@@ -481,6 +481,18 @@ final class AssistantController {
         }
     }
 
+    /// The proposal made again with the person's choices on its card (`ProposalChoices`): rows
+    /// left out, categories or amounts given.
+    func revise(_ proposal: String, _ revision: JSON) {
+        operation("proposal") { [self] in
+            let id = threadId
+            var params = proposalParams(id, proposal)
+            params["revision"] = revision
+            _ = try await call("assistant_revise", params)
+            try await loadThread(id)
+        }
+    }
+
     func discard(_ proposal: String) {
         operation("proposal") { [self] in
             var params = proposalParams(threadId, proposal)

@@ -52,6 +52,7 @@ struct AssistantView: View {
     @State private var importReview: AssistantSheetItem<AssistantImportRequest>?
     @State private var replyReport: AssistantSheetItem<String>?
     @State private var share: AssistantSheetItem<URL>?
+    @State private var changing: AssistantSheetItem<AssistantRowChange>?
     @State private var preview: URL?
     @State private var localError: String?
     @State private var sent = 0
@@ -64,7 +65,7 @@ struct AssistantView: View {
     init(request: AssistantRequest? = nil) { self.request = request }
 
     private var sheetShown: Bool {
-        historyShown || contextShown || report != nil || importReview != nil || replyReport != nil || share != nil || preview != nil
+        historyShown || contextShown || report != nil || importReview != nil || replyReport != nil || share != nil || preview != nil || changing != nil
     }
 
     var body: some View {
@@ -134,6 +135,12 @@ struct AssistantView: View {
             }
         }
         .sheet(item: $replyReport) { AssistantReplyReportForm(excerpt: $0.value) }
+        .sheet(item: $changing) { item in
+            AssistantRowEditor(row: item.value.row) { change in
+                let proposal = item.value.proposal
+                controller.revise(proposal.text("id"), ProposalChoices.change(proposal["choices"], key: item.value.row.text("key"), change: change))
+            }
+        }
         .sheet(item: $share) { AssistantShareSheet(items: [$0.value]) { share = nil }.presentationDetents([.medium, .large]) }
         .quickLookPreview($preview)
         .alert("Couldn’t complete that", isPresented: Binding(get: {
@@ -301,7 +308,9 @@ struct AssistantView: View {
                     }
                 }
             },
-            applyFix: request?.applyFix.map { fix -> () -> Void in { fix(controller.threadId, proposal) } })
+            applyFix: request?.applyFix.map { fix -> () -> Void in { fix(controller.threadId, proposal) } },
+            revise: { controller.revise(id, $0) },
+            change: { changing = AssistantSheetItem(value: AssistantRowChange(proposal: proposal, row: $0)) })
     }
 
     private func shareFile(_ path: String) {

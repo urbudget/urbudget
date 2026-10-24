@@ -220,3 +220,60 @@ func assistantLimited(_ text: String, utf16 limit: Int) -> String {
     }
     return out
 }
+
+/// What the person chose on a proposal card, as `assistant_revise` takes it (the desktop's
+/// ProposalCard, Android's ProposalChoices): `skip` lists the keys of rows left out, `set` the rows
+/// given another category (null: Ready to Assign) or amount. Each choice is made from the card's
+/// current `choices`.
+enum ProposalChoices {
+    /// The assistant's own version: nothing left out or changed.
+    static let original: JSON = ["skip": [], "set": []]
+
+    /// `choices` with the row `key` left out, or put back when it was; one put back loses an amount
+    /// of nothing given to it.
+    static func toggle(_ choices: JSON, key: String, skipped: Bool) -> JSON {
+        let skip = choices["skip"].array.map(\.string)
+        let set = choices.rows("set")
+        guard skipped else { return revision(skip + [key], set) }
+        return revision(skip.filter { $0 != key }, set.filter { !($0.text("key") == key && !$0["amount"].isNull && $0.long("amount") == 0) })
+    }
+
+    /// `choices` with `change` (a category and/or an amount) given to the row `key`, over what it
+    /// was given before.
+    static func change(_ choices: JSON, key: String, change: JSON) -> JSON {
+        let set = choices.rows("set")
+        var given = set.first(where: { $0.text("key") == key }) ?? [:]
+        for (field, value) in change.object { given[field] = value }
+        given["key"] = .string(key)
+        return revision(choices["skip"].array.map(\.string), set.filter { $0.text("key") != key } + [given])
+    }
+
+    /// What saving a row's editor gives it: `category` (nil: Ready to Assign) when it isn't the one
+    /// the row has, and the typed amount when it isn't the row's; nil when nothing changed. An
+    /// amount typed without a sign keeps the row's sign. Throws when the amount doesn't read.
+    static func edit(_ row: JSON, category: String?, amount: String) throws -> JSON? {
+        let edit = row["edit"]
+        guard edit.isObject else { return nil }
+        var change: JSON = [:]
+        let had = edit.text("categoryId")
+        if edit.flag("category") && category != (had.isEmpty ? nil : had) { change["category"] = category.map(JSON.string) ?? .null }
+        if edit.flag("amount") {
+            let was: Int64? = row["amount"].isNull ? nil : row.long("amount")
+            let typed = amount.trimmingCharacters(in: .whitespaces)
+            var cents = try Money.parse(typed)
+            if !typed.hasPrefix("-") && !typed.hasPrefix("+") && (was ?? 0) < 0 { cents = -abs(cents) }
+            if cents != was { change["amount"] = .int(cents) }
+        }
+        return change.object.isEmpty ? nil : change
+    }
+
+    /// How much of the card Apply makes ("Apply 2 of 3") while the person is choosing and some of
+    /// its rows are left out; nil otherwise.
+    static func partial(_ rows: [JSON], choosing: Bool) -> String? {
+        let keyed = rows.filter { !$0.text("key").isEmpty }
+        let chosen = keyed.filter { !$0.flag("skipped") }.count
+        return choosing && chosen < keyed.count ? "Apply \(chosen) of \(keyed.count)" : nil
+    }
+
+    private static func revision(_ skip: [String], _ set: [JSON]) -> JSON { ["skip": JSON(skip), "set": .array(set)] }
+}

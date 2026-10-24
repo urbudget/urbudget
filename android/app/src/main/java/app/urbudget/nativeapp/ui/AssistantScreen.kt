@@ -20,8 +20,13 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -32,6 +37,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import app.urbudget.nativeapp.AssistantController
 import app.urbudget.nativeapp.AssistantState
 import app.urbudget.nativeapp.BudgetViewModel
+import app.urbudget.nativeapp.ProposalChoices
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -67,6 +73,8 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
     var reportReply by remember { mutableStateOf<String?>(null) }
     var pendingExport by remember { mutableStateOf<Pair<String, ByteArray>?>(null) }
     var exportError by remember { mutableStateOf<String?>(null) }
+    // A proposal card's row being given another category or amount: the proposal, and the row.
+    var changing by remember { mutableStateOf<Pair<JSONObject, JSONObject>?>(null) }
     val list = rememberLazyListState()
     val entries = state.entries
     val attach = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -136,7 +144,9 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
                             } },
                             saveImport = { controller.saveImport(proposal.text("id"), ::savePath) },
                             report = { controller.report(proposal.text("id")) { report = it } },
-                            spreadsheet = { open -> controller.spreadsheet(proposal.text("id"), open) { if (!open) savePath(it) } })
+                            spreadsheet = { open -> controller.spreadsheet(proposal.text("id"), open) { if (!open) savePath(it) } },
+                            revise = { controller.revise(proposal.text("id"), it) },
+                            change = { row -> changing = proposal to row })
                     }
                     "step" -> Text((if (entry.optBoolean("failed")) "Couldn’t complete: " else "✓ ") + entry.text("text"), style = MaterialTheme.typography.labelMedium,
                         color = if (entry.optBoolean("failed")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
@@ -214,6 +224,11 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
         scope.launch { val bytes = withContext(Dispatchers.Default) { document.text("body").toByteArray() }; saveBytes("${document.text("title").take(60)}.md", bytes) }
     }) }
     reportReply?.let { excerpt -> AssistantReplyReportDialog(excerpt, controller, { reportReply = null }) }
+    changing?.let { (proposal, row) ->
+        ProposalRowEditor(row, budget, budgetState.summary, budgetState.month, { change ->
+            controller.revise(proposal.text("id"), ProposalChoices.change(proposal.optJSONObject("choices"), row.text("key"), change)); changing = null
+        }) { changing = null }
+    }
     if (contextPicker) Dialog(onDismissRequest = { contextPicker = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         val transactions by produceState<List<JSONObject>?>(null, budget) {
             value = null
@@ -258,15 +273,27 @@ private fun AssistantLiveReply(controller: AssistantController, list: LazyListSt
     }
 }
 
+/**
+ * A change the assistant prepared, applied only from here. While it waits, each part of it can be
+ * left out (its checkbox) or given another category or amount (its pencil, `change`); `revise`
+ * makes the card again with those choices, and Apply makes what's left (desktop ProposalCard).
+ */
 @Composable
-private fun AssistantProposalCard(proposal: JSONObject, currency: String, busy: Boolean, canUndo: Boolean, apply: () -> Unit, undo: () -> Unit, discard: () -> Unit,
-    refine: () -> Unit, reviewImport: () -> Unit, saveImport: () -> Unit, report: () -> Unit, spreadsheet: (Boolean) -> Unit, applyFix: (() -> Unit)? = null) {
+internal fun AssistantProposalCard(proposal: JSONObject, currency: String, busy: Boolean, canUndo: Boolean, apply: () -> Unit, undo: () -> Unit, discard: () -> Unit,
+    refine: () -> Unit, reviewImport: () -> Unit, saveImport: () -> Unit, report: () -> Unit, spreadsheet: (Boolean) -> Unit, applyFix: (() -> Unit)? = null,
+    revise: ((JSONObject) -> Unit)? = null, change: ((JSONObject) -> Unit)? = null) {
     val card = proposal.optJSONObject("card") ?: JSONObject()
     val rows = remember(card) { card.rows("rows") }
     var page by remember(proposal.text("id")) { mutableIntStateOf(0) }
     val pages = ((rows.size + 19) / 20).coerceAtLeast(1)
     val currentPage = page.coerceAtMost(pages - 1)
     val status = proposal.text("status")
+    // Its parts, to leave out or change, while it waits.
+    val choices = proposal.optJSONObject("choices")
+    val choosing = revise != null && status == "proposed" && rows.any { it.text("key").isNotEmpty() }
+    val chosen = rows.count { it.text("key").isNotEmpty() && !it.optBoolean("skipped") }
+    val partial = ProposalChoices.partial(rows, choosing)
+    val original: (() -> Unit)? = if (revise != null && choices != null) ({ revise(ProposalChoices.original()) }) else null
     if (status == "applied" || status == "discarded") {
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
@@ -281,14 +308,15 @@ private fun AssistantProposalCard(proposal: JSONObject, currency: String, busy: 
             Text(card.text("kicker"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             Text(proposal.text("title"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             card.rows("stats").forEach { stat -> Text("${stat.text("label")}: ${if (stat.has("amount") && !stat.isNull("amount")) money(stat.optLong("amount"), currency) else stat.text("text")}") }
-            (rows.subList(currentPage * 20, minOf(rows.size, (currentPage + 1) * 20)) + listOfNotNull(card.optJSONObject("total"))).forEach { row ->
-                Column(Modifier.padding(start = if (row.optBoolean("indent")) 16.dp else 0.dp)) {
-                    Row { Text(row.text("label"), Modifier.weight(1f)); if (row.has("amount")) Text(money(row.optLong("amount"), currency), fontWeight = FontWeight.SemiBold) }
-                    if (row.text("detail").isNotEmpty()) Text(row.text("detail"), style = MaterialTheme.typography.bodySmall)
-                    if (row.has("before") || row.has("after")) Text("${money(row.optLong("before"), currency)} → ${money(row.optLong("after"), currency)}", style = MaterialTheme.typography.bodySmall)
-                    if (row.text("badge").isNotEmpty()) Text(row.text("badge"), style = MaterialTheme.typography.labelSmall, color = if (row.text("tone") == "warn") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
-                }
+            rows.subList(currentPage * 20, minOf(rows.size, (currentPage + 1) * 20)).forEach { row ->
+                val key = row.text("key")
+                val edit = row.optJSONObject("edit")
+                val editable = !row.optBoolean("skipped") && (edit?.optBoolean("category") == true || edit?.optBoolean("amount") == true)
+                ProposalRow(row, currency, busy,
+                    toggle = if (choosing && key.isNotEmpty()) ({ revise?.invoke(ProposalChoices.toggle(choices, key, row.optBoolean("skipped"))) }) else null,
+                    change = if (choosing && key.isNotEmpty() && editable && change != null) ({ change(row) }) else null)
             }
+            card.optJSONObject("total")?.let { ProposalRow(it, currency, busy) }
             if (pages > 1) Row {
                 TextButton({ page = currentPage - 1 }, enabled = currentPage > 0) { Text("Previous rows") }
                 Text("${currentPage + 1} / $pages", Modifier.padding(12.dp))
@@ -302,17 +330,21 @@ private fun AssistantProposalCard(proposal: JSONObject, currency: String, busy: 
             else when (proposal.text("kind")) {
                 // Fixes for a bank file being imported: the import applies them, each only to a line that hasn't changed.
                 "fix" -> if (status == "proposed" || status == "undone") {
-                    Button(applyFix ?: {}, enabled = !busy && applyFix != null) { Text(if (applyFix != null) "Apply to the import" else "Apply from the import") }
+                    Button(applyFix ?: {}, enabled = !busy && applyFix != null && !(choosing && chosen == 0)) {
+                        Text(if (applyFix == null) "Apply from the import" else partial?.let { "$it to the import" } ?: "Apply to the import")
+                    }
                     Text(if (applyFix != null) "Each applies only to a line that hasn't changed." else "Open the import these fixes are for.", style = MaterialTheme.typography.bodySmall)
                     Row { TextButton(refine, enabled = !busy) { Text("Ask for changes") }; TextButton(discard, enabled = !busy) { Text("Discard") } }
+                    if (original != null) TextButton(original, enabled = !busy) { Text("Use the assistant's version") }
                 } else Text(if (status == "applied") "✓ Applied to the import" else "Discarded", style = MaterialTheme.typography.labelMedium)
                 "report" -> Button(report, enabled = !busy) { Text("Read report · Print / PDF") }
                 "import" -> { Button(reviewImport, enabled = !busy) { Text("Review ${proposal.optInt("rows")} import rows") }; TextButton(saveImport) { Text("Export converted CSV") } }
                 "spreadsheet" -> { Button({ spreadsheet(true) }, enabled = !busy) { Text("Open spreadsheet") }; TextButton({ spreadsheet(false) }) { Text("Export Excel file") } }
                 else -> when (status) {
                     "proposed", "undone" -> {
-                        Button(apply, enabled = !busy) { Text("Apply reviewed changes") }
+                        Button(apply, enabled = !busy && !(choosing && chosen == 0)) { Text(partial ?: "Apply reviewed changes") }
                         Row { TextButton(refine, enabled = !busy) { Text("Ask for changes") }; TextButton(discard, enabled = !busy) { Text("Discard") } }
+                        if (original != null) TextButton(original, enabled = !busy) { Text("Use the assistant's version") }
                     }
                     "applied" -> { Text("✓ Applied", color = MaterialTheme.colorScheme.primary); if (canUndo) TextButton(undo, enabled = !busy) { Text("Undo this proposal") } }
                     "discarded" -> Text("Discarded", style = MaterialTheme.typography.labelMedium)
@@ -323,6 +355,59 @@ private fun AssistantProposalCard(proposal: JSONObject, currency: String, busy: 
             if (status != "failed" && proposal.text("kind") in listOf("report", "spreadsheet", "import")) TextButton(discard, enabled = !busy) { Text("Discard") }
         }
     }
+}
+
+/**
+ * A card row. While the card waits, its checkbox (`toggle`) leaves it out or puts it back, and its
+ * pencil (`change`) gives it another category or amount. A row left out stays, dimmed and struck
+ * through; an amount the user gave shows in the accent colour.
+ */
+@Composable
+private fun ProposalRow(row: JSONObject, currency: String, busy: Boolean, toggle: (() -> Unit)? = null, change: (() -> Unit)? = null) {
+    val skipped = row.optBoolean("skipped")
+    val label = row.text("label")
+    Row(Modifier.padding(start = if (row.optBoolean("indent")) 16.dp else 0.dp).alpha(if (skipped) .5f else 1f), verticalAlignment = Alignment.CenterVertically) {
+        if (toggle != null) Checkbox(!skipped, { toggle() }, Modifier.semantics { contentDescription = "Apply: $label" }, enabled = !busy)
+        Column(Modifier.weight(1f)) {
+            Row {
+                Text(label, Modifier.weight(1f), textDecoration = if (skipped) TextDecoration.LineThrough else null)
+                if (row.has("amount")) Text(money(row.optLong("amount"), currency), fontWeight = FontWeight.SemiBold,
+                    color = if (row.optBoolean("edited")) MaterialTheme.colorScheme.primary else Color.Unspecified)
+            }
+            if (row.text("detail").isNotEmpty()) Text(row.text("detail"), style = MaterialTheme.typography.bodySmall)
+            if (row.has("before") || row.has("after")) Text("${money(row.optLong("before"), currency)} → ${money(row.optLong("after"), currency)}", style = MaterialTheme.typography.bodySmall)
+            if (row.text("badge").isNotEmpty()) Text(row.text("badge"), style = MaterialTheme.typography.labelSmall, color = if (row.text("tone") == "warn") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+        }
+        if (change != null) IconButton(change, enabled = !busy) { Icon(Icons.Outlined.Edit, "Change $label") }
+    }
+}
+
+/**
+ * A card row's category and/or amount, as its `edit` allows (desktop RowEditor). The category
+ * starts at the row's (none is Unassigned, Ready to Assign), the amount at the row's signed amount;
+ * one typed without a sign keeps the row's. Saving with nothing changed just closes.
+ */
+@Composable
+internal fun ProposalRowEditor(row: JSONObject, budget: JSONObject, summary: JSONObject?, month: String, save: (JSONObject) -> Unit, close: () -> Unit) {
+    val edit = row.optJSONObject("edit") ?: JSONObject()
+    val label = row.text("label")
+    var category by remember { mutableStateOf(edit.text("categoryId").ifEmpty { Unassigned }) }
+    var amount by remember { mutableStateOf(if (row.has("amount")) amountText(row.optLong("amount")) else "") }
+    var problem by remember { mutableStateOf<String?>(null) }
+    var picking by remember { mutableStateOf(false) }
+    val names = remember(budget) { budget.rows("categories").associate { it.text("id") to it.text("name") } }
+    FormDialog("Change $label", close, onConfirm = {
+        runCatching { ProposalChoices.edit(row, category.takeUnless { it == Unassigned }, amount) }
+            .onSuccess { change -> if (change == null) close() else save(change) }
+            .onFailure { problem = it.message ?: "Enter an amount." }
+    }) {
+        if (row.text("detail").isNotEmpty()) Text(row.text("detail"), style = MaterialTheme.typography.bodyMedium, color = ur.muted)
+        if (edit.optBoolean("category")) PickerField("Category", if (category == Unassigned) "Unassigned" else names[category] ?: "Deleted category", "Choose a category", { picking = true })
+        if (edit.optBoolean("amount")) Field(amount, { amount = it; problem = null }, "Amount", numeric = true)
+        problem?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = ur.negative) }
+    }
+    if (picking) CategoryPickerSheet(budget, summary, month, category, "Category for $label", includeUnassigned = true, includePayment = false,
+        onPick = { category = it; picking = false }) { picking = false }
 }
 
 private fun conversationMarkdown(thread: JSONObject, currency: String): String = buildString {

@@ -126,6 +126,64 @@ final class AssistantPresentationTests: XCTestCase {
     }
 }
 
+/// The revisions a proposal card sends `assistant_revise`, as the desktop's ProposalCard builds them.
+final class ProposalChoicesTests: XCTestCase {
+    func testLeavingARowOutAndPuttingItBackChangesOnlyItsKey() {
+        XCTAssertEqual(ProposalChoices.original, ["skip": [], "set": []])
+        let one = ProposalChoices.toggle(.null, key: "t:b", skipped: false)
+        XCTAssertEqual(one, ["skip": ["t:b"], "set": []])
+        XCTAssertEqual(ProposalChoices.toggle(one, key: "t:a", skipped: false), ["skip": ["t:b", "t:a"], "set": []])
+        // Put back: out of skip, and an amount of nothing given to it goes too; other choices stay.
+        let choices: JSON = ["skip": ["s:0", "s:1"], "set": [["key": "s:0", "amount": 0], ["key": "s:1", "category": .null], ["key": "s:2", "amount": 0]]]
+        let back = ProposalChoices.toggle(choices, key: "s:0", skipped: true)
+        XCTAssertEqual(back, ["skip": ["s:1"], "set": [["key": "s:1", "category": .null], ["key": "s:2", "amount": 0]]])
+        // A category given stays when its row is put back, Ready to Assign (null) included.
+        let again = ProposalChoices.toggle(back, key: "s:1", skipped: true)
+        XCTAssertEqual(again, ["skip": [], "set": [["key": "s:1", "category": .null], ["key": "s:2", "amount": 0]]])
+        XCTAssertTrue(again["set"][0].has("category"))
+        XCTAssertTrue(again.serialized().contains("\"category\":null"))
+    }
+
+    func testAnEditReplacesItsRowsEntryOverWhatItWasGiven() {
+        let one = ProposalChoices.change(["skip": ["r:r1"], "set": []], key: "t:b", change: ["category": "groceries"])
+        XCTAssertEqual(one, ["skip": ["r:r1"], "set": [["key": "t:b", "category": "groceries"]]])
+        let two = ProposalChoices.change(one, key: "t:a", change: ["category": .null])
+        XCTAssertEqual(two, ["skip": ["r:r1"], "set": [["key": "t:b", "category": "groceries"], ["key": "t:a", "category": .null]]])
+        // Another amount for t:b keeps the category it was given.
+        let three = ProposalChoices.change(two, key: "t:b", change: ["amount": -30000])
+        XCTAssertEqual(three, ["skip": ["r:r1"], "set": [["key": "t:a", "category": .null], ["key": "t:b", "category": "groceries", "amount": -30000]]])
+        XCTAssertEqual(ProposalChoices.change(.null, key: "s:0", change: ["amount": 500]), ["skip": [], "set": [["key": "s:0", "amount": 500]]])
+    }
+
+    func testSavingARowsEditorGivesWhatChangedKeepingTheRowsSign() throws {
+        Money.configure(budget: ["currency": "SAR"])
+        let home: JSON = ["label": "Home", "amount": -45900, "key": "s:0", "edit": ["category": true, "categoryId": "rent", "amount": true]]
+        XCTAssertEqual(try ProposalChoices.edit(home, category: "rent", amount: "300"), ["amount": -30000])
+        XCTAssertEqual(try ProposalChoices.edit(home, category: "rent", amount: "+5"), ["amount": 500])
+        XCTAssertNil(try ProposalChoices.edit(home, category: "rent", amount: "-459.00"))
+        XCTAssertNil(try ProposalChoices.edit(home, category: "rent", amount: " 459 "))
+        XCTAssertEqual(try ProposalChoices.edit(home, category: nil, amount: "-459.00"), ["category": .null])
+        XCTAssertEqual(try ProposalChoices.edit(home, category: "groceries", amount: "12.5"), ["category": "groceries", "amount": -1250])
+        XCTAssertThrowsError(try ProposalChoices.edit(home, category: "rent", amount: "lots"))
+        // A category only: the amount isn't read. Ready to Assign is a row with no categoryId.
+        let careem: JSON = ["label": "Careem", "amount": -3800, "key": "t:a", "edit": ["category": true, "amount": false]]
+        XCTAssertNil(try ProposalChoices.edit(careem, category: nil, amount: "lots"))
+        XCTAssertEqual(try ProposalChoices.edit(careem, category: "transport", amount: ""), ["category": "transport"])
+        // A positive row stays positive.
+        let salary: JSON = ["label": "Salary", "amount": 2000, "key": "t:s", "edit": ["category": false, "amount": true]]
+        XCTAssertEqual(try ProposalChoices.edit(salary, category: nil, amount: "15"), ["amount": 1500])
+        XCTAssertNil(try ProposalChoices.edit(["label": "New rule"], category: nil, amount: ""))
+    }
+
+    func testApplySaysHowMuchOfTheCardItMakesWhenSomeIsLeftOut() {
+        let rows: [JSON] = [["key": "t:a"], ["key": "t:b", "skipped": true], ["key": "r:r1"], ["label": "unkeyed"]]
+        XCTAssertEqual(ProposalChoices.partial(rows, choosing: true), "Apply 2 of 3")
+        XCTAssertNil(ProposalChoices.partial(rows, choosing: false))
+        XCTAssertNil(ProposalChoices.partial(rows.map { row -> JSON in var row = row; row["skipped"] = false; return row }, choosing: true))
+        XCTAssertEqual(ProposalChoices.partial(rows.map { row -> JSON in var row = row; row["skipped"] = true; return row }, choosing: true), "Apply 0 of 3")
+    }
+}
+
 final class AssistantBankReviewTests: XCTestCase {
     func testDefaultChoicesMatchTheDesktop() {
         XCTAssertEqual(AssistantBankReview.defaultChoice(duplicate: true, possibleDuplicate: false, candidates: ["a"], previouslyMatched: []), "skip")
