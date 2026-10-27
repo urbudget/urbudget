@@ -4,6 +4,10 @@ Notable changes to UrBudget, organized using [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Added
+
+- On the phones, the assistant's proposals can be changed before they're applied, as on the desktop: a part is left out with its checkbox, or given another category or amount with its pencil, and Apply makes what's left ("Apply 2 of 3"), still as one undo step. Use the assistant's version puts it back as proposed. An import's fixes work the same way.
+
 ## [1.0.10] - 2026-10-27
 
 ### Added

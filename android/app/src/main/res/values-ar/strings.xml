@@ -2107,9 +2107,19 @@
     <string name="assistant_applied">✓ طُبِّق</string>
     <string name="assistant_discarded">تم تجاهله</string>
     <string name="assistant_could_not_apply">تعذّر التطبيق</string>
+    <!-- While a proposal waits, each of its parts can be left out with its checkbox or changed with its pencil. -->
+    <!-- Apply when some parts are left out: how many of them it makes. -->
+    <string name="assistant_apply_some">تطبيق \u2068%1$s\u2069 من \u2068%2$s\u2069</string>
+    <string name="assistant_use_original">استخدام نسخة المساعد</string>
+    <!-- The checkbox of a part, read out with the part. -->
+    <string name="assistant_apply_row">تطبيق: \u2068%1$s\u2069</string>
+    <string name="assistant_change_row">تغيير \u2068%1$s\u2069</string>
+    <string name="assistant_category_for">فئة \u2068%1$s\u2069</string>
+    <string name="assistant_amount_required">أدخل مبلغًا.</string>
     <!-- Fixes the assistant proposes for a bank file being imported. -->
     <string name="assistant_fix_apply">تطبيق على الاستيراد</string>
     <string name="assistant_fix_apply_from_import">تطبيق من الاستيراد</string>
+    <string name="assistant_fix_apply_some">تطبيق \u2068%1$s\u2069 من \u2068%2$s\u2069 على الاستيراد</string>
     <string name="assistant_fix_each_line">لا يُطبَّق كل تصحيح إلا على سطر لم يتغيّر.</string>
     <string name="assistant_fix_open_import">افتح الاستيراد الذي تخصّه هذه التصحيحات.</string>
     <string name="assistant_fix_other_import">هذه التصحيحات تخصّ استيرادًا آخر.</string>

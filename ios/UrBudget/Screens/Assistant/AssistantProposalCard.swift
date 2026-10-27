@@ -13,11 +13,17 @@ struct AssistantProposalActions {
     var spreadsheet: (Bool) -> Void
     /// Fixes for a bank file being imported go to that import, when the assistant is open over it.
     var applyFix: (() -> Void)? = nil
+    /// The card made again with the person's choices on it (`ProposalChoices`).
+    var revise: ((JSON) -> Void)? = nil
+    /// Opens a row's editor, to give it another category or amount.
+    var change: ((JSON) -> Void)? = nil
 }
 
 /// A proposed change, shown in full before anything is applied: what changes, by how much, and
 /// what each balance becomes. Its buttons follow Android's: a budget change is applied only from
-/// here, after the service checks it again, and can be undone while it's the latest change.
+/// here, after the service checks it again, and can be undone while it's the latest change. While
+/// it waits, each part of it can be left out (its check) or given another category or amount (its
+/// pencil), and Apply makes what's left (the desktop's ProposalCard).
 struct AssistantProposalCard: View {
     var proposal: JSON
     var currency: String
@@ -27,6 +33,11 @@ struct AssistantProposalCard: View {
     @State private var page = 0
 
     private static let pageSize = 20
+
+    /// Its parts can be left out or changed: it waits to be applied, and its rows have keys.
+    private var choosing: Bool {
+        actions.revise != nil && proposal.text("status") == "proposed" && proposal["card"].rows("rows").contains { !$0.text("key").isEmpty }
+    }
 
     var body: some View {
         let status = proposal.text("status")
@@ -69,6 +80,7 @@ struct AssistantProposalCard: View {
         let current = min(page, pages - 1)
         let shown = Array(rows[min(rows.count, current * Self.pageSize)..<min(rows.count, (current + 1) * Self.pageSize)])
         let kind = proposal.text("kind")
+        let choosing = self.choosing
         return VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 Label(card.text("kicker").isEmpty ? String(localized: "Proposal") : card.text("kicker"), systemImage: Self.symbol(kind))
@@ -94,7 +106,7 @@ struct AssistantProposalCard: View {
                 VStack(spacing: 0) {
                     ForEach(Array(shown.enumerated()), id: \.offset) { index, row in
                         if index > 0 { Divider().padding(.leading, 12) }
-                        rowView(row, total: false)
+                        rowView(row, total: false, choosing: choosing)
                     }
                     if card["total"].isObject {
                         Divider()
@@ -139,11 +151,52 @@ struct AssistantProposalCard: View {
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.urAccent.opacity(0.22)))
     }
 
-    private func rowView(_ row: JSON, total: Bool) -> some View {
+    /// A row. While the card waits (`choosing`), its check leaves it out or puts it back, and its
+    /// pencil gives it another category or amount. A row left out stays, dimmed and struck through;
+    /// an amount the person gave shows in the accent colour.
+    private func rowView(_ row: JSON, total: Bool, choosing: Bool = false) -> some View {
+        let key = row.text("key")
+        let label = row.text("label")
+        let skipped = row.flag("skipped")
+        let edit = row["edit"]
+        let pickable = choosing && !key.isEmpty
+        let editable = pickable && !skipped && (edit.flag("category") || edit.flag("amount")) && actions.change != nil
+        return HStack(spacing: 4) {
+            if pickable {
+                Button {
+                    actions.revise?(ProposalChoices.toggle(proposal["choices"], key: key, skipped: skipped))
+                } label: {
+                    Image(systemName: skipped ? "circle" : "checkmark.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(skipped ? Color.secondary : Color.urAccent)
+                        .frame(minWidth: 32, minHeight: 32)
+                }
+                .buttonStyle(.borderless)
+                .disabled(busy)
+                .accessibilityLabel("Apply: \(label)")
+                .accessibilityAddTraits(skipped ? [] : .isSelected)
+            }
+            rowText(row, total: total)
+            if editable {
+                Button { actions.change?(row) } label: {
+                    Image(systemName: "pencil").frame(minWidth: 32, minHeight: 32)
+                }
+                .buttonStyle(.borderless)
+                .disabled(busy)
+                .accessibilityLabel("Change \(label)")
+            }
+        }
+        .padding(.leading, pickable ? 4 : 0)
+        .padding(.trailing, editable ? 4 : 0)
+        .opacity(skipped ? 0.5 : 1)
+    }
+
+    private func rowText(_ row: JSON, total: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(row.text("label"))
                     .font(total ? .subheadline.weight(.semibold) : .subheadline)
+                    .strikethrough(row.flag("skipped"))
                     .fixedSize(horizontal: false, vertical: true)
                 if !row.text("detail").isEmpty {
                     Text(row.text("detail")).font(.footnote).foregroundStyle(Color.secondary).fixedSize(horizontal: false, vertical: true)
@@ -173,6 +226,8 @@ struct AssistantProposalCard: View {
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
+                    .foregroundStyle(row.flag("edited") ? Color.urAccent : Color.primary)
+                    .accessibilityValue(row.flag("edited") ? Text("Changed by you") : Text(verbatim: ""))
             }
         }
         .padding(.leading, row.flag("indent") ? 28 : 12)
@@ -209,7 +264,11 @@ struct AssistantProposalCard: View {
                     // The import applies them, each only to a line that hasn't changed.
                     if status == "proposed" || status == "undone" {
                         if let applyFix = actions.applyFix {
-                            primary("Apply to the import", "checkmark", applyFix)
+                            if let partial {
+                                primary("Apply \(partial.chosen) of \(partial.total) to the import", "checkmark", applyFix, enabled: !nothingChosen)
+                            } else {
+                                primary("Apply to the import", "checkmark", applyFix, enabled: !nothingChosen)
+                            }
                             Text("Each applies only to a line that hasn't changed.").font(.footnote).foregroundStyle(Color.secondary)
                         } else {
                             Text("Open the import these fixes are for, and apply them from there.").font(.footnote).foregroundStyle(Color.secondary)
@@ -218,17 +277,23 @@ struct AssistantProposalCard: View {
                             Button("Ask for changes", systemImage: "text.bubble", action: actions.refine).disabled(busy)
                             Button("Discard", role: .destructive, action: actions.discard).disabled(busy)
                         }
+                        original
                     } else if status == "applied" {
                         Label("Applied to the import", systemImage: "checkmark.circle.fill").foregroundStyle(Color.urPositive)
                     }
                 default:
                     switch status {
                     case "proposed", "undone":
-                        primary("Apply reviewed changes", "checkmark", actions.apply)
+                        if let partial {
+                            primary("Apply \(partial.chosen) of \(partial.total)", "checkmark", actions.apply, enabled: !nothingChosen)
+                        } else {
+                            primary("Apply reviewed changes", "checkmark", actions.apply, enabled: !nothingChosen)
+                        }
                         HStack(spacing: 20) {
                             Button("Ask for changes", systemImage: "text.bubble", action: actions.refine).disabled(busy)
                             Button("Discard", role: .destructive, action: actions.discard).disabled(busy)
                         }
+                        original
                     case "applied":
                         Label("Applied", systemImage: "checkmark.circle.fill").foregroundStyle(Color.urPositive)
                         if canUndo { Button("Undo this proposal", systemImage: "arrow.uturn.backward", action: actions.undo).disabled(busy) }
@@ -250,7 +315,7 @@ struct AssistantProposalCard: View {
         .buttonStyle(.borderless)
     }
 
-    private func primary(_ title: LocalizedStringKey, _ symbol: String, _ action: @escaping () -> Void) -> some View {
+    private func primary(_ title: LocalizedStringKey, _ symbol: String, _ action: @escaping () -> Void, enabled: Bool = true) -> some View {
         Button(action: action) {
             HStack(spacing: 8) {
                 if busy { ProgressView().controlSize(.small).tint(.white) } else { Image(systemName: symbol) }
@@ -261,7 +326,22 @@ struct AssistantProposalCard: View {
             .padding(.vertical, 4)
         }
         .buttonStyle(.borderedProminent)
-        .disabled(busy)
+        .disabled(busy || !enabled)
+    }
+
+    /// How much Apply makes ("Apply 2 of 3") while some of the card's rows are left out.
+    private var partial: ProposalChoices.Partial? { ProposalChoices.partial(proposal["card"].rows("rows"), choosing: choosing) }
+
+    /// Every row is left out: nothing to apply.
+    private var nothingChosen: Bool {
+        choosing && !proposal["card"].rows("rows").contains { !$0.text("key").isEmpty && !$0.flag("skipped") }
+    }
+
+    /// Back to the card as the assistant made it, once the person has changed it.
+    @ViewBuilder private var original: some View {
+        if let revise = actions.revise, proposal.has("choices") && !proposal["choices"].isNull {
+            Button("Use the assistant's version", systemImage: "arrow.uturn.backward") { revise(ProposalChoices.original) }.disabled(busy)
+        }
     }
 
     private func badge(_ text: LocalizedStringKey, _ color: Color) -> some View {
@@ -282,6 +362,83 @@ struct AssistantProposalCard: View {
         case "transactions": return "list.bullet.rectangle"
         case "payees": return "person.text.rectangle"
         default: return "arrow.left.arrow.right"
+        }
+    }
+}
+
+/// A card row to change: the proposal it's on, and the row.
+struct AssistantRowChange {
+    var proposal: JSON
+    var row: JSON
+}
+
+/// A card row's category and/or amount, as its `edit` allows (the desktop's RowEditor). The
+/// category starts at the row's (none is Unassigned, Ready to Assign), the amount at the row's
+/// signed amount; one typed without a sign keeps the row's. Saving with nothing changed just closes.
+struct AssistantRowEditor: View {
+    @Environment(BudgetStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    var row: JSON
+    var onSave: (JSON) -> Void
+    @State private var category: String
+    @State private var amount: String
+    @State private var error: String?
+    @State private var route: [Route] = []
+
+    private enum Route: Hashable { case category }
+
+    init(row: JSON, onSave: @escaping (JSON) -> Void) {
+        self.row = row
+        self.onSave = onSave
+        let had = row["edit"].text("categoryId")
+        _category = State(initialValue: had.isEmpty ? Unassigned : had)
+        _amount = State(initialValue: row["amount"].isNull ? "" : Money.editable(row.long("amount")))
+    }
+
+    var body: some View {
+        let edit = row["edit"]
+        let label = row.text("label")
+        NavigationStack(path: $route) {
+            Form {
+                Section {
+                    if edit.flag("category") {
+                        NavigationLink(value: Route.category) {
+                            PlanningPickerRow(icon: "tag", label: String(localized: "Category"), value: planningCategoryName(store.budget, category),
+                                              placeholder: String(localized: "Choose a category"))
+                        }
+                    }
+                    if edit.flag("amount") {
+                        TextField("Amount", text: $amount)
+                            .decimalKeyboard()
+                            .accessibilityLabel("Amount for \(label)")
+                            .onChange(of: amount) { _, _ in error = nil }
+                    }
+                } footer: {
+                    if !row.text("detail").isEmpty { Text(row.text("detail")) }
+                }
+                if let error { FormErrorView(message: error) }
+            }
+            .navigationTitle("Change \(label)")
+            .inlineTitle()
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Save", action: save).fontWeight(.semibold) }
+            }
+            .navigationDestination(for: Route.self) { _ in
+                CategoryPicker(title: String(localized: "Category for \(label)"), month: store.month, selected: category, includeUnassigned: true, includePayment: false) { picked in
+                    category = picked
+                    route = []
+                }
+            }
+        }
+    }
+
+    private func save() {
+        do {
+            if let change = try ProposalChoices.edit(row, category: category == Unassigned ? nil : category, amount: amount) { onSave(change) }
+            dismiss()
+        } catch {
+            self.error = BudgetStore.readable(error)
         }
     }
 }

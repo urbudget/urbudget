@@ -1849,9 +1849,19 @@
     <string name="assistant_applied">✓ Applied</string>
     <string name="assistant_discarded">Discarded</string>
     <string name="assistant_could_not_apply">Could not apply</string>
+    <!-- While a proposal waits, each of its parts can be left out with its checkbox or changed with its pencil. -->
+    <!-- Apply when some parts are left out: how many of them it makes. -->
+    <string name="assistant_apply_some">Apply %1$s of %2$s</string>
+    <string name="assistant_use_original">Use the assistant\'s version</string>
+    <!-- The checkbox of a part, read out with the part. -->
+    <string name="assistant_apply_row">Apply: %1$s</string>
+    <string name="assistant_change_row">Change %1$s</string>
+    <string name="assistant_category_for">Category for %1$s</string>
+    <string name="assistant_amount_required">Enter an amount.</string>
     <!-- Fixes the assistant proposes for a bank file being imported. -->
     <string name="assistant_fix_apply">Apply to the import</string>
     <string name="assistant_fix_apply_from_import">Apply from the import</string>
+    <string name="assistant_fix_apply_some">Apply %1$s of %2$s to the import</string>
     <string name="assistant_fix_each_line">Each applies only to a line that hasn\'t changed.</string>
     <string name="assistant_fix_open_import">Open the import these fixes are for.</string>
     <string name="assistant_fix_other_import">These fixes are for another import.</string>

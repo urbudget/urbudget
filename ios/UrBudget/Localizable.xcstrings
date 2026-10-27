@@ -4757,6 +4757,16 @@
         }
       }
     },
+    "Amount for %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مبلغ ⁨%@⁩"
+          }
+        }
+      }
+    },
     "Amount, %@. Edit amount" : {
       "localizations" : {
         "ar" : {
@@ -5255,6 +5265,28 @@
         }
       }
     },
+    "Apply %lld of %lld" : {
+      "comment" : "A proposal's Apply when some of its parts are left out: how many of them it makes.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تطبيق %1$lld من %2$lld"
+          }
+        }
+      }
+    },
+    "Apply %lld of %lld to the import" : {
+      "comment" : "Apply for an import's fixes when some of them are left out.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تطبيق %1$lld من %2$lld على الاستيراد"
+          }
+        }
+      }
+    },
     "Apply reviewed changes" : {
       "localizations" : {
         "ar" : {
@@ -5419,6 +5451,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "تطبيق على الاستيراد"
+          }
+        }
+      }
+    },
+    "Apply: %@" : {
+      "comment" : "A proposal part's check, read out with the part.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تطبيق: ⁨%@⁩"
           }
         }
       }
@@ -7041,6 +7084,16 @@
         }
       }
     },
+    "Category for %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فئة ⁨%@⁩"
+          }
+        }
+      }
+    },
     "Category group" : {
       "comment" : "Button under the budget that adds a group.",
       "localizations" : {
@@ -7099,6 +7152,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "تغيير"
+          }
+        }
+      }
+    },
+    "Change %@" : {
+      "comment" : "A proposal part's pencil, and its editor's title.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تغيير ⁨%@⁩"
           }
         }
       }
@@ -7190,6 +7254,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "معدَّلة"
+          }
+        }
+      }
+    },
+    "Changed by you" : {
+      "comment" : "An amount in a proposal that the person gave.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "غيّرته أنت"
           }
         }
       }
@@ -23891,6 +23966,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "استخدام المتبقي ⁨%@⁩"
+          }
+        }
+      }
+    },
+    "Use the assistant's version" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استخدام نسخة المساعد"
           }
         }
       }

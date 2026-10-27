@@ -245,6 +245,11 @@ class AssistantController : ViewModel() {
         call("assistant_undo_commit", proposalParams(id, proposal).put("expectedToken", token))
         undoToken = null; mutable.update { it.copy(undoProposal = null) }; NativeServices.notifySaved(); changed(); loadThread(id)
     }
+    /** The proposal made again with the user's choices on its card (`ProposalChoices`): rows left out, categories or amounts given. */
+    fun revise(proposal: String, revision: JSONObject) = operation("proposal") {
+        val id = state.value.threadId
+        call("assistant_revise", proposalParams(id, proposal).put("revision", revision)); loadThread(id)
+    }
     fun discard(proposal: String) = operation("proposal") {
         call("assistant_mark", proposalParams(state.value.threadId, proposal).put("status", "discarded")); loadThread(state.value.threadId)
     }
