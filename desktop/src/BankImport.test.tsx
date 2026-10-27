@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
 import type { Budget, Transaction } from "./types";
 
 vi.mock("./bridge", () => ({
@@ -11,7 +12,16 @@ vi.mock("./bridge", () => ({
   },
 }));
 import { api } from "./bridge";
-import { ImportReview, bankTemplate, categorizeText, importHelpText, statementFile, statementText, uncategorizedImports } from "./BankImport";
+import {
+  ImportReview,
+  bankTemplate,
+  categorizeText,
+  importHelpText,
+  statementFile,
+  statementText,
+  uncategorizedImports,
+  type ReviewChoices,
+} from "./BankImport";
 import { demoBudget } from "./demo";
 
 afterEach(cleanup);
@@ -34,6 +44,33 @@ it("lets an identical ID-less receipt be imported separately with a stable retry
   expect(first.row.importId).toMatch(/^bank:manual:/);
   expect(onImport.mock.calls[1][0][0].row.importId).toBe(first.row.importId);
   expect(screen.getByText("Second receipt")).toBeTruthy();
+});
+
+it("keeps its choices with whoever shows it, checked against the rows as they are, with a separate row's ID", () => {
+  const known = { id: "bank:known", date: "2026-10-03", payee: "Shop", memo: "", amount: -500, duplicate: true, idless: true, candidates: [] };
+  // Chosen to match a transaction since gone.
+  const fee = { id: "bank:fee", date: "2026-10-04", payee: "Fee", memo: "", amount: -100, duplicate: false, candidates: [] };
+  const onImport = vi.fn();
+  function Kept({ shown }: { shown: boolean }) {
+    const [choices, setChoices] = useState<ReviewChoices>({ picked: { "bank:fee": "match:gone" } });
+    if (!shown) return null;
+    const props = { budget: demoBudget(), busy: false, icon: null, onCancel: () => {}, onImport };
+    return <ImportReview {...props} rows={[known, fee]} choices={choices} onChoices={setChoices} />;
+  }
+  const view = render(<Kept shown />);
+  const value = (n: number) => (screen.getByLabelText(`Import action ${n}`) as HTMLSelectElement).value;
+  expect(value(2)).toBe("review");
+  fireEvent.change(screen.getByLabelText("Import action 1"), { target: { value: "separate" } });
+  fireEvent.change(screen.getByLabelText("Import action 2"), { target: { value: "skip" } });
+  fireEvent.click(screen.getByRole("button", { name: "Import 1 transaction" }));
+  // Shown again: the same choices, and the same ID for the row added separately.
+  view.rerender(<Kept shown={false} />);
+  view.rerender(<Kept shown />);
+  expect([value(1), value(2)]).toEqual(["separate", "skip"]);
+  fireEvent.click(screen.getByRole("button", { name: "Import 1 transaction" }));
+  const [first, again] = onImport.mock.calls.map(([choices]) => choices[0].row.importId);
+  expect(first).toMatch(/^bank:manual:/);
+  expect(again).toBe(first);
 });
 
 it("skips a chosen row when a refreshed preview confirms it was imported", () => {

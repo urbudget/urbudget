@@ -1,6 +1,13 @@
 import Foundation
 
+/// The hidden categories' group in lists: an identifier, shown as `hiddenGroupName`.
 let HiddenGroup = "Hidden categories"
+
+/// The hidden categories' group as people see it, in the app's language.
+var hiddenGroupName: String { String(localized: "Hidden categories") }
+
+/// A group's name for display: people's own names as they are, the hidden group in the app's language.
+func groupDisplayName(_ name: String) -> String { name == HiddenGroup ? hiddenGroupName : name }
 
 /// How a category's line under its name reads.
 enum Tone: Sendable { case muted, warning, negative, positive }
@@ -67,8 +74,9 @@ struct BudgetModel: Equatable, Sendable {
 
 /// The views the budget's filter menu offers.
 let budgetViews: [(id: String, label: String)] = [
-    ("all", "All"), ("underfunded", "Underfunded"), ("overfunded", "Overfunded"),
-    ("available", "Money available"), ("overspent", "Overspent"), ("snoozed", "Snoozed"),
+    ("all", String(localized: "All")), ("underfunded", String(localized: "Underfunded")),
+    ("overfunded", String(localized: "Overfunded")), ("available", String(localized: "Money available")),
+    ("overspent", String(localized: "Overspent")), ("snoozed", String(localized: "Snoozed")),
 ]
 
 /// The budget's groups in budget order, empty ones included (desktop's groupNames with empty).
@@ -132,10 +140,10 @@ func buildBudgetModel(budget: JSON, summary: JSON, month: String) -> BudgetModel
         let words = state.status == "underfunded" || state.eventually > 0
             ? state.targetWords(category: category, summary: total, monthFirst: monthFirst) : nil
         let detail: String?
-        if state.status == "credit" { detail = "Overspent on a card" }
-        else if state.status == "negative" { detail = "Overspent" }
+        if state.status == "credit" { detail = String(localized: "Overspent on a card") }
+        else if state.status == "negative" { detail = String(localized: "Overspent") }
         else if let words { detail = words.amount.map { "\(money($0, currency)) \(words.words)" } ?? words.words }
-        else if state.snoozed { detail = "Snoozed" }
+        else if state.snoozed { detail = String(localized: "Snoozed") }
         else { detail = nil }
         let tone: Tone = ["negative", "credit"].contains(state.status) ? .negative : state.status == "underfunded" ? .warning : .muted
         return CategoryRowModel(
@@ -190,33 +198,62 @@ func categoryMoves(_ budget: JSON, category: String, month: String, assigned: In
         let other = changes.first { $0.text("categoryId") != category }
         let what: String
         switch move.text("kind") {
-        case "quickAssign": what = move.text("detail").isEmpty ? "Quick assign" : "Quick assign: \(move.text("detail"))"
-        case "merge": what = "Merged from \(move.text("detail").isEmpty ? "a deleted category" : move.text("detail"))"
+        case "quickAssign": what = quickAssignMove(move.text("detail"))
+        case "merge": what = mergedMove(move.text("detail"))
         case "move":
             if let other {
-                let name = names[other.text("categoryId")] ?? "a deleted category"
-                what = amount > 0 ? "Moved from \(name)" : "Moved to \(name)"
+                what = movedMove(names[other.text("categoryId")], from: amount > 0)
             } else {
-                what = amount > 0 ? "Assigned" : "Returned to Unassigned"
+                what = amount > 0 ? String(localized: "Assigned") : String(localized: "Returned to Unassigned")
             }
-        case "assign": what = amount > 0 ? "Assigned" : "Returned to Unassigned"
+        case "assign": what = amount > 0 ? String(localized: "Assigned") : String(localized: "Returned to Unassigned")
         default: what = move.text("description")
         }
         lines.append(MoveLine(id: "\(index)", at: move.text("at"), what: what, detail: nil, amount: amount))
     }
     let recorded = lines.reduce(0) { $0 + $1.amount }
     if !lines.isEmpty && recorded != assigned {
-        lines.insert(MoveLine(id: "earlier", at: nil, what: "Earlier changes", detail: "Not itemised", amount: assigned - recorded), at: 0)
+        lines.insert(MoveLine(id: "earlier", at: nil, what: String(localized: "Earlier changes"),
+                              detail: String(localized: "Not itemised"), amount: assigned - recorded), at: 0)
     }
     return lines
+}
+
+private func quickAssignMove(_ detail: String) -> String {
+    detail.isEmpty ? String(localized: "Quick assign") : String(localized: "Quick assign: \(detail)")
+}
+
+private func mergedMove(_ detail: String) -> String {
+    detail.isEmpty ? String(localized: "Merged from a deleted category") : String(localized: "Merged from \(detail)")
+}
+
+/// "Moved from Groceries" or "Moved to Groceries"; a category that's gone is "a deleted category".
+private func movedMove(_ name: String?, from: Bool) -> String {
+    guard let name else {
+        return from ? String(localized: "Moved from a deleted category") : String(localized: "Moved to a deleted category")
+    }
+    return from ? String(localized: "Moved from \(name)") : String(localized: "Moved to \(name)")
 }
 
 /// The flag colours, with the budget's names for them.
 let flagColors = ["red", "orange", "yellow", "green", "blue", "purple"]
 
+/// A flag colour's name in the app's language ("Red"), for a flag without a name of its own.
+func flagColorName(_ color: String) -> String {
+    switch color {
+    case "red": return String(localized: "Red")
+    case "orange": return String(localized: "Orange")
+    case "yellow": return String(localized: "Yellow")
+    case "green": return String(localized: "Green")
+    case "blue": return String(localized: "Blue")
+    case "purple": return String(localized: "Purple")
+    default: return color.prefix(1).uppercased() + color.dropFirst()
+    }
+}
+
 func flagChoices(_ budget: JSON) -> [(id: String, name: String)] {
     flagColors.map { color in
         let named = budget["flagNames"].text(color)
-        return (color, named.isEmpty ? color.prefix(1).uppercased() + color.dropFirst() : named)
+        return (color, named.isEmpty ? flagColorName(color) : named)
     }
 }

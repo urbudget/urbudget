@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.UrBudget" parent="android:style/Theme.Material.Light.NoActionBar">
+    <!-- AppCompat's theme, as the activity is AppCompat's: below Android 13 that is what applies
+         the app's own language. The screens are Compose and draw their own theme. -->
+    <style name="Theme.UrBudget" parent="Theme.AppCompat.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:statusBarColor">@android:color/transparent</item>

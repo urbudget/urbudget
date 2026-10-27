@@ -1,3 +1,4 @@
+use crate::t;
 use crate::domain::*;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{Datelike, Duration, Months, NaiveDate};
@@ -37,7 +38,7 @@ pub struct UpcomingIndex {
 impl UpcomingIndex {
     pub fn new(b: &Budget, from: &str, through: &str) -> Result<Self, String> {
         if !valid_month(from) || !valid_month(through) || from > through {
-            return Err("Choose a valid scheduled month range.".into());
+            return Err(t!("Choose a valid scheduled month range."));
         }
         let accounts: HashMap<&str, &Account> =
             b.accounts.iter().map(|a| (a.id.as_str(), a)).collect();
@@ -54,24 +55,24 @@ impl UpcomingIndex {
             let mut count = 0;
             let mut obligations = None;
             while let Some(due) = next_date {
-                let month = due.get(..7).ok_or("Invalid schedule date")?;
+                let month = due.get(..7).ok_or_else(|| t!("Invalid schedule date"))?;
                 if month > through {
                     break;
                 }
                 count += 1;
                 occurrences += 1;
                 if occurrences > MAX_OCCURRENCES {
-                    return Err("Schedule history exceeds 1,000,000 occurrences in this calculation. Adjust the schedules' next dates first.".into());
+                    return Err(t!("Schedule history exceeds 1,000,000 occurrences in this calculation. Adjust the schedules' next dates first."));
                 }
                 if count > 10000 {
-                    return Err("Schedule history exceeds 10,000 occurrences.".into());
+                    return Err(t!("Schedule history exceeds 10,000 occurrences."));
                 }
                 if month >= from {
                     if obligations.is_none() {
                         let mut per_occurrence = HashMap::<String, i64>::new();
                         let account = *accounts
                             .get(s.transaction.account_id.as_str())
-                            .ok_or("Missing scheduled account")?;
+                            .ok_or_else(|| t!("Missing scheduled account"))?;
                         let on_budget = account.on_budget();
                         let direction = if on_budget { 1 } else { -1 };
                         let mut record = |peer: Option<&str>,
@@ -80,11 +81,11 @@ impl UpcomingIndex {
                          -> Result<(), String> {
                             let mut amount = amount
                                 .checked_mul(-direction)
-                                .ok_or("Scheduled totals exceed the supported range.")?;
+                                .ok_or_else(|| t!("Scheduled totals exceed the supported range."))?;
                             let mut payment_category = None;
                             if let Some(other) = peer {
                                 let other =
-                                    *accounts.get(other).ok_or("Missing scheduled account")?;
+                                    *accounts.get(other).ok_or_else(|| t!("Missing scheduled account"))?;
                                 if other.on_budget() == on_budget {
                                     // A cash payment consumes the receiving card's payment envelope.
                                     // Cash moves, balance transfers, and cash advances reserve no money.
@@ -99,9 +100,7 @@ impl UpcomingIndex {
                                         && other.kind == AccountKind::Cash
                                         && amount < 0
                                     {
-                                        amount = amount.checked_neg().ok_or(
-                                            "Scheduled totals exceed the supported range.",
-                                        )?;
+                                        amount = amount.checked_neg().ok_or_else(|| t!("Scheduled totals exceed the supported range."))?;
                                         Some(account)
                                     } else {
                                         None
@@ -112,7 +111,7 @@ impl UpcomingIndex {
                                     payment_category = Some(
                                         *payment_categories
                                             .get(card.id.as_str())
-                                            .ok_or("Missing credit-card payment category")?,
+                                            .ok_or_else(|| t!("Missing credit-card payment category"))?,
                                     );
                                 }
                             } else if !on_budget {
@@ -122,7 +121,7 @@ impl UpcomingIndex {
                                 let total = per_occurrence.entry(c.to_owned()).or_default();
                                 *total = total
                                     .checked_add(amount)
-                                    .ok_or("Scheduled totals exceed the supported range.")?;
+                                    .ok_or_else(|| t!("Scheduled totals exceed the supported range."))?;
                             }
                             Ok(())
                         };
@@ -162,7 +161,7 @@ impl UpcomingIndex {
                         let month_total = month_totals.entry(month.to_owned()).or_default();
                         *month_total += i128::from(*amount);
                         if *month_total > i128::from(MAX_SAFE_TOTAL) {
-                            return Err("Scheduled monthly totals exceed the safe numeric range.".into());
+                            return Err(t!("Scheduled monthly totals exceed the safe numeric range."));
                         }
                         let total = out.entry(category.clone()).or_insert_with(|| Upcoming {
                             amount: 0,
@@ -171,7 +170,7 @@ impl UpcomingIndex {
                         total.amount = total
                             .amount
                             .checked_add(*amount)
-                            .ok_or("Scheduled totals exceed the supported range.")?;
+                            .ok_or_else(|| t!("Scheduled totals exceed the supported range."))?;
                         if due < total.first_due {
                             total.first_due = due.clone();
                         }
@@ -208,23 +207,23 @@ pub struct Schedule {
 pub fn read(b: &Budget) -> Result<Vec<Schedule>, String> {
     let Some(value) = b.extra.get("schedules") else { return Ok(vec![]); };
     if value.as_array().is_some_and(|rows| rows.len() > MAX_SCHEDULES) {
-        return Err("This budget exceeds the supported limit of 2,000 schedules.".into());
+        return Err(t!("This budget exceeds the supported limit of 2,000 schedules."));
     }
     if value.as_array().is_some_and(|rows| rows.iter().any(|row|
         row.pointer("/transaction/splits").and_then(Value::as_array).is_some_and(|splits| splits.len() > 100))) {
-        return Err("A scheduled transaction exceeds the supported limit of 100 splits.".into());
+        return Err(t!("A scheduled transaction exceeds the supported limit of 100 splits."));
     }
     // Deserialize from the borrowed JSON: do not clone the full template tree first.
-    Vec::<Schedule>::deserialize(value).map_err(|e| format!("Invalid schedules: {e}"))
+    Vec::<Schedule>::deserialize(value).map_err(|e| t!("Invalid schedules: {error}", error = e))
 }
 fn date(s: &str) -> Result<NaiveDate, String> {
     if s.len() != 10 {
-        return Err("Invalid scheduled date.".into());
+        return Err(t!("Invalid scheduled date."));
     }
     let d = NaiveDate::parse_from_str(s, "%Y-%m-%d")
-        .map_err(|_| "Invalid scheduled date.".to_string())?;
+        .map_err(|_| t!("Invalid scheduled date."))?;
     if d.to_string() != s {
-        return Err("Invalid scheduled date.".into());
+        return Err(t!("Invalid scheduled date."));
     }
     Ok(d)
 }
@@ -247,26 +246,26 @@ pub fn next(current: &str, anchor: &str, frequency: &str) -> Result<Option<Strin
             .with_day(1)
             .unwrap()
             .checked_add_months(Months::new(months))
-            .ok_or("Schedule exceeds date range")?;
+            .ok_or_else(|| t!("Schedule exceeds date range"))?;
         let last = first
             .checked_add_months(Months::new(1))
-            .ok_or("Schedule exceeds date range")?
+            .ok_or_else(|| t!("Schedule exceeds date range"))?
             - Duration::days(1);
         first.with_day(anchor.day().min(last.day())).unwrap()
     } else if frequency == "twiceAMonth" {
         let base = (anchor.day() - 1) % 15 + 1;
-        let mut candidate = d.checked_add_signed(Duration::days(1)).ok_or("Schedule exceeds date range")?;
+        let mut candidate = d.checked_add_signed(Duration::days(1)).ok_or_else(|| t!("Schedule exceeds date range"))?;
         loop {
             let month_end = candidate
                 .with_day(1)
                 .unwrap()
                 .checked_add_months(Months::new(1))
-                .ok_or("Schedule exceeds date range")?
+                .ok_or_else(|| t!("Schedule exceeds date range"))?
                 - Duration::days(1);
             if candidate.day() == base || candidate.day() == (base + 15).min(month_end.day()) {
                 break candidate;
             }
-            candidate = candidate.checked_add_signed(Duration::days(1)).ok_or("Schedule exceeds date range")?;
+            candidate = candidate.checked_add_signed(Duration::days(1)).ok_or_else(|| t!("Schedule exceeds date range"))?;
         }
     } else {
         d.checked_add_signed(Duration::days(match frequency {
@@ -274,8 +273,8 @@ pub fn next(current: &str, anchor: &str, frequency: &str) -> Result<Option<Strin
             "weekly" => 7,
             "everyOtherWeek" => 14,
             "every4Weeks" => 28,
-            _ => return Err("Unknown repeat frequency.".into()),
-        })).ok_or("Schedule exceeds date range")?
+            _ => return Err(t!("Unknown repeat frequency.")),
+        })).ok_or_else(|| t!("Schedule exceeds date range"))?
     };
     let result = result.to_string();
     date(&result)?;
@@ -287,7 +286,7 @@ pub fn validate_schedules(b: &Budget) -> Result<(), String> {
     let categories: HashSet<_> = b.categories.iter().filter(|c| c.payment_account().is_none()).map(|c| c.id.as_str()).collect();
     for s in read(b)? {
         if s.id.len() > 64 || s.id.is_empty() || !ids.insert(s.id.clone()) {
-            return Err("Invalid or duplicate schedule ID.".into());
+            return Err(t!("Invalid or duplicate schedule ID."));
         }
         next(
             s.next_date.as_deref().unwrap_or(&s.anchor_date),
@@ -300,12 +299,12 @@ pub fn validate_schedules(b: &Budget) -> Result<(), String> {
                 .as_ref()
                 .is_some_and(|id| id == &t.account_id || !accounts.contains_key(id.as_str()))
         {
-            return Err("Schedule references a missing account.".into());
+            return Err(t!("Schedule references a missing account."));
         }
         if t.splits.is_empty() && t.transfer_account_id.as_ref().is_some_and(|peer| {
             accounts[t.account_id.as_str()].on_budget() != accounts[peer.as_str()].on_budget()
         }) {
-            return Err("A scheduled transfer crossing the budget boundary needs a category or Unassigned split.".into());
+            return Err(t!("A scheduled transfer crossing the budget boundary needs a category or Unassigned split."));
         }
         if !(-1_000_000_000_000..=1_000_000_000_000).contains(&t.amount)
             || t.memo.len() > 5000
@@ -326,7 +325,7 @@ pub fn validate_schedules(b: &Budget) -> Result<(), String> {
                         .is_some_and(|id| !categories.contains(id.as_str()))
             })
         {
-            return Err("Invalid scheduled transaction details.".into());
+            return Err(t!("Invalid scheduled transaction details."));
         }
     }
     Ok(())
@@ -384,13 +383,10 @@ pub fn apply(
             iterations += 1;
             occurrences += 1;
             if occurrences > MAX_OCCURRENCES {
-                return Err("More than 1,000,000 scheduled occurrences are due. Adjust the schedules' next dates first.".into());
+                return Err(t!("More than 1,000,000 scheduled occurrences are due. Adjust the schedules' next dates first."));
             }
             if iterations > 10000 {
-                return Err(
-                    "More than 10,000 occurrences are due. Adjust the schedule’s next date first."
-                        .into(),
-                );
+                return Err(t!("More than 10,000 occurrences are due. Adjust the schedule’s next date first."));
             }
             if !skip {
                 let mut t = occurrence(s, &due, if selected.is_some() { through } else { &due });
@@ -400,7 +396,7 @@ pub fn apply(
                     ledger_entries = ledger_entries.saturating_add(if t.splits.iter().any(|s| crate::ledger::transfer(s).is_some()) { t.splits.len() } else { 1 });
                     if b.transactions.len() + posted.len() >= 200_000
                         || split_count > MAX_TRANSACTION_SPLITS || ledger_entries > MAX_LEDGER_ENTRIES {
-                        return Err("Posting these schedules would exceed the supported transaction size. Adjust the schedules' next dates first.".into());
+                        return Err(t!("Posting these schedules would exceed the supported transaction size. Adjust the schedules' next dates first."));
                     }
                     posted.push(t);
                 }
@@ -462,7 +458,7 @@ pub fn schedule_future(b: &mut Budget, through: &str) -> Result<usize, String> {
     let additions = b.transactions.iter().filter(|t| movable(t, &scheduled_ids, &templates))
         .take(MAX_SCHEDULES - schedules.len() + 1).count();
     if schedules.len() + additions > MAX_SCHEDULES {
-        return Err("Converting future transactions would exceed the supported limit of 2,000 schedules.".into());
+        return Err(t!("Converting future transactions would exceed the supported limit of 2,000 schedules."));
     }
     // Reserve ledger IDs too: a long ID processed first must not take the ID of a short
     // transaction that will be converted later. Existing short schedule IDs stay unchanged.
@@ -484,7 +480,7 @@ pub fn schedule_future(b: &mut Budget, through: &str) -> Result<usize, String> {
                 if !reserved.contains(&candidate) {
                     break candidate;
                 }
-                attempt = attempt.checked_add(1).ok_or("Too many schedule ID collisions.")?;
+                attempt = attempt.checked_add(1).ok_or_else(|| t!("Too many schedule ID collisions."))?;
             }
         };
         reserved.insert(id.clone());
@@ -514,25 +510,25 @@ pub fn from_ynab(source: &Value, b: &Budget) -> Result<Vec<Schedule>, String> {
     let p = source
         .pointer("/data/plan")
         .or_else(|| source.pointer("/data/budget"))
-        .ok_or("Missing plan")?;
+        .ok_or_else(|| t!("Missing plan"))?;
     let accounts: HashMap<_, _> = b.accounts.iter().map(|a| (a.id.as_str(), a)).collect();
     let mut scheduled_ids = HashSet::new();
     for row in p["scheduled_transactions"].as_array().into_iter().flatten().filter(|row| row["deleted"] != true) {
-        let id = row["id"].as_str().ok_or("Missing schedule ID")?;
+        let id = row["id"].as_str().ok_or_else(|| t!("Missing schedule ID"))?;
         if id.is_empty() || id.len() > 64 || !scheduled_ids.insert(id) {
-            return Err("Invalid or duplicate schedule ID.".into());
+            return Err(t!("Invalid or duplicate schedule ID."));
         }
         if scheduled_ids.len() > MAX_SCHEDULES {
-            return Err("This budget exceeds the supported limit of 2,000 schedules.".into());
+            return Err(t!("This budget exceeds the supported limit of 2,000 schedules."));
         }
     }
     let mut subtransactions = HashMap::<&str, Vec<&Value>>::new();
     for sub in p["scheduled_subtransactions"].as_array().into_iter().flatten().filter(|row| row["deleted"] != true) {
         let parent = sub["scheduled_transaction_id"].as_str().filter(|id| scheduled_ids.contains(id))
-            .ok_or("A scheduled split references a missing parent transaction.")?;
+            .ok_or_else(|| t!("A scheduled split references a missing parent transaction."))?;
         let parts = subtransactions.entry(parent).or_default();
         if parts.len() >= 100 {
-            return Err("A scheduled transaction exceeds the supported limit of 100 splits.".into());
+            return Err(t!("A scheduled transaction exceeds the supported limit of 100 splits."));
         }
         parts.push(sub);
     }
@@ -549,20 +545,20 @@ pub fn from_ynab(source: &Value, b: &Budget) -> Result<Vec<Schedule>, String> {
         .filter(|c| c["internal"] == true).filter_map(|c| c["id"].as_str()).collect();
     let category = |value: &Value| -> Result<Option<String>, String> {
         if value.is_null() { return Ok(None); }
-        let id = value.as_str().ok_or("Scheduled transaction has an invalid category reference.")?;
+        let id = value.as_str().ok_or_else(|| t!("Scheduled transaction has an invalid category reference."))?;
         if categories.contains(id) { return Ok(Some(id.to_owned())); }
         // Ready to Assign and other provider-internal categories have no envelope.
         // Retained source metadata restores their explicit role after import.
         if internal_categories.contains(id) { return Ok(None); }
-        Err(format!("YNAB scheduled transaction references unknown category {id}."))
+        Err(t!("YNAB scheduled transaction references unknown category {id}.", id))
     };
     let money = |v: &Value| -> Result<i64, String> {
-        let n = v.as_i64().ok_or("Invalid scheduled amount")?;
+        let n = v.as_i64().ok_or_else(|| t!("Invalid scheduled amount"))?;
         if n % 10 != 0 {
-            return Err("Scheduled amount has sub-cent precision.".into());
+            return Err(t!("Scheduled amount has sub-cent precision."));
         }
         let amount = n / 10;
-        if !valid_money(amount) { return Err("Scheduled amount exceeds the supported range.".into()); }
+        if !valid_money(amount) { return Err(t!("Scheduled amount exceeds the supported range.")); }
         Ok(amount)
     };
     let mut out = vec![];
@@ -573,26 +569,26 @@ pub fn from_ynab(source: &Value, b: &Budget) -> Result<Vec<Schedule>, String> {
         .filter(|s| s["deleted"] != true)
     {
         if out.len() >= MAX_SCHEDULES {
-            return Err("This budget exceeds the supported limit of 2,000 schedules.".into());
+            return Err(t!("This budget exceeds the supported limit of 2,000 schedules."));
         }
-        let id = s["id"].as_str().ok_or("Missing schedule ID")?.to_owned();
+        let id = s["id"].as_str().ok_or_else(|| t!("Missing schedule ID"))?.to_owned();
         if !s["transfer_account_id"].is_null() && !s["transfer_account_id"].is_string() {
-            return Err("Scheduled transfer has an invalid account reference.".into());
+            return Err(t!("Scheduled transfer has an invalid account reference."));
         }
         let transfer = s["transfer_account_id"].as_str().map(String::from);
-        let account = s["account_id"].as_str().ok_or("Missing schedule account")?.to_owned();
-        let source_account = accounts.get(account.as_str()).ok_or("Schedule references a missing account.")?;
+        let account = s["account_id"].as_str().ok_or_else(|| t!("Missing schedule account"))?.to_owned();
+        let source_account = accounts.get(account.as_str()).ok_or_else(|| t!("Schedule references a missing account."))?;
         if transfer.as_ref().is_some_and(|other| other == &account || !accounts.contains_key(other.as_str())) {
-            return Err("Scheduled transfer references a missing or identical account.".into());
+            return Err(t!("Scheduled transfer references a missing or identical account."));
         }
         let amount = money(&s["amount"])?;
         let mut splits = vec![];
         for sub in subtransactions.get(id.as_str()).into_iter().flatten() {
             if !sub["transfer_account_id"].is_null() && !sub["transfer_account_id"].is_string() {
-                return Err("Scheduled split transfer has an invalid account reference.".into());
+                return Err(t!("Scheduled split transfer has an invalid account reference."));
             }
             if sub["transfer_account_id"].as_str().is_some_and(|other| other == account || !accounts.contains_key(other)) {
-                return Err("Scheduled split transfer references a missing or identical account.".into());
+                return Err(t!("Scheduled split transfer references a missing or identical account."));
             }
             splits.push(Split {
                 category_id: category(&sub["category_id"])?,
@@ -615,11 +611,11 @@ pub fn from_ynab(source: &Value, b: &Budget) -> Result<Vec<Schedule>, String> {
         }
         let first = s["date_first"]
             .as_str()
-            .ok_or("Missing first scheduled date")?
+            .ok_or_else(|| t!("Missing first scheduled date"))?
             .to_owned();
         let next = s["date_next"]
             .as_str()
-            .ok_or("Missing next scheduled date")?
+            .ok_or_else(|| t!("Missing next scheduled date"))?
             .to_owned();
         date(&first)?;
         date(&next)?;
@@ -629,7 +625,7 @@ pub fn from_ynab(source: &Value, b: &Budget) -> Result<Vec<Schedule>, String> {
             next_date: Some(next.clone()),
             frequency: s["frequency"]
                 .as_str()
-                .ok_or("Missing frequency")?
+                .ok_or_else(|| t!("Missing frequency"))?
                 .to_owned(),
             paused: false,
             transaction: Transaction {

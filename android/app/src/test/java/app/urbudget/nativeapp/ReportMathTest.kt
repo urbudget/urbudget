@@ -14,6 +14,8 @@ import java.time.YearMonth
 class ReportMathTest {
     private val today = LocalDate.of(2026, 10, 21)
 
+    @Before fun english() = EnglishWords.install()
+
     @Before fun plainAmounts() {
         Money.configure(JSONObject().put("currency", "USD").put("dateFormat", "iso")
             .put("numberFormat", JSONObject().put("decimal", ".").put("group", ",").put("symbol", "none")))

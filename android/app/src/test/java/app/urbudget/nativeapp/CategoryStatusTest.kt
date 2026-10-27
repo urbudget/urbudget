@@ -3,9 +3,11 @@ package app.urbudget.nativeapp
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Before
 import org.junit.Test
 
 class CategoryStatusTest {
+    @Before fun english() = EnglishWords.install()
     private val month = "2026-10"
     private fun category(target: Long = 0, goal: JSONObject? = null) = JSONObject().put("id", "c").put("name", "Rent").put("target", target).apply { if (goal != null) put("goal", goal) }
     private fun summary(available: Long, assigned: Long = 0, activity: Long = 0, needed: Long = 0, required: Long = 0, funded: Long = 0) =

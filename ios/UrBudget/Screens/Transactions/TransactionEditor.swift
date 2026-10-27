@@ -16,10 +16,12 @@ private struct SplitDraft: Identifiable {
 
 /// How often a new transaction repeats; "never" saves it once.
 private let frequencies: [(id: String, label: String)] = [
-    ("never", "Never"), ("daily", "Daily"), ("weekly", "Weekly"), ("everyOtherWeek", "Every other week"),
-    ("twiceAMonth", "Twice a month"), ("every4Weeks", "Every 4 weeks"), ("monthly", "Monthly"),
-    ("everyOtherMonth", "Every other month"), ("every3Months", "Every 3 months"), ("every4Months", "Every 4 months"),
-    ("twiceAYear", "Twice a year"), ("yearly", "Yearly"), ("everyOtherYear", "Every other year"),
+    ("never", String(localized: "Never")), ("daily", String(localized: "Daily")), ("weekly", String(localized: "Weekly")),
+    ("everyOtherWeek", String(localized: "Every other week")), ("twiceAMonth", String(localized: "Twice a month")),
+    ("every4Weeks", String(localized: "Every 4 weeks")), ("monthly", String(localized: "Monthly")),
+    ("everyOtherMonth", String(localized: "Every other month")), ("every3Months", String(localized: "Every 3 months")),
+    ("every4Months", String(localized: "Every 4 months")), ("twiceAYear", String(localized: "Twice a year")),
+    ("yearly", String(localized: "Yearly")), ("everyOtherYear", String(localized: "Every other year")),
 ]
 
 /// Adding or editing a transaction takes the whole screen, as YNAB's app does: Outflow or Inflow, the
@@ -84,9 +86,22 @@ struct TransactionEditor: View {
     private func categoryName(_ id: String) -> String? {
         switch id {
         case "": return nil
-        case Unassigned: return "Unassigned"
+        case Unassigned: return String(localized: "Unassigned")
         default: return budget.row("categories", id: id)?.text("name")
         }
+    }
+
+    /// The payee row's value: the payee, or the account a transfer goes to or comes from.
+    private var payeeValue: String? {
+        guard !transfer.isEmpty else { return payee.isEmpty ? nil : payee }
+        let name = accountName(transfer) ?? String(localized: "account")
+        return direction == "out" ? String(localized: "Transfer to \(name)") : String(localized: "Transfer from \(name)")
+    }
+
+    /// A repeat choice's name; "never" reads "Once" for a transaction dated ahead.
+    private func frequencyLabel(_ choice: (id: String, label: String)) -> String {
+        guard choice.id == "never" else { return choice.label }
+        return date > today ? String(localized: "Once") : String(localized: "Never")
     }
 
     var body: some View {
@@ -128,30 +143,31 @@ struct TransactionEditor: View {
                     .accessibilityLabel("Amount, \(money(pad.cents ?? 0, currency)). Edit amount")
                 }
                 if accounts.isEmpty {
-                    Notice(text: "Create an account in Accounts before adding your first transaction.", tone: "info")
+                    Notice(text: String(localized: "Create an account in Accounts before adding your first transaction."), tone: "info")
                 }
                 if original?.text("status") == "reconciled" || original?.text("transferStatus") == "reconciled" {
-                    Notice(text: "This transaction is reconciled. Changing its amount, date, or account changes previously reconciled history.", icon: "lock.fill")
+                    Notice(text: String(localized: "This transaction is reconciled. Changing its amount, date, or account changes previously reconciled history."),
+                           icon: "lock.fill")
                 }
                 Section {
                     NavigationLink(value: EditorRoute.payee) {
-                        formRow("storefront", "Payee", transfer.isEmpty ? (payee.isEmpty ? nil : payee)
-                                : "\(direction == "out" ? "Transfer to" : "Transfer from") \(accountName(transfer) ?? "account")", placeholder: "Choose payee")
+                        formRow("storefront", String(localized: "Payee"), payeeValue, placeholder: String(localized: "Choose payee"))
                     }
                     if !splitMode && needsCategory {
                         NavigationLink(value: EditorRoute.category) {
-                            formRow("tag", "Category", categoryName(category), placeholder: "Choose category", attention: category.isEmpty)
+                            formRow("tag", String(localized: "Category"), categoryName(category), placeholder: String(localized: "Choose category"),
+                                    attention: category.isEmpty)
                         }
                     }
                     NavigationLink(value: EditorRoute.account) {
-                        formRow("building.columns", "Account", accountName(account), placeholder: "Choose account")
+                        formRow("building.columns", String(localized: "Account"), accountName(account), placeholder: String(localized: "Choose account"))
                     }
                     DatePicker(selection: Binding(get: { Dates.pickerDate(date) }, set: { date = Dates.fromPicker($0) }), displayedComponents: .date) {
                         Label { Text(scheduled ? "Date · Scheduled" : date == today ? "Date · Today" : "Date") } icon: { Image(systemName: "calendar") }
                     }
                     if repeatable {
                         Picker(selection: $repeatEvery) {
-                            ForEach(frequencies, id: \.id) { Text($0.id == "never" ? (date > today ? "Once" : "Never") : $0.label).tag($0.id) }
+                            ForEach(frequencies, id: \.id) { Text(frequencyLabel($0)).tag($0.id) }
                         } label: {
                             Label("Repeat", systemImage: "repeat")
                         }
@@ -160,9 +176,9 @@ struct TransactionEditor: View {
                 if splitMode && needsCategory { splitSection(currency) }
                 Section {
                     TextField("Memo", text: $memo, axis: .vertical).lineLimit(1...4).focused($typing)
-                    clearedRow(transfer.isEmpty ? "Cleared" : "Cleared in \(accountName(account) ?? "this account")",
+                    clearedRow(transfer.isEmpty ? nil : accountName(account) ?? String(localized: "this account"),
                                Binding(get: { status }, set: { status = $0; statusTouched = true }))
-                    if !transfer.isEmpty { clearedRow("Cleared in \(accountName(transfer) ?? "the other account")", $peerStatus) }
+                    if !transfer.isEmpty { clearedRow(accountName(transfer) ?? String(localized: "the other account"), $peerStatus) }
                     Picker(selection: $flag) {
                         Text("No flag").tag("")
                         ForEach(flagChoices(budget), id: \.id) { choice in
@@ -208,7 +224,8 @@ struct TransactionEditor: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
                 ToolbarItem(placement: .confirmationAction) {
-                    SaveButton(title: scheduled || repeatable && repeatEvery != "never" && date > today ? "Schedule" : "Save", saving: saving) { save() }
+                    SaveButton(title: scheduled || repeatable && repeatEvery != "never" && date > today ? String(localized: "Schedule") : String(localized: "Save"),
+                               saving: saving) { save() }
                         .disabled(accounts.isEmpty)
                         .keyboardShortcut(.return, modifiers: .command)
                 }
@@ -235,7 +252,7 @@ struct TransactionEditor: View {
                     guard let id = original?.text("id") else { return }
                     attempt($error, saving: $saving) {
                         try await store.removing("transactions", id: id)
-                        store.showToast("Deleted the transaction.", undo: true)
+                        store.showToast(String(localized: "Deleted the transaction."), undo: true)
                         dismiss()
                     }
                 }
@@ -301,7 +318,7 @@ struct TransactionEditor: View {
                 self.route = []
             })
         case .category:
-            CategoryPicker(title: "Category", month: String(date.prefix(7)), selected: category, includeUnassigned: true,
+            CategoryPicker(title: String(localized: "Category"), month: String(date.prefix(7)), selected: category, includeUnassigned: true,
                            includeUncategorized: true, includePayment: false, allowsCreate: true, onSplit: { self.route = []; startSplit() }) { id in
                 category = id
                 self.route = []
@@ -313,7 +330,7 @@ struct TransactionEditor: View {
                 self.route = []
             }
         case .splitCategory(let index):
-            CategoryPicker(title: "Split category", month: String(date.prefix(7)), selected: splits.indices.contains(index) ? splits[index].category : "",
+            CategoryPicker(title: String(localized: "Split category"), month: String(date.prefix(7)), selected: splits.indices.contains(index) ? splits[index].category : "",
                            includeUnassigned: true, includeUncategorized: true, includePayment: false, allowsCreate: true) { id in
                 if splits.indices.contains(index) { splits[index].category = id }
                 self.route = []
@@ -332,17 +349,25 @@ struct TransactionEditor: View {
         }
     }
 
-    /// Cleared as a switch, or locked once reconciled.
-    @ViewBuilder private func clearedRow(_ label: String, _ value: Binding<String>) -> some View {
+    /// Cleared as a switch, or locked once reconciled. `account` names the side of a transfer it's for.
+    @ViewBuilder private func clearedRow(_ account: String?, _ value: Binding<String>) -> some View {
         if value.wrappedValue == "reconciled" {
-            Label { Text(label.replacingOccurrences(of: "Cleared", with: "Reconciled")) } icon: { Image(systemName: "lock.fill") }
+            Label { Text(account.map { String(localized: "Reconciled in \($0)") } ?? String(localized: "Reconciled")) } icon: { Image(systemName: "lock.fill") }
                 .foregroundStyle(Color.secondary)
         } else {
             Toggle(isOn: Binding(get: { value.wrappedValue == "cleared" }, set: { value.wrappedValue = $0 ? "cleared" : "uncleared" })) {
-                Label { Text(label).lineLimit(1) } icon: { ClearedMark(status: value.wrappedValue).frame(width: 22, height: 22) }
+                Label { Text(account.map { String(localized: "Cleared in \($0)") } ?? String(localized: "Cleared")).lineLimit(1) } icon: {
+                    ClearedMark(status: value.wrappedValue).frame(width: 22, height: 22)
+                }
             }
             .tint(.urPositive)
         }
+    }
+
+    /// A split line's heading: Transfer, its category, or the prompt to choose one.
+    private func splitName(_ part: SplitDraft) -> String {
+        if !part.transfer.isEmpty { return String(localized: "Transfer") }
+        return categoryName(part.category) ?? String(localized: "Choose category")
     }
 
     private func startSplit() {
@@ -363,10 +388,10 @@ struct TransactionEditor: View {
                     HStack {
                         Button { route.append(.splitCategory(index)) } label: {
                             HStack {
-                                Text(!part.transfer.isEmpty ? "Transfer" : categoryName(part.category) ?? "Choose category")
+                                Text(splitName(part))
                                     .fontWeight(.semibold)
                                     .foregroundStyle(part.category.isEmpty && part.transfer.isEmpty ? Color.urWarning : .primary)
-                                Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(Color.urTertiary)
+                                Image(systemName: "chevron.forward").font(.caption.weight(.bold)).foregroundStyle(Color.urTertiary)
                             }
                         }
                         .buttonStyle(.borderless)
@@ -376,7 +401,7 @@ struct TransactionEditor: View {
                             .accessibilityLabel("Remove split line \(index + 1)")
                     }
                     HStack {
-                        AmountField(title: "Amount", text: $part.amount, labeled: false).frame(maxWidth: 130)
+                        AmountField(title: String(localized: "Amount"), text: $part.amount, labeled: false).frame(maxWidth: 130)
                         TextField("Memo", text: $part.memo)
                     }
                     .textFieldStyle(.roundedBorder)
@@ -411,11 +436,11 @@ struct TransactionEditor: View {
     private func save(another: Bool = false) {
         typing = false
         attempt($error, saving: $saving) {
-            guard !account.isEmpty else { throw AppError("Choose an account.") }
-            guard Dates.day(date) != nil else { throw AppError("Choose a valid date.") }
-            guard let parsed = pad.cents else { throw AppError("Finish the sum first.") }
-            guard parsed >= 0 else { throw AppError("Use Outflow or Inflow to choose the direction.") }
-            guard transfer != account else { throw AppError("Choose a different transfer account.") }
+            guard !account.isEmpty else { throw AppError(String(localized: "Choose an account.")) }
+            guard Dates.day(date) != nil else { throw AppError(String(localized: "Choose a valid date.")) }
+            guard let parsed = pad.cents else { throw AppError(String(localized: "Finish the sum first.")) }
+            guard parsed >= 0 else { throw AppError(String(localized: "Use Outflow or Inflow to choose the direction.")) }
+            guard transfer != account else { throw AppError(String(localized: "Choose a different transfer account.")) }
             let sign: Int64 = direction == "out" ? -1 : 1
             let cents = parsed * sign
             var record = original ?? ["id": .string(UUID().uuidString.lowercased())]
@@ -438,7 +463,7 @@ struct TransactionEditor: View {
                 part["amount"] = .int(cents)
                 parts = [part]
             } else if splitMode {
-                guard splits.count >= 2 else { throw AppError("Add at least two split lines.") }
+                guard splits.count >= 2 else { throw AppError(String(localized: "Add at least two split lines.")) }
                 parts = try splits.map { draft in
                     var part = draft.original
                     part["categoryId"] = draft.category.isEmpty || draft.category == Unassigned ? .null : .string(draft.category)
@@ -450,7 +475,9 @@ struct TransactionEditor: View {
                     part["transferStatus"] = draft.transfer.isEmpty ? .null : .string(draft.transferStatus)
                     return part
                 }
-                guard parts.reduce(Int64(0), { $0 + $1.long("amount") }) == cents else { throw AppError("The split amounts must equal the transaction total.") }
+                guard parts.reduce(Int64(0), { $0 + $1.long("amount") }) == cents else {
+                    throw AppError(String(localized: "The split amounts must equal the transaction total."))
+                }
             } else {
                 var part = single
                 part["categoryId"] = category.isEmpty || category == Unassigned ? .null : .string(category)
@@ -465,7 +492,8 @@ struct TransactionEditor: View {
                                       "frequency": .string(repeatEvery), "paused": false]
                 try await store.saveRepeating(schedule: schedule, entered: date <= today ? record : nil)
                 let often = frequencies.first { $0.id == repeatEvery }?.label.lowercased() ?? repeatEvery
-                store.showToast(date <= today ? "Saved. It repeats \(often)." : "Scheduled \(often) from \(Money.date(date)).")
+                store.showToast(date <= today ? String(localized: "Saved. It repeats \(often).")
+                                : String(localized: "Scheduled \(often) from \(Money.date(date))."))
             } else {
                 let rules = budget.rows("payeeRules")
                 try await store.saveTransaction(record, original: original)
@@ -474,11 +502,11 @@ struct TransactionEditor: View {
                     store.offerPayeeRule(rule)
                 }
                 if another {
-                    let name = transfer.isEmpty ? (payee.isEmpty ? "the transaction" : payee) : "the transfer"
-                    startAnother(saved: "Saved \(name), \(money(cents, store.currency)). Add the next one.")
+                    let name = transfer.isEmpty ? (payee.isEmpty ? String(localized: "the transaction") : payee) : String(localized: "the transfer")
+                    startAnother(saved: String(localized: "Saved \(name), \(money(cents, store.currency)). Add the next one."))
                     return
                 }
-                if scheduled { store.showToast("Scheduled for \(Money.date(date)). It's entered on that day.") }
+                if scheduled { store.showToast(String(localized: "Scheduled for \(Money.date(date)). It's entered on that day.")) }
             }
             dismiss()
         }

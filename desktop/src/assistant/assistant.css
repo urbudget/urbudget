@@ -11,7 +11,7 @@
   min-height: 0;
   height: 100%;
   background: var(--surface);
-  border-left: 1px solid var(--border);
+  border-inline-start: 1px solid var(--border);
   font-size: 13px;
   line-height: 1.45;
 }
@@ -19,7 +19,7 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  left: -3px;
+  inset-inline-start: -3px;
   z-index: 5;
   width: 6px;
   cursor: col-resize;
@@ -35,7 +35,8 @@
   align-items: center;
   gap: 8px;
   height: var(--header);
-  padding: 0 8px 0 14px;
+  padding-block: 0;
+  padding-inline: 14px 8px;
   border-bottom: 1px solid var(--border);
 }
 .assistant-head strong {
@@ -56,7 +57,7 @@
 .assistant-tools {
   display: flex;
   gap: 2px;
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 .assistant-loading {
   display: grid;
@@ -104,7 +105,10 @@
   align-self: flex-end;
   max-width: 88%;
   padding: 8px 12px;
-  border-radius: 14px 14px 4px 14px;
+  border-start-start-radius: 14px;
+  border-start-end-radius: 14px;
+  border-end-end-radius: 4px;
+  border-end-start-radius: 14px;
   background: var(--accent-soft);
   line-height: 1.5;
   overflow-wrap: anywhere;
@@ -168,11 +172,11 @@
 }
 .assistant-reply ul,
 .assistant-reply ol {
-  padding-left: 20px;
+  padding-inline-start: 20px;
 }
 .assistant-reply li {
   margin: 3px 0;
-  padding-left: 2px;
+  padding-inline-start: 2px;
 }
 .assistant-reply li::marker {
   color: var(--muted);
@@ -199,8 +203,9 @@
   margin-top: 0;
 }
 .assistant-reply blockquote {
-  padding: 1px 0 1px 10px;
-  border-left: 3px solid var(--border-strong);
+  padding-block: 1px;
+  padding-inline: 10px 0;
+  border-inline-start: 3px solid var(--border-strong);
   color: var(--text-2);
 }
 .assistant-reply hr {
@@ -279,7 +284,7 @@
   display: inline-flex;
   gap: 3px;
   align-items: center;
-  margin-left: 18px;
+  margin-inline-start: 18px;
   padding: 0;
   border: 0;
   background: none;
@@ -428,7 +433,7 @@
   color: var(--text-2);
   font-size: 12.5px;
   font-weight: 600;
-  text-align: left;
+  text-align: start;
 }
 .assistant-idea:hover {
   border-color: var(--accent);
@@ -511,7 +516,8 @@
   gap: 6px;
   align-items: center;
   max-width: 100%;
-  padding: 3px 6px 3px 8px;
+  padding-block: 3px;
+  padding-inline: 8px 6px;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 7px;
@@ -544,7 +550,8 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 8px 8px 6px 11px;
+  padding-block: 8px 6px;
+  padding-inline: 11px 8px;
   border: 1px solid var(--border-strong);
   border-radius: 10px;
   background: var(--surface-2);
@@ -563,6 +570,10 @@
   font: inherit;
   resize: none;
 }
+/* The composer around it shows the focus, not the field's own ring. */
+.assistant-composer textarea:focus {
+  box-shadow: none;
+}
 .assistant-compose-row {
   display: flex;
   gap: 4px;
@@ -580,7 +591,7 @@
   flex: none;
   width: 28px;
   height: 28px;
-  margin-left: auto;
+  margin-inline-start: auto;
   padding: 0;
   place-items: center;
   border: 0;
@@ -642,7 +653,8 @@
 /* Each part of a change waiting to be applied: a checkbox to leave it out, and a pencil to give
    it another category or amount (ProposalCard). */
 .proposal-pick {
-  margin: 0 -2px 0 0;
+  margin-block: 0;
+  margin-inline: 0 -2px;
 }
 .proposal-row.skipped > :not(.proposal-pick) {
   opacity: 0.5;
@@ -660,7 +672,8 @@
   place-items: center;
   width: 22px;
   height: 22px;
-  margin: 0 -6px 0 -4px;
+  margin-block: 0;
+  margin-inline: -4px -6px;
   padding: 0;
   border: none;
   border-radius: 5px;
@@ -681,10 +694,15 @@
   flex-wrap: wrap;
   gap: 6px 8px;
   align-items: center;
-  padding: 8px 12px 10px 34px;
+  padding-block: 8px 10px;
+  padding-inline: 34px 12px;
   background: color-mix(in srgb, var(--accent) 5%, var(--surface));
   box-shadow: inset 3px 0 0 var(--accent);
   animation: pop-in 0.14s var(--ease);
+}
+/* Right to left, its accent edge is on the right. */
+[dir="rtl"] .proposal-editor {
+  box-shadow: inset -3px 0 0 var(--accent);
 }
 .proposal-editor .combobox {
   flex: 1 1 160px;
@@ -703,7 +721,7 @@
 .proposal-editor-actions {
   display: flex;
   gap: 6px;
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 .proposal-editor-problem {
   flex: 1 0 100%;
@@ -763,7 +781,7 @@ button.proposal-more {
   width: 100%;
   border-radius: 0;
   color: var(--accent);
-  text-align: left;
+  text-align: start;
 }
 button.proposal-more:hover {
   background: var(--hover);
@@ -781,7 +799,7 @@ button.proposal-more:hover {
   padding: 7px 12px;
 }
 .proposal-stats div + div {
-  border-left: 1px solid var(--border);
+  border-inline-start: 1px solid var(--border);
 }
 .proposal-stats small {
   color: var(--muted);
@@ -830,7 +848,7 @@ button.proposal-more:hover {
   background: var(--surface-2);
 }
 .proposal-hint {
-  margin-left: auto;
+  margin-inline-start: auto;
   color: var(--muted);
   font-size: 11.5px;
 }
@@ -863,7 +881,7 @@ button.proposal-more:hover {
   color: var(--muted);
 }
 .proposal.done button {
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 
 /* First use, and dropping files */
@@ -981,7 +999,7 @@ button.proposal-more:hover {
   margin-top: 4px;
   color: var(--muted);
   font-size: 12px;
-  text-align: left;
+  text-align: start;
 }
 .crash-details summary {
   cursor: pointer;

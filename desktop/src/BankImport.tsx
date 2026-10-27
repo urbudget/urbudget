@@ -5,6 +5,7 @@ import { placeholder } from "./bankNames";
 import { formatDate, money } from "./format";
 import { today, type Budget } from "./types";
 import { useVirtualRows } from "./ui";
+import { list, t, tn } from "./i18n";
 import "./import.css";
 
 /** Each review row is this tall, so a long bank file only renders the rows in view. */
@@ -66,17 +67,17 @@ export function bankTemplate(dateOrder = "ymd", month = today().slice(0, 7)) {
 /** What the assistant is asked when someone wants help with a file: ready to send, not sent. */
 export function importHelpText(account: string, problem = "") {
   return [
-    `Help me import this file into ${account}.`,
-    problem && `The import preview said: ${problem}`,
-    "Find the transactions, ask me about anything unclear, and prepare them for the import review.",
+    t("Help me import this file into {account}.", { account }),
+    problem && t("The import preview said: {problem}", { problem }),
+    t("Find the transactions, ask me about anything unclear, and prepare them for the import review."),
   ]
     .filter(Boolean)
     .join(" ");
 }
 
 /** What the assistant is asked about the lines of an import that need attention: ready to send, not sent. */
-export const fixImportText =
-  "Fix the lines of this import that need attention. Use only what the file itself supports, and ask me about anything that isn't clear.";
+export const fixImportText = () =>
+  t("Fix the lines of this import that need attention. Use only what the file itself supports, and ask me about anything that isn't clear.");
 
 /** New transactions an import left without a category, and the accounts they went into. */
 export type Uncategorized = { ids: string[]; accounts: string[] };
@@ -102,17 +103,27 @@ export function uncategorizedImports(before: Budget, after: Budget): Uncategoriz
   return { ids: fresh.map((t) => t.id), accounts };
 }
 const join = (names: string[]) =>
-  names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  names.length < 2 ? names.join("") : t("{items} and {last}", { items: list(names.slice(0, -1)), last: names[names.length - 1] });
 /** What the assistant is asked about them, ready to send with them attached; never sent by itself. */
 export function categorizeText({ ids, accounts }: Uncategorized) {
   const where = join(accounts);
-  if (ids.length > ATTACH_LIMIT) return `Categorize these ${ATTACH_LIMIT} of the ${ids.length} new transactions in ${where}.`;
+  if (ids.length > ATTACH_LIMIT)
+    return tn(
+      ids.length,
+      "Categorize these {limit} of the {count} new transactions in {where}.",
+      "Categorize these {limit} of the {count} new transactions in {where}.",
+      { limit: ATTACH_LIMIT, where },
+    );
   return ids.length === 1
-    ? `Categorize the new transaction in ${where}.`
-    : `Categorize the ${ids.length} new transactions in ${where}.`;
+    ? t("Categorize the new transaction in {where}.", { where })
+    : tn(ids.length, "Categorize the {count} new transactions in {where}.", "Categorize the {count} new transactions in {where}.", {
+        where,
+      });
 }
 
 export type ImportChoice = { row: BankRow; action: string; matchId: string | null };
+/** What's chosen in a review so far: each row's choice, and the ID each row added separately imports with. */
+export type ReviewChoices = { picked: Record<string, string>; separate?: Record<string, string> };
 
 /**
  * Skip known bank IDs and take a single match only when that account side has not been imported.
@@ -130,9 +141,13 @@ const defaultChoice = (r: BankRow) => {
 
 /** What a row of money in may be: a refund of a purchase, with its category when it gives one. */
 export function refundText(refund: RefundOf, budget: Budget) {
-  if (refund.purchases > 1 && !refund.categoryId) return `Possible refund · ${refund.purchases} purchases from ${refund.payee} match`;
+  if (refund.purchases > 1 && !refund.categoryId)
+    return tn(refund.purchases, "Possible refund · {count} purchase from {payee} matches", "Possible refund · {count} purchases from {payee} match", {
+      payee: refund.payee,
+    });
   const category = refund.categoryId && budget.categories.find((c) => c.id === refund.categoryId)?.name;
-  return `Refund of ${refund.payee} · ${money(-refund.amount)} on ${formatDate(refund.date)}${category ? ` · ${category}` : ""}`;
+  const of = t("Refund of {payee} · {amount} on {date}", { payee: refund.payee, amount: money(-refund.amount), date: formatDate(refund.date) });
+  return `${of}${category ? ` · ${category}` : ""}`;
 }
 
 /**
@@ -146,26 +161,35 @@ export function ImportReview({
   icon,
   title,
   action,
-  cancelLabel = "Cancel",
+  cancelLabel = t("Cancel"),
   onCancel,
   onImport,
+  choices: given,
+  onChoices,
 }: {
   budget: Budget;
   rows: BankRow[];
   busy: boolean;
   icon: ReactNode;
-  /** Where the rows come from and where they go. */
-  title: ReactNode;
+  /** Where the rows come from and where they go, unless the page says so already. */
+  title?: ReactNode;
   /** A link beside the summary, such as one to choose another file. */
   action?: ReactNode;
   cancelLabel?: string;
   onCancel: () => void;
   /** Every row's choice, and how many rows are added or matched. */
   onImport: (choices: ImportChoice[], count: number) => void;
+  /** The choices, kept by whoever shows the review when they must outlast it (a page that leaves it and comes back). */
+  choices?: ReviewChoices;
+  onChoices?: (next: ReviewChoices) => void;
 }) {
   // Rows checked again (bank sync does when the budget changes) keep the choices made so far.
-  const [choices, setChoices] = useState<Record<string, string>>({});
-  const separateIds = useRef(new Map<string, string>());
+  const [own, setOwn] = useState<ReviewChoices>({ picked: {} });
+  const kept = given ?? own;
+  const keep = onChoices ?? setOwn;
+  const choices = kept.picked;
+  const setChoices = (picked: Record<string, string>) => keep({ ...kept, picked });
+  // Kept choices are checked against the rows as they are now, as any other.
   const choice = (r: BankRow) => {
     if (r.duplicate) return r.idless && choices[r.id] === "separate" ? "separate" : "skip";
     const selected = choices[r.id];
@@ -212,55 +236,54 @@ export function ImportReview({
   const duplicates = rows.filter((r) => r.duplicate).length;
   const renamed = rows.filter((r) => !r.duplicate && r.rename).length;
   const refunds = rows.filter((r) => !r.duplicate && r.refundOf).length;
-  const chosen = () =>
-    rows.map((row) => {
+  // A row added separately keeps its ID with the choices, so trying the import again (after a save
+  // that failed once the budget had it) can't add it twice, even from a review shown again.
+  const chosen = () => {
+    const separate = { ...kept.separate };
+    const out = rows.map((row) => {
       const c = choice(row);
       if (c === "separate") {
-        let importId = separateIds.current.get(row.id);
-        if (!importId) {
-          importId = `bank:manual:${crypto.randomUUID()}`;
-          separateIds.current.set(row.id, importId);
-        }
+        const importId = (separate[row.id] ??= `bank:manual:${crypto.randomUUID()}`);
         return { row: { ...row, importId }, action: "new", matchId: null };
       }
       return { row, action: c.startsWith("match:") ? "match" : c, matchId: c.startsWith("match:") ? c.slice(6) : null };
     });
+    if (Object.keys(separate).length !== Object.keys(kept.separate ?? {}).length) keep({ ...kept, separate });
+    return out;
+  };
   return (
     <>
       <div className="import-summary">
         {icon}
         <span>
-          {title} · {rows.length} {rows.length === 1 ? "row" : "rows"}
-          {duplicates > 0 && ` · ${duplicates} already imported`}
-          {renamed > 0 && ` · ${renamed} renamed by your payee rules`}
-          {refunds > 0 && ` · ${refunds} ${refunds === 1 ? "refund" : "refunds"}`}
-          {transfers > 0 && ` · ${transfers} ${transfers === 1 ? "transfer" : "transfers"} between your accounts`}
+          {title && <>{title} · </>}
+          {tn(rows.length, "{count} row", "{count} rows")}
+          {duplicates > 0 && ` · ${tn(duplicates, "{count} already imported", "{count} already imported")}`}
+          {renamed > 0 && ` · ${tn(renamed, "{count} renamed by your payee rules", "{count} renamed by your payee rules")}`}
+          {refunds > 0 && ` · ${tn(refunds, "{count} refund", "{count} refunds")}`}
+          {transfers > 0 && ` · ${tn(transfers, "{count} transfer between your accounts", "{count} transfers between your accounts")}`}
         </span>
         {action}
       </div>
       <p className="help import-note">
-        Matching keeps your category and memo and marks the transaction cleared. Imported transactions wait for your
-        approval.
+        {t("Matching keeps your category and memo and marks the transaction cleared. Imported transactions wait for your approval.")}
       </p>
       {rows.some((r) => r.transferCandidates?.length) && (
         <p className="help import-note">
-          A transfer joins a row to the uncategorized entry it mirrors in another account, so the money you moved isn't
-          counted as spending or income. It's chosen for you when the bank's text names the other account or matches
-          earlier transfers between them; otherwise it's suggested for you to check.
+          {t("A transfer joins a row to the uncategorized entry it mirrors in another account, so the money you moved isn't counted as spending or income. It's chosen for you when the bank's text names the other account or matches earlier transfers between them; otherwise it's suggested for you to check.")}
         </p>
       )}
       {rows.some((r) => r.possibleDuplicate || (r.idless && r.duplicate)) && <p className="help import-note">
-        This file has no bank transaction IDs. A row may already be imported; compare its memo and amount.
-        Skip it if it is the same payment, or add it separately if it is a different payment.
+        {t("This file has no bank transaction IDs. A row may already be imported; compare its memo and amount. Skip it if it is the same payment, or add it separately if it is a different payment.")}
       </p>}
       <div className="table-scroll import-review" ref={review}>
         <table>
           <thead>
             <tr>
-              <th>Date</th>
-              <th>Payee</th>
-              <th className="num">Amount</th>
-              <th>What to do</th>
+              <th>{t("Date")}</th>
+              <th>{t("Payee")}</th>
+              <th className="num">{t("Amount")}</th>
+              <th>{t("What to do")}</th>
             </tr>
           </thead>
           <tbody>
@@ -274,7 +297,7 @@ export function ImportReview({
               return (
                 <tr key={`${r.id}:${index}`} className={r.duplicate ? "muted" : ""}>
                   <td>{formatDate(r.date)}</td>
-                  <td title={r.rename ? `${r.rename}, from the bank's “${r.payee}”` : undefined}>
+                  <td title={r.rename ? t("{name}, from the bank's “{payee}”", { name: r.rename, payee: r.payee }) : undefined}>
                     {r.rename ?? r.payee}
                     {r.rename && <small className="bank-text">{r.payee}</small>}
                     {r.memo && <small className="bank-text" title={r.memo}>{r.memo}</small>}
@@ -287,10 +310,10 @@ export function ImportReview({
                   <td className="num">{money(r.amount)}</td>
                   <td>
                     {r.duplicate && !r.idless ? (
-                      "Already imported · skipped"
+                      t("Already imported · skipped")
                     ) : (
                       <select
-                        aria-label={`Import action ${index + 1}`}
+                        aria-label={t("Import action {number}", { number: index + 1 })}
                         disabled={busy}
                         value={choice(r)}
                         onChange={(e) => setChoices({ ...choices, [r.id]: e.target.value })}
@@ -298,34 +321,43 @@ export function ImportReview({
                         {!r.duplicate && (
                           <option value="review">
                             {r.possibleDuplicate
-                              ? "May already be imported — choose"
+                              ? t("May already be imported — choose")
                               : r.transferCandidates?.length
-                                ? "Transfer suggested — check it and choose"
-                                : "Choose a match or add it"}
+                                ? t("Transfer suggested — check it and choose")
+                                : t("Choose a match or add it")}
                           </option>
                         )}
                         {r.duplicate
-                          ? <option value="separate">Add as a separate transaction</option>
-                          : <option value="new">Add as a new transaction</option>}
-                        <option value="skip">{r.duplicate ? "Already imported — skip" : "Skip"}</option>
+                          ? <option value="separate">{t("Add as a separate transaction")}</option>
+                          : <option value="new">{t("Add as a new transaction")}</option>}
+                        <option value="skip">{r.duplicate ? t("Already imported — skip") : t("Skip")}</option>
                         {(r.duplicate ? [] : listed(r)).map((id) => {
                           const detail = r.candidateDetails?.find((c) => c.id === id);
-                          const t = byId.get(detail?.transactionId ?? id);
-                          const part = detail && t?.splits[detail.splitIndex];
-                          const other = r.transferCandidates?.includes(id) && t && accountNames.get(t.accountId);
+                          const tx = byId.get(detail?.transactionId ?? id);
+                          const part = detail && tx?.splits[detail.splitIndex];
+                          const other = r.transferCandidates?.includes(id) && tx && accountNames.get(tx.accountId);
+                          const memo = part?.memo || tx?.memo;
+                          const values = { date: tx ? formatDate(tx.date) : "", payee: tx?.payee || t("Transfer") };
                           return (
                             <option key={id} value={`match:${id}`}>
-                              {other ? `Transfer ${r.amount > 0 ? "from" : "to"} ${other}: ` : "Match: "}
-                              {t ? formatDate(t.date) : ""} · {t?.payee || "Transfer"}
-                              {detail ? ` · Split ${detail.splitIndex + 1}` : ""}
-                              {part?.memo || t?.memo ? ` · ${part?.memo || t?.memo}` : ""}
-                              {r.previouslyMatchedCandidates?.includes(id) ? " · Previously imported" : ""}
+                              {other
+                                ? r.amount > 0
+                                  ? t("Transfer from {account}: {date} · {payee}", { account: other, ...values })
+                                  : t("Transfer to {account}: {date} · {payee}", { account: other, ...values })
+                                : t("Match: {date} · {payee}", values)}
+                              {detail ? ` · ${t("Split {number}", { number: detail.splitIndex + 1 })}` : ""}
+                              {memo ? ` · ${memo}` : ""}
+                              {r.previouslyMatchedCandidates?.includes(id) ? ` · ${t("Previously imported")}` : ""}
                             </option>
                           );
                         })}
                         {!r.duplicate && r.candidates.length > LISTED && (
                           <option disabled>
-                            {r.candidates.length - LISTED} more of the same amount within ten days aren't listed
+                            {tn(
+                              r.candidates.length - LISTED,
+                              "{count} more of the same amount within ten days aren't listed",
+                              "{count} more of the same amount within ten days aren't listed",
+                            )}
                           </option>
                         )}
                       </select>
@@ -344,9 +376,7 @@ export function ImportReview({
       </div>
       <div className="form-actions">
         {undecided > 0 && (
-          <span className="help">
-            {undecided} {undecided === 1 ? "row needs" : "rows need"} a choice
-          </span>
+          <span className="help">{tn(undecided, "{count} row needs a choice", "{count} rows need a choice")}</span>
         )}
         {suggested.length > 0 && (
           <button
@@ -356,24 +386,25 @@ export function ImportReview({
               setChoices({ ...choices, ...Object.fromEntries(suggested.map((r) => [r.id, `match:${r.transferCandidates![0]}`])) })
             }
           >
-            Pair {suggested.length} suggested {suggested.length === 1 ? "transfer" : "transfers"}
+            {tn(suggested.length, "Pair {count} suggested transfer", "Pair {count} suggested transfers")}
           </button>
         )}
         {undecided > 0 && (
           <>
             <button className="secondary" disabled={busy} onClick={() => decide("new")}>
-              Add {undecided === 1 ? "it" : "them"} as new
+              {tn(undecided, "Add it as new", "Add them as new")}
             </button>
             <button className="secondary" disabled={busy} onClick={() => decide("skip")}>
-              Skip {undecided === 1 ? "it" : "them"}
+              {tn(undecided, "Skip it", "Skip them")}
             </button>
           </>
         )}
-        <button className="secondary" onClick={onCancel}>
+        {/* Not while the import saves: it lands all the same. */}
+        <button className="secondary" disabled={busy} onClick={onCancel}>
           {cancelLabel}
         </button>
         <button className="primary" disabled={busy || undecided > 0 || !importing} onClick={() => onImport(chosen(), importing)}>
-          {busy ? "Importing…" : `Import ${importing} ${importing === 1 ? "transaction" : "transactions"}`}
+          {busy ? t("Importing…") : tn(importing, "Import {count} transaction", "Import {count} transactions")}
         </button>
       </div>
     </>
@@ -387,11 +418,13 @@ export function CategorizeOffer({ uncategorized, onCategorize }: { uncategorized
     <div className="import-assist">
       <MessageSquareText size={16} aria-hidden />
       <p>
-        {n === 1 ? "1 new transaction has no category." : `${n} new transactions have no category.`}
-        <small>Opens the assistant with them attached. Nothing is sent until you press Send.</small>
+        {n === 1
+          ? t("1 new transaction has no category.")
+          : tn(n, "{count} new transactions have no category.", "{count} new transactions have no category.")}
+        <small>{t("Opens the assistant with them attached. Nothing is sent until you press Send.")}</small>
       </p>
       <button type="button" className="secondary small" onClick={onCategorize}>
-        Categorize with the assistant
+        {t("Categorize with the assistant")}
       </button>
     </div>
   );

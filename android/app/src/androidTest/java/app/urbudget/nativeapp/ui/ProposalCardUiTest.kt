@@ -5,12 +5,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import app.urbudget.nativeapp.ProposalChoices
+import app.urbudget.nativeapp.ResourceWords
+import app.urbudget.nativeapp.Words
 import app.urbudget.nativeapp.sameJson
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -22,6 +26,9 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class ProposalCardUiTest {
     @get:Rule val compose = createComposeRule()
+
+    /** The app's words, as its activity loads them: an amount that doesn't read says why in them. */
+    @Before fun words() { Words.source = ResourceWords(InstrumentationRegistry.getInstrumentation().targetContext.resources) }
 
     private val rows = listOf(
         row("Careem · Oct 3", -3800, "t:a", "Uncategorized → Transport", JSONObject().put("category", true).put("categoryId", "transport").put("amount", false)),

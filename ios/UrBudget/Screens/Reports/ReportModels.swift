@@ -458,23 +458,25 @@ extension ReportMath {
             .map { ReportSlice(key: $0.key, label: $0.label, value: $0.value, valueText: ctx.money($0.value), color: $0.color) }
         if !other.isEmpty {
             let sum = other.map(\.value).reportSum
-            slices.append(ReportSlice(key: "__other", label: "Other", value: sum, valueText: ctx.money(sum), color: ReportColors.other))
+            slices.append(ReportSlice(key: "__other", label: String(localized: "Other"), value: sum, valueText: ctx.money(sum), color: ReportColors.other))
         }
         let top = rows.first
+        let allShare = share(total, data.spending)
         let tiles = [
-            ReportTile(label: group.map { "Spent in \($0)" } ?? "Spending", value: ctx.money(total),
-                       note: group != nil ? "\(share(total, data.spending)) of all spending" : "over \(n) \(plural(n, "month", "months"))"),
-            ReportTile(label: "Monthly average", value: ctx.money(roundDiv(total, n))),
-            ReportTile(label: group != nil ? "Biggest category" : "Biggest group", value: top?.label ?? "—",
+            ReportTile(label: group.map { String(localized: "Spent in \($0)") } ?? String(localized: "Spending"), value: ctx.money(total),
+                       note: group != nil ? String(localized: "\(allShare) of all spending") : String(localized: "over \(n) months", locale: .app)),
+            ReportTile(label: String(localized: "Monthly average"), value: ctx.money(roundDiv(total, n))),
+            ReportTile(label: group != nil ? String(localized: "Biggest category") : String(localized: "Biggest group"), value: top?.label ?? "—",
                        note: top.map { "\(ctx.money($0.value)) · \(share($0.value, total))" }),
-            ReportTile(label: group != nil ? "Categories with spending" : "Groups with spending", value: "\(rows.filter { $0.value > 0 }.count)"),
+            ReportTile(label: group != nil ? String(localized: "Categories with spending") : String(localized: "Groups with spending"),
+                       value: "\(rows.filter { $0.value > 0 }.count)"),
         ]
         var colors: [String: Int] = [:]
         for row in rows { colors[row.key] = row.color }
-        let help = (group != nil ? "Select a category to see its transactions." : "Select a group to see its categories.") +
-            " Refunds reduce spending, so a category can be negative. The ring shows only groups or categories with net spending; the total and list include refunds."
+        let select = group != nil ? String(localized: "Select a category to see its transactions.") : String(localized: "Select a group to see its categories.")
+        let help = select + " " + String(localized: "Refunds reduce spending, so a category can be negative. The ring shows only groups or categories with net spending; the total and list include refunds.")
         return ReportCategoryModel(
-            group: group, tiles: tiles, slices: slices, centerValue: ctx.money(total), centerLabel: group ?? "Spent",
+            group: group, tiles: tiles, slices: slices, centerValue: ctx.money(total), centerLabel: group ?? String(localized: "Spent"),
             rows: barRows(rows.map { ($0.key, $0.label, $0.value) }, colors: { colors[$0] }, total: total, ctx, drill: true), help: help,
             changes: data.months.count >= 2 ? changesView(data, ctx, group: group, todayMonth: String(today.prefix(7))) : nil)
     }
@@ -499,21 +501,24 @@ extension ReportMath {
         struct Row { var key: String; var label: String; var value: Int64; var detail: String }
         let rows = keys.map { key -> Row in
             let avg = average[key] ?? 0
+            let averageText = ctx.money(jround(avg))
             return Row(key: key, label: group != nil ? (ctx.nameOf[key] ?? key) : key, value: jround(Double(now[key] ?? 0) - avg),
-                       detail: "avg \(ctx.money(jround(avg)))")
+                       detail: String(localized: "avg \(averageText)"))
         }.filter { $0.value != 0 }.reportSorted(descending: { $0.value.magnitude }).prefix(10)
         let most = Swift.max(1, rows.map { Int64(clamping: $0.value.magnitude) }.max() ?? 1)
         let partial = last.month == todayMonth
+        let name = monthName(last.month)
+        let earlierCount = earlier.count
         return ReportChanges(
-            title: "\(monthName(last.month))\(partial ? " so far" : "") against your average",
-            aside: "the \(earlier.count)-month average before it",
+            title: partial ? String(localized: "\(name) so far against your average") : String(localized: "\(name) against your average"),
+            aside: String(localized: "the \(earlierCount)-month average before it", locale: .app),
             rows: rows.map {
-                ReportDivRow(key: $0.key, label: $0.label, valueText: "\($0.value > 0 ? "+" : "")\(ctx.money($0.value))", detail: $0.detail,
+                ReportDivRow(key: $0.key, label: $0.label, valueText: ctx.signed($0.value), detail: $0.detail,
                              fraction: Double($0.value) / Double(most),
                              color: $0.value > 0 ? ReportColors.divergingNegative : ReportColors.divergingPositive)
             },
-            legend: [ReportLegendItem(label: "Spent less than average", color: ReportColors.divergingPositive),
-                     ReportLegendItem(label: "Spent more than average", color: ReportColors.divergingNegative)])
+            legend: [ReportLegendItem(label: String(localized: "Spent less than average"), color: ReportColors.divergingPositive),
+                     ReportLegendItem(label: String(localized: "Spent more than average"), color: ReportColors.divergingNegative)])
     }
 
     /// The payees big enough to read as tiles (at least 1.5% of the set, 8 to 14 of them) and the
@@ -535,31 +540,44 @@ extension ReportMath {
         let top = positive.first
         let (big, rest) = foldPayees(positive) { $0.amount }
         let restTotal = rest.map(\.amount).reportSum
-        func average(_ p: ReportPayeeSpend) -> String { ctx.money(rounding: Double(p.amount) / Double(Swift.max(1, p.count))) }
+        func average(_ p: ReportPayeeSpend) -> String {
+            let amount = ctx.money(rounding: Double(p.amount) / Double(Swift.max(1, p.count)))
+            return String(localized: "avg \(amount)")
+        }
+        func transactions(_ count: Int64) -> String { String(localized: "\(count) transactions", locale: .app) }
+        func shown(_ part: Int64) -> String {
+            let percent = share(part, positiveTotal)
+            return String(localized: "\(percent) of spending shown")
+        }
+        let noPayee = String(localized: "No payee")
         let levels = heatLevels(big.map(\.amount))
         let tiles = [
-            ReportTile(label: "Spending", value: ctx.money(total), note: "at \(all.count) \(plural(all.count, "payee", "payees"))"),
-            ReportTile(label: "Top payee", value: top.map { $0.name.isEmpty ? "No payee" : $0.name } ?? "—",
-                       note: top.map { "\(ctx.money($0.amount)) · \(share($0.amount, positiveTotal)) of spending shown" }),
-            ReportTile(label: "Average per transaction", value: count != 0 ? ctx.money(rounding: Double(total) / Double(count)) : "—", note: "\(count) transactions"),
-            ReportTile(label: "Top 5 payees", value: share(positive.prefix(5).map(\.amount).reportSum, positiveTotal), note: "of spending shown"),
+            ReportTile(label: String(localized: "Spending"), value: ctx.money(total), note: String(localized: "at \(all.count) payees", locale: .app)),
+            ReportTile(label: String(localized: "Top payee"), value: top.map { $0.name.isEmpty ? noPayee : $0.name } ?? "—",
+                       note: top.map { "\(ctx.money($0.amount)) · \(shown($0.amount))" }),
+            ReportTile(label: String(localized: "Average per transaction"), value: count != 0 ? ctx.money(rounding: Double(total) / Double(count)) : "—",
+                       note: transactions(count)),
+            ReportTile(label: String(localized: "Top 5 payees"), value: share(positive.prefix(5).map(\.amount).reportSum, positiveTotal),
+                       note: String(localized: "of spending shown")),
         ]
         let map = big.map { p in
-            ReportTreemapItem(key: p.name, label: p.name.isEmpty ? "No payee" : p.name, value: p.amount, valueText: ctx.money(p.amount),
-                              detail: "\(share(p.amount, positiveTotal)) of spending shown",
-                              more: "\(p.count) \(plural(p.count, "transaction", "transactions")) · avg \(average(p))", level: levels.level(p.amount))
+            ReportTreemapItem(key: p.name, label: p.name.isEmpty ? noPayee : p.name, value: p.amount, valueText: ctx.money(p.amount),
+                              detail: shown(p.amount), more: "\(transactions(p.count)) · \(average(p))", level: levels.level(p.amount))
         }
         let rows = all.map { p in
-            ReportPayeeRow(key: p.name, name: p.name, label: p.name.isEmpty ? "No payee" : p.name, amountText: ctx.money(p.amount),
-                           detail: "\(share(p.amount, total)) · \(p.count) \(plural(p.count, "transaction", "transactions")) · avg \(average(p))")
+            ReportPayeeRow(key: p.name, name: p.name, label: p.name.isEmpty ? noPayee : p.name, amountText: ctx.money(p.amount),
+                           detail: "\(share(p.amount, total)) · \(transactions(p.count)) · \(average(p))")
         }
+        let tilesNote = String(localized: "Bigger tiles, more spent")
+        let help = String(localized: "Select a payee to see its transactions. Tiles show payees with net spending; the total and table include refunds.")
+        let refundsText = ctx.money(refunds)
+        let morePayees = String(localized: "\(rest.count) more payees", locale: .app)
         return ReportPayeeModel(
-            tiles: tiles, title: rest.isEmpty ? "Where your money goes" : "Top \(big.count) payees",
-            aside: "\(rest.isEmpty ? "" : "\(share(positiveTotal &- restTotal, positiveTotal)) of spending shown · ")Bigger tiles, more spent",
+            tiles: tiles, title: rest.isEmpty ? String(localized: "Where your money goes") : String(localized: "Top \(big.count) payees", locale: .app),
+            aside: rest.isEmpty ? tilesNote : "\(shown(positiveTotal &- restTotal)) · \(tilesNote)",
             map: map,
-            help: "Select a payee to see its transactions. Tiles show payees with net spending; the total and table include refunds." +
-                (refunds > 0 ? " Net refunds of \(ctx.money(refunds)) at other payees reduce the total." : ""),
-            more: rest.isEmpty ? nil : "\(rest.count) more \(plural(rest.count, "payee", "payees")) · \(ctx.money(restTotal))",
+            help: help + (refunds > 0 ? " " + String(localized: "Net refunds of \(refundsText) at other payees reduce the total.") : ""),
+            more: rest.isEmpty ? nil : "\(morePayees) · \(ctx.money(restTotal))",
             rows: rows)
     }
 
@@ -569,9 +587,10 @@ extension ReportMath {
         let recent = half > 0 ? Double(totals.suffix(half).reportSum) / Double(half) : 0
         let before = half > 0 ? Double(totals.prefix(half).reportSum) / Double(half) : 0
         let known = half > 0 && before != 0
-        return ReportTile(label: "Trend",
-                          value: known ? "\(recent >= before ? "+" : "")\(fixed((recent - before) / before * 100, 0))%" : "—",
-                          note: half > 0 ? "last \(half) months against the \(half) before" : "needs two months or more",
+        return ReportTile(label: String(localized: "Trend"),
+                          value: known ? AppLanguage.leftToRight("\(recent >= before ? "+" : "")\(fixed((recent - before) / before * 100, 0))%") : "—",
+                          note: half > 0 ? String(localized: "last \(half) months against the \(half) before", locale: .app)
+                              : String(localized: "needs two months or more"),
                           tone: known ? (recent > before ? .negative : .positive) : .none)
     }
 
@@ -580,7 +599,7 @@ extension ReportMath {
         var series: [ReportColumnSeries] = []
         for group in ctx.spendingGroups {
             let color = ctx.colorOf(group)
-            let label = color == ReportColors.other ? "Other" : group
+            let label = color == ReportColors.other ? String(localized: "Other") : group
             let values = data.months.map { m in Double(m.categories.entries.filter { ctx.groupOf[$0.key] == group }.map(\.value).reportSum) }
             if let existing = series.firstIndex(where: { $0.label == label }) {
                 series[existing].values = zip(series[existing].values, values).map { $0 + $1 }
@@ -592,20 +611,26 @@ extension ReportMath {
         let totals = data.months.map(\.spending)
         let average = totals.isEmpty ? 0 : roundDiv(totals.reportSum, totals.count)
         let byAmount = data.months.reportSorted(descending: { $0.spending })
-        let chart = columnModel(label: byGroup ? "Spending by month, stacked by category group" : "Spending by month", keys: keys,
-                                series: byGroup ? shown : [ReportColumnSeries(key: "total", label: "Spending", color: 0, values: totals.map { Double($0) })],
-                                format: { ctx.money(rounding: $0) }, axis: moneyAxis, unit: ctx.axisUnit, average: ("Average", Double(average)))
+        let chart = columnModel(label: byGroup ? String(localized: "Spending by month, stacked by category group") : String(localized: "Spending by month"),
+                                keys: keys,
+                                series: byGroup ? shown
+                                    : [ReportColumnSeries(key: "total", label: String(localized: "Spending"), color: 0, values: totals.map { Double($0) })],
+                                format: { ctx.money(rounding: $0) }, axis: moneyAxis, unit: ctx.axisUnit,
+                                average: (String(localized: "Average"), Double(average)))
         var rows = data.months.enumerated().map { i, m in
             let parts = shown.filter { $0.values[i] != 0 }.map { "\($0.label) \(ctx.money(rounding: $0.values[i]))" }.joined(separator: " · ")
             return ReportFigureRow(key: m.month, title: monthName(m.month, short: true), value: ctx.money(m.spending),
                                    subtitle: byGroup && !parts.isEmpty ? parts : nil)
         }
         let averages = shown.map { s in "\(s.label) \(ctx.money(rounding: s.values.reduce(0, +) / Double(Swift.max(1, keys.count))))" }.joined(separator: " · ")
-        rows.append(ReportFigureRow(key: "__average", title: "Average", value: ctx.money(average), subtitle: byGroup && !averages.isEmpty ? averages : nil, style: .total))
+        rows.append(ReportFigureRow(key: "__average", title: String(localized: "Average"), value: ctx.money(average),
+                                    subtitle: byGroup && !averages.isEmpty ? averages : nil, style: .total))
         return ReportOverTimeModel(byGroup: byGroup, tiles: [
-            ReportTile(label: "Monthly average", value: ctx.money(average)),
-            ReportTile(label: "Highest month", value: byAmount.first.map { ctx.money($0.spending) } ?? "—", note: byAmount.first.map { monthName($0.month) }),
-            ReportTile(label: "Lowest month", value: byAmount.last.map { ctx.money($0.spending) } ?? "—", note: byAmount.last.map { monthName($0.month) }),
+            ReportTile(label: String(localized: "Monthly average"), value: ctx.money(average)),
+            ReportTile(label: String(localized: "Highest month"), value: byAmount.first.map { ctx.money($0.spending) } ?? "—",
+                       note: byAmount.first.map { monthName($0.month) }),
+            ReportTile(label: String(localized: "Lowest month"), value: byAmount.last.map { ctx.money($0.spending) } ?? "—",
+                       note: byAmount.last.map { monthName($0.month) }),
             trendTile(totals),
         ], chart: chart, legend: byGroup ? shown.map { ReportLegendItem(label: $0.label, color: $0.color) } : [], rows: rows)
     }
@@ -642,12 +667,14 @@ extension ReportMath {
         let top = byWeekday.firstIndex(of: byWeekday.max() ?? 0) ?? 0
         func dayTitle(_ day: String) -> String { "\(weekdayName(jsWeekday(day))) \(Money.date(day))" }
         let noSpend = days.count - spent.count
+        let ofDays = String(localized: "of \(days.count) days", locale: .app)
+        let topAverage = ctx.money(byWeekday[top])
         let tiles = [
-            ReportTile(label: "Average a day", value: days.isEmpty ? "—" : ctx.money(roundDiv(days.map(spentOn).reportSum, days.count))),
-            ReportTile(label: "No-spend days", value: "\(noSpend)", note: "of \(days.count) days · \(share(Int64(noSpend), Int64(days.count)))"),
-            ReportTile(label: "Biggest day", value: busiest.first.map { ctx.money(spentOn($0)) } ?? "—", note: busiest.first.map { Money.date($0) }),
-            ReportTile(label: "Busiest weekday", value: spent.isEmpty ? "—" : weekdayName(weekdays[top]),
-                       note: spent.isEmpty ? nil : "\(ctx.money(byWeekday[top])) on average"),
+            ReportTile(label: String(localized: "Average a day"), value: days.isEmpty ? "—" : ctx.money(roundDiv(days.map(spentOn).reportSum, days.count))),
+            ReportTile(label: String(localized: "No-spend days"), value: "\(noSpend)", note: "\(ofDays) · \(share(Int64(noSpend), Int64(days.count)))"),
+            ReportTile(label: String(localized: "Biggest day"), value: busiest.first.map { ctx.money(spentOn($0)) } ?? "—", note: busiest.first.map { Money.date($0) }),
+            ReportTile(label: String(localized: "Busiest weekday"), value: spent.isEmpty ? "—" : weekdayName(weekdays[top]),
+                       note: spent.isEmpty ? nil : String(localized: "\(topAverage) on average")),
         ]
         var heat: ReportHeatModel?
         if let first = days.first {
@@ -662,8 +689,8 @@ extension ReportMath {
                                    weekdayLabels: [1, 3, 5].map { weekdayName(($0 + scope.weekStart) % 7, short: true) },
                                    titles: days.map(dayTitle), amounts: days.map { ctx.money(spentOn($0)) }, spent: days.map { spentOn($0) > 0 })
         }
-        let weekdayChart = columnModel(label: "Average spending on each day of the week", keys: weekdays.map(String.init),
-                                       series: [ReportColumnSeries(key: "avg", label: "Average", color: 0, values: byWeekday.map { Double($0) })],
+        let weekdayChart = columnModel(label: String(localized: "Average spending on each day of the week"), keys: weekdays.map(String.init),
+                                       series: [ReportColumnSeries(key: "avg", label: String(localized: "Average"), color: 0, values: byWeekday.map { Double($0) })],
                                        format: { ctx.money(rounding: $0) }, axis: moneyAxis, unit: ctx.axisUnit,
                                        xTick: { key, _ in plainTick(weekdayName(Int(key) ?? 0, short: true)) }, title: { weekdayName(Int($0) ?? 0) })
         let biggest = busiest.prefix(10).map { day in
@@ -688,35 +715,47 @@ extension ReportMath {
         let saved = net.filter { $0 > 0 }.count
         var best: ReportMonth?
         for month in data.months where best.map({ month.netIncome > $0.netIncome }) ?? true { best = month }
-        let rateText = data.income > 0 ? "\(fixed(Double(kept) / Double(data.income) * 100, 1))%" : "—"
+        let rateText = data.income > 0 ? AppLanguage.leftToRight("\(fixed(Double(kept) / Double(data.income) * 100, 1))%") : "—"
         let format: (Double) -> String = { ctx.money(rounding: $0) }
-        let percent: (Double) -> String = { "\(jsNumber($0))%" }
+        let percent: (Double) -> String = { AppLanguage.leftToRight("\(jsNumber($0))%") }
+        func aMonth(_ amount: String) -> String { String(localized: "\(amount) a month") }
+        let income = String(localized: "Income")
+        let spending = String(localized: "Spending")
+        let surplus = String(localized: "Budget surplus")
+        let surplusRate = String(localized: "Budget surplus rate")
+        var bestNote: String?
+        if let best, best.netIncome > 0 {
+            let name = monthName(best.month)
+            bestNote = String(localized: "best: \(name)")
+        }
         let tiles = [
-            ReportTile(label: "Income", value: ctx.money(data.income), note: "\(ctx.money(roundDiv(data.income, n))) a month"),
-            ReportTile(label: "Spending", value: ctx.money(data.spending), note: "\(ctx.money(roundDiv(data.spending, n))) a month"),
-            ReportTile(label: "Budget surplus", value: ctx.money(kept), note: "\(ctx.signed(roundDiv(kept, n))) a month", tone: kept < 0 ? .negative : .positive),
-            ReportTile(label: "Budget surplus rate", value: rateText, note: "surplus as a share of income"),
-            ReportTile(label: "Positive-surplus months", value: "\(saved) of \(data.months.count)",
-                       note: best.flatMap { $0.netIncome > 0 ? "best: \(monthName($0.month))" : nil }),
+            ReportTile(label: income, value: ctx.money(data.income), note: aMonth(ctx.money(roundDiv(data.income, n)))),
+            ReportTile(label: spending, value: ctx.money(data.spending), note: aMonth(ctx.money(roundDiv(data.spending, n)))),
+            ReportTile(label: surplus, value: ctx.money(kept), note: aMonth(ctx.signed(roundDiv(kept, n))), tone: kept < 0 ? .negative : .positive),
+            ReportTile(label: surplusRate, value: rateText, note: String(localized: "surplus as a share of income")),
+            ReportTile(label: String(localized: "Positive-surplus months"), value: String(localized: "\(saved) of \(data.months.count)", locale: .app),
+                       note: bestNote),
         ]
-        let help = "Budget surplus compares income with spending. Categorized transfers to tracking investments and loans reduce it; use Net worth to see changes in wealth." +
-            (someCategories ? " Income stays included; spending reflects the chosen categories." : "")
-        let chart = columnModel(label: "Income and spending side by side each month, with budget surplus as a line", keys: keys, series: [
-            ReportColumnSeries(key: "income", label: "Income", color: 0, values: data.months.map { Double($0.income) }),
-            ReportColumnSeries(key: "spending", label: "Spending", color: 1, values: data.months.map { Double($0.spending) }),
+        let help = String(localized: "Budget surplus compares income with spending. Categorized transfers to tracking investments and loans reduce it; use Net worth to see changes in wealth.") +
+            (someCategories ? " " + String(localized: "Income stays included; spending reflects the chosen categories.") : "")
+        let chart = columnModel(label: String(localized: "Income and spending side by side each month, with budget surplus as a line"), keys: keys, series: [
+            ReportColumnSeries(key: "income", label: income, color: 0, values: data.months.map { Double($0.income) }),
+            ReportColumnSeries(key: "spending", label: spending, color: 1, values: data.months.map { Double($0.spending) }),
         ], format: format, axis: moneyAxis, unit: ctx.axisUnit, grouped: true,
-           line: ReportLineOverlay(label: "Budget surplus", color: ReportColors.ink, values: net.map { Double($0) }))
-        let legend = [ReportLegendItem(label: "Income", color: 0), ReportLegendItem(label: "Spending", color: 1),
-                      ReportLegendItem(label: "Budget surplus", color: ReportColors.ink, line: true)]
-        let rate = linesModel(label: "Budget surplus each month, as a percentage of income", keys: keys,
-                              series: [ReportLineSeries(key: "rate", label: "Budget surplus rate", color: 0, values: rates)],
+           line: ReportLineOverlay(label: surplus, color: ReportColors.ink, values: net.map { Double($0) }))
+        let legend = [ReportLegendItem(label: income, color: 0), ReportLegendItem(label: spending, color: 1),
+                      ReportLegendItem(label: surplus, color: ReportColors.ink, line: true)]
+        let rate = linesModel(label: String(localized: "Budget surplus each month, as a percentage of income"), keys: keys,
+                              series: [ReportLineSeries(key: "rate", label: surplusRate, color: 0, values: rates)],
                               format: percent, axis: percent, unit: nil)
-        let cumulativeChart = linesModel(label: "Budget surplus added up month by month", keys: keys,
-                                         series: [ReportLineSeries(key: "surplus", label: "Cumulative budget surplus", color: 2, values: cumulative.map { Double($0) })],
+        let cumulativeChart = linesModel(label: String(localized: "Budget surplus added up month by month"), keys: keys,
+                                         series: [ReportLineSeries(key: "surplus", label: String(localized: "Cumulative budget surplus"), color: 2,
+                                                                   values: cumulative.map { Double($0) })],
                                          format: format, axis: moneyAxis, unit: ctx.axisUnit)
         func totalRow(_ key: String, _ title: String, _ values: [Int64], _ style: ReportRowStyle, expand: String? = nil, tone: Bool = false) -> ReportFigureRow {
             let sum = values.reportSum
-            return ReportFigureRow(key: key, title: title, value: ctx.money(sum), subtitle: "avg \(ctx.money(roundDiv(sum, n))) a month",
+            let average = ctx.money(roundDiv(sum, n))
+            return ReportFigureRow(key: key, title: title, value: ctx.money(sum), subtitle: String(localized: "avg \(average) a month"),
                                    tone: tone && sum < 0 ? .negative : .none, style: style, expand: expand)
         }
         let sources = data.incomeSources.entries.reportSorted(descending: { $0.value })
@@ -727,24 +766,28 @@ extension ReportMath {
             let categories = ids.map { id in (id: id, values: data.months.map { $0.categories[id] ?? 0 }) }.reportSorted(descending: { $0.values.reportSum })
             return GroupRow(name: group, values: values, categories: categories)
         }.filter { $0.values.contains { $0 != 0 } }
-        var table: [ReportFigureRow] = [ReportFigureRow(key: "__income", title: "Income", style: .section)]
+        var table: [ReportFigureRow] = [ReportFigureRow(key: "__income", title: income, style: .section)]
         for source in sources {
-            table.append(totalRow("in:\(source.key)", source.key.isEmpty ? "No payee" : source.key, data.months.map { $0.incomeSources[source.key] ?? 0 }, .plain))
+            table.append(totalRow("in:\(source.key)", source.key.isEmpty ? String(localized: "No payee") : source.key,
+                                  data.months.map { $0.incomeSources[source.key] ?? 0 }, .plain))
         }
-        table.append(totalRow("__totalIncome", "Total income", data.months.map(\.income), .total, tone: true))
-        table.append(ReportFigureRow(key: "__spending", title: "Spending", style: .section))
+        table.append(totalRow("__totalIncome", String(localized: "Total income"), data.months.map(\.income), .total, tone: true))
+        table.append(ReportFigureRow(key: "__spending", title: spending, style: .section))
         for group in groupRows { table.append(totalRow("g:\(group.name)", group.name, group.values, .group, expand: group.name)) }
-        table.append(totalRow("__totalSpending", "Total spending", data.months.map(\.spending), .total, tone: true))
-        table.append(totalRow("__surplus", "Budget surplus", net, .net, tone: true))
-        table.append(ReportFigureRow(key: "__rate", title: "Budget surplus rate", value: rateText, tone: kept < 0 && data.income > 0 ? .negative : .none, style: .net))
+        table.append(totalRow("__totalSpending", String(localized: "Total spending"), data.months.map(\.spending), .total, tone: true))
+        table.append(totalRow("__surplus", surplus, net, .net, tone: true))
+        table.append(ReportFigureRow(key: "__rate", title: surplusRate, value: rateText, tone: kept < 0 && data.income > 0 ? .negative : .none, style: .net))
         var children: [String: [ReportFigureRow]] = [:]
         for group in groupRows {
             children[group.name] = group.categories.map { totalRow("c:\($0.id)", ctx.nameOf[$0.id] ?? $0.id, $0.values, .child) }
         }
-        let months = data.months.enumerated().map { i, m in
-            ReportFigureRow(key: m.month, title: monthName(m.month, short: true), value: ctx.money(m.netIncome),
-                            subtitle: "Income \(ctx.money(m.income)) · Spending \(ctx.money(m.spending)) · Rate \(rates[i].map { "\(jsNumber($0))%" } ?? "—")",
-                            tone: m.netIncome < 0 ? .negative : .none)
+        let months = data.months.enumerated().map { i, m -> ReportFigureRow in
+            let monthIncome = ctx.money(m.income)
+            let monthSpending = ctx.money(m.spending)
+            let monthRate = rates[i].map { AppLanguage.leftToRight("\(jsNumber($0))%") } ?? "—"
+            return ReportFigureRow(key: m.month, title: monthName(m.month, short: true), value: ctx.money(m.netIncome),
+                                   subtitle: String(localized: "Income \(monthIncome) · Spending \(monthSpending) · Rate \(monthRate)"),
+                                   tone: m.netIncome < 0 ? .negative : .none)
         }
         return ReportIncomeExpenseModel(tiles: tiles, help: help, chart: chart, legend: legend, rate: rate, cumulative: cumulativeChart,
                                         table: table, children: children, months: months)
@@ -753,7 +796,8 @@ extension ReportMath {
     /// Where income comes from: sources ranked, as a whole and month by month.
     static func incomeView(_ data: ReportData, _ ctx: ReportBudget) -> ReportIncomeModel {
         let n = Swift.max(1, data.months.count)
-        let all = data.incomeSources.entries.map { (key: $0.key, label: $0.key.isEmpty ? "No payee" : $0.key, value: $0.value) }
+        let noPayee = String(localized: "No payee")
+        let all = data.incomeSources.entries.map { (key: $0.key, label: $0.key.isEmpty ? noPayee : $0.key, value: $0.value) }
         let positive = all.filter { $0.value > 0 }.reportSorted(descending: { $0.value })
         let negative = all.filter { $0.value < 0 }.reportSorted(ascending: { $0.value })
         let coloured = positive.enumerated().map { i, s in
@@ -762,7 +806,7 @@ extension ReportMath {
         let rest = coloured.dropFirst(7)
         let restTotal = rest.map(\.value).reportSum
         let folded = rest.isEmpty ? coloured : Array(coloured.prefix(7)) + [
-            ReportSlice(key: "__other", label: "Other sources", value: restTotal, valueText: ctx.money(restTotal), color: ReportColors.other),
+            ReportSlice(key: "__other", label: String(localized: "Other sources"), value: restTotal, valueText: ctx.money(restTotal), color: ReportColors.other),
         ]
         let total = positive.map(\.value).reportSum
         let topKeys = Set(coloured.prefix(7).map(\.key))
@@ -775,31 +819,37 @@ extension ReportMath {
         }
         let top = positive.first
         let taken = -negative.map(\.value).reportSum
+        let takenText = ctx.money(taken)
+        let withIncome = data.months.filter { $0.income > 0 }.count
         let tiles = [
-            ReportTile(label: "Income", value: ctx.money(data.income),
-                       note: negative.isEmpty ? "from \(positive.count) \(plural(positive.count, "source", "sources"))" : "after \(ctx.money(taken)) taken out"),
-            ReportTile(label: "Monthly average", value: ctx.money(roundDiv(data.income, n))),
-            ReportTile(label: "Largest source", value: top?.label ?? "—", note: top.map { "\(ctx.money($0.value)) · \(share($0.value, total))" }),
-            ReportTile(label: "Months with income", value: "\(data.months.filter { $0.income > 0 }.count) of \(data.months.count)"),
+            ReportTile(label: String(localized: "Income"), value: ctx.money(data.income),
+                       note: negative.isEmpty ? String(localized: "from \(positive.count) sources", locale: .app) : String(localized: "after \(takenText) taken out")),
+            ReportTile(label: String(localized: "Monthly average"), value: ctx.money(roundDiv(data.income, n))),
+            ReportTile(label: String(localized: "Largest source"), value: top?.label ?? "—", note: top.map { "\(ctx.money($0.value)) · \(share($0.value, total))" }),
+            ReportTile(label: String(localized: "Months with income"), value: String(localized: "\(withIncome) of \(data.months.count)", locale: .app)),
         ]
         let most = Swift.max(1, coloured.map(\.value).max() ?? 1)
         let bars = coloured.map {
             ReportBarRow(key: $0.key, label: $0.label, valueText: ctx.money($0.value), detail: share($0.value, total), color: $0.color,
                          fraction: Double($0.value) / Double(most))
         }
-        let monthly = positive.isEmpty ? nil : columnModel(label: "Income each month, stacked by source", keys: data.months.map(\.month), series: series,
-                                                           format: { ctx.money(rounding: $0) }, axis: moneyAxis, unit: ctx.axisUnit)
-        let sources = (positive + negative).map { s in
+        let monthly = positive.isEmpty ? nil : columnModel(label: String(localized: "Income each month, stacked by source"), keys: data.months.map(\.month),
+                                                           series: series, format: { ctx.money(rounding: $0) }, axis: moneyAxis, unit: ctx.axisUnit)
+        let sources = (positive + negative).map { s -> ReportFigureRow in
             let months = data.months.filter { ($0.incomeSources[s.key] ?? 0) != 0 }.count
+            let average = ctx.money(roundDiv(s.value, n))
+            let part = s.value > 0 ? share(s.value, total) : "—"
             return ReportFigureRow(key: "s:\(s.key)", title: s.label, value: ctx.money(s.value),
-                                   subtitle: "Average \(ctx.money(roundDiv(s.value, n))) · Share \(s.value > 0 ? share(s.value, total) : "—") · Months \(months)",
+                                   subtitle: String(localized: "Average \(average) · Share \(part) · Months \(months)", locale: .app),
                                    tone: s.value < 0 ? .negative : .none, drill: ReportDrillTarget(title: s.label, dimension: "income", key: s.key))
         }
         return ReportIncomeModel(
             tiles: tiles, slices: folded, centerValue: ctx.money(total), bars: bars,
-            chartHelp: negative.isEmpty ? nil : "The charts show positive source contributions. The income total and source table include amounts taken out of Unassigned.",
+            chartHelp: negative.isEmpty ? nil
+                : String(localized: "The charts show positive source contributions. The income total and source table include amounts taken out of Unassigned."),
             monthly: monthly, legend: series.map { ReportLegendItem(label: $0.label, color: $0.color) }, sources: sources,
-            sourcesHelp: negative.isEmpty ? nil : "Negative sources are amounts explicitly taken from Unassigned, such as a reconciliation adjustment or a transfer to a tracking account assigned to Unassigned.")
+            sourcesHelp: negative.isEmpty ? nil
+                : String(localized: "Negative sources are amounts explicitly taken from Unassigned, such as a reconciliation adjustment or a transfer to a tracking account assigned to Unassigned."))
     }
 
     /// Flows across the budget-account boundary, from recorded account movements.
@@ -817,29 +867,41 @@ extension ReportMath {
         let totalIn = inflow.reportSum
         let totalOut = outflow.reportSum
         let format: (Double) -> String = { ctx.money(rounding: $0) }
-        let chart = columnModel(label: "Money into budget accounts above the line, money out below, with the net as a line", keys: keys, series: [
-            ReportColumnSeries(key: "in", label: "Money in", color: 0, values: inflow.map { Double($0) }),
-            ReportColumnSeries(key: "out", label: "Money out", color: 1, values: outflow.map { -Double($0) }),
-        ], format: format, axis: moneyAxis, unit: ctx.axisUnit, line: ReportLineOverlay(label: "Net flow", color: ReportColors.ink, values: net.map { Double($0) }))
-        var months = keys.enumerated().map { i, m in
-            ReportFigureRow(key: m, title: monthName(m, short: true), value: ctx.money(net[i]),
-                            subtitle: "In \(ctx.money(inflow[i])) · Out \(ctx.money(outflow[i])) · Running total \(ctx.money(cumulative[i]))",
-                            tone: net[i] < 0 ? .negative : .none)
+        let moneyIn = String(localized: "Money in")
+        let moneyOut = String(localized: "Money out")
+        let netFlow = String(localized: "Net flow")
+        let chart = columnModel(label: String(localized: "Money into budget accounts above the line, money out below, with the net as a line"), keys: keys, series: [
+            ReportColumnSeries(key: "in", label: moneyIn, color: 0, values: inflow.map { Double($0) }),
+            ReportColumnSeries(key: "out", label: moneyOut, color: 1, values: outflow.map { -Double($0) }),
+        ], format: format, axis: moneyAxis, unit: ctx.axisUnit, line: ReportLineOverlay(label: netFlow, color: ReportColors.ink, values: net.map { Double($0) }))
+        var months = keys.enumerated().map { i, m -> ReportFigureRow in
+            let monthIn = ctx.money(inflow[i])
+            let monthOut = ctx.money(outflow[i])
+            let runningTotal = ctx.money(cumulative[i])
+            return ReportFigureRow(key: m, title: monthName(m, short: true), value: ctx.money(net[i]),
+                                   subtitle: String(localized: "In \(monthIn) · Out \(monthOut) · Running total \(runningTotal)"),
+                                   tone: net[i] < 0 ? .negative : .none)
         }
-        months.append(ReportFigureRow(key: "__average", title: "Average", value: ctx.money(roundDiv(totalIn &- totalOut, n)),
-                                      subtitle: "In \(ctx.money(roundDiv(totalIn, n))) · Out \(ctx.money(roundDiv(totalOut, n)))", style: .total))
+        let averageIn = ctx.money(roundDiv(totalIn, n))
+        let averageOut = ctx.money(roundDiv(totalOut, n))
+        months.append(ReportFigureRow(key: "__average", title: String(localized: "Average"), value: ctx.money(roundDiv(totalIn &- totalOut, n)),
+                                      subtitle: String(localized: "In \(averageIn) · Out \(averageOut)"), style: .total))
+        let blackMonths = net.filter { $0 > 0 }.count
         return ReportCashFlowModel(tiles: [
-            ReportTile(label: "Money in", value: ctx.money(totalIn), note: "\(ctx.money(roundDiv(totalIn, n))) a month"),
-            ReportTile(label: "Money out", value: ctx.money(totalOut), note: "\(ctx.money(roundDiv(totalOut, n))) a month"),
-            ReportTile(label: "Net flow", value: ctx.money(totalIn &- totalOut), tone: totalIn &- totalOut < 0 ? .negative : .positive),
-            ReportTile(label: "Months in the black", value: "\(net.filter { $0 > 0 }.count) of \(keys.count)"),
-        ], chart: chart, legend: [ReportLegendItem(label: "Money in", color: 0), ReportLegendItem(label: "Money out", color: 1),
-                                  ReportLegendItem(label: "Net flow", color: ReportColors.ink, line: true)],
-           running: linesModel(label: "Net flow added up month by month", keys: keys,
-                               series: [ReportLineSeries(key: "running", label: "Running total", color: 2, values: cumulative.map { Double($0) })],
+            ReportTile(label: moneyIn, value: ctx.money(totalIn), note: String(localized: "\(averageIn) a month")),
+            ReportTile(label: moneyOut, value: ctx.money(totalOut), note: String(localized: "\(averageOut) a month")),
+            ReportTile(label: netFlow, value: ctx.money(totalIn &- totalOut), tone: totalIn &- totalOut < 0 ? .negative : .positive),
+            ReportTile(label: String(localized: "Months in the black"), value: String(localized: "\(blackMonths) of \(keys.count)", locale: .app)),
+        ], chart: chart, legend: [ReportLegendItem(label: moneyIn, color: 0), ReportLegendItem(label: moneyOut, color: 1),
+                                  ReportLegendItem(label: netFlow, color: ReportColors.ink, line: true)],
+           running: linesModel(label: String(localized: "Net flow added up month by month"), keys: keys,
+                               series: [ReportLineSeries(key: "running", label: String(localized: "Running total"), color: 2, values: cumulative.map { Double($0) })],
                                format: format, axis: moneyAxis, unit: ctx.axisUnit),
            months: months)
     }
+
+    /// "1,000.00 → 1,250.00": a balance then and now (the arrow points the reading way in Arabic).
+    private static func fromTo(_ start: String, _ end: String) -> String { String(localized: "\(start) → \(end)") }
 
     /// Net worth before the range starts, from the balances just before it.
     static func openingNetWorth(_ data: ReportData, _ accounts: [ReportAccount]) -> Int64 {
@@ -858,41 +920,52 @@ extension ReportMath {
         let format: (Double) -> String = { ctx.money(rounding: $0) }
         let startDate = Money.date(firstDay(first.month))
         let endDate = Money.date(lastDay(last.month))
+        let netWorth = String(localized: "Net worth")
+        let assets = String(localized: "Assets")
+        let debts = String(localized: "Debts")
+        let grew = String(localized: "Grew")
+        let shrank = String(localized: "Shrank")
         var rows = shownAccounts.map { a -> ReportFigureRow in
             let start = data.openingAccounts?[a.id] ?? first.accounts[a.id] ?? 0
             let end = last.accounts[a.id] ?? 0
-            return ReportFigureRow(key: a.id, title: a.name + (a.archived ? " · closed" : "") + (a.inNetWorth ? "" : " · not in net worth"),
-                                   value: ctx.money(end &- start), subtitle: "\(ctx.money(start)) → \(ctx.money(end))",
+            let title = a.name + (a.archived ? " · " + String(localized: "closed") : "") + (a.inNetWorth ? "" : " · " + String(localized: "not in net worth"))
+            return ReportFigureRow(key: a.id, title: title, value: ctx.money(end &- start), subtitle: fromTo(ctx.money(start), ctx.money(end)),
                                    tone: end &- start < 0 ? .negative : .none)
         }
-        rows.append(ReportFigureRow(key: "__networth", title: "Net worth", value: ctx.money(change),
-                                    subtitle: "\(ctx.money(opening)) → \(ctx.money(last.netWorth))", style: .total))
-        let percent = opening > 0 ? " · \(change >= 0 ? "+" : "")\(fixed(Double(change) / Double(opening) * 100, 1))%" : ""
+        rows.append(ReportFigureRow(key: "__networth", title: netWorth, value: ctx.money(change),
+                                    subtitle: fromTo(ctx.money(opening), ctx.money(last.netWorth)), style: .total))
+        let percent = opening > 0 ? " · " + AppLanguage.leftToRight("\(change >= 0 ? "+" : "")\(fixed(Double(change) / Double(opening) * 100, 1))%") : ""
+        let lastName = monthName(last.month)
+        let firstName = monthName(first.month)
+        let debtShare = share(last.debt, last.assets)
         return ReportNetWorthModel(tiles: [
-            ReportTile(label: "Net worth", value: ctx.money(last.netWorth), note: "end of \(monthName(last.month))"),
-            ReportTile(label: "Change", value: ctx.signed(change), note: "since \(monthName(first.month)) began\(percent)", tone: change < 0 ? .negative : .positive),
-            ReportTile(label: "Assets", value: ctx.money(last.assets)),
-            ReportTile(label: "Debts", value: ctx.money(last.debt), note: last.assets > 0 ? "\(share(last.debt, last.assets)) of assets" : nil),
-        ], chart: columnModel(label: "Assets and debts by month with net worth", keys: keys, series: [
-            ReportColumnSeries(key: "assets", label: "Assets", color: 0, values: data.months.map { Double($0.assets) }),
-            ReportColumnSeries(key: "debts", label: "Debts", color: 1, values: data.months.map { -Double($0.debt) }),
-        ], format: format, axis: moneyAxis, unit: ctx.axisUnit, line: ReportLineOverlay(label: "Net worth", color: ReportColors.ink, values: data.months.map { Double($0.netWorth) })),
-           legend: [ReportLegendItem(label: "Assets", color: 0), ReportLegendItem(label: "Debts", color: 1),
-                    ReportLegendItem(label: "Net worth", color: ReportColors.ink, line: true)],
-           change: columnModel(label: "How much net worth grew or shrank each month", keys: keys, series: [
-            ReportColumnSeries(key: "up", label: "Grew", color: ReportColors.divergingPositive, values: monthly.map { Double(Swift.max(0, $0)) }),
-            ReportColumnSeries(key: "down", label: "Shrank", color: ReportColors.divergingNegative, values: monthly.map { Double(Swift.min(0, $0)) }),
+            ReportTile(label: netWorth, value: ctx.money(last.netWorth), note: String(localized: "end of \(lastName)")),
+            ReportTile(label: String(localized: "Change"), value: ctx.signed(change), note: String(localized: "since \(firstName) began") + percent,
+                       tone: change < 0 ? .negative : .positive),
+            ReportTile(label: assets, value: ctx.money(last.assets)),
+            ReportTile(label: debts, value: ctx.money(last.debt), note: last.assets > 0 ? String(localized: "\(debtShare) of assets") : nil),
+        ], chart: columnModel(label: String(localized: "Assets and debts by month with net worth"), keys: keys, series: [
+            ReportColumnSeries(key: "assets", label: assets, color: 0, values: data.months.map { Double($0.assets) }),
+            ReportColumnSeries(key: "debts", label: debts, color: 1, values: data.months.map { -Double($0.debt) }),
+        ], format: format, axis: moneyAxis, unit: ctx.axisUnit, line: ReportLineOverlay(label: netWorth, color: ReportColors.ink, values: data.months.map { Double($0.netWorth) })),
+           legend: [ReportLegendItem(label: assets, color: 0), ReportLegendItem(label: debts, color: 1),
+                    ReportLegendItem(label: netWorth, color: ReportColors.ink, line: true)],
+           change: columnModel(label: String(localized: "How much net worth grew or shrank each month"), keys: keys, series: [
+            ReportColumnSeries(key: "up", label: grew, color: ReportColors.divergingPositive, values: monthly.map { Double(Swift.max(0, $0)) }),
+            ReportColumnSeries(key: "down", label: shrank, color: ReportColors.divergingNegative, values: monthly.map { Double(Swift.min(0, $0)) }),
            ], format: format, axis: moneyAxis, unit: ctx.axisUnit),
-           changeLegend: [ReportLegendItem(label: "Grew", color: ReportColors.divergingPositive),
-                          ReportLegendItem(label: "Shrank", color: ReportColors.divergingNegative)],
-           dates: "Balances on \(startDate) and \(endDate)", accounts: rows)
+           changeLegend: [ReportLegendItem(label: grew, color: ReportColors.divergingPositive),
+                          ReportLegendItem(label: shrank, color: ReportColors.divergingNegative)],
+           dates: String(localized: "Balances on \(startDate) and \(endDate)"), accounts: rows)
     }
 
-    private static let inCredit = "Accounts in credit"
-    private static let overdrawn = "Overdrawn accounts"
-    private static let assetSections = ["Cash and bank", "Investments", "Property", "Vehicles", "Receivables", "Other assets", inCredit]
-    private static let debtSections = ["Credit cards", "Lines of credit", "Mortgages", "Loans", "Other debts", overdrawn]
-    private static let liquid: Set<String> = ["Cash and bank"]
+    private static let inCredit = SheetSection.inCredit
+    private static let overdrawn = SheetSection.overdrawn
+    private static let assetSections = [SheetSection.cash, SheetSection.investments, SheetSection.property, SheetSection.vehicles,
+                                        SheetSection.receivables, SheetSection.otherAssets, inCredit]
+    private static let debtSections = [SheetSection.creditCards, SheetSection.linesOfCredit, SheetSection.mortgages, SheetSection.loans,
+                                       SheetSection.otherDebts, overdrawn]
+    private static let liquid: Set<String> = [SheetSection.cash]
 
     /// The balance decides the side, as it does for net worth: an overdrawn bank account is owed, a card in credit is owned.
     static func balanceSheetLines(_ data: ReportData, _ ctx: ReportBudget, accounts: Set<String>) -> [ReportSheetLine] {
@@ -929,8 +1002,11 @@ extension ReportMath {
             return barRows(rows, colors: { _ in nil }, total: total, ctx, drill: false)
         }
         func subtitle(_ start: Int64, _ end: Int64, _ of: Int64?) -> String {
-            "From \(ctx.money(start)) · Change \(ctx.money(end &- start))\(of.map { " · \(share(end, $0))" } ?? "")"
+            let from = ctx.money(start)
+            let change = ctx.money(end &- start)
+            return String(localized: "From \(from) · Change \(change)") + (of.map { " · \(share(end, $0))" } ?? "")
         }
+        let closed = " · " + String(localized: "closed")
         var statement: [ReportFigureRow] = []
         func part(_ title: String, _ order: [String], _ list: [ReportSheetLine], _ totalLabel: String, _ total: Int64) {
             statement.append(ReportFigureRow(key: "h:\(title)", title: title, style: .section))
@@ -940,41 +1016,51 @@ extension ReportMath {
                 let end = inSection.map(\.end).reportSum
                 statement.append(ReportFigureRow(key: "s:\(title):\(section)", title: section, value: ctx.money(end), subtitle: subtitle(start, end, total), style: .group))
                 for line in inSection {
-                    statement.append(ReportFigureRow(key: "a:\(line.account.id)", title: line.account.name + (line.account.archived ? " · closed" : ""),
+                    statement.append(ReportFigureRow(key: "a:\(line.account.id)", title: line.account.name + (line.account.archived ? closed : ""),
                                                      value: ctx.money(line.end), subtitle: subtitle(line.start, line.end, total), style: .child))
                 }
             }
-            if list.isEmpty { statement.append(ReportFigureRow(key: "n:\(title)", title: "None", style: .muted)) }
+            if list.isEmpty { statement.append(ReportFigureRow(key: "n:\(title)", title: String(localized: "None"), style: .muted)) }
             let start = list.map(\.start).reportSum
             let end = list.map(\.end).reportSum
             statement.append(ReportFigureRow(key: "t:\(title)", title: totalLabel, value: ctx.money(end), subtitle: subtitle(start, end, nil), style: .total))
         }
-        part("Assets", assetSections, assets, "Total assets", totalAssets)
-        part("Liabilities (owed)", debtSections, debts, "Total liabilities", totalDebts)
-        statement.append(ReportFigureRow(key: "__net", title: "Net worth", value: ctx.money(netEnd), subtitle: subtitle(netStart, netEnd, nil),
+        let totalAssetsLabel = String(localized: "Total assets")
+        let totalDebtsLabel = String(localized: "Total liabilities")
+        let netWorth = String(localized: "Net worth")
+        part(String(localized: "Assets"), assetSections, assets, totalAssetsLabel, totalAssets)
+        part(String(localized: "Liabilities (owed)"), debtSections, debts, totalDebtsLabel, totalDebts)
+        statement.append(ReportFigureRow(key: "__net", title: netWorth, value: ctx.money(netEnd), subtitle: subtitle(netStart, netEnd, nil),
                                          tone: netEnd < 0 ? .negative : .none, style: .net))
         if !apart.isEmpty {
-            statement.append(ReportFigureRow(key: "h:apart", title: "Not counted in net worth", style: .section))
+            statement.append(ReportFigureRow(key: "h:apart", title: String(localized: "Not counted in net worth"), style: .section))
             for line in apart {
                 statement.append(ReportFigureRow(key: "x:\(line.account.id)", title: "\(line.account.name) · \(line.section.lowercased())",
                                                  value: ctx.money(line.end), subtitle: subtitle(line.start, line.end, nil), style: .child))
             }
         }
         let mixed = lines.contains { $0.section == overdrawn || $0.section == inCredit }
+        let periodChange = ctx.signed(netEnd &- netStart)
+        let months = monthlySpending > 0 ? fixed(Double(liquidTotal) / monthlySpending, 1) : ""
+        let endDate = Money.date(lastDay(last.month))
+        let netText = ctx.money(netEnd)
+        let startDate = Money.date(firstDay(first.month))
+        let firstName = monthName(first.month)
+        let lastName = monthName(last.month)
+        let help = String(localized: "Balances at the start of \(firstName) and the end of \(lastName). Set an account's type, or leave it out of net worth, in its settings.")
         return ReportBalanceSheetModel(tiles: [
-            ReportTile(label: "Total assets", value: ctx.money(totalAssets)),
-            ReportTile(label: "Total liabilities", value: ctx.money(totalDebts)),
-            ReportTile(label: "Net worth", value: ctx.money(netEnd), note: "\(ctx.signed(netEnd &- netStart)) in this period", tone: netEnd < 0 ? .negative : .none),
-            ReportTile(label: "Debt to assets", value: totalAssets > 0 ? share(totalDebts, totalAssets) : "—",
-                       note: totalDebts > totalAssets ? "you owe more than you own" : "of what you own is owed"),
-            ReportTile(label: "Cash on hand", value: ctx.money(liquidTotal),
-                       note: monthlySpending > 0 ? "\(fixed(Double(liquidTotal) / monthlySpending, 1)) months of spending" : "in cash and bank accounts"),
+            ReportTile(label: totalAssetsLabel, value: ctx.money(totalAssets)),
+            ReportTile(label: totalDebtsLabel, value: ctx.money(totalDebts)),
+            ReportTile(label: netWorth, value: netText, note: String(localized: "\(periodChange) in this period"), tone: netEnd < 0 ? .negative : .none),
+            ReportTile(label: String(localized: "Debt to assets"), value: totalAssets > 0 ? share(totalDebts, totalAssets) : "—",
+                       note: totalDebts > totalAssets ? String(localized: "you owe more than you own") : String(localized: "of what you own is owed")),
+            ReportTile(label: String(localized: "Cash on hand"), value: ctx.money(liquidTotal),
+                       note: monthlySpending > 0 ? String(localized: "\(months) months of spending") : String(localized: "in cash and bank accounts")),
         ], ownTotal: ctx.money(totalAssets), own: totalAssets > 0 ? sections(assetSections, assets, of: totalAssets) : [],
            oweTotal: ctx.money(totalDebts), owe: totalDebts > 0 ? sections(debtSections, debts, of: totalDebts) : [],
-           statementAside: "Net worth on \(Money.date(lastDay(last.month))): \(ctx.money(netEnd))",
-           dates: "Balances on \(Money.date(firstDay(first.month))) and \(Money.date(lastDay(last.month)))", statement: statement,
-           help: "Balances at the start of \(monthName(first.month)) and the end of \(monthName(last.month)). Set an account's type, or leave it out of net worth, in its settings." +
-            (mixed ? " Accounts below zero count as owed and loans or cards above zero as owned, whatever their type." : ""))
+           statementAside: String(localized: "Net worth on \(endDate): \(netText)"),
+           dates: String(localized: "Balances on \(startDate) and \(endDate)"), statement: statement,
+           help: help + (mixed ? " " + String(localized: "Accounts below zero count as owed and loans or cards above zero as owned, whatever their type.") : ""))
     }
 
     /// Accounts that can be charted: chosen, with balances in the range, closed ones only if they held money.
@@ -1021,21 +1107,33 @@ extension ReportMath {
         }
         let mover = stats.reportSorted(descending: { ($0.end &- $0.start).magnitude }).first
         let chart = shown.isEmpty ? nil : linesModel(
-            label: "Balance of each chosen account at the end of each month", keys: keys,
+            label: String(localized: "Balance of each chosen account at the end of each month"), keys: keys,
             series: shown.map { a in ReportLineSeries(key: a.id, label: a.name, color: chosen[a.id] ?? 0, values: values(a.id).map { Double($0) }) },
             format: { ctx.money(rounding: $0) }, axis: moneyAxis, unit: ctx.axisUnit)
+        let firstName = monthName(keys[0])
+        var moverNote: String?
+        if let mover {
+            let moved = ctx.signed(mover.end &- mover.start)
+            moverNote = String(localized: "\(moved) since \(firstName) began")
+        }
+        let closed = " · " + String(localized: "closed")
+        let rows = stats.map { s -> ReportFigureRow in
+            let start = ctx.money(s.start)
+            let change = ctx.money(s.end &- s.start)
+            let low = ctx.money(s.low)
+            let high = ctx.money(s.high)
+            return ReportFigureRow(key: s.account.id, title: s.account.name + (s.account.archived ? closed : ""), value: ctx.money(s.end),
+                                   subtitle: String(localized: "Start \(start) · Change \(change) · Lowest \(low) · Highest \(high)"),
+                                   tone: s.end &- s.start < 0 ? .negative : .none)
+        }
         return ReportBalancesModel(tiles: [
-            ReportTile(label: "On the chart", value: "\(shown.count) of \(eligible.count)", note: "up to 8 at a time"),
-            ReportTile(label: "Their balance now", value: ctx.money(shown.map { last.accounts[$0.id] ?? 0 }.reportSum)),
-            ReportTile(label: "Biggest change", value: mover?.account.name ?? "—",
-                       note: mover.map { "\(ctx.signed($0.end &- $0.start)) since \(monthName(keys[0])) began" }),
+            ReportTile(label: String(localized: "On the chart"), value: String(localized: "\(shown.count) of \(eligible.count)", locale: .app),
+                       note: String(localized: "up to 8 at a time")),
+            ReportTile(label: String(localized: "Their balance now"), value: ctx.money(shown.map { last.accounts[$0.id] ?? 0 }.reportSum)),
+            ReportTile(label: String(localized: "Biggest change"), value: mover?.account.name ?? "—", note: moverNote),
         ], chips: eligible.map { a in ReportAccountChip(id: a.id, name: a.name, slot: chosen[a.id], enabled: chosen[a.id] != nil || shown.count < 8) },
            chosen: chosen, chart: chart, legend: shown.map { ReportLegendItem(label: $0.name, color: chosen[$0.id] ?? 0, line: true) },
-           rows: stats.map { s in
-            ReportFigureRow(key: s.account.id, title: s.account.name + (s.account.archived ? " · closed" : ""), value: ctx.money(s.end),
-                            subtitle: "Start \(ctx.money(s.start)) · Change \(ctx.money(s.end &- s.start)) · Lowest \(ctx.money(s.low)) · Highest \(ctx.money(s.high))",
-                            tone: s.end &- s.start < 0 ? .negative : .none)
-        })
+           rows: rows)
     }
 
     static func ageView(_ data: ReportData) -> ReportAgeModel {
@@ -1044,15 +1142,26 @@ extension ReportMath {
         let known = values.compactMap { $0 }
         let changed = known.count > 1
         let delta = changed ? (known[known.count - 1] &- known[0]) : 0
+        // "+3 days" or "-3 days", the sign kept with the number.
+        let lost = -delta
+        let deltaText = delta >= 0 ? String(localized: "+\(delta) days", locale: .app) : String(localized: "-\(lost) days", locale: .app)
+        let cashAge = String(localized: "Cash age")
         return ReportAgeModel(tiles: [
-            ReportTile(label: "Cash age", value: daysText(data.ageOfMoney)),
-            ReportTile(label: "Change", value: changed ? "\(delta >= 0 ? "+" : "")\(delta) days" : "—", note: changed ? "over these months" : nil,
+            ReportTile(label: cashAge, value: daysText(data.ageOfMoney)),
+            ReportTile(label: String(localized: "Change"), value: changed ? deltaText : "—", note: changed ? String(localized: "over these months") : nil,
                        tone: changed ? (delta >= 0 ? .positive : .negative) : .none),
-            ReportTile(label: "Highest", value: known.max().map { daysText($0) } ?? "—"),
-            ReportTile(label: "Lowest", value: known.min().map { daysText($0) } ?? "—"),
-        ], chart: linesModel(label: "Cash age at the end of each month, in days", keys: keys,
-                             series: [ReportLineSeries(key: "line", label: "Cash age", color: 0, values: values.map { $0.map { Double($0) } })],
-                             format: { "\(jsNumber($0)) days" }, axis: { "\(jsNumber($0))d" }, unit: nil),
+            ReportTile(label: String(localized: "Highest"), value: known.max().map { daysText($0) } ?? "—"),
+            ReportTile(label: String(localized: "Lowest"), value: known.min().map { daysText($0) } ?? "—"),
+        ], chart: linesModel(label: String(localized: "Cash age at the end of each month, in days"), keys: keys,
+                             series: [ReportLineSeries(key: "line", label: cashAge, color: 0, values: values.map { $0.map { Double($0) } })],
+                             format: { value in
+                                 let number = jsNumber(value)
+                                 return String(localized: "\(number) days", comment: "Days on a chart's readout; the number may have decimals")
+                             },
+                             axis: { value in
+                                 let number = jsNumber(value)
+                                 return String(localized: "\(number)d", comment: "Days on a chart's axis, as 30d")
+                             }, unit: nil),
            rows: keys.enumerated().map { i, m in ReportFigureRow(key: m, title: monthName(m, short: true), value: values[i].map { "\($0)" } ?? "—") })
     }
 
@@ -1080,11 +1189,12 @@ extension ReportMath {
     /// The income card's sentence, from the months with any income or spending.
     static func incomeLead(_ months: [ReportMonth]) -> String {
         let active = months.filter { $0.income != 0 || $0.spending != 0 }
-        if active.isEmpty { return "Nothing earned or spent in these months." }
+        if active.isEmpty { return String(localized: "Nothing earned or spent in these months.") }
         let income = Double(active.map(\.income).reportSum) / Double(active.count)
         let spending = Double(active.map(\.spending).reportSum) / Double(active.count)
-        if abs(income - spending) < Swift.max(income, spending) * 0.02 { return "On average, you're spending about what you make." }
-        return spending > income ? "On average, you're spending more than you make." : "On average, you're spending less than you make."
+        if abs(income - spending) < Swift.max(income, spending) * 0.02 { return String(localized: "On average, you're spending about what you make.") }
+        return spending > income ? String(localized: "On average, you're spending more than you make.")
+            : String(localized: "On average, you're spending less than you make.")
     }
 
     /// The Reports tab's cards: this month's spending, income against spending, net worth and cash age.
@@ -1099,33 +1209,39 @@ extension ReportMath {
         }
         let otherRefunds = refunds.dropFirst(top).map(\.value).reportSum
         if otherRefunds != 0 {
-            refundRows.append(ReportSpendRow(key: "__refunds", label: "Other refund categories", valueText: ctx.money(otherRefunds),
+            refundRows.append(ReportSpendRow(key: "__refunds", label: String(localized: "Other refund categories"), valueText: ctx.money(otherRefunds),
                                              color: ReportColors.other, weight: -otherRefunds))
         }
+        let unassigned = String(localized: "Unassigned")
         var rows = ranked.prefix(top).enumerated().map { i, entry in
-            ReportSpendRow(key: entry.key, label: ctx.nameOf[entry.key] ?? "Unassigned", valueText: ctx.money(entry.value), color: i, weight: entry.value)
+            ReportSpendRow(key: entry.key, label: ctx.nameOf[entry.key] ?? unassigned, valueText: ctx.money(entry.value), color: i, weight: entry.value)
         }
         let rest = ranked.dropFirst(top).map(\.value).reportSum
-        if rest > 0 { rows.append(ReportSpendRow(key: "__rest", label: "All others", valueText: ctx.money(rest), color: ReportColors.other, weight: rest)) }
+        if rest > 0 {
+            rows.append(ReportSpendRow(key: "__rest", label: String(localized: "All others"), valueText: ctx.money(rest), color: ReportColors.other, weight: rest))
+        }
         let labels = data.months.map { monthAbbrev($0.month) }
         func mini(_ label: String, _ color: Int, _ values: [Int64], _ text: (Int64) -> String) -> ReportMiniSeries {
             ReportMiniSeries(label: label, color: color, values: values, texts: values.map(text))
         }
         let ages = data.months.map { (data.ageOfMoneyByMonth[$0.month] ?? nil) ?? 0 }
+        let refundText = ctx.money(-refundTotal)
+        let refundLead = String(localized: "Includes \(refundText) in net refunds.")
+            + (ranked.isEmpty ? "" : " " + String(localized: "The bar shows categories with net spending."))
         return ReportOverviewModel(
             month: last.month, monthName: monthName(last.month), spendingText: ctx.money(last.spending), rows: rows,
             nothingSpent: ranked.isEmpty && refunds.isEmpty,
-            refundLead: refunds.isEmpty ? nil : "Includes \(ctx.money(-refundTotal)) in net refunds.\(ranked.isEmpty ? "" : " The bar shows categories with net spending.")",
+            refundLead: refunds.isEmpty ? nil : refundLead,
             refunds: refundRows, incomeLead: incomeLead(data.months),
             incomeBars: ReportMiniBarsModel(labels: labels, series: [
-                mini("Income", ReportColors.positive, data.months.map(\.income), ctx.money),
-                mini("Spending", 0, data.months.map(\.spending), ctx.money),
+                mini(String(localized: "Income"), ReportColors.positive, data.months.map(\.income), ctx.money),
+                mini(String(localized: "Spending"), 0, data.months.map(\.spending), ctx.money),
             ]),
             netWorthText: ctx.money(last.netWorth), netWorthNegative: last.netWorth < 0, assetsText: ctx.money(last.assets),
             debtsText: ctx.money(-last.debt), debtsNegative: last.debt != 0,
-            netWorthBars: ReportMiniBarsModel(labels: labels, series: [mini("Net worth", 0, data.months.map(\.netWorth), ctx.money)]),
+            netWorthBars: ReportMiniBarsModel(labels: labels, series: [mini(String(localized: "Net worth"), 0, data.months.map(\.netWorth), ctx.money)]),
             ageText: daysText(data.ageOfMoney),
-            ageBars: ReportMiniBarsModel(labels: labels, series: [mini("Cash age", ReportColors.positive, ages, { daysText($0) })]))
+            ageBars: ReportMiniBarsModel(labels: labels, series: [mini(String(localized: "Cash age"), ReportColors.positive, ages, { daysText($0) })]))
     }
 
     // MARK: Forecast
@@ -1187,33 +1303,45 @@ extension ReportMath {
         let knownOut = plan.events.filter { $0.amount < 0 }.map { -$0.amount }.reportSum
         var categoryName: [String: String] = [:]
         for category in ctx.categories { categoryName[category.id] = category.name }
-        let chart = linesModel(label: "Forecast balance of budget accounts for the next \(months) months", keys: plan.days, series: [
-            ReportLineSeries(key: "forecast", label: "Forecast", color: 0, values: line.map { Double($0) }),
-            ReportLineSeries(key: "known", label: "Known transactions only", color: 1, values: plan.knownLine.map { Double($0) }, dashed: true),
+        let forecast = String(localized: "Forecast")
+        let knownOnly = String(localized: "Known transactions only")
+        let today = String(localized: "Today")
+        let chart = linesModel(label: String(localized: "Forecast balance of budget accounts for the next \(months) months", locale: .app), keys: plan.days, series: [
+            ReportLineSeries(key: "forecast", label: forecast, color: 0, values: line.map { Double($0) }),
+            ReportLineSeries(key: "known", label: knownOnly, color: 1, values: plan.knownLine.map { Double($0) }, dashed: true),
         ], format: { ctx.money(rounding: $0) }, axis: { compactMoney($0) }, unit: ctx.axisUnit,
-           xTick: { day, index in index == 0 ? plainTick("Today") : day.hasSuffix("-01") ? plainTick(monthAbbrev(day)) : nil },
+           xTick: { day, index in index == 0 ? plainTick(today) : day.hasSuffix("-01") ? plainTick(monthAbbrev(day)) : nil },
            title: { Money.date($0) })
-        let rows = plan.events.enumerated().map { i, e in
-            let other = e.peerId != nil ? "Transfer: \(ctx.accountName(e.peerId))" : (e.categoryId.flatMap { categoryName[$0] } ?? "")
+        let noPayee = String(localized: "No payee")
+        let entered = " · " + String(localized: "entered")
+        let rows = plan.events.enumerated().map { i, e -> ReportForecastRow in
+            let peer = ctx.accountName(e.peerId)
+            let other = e.peerId != nil ? String(localized: "Transfer: \(peer)") : (e.categoryId.flatMap { categoryName[$0] } ?? "")
             return ReportForecastRow(key: "\(i):\(e.date):\(e.scheduleId ?? "null"):\(e.accountId)",
-                                     title: (e.payee.isEmpty ? "No payee" : e.payee) + (e.scheduleId == nil ? " · entered" : ""),
+                                     title: (e.payee.isEmpty ? noPayee : e.payee) + (e.scheduleId == nil ? entered : ""),
                                      detail: [Money.date(e.date), ctx.accountName(e.accountId), other].filter { !$0.isEmpty }.joined(separator: " · "),
                                      amount: ctx.money(e.amount), amountPositive: e.amount >= 0, balance: ctx.money(plan.balances[i]),
                                      balanceNegative: plan.balances[i] < 0)
         }
+        let fromToday = ctx.signed(end &- plan.opening)
+        let suggested = ctx.money(plan.suggested)
+        let recent = ctx.money(data.recentSpending)
+        let scheduled = ctx.money(rounding: plan.scheduledSpending)
+        let scheduledOrEntered = String(localized: "scheduled or entered")
         return ReportForecastModel(tiles: [
-            ReportTile(label: "Today", value: ctx.money(plan.opening), note: "in \(plan.ids.count) budget \(plural(plan.ids.count, "account", "accounts"))"),
-            ReportTile(label: "Lowest point", value: ctx.money(lowest), note: low == 0 ? "today" : Money.date(plan.days[low]), tone: lowest < 0 ? .negative : .none),
-            ReportTile(label: "In \(months) months", value: ctx.money(end), note: "\(ctx.signed(end &- plan.opening)) from today", tone: end < 0 ? .negative : .none),
-            ReportTile(label: "Known money in", value: ctx.money(knownIn), note: "scheduled or entered"),
-            ReportTile(label: "Known money out", value: ctx.money(knownOut), note: "scheduled or entered"),
-        ], chart: chart, legend: [ReportLegendItem(label: "Forecast", color: 0, line: true),
-                                  ReportLegendItem(label: "Known transactions only", color: 1, line: true, dashed: true)],
+            ReportTile(label: today, value: ctx.money(plan.opening), note: String(localized: "in \(plan.ids.count) budget accounts", locale: .app)),
+            ReportTile(label: String(localized: "Lowest point"), value: ctx.money(lowest), note: low == 0 ? String(localized: "today") : Money.date(plan.days[low]),
+                       tone: lowest < 0 ? .negative : .none),
+            ReportTile(label: String(localized: "In \(months) months", locale: .app), value: ctx.money(end), note: String(localized: "\(fromToday) from today"),
+                       tone: end < 0 ? .negative : .none),
+            ReportTile(label: String(localized: "Known money in"), value: ctx.money(knownIn), note: scheduledOrEntered),
+            ReportTile(label: String(localized: "Known money out"), value: ctx.money(knownOut), note: scheduledOrEntered),
+        ], chart: chart, legend: [ReportLegendItem(label: forecast, color: 0, line: true),
+                                  ReportLegendItem(label: knownOnly, color: 1, line: true, dashed: true)],
            everyday: monthly, everydayText: ctx.money(monthly),
-           suggestion: everyday != nil && everyday != plan.suggested ? "Use the suggested \(ctx.money(plan.suggested))" : nil,
-           help: "Spending that isn't scheduled, spread evenly over each day. Your last three months averaged \(ctx.money(data.recentSpending)) a month; " +
-            "scheduled spending covers about \(ctx.money(rounding: plan.scheduledSpending)) a month, which suggests \(ctx.money(plan.suggested)) for the rest.",
-           count: "\(plan.events.count) \(plural(plan.events.count, "transaction", "transactions"))", rows: rows)
+           suggestion: everyday != nil && everyday != plan.suggested ? String(localized: "Use the suggested \(suggested)") : nil,
+           help: String(localized: "Spending that isn't scheduled, spread evenly over each day. Your last three months averaged \(recent) a month; scheduled spending covers about \(scheduled) a month, which suggests \(suggested) for the rest."),
+           count: String(localized: "\(plan.events.count) transactions", locale: .app), rows: rows)
     }
 
     // MARK: The transactions behind a figure
@@ -1234,7 +1362,7 @@ extension ReportMath {
     }
 
     private static func drillRange(_ from: String, _ to: String, _ accounts: Set<String>) -> String {
-        (from == to ? Money.date(from) : "\(Money.date(from)) – \(Money.date(to))") + (accounts.isEmpty ? "" : " · chosen accounts")
+        (from == to ? Money.date(from) : "\(Money.date(from)) – \(Money.date(to))") + (accounts.isEmpty ? "" : " · " + String(localized: "chosen accounts"))
     }
 
     private static func drillModel(_ entries: [ReportDrillEntry], _ ctx: ReportBudget, income: Bool, from: String, to: String,
@@ -1244,7 +1372,8 @@ extension ReportMath {
         var records: [String: JSON] = [:]
         for entry in entries { records[entry.transaction.text("id")] = entry.transaction }
         return ReportDrillModel(
-            range: drillRange(from, to, accounts), figureLabel: income ? "Received" : "Spent", figure: ctx.money(total), count: "\(count)",
+            range: drillRange(from, to, accounts), figureLabel: income ? String(localized: "Received") : String(localized: "Spent"),
+            figure: ctx.money(total), count: "\(count)",
             average: count > 0 ? ctx.money(rounding: Double(total) / Double(count)) : "—",
             lines: ordered.map { e in
                 ReportDrillLine(key: "\(e.transaction.text("id")):\(e.index)", transactionId: e.transaction.text("id"), payee: e.payee,
@@ -1267,13 +1396,16 @@ extension ReportMath {
             let categoryId = part.text("categoryId")
             let payee = part.text("payee")
             return ReportDrillEntry(transaction: t, index: i, date: part.text("date"),
-                                    payee: peer.map { "Transfer: \(ctx.accountName($0))" } ?? (payee.isEmpty ? "No payee" : payee),
+                                    payee: peer.map { transferText(ctx.accountName($0)) } ?? (payee.isEmpty ? String(localized: "No payee") : payee),
                                     account: ctx.accountName(account),
-                                    category: categoryId == uncategorized ? needsCategory : (ctx.nameOf[categoryId] ?? "Unassigned"),
+                                    category: categoryId == uncategorized ? needsCategory : (ctx.nameOf[categoryId] ?? String(localized: "Unassigned")),
                                     amount: -part.long("amount"))
         }
         return drillModel(entries, ctx, income: false, from: from, to: to, accounts: accounts, total: items.map { $0.long("amount") }.reportSum)
     }
+
+    /// A transfer as a drill line's payee: "Transfer: Savings".
+    private static func transferText(_ account: String) -> String { String(localized: "Transfer: \(account)") }
 
     private static func leftUnassigned(_ t: JSON, _ s: JSON, splits: Int) -> Bool {
         if case .bool(let value) = s["unassigned"] { return value }
@@ -1293,6 +1425,8 @@ extension ReportMath {
         let from = firstDay(fromMonth)
         let to = lastDay(toMonth)
         func onBudget(_ id: String) -> Bool { ctx.accountsById[id]?.onBudget == true }
+        let noPayee = String(localized: "No payee")
+        let unassigned = String(localized: "Unassigned")
         var entries: [ReportDrillEntry] = []
         for t in budget.rows("transactions") {
             let date = t.text("date")
@@ -1306,7 +1440,7 @@ extension ReportMath {
                 var account = t.text("accountId")
                 let splitPayee = s.text("payee")
                 let effective = splitPayee.isEmpty ? t.text("payee") : splitPayee
-                var shown = effective.isEmpty ? "No payee" : effective
+                var shown = effective.isEmpty ? noPayee : effective
                 if !other.isEmpty {
                     let fromBudget = onBudget(t.text("accountId"))
                     if fromBudget == onBudget(other) { continue }
@@ -1314,7 +1448,7 @@ extension ReportMath {
                         amount = -amount
                         account = other
                     }
-                    shown = "Transfer: \(ctx.accountName(fromBudget ? other : t.text("accountId")))"
+                    shown = transferText(ctx.accountName(fromBudget ? other : t.text("accountId")))
                 } else if !onBudget(t.text("accountId")) {
                     continue
                 }
@@ -1323,7 +1457,7 @@ extension ReportMath {
                 let income = !opening && s.text("categoryId").isEmpty && (amount >= 0 || leftUnassigned(t, s, splits: splits.count))
                 if !income { continue }
                 entries.append(ReportDrillEntry(transaction: t, index: index, date: date, payee: shown, account: ctx.accountName(account),
-                                                category: "Unassigned", amount: amount))
+                                                category: unassigned, amount: amount))
             }
         }
         return drillModel(entries, ctx, income: true, from: from, to: to, accounts: accounts, total: entries.map(\.amount).reportSum)

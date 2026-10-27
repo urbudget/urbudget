@@ -11,6 +11,7 @@ use crate::bank_csv::{self, Columns, FileSettings, Options};
 use crate::bank_import::{self, BankTransaction, CompactReview, Counter, DateReading, Identity};
 use crate::bank_statements::{self, cents, LineOptions};
 use crate::domain::{validate, Budget};
+use crate::t;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -443,6 +444,8 @@ struct Extra {
     /// A statement's line as the file writes it, with its bank ID; empty for a CSV's, which is
     /// its line's cells as written.
     written: Vec<String>,
+    /// The transaction 1.0.8 read a CSV's line as (see `bank_csv::CsvLine::then`).
+    then: Option<BankTransaction>,
 }
 struct Reading {
     statement: Statement,
@@ -454,13 +457,13 @@ struct Reading {
 fn reading(b: &Budget, account: &str, content: &str, session: &Session) -> Result<Reading, String> {
     validate(b)?;
     if !b.accounts.iter().any(|a| a.id == account) {
-        return Err("Choose an account.".into());
+        return Err(t!("Choose an account."));
     }
     if content.len() > 20_000_000 {
-        return Err("Import a file smaller than 20 MB.".into());
+        return Err(t!("Import a file smaller than 20 MB."));
     }
     if session.scope.account != account || session.scope.file != fingerprint(content) {
-        return Err("This import is for another file. Open the file again.".into());
+        return Err(t!("This import is for another file. Open the file again."));
     }
     let s = &session.structure;
     let edits = &session.edits;
@@ -509,7 +512,9 @@ fn reading(b: &Budget, account: &str, content: &str, session: &Session) -> Resul
             // Columns that aren't found: every line, for someone to say which holds what.
             Err(why) => {
                 let unread = bank_csv::unread(content, &b.currency, s.header_line).map_err(|_| why.clone())?;
-                let reason = if why.starts_with("CSV needs") { "Choose the columns with the date and the amount (or money out and in).".to_string() } else { why };
+                // No date or amount column found (the messages `bank_csv::read_lines` gives for it).
+                let columns = why == t!("CSV needs Date, Payee/Description, and Amount (or Outflow/Inflow) headers.") || why == t!("CSV needs Amount or Outflow/Inflow columns.");
+                let reason = if columns { t!("Choose the columns with the date and the amount (or money out and in).") } else { why };
                 for (offset, cells, above) in unread.lines {
                     let id = offset.to_string();
                     let status = if above {
@@ -517,7 +522,7 @@ fn reading(b: &Budget, account: &str, content: &str, session: &Session) -> Resul
                     } else {
                         Status::Attention { field: Field::Date, column: None, reason: reason.clone() }
                     };
-                    extra.push(Extra { transaction: None, original: None, reserves: false, bank_id: String::new(), written: vec![] });
+                    extra.push(Extra { transaction: None, original: None, reserves: false, bank_id: String::new(), written: vec![], then: None });
                     statement.lines.push(Line {
                         version: version(&id),
                         included: false,
@@ -558,7 +563,7 @@ fn reading(b: &Budget, account: &str, content: &str, session: &Session) -> Resul
                         .unwrap_or_else(|| r.amount_columns.iter().map(|&i| cell(&l.cells, i)).find(|c| !c.trim().is_empty()).unwrap_or_default()),
                 },
             };
-            extra.push(Extra { transaction: l.transaction, original: l.original, reserves: l.reserves, bank_id: l.bank_id, written: vec![] });
+            extra.push(Extra { transaction: l.transaction, original: l.original, reserves: l.reserves, bank_id: l.bank_id, written: vec![], then: l.then });
             statement.lines.push(Line {
                 version: version(&id),
                 included: edits.include.contains(&id),
@@ -612,7 +617,7 @@ fn reading(b: &Budget, account: &str, content: &str, session: &Session) -> Resul
             });
             let mut written = written;
             written.push(l.bank_id.clone());
-            extra.push(Extra { transaction: l.transaction, original: l.original, reserves: l.reserves, bank_id: l.bank_id, written });
+            extra.push(Extra { transaction: l.transaction, original: l.original, reserves: l.reserves, bank_id: l.bank_id, written, then: None });
         }
         statement.sources = read.sources.iter().map(|s| SourceInfo { label: s.label.clone(), currency: s.currency.clone(), lines: s.lines }).collect();
         statement.source = (!read.sources.is_empty()).then_some(read.source);
@@ -778,16 +783,44 @@ pub fn preview_statement(b: &Budget, account: &str, content: &str, session: &Ses
     // Lines that read only with help are known by the line as written too.
     let helped = |i: usize| read.extra[i].original.is_none() && all[i].status == Status::Ready;
     let mut aliases = if (0..all.len()).any(helped) { aliases(account, all, &read.extra, helped) } else { vec![None; all.len()] };
+    // And by the ID 1.0.8 gave the line, where it read it otherwise (another column for the
+    // payee, a fee taken off, spaces tidied): a file it imported is found imported still.
+    let mut seen: HashMap<String, usize> = HashMap::new();
+    let mut earlier: Vec<Option<String>> = read
+        .extra
+        .iter()
+        .map(|e| {
+            let t = e.then.as_ref()?;
+            let signature = if t.fit.is_empty() {
+                let key = serde_json::json!([t.date, t.payee, t.memo, t.amount]).to_string();
+                let n = seen.entry(key.clone()).or_default();
+                *n += 1;
+                format!("idless:v2:{key}:{n}")
+            // The same bank ID is the ID today's import gives its first line already.
+            } else if t.fit != e.bank_id {
+                format!("fit:{}", t.fit)
+            } else {
+                return None;
+            };
+            Some(bank_import::bank_id_of(account, &signature))
+        })
+        .collect();
+    // Never another line's own ID: 1.0.8 gave lines sharing a bank ID one ID between them, and a
+    // line it read untidied can read as another does now.
+    let own: HashSet<String> = who.iter().flatten().map(|w| bank_import::bank_id_of(account, &w.signature)).collect();
     let (mut rows, mut lines) = (vec![], vec![]);
     for (i, (e, who)) in read.extra.into_iter().zip(who).enumerate() {
         if let (Status::Ready, Some(t), Some(mut who)) = (&all[i].status, e.transaction, who) {
             who.aliases.extend(aliases[i].take());
+            if let Some(then) = earlier[i].take().filter(|then| !own.contains(then) && !who.aliases.contains(then)) {
+                who.aliases.push(then);
+            }
             rows.push((t, who));
             lines.push(all[i].id.clone());
         }
     }
     if rows.len() > 10_000 {
-        return Err("Choose a file containing 1–10,000 transactions.".into());
+        return Err(t!("Choose a file containing 1–10,000 transactions."));
     }
     let review = bank_import::review_identified(b, account, rows)?;
     Ok(StatementPreview { statement: read.statement, review, lines })
@@ -797,10 +830,10 @@ pub fn preview_statement(b: &Budget, account: &str, content: &str, session: &Ses
 /// after them, and what became of each.
 pub fn apply_fixes(b: &Budget, account: &str, content: &str, session: &Session, fixes: &Fixes) -> Result<Applied, String> {
     if fixes.scope != session.scope {
-        return Err("This fix is for another import.".into());
+        return Err(t!("This fix is for another import."));
     }
     if fixes.structure.is_some() && fixes.base_structure != session.structure {
-        return Err("The import changed since this fix was made.".into());
+        return Err(t!("The import changed since this fix was made."));
     }
     let read = reading(b, account, content, session)?;
     let now = &read.statement;
@@ -809,11 +842,11 @@ pub fn apply_fixes(b: &Budget, account: &str, content: &str, session: &Session, 
     // A line as it was when a fix for it was made, or why the fix no longer fits it.
     let line = |id: &str, version: u64| -> Result<&Line, String> {
         if !same {
-            return Err("The file reads another way since this fix was made.".into());
+            return Err(t!("The file reads another way since this fix was made."));
         }
-        let line = *lines.get(id).ok_or("This file has no such line.")?;
+        let line = *lines.get(id).ok_or_else(|| t!("This file has no such line."))?;
         if session.versions.get(id).copied().unwrap_or(0) != version {
-            return Err("This line changed since this fix was made.".into());
+            return Err(t!("This line changed since this fix was made."));
         }
         Ok(line)
     };
@@ -848,13 +881,13 @@ pub fn apply_fixes(b: &Budget, account: &str, content: &str, session: &Session, 
             let value = match l.cells.get(f.column) {
                 Some(v) => v,
                 None if table && f.column < now.headers.len() => &empty,
-                None => return Err("This line has no such column.".into()),
+                None => return Err(t!("This line has no such column.")),
             };
             if table && now.id_column == Some(f.column) {
-                return Err("The bank's ID for a line can't be changed.".into());
+                return Err(t!("The bank's ID for a line can't be changed."));
             }
             if *value != f.from {
-                return Err("This cell changed since this fix was made.".into());
+                return Err(t!("This cell changed since this fix was made."));
             }
             if table {
                 let written = if l.original.is_empty() { &l.cells } else { &l.original };
@@ -885,10 +918,10 @@ pub fn apply_fixes(b: &Budget, account: &str, content: &str, session: &Session, 
     for f in &fixes.fields {
         let outcome = line(&f.line, f.line_version).and_then(|l| {
             if l.fields.get(f.field) != f.from {
-                return Err("This value changed since this fix was made.".into());
+                return Err(t!("This value changed since this fix was made."));
             }
             if f.to.trim() == f.from.trim() {
-                return Err("The line already has that value.".into());
+                return Err(t!("The line already has that value."));
             }
             next.edits.fields.entry(f.line.clone()).or_default().insert(f.field, f.to.trim().to_string());
             Ok(())
@@ -899,7 +932,7 @@ pub fn apply_fixes(b: &Budget, account: &str, content: &str, session: &Session, 
         let outcome = line(&f.line, f.line_version).and_then(|l| {
             if let (true, Status::LeftOut { reason, .. }) = (f.include, &l.status) {
                 if !reason.includable() {
-                    return Err("This line can't be included.".into());
+                    return Err(t!("This line can't be included."));
                 }
             }
             if f.include {
@@ -922,7 +955,7 @@ pub fn apply_fixes(b: &Budget, account: &str, content: &str, session: &Session, 
     if let Some(structure) = &fixes.structure {
         // A new way to read the file comes with the fixes made for it, or not at all.
         let problem = if results.iter().any(|r| !r.applied) {
-            Some("Nothing was changed: a fix that comes with it no longer fits.".to_string())
+            Some(t!("Nothing was changed: a fix that comes with it no longer fits."))
         } else {
             split_already(b, account, &read, structure)
         };
@@ -959,7 +992,7 @@ fn split_already(b: &Budget, account: &str, read: &Reading, structure: &Structur
         let taken = added.contains(&&batch.entry)
             && (name.as_ref().is_some_and(|n| imported.contains(&format!("camt-batch:{n}")))
                 || batch.payments.iter().any(|&l| who[l].as_ref().is_some_and(|w| imported.contains(&bank_import::bank_id_of(account, &w.signature)))));
-        taken.then(|| "These payments were imported one by one already: they can't be imported as one entry.".to_string())
+        taken.then(|| t!("These payments were imported one by one already: they can't be imported as one entry."))
     })
 }
 

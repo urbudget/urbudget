@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { getDirection } from "../i18n";
 
 /**
  * A row of tabs (or view filters); the arrow keys move between them. They stay on one line:
@@ -22,8 +23,10 @@ export function Tabs<T extends string>({
   const measure = () => {
     const el = list.current;
     if (!el) return;
-    const start = el.scrollLeft > 1,
-      end = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+    // Right to left, scrollLeft runs from 0 at the start towards negative values.
+    const scrolled = Math.abs(el.scrollLeft);
+    const start = scrolled > 1,
+      end = scrolled + el.clientWidth < el.scrollWidth - 1;
     setFade(start && end ? "both" : start ? "start" : end ? "end" : undefined);
   };
   useLayoutEffect(() => {
@@ -40,7 +43,9 @@ export function Tabs<T extends string>({
   }, [value]);
   const key = (e: KeyboardEvent<HTMLDivElement>) => {
     const index = tabs.findIndex((t) => t.id === value);
-    const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+    // The arrow pointing along the row moves on: the left one, right to left.
+    const [forward, back] = getDirection() === "rtl" ? ["ArrowLeft", "ArrowRight"] : ["ArrowRight", "ArrowLeft"];
+    const step = e.key === forward ? 1 : e.key === back ? -1 : 0;
     if (!step) return;
     e.preventDefault();
     const el = e.currentTarget;

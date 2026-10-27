@@ -144,7 +144,7 @@ export const api = {
   /** Switches the window to another budget (save the open one first). */
   openBudget: (id: string) => reset<Snapshot>("open_budget", { id }, (s) => s.budget),
   deleteBudget: (id: string) => invoke<BudgetListing[]>("delete_budget", { id }),
-  /** Shows a file from the app's data folder in the system file manager. */
+  /** Shows a file from the app's data folder, or an export it just saved, in the system file manager. */
   reveal: (path: string) => invoke<void>("reveal_path", { path }),
   importYnab: (exportData: unknown) =>
     invoke<Budget>("import_ynab_export", { exportData }),
@@ -162,15 +162,17 @@ export const api = {
     reset<Snapshot>("restore_budget", { budget, expectedToken }, (s) => s.budget),
   /** Deletes all but the newest `keep` backups. */
   pruneBackups: (keep: number) => invoke<number>("prune_backups", { keep }),
-  export: (budget: Budget) => read<string>(budget, "export_budget"),
+  // Exports open a save panel in Downloads and return where the file went, or null when cancelled.
+  export: (budget: Budget) => read<string | null>(budget, "export_budget"),
   /** Preserve an invalid unsaved draft for repair; ordinary backup exports still validate. */
-  exportRecoveryDraft: (budget: Budget) => read<string>(budget, "export_budget", { recovery: true }),
-  exportYnab: (budget: Budget) => read<string>(budget, "export_ynab_csv"),
+  exportRecoveryDraft: (budget: Budget) => read<string | null>(budget, "export_budget", { recovery: true }),
+  /** A folder with YNAB's Register and Plan CSVs. */
+  exportYnab: (budget: Budget) => read<string | null>(budget, "export_ynab_csv"),
   /** One account's transactions (or all), optionally just the listed ones, as a register CSV. */
   exportTransactions: (budget: Budget, accountId: string | null, ids: string[] | null) =>
-    read<string>(budget, "export_transactions", { accountId, ids }),
-  /** Saves a CSV the app made (a template) in the budget's exports folder. */
-  writeExport: (name: string, contents: string) => invoke<string>("write_export", { name, contents }),
+    read<string | null>(budget, "export_transactions", { accountId, ids }),
+  /** Saves a CSV the app made (a template), suggesting `name`. */
+  writeExport: (name: string, contents: string) => invoke<string | null>("write_export", { name, contents }),
   upsertTransaction: (budget: Budget, transaction: Transaction) =>
     change(budget, "upsert_transaction", { transaction }),
   sourceLoanTerms: (budget: Budget, accountId: string) =>
@@ -265,7 +267,7 @@ export const api = {
   reports: (budget: Budget, filter: ReportFilter, signal?: AbortSignal) =>
     read<Report>(budget, "calculate_reports", { filter }, signal),
   exportReports: (budget: Budget, filter: ReportFilter) =>
-    read<string>(budget, "export_reports", { filter }),
+    read<string | null>(budget, "export_reports", { filter }),
   previewSchedules: (
     budget: Budget,
     through: string,

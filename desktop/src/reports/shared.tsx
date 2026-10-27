@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { money } from "../format";
+import { ltr, t } from "../i18n";
 import { tableWidth, textWidth, useColumns } from "../ui/columns";
 import type { Budget } from "../types";
 import type { RegisterFilter } from "../Register";
@@ -67,8 +68,9 @@ export const SERIES = (i: number) => `var(--series-${i + 1})`;
 export const OTHER = "var(--series-other)";
 export const fmt = (n: number) => money(n, { symbol: true });
 export const sum = (values: number[]) => values.reduce((n, v) => n + v, 0);
-export const share = (n: number, total: number) => (total > 0 ? `${((n / total) * 100).toFixed(1)}%` : "—");
-export const signed = (n: number) => `${n > 0 ? "+" : ""}${money(n)}`;
+export const share = (n: number, total: number) => (total > 0 ? ltr(`${((n / total) * 100).toFixed(1)}%`) : "—");
+// The sign stays with the amount in Arabic too.
+export const signed = (n: number) => ltr(`${n > 0 ? "+" : ""}${money(n)}`);
 export const firstDay = (month: string) => `${month}-01`;
 export const lastDay = (month: string) => {
   const [y, m] = month.split("-").map(Number);
@@ -79,7 +81,7 @@ export const lastDay = (month: string) => {
  * Colours for a ranked list: the first seven items have their own colour; the rest share
  * "Other" and are folded into one item for charts.
  */
-export function ranked<T extends { key: string; label: string; value: number }>(items: T[], otherLabel = "Other") {
+export function ranked<T extends { key: string; label: string; value: number }>(items: T[], otherLabel = t("Other")) {
   const coloured = items.map((item, i) => ({ ...item, color: i < 7 ? SERIES(i) : OTHER }));
   const rest = coloured.slice(7);
   const folded = rest.length

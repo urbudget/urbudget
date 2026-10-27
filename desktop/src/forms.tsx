@@ -37,6 +37,7 @@ import {
   type Status,
   type Split,
 } from "./types";
+import { msg, t } from "./i18n";
 
 /** A text field that saves after a pause in typing, on Enter, or on blur — not per keystroke. */
 export function CommitInput({
@@ -160,7 +161,7 @@ export function Modal({
           <button
             className="icon-button"
             onClick={close}
-            aria-label="Close dialog"
+            aria-label={t("Close dialog")}
           >
             <X size={19} />
           </button>
@@ -235,16 +236,16 @@ export function AccountForm({
   const showLoan = !!budget && ((kind === "tracking" && isLoanType(type)) || !!saved);
   return (
     <Modal
-      title={initial ? "Edit account" : "New account"}
+      title={initial ? t("Edit account") : t("New account")}
       close={close}
     >
       <form
         onSubmit={(e) => {
           e.preventDefault();
           try {
-            if (!name.trim()) throw new Error("Enter an account name.");
+            if (!name.trim()) throw new Error(t("Enter an account name."));
             if (initial && kind !== initial.kind)
-              throw new Error("Create a new account to change how this account affects your budget.");
+              throw new Error(t("Create a new account to change how this account affects your budget."));
             const terms = showLoan && loanChanged ? loanTermsOf(accountId, loan) : undefined;
             const account: Account = {
               ...initial,
@@ -267,24 +268,24 @@ export function AccountForm({
         }}
       >
         <label>
-          Account name
+          {t("Account name")}
           <input
             required
             maxLength={200}
-            placeholder="e.g. Everyday account"
+            placeholder={t("e.g. Everyday account")}
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
         </label>
         <div className="form-grid">
           <label>
-            Account type
-            <select aria-label="Account type" value={type} onChange={(e) => setType(e.target.value)}>
+            {t("Account type")}
+            <select aria-label={t("Account type")} value={type} onChange={(e) => setType(e.target.value)}>
               {ACCOUNT_TYPES.map((g, i) => (
-                <optgroup key={i} label={g.group}>
+                <optgroup key={i} label={t(g.group)}>
                   {g.types.map(([value, label]) => (
                     <option key={value} value={value} disabled={!!initial && g.kind !== initial.kind}>
-                      {label}
+                      {t(label)}
                     </option>
                   ))}
                 </optgroup>
@@ -292,7 +293,7 @@ export function AccountForm({
             </select>
           </label>
           <label>
-            Opening balance
+            {t("Opening balance")}
             <input
               required
               inputMode="decimal"
@@ -303,28 +304,25 @@ export function AccountForm({
         </div>
         {initial && (
           <p className="help">
-            To switch between cash, credit, and tracking, create a new account so past transactions keep their budget treatment.
+            {t("To switch between cash, credit, and tracking, create a new account so past transactions keep their budget treatment.")}
           </p>
         )}
         <p className="help">
           {kind === "tracking"
-            ? "Tracking accounts hold things you own or owe outside the budget; their changes don't affect your categories. "
-            : "Budget accounts hold the money you give jobs to. "}
-          {isLiability(type)
-            ? "Enter what you owe as a negative amount. "
-            : ""}
-          This balance is the starting point, before any transactions you add.
+            ? `${t("Tracking accounts hold things you own or owe outside the budget; their changes don't affect your categories.")} `
+            : `${t("Budget accounts hold the money you give jobs to.")} `}
+          {isLiability(type) ? `${t("Enter what you owe as a negative amount.")} ` : ""}
+          {t("This balance is the starting point, before any transactions you add.")}
         </p>
         {kind === "tracking" && (
           <label className="checkbox-label">
             <input type="checkbox" checked={netWorth} onChange={(e) => setNetWorth(e.target.checked)} />
-            Count this account in net worth
+            {t("Count this account in net worth")}
           </label>
         )}
         {kind === "tracking" && !netWorth && (
           <p className="help">
-            It still shows its balance and appears in reports, but isn't added to net worth, e.g. money a
-            friend owes you that you aren't counting on yet.
+            {t("It still shows its balance and appears in reports, but isn't added to net worth, e.g. money a friend owes you that you aren't counting on yet.")}
           </p>
         )}
         {showLoan && budget && (
@@ -351,14 +349,15 @@ export function AccountForm({
             />
             {!isLoanType(type) && (
               <p className="help">
-                Loan details are for debts. This is set as {typeName(type).toLowerCase()}: choose a loan type
-                above, such as Personal loan, to list it with your debts.
+                {t("Loan details are for debts. This is set as {type}: choose a loan type above, such as Personal loan, to list it with your debts.", {
+                  type: typeName(type).toLowerCase(),
+                })}
               </p>
             )}
           </>
         )}
         <label>
-          Account notes
+          {t("Account notes")}
           <textarea
             value={accountNote}
             onChange={(e) => setAccountNote(e.target.value)}
@@ -371,16 +370,16 @@ export function AccountForm({
               checked={archived}
               onChange={(e) => setArchived(e.target.checked)}
             />
-            Archive account (history and balance stay in the budget)
+            {t("Archive account (history and balance stay in the budget)")}
           </label>
         )}
         {error && <p className="form-error">{error}</p>}
         <div className="modal-actions">
           <button type="button" className="secondary" onClick={close}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button className="primary">
-            {initial ? "Update account" : "Add account"}
+            {initial ? t("Update account") : t("Add account")}
           </button>
         </div>
       </form>
@@ -423,7 +422,7 @@ export function CategoryForm({
   const [error, setError] = useState("");
   return (
     <Modal
-      title={initial ? "Edit category" : "New category"}
+      title={initial ? t("Edit category") : t("New category")}
       close={close}
     >
       <form
@@ -432,8 +431,8 @@ export function CategoryForm({
           try {
             const amount = evaluateAmount(target || "0");
             if (!name.trim() || !group.trim())
-              throw new Error("Enter a category name and group.");
-            if (amount < 0) throw new Error("Targets cannot be negative.");
+              throw new Error(t("Enter a category name and group."));
+            if (amount < 0) throw new Error(t("Targets cannot be negative."));
             save({
               ...initial,
               id: initial?.id ?? id(),
@@ -453,18 +452,18 @@ export function CategoryForm({
         }}
       >
         <label>
-          Category name
+          {t("Category name")}
           <input
             required
             maxLength={200}
-            placeholder="e.g. Groceries, travel, a rainy day"
+            placeholder={t("e.g. Groceries, travel, a rainy day")}
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
         </label>
         <div className="form-grid">
           <label>
-            Group
+            {t("Group")}
             <input
               required
               maxLength={200}
@@ -479,7 +478,7 @@ export function CategoryForm({
             </datalist>
           </label>
           <label>
-            Target amount
+            {t("Target amount")}
             <input
               inputMode="decimal"
               value={target}
@@ -488,8 +487,7 @@ export function CategoryForm({
           </label>
         </div>
         <p className="help">
-          A target helps you plan. Set it to zero if you prefer to decide as you
-          go.
+          {t("A target helps you plan. Set it to zero if you prefer to decide as you go.")}
         </p>
         <TargetFields
           goal={goal}
@@ -502,7 +500,7 @@ export function CategoryForm({
           }}
         />
         <label>
-          Category notes
+          {t("Category notes")}
           <textarea
             rows={5}
             value={categoryNote}
@@ -515,21 +513,24 @@ export function CategoryForm({
             checked={hidden}
             onChange={(e) => setHidden(e.target.checked)}
           />
-          Hidden category
+          {t("Hidden category")}
         </label>
         {error && <p className="form-error">{error}</p>}
         <div className="modal-actions">
           <button type="button" className="secondary" onClick={close}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button className="primary">
-            {initial ? "Update category" : "Add category"}
+            {initial ? t("Update category") : t("Add category")}
           </button>
         </div>
       </form>
     </Modal>
   );
 }
+
+/** The transaction form's kinds, as its buttons name them. */
+const KIND_NAMES: Record<string, string> = { outflow: msg("Outflow"), inflow: msg("Inflow"), transfer: msg("Transfer") };
 
 export function TransactionForm({
   budget,
@@ -672,7 +673,7 @@ export function TransactionForm({
     try {
       const total = evaluateAmount(amount);
       if (total < 0)
-        throw new Error("Enter a non-negative transaction amount.");
+        throw new Error(t("Enter a non-negative transaction amount."));
       const sign =
         kind === "inflow" ||
         (kind === "transfer" &&
@@ -682,7 +683,7 @@ export function TransactionForm({
           ? 1
           : -1;
       if (kind === "transfer" && (!other || other === account))
-        throw new Error("Choose a different account for this transfer.");
+        throw new Error(t("Choose a different account for this transfer."));
       // Spending can be saved with no category, as in YNAB: it says "Needs a category" until it
       // has one (uncategorized.ts).
       const parsed = !needsCategory
@@ -714,7 +715,7 @@ export function TransactionForm({
         needsCategory &&
         parsed.reduce((n, s) => n + s.amount, 0) !== total * sign
       )
-        throw new Error("The split amounts must equal the transaction total.");
+        throw new Error(t("The split amounts must equal the transaction total."));
       const frequency = repeatable && repeat !== "never" ? repeat : undefined;
       const transaction: Transaction = {
         ...initial,
@@ -750,7 +751,7 @@ export function TransactionForm({
     }
   };
   const kinds = ["outflow", "inflow", "transfer"];
-  const kindName = (k: string) => k[0].toUpperCase() + k.slice(1);
+  const kindName = (k: string) => t(KIND_NAMES[k] ?? k);
   const kindIcon = (k: string, size = 15) =>
     k === "outflow" ? <ArrowUpRight size={size} /> : k === "inflow" ? <ArrowDownLeft size={size} /> : <ArrowLeftRight size={size} />;
   const pickKind = (k: string) => {
@@ -762,9 +763,9 @@ export function TransactionForm({
       <span>
         {kind === "transfer"
           ? initial && initial.amount > 0 && initial.splits.length
-            ? "To account"
-            : "From account"
-          : "Account"}
+            ? t("To account")
+            : t("From account")
+          : t("Account")}
       </span>
       <select value={account} onChange={(e) => setAccount(e.target.value)}>
         {budget.accounts
@@ -779,17 +780,17 @@ export function TransactionForm({
   );
   const dateField = (
     <label>
-      <span>Date</span>
+      <span>{t("Date")}</span>
       <DateInput required value={date} onChange={pickDate} />
     </label>
   );
   const repeatField = frequency ? (
     <label>
-      <span>Repeat</span>
-      <select aria-label="Repeat frequency" value={frequency.value} onChange={(e) => frequency.set(e.target.value)}>
+      <span>{t("Repeat")}</span>
+      <select aria-label={t("Repeat frequency")} value={frequency.value} onChange={(e) => frequency.set(e.target.value)}>
         {Object.entries(frequencies).map(([v, n]) => (
           <option key={v} value={v}>
-            {n}
+            {t(n)}
           </option>
         ))}
       </select>
@@ -797,14 +798,14 @@ export function TransactionForm({
   ) : (
     repeatable && (
       <label>
-        <span>Repeat</span>
-        <select aria-label="Repeat" value={repeat} onChange={(e) => setRepeat(e.target.value)}>
-          <option value="never">{ahead ? "Once" : "Never"}</option>
+        <span>{t("Repeat")}</span>
+        <select aria-label={t("Repeat")} value={repeat} onChange={(e) => setRepeat(e.target.value)}>
+          <option value="never">{ahead ? t("Once") : t("Never")}</option>
           {Object.entries(frequencies)
             .filter(([v]) => v !== "never")
             .map(([v, n]) => (
               <option key={v} value={v}>
-                {n}
+                {t(n)}
               </option>
             ))}
         </select>
@@ -814,9 +815,9 @@ export function TransactionForm({
   const whoField =
     kind === "transfer" ? (
       <label>
-        <span>{initial && initial.amount > 0 && initial.splits.length ? "From account" : "To account"}</span>
+        <span>{initial && initial.amount > 0 && initial.splits.length ? t("From account") : t("To account")}</span>
         <select value={other} onChange={(e) => setOther(e.target.value)}>
-          <option value="">Choose account</option>
+          <option value="">{t("Choose account")}</option>
           {budget.accounts
             .filter((a) => a.id !== account && (!a.archived || a.id === initialOther))
             .map((a) => (
@@ -828,12 +829,12 @@ export function TransactionForm({
       </label>
     ) : (
       <div className="field">
-        <span>Payee</span>
+        <span>{t("Payee")}</span>
         <PayeeInput
           budget={budget}
           value={payee}
           onChange={setPayee}
-          placeholder="Who was it for?"
+          placeholder={t("Who was it for?")}
           onPick={(info) => {
             // Fill in the payee's usual category when none is chosen yet. Its usual "none" is
             // Unassigned only for income; spending is left for a category.
@@ -846,28 +847,28 @@ export function TransactionForm({
     );
   const amountField = (
     <label>
-      Amount ({budget.currency})
+      {t("Amount ({currency})", { currency: budget.currency })}
       <input required inputMode="decimal" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
     </label>
   );
   const categoryField = needsCategory && (
     <div className="split-section">
       <div className="split-label">
-        {splits.length > 1 ? "SPLIT CATEGORIES" : "CATEGORY"}
+        {splits.length > 1 ? t("SPLIT CATEGORIES") : t("CATEGORY")}
         <button
           type="button"
           className="text-button"
           onClick={() => setSplits((s) => [...s, { categoryId: "", amount: "", memo: "", payee: "" }])}
         >
           <Plus size={14} />
-          Split transaction
+          {t("Split transaction")}
         </button>
       </div>
       {splits.map((s, index) => (
         <div className="split-row" key={index}>
           <CategoryPicker
             budget={budget}
-            label={`Category ${index + 1}`}
+            label={t("Category {number}", { number: index + 1 })}
             value={s.categoryId || null}
             onChange={(categoryId) => setSplits((rows) => rows.map((r, i) => (i === index ? { ...r, categoryId } : r)))}
             onClear={() => setSplits((rows) => rows.map((r, i) => (i === index ? { ...r, categoryId: "" } : r)))}
@@ -878,16 +879,16 @@ export function TransactionForm({
                   if (categoryId) setSplits((rows) => rows.map((r, i) => (i === index ? { ...r, categoryId } : r)));
                 }))
             }
-            readyToAssign={kind === "inflow" ? INCOME : s.categoryId === READY_TO_ASSIGN ? FROM_UNASSIGNED : false}
+            readyToAssign={kind === "inflow" ? t(INCOME) : s.categoryId === READY_TO_ASSIGN ? t(FROM_UNASSIGNED) : false}
             readyToAssignLast={kind !== "inflow"}
             includeHidden
             includePayment={!!budget.categories.find((c) => c.id === s.categoryId)?.paymentAccountId}
-            placeholder={kind === "inflow" ? INCOME : "Choose a category"}
+            placeholder={kind === "inflow" ? t(INCOME) : t("Choose a category")}
           />
           {splits.length > 1 && kind !== "transfer" && (
             <>
               <select
-                aria-label={`Transfer account ${index + 1}`}
+                aria-label={t("Transfer account {number}", { number: index + 1 })}
                 value={s.transferAccountId ?? ""}
                 onChange={(e) =>
                   setSplits((rows) =>
@@ -899,18 +900,18 @@ export function TransactionForm({
                   )
                 }
               >
-                <option value="">No transfer</option>
+                <option value="">{t("No transfer")}</option>
                 {budget.accounts
                   .filter((a) => a.id !== account && (!a.archived || a.id === s.transferAccountId))
                   .map((a) => (
                     <option key={a.id} value={a.id}>
-                      Transfer: {a.name}
+                      {t("Transfer: {account}", { account: a.name })}
                     </option>
                   ))}
               </select>
               {s.transferAccountId && (
                 <select
-                  aria-label={`Transfer status ${index + 1}`}
+                  aria-label={t("Transfer status {number}", { number: index + 1 })}
                   value={s.transferStatus ?? "uncleared"}
                   onChange={(e) =>
                     setSplits((rows) =>
@@ -918,9 +919,9 @@ export function TransactionForm({
                     )
                   }
                 >
-                  <option value="uncleared">Uncleared</option>
-                  <option value="cleared">Cleared</option>
-                  <option value="reconciled">Reconciled</option>
+                  <option value="uncleared">{t("Uncleared")}</option>
+                  <option value="cleared">{t("Cleared")}</option>
+                  <option value="reconciled">{t("Reconciled")}</option>
                 </select>
               )}
             </>
@@ -928,28 +929,28 @@ export function TransactionForm({
           {splits.length > 1 && (
             <>
               <input
-                aria-label={`Split amount ${index + 1}`}
+                aria-label={t("Split amount {number}", { number: index + 1 })}
                 inputMode="decimal"
                 placeholder="0.00"
                 value={s.amount}
                 onChange={(e) => setSplits((rows) => rows.map((r, i) => (i === index ? { ...r, amount: e.target.value } : r)))}
               />
               <input
-                aria-label={`Split memo ${index + 1}`}
-                placeholder="Split memo"
+                aria-label={t("Split memo {number}", { number: index + 1 })}
+                placeholder={t("Split memo")}
                 value={s.memo}
                 onChange={(e) => setSplits((rows) => rows.map((r, i) => (i === index ? { ...r, memo: e.target.value } : r)))}
               />
               <input
-                aria-label={`Split payee ${index + 1}`}
-                placeholder="Split payee"
+                aria-label={t("Split payee {number}", { number: index + 1 })}
+                placeholder={t("Split payee")}
                 value={s.payee}
                 onChange={(e) => setSplits((rows) => rows.map((r, i) => (i === index ? { ...r, payee: e.target.value } : r)))}
               />
               <button
                 type="button"
                 className="icon-button"
-                aria-label={`Remove split ${index + 1}`}
+                aria-label={t("Remove split {number}", { number: index + 1 })}
                 onClick={() => setSplits((rows) => rows.filter((_, i) => i !== index))}
               >
                 <X size={15} />
@@ -959,16 +960,16 @@ export function TransactionForm({
         </div>
       ))}
       {splits.length > 1 && (
-        <p className="help">Split amounts must add up to the total above. Use a negative split for a refund within a purchase.</p>
+        <p className="help">{t("Split amounts must add up to the total above. Use a negative split for a refund within a purchase.")}</p>
       )}
     </div>
   );
   const flags = flagsOf(budget);
   const flagField = (
     <label>
-      <span>Flag</span>
+      <span>{t("Flag")}</span>
       <select value={flag} onChange={(e) => setFlag(e.target.value)}>
-        <option value="">None</option>
+        <option value="">{t("None")}</option>
         {flags.map(([f, name]) => (
           <option key={f} value={f}>
             {name}
@@ -979,9 +980,9 @@ export function TransactionForm({
   );
   const transferFlagField = kind === "transfer" && (
     <label>
-      <span>Other account’s flag</span>
+      <span>{t("Other account’s flag")}</span>
       <select value={transferFlag} onChange={(e) => setTransferFlag(e.target.value)}>
-        <option value="">None</option>
+        <option value="">{t("None")}</option>
         {flags.map(([f, name]) => (
           <option key={f} value={f}>
             {name}
@@ -992,19 +993,19 @@ export function TransactionForm({
   );
   const transferMemoField = kind === "transfer" && (
     <label>
-      <span>Other account’s memo</span>
+      <span>{t("Other account’s memo")}</span>
       <textarea value={transferMemo} onChange={(e) => setTransferMemo(e.target.value)} />
     </label>
   );
   const memoField = (
     <label>
       <span>
-        Memo<span className="optional">optional</span>
+        {t("Memo")}<span className="optional">{t("optional")}</span>
       </span>
       <textarea
         rows={2}
         maxLength={5000}
-        placeholder="Anything you want to remember"
+        placeholder={t("Anything you want to remember")}
         value={memo}
         onChange={(e) => setMemo(e.target.value)}
       />
@@ -1021,7 +1022,7 @@ export function TransactionForm({
             setStatus(e.target.checked ? "cleared" : "uncleared");
           }}
         />
-        {kind === "transfer" ? "Cleared in source account" : "Cleared at the bank"}
+        {kind === "transfer" ? t("Cleared in source account") : t("Cleared at the bank")}
       </label>
       {kind === "transfer" && (
         <label className="checkbox-label">
@@ -1033,7 +1034,7 @@ export function TransactionForm({
               setTransferStatus(e.target.checked ? "cleared" : "uncleared");
             }}
           />
-          Cleared in destination
+          {t("Cleared in destination")}
         </label>
       )}
     </div>
@@ -1042,7 +1043,7 @@ export function TransactionForm({
     <>
       {(initial?.status === "reconciled" || initial?.transferStatus === "reconciled") && (
         <p className="help warning-text">
-          This transaction is reconciled. Changing its amount, date, or account changes previously reconciled history.
+          {t("This transaction is reconciled. Changing its amount, date, or account changes previously reconciled history.")}
         </p>
       )}
       {error && (
@@ -1055,12 +1056,14 @@ export function TransactionForm({
   const actions = (
     <div className="modal-actions">
       <button type="button" className="secondary" onClick={close}>
-        Cancel
+        {t("Cancel")}
       </button>
-      <button className="primary" disabled={busy}>{busy ? "Saving…" : saveLabel ?? (ahead ? "Schedule" : isNew ? "Add transaction" : "Update transaction")}</button>
+      <button className="primary" disabled={busy}>
+        {busy ? t("Saving…") : saveLabel ?? (ahead ? t("Schedule") : isNew ? t("Add transaction") : t("Update transaction"))}
+      </button>
     </div>
   );
-  const heading = title ?? (isNew ? "New transaction" : "Edit transaction");
+  const heading = title ?? (isNew ? t("New transaction") : t("Edit transaction"));
   return (
     <Modal title={heading} close={close}>
       <form onSubmit={submit}>
@@ -1146,19 +1149,19 @@ export function ScheduleDialog({
       defaultAccount={defaultAccount}
       close={close}
       onCreateCategory={onCreateCategory}
-      title={schedule ? "Scheduled transaction" : "New scheduled transaction"}
+      title={schedule ? t("Scheduled transaction") : t("New scheduled transaction")}
       schedule
-      saveLabel="Save schedule"
+      saveLabel={t("Save schedule")}
       frequency={{ value: frequency, set: setFrequency }}
-      save={async (t) => {
+      save={async (tx) => {
         await save({
           paused: false,
           ...schedule,
-          id: schedule?.id ?? t.id,
-          transaction: t,
-          nextDate: t.date,
+          id: schedule?.id ?? tx.id,
+          transaction: tx,
+          nextDate: tx.date,
           // A new next date starts the pattern again from there.
-          anchorDate: schedule && schedule.nextDate === t.date ? schedule.anchorDate : t.date,
+          anchorDate: schedule && schedule.nextDate === tx.date ? schedule.anchorDate : tx.date,
           frequency,
         });
         close();
@@ -1190,7 +1193,7 @@ export function ReconcileForm({
     /* validated on submit */
   }
   return (
-    <Modal title={`Reconcile ${account.name}`} close={close}>
+    <Modal title={t("Reconcile {account}", { account: account.name })} close={close}>
       <form
         onSubmit={async (e) => {
           e.preventDefault();
@@ -1204,11 +1207,12 @@ export function ReconcileForm({
         }}
       >
         <p>
-          Your cleared balance is <strong>{money(cleared)}</strong>. Compare it
-          with the bank’s posted balance, excluding pending transactions.
+          {t("Your cleared balance is {balance}. Compare it with the bank’s posted balance, excluding pending transactions.", {
+            balance: <strong>{money(cleared)}</strong>,
+          })}
         </p>
         <label>
-          Bank balance
+          {t("Bank balance")}
           <input
             required
             inputMode="decimal"
@@ -1218,26 +1222,24 @@ export function ReconcileForm({
         </label>
         {difference !== 0 ? (
           <div className="tip warning">
-            Difference: <strong>{money(difference)}</strong>. Continuing creates
-            a clearly labeled reconciliation adjustment in Unassigned.
-            Review missing transactions first if this difference is unexpected.
+            {t("Difference: {amount}. Continuing creates a clearly labeled reconciliation adjustment in Unassigned. Review missing transactions first if this difference is unexpected.", {
+              amount: <strong>{money(difference)}</strong>,
+            })}
           </div>
         ) : (
-          <div className="tip">
-            Balances match. All cleared entries will be marked reconciled.
-          </div>
+          <div className="tip">{t("Balances match. All cleared entries will be marked reconciled.")}</div>
         )}
         {error && <p className="form-error">{error}</p>}
         <div className="modal-actions">
           <button type="button" className="secondary" onClick={close}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button className="primary" disabled={busy}>
             {busy
-              ? "Reconciling…"
+              ? t("Reconciling…")
               : difference
-                ? "Add adjustment & reconcile"
-                : "Finish reconciliation"}
+                ? t("Add adjustment & reconcile")
+                : t("Finish reconciliation")}
           </button>
         </div>
       </form>

@@ -81,7 +81,7 @@ impl Usage {
         let state = match std::fs::read(&path) {
             // Unreadable: counted again as a copy in use, never as a new one.
             Ok(raw) => serde_json::from_slice(&raw).unwrap_or_default(),
-            Err(_) => {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 let fresh = std::fs::read_dir(data_dir).map_or(true, |mut entries| entries.next().is_none());
                 let state = State {
                     first: fresh,
@@ -90,9 +90,12 @@ impl Usage {
                 };
                 // Kept straight away, so a first opening while offline still counts as one later.
                 let _ = std::fs::create_dir_all(data_dir);
-                let _ = std::fs::write(&path, serde_json::to_vec(&state).unwrap_or_default());
+                let _ = save(&path, &state);
                 state
             }
+            // There but out of reach for now (a backup or virus scan holding it): left as it is, and
+            // taken as counted today rather than counting this copy again.
+            Err(_) => counted(&State::default(), today),
         };
         let client = reqwest::Client::builder()
             .user_agent(concat!("UrBudget/", env!("CARGO_PKG_VERSION")))
@@ -134,11 +137,18 @@ impl Usage {
         if !response.status().is_success() {
             return Err(format!("urbudget.app answered {}.", response.status().as_u16()));
         }
-        let next = counted(&state, today);
-        std::fs::write(&self.path, serde_json::to_vec(&next).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
-        *state = next;
-        Ok(())
+        // Counted from here on, even if it can't be kept: a later report in this run mustn't count
+        // the same day again.
+        *state = counted(&state, today);
+        save(&self.path, &state).map_err(|e| e.to_string())
     }
+}
+
+/// Keeps `state` whole or not at all: a write cut short never leaves half a file behind.
+fn save(path: &Path, state: &State) -> std::io::Result<()> {
+    let temp = path.with_extension("json.tmp");
+    std::fs::write(&temp, serde_json::to_vec(state)?)?;
+    std::fs::rename(&temp, path)
 }
 
 #[cfg(test)]
@@ -247,5 +257,22 @@ mod tests {
         assert_eq!(body["day"], true);
         assert_eq!(body["week"], false);
         assert_eq!(body["cohort"], "");
+    }
+
+    #[test]
+    fn a_report_that_cant_be_kept_still_counts_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let usage = Usage::open_on(dir.path(), day("2026-10-22"));
+        // The file can't be written: its temporary copy's name is taken by a folder.
+        std::fs::create_dir(dir.path().join("usage.json.tmp")).unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let (site, request) = server("204 No Content");
+        assert!(runtime.block_on(usage.report_on(&site, "windows", "direct", "1.0.9", day("2026-10-22"))).is_err());
+        request.join().unwrap();
+        // Later the same day nothing is sent again (no server is listening).
+        runtime.block_on(usage.report_on("http://127.0.0.1:9", "windows", "direct", "1.0.9", day("2026-10-22"))).unwrap();
+        // And the first opening the file holds is still there for the next run.
+        let saved: State = serde_json::from_slice(&std::fs::read(dir.path().join("usage.json")).unwrap()).unwrap();
+        assert!(saved.first);
     }
 }

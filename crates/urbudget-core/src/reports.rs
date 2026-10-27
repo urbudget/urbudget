@@ -1,3 +1,4 @@
+use crate::{i18n::tr, t};
 use crate::{domain::*, ledger, schedules};
 use chrono::{Datelike, Months, NaiveDate};
 use serde::{Deserialize, Serialize};
@@ -77,7 +78,7 @@ pub struct Contribution {
 /// Ordinary reports avoid allocating these rows.
 pub fn details(b: &Budget, f: &Filter, dimension: &str, key: &str) -> Result<Vec<Contribution>, String> {
     if !matches!(dimension, "category" | "payee" | "day") {
-        return Err("Choose a category, payee or day for the report detail.".into());
+        return Err(t!("Choose a category, payee or day for the report detail."));
     }
     let mut rows = vec![];
     calculate_with(b, f, |t, saved_id, account_id, part, category_id, amount| {
@@ -99,16 +100,16 @@ pub fn calculate(b: &Budget, f: &Filter) -> Result<Report, String> {
 fn calculate_with(b: &Budget, f: &Filter, mut contribution: impl FnMut(&Transaction, &str, &str, &Split, &str, i64)) -> Result<Report, String> {
     validate(b)?;
     let date = |s: &str| -> Result<NaiveDate, &str> {
-        if s.len() != 7 { return Err("Choose valid months."); }
+        if s.len() != 7 { return Err(tr("Choose valid months.")); }
         let date = NaiveDate::parse_from_str(&format!("{s}-01"), "%Y-%m-%d")
-            .map_err(|_| "Choose valid months.")?;
-        if date.format("%Y-%m").to_string() != s { return Err("Choose valid months."); }
+            .map_err(|_| tr("Choose valid months."))?;
+        if date.format("%Y-%m").to_string() != s { return Err(tr("Choose valid months.")); }
         Ok(date)
     };
     let mut current = date(&f.from)?;
     let end = date(&f.to)?;
     if current > end || (end - current).num_days() > 366 * 100 {
-        return Err("Choose a range of up to 100 years.".into());
+        return Err(t!("Choose a range of up to 100 years."));
     }
     let selected: HashSet<_> = f.account_ids.iter().map(String::as_str).collect();
     let cats: HashSet<_> = f.category_ids.iter().map(String::as_str).collect();
@@ -270,7 +271,7 @@ fn calculate_with(b: &Budget, f: &Filter, mut contribution: impl FnMut(&Transact
         months.push(row);
         current = current
             .checked_add_months(Months::new(1))
-            .ok_or("Invalid date")?;
+            .ok_or_else(|| t!("Invalid date"))?;
     }
     let range: Vec<String> = months.iter().map(|m| m.month.clone()).collect();
     let (age_of_money, age_of_money_by_month) = cash_age_history(b, &entries, &accounts, &range, &f.to);
@@ -326,14 +327,14 @@ struct ForecastWork {
 }
 impl ForecastWork {
     fn occurrence(&mut self) -> Result<(), String> {
-        if self.occurrences >= 1_000_000 { return Err("The forecast exceeds 1,000,000 scheduled occurrences.".into()); }
+        if self.occurrences >= 1_000_000 { return Err(t!("The forecast exceeds 1,000,000 scheduled occurrences.")); }
         self.occurrences += 1;
         Ok(())
     }
     fn event(&mut self, amount: i64) -> Result<(), String> {
-        if self.events >= 500_000 { return Err("The forecast exceeds 500,000 events. Choose a shorter range.".into()); }
+        if self.events >= 500_000 { return Err(t!("The forecast exceeds 500,000 events. Choose a shorter range.")); }
         let total = self.absolute_total + i128::from(amount).abs();
-        if total > i128::from(MAX_SAFE_TOTAL) { return Err("Forecast totals exceed the safe numeric range.".into()); }
+        if total > i128::from(MAX_SAFE_TOTAL) { return Err(t!("Forecast totals exceed the safe numeric range.")); }
         self.events += 1;
         self.absolute_total = total;
         Ok(())
@@ -346,12 +347,12 @@ pub fn forecast(b: &Budget, today: &str, through: &str) -> Result<Forecast, Stri
 pub fn forecast_for_accounts(b: &Budget, today: &str, through: &str, account_ids: &[String]) -> Result<Forecast, String> {
     validate(b)?;
     let day = |s: &str| {
-        if !valid_date(s) { return Err("Choose valid dates.".to_string()); }
-        NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|_| "Choose valid dates.".to_string())
+        if !valid_date(s) { return Err(t!("Choose valid dates.")); }
+        NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|_| t!("Choose valid dates."))
     };
     let (start, end) = (day(today)?, day(through)?);
     if end < start || (end - start).num_days() > 366 * 5 {
-        return Err("Choose up to five years ahead.".into());
+        return Err(t!("Choose up to five years ahead."));
     }
     let accounts: HashMap<_, _> = b.accounts.iter().map(|a| (a.id.as_str(), a)).collect();
     let on_budget = |id: &str| accounts.get(id).is_some_and(|a| a.on_budget());
@@ -367,7 +368,7 @@ pub fn forecast_for_accounts(b: &Budget, today: &str, through: &str, account_ids
         if let Some(n) = t.transfer_account_id.as_ref().and_then(|p| balances.get_mut(p)) { *n -= t.amount; }
     }
     let mut work = ForecastWork { absolute_total: balances.values().map(|n| i128::from(*n).abs()).sum(), ..Default::default() };
-    if work.absolute_total > i128::from(MAX_SAFE_TOTAL) { return Err("Forecast balances exceed the safe numeric range.".into()); }
+    if work.absolute_total > i128::from(MAX_SAFE_TOTAL) { return Err(t!("Forecast balances exceed the safe numeric range.")); }
     // One event for each budget account the money moves in or out of.
     let push =
         |events: &mut Vec<ForecastEvent>, work: &mut ForecastWork, t: &Transaction, date: &str, schedule: Option<&str>| -> Result<(), String> {
@@ -428,7 +429,7 @@ pub fn forecast_for_accounts(b: &Budget, today: &str, through: &str, account_ids
             count += 1;
             work.occurrence()?;
             if count > 10_000 {
-                return Err("A schedule repeats too often to forecast.".into());
+                return Err(t!("A schedule repeats too often to forecast."));
             }
             if due.as_str() > today {
                 for leg in &legs {
@@ -439,12 +440,12 @@ pub fn forecast_for_accounts(b: &Budget, today: &str, through: &str, account_ids
         }
     }
     events.sort_by(|a, b| a.date.cmp(&b.date).then(b.amount.cmp(&a.amount)));
-    let month = start.with_day(1).ok_or("Invalid date")?;
+    let month = start.with_day(1).ok_or_else(|| t!("Invalid date"))?;
     let shift = |n: u32| {
         month
             .checked_sub_months(Months::new(n))
             .map(|d| d.format("%Y-%m").to_string())
-            .ok_or("Invalid date")
+            .ok_or_else(|| t!("Invalid date"))
     };
     let recent = calculate(
         b,
@@ -459,7 +460,7 @@ pub fn forecast_for_accounts(b: &Budget, today: &str, through: &str, account_ids
     for event in &events {
         // Each transfer already has an event for each account side.
         if let Some(balance) = closing_balances.get_mut(&event.account_id) {
-            *balance = balance.checked_add(event.amount).ok_or("Forecast balance exceeds the supported range.")?;
+            *balance = balance.checked_add(event.amount).ok_or_else(|| t!("Forecast balance exceeds the supported range."))?;
         }
     }
     Ok(Forecast {

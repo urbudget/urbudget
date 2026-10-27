@@ -1,15 +1,18 @@
-import { useState, type KeyboardEvent } from "react";
+import { useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Check, Eye, FileDown, FileSpreadsheet, LoaderCircle, Pencil, RefreshCw, TriangleAlert, Undo2 } from "lucide-react";
 import { editableAmount, errorText, evaluateAmount, money } from "../format";
 import type { Budget } from "../types";
 import { CategoryPicker, READY_TO_ASSIGN } from "../ui";
 import type { CardRow, Proposal, Revision } from "./api";
+import { ltr, msg, t, tn } from "../i18n";
 
-const signed = (n: number) => (n > 0 ? `+${money(n)}` : money(n));
+// The sign stays with the amount in Arabic too.
+const signed = (n: number) => (n > 0 ? ltr(`+${money(n)}`) : money(n));
 /** Rows a card lists before "Show all". */
 const SHOWN = 8;
 
 type RowChange = Revision["set"][number];
+const NONE: Revision = { skip: [], set: [] };
 
 function Row({
   row,
@@ -36,7 +39,7 @@ function Row({
           className="proposal-pick"
           checked={!row.skipped}
           disabled={busy}
-          aria-label={`Apply: ${row.label}`}
+          aria-label={t("Apply: {item}", { item: row.label })}
           onChange={onToggle}
         />
       )}
@@ -46,19 +49,19 @@ function Row({
       </span>
       {row.badge && <span className={`proposal-badge${row.tone === "warn" ? " warn" : ""}`}>{row.badge}</span>}
       {budget && row.amount !== undefined ? (
-        <span className={`num${row.amount > 0 ? " positive" : ""}`} title={row.edited ? "Changed by you" : undefined}>
+        <span className={`num${row.amount > 0 ? " positive" : ""}`} title={row.edited ? t("Changed by you") : undefined}>
           {signed(row.amount)}
         </span>
       ) : (
         row.amount !== undefined && (
-          <span className="num" title={row.edited ? "Changed by you" : undefined}>
+          <span className="num" title={row.edited ? t("Changed by you") : undefined}>
             {money(row.amount)}
           </span>
         )
       )}
       {row.before !== undefined && row.after !== undefined && row.before !== row.after && (
         <span className="num muted proposal-change">
-          {money(row.before)} → {money(row.after)}
+          {ltr(`${money(row.before)} → ${money(row.after)}`)}
         </span>
       )}
       {editable && (
@@ -66,13 +69,13 @@ function Row({
           type="button"
           className="proposal-edit"
           disabled={busy}
-          aria-label={`Change ${row.label}`}
+          aria-label={t("Change {item}", { item: row.label })}
           title={
             row.edit?.category && row.edit.amount
-              ? "Change the category or amount"
+              ? t("Change the category or amount")
               : row.edit?.category
-                ? "Change the category"
-                : "Change the amount"
+                ? t("Change the category")
+                : t("Change the amount")
           }
           onClick={onEdit}
         >
@@ -90,11 +93,14 @@ function Row({
 function RowEditor({
   row,
   budget,
+  busy,
   onSave,
   onCancel,
 }: {
   row: CardRow;
   budget: Pick<Budget, "categories" | "categoryOrder" | "groupOrder">;
+  /** The card is being made again or applied: what's saved now would be made on the card as it was. */
+  busy?: boolean;
   onSave: (change: Omit<RowChange, "key">) => void;
   onCancel: () => void;
 }) {
@@ -103,6 +109,7 @@ function RowEditor({
   const [amount, setAmount] = useState(row.amount !== undefined ? editableAmount(row.amount) : "");
   const [problem, setProblem] = useState("");
   const save = () => {
+    if (busy) return;
     const change: Omit<RowChange, "key"> = {};
     if (row.edit?.category && category !== was) change.category = category === READY_TO_ASSIGN ? null : category;
     if (row.edit?.amount) {
@@ -129,13 +136,13 @@ function RowEditor({
     }
   };
   return (
-    <div className="proposal-editor" role="group" aria-label={`Change ${row.label}`} onKeyDown={keys}>
+    <div className="proposal-editor" role="group" aria-label={t("Change {item}", { item: row.label })} onKeyDown={keys}>
       {row.edit?.category && (
         <CategoryPicker
           budget={budget}
           value={category}
-          readyToAssign="Ready to assign"
-          label={`Category for ${row.label}`}
+          readyToAssign={t("Ready to assign")}
+          label={t("Category for {item}", { item: row.label })}
           autoFocus
           onChange={setCategory}
         />
@@ -143,7 +150,7 @@ function RowEditor({
       {row.edit?.amount && (
         <input
           className="proposal-amount num-input"
-          aria-label={`Amount for ${row.label}`}
+          aria-label={t("Amount for {item}", { item: row.label })}
           value={amount}
           autoFocus={!row.edit.category}
           onFocus={(e) => e.target.select()}
@@ -155,11 +162,11 @@ function RowEditor({
       )}
       {problem && <span className="proposal-editor-problem">{problem}</span>}
       <span className="proposal-editor-actions">
-        <button type="button" className="primary small" onClick={save}>
-          Save
+        <button type="button" className="primary small" disabled={busy} onClick={save}>
+          {t("Save")}
         </button>
         <button type="button" className="secondary small" onClick={onCancel}>
-          Cancel
+          {t("Cancel")}
         </button>
       </span>
     </div>
@@ -203,34 +210,47 @@ export function ProposalCard({
   /** The card made again with the user's choices on it. */
   onRevise?: (revision: Revision) => Promise<void>;
 }) {
-  const [busy, setBusy] = useState(false);
+  // Counted, so the first of two to finish doesn't offer Apply while the other is on its way.
+  const [pending, setPending] = useState(0);
+  const busy = pending > 0;
   const [editing, setEditing] = useState<string | null>(null);
   const [all, setAll] = useState(false);
+  // The choices as the revisions sent will leave them: each is made on the one before and sent
+  // once that one is back, so one started before the last reply lands doesn't drop its change.
+  const latest = useRef(p.choices ?? NONE);
+  const queue = useRef(Promise.resolve());
+  useLayoutEffect(() => {
+    // Nothing on its way: the card's own (one that failed leaves them as they were).
+    if (!pending) latest.current = p.choices ?? NONE;
+  }, [p.choices, pending]);
   const run = (work: () => Promise<void>) => async () => {
-    setBusy(true);
+    setPending((n) => n + 1);
     try {
       await work();
     } finally {
-      setBusy(false);
+      setPending((n) => n - 1);
     }
   };
   const c = p.card;
   if (p.status === "applied" || p.status === "discarded" || p.status === "undone") {
-    const label = p.status === "applied" ? "Applied" : p.status === "undone" ? "Undone" : "Discarded";
+    const label =
+      p.status === "applied"
+        ? t("Applied: {title}", { title: p.title })
+        : p.status === "undone"
+          ? t("Undone: {title}", { title: p.title })
+          : t("Discarded: {title}", { title: p.title });
     return (
       <div className={`proposal done ${p.status}`}>
         {p.status === "applied" ? <Check size={14} aria-hidden /> : <Undo2 size={14} aria-hidden />}
-        <span>
-          {label}: {p.title}
-        </span>
+        <span>{label}</span>
         {p.status === "applied" && canUndo && (
           <button className="secondary small" disabled={busy} onClick={run(onUndo)}>
-            Undo
+            {t("Undo")}
           </button>
         )}
         {p.status === "undone" && (
           <button className="secondary small" disabled={busy} onClick={run(onApply)}>
-            Apply again
+            {t("Apply again")}
           </button>
         )}
       </div>
@@ -242,26 +262,38 @@ export function ProposalCard({
   const keyed = c.rows.filter((r) => r.key);
   const choosing = !!onRevise && p.status === "proposed" && keyed.length > 0;
   const chosen = keyed.filter((r) => !r.skipped).length;
-  const choices: Revision = p.choices ?? { skip: [], set: [] };
-  const revise = (revision: Revision) => onRevise && run(() => onRevise(revision))();
+  const revise = (make: (choices: Revision) => Revision) => {
+    if (!onRevise) return;
+    const revision = make(latest.current);
+    latest.current = revision;
+    const sent = queue.current.then(() => onRevise(revision));
+    queue.current = sent.catch(() => {});
+    void run(() => sent)();
+  };
   const toggle = (row: CardRow) => {
     const key = row.key!;
-    if (row.skipped)
-      // Chosen again: an amount of nothing given to it goes too.
-      void revise({ skip: choices.skip.filter((k) => k !== key), set: choices.set.filter((s) => !(s.key === key && s.amount === 0)) });
-    else void revise({ skip: [...choices.skip, key], set: choices.set });
+    // An editor left open would save onto the card as it was.
+    setEditing(null);
+    revise((choices) =>
+      row.skipped
+        ? // Chosen again: an amount of nothing given to it goes too.
+          { skip: choices.skip.filter((k) => k !== key), set: choices.set.filter((s) => !(s.key === key && s.amount === 0)) }
+        : { skip: [...choices.skip, key], set: choices.set },
+    );
   };
   const change = (row: CardRow, values: Omit<RowChange, "key">) => {
     const key = row.key!;
-    const was = choices.set.find((s) => s.key === key);
     setEditing(null);
-    void revise({ skip: choices.skip, set: [...choices.set.filter((s) => s.key !== key), { ...was, ...values, key }] });
+    revise((choices) => {
+      const was = choices.set.find((s) => s.key === key);
+      return { skip: choices.skip, set: [...choices.set.filter((s) => s.key !== key), { ...was, ...values, key }] };
+    });
   };
   // A long card lists its first rows until asked for all (the one being changed stays in view).
   const shown = all ? c.rows : c.rows.filter((r, i) => i < SHOWN || (editing !== null && r.key === editing));
-  const apply = p.kind === "fix" ? "Apply to the import" : "Apply";
+  const apply = p.kind === "fix" ? msg("Apply to the import") : msg("Apply");
   return (
-    <div className={`proposal${p.status === "failed" ? " failed" : ""}`} aria-label={`Proposal: ${p.title}`}>
+    <div className={`proposal${p.status === "failed" ? " failed" : ""}`} aria-label={t("Proposal: {title}", { title: p.title })}>
       <div className="proposal-head">
         <span className="proposal-kicker">{c.kicker}</span>
         <strong>{p.title}</strong>
@@ -287,16 +319,22 @@ export function ProposalCard({
             onEdit={() => setEditing(row.key ?? null)}
           />
           {choosing && editing !== null && row.key === editing && book && (
-            <RowEditor row={row} budget={book} onSave={(values) => change(row, values)} onCancel={() => setEditing(null)} />
+            <RowEditor
+              row={row}
+              budget={book}
+              busy={busy}
+              onSave={(values) => change(row, values)}
+              onCancel={() => setEditing(null)}
+            />
           )}
         </div>
       ))}
       {c.rows.length > SHOWN && (
         <button type="button" className="proposal-more link-button" onClick={() => setAll((a) => !a)}>
-          {all ? "Show fewer" : `Show all ${c.rows.length}`}
+          {all ? t("Show fewer") : t("Show all {count}", { count: c.rows.length })}
         </button>
       )}
-      {c.more > 0 && <div className="proposal-more">and {c.more} more</div>}
+      {c.more > 0 && <div className="proposal-more">{tn(c.more, "and {count} more", "and {count} more")}</div>}
       {c.total && (
         <div className="proposal-total">
           <Row row={c.total} budget={isBudget} />
@@ -318,52 +356,52 @@ export function ProposalCard({
       <div className="proposal-actions">
         {p.status === "failed" ? (
           <button className="secondary small" disabled={busy} onClick={run(onDiscard)}>
-            Dismiss
+            {t("Dismiss")}
           </button>
         ) : p.kind === "report" ? (
           <>
             <button className="primary small" disabled={busy} onClick={onPreview}>
-              <Eye size={13} aria-hidden /> Preview
+              <Eye size={13} aria-hidden /> {t("Preview")}
             </button>
             <button className="secondary small" disabled={busy} onClick={onPrint && run(onPrint)}>
-              <FileDown size={13} aria-hidden /> Save as PDF
+              <FileDown size={13} aria-hidden /> {t("Save as PDF")}
             </button>
             {p.sheets > 0 && onSheet && (
               <button
                 className="secondary small"
                 disabled={busy}
-                title={`Each table on its own sheet (${p.sheets})`}
+                title={t("Each table on its own sheet ({count})", { count: p.sheets })}
                 onClick={run(() => onSheet(false))}
               >
                 <FileSpreadsheet size={13} aria-hidden /> Excel
               </button>
             )}
             <button className="link-button" disabled={busy} onClick={run(onDiscard)}>
-              Discard
+              {t("Discard")}
             </button>
           </>
         ) : p.kind === "spreadsheet" ? (
           <>
             <button className="primary small" disabled={busy || !onSheet} onClick={onSheet && run(() => onSheet(true))}>
-              {busy ? <LoaderCircle size={13} className="spin" aria-hidden /> : <FileSpreadsheet size={13} aria-hidden />} Open
+              {busy ? <LoaderCircle size={13} className="spin" aria-hidden /> : <FileSpreadsheet size={13} aria-hidden />} {t("Open")}
             </button>
             <button className="secondary small" disabled={busy || !onSheet} onClick={onSheet && run(() => onSheet(false))}>
-              <FileDown size={13} aria-hidden /> Save
+              <FileDown size={13} aria-hidden /> {t("Save")}
             </button>
             <button className="link-button" disabled={busy} onClick={run(onDiscard)}>
-              Discard
+              {t("Discard")}
             </button>
           </>
         ) : isImport ? (
           <>
             <button className="primary small" disabled={busy} onClick={onReview}>
-              Review import
+              {t("Review import")}
             </button>
             <button className="secondary small" disabled={busy} onClick={run(onSave)}>
-              <FileDown size={13} aria-hidden /> Save as CSV
+              <FileDown size={13} aria-hidden /> {t("Save as CSV")}
             </button>
             <button className="link-button" disabled={busy} onClick={run(onDiscard)}>
-              Discard
+              {t("Discard")}
             </button>
           </>
         ) : (
@@ -374,18 +412,22 @@ export function ProposalCard({
               ) : p.problem && p.kind !== "fix" ? (
                 <RefreshCw size={13} aria-hidden />
               ) : null}
-              {choosing && chosen < keyed.length ? `${apply} ${chosen} of ${keyed.length}` : apply}
+              {choosing && chosen < keyed.length
+                ? p.kind === "fix"
+                  ? t("Apply to the import {chosen} of {total}", { chosen, total: keyed.length })
+                  : t("Apply {chosen} of {total}", { chosen, total: keyed.length })
+                : t(apply)}
             </button>
             <button className="secondary small" disabled={busy} onClick={run(onDiscard)}>
-              Discard
+              {t("Discard")}
             </button>
             {p.choices ? (
-              <button className="link-button proposal-hint" disabled={busy} onClick={() => void revise({ skip: [], set: [] })}>
-                Use the assistant's version
+              <button className="link-button proposal-hint" disabled={busy} onClick={() => revise(() => NONE)}>
+                {t("Use the assistant's version")}
               </button>
             ) : (
               <span className="proposal-hint">
-                {p.kind === "fix" ? "Each applies only to a line that hasn't changed" : "One undo step"}
+                {p.kind === "fix" ? t("Each applies only to a line that hasn't changed") : t("One undo step")}
               </span>
             )}
           </>

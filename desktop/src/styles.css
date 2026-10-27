@@ -247,7 +247,7 @@ small {
   font-size: 12px;
 }
 .num {
-  text-align: right;
+  text-align: end;
   font-variant-numeric: tabular-nums;
 }
 .center {
@@ -305,7 +305,7 @@ small {
   flex: 1;
 }
 .float-right {
-  float: right;
+  float: inline-end;
 }
 .spin {
   animation: spin 0.9s linear infinite;
@@ -468,11 +468,14 @@ textarea {
    gloss and arrows) over the styles above. The caret sits where the combobox's does. */
 select {
   appearance: none;
-  padding-right: 24px;
+  padding-inline-end: 24px;
   background-image: var(--select-caret);
   background-repeat: no-repeat;
   background-position: right 8px center;
   background-size: 14px;
+}
+[dir="rtl"] select {
+  background-position: left 8px center;
 }
 /* The system dimmed a disabled one; this dims it as a disabled button is. */
 select:disabled {
@@ -622,7 +625,7 @@ label small {
   font-size: 12px;
 }
 .optional {
-  margin-left: 4px;
+  margin-inline-start: 4px;
   color: var(--muted);
   font-weight: 400;
 }
@@ -708,8 +711,8 @@ progress {
   gap: 10px 20px;
 }
 .figures > .stat + .stat {
-  padding-left: 20px;
-  border-left: 1px solid var(--border);
+  padding-inline-start: 20px;
+  border-inline-start: 1px solid var(--border);
 }
 .panel {
   padding: 16px 18px;
@@ -791,7 +794,7 @@ progress {
 .detail-list dd {
   min-width: 0;
   margin: 0;
-  text-align: right;
+  text-align: end;
   font-variant-numeric: tabular-nums;
 }
 .empty-state {
@@ -830,7 +833,7 @@ th {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
-  text-align: left;
+  text-align: start;
   text-transform: uppercase;
   white-space: nowrap;
 }
@@ -848,7 +851,7 @@ th.numeric,
 td.numeric,
 th.num,
 td.num {
-  text-align: right;
+  text-align: end;
 }
 tr.muted td {
   color: var(--muted);
@@ -866,7 +869,7 @@ tr.muted td {
   white-space: nowrap;
 }
 .row-actions {
-  text-align: right;
+  text-align: end;
   white-space: nowrap;
 }
 .row-actions .link-button {
@@ -1170,7 +1173,7 @@ table.fixed td {
   white-space: nowrap;
 }
 table.fixed :is(th, td) + :is(th, td) {
-  border-left: 1px solid var(--border);
+  border-inline-start: 1px solid var(--border);
 }
 table.fixed thead th {
   border-bottom-color: var(--border-strong);
@@ -1187,5 +1190,77 @@ table.fixed td.row-actions {
 /* The spare-width column (and the row buttons after it) aren't data columns: no lines around them. */
 table.fixed :is(th, td)[aria-hidden],
 table.fixed :is(th, td)[aria-hidden] + :is(th, td) {
-  border-left: none;
+  border-inline-start: none;
+}
+
+/* ---------- Right to left (Arabic) ----------
+   Layout uses logical properties (inline-start/end), so it mirrors by itself. Icons that point
+   somewhere point the other way; amounts, dates and charts keep their left-to-right order. */
+[dir="rtl"] :is(
+    .lucide-chevron-left,
+    .lucide-chevron-right,
+    .lucide-arrow-left,
+    .lucide-arrow-right,
+    .lucide-arrow-up-right,
+    .lucide-arrow-down-left,
+    .lucide-corner-down-left,
+    .lucide-undo2,
+    .lucide-redo2,
+    .lucide-panel-left-open,
+    .lucide-panel-left-close,
+    .lucide-skip-forward,
+    .lucide-send
+  ) {
+  transform: scaleX(-1);
+}
+
+/* Amounts keep their left-to-right order and stay right-aligned, so decimal points line up in a
+   column as they do in English; the headings over them follow. */
+[dir="rtl"] .num {
+  direction: ltr;
+}
+/* What people type takes its own direction (an amount, a date, an email or a Latin name reads
+   left to right) in fields that keep the layout's sides. */
+[dir="rtl"] :is(input:not([type="checkbox"], [type="radio"], [type="range"]), textarea) {
+  unicode-bidi: plaintext;
+  text-align: right;
+}
+/* People's names (accounts, categories, groups, payees, files) take their own direction, so a
+   Latin name in the Arabic layout starts at its start and is cut at its end. */
+[dir="rtl"]
+  :is(
+    .account-name > span:first-child,
+    .budget-switcher-text strong,
+    .category-name .name,
+    .group-name span,
+    .qa-name,
+    .reg-row > span:not(.num),
+    .transfer-payee > span,
+    .schedule-name,
+    .bar-list-label > span,
+    .payee-list li > span:first-child,
+    .combobox-option > span:first-child,
+    .saved-token-name,
+    .assistant-file,
+    .link-button.cell-link,
+    .activity-line > span,
+    .report-tiles dd,
+    .qa-stats strong,
+    .donut-center span,
+    table.fixed td:not(.num)
+  ) {
+  unicode-bidi: plaintext;
+  /* Aligned as the layout's start, not the name's. */
+  text-align: right;
+}
+[dir="rtl"] :is(.tm-label, .file-drop strong) {
+  unicode-bidi: plaintext;
+}
+/* Charts read left to right in Arabic too, like the numbers and dates on their axes. */
+[dir="rtl"] :is(.chart svg, .heat-scroll) {
+  direction: ltr;
+}
+/* Arabic letters join: spacing them out breaks the words apart. */
+:root[lang="ar"] :not(input) {
+  letter-spacing: normal !important;
 }

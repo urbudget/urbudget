@@ -128,6 +128,24 @@ it("asks to sign in with ChatGPT before anything else", async () => {
   expect(screen.getByText("Using ChatGPT plan")).toBeTruthy();
 });
 
+it("says while a message is being written or sent, which an automatic update waits for", async () => {
+  vi.mocked(assistant.status).mockResolvedValue(ready);
+  vi.mocked(assistant.send).mockResolvedValue("t_1");
+  vi.mocked(assistant.thread).mockResolvedValue({ id: "t_1", title: "Cover", entries: [], running: true });
+  const onWorking = vi.fn();
+  panel({ onWorking });
+  const box = await screen.findByLabelText("Message the assistant");
+  expect(onWorking).toHaveBeenLastCalledWith(false);
+  fireEvent.change(box, { target: { value: "Cover what I overspent" } });
+  expect(onWorking).toHaveBeenLastCalledWith(true);
+  // Sent, and waiting for the reply: still at work.
+  fireEvent.keyDown(box, { key: "Enter" });
+  await waitFor(() => expect(assistant.send).toHaveBeenCalled());
+  expect(onWorking).toHaveBeenLastCalledWith(true);
+  cleanup();
+  expect(onWorking).toHaveBeenLastCalledWith(false);
+});
+
 it("offers starting points from the budget and sends one with the screen", async () => {
   vi.mocked(assistant.status).mockResolvedValue(ready);
   vi.mocked(assistant.send).mockResolvedValue("t_1");
@@ -324,17 +342,22 @@ it("opens or saves a spreadsheet the assistant made", async () => {
     },
   };
   vi.mocked(assistant.thread).mockResolvedValue({ id: "t_4", title: "Sheet", running: false, entries: [{ kind: "proposal", proposal: sheet }] });
-  vi.mocked(assistant.spreadsheet).mockResolvedValue("/home/pat/UrBudget/exports/Groceries since June.xlsx");
+  vi.mocked(assistant.spreadsheet).mockResolvedValue("/home/pat/Downloads/Groceries since June.xlsx");
   panel();
   const card = await screen.findByLabelText("Proposal: Groceries since June");
   expect(card.textContent).toContain("214 rows");
   fireEvent.click(within(card).getByRole("button", { name: "Open" }));
   await waitFor(() => expect(assistant.spreadsheet).toHaveBeenCalledTimes(1));
   expect(vi.mocked(assistant.spreadsheet).mock.calls[0].slice(1)).toEqual(["t_4", "p_s", true]);
-  // Opening needs no message; saving says where the file went.
+  // Opening needs no message, and neither does a save panel that was cancelled.
   expect(screen.queryByText(/Saved/)).toBeNull();
+  vi.mocked(assistant.spreadsheet).mockResolvedValueOnce(null);
   fireEvent.click(within(card).getByRole("button", { name: "Save" }));
-  expect(await screen.findByText(/Saved “Groceries since June.xlsx” in the budget's exports folder/)).toBeTruthy();
+  await waitFor(() => expect(assistant.spreadsheet).toHaveBeenCalledTimes(2));
+  expect(screen.queryByText(/Saved/)).toBeNull();
+  // Saving says which file it was.
+  fireEvent.click(within(card).getByRole("button", { name: "Save" }));
+  expect(await screen.findByText("Saved “Groceries since June.xlsx”.")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Show in folder" })).toBeTruthy();
 });
 

@@ -3,9 +3,12 @@ package app.urbudget.nativeapp
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Test
 
 class AssistantPresentationTest {
+    @Before fun english() = EnglishWords.install()
+
     @Test fun tokenBurstsPreserveExactTextAcrossBatchedPublications() {
         val buffer = AssistantStreamBuffer()
         val expected = StringBuilder()
@@ -112,10 +115,10 @@ class AssistantPresentationTest {
 
     @Test fun applySaysHowMuchOfTheCardItMakesWhenSomeIsLeftOut() {
         val rows = listOf(JSONObject().put("key", "t:a"), JSONObject().put("key", "t:b").put("skipped", true), JSONObject().put("key", "r:r1"), JSONObject().put("label", "unkeyed"))
-        assertEquals("Apply 2 of 3", ProposalChoices.partial(rows, choosing = true))
+        assertEquals(ProposalChoices.Partial(2, 3), ProposalChoices.partial(rows, choosing = true))
         assertNull(ProposalChoices.partial(rows, choosing = false))
         assertNull(ProposalChoices.partial(rows.map { JSONObject(it.toString()).put("skipped", false) }, choosing = true))
-        assertEquals("Apply 0 of 3", ProposalChoices.partial(rows.map { JSONObject(it.toString()).put("skipped", true) }, choosing = true))
+        assertEquals(ProposalChoices.Partial(0, 3), ProposalChoices.partial(rows.map { JSONObject(it.toString()).put("skipped", true) }, choosing = true))
     }
 
     /** Key order is the JSON library's, not the revision's. */

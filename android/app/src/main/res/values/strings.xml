@@ -1,0 +1,1945 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The app's words, in English (the source). values-ar/strings.xml has the Arabic, following
+  docs/LOCALIZATION.md: its style, glossary and what is never translated.
+  Arguments are always text (%1$s), never %d: counts and amounts arrive already written with
+  Western digits, so Arabic shows the same digits as the budget. In <plurals>, %1$s is the count.
+-->
+<resources>
+    <string name="app_name" translatable="false">UrBudget</string>
+    <!-- The language these strings are in, sent to the shared engine for its own messages. -->
+    <string name="language_code">en</string>
+    <!-- Language names are always shown in their own language. -->
+    <string name="language_english" translatable="false">English</string>
+    <string name="language_arabic" translatable="false">العربية</string>
+
+    <!-- Messages raised below the screens -->
+    <string name="money_invalid_amount">Enter an amount with up to two decimal places. Decimal separator: %1$s</string>
+    <string name="money_too_large">The amount is too large.</string>
+    <string name="error_services_starting">Budget services are still starting. Try again.</string>
+    <string name="error_service_failed">The service could not complete this request.</string>
+    <string name="error_no_app_to_open">No app could open this file or link.</string>
+    <string name="error_generated_file_unavailable">The generated file is unavailable.</string>
+    <string name="error_file_too_large_to_share">This file is too large to share.</string>
+    <string name="share_file_title">Share %1$s</string>
+
+    <!-- Shared controls -->
+    <string name="common_back">Back</string>
+    <string name="common_cancel">Cancel</string>
+    <string name="common_done">Done</string>
+    <string name="common_save">Save</string>
+    <string name="common_search">Search</string>
+    <string name="common_clear_search">Clear search</string>
+    <string name="common_choose">Choose…</string>
+    <string name="common_no_matching_options">No matching options</string>
+    <string name="common_date">Date</string>
+    <string name="cleared_toggle">Toggle cleared</string>
+    <string name="status_cleared">Cleared</string>
+    <string name="status_reconciled">Reconciled</string>
+    <string name="flag_red">Red</string>
+    <string name="flag_orange">Orange</string>
+    <string name="flag_yellow">Yellow</string>
+    <string name="flag_green">Green</string>
+    <string name="flag_blue">Blue</string>
+    <string name="flag_purple">Purple</string>
+    <string name="error_editor_budget_changed">Your budget changed while this editor was open. Close it and reopen to review the latest values.</string>
+    <string name="error_reopen_editor">The budget changed. Reopen this editor.</string>
+    <string name="month_choose">Choose month</string>
+    <string name="month_previous_year">Previous year</string>
+    <string name="month_next_year">Next year</string>
+    <string name="month_go_to_current">Go to this month</string>
+    <string name="fold_collapse">Collapse %1$s</string>
+    <string name="fold_expand">Expand %1$s</string>
+    <string name="keypad_delete">Delete</string>
+    <string name="keypad_minus">Minus</string>
+    <string name="keypad_times">Times</string>
+    <string name="keypad_divide">Divided by</string>
+
+    <!-- The app's frame: tabs, pages, menus, welcome -->
+    <string name="tab_budget">Budget</string>
+    <string name="tab_transactions">Transactions</string>
+    <string name="tab_accounts">Accounts</string>
+    <string name="tab_reports">Reports</string>
+    <string name="tab_more">More</string>
+    <string name="page_scheduled">Scheduled</string>
+    <string name="page_scheduled_detail">Bills, income and repeating transactions</string>
+    <string name="page_loans">Loan planner</string>
+    <string name="page_loans_detail">Payoff dates and extra payments</string>
+    <string name="page_payees">Payees &amp; rules</string>
+    <string name="page_payees_detail">Default categories and import rules</string>
+    <string name="page_banks">Bank connections</string>
+    <string name="page_banks_detail">Link accounts and review downloads</string>
+    <string name="page_account_sync">Account &amp; sync</string>
+    <string name="page_account_sync_detail">Encrypted sync and your account</string>
+    <string name="page_library">Budget library</string>
+    <string name="page_library_detail">Budgets, backups and fresh starts</string>
+    <string name="page_settings">Settings &amp; data</string>
+    <string name="page_settings_detail">Backups, imports and appearance</string>
+    <string name="assistant_title">Assistant</string>
+    <string name="drawer_assistant_detail">Ask about your budget and review changes</string>
+    <string name="drawer_budget_detail">%1$s · Switch or manage budgets</string>
+    <string name="import_bank_file">Import bank file</string>
+    <string name="import_bank_file_detail">CSV, OFX, QFX or QIF, reviewed first</string>
+    <string name="import_ynab">Import from YNAB</string>
+    <string name="import_ynab_detail">From YNAB\'s API or its export files</string>
+    <string name="common_undo">Undo</string>
+    <string name="common_redo">Redo</string>
+    <string name="common_ok">OK</string>
+    <string name="common_restore">Restore</string>
+    <string name="common_more_actions">More actions</string>
+    <string name="transaction_add">Add transaction</string>
+    <string name="transaction_add_short">Transaction</string>
+    <string name="error_title">Couldn’t complete that</string>
+    <string name="backup_too_large">Choose a JSON backup smaller than 32 MB.</string>
+    <string name="error_file_not_opened">The selected file could not be opened.</string>
+    <string name="backup_open_failed">Could not open this backup.</string>
+    <string name="backup_not_saved">The backup could not be saved.</string>
+    <string name="backup_save_failed">Could not save this backup.</string>
+    <string name="backup_exported">Backup exported</string>
+    <string name="import_replace_title">Replace the open budget?</string>
+    <string name="import_replace_message">Import replaces the budget on this device. Export your current budget first if you want a separate copy. Unknown desktop fields are preserved in JSON backups.</string>
+    <string name="import_backup_action">Import backup</string>
+    <string name="restore_previous_title">Restore the previous budget?</string>
+    <string name="restore_previous_message">Restore the budget saved before your last import or replacement. Export the current budget first to keep a separate copy.</string>
+    <string name="create_replace_title">Replace existing data?</string>
+    <string name="create_replace_message">Existing budget data is still stored on this device. Export it for recovery before creating a new budget.</string>
+    <string name="create_budget_action">Create budget</string>
+    <string name="welcome_default_name">My budget</string>
+    <string name="welcome_sample_name">Sample budget</string>
+    <string name="welcome_title">Make room for\nwhat matters.</string>
+    <string name="welcome_message">A plan for every part of your money. Your budget lives on this device, and your desktop backups work here too.</string>
+    <string name="budget_name">Budget name</string>
+    <string name="budget_currency">Currency</string>
+    <string name="welcome_create">Create my budget</string>
+    <string name="welcome_sample">Explore with sample money</string>
+    <string name="welcome_sample_detail">A filled-in budget to try things on</string>
+    <string name="welcome_import">Import UrBudget backup</string>
+    <string name="welcome_import_detail">A JSON backup from desktop or Android</string>
+    <string name="welcome_sign_in">Sign in and sync</string>
+    <string name="welcome_sign_in_detail">Bring down a budget you sync</string>
+    <string name="welcome_export_recovery">Export existing data for recovery</string>
+    <string name="welcome_restore_previous">Restore previous budget</string>
+
+    <!-- More: scheduled, loan planner, settings -->
+    <string name="repeat_never">Once</string>
+    <string name="repeat_daily">Daily</string>
+    <string name="repeat_weekly">Weekly</string>
+    <string name="repeat_every_other_week">Every other week</string>
+    <string name="repeat_every_4_weeks">Every 4 weeks</string>
+    <string name="repeat_twice_a_month">Twice a month</string>
+    <string name="repeat_monthly">Monthly</string>
+    <string name="repeat_every_other_month">Every other month</string>
+    <string name="repeat_every_3_months">Every 3 months</string>
+    <string name="repeat_every_4_months">Every 4 months</string>
+    <string name="repeat_twice_a_year">Twice a year</string>
+    <string name="repeat_yearly">Yearly</string>
+    <string name="repeat_every_other_year">Every other year</string>
+    <string name="category_split">Split</string>
+    <string name="category_unassigned">Unassigned</string>
+    <string name="transfer_to_account">Transfer: %1$s</string>
+    <string name="common_delete">Delete</string>
+    <string name="common_edit">Edit</string>
+    <string name="common_actions_for">Actions for %1$s</string>
+    <string name="schedule_unnamed">Scheduled transaction</string>
+    <string name="schedule_due_on">Due %1$s</string>
+    <string name="schedule_paused">Paused</string>
+    <string name="schedule_add">Add schedule</string>
+    <string name="schedule_enter_all_due">Enter all due</string>
+    <string name="schedules_empty_title">Nothing scheduled</string>
+    <string name="schedules_empty_detail">Add a transaction with a later date, or choose how often it repeats, and it waits here.</string>
+    <string name="schedules_active_paused">%1$s · %2$s paused</string>
+    <string name="schedules_due_soon">Due in 30 days</string>
+    <string name="schedules_going_out">Going out</string>
+    <string name="schedules_coming_in">Coming in</string>
+    <string name="schedules_help">A transaction dated ahead waits here and is entered on its date, uncleared and waiting for approval; a repeating one carries on from there.</string>
+    <string name="schedule_delete_title">Delete this schedule?</string>
+    <string name="schedule_delete_message">%1$s won\'t be entered again. Transactions it already entered stay. You can undo this.</string>
+    <string name="schedule_enter_now">Enter now</string>
+    <string name="schedule_skip_once">Skip it</string>
+    <string name="schedule_skip_date">Skip %1$s</string>
+    <string name="schedule_resume">Resume</string>
+    <string name="schedule_pause">Pause</string>
+    <string name="schedule_new">New schedule</string>
+    <string name="schedule_edit">Edit schedule</string>
+    <string name="schedule_repeat">Repeat</string>
+    <string name="schedule_due_entered_on_save">If it\'s dated today or earlier, it\'s entered as soon as you save it.</string>
+    <string name="schedule_delete">Delete schedule</string>
+    <string name="loan_line_payment">Payment %1$s · %2$s</string>
+    <string name="loan_line_needs_details">Add loan details to see the payoff date</string>
+    <string name="loans_new_plan">New payoff plan</string>
+    <string name="loans_empty_title">Make a payoff plan</string>
+    <string name="loans_empty_detail">Add a tracking account of a loan type, such as Mortgage or Auto loan, with what you owe as a negative balance. Then add its rate and payment here.</string>
+    <string name="loans_create_plan">Create plan</string>
+    <string name="loans_help">Owed is what\'s left on each loan. The planner tries extra payments without changing anything; Record payment adds the transfer and the month\'s interest.</string>
+    <string name="settings_budget_formats">Name, currency &amp; formats</string>
+    <string name="settings_flag_names">Flag names</string>
+    <string name="settings_flag_names_hint">Name colours such as Reimburse or Tax</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="settings_theme_device">Device</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_language">Language</string>
+    <string name="settings_language_detail">System follows your phone\'s language.</string>
+    <string name="language_system">System</string>
+    <string name="settings_preferences">Preferences</string>
+    <string name="settings_preferences_detail">These apply on this phone, to every budget.</string>
+    <string name="settings_show_needed">Show what targets still need</string>
+    <string name="settings_show_needed_detail">The amount under each category\'s name, such as “120.00 needed”</string>
+    <string name="settings_new_cleared">New transactions start cleared</string>
+    <string name="settings_new_cleared_detail">Useful if you enter transactions once they\'ve reached your bank</string>
+    <string name="settings_open_scheduled">Open scheduled transactions</string>
+    <string name="settings_open_scheduled_detail">Whether the schedules atop each register start unfolded</string>
+    <string name="settings_enter_due">Enter due schedules on opening</string>
+    <string name="settings_enter_due_detail">Scheduled transactions that are due are added when the app opens</string>
+    <string name="settings_open_on">Open on</string>
+    <string name="settings_all_transactions">All transactions</string>
+    <string name="settings_open_on_detail">The page you see when the app starts or you switch budgets.</string>
+    <string name="settings_backups">Backups</string>
+    <string name="settings_export_backup">Export full backup</string>
+    <string name="settings_export_backup_detail">A portable JSON file with every desktop field</string>
+    <string name="settings_import_backup">Import full backup</string>
+    <string name="settings_import_backup_detail">A UrBudget JSON budget from desktop or Android</string>
+    <string name="settings_restore_previous_detail">The budget saved before your last import</string>
+    <string name="settings_imports">Imports</string>
+    <string name="settings_privacy">Privacy &amp; your data</string>
+    <string name="settings_privacy_detail">What stays on this phone and what sync, bank links and the assistant share</string>
+    <string name="settings_footer">%1$s · Stored on this device. Envelope math, targets, reports and imports use the same engine as the desktop app.</string>
+
+    <!-- Transactions: register, filters, transaction editor -->
+    <string name="date_pattern_weekday_month_first">EEEE, MMMM d, yyyy</string>
+    <string name="date_pattern_weekday_day_first">EEEE, d MMMM yyyy</string>
+    <string name="category_needed">Needs a category</string>
+    <string name="category_fallback">Category</string>
+    <string name="category_uncategorized">Uncategorized</string>
+    <string name="category_to_unassigned">To Unassigned</string>
+    <string name="category_label">Category</string>
+    <string name="category_all">All categories</string>
+    <string name="category_choose">Choose category</string>
+    <string name="account_fallback">Account</string>
+    <string name="account_fallback_lower">account</string>
+    <string name="account_this">this account</string>
+    <string name="account_other">the other account</string>
+    <string name="account_label">Account</string>
+    <string name="account_choose">Choose account</string>
+    <string name="account_kind_credit">Credit card</string>
+    <string name="account_kind_tracking">Tracking</string>
+    <string name="account_kind_cash">Cash</string>
+    <string name="account_working_balance">Working balance</string>
+    <string name="account_edit">Edit account</string>
+    <string name="transfer_line_to">To: %1$s</string>
+    <string name="transfer_line_from">From: %1$s</string>
+    <string name="transfer_to">Transfer to %1$s</string>
+    <string name="transfer_from">Transfer from %1$s</string>
+    <string name="transfer_label">Transfer</string>
+    <string name="transfer_open_other_account">Open the other account</string>
+    <string name="payee_none">No payee</string>
+    <string name="payee_label">Payee</string>
+    <string name="payee_choose">Choose payee</string>
+    <string name="payee_search_or_add">Search or add a payee</string>
+    <string name="payee_add_named">Add “%1$s”</string>
+    <string name="payee_section_transfers">TRANSFER TO OR FROM</string>
+    <string name="payee_section_payees">PAYEES</string>
+    <string name="range_this_month">This month</string>
+    <string name="range_last_month">Last month</string>
+    <string name="range_last_3_months">Last 3 months</string>
+    <string name="range_last_6_months">Last 6 months</string>
+    <string name="range_last_12_months">Last 12 months</string>
+    <string name="range_year_to_date">Year to date</string>
+    <string name="range_last_year">Last year</string>
+    <string name="range_custom">Custom range</string>
+    <string name="export_destination_failed">Could not open export destination.</string>
+    <string name="export_register_failed">Could not export the register.</string>
+    <string name="selection_end">End selection</string>
+    <string name="selection_none">Select none</string>
+    <string name="selection_all">Select all</string>
+    <string name="selection_select">Select</string>
+    <plurals name="transactions_selected">
+        <item quantity="one">%1$s selected</item>
+        <item quantity="other">%1$s selected</item>
+    </plurals>
+    <string name="register_search_hint">Payee, category, memo, amount</string>
+    <string name="filters_title">Filters</string>
+    <string name="filters_count">Filters · %1$s</string>
+    <string name="filters_clear">Clear filters</string>
+    <string name="filters_amount_help">Amounts match outflows and inflows alike.</string>
+    <string name="dates_title">Dates</string>
+    <string name="date_any">Any date</string>
+    <string name="date_from">From</string>
+    <string name="date_through">Through</string>
+    <string name="date_range">%1$s – %2$s</string>
+    <string name="date_range_from">From %1$s</string>
+    <string name="date_range_through">Through %1$s</string>
+    <string name="date_today_suffix">%1$s · Today</string>
+    <string name="date_scheduled_suffix">%1$s · Scheduled</string>
+    <string name="status_label">Status</string>
+    <string name="status_any">Any status</string>
+    <string name="status_uncleared">Uncleared</string>
+    <string name="status_not_reconciled">Not reconciled</string>
+    <string name="status_needs_approval">Needs approval</string>
+    <string name="flag_label">Flag</string>
+    <string name="flag_none">No flag</string>
+    <string name="flag_flagged">Flagged</string>
+    <string name="flag_not_flagged">Not flagged</string>
+    <string name="flag_any_or_none">Any or no flag</string>
+    <string name="common_export">Export</string>
+    <string name="common_review">Review</string>
+    <string name="common_approve">Approve</string>
+    <string name="common_apply">Apply</string>
+    <plurals name="transactions_to_approve">
+        <item quantity="one">%1$s transaction to approve</item>
+        <item quantity="other">%1$s transactions to approve</item>
+    </plurals>
+    <string name="scheduled_band">Scheduled · %1$s</string>
+    <string name="scheduled_band_30_days">30 days: %1$s</string>
+    <string name="show_fewer">Show fewer</string>
+    <plurals name="show_more">
+        <item quantity="one">Show %1$s more</item>
+        <item quantity="other">Show %1$s more</item>
+    </plurals>
+    <string name="register_no_matches">No matches</string>
+    <string name="register_no_matches_detail">Nothing matches this search and these filters.</string>
+    <string name="register_empty_title">No transactions here</string>
+    <string name="register_empty_detail">Add a purchase, income, or a transfer to see your money in motion.</string>
+    <string name="bulk_categorize">Categorize %1$s</string>
+    <plurals name="delete_transactions_title">
+        <item quantity="one">Delete %1$s transactions?</item>
+        <item quantity="other">Delete %1$s transactions?</item>
+    </plurals>
+    <string name="delete_transactions_message">Both sides of transfers are removed too. You can undo this.</string>
+    <string name="band_fold">Fold %1$s</string>
+    <string name="band_show">Show %1$s</string>
+    <string name="transaction_edit">Edit transaction</string>
+    <string name="transaction_new">New transaction</string>
+    <string name="transaction_delete">Delete transaction</string>
+    <string name="transaction_delete_title">Delete transaction?</string>
+    <string name="transaction_delete_message">Both sides of a transfer will be removed. You can undo the change.</string>
+    <string name="transaction_schedule_action">Schedule</string>
+    <string name="transaction_choose_account">Choose an account.</string>
+    <string name="transaction_finish_sum">Finish the sum first.</string>
+    <string name="transaction_use_direction">Use Outflow or Inflow to choose the direction.</string>
+    <string name="transaction_different_transfer">Choose a different transfer account.</string>
+    <string name="transaction_saved_repeats">Saved. It repeats %1$s.</string>
+    <string name="transaction_scheduled_repeating">Scheduled %1$s from %2$s.</string>
+    <string name="transaction_scheduled_for">Scheduled for %1$s. It\'s entered on that day.</string>
+    <string name="transaction_needs_account">Create an account in Accounts before adding your first transaction.</string>
+    <string name="transaction_reconciled_warning">This transaction is reconciled. Changing its amount, date, or account changes previously reconciled history.</string>
+    <string name="transaction_imported_unapproved">Imported, not yet approved</string>
+    <string name="schedule_unnamed_short">Scheduled</string>
+    <string name="schedule_enter">Enter</string>
+    <string name="schedule_skip">Skip</string>
+    <string name="schedule_actions">Schedule actions</string>
+    <string name="repeat_none">Never</string>
+    <string name="balance_cleared">Cleared</string>
+    <string name="balance_uncleared">Uncleared</string>
+    <string name="card_make_payment">Make a payment</string>
+    <string name="reconcile_action">Reconcile</string>
+    <string name="amount_label">Amount</string>
+    <string name="amount_at_least">At least</string>
+    <string name="amount_at_most">At most</string>
+    <string name="amount_edit">Edit amount</string>
+    <string name="amount_type">Type the amount</string>
+    <string name="amount_tap_to_change">Tap to change</string>
+    <string name="sort_label">Sort</string>
+    <string name="sort_newest">Newest first</string>
+    <string name="sort_oldest">Oldest first</string>
+    <string name="direction_outflow">Outflow</string>
+    <string name="direction_inflow">Inflow</string>
+    <string name="memo_label">Memo</string>
+    <string name="cleared_in">Cleared in %1$s</string>
+    <string name="reconciled_in">Reconciled in %1$s</string>
+    <string name="reconciled_locked">Locked by reconciliation</string>
+    <string name="choose_field">Choose %1$s</string>
+    <string name="split_label">Split</string>
+    <string name="split_between_categories">Split between categories</string>
+    <string name="split_category">Split category</string>
+    <string name="split_fully">Fully split</string>
+    <string name="split_left">%1$s left to split</string>
+    <string name="split_over">%1$s over the total</string>
+    <string name="split_undo">Undo split</string>
+    <string name="split_share_help">Each line is its share of the total.</string>
+    <string name="split_remove_line">Remove split line %1$s</string>
+    <string name="split_use_left">Use the %1$s left</string>
+    <string name="split_add_line">Add line</string>
+    <string name="split_two_lines">Add at least two split lines.</string>
+    <string name="split_must_equal_total">The split amounts must equal the transaction total.</string>
+    <plurals name="bulk_edit_title">
+        <item quantity="one">Edit %1$s transactions</item>
+        <item quantity="other">Edit %1$s transactions</item>
+    </plurals>
+    <string name="bulk_change">Change</string>
+    <string name="bulk_cleared_status">Cleared status</string>
+    <string name="bulk_duplicate">Duplicate</string>
+    <string name="bulk_duplicate_help">Makes a copy of each selected transaction.</string>
+    <string name="bulk_delete_confirm">Delete the selected transactions and both transfer sides</string>
+
+    <!-- Budget: categories, groups, targets -->
+    <string name="target_amount_words">%1$s %2$s</string>
+    <string name="target_needed_this_month">needed this month</string>
+    <string name="target_more_needed_this_month">more needed this month</string>
+    <string name="target_needed_by_day">needed by the %1$s</string>
+    <string name="target_more_needed_by_day">more needed by the %1$s</string>
+    <string name="target_needed_by_date">needed by %1$s</string>
+    <string name="target_more_needed_by_date">more needed by %1$s</string>
+    <string name="target_needed_eventually">needed eventually</string>
+    <string name="target_more_needed_eventually">more needed eventually</string>
+    <string name="target_funded">Funded</string>
+    <string name="target_fully_spent">Fully spent</string>
+    <string name="ordinal_ends_1">%1$sst</string>
+    <string name="ordinal_ends_2">%1$snd</string>
+    <string name="ordinal_ends_3">%1$srd</string>
+    <string name="ordinal_other">%1$sth</string>
+    <string name="deadline_month_first">%1$s %2$s</string>
+    <string name="deadline_day_first">%1$s %2$s</string>
+    <string name="category_overspent_card">Overspent on a card</string>
+    <string name="category_overspent">Overspent</string>
+    <string name="category_snoozed">Snoozed</string>
+    <string name="view_all">All</string>
+    <string name="view_underfunded">Underfunded</string>
+    <string name="view_overfunded">Overfunded</string>
+    <string name="view_available">Money available</string>
+    <string name="view_overspent">Overspent</string>
+    <string name="view_snoozed">Snoozed</string>
+    <string name="view_show_all">Show all</string>
+    <string name="view_empty_title">Nothing to show</string>
+    <string name="view_empty_detail">No categories match this view this month.</string>
+    <string name="group_hidden">Hidden categories</string>
+    <string name="budget_views">Views</string>
+    <string name="budget_view_showing">Showing</string>
+    <string name="budget_unavailable_title">Budget calculation unavailable</string>
+    <string name="budget_unavailable_detail">Resolve the reported error or import a valid backup in Settings &amp; data. Your saved data remains available to export.</string>
+    <string name="month_back_to">Back to %1$s</string>
+    <string name="month_previous">Previous month</string>
+    <string name="month_next">Next month</string>
+    <string name="future_assigned">Assigned in future months: %1$s.</string>
+    <string name="future_short_by">%1$s is short by %2$s.</string>
+    <string name="future_move_back">Move funds back from a future month.</string>
+    <string name="future_held_back">It is held back from this month\'s unassigned money.</string>
+    <plurals name="needs_category_notice">
+        <item quantity="one">%1$s transaction needs a category. %2$s counts as overspending until it has one.</item>
+        <item quantity="other">%1$s transactions need a category. %2$s counts as overspending until they have one.</item>
+    </plurals>
+    <string name="budget_empty_title">Start your plan</string>
+    <string name="budget_empty_detail">Create categories for bills, everyday spending, and the things you’re saving for.</string>
+    <string name="category_add">Add category</string>
+    <string name="category_add_a">Add a category</string>
+    <string name="category_new">New category</string>
+    <string name="category_assign_to">Assign to %1$s</string>
+    <string name="category_move_money_for">Move money for %1$s</string>
+    <string name="group_hid_categories">Hid the categories in %1$s. Find them under Hidden categories.</string>
+    <string name="group_new">New group</string>
+    <string name="group_actions_for">Actions for group %1$s</string>
+    <string name="group_rename">Rename group</string>
+    <string name="group_hide_all">Hide all categories</string>
+    <string name="group_delete_menu">Delete group…</string>
+    <string name="unassigned_assign">Assign money</string>
+    <string name="unassigned_tap_to_assign">Tap to assign</string>
+    <string name="unassigned_over_assigned">More is assigned than you have</string>
+    <string name="unassigned_all_assigned">All of it is assigned</string>
+    <plurals name="overspent_categories">
+        <item quantity="one">Overspent category</item>
+        <item quantity="other">Overspent categories</item>
+    </plurals>
+    <string name="common_show">Show</string>
+    <string name="common_expand_all">Expand all</string>
+    <string name="common_collapse_all">Collapse all</string>
+    <string name="common_move_up">Move up</string>
+    <string name="common_move_down">Move down</string>
+    <string name="common_open_named">Open %1$s</string>
+    <string name="budget_show_hidden">Show hidden categories</string>
+    <string name="budget_assigned">Assigned</string>
+    <string name="budget_available">Available</string>
+    <string name="month_note_income">Month note &amp; income</string>
+    <string name="uncategorized_show">Show uncategorized transactions</string>
+
+    <!-- Budget sheets: category details, targets, moving money, quick assign -->
+    <string name="quick_assign">Quick assign</string>
+    <string name="move_quick_assign_named">Quick assign: %1$s</string>
+    <string name="move_merged_from">Merged from %1$s</string>
+    <string name="move_deleted_category">a deleted category</string>
+    <string name="move_moved_from">Moved from %1$s</string>
+    <string name="move_moved_to">Moved to %1$s</string>
+    <string name="move_assigned">Assigned</string>
+    <string name="move_returned">Returned to Unassigned</string>
+    <string name="move_earlier">Earlier changes</string>
+    <string name="move_not_itemised">Not itemised</string>
+    <string name="move_money">Move money</string>
+    <string name="move_swap">Swap</string>
+    <string name="move_to_label">To</string>
+    <string name="move_action">Move</string>
+    <string name="move_choose_both">Choose where the money comes from and where it goes.</string>
+    <string name="move_choose_different">Choose two different places.</string>
+    <string name="move_amount_required">Enter an amount to move.</string>
+    <string name="move_toast">Moved %1$s from %2$s to %3$s.</string>
+    <string name="move_from_title">Move from</string>
+    <string name="move_to_title">Move to</string>
+    <string name="cover_overspending">Cover overspending</string>
+    <string name="target_kind_set_aside">Set aside</string>
+    <string name="target_kind_refill">Refill up to</string>
+    <string name="target_kind_balance">Balance target</string>
+    <string name="target_kind_debt">Loan payment target</string>
+    <string name="target_kind_monthly_funding">Monthly funding</string>
+    <string name="cadence_by_date">by %1$s</string>
+    <string name="cadence_once_by">once, by %1$s</string>
+    <string name="cadence_each_month">each month</string>
+    <string name="cadence_each_week">each week</string>
+    <string name="cadence_each_year">each year</string>
+    <string name="cadence_every_two_years">every two years</string>
+    <plurals name="cadence_every_months">
+        <item quantity="one">every %1$s months</item>
+        <item quantity="other">every %1$s months</item>
+    </plurals>
+    <plurals name="cadence_every_weeks">
+        <item quantity="one">every %1$s weeks</item>
+        <item quantity="other">every %1$s weeks</item>
+    </plurals>
+    <plurals name="cadence_every_years">
+        <item quantity="one">every %1$s years</item>
+        <item quantity="other">every %1$s years</item>
+    </plurals>
+    <string name="cadence_option_once">Once by a date</string>
+    <string name="cadence_option_every_two_years">Every two years</string>
+    <plurals name="cadence_option_every_months">
+        <item quantity="one">Every %1$s months</item>
+        <item quantity="other">Every %1$s months</item>
+    </plurals>
+    <string name="category_group_hidden">%1$s · Hidden</string>
+    <string name="category_hid">Hid %1$s. Find it under Hidden categories.</string>
+    <string name="category_shown_again">%1$s is shown again.</string>
+    <string name="category_carried">Carried from last month</string>
+    <string name="category_assigned_in">Assigned in %1$s</string>
+    <string name="category_upcoming">Upcoming</string>
+    <string name="category_upcoming_detail">Scheduled this month</string>
+    <string name="category_cover">Cover</string>
+    <string name="category_moves_this_month">Moves this month</string>
+    <string name="category_actions">Category actions</string>
+    <string name="category_details">Name, group &amp; note</string>
+    <string name="category_organize">Move or reorder</string>
+    <string name="category_moves_menu">Money moves this month</string>
+    <string name="category_money_moves">Money moves</string>
+    <string name="category_show">Show category</string>
+    <string name="category_hide">Hide category</string>
+    <string name="category_delete">Delete category</string>
+    <string name="category_name_group_required">Enter a name and group.</string>
+    <string name="category_delete_confirm_required">Confirm the category deletion.</string>
+    <string name="category_no_moves">No money moved for this category this month.</string>
+    <string name="category_moves_add_up">Moves add up to what\'s assigned in %1$s.</string>
+    <string name="category_hidden">Hidden</string>
+    <string name="category_hidden_detail">Hidden categories keep their money and history</string>
+    <string name="category_delete_unused">It has no transactions or assigned money.</string>
+    <string name="category_delete_move_history">Move its history into</string>
+    <string name="category_delete_help">Transactions, schedules, defaults and loan categories move to the destination. Monthly assignments combine with its assignments; Unassigned takes them back.</string>
+    <string name="category_delete_confirm">Delete this category and move its history</string>
+    <string name="category_choose_a">Choose a category</string>
+    <string name="category_search">Search categories</string>
+    <string name="category_search_none">No categories match “%1$s”.</string>
+    <string name="category_name">Category name</string>
+    <string name="common_close">Close</string>
+    <string name="common_add">Add</string>
+    <string name="card_set_aside">Set aside for the card</string>
+    <string name="budget_activity">Activity</string>
+    <string name="target_label">Target</string>
+    <string name="target_edit">Edit target</string>
+    <string name="target_create">Create target</string>
+    <string name="target_remove">Remove target</string>
+    <string name="target_behaviour_set">Set aside each period</string>
+    <string name="target_behaviour_set_hint">Assign the whole amount every period, whatever is left over.</string>
+    <string name="target_behaviour_refill">Refill up to each period</string>
+    <string name="target_behaviour_refill_hint">Top up to the amount; money carried forward counts.</string>
+    <string name="target_behaviour_balance">Maintain a category balance</string>
+    <string name="target_behaviour_balance_hint">Keep at least this much available.</string>
+    <string name="target_behaviour_by_date">Reach a balance by a date</string>
+    <string name="target_behaviour_by_date_hint">Save up to the amount by a chosen date.</string>
+    <string name="target_behaviour_monthly_funding_hint">An imported target: fund this amount each month.</string>
+    <string name="target_behaviour_debt">Monthly debt payment</string>
+    <string name="target_behaviour_debt_hint">An imported target for a loan payment.</string>
+    <string name="target_amount_required">Enter a target amount, or remove the target.</string>
+    <string name="target_interval_range">Choose an interval from 1 to 100.</string>
+    <string name="target_set_toast">Set the %1$s target to %2$s.</string>
+    <string name="target_removed_toast">Removed the %1$s target.</string>
+    <string name="target_balance_to_reach">Balance to reach</string>
+    <string name="target_amount_each_period">Amount each period</string>
+    <string name="target_repeats">Repeats</string>
+    <string name="target_interval_weeks">Every how many weeks</string>
+    <string name="target_interval_years">Every how many years</string>
+    <string name="target_interval_months">Every how many months</string>
+    <string name="target_day_of_week">Day of week</string>
+    <string name="target_needed_by">Needed by</string>
+    <string name="target_first_due">First due date</string>
+    <string name="target_reach_by">Reach it by</string>
+    <string name="target_starts">Starts</string>
+    <string name="target_snooze">Snooze this month</string>
+    <string name="target_snooze_detail">It asks for nothing until next month</string>
+    <string name="note_add">Add a note</string>
+    <string name="note_label">Note</string>
+    <string name="show_all_count">Show all %1$s</string>
+    <string name="assign_needed">Needed %1$s</string>
+    <string name="assign_cover">Cover %1$s</string>
+    <!-- A keypad shortcut: what it is (%1$s) and the amount it sets (%2$s). -->
+    <string name="assign_suggestion">%1$s %2$s</string>
+    <string name="assign_spent_last_month">Spent last month</string>
+    <string name="assign_average_assigned">Avg assigned</string>
+    <string name="assign_average_spent">Avg spent</string>
+    <string name="assign_action">Assign</string>
+    <string name="sum_finish_before_saving">Finish the sum before saving.</string>
+    <string name="group_rename_or_merge">Rename or merge group</string>
+    <string name="group_name_required">Enter a group name.</string>
+    <string name="group_merged">Merged %1$s into %2$s.</string>
+    <string name="group_label">Group</string>
+    <string name="group_name">Group name</string>
+    <string name="group_rename_help">All categories in this group move together. An existing group name merges the groups.</string>
+    <string name="group_new_ellipsis">New group…</string>
+    <string name="group_new_name">New group name</string>
+    <string name="group_name_taken">There is already a group called %1$s.</string>
+    <string name="group_rename_merges">An existing group\'s name merges the two groups.</string>
+    <string name="group_deleted_moved">Deleted %1$s; its categories moved to %2$s.</string>
+    <string name="group_empty">The group is empty.</string>
+    <plurals name="group_move_categories_to">
+        <item quantity="one">Move its %1$s category to</item>
+        <item quantity="other">Move its %1$s categories to</item>
+    </plurals>
+    <string name="deleted_named">Deleted %1$s.</string>
+    <string name="delete_named">Delete %1$s</string>
+    <string name="name_label">Name</string>
+    <string name="organize_end_of_group">End of group</string>
+    <string name="organize_keep_group_position">Keep group position</string>
+    <string name="organize_end_of_groups">End of groups</string>
+    <string name="organize_place_before">Place before</string>
+    <string name="organize_place_group_before">Place group before</string>
+    <string name="unassigned_available_to_assign">Available to assign</string>
+    <string name="unassigned_ready">Unassigned: ready for a job</string>
+    <string name="unassigned_still_needed">%1$s still needed this month</string>
+    <string name="unassigned_funding_complete">This month\'s funding is complete</string>
+    <string name="unassigned_take_back">Take money back</string>
+    <string name="unassigned_assign_to_category">Assign to a category</string>
+    <string name="unassigned_carried">Carried over</string>
+    <string name="unassigned_income">Income this month</string>
+    <string name="unassigned_targets_income">Targets &amp; income</string>
+    <string name="unassigned_month_targets">%1$s targets</string>
+    <string name="unassigned_recent_changes">Recent changes</string>
+    <string name="unassigned_change">Change</string>
+    <string name="expected_income">Expected income</string>
+    <string name="expected_income_compare">Compare your targets with what you expect to earn</string>
+    <string name="expected_income_short">Targets are %1$s more than expected income</string>
+    <string name="expected_income_left">%1$s left after targets</string>
+    <string name="expected_income_not_negative">Expected income must be zero or positive.</string>
+    <string name="expected_income_field">Expected monthly income (%1$s)</string>
+    <string name="expected_income_help">Expected income helps compare your targets with your plan. It doesn’t add money to Unassigned.</string>
+    <string name="month_note">Month note</string>
+    <string name="last_month_lower">last month</string>
+    <string name="quick_underfunded">Underfunded</string>
+    <string name="quick_group_fund">Fund targets</string>
+    <string name="quick_underfunded_hint">Assign what targets still need and cover overspending.</string>
+    <string name="quick_assigned_last_month">Assigned last month</string>
+    <string name="quick_group_repeat">Repeat past months</string>
+    <string name="quick_assigned_last_month_hint">Assign what each category got last month.</string>
+    <string name="quick_spent_last_month">Spent last month</string>
+    <string name="quick_spent_last_month_hint">Assign what each category spent last month.</string>
+    <string name="quick_average_assigned">Average assigned</string>
+    <string name="quick_average_assigned_hint">Assign each category\'s 12-month average assignment.</string>
+    <string name="quick_average_spent">Average spent</string>
+    <string name="quick_average_spent_hint">Assign each category\'s 12-month average spending.</string>
+    <string name="quick_reduce_overfunding">Reduce overfunding</string>
+    <string name="quick_group_clean">Clean up</string>
+    <string name="quick_reduce_overfunding_hint">Return what\'s beyond each target to Unassigned.</string>
+    <string name="quick_reset_available">Reset available amounts</string>
+    <string name="quick_reset_available_hint">Bring every Available to 0.00.</string>
+    <string name="quick_reset_assigned">Reset assigned amounts</string>
+    <string name="quick_reset_assigned_hint">Set this month\'s assignments to 0.00.</string>
+    <!-- What a Quick assign option does: %1$s is this month's name, %2$s last month's. -->
+    <string name="quick_explain_underfunded">Assigns what each category still needs for its %1$s target, and covers overspending. It never assigns more than Unassigned holds: overspent categories go first, then the targets due soonest, then credit card payments.</string>
+    <string name="quick_explain_assigned_last_month">Replaces each category\'s %1$s assignment with what you assigned to it in %2$s.</string>
+    <string name="quick_explain_spent_last_month">Replaces each category\'s %1$s assignment with what it spent in %2$s. Categories that spent nothing get 0.00, and credit card payments stay as they are.</string>
+    <string name="quick_explain_average_assigned">Replaces each category\'s %1$s assignment with its average monthly assignment over the last 12 months.</string>
+    <string name="quick_explain_average_spent">Replaces each category\'s %1$s assignment with its average monthly spending over the last 12 months. Credit card payments stay as they are.</string>
+    <string name="quick_explain_reduce_overfunding">Lowers the %1$s assignment of categories holding more than their target needs, and returns the extra to Unassigned.</string>
+    <string name="quick_explain_reset_available">Changes each category\'s %1$s assignment so its Available becomes 0.00. Money set aside, including what carried over from %2$s, returns to Unassigned.</string>
+    <string name="quick_explain_reset_assigned">Sets each category\'s %1$s assignment to 0.00. Carried-over money and spending stay, so each Available drops by what was assigned.</string>
+    <string name="quick_no_change">No change</string>
+    <string name="quick_toast_assigned">%1$s: assigned %2$s.</string>
+    <string name="quick_toast_removed">%1$s: removed %2$s.</string>
+    <string name="quick_returns">Returns</string>
+    <string name="quick_assigns">Assigns</string>
+    <!-- An amount before (%1$s) and after (%2$s); Arabic points its arrow the way it reads. -->
+    <string name="change_from_to">%1$s → %2$s</string>
+    <string name="quick_categories_change">%1$s of %2$s categories change.</string>
+    <string name="quick_over_assigns">This assigns more than you have: Unassigned would be %1$s.</string>
+    <string name="quick_nothing_to_change">Nothing to change for %1$s.</string>
+    <string name="quick_row_detail">%1$s → %2$s · Available %3$s</string>
+    <string name="quick_nothing_to_apply">Nothing to apply</string>
+    <plurals name="quick_visible_categories">
+        <item quantity="one">All %1$s visible categories in %2$s.</item>
+        <item quantity="other">All %1$s visible categories in %2$s.</item>
+    </plurals>
+    <plurals name="quick_categories_stay_overspent">
+        <item quantity="one">%1$s category stays overspent.</item>
+        <item quantity="other">%1$s categories stay overspent.</item>
+    </plurals>
+    <plurals name="quick_apply_to">
+        <item quantity="one">Apply to %1$s category</item>
+        <item quantity="other">Apply to %1$s categories</item>
+    </plurals>
+
+    <!-- Accounts: list, account editor, reconciling -->
+    <string name="account_type_checking">Checking</string>
+    <string name="account_type_savings">Savings</string>
+    <string name="account_type_cash">Cash</string>
+    <string name="account_type_line_of_credit">Line of credit</string>
+    <string name="account_type_investment">Investment</string>
+    <string name="account_type_retirement">Retirement</string>
+    <string name="account_type_mortgage">Mortgage</string>
+    <string name="account_type_auto_loan">Auto loan</string>
+    <string name="account_type_student_loan">Student loan</string>
+    <string name="account_type_personal_loan">Personal loan</string>
+    <string name="account_type_medical_debt">Medical debt</string>
+    <string name="account_type_property">Property</string>
+    <string name="account_type_vehicle">Vehicle</string>
+    <string name="account_type_receivable">Receivable</string>
+    <string name="account_type_other_asset">Other asset</string>
+    <string name="account_type_other_debt">Other debt</string>
+    <string name="account_not_in_net_worth">%1$s · Not in net worth</string>
+    <string name="accounts_section_cash">Cash</string>
+    <string name="accounts_section_credit">Credit</string>
+    <string name="accounts_section_tracking">Tracking</string>
+    <string name="accounts_section_closed">Closed</string>
+    <string name="accounts_empty_title">Add your first account</string>
+    <string name="accounts_empty_detail">Start with your checking or spending account and its current balance.</string>
+    <string name="account_add">Add account</string>
+    <string name="account_closed_toast">Closed %1$s.</string>
+    <string name="account_closed_with_balance">Closed %1$s. It still has a balance of %2$s.</string>
+    <string name="account_reopened">Reopened %1$s.</string>
+    <string name="account_loan_details">Loan details &amp; payoff</string>
+    <string name="account_reopen">Reopen account</string>
+    <string name="account_close">Close account</string>
+    <string name="account_exists">This account already exists.</string>
+    <string name="account_name_required">Enter an account name.</string>
+    <string name="account_name">Account name</string>
+    <string name="account_type">Account type</string>
+    <string name="account_kind_cash_help">Its money is in your budget, ready to assign.</string>
+    <string name="account_kind_credit_help">A credit card payment category is created for it.</string>
+    <string name="account_kind_tracking_help">Tracked outside the budget, in net worth.</string>
+    <string name="account_current_balance">Current balance (%1$s)</string>
+    <string name="account_opening_balance">Opening balance (%1$s)</string>
+    <string name="account_owed_negative">Enter what you owe as a negative amount.</string>
+    <string name="account_debt_negative">For debt, enter a negative balance.</string>
+    <string name="account_opening_changes_history">Changing an opening balance changes the account’s entire history.</string>
+    <string name="account_kind_switch_help">To switch between cash, credit and tracking, create a new account so past transactions keep their budget treatment.</string>
+    <string name="account_count_in_net_worth">Count in net worth</string>
+    <string name="account_count_in_net_worth_off">Its balance still shows and appears in reports, but isn\'t added to net worth.</string>
+    <string name="account_closed">Account closed</string>
+    <string name="account_closed_detail">History and balance stay in the budget.</string>
+    <string name="net_worth">Net worth</string>
+    <string name="common_no">No</string>
+    <string name="common_yes">Yes</string>
+    <string name="reconcile_title">Reconcile %1$s</string>
+    <string name="reconcile_adjust_finish">Adjust &amp; finish</string>
+    <!-- The question is split around the cleared balance, which shows large between the two halves. -->
+    <string name="reconcile_question_start">Is your cleared balance</string>
+    <string name="reconcile_question_end">what your bank shows?</string>
+    <string name="reconcile_bank_balance">Bank\'s balance</string>
+    <string name="reconcile_statement_date">Statement date</string>
+    <string name="reconcile_help">Mark the transactions on your statement as cleared first; any difference left becomes an adjustment.</string>
+    <string name="reconcile_match">Balances match. Cleared transactions will be locked as reconciled.</string>
+    <string name="reconcile_adjustment">An adjustment of %1$s will be recorded. Look for missing or incorrect transactions first.</string>
+
+    <!-- Reports: figures, tiles, charts and their words -->
+    <plurals name="report_days">
+        <item quantity="one">%1$s day</item>
+        <item quantity="other">%1$s days</item>
+    </plurals>
+    <!-- A chart readout of days; English keeps "days" for every number, as the chart always has. -->
+    <plurals name="report_days_value">
+        <item quantity="one">%1$s days</item>
+        <item quantity="other">%1$s days</item>
+    </plurals>
+    <!-- A change in days: %2$s is the signed number ("+5"); the plural form follows its size. -->
+    <plurals name="report_days_change">
+        <item quantity="one">%2$s days</item>
+        <item quantity="other">%2$s days</item>
+    </plurals>
+    <string name="report_days_axis">%1$sd</string>
+    <string name="section_cash_bank">Cash and bank</string>
+    <string name="section_investments">Investments</string>
+    <string name="section_property">Property</string>
+    <string name="section_vehicles">Vehicles</string>
+    <string name="section_receivables">Receivables</string>
+    <string name="section_other_assets">Other assets</string>
+    <string name="section_credit_cards">Credit cards</string>
+    <string name="section_lines_of_credit">Lines of credit</string>
+    <string name="section_mortgages">Mortgages</string>
+    <string name="section_loans">Loans</string>
+    <string name="section_other_debts">Other debts</string>
+    <string name="section_in_credit">Accounts in credit</string>
+    <string name="section_overdrawn">Overdrawn accounts</string>
+    <string name="range_all_dates">All dates</string>
+    <string name="filter_none">None</string>
+    <string name="report_accounts_budget">Budget</string>
+    <string name="report_accounts_tracking">Tracking</string>
+    <string name="report_accounts_closed">Closed</string>
+    <string name="report_total">Total</string>
+    <!-- A chart's average line: its name (%1$s) and the amount (%2$s). -->
+    <string name="report_average_line">%1$s %2$s</string>
+    <string name="report_other">Other</string>
+    <string name="report_spent_in">Spent in %1$s</string>
+    <string name="report_spending">Spending</string>
+    <string name="report_of_all_spending">%1$s of all spending</string>
+    <plurals name="report_over_months">
+        <item quantity="one">over %1$s month</item>
+        <item quantity="other">over %1$s months</item>
+    </plurals>
+    <string name="report_monthly_average">Monthly average</string>
+    <string name="report_biggest_category">Biggest category</string>
+    <string name="report_biggest_group">Biggest group</string>
+    <string name="report_categories_with_spending">Categories with spending</string>
+    <string name="report_groups_with_spending">Groups with spending</string>
+    <string name="report_categories_help_group">Select a category to see its transactions.</string>
+    <string name="report_categories_help_all">Select a group to see its categories.</string>
+    <string name="report_categories_help_refunds">Refunds reduce spending, so a category can be negative. The ring shows only groups or categories with net spending; the total and list include refunds.</string>
+    <string name="report_spent">Spent</string>
+    <string name="report_received">Received</string>
+    <string name="report_changes_title">%1$s against your average</string>
+    <string name="report_changes_title_partial">%1$s so far against your average</string>
+    <plurals name="report_changes_aside">
+        <item quantity="one">the %1$s-month average before it</item>
+        <item quantity="other">the %1$s-month average before it</item>
+    </plurals>
+    <string name="report_avg">avg %1$s</string>
+    <string name="report_spent_less">Spent less than average</string>
+    <string name="report_spent_more">Spent more than average</string>
+    <plurals name="report_at_payees">
+        <item quantity="one">at %1$s payee</item>
+        <item quantity="other">at %1$s payees</item>
+    </plurals>
+    <string name="report_top_payee">Top payee</string>
+    <string name="report_amount_share_shown">%1$s · %2$s of spending shown</string>
+    <string name="report_average_per_transaction">Average per transaction</string>
+    <!-- English says "transactions" for every count here, as it always has. -->
+    <plurals name="report_transactions_count">
+        <item quantity="one">%1$s transactions</item>
+        <item quantity="other">%1$s transactions</item>
+    </plurals>
+    <plurals name="report_transactions_plural">
+        <item quantity="one">%1$s transaction</item>
+        <item quantity="other">%1$s transactions</item>
+    </plurals>
+    <string name="report_top_5_payees">Top 5 payees</string>
+    <string name="report_of_spending_shown">of spending shown</string>
+    <string name="report_share_of_spending_shown">%1$s of spending shown</string>
+    <plurals name="report_top_payees">
+        <item quantity="one">Top %1$s payees</item>
+        <item quantity="other">Top %1$s payees</item>
+    </plurals>
+    <string name="report_where_money_goes">Where your money goes</string>
+    <string name="report_payees_aside">Bigger tiles, more spent</string>
+    <string name="report_payees_aside_share">%1$s of spending shown · Bigger tiles, more spent</string>
+    <!-- A payee's tile: how many transactions (%1$s) and the average (%2$s). -->
+    <plurals name="report_payee_tile_more">
+        <item quantity="one">%1$s transaction · avg %2$s</item>
+        <item quantity="other">%1$s transactions · avg %2$s</item>
+    </plurals>
+    <string name="report_payees_help">Select a payee to see its transactions. Tiles show payees with net spending; the total and table include refunds.</string>
+    <string name="report_payees_help_refunds">Net refunds of %1$s at other payees reduce the total.</string>
+    <plurals name="report_more_payees">
+        <item quantity="one">%1$s more payee · %2$s</item>
+        <item quantity="other">%1$s more payees · %2$s</item>
+    </plurals>
+    <!-- A payee's row: the count of transactions is %1$s, the share %2$s, the average %3$s. -->
+    <plurals name="report_payee_row_detail">
+        <item quantity="one">%2$s · %1$s transaction · avg %3$s</item>
+        <item quantity="other">%2$s · %1$s transactions · avg %3$s</item>
+    </plurals>
+    <string name="report_trend">Trend</string>
+    <!-- The trend tile's note: the later half of the months (%1$s of them) against the earlier half. -->
+    <plurals name="report_trend_note">
+        <item quantity="one">last %1$s months against the %1$s before</item>
+        <item quantity="other">last %1$s months against the %1$s before</item>
+    </plurals>
+    <string name="report_trend_needs_two">needs two months or more</string>
+    <string name="report_chart_spending_by_group">Spending by month, stacked by category group</string>
+    <string name="report_chart_spending_by_month">Spending by month</string>
+    <string name="report_average">Average</string>
+    <string name="report_highest_month">Highest month</string>
+    <string name="report_lowest_month">Lowest month</string>
+    <!-- A day in a heading: its weekday (%1$s) and date (%2$s). -->
+    <string name="report_day_title">%1$s %2$s</string>
+    <string name="report_average_a_day">Average a day</string>
+    <string name="report_no_spend_days">No-spend days</string>
+    <plurals name="report_of_days">
+        <item quantity="one">of %1$s days · %2$s</item>
+        <item quantity="other">of %1$s days · %2$s</item>
+    </plurals>
+    <string name="report_biggest_day">Biggest day</string>
+    <string name="report_busiest_weekday">Busiest weekday</string>
+    <string name="report_on_average">%1$s on average</string>
+    <string name="report_chart_weekdays">Average spending on each day of the week</string>
+    <string name="report_income">Income</string>
+    <string name="report_a_month">%1$s a month</string>
+    <string name="report_budget_surplus">Budget surplus</string>
+    <string name="report_budget_surplus_rate">Budget surplus rate</string>
+    <string name="report_surplus_share_of_income">surplus as a share of income</string>
+    <string name="report_positive_surplus_months">Positive-surplus months</string>
+    <!-- A part of a whole: "%1$s of %2$s", as in "3 of 12". -->
+    <string name="report_x_of_y">%1$s of %2$s</string>
+    <string name="report_best_month">best: %1$s</string>
+    <string name="report_surplus_help">Budget surplus compares income with spending. Categorized transfers to tracking investments and loans reduce it; use Net worth to see changes in wealth.</string>
+    <string name="report_surplus_help_categories">Income stays included; spending reflects the chosen categories.</string>
+    <string name="report_chart_income_spending">Income and spending side by side each month, with budget surplus as a line</string>
+    <string name="report_chart_surplus_rate">Budget surplus each month, as a percentage of income</string>
+    <string name="report_chart_surplus_cumulative">Budget surplus added up month by month</string>
+    <string name="report_cumulative_surplus">Cumulative budget surplus</string>
+    <string name="report_avg_a_month">avg %1$s a month</string>
+    <string name="report_total_income">Total income</string>
+    <string name="report_total_spending">Total spending</string>
+    <string name="report_income_month_detail">Income %1$s · Spending %2$s · Rate %3$s</string>
+    <string name="report_other_sources">Other sources</string>
+    <string name="report_after_taken_out">after %1$s taken out</string>
+    <plurals name="report_from_sources">
+        <item quantity="one">from %1$s source</item>
+        <item quantity="other">from %1$s sources</item>
+    </plurals>
+    <string name="report_largest_source">Largest source</string>
+    <string name="report_months_with_income">Months with income</string>
+    <string name="report_chart_income_by_source">Income each month, stacked by source</string>
+    <string name="report_source_detail">Average %1$s · Share %2$s · Months %3$s</string>
+    <string name="report_income_chart_help">The charts show positive source contributions. The income total and source table include amounts taken out of Unassigned.</string>
+    <string name="report_income_sources_help">Negative sources are amounts explicitly taken from Unassigned, such as a reconciliation adjustment or a transfer to a tracking account assigned to Unassigned.</string>
+    <string name="report_money_in">Money in</string>
+    <string name="report_money_out">Money out</string>
+    <string name="report_net_flow">Net flow</string>
+    <string name="report_chart_cash_flow">Money into budget accounts above the line, money out below, with the net as a line</string>
+    <string name="report_cash_flow_month_detail">In %1$s · Out %2$s · Running total %3$s</string>
+    <string name="report_cash_flow_average_detail">In %1$s · Out %2$s</string>
+    <string name="report_months_in_black">Months in the black</string>
+    <string name="report_chart_net_flow_cumulative">Net flow added up month by month</string>
+    <string name="report_running_total">Running total</string>
+    <string name="report_assets">Assets</string>
+    <string name="report_debts">Debts</string>
+    <string name="report_grew">Grew</string>
+    <string name="report_shrank">Shrank</string>
+    <string name="report_end_of">end of %1$s</string>
+    <string name="report_change">Change</string>
+    <string name="report_since_began">since %1$s began</string>
+    <string name="report_since_began_percent">since %1$s began · %2$s</string>
+    <string name="report_of_assets">%1$s of assets</string>
+    <string name="report_chart_net_worth">Assets and debts by month with net worth</string>
+    <string name="report_chart_net_worth_change">How much net worth grew or shrank each month</string>
+    <string name="report_balances_on">Balances on %1$s and %2$s</string>
+    <string name="report_account_closed">%1$s · closed</string>
+    <string name="report_account_not_in_net_worth">%1$s · not in net worth</string>
+    <string name="report_sheet_subtitle">From %1$s · Change %2$s</string>
+    <string name="report_sheet_subtitle_share">From %1$s · Change %2$s · %3$s</string>
+    <string name="report_liabilities_owed">Liabilities (owed)</string>
+    <string name="report_total_assets">Total assets</string>
+    <string name="report_total_liabilities">Total liabilities</string>
+    <string name="report_not_counted">Not counted in net worth</string>
+    <string name="report_in_this_period">%1$s in this period</string>
+    <string name="report_debt_to_assets">Debt to assets</string>
+    <string name="report_owe_more_than_own">you owe more than you own</string>
+    <string name="report_owned_is_owed">of what you own is owed</string>
+    <string name="report_cash_on_hand">Cash on hand</string>
+    <string name="report_months_of_spending">%1$s months of spending</string>
+    <string name="report_in_cash_accounts">in cash and bank accounts</string>
+    <string name="report_net_worth_on">Net worth on %1$s: %2$s</string>
+    <string name="report_sheet_help">Balances at the start of %1$s and the end of %2$s. Set an account\'s type, or leave it out of net worth, in its settings.</string>
+    <string name="report_sheet_help_sides">Accounts below zero count as owed and loans or cards above zero as owned, whatever their type.</string>
+    <string name="report_chart_balances">Balance of each chosen account at the end of each month</string>
+    <string name="report_on_the_chart">On the chart</string>
+    <string name="report_up_to_8">up to 8 at a time</string>
+    <string name="report_their_balance_now">Their balance now</string>
+    <string name="report_biggest_change">Biggest change</string>
+    <string name="report_change_since_began">%1$s since %2$s began</string>
+    <string name="report_balance_stats">Start %1$s · Change %2$s · Lowest %3$s · Highest %4$s</string>
+    <string name="report_cash_age">Cash age</string>
+    <string name="report_over_these_months">over these months</string>
+    <string name="report_highest">Highest</string>
+    <string name="report_lowest">Lowest</string>
+    <string name="report_chart_cash_age">Cash age at the end of each month, in days</string>
+    <string name="report_other_refund_categories">Other refund categories</string>
+    <string name="report_all_others">All others</string>
+    <string name="report_refund_lead">Includes %1$s in net refunds.</string>
+    <string name="report_refund_lead_bar">The bar shows categories with net spending.</string>
+    <string name="report_lead_nothing">Nothing earned or spent in these months.</string>
+    <string name="report_lead_about">On average, you\'re spending about what you make.</string>
+    <string name="report_lead_more">On average, you\'re spending more than you make.</string>
+    <string name="report_lead_less">On average, you\'re spending less than you make.</string>
+    <string name="report_forecast">Forecast</string>
+    <string name="report_known_only">Known transactions only</string>
+    <plurals name="report_chart_forecast">
+        <item quantity="one">Forecast balance of budget accounts for the next %1$s months</item>
+        <item quantity="other">Forecast balance of budget accounts for the next %1$s months</item>
+    </plurals>
+    <string name="report_today">Today</string>
+    <string name="report_today_lower">today</string>
+    <string name="report_entered_suffix">%1$s · entered</string>
+    <plurals name="report_in_budget_accounts">
+        <item quantity="one">in %1$s budget account</item>
+        <item quantity="other">in %1$s budget accounts</item>
+    </plurals>
+    <string name="report_lowest_point">Lowest point</string>
+    <plurals name="report_in_months">
+        <item quantity="one">In %1$s months</item>
+        <item quantity="other">In %1$s months</item>
+    </plurals>
+    <string name="report_from_today">%1$s from today</string>
+    <string name="report_known_money_in">Known money in</string>
+    <string name="report_known_money_out">Known money out</string>
+    <string name="report_scheduled_or_entered">scheduled or entered</string>
+    <string name="report_use_suggested">Use the suggested %1$s</string>
+    <string name="report_forecast_help">Spending that isn\'t scheduled, spread evenly over each day. Your last three months averaged %1$s a month; scheduled spending covers about %2$s a month, which suggests %3$s for the rest.</string>
+    <string name="report_chosen_accounts_suffix">%1$s · chosen accounts</string>
+
+    <!-- Reports: the overview, report pages and their sheets -->
+    <string name="reports_categories">Spending by category</string>
+    <string name="reports_categories_short">By category</string>
+    <string name="reports_categories_blurb">Where your money went, by group and category, and how last month compares.</string>
+    <string name="reports_payees">Spending by payee</string>
+    <string name="reports_payees_short">By payee</string>
+    <string name="reports_payees_blurb">Who you pay most, and how often.</string>
+    <string name="reports_trends">Spending over time</string>
+    <string name="reports_trends_short">Over time</string>
+    <string name="reports_trends_blurb">Spending month by month, by group or in total.</string>
+    <string name="reports_calendar">Spending calendar</string>
+    <string name="reports_calendar_short">Calendar</string>
+    <string name="reports_calendar_blurb">Spending day by day: busy days, quiet days and weekdays.</string>
+    <string name="reports_income_expense">Income vs. expense</string>
+    <string name="reports_income_expense_blurb">Income, spending and the surplus left in your budget.</string>
+    <string name="reports_income">Income breakdown</string>
+    <string name="reports_income_blurb">Where your income comes from, and how steady it is.</string>
+    <string name="reports_cash_flow">Money in and out</string>
+    <string name="reports_cash_flow_blurb">Account movements across your budget boundary, including credit purchases.</string>
+    <string name="reports_net_worth_blurb">What you own minus what you owe, month by month.</string>
+    <string name="reports_balance_sheet">Balance sheet</string>
+    <string name="reports_balance_sheet_blurb">Assets and liabilities by type, with the ratios that matter.</string>
+    <string name="reports_balances">Balance over time</string>
+    <string name="reports_balances_blurb">Each account\'s balance at the end of every month.</string>
+    <string name="reports_forecast_blurb">Where your cash and card balances are heading, from what\'s scheduled.</string>
+    <string name="reports_age_blurb">How long money waits in your accounts before you spend it.</string>
+    <string name="reports_group_wealth">Wealth</string>
+    <string name="reports_failed">Reports could not be calculated.</string>
+    <string name="reports_failed_one">The report could not be calculated.</string>
+    <string name="reports_forecast_failed">The forecast could not be calculated.</string>
+    <string name="reports_drill_failed">These transactions could not be listed.</string>
+    <string name="reports_retry_all">Retry reports</string>
+    <string name="reports_retry">Retry report</string>
+    <string name="reports_retry_forecast">Retry forecast</string>
+    <string name="reports_income_vs_spending">Income vs. spending</string>
+    <string name="reports_top_categories">Top categories</string>
+    <string name="reports_spending_breakdown">Spending breakdown</string>
+    <string name="reports_nothing_spent">Nothing spent yet this month.</string>
+    <string name="reports_all">All reports</string>
+    <string name="reports_uncategorized_notice">%1$s of spending still needs a category. It is included in these totals.</string>
+    <string name="reports_all_budget_accounts">All budget accounts</string>
+    <string name="reports_all_accounts">All accounts</string>
+    <plurals name="filter_accounts">
+        <item quantity="one">%1$s accounts</item>
+        <item quantity="other">%1$s accounts</item>
+    </plurals>
+    <plurals name="filter_categories">
+        <item quantity="one">%1$s categories</item>
+        <item quantity="other">%1$s categories</item>
+    </plurals>
+    <string name="reports_export_csv">Export CSV</string>
+    <string name="reports_empty_title">No figures for these months</string>
+    <string name="reports_empty_detail">Choose another range or clear the filters.</string>
+    <string name="reports_categories_filter">Categories</string>
+    <string name="reports_everyday">Everyday spending</string>
+    <string name="reports_everyday_help">Spending that isn\'t scheduled, spread evenly over each day.</string>
+    <string name="reports_everyday_field">Everyday spending a month (%1$s)</string>
+    <string name="reports_everyday_a_month">Everyday spending a month</string>
+    <string name="reports_change_everyday">Change everyday spending</string>
+    <string name="reports_open_in_register">Open in register</string>
+    <string name="reports_no_transactions">No transactions.</string>
+    <string name="reports_all_groups">All groups</string>
+    <string name="reports_spending_by_group">Spending by group</string>
+    <string name="reports_no_spending">No spending in these months.</string>
+    <string name="reports_matched_average">Spending matched the average.</string>
+    <string name="reports_no_payees">No payees with net spending in these months.</string>
+    <string name="reports_all_payees">All payees</string>
+    <string name="reports_find_payee">Find a payee</string>
+    <string name="reports_no_payees_match">No payees match.</string>
+    <string name="reports_by_group">By group</string>
+    <!-- A day of the heat calendar: the day (%1$s) and its spending (%2$s). -->
+    <string name="reports_heat_spent">%1$s · %2$s spent</string>
+    <string name="reports_heat_nothing">%1$s · %2$s nothing spent</string>
+    <string name="reports_heat_help">Tap a day for its spending. Darker means more.</string>
+    <string name="reports_spending_by_day">Spending by day</string>
+    <string name="reports_not_started">These months haven\'t started yet.</string>
+    <string name="reports_by_weekday">By day of the week</string>
+    <string name="reports_average_spent">Average spent</string>
+    <string name="reports_biggest_days">Biggest days</string>
+    <string name="reports_income_spending_by_month">Income and spending by month</string>
+    <string name="reports_surplus_share">Surplus as a share of income</string>
+    <string name="reports_surplus_added_up">Surplus added up</string>
+    <string name="reports_income_and_spending">Income and spending</string>
+    <string name="reports_select_group">Select a group to see its categories</string>
+    <string name="reports_by_month">By month</string>
+    <string name="reports_surplus_each_month">Budget surplus each month</string>
+    <string name="reports_income_from">Where your income comes from</string>
+    <string name="reports_positive_sources">Positive sources</string>
+    <string name="reports_no_income">No income in these months.</string>
+    <string name="reports_income_by_month">Income by month</string>
+    <string name="reports_sources">Sources</string>
+    <string name="reports_money_in_out_by_month">Money in and out by month</string>
+    <string name="reports_cash_flow_help">Account movements across your budget boundary, including credit-card purchases and transfers to tracking accounts. Card payments, other transfers between budget accounts and starting balances are excluded. Split inflows and outflows may be netted; these are account movements rather than gross category splits.</string>
+    <string name="reports_net_flow_added_up">Net flow added up</string>
+    <string name="reports_net_flow_each_month">Net flow each month</string>
+    <string name="reports_assets_debts_net_worth">Assets, debts and net worth</string>
+    <string name="reports_change_each_month">Change each month</string>
+    <string name="reports_by_account">By account</string>
+    <string name="reports_what_you_own">What you own</string>
+    <string name="reports_no_assets">No assets.</string>
+    <string name="reports_what_you_owe">What you owe</string>
+    <string name="reports_nothing_owed">Nothing owed.</string>
+    <string name="reports_statement">Statement</string>
+    <string name="reports_balances_month_end">Balances at the end of each month</string>
+    <string name="reports_choose_accounts">Choose accounts above to chart them.</string>
+    <string name="reports_balances_help">Month-end balances; lowest and highest are among those.</string>
+    <string name="reports_cash_age_month_end">Cash age at the end of each month</string>
+    <string name="reports_cash_age_help">How long money sits in your cash accounts before you spend it: the average age of the last ten cash outflows, first in, first out, to the nearest day. Until there are ten, the missing ones count as zero days. It is an estimate when opening balances have no known dates.</string>
+    <string name="reports_balance_ahead">Balance ahead</string>
+    <plurals name="report_months_option">
+        <item quantity="one">%1$s months</item>
+        <item quantity="other">%1$s months</item>
+    </plurals>
+    <string name="common_change">Change</string>
+    <string name="reports_coming_up">Coming up</string>
+    <string name="reports_nothing_ahead">Nothing is scheduled or entered for later dates.</string>
+    <string name="reports_schedule_more">Schedule your income and bills to make this forecast more exact.</string>
+    <string name="reports_known_balances">Balances here count known transactions only.</string>
+    <string name="reports_months">Months</string>
+    <string name="reports_range_help">Apply uses the custom months. A preset applies as soon as you choose it.</string>
+    <string name="search_named">Search %1$s</string>
+    <string name="nothing_matches">Nothing matches.</string>
+
+    <!-- Loans: details, payoff planner and recording a payment -->
+    <string name="loan_choose_account">Choose the loan account.</string>
+    <string name="loan_payment_positive">Enter the loan\'s monthly payment as a positive amount.</string>
+    <string name="loan_fees_positive">Enter the monthly fees as a positive amount.</string>
+    <string name="loan_rate_format">Enter the interest rate as a percentage, like 5.25.</string>
+    <string name="loan_rate_range">The interest rate must be from 0 to 1,000%.</string>
+    <string name="loan_rate_month_required">Choose the month each rate change starts.</string>
+    <string name="loan_one_rate_per_month">Keep one interest rate per month.</string>
+    <string name="loan_category_required">Choose the category the payment comes from.</string>
+    <string name="loan_paid_off">Paid off</string>
+    <string name="loan_time_left">Time left</string>
+    <string name="loan_interest">Interest</string>
+    <string name="loan_total_cost">Total cost</string>
+    <string name="loan_interest_saved">Interest saved</string>
+    <string name="loan_time_saved">Time saved</string>
+    <string name="loan_now">Now</string>
+    <!-- A payment: its interest (%1$s), escrow or fees (%2$s, %3$s), principal (%4$s) and what's still owed (%5$s). -->
+    <string name="loan_schedule_line">Interest %1$s · %2$s %3$s · Principal %4$s · Still owed %5$s</string>
+    <plurals name="loan_schedule_title">
+        <item quantity="one">Payment schedule · %1$s payments</item>
+        <item quantity="other">Payment schedule · %1$s payments</item>
+    </plurals>
+    <plurals name="loan_schedule_title_changes">
+        <item quantity="one">Payment schedule with changes · %1$s payments</item>
+        <item quantity="other">Payment schedule with changes · %1$s payments</item>
+    </plurals>
+    <string name="loan_fee_escrow">Escrow</string>
+    <string name="loan_fee_fees">Fees</string>
+    <string name="loan_title_named">Loan · %1$s</string>
+    <string name="loan_title">Loan payoff planner</string>
+    <string name="loan_needs_account">Add a tracking account of a loan type, such as Mortgage or Auto loan, with what you owe as a negative balance first.</string>
+    <string name="loan_debt_account">Debt account</string>
+    <string name="loan_status_paid_off">Paid off</string>
+    <string name="loan_record_payment">Record payment</string>
+    <string name="loan_save_first">Save the loan details first to record a payment with them.</string>
+    <string name="loan_save_changes_first">Save your changes first: a payment uses the saved details.</string>
+    <string name="loan_interest_escrow_added">Interest and escrow are added to the loan with the first payment each month.</string>
+    <string name="loan_interest_fees_added">Interest and fees are added to the loan with the first payment each month.</string>
+    <string name="loan_interest_added">Interest is added to the loan with the first payment each month.</string>
+    <string name="loan_details">Loan details</string>
+    <string name="loan_details_detail">What the payoff date and the interest are worked out from</string>
+    <string name="loan_rate_field">Interest rate (%)</string>
+    <string name="loan_payment_field">Monthly payment (%1$s)</string>
+    <string name="loan_escrow_field">Monthly escrow (%1$s)</string>
+    <string name="loan_fees_field">Monthly fees (%1$s)</string>
+    <string name="loan_payment_category">Payment category</string>
+    <string name="loan_payment_category_hint">Where the payment comes from</string>
+    <string name="loan_rate_changes">Rate changes</string>
+    <string name="loan_rate_changes_detail">For a variable rate: each one replaces the rate above from its month.</string>
+    <string name="loan_new_rate_field">New annual rate (%)</string>
+    <string name="loan_remove_rate">Remove the %1$s rate</string>
+    <string name="loan_add_rate_change">Add rate change</string>
+    <string name="loan_unsaved">Unsaved changes. The planner below already tries them; Save keeps them.</string>
+    <string name="loan_planner">Payoff planner</string>
+    <string name="loan_planner_detail">Only a sandbox: nothing here changes your budget or the loan\'s details.</string>
+    <string name="loan_nothing_owed">Nothing is owed on this account.</string>
+    <string name="loan_extra_field">Extra each month (%1$s)</string>
+    <string name="loan_lump_field">One-off payment now (%1$s)</string>
+    <string name="loan_pay_off_by_date">Pay off by a date…</string>
+    <string name="loan_pay_off_by">Pay off by</string>
+    <string name="loan_clear_payoff_date">Clear the payoff date</string>
+    <string name="loan_amounts_format">Enter amounts like 50 or 25.50.</string>
+    <string name="loan_no_payment_repays">No monthly payment repays the loan by then.</string>
+    <string name="loan_pay_by_needed">To pay it off by %1$s, pay %2$s a month: %3$s more than now, tried below as the extra.</string>
+    <string name="loan_already_pays_by">Your current payment already pays it off by %1$s.</string>
+    <string name="loan_current_plan">Current plan</string>
+    <string name="loan_with_changes">With changes</string>
+    <plurals name="loan_show_all_payments">
+        <item quantity="one">Show all %1$s payments</item>
+        <item quantity="other">Show all %1$s payments</item>
+    </plurals>
+    <string name="loan_note">Interest compounds monthly and each charge is rounded to the cent, so a lender\'s own figures may differ a little. Recording a payment adds local transactions; it doesn\'t pay your bank.</string>
+    <string name="loan_remove_details">Remove loan details</string>
+    <string name="loan_remove_title">Remove loan details?</string>
+    <string name="loan_remove_message">The payoff date and interest are no longer worked out for %1$s. Its transactions stay. You can undo this.</string>
+    <string name="common_remove">Remove</string>
+    <string name="loan_owed">Owed</string>
+    <string name="loan_rate">Rate</string>
+    <string name="loan_payment">Payment</string>
+    <string name="loan_interest_to_pay">Interest to pay</string>
+    <string name="clear_field">Clear %1$s</string>
+    <!-- How a loan payment is recorded: from the account (%1$s) to the loan (%2$s). -->
+    <string name="loan_payment_note_interest">Recorded as a transfer from %1$s to %2$s, spending the category. The month\'s interest is added to the loan with its first payment that month.</string>
+    <string name="loan_payment_note_escrow">Recorded as a transfer from %1$s to %2$s, spending the category. The month\'s interest and escrow are added to the loan with its first payment that month.</string>
+    <string name="loan_payment_note_fees">Recorded as a transfer from %1$s to %2$s, spending the category. The month\'s interest and fees are added to the loan with its first payment that month.</string>
+    <string name="loan_account_you_choose">the account you choose</string>
+    <string name="loan_payment_account_required">Choose the account the payment comes from.</string>
+    <string name="loan_payment_amount_required">Enter an amount to pay.</string>
+    <string name="loan_pay_title">Pay %1$s</string>
+    <string name="loan_pay_amount">Pay %1$s</string>
+    <string name="loan_owed_on_loan">Owed on the loan</string>
+    <string name="loan_monthly_payment">Monthly payment</string>
+    <string name="loan_needs_cash_account">Add a cash account in your budget to pay the loan from.</string>
+    <!-- A span of time: the years (%1$s) and the months (%2$s). -->
+    <string name="span_years_months">%1$s %2$s</string>
+    <plurals name="span_years">
+        <item quantity="one">%1$s year</item>
+        <item quantity="other">%1$s years</item>
+    </plurals>
+    <plurals name="span_months">
+        <item quantity="one">%1$s month</item>
+        <item quantity="other">%1$s months</item>
+    </plurals>
+    <string name="rate_three_decimals">Enter a rate with up to three decimals.</string>
+    <string name="rate_range">Rate must be between 0 and 1,000%.</string>
+
+    <!-- Payees and import rules -->
+    <plurals name="payee_transactions">
+        <item quantity="one">%1$s transaction</item>
+        <item quantity="other">%1$s transactions</item>
+    </plurals>
+    <string name="payee_not_used">Not used in transactions yet</string>
+    <string name="payee_default_named">Default: %1$s</string>
+    <string name="category_deleted">Deleted category</string>
+    <string name="category_split_count">Split (%1$s)</string>
+    <string name="rule_contains">Contains “%1$s”</string>
+    <string name="rule_rename_to_named">Rename to %1$s</string>
+    <string name="rule_keep_name">Keep payee name</string>
+    <string name="payees_title">Payees</string>
+    <string name="payees_detail">Tidy names, and a default category for new transactions</string>
+    <string name="payee_add">Add payee</string>
+    <string name="payees_search">Search payees</string>
+    <string name="payees_empty">Payees appear here as you enter transactions.</string>
+    <string name="rules_title">Import rules</string>
+    <string name="rules_detail">The longest matching pattern wins</string>
+    <string name="rule_add">Add import rule</string>
+    <plurals name="rules_pending">
+        <item quantity="one">The rules would rename or categorize %1$s transaction you already have.</item>
+        <item quantity="other">The rules would rename or categorize %1$s transactions you already have.</item>
+    </plurals>
+    <string name="rules_empty">Rules rename and categorize transactions as they come in from bank files and bank sync.</string>
+    <string name="rules_apply_existing">Apply rules to existing transactions</string>
+    <string name="payee_choose_a">Choose a payee</string>
+    <string name="payee_last_used">Last used: %1$s</string>
+    <string name="payee_no_category">no category</string>
+    <string name="payee_no_default">No default</string>
+    <string name="payee_no_transactions">No transactions yet</string>
+    <plurals name="payee_count_total">
+        <item quantity="one">%1$s transaction · total %2$s</item>
+        <item quantity="other">%1$s transactions · total %2$s</item>
+    </plurals>
+    <string name="payee_default_category">Default category</string>
+    <string name="payee_default_category_help">Filled in when you enter a transaction for this payee. Without one, the category you used last time is suggested.</string>
+    <string name="payee_name">Payee name</string>
+    <string name="payee_merge">Merge into another payee</string>
+    <string name="payee_merge_exists">%1$s already exists, so saving merges the two.</string>
+    <string name="payee_rename_help">Renaming or merging updates saved transactions, split payees, schedules and import rules.</string>
+    <string name="payee_recent">Recent transactions</string>
+    <string name="rule_keep_category">Keep category</string>
+    <string name="rule_title">Import rule</string>
+    <string name="rule_match_field">Bank payee contains</string>
+    <string name="rule_rename_to">Rename to</string>
+    <string name="rule_match_help">Enter the text to look for in the bank\'s payee, e.g. CARREFOUR.</string>
+    <string name="rule_choose_something">Choose a new name, a category, or both.</string>
+    <plurals name="rule_would_change">
+        <item quantity="one">Applied to existing transactions, it would rename or categorize %1$s transaction.</item>
+        <item quantity="other">Applied to existing transactions, it would rename or categorize %1$s transactions.</item>
+    </plurals>
+    <string name="rule_how_it_matches">A rule matches when the bank\'s payee contains its text, ignoring case and punctuation; the longest match wins. It renames the payee and fills in the category if there\'s none.</string>
+    <string name="rule_move_earlier">Move earlier</string>
+    <string name="rule_move_later">Move later</string>
+    <string name="rule_order_help">The longest pattern wins; list order breaks ties.</string>
+    <string name="rule_apply_existing">Apply to existing transactions</string>
+    <string name="rule_delete">Delete rule</string>
+
+    <!-- Card payments, budget settings and flag names -->
+    <string name="card_paid_toast">Paid %1$s to %2$s.</string>
+    <string name="card_set_aside_option">What\'s set aside</string>
+    <string name="card_set_aside_detail">In the %1$s payment category</string>
+    <string name="card_whole_balance">The whole balance</string>
+    <string name="card_whole_balance_detail">Pays the card off</string>
+    <string name="card_another_amount">Another amount</string>
+    <string name="card_type_on_keypad">Type it on the keypad</string>
+    <string name="card_payment_help">The payment is a transfer from the cash account to the card: it uses money already set aside, so it doesn\'t change any category.</string>
+    <string name="card_pay_from">Pay from</string>
+    <string name="memo_optional">Memo (optional)</string>
+    <string name="budget_settings">Budget settings</string>
+    <string name="budget_settings_changed">The open budget changed. Close settings and reopen them.</string>
+    <string name="budget_settings_saved">Budget settings saved.</string>
+    <string name="budget_currency_help">The currency only changes how amounts are labelled. Amounts are never converted.</string>
+    <string name="budget_number_format">Number format</string>
+    <string name="budget_symbol_placement">Currency placement</string>
+    <string name="budget_symbol_before">Before amount · %1$s</string>
+    <string name="budget_symbol_after">After amount · %1$s</string>
+    <string name="budget_symbol_none">Don\'t show · %1$s</string>
+    <string name="budget_date_format">Date format</string>
+    <string name="editor_budget_switched">The open budget changed. Close this editor and reopen it.</string>
+    <string name="flag_names_help">Use names such as Reimburse or Tax. Leave a name empty to use its colour.</string>
+    <string name="flag_field_red">Red flag</string>
+    <string name="flag_field_orange">Orange flag</string>
+    <string name="flag_field_yellow">Yellow flag</string>
+    <string name="flag_field_green">Green flag</string>
+    <string name="flag_field_blue">Blue flag</string>
+    <string name="flag_field_purple">Purple flag</string>
+
+    <!-- Budget library and backups -->
+    <string name="library_save_backup_failed">Could not save the backup.</string>
+    <string name="library_backup_exported">Portable backup exported.</string>
+    <string name="library_export_backup_failed">Could not export the backup.</string>
+    <string name="library_load_failed">Could not load budgets.</string>
+    <string name="library_budgets">Budgets</string>
+    <string name="library_budgets_detail">Each has its own history, bank links, assistant chats and backups.</string>
+    <string name="library_open_now">Open now</string>
+    <string name="library_file_missing">File missing</string>
+    <string name="library_on_device">On this device</string>
+    <string name="library_open_chip">Open</string>
+    <string name="common_open">Open</string>
+    <string name="library_delete_local">Delete local budget</string>
+    <string name="library_new_budget">New budget</string>
+    <string name="library_help">Tap the open budget for its name, currency and formats. Press and hold another to delete it.</string>
+    <string name="library_start_new">Start a new plan</string>
+    <string name="library_fresh_start">Make a fresh start</string>
+    <string name="library_fresh_start_detail">Carry balances, categories and targets into a new budget; this one stays in the library</string>
+    <!-- A fresh start's suggested name: the budget's own name, then the words. -->
+    <string name="library_fresh_name">%1$s · Fresh start</string>
+    <string name="library_fresh_create">Create fresh budget</string>
+    <string name="library_fresh_field">New budget name</string>
+    <string name="library_start_date">Start date</string>
+    <string name="library_fresh_help">The shared engine carries account balances, categories, targets and pending activity into a separate budget. Your original remains in this library.</string>
+    <string name="library_backups">Backups &amp; recovery</string>
+    <string name="library_backups_detail">Automatic backups follow the same retention rules as desktop.</string>
+    <string name="library_create_backup">Create portable backup</string>
+    <string name="library_create_backup_detail">A complete copy to save or share</string>
+    <string name="library_export_json">Export JSON</string>
+    <string name="library_import_json">Import JSON</string>
+    <string name="library_keep_backups">Keep automatic backups</string>
+    <string name="library_keep_all">Keep all</string>
+    <string name="library_keep_newest">Newest %1$s</string>
+    <string name="library_size_kib">%1$s KiB</string>
+    <string name="library_settings_hint">Preferences, the theme and flag names are in Settings &amp; data.</string>
+    <string name="library_delete_title">Delete %1$s?</string>
+    <string name="library_restore_title">Restore this backup?</string>
+    <string name="library_delete_message">The local budget and its files will be deleted from this device. Export a backup first if you want to keep them. Cloud copies are managed separately under Account &amp; sync.</string>
+    <string name="library_restore_message">This replaces the open budget with %1$s. The current budget is backed up before replacement. A newer change will stop this restore for review.</string>
+
+    <!-- Account and sync -->
+    <string name="common_try_again">Try again.</string>
+    <string name="common_continue">Continue</string>
+    <string name="billing_cancelled">Purchase cancelled.</string>
+    <string name="billing_pending">Payment is pending. Google Play will finish it; restore purchases when it completes.</string>
+    <string name="billing_restored">Purchase verified and restored to your account.</string>
+    <string name="billing_none_found">No purchases were found for this UrBudget account.</string>
+    <string name="cloud_intro">Your budgets stay on this device. Sync is optional.</string>
+    <string name="cloud_account">Account</string>
+    <string name="cloud_sign_in_intro">Sign in with your email to use sync. No password needed.</string>
+    <string name="cloud_email">Email address</string>
+    <string name="cloud_code">Code from the email</string>
+    <string name="cloud_check_email">Check your email for a sign-in code.</string>
+    <string name="cloud_sign_in">Sign in</string>
+    <string name="cloud_new_code">New code</string>
+    <string name="cloud_send_code">Send sign-in code</string>
+    <string name="cloud_session_stored">Session stored securely on this device</string>
+    <string name="cloud_sign_out">Sign out on this device</string>
+    <string name="cloud_subscription">Sync subscription</string>
+    <string name="cloud_subscription_intro">UrBudget is free. Sync is an optional monthly subscription. Google Play shows its price and handles payment.</string>
+    <string name="cloud_sign_in_to_subscribe">Sign in above to subscribe or restore purchases.</string>
+    <string name="cloud_show_price">Show price</string>
+    <!-- The monthly price, as Google Play writes it. -->
+    <string name="cloud_subscribe">Subscribe to sync · %1$s a month</string>
+    <string name="cloud_restore_purchases">Restore purchases</string>
+    <string name="cloud_manage_subscription">Manage subscription</string>
+    <string name="cloud_encrypted_sync">Encrypted sync</string>
+    <string name="cloud_encrypted_sync_detail">Budgets are encrypted before uploading. Only your sync passphrase opens them.</string>
+    <string name="cloud_subscription_active">Sync subscription active</string>
+    <string name="cloud_subscription_needed">Sync needs an active subscription</string>
+    <string name="cloud_sync_automatically">Sync automatically</string>
+    <string name="cloud_while_open">While the app is open</string>
+    <string name="cloud_sync_now">Sync now</string>
+    <string name="cloud_lock">Lock sync on this device</string>
+    <string name="cloud_set_up_or_unlock">Set up or unlock sync</string>
+    <string name="cloud_last_attempt">Last attempt: %1$s</string>
+    <string name="sync_state_cloud_only">In the cloud</string>
+    <string name="sync_state_local_only">This device only</string>
+    <string name="sync_state_conflict">Needs review</string>
+    <string name="sync_state_synced">Synced</string>
+    <string name="sync_state_uploaded">Uploaded</string>
+    <string name="sync_state_downloaded">Downloaded</string>
+    <string name="sync_state_merged">Merged</string>
+    <string name="sync_state_waiting">Waiting</string>
+    <string name="sync_state_update_app">Update app</string>
+    <string name="sync_state_error">Error</string>
+    <string name="sync_state_unknown">Unknown</string>
+    <string name="cloud_download_open">Download and open</string>
+    <string name="cloud_start_syncing">Start syncing</string>
+    <string name="cloud_review_differences">Review differences</string>
+    <string name="cloud_remove_copy">Remove cloud copy</string>
+    <string name="cloud_reset_passphrase">Reset forgotten sync passphrase</string>
+    <string name="cloud_delete_account">Delete account and cloud data</string>
+    <string name="cloud_sign_in_to_sync">Sign in above to use sync.</string>
+    <string name="cloud_privacy">Privacy &amp; your choices</string>
+    <string name="cloud_reset_title">Reset sync passphrase?</string>
+    <string name="cloud_setup_title">Create sync passphrase</string>
+    <string name="cloud_unlock_title">Unlock encrypted sync</string>
+    <string name="cloud_reset_confirm">Reset cloud copies</string>
+    <string name="cloud_reset_message">This deletes cloud copies encrypted with the old passphrase. Local budgets stay on your devices and this device uploads its copies again.</string>
+    <string name="cloud_passphrase_safe">Keep this passphrase somewhere safe. UrBudget cannot recover it for you.</string>
+    <string name="cloud_passphrase_field">Sync passphrase · at least 8 characters</string>
+    <string name="cloud_passphrase_repeat">Repeat passphrase</string>
+    <string name="cloud_delete_title">Delete your account?</string>
+    <string name="cloud_delete_confirm">Delete account</string>
+    <string name="cloud_delete_message">This deletes your account and cloud budgets and stops subscription renewals. Budgets on your devices stay. Purchase records may be retained as described in the privacy policy.</string>
+    <string name="cloud_delete_type">Type %1$s to confirm</string>
+    <string name="cloud_remove_title">Remove cloud copy?</string>
+    <string name="cloud_remove_message">This stops syncing %1$s and deletes its cloud copy. Local copies remain on your devices.</string>
+    <string name="conflict_title">Resolve %1$s</string>
+    <string name="conflict_apply">Apply choices</string>
+    <string name="conflict_help">Review both versions. Nothing changes until you apply your choices.</string>
+    <string name="conflict_keep_whole">Keep this complete budget</string>
+    <string name="conflict_local_replaces">This device replaces the cloud copy</string>
+    <string name="conflict_cloud_replaces">Cloud copy replaces this device</string>
+    <string name="conflict_this_device_value">This device: %1$s</string>
+    <string name="conflict_cloud_value">Cloud: %1$s</string>
+    <string name="conflict_deleted">Deleted</string>
+    <string name="conflict_keep">Keep</string>
+    <string name="conflict_this_device">This device</string>
+    <string name="conflict_cloud">Cloud</string>
+
+    <!-- Google Play billing -->
+    <string name="billing_no_purchase">Google Play returned no purchase. Try restoring purchases.</string>
+    <!-- Google Play's response code, a plain number. -->
+    <string name="billing_unavailable">Google Play billing is unavailable (%1$s). Try again in Google Play, or restore purchases later.</string>
+    <string name="billing_screen_closed">The billing screen closed. Reopen Account &amp; sync to continue.</string>
+    <string name="billing_product_not_loaded">Google Play could not load this product (%1$s). Try again later.</string>
+    <string name="billing_product_missing">This product is not available in Google Play yet.</string>
+    <string name="billing_plan_not_in_play">The monthly sync plan is unavailable in Google Play.</string>
+    <string name="billing_sign_in_to_subscribe">Sign in to your UrBudget account before subscribing.</string>
+    <string name="billing_purchase_in_progress">A purchase is already in progress.</string>
+    <string name="billing_plan_unavailable">The monthly sync plan is unavailable.</string>
+    <string name="billing_sign_in_to_restore">Sign in before restoring purchases.</string>
+    <string name="billing_closed_before_restore">The billing screen closed. Restore purchases after reopening UrBudget.</string>
+    <string name="billing_open_play_to_manage">Open Google Play to manage your subscriptions.</string>
+    <string name="billing_purchase_screen_closed">The purchase screen closed. Restore purchases after reopening UrBudget.</string>
+    <string name="billing_connection_closed">The billing connection closed.</string>
+
+    <!-- Bank connections and bank files -->
+    <string name="bank_sync_intro">SimpleFIN Bridge · Nothing is added until you review it.</string>
+    <string name="bank_login_note">Your bank login stays with SimpleFIN. The connection token is protected by this device\'s credential store and kept out of budget backups.</string>
+    <string name="bank_setup_token">SimpleFIN setup token</string>
+    <string name="bank_connect">Connect</string>
+    <string name="bank_get_token">Get a token</string>
+    <string name="bank_connected">Connected</string>
+    <!-- Requests used today (%1$s) out of the daily limit (%2$s). -->
+    <string name="bank_requests_used">%1$s of %2$s requests used today</string>
+    <string name="bank_download_activity">Download activity</string>
+    <string name="bank_link_first">Link a budget account first</string>
+    <string name="bank_download_detail">From every linked account, then review one account at a time</string>
+    <string name="bank_refresh_accounts">Refresh accounts</string>
+    <string name="bank_disconnect">Disconnect this device</string>
+    <string name="bank_accounts">Bank accounts</string>
+    <string name="bank_accounts_detail">Tap one to link it to a budget account.</string>
+    <!-- The budget account's name, then when it last synced (a date, or the word for never). -->
+    <string name="bank_linked_to">Linked to %1$s · Last sync %2$s</string>
+    <string name="bank_never_synced">never</string>
+    <string name="bank_not_linked">Not linked</string>
+    <string name="bank_downloaded_activity">Downloaded activity</string>
+    <!-- Through a date (%1$s); requests used today (%2$s) out of the daily limit (%3$s). -->
+    <string name="bank_downloaded_detail">Through %1$s · %2$s of %3$s requests today</string>
+    <string name="bank_reviewed">Reviewed</string>
+    <string name="bank_up_to_date">Up to date</string>
+    <plurals name="bank_skipped_new">
+        <item quantity="one">Skipped for now · %1$s new</item>
+        <item quantity="other">Skipped for now · %1$s new</item>
+    </plurals>
+    <plurals name="bank_new_to_review">
+        <item quantity="one">%1$s new to review</item>
+        <item quantity="other">%1$s new to review</item>
+    </plurals>
+    <string name="bank_balance">Bank balance %1$s</string>
+    <!-- The bank's balance (%1$s) on a date (%2$s). -->
+    <string name="bank_balance_on">Bank balance %1$s on %2$s</string>
+    <plurals name="bank_review_accounts">
+        <item quantity="one">Review %1$s account</item>
+        <item quantity="other">Review %1$s accounts</item>
+    </plurals>
+    <string name="bank_link_title">Link %1$s</string>
+    <string name="bank_choose_account">Choose account</string>
+    <string name="bank_date_not_future">Choose today or an earlier date.</string>
+    <string name="bank_choose_an_account">Choose an account.</string>
+    <string name="bank_currency_differs">This bank account uses a different currency.</string>
+    <string name="bank_budget_account">Budget account</string>
+    <string name="bank_first_import">First import from</string>
+    <string name="bank_reverse_signs">Reverse bank amount signs</string>
+    <string name="bank_history_note">Up to one year of history, downloaded in 45-day windows. Each window uses one request.</string>
+    <string name="bank_unlink">Unlink account</string>
+    <string name="bank_review_title">Review bank activity</string>
+    <string name="bank_importing">Importing…</string>
+    <!-- A button: how many rows the import adds or matches. -->
+    <string name="bank_import_count">Import %1$s</string>
+    <string name="bank_mark_checked">Mark checked</string>
+    <string name="bank_budget_changed_close">The budget changed. Close and download activity again to review current matches.</string>
+    <string name="bank_budget_changed_download">The budget changed. Download activity again to review current matches.</string>
+    <!-- Where the rows come from (a bank or a file name), then the budget account they go into. -->
+    <string name="bank_source_into">%1$s into %2$s</string>
+    <plurals name="bank_more_after">
+        <item quantity="one">%1$s more after this</item>
+        <item quantity="other">%1$s more after this</item>
+    </plurals>
+    <string name="bank_checking_matches">Checking matches…</string>
+    <string name="bank_skip_account">Skip this account</string>
+    <string name="bank_at_bank">At the bank</string>
+    <string name="bank_at_bank_on">At the bank on %1$s</string>
+    <string name="bank_not_sent">Not sent</string>
+    <string name="bank_ours_before">UrBudget, before this import</string>
+    <string name="bank_no_new">No new transactions. Confirm to record the account as checked through %1$s.</string>
+    <plurals name="bank_rows">
+        <item quantity="one">%1$s row</item>
+        <item quantity="other">%1$s rows</item>
+    </plurals>
+    <plurals name="bank_already_imported_count">
+        <item quantity="one">%1$s already imported</item>
+        <item quantity="other">%1$s already imported</item>
+    </plurals>
+    <plurals name="bank_renamed_count">
+        <item quantity="one">%1$s renamed by your payee rules</item>
+        <item quantity="other">%1$s renamed by your payee rules</item>
+    </plurals>
+    <plurals name="bank_refunds_count">
+        <item quantity="one">%1$s refund</item>
+        <item quantity="other">%1$s refunds</item>
+    </plurals>
+    <string name="bank_transfers_note">A transfer joins a row to the uncategorized entry it mirrors in another account, so the money you moved isn\'t counted as spending or income. It\'s chosen for you when the bank\'s text names the other account or matches earlier transfers between them; otherwise it\'s suggested for you to check.</string>
+    <!-- Transfers matched only by amount and date, still to decide. -->
+    <plurals name="bank_transfers_suggested">
+        <item quantity="one">%1$s transfer is suggested by its amount and date. Check it below, or pair it.</item>
+        <item quantity="other">%1$s transfers are suggested by their amount and date. Check them below, or pair them all.</item>
+    </plurals>
+    <string name="bank_pair_it">Pair it</string>
+    <string name="bank_pair_all">Pair all</string>
+    <!-- Money in that may be a refund: the payee of the purchase, its amount and its date. -->
+    <string name="bank_refund_of">Refund of %1$s · %2$s on %3$s</string>
+    <!-- Money in that several purchases from one payee (%2$s) match; the count is how many. -->
+    <plurals name="bank_possible_refund">
+        <item quantity="one">Possible refund · %1$s purchase from %2$s matches</item>
+        <item quantity="other">Possible refund · %1$s purchases from %2$s match</item>
+    </plurals>
+    <string name="bank_matching_note">Matching keeps your category and memo and marks the transaction cleared. Imported transactions wait for your approval.</string>
+    <string name="bank_idless_note">This file has no bank transaction IDs. A row may already be imported; compare its memo and amount. Skip it if it\'s the same payment, or add it separately if it\'s a different one.</string>
+    <plurals name="bank_rows_need_choice">
+        <item quantity="one">%1$s row needs a choice before importing.</item>
+        <item quantity="other">%1$s rows need a choice before importing.</item>
+    </plurals>
+    <!-- What the bank called the payee before a rule renamed it. -->
+    <string name="bank_row_bank">Bank: %1$s</string>
+    <string name="bank_already_imported_skipped">Already imported · skipped</string>
+    <string name="bank_may_be_imported">May already be imported: compare the memo and amount, then choose</string>
+    <string name="bank_choose_matching">Choose the matching transaction, or add it as new</string>
+    <string name="bank_what_to_do">What to do</string>
+    <string name="bank_option_already_imported">Already imported — skip</string>
+    <string name="bank_option_add_separate">Add as a separate transaction</string>
+    <string name="bank_option_choose">Choose a match or add it</string>
+    <string name="bank_option_add_new">Add as a new transaction</string>
+    <string name="bank_option_skip">Skip</string>
+    <string name="bank_option_possible">May already be imported — choose</string>
+    <string name="bank_match_details_missing">Bank match details are missing. Preview again.</string>
+    <!-- A transaction to match: its date, payee, split part, memo and notes, joined by " · ". Each name keeps its own direction. -->
+    <string name="bank_match">Match: %1$s</string>
+    <!-- Which part of a split transaction (1, 2, …). -->
+    <string name="bank_match_split">Split %1$s</string>
+    <string name="bank_previously_imported">Previously imported</string>
+    <!-- The other side of money moved from or to another account (%1$s): the transaction, as bank_match describes it. -->
+    <string name="bank_transfer_from_match">Transfer from %1$s: %2$s</string>
+    <string name="bank_transfer_to_match">Transfer to %1$s: %2$s</string>
+    <!-- The name shown for a chosen file that has none. -->
+    <string name="bank_statement_file">Bank statement</string>
+    <string name="bank_statement_too_large">Choose a statement smaller than 8 MiB.</string>
+    <string name="bank_statement_unopened">The selected statement could not be opened.</string>
+    <string name="bank_import_lead">Bring in the transactions your bank exported. You see the lines that don\'t read and fix them, then check every transaction before anything is saved.</string>
+    <string name="bank_into_account">Into account</string>
+    <string name="bank_choose_file">Choose a file</string>
+    <string name="bank_file_formats">CSV, Excel, OFX, QIF, CAMT.053 or MT940; PDF through the assistant</string>
+    <string name="bank_statement_label">Statement</string>
+    <string name="bank_change_file">Change file</string>
+    <string name="bank_all_in_note">Every row came out as money in. If these are purchases, the file writes them as positive numbers.</string>
+    <string name="bank_reverse_signs_action">Reverse signs</string>
+    <string name="bank_file_unreadable">This file couldn\'t be read.</string>
+    <string name="bank_change_no_longer_fits">That change no longer fits the file.</string>
+    <string name="bank_budget_changed_review">Your budget changed. The review is up to date again: check it and import.</string>
+    <string name="bank_reading_file">Reading the file…</string>
+    <!-- The chosen file's name. -->
+    <string name="bank_reading_named">Reading %1$s…</string>
+    <string name="bank_reading">Reading…</string>
+    <string name="bank_pdf_choose_another">PDF · tap to choose another</string>
+    <string name="bank_pdf_note">PDF statements need the assistant. It reads the PDF, finds the transactions, checks them against the statement\'s totals and brings them to a review like this one, where you decide on each row.</string>
+    <string name="bank_pdf_read_with_assistant">Read it with the assistant</string>
+    <string name="bank_pdf_attach_note">PDF statements need the assistant. Open the assistant, attach this PDF and ask it to import the statement.</string>
+    <string name="bank_import_help">Lines that don\'t read, or that the import leaves out (pending payments, another account\'s, balances), are shown for you to fix or include. The account remembers how its file read; on the desktop you can also choose which column holds what.</string>
+    <!-- What is left out of the review: "2 need attention · 1 left out". -->
+    <string name="bank_not_imported">%1$s, not imported.</string>
+    <plurals name="bank_need_attention">
+        <item quantity="one">%1$s need attention</item>
+        <item quantity="other">%1$s need attention</item>
+    </plurals>
+    <string name="bank_check_file">Check the file</string>
+    <string name="bank_checking_lines">Checking the lines against your budget…</string>
+    <!-- How the file reads: "2 lines read · 1 needs attention and won't be imported · 1 left out". -->
+    <plurals name="bank_lines_read">
+        <item quantity="one">%1$s line reads</item>
+        <item quantity="other">%1$s lines read</item>
+    </plurals>
+    <plurals name="bank_lines_need_attention">
+        <item quantity="one">%1$s needs attention and won\'t be imported</item>
+        <item quantity="other">%1$s need attention and won\'t be imported</item>
+    </plurals>
+    <plurals name="bank_lines_left_out">
+        <item quantity="one">%1$s left out</item>
+        <item quantity="other">%1$s left out</item>
+    </plurals>
+    <!-- A workbook's sheet the file is read from. -->
+    <string name="bank_sheet">Sheet</string>
+    <string name="bank_account_in_file">Account in the file</string>
+    <!-- How many lines an account in the file has. -->
+    <plurals name="bank_source_lines">
+        <item quantity="one">%1$s line</item>
+        <item quantity="other">%1$s lines</item>
+    </plurals>
+    <string name="bank_purchases_in_file">Purchases in the file</string>
+    <string name="bank_purchases_negative">Negative, as bank accounts write them</string>
+    <string name="bank_purchases_positive_cards">Positive, as many card statements write them</string>
+    <!-- A currency code (EUR, USD…), both times. -->
+    <string name="bank_amounts_elsewhere">The file\'s amounts are in %1$s. Include a line to enter its amount in your budget\'s currency, or import the file into a budget in %1$s.</string>
+    <!-- A currency code (EUR, USD…). -->
+    <string name="bank_account_currency">This account\'s amounts are in %1$s. Choose another account in the file, or include its lines with their amounts in your budget\'s currency.</string>
+    <string name="bank_day_first">Day first</string>
+    <string name="bank_month_first">Month first</string>
+    <!-- A date as the file writes it, then that date read day first: "Day first (01/02/2026 is 1 February 2026)". -->
+    <string name="bank_day_first_example">Day first (%1$s is %2$s)</string>
+    <string name="bank_month_first_example">Month first (%1$s is %2$s)</string>
+    <string name="bank_money_out">Money out</string>
+    <string name="bank_signs_by_type">Told by the transaction types</string>
+    <string name="bank_signs_as_written">As the amounts are written</string>
+    <!-- A date as the file writes it; the two ways it can read are the answers below. -->
+    <string name="bank_date_question">The dates don\'t say whether the day or the month comes first: is %1$s</string>
+    <!-- DEBIT and POS are transaction types as files write them: keep them as they are. -->
+    <string name="bank_signs_question">Every amount that reads is positive. Is money out told by the transaction types (DEBIT, POS…)?</string>
+    <string name="bank_signs_yes">Yes, use the types</string>
+    <string name="bank_signs_no">No, as written</string>
+    <string name="bank_needs_attention">Needs attention</string>
+    <string name="bank_needs_attention_detail">Not imported until fixed: tap a line to give what doesn\'t read.</string>
+    <string name="bank_assistant_fix_note">The assistant can fix these lines from what the file says, and asks you about anything unclear. You see each fix before it\'s applied.</string>
+    <string name="bank_fix_with_assistant">Fix with the assistant</string>
+    <!-- Lines of the file the import leaves out; also a line's state when its reason is unknown. -->
+    <string name="bank_left_out">Left out</string>
+    <string name="bank_left_out_section_detail">Not imported. Include a line if it belongs in the account.</string>
+    <!-- Why a line is left out (bank_statement.rs Reason). -->
+    <string name="bank_left_out_pending">Not booked yet</string>
+    <string name="bank_left_out_declined">Declined or cancelled</string>
+    <string name="bank_left_out_other_account">Another account\'s</string>
+    <string name="bank_left_out_other_currency">In another currency</string>
+    <string name="bank_left_out_own_balances">Between your own balances</string>
+    <string name="bank_left_out_balance">A balance or a total</string>
+    <string name="bank_left_out_above_header">Above the header</string>
+    <string name="bank_left_out_no_date">No date</string>
+    <string name="bank_left_out_no_amount">No amount</string>
+    <string name="bank_left_out_zero">Nothing moved</string>
+    <string name="bank_left_out_corrected">Corrected by the bank</string>
+    <string name="bank_left_out_repeated_header">The header row again</string>
+    <string name="bank_left_out_in_whole_batch">In a batch imported as one entry</string>
+    <string name="bank_left_out_imported">Imported before</string>
+    <!-- Left out as another account's: the account the file names. -->
+    <string name="bank_left_out_account">Account %1$s</string>
+    <!-- Left out as in another currency: its code (EUR, USD…). -->
+    <string name="bank_left_out_in_currency">In %1$s</string>
+    <!-- Why a line is left out, then its state as the file writes it. -->
+    <string name="bank_left_out_with_detail">%1$s (%2$s)</string>
+    <string name="bank_include">Include</string>
+    <string name="bank_included">Included</string>
+    <string name="bank_batch_as_one">Import as one entry</string>
+    <string name="bank_batch_payments">Import its payments</string>
+    <string name="bank_undo_assistant_fix">Undo the assistant\'s fix</string>
+    <string name="bank_changed">Changed</string>
+    <string name="bank_changed_detail">Imported as you changed them.</string>
+    <string name="bank_fixed_by_assistant">Fixed by the assistant</string>
+    <string name="bank_changed_from_file">Changed from the file</string>
+    <!-- A line of the file with nothing written on it, by its number. -->
+    <string name="bank_line_number">Line %1$s</string>
+    <string name="bank_fix_line">Fix line</string>
+    <!-- What the file writes on the line, cell by cell. -->
+    <string name="bank_in_the_file">In the file: %1$s</string>
+    <string name="bank_nothing">nothing</string>
+    <!-- YYYY-MM-DD is how the date is typed: keep it. -->
+    <string name="bank_fix_date">Date (YYYY-MM-DD)</string>
+    <string name="bank_fix_amount">Amount (negative for money out)</string>
+    <!-- Put in the assistant's message box, for the person to send or change. -->
+    <string name="bank_fix_import_prompt">Fix the lines of this import that need attention. Use only what the file itself supports, and ask me about anything that isn\'t clear.</string>
+    <!-- The assistant's fixes: how many applied, of how many. -->
+    <string name="bank_fixes_applied_of">Applied %1$s of %2$s fixes.</string>
+    <!-- Fixes that no longer fit the file, then why the first doesn't. -->
+    <plurals name="bank_fixes_refused">
+        <item quantity="one">One no longer fits: %2$s</item>
+        <item quantity="other">%1$s no longer fit: %2$s</item>
+    </plurals>
+    <string name="bank_fix_line_changed">the line changed</string>
+    <plurals name="bank_fixes_applied">
+        <item quantity="one">Applied the assistant\'s fix.</item>
+        <item quantity="other">Applied the assistant\'s %1$s fixes.</item>
+    </plurals>
+
+    <!-- Import from YNAB -->
+    <string name="ynab_method">Import method</string>
+    <string name="ynab_method_account">YNAB account</string>
+    <string name="ynab_method_files">YNAB export files</string>
+    <string name="ynab_too_many_files">Select at most eight YNAB export files.</string>
+    <string name="ynab_file_unreadable">Could not read the selected file.</string>
+    <string name="ynab_file_too_large">Each YNAB file must be smaller than 8 MiB.</string>
+    <string name="ynab_files_too_large">Select at most 16 MiB of exports.</string>
+    <string name="ynab_paste_token">Paste one-time token</string>
+    <string name="ynab_credential">Credential</string>
+    <string name="ynab_access_token">Personal access token</string>
+    <string name="ynab_remember_token">Remember in device credential store</string>
+    <string name="ynab_forget_token">Forget saved token</string>
+    <string name="ynab_load_plans">Load YNAB plans</string>
+    <string name="ynab_plan">Plan</string>
+    <string name="ynab_replace">Replace budget instead of merging changes</string>
+    <string name="ynab_backup_note">Imports keep a local backup. Repeated imports request only changes; competing edits wait for your choice.</string>
+    <string name="ynab_import_replace">Import and replace</string>
+    <string name="ynab_import_changes">Import changes</string>
+    <string name="ynab_review_differences">Review differences from YNAB</string>
+    <string name="ynab_differences_note">These source totals differ from the shared engine\'s calculation. Accept only after reviewing them.</string>
+    <string name="ynab_accept_differences">Accept differences and continue</string>
+    <string name="ynab_choose_each">Choose each competing change</string>
+    <!-- The value on this device. -->
+    <string name="ynab_local_value">Local: %1$s</string>
+    <!-- The value in YNAB. -->
+    <string name="ynab_remote_value">YNAB: %1$s</string>
+    <string name="ynab_choose_version">Choose a version</string>
+    <string name="ynab_local">Local</string>
+    <string name="ynab_apply_versions">Apply chosen versions</string>
+    <string name="ynab_up_to_date">Your budget is already up to date.</string>
+    <string name="ynab_saved">YNAB import saved. A backup is available in your budget\'s history.</string>
+    <!-- Register and Plan are the names of YNAB's export files: keep them in English. -->
+    <string name="ynab_files_help">Choose YNAB\'s ZIP export, or its Register and Plan CSV files together. Source IDs, targets and notes are absent from these exports; use account import when available.</string>
+    <string name="ynab_choose_files">Choose YNAB export files</string>
+    <string name="ynab_date_order">Date order</string>
+    <string name="ynab_detect">Detect automatically</string>
+    <string name="ynab_mdy">Month / day / year</string>
+    <string name="ynab_dmy">Day / month / year</string>
+    <string name="ynab_ymd">Year / month / day</string>
+    <string name="ynab_preview">Preview file import</string>
+    <string name="ynab_replace_note">Replacing this budget keeps the previous budget for recovery.</string>
+    <string name="ynab_budget_changed">Your budget changed. Preview these files again.</string>
+    <string name="ynab_accept_replace">Accept preview and replace</string>
+    <!-- YNAB's figure (%1$s), then the one the shared engine calculated (%2$s). -->
+    <string name="ynab_difference_values">YNAB %1$s · Calculated %2$s</string>
+
+    <!-- Saving and loading budgets -->
+    <string name="guard_budget_switched">The open budget changed. Reopen this editor in the intended budget.</string>
+    <string name="guard_values_changed">The values you edited changed before this action could be saved. Reopen the editor and review the latest values.</string>
+    <string name="guard_replacement_switched">The open budget changed. Review the replacement in the intended budget.</string>
+    <string name="guard_replacement_changed">The budget changed before it could be replaced. Review the latest budget and try again.</string>
+    <string name="model_action_not_saved">The action could not be saved. Please retry.</string>
+    <string name="model_changed_while_downloading">The budget changed while downloading. Refresh the bank review before importing.</string>
+    <string name="model_changed_refresh">The budget changed. Refresh to use its latest information.</string>
+    <string name="model_service_failed">The service could not complete this request.</string>
+    <string name="model_changed_preview">The budget changed. Refresh this preview to use the latest values.</string>
+    <string name="model_engine_failed">The shared engine could not complete this action.</string>
+    <string name="model_category_not_found">Category not found.</string>
+    <string name="model_choose_valid_month">Choose a valid month.</string>
+    <string name="model_invalid_budget">The engine returned an invalid budget.</string>
+    <string name="model_backup_too_large">Choose a JSON backup smaller than 32 MiB.</string>
+    <string name="model_not_a_backup">This file is not a portable UrBudget JSON backup.</string>
+    <string name="model_no_editable_budget">This command did not return an editable budget.</string>
+    <string name="model_no_recovery">There is no previous budget to restore.</string>
+    <string name="model_no_budget">Create or import a budget first.</string>
+
+    <!-- Assistant -->
+    <string name="assistant_export_failed">The export could not be saved.</string>
+    <string name="assistant_tagline">Your budget, with a second pair of eyes</string>
+    <string name="assistant_history">Conversation history</string>
+    <string name="assistant_new">New conversation</string>
+    <string name="assistant_settings">Assistant settings</string>
+    <string name="assistant_close">Close assistant</string>
+    <string name="assistant_dismiss_notice">Dismiss notice</string>
+    <string name="assistant_empty_title">Ask about your budget. Review every change.</string>
+    <string name="assistant_empty_detail">Look up spending, cover overspending, categorize selected transactions, read statements, or create a report. Proposed changes are checked again before you apply them.</string>
+    <string name="assistant_set_up">Set up assistant</string>
+    <!-- Suggested questions; tapping one puts it in the message box. -->
+    <string name="assistant_prompt_where">Where is my money going this month?</string>
+    <string name="assistant_prompt_cover">Help me cover overspending</string>
+    <string name="assistant_prompt_report">Make a report of this month\'s budget</string>
+    <!-- Put in the message box to ask for changes to a proposal (its title); the person types the rest. -->
+    <string name="assistant_refine_prompt">Revise the proposal ‘%1$s’:</string>
+    <!-- A step the assistant couldn't complete, then its description. -->
+    <string name="assistant_step_failed">Couldn’t complete: %1$s</string>
+    <string name="assistant_reply_stopped">Reply stopped</string>
+    <string name="assistant_you">You</string>
+    <string name="assistant_couldnt_finish">Couldn’t finish</string>
+    <string name="assistant_try_again">Try again</string>
+    <string name="assistant_report_reply">Report reply</string>
+    <string name="assistant_working">Working…</string>
+    <string name="assistant_continue_reply">Continue interrupted reply</string>
+    <string name="assistant_remove_attachment">Remove attachment</string>
+    <plurals name="assistant_selected_transactions">
+        <item quantity="one">%1$s selected transactions</item>
+        <item quantity="other">%1$s selected transactions</item>
+    </plurals>
+    <string name="assistant_attach">Attach statement, document, or image</string>
+    <string name="assistant_select_transactions">Select budget transactions</string>
+    <string name="assistant_ask">Ask about your budget</string>
+    <string name="assistant_stop">Stop reply</string>
+    <string name="assistant_send">Send message</string>
+    <string name="assistant_conversations">Conversations</string>
+    <string name="assistant_export_conversation">Export current conversation</string>
+    <string name="assistant_no_conversations">No saved conversations yet</string>
+    <string name="assistant_delete_conversation">Delete conversation</string>
+    <string name="assistant_delete_conversation_title">Delete this conversation?</string>
+    <string name="assistant_delete_conversation_message">This removes its saved history from this device.</string>
+    <string name="assistant_transactions_to_discuss">Transactions to discuss</string>
+    <string name="assistant_select_up_to">Select up to 200 transactions for your next message.</string>
+    <string name="assistant_clear">Clear</string>
+    <string name="assistant_done_count">Done (%1$s)</string>
+    <string name="assistant_error_title">Couldn’t complete that</string>
+    <string name="assistant_applied_title">✓ Applied: %1$s</string>
+    <string name="assistant_discarded_title">Discarded: %1$s</string>
+    <string name="assistant_undo_proposal">Undo this proposal</string>
+    <string name="assistant_previous_rows">Previous rows</string>
+    <string name="assistant_next_rows">Next rows</string>
+    <!-- A page number out of how many pages. -->
+    <string name="assistant_page">%1$s / %2$s</string>
+    <plurals name="assistant_more_rows">
+        <item quantity="one">%1$s more rows</item>
+        <item quantity="other">%1$s more rows</item>
+    </plurals>
+    <!-- A check the engine ran that did not pass, then what it says. -->
+    <string name="assistant_check">Check: %1$s</string>
+    <string name="assistant_dismiss">Dismiss</string>
+    <string name="assistant_read_report">Read report · Print / PDF</string>
+    <plurals name="assistant_review_import_rows">
+        <item quantity="one">Review %1$s import rows</item>
+        <item quantity="other">Review %1$s import rows</item>
+    </plurals>
+    <string name="assistant_export_csv">Export converted CSV</string>
+    <string name="assistant_open_spreadsheet">Open spreadsheet</string>
+    <string name="assistant_export_excel">Export Excel file</string>
+    <string name="assistant_apply_changes">Apply reviewed changes</string>
+    <string name="assistant_ask_changes">Ask for changes</string>
+    <string name="assistant_discard">Discard</string>
+    <string name="assistant_applied">✓ Applied</string>
+    <string name="assistant_discarded">Discarded</string>
+    <string name="assistant_could_not_apply">Could not apply</string>
+    <!-- While a proposal waits, each of its parts can be left out with its checkbox or changed with its pencil. -->
+    <!-- Apply when some parts are left out: how many of them it makes. -->
+    <string name="assistant_apply_some">Apply %1$s of %2$s</string>
+    <string name="assistant_use_original">Use the assistant\'s version</string>
+    <!-- The checkbox of a part, read out with the part. -->
+    <string name="assistant_apply_row">Apply: %1$s</string>
+    <string name="assistant_change_row">Change %1$s</string>
+    <string name="assistant_category_for">Category for %1$s</string>
+    <string name="assistant_amount_required">Enter an amount.</string>
+    <!-- Fixes the assistant proposes for a bank file being imported. -->
+    <string name="assistant_fix_apply">Apply to the import</string>
+    <string name="assistant_fix_apply_from_import">Apply from the import</string>
+    <string name="assistant_fix_apply_some">Apply %1$s of %2$s to the import</string>
+    <string name="assistant_fix_each_line">Each applies only to a line that hasn\'t changed.</string>
+    <string name="assistant_fix_open_import">Open the import these fixes are for.</string>
+    <string name="assistant_fix_other_import">These fixes are for another import.</string>
+    <string name="assistant_fix_applied">✓ Applied to the import</string>
+    <string name="assistant_export_report_tables">Export report tables to Excel</string>
+    <string name="assistant_save_text">Save text</string>
+    <string name="assistant_share_report">Share report</string>
+    <string name="assistant_share">Share</string>
+    <string name="assistant_print">Print / PDF</string>
+    <string name="assistant_report_a_reply">Report a reply</string>
+    <string name="assistant_send_report">Send report</string>
+    <string name="assistant_report_note">Only the excerpt and explanation below will be sent to UrBudget. Edit out anything private before sending.</string>
+    <string name="assistant_excerpt">Selected excerpt</string>
+    <string name="assistant_what_went_wrong">What went wrong?</string>
+    <string name="assistant_model_default">Provider default</string>
+    <string name="assistant_settings_intro">Answers use your budget and the files you attach. Changes are proposed for your review. Your chosen provider processes the conversation.</string>
+    <string name="assistant_provider">Provider</string>
+    <string name="assistant_provider_chatgpt">ChatGPT plan · browser sign-in</string>
+    <string name="assistant_provider_openai">OpenAI API key</string>
+    <string name="assistant_provider_anthropic">Anthropic API key</string>
+    <string name="assistant_sign_in_browser">Sign in in your browser, then return here. Your ChatGPT plan must allow this app\'s usage.</string>
+    <string name="assistant_signed_in">Signed in</string>
+    <!-- The email address of the ChatGPT account. -->
+    <string name="assistant_signed_in_as">Signed in %1$s</string>
+    <string name="assistant_cancel_sign_in">Cancel sign-in</string>
+    <string name="assistant_sign_out">Sign out</string>
+    <string name="assistant_continue_chatgpt">Continue with ChatGPT</string>
+    <string name="assistant_plan_usage">Plan usage</string>
+    <string name="assistant_connected_apps">Connected apps</string>
+    <!-- The company that bills API usage (OpenAI or Anthropic). -->
+    <string name="assistant_api_billing">API usage is billed by %1$s. The key is checked with your provider before saving.</string>
+    <string name="assistant_remove_key">Remove saved key</string>
+    <string name="assistant_api_key">API key</string>
+    <string name="assistant_checking_key">Checking key…</string>
+    <string name="assistant_verify_key">Verify and save key</string>
+    <string name="assistant_get_key">Get an API key</string>
+    <!-- Where the credentials are kept, as the engine describes it. -->
+    <string name="assistant_credentials">Credentials: %1$s</string>
+    <string name="assistant_credentials_memory">Credentials are kept in memory until the app closes.</string>
+    <string name="assistant_model">Model</string>
+    <string name="assistant_refresh_models">Refresh available models</string>
+    <string name="assistant_share_memos">Share transaction memos</string>
+    <string name="assistant_share_memos_detail">Include memo text in budget lookups sent to the provider.</string>
+    <string name="assistant_keep_history">Keep conversation history</string>
+    <string name="assistant_keep_history_detail">Saved only in this budget\'s folder. Existing history stays until deleted.</string>
+    <string name="assistant_delete_everything">Delete all conversations and attachments</string>
+    <string name="assistant_delete_history_title">Delete all assistant history?</string>
+    <string name="assistant_delete_history_message">This deletes every conversation and attached file for the open budget on this device. Running replies are stopped.</string>
+    <string name="assistant_delete_all">Delete all</string>
+    <string name="assistant_action_failed">The assistant could not complete that action.</string>
+    <string name="assistant_attach_limit">Attach up to five files per message.</string>
+    <string name="assistant_select_limit">Select up to 200 transactions per message.</string>
+    <string name="assistant_proposal_applied">Proposal applied</string>
+    <string name="assistant_budget_changed_review">Your budget changed. Review the refreshed proposal before applying it.</string>
+    <string name="assistant_budget_changed_undo">Your budget changed after this proposal. Use the budget\'s undo history to review subsequent changes.</string>
+    <!-- The reference number UrBudget gave the report. -->
+    <string name="assistant_report_sent">Report sent · %1$s</string>
+    <string name="assistant_file_too_large">Choose a file smaller than 25 MiB.</string>
+    <string name="assistant_attachment_unopened">The attachment could not be opened.</string>
+    <string name="assistant_previous">Previous</string>
+    <string name="assistant_next">Next</string>
+    <string name="assistant_report_layout_failed">The report could not be laid out.</string>
+    <string name="assistant_report_not_laid_out">The report was not laid out.</string>
+    <string name="assistant_report_print_failed">The report could not be printed.</string>
+
+    <!-- Names the app gives new budget data -->
+    <!-- A new budget's first category group. Stored as the person's data once created; the same word the engine uses for its starter group. -->
+    <string name="starter_group_everyday">Everyday</string>
+
+    <!-- Charts -->
+    <!-- A chart's readout when the chosen column has no figures. -->
+    <string name="chart_nothing">Nothing</string>
+    <string name="chart_no_spending">No spending</string>
+    <string name="chart_less">Less</string>
+    <string name="chart_more">More</string>
+    <string name="chart_spending_by_payee">Spending by payee</string>
+    <!-- Joins two series names in a chart's spoken description. -->
+    <string name="chart_and">%1$s and %2$s</string>
+    <!-- A chart's spoken description: the series it shows, by month. -->
+    <string name="chart_by_month">%1$s by month</string>
+</resources>

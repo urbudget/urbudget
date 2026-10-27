@@ -108,17 +108,18 @@ struct CategorySheet: View {
         let payment = terms.long("monthlyPayment")
         let targeted = category.long("target") == payment && category["goal"].text("goal_type") == "DEBT"
         Section {
-            ValueRow(title: "Still owed", value: money(owed, currency))
-            ValueRow(title: "Monthly payment", value: money(payment, currency))
+            ValueRow(title: String(localized: "Still owed"), value: money(owed, currency))
+            ValueRow(title: String(localized: "Monthly payment"), value: money(payment, currency))
             Button { loanFor = id } label: { Label("Loan details & payoff", systemImage: "percent") }
             if !targeted && payment > 0 {
                 Button {
                     let name = category.text("name")
                     let categoryId = categoryId
+                    let toast = String(localized: "Set \(name)'s target to the \(money(payment, currency)) \(account.text("name")) payment.")
                     // A monthly debt payment target, as the target editor saves one.
-                    store.edit(then: { store.showToast("Set \(name)'s target to the \(money(payment, currency)) \(account.text("name")) payment.", undo: true) }) { budget in
+                    store.edit(then: { store.showToast(toast, undo: true) }) { budget in
                         var rows = budget["categories"].array
-                        guard let index = rows.firstIndex(where: { $0.text("id") == categoryId }) else { throw AppError("Category not found.") }
+                        guard let index = rows.firstIndex(where: { $0.text("id") == categoryId }) else { throw AppError(String(localized: "Category not found.")) }
                         var goal = rows[index]["goal"].text("goal_type") == "DEBT" ? rows[index]["goal"] : ["goal_creation_month": .string("\(Dates.currentMonth)-01")]
                         goal["goal_type"] = "DEBT"
                         goal["goal_needs_whole_amount"] = .null
@@ -188,7 +189,7 @@ struct CategorySheet: View {
                 .listRowBackground(Color.clear)
             }
             Section {
-                ValueRow(title: "Carried from last month", value: money(total?.long("carried") ?? 0, currency))
+                ValueRow(title: String(localized: "Carried from last month"), value: money(total?.long("carried") ?? 0, currency))
                 Button {
                     if !editingAssigned { beginAssigning() }
                 } label: {
@@ -196,7 +197,7 @@ struct CategorySheet: View {
                         Text("Assigned in \(Dates.shortMonthLabel(month))").foregroundStyle(Color.primary)
                         Spacer()
                         if editingAssigned {
-                            Text(pad.isSum ? pad.display : money(pad.cents ?? 0, currency))
+                            Text(pad.isSum ? AppLanguage.leftToRight(pad.display) : money(pad.cents ?? 0, currency))
                                 .font(.title3.weight(.heavy)).monospacedDigit().foregroundStyle(Color.urAccent)
                         } else {
                             Text(money(assigned, currency)).monospacedDigit().foregroundStyle(Color.urAccent)
@@ -211,17 +212,17 @@ struct CategorySheet: View {
                                          : RegisterTarget(category: categoryId, from: from, through: through))
                 } label: {
                     HStack {
-                        ValueRow(title: "Activity", value: money(total?.long("activity") ?? 0, currency))
-                        Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Color.urTertiary)
+                        ValueRow(title: String(localized: "Activity"), value: money(total?.long("activity") ?? 0, currency))
+                        Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(Color.urTertiary)
                     }
                     .foregroundStyle(Color.primary)
                 }
                 if let upcoming = total?.long("upcoming"), upcoming > 0 {
-                    ValueRow(title: "Upcoming", value: money(upcoming, currency), subtitle: "Scheduled this month")
+                    ValueRow(title: String(localized: "Upcoming"), value: money(upcoming, currency), subtitle: String(localized: "Scheduled this month"))
                 }
                 if target > 0 {
                     NavigationLink(value: CategoryRoute.target) {
-                        ValueRow(title: "Target", value: money(target, currency), subtitle: targetDescription(category))
+                        ValueRow(title: String(localized: "Target"), value: money(target, currency), subtitle: targetDescription(category))
                     }
                 }
             }
@@ -230,12 +231,13 @@ struct CategorySheet: View {
                 Section {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
-                            if state.needed > 0 && !payment { chip("Needed +\(money(state.needed, currency))") { pad.set(assigned + state.needed) } }
-                            if available < 0 { chip("Cover +\(money(-available, currency))") { pad.set(assigned - available) } }
-                            ForEach([("assignedLastMonth", "Last month"), ("spentLastMonth", "Spent last month"),
-                                     ("averageAssigned", "Avg assigned"), ("averageSpent", "Avg spent")], id: \.0) { mode, label in
+                            if state.needed > 0 && !payment {
+                                chip(String(localized: "Needed \(plus(state.needed, currency))")) { pad.set(assigned + state.needed) }
+                            }
+                            if available < 0 { chip(String(localized: "Cover \(plus(-available, currency))")) { pad.set(assigned - available) } }
+                            ForEach(["assignedLastMonth", "spentLastMonth", "averageAssigned", "averageSpent"], id: \.self) { mode in
                                 if let value = suggestions[mode], value != assigned {
-                                    chip("\(label) \(money(value, currency))") { pad.set(value) }
+                                    chip(suggestion(mode, money(value, currency))) { pad.set(value) }
                                 }
                             }
                             Button("Cancel") { editingAssigned = false; error = nil }.buttonStyle(.borderless).foregroundStyle(Color.secondary)
@@ -259,7 +261,7 @@ struct CategorySheet: View {
                 ForEach(loans, id: \.account.idText) { loan in loanSection(loan.terms, loan.account, category, currency) }
                 Section("Note") {
                     Button { noting = true } label: {
-                        Text(category.text("note").isEmpty ? "Add a note" : category.text("note"))
+                        Text(category.text("note").isEmpty ? String(localized: "Add a note") : category.text("note"))
                             .foregroundStyle(category.text("note").isEmpty ? Color.urAccent : .primary)
                             .lineLimit(4)
                     }
@@ -292,8 +294,8 @@ struct CategorySheet: View {
         }
         .safeAreaInset(edge: .bottom) {
             if editingAssigned {
-                AmountKeypad(pad: pad, doneLabel: "Assign") {
-                    guard let cents = pad.cents else { error = "Finish the sum before saving."; return }
+                AmountKeypad(pad: pad, doneLabel: String(localized: "Assign")) {
+                    guard let cents = pad.cents else { error = String(localized: "Finish the sum before saving."); return }
                     // The sheet stays open on the new figures, as the desktop's inspector does.
                     store.assign(category: categoryId, amount: cents) { editingAssigned = false; error = nil }
                 }
@@ -301,6 +303,21 @@ struct CategorySheet: View {
             }
         }
         .animation(.snappy(duration: 0.25), value: editingAssigned)
+    }
+
+    /// "+45.00", kept whole in right-to-left text.
+    private func plus(_ cents: Int64, _ currency: String) -> String {
+        AppLanguage.leftToRight("+" + money(cents, currency))
+    }
+
+    /// A keypad shortcut's label: what a Quick assign option would set Assigned to.
+    private func suggestion(_ mode: String, _ amount: String) -> String {
+        switch mode {
+        case "assignedLastMonth": return String(localized: "Last month \(amount)")
+        case "spentLastMonth": return String(localized: "Spent last month \(amount)")
+        case "averageAssigned": return String(localized: "Avg assigned \(amount)")
+        default: return String(localized: "Avg spent \(amount)")
+        }
     }
 
     private func chip(_ text: String, _ action: @escaping () -> Void) -> some View {
@@ -315,14 +332,15 @@ struct CategorySheet: View {
         Menu {
             if !payment { Button { route.append(.details) } label: { Label("Name, group & note", systemImage: "pencil") } }
             Button { route.append(.history) } label: { Label("Money moves this month", systemImage: "clock.arrow.circlepath") }
-            Button { asking = AssistantRequest(text: "Help me with \(category.text("name")) this month.") } label: {
+            Button { asking = AssistantRequest(text: String(localized: "Help me with \(category.text("name")) this month.")) } label: {
                 Label("Ask the assistant", systemImage: "sparkles")
             }
             let hidden = category.flag("hidden")
             Button {
                 let name = category.text("name")
                 store.upsert("categories", ["id": .string(categoryId), "hidden": .bool(!hidden)]) {
-                    store.showToast(hidden ? "\(name) is shown again." : "Hid \(name). Find it under Hidden categories.", undo: true)
+                    store.showToast(hidden ? String(localized: "\(name) is shown again.")
+                                           : String(localized: "Hid \(name). Find it under Hidden categories."), undo: true)
                 }
                 dismiss()
             } label: { Label(hidden ? "Show category" : "Hide category", systemImage: hidden ? "eye" : "eye.slash") }
@@ -338,36 +356,51 @@ struct CategorySheet: View {
 }
 
 func moveRow(_ line: MoveLine, _ currency: String) -> some View {
-    ValueRow(title: line.what, value: (line.amount > 0 ? "+" : "") + money(line.amount, currency),
+    ValueRow(title: line.what, value: AppLanguage.leftToRight((line.amount > 0 ? "+" : "") + money(line.amount, currency)),
              subtitle: line.detail ?? Dates.dayAndMonth(line.at), color: line.amount < 0 ? .urNegative : .primary)
 }
 
 /// A target's kind and how often it repeats, as the desktop's inspector names them.
 func targetDescription(_ category: JSON) -> String {
     let goal = category["goal"]
-    guard goal.isObject else { return "Set aside" }
-    let label: String
+    guard goal.isObject else { return String(localized: "Set aside") }
+    let date = Money.date(goal.text("goal_target_date"))
     switch goal.text("goal_type") {
-    case "NEED": label = goal.flag("goal_needs_whole_amount", true) ? "Set aside" : "Refill up to"
-    case "TB", "TBD": label = "Balance target"
-    case "DEBT": label = "Loan payment target"
-    case "MF": label = "Monthly funding"
-    default: label = "Set aside"
+    case "NEED": break
+    case "TB": return String(localized: "Balance target")
+    case "TBD": return String(localized: "Balance target by \(date)")
+    case "DEBT": return String(localized: "Loan payment target")
+    case "MF": return String(localized: "Monthly funding")
+    default: return String(localized: "Set aside")
     }
-    if goal.text("goal_type") == "TBD" { return "\(label) by \(Money.date(goal.text("goal_target_date")))" }
-    guard goal.text("goal_type") == "NEED" else { return label }
     let every = Int(goal.long("goal_cadence_frequency") == 0 ? 1 : goal.long("goal_cadence_frequency"))
     let cadence = goal.has("goal_cadence") ? Int(goal.long("goal_cadence")) : 1
-    let when: String
+    return goal.flag("goal_needs_whole_amount", true) ? setAsideDescription(cadence, every: every, date: date)
+        : refillDescription(cadence, every: every, date: date)
+}
+
+/// "Set aside each month", "Set aside every 3 weeks", "Set aside once, by 2026-12-01"…
+private func setAsideDescription(_ cadence: Int, every: Int, date: String) -> String {
     switch cadence {
-    case 0: when = "once, by \(Money.date(goal.text("goal_target_date")))"
-    case 1: when = every > 1 ? "every \(every) months" : "each month"
-    case 2: when = every > 1 ? "every \(every) weeks" : "each week"
-    case 13: when = every > 1 ? "every \(every) years" : "each year"
-    case 14: when = "every two years"
-    default: when = "every \(cadence - 1) months"
+    case 0: return String(localized: "Set aside once, by \(date)")
+    case 1: return every > 1 ? String(localized: "Set aside every \(every) months", locale: .app) : String(localized: "Set aside each month")
+    case 2: return every > 1 ? String(localized: "Set aside every \(every) weeks", locale: .app) : String(localized: "Set aside each week")
+    case 13: return every > 1 ? String(localized: "Set aside every \(every) years", locale: .app) : String(localized: "Set aside each year")
+    case 14: return String(localized: "Set aside every two years")
+    default: return String(localized: "Set aside every \(cadence - 1) months", locale: .app)
     }
-    return "\(label) \(when)"
+}
+
+/// "Refill up to each month", "Refill up to every 3 weeks"…
+private func refillDescription(_ cadence: Int, every: Int, date: String) -> String {
+    switch cadence {
+    case 0: return String(localized: "Refill up to once, by \(date)")
+    case 1: return every > 1 ? String(localized: "Refill up to every \(every) months", locale: .app) : String(localized: "Refill up to each month")
+    case 2: return every > 1 ? String(localized: "Refill up to every \(every) weeks", locale: .app) : String(localized: "Refill up to each week")
+    case 13: return every > 1 ? String(localized: "Refill up to every \(every) years", locale: .app) : String(localized: "Refill up to each year")
+    case 14: return String(localized: "Refill up to every two years")
+    default: return String(localized: "Refill up to every \(cadence - 1) months", locale: .app)
+    }
 }
 
 /// All of a category's moves this month.
@@ -410,7 +443,7 @@ private struct NoteEditor: View {
                 if let error { FormErrorView(message: error) }
             }
             .disabled(saving)
-            .navigationTitle(store.budget?.row("categories", id: categoryId)?.text("name") ?? "Note")
+            .navigationTitle(store.budget?.row("categories", id: categoryId)?.text("name") ?? String(localized: "Note"))
             .inlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
@@ -430,12 +463,17 @@ private struct NoteEditor: View {
 }
 
 /// The target kinds the desktop offers, in its words. Imported kinds stay available only to targets that use them.
-private let targetBehaviours: [(id: String, label: String, hint: String)] = [
-    ("set", "Set aside each period", "Assign the whole amount every period, whatever is left over."),
-    ("refill", "Refill up to each period", "Top up to the amount; money carried forward counts."),
-    ("TB", "Maintain a category balance", "Keep at least this much available."),
-    ("TBD", "Reach a balance by a date", "Save up to the amount by a chosen date."),
-]
+private let targetBehaviours: [(id: String, label: String, hint: String)] = { () -> [(id: String, label: String, hint: String)] in
+    var behaviours: [(id: String, label: String, hint: String)] = []
+    behaviours.append(("set", String(localized: "Set aside each period"), String(localized: "Assign the whole amount every period, whatever is left over.")))
+    behaviours.append(("refill", String(localized: "Refill up to each period"), String(localized: "Top up to the amount; money carried forward counts.")))
+    behaviours.append(("TB", String(localized: "Maintain a category balance"), String(localized: "Keep at least this much available.")))
+    behaviours.append(("TBD", String(localized: "Reach a balance by a date"), String(localized: "Save up to the amount by a chosen date.")))
+    return behaviours
+}()
+
+/// The days a weekly target can fall on, Sunday first, as the budget numbers them.
+private let weekdayNames: [LocalizedStringKey] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 
 /// Creating or changing a target, as the desktop's editor does: the four behaviours, the amount on
 /// the keypad, how often it repeats and from when, and snoozing for this month.
@@ -467,8 +505,12 @@ private struct TargetEditor: View {
         let payment = !category.text("paymentAccountId").isEmpty
         let hasTarget = existing.isObject || category.long("target") > 0
         var options = targetBehaviours
-        if existingType == "MF" { options.append(("MF", "Monthly funding", "An imported target: fund this amount each month.")) }
-        if existingType == "DEBT" { options.append(("DEBT", "Monthly debt payment", "An imported target for a loan payment.")) }
+        if existingType == "MF" {
+            options.append(("MF", String(localized: "Monthly funding"), String(localized: "An imported target: fund this amount each month.")))
+        }
+        if existingType == "DEBT" {
+            options.append(("DEBT", String(localized: "Monthly debt payment"), String(localized: "An imported target for a loan payment.")))
+        }
         return Form {
             Section {
                 Button {
@@ -508,18 +550,18 @@ private struct TargetEditor: View {
                         Text("Every two years").tag(14)
                     }
                     if [1, 2, 13].contains(cadence) {
-                        Stepper("Every \(interval) \(cadence == 2 ? "weeks" : cadence == 13 ? "years" : "months")", value: $interval, in: 1...100)
+                        Stepper(value: $interval, in: 1...100) { intervalLabel }
                     }
                     if cadence == 2 {
                         Picker("Day of week", selection: $weekday) {
-                            ForEach(Array(["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].enumerated()), id: \.offset) { Text($0.element).tag($0.offset) }
+                            ForEach(Array(weekdayNames.enumerated()), id: \.offset) { Text($0.element).tag($0.offset) }
                         }
                     } else if cadence != 1 || interval != 1 {
-                        DayPicker(title: cadence == 0 ? "Needed by" : "First due date", iso: $due)
+                        DayPicker(title: cadence == 0 ? String(localized: "Needed by") : String(localized: "First due date"), iso: $due)
                     }
                 }
-                if behaviour == "TBD" { DayPicker(title: "Reach it by", iso: $due) }
-                if behaviour != "TB" { MonthRow(title: "Starts", month: $start) }
+                if behaviour == "TBD" { DayPicker(title: String(localized: "Reach it by"), iso: $due) }
+                if behaviour != "TB" { MonthRow(title: String(localized: "Starts"), month: $start) }
                 if store.month == Dates.currentMonth && !payment && hasTarget {
                     Toggle(isOn: $snoozed) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -535,7 +577,7 @@ private struct TargetEditor: View {
                     Button("Remove target", role: .destructive) {
                         attempt($error, saving: $saving) {
                             try await store.saveTarget(category: categoryId, goal: nil, amount: 0)
-                            store.showToast("Removed the \(category.text("name")) target.", undo: true)
+                            store.showToast(String(localized: "Removed the \(category.text("name")) target."), undo: true)
                             close()
                         }
                     }
@@ -551,6 +593,15 @@ private struct TargetEditor: View {
         }
         .animation(.snappy(duration: 0.25), value: keypad)
         .onAppear(perform: load)
+    }
+
+    /// "Every 2 weeks": the stepper's label, in the unit the target repeats in.
+    private var intervalLabel: Text {
+        switch cadence {
+        case 2: return Text("Every \(interval) weeks")
+        case 13: return Text("Every \(interval) years")
+        default: return Text("Every \(interval) months")
+        }
     }
 
     private func load() {
@@ -575,9 +626,9 @@ private struct TargetEditor: View {
 
     private func save() {
         attempt($error, saving: $saving) {
-            guard let category else { throw AppError("This category was deleted.") }
-            guard let amount = pad.cents else { throw AppError("Finish the sum first.") }
-            guard amount > 0 else { throw AppError("Enter a target amount, or remove the target.") }
+            guard let category else { throw AppError(String(localized: "This category was deleted.")) }
+            guard let amount = pad.cents else { throw AppError(String(localized: "Finish the sum first.")) }
+            guard amount > 0 else { throw AppError(String(localized: "Enter a target amount, or remove the target.")) }
             let existing = category["goal"]
             let need = behaviour == "set" || behaviour == "refill"
             let type = need ? "NEED" : behaviour
@@ -585,7 +636,7 @@ private struct TargetEditor: View {
             var goal: JSON = existing.text("goal_type") == type ? existing : ["goal_creation_month": .string("\(Dates.currentMonth)-01")]
             goal["goal_type"] = .string(type)
             let (scaled, overflow) = amount.multipliedReportingOverflow(by: 10)
-            guard !overflow else { throw AppError("The amount is too large.") }
+            guard !overflow else { throw AppError(String(localized: "The amount is too large.")) }
             goal["goal_target"] = .int(scaled)
             if type != "TB" { goal["goal_creation_month"] = .string("\(start)-01") }
             if store.month == Dates.currentMonth && !payment {
@@ -599,18 +650,18 @@ private struct TargetEditor: View {
                     goal["goal_day"] = .int(Int64(weekday))
                     goal.remove("goal_target_date"); goal.remove("goal_target_month")
                 } else if cadence != 1 || interval > 1 {
-                    guard Dates.day(due) != nil else { throw AppError("Choose a due date.") }
+                    guard Dates.day(due) != nil else { throw AppError(String(localized: "Choose a due date.")) }
                     goal["goal_target_date"] = .string(due)
                     goal.remove("goal_target_month"); goal.remove("goal_day")
                 } else {
                     goal.remove("goal_target_date"); goal.remove("goal_target_month"); goal.remove("goal_day")
                 }
             } else if type == "TBD" {
-                guard Dates.day(due) != nil else { throw AppError("Choose a date to reach it by.") }
+                guard Dates.day(due) != nil else { throw AppError(String(localized: "Choose a date to reach it by.")) }
                 goal["goal_target_date"] = .string(due)
             }
             try await store.saveTarget(category: categoryId, goal: goal, amount: amount)
-            store.showToast("Set the \(category.text("name")) target to \(money(amount, store.currency)).", undo: true)
+            store.showToast(String(localized: "Set the \(category.text("name")) target to \(money(amount, store.currency))."), undo: true)
             close()
         }
     }
@@ -652,7 +703,9 @@ private struct CategoryDetailsEditor: View {
             ToolbarItem(placement: .confirmationAction) {
                 SaveButton(saving: saving) {
                     attempt($error, saving: $saving) {
-                        guard let original = store.budget?.row("categories", id: categoryId) else { throw AppError("This category was deleted.") }
+                        guard let original = store.budget?.row("categories", id: categoryId) else {
+                            throw AppError(String(localized: "This category was deleted."))
+                        }
                         try await store.upserting("categories", ["id": .string(categoryId), "name": .string(name.trimmingCharacters(in: .whitespaces)),
                                                                  "group": .string(group), "note": .string(note), "hidden": .bool(hidden)], original: original)
                         close()
@@ -685,11 +738,11 @@ private struct DeleteCategoryView: View {
 
     var body: some View {
         let budget = store.budget ?? [:]
-        let name = budget.row("categories", id: categoryId)?.text("name") ?? "category"
+        let name = budget.row("categories", id: categoryId)?.text("name") ?? String(localized: "category")
         // Whether anything refers to the category: an unused one is deleted without choosing where its history goes.
         let used = budget.rows("assignments").contains { $0.text("categoryId") == categoryId && $0.long("amount") != 0 }
             || budget.rows("transactions").contains { $0.rows("splits").contains { $0.text("categoryId") == categoryId } }
-        let destination = replacement == Unassigned ? "Unassigned" : budget.row("categories", id: replacement)?.text("name") ?? "Unassigned"
+        let destination = destinationName(budget)
         Form {
             if used {
                 Button { picking = true } label: {
@@ -697,7 +750,7 @@ private struct DeleteCategoryView: View {
                         Text("Move its history into").foregroundStyle(Color.primary)
                         Spacer()
                         Text(destination).foregroundStyle(Color.secondary)
-                        Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Color.urTertiary)
+                        Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(Color.urTertiary)
                     }
                 }
                 Section {
@@ -714,7 +767,8 @@ private struct DeleteCategoryView: View {
                     attempt($error, saving: $saving) {
                         try await store.committingWorkflow(["type": "deleteCategory", "id": .string(categoryId),
                                                             "replacement": .string(used ? replacement : Unassigned)])
-                        store.showToast(used ? "Deleted \(name). Its history moved to \(destination)." : "Deleted \(name).", undo: true)
+                        store.showToast(used ? String(localized: "Deleted \(name). Its history moved to \(destination).")
+                                             : String(localized: "Deleted \(name)."), undo: true)
                         close()
                     }
                 } label: {
@@ -730,7 +784,7 @@ private struct DeleteCategoryView: View {
         .inlineTitle()
         .sheet(isPresented: $picking) {
             NavigationStack {
-                CategoryPicker(title: "Move history into", month: store.month, selected: replacement, includeUnassigned: true,
+                CategoryPicker(title: String(localized: "Move history into"), month: store.month, selected: replacement, includeUnassigned: true,
                                includePayment: false, excluding: categoryId) { id in
                     replacement = id
                     picking = false
@@ -738,5 +792,11 @@ private struct DeleteCategoryView: View {
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { picking = false } } }
             }
         }
+    }
+
+    /// Where the history goes: Unassigned, or the chosen category's name.
+    private func destinationName(_ budget: JSON) -> String {
+        guard replacement != Unassigned, let category = budget.row("categories", id: replacement) else { return String(localized: "Unassigned") }
+        return category.text("name")
     }
 }

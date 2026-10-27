@@ -177,10 +177,11 @@ final class ProposalChoicesTests: XCTestCase {
 
     func testApplySaysHowMuchOfTheCardItMakesWhenSomeIsLeftOut() {
         let rows: [JSON] = [["key": "t:a"], ["key": "t:b", "skipped": true], ["key": "r:r1"], ["label": "unkeyed"]]
-        XCTAssertEqual(ProposalChoices.partial(rows, choosing: true), "Apply 2 of 3")
+        XCTAssertEqual(ProposalChoices.partial(rows, choosing: true), ProposalChoices.Partial(chosen: 2, total: 3))
         XCTAssertNil(ProposalChoices.partial(rows, choosing: false))
         XCTAssertNil(ProposalChoices.partial(rows.map { row -> JSON in var row = row; row["skipped"] = false; return row }, choosing: true))
-        XCTAssertEqual(ProposalChoices.partial(rows.map { row -> JSON in var row = row; row["skipped"] = true; return row }, choosing: true), "Apply 0 of 3")
+        XCTAssertEqual(ProposalChoices.partial(rows.map { row -> JSON in var row = row; row["skipped"] = true; return row }, choosing: true),
+                       ProposalChoices.Partial(chosen: 0, total: 3))
     }
 }
 

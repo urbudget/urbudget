@@ -10,14 +10,16 @@ import SwiftUI
 /// How often a schedule repeats, in Android's words (MoreScreen.kt's frequencies); "never" is once.
 enum ScheduleFrequency {
     static let all: [(id: String, label: String)] = [
-        ("never", "Once"), ("daily", "Daily"), ("weekly", "Weekly"), ("everyOtherWeek", "Every other week"),
-        ("every4Weeks", "Every 4 weeks"), ("twiceAMonth", "Twice a month"), ("monthly", "Monthly"),
-        ("everyOtherMonth", "Every other month"), ("every3Months", "Every 3 months"), ("every4Months", "Every 4 months"),
-        ("twiceAYear", "Twice a year"), ("yearly", "Yearly"), ("everyOtherYear", "Every other year"),
+        ("never", String(localized: "Once")), ("daily", String(localized: "Daily")), ("weekly", String(localized: "Weekly")),
+        ("everyOtherWeek", String(localized: "Every other week")), ("every4Weeks", String(localized: "Every 4 weeks")),
+        ("twiceAMonth", String(localized: "Twice a month")), ("monthly", String(localized: "Monthly")),
+        ("everyOtherMonth", String(localized: "Every other month")), ("every3Months", String(localized: "Every 3 months")),
+        ("every4Months", String(localized: "Every 4 months")), ("twiceAYear", String(localized: "Twice a year")),
+        ("yearly", String(localized: "Yearly")), ("everyOtherYear", String(localized: "Every other year")),
     ]
 
     static func label(_ id: String) -> String {
-        if id.isEmpty { return "Once" }
+        if id.isEmpty { return String(localized: "Once") }
         return all.first { $0.id == id }?.label ?? id
     }
 
@@ -163,8 +165,8 @@ enum LoanMath {
         var typed = text.trimmingCharacters(in: .whitespaces)
         if typed.hasSuffix("%") { typed = String(typed.dropLast()).trimmingCharacters(in: .whitespaces) }
         if typed.isEmpty { return 0 }
-        guard let value = try? Money.parse(typed) else { throw AppError("Enter the interest rate as a percentage, like 5.25.") }
-        guard (0...100_000).contains(value) else { throw AppError("The interest rate must be from 0 to 1,000%.") }
+        guard let value = try? Money.parse(typed) else { throw AppError(String(localized: "Enter the interest rate as a percentage, like 5.25.")) }
+        guard (0...100_000).contains(value) else { throw AppError(String(localized: "The interest rate must be from 0 to 1,000%.")) }
         return value
     }
 
@@ -175,21 +177,22 @@ enum LoanMath {
         if typed.hasSuffix("%") { typed = String(typed.dropLast()).trimmingCharacters(in: .whitespaces) }
         if decimal == "," { typed = typed.replacingOccurrences(of: ",", with: ".") }
         guard typed.range(of: #"^[0-9]+(\.[0-9]{1,3})?$"#, options: .regularExpression) != nil else {
-            throw AppError("Enter a rate with up to three decimals.")
+            throw AppError(String(localized: "Enter a rate with up to three decimals."))
         }
         let pieces = typed.split(separator: ".", omittingEmptySubsequences: false)
         let fraction = pieces.count > 1 ? String(pieces[1]).padding(toLength: 3, withPad: "0", startingAt: 0) : "000"
         guard pieces[0].count <= 7, let whole = Int64(pieces[0]), let part = Int64(fraction), whole * 1000 + part <= 1_000_000 else {
-            throw AppError("Rate must be between 0 and 1,000%.")
+            throw AppError(String(localized: "Rate must be between 0 and 1,000%."))
         }
         return whole * 1000 + part
     }
 
     /// "2 years 3 months".
     static func span(_ months: Int) -> String {
-        func part(_ n: Int, _ unit: String) -> String? { n != 0 ? "\(n) \(unit)\(n == 1 ? "" : "s")" : nil }
-        let text = [part(months / 12, "year"), part(months % 12, "month")].compactMap { $0 }.joined(separator: " ")
-        return text.isEmpty ? "0 months" : text
+        let years = months / 12, rest = months % 12
+        if years != 0 && rest != 0 { return String(localized: "\(years) years \(rest) months", locale: .app) }
+        if years != 0 { return String(localized: "\(years) years", locale: .app) }
+        return String(localized: "\(rest) months", locale: .app)
     }
 
     /// Whether a transaction pays money into the loan account (Planning.tsx's paysInto).
@@ -285,23 +288,23 @@ struct LoanDraft: Equatable {
     /// The typed details as loan terms (loans.rs's Terms, with any fields kept from `saved`), or a
     /// sentence saying what doesn't read.
     func terms(accountId: String, saved: JSON?, requireCategory: Bool) throws -> JSON {
-        guard !accountId.isEmpty else { throw AppError("Choose the loan account.") }
+        guard !accountId.isEmpty else { throw AppError(String(localized: "Choose the loan account.")) }
         let typedPayment = payment.trimmingCharacters(in: .whitespaces)
         let monthly = typedPayment.isEmpty ? 0 : try Money.parse(typedPayment)
-        guard monthly > 0 else { throw AppError("Enter the loan's monthly payment as a positive amount.") }
+        guard monthly > 0 else { throw AppError(String(localized: "Enter the loan's monthly payment as a positive amount.")) }
         let typedFees = fees.trimmingCharacters(in: .whitespaces)
         let charges = typedFees.isEmpty ? 0 : try Money.parse(typedFees)
-        guard charges >= 0 else { throw AppError("Enter the monthly fees as a positive amount.") }
+        guard charges >= 0 else { throw AppError(String(localized: "Enter the monthly fees as a positive amount.")) }
         let basisPoints = try LoanMath.parseRate(rate)
         let history = try rates.map { row -> JSON in
-            guard Dates.isMonth(row.month) else { throw AppError("Choose the month each rate change starts.") }
+            guard Dates.isMonth(row.month) else { throw AppError(String(localized: "Choose the month each rate change starts.")) }
             var record = row.source ?? [:]
             record["month"] = .string(row.month)
             record["annualRateMilliPercent"] = .int(try LoanMath.parseRateChange(row.rate, decimal: Money.decimalMark()))
             return record
         }.sorted { $0.text("month") < $1.text("month") }
-        guard Set(history.map { $0.text("month") }).count == history.count else { throw AppError("Keep one interest rate per month.") }
-        if requireCategory && category.isEmpty { throw AppError("Choose the category the payment comes from.") }
+        guard Set(history.map { $0.text("month") }).count == history.count else { throw AppError(String(localized: "Keep one interest rate per month.")) }
+        if requireCategory && category.isEmpty { throw AppError(String(localized: "Choose the category the payment comes from.")) }
         var record = saved ?? [:]
         record["accountId"] = .string(accountId)
         record["categoryId"] = .string(category)
@@ -386,8 +389,8 @@ struct PayeeUsage: Equatable {
 
     /// "12 transactions, 1 schedule, 2 rules".
     var description: String {
-        [PayeeText.plural(transactions, "transaction"), schedules > 0 ? PayeeText.plural(schedules, "schedule") : nil,
-         rules > 0 ? PayeeText.plural(rules, "rule") : nil].compactMap { $0 }.joined(separator: ", ")
+        planningList([PayeeText.transactions(transactions), schedules > 0 ? String(localized: "\(schedules) schedules", locale: .app) : nil,
+                      rules > 0 ? String(localized: "\(rules) rules", locale: .app) : nil].compactMap { $0 })
     }
 }
 
@@ -395,6 +398,26 @@ enum PayeeText {
     static func plural(_ n: Int, _ word: String) -> String {
         "\(n.formatted()) \(word)\(n == 1 ? "" : "s")"
     }
+
+    /// "12 transactions", or "1,234 transactions" grouped as the number always was.
+    static func transactions(_ n: Int) -> String {
+        if n < 1000 { return String(localized: "\(n) transactions", locale: .app) }
+        let grouped = n.formatted(.number.locale(.app))
+        return String(localized: "\(grouped) transactions")
+    }
+}
+
+/// Items in a sentence ("21/10/2026, 21/11/2026"), separated in the app's language. In Arabic each
+/// item keeps its own direction and the list reads right to left.
+func planningList(_ items: [String]) -> String {
+    planningJoined(items, separator: String(localized: ", ", comment: "Between the items of a list in a sentence, as in “3 transactions, 1 rule”."))
+}
+
+/// Parts of a line ("Due 21/10/2026 · Monthly · Checking"). In Arabic each part keeps its own
+/// direction (a date, a name), and the line reads right to left.
+func planningJoined(_ parts: [String], separator: String) -> String {
+    guard AppLanguage.isRightToLeft else { return parts.joined(separator: separator) }
+    return "\u{200F}" + parts.map { "\u{2068}" + $0 + "\u{2069}" }.joined(separator: separator)
 }
 
 /// The saved payee record for a name, as payeeIndex reads them: the first that isn't a YNAB transfer
@@ -470,8 +493,8 @@ extension BudgetStore {
 func planningCategoryName(_ budget: JSON?, _ id: String) -> String? {
     switch id {
     case "": return nil
-    case Unassigned: return "Unassigned"
-    default: return budget?.row("categories", id: id)?.text("name") ?? "Deleted category"
+    case Unassigned: return String(localized: "Unassigned")
+    default: return budget?.row("categories", id: id)?.text("name") ?? String(localized: "Deleted category")
     }
 }
 

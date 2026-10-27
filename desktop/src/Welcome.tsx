@@ -10,12 +10,14 @@ import { demoBudget } from "./demo";
 import { errorText, numberFormatFor } from "./format";
 import { starterCategories } from "./newBudget";
 import { useToast } from "./ui";
+import { msg, t } from "./i18n";
 import type { Budget, ImportResult, YnabImportRequest } from "./types";
 import "./welcome.css";
 
 /** The currency a first launch's budget is made with (Budget::default in domain.rs). */
 const BUILT_IN_CURRENCY = "SAR";
-const SAMPLE_NAME = "Sample budget";
+/** The sample budget's name: made in the language in use, found by either name. */
+const SAMPLE_NAME = msg("Sample budget");
 
 /** No accounts, categories or transactions: a budget nobody has set up yet. */
 export const isBlank = (b: Budget) => !b.accounts.length && !b.categories.length && !b.transactions.length;
@@ -43,12 +45,12 @@ const writeSetup = (budgetId: string, value: "on" | "off") => {
 
 /** Opens the sample budget, making it (in this budget's currency and formats) the first time. */
 export async function openSample(budget: Budget, budgetId: string, openBudget: (id: string) => Promise<void>) {
-  const existing = (await api.listBudgets()).find((b) => b.name === SAMPLE_NAME && !b.missing);
+  const existing = (await api.listBudgets()).find((b) => (b.name === SAMPLE_NAME || b.name === t(SAMPLE_NAME)) && !b.missing);
   const id =
     existing?.id ??
     (await api.createBudget({
       ...demoBudget(),
-      name: SAMPLE_NAME,
+      name: t(SAMPLE_NAME),
       currency: budget.currency,
       numberFormat: budget.numberFormat,
       dateFormat: budget.dateFormat,
@@ -105,20 +107,20 @@ export function Welcome({
     {
       id: "ynab",
       icon: <FileArchive size={20} />,
-      title: "I'm coming from YNAB",
-      text: "Paste a YNAB token and bring everything over in one click, checked against YNAB's own numbers.",
+      title: t("I'm coming from YNAB"),
+      text: t("Paste a YNAB token and bring everything over in one click, checked against YNAB's own numbers."),
     },
     {
       id: "fresh",
       icon: <Sprout size={20} />,
-      title: "Start fresh",
-      text: "Start with categories for bills, needs, wants and savings, then add your accounts.",
+      title: t("Start fresh"),
+      text: t("Start with categories for bills, needs, wants and savings, then add your accounts."),
     },
     {
       id: "sample",
       icon: <FlaskConical size={20} />,
-      title: "Look around first",
-      text: "Open a sample budget to try things out. This budget stays empty until you're ready.",
+      title: t("Look around first"),
+      text: t("Open a sample budget to try things out. This budget stays empty until you're ready."),
     },
   ];
   const choose = async (id: Path | "sample") => {
@@ -136,10 +138,9 @@ export function Welcome({
   return (
     <div className="page welcome">
       <div className="welcome-intro">
-        <h2>Let's set up your budget</h2>
+        <h2>{t("Let's set up your budget")}</h2>
         <p>
-          UrBudget works like envelopes: you give all the money you have a job, spend from those jobs, and move money
-          around when life changes the plan. How would you like to start?
+          {t("UrBudget works like envelopes: you give all the money you have a job, spend from those jobs, and move money around when life changes the plan. How would you like to start?")}
         </p>
       </div>
       <ul className="welcome-paths">
@@ -163,8 +164,7 @@ export function Welcome({
         <div className="welcome-step">
           {!exportFile && (
             <p className="help">
-              Make a token in YNAB on the web (Account Settings, then Developer Settings, then New Token), paste it
-              below, pick your plan and choose Import &amp; save.
+              {t("Make a token in YNAB on the web (Account Settings, then Developer Settings, then New Token), paste it below, pick your plan and choose Import & save.")}
             </p>
           )}
           {exportFile ? (
@@ -178,9 +178,9 @@ export function Welcome({
           )}
           <p className="help">
             <button className="link-button" onClick={() => setExportFile(!exportFile)}>
-              {exportFile ? "Use a YNAB token instead" : "No token? Use YNAB's export file"}
+              {exportFile ? t("Use a YNAB token instead") : t("No token? Use YNAB's export file")}
             </button>
-            {!exportFile && " (it leaves out targets, notes and scheduled transactions)."}
+            {!exportFile && t(" (it leaves out targets, notes and scheduled transactions).")}
           </p>
         </div>
       )}
@@ -196,15 +196,15 @@ export function Welcome({
             onAddAccount();
           }}
         >
-          <h2>Start fresh</h2>
+          <h2>{t("Start fresh")}</h2>
           <BudgetFormatFields value={format} onChange={setFormat} />
           <label className="checkbox-label">
             <input type="checkbox" checked={starter} onChange={(e) => setStarter(e.target.checked)} />
-            Start with categories for bills, needs, wants and savings (rename or delete any of them later)
+            {t("Start with categories for bills, needs, wants and savings (rename or delete any of them later)")}
           </label>
           <div className="modal-actions">
             <button className="primary">
-              Next: add your accounts <ArrowRight size={15} />
+              {t("Next: add your accounts")} <ArrowRight size={15} />
             </button>
           </div>
         </form>
@@ -237,7 +237,7 @@ export function SampleBanner({
       await openBudget(target.id);
       if (remove) {
         await api.deleteBudget(budgetId);
-        toast({ message: "Deleted the sample budget." });
+        toast({ message: t("Deleted the sample budget.") });
       }
     } catch (e) {
       toast({ message: errorText(e), tone: "error" });
@@ -249,13 +249,13 @@ export function SampleBanner({
     <div className="notice sample-banner" role="note">
       <FlaskConical size={16} />
       <span>
-        <strong>This is a sample budget.</strong> Try anything here; your own budget is separate.
+        <strong>{t("This is a sample budget.")}</strong> {t("Try anything here; your own budget is separate.")}
       </span>
       <button className="primary" disabled={busy} onClick={() => void leave(false)}>
-        Go to my budget
+        {t("Go to my budget")}
       </button>
       <button className="secondary" disabled={busy} onClick={() => void leave(true)}>
-        Delete sample
+        {t("Delete sample")}
       </button>
     </div>
   );
@@ -287,32 +287,32 @@ export function GettingStarted({
   useEffect(() => setShown(readSetup(budgetId) === "on"), [budgetId]);
   const steps: Step[] = [
     {
-      title: "Add your accounts",
-      text: "Add each bank account and credit card with today's balance. That balance is the money you have to budget.",
+      title: t("Add your accounts"),
+      text: t("Add each bank account and credit card with today's balance. That balance is the money you have to budget."),
       done: budget.accounts.length > 0,
-      action: ["Add an account", onAddAccount],
+      action: [t("Add an account"), onAddAccount],
     },
     {
-      title: "Assign your money",
-      text: "Give all of it a job: type amounts in the Assigned column until Unassigned reaches zero. Quick assign on the right can fill in targets for you.",
+      title: t("Assign your money"),
+      text: t("Give all of it a job: type amounts in the Assigned column until Unassigned reaches zero. Quick assign on the right can fill in targets for you."),
       done: budget.assignments.some((a) => a.amount !== 0),
-      action: ["Assign money", onAssign],
+      action: [t("Assign money"), onAssign],
     },
     {
-      title: "Record your spending",
-      text: "Add transactions as you spend, or import the statement file your bank lets you download (CSV, OFX, QFX or QIF) from an account's page. Each one comes out of its category.",
+      title: t("Record your spending"),
+      text: t("Add transactions as you spend, or import the statement file your bank lets you download (CSV, OFX, QFX or QIF) from an account's page. Each one comes out of its category."),
       done: budget.transactions.length > 0,
-      action: onAddTransaction && ["Add a transaction", onAddTransaction],
+      action: onAddTransaction && [t("Add a transaction"), onAddTransaction],
     },
     {
-      title: "Plan for a bigger bill",
-      text: "Pick something that doesn't come every month, like car insurance or gifts, and give it a target. UrBudget works out what to set aside each month so it's ready when it's due.",
+      title: t("Plan for a bigger bill"),
+      text: t("Pick something that doesn't come every month, like car insurance or gifts, and give it a target. UrBudget works out what to set aside each month so it's ready when it's due."),
       done: budget.categories.some((c) => c.target > 0 || !!c.goal),
-      action: ["Set a target", onSetTarget],
+      action: [t("Set a target"), onSetTarget],
     },
     {
-      title: "Cover overspending",
-      text: "When a category's Available turns red, click the amount and move money over from a category that has some left. Changing the plan is part of the plan.",
+      title: t("Cover overspending"),
+      text: t("When a category's Available turns red, click the amount and move money over from a category that has some left. Changing the plan is part of the plan."),
       done: (budget.moneyMoves ?? []).some((m) => m.kind === "move" && (m.changes?.length ?? 0) > 1),
     },
   ];
@@ -328,16 +328,16 @@ export function GettingStarted({
   const open = chosen ?? steps.findIndex((s) => !s.done);
   const step = steps[open];
   return (
-    <section className="getting-started" aria-label="Getting started">
+    <section className="getting-started" aria-label={t("Getting started")}>
       <div className="gs-head">
-        <strong>Getting started</strong>
+        <strong>{t("Getting started")}</strong>
         <span className="gs-count">
-          {doneCount} of {steps.length} done
+          {t("{done} of {total} done", { done: doneCount, total: steps.length })}
         </span>
         <span className="gs-bar" aria-hidden>
           <span style={{ width: `${(doneCount / steps.length) * 100}%` }} />
         </span>
-        <button className="icon-button" title="Hide getting started" aria-label="Hide getting started" onClick={hide}>
+        <button className="icon-button" title={t("Hide getting started")} aria-label={t("Hide getting started")} onClick={hide}>
           <X size={15} />
         </button>
       </div>
@@ -358,11 +358,10 @@ export function GettingStarted({
       {allDone ? (
         <div className="gs-detail">
           <p>
-            That's the method. From here it's a few minutes a week: record what you spent, and assign new money when it
-            comes in.
+            {t("That's the method. From here it's a few minutes a week: record what you spent, and assign new money when it comes in.")}
           </p>
           <button className="secondary small" onClick={hide}>
-            Hide this
+            {t("Hide this")}
           </button>
         </div>
       ) : (

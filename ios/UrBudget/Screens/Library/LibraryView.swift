@@ -28,9 +28,9 @@ struct LibraryView: View {
 
     var body: some View {
         let busy = working || store.busy
-        let name = store.budget?.text("name") ?? "this budget"
+        let name = store.budget?.text("name")
         let excess = LibraryBackup.excess(backups.count, keep: keep)
-        let pruneTitle: String = excess == 1 ? "Remove 1 older backup?" : "Remove \(excess) older backups?"
+        let pruneTitle = String(localized: "Remove \(excess) older backups?", locale: .app)
         // One small function per section: Xcode 26's type checker gives up on the whole list at once.
         List {
             budgetsSection(busy: busy)
@@ -51,9 +51,9 @@ struct LibraryView: View {
         .refreshable { await reload() }
         .sheet(isPresented: $creating) { NewBudgetForm() }
         .sheet(isPresented: $freshStarting) {
-            FreshStartForm(defaultName: "\(name) · Fresh start") { freshStart(name: $0, asOf: $1) }
+            FreshStartForm(defaultName: String(localized: "\(name ?? "") · Fresh start")) { freshStart(name: $0, asOf: $1) }
         }
-        .confirmationDialog("Delete \(deleting?.text("name") ?? "budget")?", isPresented: present($deleting), titleVisibility: .visible,
+        .confirmationDialog(deleteTitle, isPresented: present($deleting), titleVisibility: .visible,
                             presenting: deleting) { entry in
             Button("Delete local budget", role: .destructive) { delete(entry) }
         } message: { _ in
@@ -76,10 +76,16 @@ struct LibraryView: View {
         }
         .fileExporter(isPresented: $exporting, document: export?.file, contentType: export?.type ?? .json, defaultFilename: export?.name) { result in
             switch result {
-            case .success: store.showToast(export?.done ?? "Exported")
+            case .success: store.showToast(export?.done ?? String(localized: "Exported"))
             case .failure(let failure): store.error = BudgetStore.readable(failure)
             }
         }
+    }
+
+    /// "Delete Household?"
+    private var deleteTitle: Text {
+        if let name = deleting?.text("name") { return Text("Delete \(name)?") }
+        return Text("Delete budget?")
     }
 
     // MARK: Sections
@@ -128,8 +134,8 @@ struct LibraryView: View {
         }
     }
 
-    private func backupsSection(busy: Bool, name: String, excess: Int) -> some View {
-        let removeTitle: String = excess == 1 ? "Remove 1 older backup" : "Remove \(excess) older backups"
+    private func backupsSection(busy: Bool, name: String?, excess: Int) -> some View {
+        let removeTitle = String(localized: "Remove \(excess) older backups", locale: .app)
         return Section {
             if loaded && backups.isEmpty {
                 Text("No backups yet.").foregroundStyle(Color.secondary)
@@ -142,7 +148,7 @@ struct LibraryView: View {
                 .disabled(busy)
             }
         } header: {
-            Text("Backups of \(name)")
+            if let name { Text("Backups of \(name)") } else { Text("Backups of this budget") }
         } footer: {
             Text("Safety copies are made before a restore, an import or sync replaces this budget. Restoring one backs up the current budget first.")
         }
@@ -165,7 +171,7 @@ struct LibraryView: View {
                         .disabled(entry.flag("missing"))
                     Button(role: .destructive) { deleting = entry } label: { Label("Delete local budget", systemImage: "trash") }
                 }
-                .accessibilityHint(entry.flag("missing") ? "Its file is missing. Swipe to delete it." : "Opens this budget")
+                .accessibilityHint(entry.flag("missing") ? Text("Its file is missing. Swipe to delete it.") : Text("Opens this budget"))
         }
     }
 
@@ -199,8 +205,8 @@ struct LibraryView: View {
         let matches = recovery["matches"].bool
         return Section {
             Notice(text: matches
-                   ? "Some changes weren't saved. Restore them to continue where you left off, or keep the saved budget."
-                   : "Some changes weren't saved, and the budget has changed since. Export them to compare, or keep the saved budget.",
+                   ? String(localized: "Some changes weren't saved. Restore them to continue where you left off, or keep the saved budget.")
+                   : String(localized: "Some changes weren't saved, and the budget has changed since. Export them to compare, or keep the saved budget."),
                    tone: "attention", icon: "exclamationmark.triangle.fill")
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)
@@ -259,21 +265,21 @@ struct LibraryView: View {
 
     private func open(_ entry: JSON) {
         guard !store.busy, !entry.flag("missing") else { return }
-        let id = entry.text("id")
-        run("Opened \(entry.text("name"))") {
+        let id = entry.text("id"), name = entry.text("name")
+        run(String(localized: "Opened \(name)")) {
             try await store.perform { repository in ((), try await repository.open(id: id)) }
         }
     }
 
     private func delete(_ entry: JSON) {
-        let id = entry.text("id")
-        run("Deleted \(entry.text("name"))") { budgets = try await store.deleteBudget(id: id) }
+        let id = entry.text("id"), name = entry.text("name")
+        run(String(localized: "Deleted \(name)")) { budgets = try await store.deleteBudget(id: id) }
     }
 
     /// The engine carries the open budget's accounts, categories and pending activity into a new one, which then opens.
     private func freshStart(name: String, asOf: String) {
         let params: JSON = ["name": .string(name.trimmingCharacters(in: .whitespaces)), "asOf": .string(asOf)]
-        run("Fresh start created") {
+        run(String(localized: "Fresh start created")) {
             try await store.perform { repository in
                 let (id, _) = try await repository.commitService("fresh_start", params)
                 return ((), try await repository.open(id: id.string))
@@ -282,7 +288,7 @@ struct LibraryView: View {
     }
 
     private func backUp() {
-        run("Backup created") { _ = try await store.service("backup_database") }
+        run(String(localized: "Backup created")) { _ = try await store.service("backup_database") }
     }
 
     private func setRetention(_ value: Int) {
@@ -302,7 +308,7 @@ struct LibraryView: View {
         let count = keep
         run {
             let removed = try await store.service("prune_backups", ["keep": .int(Int64(count))]).int
-            store.showToast(removed == 1 ? "Removed 1 backup" : "Removed \(removed) backups")
+            store.showToast(String(localized: "Removed \(removed) backups", locale: .app))
         }
     }
 
@@ -314,14 +320,14 @@ struct LibraryView: View {
     /// Restores a backup file in the edit queue with the revision that was showing, so a newer change stops it.
     private func restore(_ backup: LibraryBackup) {
         let params: JSON = ["path": .string(backup.path), "expectedToken": .string(restoreToken)]
-        run("Backup restored") { _ = try await store.service("restore_backup_file", params, changesBudget: true) }
+        run(String(localized: "Backup restored")) { _ = try await store.service("restore_backup_file", params, changesBudget: true) }
     }
 
     /// Puts the unsaved changes back as the draft (Rust restores the fields it keeps out of it) and commits them.
     private func restoreRecovery(_ recovery: JSON) {
         let draft = recovery["budget"]
         let store = store
-        run("Unsaved changes restored") {
+        run(String(localized: "Unsaved changes restored")) {
             do {
                 try await store.perform { repository in
                     _ = try await store.service("replace_draft", ["budget": draft])
@@ -337,7 +343,7 @@ struct LibraryView: View {
     }
 
     private func discardRecovery() {
-        run("Unsaved changes discarded") {
+        run(String(localized: "Unsaved changes discarded")) {
             _ = try await store.service("discard_recovery")
             recovery = nil
         }
@@ -346,7 +352,8 @@ struct LibraryView: View {
     private func exportRecovery(_ recovery: JSON) {
         let budget = recovery["budget"]
         let data = (try? JSONSerialization.data(withJSONObject: budget.foundation, options: [.prettyPrinted, .sortedKeys])) ?? budget.data()
-        export = LibraryExport(file: TextFile(data: data), type: .json, name: "UrBudget-unsaved-changes-\(Dates.today).json", done: "Unsaved changes exported")
+        export = LibraryExport(file: TextFile(data: data), type: .json, name: "UrBudget-unsaved-changes-\(Dates.today).json",
+                               done: String(localized: "Unsaved changes exported"))
         exporting = true
     }
 
@@ -376,7 +383,7 @@ private struct LibraryBudgetLabel: View {
             }
             Spacer(minLength: 8)
             if current {
-                Text("Open")
+                Text(String(localized: "state.open", defaultValue: "Open", comment: "Something that is open now (a state, not a button)."))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Color.urAccent)
                     .padding(.horizontal, 8)
@@ -391,13 +398,14 @@ private struct LibraryBudgetLabel: View {
     private var subtitle: String {
         let status: String
         if entry.flag("current") {
-            status = "Open now"
+            status = String(localized: "Open now")
         } else if entry.flag("missing") {
-            status = "File missing"
+            status = String(localized: "File missing")
         } else if let opened = LibraryDates.instant(entry.text("lastOpened")) {
-            status = "Opened " + opened.formatted(.relative(presentation: .named))
+            let when = opened.formatted(.relative(presentation: .named).locale(.app))
+            status = String(localized: "Opened \(when)", comment: "When a budget was last opened, as in “Opened 2 hours ago”.")
         } else {
-            status = "On this device"
+            status = String(localized: "On this device")
         }
         return [entry.text("currency"), status].filter { !$0.isEmpty }.joined(separator: " · ")
     }
@@ -410,8 +418,8 @@ private struct LibraryBudgetLabel: View {
 
 /// A row's title over a line about it, with an icon.
 private struct LibraryRowLabel: View {
-    var title: String
-    var detail: String
+    var title: LocalizedStringKey
+    var detail: LocalizedStringKey
     var symbol: String
 
     var body: some View {
@@ -428,13 +436,14 @@ private struct LibraryRowLabel: View {
 
 private struct NewBudgetForm: View {
     @Environment(BudgetStore.self) private var store
-    @State private var name = "My budget"
+    @State private var name = String(localized: "My budget")
     @State private var currency = Locale.current.currency?.identifier ?? "SAR"
     @State private var sample = false
     @State private var started = false
 
     var body: some View {
-        FormSheet(title: "New budget", confirm: "Create", enabled: LibrarySettings.validName(name) && LibraryCurrencies.valid(currency)) {
+        FormSheet(title: String(localized: "New budget"), confirm: String(localized: "Create"),
+                  enabled: LibrarySettings.validName(name) && LibraryCurrencies.valid(currency)) {
             store.createBudget(name: name, currency: currency, sample: sample)
         } content: {
             Section {
@@ -462,12 +471,12 @@ private struct FreshStartForm: View {
     @State private var started = false
 
     var body: some View {
-        FormSheet(title: "Make a fresh start", confirm: "Create", enabled: LibrarySettings.validName(name)) {
+        FormSheet(title: String(localized: "Make a fresh start"), confirm: String(localized: "Create"), enabled: LibrarySettings.validName(name)) {
             onCreate(name, asOf)
         } content: {
             Section {
                 TextField("New budget name", text: $name).wordsCapitalized()
-                DayPicker(title: "Start date", iso: $asOf)
+                DayPicker(title: String(localized: "Start date"), iso: $asOf)
             } footer: {
                 Text("The shared engine carries account balances, categories, targets and pending activity into a separate budget. Cleared transactions up to the start date become opening balances. Your original remains in this library.")
             }

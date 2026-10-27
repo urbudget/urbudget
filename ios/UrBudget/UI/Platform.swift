@@ -60,6 +60,13 @@ extension NSColor {
 }
 #endif
 
+/// Opens UrBudget's page in the Settings app, where iOS offers the app's own language.
+@MainActor func openAppSettings() {
+    #if canImport(UIKit)
+    if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+    #endif
+}
+
 /// How wide a money figure draws, so a list's columns line up with its widest figure.
 func figureWidth(_ text: String, size: CGFloat, bold: Bool) -> CGFloat {
     #if canImport(UIKit)

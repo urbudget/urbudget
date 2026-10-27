@@ -25,7 +25,8 @@
   gap: 10px;
   align-items: center;
   height: 52px;
-  padding: 0 10px 0 18px;
+  padding-block: 0;
+  padding-inline: 18px 10px;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
 }
@@ -39,7 +40,7 @@
   font-size: 12px;
 }
 .report-toolbar .primary {
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 .report-scroll {
   display: flex;

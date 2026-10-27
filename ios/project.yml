@@ -83,6 +83,10 @@ targets:
         SWIFT_OBJC_BRIDGING_HEADER: UrBudget/Bridge/UrBudget-Bridging-Header.h
         LIBRARY_SEARCH_PATHS: $(BUILT_PRODUCTS_DIR)/rust
         OTHER_LDFLAGS: -lurbudget_ios -liconv
+        # English and Arabic: Localizable, InfoPlist and AppShortcuts .xcstrings in UrBudget/ (their
+        # languages become the project's known regions). The compiler lists the code's strings for them.
+        LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+        SWIFT_EMIT_LOC_STRINGS: YES
       configs:
         # Debug installs beside a release build, so testing never touches real budgets.
         Debug:

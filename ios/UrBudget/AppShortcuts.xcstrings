@@ -1,0 +1,28 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "Add a transaction in ${applicationName}" : {
+      "comment" : "Siri, Spotlight and Shortcuts phrase. Keep ${applicationName}.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أضف معاملة في ${applicationName}"
+          }
+        }
+      }
+    },
+    "New ${applicationName} transaction" : {
+      "comment" : "Siri, Spotlight and Shortcuts phrase. Keep ${applicationName}.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "معاملة جديدة في ${applicationName}"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

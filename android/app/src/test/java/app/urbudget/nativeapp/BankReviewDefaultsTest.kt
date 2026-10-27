@@ -8,6 +8,7 @@ import org.junit.Before
 import org.junit.Test
 
 class BankReviewDefaultsTest {
+    @Before fun english() = EnglishWords.install()
     @Before fun resetFormat() { Money.configure(JSONObject().put("currency", "SAR")) }
 
     @Test fun defaultsFollowTheDesktop() {

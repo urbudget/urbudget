@@ -81,11 +81,14 @@ internal object ProposalChoices {
         return change.takeIf { it.length() > 0 }
     }
 
-    /** How much of the card Apply makes ("Apply 2 of 3") while the user is choosing and some of its rows are left out; null otherwise. */
-    fun partial(rows: List<JSONObject>, choosing: Boolean): String? {
+    /** How much of a card Apply makes: `chosen` of its `total` parts ("Apply 2 of 3"). */
+    data class Partial(val chosen: Int, val total: Int)
+
+    /** How much of the card Apply makes while the user is choosing and some of its rows are left out; null otherwise. The card words it. */
+    fun partial(rows: List<JSONObject>, choosing: Boolean): Partial? {
         val keyed = rows.filter { it.optString("key").isNotEmpty() }
         val chosen = keyed.count { !it.optBoolean("skipped") }
-        return if (choosing && chosen < keyed.size) "Apply $chosen of ${keyed.size}" else null
+        return if (choosing && chosen < keyed.size) Partial(chosen, keyed.size) else null
     }
 
     private fun revision(skip: List<String>, set: List<JSONObject>) = JSONObject().put("skip", JSONArray(skip)).put("set", JSONArray(set))

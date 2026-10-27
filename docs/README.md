@@ -12,6 +12,7 @@ for the account, encrypted sync, assistant and bank services.
 | How the phone apps are built, where their code is, secrets, CI and store setup | [Mobile guide](MOBILE.md) |
 | Native Kotlin Android client, shared services, billing and feature coverage | [Native Android](../android/README.md) |
 | Native SwiftUI iOS client, its Rust adapter and feature coverage | [Native iOS](../ios/README.md) |
+| English and Arabic: the language setting, right to left, the Arabic style guide and glossary | [Languages](LOCALIZATION.md) |
 | Versions, tags and release workflows for each app | [Releasing](../RELEASING.md) |
 | Published versions and remaining release work | [Release status](RELEASE-STATUS.md) |
 | Agreed work not done yet | [Follow-ups](FOLLOW-UPS.md) |

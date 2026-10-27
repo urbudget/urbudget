@@ -1,3 +1,4 @@
+use crate::t;
 use crate::{domain::*, engine};
 use chrono::{Months, NaiveDate};
 use serde_json::{json, Value};
@@ -89,7 +90,7 @@ fn quick_assign_label(mode: &str) -> &str {
     }
 }
 fn row<'a>(s: &'a Summary, id: &str) -> Result<&'a CategorySummary, String> {
-    s.categories.iter().find(|r| r.id == id).ok_or_else(|| format!("No budget row for category {id}."))
+    s.categories.iter().find(|r| r.id == id).ok_or_else(|| t!("No budget row for category {id}.", id))
 }
 /// What a quick-assign option assigns in `month`: each selected category's new Assigned, in the
 /// order it's assigned. It changes nothing, so the inspector can show every option's effect and
@@ -102,8 +103,8 @@ fn auto_assign_plan(
     limit: bool,
     history: &BTreeMap<String, Summary>,
 ) -> Result<Vec<(String, i64)>, String> {
-    let date = NaiveDate::parse_from_str(&format!("{month}-01"), "%Y-%m-%d").map_err(|_| "Invalid month")?;
-    let summary = history.get(month).ok_or("Missing month")?;
+    let date = NaiveDate::parse_from_str(&format!("{month}-01"), "%Y-%m-%d").map_err(|_| t!("Invalid month"))?;
+    let summary = history.get(month).ok_or_else(|| t!("Missing month"))?;
     if mode == "underfunded" {
         return underfunded_plan(b, month, selected, limit, history);
     }
@@ -163,7 +164,7 @@ fn auto_assign_plan(
                 for n in (1..=months).rev() {
                     let key = date
                         .checked_sub_months(Months::new(n))
-                        .ok_or("Invalid month")?
+                        .ok_or_else(|| t!("Invalid month"))?
                         .format("%Y-%m")
                         .to_string();
                     let previous = history
@@ -192,7 +193,7 @@ fn auto_assign_plan(
                 }
                 .max(0)
             }
-            _ => return Err("Unknown quick-assign option.".into()),
+            _ => return Err(t!("Unknown quick-assign option.")),
         };
         plan.push((c.id.clone(), value));
     }
@@ -337,7 +338,7 @@ pub fn auto_assign_preview(
 ) -> Result<HashMap<String, Option<Vec<AssignChange>>>, String> {
     let selected: HashSet<&str> = categories.iter().map(String::as_str).collect();
     if selected.is_empty() {
-        return Err("Select at least one category.".into());
+        return Err(t!("Select at least one category."));
     }
     let history = engine::calculate_history(b, month)?;
     let before = assigned_in(b, month);
@@ -361,8 +362,8 @@ pub fn apply(mut b: Budget, action: &Value) -> Result<Budget, String> {
     match strarg(action, "type")? {
         "assignAmount" => {
             let month = strarg(action, "month")?; let id = strarg(action, "categoryId")?;
-            if !valid_month(month) || !b.categories.iter().any(|c| c.id == id) { return Err("Choose a valid category and month.".into()); }
-            let amount = action["amount"].as_i64().ok_or("Enter an assigned amount.")?;
+            if !valid_month(month) || !b.categories.iter().any(|c| c.id == id) { return Err(t!("Choose a valid category and month.")); }
+            let amount = action["amount"].as_i64().ok_or_else(|| t!("Enter an assigned amount."))?;
             let before = assigned_in(&b, month);
             assign(&mut b, month, id, amount);
             if before.get(id).copied().unwrap_or_default() != amount {
@@ -372,10 +373,10 @@ pub fn apply(mut b: Budget, action: &Value) -> Result<Budget, String> {
         }
         "setBudgetPlanning" => {
             let month = strarg(action, "month")?;
-            if !valid_month(month) { return Err("Choose a valid month.".into()); }
+            if !valid_month(month) { return Err(t!("Choose a valid month.")); }
             let note = strarg(action, "note")?;
-            if note.len() > 100_000 { return Err("The month note is too long.".into()); }
-            let notes = b.extra.entry("ynabMonths").or_insert(json!([])).as_array_mut().ok_or("Invalid saved month notes.")?;
+            if note.len() > 100_000 { return Err(t!("The month note is too long.")); }
+            let notes = b.extra.entry("ynabMonths").or_insert(json!([])).as_array_mut().ok_or_else(|| t!("Invalid saved month notes."))?;
             if let Some(existing) = notes.iter_mut().find(|n| n["month"].as_str().is_some_and(|s| s.starts_with(month))) { existing["note"] = json!(note); }
             else { notes.push(json!({"month":format!("{month}-01"),"note":note})); }
             if action.get("expectedIncome").is_some() { b.extra.insert("expectedIncome".into(), action["expectedIncome"].clone()); }
@@ -383,10 +384,10 @@ pub fn apply(mut b: Budget, action: &Value) -> Result<Budget, String> {
         "organizeCategory" => {
             let id = strarg(action, "id")?;
             let group = strarg(action, "group")?.trim();
-            if group.is_empty() || group.len() > 200 { return Err("Enter a category group name.".into()); }
+            if group.is_empty() || group.len() > 200 { return Err(t!("Enter a category group name.")); }
             let mut order: Vec<String> = b.extra.get("categoryOrder").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(str::to_owned).collect();
             for c in &b.categories { if !order.contains(&c.id) { order.push(c.id.clone()); } }
-            let category = b.categories.iter_mut().find(|c| c.id == id).ok_or("Category not found.")?;
+            let category = b.categories.iter_mut().find(|c| c.id == id).ok_or_else(|| t!("Category not found."))?;
             category.group = group.into();
             order.retain(|item| item != id);
             let before = action["beforeId"].as_str().filter(|before| *before != id);
@@ -406,7 +407,7 @@ pub fn apply(mut b: Budget, action: &Value) -> Result<Budget, String> {
         "renameGroup" => {
             let from = strarg(action, "from")?;
             let to = strarg(action, "to")?.trim();
-            if to.is_empty() || to.len() > 200 { return Err("Enter a group name.".into()); }
+            if to.is_empty() || to.len() > 200 { return Err(t!("Enter a group name.")); }
             for c in &mut b.categories { if c.group == from { c.group = to.into(); } }
             let mut groups: Vec<String> = b.extra.get("groupOrder").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(|g| if g == from { to.to_owned() } else { g.to_owned() }).collect();
             for c in &b.categories { if !groups.contains(&c.group) { groups.push(c.group.clone()); } }
@@ -416,9 +417,9 @@ pub fn apply(mut b: Budget, action: &Value) -> Result<Budget, String> {
         "deleteCategory" => {
             let id = strarg(action, "id")?;
             let replacement = action["replacement"].as_str().filter(|id| *id != "__rta");
-            let category = b.categories.iter().find(|c| c.id == id).ok_or("Category not found.")?;
-            if category.payment_account().is_some() { return Err("Credit payment categories belong to their accounts and cannot be deleted.".into()); }
-            if replacement == Some(id) || replacement.is_some_and(|r| !b.categories.iter().any(|c| c.id == r && c.payment_account().is_none())) { return Err("Choose another ordinary category or Ready to assign.".into()); }
+            let category = b.categories.iter().find(|c| c.id == id).ok_or_else(|| t!("Category not found."))?;
+            if category.payment_account().is_some() { return Err(t!("Credit payment categories belong to their accounts and cannot be deleted.")); }
+            if replacement == Some(id) || replacement.is_some_and(|r| !b.categories.iter().any(|c| c.id == r && c.payment_account().is_none())) { return Err(t!("Choose another ordinary category or Ready to assign.")); }
             for transaction in &mut b.transactions {
                 for split in &mut transaction.splits { if split.category_id.as_deref() == Some(id) { split.category_id = replacement.map(str::to_owned); split.extra.insert("unassigned".into(), json!(replacement.is_none())); } }
             }
@@ -434,7 +435,7 @@ pub fn apply(mut b: Budget, action: &Value) -> Result<Budget, String> {
             b.assignments.retain(|a| a.category_id != id);
             if let Some(replacement) = replacement {
                 for mut assignment in removed {
-                    if let Some(existing) = b.assignments.iter_mut().find(|a| a.category_id == replacement && a.month == assignment.month) { existing.amount = existing.amount.checked_add(assignment.amount).ok_or("Merged assignments exceed the supported range.")?; for (key,value) in assignment.extra { existing.extra.entry(key).or_insert(value); } }
+                    if let Some(existing) = b.assignments.iter_mut().find(|a| a.category_id == replacement && a.month == assignment.month) { existing.amount = existing.amount.checked_add(assignment.amount).ok_or_else(|| t!("Merged assignments exceed the supported range."))?; for (key,value) in assignment.extra { existing.extra.entry(key).or_insert(value); } }
                     else { assignment.category_id = replacement.into(); b.assignments.push(assignment); }
                 }
             }
@@ -449,7 +450,7 @@ pub fn apply(mut b: Budget, action: &Value) -> Result<Budget, String> {
             // the preview instead of applying a different current/future-month target plan.
             let original_reference = if let Some(expected) = action.get("expectedAsOfMonth") {
                 if expected.as_str() != Some(engine::calculation_month(&b).as_str()) {
-                    return Err("The calendar month changed. Refresh the Quick assign preview before applying it.".into());
+                    return Err(t!("The calendar month changed. Refresh the Quick assign preview before applying it."));
                 }
                 // All calculations in this action share the accepted instant, even if the
                 // wall clock rolls over during a large plan. Restore the original metadata below.
@@ -457,12 +458,12 @@ pub fn apply(mut b: Budget, action: &Value) -> Result<Budget, String> {
             } else { None };
             let selected: HashSet<_> = action["categories"]
                 .as_array()
-                .ok_or("Select categories")?
+                .ok_or_else(|| t!("Select categories"))?
                 .iter()
                 .filter_map(Value::as_str)
                 .collect();
             if selected.is_empty() {
-                return Err("Select at least one category.".into());
+                return Err(t!("Select at least one category."));
             }
             let history = engine::calculate_history(&b, month)?;
             let before = assigned_in(&b, month);
@@ -493,9 +494,9 @@ pub fn apply(mut b: Budget, action: &Value) -> Result<Budget, String> {
             let amount = action["amount"]
                 .as_i64()
                 .filter(|x| *x > 0)
-                .ok_or("Enter a positive amount.")?;
+                .ok_or_else(|| t!("Enter a positive amount."))?;
             if from == to {
-                return Err("Choose different categories.".into());
+                return Err(t!("Choose different categories."));
             }
             let s = engine::calculate(&b, month)?;
             let available = if from == "__rta" {
@@ -504,11 +505,11 @@ pub fn apply(mut b: Budget, action: &Value) -> Result<Budget, String> {
                 s.categories
                     .iter()
                     .find(|c| c.id == from)
-                    .ok_or("Category not found")?
+                    .ok_or_else(|| t!("Category not found"))?
                     .available
             };
             if amount > available {
-                return Err("The source does not have that much available.".into());
+                return Err(t!("The source does not have that much available."));
             }
             let before = assigned_in(&b, month);
             for (id, delta) in [(from, -amount), (to, amount)] {
@@ -517,7 +518,7 @@ pub fn apply(mut b: Budget, action: &Value) -> Result<Budget, String> {
                         .categories
                         .iter()
                         .find(|c| c.id == id)
-                        .ok_or("Category not found")?
+                        .ok_or_else(|| t!("Category not found"))?
                         .assigned;
                     assign(&mut b, month, id, old + delta);
                 }
@@ -543,7 +544,7 @@ pub fn apply(mut b: Budget, action: &Value) -> Result<Budget, String> {
             let from = strarg(action, "from")?;
             let to = strarg(action, "to")?.trim();
             if to.is_empty() || to.len() > 200 {
-                return Err("Enter a payee name (up to 200 characters).".into());
+                return Err(t!("Enter a payee name (up to 200 characters)."));
             }
             for t in &mut b.transactions {
                 if t.payee == from {
@@ -593,14 +594,14 @@ pub fn apply(mut b: Budget, action: &Value) -> Result<Budget, String> {
             }
         }
         "savePayee" => {
-            let mut record = action["record"].as_object().cloned().ok_or("Invalid payee.")?;
-            let id = record.get("id").and_then(Value::as_str).filter(|s| !s.is_empty()).ok_or("Every payee needs an ID.")?.to_owned();
+            let mut record = action["record"].as_object().cloned().ok_or_else(|| t!("Invalid payee."))?;
+            let id = record.get("id").and_then(Value::as_str).filter(|s| !s.is_empty()).ok_or_else(|| t!("Every payee needs an ID."))?.to_owned();
             let name = record.get("name").and_then(Value::as_str).unwrap_or_default().trim().to_owned();
-            if name.is_empty() || name.len() > 200 { return Err("Enter a payee name (up to 200 characters).".into()); }
+            if name.is_empty() || name.len() > 200 { return Err(t!("Enter a payee name (up to 200 characters).")); }
             if let Some(category) = record.get("categoryId").and_then(Value::as_str).filter(|s| !s.is_empty()) {
-                if category != "__rta" && !b.categories.iter().any(|c| c.id == category && c.payment_account().is_none()) { return Err("Choose an ordinary category or Ready to assign.".into()); }
+                if category != "__rta" && !b.categories.iter().any(|c| c.id == category && c.payment_account().is_none()) { return Err(t!("Choose an ordinary category or Ready to assign.")); }
             }
-            let payees = b.extra.entry("payees").or_insert(json!([])).as_array_mut().ok_or("Invalid saved payees.")?;
+            let payees = b.extra.entry("payees").or_insert(json!([])).as_array_mut().ok_or_else(|| t!("Invalid saved payees."))?;
             let index = payees.iter().position(|p| p["id"] == id);
             let from = index.and_then(|i| payees[i]["name"].as_str()).or_else(|| action["from"].as_str()).unwrap_or(&name).to_owned();
             record.insert("name".into(), json!(from));
@@ -610,9 +611,9 @@ pub fn apply(mut b: Budget, action: &Value) -> Result<Budget, String> {
         "reorderPayeeRule" => {
             let id = strarg(action, "id")?;
             let direction = strarg(action, "direction")?;
-            if !matches!(direction, "up" | "down") { return Err("Choose up or down.".into()); }
-            let rules = b.extra.get_mut("payeeRules").and_then(Value::as_array_mut).ok_or("No payee rules exist.")?;
-            let index = rules.iter().position(|r| r["id"] == id).ok_or("Payee rule not found.")?;
+            if !matches!(direction, "up" | "down") { return Err(t!("Choose up or down.")); }
+            let rules = b.extra.get_mut("payeeRules").and_then(Value::as_array_mut).ok_or_else(|| t!("No payee rules exist."))?;
+            let index = rules.iter().position(|r| r["id"] == id).ok_or_else(|| t!("Payee rule not found."))?;
             let next = if direction == "up" { index.saturating_sub(1) } else { (index + 1).min(rules.len() - 1) };
             rules.swap(index, next);
         }
@@ -626,7 +627,7 @@ pub fn apply(mut b: Budget, action: &Value) -> Result<Budget, String> {
         "bulk" => {
             let ids: HashSet<_> = action["ids"]
                 .as_array()
-                .ok_or("Select transactions")?
+                .ok_or_else(|| t!("Select transactions"))?
                 .iter()
                 .filter_map(Value::as_str)
                 .collect();
@@ -710,7 +711,7 @@ pub fn apply(mut b: Budget, action: &Value) -> Result<Budget, String> {
                                     .iter()
                                     .any(|s| crate::ledger::transfer(s).is_some())
                             {
-                                return Err("Bulk categorization only supports ordinary, unsplit transactions. Select those entries separately.".into());
+                                return Err(t!("Bulk categorization only supports ordinary, unsplit transactions. Select those entries separately."));
                             }
                             t.splits[0].category_id = action["value"]
                                 .as_str()
@@ -719,9 +720,9 @@ pub fn apply(mut b: Budget, action: &Value) -> Result<Budget, String> {
                         }
                         "status" => {
                             let status: Cleared = serde_json::from_value(action["value"].clone())
-                                .map_err(|_| "Invalid status")?;
+                                .map_err(|_| t!("Invalid status"))?;
                             if status == Cleared::Reconciled {
-                                return Err("Use Reconcile to lock a balance.".into());
+                                return Err(t!("Use Reconcile to lock a balance."));
                             }
                             if account == "all" || account == t.account_id {
                                 if t.status != Cleared::Reconciled {
@@ -741,12 +742,12 @@ pub fn apply(mut b: Budget, action: &Value) -> Result<Budget, String> {
                                 }
                             }
                         }
-                        _ => return Err("Unknown bulk operation".into()),
+                        _ => return Err(t!("Unknown bulk operation")),
                     }
                 }
             }
         }
-        _ => return Err("Unknown operation".into()),
+        _ => return Err(t!("Unknown operation")),
     }
     validate(&b)?;
     Ok(b)

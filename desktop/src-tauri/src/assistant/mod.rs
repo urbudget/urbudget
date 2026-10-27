@@ -1,8 +1,8 @@
 //! Tauri adapters for the host-neutral assistant shared with native Android.
 pub use urbudget_services::assistant::{Assistant, attachments, history, llm, mcp, prompt, proposals, tools, workbook, new_id, now, money, parse_money, open_browser};
 use urbudget_services::assistant as shared;
-use crate::{Database, patch::Patch};
-use tauri::{AppHandle, Emitter, Manager, State};
+use crate::{Database, patch::Patch, save};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 use serde_json::Value;
 use shared::{SettingsChange, StatusView, Applied, ReportView, ImportView};
 use llm::Provider;
@@ -175,21 +175,34 @@ pub(crate) fn assistant_import(db: State<'_, Database>, assistant: State<'_, Ass
     shared::assistant_import(&db, &assistant, thread_id, proposal_id)
 }
 
+/// Saves the converted rows where you choose; `None` when cancelled.
 #[tauri::command(async)]
-pub(crate) fn assistant_save_import(db: State<'_, Database>, assistant: State<'_, Assistant>, thread_id: String, proposal_id: String) -> Result<String, String> {
-    shared::assistant_save_import(&db, &assistant, thread_id, proposal_id)
+pub(crate) fn assistant_save_import(window: WebviewWindow, db: State<'_, Database>, assistant: State<'_, Assistant>, thread_id: String, proposal_id: String) -> Result<Option<String>, String> {
+    let (name, csv) = shared::import_file(&db, &assistant, &thread_id, &proposal_id)?;
+    save::file(&window, &name, save::Kind::Csv, csv.as_bytes())
 }
 
+/// With `open`, opens the card's spreadsheet (a copy in the budget's folder); otherwise saves it
+/// where you choose, `None` when cancelled.
 #[tauri::command(async)]
 pub(crate) fn assistant_spreadsheet(
+    window: WebviewWindow,
     db: State<'_, Database>,
     assistant: State<'_, Assistant>,
     patch: Option<Patch>,
     thread_id: String,
     proposal_id: String,
     open: bool,
-) -> Result<String, String> {
-    shared::assistant_spreadsheet(&db, &assistant, patch, thread_id, proposal_id, open)
+) -> Result<Option<String>, String> {
+    if open {
+        return shared::assistant_spreadsheet(&db, &assistant, patch, thread_id, proposal_id, true).map(Some);
+    }
+    let (title, bytes) = shared::spreadsheet_file(&db, &assistant, patch, &thread_id, &proposal_id)?;
+    let Some(path) = save::file(&window, &workbook::file_name(&title), save::Kind::Workbook, &bytes)? else {
+        return Ok(None);
+    };
+    shared::spreadsheet_saved(&db, &assistant, &thread_id, &proposal_id, &path)?;
+    Ok(Some(path))
 }
 
 #[tauri::command(async)]

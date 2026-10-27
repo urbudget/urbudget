@@ -3,6 +3,7 @@
 //! types or split-parent memos, and write amounts and dates in the plan's display format, so
 //! those are inferred here. The result is a new budget, checked against the Plan's monthly
 //! figures; differences are reported, never patched over.
+use crate::{i18n::tr, t};
 use crate::domain::*;
 use chrono::NaiveDate;
 use serde::Deserialize;
@@ -52,7 +53,7 @@ fn field(r: &csv::StringRecord, column: Option<usize>) -> &str {
 }
 
 fn table(name: &str, bytes: &[u8], remaining_rows: &mut usize) -> Result<Table, String> {
-    let text = std::str::from_utf8(bytes).map_err(|_| format!("{name} isn't a text file."))?;
+    let text = std::str::from_utf8(bytes).map_err(|_| t!("{name} isn't a text file.", name))?;
     let text = text.trim_start_matches('\u{feff}');
     // A plan whose amounts use a decimal comma is exported with tabs between the columns.
     let tabs = text.lines().next().is_some_and(|header| header.contains('\t'));
@@ -62,17 +63,17 @@ fn table(name: &str, bytes: &[u8], remaining_rows: &mut usize) -> Result<Table, 
         .from_reader(text.as_bytes());
     let headers = reader.headers().map_err(|e| format!("{name}: {e}"))?;
     if headers.len() > MAX_COLUMNS {
-        return Err(format!("{name} has more than 128 columns and isn't a supported YNAB export."));
+        return Err(t!("{name} has more than 128 columns and isn't a supported YNAB export.", name));
     }
     let header = headers.iter().map(|h| h.trim().to_string()).collect();
     let mut rows = vec![];
     for row in reader.records() {
         if *remaining_rows == 0 {
-            return Err("The export contains more than 200,000 CSV rows. Use YNAB's token import instead.".into());
+            return Err(t!("The export contains more than 200,000 CSV rows. Use YNAB's token import instead."));
         }
         let row = row.map_err(|e| format!("{name}: {e}"))?;
         if row.len() > MAX_COLUMNS {
-            return Err(format!("{name} has more than 128 columns and isn't a supported YNAB export."));
+            return Err(t!("{name} has more than 128 columns and isn't a supported YNAB export.", name));
         }
         *remaining_rows -= 1;
         rows.push(row);
@@ -93,16 +94,16 @@ fn spreadsheet(name: &str) -> bool {
 /// Every CSV among the chosen files, opening a .zip to read the ones inside it.
 fn tables(files: &[ExportFile]) -> Result<Vec<Table>, String> {
     if files.len() > MAX_FILES {
-        return Err("Choose at most 8 export files at once.".into());
+        return Err(t!("Choose at most 8 export files at once."));
     }
     let mut input = 0;
     for f in files {
         if f.bytes.len() > MAX_FILE {
-            return Err(format!("{} is larger than 8 MB. Use YNAB's token import for larger budgets.", f.name));
+            return Err(t!("{name} is larger than 8 MB. Use YNAB's token import for larger budgets.", name = f.name));
         }
         input += f.bytes.len();
         if input > MAX_INPUT {
-            return Err("These export files total more than 16 MB. Use YNAB's token import for larger budgets.".into());
+            return Err(t!("These export files total more than 16 MB. Use YNAB's token import for larger budgets."));
         }
     }
     // Inspect all declared sizes before parsing any CSV: an archive bomb must fail before
@@ -114,25 +115,25 @@ fn tables(files: &[ExportFile]) -> Result<Vec<Table>, String> {
             declared_expanded += f.bytes.len() as u64;
         } else {
             let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&f.bytes[..]))
-                .map_err(|_| format!("{} isn't a readable .zip file.", f.name))?;
+                .map_err(|_| t!("{name} isn't a readable .zip file.", name = f.name))?;
             entries += archive.len();
             if entries > MAX_ENTRIES {
-                return Err("The export contains more than 64 archive entries. Choose only YNAB's Register and Plan files.".into());
+                return Err(t!("The export contains more than 64 archive entries. Choose only YNAB's Register and Plan files."));
             }
             for i in 0..archive.len() {
-                let entry = archive.by_index(i).map_err(|_| format!("{} isn't a readable .zip file.", f.name))?;
+                let entry = archive.by_index(i).map_err(|_| t!("{name} isn't a readable .zip file.", name = f.name))?;
                 let name = entry.name().map(|n| n.into_owned()).unwrap_or_default();
                 if entry.is_dir() || name.starts_with("__MACOSX") || !spreadsheet(&name) {
                     continue;
                 }
                 if entry.size() > MAX_CSV {
-                    return Err(format!("{name} expands to more than 32 MB. Use YNAB's token import instead."));
+                    return Err(t!("{name} expands to more than 32 MB. Use YNAB's token import instead.", name));
                 }
                 declared_expanded += entry.size();
             }
         }
         if declared_expanded > MAX_EXPANDED {
-            return Err("The export expands to more than 64 MB of CSV data. Use YNAB's token import instead.".into());
+            return Err(t!("The export expands to more than 64 MB of CSV data. Use YNAB's token import instead."));
         }
     }
     let mut out = vec![];
@@ -142,12 +143,12 @@ fn tables(files: &[ExportFile]) -> Result<Vec<Table>, String> {
         if !f.bytes.starts_with(b"PK\x03\x04") {
             expanded += f.bytes.len() as u64;
             if expanded > MAX_EXPANDED {
-                return Err("The export expands to more than 64 MB of CSV data. Use YNAB's token import instead.".into());
+                return Err(t!("The export expands to more than 64 MB of CSV data. Use YNAB's token import instead."));
             }
             out.push(table(&f.name, &f.bytes, &mut remaining_rows)?);
             continue;
         }
-        let unreadable = |_: zip::result::ZipError| format!("{} isn't a readable .zip file.", f.name);
+        let unreadable = |_: zip::result::ZipError| t!("{name} isn't a readable .zip file.", name = f.name);
         let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&f.bytes[..])).map_err(unreadable)?;
         for i in 0..archive.len() {
             let entry = archive.by_index(i).map_err(unreadable)?;
@@ -156,23 +157,23 @@ fn tables(files: &[ExportFile]) -> Result<Vec<Table>, String> {
                 continue;
             }
             if entry.size() > MAX_CSV {
-                return Err(format!("{name} expands to more than 32 MB. Use YNAB's token import instead."));
+                return Err(t!("{name} expands to more than 32 MB. Use YNAB's token import instead.", name));
             }
             let remaining = MAX_EXPANDED - expanded;
             if entry.size() > remaining {
-                return Err("The export expands to more than 64 MB of CSV data. Use YNAB's token import instead.".into());
+                return Err(t!("The export expands to more than 64 MB of CSV data. Use YNAB's token import instead."));
             }
             let mut bytes = vec![];
             entry
                 .take(MAX_CSV.min(remaining) + 1)
                 .read_to_end(&mut bytes)
-                .map_err(|_| format!("{name} in {} couldn't be read.", f.name))?;
+                .map_err(|_| t!("{name} in {file} couldn't be read.", name, file = f.name))?;
             if bytes.len() as u64 > MAX_CSV {
-                return Err(format!("{name} is too large to import."));
+                return Err(t!("{name} is too large to import.", name));
             }
             expanded += bytes.len() as u64;
             if expanded > MAX_EXPANDED {
-                return Err("The export expands to more than 64 MB of CSV data. Use YNAB's token import instead.".into());
+                return Err(t!("The export expands to more than 64 MB of CSV data. Use YNAB's token import instead."));
             }
             out.push(table(&name, &bytes, &mut remaining_rows)?);
         }
@@ -192,10 +193,11 @@ fn decimal_mark<'a>(amounts: impl Iterator<Item = &'a str>) -> Result<char, Stri
         }
         match core.iter().rposition(|c| !c.is_ascii_digit()) {
             Some(i) if core.len() - i - 1 == 2 && mark.is_none_or(|m| m == core[i]) => mark = Some(core[i]),
-            Some(i) if core.len() - i - 1 == 2 => return Err("The export mixes number formats.".into()),
+            Some(i) if core.len() - i - 1 == 2 => return Err(t!("The export mixes number formats.")),
             _ => {
-                return Err(format!(
-                    "Amounts such as “{s}” don't have two decimal places. UrBudget keeps money in cents, so it can't read this plan's currency."
+                return Err(t!(
+                    "Amounts such as “{amount}” don't have two decimal places. UrBudget keeps money in cents, so it can't read this plan's currency.",
+                    amount = s
                 ))
             }
         }
@@ -211,7 +213,7 @@ fn money(s: &str, mark: char) -> Result<i64, String> {
     if core.is_empty() {
         return Ok(0);
     }
-    let bad = || format!("unreadable amount “{s}”");
+    let bad = || t!("unreadable amount “{amount}”", amount = s);
     let (whole, cents) = core.split_once(mark).ok_or_else(bad)?;
     if cents.len() != 2 || cents.contains(mark) {
         return Err(bad());
@@ -221,7 +223,7 @@ fn money(s: &str, mark: char) -> Result<i64, String> {
         .checked_mul(100)
         .and_then(|n| n.checked_add(cents.parse().ok()?))
         .ok_or_else(bad)?;
-    if !valid_money(n) { return Err(format!("amount “{s}” exceeds the supported money range")); }
+    if !valid_money(n) { return Err(t!("amount “{amount}” exceeds the supported money range", amount = s)); }
     let negative = if mark == '-' {
         lead.contains(['-', '−', '('])
     } else {
@@ -279,12 +281,12 @@ fn date_order(dates: &[&str], chosen: Option<&str>) -> Result<Order, String> {
         .collect();
     match fits[..] {
         [order] => Ok(order),
-        [] => Err(format!(
-            "Dates in the register (such as “{}”) don't match {}.",
-            dates.iter().find(|d| [Order::Ymd, Order::Dmy, Order::Mdy].iter().all(|o| iso(d, *o).is_none())).or(dates.first()).unwrap_or(&""),
-            if chosen.is_some() { "the chosen date order" } else { "a date format UrBudget reads" }
+        [] => Err(t!(
+            "Dates in the register (such as “{date}”) don't match {expected}.",
+            date = dates.iter().find(|d| [Order::Ymd, Order::Dmy, Order::Mdy].iter().all(|o| iso(d, *o).is_none())).or(dates.first()).unwrap_or(&""),
+            expected = if chosen.is_some() { tr("the chosen date order") } else { tr("a date format UrBudget reads") }
         )),
-        _ => Err("Every date in the register could be day-first or month-first. Choose the date order, then import again.".into()),
+        _ => Err(t!("Every date in the register could be day-first or month-first. Choose the date order, then import again.")),
     }
 }
 /// "Oct 2026" (or "October 2026", "2026-10") as "2026-10".
@@ -419,11 +421,11 @@ pub fn import_files(files: &[ExportFile], order: Option<&str>, fallback_currency
     let register = tables
         .iter()
         .find(|t| t.has(&["Account", "Date", "Payee", "Outflow", "Inflow"]))
-        .ok_or("Choose YNAB's export: the .zip it downloads, or its Register and Plan files together.")?;
+        .ok_or_else(|| t!("Choose YNAB's export: the .zip it downloads, or its Register and Plan files together."))?;
     let plan = tables
         .iter()
         .find(|t| t.has(&["Month", "Category", "Available"]) && (t.has(&["Assigned"]) || t.has(&["Budgeted"])))
-        .ok_or("The export's Plan file is missing. Choose the .zip, or the Register and Plan files together.")?;
+        .ok_or_else(|| t!("The export's Plan file is missing. Choose the .zip, or the Register and Plan files together."))?;
     let rc = |name| register.column(name);
     let pc = |name| plan.column(name);
     let (assigned_c, activity_c, available_c) = (pc("Assigned").or(pc("Budgeted")), pc("Activity"), pc("Available"));
@@ -469,21 +471,21 @@ pub fn import_files(files: &[ExportFile], order: Option<&str>, fallback_currency
             continue;
         }
         let row = i + 2;
-        let at = |e: String| format!("Register row {row}: {e}");
+        let at = |e: String| t!("Register row {row}: {problem}", row, problem = e);
         let cleared = match field(r, rc("Cleared")).to_ascii_lowercase().as_str() {
             "" | "uncleared" => Cleared::Uncleared,
             "cleared" => Cleared::Cleared,
             "reconciled" => Cleared::Reconciled,
-            other => return Err(at(format!("unknown cleared status “{other}”"))),
+            other => return Err(at(t!("unknown cleared status “{status}”", status = other))),
         };
-        let date = iso(field(r, rc("Date")), order).ok_or_else(|| at("unreadable date".into()))?;
+        let date = iso(field(r, rc("Date")), order).ok_or_else(|| at(t!("unreadable date")))?;
         if date > exported {
             scheduled += 1;
             continue;
         }
         let amount = money(field(r, rc("Inflow")), mark).map_err(at)?
             .checked_sub(money(field(r, rc("Outflow")), mark).map_err(at)?)
-            .filter(|n| valid_money(*n)).ok_or_else(|| at("transaction exceeds the supported money range".into()))?;
+            .filter(|n| valid_money(*n)).ok_or_else(|| at(t!("transaction exceeds the supported money range")))?;
         lines.push(Line {
             row,
             account,
@@ -524,11 +526,11 @@ pub fn import_files(files: &[ExportFile], order: Option<&str>, fallback_currency
     for (i, r) in plan.rows.iter().enumerate() {
         let c = category_of(r, plan);
         let Some(id) = add(c) else { continue };
-        let at = |e: String| format!("Plan row {}: {e}", i + 2);
-        let month = plan_month(field(r, pc("Month"))).ok_or_else(|| at("unreadable month".into()))?;
+        let at = |e: String| t!("Plan row {row}: {problem}", row = i + 2, problem = e);
+        let month = plan_month(field(r, pc("Month"))).ok_or_else(|| at(t!("unreadable month")))?;
         if !seen.insert((month.clone(), id.clone())) {
             let Cat::Envelope(group, name) = c else { unreachable!() };
-            return Err(format!("The plan lists “{group}: {name}” twice in {month}. Rename one in YNAB and export again."));
+            return Err(t!("The plan lists “{group}: {name}” twice in {month}. Rename one in YNAB and export again.", group, name, month));
         }
         let Cat::Envelope(_, name) = c else { unreachable!() };
         plan_rows.push(PlanRow {
@@ -573,7 +575,7 @@ pub fn import_files(files: &[ExportFile], order: Option<&str>, fallback_currency
         .collect();
     for c in categories.iter_mut().filter(|c| c.group == CARD_PAYMENTS) {
         let a = accounts.iter().find(|a| a.kind == AccountKind::Credit && a.name == c.name)
-            .ok_or_else(|| format!("Payment category “{}” ({}) has no matching account in the Register export. Export the complete Register and Plan together, or use YNAB's token import.", c.name, c.id))?;
+            .ok_or_else(|| t!("Payment category “{name}” ({id}) has no matching account in the Register export. Export the complete Register and Plan together, or use YNAB's token import.", name = c.name, id = c.id))?;
         c.extra.insert("paymentAccountId".into(), json!(a.id));
     }
     let ids: HashMap<&str, String> = accounts.iter().map(|a| (a.name.as_str(), a.id.clone())).collect();
@@ -581,7 +583,7 @@ pub fn import_files(files: &[ExportFile], order: Option<&str>, fallback_currency
     for l in &lines {
         if let Some(to) = l.payee.strip_prefix(TRANSFER).map(str::trim) {
             if to == l.account || !ids.contains_key(to) {
-                return Err(format!("Register row {}: transfer account “{to}” is missing or is the same as “{}”. Export the complete Register and Plan together.", l.row, l.account));
+                return Err(t!("Register row {row}: transfer account “{to}” is missing or is the same as “{account}”. Export the complete Register and Plan together.", row = l.row, to, account = l.account));
             }
         }
     }
@@ -606,9 +608,9 @@ pub fn import_files(files: &[ExportFile], order: Option<&str>, fallback_currency
             .collect();
         group.sort_by_key(|&j| split_part(lines[j].memo).map(|(k, _, _)| k));
         if group.len() != n || group.iter().enumerate().any(|(k, &j)| split_part(lines[j].memo).map(|p| p.0) != Some(k + 1)) {
-            return Err(format!(
-                "Register row {}: the split in {} on {} is incomplete.",
-                first.row, first.account, first.date
+            return Err(t!(
+                "Register row {row}: the split in {account} on {date} is incomplete.",
+                row = first.row, account = first.account, date = first.date
             ));
         }
         i += n;
@@ -624,9 +626,9 @@ pub fn import_files(files: &[ExportFile], order: Option<&str>, fallback_currency
         }
     }
     let unmatched = |l: &Line, to: &str| {
-        format!(
-            "Register row {}: the transfer from {} to {to} on {} has no matching row in {to}. Nothing was imported.",
-            l.row, l.account, l.date
+        t!(
+            "Register row {row}: the transfer from {account} to {to} on {date} has no matching row in {to}. Nothing was imported.",
+            row = l.row, account = l.account, to, date = l.date
         )
     };
     let mut used = vec![false; lines.len()];
@@ -669,7 +671,7 @@ pub fn import_files(files: &[ExportFile], order: Option<&str>, fallback_currency
             });
         }
         let amount = splits.iter().try_fold(0i64, |total, s| total.checked_add(s.amount))
-            .filter(|n| valid_money(*n)).ok_or_else(|| format!("Register row {}: split total exceeds the supported money range.", first.row))?;
+            .filter(|n| valid_money(*n)).ok_or_else(|| t!("Register row {row}: split total exceeds the supported money range.", row = first.row))?;
         transactions.push(Transaction {
             id: id(transactions.len() + 1),
             date: first.date.clone(),
@@ -762,7 +764,7 @@ pub fn import_files(files: &[ExportFile], order: Option<&str>, fallback_currency
         .find(|f| f.bytes.starts_with(b"PK\x03\x04"))
         .and_then(|f| plan_name(&f.name))
         .or_else(|| plan_name(&register.name))
-        .unwrap_or_else(|| "Imported from YNAB".into());
+        .unwrap_or_else(|| t!("Imported from YNAB"));
     let mut b = Budget {
         schema_version: SCHEMA_VERSION,
         name,

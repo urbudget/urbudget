@@ -3,6 +3,7 @@
 //! for each transaction record, saying what became of it (see `bank_statement`).
 use crate::bank_import::{dates, money, read_dates, BankTransaction, DateReading};
 use crate::bank_statement::{Field, Fields, Reason, Status};
+use crate::t;
 use chrono::NaiveDate;
 use std::collections::{HashMap, HashSet};
 
@@ -137,7 +138,7 @@ fn xml(s: &str) -> Result<Node, String> {
         stack.last_mut().unwrap().text.push_str(&unescape(&rest[..lt]));
         rest = &rest[lt..];
         if let Some(cdata) = rest.strip_prefix("<![CDATA[") {
-            let end = cdata.find("]]>").ok_or("The XML file ends inside a CDATA section.")?;
+            let end = cdata.find("]]>").ok_or_else(|| t!("The XML file ends inside a CDATA section."))?;
             stack.last_mut().unwrap().text.push_str(&cdata[..end]);
             rest = &cdata[end + 3..];
             continue;
@@ -146,7 +147,7 @@ fn xml(s: &str) -> Result<Node, String> {
             rest = rest.find("-->").map_or("", |e| &rest[e + 3..]);
             continue;
         }
-        let gt = rest.find('>').ok_or("The XML file ends inside a tag.")?;
+        let gt = rest.find('>').ok_or_else(|| t!("The XML file ends inside a tag."))?;
         let inner = &rest[1..gt];
         rest = &rest[gt + 1..];
         if inner.starts_with('?') || inner.starts_with('!') {
@@ -179,7 +180,7 @@ fn xml(s: &str) -> Result<Node, String> {
             stack.last_mut().unwrap().children.push(node);
         } else if stack.len() > 64 {
             // Statements nest a dozen deep; this deep is a file that isn't one.
-            return Err("This XML file is nested too deeply to be a bank statement.".into());
+            return Err(t!("This XML file is nested too deeply to be a bank statement."));
         } else {
             stack.push(node);
         }
@@ -348,7 +349,7 @@ pub(crate) fn lines(format: &str, content: &str, currency: &str, o: &LineOptions
         "qif" => qif_lines(content, currency, o),
         "camt053" => camt_lines(content, currency, o)?,
         "mt940" => mt940_lines(content, currency, o),
-        _ => return Err("Choose CSV, OFX, QFX, QIF, CAMT.053 or MT940.".into()),
+        _ => return Err(t!("Choose CSV, OFX, QFX, QIF, CAMT.053 or MT940.")),
     };
     for p in &read.parts {
         if let Some(s) = read.sources.get_mut(p.source) {
@@ -376,7 +377,7 @@ pub(crate) fn transactions(format: &str, content: &str, currency: &str, date_for
     if matches!(format, "ofx" | "qfx") {
         if let Some(code) = tag(content, "CURDEF").filter(|c| !c.is_empty()) {
             if !code.eq_ignore_ascii_case(currency) {
-                return Err(format!("File currency {code} differs from {currency}."));
+                return Err(t!("File currency {code} differs from {currency}.", code, currency));
             }
         }
     }
@@ -409,11 +410,11 @@ fn finish(p: Parts, o: &LineOptions, currency: &str, order: &str) -> RecordLine 
     for (field, value) in o.fields.get(&key).into_iter().flatten() {
         match field {
             Field::Date => {
-                date = crate::bank_import::date(value, order).map_err(|_| format!("Can't read the date ‘{}’.", value.trim()));
+                date = crate::bank_import::date(value, order).map_err(|_| t!("Can't read the date ‘{date}’.", date = value.trim()));
             }
             Field::Amount => {
                 given = true;
-                amount = money(value, currency).and_then(|a| if a == 0 { Err("Enter an amount other than zero.".into()) } else { Ok(a) });
+                amount = money(value, currency).and_then(|a| if a == 0 { Err(t!("Enter an amount other than zero.")) } else { Ok(a) });
             }
             Field::Payee => payee = value.trim().to_string(),
             Field::Memo => memo = value.trim().to_string(),
@@ -436,7 +437,7 @@ fn finish(p: Parts, o: &LineOptions, currency: &str, order: &str) -> RecordLine 
             Status::LeftOut { reason: *reason, detail: detail.clone() }
         }
         Some((Reason::OtherCurrency, code)) if !given => {
-            attention(Field::Amount, &format!("This line is in {code}: enter the amount in {currency}."))
+            attention(Field::Amount, &t!("This line is in {code}: enter the amount in {currency}.", code, currency))
         }
         _ => match (&date, &amount) {
             (Err(e), _) => attention(Field::Date, e),
@@ -468,7 +469,7 @@ fn settle(batch: &mut Batch, lines: &mut [RecordLine]) {
     }
     batch.adds_up = now.map(|s| s == total);
     if let Some(s) = now.filter(|s| *s != total) {
-        let reason = format!("These payments add up to {}, not the entry's {}.", cents(s), cents(total));
+        let reason = t!("These payments add up to {sum}, not the entry's {total}.", sum = cents(s), total = cents(total));
         for &i in &batch.payments {
             if lines[i].status == Status::Ready {
                 lines[i].status = Status::Attention { field: Field::Amount, column: None, reason: reason.clone() };
@@ -582,13 +583,13 @@ fn ofx_lines(content: &str, currency: &str, o: &LineOptions) -> Parsed {
             let posted = tag("DTPOSTED").or_else(|| tag("DTUSER"));
             // YYYYMMDD with a time after it, or now and then a date written another way.
             let date = match &posted {
-                None => Err("Missing OFX posted date".to_string()),
+                None => Err(t!("Missing OFX posted date")),
                 Some(d) => d.get(..8).and_then(|day| NaiveDate::parse_from_str(day, "%Y%m%d").ok())
                     .map(|day| day.format("%Y-%m-%d").to_string())
-                    .map_or_else(|| crate::bank_import::date(d, "ymd").map_err(|_| format!("Invalid OFX posted date ‘{d}’")), Ok),
+                    .map_or_else(|| crate::bank_import::date(d, "ymd").map_err(|_| t!("Invalid OFX posted date ‘{date}’", date = d)), Ok),
             };
             let written = tag("TRNAMT");
-            let amount = written.as_deref().ok_or_else(|| "Missing OFX amount".to_string()).and_then(|a| money(a, currency));
+            let amount = written.as_deref().ok_or_else(|| t!("Missing OFX amount")).and_then(|a| money(a, currency));
             if k == source && !deletes && stop.is_none() {
                 stop = date.as_ref().err().or(amount.as_ref().err()).cloned();
             }
@@ -731,10 +732,10 @@ fn qif_lines(content: &str, currency: &str, o: &LineOptions) -> Parsed {
     let mut stop = ours.iter().filter(|&&i| !(cut_short && tail_ours && i == records.len() - 1)).find_map(|&i| amounts[i].clone().err());
     let tail_account_ours = ours.first().is_some_and(|&i| records[i].account == last);
     if stop.is_none() && cut_short && (tail_account_ours || counted.is_empty()) {
-        stop = Some("Incomplete QIF record (missing ^ terminator).".into());
+        stop = Some(t!("Incomplete QIF record (missing ^ terminator)."));
     }
     if stop.is_none() && counted.is_empty() && unsupported {
-        stop = Some("Only bank, cash, credit-card and other asset or liability QIF files are supported.".into());
+        stop = Some(t!("Only bank, cash, credit-card and other asset or liability QIF files are supported."));
     }
     let chosen = if o.date_order.is_empty() { "mdy" } else { o.date_order };
     let raw: Vec<String> = records.iter().map(|r| get(r, 'D')).collect();
@@ -756,8 +757,8 @@ fn qif_lines(content: &str, currency: &str, o: &LineOptions) -> Parsed {
         let dated = raw
             .iter()
             .map(|d| match d.trim() {
-                "" => Err("This record has no date.".to_string()),
-                d => crate::bank_import::date(d, reading.order).map_err(|_| format!("Can't read the date ‘{d}’.")),
+                "" => Err(t!("This record has no date.")),
+                d => crate::bank_import::date(d, reading.order).map_err(|_| t!("Can't read the date ‘{date}’.", date = d)),
             })
             .collect();
         let order = reading.order.to_string();
@@ -806,7 +807,7 @@ fn camt_lines(content: &str, currency: &str, o: &LineOptions) -> Result<Parsed, 
         root.find_all("Rpt", &mut statements);
     }
     if statements.is_empty() {
-        return Err("This XML file has no CAMT.053 statement in it.".into());
+        return Err(t!("This XML file has no CAMT.053 statement in it."));
     }
     // Several statements for the one account (a day each) are all its.
     let account = |s: &Node| s.at(&["Acct", "Id"]).map(Node::deep_text);
@@ -831,7 +832,7 @@ fn camt_lines(content: &str, currency: &str, o: &LineOptions) -> Result<Parsed, 
             let booked = status.eq_ignore_ascii_case("BOOK");
             let posted = entry.text_at(&["BookgDt", "Dt"]).or(entry.text_at(&["BookgDt", "DtTm"]))
                 .or(entry.text_at(&["ValDt", "Dt"])).or(entry.text_at(&["ValDt", "DtTm"]));
-            let date = posted.and_then(iso_date).ok_or_else(|| "A CAMT.053 entry has no booking date.".to_string());
+            let date = posted.and_then(iso_date).ok_or_else(|| t!("A CAMT.053 entry has no booking date."));
             let out_of = entry.text_at(&["CdtDbtInd"]).is_some_and(|i| i.eq_ignore_ascii_case("DBIT"));
             // A reversal keeps the parties of what it reverses: a direct debit coming back names its
             // creditor still.
@@ -840,7 +841,7 @@ fn camt_lines(content: &str, currency: &str, o: &LineOptions) -> Result<Parsed, 
             // An amount in the budget's currency, or why not, and the currency it's in instead.
             let amount = |amt: &Node| -> (Result<i64, String>, Option<String>) {
                 if let Some(code) = amt.attr("Ccy").filter(|c| !c.eq_ignore_ascii_case(currency)) {
-                    let why = format!("The file's amounts are in {code}, but this budget uses {currency}.");
+                    let why = t!("The file's amounts are in {code}, but this budget uses {currency}.", code, currency);
                     return (Err(why), Some(code.to_ascii_uppercase()));
                 }
                 (money(amt.text.trim(), currency).map(|n| if out_of { -n.abs() } else { n.abs() }), None)
@@ -848,7 +849,7 @@ fn camt_lines(content: &str, currency: &str, o: &LineOptions) -> Result<Parsed, 
             let shown = |amt: Option<&Node>| amt.map(|a| format!("{}{}", if out_of { "-" } else { "" }, a.text.trim())).unwrap_or_default();
             let (total, foreign) = match entry.child("Amt") {
                 Some(a) => amount(a),
-                None => (Err("A CAMT.053 entry has no amount.".to_string()), None),
+                None => (Err(t!("A CAMT.053 entry has no amount.")), None),
             };
             if k == source && booked && stop.is_none() {
                 stop = date.as_ref().err().or(total.as_ref().err()).cloned();
@@ -1033,7 +1034,7 @@ fn mt940_lines(content: &str, currency: &str, o: &LineOptions) -> Parsed {
                 // Today's import stops at any statement in another currency.
                 let code = code(value);
                 if code.len() == 3 && !code.eq_ignore_ascii_case(currency) && stop.is_none() {
-                    stop = Some(format!("The file's amounts are in {code}, but this budget uses {currency}."));
+                    stop = Some(t!("The file's amounts are in {code}, but this budget uses {currency}.", code, currency));
                 }
             }
             "61" => {
@@ -1089,7 +1090,7 @@ struct StatementLine {
 /// letter, the amount with a decimal comma, then the type and references.
 fn statement_line(value: &str, currency: &str) -> StatementLine {
     let text: String = value.lines().next().unwrap_or("").trim().to_string();
-    let bad = || format!("Cannot read the MT940 line ‘:61:{text}’.");
+    let bad = || t!("Cannot read the MT940 line ‘:61:{text}’.", text);
     let six = text.char_indices().nth(6).map_or(text.len(), |(i, _)| i);
     let value_date = NaiveDate::parse_from_str(&text[..six], "%y%m%d").ok();
     let mut written_date = text[..six].to_string();

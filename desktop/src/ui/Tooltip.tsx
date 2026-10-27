@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { getDirection } from "../i18n";
 
 /** How long the pointer rests before the first tooltip shows. */
 const DELAY = 500;
@@ -17,7 +18,7 @@ type Tip = { text: string; rect: DOMRect; x: number | null; side: "below" | "rig
  * pointer is over an element its title is blanked (so the system tooltip stays away) and put
  * back when the pointer leaves. Moving focus with Tab or the arrow keys shows the same tooltip
  * and leaves the title alone, so screen readers still read it. `data-tooltip-side="right"`
- * puts it beside the element instead of below.
+ * puts it beside the element instead of below (on its left, right to left).
  */
 export function TooltipLayer() {
   const [tip, setTip] = useState<Tip | null>(null);
@@ -161,8 +162,9 @@ export function TooltipLayer() {
     const w = el.offsetWidth,
       h = el.offsetHeight;
     let left: number, top: number;
-    if (tip.side === "right" && rect.right + GAP + w <= innerWidth - MARGIN) {
-      left = rect.right + GAP;
+    const rtl = getDirection() === "rtl";
+    if (tip.side === "right" && (rtl ? rect.left - GAP - w >= MARGIN : rect.right + GAP + w <= innerWidth - MARGIN)) {
+      left = rtl ? rect.left - GAP - w : rect.right + GAP;
       top = rect.top + rect.height / 2 - h / 2;
     } else {
       // A wide anchor (a row, a long name) puts the tooltip under the pointer, not its middle.

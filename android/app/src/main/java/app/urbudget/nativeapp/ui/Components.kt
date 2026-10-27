@@ -37,6 +37,11 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import app.urbudget.nativeapp.ScopedResult
+import app.urbudget.nativeapp.R
+import app.urbudget.nativeapp.Words
+import androidx.compose.ui.res.stringResource
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 
 internal fun JSONObject.rows(key: String): List<JSONObject> = optJSONArray(key)?.let { a ->
     (0 until a.length()).mapNotNull { a.optJSONObject(it) }
@@ -47,24 +52,30 @@ internal fun JSONObject.row(key: String, id: String) = rows(key).firstOrNull { i
 internal fun money(value: Long, currency: String) = Money.format(value, currency)
 internal fun amountText(value: Long) = Money.editable(value)
 internal fun amountValue(value: String) = Money.parse(value)
-private val MonthYear = DateTimeFormatter.ofPattern("MMMM yyyy")
-private val ShortMonthYear = DateTimeFormatter.ofPattern("MMM yyyy")
-internal val ShortMonth: DateTimeFormatter = DateTimeFormatter.ofPattern("MMM")
-internal fun monthLabel(month: String) = runCatching { YearMonth.parse(month).format(MonthYear) }.getOrDefault(month)
+/** Month names follow the interface's language (Money.pattern), digits stay Western. */
+internal fun monthLabel(month: String) = runCatching { YearMonth.parse(month).format(Money.pattern("MMMM yyyy")) }.getOrDefault(month)
 /** "Oct 2026", as the phone's month header shows it. */
-internal fun shortMonthLabel(month: String) = runCatching { YearMonth.parse(month).format(ShortMonthYear) }.getOrDefault(month)
+internal fun shortMonthLabel(month: String) = runCatching { YearMonth.parse(month).format(Money.pattern("MMM yyyy")) }.getOrDefault(month)
+/** A month on its own, as the month picker's buttons show it: "Oct". */
+internal fun shortMonthName(month: YearMonth): String = month.format(Money.pattern("MMM"))
 internal fun jsonArray(values: List<JSONObject>) = JSONArray().apply { values.forEach { put(it) } }
 internal val flagColors = listOf("red", "orange", "yellow", "green", "blue", "purple")
+/** A flag's default name, until the budget names it. */
+internal fun flagDefaultName(color: String): String = when (color) {
+    "red" -> Words[R.string.flag_red]; "orange" -> Words[R.string.flag_orange]; "yellow" -> Words[R.string.flag_yellow]
+    "green" -> Words[R.string.flag_green]; "blue" -> Words[R.string.flag_blue]; "purple" -> Words[R.string.flag_purple]
+    else -> color.replaceFirstChar(Char::uppercase)
+}
 internal fun flagChoices(budget: JSONObject) = flagColors.map { color ->
-    color to (budget.optJSONObject("flagNames")?.text(color)?.takeIf(String::isNotBlank) ?: color.replaceFirstChar(Char::uppercase))
+    color to (budget.optJSONObject("flagNames")?.text(color)?.takeIf(String::isNotBlank) ?: flagDefaultName(color))
 }
 
 /** A form must not apply the full record it opened over changes arriving from sync. */
 internal fun requireCurrentBudget(opened: JSONObject, vm: BudgetViewModel) {
-    require(opened === vm.state.value.budget) { "Your budget changed while this editor was open. Close it and reopen to review the latest values." }
+    require(opened === vm.state.value.budget) { Words[R.string.error_editor_budget_changed] }
 }
 internal fun withCurrentBudget(opened: JSONObject, vm: BudgetViewModel, action: () -> Unit) {
-    runCatching { requireCurrentBudget(opened, vm); action() }.onFailure { vm.notifyError(it.message ?: "The budget changed. Reopen this editor.") }
+    runCatching { requireCurrentBudget(opened, vm); action() }.onFailure { vm.notifyError(it.message ?: Words[R.string.error_reopen_editor]) }
 }
 
 /** Stop obsolete preview work when its inputs change or its form closes. */
@@ -107,7 +118,7 @@ internal fun MonthSelector(month: String, onChange: (String) -> Unit) {
     Row(Modifier.clip(RoundedCornerShape(12.dp)).clickable { picking = true }.padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Text(shortMonthLabel(month), style = MaterialTheme.typography.titleLarge, color = ur.text)
-        Icon(Icons.Outlined.KeyboardArrowDown, "Choose month", Modifier.padding(start = 2.dp), tint = ur.text)
+        Icon(Icons.Outlined.KeyboardArrowDown, stringResource(R.string.month_choose), Modifier.padding(start = 2.dp), tint = ur.text)
     }
     if (picking) MonthPickerSheet(month, { onChange(it); picking = false }) { picking = false }
 }
@@ -118,9 +129,9 @@ internal fun MonthPickerSheet(month: String, onPick: (String) -> Unit, onDismiss
     var year by remember(month) { mutableStateOf(current.year) }
     UrSheet(onDismiss) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton({ year-- }) { Icon(Icons.Outlined.ChevronLeft, "Previous year", tint = ur.text) }
+            IconButton({ year-- }) { Icon(Icons.AutoMirrored.Outlined.KeyboardArrowLeft, stringResource(R.string.month_previous_year), tint = ur.text) }
             Text("$year", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, color = ur.text, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-            IconButton({ year++ }) { Icon(Icons.Outlined.ChevronRight, "Next year", tint = ur.text) }
+            IconButton({ year++ }) { Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, stringResource(R.string.month_next_year), tint = ur.text) }
         }
         val now = YearMonth.now()
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -132,13 +143,13 @@ internal fun MonthPickerSheet(month: String, onPick: (String) -> Unit, onDismiss
                         Box(Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(14.dp))
                             .background(if (chosen) ur.accent else if (value == now) ur.accentSoft else ur.surface2)
                             .clickable { onPick(value.toString()) }, contentAlignment = Alignment.Center) {
-                            Text(value.format(ShortMonth), fontWeight = FontWeight.SemiBold,
+                            Text(shortMonthName(value), fontWeight = FontWeight.SemiBold,
                                 color = if (chosen) MaterialTheme.colorScheme.onPrimary else if (value == now) ur.accent else ur.text)
                         }
                     }
                 }
             }
-            if (current != now) TextButton({ onPick(now.toString()) }, Modifier.align(Alignment.CenterHorizontally)) { Text("Go to this month") }
+            if (current != now) TextButton({ onPick(now.toString()) }, Modifier.align(Alignment.CenterHorizontally)) { Text(stringResource(R.string.month_go_to_current)) }
         }
     }
 }
@@ -148,7 +159,7 @@ internal fun MonthPickerSheet(month: String, onPick: (String) -> Unit, onDismiss
  * header so they stay in reach above the keyboard.
  */
 @Composable
-internal fun FormDialog(title: String, onDismiss: () -> Unit, confirm: String = "Save", onConfirm: (() -> Unit)? = null,
+internal fun FormDialog(title: String, onDismiss: () -> Unit, confirm: String = stringResource(R.string.common_save), onConfirm: (() -> Unit)? = null,
                         enabled: Boolean = true, content: @Composable ColumnScope.() -> Unit) {
     UrSheet(onDismiss) {
         SheetHeader(title, onDismiss, if (onConfirm == null) null else confirm, onConfirm, enabled)
@@ -159,7 +170,7 @@ internal fun FormDialog(title: String, onDismiss: () -> Unit, confirm: String = 
 
 /** Fixed viewport keeps arbitrarily long editors virtualized without nested scrolling. */
 @Composable
-internal fun LazyFormDialog(title: String, onDismiss: () -> Unit, confirm: String = "Save", onConfirm: (() -> Unit)? = null,
+internal fun LazyFormDialog(title: String, onDismiss: () -> Unit, confirm: String = stringResource(R.string.common_save), onConfirm: (() -> Unit)? = null,
                             enabled: Boolean = true, content: LazyListScope.() -> Unit) {
     val height = screenHeight()
     UrSheet(onDismiss) {
@@ -170,11 +181,13 @@ internal fun LazyFormDialog(title: String, onDismiss: () -> Unit, confirm: Strin
     }
 }
 
+/** `ltr`: what is typed reads left to right whatever the interface's direction (a date or an amount the person writes out). */
 @Composable
-internal fun Field(value: String, onChange: (String) -> Unit, label: String, numeric: Boolean = false, lines: Int = 1) {
+internal fun Field(value: String, onChange: (String) -> Unit, label: String, numeric: Boolean = false, lines: Int = 1, ltr: Boolean = false) {
+    val style = if (numeric) LocalTextStyle.current.merge(Tabular) else LocalTextStyle.current
     TextField(value, onChange, label = { Text(label) }, modifier = Modifier.fillMaxWidth(), singleLine = lines == 1, maxLines = lines,
         minLines = if (lines > 1) 2 else 1, shape = RoundedCornerShape(12.dp), colors = fieldColors(),
-        textStyle = if (numeric) LocalTextStyle.current.merge(Tabular) else LocalTextStyle.current,
+        textStyle = if (ltr) style.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Ltr) else style,
         keyboardOptions = KeyboardOptions(keyboardType = if (numeric) KeyboardType.Decimal else KeyboardType.Text))
 }
 
@@ -199,21 +212,22 @@ internal fun fieldColors() = TextFieldDefaults.colors(
 @Composable
 internal fun Choice(label: String, selected: String, choices: List<Pair<String, String>>, onChange: (String) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
-    val chosen = remember(choices, selected) { choices.firstOrNull { it.first == selected }?.second ?: "Choose…" }
+    val choose = stringResource(R.string.common_choose)
+    val chosen = remember(choices, selected, choose) { choices.firstOrNull { it.first == selected }?.second ?: choose }
     Box {
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(fieldFill()).clickable { expanded = true }
             .testTag("choice-open:$label").padding(start = 16.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(label, style = MaterialTheme.typography.bodySmall, color = ur.muted)
-                Text(chosen, style = MaterialTheme.typography.bodyLarge, color = ur.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(Money.own(chosen), style = MaterialTheme.typography.bodyLarge, color = ur.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Icon(Icons.Outlined.UnfoldMore, null, tint = ur.muted)
         }
         DropdownMenu(expanded && choices.size <= 20, { expanded = false }, modifier = Modifier.heightIn(max = 360.dp),
             shape = RoundedCornerShape(14.dp), containerColor = ur.surface) {
             choices.forEach { (id, name) ->
-                DropdownMenuItem(text = { Text(name, fontWeight = if (id == selected) FontWeight.SemiBold else FontWeight.Normal) },
+                DropdownMenuItem(text = { Text(Money.own(name), fontWeight = if (id == selected) FontWeight.SemiBold else FontWeight.Normal) },
                     trailingIcon = if (id == selected) ({ Icon(Icons.Outlined.Check, null, tint = ur.accent) }) else null,
                     onClick = { onChange(id); expanded = false })
             }
@@ -229,17 +243,17 @@ internal fun Choice(label: String, selected: String, choices: List<Pair<String, 
         val height = screenHeight()
         UrSheet({ expanded = false }) {
             SheetHeader(label, { expanded = false }, null, null)
-            SearchField(search, { search = it }, "Search", Modifier.padding(horizontal = 16.dp), Modifier.testTag("choice-search:$label"))
+            SearchField(search, { search = it }, stringResource(R.string.common_search), Modifier.padding(horizontal = 16.dp), Modifier.testTag("choice-search:$label"))
             if (visible == null) LinearProgressIndicator(Modifier.fillMaxWidth().padding(16.dp))
             LazyColumn(Modifier.fillMaxWidth().height(height * .6f).testTag("choice-options:$label"), contentPadding = PaddingValues(vertical = 8.dp)) {
                 itemsIndexed(visible.orEmpty()) { _, option ->
                     Row(Modifier.fillMaxWidth().clickable { onChange(option.first); expanded = false }.padding(horizontal = 20.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically) {
-                        Text(option.second, Modifier.weight(1f), color = ur.text, fontWeight = if (option.first == selected) FontWeight.SemiBold else FontWeight.Normal)
+                        Text(Money.own(option.second), Modifier.weight(1f), color = ur.text, fontWeight = if (option.first == selected) FontWeight.SemiBold else FontWeight.Normal)
                         if (option.first == selected) Icon(Icons.Outlined.Check, null, tint = ur.accent)
                     }
                 }
-                if (visible?.isEmpty() == true) item { Text("No matching options", Modifier.padding(20.dp), color = ur.muted) }
+                if (visible?.isEmpty() == true) item { Text(stringResource(R.string.common_no_matching_options), Modifier.padding(20.dp), color = ur.muted) }
             }
         }
     }
@@ -260,7 +274,7 @@ internal suspend fun filterChoices(choices: List<Pair<String, String>>, search: 
 /** A date row that opens the Material date picker. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun DateField(value: String, onChange: (String) -> Unit, label: String = "Date") {
+internal fun DateField(value: String, onChange: (String) -> Unit, label: String = stringResource(R.string.common_date)) {
     var picking by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(fieldFill()).clickable { picking = true }
         .padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -279,8 +293,8 @@ internal fun DatePickerSheet(value: String, onPick: (String) -> Unit, onDismiss:
     val initial = remember(value) { runCatching { LocalDate.parse(value) }.getOrDefault(LocalDate.now()).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli() }
     val state = rememberDatePickerState(initialSelectedDateMillis = initial)
     DatePickerDialog(onDismissRequest = onDismiss, confirmButton = {
-        TextButton({ state.selectedDateMillis?.let { onPick(Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate().toString()) } ?: onDismiss() }) { Text("Done") }
-    }, dismissButton = { TextButton(onDismiss) { Text("Cancel") } },
+        TextButton({ state.selectedDateMillis?.let { onPick(Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate().toString()) } ?: onDismiss() }) { Text(stringResource(R.string.common_done)) }
+    }, dismissButton = { TextButton(onDismiss) { Text(stringResource(R.string.common_cancel)) } },
         colors = DatePickerDefaults.colors(containerColor = ur.surface)) {
         DatePicker(state, showModeToggle = false, colors = DatePickerDefaults.colors(containerColor = ur.surface,
             selectedDayContainerColor = ur.accent, todayDateBorderColor = ur.accent, todayContentColor = ur.accent))

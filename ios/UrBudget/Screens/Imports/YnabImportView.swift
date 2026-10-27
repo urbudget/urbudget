@@ -3,27 +3,57 @@ import UniformTypeIdentifiers
 
 /// YNAB's words for the totals an import checks, and the conflict fields, as the desktop shows them.
 enum ImportYnabText {
-    private static let fields = ["balance": "balance", "cleared_balance": "cleared balance", "uncleared_balance": "uncleared balance",
-                                 "budgeted": "assigned", "activity": "activity"]
-    private static let conflictFields = ["splits": "split lines", "status": "cleared", "approved": "approval",
-                                         "transferStatus": "transfer's cleared", "accountId": "account"]
+    private static let fields = ["balance": String(localized: "balance"), "cleared_balance": String(localized: "cleared balance"),
+                                 "uncleared_balance": String(localized: "uncleared balance"), "budgeted": String(localized: "assigned"),
+                                 "activity": String(localized: "activity")]
+    private static let conflictFields = ["splits": String(localized: "split lines"), "status": String(localized: "cleared"),
+                                         "approved": String(localized: "approval"), "transferStatus": String(localized: "transfer's cleared"),
+                                         "accountId": String(localized: "account")]
 
     /// A total that differs from YNAB's: "Car Loan balance: −10,600.00 here, −10,831.27 in YNAB".
     static func difference(_ d: JSON, currency: String) -> String {
-        let amounts = "\(money(d.long("actual"), currency)) here, \(money(d.long("expected"), currency)) in YNAB"
+        let actual = money(d.long("actual"), currency)
+        let expected = money(d.long("expected"), currency)
+        let amounts = String(localized: "\(actual) here, \(expected) in YNAB")
         let month = d.text("month").isEmpty ? "" : Dates.monthLabel(String(d.text("month").prefix(7)))
         let field = d.text("field")
         var kind = d.text("kind")
         if kind.isEmpty { kind = !d.text("account").isEmpty ? "account" : !d.text("category").isEmpty ? "category" : "readyToAssign" }
         switch kind {
         case "account":
-            let name = field.isEmpty ? "balance" : fields[field] ?? field.replacingOccurrences(of: "_", with: " ")
-            return "\(d.text("account")) \(name): \(amounts)"
+            return accountDifference(d.text("account"), field: field, amounts: amounts)
         case "category":
-            let name = field == "balance" ? "available" : fields[field] ?? field
-            return [d.text("category"), month, name].filter { !$0.isEmpty }.joined(separator: ", ") + ": \(amounts)"
+            return categoryDifference([d.text("category"), month].filter { !$0.isEmpty }, field: field, amounts: amounts)
         default:
-            return "Ready to Assign\(month.isEmpty ? "" : ", \(month)"): \(amounts)"
+            if month.isEmpty { return String(localized: "Ready to Assign: \(amounts)") }
+            return String(localized: "Ready to Assign, \(month): \(amounts)")
+        }
+    }
+
+    /// "Car Loan balance: …", a whole sentence for each total so every language can order it.
+    private static func accountDifference(_ account: String, field: String, amounts: String) -> String {
+        switch field {
+        case "", "balance": return String(localized: "\(account) balance: \(amounts)")
+        case "cleared_balance": return String(localized: "\(account) cleared balance: \(amounts)")
+        case "uncleared_balance": return String(localized: "\(account) uncleared balance: \(amounts)")
+        case "budgeted": return String(localized: "\(account) assigned: \(amounts)")
+        case "activity": return String(localized: "\(account) activity: \(amounts)")
+        default: return "\(account) \(field.replacingOccurrences(of: "_", with: " ")): \(amounts)"
+        }
+    }
+
+    /// "Groceries, October 2026, available: …"; `about` is the category and the month, either of which may be missing.
+    private static func categoryDifference(_ about: [String], field: String, amounts: String) -> String {
+        switch (field, about.count) {
+        case ("balance", 2): return String(localized: "\(about[0]), \(about[1]), available: \(amounts)")
+        case ("balance", 1): return String(localized: "\(about[0]), available: \(amounts)")
+        case ("budgeted", 2): return String(localized: "\(about[0]), \(about[1]), assigned: \(amounts)")
+        case ("budgeted", 1): return String(localized: "\(about[0]), assigned: \(amounts)")
+        case ("activity", 2): return String(localized: "\(about[0]), \(about[1]), activity: \(amounts)")
+        case ("activity", 1): return String(localized: "\(about[0]), activity: \(amounts)")
+        default:
+            let name = field == "balance" ? String(localized: "available") : fields[field] ?? field
+            return (about + [name]).filter { !$0.isEmpty }.joined(separator: ", ") + ": \(amounts)"
         }
     }
 
@@ -44,13 +74,13 @@ enum ImportYnabText {
 
     /// A value in the conflict review: the side in words, plain text, an amount as money, or the record.
     static func conflictValue(_ value: JSON, field: String, text: String, currency: String) -> String {
-        if value.isNull { return "Deleted" }
+        if value.isNull { return String(localized: "Deleted") }
         if !text.isEmpty { return text }
         switch value {
-        case .string(let string): return string.isEmpty ? "(empty)" : string
+        case .string(let string): return string.isEmpty ? String(localized: "(empty)") : string
         case .int(let number): return field == "amount" ? money(number, currency) : String(number)
         case .double(let number): return String(number)
-        case .bool(let flag): return flag ? "Yes" : "No"
+        case .bool(let flag): return flag ? String(localized: "Yes") : String(localized: "No")
         default:
             let data = try? JSONSerialization.data(withJSONObject: value.foundation, options: [.prettyPrinted, .sortedKeys])
             return data.map { String(decoding: $0, as: UTF8.self) } ?? value.serialized()
@@ -140,7 +170,7 @@ struct YnabImportView: View {
             .inlineTitle()
             .toolbar { toolbar }
             .navigationDestination(for: YnabRoute.self) { _ in
-                YnabTokenList(tokens: tokens, current: savedId, store: "Keychain",
+                YnabTokenList(tokens: tokens, current: savedId, store: String(localized: "Keychain"),
                               use: { id in
                                   choseToken = true
                                   savedId = id
@@ -207,8 +237,8 @@ struct YnabImportView: View {
     @ViewBuilder private var statusContent: some View {
         if let failure {
             Section {
-                Notice(text: "The import stopped. Nothing was changed. \(failure)", tone: "negative", icon: "exclamationmark.triangle.fill",
-                       action: "Dismiss") { self.failure = nil }
+                Notice(text: String(localized: "The import stopped. Nothing was changed. \(failure)"), tone: "negative", icon: "exclamationmark.triangle.fill",
+                       action: String(localized: "Dismiss")) { self.failure = nil }
             }
             .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
         }
@@ -216,7 +246,7 @@ struct YnabImportView: View {
             Section {
                 HStack(spacing: 10) {
                     ProgressView()
-                    Text(progress ?? "Importing…").foregroundStyle(Color.secondary)
+                    Text(progress ?? String(localized: "Importing…")).foregroundStyle(Color.secondary)
                 }
             }
         }
@@ -268,11 +298,16 @@ struct YnabImportView: View {
         } header: {
             Text("YNAB token")
         } footer: {
-            if saved == nil {
-                Text("In YNAB on the web, open Account Settings, then Developer Settings, and choose New Token. Copy it right away: YNAB shows it only once. "
-                     + (tokenStore ? "A remembered token is kept in Keychain; otherwise it's used only for this import." : "It's used only for this import and never stored."))
-            }
+            if saved == nil { tokenHelp }
         }
+    }
+
+    /// Where a YNAB token comes from, and whether it's kept.
+    private var tokenHelp: Text {
+        let kept = tokenStore ? Text("A remembered token is kept in Keychain; otherwise it's used only for this import.")
+            : Text("It's used only for this import and never stored.")
+        let start = Text("In YNAB on the web, open Account Settings, then Developer Settings, and choose New Token. Copy it right away: YNAB shows it only once.")
+        return start + Text(verbatim: " ") + kept
     }
 
     private var planSection: some View {
@@ -310,7 +345,7 @@ struct YnabImportView: View {
         }
     }
 
-    private func choice(_ title: String, _ detail: String) -> some View {
+    private func choice(_ title: LocalizedStringKey, _ detail: LocalizedStringKey) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
             Text(detail).font(.footnote).foregroundStyle(Color.secondary)
@@ -322,7 +357,8 @@ struct YnabImportView: View {
         let name = plan.text("name")
         let edited = plan.text("lastModifiedOn")
         guard !edited.isEmpty, plans.count(where: { $0.text("name") == name }) > 1 else { return name }
-        return "\(name) · edited \(Money.date(String(edited.prefix(10))))"
+        let date = Money.date(String(edited.prefix(10)))
+        return String(localized: "\(name) · edited \(date)")
     }
 
     @ViewBuilder private func differencesContent(_ result: JSON) -> some View {
@@ -332,8 +368,7 @@ struct YnabImportView: View {
             stalenessNotice
         }
         Section {
-            Notice(text: "Nothing has been saved yet. UrBudget rebuilt \(planName.isEmpty ? "your plan" : planName) from YNAB's transactions, and these came out different from what YNAB shows.",
-                   icon: "exclamationmark.triangle.fill")
+            Notice(text: rebuiltNotice, icon: "exclamationmark.triangle.fill")
         }
         .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
         Section {
@@ -341,13 +376,20 @@ struct YnabImportView: View {
                 Text(ImportYnabText.difference(difference, currency: currency)).font(.subheadline)
             }
         } header: {
-            Text(rows.count == 1 ? "One total doesn't match YNAB" : "\(rows.count) totals don't match YNAB")
+            Text("\(rows.count) totals don't match YNAB")
         } footer: {
             Text("Importing anyway brings everything over as YNAB has it, and keeps these differences with the budget. A later import asks again only if they change.")
         }
         Section {
             Button("Cancel review", role: .cancel) { differences = nil }.disabled(busy)
         }
+    }
+
+    private var rebuiltNotice: String {
+        if planName.isEmpty {
+            return String(localized: "Nothing has been saved yet. UrBudget rebuilt your plan from YNAB's transactions, and these came out different from what YNAB shows.")
+        }
+        return String(localized: "Nothing has been saved yet. UrBudget rebuilt \(planName) from YNAB's transactions, and these came out different from what YNAB shows.")
     }
 
     @ViewBuilder private func conflictsContent(_ result: JSON) -> some View {
@@ -383,8 +425,8 @@ struct YnabImportView: View {
                 .disabled(busy)
                 .accessibilityLabel("Keep for \(conflict.text("about").isEmpty ? path : conflict.text("about"))")
             } header: {
-                Text([conflict.text("about").isEmpty ? path : conflict.text("about"), field.isEmpty ? nil : ImportYnabText.conflictField(field)]
-                    .compactMap { $0 }.joined(separator: " · "))
+                Text(ImportsText.line([conflict.text("about").isEmpty ? path : conflict.text("about"), field.isEmpty ? nil : ImportYnabText.conflictField(field)]
+                    .compactMap { $0 }))
                     .textCase(nil)
             }
         }
@@ -395,7 +437,7 @@ struct YnabImportView: View {
 
     private var stalenessNotice: some View {
         Section {
-            Notice(text: "Your budget changed since this review. Cancel it and import again to review the latest changes.", tone: "negative",
+            Notice(text: String(localized: "Your budget changed since this review. Cancel it and import again to review the latest changes."), tone: "negative",
                    icon: "exclamationmark.triangle.fill")
         }
         .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
@@ -406,9 +448,7 @@ struct YnabImportView: View {
     @ViewBuilder private var fileContent: some View {
         let json = files.count == 1 && files[0].name.lowercased().hasSuffix(".json")
         Section {
-            Text("In YNAB on the web, open your plan's menu and export it. Choose the .zip it downloads, or the Register and Plan files inside. "
-                 + (blank ? "It fills this empty budget." : "This makes a new budget; the open one isn't changed.") + " No token or connection is needed.")
-                .font(.subheadline).foregroundStyle(Color.secondary)
+            exportHelp.font(.subheadline).foregroundStyle(Color.secondary)
         }
         .listRowBackground(Color.clear)
         Section {
@@ -439,6 +479,33 @@ struct YnabImportView: View {
         if let preview { previewContent(preview, fromFiles: !json) }
     }
 
+    /// How to get YNAB's export, and what importing it does to this budget.
+    private var exportHelp: Text {
+        let effect = blank ? Text("It fills this empty budget.") : Text("This makes a new budget; the open one isn't changed.")
+        let start = Text("In YNAB on the web, open your plan's menu and export it. Choose the .zip it downloads, or the Register and Plan files inside.")
+        return start + Text(verbatim: " ") + effect + Text(verbatim: " ") + Text("No token or connection is needed.")
+    }
+
+    /// "4 budget, 1 credit, 2 tracking".
+    private func accountKinds(cash: Int, credit: Int, tracking: Int) -> String {
+        String(localized: "\(cash) budget, \(credit) credit, \(tracking) tracking", locale: .app)
+    }
+
+    private func matchesText(checks: Int64) -> String {
+        if checks > 0 {
+            return String(localized: "Checked \(checks) category months against YNAB's plan: every amount matches.", locale: .app)
+        }
+        return String(localized: "Every total matches YNAB.")
+    }
+
+    /// "Checked 120 category months against YNAB's plan: 2 amounts differ.", or "3 totals differ from YNAB."
+    private func differsText(checks: Int64, found: Int) -> String {
+        if checks > 0 {
+            return String(localized: "Checked \(checks) category months against YNAB's plan: \(found) amounts differ.", locale: .app)
+        }
+        return String(localized: "\(found) totals differ from YNAB.", locale: .app)
+    }
+
     @ViewBuilder private func previewContent(_ preview: JSON, fromFiles: Bool) -> some View {
         let accounts = preview.rows("accounts")
         let kinds = { (kind: String) in accounts.filter { $0.text("kind") == kind } }
@@ -448,12 +515,12 @@ struct YnabImportView: View {
         let found = ImportYnabText.differences(preview)
         let checks = preview["importAudit"].long("categoryMonthChecks")
         Section {
-            ValueRow(title: "Accounts", value: "\(accounts.count)",
-                     subtitle: "\(kinds("cash").count) budget, \(kinds("credit").count) credit, \(tracking.count) tracking")
-            ValueRow(title: "Categories", value: "\(preview.rows("categories").count)")
-            ValueRow(title: "Transactions", value: "\(preview.rows("transactions").count)")
-            ValueRow(title: "Months of assignments", value: "\(months)")
-            ValueRow(title: "Currency", value: currency)
+            ValueRow(title: String(localized: "Accounts"), value: "\(accounts.count)",
+                     subtitle: accountKinds(cash: kinds("cash").count, credit: kinds("credit").count, tracking: tracking.count))
+            ValueRow(title: String(localized: "Categories"), value: "\(preview.rows("categories").count)")
+            ValueRow(title: String(localized: "Transactions"), value: "\(preview.rows("transactions").count)")
+            ValueRow(title: String(localized: "Months of assignments"), value: "\(months)")
+            ValueRow(title: String(localized: "Currency"), value: currency)
         } header: {
             Text(preview.text("name")).textCase(nil)
         } footer: {
@@ -463,13 +530,10 @@ struct YnabImportView: View {
         }
         Section {
             if found.isEmpty {
-                Label(checks > 0 ? "Checked \(checks) category months against YNAB's plan: every amount matches." : "Every total matches YNAB.",
-                      systemImage: "checkmark.circle.fill")
+                Label(matchesText(checks: checks), systemImage: "checkmark.circle.fill")
                     .foregroundStyle(Color.urPositive)
             } else {
-                Label(checks > 0 ? "Checked \(checks) category months against YNAB's plan: \(found.count) \(found.count == 1 ? "amount differs" : "amounts differ")."
-                                 : "\(found.count) \(found.count == 1 ? "total differs" : "totals differ") from YNAB.",
-                      systemImage: "exclamationmark.triangle.fill")
+                Label(differsText(checks: checks, found: found.count), systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(Color.urWarning)
                 ForEach(Array(found.enumerated()), id: \.offset) { _, difference in
                     Text(ImportYnabText.difference(difference, currency: currency)).font(.subheadline)
@@ -618,9 +682,17 @@ struct YnabImportView: View {
         }
         let snapshot = result["snapshot"]["budget"]
         let time = ImportYnabText.seconds(result.long("elapsedMs"))
-        message = result.flag("unchanged")
-            ? "Already up to date · \(time) seconds."
-            : "Imported and saved \(snapshot.text("name")) · \(snapshot.rows("accounts").count) accounts · \(snapshot.rows("transactions").count) transactions · \(time) seconds. \(result.flag("incremental") ? "Downloaded changes only. " : "")A backup was saved automatically."
+        if result.flag("unchanged") {
+            message = String(localized: "Already up to date · \(time) seconds.")
+            return
+        }
+        let name = snapshot.text("name")
+        let accounts = snapshot.rows("accounts").count
+        let transactions = snapshot.rows("transactions").count
+        let done = String(localized: "Imported and saved \(name) · \(accounts) accounts · \(transactions) transactions · \(time) seconds.", locale: .app)
+        let backup = String(localized: "A backup was saved automatically.")
+        let changesOnly: [String] = result.flag("incremental") ? [String(localized: "Downloaded changes only.")] : []
+        message = ([done] + changesOnly + [backup]).joined(separator: " ")
     }
 
     private func accept(_ pending: JSON) {
@@ -635,7 +707,7 @@ struct YnabImportView: View {
             _ = try await store.service("resolve_ynab", params, changesBudget: true)
             conflicts = nil
             choices = [:]
-            message = "Reviewed changes imported and saved. A backup was created."
+            message = String(localized: "Reviewed changes imported and saved. A backup was created.")
         }
     }
 
@@ -684,7 +756,7 @@ struct YnabImportView: View {
                     }.value
                 }
                 guard current == generation else { return }
-                guard value.has("schemaVersion") else { throw AppError("These files didn't make a budget UrBudget can open.") }
+                guard value.has("schemaVersion") else { throw AppError(String(localized: "These files didn't make a budget UrBudget can open.")) }
                 preview = value
                 previewRevision = store.revision
             } catch {
@@ -708,7 +780,7 @@ struct YnabImportView: View {
         let name = preview.text("name")
         run {
             let id = try await store.service("create_budget", ["budget": imported]).string
-            store.showToast("Created “\(name)” from YNAB's export and opened it.")
+            store.showToast(String(localized: "Created “\(name)” from YNAB's export and opened it."))
             dismiss()
             store.openBudget(id: id)
         }
@@ -724,13 +796,14 @@ struct YnabImportView: View {
             let data = await Task.detached(priority: .userInitiated) { imported.data() }.value
             do {
                 try await store.importsReplace(with: data, since: revision,
-                                               stale: "Your budget changed since this preview. Choose Replace again to replace it as it is now.")
+                                               stale: String(localized: "Your budget changed since this preview. Choose Replace again to replace it as it is now."))
             } catch {
                 // Once told, a second Replace replaces the budget as it is now.
                 if store.revision != revision { previewRevision = store.revision }
                 throw error
             }
-            store.showToast(empty ? "Imported “\(name)” from YNAB's export." : "Replaced this budget with “\(name)” from YNAB's export.", undo: true)
+            store.showToast(empty ? String(localized: "Imported “\(name)” from YNAB's export.")
+                                  : String(localized: "Replaced this budget with “\(name)” from YNAB's export."), undo: true)
             dismiss()
         }
     }
@@ -738,7 +811,7 @@ struct YnabImportView: View {
 
 /// A labelled value that can run to several lines, for the conflict review.
 private struct ValueBlock: View {
-    var title: String
+    var title: LocalizedStringKey
     var value: String
 
     var body: some View {
@@ -764,7 +837,7 @@ private struct YnabTokenList: View {
     var body: some View {
         List {
             if tokens.isEmpty {
-                EmptyState(title: "No saved tokens", detail: "Paste one and choose Remember on this device.", symbol: "key")
+                EmptyState(title: String(localized: "No saved tokens"), detail: String(localized: "Paste one and choose Remember on this device."), symbol: "key")
             } else {
                 Section {
                     ForEach(tokens, id: \.idText) { token in row(token) }
@@ -780,8 +853,7 @@ private struct YnabTokenList: View {
         .groupedList()
         .navigationTitle("Saved YNAB tokens")
         .inlineTitle()
-        .confirmationDialog("Delete \(confirming?.text("label") ?? "this token") (••••\(confirming?.text("hint") ?? ""))?",
-                            isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }), titleVisibility: .visible) {
+        .confirmationDialog(deleteTitle, isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }), titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
                 guard let id = confirming?.text("id") else { return }
                 Task {
@@ -793,11 +865,24 @@ private struct YnabTokenList: View {
         }
     }
 
+    private var deleteTitle: Text {
+        guard let confirming else { return Text("Delete this token?") }
+        return Text("Delete \(confirming.text("label")) (••••\(confirming.text("hint")))?")
+    }
+
+    /// "••••abcd · saved 2026-10-01 · last used 2026-10-20".
+    private func tokenDetail(_ token: JSON) -> String {
+        let hint = token.text("hint")
+        let saved = Money.date(String(token.text("savedAt").prefix(10)))
+        let lastUsed = token.text("lastUsed")
+        guard !lastUsed.isEmpty else { return String(localized: "••••\(hint) · saved \(saved)") }
+        let used = Money.date(String(lastUsed.prefix(10)))
+        return String(localized: "••••\(hint) · saved \(saved) · last used \(used)")
+    }
+
     private func row(_ token: JSON) -> some View {
         let id = token.text("id")
-        let lastUsed = token.text("lastUsed")
-        let detail = "••••\(token.text("hint")) · saved \(Money.date(String(token.text("savedAt").prefix(10))))"
-            + (lastUsed.isEmpty ? "" : " · last used \(Money.date(String(lastUsed.prefix(10))))")
+        let detail = tokenDetail(token)
         return Button { use(id) } label: {
             HStack(spacing: 12) {
                 Image(systemName: "key.fill").foregroundStyle(Color.urAccent).accessibilityHidden(true)

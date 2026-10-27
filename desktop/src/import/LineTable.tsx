@@ -18,6 +18,7 @@ import type { BankColumns } from "../types";
 import { useVirtualRows } from "../ui";
 import { textWidth, useColumns } from "../ui/columns";
 import { FIELDS, INCLUDABLE, ROLES, leftOutText } from "./model";
+import { formatCount, getDirection, t, tc, tn, tnc } from "../i18n";
 
 /** A line is this tall, so a long file only renders the lines in view (as the register's rows). */
 const LINE = 34;
@@ -28,8 +29,8 @@ const ACTIONS = 64;
 
 /** What can be done to lines, the same functions for every render. */
 export type LineOps = {
-  /** Cells given new values, each against the line as it reads when the change is made. */
-  cells: (line: StatementLine, changes: { column: number; to: string }[]) => void;
+  /** Cells given new values, each from the value it was changed from, against the line as it reads when the change is made. */
+  cells: (line: StatementLine, changes: { column: number; from: string; to: string }[]) => void;
   include: (lines: StatementLine[], on: boolean) => void;
   revert: (lines: StatementLine[]) => void;
   header: (line: StatementLine) => void;
@@ -38,6 +39,8 @@ export type LineOps = {
 };
 /** Cells given new values, shown as them until the file reads again. */
 type Pending = { line: string; values: Record<number, string>; revision: number };
+/** A line's cells as the editor opened on them, and what its fields hold now. */
+type Draft = { opened: string[]; values: string[] };
 
 const includable = (l: StatementLine) => l.status.kind === "leftOut" && INCLUDABLE.has(l.status.reason) && !l.included;
 
@@ -51,7 +54,7 @@ const includable = (l: StatementLine) => l.status.kind === "leftOut" && INCLUDAB
  */
 export function LineTable({
   statement,
-  lines,
+  lines: tab,
   role,
   busy,
   slow,
@@ -85,12 +88,22 @@ export function LineTable({
   const headers = statement.headers;
   const width = Math.max(1, headers.length);
   const place = useMemo(() => new Map(statement.lines.map((l, i) => [l.id, i])), [statement.lines]);
+  // The line being edited stays, in its place, while it's edited, though it has left the tab
+  // meanwhile (another change made it read): what's typed in it isn't lost.
+  const lines = useMemo(() => {
+    const id = editing?.line;
+    if (id === undefined || tab.some((l) => l.id === id)) return tab;
+    const at = place.get(id);
+    if (at === undefined) return tab;
+    const after = tab.findIndex((l) => (place.get(l.id) ?? 0) > at);
+    return after < 0 ? [...tab, statement.lines[at]] : [...tab.slice(0, after), statement.lines[at], ...tab.slice(after)];
+  }, [tab, editing?.line, place, statement.lines]);
   // A new reading of the file shows the cells as they read; a change that didn't apply, as they were.
   useEffect(() => setPending((p) => (p && p.revision !== statement.revision ? null : p)), [statement.revision]);
   useEffect(() => {
     if (!busy) setPending((p) => (p && p.revision === statement.revision ? null : p));
   }, [busy]);
-  // A line no longer in the tab isn't being edited.
+  // A line no longer in the file isn't being edited.
   useEffect(() => {
     if (editing && !lines.some((l) => l.id === editing.line)) setEditing(null);
   }, [lines]);
@@ -103,7 +116,7 @@ export function LineTable({
     return headers.map((h, i) => {
       let longest = "";
       for (const l of sample) if ((l.cells[i]?.length ?? 0) > longest.length) longest = l.cells[i];
-      const head = textWidth((h || `Column ${i + 1}`).toUpperCase(), 11, 600) + (table ? 74 : 0);
+      const head = textWidth((h || columnLabel(i)).toUpperCase(), 11, 600) + (table ? 74 : 0);
       return Math.min(320, Math.max(84, Math.max(head, textWidth(longest, 13)) + 24));
     });
   }, [headers, statement.lines, table]);
@@ -206,15 +219,25 @@ export function LineTable({
     setEditing(null);
     focusGrid();
   };
-  const save = (line: StatementLine, values: string[]) => {
-    const changes = values.map((to, column) => ({ column, to: to.trim() })).filter((c) => c.to !== (line.cells[c.column] ?? "").trim());
+  // Only the cells typed over are saved, each from what it held when the editor opened: a change
+  // that landed on the line meanwhile (the assistant's, an earlier edit still being read) stays.
+  const save = (line: StatementLine, { opened, values }: Draft) => {
+    const changes = values
+      .map((to, column) => ({ column, from: opened[column] ?? "", to: to.trim() }))
+      .filter((c) => c.to !== c.from.trim());
     close();
     if (!changes.length) return;
-    setPending({ line: line.id, values: Object.fromEntries(changes.map((c) => [c.column, c.to])), revision: statement.revision });
+    const given = Object.fromEntries(changes.map((c) => [c.column, c.to]));
+    setPending((p) => ({
+      line: line.id,
+      // An earlier edit of the line still on its way keeps showing too.
+      values: p?.line === line.id && p.revision === statement.revision ? { ...p.values, ...given } : given,
+      revision: statement.revision,
+    }));
     ops.cells(line, changes);
   };
   // What the line being edited holds now, saved when the selection moves away from it.
-  const draft = useRef<string[] | null>(null);
+  const draft = useRef<Draft | null>(null);
   const commit = (keep?: string) => {
     if (!editing || editing.line === keep) return;
     const line = lines.find((l) => l.id === editing.line);
@@ -228,9 +251,12 @@ export function LineTable({
   useLayoutEffect(() => {
     const el = scroller.current;
     if (!el) return;
+    // Under the start (the left; right to left, the right) and under the end. Right to left,
+    // scrollLeft runs from 0 at the start towards negative values.
     const edges = () => {
-      el.classList.toggle("under-left", el.scrollLeft > 0);
-      el.classList.toggle("under-right", el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+      const scrolled = Math.abs(el.scrollLeft);
+      el.classList.toggle("under-left", scrolled > 0);
+      el.classList.toggle("under-right", scrolled + el.clientWidth < el.scrollWidth - 1);
     };
     edges();
     el.addEventListener("scroll", edges, { passive: true });
@@ -331,17 +357,17 @@ export function LineTable({
         <div
           className="line-table"
           role="grid"
-          aria-label="The file's lines"
+          aria-label={t("The file's lines")}
           aria-rowcount={lines.length + 1}
           aria-multiselectable
           style={style}
         >
           <div className="line-row line-head" role="row">
-            <span role="columnheader" className="line-state" title="How each line imports, or why it doesn't">
+            <span role="columnheader" className="line-state" title={t("How each line imports, or why it doesn't")}>
               <span className="line-check">
                 <input
                   type="checkbox"
-                  aria-label="Select every line shown"
+                  aria-label={t("Select every line shown")}
                   checked={all}
                   disabled={!lines.length}
                   ref={(el) => {
@@ -350,19 +376,19 @@ export function LineTable({
                   onChange={() => (all ? act.clear() : setSelected(new Set(lines.map((l) => l.id))))}
                 />
               </span>
-              Imports as
-              {columns.grip("state", "Imports as")}
+              {t("Imports as")}
+              {columns.grip("state", t("Imports as"))}
             </span>
             {headers.map((h, i) => (
               <span role="columnheader" key={i} className="line-col">
-                <span className="line-col-name" title={h || `Column ${i + 1}`}>
-                  {h || `Column ${i + 1}`}
+                <span className="line-col-name" title={h || columnLabel(i)}>
+                  {h || columnLabel(i)}
                 </span>
                 {table && <RolePick column={i} role={role[i] ?? null} busy={slow} onChange={(r) => ops.role(i, r)} />}
-                {columns.grip(`c${i}`, h || `Column ${i + 1}`)}
+                {columns.grip(`c${i}`, h || columnLabel(i))}
               </span>
             ))}
-            <span role="columnheader" className="line-actions-cell" aria-label="What can be done" />
+            <span role="columnheader" className="line-actions-cell" aria-label={t("What can be done")} />
           </div>
           {before > 0 && <div aria-hidden style={{ height: before }} />}
           {lines
@@ -375,8 +401,9 @@ export function LineTable({
                   headers={headers}
                   locked={table ? role.map((r) => r === "id") : []}
                   focus={editing.column}
+                  waiting={pending?.line === line.id ? pending.values : null}
                   draft={draft}
-                  onSave={(values) => save(line, values)}
+                  onSave={(d) => save(line, d)}
                   onCancel={close}
                 />
               ) : (
@@ -409,6 +436,9 @@ export function LineTable({
   );
 }
 
+/** A column the file gives no name. */
+const columnLabel = (i: number) => t("Column {number}", { number: i + 1 });
+
 /** A short name for a file's layout: its columns' names. */
 function layoutKey(headers: string[]) {
   let hash = 0;
@@ -424,36 +454,38 @@ function LineBulkBar({ chosen, busy, ops, onClear }: { chosen: StatementLine[]; 
   const toInclude = chosen.filter(includable);
   const toLeave = chosen.filter((l) => l.included);
   const toRevert = chosen.filter((l) => l.fixed);
-  const n = (k: number) => (k === 1 ? "1 line" : `${k.toLocaleString()} lines`);
+  const count = (k: number) => formatCount(k);
   const actions = [
     {
-      name: "Include",
+      name: t("Include"),
       lines: toInclude,
       icon: <CirclePlus size={15} />,
-      title: `Import ${n(toInclude.length)} though left out`,
+      title: tn(toInclude.length, "Import 1 line though left out", "Import {count} lines though left out", { count: count(toInclude.length) }),
       run: () => ops.include(toInclude, true),
     },
     {
-      name: "Leave out",
+      name: t("Leave out"),
       lines: toLeave,
       icon: <CircleMinus size={15} />,
-      title: `Leave ${n(toLeave.length)} out again`,
+      title: tn(toLeave.length, "Leave 1 line out again", "Leave {count} lines out again", { count: count(toLeave.length) }),
       run: () => ops.include(toLeave, false),
     },
     {
-      name: "Put back",
+      name: t("Put back"),
       lines: toRevert,
       icon: <RotateCcw size={14} />,
-      title: `Put ${n(toRevert.length)} back as the file has them`,
+      title: tn(toRevert.length, "Put 1 line back as the file has it", "Put {count} lines back as the file has them", {
+        count: count(toRevert.length),
+      }),
       run: () => ops.revert(toRevert),
     },
   ].filter((a) => a.lines.length);
   return (
     <div className="bulk-dock line-bulk">
-      <div className="bulk-bar" role="toolbar" aria-label="Selected lines">
+      <div className="bulk-bar" role="toolbar" aria-label={t("Selected lines")}>
         <span className="bulk-count">
-          <span aria-live="polite">{chosen.length.toLocaleString()} selected</span>
-          <button aria-label="Clear selection" title="Clear selection (Esc)" onClick={onClear}>
+          <span aria-live="polite">{tnc("lines", chosen.length, "{count} selected", "{count} selected", { count: formatCount(chosen.length) })}</span>
+          <button aria-label={t("Clear selection")} title={t("Clear selection (Esc)")} onClick={onClear}>
             <X size={14} />
           </button>
         </span>
@@ -464,13 +496,13 @@ function LineBulkBar({ chosen, busy, ops, onClear }: { chosen: StatementLine[]; 
                 {a.icon}
                 <span>
                   {a.name}
-                  {a.lines.length < chosen.length && <small> {a.lines.length.toLocaleString()}</small>}
+                  {a.lines.length < chosen.length && <small> {formatCount(a.lines.length)}</small>}
                 </span>
               </button>
             ))}
           </span>
         ) : (
-          <span className="bulk-note">Nothing to change on these together</span>
+          <span className="bulk-note">{t("Nothing to change on these together")}</span>
         )}
       </div>
     </div>
@@ -491,18 +523,18 @@ function RolePick({
 }) {
   const label = ROLES.find(([r]) => r === role)?.[1];
   return (
-    <label className={`role-pick${role ? " on" : ""}`} title="What this column holds">
-      <span aria-hidden>{label ?? "Not read"}</span>
+    <label className={`role-pick${role ? " on" : ""}`} title={t("What this column holds")}>
+      <span aria-hidden>{label ? t(label) : t("Not read")}</span>
       <select
-        aria-label={`What column ${column + 1} holds`}
+        aria-label={t("What column {number} holds", { number: column + 1 })}
         value={role ?? ""}
         disabled={busy}
         onChange={(e) => onChange((e.target.value || null) as keyof BankColumns | null)}
       >
-        <option value="">Not read</option>
+        <option value="">{t("Not read")}</option>
         {ROLES.map(([r, name]) => (
           <option key={r} value={r}>
-            {name}
+            {t(name)}
           </option>
         ))}
       </select>
@@ -565,7 +597,7 @@ const LineRow = memo(function LineRow({
         <span className="line-check">
           <input
             type="checkbox"
-            aria-label={`Select line ${line.id}`}
+            aria-label={t("Select line {line}", { line: line.id })}
             checked={selected}
             onChange={(e) => onCheck(line, (e.nativeEvent as globalThis.MouseEvent).shiftKey)}
           />
@@ -579,7 +611,7 @@ const LineRow = memo(function LineRow({
           </span>
         ) : (
           <span className="line-left-out" title={leftOutText(line)}>
-            {line.included ? "Included · " : ""}
+            {line.included ? `${t("Included")} · ` : ""}
             {leftOutText(line)}
           </span>
         )}
@@ -595,8 +627,8 @@ const LineRow = memo(function LineRow({
             key={column}
             data-column={column}
             className={`line-cell${bad ? " bad" : ""}${edited ? " edited" : ""}${waiting !== null ? " waiting" : ""}`}
-            aria-label={`${headers[column] || `Column ${column + 1}`} of line ${line.id}: ${value || "empty"}`}
-            title={edited && line.original?.length ? `In the file: ${line.original[column] ?? ""}` : undefined}
+            aria-label={t("{column} of line {line}: {value}", { column: headers[column] || columnLabel(column), line: line.id, value: value || t("empty") })}
+            title={edited && line.original?.length ? t("In the file: {value}", { value: line.original[column] ?? "" }) : undefined}
           >
             {value}
           </span>
@@ -635,52 +667,52 @@ function LineActions({
   // Each with a short label, and a name that says it all to whoever can't see the line.
   const list: { label: string; name: string; title: string; icon: ReactNode; run: () => void }[] = [];
   if (s.kind === "attention")
-    list.push({ label: "Fix", name: `Fix line ${id}`, title: s.reason, icon: <Pencil size={13} />, run: () => onEdit(line) });
+    list.push({ label: t("Fix"), name: t("Fix line {line}", { line: id }), title: s.reason, icon: <Pencil size={13} />, run: () => onEdit(line) });
   if (includable(line))
     list.push({
-      label: "Include",
-      name: `Include line ${id}`,
-      title: "Import this line though it's left out",
+      label: t("Include"),
+      name: t("Include line {line}", { line: id }),
+      title: t("Import this line though it's left out"),
       icon: <CirclePlus size={14} />,
       run: () => ops.include([line], true),
     });
   if (line.included)
     list.push({
-      label: "Leave out",
-      name: `Leave line ${id} out`,
-      title: "Leave this line out again",
+      label: t("Leave out"),
+      name: t("Leave line {line} out", { line: id }),
+      title: t("Leave this line out again"),
       icon: <CircleMinus size={14} />,
       run: () => ops.include([line], false),
     });
   if (s.kind === "leftOut" && s.reason === "aboveHeader")
     list.push({
-      label: "Header",
-      name: `Use line ${id} as the header row`,
-      title: "Use this line as the header row: the columns take its names",
+      label: t("Header"),
+      name: t("Use line {line} as the header row", { line: id }),
+      title: t("Use this line as the header row: the columns take its names"),
       icon: <Rows3 size={14} />,
       run: () => ops.header(line),
     });
   if (batch && batch.addsUp === false && !batch.asOne && batch.payments[0] === index)
     list.push({
-      label: "As one",
-      name: "Import as one entry",
-      title: "Import the batch as the bank's one entry, not its payments",
+      label: t("As one"),
+      name: t("Import as one entry"),
+      title: t("Import the batch as the bank's one entry, not its payments"),
       icon: <Layers size={14} />,
       run: () => ops.whole(batch.entry, true),
     });
   if (batch?.asOne && batch.line === index)
     list.push({
-      label: "Split",
-      name: "Import the payments one by one",
-      title: "Import the batch's payments one by one",
+      label: tc("batch", "Split"),
+      name: t("Import the payments one by one"),
+      title: t("Import the batch's payments one by one"),
       icon: <Split size={14} />,
       run: () => ops.whole(batch.entry, false),
     });
   if (line.fixed)
     list.push({
-      label: "Undo",
-      name: `Put line ${id} back as the file has it`,
-      title: assisted ? "Fixed by the assistant · put back as the file has it" : "Put back as the file has it",
+      label: t("Undo"),
+      name: t("Put line {line} back as the file has it", { line: id }),
+      title: assisted ? t("Fixed by the assistant · put back as the file has it") : t("Put back as the file has it"),
       icon: assisted ? <Sparkles size={13} /> : <RotateCcw size={13} />,
       run: () => ops.revert([line]),
     });
@@ -712,7 +744,7 @@ function LineActions({
 function ReadsAs({ line, assisted }: { line: StatementLine; assisted: boolean }) {
   const cents = Math.round(Number(line.fields.amount) * 100);
   const changed = line.fixed || line.included;
-  const why = changed ? (assisted ? "Fixed by the assistant · " : line.included ? "Included · " : "Changed · ") : "";
+  const why = changed ? (assisted ? t("Fixed by the assistant") : line.included ? t("Included") : t("Changed")) : "";
   const amount = Number.isFinite(cents) ? money(cents, { symbol: false }) : line.fields.amount;
   // A new reading of the same line (the signs turned, another date order) lights up as it changes,
   // counted as it renders rather than with a render of its own for every line.
@@ -721,8 +753,11 @@ function ReadsAs({ line, assisted }: { line: StatementLine; assisted: boolean })
   if (seen.current.reading !== reading) seen.current = { reading, moved: seen.current.moved + 1 };
   const moved = seen.current.moved;
   return (
-    <span className={`line-ok${changed ? " line-changed" : ""}`} title={`${why}Imports as ${formatDate(line.fields.date)}, ${amount}`}>
-      <Check size={14} aria-label="Reads" />
+    <span
+      className={`line-ok${changed ? " line-changed" : ""}`}
+      title={[why, t("Imports as {date}, {amount}", { date: formatDate(line.fields.date), amount })].filter(Boolean).join(" · ")}
+    >
+      <Check size={14} aria-label={t("Reads")} />
       <span key={moved} className={`line-reading${moved ? " moved" : ""}`}>
         <span className="line-date">{formatDate(line.fields.date)}</span>
         <span className={`line-amount${cents > 0 ? " in" : ""}`}>{amount}</span>
@@ -740,6 +775,7 @@ function LineEditor({
   headers,
   locked,
   focus,
+  waiting,
   draft,
   onSave,
   onCancel,
@@ -750,13 +786,17 @@ function LineEditor({
   locked: boolean[];
   /** The cell to start in. */
   focus: number;
+  /** The line's cells given new values that the file doesn't read with yet. */
+  waiting: Record<number, string> | null;
   /** Where what the fields hold is kept, for the table to save the line when the selection moves away. */
-  draft: MutableRefObject<string[] | null>;
-  onSave: (values: string[]) => void;
+  draft: MutableRefObject<Draft | null>;
+  onSave: (draft: Draft) => void;
   onCancel: () => void;
 }) {
-  const [values, setValues] = useState(() => headers.map((_, i) => line.cells[i] ?? ""));
-  draft.current = values;
+  // The cells as they show when it opens, kept: what's saved is what's typed over them.
+  const [opened] = useState(() => headers.map((_, i) => waiting?.[i] ?? line.cells[i] ?? ""));
+  const [values, setValues] = useState(opened);
+  draft.current = { opened, values };
   const row = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = row.current;
@@ -768,17 +808,25 @@ function LineEditor({
     if (!el || !scroller || !cell) return;
     // The cell may be off to the side: brought into view between the pinned columns (how the
     // line imports, what can be done to it), and the whole line above the bottom edge.
-    const left = el.querySelector<HTMLElement>(".line-state")?.offsetWidth ?? 0;
-    if (cell.offsetLeft - left < scroller.scrollLeft) scroller.scrollLeft = cell.offsetLeft - left;
-    else if (cell.offsetLeft + cell.offsetWidth > scroller.scrollLeft + scroller.clientWidth - ACTIONS)
-      scroller.scrollLeft = cell.offsetLeft + cell.offsetWidth - scroller.clientWidth + ACTIONS;
+    const pinned = el.querySelector<HTMLElement>(".line-state")?.offsetWidth ?? 0;
+    // Right to left, how the line imports is pinned on the right and its actions on the left; and
+    // scrollLeft runs from 0, the right end, towards negative values, so the view's left edge
+    // stands that far left of where it is at 0.
+    const rtl = getDirection() === "rtl";
+    const [left, right] = rtl ? [ACTIONS, pinned] : [pinned, ACTIONS];
+    const shift = rtl ? scroller.scrollWidth - scroller.clientWidth : 0;
+    const view = shift + scroller.scrollLeft;
+    if (cell.offsetLeft - left < view) scroller.scrollLeft = cell.offsetLeft - left - shift;
+    else if (cell.offsetLeft + cell.offsetWidth > view + scroller.clientWidth - right)
+      scroller.scrollLeft = cell.offsetLeft + cell.offsetWidth - scroller.clientWidth + right - shift;
     const bottom = el.offsetTop + el.offsetHeight;
     if (bottom > scroller.scrollTop + scroller.clientHeight) scroller.scrollTop = bottom - scroller.clientHeight;
   }, []);
   const keys = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "Enter") {
+    // Enter on a button does what the button does (Cancel cancels).
+    if (e.key === "Enter" && !(e.target as HTMLElement).closest("button")) {
       e.preventDefault();
-      onSave(values);
+      onSave({ opened, values });
     } else if (e.key === "Escape") {
       e.preventDefault();
       onCancel();
@@ -786,24 +834,24 @@ function LineEditor({
   };
   const problem = line.status.kind === "attention" ? line.status.reason : line.status.kind === "leftOut" ? leftOutText(line) : "";
   return (
-    <div className="line-row line-editor" role="row" ref={row} onKeyDown={keys} aria-label={`Edit line ${line.id}`}>
+    <div className="line-row line-editor" role="row" ref={row} onKeyDown={keys} aria-label={t("Edit line {line}", { line: line.id })}>
       <span role="cell" className="line-state">
         <span className={problem ? "line-attention" : "line-editing"}>
           {problem ? <AlertTriangle size={14} aria-hidden /> : <Pencil size={13} aria-hidden />}
-          <span>{problem || "Editing the line"}</span>
+          <span>{problem || t("Editing the line")}</span>
         </span>
       </span>
       {headers.map((h, i) => (
         <span role="cell" key={i} className="line-cell">
           <input
-            aria-label={`${h || `Column ${i + 1}`} of line ${line.id}`}
+            aria-label={t("{column} of line {line}", { column: h || columnLabel(i), line: line.id })}
             value={values[i]}
             readOnly={locked[i]}
             title={
               locked[i]
-                ? "The bank's ID for the line isn't changed"
+                ? t("The bank's ID for the line isn't changed")
                 : line.original?.length
-                  ? `In the file: ${line.original[i] ?? ""}`
+                  ? t("In the file: {value}", { value: line.original[i] ?? "" })
                   : undefined
             }
             onChange={(e) => setValues((v) => v.map((x, k) => (k === i ? e.target.value : x)))}
@@ -813,14 +861,18 @@ function LineEditor({
       <span role="cell" className="line-actions-cell" />
       <div className="line-editor-footer">
         <span className="line-editor-buttons">
-          <button type="button" className="primary small" onClick={() => onSave(values)}>
-            Save
+          <button type="button" className="primary small" onClick={() => onSave({ opened, values })}>
+            {t("Save")}
           </button>
           <button type="button" className="secondary small" onClick={onCancel}>
-            Cancel
+            {t("Cancel")}
           </button>
           <span className="editor-hint" aria-hidden>
-            <kbd>Enter</kbd> saves · <kbd>Esc</kbd> cancels · <kbd>Tab</kbd> moves to the next cell
+            {t("{enter} saves · {esc} cancels · {tab} moves to the next cell", {
+              enter: <kbd>Enter</kbd>,
+              esc: <kbd>Esc</kbd>,
+              tab: <kbd>Tab</kbd>,
+            })}
           </span>
         </span>
       </div>

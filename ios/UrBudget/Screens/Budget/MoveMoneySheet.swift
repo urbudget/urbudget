@@ -15,7 +15,7 @@ struct MoveMoneySheet: View {
     @State private var keypad = false
     @State private var route: [MoveEnd] = []
     @State private var error: String?
-    @State private var title = "Move money"
+    @State private var title = String(localized: "Move money")
     @State private var started = false
     @State private var saving = false
 
@@ -25,8 +25,8 @@ struct MoveMoneySheet: View {
     }
 
     private func name(_ id: String) -> String {
-        if id == Unassigned { return "Unassigned" }
-        return store.budget?.row("categories", id: id)?.text("name") ?? "Choose a category"
+        if id == Unassigned { return String(localized: "Unassigned") }
+        return store.budget?.row("categories", id: id)?.text("name") ?? String(localized: "Choose a category")
     }
 
     var body: some View {
@@ -72,7 +72,8 @@ struct MoveMoneySheet: View {
             .inlineTitle()
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
             .navigationDestination(for: MoveEnd.self) { end in
-                CategoryPicker(title: end == .from ? "Move from" : "Move to", month: store.month, selected: end == .from ? from : to,
+                CategoryPicker(title: end == .from ? String(localized: "Move from") : String(localized: "Move to"), month: store.month,
+                               selected: end == .from ? from : to,
                                includeUnassigned: true, includePayment: false) { id in
                     if end == .from { from = id } else { to = id }
                     route.removeLast()
@@ -96,15 +97,15 @@ struct MoveMoneySheet: View {
         else if start < 0 && rta > 0 && request.category != Unassigned { from = Unassigned }
         if request.direction == "from" { to = request.category }
         pad = PadState(start < 0 ? -start : max(0, start))
-        if request.category == Unassigned && start >= 0 { title = "Assign money" }
-        else if start < 0 && request.category != Unassigned { title = "Cover overspending" }
+        if request.category == Unassigned && start >= 0 { title = String(localized: "Assign money") }
+        else if start < 0 && request.category != Unassigned { title = String(localized: "Cover overspending") }
     }
 
-    private func end(_ label: String, _ id: String, _ currency: String) -> some View {
+    private func end(_ label: LocalizedStringKey, _ id: String, _ currency: String) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(label).font(.footnote).foregroundStyle(Color.secondary)
-                Text(id.isEmpty ? "Choose a category" : name(id)).fontWeight(.semibold)
+                Text(id.isEmpty ? String(localized: "Choose a category") : name(id)).fontWeight(.semibold)
                     .foregroundStyle(id.isEmpty ? Color.urAccent : .primary).lineLimit(1)
             }
             Spacer()
@@ -117,12 +118,12 @@ struct MoveMoneySheet: View {
 
     private func save() {
         attempt($error, saving: $saving) {
-            guard !from.isEmpty, !to.isEmpty else { throw AppError("Choose where the money comes from and where it goes.") }
-            guard from != to else { throw AppError("Choose two different places.") }
-            guard let amount = pad.cents else { throw AppError("Finish the sum first.") }
-            guard amount > 0 else { throw AppError("Enter an amount to move.") }
+            guard !from.isEmpty, !to.isEmpty else { throw AppError(String(localized: "Choose where the money comes from and where it goes.")) }
+            guard from != to else { throw AppError(String(localized: "Choose two different places.")) }
+            guard let amount = pad.cents else { throw AppError(String(localized: "Finish the sum first.")) }
+            guard amount > 0 else { throw AppError(String(localized: "Enter an amount to move.")) }
             try await store.committingWorkflow(["type": "moveMoney", "month": .string(store.month), "from": .string(from), "to": .string(to), "amount": .int(amount)])
-            store.showToast("Moved \(money(amount, store.currency)) from \(name(from)) to \(name(to)).", undo: true)
+            store.showToast(String(localized: "Moved \(money(amount, store.currency)) from \(name(from)) to \(name(to))."), undo: true)
             dismiss()
         }
     }

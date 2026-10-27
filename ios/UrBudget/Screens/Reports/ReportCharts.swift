@@ -124,7 +124,12 @@ struct ReportLegendView: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Legend: " + items.map(\.label).joined(separator: ", "))
+        .accessibilityLabel(spoken)
+    }
+
+    private var spoken: String {
+        let labels = items.map(\.label).joined(separator: ", ")
+        return String(localized: "Legend: \(labels)")
     }
 }
 
@@ -150,7 +155,7 @@ struct ReportReadoutView: View {
         .frame(maxWidth: .infinity, minHeight: 38, alignment: .topLeading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
-        .accessibilityValue(rows.isEmpty ? "Nothing" : rows.map { "\($0.label) \($0.value)" }.joined(separator: ", "))
+        .accessibilityValue(rows.isEmpty ? String(localized: "Nothing") : rows.map { "\($0.label) \($0.value)" }.joined(separator: ", "))
     }
 }
 
@@ -229,13 +234,16 @@ struct ReportColumnChart: View {
     var height: CGFloat = 220
     @State private var selected: Int?
     @ScaledMetric(relativeTo: .caption2) private var labelSpacing: CGFloat = 44
+    @Environment(\.layoutDirection) private var direction
 
     var body: some View {
         let count = model.keys.count
         let shown = selected.flatMap { $0 < count ? $0 : nil } ?? count - 1
         VStack(alignment: .leading, spacing: 8) {
             if shown >= 0 && shown < model.readouts.count { ReportReadoutView(title: model.titles[shown], rows: model.readouts[shown]) }
+            // Months run left to right in every language, so a tap's column is counted from the left.
             GeometryReader { geometry in plot(width: geometry.size.width) }
+                .environment(\.layoutDirection, .leftToRight)
                 .frame(height: height)
         }
         .onChange(of: model.keys) { selected = nil }
@@ -329,8 +337,9 @@ struct ReportColumnChart: View {
                         Text(model.averageText ?? "").font(.caption2).monospacedDigit().foregroundStyle(Color.secondary)
                             .padding(.horizontal, 3)
                             .background(Color.cardBackground.opacity(0.85), in: RoundedRectangle(cornerRadius: 3))
+                            .environment(\.layoutDirection, direction)
                     }
-                    .accessibilityLabel(model.averageText ?? "Average")
+                    .accessibilityLabel(model.averageText ?? String(localized: "Average"))
             }
             ForEach(points) { point in
                 LineMark(x: .value("Month", point.key), y: .value("Amount", point.value), series: .value("Line", point.series))
@@ -394,7 +403,9 @@ struct ReportLinesChart: View {
         let shown = selected.flatMap { $0 < count ? $0 : nil } ?? count - 1
         VStack(alignment: .leading, spacing: 8) {
             if shown >= 0 && shown < model.readouts.count { ReportReadoutView(title: model.titles[shown], rows: model.readouts[shown]) }
+            // Time runs left to right in every language, so a tap's point is counted from the left.
             GeometryReader { geometry in plot(width: geometry.size.width) }
+                .environment(\.layoutDirection, .leftToRight)
                 .frame(height: height)
         }
         .onChange(of: model.keys) { selected = nil }
@@ -534,6 +545,8 @@ struct ReportDonut: View {
                         }
                     }
                 }
+                // Clockwise from the top in every language, as `sliceKey` reads a tap.
+                .environment(\.layoutDirection, .leftToRight)
             }
             VStack(spacing: 1) {
                 Text(centerValue).font(.headline).monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
@@ -599,9 +612,10 @@ struct ReportBarRowView: View {
     }
 }
 
-/// A change either side of a centre line: less to the left, more to the right.
+/// A change either side of a centre line: less towards the start (left, or right in Arabic), more towards the end.
 struct ReportDivergingRowView: View {
     var row: ReportDivRow
+    @Environment(\.layoutDirection) private var direction
 
     var body: some View {
         let color = ReportPalette.color(row.color)
@@ -613,22 +627,29 @@ struct ReportDivergingRowView: View {
                 Text(row.detail).font(.footnote).foregroundStyle(Color.secondary).monospacedDigit().lineLimit(1)
             }
             .font(.subheadline)
-            GeometryReader { geometry in
-                let half = (geometry.size.width - 1) / 2
-                let length = half * CGFloat(min(1, abs(row.fraction)))
-                ZStack(alignment: .topLeading) {
-                    Rectangle().fill(Color.secondary.opacity(0.5)).frame(width: 1, height: 12).offset(x: half)
-                    RoundedRectangle(cornerRadius: 3, style: .continuous).fill(color)
-                        .frame(width: length, height: 12)
-                        .offset(x: row.fraction < 0 ? half - length : half + 1)
-                }
-            }
-            .frame(height: 12)
+            bar(color)
         }
         .padding(.vertical, 3)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(row.label)
         .accessibilityValue("\(row.valueText), \(row.detail)")
+    }
+
+    /// Placed by offsets from the left edge, so it's laid out left to right and mirrored by hand in Arabic.
+    private func bar(_ color: Color) -> some View {
+        let drawsLeft = (row.fraction < 0) == (direction == .leftToRight)
+        return GeometryReader { geometry in
+            let half = (geometry.size.width - 1) / 2
+            let length = half * CGFloat(min(1, abs(row.fraction)))
+            ZStack(alignment: .topLeading) {
+                Rectangle().fill(Color.secondary.opacity(0.5)).frame(width: 1, height: 12).offset(x: half)
+                RoundedRectangle(cornerRadius: 3, style: .continuous).fill(color)
+                    .frame(width: length, height: 12)
+                    .offset(x: drawsLeft ? half - length : half + 1)
+            }
+        }
+        .environment(\.layoutDirection, .leftToRight)
+        .frame(height: 12)
     }
 }
 
@@ -641,7 +662,8 @@ struct ReportHeatCalendar: View {
     @State private var width: CGFloat = 340
 
     var body: some View {
-        let left: CGFloat = 30
+        // Arabic weekday names need a little more room than "Mon".
+        let left: CGFloat = AppLanguage.isRightToLeft ? 40 : 30
         let top: CGFloat = 18
         let cell = min(18, max(9, ((width - left) / CGFloat(max(1, model.weeks))).rounded(.down) - 3))
         let pitch = cell + 3
@@ -690,6 +712,8 @@ struct ReportHeatCalendar: View {
                     .onChange(of: geometry.size.width) { _, next in width = next }
             }
         }
+        // Drawn at fixed positions: weeks run left to right, the latest at the right, in every language.
+        .environment(\.layoutDirection, .leftToRight)
     }
 }
 
@@ -702,7 +726,8 @@ struct ReportHeatLegend: View {
             Spacer(minLength: 8)
             Text("Less").font(.caption).foregroundStyle(Color.secondary).padding(.trailing, 3)
             ForEach(1...5, id: \.self) { swatch($0) }
-            Text("More").font(.caption).foregroundStyle(Color.secondary).padding(.leading, 3)
+            Text(String(localized: "reports.legend.more", defaultValue: "More", comment: "End of a scale from less to more spending."))
+                .font(.caption).foregroundStyle(Color.secondary).padding(.leading, 3)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Darker days had more spending")
@@ -720,22 +745,27 @@ struct ReportTreemap: View {
     var items: [ReportTreemapItem]
     var onSelect: (ReportTreemapItem) -> Void
     var height: CGFloat = 280
+    @Environment(\.layoutDirection) private var direction
 
+    /// Tiles are placed by offsets from the left edge, so they're laid out left to right; in Arabic the
+    /// largest starts at the right, mirrored by hand, and each tile's text keeps the app's direction.
     var body: some View {
         GeometryReader { geometry in
             let sorted = items.filter { $0.value > 0 }.reportSorted(descending: { $0.value })
             let boxes = ReportMath.squarify(sorted, value: { Double($0.value) }, width: geometry.size.width, height: geometry.size.height)
             ZStack(alignment: .topLeading) {
-                ForEach(boxes.indices, id: \.self) { index in tile(boxes[index]) }
+                ForEach(boxes.indices, id: \.self) { index in tile(boxes[index], width: geometry.size.width) }
             }
         }
+        .environment(\.layoutDirection, .leftToRight)
         .frame(height: height)
     }
 
-    private func tile(_ box: ReportTileBox<ReportTreemapItem>) -> some View {
+    private func tile(_ box: ReportTileBox<ReportTreemapItem>, width: CGFloat) -> some View {
         let item = box.item
         let w = max(0, box.w - 2)
         let h = max(0, box.h - 2)
+        let x: Double = direction == .rightToLeft ? Double(width) - box.x - box.w : box.x
         return Button { onSelect(item) } label: {
             VStack(alignment: .leading, spacing: 2) {
                 if w > 44 && h > 22 { Text(item.label).font(.caption.weight(.semibold)).lineLimit(1) }
@@ -748,9 +778,10 @@ struct ReportTreemap: View {
             .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous).strokeBorder(Color.primary.opacity(0.1)))
             .clipped()
             .foregroundStyle(Color.primary)
+            .environment(\.layoutDirection, direction)
         }
         .buttonStyle(.plain)
-        .offset(x: box.x + 1, y: box.y + 1)
+        .offset(x: x + 1, y: box.y + 1)
         .accessibilityLabel(item.label)
         .accessibilityValue("\(item.valueText), \(item.detail), \(item.more)")
         .accessibilityHint("Shows this payee's transactions")
@@ -779,8 +810,18 @@ struct ReportMiniBars: View {
         }
         .chartYAxis(.hidden)
         .chartLegend(.hidden)
+        // Months run left to right, as on the reports' other charts.
+        .environment(\.layoutDirection, .leftToRight)
         .frame(height: 130)
-        .accessibilityLabel(model.series.map(\.label).joined(separator: " and ") + " by month")
+        .accessibilityLabel(spoken)
+    }
+
+    /// "Income and Spending by month".
+    private var spoken: String {
+        let labels = model.series.map(\.label)
+        if labels.count == 2 { return String(localized: "\(labels[0]) and \(labels[1]) by month") }
+        let joined = labels.joined(separator: " and ")
+        return String(localized: "\(joined) by month")
     }
 
     /// One column. Its parts are worked out first: as one expression, Xcode 26 can't type-check it in time.

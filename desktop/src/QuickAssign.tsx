@@ -7,22 +7,24 @@ import { Modal } from "./forms";
 import { money, monthOnly, shiftMonth } from "./format";
 import type { CategorySummary } from "./CategoryRow";
 import type { Budget, Summary } from "./types";
+import { getLanguage, msg, t, tn } from "./i18n";
 
 type Group = "fund" | "history" | "cleanup";
 export const AUTO_ASSIGN: { mode: string; label: string; group: Group; hint: string }[] = [
-  { mode: "underfunded", label: "Underfunded", group: "fund", hint: "Assign what targets still need and cover overspending." },
-  { mode: "assignedLastMonth", label: "Assigned last month", group: "history", hint: "Assign what each category got last month." },
-  { mode: "spentLastMonth", label: "Spent last month", group: "history", hint: "Assign what each category spent last month." },
-  { mode: "averageAssigned", label: "Average assigned", group: "history", hint: "Assign each category's 12-month average assignment." },
-  { mode: "averageSpent", label: "Average spent", group: "history", hint: "Assign each category's 12-month average spending." },
-  { mode: "reduceOverfunding", label: "Reduce overfunding", group: "cleanup", hint: "Return what's beyond each target to Unassigned." },
-  { mode: "resetAvailable", label: "Reset available amounts", group: "cleanup", hint: "Bring every Available to 0.00." },
-  { mode: "resetAssigned", label: "Reset assigned amounts", group: "cleanup", hint: "Set this month's assignments to 0.00." },
+  // Labels and hints are English (history entries name options this way); show them with t().
+  { mode: "underfunded", label: msg("Underfunded"), group: "fund", hint: msg("Assign what targets still need and cover overspending.") },
+  { mode: "assignedLastMonth", label: msg("Assigned last month"), group: "history", hint: msg("Assign what each category got last month.") },
+  { mode: "spentLastMonth", label: msg("Spent last month"), group: "history", hint: msg("Assign what each category spent last month.") },
+  { mode: "averageAssigned", label: msg("Average assigned"), group: "history", hint: msg("Assign each category's 12-month average assignment.") },
+  { mode: "averageSpent", label: msg("Average spent"), group: "history", hint: msg("Assign each category's 12-month average spending.") },
+  { mode: "reduceOverfunding", label: msg("Reduce overfunding"), group: "cleanup", hint: msg("Return what's beyond each target to Unassigned.") },
+  { mode: "resetAvailable", label: msg("Reset available amounts"), group: "cleanup", hint: msg("Bring every Available to 0.00.") },
+  { mode: "resetAssigned", label: msg("Reset assigned amounts"), group: "cleanup", hint: msg("Set this month's assignments to 0.00.") },
 ];
 const GROUPS: { id: Group; title: string }[] = [
-  { id: "fund", title: "Fund targets" },
-  { id: "history", title: "Repeat past months" },
-  { id: "cleanup", title: "Clean up" },
+  { id: "fund", title: msg("Fund targets") },
+  { id: "history", title: msg("Repeat past months") },
+  { id: "cleanup", title: msg("Clean up") },
 ];
 /** Options that take money back from every category they touch. */
 const RESETS = new Set(["resetAvailable", "resetAssigned"]);
@@ -115,19 +117,19 @@ export function QuickAssign({
   const [open, setOpen] = useState<string | null>(null);
   const option = AUTO_ASSIGN.find((o) => o.mode === open);
   return (
-    <section className="quick-assign" aria-label="Quick assign">
+    <section className="quick-assign" aria-label={t("Quick assign")}>
       <h3>
-        Quick assign {!preview && !error && <LoaderCircle size={12} className="spin muted" aria-label="Calculating" />}
+        {t("Quick assign")} {!preview && !error && <LoaderCircle size={12} className="spin muted" aria-label={t("Calculating")} />}
       </h3>
-      <p className="quick-hint">Each option shows its changes first.</p>
+      <p className="quick-hint">{t("Each option shows its changes first.")}</p>
       {error && (
         <p className="form-error" role="alert">
-          Could not calculate these options. <button className="link-button" onClick={retry}>Retry preview</button>
+          {t("Could not calculate these options.")} <button className="link-button" onClick={retry}>{t("Retry preview")}</button>
         </p>
       )}
       {GROUPS.map((g) => (
-        <div key={g.id} className="quick-group" role="group" aria-label={g.title}>
-          <h4>{g.title}</h4>
+        <div key={g.id} className="quick-group" role="group" aria-label={t(g.title)}>
+          <h4>{t(g.title)}</h4>
           {AUTO_ASSIGN.filter((o) => o.group === g.id).map(({ mode, label, hint }) => {
             const outcome = preview?.[mode];
             const change = outcome?.total ?? 0;
@@ -136,13 +138,13 @@ export function QuickAssign({
               <button
                 key={mode}
                 className="quick-row"
-                title={hint}
+                title={t(hint)}
                 disabled={error || (ready && (!outcome || !outcome.changes.length))}
                 onClick={() => setOpen(mode)}
               >
-                <span className="quick-label">{label}</span>
+                <span className="quick-label">{t(label)}</span>
                 <span className={`quick-amount${change > 0 ? " up" : change < 0 ? " down" : ""}`}>
-                  {!ready ? "…" : outcome === null ? "—" : outcome?.changes.length ? signed(change) : "No change"}
+                  {!ready ? "…" : outcome === null ? "—" : outcome?.changes.length ? signed(change) : t("No change")}
                 </span>
                 <ChevronRight size={14} className="quick-chevron" aria-hidden />
               </button>
@@ -166,7 +168,7 @@ export function QuickAssign({
             close={() => setOpen(null)}
             confirm={(change) => {
               setOpen(null);
-              onApply(option.mode, option.label, change, asOfMonth);
+              onApply(option.mode, t(option.label), change, asOfMonth);
             }}
           />,
           document.body,
@@ -179,25 +181,26 @@ export function QuickAssign({
 function explain(mode: string, month: string, all: boolean) {
   const now = monthOnly(month);
   const last = monthOnly(shiftMonth(month, -1));
+  const values = { month: now, last };
   switch (mode) {
     case "underfunded":
       return all
-        ? `Assigns what each category still needs for its ${now} target, and covers overspending. It never assigns more than Unassigned holds: overspent categories go first, then the targets due soonest, then credit card payments.`
-        : `Assigns what each category still needs for its ${now} target, and covers overspending. Overspent categories go first, then the targets due soonest.`;
+        ? t("Assigns what each category still needs for its {month} target, and covers overspending. It never assigns more than Unassigned holds: overspent categories go first, then the targets due soonest, then credit card payments.", values)
+        : t("Assigns what each category still needs for its {month} target, and covers overspending. Overspent categories go first, then the targets due soonest.", values);
     case "assignedLastMonth":
-      return `Replaces each category's ${now} assignment with what you assigned to it in ${last}.`;
+      return t("Replaces each category's {month} assignment with what you assigned to it in {last}.", values);
     case "spentLastMonth":
-      return `Replaces each category's ${now} assignment with what it spent in ${last}. Categories that spent nothing get 0.00, and credit card payments stay as they are.`;
+      return t("Replaces each category's {month} assignment with what it spent in {last}. Categories that spent nothing get 0.00, and credit card payments stay as they are.", values);
     case "averageAssigned":
-      return `Replaces each category's ${now} assignment with its average monthly assignment over the last 12 months, counted from the first month it was assigned to or spent from.`;
+      return t("Replaces each category's {month} assignment with its average monthly assignment over the last 12 months, counted from the first month it was assigned to or spent from.", values);
     case "averageSpent":
-      return `Replaces each category's ${now} assignment with its average monthly spending over the last 12 months, counted from the first month it was assigned to or spent from. Credit card payments stay as they are.`;
+      return t("Replaces each category's {month} assignment with its average monthly spending over the last 12 months, counted from the first month it was assigned to or spent from. Credit card payments stay as they are.", values);
     case "reduceOverfunding":
-      return `Lowers the ${now} assignment of categories holding more than their target needs, and returns the extra to Unassigned. A credit card payment without a target keeps what its card owes. Other categories without a target stay as they are.`;
+      return t("Lowers the {month} assignment of categories holding more than their target needs, and returns the extra to Unassigned. A credit card payment without a target keeps what its card owes. Other categories without a target stay as they are.", values);
     case "resetAvailable":
-      return `Changes each category's ${now} assignment so its Available becomes 0.00. Money set aside, including what carried over from ${last}, returns to Unassigned, so a category holding older money gets a negative assignment. Overspent categories are covered.`;
+      return t("Changes each category's {month} assignment so its Available becomes 0.00. Money set aside, including what carried over from {last}, returns to Unassigned, so a category holding older money gets a negative assignment. Overspent categories are covered.", values);
     case "resetAssigned":
-      return `Sets each category's ${now} assignment to 0.00. Carried-over money and spending stay, so each Available drops by what was assigned.`;
+      return t("Sets each category's {month} assignment to 0.00. Carried-over money and spending stay, so each Available drops by what was assigned.", values);
     default:
       return "";
   }
@@ -209,18 +212,33 @@ type Row = Change & { name: string; card: boolean; availableBefore: number; avai
 function example(mode: string, month: string, r: Row) {
   const last = monthOnly(shiftMonth(month, -1));
   const now = monthOnly(month);
-  const moves = `its ${now} assignment goes from ${money(r.before)} to ${money(r.after)}`;
-  const why: Record<string, string> = {
-    underfunded: `${r.name} still needs ${money(r.after - r.before)}, so ${moves}.`,
-    assignedLastMonth: `You assigned ${money(r.after)} to ${r.name} in ${last}, so ${moves}.`,
-    spentLastMonth: `${r.name} spent ${money(r.after)} in ${last}, so ${moves}.`,
-    averageAssigned: `${r.name} was assigned ${money(r.after)} a month on average, so ${moves}.`,
-    averageSpent: `${r.name} spent ${money(r.after)} a month on average, so ${moves}.`,
-    reduceOverfunding: `${r.name} holds ${money(r.before - r.after)} more than ${r.card ? "its card owes" : "its target needs"}, so ${moves}.`,
-    resetAvailable: `${r.name} has ${money(r.availableBefore)} available, so ${moves}.`,
-    resetAssigned: `${r.name} has ${money(r.before)} assigned in ${now}, so ${moves}.`,
-  };
-  return `${why[mode] ?? `${r.name}: ${moves}.`} Its Available goes from ${money(r.availableBefore)} to ${money(r.availableAfter)}.`;
+  // Each sentence whole, as the order of its parts differs between languages.
+  const v = { name: r.name, month: now, last, before: money(r.before), after: money(r.after) };
+  const why = (() => {
+    switch (mode) {
+      case "underfunded":
+        return t("{name} still needs {amount}, so its {month} assignment goes from {before} to {after}.", { ...v, amount: money(r.after - r.before) });
+      case "assignedLastMonth":
+        return t("You assigned {amount} to {name} in {last}, so its {month} assignment goes from {before} to {after}.", { ...v, amount: money(r.after) });
+      case "spentLastMonth":
+        return t("{name} spent {amount} in {last}, so its {month} assignment goes from {before} to {after}.", { ...v, amount: money(r.after) });
+      case "averageAssigned":
+        return t("{name} was assigned {amount} a month on average, so its {month} assignment goes from {before} to {after}.", { ...v, amount: money(r.after) });
+      case "averageSpent":
+        return t("{name} spent {amount} a month on average, so its {month} assignment goes from {before} to {after}.", { ...v, amount: money(r.after) });
+      case "reduceOverfunding":
+        return r.card
+          ? t("{name} holds {amount} more than its card owes, so its {month} assignment goes from {before} to {after}.", { ...v, amount: money(r.before - r.after) })
+          : t("{name} holds {amount} more than its target needs, so its {month} assignment goes from {before} to {after}.", { ...v, amount: money(r.before - r.after) });
+      case "resetAvailable":
+        return t("{name} has {amount} available, so its {month} assignment goes from {before} to {after}.", { ...v, amount: money(r.availableBefore) });
+      case "resetAssigned":
+        return t("{name} has {amount} assigned in {month}, so its {month} assignment goes from {before} to {after}.", { ...v, amount: money(r.before) });
+      default:
+        return t("{name}: its {month} assignment goes from {before} to {after}.", v);
+    }
+  })();
+  return `${why} ${t("Its Available goes from {before} to {after}.", { before: money(r.availableBefore), after: money(r.availableAfter) })}`;
 }
 
 /** Explains an option with the budget's own numbers, and applies it only on confirmation. */
@@ -291,62 +309,66 @@ function QuickAssignDialog({
   const shortfalls = after?.futureShortfalls ?? [];
   const overspent = rows.filter((r) => r.availableAfter < 0 && r.availableAfter < r.availableBefore).length;
   const scope = all
-    ? `All ${count} visible ${count === 1 ? "category" : "categories"}`
-    : `${count} selected ${count === 1 ? "category" : "categories"}`;
+    ? tn(count, "All {count} visible category in {month}", "All {count} visible categories in {month}", { month: monthOnly(month) })
+    : tn(count, "{count} selected category in {month}", "{count} selected categories in {month}", { month: monthOnly(month) });
   return (
-    <Modal title={`Quick assign: ${option.label}`} close={close}>
+    <Modal title={t("Quick assign: {option}", { option: t(option.label) })} close={close}>
       <div className="qa-dialog">
         <p className="qa-lead">{explain(option.mode, month, all)}</p>
-        <p className="qa-scope">
-          {scope} in {monthOnly(month)}
-        </p>
+        <p className="qa-scope">{scope}</p>
         {resultError ? (
           <p className="notice error" role="alert">
-            Could not calculate the resulting budget. <button className="link-button" onClick={() => setAttempt((n) => n + 1)}>Retry result</button>
+            {t("Could not calculate the resulting budget.")} <button className="link-button" onClick={() => setAttempt((n) => n + 1)}>{t("Retry result")}</button>
           </p>
         ) : outcome === undefined || (outcome && !after) ? (
           <p className="qa-loading">
-            <LoaderCircle size={14} className="spin" /> Working out the changes…
+            <LoaderCircle size={14} className="spin" /> {t("Working out the changes…")}
           </p>
         ) : outcome === null ? (
-          <p className="notice error">This option can’t be worked out for these categories.</p>
+          <p className="notice error">{t("This option can’t be worked out for these categories.")}</p>
         ) : (
           <>
             <div className="qa-stats">
               <div>
-                <span>{total >= 0 ? "Assigns" : "Returns"}</span>
+                <span>{total >= 0 ? t("Assigns") : t("Returns")}</span>
                 <strong className={total > 0 ? "positive" : ""}>{money(Math.abs(total))}</strong>
-                <small>{total >= 0 ? "to categories" : "from assignments"}</small>
+                <small>{total >= 0 ? t("to categories") : t("from assignments")}</small>
               </div>
               <div>
-                <span>Unassigned</span>
+                <span>{t("Unassigned")}</span>
                 <strong className={unassignedAfter < 0 ? "negative" : ""}>{money(unassignedAfter)}</strong>
-                <small>now {money(readyToAssign)}</small>
+                <small>{t("now {amount}", { amount: money(readyToAssign) })}</small>
               </div>
               <div>
-                <span>Categories</span>
+                <span>{t("Categories")}</span>
                 <strong>{rows.length}</strong>
-                <small>of {count} change</small>
+                <small>{t("of {count} change", { count })}</small>
               </div>
             </div>
             {sample && (
               <p className="qa-example">
-                <span>For example</span>
+                <span>{t("For example")}</span>
                 {example(option.mode, month, sample)}
               </p>
             )}
             {shortfalls.length > 0 && (
               <p className="qa-warning" role="alert">
                 <AlertTriangle size={15} />
-                <span>Future funding still needs attention: {shortfalls.map((s) => `${monthOnly(s.month)} is short by ${money(s.amount)}`).join("; ")}. Returned money covers these shortfalls before becoming Unassigned.</span>
+                <span>
+                  {t("Future funding still needs attention: {shortfalls}. Returned money covers these shortfalls before becoming Unassigned.", {
+                    shortfalls: shortfalls
+                      .map((s) => t("{month} is short by {amount}", { month: monthOnly(s.month), amount: money(s.amount) }))
+                      .join(getLanguage() === "ar" ? "؛ " : "; "),
+                  })}
+                </span>
               </p>
             )}
-            <div className="qa-table" role="table" aria-label="Changes by category">
+            <div className="qa-table" role="table" aria-label={t("Changes by category")}>
               <div className="qa-tr qa-th" role="row">
-                <span role="columnheader">Category</span>
-                <span role="columnheader">Assigned</span>
-                <span role="columnheader">Change</span>
-                <span role="columnheader">Available after</span>
+                <span role="columnheader">{t("Category")}</span>
+                <span role="columnheader">{t("Assigned")}</span>
+                <span role="columnheader">{t("Change")}</span>
+                <span role="columnheader">{t("Available after")}</span>
               </div>
               <div className="qa-body">
                 {rows.map((r) => (
@@ -369,25 +391,25 @@ function QuickAssignDialog({
             </div>
             {count > rows.length && (
               <p className="qa-same">
-                {count - rows.length} {count - rows.length === 1 ? "category stays" : "categories stay"} the same.
+                {tn(count - rows.length, "{count} category stays the same.", "{count} categories stay the same.")}
               </p>
             )}
             {(unassignedAfter < 0 || overspent > 0) && (
               <p className="qa-warning" role="alert">
                 <AlertTriangle size={15} />
                 <span>
-                  {unassignedAfter < 0 && `This assigns more than you have: Unassigned would be ${money(unassignedAfter)}. `}
+                  {unassignedAfter < 0 && `${t("This assigns more than you have: Unassigned would be {amount}.", { amount: money(unassignedAfter) })} `}
                   {overspent > 0 &&
-                    `${overspent} ${overspent === 1 ? "category ends" : "categories end"} up overspent, with Available below 0.00.`}
+                    tn(overspent, "{count} category ends up overspent, with Available below 0.00.", "{count} categories end up overspent, with Available below 0.00.")}
                 </span>
               </p>
             )}
           </>
         )}
         <div className="modal-actions qa-actions">
-          <small className="muted">You can undo this afterwards.</small>
+          <small className="muted">{t("You can undo this afterwards.")}</small>
           <button className="secondary" onClick={close} data-autofocus={reset || undefined}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button
             className={reset ? "danger" : "primary"}
@@ -395,7 +417,7 @@ function QuickAssignDialog({
             data-autofocus={!reset || undefined}
             onClick={() => confirm(total)}
           >
-            {rows.length ? `Apply to ${rows.length} ${rows.length === 1 ? "category" : "categories"}` : "Apply"}
+            {rows.length ? tn(rows.length, "Apply to {count} category", "Apply to {count} categories") : t("Apply")}
           </button>
         </div>
       </div>

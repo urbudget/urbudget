@@ -1,6 +1,6 @@
 //! Native host command router. SQLite and the service state live for the process lifetime so
 //! sync, bank imports and assistant edits all observe the same saved revision and draft.
-use crate::{assistant, budgets, cloud, domain, fresh_start, host, simplefin, store::Store, vault, ynab_capture, Database, Library};
+use crate::{assistant, budgets, cloud, domain, fresh_start, host, simplefin, store::Store, t, vault, ynab_capture, Database, Library};
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -149,6 +149,10 @@ mod tests {
                     tokio::time::timeout(std::time::Duration::from_secs(1), runtime.dispatch(method, json!({})))
                         .await.unwrap_or_else(|_| panic!("{method} waited for the command queue")).unwrap();
                 }
+                // English is already the language: this checks the call, not a switch other tests could see.
+                let switched = tokio::time::timeout(std::time::Duration::from_secs(1), runtime.dispatch("set_language", json!({"language":"en"})))
+                    .await.expect("set_language waited for the command queue").unwrap();
+                assert_eq!(switched, Value::Null);
             }
             let mut budget = urbudget_core::test_support::sample();
             budget.name = "Edited while the bank is waiting".into();
@@ -235,7 +239,7 @@ impl Runtime {
     fn save(&self, budget: &domain::Budget, expected: &str) -> Result<Value, String> {
         let mut store = self.db.store()?;
         let (before, status) = store.saved()?;
-        if status.token != expected { return Err("CONFLICT: The budget changed. Reload it before saving your edit.".into()); }
+        if status.token != expected { return Err(t!("CONFLICT: The budget changed. Reload it before saving your edit.")); }
         domain::validate(budget)?;
         // Native editors send a complete snapshot, but ordinary edits still use the desktop
         // delta commit path. Large imported source payloads and untouched ledger rows stay in
@@ -279,7 +283,7 @@ impl Runtime {
     fn undo_redo(&self, redo: bool, expected: Option<String>) -> Result<Value, String> {
         let mut store = self.db.store()?;
         let (before, status) = store.saved()?;
-        if expected.as_ref().is_some_and(|token| token != &status.token) { return Err("CONFLICT: The budget changed after that edit. Review the current budget before undoing.".into()); }
+        if expected.as_ref().is_some_and(|token| token != &status.token) { return Err(t!("CONFLICT: The budget changed after that edit. Review the current budget before undoing.")); }
         let mut histories = self.history.lock().unwrap_or_else(|e| e.into_inner());
         let history = histories.entry(store.id().to_owned()).or_default();
         if history.token != status.token { *history = History { token: status.token.clone(), ..History::default() }; }
@@ -305,7 +309,7 @@ impl Runtime {
         // Do not hold the UI command queue over that network wait: an offline sync must never
         // make local budgeting wait for the HTTP timeout.
         let independent = method.starts_with("account_") || method.starts_with("billing_") || method.starts_with("sync_") || matches!(method,
-            "host_events" | "native_budget_status" | "database_status" | "cloud_status" | "sync_status" | "assistant_stop" | "assistant_cancel_sign_in" | "assistant_status" | "assistant_thread" | "assistant_threads" |
+            "set_language" | "host_events" | "native_budget_status" | "database_status" | "cloud_status" | "sync_status" | "assistant_stop" | "assistant_cancel_sign_in" | "assistant_status" | "assistant_thread" | "assistant_threads" |
             "assistant_sign_in" | "assistant_sign_out" | "assistant_settings" | "assistant_set_key" | "assistant_forget_key" | "assistant_models" | "assistant_report_reply" |
             "simplefin_status" | "simplefin_connect" | "simplefin_accounts" | "simplefin_disconnect" | "simplefin_open" | "simplefin_sync" |
             "ynab_tokens" | "ynab_plans" | "forget_ynab_token" | "list_budgets" | "list_backups" | "backup_retention");
@@ -319,6 +323,8 @@ impl Runtime {
         } else { None };
         let text = |key: &str| field::<String>(&p, key);
         match method {
+            // The language of the messages the services return from now on ("ar" or "en").
+            "set_language" => { crate::i18n::set_language(&text("language")?); Ok(Value::Null) }
             "host_events" => value(host::drain()),
             "load_budget" => self.load(),
             "native_budget_status" => self.native_status(),
@@ -379,7 +385,7 @@ impl Runtime {
                 let permitted = self.history.lock().unwrap_or_else(|e| e.into_inner()).get(&id).is_some_and(|history| {
                     history.token == expected && !history.undo.is_empty() && history.proposal.as_ref() == Some(&(thread.clone(), proposal.clone()))
                 });
-                if !permitted { return Err("The budget changed after this proposal. Use the budget's undo history to review later changes.".into()); }
+                if !permitted { return Err(t!("The budget changed after this proposal. Use the budget's undo history to review later changes.")); }
                 assistant::verify_undo_proposal(&self.db, &self.assistant, &thread, &proposal)?;
                 let snapshot = self.undo_redo(false, Some(expected))?;
                 let marked = assistant::dispatch("assistant_mark", json!({"threadId":thread,"proposalId":proposal,"status":"undone"}), &self.db, &self.assistant, &self.simplefin, &self.cloud).await?;
@@ -419,7 +425,7 @@ impl Runtime {
             "open_budget" => {
                 let id = text("id")?;
                 let mut library = self.library.lock();
-                if self.db.store()?.has_unsaved_draft() { return Err("Save or discard your changes before opening another budget.".into()); }
+                if self.db.store()?.has_unsaved_draft() { return Err(t!("Save or discard your changes before opening another budget.")); }
                 let store = Store::open_budget(&library.database(&id)?, &id)?.with_backup_preferences(library.data_dir());
                 library.set_current(&id)?;
                 *self.db.store()? = store;
@@ -443,11 +449,11 @@ impl Runtime {
             "restore_backup_file" => {
                 let root = self.db.store()?.folder().join("backups").canonicalize().map_err(|e| e.to_string())?;
                 let path = PathBuf::from(text("path")?).canonicalize().map_err(|e| e.to_string())?;
-                if path.parent() != Some(root.as_path()) || !path.is_file() { return Err("Choose a backup from this budget's backup folder.".into()); }
+                if path.parent() != Some(root.as_path()) || !path.is_file() { return Err(t!("Choose a backup from this budget's backup folder.")); }
                 let budget = match path.extension().and_then(|s| s.to_str()) {
                     Some("json") => serde_json::from_slice(&std::fs::read(&path).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?,
                     Some("sqlite3") => Store::open(&path)?.load()?.budget,
-                    _ => return Err("Choose a JSON or SQLite budget backup.".into()),
+                    _ => return Err(t!("Choose a JSON or SQLite budget backup.")),
                 };
                 self.db.store()?.restore_backup(&budget, &text("expectedToken")?)?;
                 self.load()
@@ -508,7 +514,7 @@ impl Runtime {
             "billing_apple_verify" => crate::billing::apple_verify(&self.cloud, text("transaction")?).await,
             "simplefin_import" => {
                 let token = optional::<String>(&p, "expectedToken")?.unwrap_or(self.db.store()?.status()?.token);
-                if self.db.store()?.status()?.token != token { return Err("CONFLICT: The budget changed. Refresh the bank review before importing.".into()); }
+                if self.db.store()?.status()?.token != token { return Err(t!("CONFLICT: The budget changed. Refresh the bank review before importing.")); }
                 let patch = simplefin::dispatch(method, p, &self.db, &self.simplefin).await?;
                 let budget = self.db.store()?.full_draft(Some(serde_json::from_value(patch).map_err(|e| e.to_string())?))?;
                 self.save(&budget, &token)?;
@@ -517,11 +523,11 @@ impl Runtime {
             "simplefin_sync" => {
                 let expected = optional::<String>(&p, "expectedToken")?;
                 if expected.as_ref().is_some_and(|token| self.db.store().and_then(|s| s.status()).map(|s| s.token != *token).unwrap_or(true)) {
-                    return Err("The budget changed. Refresh the bank review before downloading.".into());
+                    return Err(t!("The budget changed. Refresh the bank review before downloading."));
                 }
                 let result = value(simplefin::simplefin_sync_compact(&self.db, &self.simplefin, None, p["refresh"].as_bool().unwrap_or(true)).await?)?;
                 if expected.as_ref().is_some_and(|token| self.db.store().and_then(|s| s.status()).map(|s| s.token != *token).unwrap_or(true)) {
-                    return Err("The budget changed while downloading. Refresh the bank review before importing.".into());
+                    return Err(t!("The budget changed while downloading. Refresh the bank review before importing."));
                 }
                 Ok(result)
             }

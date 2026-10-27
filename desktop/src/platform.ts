@@ -1,3 +1,5 @@
+import { msg } from "./i18n";
+
 /** The system the window runs on, from the webview's user agent (WebView2, WKWebView, WebKitGTK). */
 export type Os = "macos" | "windows" | "linux" | "other";
 
@@ -12,7 +14,8 @@ export const os: Os = typeof navigator === "undefined" ? "other" : osFrom(naviga
 
 const TOKEN_STORES: Partial<Record<Os, string>> = {
   macos: "Keychain",
-  windows: "Windows encrypted storage",
+  // Translated where it's shown; Keychain is Apple's name for it.
+  windows: msg("Windows encrypted storage"),
 };
 /** What protects a remembered YNAB token (see vault.rs), or null where it can't be kept. */
 export const tokenStoreFor = (system: Os) => TOKEN_STORES[system] ?? null;

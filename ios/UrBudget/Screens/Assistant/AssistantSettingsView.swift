@@ -10,7 +10,8 @@ struct AssistantSettingsView: View {
 
     init() {}
 
-    private static let providers = [("chatgpt", "ChatGPT plan · browser sign-in"), ("openai", "OpenAI API key"), ("anthropic", "Anthropic API key")]
+    private static let providers = [("chatgpt", String(localized: "ChatGPT plan · browser sign-in")), ("openai", String(localized: "OpenAI API key")),
+                                    ("anthropic", String(localized: "Anthropic API key"))]
 
     var body: some View {
         let status = controller.status
@@ -195,7 +196,7 @@ struct AssistantSettingsView: View {
 
     /// "Provider default" first, then the provider's models; a saved model the list lacks stays choosable.
     private func modelChoices(_ status: JSON?) -> [(String, String)] {
-        var choices = [("", "Provider default")] + controller.models.map { ($0.text("id"), $0.text("name", $0.text("id"))) }
+        var choices = [("", String(localized: "Provider default"))] + controller.models.map { ($0.text("id"), $0.text("name", $0.text("id"))) }
         let current = status?.text("model") ?? ""
         if !current.isEmpty && !choices.contains(where: { $0.0 == current }) { choices.append((current, current)) }
         var seen = Set<String>()

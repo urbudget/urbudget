@@ -52,6 +52,7 @@ original three-column assignment table remains compatible with existing database
 
 ## Supported workflows
 
+- English and Arabic, chosen in Settings › General (System follows Windows' or macOS's language). Arabic lays the whole window out right to left, the title bar included; amounts and charts keep their left-to-right order. Strings go through `t()` and `tn()` in `src/i18n`, and [the languages guide](../docs/LOCALIZATION.md) has the rules and glossary.
 - A first launch starts in the currency, number and date format of the system's language and region, and offers three ways in: YNAB's export file (filling the empty budget), starter categories, or a sample budget opened as its own budget. A budget set up from there shows a five-step getting-started checklist (accounts, assigning, spending, a target, covering overspending) that ticks itself off from what's in the budget and can be hidden.
 - Cash, credit-card, and tracking accounts, including closed account history. Accounts have a type (checking, savings, line of credit, investment, property, vehicle, receivable, mortgage, auto/student/personal loan, …); tracking accounts can be left out of net worth.
 - Monthly envelopes, assignments, positive rollover, cash/credit overspending, credit payment reserves, and categorized transfers to tracking accounts.
@@ -116,12 +117,14 @@ Data directory (macOS `~/Library/Application Support/com.localbudget.desktop/`, 
 budgets.json                 # list of budgets and the one last open
 budget.sqlite3               # the first budget, kept in place
 recovery.json                # its unsaved changes, only while they need recovery
-imports/ backups/ exports/   # its API downloads, SQLite snapshots, and exports
+imports/ backups/ exports/   # its API downloads, SQLite snapshots, and spreadsheets opened from the assistant
 budgets/<id>/                # every other budget: the same files in its own folder
 trash/                       # deleted budgets, moved here rather than erased
 secrets.bin                  # saved tokens and keys, sealed (see Secrets); on Windows also secrets.key
 account.json, sync-state.json  # the signed-in email; per budget, the revisions at the last sync
 ```
+
+Exports go where you choose: the JSON backup, the recovery draft, transaction and report CSVs, the YNAB export (a folder), the bank-file template and the assistant's spreadsheets and converted files each open a save panel in Downloads with a suggested name. The panel opens from Rust ([save.rs](src-tauri/src/save.rs)), so the window never names a path, and Show in folder reveals only the data folder and files saved since the app started.
 
 ### Secrets
 
@@ -160,7 +163,7 @@ Debug builds take `URBUDGET_API` (the server, e.g. `wrangler dev`) for testing; 
 
 Current publication state is in [release status](../docs/RELEASE-STATUS.md). User-facing changes are recorded in [CHANGELOG.md](CHANGELOG.md). Desktop, Android and iOS are released separately, each with its own version and tag ([RELEASING.md](../RELEASING.md)). Before tagging a desktop release, run `node ../scripts/versions.mjs desktop 1.2.3` (it writes the version into `package.json`, `package-lock.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, `src-tauri/tauri.conf.json` and the shared crates), then `npm run check`. Copy that version's changelog entry into the draft release description before publishing; it also appears on the download page and in the app's update notice.
 
-Desktop source is currently **1.0.8**. `npm run check:versions` verifies the desktop package/Cargo/config versions agree and the app keeps its installed identity (`com.localbudget.desktop`). It also runs before every frontend build.
+Desktop source is currently **1.0.9**. `npm run check:versions` verifies the desktop package/Cargo/config versions agree and the app keeps its installed identity (`com.localbudget.desktop`). It also runs before every frontend build.
 
 Bump only the app being released; a desktop bump never changes the native apps' versions. The shared Cargo crate version follows the desktop package. Desktop releases are tagged `desktop-v1.2.3`; releases up to 1.0.7 are tagged `v1.0.7` and so on, and those tags stay. The Release, Publish and Microsoft Store workflows act only on desktop tags.
 
@@ -174,9 +177,25 @@ GitHub builds the installers (`.github/workflows/release.yml`): push a tag such 
 
 ## Updates
 
-Standalone copies update themselves with Tauri's updater plugin. A few seconds after launch and then once a day (an hourly timer and focus check catch up after sleep), the app asks `https://urbudget.app/api/v1/releases/update/{{target}}/{{arch}}/{{current_version}}` (`plugins.updater` in `src-tauri/tauri.conf.json`), which answers 204 or describes the newer version ([`../web`](../web/README.md#5-publish-the-app) publishes them). A newer version shows an **Update** chip in the title bar and, in Settings › General, "Update available: version X" with its notes and **Install & restart**. Settings › General also has **Check now**.
+Standalone copies update themselves with Tauri's updater plugin. A few seconds after launch and then once a day (an hourly timer and focus check catch up after sleep), the app asks `https://urbudget.app/api/v1/releases/update/{{target}}/{{arch}}/{{current_version}}` (`plugins.updater` in `src-tauri/tauri.conf.json`), which answers 204 or describes the newer version ([`../web`](../web/README.md#5-publish-the-app) publishes them). A newer version shows an **Update** chip in the title bar and, in Settings › General, its version and notes. Settings › General also has **Check now**.
 
-Microsoft Store copies use [Windows Store package-update APIs](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/package-updates-from-store) on the same schedule, with **Check now**, **Install Store update**, and **Open Microsoft Store** in Settings › General. The Store decides availability for this copy; an update notice does not guess the target version. Before requesting download and installation, UrBudget saves, makes the configured on-close backup, and locks budget edits because Windows may close the app during the request. Canceled or failed requests unlock the app without restarting. Store requests start on the UI thread with the window's HWND; availability checks time out after 30 seconds. Unknown package identity fails closed rather than enabling the standalone installer. Phones leave updates to their stores.
+Updates install themselves at a moment that interrupts nothing (`src/updates.ts`):
+
+- **Download:** an update the check finds is downloaded in the background straight away, after which Settings shows "Version X is ready to install" and **Restart to update**.
+- **Unused:** once the window has been in the background, with no keyboard, mouse or wheel input, for 15 minutes (`IDLE_BEFORE_UPDATE`), the update installs and UrBudget reopens on the new version. That waits while anything could be lost that a restart doesn't keep: unsaved or saving changes, an operation, a sync, an open dialog or editor, a focused text field, a bank import under way (on its page or not), or a message being written, attached to or sent in the assistant. A failed attempt isn't retried by itself until the next check finds the update again, and an update that installed by itself without the version changing isn't tried by itself again for three days (`lb:update-attempt`), so a failing install never loops.
+- **Turned off:** Settings › General › **Install updates by themselves** (the `autoUpdate` preference) stops installing when unused and on close; updates still download and wait for **Restart to update**.
+- **Development builds** (debug builds: `tauri dev`, the QA window) report the `development` channel and don't look for updates, so a published version never installs over the copy being worked on. With `URBUDGET_API` set they use the standalone channel against that local server, to try updating.
+- **On close (Store copies only):** closing the window installs a downloaded update after the usual save and on-close backup, without reopening the app. The edit lock is held from the save until the window goes, as for **Restart to update**, and closing waits at most two minutes for Windows. Standalone copies don't install on close, because Tauri's installer reopens the app when it finishes.
+- **After an update:** the first launch on the new version says which version it is.
+
+Every install saves first and holds the budget's edit lock, as **Restart to update** does.
+
+Microsoft Store copies use [Windows Store package-update APIs](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/package-updates-from-store) on the same schedule, with **Check now** and **Open Microsoft Store** in Settings › General. The Store decides availability for this copy; an update notice does not guess the target version.
+
+- **Silent download and install:** `TrySilentDownloadStorePackageUpdatesAsync` downloads the update in the background, and `TrySilentDownloadAndInstallStorePackageUpdatesAsync` installs it on close, when unused or on **Restart to update**. Windows allows both only when the person lets Microsoft Store update apps automatically and isn't on a metered connection (`CanSilentlyDownloadStorePackageUpdates`).
+- **With consent:** otherwise the update waits for **Install Store update**, which asks Windows for permission (`RequestDownloadAndInstallStorePackageUpdatesAsync`). A downloaded update Windows will no longer install silently (`apply_store_update` answers `consent`) goes the same way: pressing **Restart to update** then asks, and an automatic attempt leaves it for the person rather than prompting with nobody there. A silent install that fails also falls back to asking. A silent download that doesn't finish within 30 minutes is canceled, so it can't hold later checks off.
+- **Reopening:** before an install meant to reopen the app, UrBudget registers with `RegisterApplicationRestart` (updates only: not after a crash, a hang or a reboot), so Windows starts it again after replacing the package; an install on close unregisters instead.
+- **Saving first:** before any Store install, UrBudget saves, makes the configured on-close backup, and locks budget edits, because Windows closes the app during the request. Canceled or failed requests unlock the app without restarting. Store requests start on the UI thread with the window's HWND; availability checks time out after 30 seconds. Unknown package identity fails closed rather than enabling the standalone installer. Phones leave updates to their stores.
 
 Before publishing an update to this integration, validate with a Store-associated packaged build containing these controls and a newer package available to its test account: check availability, cancel installation, retry with an unsaved edit, and confirm the edit survives installation and reopening. Also check the no-update response and Store link. Unit tests and an unpackaged debug build cannot validate Store eligibility, consent dialogs, or package deployment.
 

@@ -3,10 +3,12 @@ import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { Popover } from "./Popover";
 import { activeFormat, formatDate, monthName, parseDate, shiftDate } from "../format";
 import { usePref } from "../prefs";
+import { getDirection, msg, stripIsolates, t } from "../i18n";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const todayIso = () => new Date().toLocaleDateString("en-CA");
-const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+// Calendar column heads, Sunday first.
+const WEEKDAYS = [msg("Su"), msg("Mo"), msg("Tu"), msg("We"), msg("Th"), msg("Fr"), msg("Sa")];
 /** The locale's first day of the week (0 = Sunday), where the browser knows it. */
 const localeFirstWeekday = (() => {
   try {
@@ -49,8 +51,9 @@ export function Calendar({ value, onPick }: { value: string; onPick: (iso: strin
   }, [month, firstWeekday]);
   const keys = (e: KeyboardEvent) => {
     const move: Record<string, () => string> = {
-      ArrowLeft: () => shiftDate(focus, -1),
-      ArrowRight: () => shiftDate(focus, 1),
+      // Right to left the week runs leftwards, so the left arrow is the next day.
+      ArrowLeft: () => shiftDate(focus, getDirection() === "rtl" ? 1 : -1),
+      ArrowRight: () => shiftDate(focus, getDirection() === "rtl" ? -1 : 1),
       ArrowUp: () => shiftDate(focus, -7),
       ArrowDown: () => shiftDate(focus, 7),
       PageUp: () => shiftDate(focus, 0, -1),
@@ -69,18 +72,18 @@ export function Calendar({ value, onPick }: { value: string; onPick: (iso: strin
   return (
     <div className="calendar">
       <div className="calendar-head">
-        <button type="button" className="icon-button" aria-label="Previous month" onClick={() => setFocus(shiftDate(focus, 0, -1))}>
+        <button type="button" className="icon-button" aria-label={t("Previous month")} onClick={() => setFocus(shiftDate(focus, 0, -1))}>
           <ChevronLeft size={15} />
         </button>
         <strong aria-live="polite">{monthName(month)}</strong>
-        <button type="button" className="icon-button" aria-label="Next month" onClick={() => setFocus(shiftDate(focus, 0, 1))}>
+        <button type="button" className="icon-button" aria-label={t("Next month")} onClick={() => setFocus(shiftDate(focus, 0, 1))}>
           <ChevronRight size={15} />
         </button>
       </div>
       <div className="calendar-grid" role="grid" aria-label={monthName(month)} ref={grid} onKeyDown={keys}>
         {Array.from({ length: 7 }, (_, i) => (
           <span key={i} className="calendar-weekday" aria-hidden>
-            {WEEKDAYS[(i + firstWeekday) % 7]}
+            {t(WEEKDAYS[(i + firstWeekday) % 7])}
           </span>
         ))}
         {days.map((d) => (
@@ -101,7 +104,7 @@ export function Calendar({ value, onPick }: { value: string; onPick: (iso: strin
       </div>
       <div className="calendar-foot">
         <button type="button" className="link-button" onClick={() => onPick(today)}>
-          Today
+          {t("Today")}
         </button>
         <span className="muted">{formatDate(focus)}</span>
       </div>
@@ -116,7 +119,7 @@ export function Calendar({ value, onPick }: { value: string; onPick: (iso: strin
 export function DateInput({
   value,
   onChange,
-  label = "Date",
+  label = t("Date"),
   autoFocus,
   className = "",
   required,
@@ -130,17 +133,19 @@ export function DateInput({
 }) {
   const box = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
-  const [text, setText] = useState(value ? formatDate(value) : "");
+  // The text being typed: the date without the marks that keep it left to right in Arabic.
+  const shown = (iso: string) => stripIsolates(formatDate(iso));
+  const [text, setText] = useState(value ? shown(value) : "");
   const [editing, setEditing] = useState(false);
   const [invalid, setInvalid] = useState(false);
   const [open, setOpen] = useState(false);
   useEffect(() => {
-    if (!editing && !invalid) setText(value ? formatDate(value) : "");
+    if (!editing && !invalid) setText(value ? shown(value) : "");
   }, [value, editing, invalid]);
   const base = value || todayIso();
   const pick = (iso: string) => {
     onChange(iso);
-    setText(formatDate(iso));
+    setText(shown(iso));
     setInvalid(false);
     input.current?.setCustomValidity("");
     setOpen(false);
@@ -169,7 +174,7 @@ export function DateInput({
         inputMode="numeric"
         placeholder={placeholders[activeFormat().date]}
         value={text}
-        title="Type a date (e.g. 15/10, 15 Oct, today), use ↑/↓ to change it, or Alt+↓ for the calendar"
+        title={t("Type a date (e.g. 15/10, 15 Oct, today), use ↑/↓ to change it, or Alt+↓ for the calendar")}
         onFocus={(e) => {
           setEditing(true);
           e.currentTarget.select();
@@ -180,20 +185,20 @@ export function DateInput({
           const iso = parseDate(e.target.value, base);
           const bad = !!e.target.value.trim() && !iso;
           setInvalid(bad);
-          e.currentTarget.setCustomValidity(bad ? "Enter a valid date." : "");
+          e.currentTarget.setCustomValidity(bad ? t("Enter a valid date.") : "");
           if (iso) onChange(iso);
           else if (!e.target.value.trim()) onChange("");
         }}
         onBlur={() => {
           setEditing(false);
-          if (!invalid) setText(value ? formatDate(value) : "");
+          if (!invalid) setText(value ? shown(value) : "");
         }}
         onKeyDown={keys}
       />
       <button
         type="button"
         className="date-input-button"
-        aria-label={`Choose ${label.toLowerCase()}`}
+        aria-label={t("Choose {field}", { field: label.toLowerCase() })}
         aria-expanded={open}
         tabIndex={-1}
         onMouseDown={(e) => e.preventDefault()}
@@ -206,7 +211,7 @@ export function DateInput({
       >
         <CalendarDays size={14} />
       </button>
-      <Popover open={open} onClose={() => setOpen(false)} anchor={box} label={`Choose ${label.toLowerCase()}`} className="calendar-popover">
+      <Popover open={open} onClose={() => setOpen(false)} anchor={box} label={t("Choose {field}", { field: label.toLowerCase() })} className="calendar-popover">
         <Calendar value={value} onPick={pick} />
       </Popover>
     </div>

@@ -8,6 +8,7 @@ import { CategoryPicker, Combobox, PayeeInput, READY_TO_ASSIGN, Tabs, useToast, 
 import { errorText, formatDate, money, tone } from "./format";
 import { Cols, tableWidth, useColumns } from "./ui/columns";
 import { id, type Budget } from "./types";
+import { formatCount, list as listOf, t, tn } from "./i18n";
 import "./pages.css";
 
 type Props = {
@@ -35,7 +36,8 @@ export function payeeUsage(b: Budget, from: string) {
   const rules = (b.payeeRules ?? []).filter((r) => r.payee === from).length;
   return { transactions, schedules, rules };
 }
-const plural = (n: number, word: string) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
+const num = formatCount;
+const transactions = (n: number) => tn(n, "{count} transaction", "{count} transactions", { count: num(n) });
 
 /** Runs the payee rules again over earlier transactions (only `ruleIds`, if given), saying how many changed. */
 function useReapply({ transform, undo }: Pick<Props, "transform" | "undo">) {
@@ -43,16 +45,23 @@ function useReapply({ transform, undo }: Pick<Props, "transform" | "undo">) {
   return async (count: number, ruleIds?: string[]) => {
     try {
       await transform((b) => api.action(b, { type: "reapplyPayeeRules", ...(ruleIds && { ruleIds }) }));
-      toast({ message: `Updated ${plural(count, "transaction")}.`, action: undo ? { label: "Undo", onClick: undo } : undefined });
+      toast({
+        message: tn(count, "Updated {count} transaction.", "Updated {count} transactions.", { count: num(count) }),
+        action: undo ? { label: t("Undo"), onClick: undo } : undefined,
+      });
     } catch (e) {
       toast({ message: errorText(e), tone: "error" });
     }
   };
 }
 const describeUsage = (u: ReturnType<typeof payeeUsage>) =>
-  [plural(u.transactions, "transaction"), u.schedules && plural(u.schedules, "schedule"), u.rules && plural(u.rules, "rule")]
-    .filter(Boolean)
-    .join(", ");
+  listOf(
+    [
+      transactions(u.transactions),
+      u.schedules ? tn(u.schedules, "{count} schedule", "{count} schedules", { count: num(u.schedules) }) : "",
+      u.rules ? tn(u.rules, "{count} rule", "{count} rules", { count: num(u.rules) }) : "",
+    ].filter(Boolean),
+  );
 
 export function Payees(props: Props) {
   const { budget } = props;
@@ -61,15 +70,15 @@ export function Payees(props: Props) {
   return (
     <div className="page payees-page">
       <div className="page-intro">
-        <p>Tidy up payee names, give payees a default category, and tell UrBudget the names your bank uses for them.</p>
+        <p>{t("Tidy up payee names, give payees a default category, and tell UrBudget the names your bank uses for them.")}</p>
       </div>
       <Tabs<"payees" | "rules">
-        label="Payees and rules"
+        label={t("Payees and rules")}
         value={tab}
         onChange={setTab}
         tabs={[
-          { id: "payees", label: "Payees", count: payees.length },
-          { id: "rules", label: "Import rules", count: budget.payeeRules?.length ?? 0 },
+          { id: "payees", label: t("Payees"), count: payees.length },
+          { id: "rules", label: t("Import rules"), count: budget.payeeRules?.length ?? 0 },
         ]}
       />
       {tab === "payees" ? <PayeeManager {...props} payees={payees} /> : <RuleList {...props} />}
@@ -122,7 +131,7 @@ function PayeeManager({ budget, edit, transform, undo, payees }: Props & { payee
     setNewName("");
     setMergeInto(null);
   };
-  const undoable = (message: string) => toast({ message, action: undo ? { label: "Undo", onClick: undo } : undefined });
+  const undoable = (message: string) => toast({ message, action: undo ? { label: t("Undo"), onClick: undo } : undefined });
   const rename = async (from: string, to: string, merging: boolean) => {
     const target = to.trim();
     if (!target || target === from) return;
@@ -131,7 +140,11 @@ function PayeeManager({ budget, edit, transform, undo, payees }: Props & { payee
     try {
       await transform(async (b) => tidyPayees(await api.action(b, { type: "renamePayee", from, to: target }), target));
       pick(target);
-      undoable(merging ? `Merged ${from} into ${target} (${usage}).` : `Renamed ${from} to ${target}.`);
+      undoable(
+        merging
+          ? t("Merged {from} into {to} ({usage}).", { from, to: target, usage })
+          : t("Renamed {from} to {to}.", { from, to: target }),
+      );
     } catch (e) {
       toast({ message: errorText(e), tone: "error" });
     } finally {
@@ -147,21 +160,24 @@ function PayeeManager({ budget, edit, transform, undo, payees }: Props & { payee
     });
     undoable(
       categoryId
-        ? `${name} now defaults to ${categoryId === READY_TO_ASSIGN ? "Unassigned" : categoryName.get(categoryId)}.`
-        : `${name} no longer has a default category.`,
+        ? t("{name} now defaults to {category}.", {
+            name,
+            category: categoryId === READY_TO_ASSIGN ? t("Unassigned") : String(categoryName.get(categoryId)),
+          })
+        : t("{name} no longer has a default category.", { name }),
     );
   };
   const exists = (name: string) => payees.some((p) => p.name === name.trim());
   const usage = current ? payeeUsage(budget, current.name) : null;
   return (
     <div className="payee-manager">
-      <section className="payee-list panel flush" aria-label="Payees">
+      <section className="payee-list panel flush" aria-label={t("Payees")}>
         <label className="search">
           <Search size={15} />
-          <input aria-label="Search payees" placeholder="Search payees" value={search} onChange={(e) => setSearch(e.target.value)}
+          <input aria-label={t("Search payees")} placeholder={t("Search payees")} value={search} onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => { if (e.key === "ArrowDown") { e.preventDefault(); list.current?.focus(); } }} />
         </label>
-        <ul ref={list} role="listbox" aria-label="Payee list" tabIndex={0}
+        <ul ref={list} role="listbox" aria-label={t("Payee list")} tabIndex={0}
           aria-activedescendant={activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined}
           onKeyDown={(e) => {
             const moves: Record<string, number> = { ArrowDown: activeIndex + 1, ArrowUp: activeIndex - 1, Home: 0, End: shown.length - 1 };
@@ -193,48 +209,54 @@ function PayeeManager({ budget, edit, transform, undo, payees }: Props & { payee
             >
               <span>{p.name}</span>
               <small>
-                {p.count ? `${plural(p.count, "transaction")} · ${formatDate(p.last)}` : "Not used yet"}
-                {p.fixed && " · default set"}
+                {p.count ? `${transactions(p.count)} · ${formatDate(p.last)}` : t("Not used yet")}
+                {p.fixed && ` · ${t("default set")}`}
               </small>
             </li>
           ))}
           {inView.after > 0 && <li role="presentation" aria-hidden className="payee-spacer" style={{ height: inView.after }} />}
-          {!shown.length && <li className="muted empty">No payees match.</li>}
+          {!shown.length && <li className="muted empty">{t("No payees match.")}</li>}
         </ul>
       </section>
       {current ? (
-        <section className="payee-detail panel" aria-label={`Payee ${current.name}`}>
+        <section className="payee-detail panel" aria-label={t("Payee {name}", { name: current.name })}>
           <div className="payee-head">
             <h2>{current.name}</h2>
             <span className="muted">
-              {plural(current.count, "transaction")}
-              {current.count > 0 && <> · total <span className={tone(total)}>{money(total)}</span></>}
+              {transactions(current.count)}
+              {current.count > 0 && (
+                <> · {t("total {amount}", { amount: <span className={tone(total)}>{money(total)}</span> })}</>
+              )}
             </span>
           </div>
 
           <div className="field">
-            <span>Default category</span>
+            <span>{t("Default category")}</span>
             <div className="with-clear">
               <CategoryPicker
                 budget={budget}
-                label="Default category"
+                label={t("Default category")}
                 value={stored?.categoryId ?? null}
                 onChange={(categoryId) => setDefault(current.name, categoryId)}
-                readyToAssign="Unassigned (new money)"
+                readyToAssign={t("Unassigned (new money)")}
                 includeHidden
                 placeholder={
                   current.categoryId !== undefined && !current.fixed
-                    ? `Last used: ${current.categoryId ? categoryName.get(current.categoryId) : "Unassigned"}`
-                    : "No default"
+                    ? t("Last used: {category}", {
+                        category: current.categoryId ? String(categoryName.get(current.categoryId)) : t("Unassigned"),
+                      })
+                    : t("No default")
                 }
               />
               {stored?.categoryId && (
-                <button className="icon-button" aria-label="Clear default category" onClick={() => setDefault(current.name, null)}>
+                <button className="icon-button" aria-label={t("Clear default category")} onClick={() => setDefault(current.name, null)}>
                   <X size={14} />
                 </button>
               )}
             </div>
-            <small className="help">Filled in when you enter a transaction for this payee. Without one, the category you used last time is suggested.</small>
+            <small className="help">
+              {t("Filled in when you enter a transaction for this payee. Without one, the category you used last time is suggested.")}
+            </small>
           </div>
 
           <BankNames budget={budget} edit={edit} transform={transform} undo={undo} payee={current.name} />
@@ -246,24 +268,26 @@ function PayeeManager({ budget, edit, transform, undo, payees }: Props & { payee
               void rename(current.name, newName, exists(newName));
             }}
           >
-            <span>Rename</span>
+            <span>{t("Rename")}</span>
             <div className="inline-form">
-              <input aria-label="New name" placeholder={current.name} value={newName} onChange={(e) => setNewName(e.target.value)} maxLength={200} />
+              <input aria-label={t("New name")} placeholder={current.name} value={newName} onChange={(e) => setNewName(e.target.value)} maxLength={200} />
               <button className="secondary" disabled={busy || !newName.trim() || newName.trim() === current.name}>
-                <Pencil size={14} /> {exists(newName) && newName.trim() !== current.name ? "Merge" : "Rename"}
+                <Pencil size={14} /> {exists(newName) && newName.trim() !== current.name ? t("Merge") : t("Rename")}
               </button>
             </div>
             {exists(newName) && newName.trim() !== current.name && (
-              <small className="help warning-text">{newName.trim()} already exists, so this merges the two.</small>
+              <small className="help warning-text">
+                {t("{name} already exists, so this merges the two.", { name: newName.trim() })}
+              </small>
             )}
           </form>
 
           <div className="field">
-            <span>Merge into another payee</span>
+            <span>{t("Merge into another payee")}</span>
             <div className="inline-form">
               <Combobox
-                label="Merge into"
-                placeholder="Choose a payee"
+                label={t("Merge into")}
+                placeholder={t("Choose a payee")}
                 options={payees.filter((p) => p.name !== current.name).map((p) => ({ id: p.name, label: p.name }))}
                 value={mergeInto}
                 onChange={setMergeInto}
@@ -273,44 +297,44 @@ function PayeeManager({ budget, edit, transform, undo, payees }: Props & { payee
                 disabled={busy || !mergeInto}
                 onClick={() => mergeInto && void rename(current.name, mergeInto, true)}
               >
-                Merge
+                {t("Merge")}
               </button>
             </div>
             {mergeInto && usage && (
               <small className="help">
-                Moves {describeUsage(usage)} from {current.name} to {mergeInto}.
+                {t("Moves {usage} from {from} to {to}.", { usage: describeUsage(usage), from: current.name, to: mergeInto })}
               </small>
             )}
           </div>
 
           <div className="payee-recent">
-            <h3>Recent transactions</h3>
+            <h3>{t("Recent transactions")}</h3>
             {recent.length ? (
               <table className="data-table">
                 <tbody>
-                  {recent.slice(0, 6).map((t) => (
-                    <tr key={t.id}>
-                      <td>{formatDate(t.date)}</td>
-                      <td className="muted">{accountName.get(t.accountId)}</td>
+                  {recent.slice(0, 6).map((tx) => (
+                    <tr key={tx.id}>
+                      <td>{formatDate(tx.date)}</td>
+                      <td className="muted">{accountName.get(tx.accountId)}</td>
                       <td>
-                        {t.splits.length > 1
-                          ? `Split (${t.splits.length})`
-                          : (categoryName.get(t.splits[0]?.categoryId ?? "") ?? "Unassigned")}
+                        {tx.splits.length > 1
+                          ? t("Split ({count})", { count: tx.splits.length })
+                          : (categoryName.get(tx.splits[0]?.categoryId ?? "") ?? t("Unassigned"))}
                       </td>
-                      <td className={`num ${tone(t.amount)}`}>{money(t.amount)}</td>
+                      <td className={`num ${tone(tx.amount)}`}>{money(tx.amount)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             ) : (
-              <p className="muted">No transactions yet.</p>
+              <p className="muted">{t("No transactions yet.")}</p>
             )}
           </div>
         </section>
       ) : (
         <section className="panel empty-state compact">
-          <h2>No payees yet</h2>
-          <p>Payees appear here as you enter transactions.</p>
+          <h2>{t("No payees yet")}</h2>
+          <p>{t("Payees appear here as you enter transactions.")}</p>
         </section>
       )}
     </div>
@@ -327,7 +351,7 @@ function BankNames({ budget, edit, transform, undo, payee }: Props & { payee: st
   const [text, setText] = useState("");
   const [error, setError] = useState("");
   const rules = useMemo(() => (budget.payeeRules ?? []).filter((r) => r.payee === payee), [budget.payeeRules, payee]);
-  const categoryName = (id: string) => budget.categories.find((c) => c.id === id)?.name ?? "Deleted category";
+  const categoryName = (id: string) => budget.categories.find((c) => c.id === id)?.name ?? t("Deleted category");
   // Bank text on this payee's transactions that the rules would name something else.
   const seen = useMemo(() => {
     const found = new Map<string, { raw: string; match: string }>();
@@ -348,31 +372,36 @@ function BankNames({ budget, edit, transform, undo, payee }: Props & { payee: st
     if (taken)
       return setError(
         taken.payee === payee
-          ? `“${match}” is already one of ${payee}'s bank names.`
-          : `“${match}” is already a rule${taken.payee ? ` for ${taken.payee}` : ""}. Change it on the Import rules tab.`,
+          ? t("“{match}” is already one of {payee}'s bank names.", { match, payee })
+          : taken.payee
+            ? t("“{match}” is already a rule for {payee}. Change it on the Import rules tab.", { match, payee: taken.payee })
+            : t("“{match}” is already a rule. Change it on the Import rules tab.", { match }),
       );
     const rule = { id: id(), match, payee, categoryId: null };
     edit((d) => void (d.payeeRules ??= []).push(rule));
     setText("");
     setError("");
-    toast({ message: `Bank payees with “${match}” are now named ${payee}.`, action: undo ? { label: "Undo", onClick: undo } : undefined });
+    toast({
+      message: t("Bank payees with “{match}” are now named {payee}.", { match, payee }),
+      action: undo ? { label: t("Undo"), onClick: undo } : undefined,
+    });
   };
   const remove = (ruleId: string, match: string) => {
     edit((d) => {
       d.payeeRules = (d.payeeRules ?? []).filter((r) => r.id !== ruleId);
     });
-    toast({ message: `Removed “${match}” from ${payee}.`, action: undo ? { label: "Undo", onClick: undo } : undefined });
+    toast({ message: t("Removed “{match}” from {payee}.", { match, payee }), action: undo ? { label: t("Undo"), onClick: undo } : undefined });
   };
   return (
     <div className="field bank-names">
-      <span>Bank names</span>
+      <span>{t("Bank names")}</span>
       {rules.length > 0 && (
-        <ul className="bank-name-list" aria-label={`Bank names for ${payee}`}>
+        <ul className="bank-name-list" aria-label={t("Bank names for {payee}", { payee })}>
           {rules.map((r) => (
             <li key={r.id}>
-              <span>“{r.match}”</span>
+              <span>{t("“{match}”", { match: r.match })}</span>
               {r.categoryId && <small className="muted">{categoryName(r.categoryId)}</small>}
-              <button className="icon-button" aria-label={`Remove bank name ${r.match}`} onClick={() => remove(r.id, r.match)}>
+              <button className="icon-button" aria-label={t("Remove bank name {match}", { match: r.match })} onClick={() => remove(r.id, r.match)}>
                 <X size={12} />
               </button>
             </li>
@@ -381,21 +410,21 @@ function BankNames({ budget, edit, transform, undo, payee }: Props & { payee: st
       )}
       <form
         className="inline-form"
-        aria-label="Add a bank name"
+        aria-label={t("Add a bank name")}
         onSubmit={(e: FormEvent) => {
           e.preventDefault();
           if (text.trim()) add(text.trim());
         }}
       >
         <input
-          aria-label="Bank name"
-          placeholder="Text the bank uses, e.g. AMZN MKTP"
+          aria-label={t("Bank name")}
+          placeholder={t("Text the bank uses, e.g. AMZN MKTP")}
           value={text}
           onChange={(e) => setText(e.target.value)}
           maxLength={200}
         />
         <button className="secondary" disabled={!text.trim()}>
-          <Plus size={14} /> Add
+          <Plus size={14} /> {t("Add")}
         </button>
       </form>
       {error && (
@@ -404,14 +433,14 @@ function BankNames({ budget, edit, transform, undo, payee }: Props & { payee: st
         </p>
       )}
       {seen.length > 0 && (
-        <ul className="bank-seen" aria-label="Seen in bank files">
+        <ul className="bank-seen" aria-label={t("Seen in bank files")}>
           {seen.map((s) => (
             <li key={s.raw}>
-              <span className="muted" title="As the bank file wrote it">
+              <span className="muted" title={t("As the bank file wrote it")}>
                 {s.raw}
               </span>
               <button className="link-button" onClick={() => add(s.match)}>
-                Add “{s.match}”
+                {t("Add “{match}”", { match: s.match })}
               </button>
             </li>
           ))}
@@ -427,12 +456,11 @@ function BankNames({ budget, edit, transform, undo, payee }: Props & { payee: st
             )
           }
         >
-          Apply to {plural(pending, "earlier transaction")}
+          {tn(pending, "Apply to {count} earlier transaction", "Apply to {count} earlier transactions", { count: num(pending) })}
         </button>
       )}
       <small className="help">
-        Bank files name the same place in different ways. A bank payee that contains one of these, ignoring case and
-        punctuation, is named {payee}.
+        {t("Bank files name the same place in different ways. A bank payee that contains one of these, ignoring case and punctuation, is named {payee}.", { payee })}
       </small>
     </div>
   );
@@ -455,8 +483,8 @@ function RuleEditor({
   const [error, setError] = useState("");
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (!match.trim()) return setError("Enter the text to look for in the bank's payee.");
-    if (!payee.trim() && !category) return setError("Choose a new name, a category, or both.");
+    if (!match.trim()) return setError(t("Enter the text to look for in the bank's payee."));
+    if (!payee.trim() && !category) return setError(t("Choose a new name, a category, or both."));
     onSave({ id: initial?.id ?? id(), match: match.trim(), payee: payee.trim(), categoryId: category });
     if (!initial) {
       setMatch("");
@@ -466,21 +494,21 @@ function RuleEditor({
     setError("");
   };
   return (
-    <form className="rule-editor" onSubmit={submit} aria-label={initial ? "Edit rule" : "New rule"}>
+    <form className="rule-editor" onSubmit={submit} aria-label={initial ? t("Edit rule") : t("New rule")}>
       <label>
-        When the bank payee contains
-        <input value={match} onChange={(e) => setMatch(e.target.value)} placeholder="e.g. CARREFOUR" autoFocus={!!initial} />
+        {t("When the bank payee contains")}
+        <input value={match} onChange={(e) => setMatch(e.target.value)} placeholder={t("e.g. CARREFOUR")} autoFocus={!!initial} />
       </label>
       <div className="field">
-        <span>Rename to</span>
-        <PayeeInput budget={budget} label="Rename to" placeholder="Keep the bank's name" value={payee} onChange={setPayee} />
+        <span>{t("Rename to")}</span>
+        <PayeeInput budget={budget} label={t("Rename to")} placeholder={t("Keep the bank's name")} value={payee} onChange={setPayee} />
       </div>
       <div className="field">
-        <span>Category</span>
+        <span>{t("Category")}</span>
         <div className="with-clear">
-          <CategoryPicker budget={budget} value={category} onChange={setCategory} label="Rule category" placeholder="Leave uncategorized" />
+          <CategoryPicker budget={budget} value={category} onChange={setCategory} label={t("Rule category")} placeholder={t("Leave uncategorized")} />
           {category && (
-            <button type="button" className="icon-button" aria-label="No category" onClick={() => setCategory(null)}>
+            <button type="button" className="icon-button" aria-label={t("No category")} onClick={() => setCategory(null)}>
               <X size={14} />
             </button>
           )}
@@ -489,13 +517,13 @@ function RuleEditor({
       <div className="rule-editor-actions">
         {onCancel && (
           <button type="button" className="secondary" onClick={onCancel}>
-            Cancel
+            {t("Cancel")}
           </button>
         )}
         <button className="primary">
-          {initial ? "Save rule" : (
+          {initial ? t("Save rule") : (
             <>
-              <Plus size={14} /> Add rule
+              <Plus size={14} /> {t("Add rule")}
             </>
           )}
         </button>
@@ -517,25 +545,28 @@ function RuleList({ budget, edit, transform, undo }: Props) {
   const pending = useMemo(() => ruleChanges(budget), [budget.transactions, budget.payeeRules, budget.payees]);
   const columns = useColumns("rules", { match: 240, payee: 240, category: 220 });
   const colWidths = [48, columns.widths.match, columns.widths.payee, columns.widths.category, null, 96];
-  const categoryName = (id: string | null) => (id ? (budget.categories.find((c) => c.id === id)?.name ?? "Deleted category") : "—");
+  const categoryName = (id: string | null) => (id ? (budget.categories.find((c) => c.id === id)?.name ?? t("Deleted category")) : "—");
   return (
     <div className="rule-list">
       <section className="panel">
-        <h2>New rule</h2>
+        <h2>{t("New rule")}</h2>
         <p className="help">
-          Rules apply to new transactions, whether imported from a bank file or entered by hand. A rule matches when
-          the bank's payee contains its text, ignoring case and punctuation; when several match, the longest wins. It
-          renames the payee and fills in the category if there's none: the rule's, or else the payee's default.
+          {t("Rules apply to new transactions, whether imported from a bank file or entered by hand. A rule matches when the bank's payee contains its text, ignoring case and punctuation; when several match, the longest wins. It renames the payee and fills in the category if there's none: the rule's, or else the payee's default.")}
         </p>
         <RuleEditor budget={budget} onSave={(rule) => edit((d) => void (d.payeeRules ??= []).push(rule))} />
       </section>
       {pending > 0 && (
         <div className="rule-apply">
           <span>
-            The rules would rename or categorize {plural(pending, "transaction")} you already have.
+            {tn(
+              pending,
+              "The rules would rename or categorize {count} transaction you already have.",
+              "The rules would rename or categorize {count} transactions you already have.",
+              { count: num(pending) },
+            )}
           </span>
           <button className="secondary" onClick={() => void reapply(pending)}>
-            Apply to {plural(pending, "transaction")}
+            {tn(pending, "Apply to {count} transaction", "Apply to {count} transactions", { count: num(pending) })}
           </button>
         </div>
       )}
@@ -546,11 +577,11 @@ function RuleList({ budget, edit, transform, undo }: Props) {
             <thead>
               <tr>
                 <th>#</th>
-                <th>Bank payee contains{columns.grip("match", "Bank payee contains")}</th>
-                <th>Rename to{columns.grip("payee", "Rename to")}</th>
-                <th>Category{columns.grip("category", "Category")}</th>
+                <th>{t("Bank payee contains")}{columns.grip("match", "Bank payee contains")}</th>
+                <th>{t("Rename to")}{columns.grip("payee", "Rename to")}</th>
+                <th>{t("Category")}{columns.grip("category", "Category")}</th>
                 <th aria-hidden />
-                <th aria-label="Actions" />
+                <th aria-label={t("Actions")} />
               </tr>
             </thead>
             <tbody>
@@ -575,22 +606,25 @@ function RuleList({ budget, edit, transform, undo }: Props) {
                 ) : (
                   <tr key={r.id}>
                     <td className="muted">{i + 1}</td>
-                    <td>“{r.match}”</td>
-                    <td>{r.payee || <span className="muted">Keep the bank's name</span>}</td>
+                    <td>{t("“{match}”", { match: r.match })}</td>
+                    <td>{r.payee || <span className="muted">{t("Keep the bank's name")}</span>}</td>
                     <td>{categoryName(r.categoryId)}</td>
                     <td aria-hidden />
                     <td className="row-actions">
-                      <button className="icon-button" aria-label={`Edit rule ${i + 1}`} onClick={() => setEditing(r.id)}>
+                      <button className="icon-button" aria-label={t("Edit rule {number}", { number: i + 1 })} onClick={() => setEditing(r.id)}>
                         <Pencil size={14} />
                       </button>
                       <button
                         className="icon-button"
-                        aria-label={`Delete rule ${i + 1}`}
+                        aria-label={t("Delete rule {number}", { number: i + 1 })}
                         onClick={() => {
                           edit((d) => {
                             d.payeeRules = (d.payeeRules ?? []).filter((x) => x.id !== r.id);
                           });
-                          toast({ message: `Deleted the rule for “${r.match}”.`, action: undo ? { label: "Undo", onClick: undo } : undefined });
+                          toast({
+                            message: t("Deleted the rule for “{match}”.", { match: r.match }),
+                            action: undo ? { label: t("Undo"), onClick: undo } : undefined,
+                          });
                         }}
                       >
                         <Trash2 size={14} />
@@ -604,8 +638,8 @@ function RuleList({ budget, edit, transform, undo }: Props) {
         </div>
       ) : (
         <section className="panel empty-state compact">
-          <h2>No rules yet</h2>
-          <p>Add one above to clean up the payee names your bank uses.</p>
+          <h2>{t("No rules yet")}</h2>
+          <p>{t("Add one above to clean up the payee names your bank uses.")}</p>
         </section>
       )}
     </div>

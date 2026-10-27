@@ -6,6 +6,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class BankStatementViewTest {
+    @org.junit.Before fun english() = EnglishWords.install()
     @org.junit.Before fun resetFormat() { Money.configure(JSONObject().put("currency", "EUR")) }
 
     private val session = JSONObject("""{"scope":{"session":"s1","budget":"b","account":"checking","file":"f"},"revision":3,

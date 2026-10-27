@@ -8,10 +8,11 @@ import { Markdown } from "./Markdown";
 import "./report-doc.css";
 import documentCss from "./report-doc.css?inline";
 import "./report.css";
+import { t, tc } from "../i18n";
 
 /** The report as a document: dark ink on white, the same on screen and on paper. */
 export function ReportDocument({ report }: { report: ReportView }) {
-  const details = [report.period, `Prepared ${formatDate(report.created.slice(0, 10))}`].filter(Boolean).join(" · ");
+  const details = [report.period, t("Prepared {date}", { date: formatDate(report.created.slice(0, 10)) })].filter(Boolean).join(" · ");
   return (
     <article className="report-doc">
       <header className="report-head">
@@ -23,7 +24,7 @@ export function ReportDocument({ report }: { report: ReportView }) {
         <Markdown text={report.body} />
       </div>
       <footer className="report-foot">
-        Made with UrBudget. Figures come from the budget as it was when this report was written.
+        {t("Made with UrBudget. Figures come from the budget as it was when this report was written.")}
       </footer>
     </article>
   );
@@ -64,7 +65,7 @@ function printInFrame(report: ReportView) {
   // Laid out, but off screen: a frame that isn't laid out has nothing to print.
   frame.style.cssText = "position:fixed;left:-10000px;top:0;width:794px;height:1123px;border:0";
   frame.srcdoc =
-    `<!doctype html><html lang="${document.documentElement.lang || "en"}"><head><meta charset="utf-8">` +
+    `<!doctype html><html lang="${document.documentElement.lang || "en"}" dir="${document.documentElement.dir || "ltr"}"><head><meta charset="utf-8">` +
     `<title>${escapeHtml(report.title)}</title><style>html,body{margin:0;background:#fff;color-scheme:light}${documentCss}</style>` +
     `</head><body>${reportHtml(report)}</body></html>`;
   const title = document.title;
@@ -140,14 +141,14 @@ export function ReportPreview({ threadId, proposalId, onClose }: { threadId: str
   }, [threadId, proposalId]);
   return createPortal(
     <div className="report-shade" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="report-window" role="dialog" aria-modal="true" aria-label={report?.title ?? "Report"}>
+      <div className="report-window" role="dialog" aria-modal="true" aria-label={report?.title ?? tc("noun", "Report")}>
         <div className="report-toolbar">
-          <strong>{report?.title ?? "Report"}</strong>
-          <span className="report-toolbar-hint">Preview</span>
+          <strong>{report?.title ?? tc("noun", "Report")}</strong>
+          <span className="report-toolbar-hint">{t("Preview")}</span>
           <button className="primary small" disabled={!report} autoFocus onClick={() => report && void printReport(report)}>
-            <FileDown size={14} aria-hidden /> Save as PDF
+            <FileDown size={14} aria-hidden /> {t("Save as PDF")}
           </button>
-          <button className="icon-button" aria-label="Close the preview" title="Close (Esc)" onClick={onClose}>
+          <button className="icon-button" aria-label={t("Close the preview")} title={t("Close (Esc)")} onClick={onClose}>
             <X size={16} />
           </button>
         </div>

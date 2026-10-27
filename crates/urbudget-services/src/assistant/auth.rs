@@ -1,6 +1,8 @@
 //! Sign in with ChatGPT: OAuth with PKCE in the system browser, a one-time listener on
 //! 127.0.0.1 for the callback, and refresh tokens that rotate. UrBudget registers itself as
 //! a client during the first sign-in, so it ships with no client secret or API key.
+use crate::i18n::{language, tr, Language};
+use crate::t;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
@@ -84,8 +86,8 @@ fn seconds(v: &Value) -> Option<i64> {
     v.as_i64().or_else(|| v.as_str().and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok()).map(|d| d.timestamp()))
 }
 fn read_tokens(v: &Value, previous_scope: &str) -> Result<Tokens, String> {
-    let access = v["access_token"].as_str().ok_or("The sign-in response had no access token.")?;
-    let refresh = v["refresh_token"].as_str().ok_or("The sign-in response had no refresh token.")?;
+    let access = v["access_token"].as_str().ok_or_else(|| t!("The sign-in response had no access token."))?;
+    let refresh = v["refresh_token"].as_str().ok_or_else(|| t!("The sign-in response had no refresh token."))?;
     Ok(Tokens {
         access: access.into(),
         refresh: refresh.into(),
@@ -99,11 +101,11 @@ fn read_tokens(v: &Value, previous_scope: &str) -> Result<Tokens, String> {
 /// OpenID Connect Core (3.1.3.7, step 6) accepts in place of checking the signature; the
 /// claims are still checked.
 fn claims(id_token: &str, client_id: &str, nonce: Option<&str>) -> Result<Account, String> {
-    let payload = id_token.split('.').nth(1).ok_or("The ID token is malformed.")?;
+    let payload = id_token.split('.').nth(1).ok_or_else(|| t!("The ID token is malformed."))?;
     let raw = URL_SAFE_NO_PAD
         .decode(payload.trim_end_matches('='))
-        .map_err(|_| "The ID token is malformed.")?;
-    let c: Value = serde_json::from_slice(&raw).map_err(|_| "The ID token is malformed.")?;
+        .map_err(|_| t!("The ID token is malformed."))?;
+    let c: Value = serde_json::from_slice(&raw).map_err(|_| t!("The ID token is malformed."))?;
     let audience_ok = match &c["aud"] {
         Value::String(a) => a == client_id,
         Value::Array(list) => list.iter().any(|a| a == client_id),
@@ -117,10 +119,10 @@ fn claims(id_token: &str, client_id: &str, nonce: Option<&str>) -> Result<Accoun
         || c["azp"].as_str().is_some_and(|a| a != client_id)
         || nonce.is_some_and(|n| c["nonce"] != n)
     {
-        return Err("The sign-in response didn't check out. Try signing in again.".into());
+        return Err(t!("The sign-in response didn't check out. Try signing in again."));
     }
     Ok(Account {
-        sub: c["sub"].as_str().ok_or("The ID token has no subject.")?.into(),
+        sub: c["sub"].as_str().ok_or_else(|| t!("The ID token has no subject."))?.into(),
         email: c["email"].as_str().unwrap_or_default().into(),
         name: c["name"].as_str().unwrap_or_default().into(),
     })
@@ -137,7 +139,7 @@ fn wait_for_callback(listener: TcpListener, state: &str, cancel: &AtomicBool, wa
     let started = Instant::now();
     loop {
         if cancel.load(Ordering::Relaxed) {
-            return Err("Sign-in was cancelled.".into());
+            return Err(t!("Sign-in was cancelled."));
         }
         let (mut stream, _) = match listener.accept() {
             Ok(s) => s,
@@ -145,7 +147,7 @@ fn wait_for_callback(listener: TcpListener, state: &str, cancel: &AtomicBool, wa
             // app behind the browser, and the callback waits in the queue until it's back.
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 if started.elapsed() > wait {
-                    return Err("Sign-in timed out. Try again.".into());
+                    return Err(t!("Sign-in timed out. Try again."));
                 }
                 std::thread::sleep(Duration::from_millis(150));
                 continue;
@@ -159,8 +161,10 @@ fn wait_for_callback(listener: TcpListener, state: &str, cancel: &AtomicBool, wa
         let request = String::from_utf8_lossy(&buf[..n]);
         let target = request.split_whitespace().nth(1).unwrap_or("/");
         let respond = |stream: &mut std::net::TcpStream, status: &str, title: &str, text: &str| {
+            // The browser page speaks the app's language; Arabic reads right to left.
+            let html = if language() == Language::Arabic { "<html lang=ar dir=rtl>" } else { "" };
             let page = format!(
-                "<!doctype html><meta charset=utf-8><title>{title}</title><body style=\"font:16px system-ui;max-width:32rem;margin:15vh auto;padding:0 1rem;color:#17191d\"><h1 style=\"font-size:22px\">{title}</h1><p>{text}</p></body>"
+                "<!doctype html>{html}<meta charset=utf-8><title>{title}</title><body style=\"font:16px system-ui;max-width:32rem;margin:15vh auto;padding:0 1rem;color:#17191d\"><h1 style=\"font-size:22px\">{title}</h1><p>{text}</p></body>"
             );
             let _ = write!(
                 stream,
@@ -170,27 +174,27 @@ fn wait_for_callback(listener: TcpListener, state: &str, cancel: &AtomicBool, wa
         };
         let Ok(url) = reqwest::Url::parse(&format!("http://127.0.0.1{target}")) else { continue };
         if url.path() != "/auth/callback" {
-            respond(&mut stream, "404 Not Found", "Not found", "");
+            respond(&mut stream, "404 Not Found", tr("Not found"), "");
             continue;
         }
         let query: std::collections::HashMap<String, String> = url.query_pairs().into_owned().collect();
         if query.get("state").map(String::as_str) != Some(state) {
-            respond(&mut stream, "400 Bad Request", "Sign-in didn't match", "Go back to UrBudget and try again.");
-            return Err("The sign-in response didn't match this attempt. Try again.".into());
+            respond(&mut stream, "400 Bad Request", tr("Sign-in didn't match"), tr("Go back to UrBudget and try again."));
+            return Err(t!("The sign-in response didn't match this attempt. Try again."));
         }
         if let Some(error) = query.get("error") {
-            respond(&mut stream, "200 OK", "Sign-in cancelled", "You can close this tab and return to UrBudget.");
+            respond(&mut stream, "200 OK", tr("Sign-in cancelled"), tr("You can close this tab and return to UrBudget."));
             return Err(if error == "access_denied" {
-                "Sign-in was cancelled.".into()
+                t!("Sign-in was cancelled.")
             } else {
-                format!("Sign-in failed: {}", query.get("error_description").unwrap_or(error))
+                t!("Sign-in failed: {reason}", reason = query.get("error_description").unwrap_or(error))
             });
         }
         let Some(code) = query.get("code") else {
-            respond(&mut stream, "400 Bad Request", "Sign-in failed", "Go back to UrBudget and try again.");
-            return Err("The sign-in response had no code. Try again.".into());
+            respond(&mut stream, "400 Bad Request", tr("Sign-in failed"), tr("Go back to UrBudget and try again."));
+            return Err(t!("The sign-in response had no code. Try again."));
         };
-        respond(&mut stream, "200 OK", "You're signed in", "You can close this tab and return to UrBudget.");
+        respond(&mut stream, "200 OK", tr("You're signed in"), tr("You can close this tab and return to UrBudget."));
         return Ok(Callback { code: code.clone(), client_id: query.get("client_id").cloned() });
     }
 }
@@ -209,7 +213,7 @@ pub async fn sign_in(
 ) -> Result<SignedIn, String> {
     let listener = TcpListener::bind(("127.0.0.1", PORT))
         .or_else(|_| TcpListener::bind(("127.0.0.1", 0)))
-        .map_err(|e| format!("Couldn't start sign-in: {e}"))?;
+        .map_err(|e| t!("Couldn't start sign-in: {e}", e))?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     let redirect = format!("http://127.0.0.1:{port}/auth/callback");
     let verifier = random(32);
@@ -243,9 +247,9 @@ pub async fn sign_in(
         .map_err(|e| e.to_string())??;
     let issued = match (&saved_client, callback.client_id) {
         (None, Some(id)) => id,
-        (None, None) => return Err("ChatGPT didn't finish registering UrBudget. Try signing in again.".into()),
+        (None, None) => return Err(t!("ChatGPT didn't finish registering UrBudget. Try signing in again.")),
         (Some(saved), Some(id)) if &id != saved => {
-            return Err("ChatGPT answered for a different app registration. Try signing in again.".into())
+            return Err(t!("ChatGPT answered for a different app registration. Try signing in again."))
         }
         (Some(saved), _) => saved.clone(),
     };
@@ -263,17 +267,17 @@ pub async fn sign_in(
         ])
         .send()
         .await
-        .map_err(|e| format!("Couldn't finish signing in: {e}"))?;
+        .map_err(|e| t!("Couldn't finish signing in: {e}", e))?;
     let status = response.status();
     let body: Value = response.json().await.unwrap_or(Value::Null);
     if !status.is_success() {
-        return Err(format!(
-            "ChatGPT didn't accept the sign-in: {}",
-            body["error_description"].as_str().or(body["error"].as_str()).unwrap_or(status.as_str())
+        return Err(t!(
+            "ChatGPT didn't accept the sign-in: {reason}",
+            reason = body["error_description"].as_str().or(body["error"].as_str()).unwrap_or(status.as_str())
         ));
     }
     let tokens = read_tokens(&body, "")?;
-    let account = claims(body["id_token"].as_str().ok_or("The sign-in response had no ID token.")?, &issued, Some(&nonce))?;
+    let account = claims(body["id_token"].as_str().ok_or_else(|| t!("The sign-in response had no ID token."))?, &issued, Some(&nonce))?;
     Ok(SignedIn { client_id: issued, account, tokens })
 }
 
@@ -297,7 +301,7 @@ pub async fn refresh(client: &reqwest::Client, client_id: &str, refresh_token: &
         ])
         .send()
         .await
-        .map_err(|e| RefreshError::Retry(format!("Couldn't reach ChatGPT: {e}")))?;
+        .map_err(|e| RefreshError::Retry(t!("Couldn't reach ChatGPT: {e}", e)))?;
     let status = response.status();
     let body: Value = response.json().await.unwrap_or(Value::Null);
     if !status.is_success() {
@@ -312,9 +316,9 @@ pub async fn refresh(client: &reqwest::Client, client_id: &str, refresh_token: &
             "invalid_client",
         ];
         return Err(if gone.contains(&error) || status.as_u16() == 401 {
-            RefreshError::SignInAgain("Your ChatGPT sign-in has ended. Sign in again.".into())
+            RefreshError::SignInAgain(t!("Your ChatGPT sign-in has ended. Sign in again."))
         } else {
-            RefreshError::Retry(format!("ChatGPT couldn't refresh the sign-in ({}).", status.as_u16()))
+            RefreshError::Retry(t!("ChatGPT couldn't refresh the sign-in ({status}).", status = status.as_u16()))
         });
     }
     read_tokens(&body, previous_scope).map_err(RefreshError::Retry)

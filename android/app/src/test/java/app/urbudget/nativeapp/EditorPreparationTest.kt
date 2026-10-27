@@ -12,6 +12,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class EditorPreparationTest {
+    @org.junit.Before fun english() = EnglishWords.install()
     @org.junit.Before fun resetFormat() { Money.configure(JSONObject().put("currency", "SAR")) }
 
     @Test fun bankReviewKeepsTransferLegIdsAndConservativeMatchDefaults() = runTest {

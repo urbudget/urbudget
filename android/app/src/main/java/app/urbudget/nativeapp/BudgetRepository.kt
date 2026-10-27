@@ -113,7 +113,7 @@ class BudgetRepository(
     }
 
     suspend fun selectMonth(value: String): BudgetSnapshot = mutex.withLock {
-        require(YearMonth.parse(value).toString() == value) { "Choose a valid month." }
+        require(YearMonth.parse(value).toString() == value) { Words[R.string.model_choose_valid_month] }
         val snapshot = snapshot(current, value)
         month = value
         snapshot
@@ -122,17 +122,17 @@ class BudgetRepository(
     suspend fun create(name: String, currency: String, sample: Boolean): BudgetSnapshot = mutex.withLock {
         val params = JSONObject().put("name", name.trim()).put("currency", currency.uppercase()).put("month", month)
         val value = call(if (sample) "sampleBudget" else "defaultBudget", null, params) as? JSONObject
-            ?: error("The engine returned an invalid budget.")
+            ?: error(Words[R.string.model_invalid_budget])
         persist(value, retainPrevious = true, createNew = true)
     }
 
     suspend fun importBudget(json: String, guard: BudgetReplacementGuard? = null): BudgetSnapshot = mutex.withLock {
         guard?.verify(current, storage.identity)
-        require(json.toByteArray(Charsets.UTF_8).size <= MAX_IMPORT_BYTES) { "Choose a JSON backup smaller than 32 MiB." }
+        require(json.toByteArray(Charsets.UTF_8).size <= MAX_IMPORT_BYTES) { Words[R.string.model_backup_too_large] }
         val root = JSONObject(json.removePrefix("\uFEFF"))
         // Desktop JSON backups are bare budgets; also accept the documented versioned export envelope.
         val value = if (root.has("schemaVersion")) root else root.optJSONObject("budget")
-            ?: throw IllegalArgumentException("This file is not a portable UrBudget JSON backup.")
+            ?: throw IllegalArgumentException(Words[R.string.model_not_a_backup])
         persist(value, retainPrevious = true)
     }
 
@@ -147,9 +147,9 @@ class BudgetRepository(
         val currentBudget = budget()
         guard?.verify(currentBudget, storage.identity)
         val value = call(method, currentBudget, params) as? JSONObject
-            ?: throw IllegalArgumentException("This command did not return an editable budget.")
+            ?: throw IllegalArgumentException(Words[R.string.model_no_editable_budget])
         val changed = value.optJSONObject("budget") ?: value
-        require(changed.has("schemaVersion")) { "This command did not return an editable budget." }
+        require(changed.has("schemaVersion")) { Words[R.string.model_no_editable_budget] }
         persist(changed)
     }
 
@@ -160,9 +160,9 @@ class BudgetRepository(
         transform(changed)
         for ((method, params) in commands) {
             val value = call(method, changed, params) as? JSONObject
-                ?: throw IllegalArgumentException("This command did not return an editable budget.")
+                ?: throw IllegalArgumentException(Words[R.string.model_no_editable_budget])
             changed = value.optJSONObject("budget") ?: value
-            require(changed.has("schemaVersion")) { "This command did not return an editable budget." }
+            require(changed.has("schemaVersion")) { Words[R.string.model_no_editable_budget] }
         }
         persist(changed)
     }
@@ -205,11 +205,11 @@ class BudgetRepository(
 
     suspend fun restoreRecovery(guard: BudgetReplacementGuard? = null): BudgetSnapshot = mutex.withLock {
         guard?.verify(current, storage.identity)
-        val previous = storage.readRecovery() ?: error("There is no previous budget to restore.")
+        val previous = storage.readRecovery() ?: error(Words[R.string.model_no_recovery])
         persist(JSONObject(previous))
     }
 
-    private fun budget(): JSONObject = current?.let(::JSONObject) ?: error("Create or import a budget first.")
+    private fun budget(): JSONObject = current?.let(::JSONObject) ?: error(Words[R.string.model_no_budget])
 
     private fun persist(value: JSONObject, retainPrevious: Boolean = false, createNew: Boolean = false): BudgetSnapshot {
         val json = value.toString()
@@ -254,7 +254,7 @@ class BudgetRepository(
         val request = JSONObject().put("version", 1).put("method", method).put("params", params)
         if (budget != null) request.put("budget", budget)
         val response = JSONObject(engine.invoke(request.toString()))
-        if (!response.optBoolean("ok")) throw IllegalArgumentException(response.optString("error", "The shared engine could not complete this action."))
+        if (!response.optBoolean("ok")) throw IllegalArgumentException(if (response.has("error")) response.optString("error") else Words[R.string.model_engine_failed])
         return response.opt("value").takeUnless { it == JSONObject.NULL }
     }
 

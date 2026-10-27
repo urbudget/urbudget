@@ -90,8 +90,7 @@ struct AccountSyncView: View {
         } message: {
             Text("Sync stops on this iPhone and it forgets the sync key. Your budgets here stay as they are.")
         }
-        .confirmationDialog("Remove the cloud copy of \(removing?.text("name") ?? "this budget")?",
-                            isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible) {
+        .confirmationDialog(removeTitle, isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible) {
             Button("Remove cloud copy", role: .destructive) {
                 guard let id = removing?.text("id") else { return }
                 run {
@@ -102,6 +101,11 @@ struct AccountSyncView: View {
         } message: {
             Text("This stops syncing it and deletes its cloud copy. Copies on your devices stay.")
         }
+    }
+
+    private var removeTitle: Text {
+        guard let removing else { return Text("Remove the cloud copy of this budget?") }
+        return Text("Remove the cloud copy of \(removing.text("name"))?")
     }
 
     // MARK: Sections
@@ -161,7 +165,7 @@ struct AccountSyncView: View {
         run {
             _ = try await store.service("account_start", ["email": .string(email.trimmingCharacters(in: .whitespaces))])
             sent = true
-            notice = "Check your email for a sign-in code. It may land in your Junk folder."
+            notice = String(localized: "Check your email for a sign-in code. It may land in your Junk folder.")
             typingCode = true
         }
     }
@@ -200,8 +204,7 @@ struct AccountSyncView: View {
             Text("Encrypted sync")
         } footer: {
             if let report, !(report.text("message").isEmpty && report.text("at").isEmpty) {
-                Text([report.text("message"), report.text("at").isEmpty ? "" : "Last attempt: \(lastAttempt(report.text("at")))"]
-                    .filter { !$0.isEmpty }.joined(separator: " · "))
+                Text(reportLine(report))
             } else {
                 Text("Only your sync passphrase opens your budgets. UrBudget can't read or recover them.")
             }
@@ -265,26 +268,36 @@ struct AccountSyncView: View {
 
     private func syncStateLabel(_ state: String) -> String {
         switch state {
-        case "cloud_only": return "In the cloud"
-        case "local_only": return "This device only"
-        case "conflict": return "Needs review"
-        case "synced": return "Synced"
-        case "uploaded": return "Uploaded"
-        case "downloaded": return "Downloaded"
-        case "merged": return "Merged"
-        case "waiting": return "Waiting"
-        case "update_app": return "Update the app"
-        case "error": return "Error"
-        case "": return "Unknown"
+        case "cloud_only": return String(localized: "In the cloud")
+        case "local_only": return String(localized: "This device only")
+        case "conflict": return String(localized: "Needs review")
+        case "synced": return String(localized: "Synced")
+        case "uploaded": return String(localized: "Uploaded")
+        case "downloaded": return String(localized: "Downloaded")
+        case "merged": return String(localized: "Merged")
+        case "waiting": return String(localized: "Waiting")
+        case "update_app": return String(localized: "Update the app")
+        case "error": return String(localized: "Error")
+        case "": return String(localized: "Unknown")
         default: return state.replacingOccurrences(of: "_", with: " ").capitalized
         }
+    }
+
+    /// The last sync's message (the engine's words) and when it was tried.
+    private func reportLine(_ report: JSON) -> String {
+        var parts = [report.text("message")].filter { !$0.isEmpty }
+        if !report.text("at").isEmpty {
+            let when = lastAttempt(report.text("at"))
+            parts.append(String(localized: "Last attempt: \(when)"))
+        }
+        return ImportsText.line(parts)
     }
 
     private func lastAttempt(_ at: String) -> String {
         let parser = ISO8601DateFormatter()
         parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let date = parser.date(from: at) ?? ISO8601DateFormatter().date(from: at)
-        return date.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? at
+        return date.map { $0.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(.app)) } ?? at
     }
 
     /// Runs one account or sync action: one at a time, with its error shown on the screen.
@@ -317,8 +330,8 @@ private struct PassphraseSheet: View {
     var body: some View {
         let needsRepeat = request.kind != .unlock
         let valid = phrase.count >= 8 && (!needsRepeat || phrase == repeated)
-        FormSheet(title: request.kind == .reset ? "Reset passphrase" : request.kind == .setup ? "Create passphrase" : "Unlock sync",
-                  confirm: request.kind == .reset ? "Reset" : "Continue", enabled: valid, destructive: request.kind == .reset) {
+        FormSheet(title: title, confirm: request.kind == .reset ? String(localized: "Reset") : String(localized: "Continue"),
+                  enabled: valid, destructive: request.kind == .reset) {
             try await submit(phrase)
         } content: {
             Section {
@@ -331,9 +344,17 @@ private struct PassphraseSheet: View {
                         ? "At least 8 characters. Keep it somewhere safe: UrBudget can't recover it for you."
                         : "The passphrase you chose when you set up sync on another device.")
             }
-            if needsRepeat && !repeated.isEmpty && phrase != repeated { FormErrorView(message: "The passphrases don't match.") }
+            if needsRepeat && !repeated.isEmpty && phrase != repeated { FormErrorView(message: String(localized: "The passphrases don't match.")) }
         }
         .presentationDetents([.medium])
+    }
+
+    private var title: String {
+        switch request.kind {
+        case .reset: return String(localized: "Reset passphrase")
+        case .setup: return String(localized: "Create passphrase")
+        case .unlock: return String(localized: "Unlock sync")
+        }
     }
 }
 
@@ -347,7 +368,7 @@ private struct SyncConflictSheet: View {
     var body: some View {
         let conflicts = entry.rows("conflicts")
         let ready = conflicts.isEmpty ? !whole.isEmpty : conflicts.allSatisfy { choices[$0.text("key")] != nil }
-        FormSheet(title: "Resolve \(entry.text("name"))", confirm: "Apply", enabled: ready) {
+        FormSheet(title: String(localized: "Resolve \(entry.text("name"))"), confirm: String(localized: "Apply"), enabled: ready) {
             var picked: JSON = [:]
             for (key, value) in choices { picked[key] = .string(value) }
             try await resolve(conflicts.isEmpty ? whole : "merge", picked)
@@ -373,7 +394,7 @@ private struct SyncConflictSheet: View {
                     }
                     .pickerStyle(.segmented)
                 } header: {
-                    Text([difference.text("label"), difference.text("field")].filter { !$0.isEmpty }.joined(separator: " · "))
+                    Text(ImportsText.line([difference.text("label"), difference.text("field")].filter { !$0.isEmpty }))
                 }
             }
         }
@@ -381,8 +402,8 @@ private struct SyncConflictSheet: View {
 
     private func describe(_ value: JSON) -> String {
         switch value {
-        case .null: return "Deleted"
-        case .string(let text): return text.isEmpty ? "Empty" : text
+        case .null: return String(localized: "Deleted")
+        case .string(let text): return text.isEmpty ? String(localized: "Empty") : text
         case .int, .double, .bool: return value.string
         default: return value.serialized()
         }
@@ -402,7 +423,7 @@ private struct DeleteAccountSheet: View {
     @State private var confirmation = ""
 
     var body: some View {
-        FormSheet(title: "Delete account", confirm: "Delete",
+        FormSheet(title: String(localized: "Delete account"), confirm: String(localized: "Delete"),
                   enabled: confirmation.trimmingCharacters(in: .whitespaces).caseInsensitiveCompare(email) == .orderedSame, destructive: true) {
             try await delete(confirmation)
         } content: {

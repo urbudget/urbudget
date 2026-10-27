@@ -55,10 +55,10 @@ final class AppStoreSubscription {
 
     /// The UUID StoreKit records with a purchase, which ties it to the signed-in UrBudget account.
     func accountToken() async throws -> UUID {
-        guard let store else { throw AppError("The App Store isn't available right now.") }
+        guard let store else { throw AppError(String(localized: "The App Store isn't available right now.")) }
         let context = try await store.service("billing_apple_context")
         guard let token = UUID(uuidString: context.text("appAccountToken")) else {
-            throw AppError("UrBudget couldn't prepare the purchase. Try again in a minute.")
+            throw AppError(String(localized: "UrBudget couldn't prepare the purchase. Try again in a minute."))
         }
         return token
     }
@@ -69,10 +69,10 @@ final class AppStoreSubscription {
         case .success(let verification):
             let answer = try await deliver(verification)
             return answer["active"].bool
-                ? "Sync is on. Set up or unlock sync on this iPhone to start."
-                : "The App Store took the purchase, but Sync isn't on yet. Try Restore purchases in a minute."
+                ? String(localized: "Sync is on. Set up or unlock sync on this iPhone to start.")
+                : String(localized: "The App Store took the purchase, but Sync isn't on yet. Try Restore purchases in a minute.")
         case .pending:
-            return "The purchase is waiting for approval. Sync turns on once it's approved."
+            return String(localized: "The purchase is waiting for approval. Sync turns on once it's approved.")
         case .userCancelled:
             return nil
         @unknown default:
@@ -93,15 +93,15 @@ final class AppStoreSubscription {
             guard case .verified(let transaction) = result, transaction.productID == Self.productID else { continue }
             restored = try await deliver(result)["active"].bool || restored
         }
-        return restored ? "Your App Store subscription to Sync is restored." : "This Apple Account has no active Sync subscription."
+        return restored ? String(localized: "Your App Store subscription to Sync is restored.") : String(localized: "This Apple Account has no active Sync subscription.")
     }
 
     /// Sends a verified Sync transaction to the server, and finishes it once the server has
     /// answered, accepted or refused. When the server can't be reached or nobody is signed in, it
     /// throws and leaves the transaction unfinished, so StoreKit offers it again.
     private func deliver(_ result: VerificationResult<Transaction>) async throws -> JSON {
-        guard case .verified(let transaction) = result else { throw AppError("The App Store couldn't confirm this purchase.") }
-        guard let store else { throw AppError("The App Store isn't available right now.") }
+        guard case .verified(let transaction) = result else { throw AppError(String(localized: "The App Store couldn't confirm this purchase.")) }
+        guard let store else { throw AppError(String(localized: "The App Store isn't available right now.")) }
         let answer = try await store.service("billing_apple_verify", ["transaction": .string(result.jwsRepresentation)])
         await transaction.finish()
         if !answer.text("refused").isEmpty { throw AppError(answer.text("refused")) }

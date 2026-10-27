@@ -103,6 +103,7 @@ tasks.named("preBuild").configure { dependsOn(buildRust) }
 
 dependencies {
     implementation("com.android.billingclient:billing:9.1.0")
+    implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("androidx.core:core-ktx:1.16.0")
     implementation(platform("androidx.compose:compose-bom:2025.08.00"))
     implementation("androidx.activity:activity-compose:1.10.1")

@@ -12,7 +12,7 @@ vi.mock("../bridge", () => ({
     bankApplyFixes: vi.fn(),
     importBank: vi.fn(async (b: Budget) => b),
     decodeStatement: vi.fn(async (latin1: string) => ({ text: latin1, encoding: "ISO-8859-1" })),
-    writeExport: vi.fn(async () => "C:/budget/exports/bank-import-template.csv"),
+    writeExport: vi.fn(async (): Promise<string | null> => "C:/Users/pat/Downloads/bank-import-template.csv"),
     reveal: vi.fn(async () => {}),
   },
 }));
@@ -107,14 +107,18 @@ function Page({
   onImported = vi.fn(),
   onAskAssistant,
   onFixWithAssistant,
+  away = false,
 }: {
   budget?: Budget;
   initial?: ImportState;
   onImported?: () => void;
   onAskAssistant?: (file: File, problem: string, account: string) => void;
   onFixWithAssistant?: () => void;
+  /** On another page: the import is kept, as the app keeps it, but not shown. */
+  away?: boolean;
 }) {
   const [state, setState] = useState<ImportState>(initial);
+  if (away) return null;
   return (
     <ToastProvider>
       <ImportPage
@@ -230,6 +234,51 @@ it("edits a line as the register does: a click selects it, another edits it ther
   expect(screen.queryByLabelText("Amount of line 30")).toBeNull();
 });
 
+it("leaves Enter on the editor's Cancel to the button, which cancels", async () => {
+  engine((s) => statement(s, [bakery, grocer]));
+  render(<Page />);
+  choose(csv());
+  fireEvent.click(await screen.findByRole("button", { name: "Fix line 30" }));
+  fireEvent.change(screen.getByLabelText("Amount of line 30"), { target: { value: "-1.00" } });
+  const cancel = screen.getByRole("button", { name: "Cancel" });
+  // Not taken as Save: the browser goes on to click the button.
+  expect(fireEvent.keyDown(cancel, { key: "Enter" })).toBe(true);
+  fireEvent.click(cancel);
+  expect(screen.queryByLabelText("Amount of line 30")).toBeNull();
+  expect(api.bankApplyFixes).not.toHaveBeenCalled();
+});
+
+it("saves only the cells typed over, keeping a change that landed on the line while it was edited", async () => {
+  let release: () => void = () => {};
+  engine((s) =>
+    statement(
+      s,
+      s.revision
+        ? [bakery, line("30", ["2026-10-02", "Grocer", "-12.40"], { kind: "ready" }, { fixed: true, version: 1 })]
+        : [bakery, grocer],
+    ),
+  );
+  render(<Page />);
+  choose(csv());
+  await screen.findByRole("button", { name: "Fix line 30" });
+  // The amount is fixed, and the file takes its time to read with it.
+  const later = vi.mocked(api.bankStatement).getMockImplementation()!;
+  vi.mocked(api.bankStatement).mockImplementationOnce((...args) => new Promise((r) => (release = () => r(later(...args)))));
+  fixCell("30", "Amount", "-12.40");
+  await waitFor(() => expect(api.bankStatement).toHaveBeenCalledTimes(2));
+  // Opened again meanwhile, the line shows the amount given.
+  fireEvent.click(screen.getByRole("button", { name: "Fix line 30" }));
+  expect((screen.getByLabelText("Amount of line 30") as HTMLInputElement).value).toBe("-12.40");
+  // The line reads now, so it's no longer one that needs attention, but it stays while it's edited.
+  release();
+  expect(await screen.findByText("Editing the line")).toBeTruthy();
+  const payee = screen.getByLabelText("Payee of line 30");
+  fireEvent.change(payee, { target: { value: "Grocer Ltd" } });
+  fireEvent.keyDown(payee, { key: "Enter" });
+  await waitFor(() => expect(api.bankApplyFixes).toHaveBeenCalledTimes(2));
+  expect(sent().cells).toEqual([{ line: "30", lineVersion: 1, column: 1, from: "Grocer", to: "Grocer Ltd" }]);
+});
+
 it("selects lines as the register does, and includes or leaves them out together", async () => {
   const pending = line("90", ["2026-10-04", "Cinema", "-12.00"], { kind: "leftOut", reason: "pending", detail: "Pending" });
   const declined = line("120", ["2026-10-05", "Taxi", "-7.00"], { kind: "leftOut", reason: "declined", detail: "Declined" });
@@ -332,6 +381,55 @@ it("never shows a review made before a change to the file", async () => {
   expect(screen.queryByRole("button", { name: /^Import \d/ })).toBeNull();
 });
 
+it("keeps what's chosen in the review while the file is looked at, or another page, until another file", async () => {
+  const pending = line("90", ["2026-10-04", "Cinema", "-12.00"], { kind: "leftOut", reason: "pending", detail: "Pending" });
+  engine((s) => statement(s, [bakery, lunch, pending]));
+  const onImported = vi.fn();
+  const view = render(<Page onImported={onImported} />);
+  choose(csv());
+  const action = async () => ((await screen.findByLabelText("Import action 1")) as HTMLSelectElement).value;
+  fireEvent.change(await screen.findByLabelText("Import action 1"), { target: { value: "skip" } });
+  // To the file and back, both ways.
+  fireEvent.click(screen.getByRole("button", { name: /Check the file/ }));
+  fireEvent.click(await screen.findByRole("button", { name: "Continue to the review" }));
+  expect(await action()).toBe("skip");
+  fireEvent.click(screen.getByRole("button", { name: "Back to the file" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Continue to the review" }));
+  expect(await action()).toBe("skip");
+  // Another page, then back to the import from the sidebar.
+  view.rerender(<Page onImported={onImported} away />);
+  expect(screen.queryByLabelText("Import action 1")).toBeNull();
+  view.rerender(<Page onImported={onImported} />);
+  expect(await action()).toBe("skip");
+  fireEvent.click(screen.getByRole("button", { name: "Import 1 transaction" }));
+  await waitFor(() => expect(onImported).toHaveBeenCalledWith(1, { ids: [], accounts: [] }));
+  expect(vi.mocked(api.importBank).mock.lastCall![2].map((c) => c.action)).toEqual(["skip", "new"]);
+  // Another file starts with nothing chosen.
+  fireEvent.click(screen.getByRole("button", { name: "Choose another file" }));
+  vi.mocked(api.bankSession).mockResolvedValue(session("s2"));
+  choose(csv("november.csv"));
+  expect(await screen.findByRole("button", { name: "Import 2 transactions" })).toBeTruthy();
+  expect(await action()).toBe("new");
+});
+
+it("goes on to the review after a change that didn't apply", async () => {
+  engine((s) => statement(s, [bakery, grocer]));
+  vi.mocked(api.bankApplyFixes).mockResolvedValueOnce({
+    session: session(),
+    results: [{ line: "30", fix: "cell", applied: false, problem: "This line changed since this fix was made." }],
+  });
+  render(<Page />);
+  choose(csv());
+  await screen.findByRole("button", { name: "Fix line 30" });
+  fixCell("30", "Amount", "-1.00");
+  expect(await screen.findByText("This line changed since this fix was made.")).toBeTruthy();
+  const next = screen.getByRole("button", { name: "Continue to the review" }) as HTMLButtonElement;
+  await waitFor(() => expect(next.disabled).toBe(false));
+  fireEvent.click(next);
+  expect(await screen.findByRole("button", { name: "Import 1 transaction" })).toBeTruthy();
+  expect(screen.queryByText("This line changed since this fix was made.")).toBeNull();
+});
+
 it("includes a line left out, and asks for its amount in the budget's currency", async () => {
   const london = line("40", ["2026-10-05", "London", "-9.99"], { kind: "leftOut", reason: "otherCurrency", detail: "GBP" });
   engine((s) =>
@@ -408,6 +506,27 @@ it("doesn't dim the lines for a quick change, and makes one asked for meanwhile 
   finish();
   await waitFor(() => expect(api.bankApplyFixes).toHaveBeenCalledTimes(2));
   expect(sent()).toMatchObject({ baseRevision: 1, structure: { flipSigns: true, columns: { memo: "Payee", payee: null } } });
+});
+
+it("makes every change asked for while another applies, in turn, none dropped for the next", async () => {
+  engine((s) => statement(s, [bakery, grocer, lunch]));
+  render(<Page />);
+  choose(csv());
+  const purchases = await screen.findByLabelText("Purchases in the file");
+  let finish: () => void = () => {};
+  const apply = vi.mocked(api.bankApplyFixes).getMockImplementation()!;
+  vi.mocked(api.bankApplyFixes).mockImplementationOnce((...args) => new Promise((r) => (finish = () => r(apply(...args)))));
+  fireEvent.change(purchases, { target: { value: "positive" } });
+  // Two more while the first applies.
+  fireEvent.change(screen.getByLabelText("What column 2 holds"), { target: { value: "memo" } });
+  fireEvent.change(screen.getByLabelText("What column 3 holds"), { target: { value: "outflow" } });
+  expect(api.bankApplyFixes).toHaveBeenCalledTimes(1);
+  finish();
+  await waitFor(() => expect(api.bankApplyFixes).toHaveBeenCalledTimes(3));
+  const made = vi.mocked(api.bankApplyFixes).mock.calls.map(([, , , , fixes]) => fixes);
+  expect(made.map((f) => f.baseRevision)).toEqual([0, 1, 2]);
+  expect(made[1].structure).toMatchObject({ flipSigns: true, columns: { memo: "Payee", payee: null } });
+  expect(made[2].structure).toMatchObject({ flipSigns: true, columns: { amount: null, outflow: "Amount" } });
 });
 
 it("makes a change again on the import as another left it, so neither undoes the other", async () => {
@@ -651,8 +770,15 @@ it("sends a PDF statement to the assistant, and saves a template", async () => {
   expect(api.bankSession).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Choose another file" }));
   fireEvent.click(screen.getByRole("button", { name: /Download a template/ }));
-  await waitFor(() => expect(api.writeExport).toHaveBeenCalledWith("bank-import-template.csv", expect.stringContaining("Date,Payee,Memo,Outflow,Inflow")));
+  await waitFor(() =>
+    expect(api.writeExport).toHaveBeenCalledWith("bank-import-template.csv", expect.stringContaining("Date,Payee,Memo,Outflow,Inflow")),
+  );
   expect(await screen.findByText("Template saved.")).toBeTruthy();
+  // A cancelled save panel says nothing.
+  vi.mocked(api.writeExport).mockResolvedValueOnce(null);
+  fireEvent.click(screen.getByRole("button", { name: /Download a template/ }));
+  await waitFor(() => expect(api.writeExport).toHaveBeenCalledTimes(2));
+  expect(screen.getAllByText("Template saved.")).toHaveLength(1);
 });
 
 it("offers the assistant first when no line reads, with why", async () => {

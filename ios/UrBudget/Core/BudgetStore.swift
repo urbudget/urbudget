@@ -45,6 +45,7 @@ actor BudgetRepository {
         if !started {
             try NativeCore.initialize(directory: folder ?? Self.directory())
             started = true
+            AppLanguage.tellEngine()
         }
         return try load()
     }
@@ -74,7 +75,7 @@ actor BudgetRepository {
     }
 
     func selectMonth(_ value: String) throws -> BudgetSnapshot {
-        guard Dates.isMonth(value) else { throw AppError("Choose a valid month.") }
+        guard Dates.isMonth(value) else { throw AppError(String(localized: "Choose a valid month.")) }
         month = value
         return snapshot()
     }
@@ -101,12 +102,12 @@ actor BudgetRepository {
     }
 
     private static func backup(_ data: Data) throws -> JSON {
-        guard data.count <= 32 * 1024 * 1024 else { throw AppError("Choose a JSON backup smaller than 32 MB.") }
+        guard data.count <= 32 * 1024 * 1024 else { throw AppError(String(localized: "Choose a JSON backup smaller than 32 MB.")) }
         // Desktop JSON backups are bare budgets; also accept the documented versioned export envelope.
         let bom = Data([0xEF, 0xBB, 0xBF])
         let root = try JSON.parse(data.starts(with: bom) ? data.dropFirst(3) : data)
         let value = root.has("schemaVersion") ? root : root["budget"]
-        guard value.has("schemaVersion") else { throw AppError("This file is not a portable UrBudget JSON backup.") }
+        guard value.has("schemaVersion") else { throw AppError(String(localized: "This file is not a portable UrBudget JSON backup.")) }
         return value
     }
 
@@ -141,11 +142,11 @@ actor BudgetRepository {
     /// an edit or a command means the same there, and an editor's `original` check still refuses
     /// a record that changed since it opened. Only a second refusal reaches the person.
     private func saving(_ change: (JSON) throws -> JSON) throws -> BudgetSnapshot {
-        guard let budget = current else { throw AppError("Create or import a budget first.") }
+        guard let budget = current else { throw AppError(String(localized: "Create or import a budget first.")) }
         do {
             return try persist(change(budget))
         } catch is Conflict {
-            guard let fresh = current else { throw AppError("Create or import a budget first.") }
+            guard let fresh = current else { throw AppError(String(localized: "Create or import a budget first.")) }
             return try persist(change(fresh))
         }
     }
@@ -155,14 +156,14 @@ actor BudgetRepository {
         let identity = collection == "loans" ? "accountId" : "id"
         let current = budget.rows(collection).first { $0.text(identity) == original.text(identity) }
         if let current, current != original {
-            throw AppError("Your budget changed while this editor was open. Close it and reopen to review the latest values.")
+            throw AppError(String(localized: "Your budget changed while this editor was open. Close it and reopen to review the latest values."))
         }
     }
 
     private static func changed(by method: String, _ params: JSON, _ budget: JSON) throws -> JSON {
         let value = try NativeCore.engine(method, budget: budget, params: params)
         let changed = value["budget"].isObject ? value["budget"] : value
-        guard changed.has("schemaVersion") else { throw AppError("This command did not return an editable budget.") }
+        guard changed.has("schemaVersion") else { throw AppError(String(localized: "This command did not return an editable budget.")) }
         return changed
     }
 
@@ -344,7 +345,7 @@ final class BudgetStore {
         }
     }
 
-    static let conflictMessage = "Your budget changed while saving, from sync or another device. The latest version is shown; make the change again if it's still needed."
+    static let conflictMessage = String(localized: "Your budget changed while saving, from sync or another device. The latest version is shown; make the change again if it's still needed.")
 
     /// Like `enqueue`, but returns the operation's result (or throws its error) to the caller.
     /// The snapshot it returns, if any, is published first.
@@ -556,7 +557,7 @@ final class BudgetStore {
     func saveTarget(category: String, goal: JSON?, amount: Int64) async throws {
         try await editing { budget in
             var rows = budget["categories"].array
-            guard let index = rows.firstIndex(where: { $0.text("id") == category }) else { throw AppError("Category not found.") }
+            guard let index = rows.firstIndex(where: { $0.text("id") == category }) else { throw AppError(String(localized: "Category not found.")) }
             if let goal { rows[index]["goal"] = goal; rows[index]["target"] = .int(amount) }
             else { rows[index].remove("goal"); rows[index]["target"] = 0 }
             budget["categories"] = .array(rows)

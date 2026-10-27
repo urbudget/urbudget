@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -37,7 +38,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import app.urbudget.nativeapp.AssistantController
 import app.urbudget.nativeapp.AssistantState
 import app.urbudget.nativeapp.BudgetViewModel
+import app.urbudget.nativeapp.Money
 import app.urbudget.nativeapp.ProposalChoices
+import app.urbudget.nativeapp.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -84,7 +87,7 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
         val data = pendingExport
         if (uri != null && data != null) scope.launch {
             runCatching { withContext(Dispatchers.IO) {
-                context.contentResolver.openOutputStream(uri)?.use { it.write(data.second) } ?: error("The export could not be saved.")
+                context.contentResolver.openOutputStream(uri)?.use { it.write(data.second) } ?: error(context.getString(R.string.assistant_export_failed))
             } }.onFailure { exportError = it.message }
             pendingExport = null
         }
@@ -105,40 +108,41 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
     Column(Modifier.fillMaxSize().imePadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Assistant", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text(state.thread?.text("title").orEmpty().ifEmpty { "Your budget, with a second pair of eyes" }, maxLines = 1, style = MaterialTheme.typography.labelSmall)
+                Text(stringResource(R.string.assistant_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text(state.thread?.text("title").orEmpty().ifEmpty { stringResource(R.string.assistant_tagline) }, maxLines = 1, style = MaterialTheme.typography.labelSmall)
             }
-            IconButton({ history = true }) { Icon(Icons.Outlined.History, "Conversation history") }
-            IconButton({ controller.newChat(); message = ""; selected = emptyList() }) { Icon(Icons.Outlined.AddComment, "New conversation") }
-            IconButton({ settings = true }) { Icon(Icons.Outlined.Settings, "Assistant settings") }
-            if (onClose != null) IconButton(onClose) { Icon(Icons.Outlined.Close, "Close assistant") }
+            IconButton({ history = true }) { Icon(Icons.Outlined.History, stringResource(R.string.assistant_history)) }
+            IconButton({ controller.newChat(); message = ""; selected = emptyList() }) { Icon(Icons.Outlined.AddComment, stringResource(R.string.assistant_new)) }
+            IconButton({ settings = true }) { Icon(Icons.Outlined.Settings, stringResource(R.string.assistant_settings)) }
+            if (onClose != null) IconButton(onClose) { Icon(Icons.Outlined.Close, stringResource(R.string.assistant_close)) }
         }
         if (state.busy.isNotEmpty()) LinearProgressIndicator(Modifier.fillMaxWidth())
         state.notice?.let { notice ->
             Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(notice, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                IconButton(controller::dismissNotice) { Icon(Icons.Outlined.Close, "Dismiss notice") }
+                IconButton(controller::dismissNotice) { Icon(Icons.Outlined.Close, stringResource(R.string.assistant_dismiss_notice)) }
             }
         }
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             if (entries.isEmpty()) item {
-                Text("Ask about your budget. Review every change.", style = MaterialTheme.typography.headlineSmall)
+                Text(stringResource(R.string.assistant_empty_title), style = MaterialTheme.typography.headlineSmall)
                 Spacer(Modifier.height(8.dp))
-                Text("Look up spending, cover overspending, categorize selected transactions, read statements, or create a report. Proposed changes are checked again before you apply them.", style = MaterialTheme.typography.bodyMedium)
-                if (state.status?.optBoolean("ready") != true) FilledTonalButton({ settings = true }, Modifier.padding(top = 12.dp)) { Text("Set up assistant") }
-                else listOf("Where is my money going this month?", "Help me cover overspending", "Make a report of this month's budget").forEach { prompt ->
+                Text(stringResource(R.string.assistant_empty_detail), style = MaterialTheme.typography.bodyMedium)
+                if (state.status?.optBoolean("ready") != true) FilledTonalButton({ settings = true }, Modifier.padding(top = 12.dp)) { Text(stringResource(R.string.assistant_set_up)) }
+                else listOf(R.string.assistant_prompt_where, R.string.assistant_prompt_cover, R.string.assistant_prompt_report).map { stringResource(it) }.forEach { prompt ->
                     OutlinedButton({ message = prompt }, Modifier.fillMaxWidth()) { Text(prompt) }
                 }
             }
             itemsIndexed(entries, key = { index, _ -> "${state.threadId}:$index" }, contentType = { _, entry -> entry.text("kind") }) { _, entry ->
                 when (entry.text("kind")) {
                     "proposal" -> entry.optJSONObject("proposal")?.let { proposal ->
+                        val refinePrompt = stringResource(R.string.assistant_refine_prompt, proposal.text("title"))
                         AssistantProposalCard(proposal, budget.text("currency"), state.busy.contains("proposal"), state.undoProposal == proposal.text("id"),
                             apply = { controller.apply(proposal.text("id"), vm::refresh) },
                             applyFix = applyFix?.let { fix -> { fix(state.threadId, proposal) } },
                             undo = { controller.undoProposal(proposal.text("id"), vm::refresh) },
                             discard = { controller.discard(proposal.text("id")) },
-                            refine = { message = "Revise the proposal ‘${proposal.text("title")}’: " },
+                            refine = { message = "$refinePrompt " },
                             reviewImport = { val thread = state.threadId; controller.importFile(proposal.text("id")) {
                                 importFile = it.put("assistantThreadId", thread).put("assistantProposalId", proposal.text("id"))
                             } },
@@ -148,54 +152,54 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
                             revise = { controller.revise(proposal.text("id"), it) },
                             change = { row -> changing = proposal to row })
                     }
-                    "step" -> Text((if (entry.optBoolean("failed")) "Couldn’t complete: " else "✓ ") + entry.text("text"), style = MaterialTheme.typography.labelMedium,
+                    "step" -> Text(if (entry.optBoolean("failed")) stringResource(R.string.assistant_step_failed, entry.text("text")) else "✓ " + entry.text("text"), style = MaterialTheme.typography.labelMedium,
                         color = if (entry.optBoolean("failed")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
-                    "stopped" -> Text("Reply stopped", style = MaterialTheme.typography.labelMedium)
+                    "stopped" -> Text(stringResource(R.string.assistant_reply_stopped), style = MaterialTheme.typography.labelMedium)
                     else -> {
                         val user = entry.text("kind") == "user"
                         Surface(color = if (user) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
                             shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text(if (user) "You" else if (entry.text("kind") == "error") "Couldn’t finish" else "Assistant", style = MaterialTheme.typography.labelMedium)
+                                Text(stringResource(if (user) R.string.assistant_you else if (entry.text("kind") == "error") R.string.assistant_couldnt_finish else R.string.assistant_title), style = MaterialTheme.typography.labelMedium)
                                 SelectionContainer {
                                     if (entry.text("kind") == "assistant") AssistantMarkdown(entry.text("text"))
                                     else Text(entry.text("text"), color = if (entry.text("kind") == "error") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
                                 }
-                                entry.rows("attachments").forEach { Text("📎 ${it.text("name")}", style = MaterialTheme.typography.labelMedium) }
-                                if (entry.text("kind") == "error") TextButton({ controller.retry(budgetState.month, importing) }, enabled = !state.running) { Text("Try again") }
-                                if (entry.text("kind") == "assistant") TextButton({ reportReply = entry.text("text").take(4000) }) { Text("Report reply") }
+                                entry.rows("attachments").forEach { Text("📎 ${Money.own(it.text("name"))}", style = MaterialTheme.typography.labelMedium) }
+                                if (entry.text("kind") == "error") TextButton({ controller.retry(budgetState.month, importing) }, enabled = !state.running) { Text(stringResource(R.string.assistant_try_again)) }
+                                if (entry.text("kind") == "assistant") TextButton({ reportReply = entry.text("text").take(4000) }) { Text(stringResource(R.string.assistant_report_reply)) }
                             }
                         }
                     }
                 }
             }
             item(key = "live-reply") { AssistantLiveReply(controller, list) }
-            if (state.running) item { Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp); Text(" Working…", style = MaterialTheme.typography.labelMedium) } }
+            if (state.running) item { Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp); Text(stringResource(R.string.assistant_working), Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelMedium) } }
             else if (entries.lastOrNull()?.text("kind") == "user") item {
-                TextButton({ controller.retry(budgetState.month, importing) }, enabled = "send" !in state.busy) { Text("Continue interrupted reply") }
+                TextButton({ controller.retry(budgetState.month, importing) }, enabled = "send" !in state.busy) { Text(stringResource(R.string.assistant_continue_reply)) }
             }
         }
         if (state.attachments.isNotEmpty() || selected.isNotEmpty()) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Column(Modifier.weight(1f)) {
-                state.attachments.forEach { file -> InputChip(true, { controller.removeAttachment(file.text("id")) }, label = { Text(file.text("name"), maxLines = 1) }, trailingIcon = { Icon(Icons.Outlined.Close, "Remove attachment") }) }
-                if (selected.isNotEmpty()) InputChip(true, { contextPicker = true }, label = { Text("${selected.size} selected transactions") })
+                state.attachments.forEach { file -> InputChip(true, { controller.removeAttachment(file.text("id")) }, label = { Text(Money.own(file.text("name")), maxLines = 1) }, trailingIcon = { Icon(Icons.Outlined.Close, stringResource(R.string.assistant_remove_attachment)) }) }
+                if (selected.isNotEmpty()) InputChip(true, { contextPicker = true }, label = { Text(countText(R.plurals.assistant_selected_transactions, selected.size)) })
             }
         }
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Column {
-                IconButton({ attach.launch(arrayOf("*/*")) }, enabled = !state.running && state.attachments.size < 5 && "attach" !in state.busy) { Icon(Icons.Outlined.AttachFile, "Attach statement, document, or image") }
-                IconButton({ contextPicker = true }, enabled = !state.running) { Icon(Icons.Outlined.Checklist, "Select budget transactions") }
+                IconButton({ attach.launch(arrayOf("*/*")) }, enabled = !state.running && state.attachments.size < 5 && "attach" !in state.busy) { Icon(Icons.Outlined.AttachFile, stringResource(R.string.assistant_attach)) }
+                IconButton({ contextPicker = true }, enabled = !state.running) { Icon(Icons.Outlined.Checklist, stringResource(R.string.assistant_select_transactions)) }
             }
-            FilledField(message, { message = it.take(20_000) }, Modifier.weight(1f), label = { Text("Ask about your budget") }, maxLines = 6)
-            if (state.running) IconButton(controller::stop) { Icon(Icons.Outlined.StopCircle, "Stop reply") }
+            FilledField(message, { message = it.take(20_000) }, Modifier.weight(1f), label = { Text(stringResource(R.string.assistant_ask)) }, maxLines = 6)
+            if (state.running) IconButton(controller::stop) { Icon(Icons.Outlined.StopCircle, stringResource(R.string.assistant_stop)) }
             else IconButton({ controller.send(message, budgetState.month, selected, importing) { message = ""; selected = emptyList() } },
-                enabled = state.status?.optBoolean("ready") == true && "send" !in state.busy && (message.isNotBlank() || state.attachments.isNotEmpty())) { Icon(Icons.AutoMirrored.Outlined.Send, "Send message") }
+                enabled = state.status?.optBoolean("ready") == true && "send" !in state.busy && (message.isNotBlank() || state.attachments.isNotEmpty())) { Icon(Icons.AutoMirrored.Outlined.Send, stringResource(R.string.assistant_send)) }
         }
     }
 
     if (settings) AssistantSettingsDialog(controller) { settings = false }
     if (history) ModalBottomSheet(onDismissRequest = { history = false }) {
-        Text("Conversations", Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.titleLarge)
+        Text(stringResource(R.string.assistant_conversations), Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.titleLarge)
         if (state.thread != null) TextButton({
             val thread = state.thread!!
             val currency = budget.text("currency")
@@ -204,17 +208,17 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
                     "${thread.text("title").take(60).replace(Regex("[^\\p{L}\\p{N} _-]"), "_")}.md" to conversationMarkdown(thread, currency).toByteArray()
                 } }.onSuccess { saveBytes(it.first, it.second) }.onFailure { exportError = it.message }
             }
-        }, Modifier.padding(horizontal = 12.dp)) { Text("Export current conversation") }
+        }, Modifier.padding(horizontal = 12.dp)) { Text(stringResource(R.string.assistant_export_conversation)) }
         LazyColumn(Modifier.heightIn(max = 500.dp)) {
-            if (state.threads.isEmpty()) item { Text("No saved conversations yet", Modifier.padding(20.dp)) }
+            if (state.threads.isEmpty()) item { Text(stringResource(R.string.assistant_no_conversations), Modifier.padding(20.dp)) }
             items(state.threads, key = { it.text("id") }) { thread ->
                 ListItem(headlineContent = { TextButton({ controller.openThread(thread.text("id")); history = false }) { Text(thread.text("title")) } },
-                    supportingContent = { Text(thread.text("updated").take(10)) }, trailingContent = { IconButton({ deleteId = thread.text("id") }) { Icon(Icons.Outlined.DeleteOutline, "Delete conversation") } })
+                    supportingContent = { Text(Money.ltr(thread.text("updated").take(10))) }, trailingContent = { IconButton({ deleteId = thread.text("id") }) { Icon(Icons.Outlined.DeleteOutline, stringResource(R.string.assistant_delete_conversation)) } })
             }
         }
     }
-    deleteId?.let { id -> AlertDialog(onDismissRequest = { deleteId = null }, title = { Text("Delete this conversation?") }, text = { Text("This removes its saved history from this device.") },
-        confirmButton = { TextButton({ controller.deleteThread(id); deleteId = null }) { Text("Delete") } }, dismissButton = { TextButton({ deleteId = null }) { Text("Cancel") } }) }
+    deleteId?.let { id -> AlertDialog(onDismissRequest = { deleteId = null }, title = { Text(stringResource(R.string.assistant_delete_conversation_title)) }, text = { Text(stringResource(R.string.assistant_delete_conversation_message)) },
+        confirmButton = { TextButton({ controller.deleteThread(id); deleteId = null }) { Text(stringResource(R.string.common_delete)) } }, dismissButton = { TextButton({ deleteId = null }) { Text(stringResource(R.string.common_cancel)) } }) }
     importFile?.let { file ->
         var draft by remember(file) { mutableStateOf(preparedBankImport(file, file.text("assistantThreadId"), file.text("assistantProposalId"))) }
         BankImportDialog(budget, vm, draft, { change -> draft = change(draft) },
@@ -237,24 +241,24 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
         val selectedIds = remember(selected) { selected.toSet() }
         Surface(Modifier.fillMaxWidth().fillMaxHeight(.85f).padding(16.dp), shape = MaterialTheme.shapes.large) {
             Column(Modifier.padding(16.dp)) {
-                Text("Transactions to discuss", style = MaterialTheme.typography.titleLarge)
-                Text("Select up to 200 transactions for your next message.", style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.assistant_transactions_to_discuss), style = MaterialTheme.typography.titleLarge)
+                Text(stringResource(R.string.assistant_select_up_to), style = MaterialTheme.typography.bodySmall)
                 if (transactions == null) LinearProgressIndicator(Modifier.fillMaxWidth())
                 LazyColumn(Modifier.weight(1f)) {
                     items(transactions.orEmpty(), key = { it.text("id") }) { row ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(row.text("id") in selectedIds, { checked -> selected = if (checked) selected + row.text("id") else selected - row.text("id") }, enabled = row.text("id") in selectedIds || selected.size < 200)
-                            Column { Text(row.text("payee")); Text("${row.text("date")} · ${money(row.optLong("amount"), budget.text("currency"))}", style = MaterialTheme.typography.bodySmall) }
+                            Column { Text(Money.own(row.text("payee"))); Text("${Money.ltr(row.text("date"))} · ${money(row.optLong("amount"), budget.text("currency"))}", style = MaterialTheme.typography.bodySmall) }
                         }
                     }
                 }
-                Row { TextButton({ selected = emptyList() }) { Text("Clear") }; Spacer(Modifier.weight(1f)); Button({ contextPicker = false }) { Text("Done (${selected.size})") } }
+                Row { TextButton({ selected = emptyList() }) { Text(stringResource(R.string.assistant_clear)) }; Spacer(Modifier.weight(1f)); Button({ contextPicker = false }) { Text(stringResource(R.string.assistant_done_count, "${selected.size}")) } }
             }
         }
     }
     val error = exportError ?: state.error
-    if (error != null) AlertDialog(onDismissRequest = { controller.dismissError(); exportError = null }, title = { Text("Couldn’t complete that") }, text = { Text(error) },
-        confirmButton = { TextButton({ controller.dismissError(); exportError = null }) { Text("OK") } })
+    if (error != null) AlertDialog(onDismissRequest = { controller.dismissError(); exportError = null }, title = { Text(stringResource(R.string.assistant_error_title)) }, text = { Text(error) },
+        confirmButton = { TextButton({ controller.dismissError(); exportError = null }) { Text(stringResource(R.string.common_ok)) } })
 }
 
 @Composable
@@ -297,8 +301,8 @@ internal fun AssistantProposalCard(proposal: JSONObject, currency: String, busy:
     if (status == "applied" || status == "discarded") {
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
-                Text("${if (status == "applied") "✓ Applied" else "Discarded"}: ${proposal.text("title")}", style = MaterialTheme.typography.titleSmall)
-                if (status == "applied" && canUndo) TextButton(undo, enabled = !busy) { Text("Undo this proposal") }
+                Text(stringResource(if (status == "applied") R.string.assistant_applied_title else R.string.assistant_discarded_title, proposal.text("title")), style = MaterialTheme.typography.titleSmall)
+                if (status == "applied" && canUndo) TextButton(undo, enabled = !busy) { Text(stringResource(R.string.assistant_undo_proposal)) }
             }
         }
         return
@@ -318,41 +322,47 @@ internal fun AssistantProposalCard(proposal: JSONObject, currency: String, busy:
             }
             card.optJSONObject("total")?.let { ProposalRow(it, currency, busy) }
             if (pages > 1) Row {
-                TextButton({ page = currentPage - 1 }, enabled = currentPage > 0) { Text("Previous rows") }
-                Text("${currentPage + 1} / $pages", Modifier.padding(12.dp))
-                TextButton({ page = currentPage + 1 }, enabled = currentPage + 1 < pages) { Text("Next rows") }
+                TextButton({ page = currentPage - 1 }, enabled = currentPage > 0) { Text(stringResource(R.string.assistant_previous_rows)) }
+                Text(stringResource(R.string.assistant_page, "${currentPage + 1}", "$pages"), Modifier.padding(12.dp))
+                TextButton({ page = currentPage + 1 }, enabled = currentPage + 1 < pages) { Text(stringResource(R.string.assistant_next_rows)) }
             }
-            if (card.optInt("more") > 0) Text("${card.optInt("more")} more rows", style = MaterialTheme.typography.labelSmall)
-            card.optJSONArray("check")?.let { Text((if (it.optBoolean(0)) "✓ " else "Check: ") + it.optString(1), color = if (it.optBoolean(0)) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error) }
+            if (card.optInt("more") > 0) Text(countText(R.plurals.assistant_more_rows, card.optInt("more")), style = MaterialTheme.typography.labelSmall)
+            card.optJSONArray("check")?.let { Text(if (it.optBoolean(0)) "✓ " + it.optString(1) else stringResource(R.string.assistant_check, it.optString(1)), color = if (it.optBoolean(0)) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error) }
             listOf("warning", "note").forEach { if (card.text(it).isNotEmpty()) Text(card.text(it), style = MaterialTheme.typography.bodySmall) }
             if (proposal.text("problem").isNotEmpty() && proposal.text("kind") != "fix") Text(proposal.text("problem"), color = MaterialTheme.colorScheme.error)
-            if (status == "failed") TextButton(discard, enabled = !busy) { Text("Dismiss") }
+            if (status == "failed") TextButton(discard, enabled = !busy) { Text(stringResource(R.string.assistant_dismiss)) }
             else when (proposal.text("kind")) {
                 // Fixes for a bank file being imported: the import applies them, each only to a line that hasn't changed.
                 "fix" -> if (status == "proposed" || status == "undone") {
                     Button(applyFix ?: {}, enabled = !busy && applyFix != null && !(choosing && chosen == 0)) {
-                        Text(if (applyFix == null) "Apply from the import" else partial?.let { "$it to the import" } ?: "Apply to the import")
+                        Text(when {
+                            applyFix == null -> stringResource(R.string.assistant_fix_apply_from_import)
+                            partial != null -> stringResource(R.string.assistant_fix_apply_some, "${partial.chosen}", "${partial.total}")
+                            else -> stringResource(R.string.assistant_fix_apply)
+                        })
                     }
-                    Text(if (applyFix != null) "Each applies only to a line that hasn't changed." else "Open the import these fixes are for.", style = MaterialTheme.typography.bodySmall)
-                    Row { TextButton(refine, enabled = !busy) { Text("Ask for changes") }; TextButton(discard, enabled = !busy) { Text("Discard") } }
-                    if (original != null) TextButton(original, enabled = !busy) { Text("Use the assistant's version") }
-                } else Text(if (status == "applied") "✓ Applied to the import" else "Discarded", style = MaterialTheme.typography.labelMedium)
-                "report" -> Button(report, enabled = !busy) { Text("Read report · Print / PDF") }
-                "import" -> { Button(reviewImport, enabled = !busy) { Text("Review ${proposal.optInt("rows")} import rows") }; TextButton(saveImport) { Text("Export converted CSV") } }
-                "spreadsheet" -> { Button({ spreadsheet(true) }, enabled = !busy) { Text("Open spreadsheet") }; TextButton({ spreadsheet(false) }) { Text("Export Excel file") } }
+                    Text(stringResource(if (applyFix != null) R.string.assistant_fix_each_line else R.string.assistant_fix_open_import), style = MaterialTheme.typography.bodySmall)
+                    Row { TextButton(refine, enabled = !busy) { Text(stringResource(R.string.assistant_ask_changes)) }; TextButton(discard, enabled = !busy) { Text(stringResource(R.string.assistant_discard)) } }
+                    if (original != null) TextButton(original, enabled = !busy) { Text(stringResource(R.string.assistant_use_original)) }
+                } else Text(stringResource(if (status == "applied") R.string.assistant_fix_applied else R.string.assistant_discarded), style = MaterialTheme.typography.labelMedium)
+                "report" -> Button(report, enabled = !busy) { Text(stringResource(R.string.assistant_read_report)) }
+                "import" -> { Button(reviewImport, enabled = !busy) { Text(countText(R.plurals.assistant_review_import_rows, proposal.optInt("rows"))) }; TextButton(saveImport) { Text(stringResource(R.string.assistant_export_csv)) } }
+                "spreadsheet" -> { Button({ spreadsheet(true) }, enabled = !busy) { Text(stringResource(R.string.assistant_open_spreadsheet)) }; TextButton({ spreadsheet(false) }) { Text(stringResource(R.string.assistant_export_excel)) } }
                 else -> when (status) {
                     "proposed", "undone" -> {
-                        Button(apply, enabled = !busy && !(choosing && chosen == 0)) { Text(partial ?: "Apply reviewed changes") }
-                        Row { TextButton(refine, enabled = !busy) { Text("Ask for changes") }; TextButton(discard, enabled = !busy) { Text("Discard") } }
-                        if (original != null) TextButton(original, enabled = !busy) { Text("Use the assistant's version") }
+                        Button(apply, enabled = !busy && !(choosing && chosen == 0)) {
+                            Text(if (partial != null) stringResource(R.string.assistant_apply_some, "${partial.chosen}", "${partial.total}") else stringResource(R.string.assistant_apply_changes))
+                        }
+                        Row { TextButton(refine, enabled = !busy) { Text(stringResource(R.string.assistant_ask_changes)) }; TextButton(discard, enabled = !busy) { Text(stringResource(R.string.assistant_discard)) } }
+                        if (original != null) TextButton(original, enabled = !busy) { Text(stringResource(R.string.assistant_use_original)) }
                     }
-                    "applied" -> { Text("✓ Applied", color = MaterialTheme.colorScheme.primary); if (canUndo) TextButton(undo, enabled = !busy) { Text("Undo this proposal") } }
-                    "discarded" -> Text("Discarded", style = MaterialTheme.typography.labelMedium)
-                    "failed" -> Text("Could not apply", color = MaterialTheme.colorScheme.error)
+                    "applied" -> { Text(stringResource(R.string.assistant_applied), color = MaterialTheme.colorScheme.primary); if (canUndo) TextButton(undo, enabled = !busy) { Text(stringResource(R.string.assistant_undo_proposal)) } }
+                    "discarded" -> Text(stringResource(R.string.assistant_discarded), style = MaterialTheme.typography.labelMedium)
+                    "failed" -> Text(stringResource(R.string.assistant_could_not_apply), color = MaterialTheme.colorScheme.error)
                 }
             }
-            if (proposal.text("kind") == "report" && proposal.optInt("sheets") > 0) TextButton({ spreadsheet(false) }) { Text("Export report tables to Excel") }
-            if (status != "failed" && proposal.text("kind") in listOf("report", "spreadsheet", "import")) TextButton(discard, enabled = !busy) { Text("Discard") }
+            if (proposal.text("kind") == "report" && proposal.optInt("sheets") > 0) TextButton({ spreadsheet(false) }) { Text(stringResource(R.string.assistant_export_report_tables)) }
+            if (status != "failed" && proposal.text("kind") in listOf("report", "spreadsheet", "import")) TextButton(discard, enabled = !busy) { Text(stringResource(R.string.assistant_discard)) }
         }
     }
 }
@@ -366,8 +376,9 @@ internal fun AssistantProposalCard(proposal: JSONObject, currency: String, busy:
 private fun ProposalRow(row: JSONObject, currency: String, busy: Boolean, toggle: (() -> Unit)? = null, change: (() -> Unit)? = null) {
     val skipped = row.optBoolean("skipped")
     val label = row.text("label")
+    val applyLabel = stringResource(R.string.assistant_apply_row, label)
     Row(Modifier.padding(start = if (row.optBoolean("indent")) 16.dp else 0.dp).alpha(if (skipped) .5f else 1f), verticalAlignment = Alignment.CenterVertically) {
-        if (toggle != null) Checkbox(!skipped, { toggle() }, Modifier.semantics { contentDescription = "Apply: $label" }, enabled = !busy)
+        if (toggle != null) Checkbox(!skipped, { toggle() }, Modifier.semantics { contentDescription = applyLabel }, enabled = !busy)
         Column(Modifier.weight(1f)) {
             Row {
                 Text(label, Modifier.weight(1f), textDecoration = if (skipped) TextDecoration.LineThrough else null)
@@ -375,10 +386,10 @@ private fun ProposalRow(row: JSONObject, currency: String, busy: Boolean, toggle
                     color = if (row.optBoolean("edited")) MaterialTheme.colorScheme.primary else Color.Unspecified)
             }
             if (row.text("detail").isNotEmpty()) Text(row.text("detail"), style = MaterialTheme.typography.bodySmall)
-            if (row.has("before") || row.has("after")) Text("${money(row.optLong("before"), currency)} → ${money(row.optLong("after"), currency)}", style = MaterialTheme.typography.bodySmall)
+            if (row.has("before") || row.has("after")) Text(stringResource(R.string.change_from_to, money(row.optLong("before"), currency), money(row.optLong("after"), currency)), style = MaterialTheme.typography.bodySmall)
             if (row.text("badge").isNotEmpty()) Text(row.text("badge"), style = MaterialTheme.typography.labelSmall, color = if (row.text("tone") == "warn") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
         }
-        if (change != null) IconButton(change, enabled = !busy) { Icon(Icons.Outlined.Edit, "Change $label") }
+        if (change != null) IconButton(change, enabled = !busy) { Icon(Icons.Outlined.Edit, stringResource(R.string.assistant_change_row, label)) }
     }
 }
 
@@ -396,17 +407,20 @@ internal fun ProposalRowEditor(row: JSONObject, budget: JSONObject, summary: JSO
     var problem by remember { mutableStateOf<String?>(null) }
     var picking by remember { mutableStateOf(false) }
     val names = remember(budget) { budget.rows("categories").associate { it.text("id") to it.text("name") } }
-    FormDialog("Change $label", close, onConfirm = {
+    val amountRequired = stringResource(R.string.assistant_amount_required)
+    FormDialog(stringResource(R.string.assistant_change_row, label), close, onConfirm = {
         runCatching { ProposalChoices.edit(row, category.takeUnless { it == Unassigned }, amount) }
             .onSuccess { change -> if (change == null) close() else save(change) }
-            .onFailure { problem = it.message ?: "Enter an amount." }
+            .onFailure { problem = it.message ?: amountRequired }
     }) {
         if (row.text("detail").isNotEmpty()) Text(row.text("detail"), style = MaterialTheme.typography.bodyMedium, color = ur.muted)
-        if (edit.optBoolean("category")) PickerField("Category", if (category == Unassigned) "Unassigned" else names[category] ?: "Deleted category", "Choose a category", { picking = true })
-        if (edit.optBoolean("amount")) Field(amount, { amount = it; problem = null }, "Amount", numeric = true)
+        if (edit.optBoolean("category")) PickerField(stringResource(R.string.category_label),
+            if (category == Unassigned) stringResource(R.string.category_unassigned) else names[category] ?: stringResource(R.string.category_deleted),
+            stringResource(R.string.category_choose_a), { picking = true })
+        if (edit.optBoolean("amount")) Field(amount, { amount = it; problem = null }, stringResource(R.string.amount_label), numeric = true)
         problem?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = ur.negative) }
     }
-    if (picking) CategoryPickerSheet(budget, summary, month, category, "Category for $label", includeUnassigned = true, includePayment = false,
+    if (picking) CategoryPickerSheet(budget, summary, month, category, stringResource(R.string.assistant_category_for, label), includeUnassigned = true, includePayment = false,
         onPick = { category = it; picking = false }) { picking = false }
 }
 
@@ -442,15 +456,15 @@ private fun AssistantReportDialog(report: JSONObject, close: () -> Unit, export:
         Surface(Modifier.fillMaxSize().padding(12.dp), shape = MaterialTheme.shapes.large) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(report.text("title"), style = MaterialTheme.typography.headlineSmall)
-                Text("${report.text("budget")} · ${report.text("period")} · ${report.text("created").take(10)}", style = MaterialTheme.typography.labelMedium)
+                Text("${Money.own(report.text("budget"))} · ${Money.own(report.text("period"))} · ${Money.ltr(report.text("created").take(10))}", style = MaterialTheme.typography.labelMedium)
                 SelectionContainer(Modifier.weight(1f)) { AssistantMarkdownDocument(report.text("body"), Modifier.fillMaxSize()) }
                 Row(Modifier.fillMaxWidth()) {
-                    TextButton(export, Modifier.weight(1f)) { Text("Save text") }
-                    TextButton({ context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_SUBJECT, report.text("title")).putExtra(Intent.EXTRA_TEXT, report.text("body")), "Share report")) }, Modifier.weight(1f)) { Text("Share") }
+                    TextButton(export, Modifier.weight(1f)) { Text(stringResource(R.string.assistant_save_text)) }
+                    TextButton({ context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_SUBJECT, report.text("title")).putExtra(Intent.EXTRA_TEXT, report.text("body")), context.getString(R.string.assistant_share_report))) }, Modifier.weight(1f)) { Text(stringResource(R.string.assistant_share)) }
                 }
                 Row(Modifier.fillMaxWidth()) {
-                    TextButton({ printAssistantReport(context, report) }, Modifier.weight(1f)) { Text("Print / PDF") }
-                    TextButton(close, Modifier.weight(1f)) { Text("Done") }
+                    TextButton({ printAssistantReport(context, report) }, Modifier.weight(1f)) { Text(stringResource(R.string.assistant_print)) }
+                    TextButton(close, Modifier.weight(1f)) { Text(stringResource(R.string.common_done)) }
                 }
             }
         }
@@ -462,9 +476,9 @@ private fun AssistantReplyReportDialog(initial: String, controller: AssistantCon
     val state by controller.state.collectAsStateWithLifecycle()
     var text by remember { mutableStateOf(initial) }
     var reason by remember { mutableStateOf("") }
-    FormDialog("Report a reply", close, "Send report", { controller.reportReply(text, reason, close) }, text.isNotBlank() && "reportReply" !in state.busy) {
-        Text("Only the excerpt and explanation below will be sent to UrBudget. Edit out anything private before sending.")
-        Field(text, { text = it.take(4000) }, "Selected excerpt", lines = 8)
-        Field(reason, { reason = it.take(1000) }, "What went wrong?", lines = 4)
+    FormDialog(stringResource(R.string.assistant_report_a_reply), close, stringResource(R.string.assistant_send_report), { controller.reportReply(text, reason, close) }, text.isNotBlank() && "reportReply" !in state.busy) {
+        Text(stringResource(R.string.assistant_report_note))
+        Field(text, { text = it.take(4000) }, stringResource(R.string.assistant_excerpt), lines = 8)
+        Field(reason, { reason = it.take(1000) }, stringResource(R.string.assistant_what_went_wrong), lines = 4)
     }
 }

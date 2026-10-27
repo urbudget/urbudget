@@ -5,6 +5,7 @@ import { Tabs } from "../ui";
 import { useSteady } from "../useSteady";
 import { LineTable, type LineOps } from "./LineTable";
 import { fixesFor, readings, restructure, roles, shown, withRole, type Filter } from "./model";
+import { t, tc, tn } from "../i18n";
 
 /** A change to the import, made against it as it is when it's made. */
 type Build = (session: BankSession, statement: Statement) => BankFixes;
@@ -56,16 +57,20 @@ export function StatementGrid({
   const role = useMemo(() => (table ? roles(statement.headers, statement.columns) : []), [table, statement.headers, statement.columns]);
   const s = session.structure;
 
-  // Changes read the import as it is now. One asked for while another applies waits for it, then
-  // is made against the import as it left it (the latest one asked for, if several were).
+  // Changes read the import as it is now. Those asked for while another applies wait for it, in
+  // turn, each made against the import as the one before it left it.
   const latest = useRef({ session, statement, onFix, busy });
   latest.current = { session, statement, onFix, busy };
-  const queued = useRef<Build | null>(null);
-  const ops = useMemo<LineOps & { send: (build: Build) => void }>(() => {
-    const send = (build: Build) => {
+  const queued = useRef<Build[]>([]);
+  const ops = useMemo<LineOps & { send: (build: Build) => void; next: () => void }>(() => {
+    const next = () => {
       const now = latest.current;
-      if (now.busy) queued.current = build;
-      else now.onFix(build(now.session, now.statement));
+      const build = now.busy ? undefined : queued.current.shift();
+      if (build) now.onFix(build(now.session, now.statement));
+    };
+    const send = (build: Build) => {
+      queued.current.push(build);
+      next();
     };
     // Lines' changes, as one, against the lines as they read when it's made.
     const onLines = (lines: StatementLine[], change: (ls: StatementLine[]) => Parameters<typeof fixesFor>[1]) =>
@@ -75,9 +80,11 @@ export function StatementGrid({
       });
     return {
       send,
+      next,
+      // Each from the value it was changed from, so the engine turns away one changed meanwhile.
       cells: (line, changes) =>
         onLines([line], ([l]) => ({
-          cells: changes.map(({ column, to }) => ({ line: l.id, lineVersion: l.version, column, from: l.cells[column] ?? "", to })),
+          cells: changes.map(({ column, from, to }) => ({ line: l.id, lineVersion: l.version, column, from, to })),
         })),
       include: (lines, on) => onLines(lines, (ls) => ({ include: ls.map((l) => ({ line: l.id, lineVersion: l.version, include: on })) })),
       revert: (lines) => onLines(lines, (ls) => ({ revert: ls.map((l) => ({ line: l.id, lineVersion: l.version })) })),
@@ -90,11 +97,9 @@ export function StatementGrid({
       role: (column, r) => send((now, st) => restructure(now, { columns: withRole(st.headers, st.columns, column, r) })),
     };
   }, []);
+  // The next one waiting, once the one before it has applied and the file reads again.
   useEffect(() => {
-    if (busy || !queued.current) return;
-    const build = queued.current;
-    queued.current = null;
-    onFix(build(session, statement));
+    if (!busy) ops.next();
   }, [busy]);
 
   const act = ops.send;
@@ -115,7 +120,7 @@ export function StatementGrid({
       <div className="statement-bar">
         {sources.length > 1 && (
           <label className="statement-source">
-            Account in the file
+            {t("Account in the file")}
             <select
               value={statement.source ?? 0}
               disabled={slow}
@@ -127,7 +132,7 @@ export function StatementGrid({
               {sources.map((source, i) => (
                 <option key={source.label} value={i}>
                   {source.label}
-                  {source.currency ? ` · ${source.currency}` : ""} · {source.lines} {source.lines === 1 ? "line" : "lines"}
+                  {source.currency ? ` · ${source.currency}` : ""} · {tn(source.lines, "{count} line", "{count} lines")}
                 </option>
               ))}
             </select>
@@ -136,16 +141,20 @@ export function StatementGrid({
         {answered && (
           // Answered once, the date order stays one choice away.
           <label className="statement-choice">
-            Dates
+            {t("Dates")}
             <select value={answered.order} disabled={slow} onChange={(e) => order(e.target.value as "dmy" | "mdy")}>
-              <option value="dmy">Day first{named ? ` (${answered.example} is ${named.dmy})` : ""}</option>
-              <option value="mdy">Month first{named ? ` (${answered.example} is ${named.mdy})` : ""}</option>
+              <option value="dmy">
+                {named ? t("Day first ({example} is {date})", { example: answered.example, date: named.dmy }) : t("Day first")}
+              </option>
+              <option value="mdy">
+                {named ? t("Month first ({example} is {date})", { example: answered.example, date: named.mdy }) : t("Month first")}
+              </option>
             </select>
           </label>
         )}
         {statement.signs && !statement.signs.unconfirmed && (
           <label className="statement-choice">
-            Money out
+            {t("Money out")}
             <select
               value={statement.signs.byType ? "type" : "written"}
               disabled={slow}
@@ -154,8 +163,8 @@ export function StatementGrid({
                 act((now) => restructure(now, { signsByType }));
               }}
             >
-              <option value="type">Told by the transaction types</option>
-              <option value="written">As the amounts are written</option>
+              <option value="type">{t("Told by the transaction types")}</option>
+              <option value="written">{t("As the amounts are written")}</option>
             </select>
           </label>
         )}
@@ -163,9 +172,9 @@ export function StatementGrid({
           // Some card issuers write a purchase as a positive number and a payment as a negative one.
           <label
             className="statement-choice"
-            title="How the file writes a purchase. Card statements often write purchases as positive numbers and payments as negative ones; choosing that turns every amount's sign."
+            title={t("How the file writes a purchase. Card statements often write purchases as positive numbers and payments as negative ones; choosing that turns every amount's sign.")}
           >
-            Purchases in the file
+            {t("Purchases in the file")}
             <select
               value={s.flipSigns ? "positive" : "negative"}
               disabled={slow}
@@ -175,8 +184,8 @@ export function StatementGrid({
                 act((now) => restructure(now, { flipSigns }));
               }}
             >
-              <option value="negative">Negative, as bank accounts write them</option>
-              <option value="positive">Positive, as many card statements write them</option>
+              <option value="negative">{t("Negative, as bank accounts write them")}</option>
+              <option value="positive">{t("Positive, as many card statements write them")}</option>
             </select>
           </label>
         )}
@@ -185,8 +194,9 @@ export function StatementGrid({
         <p className="statement-question" role="status">
           <AlertTriangle size={15} aria-hidden />
           <span>
-            The file's amounts are in {elsewhere}. Include a line to enter its amount in your budget's currency, or import the file into a
-            budget in {elsewhere}.
+            {t("The file's amounts are in {currency}. Include a line to enter its amount in your budget's currency, or import the file into a budget in {currency}.", {
+              currency: elsewhere,
+            })}
           </span>
         </p>
       )}
@@ -194,16 +204,17 @@ export function StatementGrid({
         <p className="statement-question" role="status">
           <AlertTriangle size={15} aria-hidden />
           <span>
-            This account's amounts are in {statement.currency}. Choose another account in the file, or include its lines with their amounts
-            in your budget's currency.
+            {t("This account's amounts are in {currency}. Choose another account in the file, or include its lines with their amounts in your budget's currency.", {
+              currency: statement.currency,
+            })}
           </span>
         </p>
       )}
       {question && (
-        <div className="statement-question" role="group" aria-label="Date order">
+        <div className="statement-question" role="group" aria-label={t("Date order")}>
           <AlertTriangle size={15} aria-hidden />
           <span>
-            The dates don't say whether the day or the month comes first: is <b>{question.example}</b>
+            {t("The dates don't say whether the day or the month comes first: is {example}", { example: <b>{question.example}</b> })}
           </span>
           <span className="statement-answers">
             {(["dmy", "mdy"] as const).map((o) => (
@@ -213,35 +224,35 @@ export function StatementGrid({
                 disabled={slow}
                 onClick={() => order(o)}
               >
-                {named ? named[o] : o === "dmy" ? "Day first" : "Month first"}
+                {named ? named[o] : o === "dmy" ? t("Day first") : t("Month first")}
               </button>
             ))}
           </span>
         </div>
       )}
       {statement.signs?.unconfirmed && (
-        <div className="statement-question" role="group" aria-label="Signs">
+        <div className="statement-question" role="group" aria-label={t("Signs")}>
           <AlertTriangle size={15} aria-hidden />
-          <span>Every amount that reads is positive. Is money out told by the transaction types (DEBIT, POS…)?</span>
+          <span>{t("Every amount that reads is positive. Is money out told by the transaction types (DEBIT, POS…)?")}</span>
           <span className="statement-answers">
             <button className="primary small" disabled={slow} onClick={() => act((now) => restructure(now, { signsByType: true }))}>
-              Yes, use the types
+              {t("Yes, use the types")}
             </button>
             <button className="secondary small" disabled={slow} onClick={() => act((now) => restructure(now, { signsByType: false }))}>
-              No, as written
+              {t("No, as written")}
             </button>
           </span>
         </div>
       )}
       <Tabs
-        label="Show lines"
+        label={t("Show lines")}
         value={filter}
         onChange={setFilter}
         tabs={[
-          { id: "all", label: "All", count: counts.all },
-          { id: "attention", label: "Need attention", count: counts.attention },
-          { id: "leftOut", label: "Left out", count: counts.leftOut },
-          { id: "edited", label: "Edited", count: counts.edited },
+          { id: "all", label: tc("lines", "All"), count: counts.all },
+          { id: "attention", label: t("Need attention"), count: counts.attention },
+          { id: "leftOut", label: t("Left out"), count: counts.leftOut },
+          { id: "edited", label: t("Edited"), count: counts.edited },
         ]}
       />
       <div className="statement-grid-frame">
@@ -259,9 +270,9 @@ export function StatementGrid({
           ops={ops}
           empty={
             <p className="help">
-              {filter === "attention" ? "Every line reads now. " : filter === "edited" ? "Nothing changed yet. " : "No lines here. "}
+              {filter === "attention" ? t("Every line reads now.") : filter === "edited" ? t("Nothing changed yet.") : t("No lines here.")}{" "}
               <button className="link-button" onClick={() => setFilter("all")}>
-                Show all lines
+                {t("Show all lines")}
               </button>
             </p>
           }
@@ -270,20 +281,22 @@ export function StatementGrid({
       <div className="form-actions statement-actions">
         <span className="help" role="status">
           {checking
-            ? "Checking the lines against your budget…"
+            ? t("Checking the lines against your budget…")
             : question
-              ? "Say whether the day or the month comes first, above, to continue."
+              ? t("Say whether the day or the month comes first, above, to continue.")
               : statement.signs?.unconfirmed
-                ? "Say how the file tells money out, above, to continue."
+                ? t("Say how the file tells money out, above, to continue.")
                 : !statement.counts.ready
-                  ? "No line reads yet."
-                  : `${statement.counts.ready} ${statement.counts.ready === 1 ? "line reads" : "lines read"}${
-                      attention > 0 ? ` · ${attention} ${attention === 1 ? "needs" : "need"} attention and won't be imported` : ""
+                  ? t("No line reads yet.")
+                  : `${tn(statement.counts.ready, "{count} line reads", "{count} lines read")}${
+                      attention > 0
+                        ? ` · ${tn(attention, "{count} needs attention and won't be imported", "{count} need attention and won't be imported")}`
+                        : ""
                     }`}
         </span>
         {onAssistant && attention > 0 && (
           <button className="secondary" disabled={slow} onClick={onAssistant}>
-            <MessageSquareText size={14} /> Fix with the assistant
+            <MessageSquareText size={14} /> {t("Fix with the assistant")}
           </button>
         )}
         <button
@@ -293,7 +306,7 @@ export function StatementGrid({
           onClick={onContinue}
         >
           {checking && <LoaderCircle size={14} className="spin" aria-hidden />}
-          Continue to the review
+          {t("Continue to the review")}
         </button>
       </div>
     </div>

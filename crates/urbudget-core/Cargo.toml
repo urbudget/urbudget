@@ -1,6 +1,6 @@
 [package]
 name = "urbudget-core"
-version = "1.0.8"
+version = "1.0.9"
 description = "Shared platform-independent UrBudget accounting, imports, and persistence"
 edition = "2021"
 license = "AGPL-3.0-or-later"

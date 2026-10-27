@@ -109,7 +109,7 @@ fn decodes_setup_tokens_and_refuses_anything_else() {
     assert_eq!(claim_url(&format!(" {a}\n{b} ")).unwrap().as_str(), url);
     assert_eq!(claim_url(token.trim_end_matches('=')).unwrap().as_str(), url);
     for bad in ["", "not a token", &STANDARD.encode("hello"), &STANDARD.encode("http://example.com/claim/x"), &STANDARD.encode("ftp://example.com/x")] {
-        assert_eq!(claim_url(bad).unwrap_err(), BAD_TOKEN, "{bad}");
+        assert_eq!(claim_url(bad).unwrap_err(), bad_token(), "{bad}");
     }
     // Plain http reaches only this computer, and only in tests and debug builds.
     assert!(claim_url(&STANDARD.encode("http://127.0.0.1:9/claim/x")).is_ok());
@@ -460,7 +460,7 @@ fn claims_a_setup_token_once() {
     let access = run(claim(&http, claim_url(&token).unwrap())).unwrap();
     assert_eq!(access, "http://demo:secret@127.0.0.1:1/simplefin");
     // A second claim means someone already has the access: the user is told so.
-    assert_eq!(run(claim(&http, claim_url(&token).unwrap())).unwrap_err(), TOKEN_USED);
+    assert_eq!(run(claim(&http, claim_url(&token).unwrap())).unwrap_err(), token_used());
     assert_eq!(fake.seen.lock().unwrap().len(), 2);
 }
 
@@ -544,10 +544,10 @@ fn says_plainly_when_simplefin_refuses() {
     assert_eq!(e, "SimpleFIN needs a payment before it sends more. Check your subscription at SimpleFIN Bridge, then sync again.");
     let broken = serve(|_, _| (200, "{not json".into()));
     let access = Access::parse(&(broken.url.replace("http://", "http://demo:x@") + "/simplefin")).unwrap();
-    assert_eq!(run(download(&http().unwrap(), &access, &[(0, 1)])).err().unwrap(), UNREADABLE);
+    assert_eq!(run(download(&http().unwrap(), &access, &[(0, 1)])).err().unwrap(), unreadable());
     // Nothing listening.
     let access = Access::parse("http://demo:x@127.0.0.1:9/simplefin").unwrap();
-    assert_eq!(run(download(&http().unwrap(), &access, &[(0, 1)])).err().unwrap(), OFFLINE);
+    assert_eq!(run(download(&http().unwrap(), &access, &[(0, 1)])).err().unwrap(), offline());
     // A redirect isn't followed with the credentials.
     let moved = serve(|_, _| (302, String::new()));
     let access = Access::parse(&(moved.url.replace("http://", "http://demo:x@") + "/simplefin")).unwrap();

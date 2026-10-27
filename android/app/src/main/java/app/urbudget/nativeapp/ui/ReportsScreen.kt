@@ -35,7 +35,7 @@ import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Category
-import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.HourglassBottom
 import androidx.compose.material.icons.outlined.Payments
@@ -74,7 +74,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
 import app.urbudget.nativeapp.BalancesView
+import app.urbudget.nativeapp.R
+import app.urbudget.nativeapp.Words
 import app.urbudget.nativeapp.BudgetViewModel
 import app.urbudget.nativeapp.DrillModel
 import app.urbudget.nativeapp.DrillTarget
@@ -123,26 +126,28 @@ import java.time.LocalDate
 import java.time.YearMonth
 import kotlin.math.abs
 
-/** A report: its page name, its chip name where the group already says the rest, and whether the Categories filter applies. */
-private data class ReportInfo(val id: String, val label: String, val short: String?, val group: String, val icon: ImageVector, val blurb: String,
+/**
+ * A report: its page name, its chip name where the group already says the rest, and whether the
+ * Categories filter applies. Groups are kept by English key; the words are string resources.
+ */
+private data class ReportInfo(val id: String, val label: Int, val short: Int?, val group: String, val icon: ImageVector, val blurb: Int,
                               val categories: Boolean = false)
 
 private val ReportList = listOf(
-    ReportInfo("categories", "Spending by category", "By category", "Spending", Icons.Outlined.PieChart,
-        "Where your money went, by group and category, and how last month compares.", true),
-    ReportInfo("payees", "Spending by payee", "By payee", "Spending", Icons.Outlined.Storefront, "Who you pay most, and how often.", true),
-    ReportInfo("trends", "Spending over time", "Over time", "Spending", Icons.Outlined.BarChart, "Spending month by month, by group or in total.", true),
-    ReportInfo("calendar", "Spending calendar", "Calendar", "Spending", Icons.Outlined.CalendarMonth, "Spending day by day: busy days, quiet days and weekdays.", true),
-    ReportInfo("incomeExpense", "Income vs. expense", null, "Income", Icons.AutoMirrored.Outlined.CompareArrows, "Income, spending and the surplus left in your budget.", true),
-    ReportInfo("income", "Income breakdown", null, "Income", Icons.Outlined.Payments, "Where your income comes from, and how steady it is."),
-    ReportInfo("cashflow", "Money in and out", null, "Income", Icons.Outlined.SwapHoriz, "Account movements across your budget boundary, including credit purchases.", true),
-    ReportInfo("networth", "Net worth", null, "Wealth", Icons.AutoMirrored.Outlined.ShowChart, "What you own minus what you owe, month by month."),
-    ReportInfo("balance", "Balance sheet", null, "Wealth", Icons.Outlined.AccountBalance, "Assets and liabilities by type, with the ratios that matter."),
-    ReportInfo("balances", "Balance over time", null, "Wealth", Icons.Outlined.StackedLineChart, "Each account's balance at the end of every month."),
-    ReportInfo("forecast", "Forecast", null, "Wealth", Icons.Outlined.Timeline, "Where your cash and card balances are heading, from what's scheduled."),
-    ReportInfo("age", "Cash age", null, "Wealth", Icons.Outlined.HourglassBottom, "How long money waits in your accounts before you spend it."),
+    ReportInfo("categories", R.string.reports_categories, R.string.reports_categories_short, "Spending", Icons.Outlined.PieChart, R.string.reports_categories_blurb, true),
+    ReportInfo("payees", R.string.reports_payees, R.string.reports_payees_short, "Spending", Icons.Outlined.Storefront, R.string.reports_payees_blurb, true),
+    ReportInfo("trends", R.string.reports_trends, R.string.reports_trends_short, "Spending", Icons.Outlined.BarChart, R.string.reports_trends_blurb, true),
+    ReportInfo("calendar", R.string.reports_calendar, R.string.reports_calendar_short, "Spending", Icons.Outlined.CalendarMonth, R.string.reports_calendar_blurb, true),
+    ReportInfo("incomeExpense", R.string.reports_income_expense, null, "Income", Icons.AutoMirrored.Outlined.CompareArrows, R.string.reports_income_expense_blurb, true),
+    ReportInfo("income", R.string.reports_income, null, "Income", Icons.Outlined.Payments, R.string.reports_income_blurb),
+    ReportInfo("cashflow", R.string.reports_cash_flow, null, "Income", Icons.Outlined.SwapHoriz, R.string.reports_cash_flow_blurb, true),
+    ReportInfo("networth", R.string.net_worth, null, "Wealth", Icons.AutoMirrored.Outlined.ShowChart, R.string.reports_net_worth_blurb),
+    ReportInfo("balance", R.string.reports_balance_sheet, null, "Wealth", Icons.Outlined.AccountBalance, R.string.reports_balance_sheet_blurb),
+    ReportInfo("balances", R.string.reports_balances, null, "Wealth", Icons.Outlined.StackedLineChart, R.string.reports_balances_blurb),
+    ReportInfo("forecast", R.string.report_forecast, null, "Wealth", Icons.Outlined.Timeline, R.string.reports_forecast_blurb),
+    ReportInfo("age", R.string.report_cash_age, null, "Wealth", Icons.Outlined.HourglassBottom, R.string.reports_age_blurb),
 )
-private val ReportGroups = listOf("Spending", "Income", "Wealth")
+private val ReportGroups = listOf("Spending" to R.string.report_spending, "Income" to R.string.report_income, "Wealth" to R.string.reports_group_wealth)
 
 private val RangeSaver = listSaver<MonthRange, String>({ listOf(it.preset.name, it.from, it.to) },
     { MonthRange(runCatching { RangePreset.valueOf(it[0]) }.getOrDefault(RangePreset.Custom), it[1], it[2]) })
@@ -159,19 +164,21 @@ private fun lastInGroup(saved: String, group: String) =
 private data class ReportKey(val budget: JSONObject, val from: String, val to: String, val accounts: List<String>, val categories: List<String>, val attempt: Int) {
     fun filter(): JSONObject = JSONObject().put("from", from).put("to", to).put("accountIds", JSONArray(accounts)).put("categoryIds", JSONArray(categories))
 }
-private data class OverviewKey(val budget: JSONObject, val month: String, val attempt: Int)
-private data class ViewKey(val data: ReportKey, val id: String, val options: ReportOptions, val scope: ReportScope)
+/** Models carry words, so each key holds the interface's language too: a new language rebuilds them. */
+private data class OverviewKey(val budget: JSONObject, val month: String, val attempt: Int, val language: Any?)
+private data class ViewKey(val data: ReportKey, val id: String, val options: ReportOptions, val scope: ReportScope, val language: Any?)
 private data class ForecastKey(val budget: JSONObject, val today: LocalDate, val months: Int, val accounts: List<String>, val attempt: Int)
-private data class ForecastViewKey(val data: ForecastKey, val everyday: Long?)
+private data class ForecastViewKey(val data: ForecastKey, val everyday: Long?, val language: Any?)
 private data class DrillRequest(val key: ReportKey, val target: DrillTarget)
 
-/** Parses a budget for reports once per snapshot, from whichever worker asks first. */
+/** Parses a budget for reports once per snapshot and language, from whichever worker asks first. */
 private class ReportBudgetCache {
-    private var last: Pair<JSONObject, ReportBudget>? = null
+    private var last: Triple<JSONObject, Any?, ReportBudget>? = null
     @Synchronized
     fun get(budget: JSONObject, today: LocalDate): ReportBudget {
-        last?.let { if (it.first === budget) return it.second }
-        return parseReportBudget(budget, today).also { last = budget to it }
+        val words = Words.source
+        last?.let { if (it.first === budget && it.second === words) return it.third }
+        return parseReportBudget(budget, today).also { last = Triple(budget, words, it) }
     }
 }
 
@@ -214,7 +221,7 @@ internal fun ReportsScreen(budget: JSONObject, report: JSONObject?, summary: JSO
     val today = remember { LocalDate.now() }
     val cache = remember { ReportBudgetCache() }
     // Names, groups and accounts for the filters; the last snapshot's stay until the next is read.
-    val context by produceState<ReportBudget?>(null, budget) { value = withContext(Dispatchers.Default) { cache.get(budget, today) } }
+    val context by produceState<ReportBudget?>(null, budget, languageKey()) { value = withContext(Dispatchers.Default) { cache.get(budget, today) } }
     BackHandler(open != null) { open = null }
     val choose: (String) -> Unit = { id ->
         ReportList.firstOrNull { it.id == id }?.let { info -> lastViews = rememberView(lastViews, info.group, id); open = id }
@@ -231,20 +238,20 @@ internal fun ReportsScreen(budget: JSONObject, report: JSONObject?, summary: JSO
 private fun ReportsOverview(budget: JSONObject, month: String, onMonth: (String) -> Unit, vm: BudgetViewModel, bar: @Composable RowScope.() -> Unit,
                             cache: ReportBudgetCache, today: LocalDate, onOpen: (String) -> Unit) {
     var attempt by remember { mutableIntStateOf(0) }
-    val key = OverviewKey(budget, month, attempt)
+    val key = OverviewKey(budget, month, attempt, languageKey())
     var result by remember { mutableStateOf<ScopedResult<OverviewModel?>?>(null) }
     var error by remember { mutableStateOf<ScopedResult<String>?>(null) }
     LaunchedEffect(key) {
         val filter = JSONObject().put("from", shiftMonth(key.month, -5)).put("to", key.month).put("accountIds", JSONArray()).put("categoryIds", JSONArray())
         vm.await("reports", filter).fold(
             { json -> result = ScopedResult(key, withContext(Dispatchers.Default) { overviewModel(parseReport(json), cache.get(key.budget, today)) }) },
-            { error = ScopedResult(key, it.message ?: "Reports could not be calculated.") })
+            { error = ScopedResult(key, it.message ?: Words[R.string.reports_failed]) })
     }
     val failed = error?.forScope(key)
     val current = result?.scope == key
     val model = result?.value
     Column(Modifier.fillMaxSize()) {
-        PhoneTopBar("Reports", actions = bar)
+        PhoneTopBar(stringResource(R.string.tab_reports), actions = bar)
         ProgressLine(failed == null && !current)
         CompositionLocalProvider(LocalStale provides !current) {
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Gutter, end = Gutter, bottom = DockRoom)) {
@@ -252,28 +259,28 @@ private fun ReportsOverview(budget: JSONObject, month: String, onMonth: (String)
                 if (failed != null) item(key = "error", contentType = "error") {
                     Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         FormError(failed)
-                        PrimaryButton("Retry reports", { attempt++ })
+                        PrimaryButton(stringResource(R.string.reports_retry_all), { attempt++ })
                     }
                 } else if (result == null) item(key = "loading", contentType = "loading") {
                     Box(Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = ur.accent) }
                 } else if (model != null) {
                     item(key = "spending", contentType = "card") { SpendingCard(model) { onOpen("categories") } }
                     item(key = "income", contentType = "card") {
-                        OverviewCard(Icons.AutoMirrored.Outlined.CompareArrows, "Income vs. spending", { onOpen("incomeExpense") }) {
+                        OverviewCard(Icons.AutoMirrored.Outlined.CompareArrows, stringResource(R.string.reports_income_vs_spending), { onOpen("incomeExpense") }) {
                             Lead(model.incomeLead)
                             MiniBars(model.incomeBars)
                         }
                     }
                     item(key = "networth", contentType = "card") {
-                        OverviewCard(Icons.AutoMirrored.Outlined.ShowChart, "Net worth", { onOpen("networth") }) {
+                        OverviewCard(Icons.AutoMirrored.Outlined.ShowChart, stringResource(R.string.net_worth), { onOpen("networth") }) {
                             BigFigure(model.netWorthText, if (model.netWorthNegative) ur.negative else ur.text)
-                            SplitRow("Assets", model.assetsText, ur.text)
-                            SplitRow("Debts", model.debtsText, if (model.debtsNegative) ur.negative else ur.text)
+                            SplitRow(stringResource(R.string.report_assets), model.assetsText, ur.text)
+                            SplitRow(stringResource(R.string.report_debts), model.debtsText, if (model.debtsNegative) ur.negative else ur.text)
                             MiniBars(model.netWorthBars)
                         }
                     }
                     item(key = "age", contentType = "card") {
-                        OverviewCard(Icons.Outlined.HourglassBottom, "Cash age", { onOpen("age") }) {
+                        OverviewCard(Icons.Outlined.HourglassBottom, stringResource(R.string.report_cash_age), { onOpen("age") }) {
                             BigFigure(model.ageText, ur.text)
                             MiniBars(model.ageBars)
                         }
@@ -290,12 +297,12 @@ private fun ReportsOverview(budget: JSONObject, month: String, onMonth: (String)
 private fun OverviewCard(icon: ImageVector, title: String, onOpen: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     CardPart(top = true, bottom = true) {
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = "Open $title", onClick = onOpen).heightIn(min = 40.dp),
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = stringResource(R.string.common_open_named, title), onClick = onOpen).heightIn(min = 40.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Icon(icon, null, Modifier.size(18.dp), tint = ur.accent)
                 Spacer(Modifier.width(8.dp))
                 Text(title, Modifier.weight(1f), color = ur.accent, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                Icon(Icons.Outlined.ChevronRight, null, Modifier.size(20.dp), tint = ur.muted)
+                Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(20.dp), tint = ur.muted)
             }
             content()
         }
@@ -325,8 +332,8 @@ private fun SpendList(rows: List<SpendRow>, dots: Boolean, head: Boolean) {
     val palette = reportPalette()
     Column {
         if (head) Row(Modifier.fillMaxWidth().heightIn(min = 26.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Top categories", Modifier.weight(1f), color = ur.text2, fontSize = 14.sp)
-            Text("Spent", color = ur.text2, fontSize = 14.sp)
+            Text(stringResource(R.string.reports_top_categories), Modifier.weight(1f), color = ur.text2, fontSize = 14.sp)
+            Text(stringResource(R.string.report_spent), color = ur.text2, fontSize = 14.sp)
         }
         rows.forEach { row ->
             Row(Modifier.fillMaxWidth().heightIn(min = 34.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -344,13 +351,13 @@ private fun SpendList(rows: List<SpendRow>, dots: Boolean, head: Boolean) {
 /** This month's spending: the total, a bar split by category, the top categories and any refunds. */
 @Composable
 private fun SpendingCard(model: OverviewModel, onOpen: () -> Unit) {
-    OverviewCard(Icons.Outlined.PieChart, "Spending breakdown", onOpen) {
+    OverviewCard(Icons.Outlined.PieChart, stringResource(R.string.reports_spending_breakdown), onOpen) {
         Text(model.monthName, color = ur.text2, fontSize = 15.sp)
         BigFigure(model.spendingText, ur.text)
         if (model.rows.isNotEmpty()) {
             SegmentBar(model.rows)
             SpendList(model.rows, dots = true, head = true)
-        } else if (model.nothingSpent) Lead("Nothing spent yet this month.")
+        } else if (model.nothingSpent) Lead(stringResource(R.string.reports_nothing_spent))
         model.refundLead?.let {
             Lead(it)
             SpendList(model.refunds, dots = false, head = false)
@@ -362,12 +369,12 @@ private fun SpendingCard(model: OverviewModel, onOpen: () -> Unit) {
 @Composable
 private fun AllReports(onOpen: (String) -> Unit) {
     CardPart(top = true, bottom = true, live = true) {
-        Text("All reports", Modifier.padding(start = 16.dp, top = 14.dp, bottom = 2.dp), color = ur.text, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-        ReportGroups.forEach { group ->
-            Text(group, Modifier.padding(start = 16.dp, top = 10.dp, bottom = 2.dp), color = ur.muted, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.reports_all), Modifier.padding(start = 16.dp, top = 14.dp, bottom = 2.dp), color = ur.text, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+        ReportGroups.forEach { (group, name) ->
+            Text(stringResource(name), Modifier.padding(start = 16.dp, top = 10.dp, bottom = 2.dp), color = ur.muted, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
             val reports = ReportList.filter { it.group == group }
             reports.forEachIndexed { i, report ->
-                ListRow(report.label, icon = report.icon, onClick = { onOpen(report.id) }, divider = i < reports.lastIndex)
+                ListRow(stringResource(report.label), icon = report.icon, onClick = { onOpen(report.id) }, divider = i < reports.lastIndex)
             }
         }
         Spacer(Modifier.height(6.dp))
@@ -403,7 +410,7 @@ private fun ReportPage(
         // A report belongs to its exact snapshot and filters; new labels must never describe old figures.
         vm.await("reports", key.filter()).fold(
             { json -> data = ScopedResult(key, withContext(Dispatchers.Default) { parseReport(json) }) },
-            { error = ScopedResult(key, it.message ?: "The report could not be calculated.") })
+            { error = ScopedResult(key, it.message ?: Words[R.string.reports_failed_one]) })
     }
     val current = data?.takeIf { it.scope == key }
 
@@ -415,10 +422,12 @@ private fun ReportPage(
     var chartAccounts by remember(info.id) { mutableStateOf<Map<String, Int>?>(null) }
     var expanded by rememberSaveable(info.id, stateSaver = IdSetSaver) { mutableStateOf(emptySet<String>()) }
     var payeeQuery by rememberSaveable(info.id) { mutableStateOf("") }
-    val weekStart = remember { localeWeekStart() }
+    // The week starts where the phone's region starts it, whatever language the app is in.
+    val weekStart = remember { localeWeekStart(android.content.res.Resources.getSystem().configuration.locales[0]) }
     val scope = ReportScope(key.from, key.to, accounts, info.categories && categories.isNotEmpty(), today, weekStart)
     val options = ReportOptions(group, byGroup, chartAccounts)
-    val viewKey = ViewKey(key, info.id, options, scope)
+    val language = languageKey()
+    val viewKey = ViewKey(key, info.id, options, scope, language)
     var view by remember { mutableStateOf<ScopedResult<ReportView?>?>(null) }
     LaunchedEffect(viewKey, current != null) {
         val figures = current ?: return@LaunchedEffect
@@ -443,10 +452,10 @@ private fun ReportPage(
             .put("accountIds", JSONArray(forecastKey.accounts))
         vm.await("forecast", params).fold(
             { json -> forecastData = ScopedResult(forecastKey, withContext(Dispatchers.Default) { parseForecast(json) }) },
-            { forecastError = ScopedResult(forecastKey, it.message ?: "The forecast could not be calculated.") })
+            { forecastError = ScopedResult(forecastKey, it.message ?: Words[R.string.reports_forecast_failed]) })
     }
     val forecastCurrent = forecastData?.takeIf { it.scope == forecastKey }
-    val forecastViewKey = ForecastViewKey(forecastKey, everyday)
+    val forecastViewKey = ForecastViewKey(forecastKey, everyday, language)
     var forecastShown by remember { mutableStateOf<ScopedResult<ForecastView>?>(null) }
     LaunchedEffect(forecastViewKey, forecastCurrent != null) {
         val figures = forecastCurrent ?: return@LaunchedEffect
@@ -471,8 +480,8 @@ private fun ReportPage(
     }
     val currency = budget.text("currency")
     val uncategorized = if (info.categories) current?.value?.categories?.get(UNCATEGORIZED_BUCKET) ?: 0L else 0L
-    val notice = remember(uncategorized, currency) {
-        if (uncategorized != 0L) "${money(uncategorized, currency)} of spending still needs a category. It is included in these totals." else null
+    val notice = remember(uncategorized, currency, language) {
+        if (uncategorized != 0L) Words[R.string.reports_uncategorized_notice, money(uncategorized, currency)] else null
     }
 
     // Filters
@@ -483,8 +492,10 @@ private fun ReportPage(
     val accountGroups = remember(context, forecast) { context?.let { accountFilterGroups(it, forecast) }.orEmpty() }
     val categoryGroups = remember(context) { context?.let { categoryFilterGroups(it) }.orEmpty() }
     val rangeLabel = describeRange(range)
-    val accountLabel = filterSummary(accountGroups, accounts, if (forecast) "All budget accounts" else "All accounts", "accounts")
-    val categoryLabel = filterSummary(categoryGroups, categories, "All categories", "categories")
+    val accountLabel = filterSummary(accountGroups, accounts, stringResource(if (forecast) R.string.reports_all_budget_accounts else R.string.reports_all_accounts)) {
+        Words.count(R.plurals.filter_accounts, it.toLong())
+    }
+    val categoryLabel = filterSummary(categoryGroups, categories, stringResource(R.string.category_all)) { Words.count(R.plurals.filter_categories, it.toLong()) }
 
     // Export: the engine writes the CSV for these exact filters, then the system asks where to save it.
     var csv by remember { mutableStateOf("") }
@@ -495,7 +506,7 @@ private fun ReportPage(
         if (uri != null) coroutines.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    androidContext.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(content) } ?: error("Could not open export destination.")
+                    androidContext.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(content) } ?: error(androidContext.getString(R.string.export_destination_failed))
                 }
             }.onFailure { exportError = it.message }
         }
@@ -533,19 +544,19 @@ private fun ReportPage(
     }
 
     Column(Modifier.fillMaxSize()) {
-        PhoneTopBar(info.label, onBack = back, actions = bar)
+        PhoneTopBar(stringResource(info.label), onBack = back, actions = bar)
         ProgressLine(if (forecast) forecastLoading else failed == null && !ready)
         CompositionLocalProvider(LocalStale provides (if (forecast) forecastStale else stale)) {
             LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(start = Gutter, end = Gutter, bottom = DockRoom)) {
                 item(key = "blurb", contentType = "chrome") {
-                    Text(info.blurb, Modifier.padding(top = 2.dp, bottom = 10.dp), color = ur.muted, style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(info.blurb), Modifier.padding(top = 2.dp, bottom = 10.dp), color = ur.muted, style = MaterialTheme.typography.bodyMedium)
                 }
                 item(key = "groups", contentType = "chrome") {
-                    Segmented(ReportGroups.map { it to it }, info.group, chooseGroup)
+                    Segmented(ReportGroups.map { (group, name) -> group to stringResource(name) }, info.group, chooseGroup)
                 }
                 item(key = "reports", contentType = "chrome") {
                     ChipRow {
-                        ReportList.filter { it.group == info.group }.forEach { r -> FilterPill(r.short ?: r.label, r.id == info.id, { choose(r.id) }, r.icon) }
+                        ReportList.filter { it.group == info.group }.forEach { r -> FilterPill(stringResource(r.short ?: r.label), r.id == info.id, { choose(r.id) }, r.icon) }
                     }
                 }
                 item(key = "filters", contentType = "chrome") {
@@ -553,19 +564,20 @@ private fun ReportPage(
                         if (!forecast) FilterPill(rangeLabel, false, { rangeOpen = true }, Icons.Outlined.CalendarMonth)
                         FilterPill(accountLabel, accounts.isNotEmpty(), { accountsOpen = true }, Icons.Outlined.AccountBalanceWallet)
                         if (info.categories) FilterPill(categoryLabel, categories.isNotEmpty(), { categoriesOpen = true }, Icons.Outlined.Category)
-                        if (!forecast) FilterPill("Export CSV", false, exportCsv, Icons.Outlined.FileDownload)
+                        if (!forecast) FilterPill(stringResource(R.string.reports_export_csv), false, exportCsv, Icons.Outlined.FileDownload)
                     }
                 }
                 notice?.let { text ->
                     item(key = "notice", contentType = "notice") {
-                        Notice(text, Modifier.padding(top = 10.dp), action = "Review",
-                            onAction = { drill = DrillRequest(key, DrillTarget(NEEDS_CATEGORY, "category", UNCATEGORIZED_BUCKET)) })
+                        val needsCategory = stringResource(R.string.category_needed)
+                        Notice(text, Modifier.padding(top = 10.dp), action = stringResource(R.string.common_review),
+                            onAction = { drill = DrillRequest(key, DrillTarget(needsCategory, "category", UNCATEGORIZED_BUCKET)) })
                     }
                 }
                 if (failed != null && !forecast) item(key = "error", contentType = "error") {
                     Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         FormError(failed)
-                        SecondaryButton("Retry report", { attempt++ })
+                        SecondaryButton(stringResource(R.string.reports_retry), { attempt++ })
                     }
                 }
                 exportError?.let { message -> item(key = "exportError", contentType = "error") { Box(Modifier.padding(top = 10.dp)) { FormError(message) } } }
@@ -573,7 +585,7 @@ private fun ReportPage(
                 else if (failed == null) {
                     val body = shown?.value
                     if (body != null) reportBody(body, bodyActions, expanded, payeeQuery, { payeeQuery = it }, filteredPayees ?: payeeView?.rows.orEmpty())
-                    else if (view?.scope == viewKey) item(key = "empty", contentType = "empty") { EmptyState("No figures for these months", "Choose another range or clear the filters.") }
+                    else if (view?.scope == viewKey) item(key = "empty", contentType = "empty") { EmptyState(stringResource(R.string.reports_empty_title), stringResource(R.string.reports_empty_detail)) }
                     else item(key = "loading", contentType = "loading") {
                         Box(Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = ur.accent) }
                     }
@@ -583,8 +595,8 @@ private fun ReportPage(
     }
 
     if (rangeOpen) RangeSheet(range, context?.earliestMonth ?: thisMonth, { setRange(it); rangeOpen = false }) { rangeOpen = false }
-    if (accountsOpen) MultiFilterSheet("Accounts", accountGroups, accounts, setAccounts) { accountsOpen = false }
-    if (categoriesOpen) MultiFilterSheet("Categories", categoryGroups, categories, setCategories) { categoriesOpen = false }
+    if (accountsOpen) MultiFilterSheet(stringResource(R.string.tab_accounts), accountGroups, accounts, setAccounts) { accountsOpen = false }
+    if (categoriesOpen) MultiFilterSheet(stringResource(R.string.reports_categories_filter), categoryGroups, categories, setCategories) { categoriesOpen = false }
     if (everydayOpen) forecastShown?.value?.let { v ->
         EverydaySheet(v.everyday, currency, { everyday = it }) { everydayOpen = false }
     }
@@ -600,11 +612,11 @@ private fun ReportPage(
 private fun EverydaySheet(current: Long, currency: String, onSave: (Long) -> Unit, onDismiss: () -> Unit) {
     var text by remember { mutableStateOf(amountText(current)) }
     var error by remember { mutableStateOf<String?>(null) }
-    FormDialog("Everyday spending", onDismiss, confirm = "Save", onConfirm = {
+    FormDialog(stringResource(R.string.reports_everyday), onDismiss, confirm = stringResource(R.string.common_save), onConfirm = {
         runCatching { amountValue(text) }.onSuccess { onSave(abs(it)); onDismiss() }.onFailure { error = it.message }
     }) {
-        HelpText("Spending that isn't scheduled, spread evenly over each day.")
-        Field(text, { text = it }, "Everyday spending a month ($currency)", numeric = true)
+        HelpText(stringResource(R.string.reports_everyday_help))
+        Field(text, { text = it }, stringResource(R.string.reports_everyday_field, currency), numeric = true)
         FormError(error)
     }
 }
@@ -645,7 +657,7 @@ private fun DrillSheet(request: DrillRequest, vm: BudgetViewModel, cache: Report
                     drillFromDetails(json.rows("items"), key.budget, cache.get(key.budget, today), target.from ?: firstDay(key.from), target.to ?: lastDay(key.to), accounts)
                 }
             },
-            { error = it.message ?: "These transactions could not be listed." })
+            { error = it.message ?: Words[R.string.reports_drill_failed] })
     }
     val height = screenHeight()
     val income = request.target.dimension == "income"
@@ -655,17 +667,17 @@ private fun DrillSheet(request: DrillRequest, vm: BudgetViewModel, cache: Report
             item(key = "range", contentType = "range") { Text(model?.range.orEmpty(), color = ur.muted, style = MaterialTheme.typography.bodyMedium) }
             item(key = "figures", contentType = "figures") {
                 Row(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
-                    Figure(model?.figureLabel ?: if (income) "Received" else "Spent", model?.figure ?: "—", Modifier.weight(1f))
-                    Figure("Transactions", model?.count ?: "—", Modifier.weight(1f))
-                    Figure("Average", model?.average ?: "—", Modifier.weight(1f), alignEnd = true)
+                    Figure(model?.figureLabel ?: stringResource(if (income) R.string.report_received else R.string.report_spent), model?.figure ?: "—", Modifier.weight(1f))
+                    Figure(stringResource(R.string.tab_transactions), model?.count ?: "—", Modifier.weight(1f))
+                    Figure(stringResource(R.string.report_average), model?.average ?: "—", Modifier.weight(1f), alignEnd = true)
                 }
-                if (register != null) SecondaryButton("Open in register", register, Modifier.fillMaxWidth().padding(bottom = 12.dp), icon = Icons.AutoMirrored.Outlined.ReceiptLong)
+                if (register != null) SecondaryButton(stringResource(R.string.reports_open_in_register), register, Modifier.fillMaxWidth().padding(bottom = 12.dp), icon = Icons.AutoMirrored.Outlined.ReceiptLong)
                 Hairline()
             }
             if (model == null && error == null) item(key = "loading", contentType = "loading") { LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 16.dp), color = ur.accent) }
             error?.let { message -> item(key = "error", contentType = "error") { Box(Modifier.padding(top = 12.dp)) { FormError(message) } } }
             model?.let { m ->
-                if (m.lines.isEmpty()) item(key = "empty", contentType = "empty") { Text("No transactions.", Modifier.padding(vertical = 16.dp), color = ur.muted) }
+                if (m.lines.isEmpty()) item(key = "empty", contentType = "empty") { Text(stringResource(R.string.reports_no_transactions), Modifier.padding(vertical = 16.dp), color = ur.muted) }
                 items(m.lines, key = { it.key }, contentType = { "line" }) { line -> DrillLineRow(line) { m.records[line.transactionId]?.let(open) } }
             }
         }

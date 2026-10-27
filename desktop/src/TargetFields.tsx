@@ -1,5 +1,8 @@
 import { today } from "./types";
 import { DateInput } from "./ui";
+import { msg, t, tn } from "./i18n";
+
+const WEEKDAYS = [msg("Sunday"), msg("Monday"), msg("Tuesday"), msg("Wednesday"), msg("Thursday"), msg("Friday"), msg("Saturday")];
 
 export type TargetMonthContext = {
   /** The budget month being edited. Defaults to the current month for standalone forms. */
@@ -52,9 +55,9 @@ export function TargetFields({
   return (
     <>
       <label>
-        Target behavior
+        {t("Target behavior")}
         <select
-          aria-label="Target behavior"
+          aria-label={t("Target behavior")}
           value={behavior}
           onChange={(e) => {
             const value = e.target.value;
@@ -65,41 +68,41 @@ export function TargetFields({
             });
           }}
         >
-          <option value="set">Set aside each period</option>
-          <option value="refill">Refill up to each period</option>
-          <option value="TB">Maintain a category balance</option>
-          <option value="TBD">Reach a balance by a date</option>
-          {type === "MF" && <option value="MF">Monthly funding (imported target)</option>}
-          {type === "DEBT" && <option value="DEBT">Monthly debt payment</option>}
+          <option value="set">{t("Set aside each period")}</option>
+          <option value="refill">{t("Refill up to each period")}</option>
+          <option value="TB">{t("Maintain a category balance")}</option>
+          <option value="TBD">{t("Reach a balance by a date")}</option>
+          {type === "MF" && <option value="MF">{t("Monthly funding (imported target)")}</option>}
+          {type === "DEBT" && <option value="DEBT">{t("Monthly debt payment")}</option>}
         </select>
       </label>
       {type === "NEED" && (
         <div className="form-grid">
           <label>
-            Repeats
+            {t("Repeats")}
             <select
-              aria-label="Target cadence"
+              aria-label={t("Target cadence")}
               value={cadence}
               onChange={(e) => change({ goal_cadence: Number(e.target.value) })}
             >
-              <option value={0}>Once by a date</option>
-              <option value={1}>Monthly</option>
-              <option value={2}>Weekly</option>
-              <option value={13}>Yearly</option>
+              <option value={0}>{t("Once by a date")}</option>
+              <option value={1}>{t("Monthly")}</option>
+              <option value={2}>{t("Weekly")}</option>
+              <option value={13}>{t("Yearly")}</option>
               {Array.from({ length: 10 }, (_, i) => (
                 <option key={i} value={i + 3}>
-                  Every {i + 2} months
+                  {tn(i + 2, "Every {count} months", "Every {count} months")}
                 </option>
               ))}
-              <option value={14}>Every two years</option>
+              <option value={14}>{t("Every two years")}</option>
             </select>
           </label>
           {[1, 2, 13].includes(cadence) && (
             <label>
-              Every (number of periods)
+              {t("Every (number of periods)")}
               <input
                 type="number"
-                aria-label="Target interval"
+                aria-label={t("Target interval")}
                 min={1}
                 max={100}
                 value={Number(goal.goal_cadence_frequency ?? 1)}
@@ -113,23 +116,15 @@ export function TargetFields({
       )}
       {type === "NEED" && cadence === 2 ? (
         <label>
-          Day of week
+          {t("Day of week")}
           <select
-            aria-label="Target weekday"
+            aria-label={t("Target weekday")}
             value={Number(goal.goal_day ?? 0)}
             onChange={(e) => change({ goal_day: Number(e.target.value) })}
           >
-            {[
-              "Sunday",
-              "Monday",
-              "Tuesday",
-              "Wednesday",
-              "Thursday",
-              "Friday",
-              "Saturday",
-            ].map((d, i) => (
+            {WEEKDAYS.map((d, i) => (
               <option key={d} value={i}>
-                {d}
+                {t(d)}
               </option>
             ))}
           </select>
@@ -140,9 +135,9 @@ export function TargetFields({
             (cadence !== 1 ||
               Number(goal.goal_cadence_frequency ?? 1) > 1))) && (
           <label>
-            First due date
+            {t("First due date")}
             <DateInput
-              label="Target due date"
+              label={t("Target due date")}
               required
               value={String(goal.goal_target_date ?? goal.goal_target_month ?? "")}
               onChange={(iso) => change({ goal_target_date: iso })}
@@ -152,9 +147,9 @@ export function TargetFields({
       )}
       {type !== "TB" && (
         <label>
-          Start month
+          {t("Start month")}
           <input
-            aria-label="Target start month"
+            aria-label={t("Target start month")}
             type="month"
             value={String(goal.goal_creation_month ?? today()).slice(0, 7)}
             onChange={(e) =>
@@ -166,12 +161,12 @@ export function TargetFields({
       {month === currentMonth && !paymentCategory && (
         <label className="checkbox-label">
           <input
-            aria-label="Snooze target this month"
+            aria-label={t("Snooze target this month")}
             type="checkbox"
             checked={String(goal.goal_snoozed_at ?? "").slice(0, 7) === currentMonth}
             onChange={(e) => change({ goal_snoozed_at: e.target.checked ? `${currentMonth}-01` : null })}
           />
-          Snooze target this month
+          {t("Snooze target this month")}
         </label>
       )}
     </>

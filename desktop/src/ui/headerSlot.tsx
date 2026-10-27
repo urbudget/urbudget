@@ -2,15 +2,19 @@ import { createContext, useContext, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 /**
- * The page header has a slot just after its title for the page's own controls (the report
- * groups): App provides the slot's element, and a page portals into it. Undefined when there is
- * no header around the page at all, as when a test renders a page on its own.
+ * The page header has two slots for a page's own controls: one just after its title (the report
+ * groups), and one beside undo and redo (the register's import and export). App provides the
+ * slots' elements, and a page portals into them. Undefined when there is no header around the
+ * page at all, as when a test renders a page on its own.
  */
-export const HeaderSlotElement = createContext<HTMLElement | null | undefined>(undefined);
+export type HeaderSlots = { title: HTMLElement | null; actions: HTMLElement | null };
+export const HeaderSlotElements = createContext<HeaderSlots | undefined>(undefined);
 
-/** Puts its children in the page header after the title; with no header around it, in place. */
-export function HeaderSlot({ children }: { children: ReactNode }) {
-  const slot = useContext(HeaderSlotElement);
-  if (slot === undefined) return <>{children}</>;
+/** Puts its children in the page header after the title, or with `actions` beside undo and redo;
+ * with no header around it, in place. */
+export function HeaderSlot({ children, actions = false }: { children: ReactNode; actions?: boolean }) {
+  const slots = useContext(HeaderSlotElements);
+  if (slots === undefined) return <>{children}</>;
+  const slot = actions ? slots.actions : slots.title;
   return slot ? createPortal(children, slot) : null;
 }

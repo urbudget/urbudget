@@ -3,10 +3,11 @@ import { FileArchive } from "lucide-react";
 import { api } from "./bridge";
 import { errorText, money, numberFormatFor } from "./format";
 import type { Budget } from "./types";
+import { list, msg, t, tn } from "./i18n";
 
 type Order = "" | "dmy" | "mdy" | "ymd";
 type Difference = { month: string; category: string; field: string; expected: number; actual: number };
-const FIELD: Record<string, string> = { budgeted: "assigned", activity: "activity", balance: "available" };
+const FIELD: Record<string, string> = { budgeted: msg("assigned"), activity: msg("activity"), balance: msg("available") };
 // Match ynab_files.rs. Check before reading: byte arrays sent over IPC take much more memory
 // than the chosen files. Larger budgets can use the YNAB token import instead.
 const MAX_FILE = 8 * 1024 * 1024;
@@ -51,13 +52,14 @@ export function YnabFileImport({
     createdId.current = null;
     setBusy(true);
     setPreview(null);
-    setMessage("Reading the export…");
+    setMessage(t("Reading the export…"));
     try {
-      if (chosen.length > MAX_FILES) throw new Error("Choose at most 8 export files at once.");
+      if (chosen.length > MAX_FILES) throw new Error(t("Choose at most 8 export files at once."));
       const oversized = chosen.find((f) => f.size > MAX_FILE);
-      if (oversized) throw new Error(`${oversized.name} is larger than 8 MB. Use YNAB's token import for larger budgets.`);
+      if (oversized)
+        throw new Error(t("{name} is larger than 8 MB. Use YNAB's token import for larger budgets.", { name: oversized.name }));
       if (chosen.reduce((total, f) => total + f.size, 0) > MAX_TOTAL)
-        throw new Error("These export files total more than 16 MB. Use YNAB's token import for larger budgets.");
+        throw new Error(t("These export files total more than 16 MB. Use YNAB's token import for larger budgets."));
       const payload: { name: string; bytes: number[] }[] = [];
       for (const file of chosen) {
         payload.push({ name: file.name, bytes: Array.from(new Uint8Array(await file.arrayBuffer())) });
@@ -79,7 +81,7 @@ export function YnabFileImport({
       // Opening may fail after creation succeeded; a retry must reuse that saved budget.
       createdId.current ??= await api.createBudget(imported);
       await openBudget(createdId.current);
-      setMessage(`Created “${preview.name}” from YNAB's export and opened it.`);
+      setMessage(t("Created “{name}” from YNAB's export and opened it.", { name: preview.name }));
       setPreview(null);
       setFiles([]);
     } catch (e) {
@@ -93,18 +95,18 @@ export function YnabFileImport({
   const kinds = (kind: string) => preview?.accounts.filter((a) => a.kind === kind) ?? [];
   const tracking = kinds("tracking");
   const months = new Set(preview?.assignments.map((a) => a.month)).size;
+  const checks = tn(preview?.importAudit?.categoryMonthChecks ?? 0, "{count} category months", "{count} category months");
   return (
     <section className="panel">
-      <h2>Import YNAB's export file</h2>
+      <h2>{t("Import YNAB's export file")}</h2>
       <p className="help">
-        In YNAB on the web, open your plan's menu and export it. Choose the .zip it downloads, or the Register and Plan
-        files inside.{" "}
-        {onBudget ? "It fills this empty budget." : "This makes a new budget; the open one isn't changed."} No token or
-        connection is needed.
+        {onBudget
+          ? t("In YNAB on the web, open your plan's menu and export it. Choose the .zip it downloads, or the Register and Plan files inside. It fills this empty budget. No token or connection is needed.")
+          : t("In YNAB on the web, open your plan's menu and export it. Choose the .zip it downloads, or the Register and Plan files inside. This makes a new budget; the open one isn't changed. No token or connection is needed.")}
       </p>
       <div className="form-grid">
         <label>
-          Date order in the file
+          {t("Date order in the file")}
           <select
             value={order}
             disabled={busy}
@@ -114,10 +116,10 @@ export function YnabFileImport({
               void read(files, next);
             }}
           >
-            <option value="">Detect automatically</option>
-            <option value="dmy">Day first (31/12/2026)</option>
-            <option value="mdy">Month first (12/31/2026)</option>
-            <option value="ymd">Year first (2026-12-31)</option>
+            <option value="">{t("Detect automatically")}</option>
+            <option value="dmy">{t("Day first (31/12/2026)")}</option>
+            <option value="mdy">{t("Month first (12/31/2026)")}</option>
+            <option value="ymd">{t("Year first (2026-12-31)")}</option>
           </select>
         </label>
       </div>
@@ -128,7 +130,7 @@ export function YnabFileImport({
         multiple
         hidden
         disabled={busy}
-        aria-label="YNAB export file"
+        aria-label={t("YNAB export file")}
         onChange={(e) => {
           const chosen = Array.from(e.target.files ?? []);
           e.target.value = "";
@@ -137,9 +139,9 @@ export function YnabFileImport({
         }}
       />
       <button className="secondary" disabled={busy} onClick={() => input.current?.click()}>
-        <FileArchive size={15} /> {files.length ? "Choose other files…" : "Choose export file…"}
+        <FileArchive size={15} /> {files.length ? t("Choose other files…") : t("Choose export file…")}
       </button>
-      {files.length > 0 && <p className="help">{files.map((f) => f.name).join(", ")}</p>}
+      {files.length > 0 && <p className="help">{list(files.map((f) => f.name))}</p>}
       {message && (
         <p className="import-result" role="status">
           {message}
@@ -148,41 +150,56 @@ export function YnabFileImport({
       {preview && (
         <div className="import-result" role="status">
           <p>
-            <strong>{preview.name}</strong>: {preview.accounts.length} accounts ({kinds("cash").length} budget,{" "}
-            {kinds("credit").length} credit, {tracking.length} tracking), {preview.categories.length} categories,{" "}
-            {preview.transactions.length} transactions and {months} months of assignments.
+            {t("{name}: {accounts} ({cash} budget, {credit} credit, {tracking} tracking), {categories}, {transactions} and {months} of assignments.", {
+              name: <strong>{preview.name}</strong>,
+              accounts: tn(preview.accounts.length, "{count} accounts", "{count} accounts"),
+              cash: kinds("cash").length,
+              credit: kinds("credit").length,
+              tracking: tracking.length,
+              categories: tn(preview.categories.length, "{count} categories", "{count} categories"),
+              transactions: tn(preview.transactions.length, "{count} transactions", "{count} transactions"),
+              months: tn(months, "{count} months", "{count} months"),
+            })}
           </p>
           <p>
-            Checked {preview.importAudit?.categoryMonthChecks ?? 0} category months against YNAB's plan:{" "}
-            {differences.length === 0 ? "every amount matches." : `${differences.length} amounts differ.`}
+            {differences.length === 0
+              ? t("Checked {checks} against YNAB's plan: every amount matches.", { checks })
+              : t("Checked {checks} against YNAB's plan: {differences}", {
+                  checks,
+                  differences: tn(differences.length, "{count} amounts differ.", "{count} amounts differ."),
+                })}
           </p>
           {differences.length > 0 && (
             <ul>
               {differences.slice(0, 5).map((d, i) => (
                 <li key={i}>
-                  {d.category}, {d.month}: {FIELD[d.field] ?? d.field}{" "}
-                  {money(d.actual, { currency: preview.currency, numberFormat: importedNumberFormat })} here,{" "}
-                  {money(d.expected, { currency: preview.currency, numberFormat: importedNumberFormat })} in YNAB
+                  {t("{category}, {month}: {field} {actual} here, {expected} in YNAB", {
+                    category: d.category,
+                    month: d.month,
+                    field: FIELD[d.field] ? t(FIELD[d.field]) : d.field,
+                    actual: money(d.actual, { currency: preview.currency, numberFormat: importedNumberFormat }),
+                    expected: money(d.expected, { currency: preview.currency, numberFormat: importedNumberFormat }),
+                  })}
                 </li>
               ))}
-              {differences.length > 5 && <li>…and {differences.length - 5} more</li>}
+              {differences.length > 5 && <li>{tn(differences.length - 5, "…and {count} more", "…and {count} more")}</li>}
             </ul>
           )}
           {tracking.length > 0 && (
             <p className="help">
-              Tracking accounts: {tracking.map((a) => a.name).join(", ")}. An account is treated as tracking when none
-              of its rows has a category; change it afterwards if that's wrong.
+              {t("Tracking accounts: {names}. An account is treated as tracking when none of its rows has a category; change it afterwards if that's wrong.", {
+                names: list(tracking.map((a) => a.name)),
+              })}
             </p>
           )}
           <p className="help">
-            YNAB's export leaves out targets, notes, split memos and which accounts are closed. It has only the next date of
-            each scheduled transaction, so those aren't brought in.
+            {t("YNAB's export leaves out targets, notes, split memos and which accounts are closed. It has only the next date of each scheduled transaction, so those aren't brought in.")}
           </p>
           <button className="primary" disabled={busy} onClick={() => void create()}>
-            {onBudget ? `Import “${preview.name}”` : `Create “${preview.name}” and open it`}
+            {onBudget ? t("Import “{name}”", { name: preview.name }) : t("Create “{name}” and open it", { name: preview.name })}
           </button>{" "}
           <button className="text-button" disabled={busy} onClick={() => setPreview(null)}>
-            Cancel
+            {t("Cancel")}
           </button>
         </div>
       )}

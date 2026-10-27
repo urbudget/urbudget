@@ -30,6 +30,7 @@ import { describe, logError } from "./errors";
 import { ProposalCard } from "./ProposalCard";
 import { printReport, ReportPreview } from "./Report";
 import { ReplyReport } from "./ReplyReport";
+import { getDirection, msg, msgc, t, tn, tnc, useLanguage } from "../i18n";
 import "./assistant.css";
 
 export { Markdown } from "./Markdown";
@@ -78,13 +79,13 @@ export type Request = {
 };
 
 const PAGE_NAMES: Record<string, string> = {
-  budget: "Budget",
-  transactions: "Transactions",
-  scheduled: "Scheduled",
-  loans: "Loan details",
-  reports: "Reports",
-  payees: "Payees & rules",
-  settings: "Settings",
+  budget: msg("Budget"),
+  transactions: msg("Transactions"),
+  scheduled: msgc("page", "Scheduled"),
+  loans: msg("Loan details"),
+  reports: msg("Reports"),
+  payees: msg("Payees & rules"),
+  settings: msg("Settings"),
 };
 
 /** Keeps a problem in the assistant from taking down the rest of the app. */
@@ -106,28 +107,28 @@ export class AssistantBoundary extends Component<
     };
     if (this.state.detail === null) return <Fragment key={this.state.attempt}>{this.props.children}</Fragment>;
     return (
-      <aside className="assistant" aria-label="Assistant">
+      <aside className="assistant" aria-label={t("Assistant")}>
         <header className="assistant-head">
-          <strong>Assistant</strong>
+          <strong>{t("Assistant")}</strong>
           <div className="assistant-tools">
-            <button className="icon-button" aria-label="Close the assistant" title={keyLabel("Close (Ctrl+J)")} onClick={this.props.onClose}>
+            <button className="icon-button" aria-label={t("Close the assistant")} title={keyLabel(t("Close (Ctrl+J)"))} onClick={this.props.onClose}>
               <X size={16} />
             </button>
           </div>
         </header>
         <div className="assistant-signin" role="alert">
-          <h3>The assistant ran into a problem</h3>
-          <p>The rest of the app is fine, and nothing in your budget changed. The details are saved in errors.log in the app's data folder.</p>
+          <h3>{t("The assistant ran into a problem")}</h3>
+          <p>{t("The rest of the app is fine, and nothing in your budget changed. The details are saved in errors.log in the app's data folder.")}</p>
           <div className="assistant-signin-links">
             <button className="primary" onClick={retry(false)}>
-              Reload the assistant
+              {t("Reload the assistant")}
             </button>
             <button className="secondary" onClick={retry(true)}>
-              New conversation
+              {t("New conversation")}
             </button>
           </div>
           <details className="crash-details">
-            <summary>Details</summary>
+            <summary>{t("Details")}</summary>
             <pre>{this.state.detail}</pre>
           </details>
         </div>
@@ -140,14 +141,14 @@ export class AssistantBoundary extends Component<
 export function suggestions(budget: Budget, summary: Summary, screen: Omit<Screen, "selected" | "today">): string[] {
   const out: string[] = [];
   const overspent = summary.categories.filter((c) => c.available < 0).length;
-  if (overspent) out.push(overspent === 1 ? "Cover the overspent category" : `Cover the ${overspent} overspent categories`);
-  const waiting = budget.transactions.filter((t) => t.approved === false).length;
-  if (waiting) out.push(waiting === 1 ? "Categorize the new transaction" : `Categorize the ${waiting} new transactions`);
+  if (overspent) out.push(tn(overspent, "Cover the overspent category", "Cover the {count} overspent categories"));
+  const waiting = budget.transactions.filter((tx) => tx.approved === false).length;
+  if (waiting) out.push(tn(waiting, "Categorize the new transaction", "Categorize the {count} new transactions"));
   const underfunded = summary.categories.filter((c) => (c.needed ?? 0) > 0).length;
-  if (underfunded) out.push("Fund what my targets need this month");
+  if (underfunded) out.push(t("Fund what my targets need this month"));
   const account = budget.accounts.find((a) => a.id === screen.accountId);
-  if (screen.page === "transactions" && account) out.push(`Anything unusual in ${account.name} lately?`);
-  out.push(`How is ${monthName(screen.month || today().slice(0, 7))} going?`);
+  if (screen.page === "transactions" && account) out.push(t("Anything unusual in {account} lately?", { account: account.name }));
+  out.push(t("How is {month} going?", { month: monthName(screen.month || today().slice(0, 7)) }));
   return out.slice(0, 4);
 }
 
@@ -206,13 +207,13 @@ function Reply({ text, live }: { text: string; live: boolean }) {
       </div>
       <button
         className={`assistant-flag${typing ? " waiting" : ""}`}
-        title="Report this reply to UrBudget's developer"
+        title={t("Report this reply to UrBudget's developer")}
         tabIndex={typing ? -1 : 0}
         disabled={typing}
         onClick={() => setReporting(true)}
       >
         <Flag size={11} aria-hidden />
-        Report
+        {t("Report")}
       </button>
       {reporting && <ReplyReport text={text} close={() => setReporting(false)} />}
     </>
@@ -238,7 +239,7 @@ function Steps({ steps }: { steps: Step[] }) {
         <StepLine key={i} step={s} />
       ))}
       <button className="assistant-steps-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
-        {open ? "Fewer" : `${steps.length - 1} more`}
+        {open ? t("Fewer") : tn(steps.length - 1, "{count} more", "{count} more")}
         <ChevronDown size={12} aria-hidden />
       </button>
     </div>
@@ -248,7 +249,7 @@ function Steps({ steps }: { steps: Step[] }) {
 const fileIcon = (a: Attachment) =>
   a.kind === "image" ? <Image size={13} aria-hidden /> : a.kind === "sheet" || a.kind === "csv" ? <FileSpreadsheet size={13} aria-hidden /> : <FileText size={13} aria-hidden />;
 const planLabel = (s: Status) =>
-  s.provider === "chatgpt" ? "Using ChatGPT plan" : s.provider === "openai" ? "Using your OpenAI key" : "Using your Anthropic key";
+  s.provider === "chatgpt" ? t("Using ChatGPT plan") : s.provider === "openai" ? t("Using your OpenAI key") : t("Using your Anthropic key");
 
 /** The latest proposal still waiting for the user, whose rows the page highlights. */
 const pending = (entries: Entry[]) =>
@@ -266,10 +267,10 @@ function SignIn({ status, onStatus, onOpenSettings }: { status: Status; onStatus
         <span className="assistant-badge">
           <MessageSquareText size={20} aria-hidden />
         </span>
-        <h3>Add your API key</h3>
-        <p>The assistant is set to use your own {status.provider === "openai" ? "OpenAI" : "Anthropic"} API key. Add it in Settings.</p>
+        <h3>{t("Add your API key")}</h3>
+        <p>{t("The assistant is set to use your own {provider} API key. Add it in Settings.", { provider: status.provider === "openai" ? "OpenAI" : "Anthropic" })}</p>
         <button className="primary" onClick={onOpenSettings}>
-          Open settings
+          {t("Open settings")}
         </button>
       </div>
     );
@@ -290,19 +291,19 @@ function SignIn({ status, onStatus, onOpenSettings }: { status: Status; onStatus
       <span className="assistant-badge">
         <MessageSquareText size={20} aria-hidden />
       </span>
-      <h3>Sign in to use the assistant</h3>
-      <p>It runs on your ChatGPT Plus or Pro plan. Your budget stays on this computer; only what you ask about is sent.</p>
+      <h3>{t("Sign in to use the assistant")}</h3>
+      <p>{t("It runs on your ChatGPT Plus or Pro plan. Your budget stays on this computer; only what you ask about is sent.")}</p>
       {busy ? (
         <div className="assistant-waiting" role="status">
           <LoaderCircle size={15} className="spin" aria-hidden />{" "}
-          Finish signing in in your browser…
+          {t("Finish signing in in your browser…")}
           <button className="link-button" onClick={() => void assistant.cancelSignIn()}>
-            Cancel
+            {t("Cancel")}
           </button>
         </div>
       ) : (
         <button className="primary" onClick={() => void signIn()}>
-          Continue with ChatGPT
+          {t("Continue with ChatGPT")}
         </button>
       )}
       {error && (
@@ -312,17 +313,15 @@ function SignIn({ status, onStatus, onOpenSettings }: { status: Status; onStatus
       )}
       <div className="assistant-signin-links">
         <button className="link-button" onClick={() => setWhy(!why)} aria-expanded={why}>
-          What gets sent?
+          {t("What gets sent?")}
         </button>
         <button className="link-button" onClick={onOpenSettings}>
-          Use an API key instead
+          {t("Use an API key instead")}
         </button>
       </div>
       {why && (
         <p className="assistant-why">
-          Your messages, what's on screen, the files you attach, and the budget details the assistant looks up to answer
-          you. Your budget file, conversation history and sign-in are kept on this computer. OpenAI's terms and privacy
-          policy govern how it processes and retains what you send. Nothing in the budget changes until you apply a change yourself.
+          {t("Your messages, what's on screen, the files you attach, and the budget details the assistant looks up to answer you. Your budget file, conversation history and sign-in are kept on this computer. OpenAI's terms and privacy policy govern how it processes and retains what you send. Nothing in the budget changes until you apply a change yourself.")}
         </p>
       )}
     </div>
@@ -344,6 +343,7 @@ export function AssistantPanel({
   canUndo,
   onReviewImport,
   onHighlight,
+  onWorking,
 }: {
   budget: Budget;
   budgetId: string;
@@ -360,6 +360,8 @@ export function AssistantPanel({
   canUndo: (p: Proposal) => boolean;
   onReviewImport: (threadId: string, p: Proposal) => void;
   onHighlight: (highlight: Card["highlight"] | null) => void;
+  /** Whether there's a message being written, attached to or sent, which closing would lose. */
+  onWorking?: (working: boolean) => void;
 }) {
   const toast = useToast();
   const threadKey = `lb:assistant:thread:${budgetId}`;
@@ -525,6 +527,11 @@ export function AssistantPanel({
   };
 
   const waiting = pending(entries);
+  const working = running || uploading > 0 || !!draft.trim() || attachments.length > 0;
+  useEffect(() => {
+    onWorking?.(working);
+  }, [working]);
+  useEffect(() => () => onWorking?.(false), []);
   useEffect(() => {
     onHighlight(waiting ? waiting.card.highlight : null);
   }, [waiting]);
@@ -532,7 +539,7 @@ export function AssistantPanel({
 
   const upload = async (files: File[]) => {
     const room = 5 - attachments.length;
-    if (files.length > room) toast({ message: "Attach up to 5 files at a time.", tone: "error" });
+    if (files.length > room) toast({ message: t("Attach up to 5 files at a time."), tone: "error" });
     for (const file of files.slice(0, Math.max(0, room))) {
       setUploading((n) => n + 1);
       try {
@@ -637,12 +644,14 @@ export function AssistantPanel({
 
   const contextLabel =
     selected.length > 0
-      ? `${selected.length} selected`
+      ? tnc("items", selected.length, "{count} selected", "{count} selected")
       : screen.page === "budget"
-        ? `${monthName(screen.month)} · Budget`
+        ? t("{month} · Budget", { month: monthName(screen.month) })
         : screen.page === "transactions"
-          ? (budget.accounts.find((a) => a.id === screen.accountId)?.name ?? "All transactions")
-          : (PAGE_NAMES[screen.page] ?? "");
+          ? (budget.accounts.find((a) => a.id === screen.accountId)?.name ?? t("All transactions"))
+          : PAGE_NAMES[screen.page]
+            ? t(PAGE_NAMES[screen.page])
+            : "";
 
   const renderEntry = (e: Entry, last: boolean): ReactNode => {
     switch (e.kind) {
@@ -690,14 +699,14 @@ export function AssistantPanel({
             onSheet={async (open) => {
               try {
                 const path = await assistant.spreadsheet(budget, id, p.id, open);
-                if (open) return;
+                if (open || !path) return;
                 const name = path.split(/[\\/]/).pop() ?? path;
                 const report = p.kind === "report";
                 toast({
-                  message: `Saved \u201c${name}\u201d in the budget's exports folder.`,
+                  message: t("Saved \u201c{name}\u201d.", { name }),
                   action: report
-                    ? { label: "Open", onClick: () => void assistant.spreadsheet(budget, id, p.id, true).catch((e) => toast({ message: errorText(e), tone: "error" })) }
-                    : { label: "Show in folder", onClick: () => void api.reveal(path).catch((e) => toast({ message: errorText(e), tone: "error" })) },
+                    ? { label: t("Open"), onClick: () => void assistant.spreadsheet(budget, id, p.id, true).catch((e) => toast({ message: errorText(e), tone: "error" })) }
+                    : { label: t("Show in folder"), onClick: () => void api.reveal(path).catch((e) => toast({ message: errorText(e), tone: "error" })) },
                 });
               } catch (err) {
                 toast({ message: errorText(err), tone: "error" });
@@ -706,9 +715,10 @@ export function AssistantPanel({
             onSave={async () => {
               try {
                 const path = await assistant.saveImport(id, p.id);
+                if (!path) return;
                 toast({
-                  message: "Saved the converted file.",
-                  action: { label: "Show in folder", onClick: () => void api.reveal(path).catch((e) => toast({ message: errorText(e), tone: "error" })) },
+                  message: t("Saved the converted file."),
+                  action: { label: t("Show in folder"), onClick: () => void api.reveal(path).catch((e) => toast({ message: errorText(e), tone: "error" })) },
                 });
               } catch (err) {
                 toast({ message: errorText(err), tone: "error" });
@@ -722,13 +732,13 @@ export function AssistantPanel({
         const chatgpt = status?.provider === "chatgpt";
         return (
           <div className="assistant-problem" role="alert">
-            <strong>{e.code === "limit" ? "Usage limit reached" : e.code === "refused" ? "Declined" : "Something went wrong"}</strong>
+            <strong>{e.code === "limit" ? t("Usage limit reached") : e.code === "refused" ? t("Declined") : t("Something went wrong")}</strong>
             <p>{e.text}</p>
             {actionable && (
               <div className="assistant-problem-actions">
                 {e.code === "limit" && chatgpt ? (
                   <button className="primary small" onClick={() => void assistant.open("usage")}>
-                    Manage usage
+                    {t("Manage usage")}
                   </button>
                 ) : e.code === "signIn" ? (
                   chatgpt ? (
@@ -741,20 +751,20 @@ export function AssistantPanel({
                           .catch((err) => toast({ message: errorText(err), tone: "error" }))
                       }
                     >
-                      Continue with ChatGPT
+                      {t("Continue with ChatGPT")}
                     </button>
                   ) : (
                     <button className="primary small" onClick={onOpenSettings}>
-                      Open settings
+                      {t("Open settings")}
                     </button>
                   )
                 ) : e.code === "model" || e.code === "notEligible" ? (
                   <button className="secondary small" onClick={onOpenSettings}>
-                    Open settings
+                    {t("Open settings")}
                   </button>
                 ) : (
                   <button className="secondary small" onClick={() => void retry()}>
-                    Try again
+                    {t("Try again")}
                   </button>
                 )}
               </div>
@@ -765,7 +775,7 @@ export function AssistantPanel({
       case "stopped":
         return (
           <div className="assistant-step">
-            <Square size={10} aria-hidden /> <span>Stopped</span>
+            <Square size={10} aria-hidden /> <span>{t("Stopped")}</span>
           </div>
         );
     }
@@ -814,18 +824,19 @@ export function AssistantPanel({
           <i />
           <i />
         </span>
-        <span className="assistant-activity-text">{title || "Thinking"}</span>
+        <span className="assistant-activity-text">{title || t("Thinking")}</span>
       </div>,
     );
   }
 
-  const ideas = useMemo(() => suggestions(budget, summary, screen), [budget, summary, screen.page, screen.month, screen.accountId]);
+  const language = useLanguage();
+  const ideas = useMemo(() => suggestions(budget, summary, screen), [budget, summary, screen.page, screen.month, screen.accountId, language]);
   const canSend = !!status?.ready && !running && !uploading && (!!draft.trim() || attachments.length > 0);
 
   return (
     <aside
       className={`assistant${dragging ? " dragging" : ""}`}
-      aria-label="Assistant"
+      aria-label={t("Assistant")}
       onDragOver={(e) => {
         if (!status?.ready || !e.dataTransfer.types.includes("Files")) return;
         e.preventDefault();
@@ -845,14 +856,16 @@ export function AssistantPanel({
         className="assistant-resize"
         role="separator"
         aria-orientation="vertical"
-        aria-label="Resize assistant"
+        aria-label={t("Resize assistant")}
         tabIndex={0}
         onPointerDown={(e) => {
           e.preventDefault();
           const handle = e.currentTarget;
           handle.setPointerCapture(e.pointerId);
-          const right = handle.parentElement!.getBoundingClientRect().right;
-          const move = (m: PointerEvent) => onResize(right - m.clientX);
+          // The panel is on the right, or on the left right to left.
+          const box = handle.parentElement!.getBoundingClientRect();
+          const rtl = getDirection() === "rtl";
+          const move = (m: PointerEvent) => onResize(rtl ? m.clientX - box.left : box.right - m.clientX);
           const up = () => {
             handle.removeEventListener("pointermove", move);
             handle.removeEventListener("pointerup", up);
@@ -862,25 +875,25 @@ export function AssistantPanel({
         }}
         onDoubleClick={() => onResize(WIDTH.default)}
         onKeyDown={(e) => {
-          if (e.key === "ArrowLeft") onResize(width + 16);
-          if (e.key === "ArrowRight") onResize(width - 16);
+          const wider = getDirection() === "rtl" ? "ArrowRight" : "ArrowLeft";
+          if (e.key === "ArrowLeft" || e.key === "ArrowRight") onResize(width + (e.key === wider ? 16 : -16));
         }}
       />
       <header className="assistant-head">
-        <strong>Assistant</strong>
+        <strong>{t("Assistant")}</strong>
         {status?.ready && contextLabel && <span className="assistant-context">{contextLabel}</span>}
         <div className="assistant-tools">
           {status?.ready && (
             <>
-              <button ref={historyButton} className="icon-button" aria-label="Conversations" title="Conversations" onClick={() => void openHistory()}>
+              <button ref={historyButton} className="icon-button" aria-label={t("Conversations")} title={t("Conversations")} onClick={() => void openHistory()}>
                 <History size={15} />
               </button>
-              <button className="icon-button" aria-label="New conversation" title="New conversation" disabled={running} onClick={newConversation}>
+              <button className="icon-button" aria-label={t("New conversation")} title={t("New conversation")} disabled={running} onClick={newConversation}>
                 <SquarePen size={15} />
               </button>
             </>
           )}
-          <button className="icon-button" aria-label="Close the assistant" title={keyLabel("Close (Ctrl+J)")} onClick={onClose}>
+          <button className="icon-button" aria-label={t("Close the assistant")} title={keyLabel(t("Close (Ctrl+J)"))} onClick={onClose}>
             <X size={16} />
           </button>
         </div>
@@ -889,25 +902,25 @@ export function AssistantPanel({
           onClose={() => setHistoryOpen(false)}
           anchor={historyButton}
           placement="bottom-end"
-          label="Conversations"
+          label={t("Conversations")}
           items={[
             ...(threads.length
-              ? threads.slice(0, 15).map((t) => ({
-                  label: t.title,
-                  icon: t.id === threadId ? <Check size={14} /> : <MessageSquareText size={14} />,
+              ? threads.slice(0, 15).map((thread) => ({
+                  label: thread.title,
+                  icon: thread.id === threadId ? <Check size={14} /> : <MessageSquareText size={14} />,
                   onSelect: () => {
-                    remember(t.id);
+                    remember(thread.id);
                     setLive(null);
                     setThinking("");
-                    void load(t.id, true);
+                    void load(thread.id, true);
                   },
                 }))
-              : [{ label: "No earlier conversations", disabled: true, onSelect: () => {} }]),
+              : [{ label: t("No earlier conversations"), disabled: true, onSelect: () => {} }]),
             ...(threadId
               ? [
                   "separator" as const,
                   {
-                    label: "Delete this conversation",
+                    label: t("Delete this conversation"),
                     icon: <Trash2 size={14} />,
                     danger: true,
                     disabled: running,
@@ -933,7 +946,7 @@ export function AssistantPanel({
             <div className="assistant-feed" ref={feed} aria-live="polite">
               {entries.length === 0 && !running ? (
                 <div className="assistant-welcome">
-                  <h3>What would you like to do?</h3>
+                  <h3>{t("What would you like to do?")}</h3>
                   <div className="assistant-ideas">
                     {ideas.map((idea) => (
                       <button key={idea} className="assistant-idea" onClick={() => void send(idea)}>
@@ -942,7 +955,7 @@ export function AssistantPanel({
                     ))}
                   </div>
                   <div className="assistant-drop">
-                    <Paperclip size={14} aria-hidden /> Drop a statement, receipt or spreadsheet here
+                    <Paperclip size={14} aria-hidden /> {t("Drop a statement, receipt or spreadsheet here")}
                   </div>
                 </div>
               ) : (
@@ -950,7 +963,7 @@ export function AssistantPanel({
               )}
             </div>
             {away && entries.length > 0 && (
-            <button className="assistant-jump" aria-label="Jump to the latest" title="Jump to the latest" onClick={jump}>
+            <button className="assistant-jump" aria-label={t("Jump to the latest")} title={t("Jump to the latest")} onClick={jump}>
               <ArrowDown size={14} />
             </button>
           )}
@@ -966,8 +979,8 @@ export function AssistantPanel({
                 {selected.length > 0 && (
                   <span className="assistant-file selection">
                     <ListChecks size={13} aria-hidden />
-                    {selected.length === 1 ? "1 selected transaction" : `${selected.length} selected transactions`}
-                    <button className="assistant-file-remove" aria-label="Don't attach the selection" onClick={() => setSelected([])}>
+                    {tn(selected.length, "{count} selected transaction", "{count} selected transactions")}
+                    <button className="assistant-file-remove" aria-label={t("Don't attach the selection")} onClick={() => setSelected([])}>
                       <X size={12} />
                     </button>
                   </span>
@@ -978,7 +991,7 @@ export function AssistantPanel({
                     {a.name}
                     <button
                       className="assistant-file-remove"
-                      aria-label={`Remove ${a.name}`}
+                      aria-label={t("Remove {name}", { name: a.name })}
                       onClick={() => setAttachments((list) => list.filter((x) => x.id !== a.id))}
                     >
                       <X size={12} />
@@ -987,7 +1000,7 @@ export function AssistantPanel({
                 ))}
                 {uploading > 0 && (
                   <span className="assistant-file">
-                    <LoaderCircle size={12} className="spin" aria-hidden /> Attaching…
+                    <LoaderCircle size={12} className="spin" aria-hidden /> {t("Attaching…")}
                   </span>
                 )}
               </div>
@@ -997,8 +1010,8 @@ export function AssistantPanel({
                 ref={input}
                 rows={1}
                 value={draft}
-                aria-label="Message the assistant"
-                placeholder="Ask about your budget, or drop a file"
+                aria-label={t("Message the assistant")}
+                placeholder={t("Ask about your budget, or drop a file")}
                 onChange={(e) => setDraft(e.target.value)}
                 onPaste={(e) => {
                   const files = [...e.clipboardData.files];
@@ -1015,7 +1028,7 @@ export function AssistantPanel({
                 }}
               />
               <div className="assistant-compose-row">
-                <button className="icon-button" aria-label="Attach a file" title="Attach a statement, receipt or spreadsheet" onClick={() => fileInput.current?.click()}>
+                <button className="icon-button" aria-label={t("Attach a file")} title={t("Attach a statement, receipt or spreadsheet")} onClick={() => fileInput.current?.click()}>
                   <Paperclip size={15} />
                 </button>
                 <input
@@ -1029,15 +1042,15 @@ export function AssistantPanel({
                     e.target.value = "";
                   }}
                 />
-                <span className="assistant-plan" title={status.model ? `Model: ${status.model}` : undefined}>
+                <span className="assistant-plan" title={status.model ? t("Model: {model}", { model: status.model }) : undefined}>
                   {planLabel(status)}
                 </span>
                 {running ? (
-                  <button className="assistant-send stop" aria-label="Stop" title="Stop" onClick={() => current.current && void assistant.stop(current.current)}>
+                  <button className="assistant-send stop" aria-label={t("Stop")} title={t("Stop")} onClick={() => current.current && void assistant.stop(current.current)}>
                     <Square size={11} fill="currentColor" />
                   </button>
                 ) : (
-                  <button className="assistant-send" aria-label="Send" title="Send (Enter)" disabled={!canSend} onClick={() => void send(draft)}>
+                  <button className="assistant-send" aria-label={t("Send")} title={t("Send (Enter)")} disabled={!canSend} onClick={() => void send(draft)}>
                     <ArrowUp size={15} />
                   </button>
                 )}
@@ -1047,17 +1060,16 @@ export function AssistantPanel({
           {status.provider === "chatgpt" && !status.planNoticeSeen && (
             <div className="assistant-notice-shade">
               <div className="assistant-notice" role="dialog" aria-modal="true" aria-labelledby="assistant-notice-title">
-                <h3 id="assistant-notice-title">You're using your ChatGPT plan</h3>
+                <h3 id="assistant-notice-title">{t("You're using your ChatGPT plan")}</h3>
                 <p>
-                  Messages here count toward your ChatGPT plan's usage, the same as using ChatGPT. You can set a limit for Local
-                  Budget in ChatGPT's settings.
+                  {t("Messages here count toward your ChatGPT plan's usage, the same as using ChatGPT. You can set a limit for Local Budget in ChatGPT's settings.")}
                 </p>
                 <div className="assistant-notice-actions">
                   <button className="link-button" onClick={() => void assistant.open("usage")}>
-                    Manage usage
+                    {t("Manage usage")}
                   </button>
                   <button className="primary" autoFocus onClick={() => void assistant.settings({ planNoticeSeen: true }).then(setStatus)}>
-                    Got it
+                    {t("Got it")}
                   </button>
                 </div>
               </div>
@@ -1068,7 +1080,7 @@ export function AssistantPanel({
       {preview && <ReportPreview threadId={preview.threadId} proposalId={preview.id} onClose={() => setPreview(null)} />}
       {dragging && (
         <div className="assistant-dropzone">
-          <Paperclip size={18} aria-hidden /> Drop to attach
+          <Paperclip size={18} aria-hidden /> {t("Drop to attach")}
         </div>
       )}
     </aside>

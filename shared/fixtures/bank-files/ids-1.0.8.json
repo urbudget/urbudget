@@ -1,0 +1,85 @@
+{
+  "us-amex.csv": {
+    "account": "card",
+    "currency": "USD",
+    "order": "mdy",
+    "flip": true,
+    "rows": [
+      ["bank:3237e15f83335cef73456373c18b61d3b075e8fe24d323687344d8bb4bbb2d7a","2026-10-16",-1485,"TST* CORNER CAFE SEATTLE WA",""],
+      ["bank:59c1a5cd5224a28e64386fe5ac3a3786c8c0af548af5dff459415726fe2150f8","2026-10-14",50000,"AUTOPAY PAYMENT RECEIVED - THANK YOU",""],
+      ["bank:bc0237bdbf572640410de2db9d70428d77cffaccf32dfb3d7ea08d0a19852440","2026-10-09",-3742,"AMAZON MARKETPLACE NA PA AMZN.COM/BILLWA",""],
+      ["bank:23ba234a1eca51d82f7709d99e8efda9c86be43722d19ed3db6fcdd0bb3685ec","2026-10-07",1999,"AMAZON MARKETPLACE NA PA AMZN.COM/BILLWA",""],
+      ["bank:3f16a5778c58f19b0c62d1c0f5ed485773e0d885a0ed0502e8bd9aec99949f1f","2026-10-02",-2495,"CAFE EXEMPLE PARIS",""],
+      ["bank:3578616f5bd1c46c480ae62450c73ee830e86b026d98f9a1248ed644143ebbc8","2026-09-24",-108995,"EXAMPLE FURNITURE CO SEATTLE WA",""]
+    ]
+  },
+  "gb-wise-statement.csv": {
+    "account": "main",
+    "currency": "GBP",
+    "order": "dmy",
+    "flip": false,
+    "rows": [
+      ["bank:ee721cbc5b454267ba7e34a60819487e7184ce921262fc840857375fa34e4185","2026-10-15",-65000,"Sent money to Oak Lettings Ltd",""],
+      ["bank:1decd2cc1600b9fc3d90714c6bebaa56341bcda36cd56a8de75f5e1ecc55a739","2026-10-08",-30000,"Converted GBP to EUR",""],
+      ["bank:3f1be35037f07c6675e7a97baa2d1e63e3ad4ddd0fad7df589e0439f415bc63b","2026-10-08",-137,"Wise Charges for: BALANCE-3900000001",""],
+      ["bank:fd185dd5363712bbe04d1d7ed4701e0cc35da361d254eacdaff5f051a7801933","2026-10-03",-2031,"Card transaction of 23.40 EUR issued by Café Lumière PARIS",""],
+      ["bank:13a73a78963a201faf457190531e3c7a25a45aa53540f3457f7c377af4f37bff","2026-09-29",75000,"Received money from Jane Example with reference Rent share",""]
+    ]
+  },
+  "nz-anz.csv": {
+    "account": "main",
+    "currency": "NZD",
+    "order": "dmy",
+    "flip": false,
+    "rows": [
+      ["bank:6a1d10cf7203bee27852e0e576bad66c077931630779f6ae6ab7b1c78c0280cb","2026-09-25",320000,"",""],
+      ["bank:fd736d2becf79e856aca174d44cbbb585b1c000345b4c7e84a2e392531b2b625","2026-09-29",-14560,"",""],
+      ["bank:179a84c0a49de8fda8e09b8a6c391c8917bd8a4c7585fddb26e67009e83245bc","2026-10-02",-60000,"",""],
+      ["bank:2d7d8fe911999aed441ccd3be132da9b83b8c7bc131ee81b48408d7bd1b08dd2","2026-10-06",-4127,"",""],
+      ["bank:b59ae87c061b7b6db78932233be59604cac61792e7035ce667b0d3aa227e4399","2026-10-10",-9215,"",""],
+      ["bank:e550adc64ae92bfbf9f532a8001a354856062bfa06b76696705139aa99349e38","2026-10-15",-4800,"",""],
+      ["bank:7a82a94e7f0ffda132bda6bcbe8f2eee845f587bc77148b9b457ff9379b79ad3","2026-10-19",3500,"",""]
+    ]
+  },
+  "ca-scotiabank.csv": {
+    "account": "main",
+    "currency": "CAD",
+    "order": "ymd",
+    "flip": true,
+    "rows": [
+      ["bank:037e54ef2eed66d2797761c892f5953244d1593be4bd37395b1713f684c8a56a","2026-10-21",-1695,"Service charge",""],
+      ["bank:92e50c840d1ad9d4d3ee91a96b758cb0b7eac3557027173ad57a636158c8da4f","2026-10-15",-7500,"Deposit",""],
+      ["bank:ca6d0b1a80b32c16a2fd05594c0037090e238cc8681372013915ea38acfffade","2026-10-08",-6327,"POS purchase",""],
+      ["bank:3d919e17ce5edfb2f57b761a391b45a0235112547c6e6d38edd340ff943b9c04","2026-10-01",-50000,"Transfer to account",""],
+      ["bank:02e5cd70c900e9975aac7677ee5ba3baa45d6afd107075873571f34e23a2d89b","2026-09-29",-8640,"Bill payment",""],
+      ["bank:5523e948ee999789c93fee173c3b41d4b96430eac9c8e3a0d221c3071501a0fe","2026-09-25",-245000,"Payroll deposit",""]
+    ]
+  },
+  "us-chase.qfx": {
+    "account": "main",
+    "currency": "USD",
+    "order": "ymd",
+    "flip": false,
+    "rows": [
+      ["bank:5791c6a9052f48c01ed6681d4613072382247661e7b2769287f38c6409bcb5bd","2026-10-01",-4567,"STARBUCKS STORE 12345","SEATTLE WA 10/01"],
+      ["bank:6872e2e20b676a3e22743941dfe5ded35d26f2a91d2e0ff7c2ccb7ebdc689c30","2026-10-01",150000,"ACME CORP PAYROLL","PPD ID: 1234567890"],
+      ["bank:24467e327893d720276a351ea78cd47152a8e70f5b7c44a9f20b4ba3b79e6dfb","2026-10-02",0,"ACCOUNT VERIFICATION",""],
+      ["bank:a9aaf2b00bba9779c1f90fcab0d401a9f62d0b9485adc4b975d37496058bc134","2026-10-02",-12000,"CHECK 1234",""]
+    ]
+  },
+  "ofx2-xml.ofx": {
+    "account": "main",
+    "currency": "USD",
+    "order": "ymd",
+    "flip": false,
+    "rows": [
+      ["bank:7d98491cf38c9f44a46124b1b427de09e5db79b7873ca98b97c6cc975de42b71","2026-09-30",310000,"ACME Corp Payroll","Salary September"],
+      ["bank:57da76ee1f7e963a0dea56e27f949698ba9b09c38a1c45a66904b8933d5a7a66","2026-10-01",-145000,"Oak Street Rentals LLC","October rent"],
+      ["bank:c219cda94a69e3f1d84e939fc74d6f5930b2efa448a77002de5817a88bef409b","2026-10-04",-2380,"","Card purchase – Portland"],
+      ["bank:08f74978b411efd5af7d76ca4a243ce12a53b2e8ac8012c633d79382986f40c6","2026-10-06",-40000,"Transfer to Savings","Online transfer to share 0002"],
+      ["bank:8184657f0dd113d646d73d1966df468587e21870ba2d533cd305960b797f60aa","2026-10-08",-500,"Monthly Maintenance Fee",""],
+      ["bank:939a6d92bce09a33fd8cc3a5a40448422ec606242baa6dfdc954142b6ffec6a5","2026-10-12",4299,"Online Store Refund","Return of order 5551234"],
+      ["bank:1b68854de05f37abc4c8b42dc0486fc64d717149fea6353ba3335f3b6e737fe4","2026-10-15",-1999,"Streamflix Subscription","Correction: duplicate posting removed"]
+    ]
+  }
+}

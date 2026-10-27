@@ -11,6 +11,7 @@ import {
   type NumberFormat,
 } from "./format";
 import { numberPresets } from "./newBudget";
+import { t, useLanguage } from "./i18n";
 
 export type FormatValue = { currency: string; numberFormat: NumberFormat; dateFormat: DateFormat };
 
@@ -22,10 +23,12 @@ export function BudgetFormatFields({
   value: FormatValue;
   onChange: (value: FormatValue) => void;
 }) {
+  // Currency names in the app's language ("US Dollar", «دولار أمريكي»).
+  const language = useLanguage();
   const currencies = useMemo(() => {
     let names: Intl.DisplayNames | undefined;
     try {
-      names = new Intl.DisplayNames(["en"], { type: "currency" });
+      names = new Intl.DisplayNames([language], { type: "currency" });
     } catch {
       names = undefined;
     }
@@ -34,7 +37,7 @@ export function BudgetFormatFields({
       label: `${code} · ${names?.of(code) ?? code}`,
       keywords: currencySymbol(code),
     }));
-  }, []);
+  }, [language]);
   const number = numberFormatFor(value.currency, value.numberFormat);
   const preset = numberPresets.findIndex(
     (p) => p.format.decimal === number.decimal && p.format.group === number.group,
@@ -44,9 +47,9 @@ export function BudgetFormatFields({
   return (
     <div className="form-grid">
       <label>
-        Currency
+        {t("Currency")}
         <Combobox
-          label="Currency"
+          label={t("Currency")}
           options={currencies}
           value={value.currency}
           onChange={(currency) =>
@@ -63,7 +66,7 @@ export function BudgetFormatFields({
         />
       </label>
       <label>
-        Number format
+        {t("Number format")}
         <select
           value={Math.max(0, preset)}
           onChange={(e) =>
@@ -81,20 +84,20 @@ export function BudgetFormatFields({
         </select>
       </label>
       <label>
-        Currency placement
+        {t("Currency placement")}
         <select
           value={number.symbol}
           onChange={(e) =>
             onChange({ ...value, numberFormat: { ...number, symbol: e.target.value as NumberFormat["symbol"] } })
           }
         >
-          <option value="before">Before amount ({example("before")})</option>
-          <option value="after">After amount ({example("after")})</option>
-          <option value="none">Don’t show ({example("none")})</option>
+          <option value="before">{t("Before amount ({example})", { example: example("before") })}</option>
+          <option value="after">{t("After amount ({example})", { example: example("after") })}</option>
+          <option value="none">{t("Don’t show ({example})", { example: example("none") })}</option>
         </select>
       </label>
       <label>
-        Date format
+        {t("Date format")}
         <select
           value={value.dateFormat}
           onChange={(e) => onChange({ ...value, dateFormat: e.target.value as DateFormat })}

@@ -2,13 +2,20 @@ import SwiftUI
 
 /// How a new budget starts, as the desktop's welcome sets one up (newBudget.ts, Welcome.tsx).
 enum StarterBudget {
-    /// Bills, needs, wants and savings categories to rename or delete later.
-    static let groups: [(name: String, categories: [String])] = [
-        ("Bills", ["Rent or mortgage", "Electricity", "Water", "Internet", "Phone"]),
-        ("Needs", ["Groceries", "Transportation", "Medical", "Insurance"]),
-        ("Wants", ["Dining out", "Entertainment", "Shopping", "Subscriptions"]),
-        ("Savings", ["Emergency fund", "Vacation", "Gifts"]),
-    ]
+    /// Bills, needs, wants and savings categories to rename or delete later, named in the app's
+    /// language when the budget is created; from then on they're the person's own names.
+    static let groups: [(name: String, categories: [String])] = { () -> [(name: String, categories: [String])] in
+        let bills: [String] = [String(localized: "Rent or mortgage"), String(localized: "Electricity"), String(localized: "Water"),
+                               String(localized: "Internet"), String(localized: "Phone")]
+        let needs: [String] = [String(localized: "Groceries"), String(localized: "Transportation"), String(localized: "Medical"),
+                               String(localized: "Insurance")]
+        let wants: [String] = [String(localized: "Dining out"), String(localized: "Entertainment"), String(localized: "Shopping"),
+                               String(localized: "Subscriptions")]
+        let savings: [String] = [String(localized: "Emergency fund"), String(localized: "Vacation"), String(localized: "Gifts")]
+        return [(String(localized: "Bills"), bills), (String(localized: "Needs"), needs),
+                (String(localized: "Wants"), wants),
+                (String(localized: "starter.group.savings", defaultValue: "Savings", comment: "A starter category group: money put aside."), savings)]
+    }()
 
     static func addCategories(to budget: inout JSON) {
         var categories = budget["categories"].array
@@ -65,23 +72,23 @@ struct GettingStartedCard: View {
     }
 
     private var steps: [Step] {
-        [
-            Step(title: "Add your accounts",
-                 text: "Add each bank account and credit card with today's balance. That balance is the money you have to budget.",
-                 done: !budget.rows("accounts").isEmpty, action: ("Add an account", addAccount)),
-            Step(title: "Assign your money",
-                 text: "Give all of it a job: tap a category's Assigned amount and type on the keypad until Unassigned reaches zero. Quick assign, in the Unassigned sheet, can fill in targets for you.",
-                 done: budget.rows("assignments").contains { $0.long("amount") != 0 }, action: ("Assign money", assign)),
-            Step(title: "Record your spending",
-                 text: "Add transactions as you spend, or import the statement file your bank lets you download (CSV, OFX, QFX or QIF) from an account's page. Each one comes out of its category.",
-                 done: !budget.rows("transactions").isEmpty, action: ("Add a transaction", addTransaction)),
-            Step(title: "Plan for a bigger bill",
-                 text: "Pick something that doesn't come every month, like car insurance or gifts, and give it a target. UrBudget works out what to set aside each month so it's ready when it's due.",
-                 done: budget.rows("categories").contains { $0.long("target") > 0 || $0["goal"].isObject }, action: ("Set a target", setTarget)),
-            Step(title: "Cover overspending",
-                 text: "When a category's Available turns red, tap it and move money over from a category that has some left. Changing the plan is part of the plan.",
-                 done: budget.rows("moneyMoves").contains { $0.text("kind") == "move" && $0.rows("changes").count > 1 }),
-        ]
+        var steps: [Step] = []
+        steps.append(Step(title: String(localized: "Add your accounts"),
+                          text: String(localized: "Add each bank account and credit card with today's balance. That balance is the money you have to budget."),
+                          done: !budget.rows("accounts").isEmpty, action: (String(localized: "Add an account"), addAccount)))
+        steps.append(Step(title: String(localized: "Assign your money"),
+                          text: String(localized: "Give all of it a job: tap a category's Assigned amount and type on the keypad until Unassigned reaches zero. Quick assign, in the Unassigned sheet, can fill in targets for you."),
+                          done: budget.rows("assignments").contains { $0.long("amount") != 0 }, action: (String(localized: "Assign money"), assign)))
+        steps.append(Step(title: String(localized: "Record your spending"),
+                          text: String(localized: "Add transactions as you spend, or import the statement file your bank lets you download (CSV, OFX, QFX or QIF) from an account's page. Each one comes out of its category."),
+                          done: !budget.rows("transactions").isEmpty, action: (String(localized: "Add a transaction"), addTransaction)))
+        steps.append(Step(title: String(localized: "Plan for a bigger bill"),
+                          text: String(localized: "Pick something that doesn't come every month, like car insurance or gifts, and give it a target. UrBudget works out what to set aside each month so it's ready when it's due."),
+                          done: budget.rows("categories").contains { $0.long("target") > 0 || $0["goal"].isObject }, action: (String(localized: "Set a target"), setTarget)))
+        steps.append(Step(title: String(localized: "Cover overspending"),
+                          text: String(localized: "When a category's Available turns red, tap it and move money over from a category that has some left. Changing the plan is part of the plan."),
+                          done: budget.rows("moneyMoves").contains { $0.text("kind") == "move" && $0.rows("changes").count > 1 }))
+        return steps
     }
 
     var body: some View {

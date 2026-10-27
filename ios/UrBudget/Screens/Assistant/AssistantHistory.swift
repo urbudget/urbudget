@@ -21,7 +21,7 @@ struct AssistantHistorySheet: View {
                     } label: {
                         HStack(spacing: 12) {
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(thread.text("title").isEmpty ? "New conversation" : thread.text("title"))
+                                Text(thread.text("title").isEmpty ? String(localized: "New conversation") : thread.text("title"))
                                     .foregroundStyle(Color.primary)
                                     .lineLimit(2)
                                 Text(Money.date(String(thread.text("updated").prefix(10))))
@@ -30,7 +30,8 @@ struct AssistantHistorySheet: View {
                             }
                             Spacer(minLength: 8)
                             if id == controller.threadId {
-                                Image(systemName: "checkmark").foregroundStyle(Color.urAccent).accessibilityLabel("Open")
+                                Image(systemName: "checkmark").foregroundStyle(Color.urAccent)
+                                    .accessibilityLabel(String(localized: "state.open", defaultValue: "Open", comment: "Something that is open now (a state, not a button)."))
                             }
                         }
                     }
@@ -145,7 +146,7 @@ struct AssistantContextRow: Identifiable, Sendable {
             .sorted { $0.text("date") > $1.text("date") }
             .map { transaction in
                 let account = accounts[transaction.text("accountId")] ?? ""
-                let payee = transaction.text("payee").isEmpty ? "No payee" : transaction.text("payee")
+                let payee = transaction.text("payee").isEmpty ? String(localized: "No payee") : transaction.text("payee")
                 let amount = money(transaction.long("amount"), currency)
                 let detail = [Money.date(transaction.text("date")), account, transaction.text("memo")].filter { !$0.isEmpty }.joined(separator: " · ")
                 return AssistantContextRow(id: transaction.text("id"), payee: payee, detail: detail, amount: amount,

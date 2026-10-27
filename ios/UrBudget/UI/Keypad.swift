@@ -38,8 +38,9 @@ struct PadAmount: View {
     var sign = ""
 
     var body: some View {
-        let text = pad.text.isEmpty ? money(0, currency) : pad.isSum ? pad.display : money(pad.cents ?? 0, currency)
-        let signed = !sign.isEmpty && !pad.isSum && (pad.cents ?? 0) != 0 ? sign + text : text
+        let text = pad.text.isEmpty ? Money.plain(0, currency: currency) : pad.isSum ? pad.display : Money.plain(pad.cents ?? 0, currency: currency)
+        // The sign and the sum stay left to right with the amount in Arabic.
+        let signed = AppLanguage.leftToRight(!sign.isEmpty && !pad.isSum && (pad.cents ?? 0) != 0 ? sign + text : text)
         Text(signed)
             .font(.system(size: pad.isSum ? 30 : 42, weight: .heavy, design: .rounded))
             .monospacedDigit()
@@ -54,7 +55,7 @@ struct PadAmount: View {
 /// The keypad for amounts, styled like the system keyboard: digits, the four operators, =, ⌫ and Done.
 struct AmountKeypad: View {
     var pad: PadState
-    var doneLabel = "Done"
+    var doneLabel = String(localized: "Done")
     var onDone: () -> Void
 
     var body: some View {
@@ -78,6 +79,8 @@ struct AmountKeypad: View {
                 .gridCellColumns(2)
             }
         }
+        // Digits keep the calculator's order (7 8 9 from the left) in right-to-left languages too.
+        .environment(\.layoutDirection, .leftToRight)
         .padding(8)
         .fixedSize(horizontal: false, vertical: true)
         .background(Color(light: 0xD1D3D9, dark: 0x2B2B2E))
@@ -105,7 +108,19 @@ struct AmountKeypad: View {
         }
         .buttonStyle(KeyStyle(kind: kind))
         .keyboardShortcut(shortcut(key))
-        .accessibilityLabel(["⌫": "Delete", "−": "Minus", "×": "Times", "÷": "Divided by", "00": "Double zero"][key] ?? key)
+        .accessibilityLabel(spoken(key))
+    }
+
+    /// What VoiceOver says for a key that isn't read well as it's printed.
+    private func spoken(_ key: String) -> String {
+        switch key {
+        case "⌫": return String(localized: "Delete")
+        case "−": return String(localized: "Minus")
+        case "×": return String(localized: "Times")
+        case "÷": return String(localized: "Divided by")
+        case "00": return String(localized: "Double zero")
+        default: return key
+        }
     }
 }
 

@@ -39,6 +39,7 @@ import { ByCategory, ByPayee, OverTime, SpendingCalendar } from "./reports/Spend
 import { CashFlow, IncomeBreakdown, IncomeExpense } from "./reports/Income";
 import { AgeOfMoney, BalanceSheet, Balances, NetWorth } from "./reports/Wealth";
 import { Forecast } from "./reports/Forecast";
+import { msg, t, tn, useLanguage } from "./i18n";
 import "./reports.css";
 
 type ReportId =
@@ -65,101 +66,102 @@ type ReportInfo = {
   /** The Categories filter applies. */
   categories?: boolean;
 };
+// Group names are also keys (remembered views); names, tabs and blurbs are translated when shown.
 const REPORTS: { group: string; items: ReportInfo[] }[] = [
   {
-    group: "Spending",
+    group: msg("Spending"),
     items: [
       {
         id: "categories",
-        label: "Spending by category",
-        short: "By category",
+        label: msg("Spending by category"),
+        short: msg("By category"),
         icon: ChartPie,
-        blurb: "Where your money went, by group and category, and how last month compares.",
+        blurb: msg("Where your money went, by group and category, and how last month compares."),
         categories: true,
       },
       {
         id: "payees",
-        label: "Spending by payee",
-        short: "By payee",
+        label: msg("Spending by payee"),
+        short: msg("By payee"),
         icon: Store,
-        blurb: "Who you pay most, and how often.",
+        blurb: msg("Who you pay most, and how often."),
         categories: true,
       },
       {
         id: "trends",
-        label: "Spending over time",
-        short: "Over time",
+        label: msg("Spending over time"),
+        short: msg("Over time"),
         icon: ChartColumnStacked,
-        blurb: "Spending month by month, by group or in total.",
+        blurb: msg("Spending month by month, by group or in total."),
         categories: true,
       },
       {
         id: "calendar",
-        label: "Spending calendar",
-        short: "Calendar",
+        label: msg("Spending calendar"),
+        short: msg("Calendar"),
         icon: CalendarDays,
-        blurb: "Spending day by day: busy days, quiet days and weekdays.",
+        blurb: msg("Spending day by day: busy days, quiet days and weekdays."),
         categories: true,
       },
     ],
   },
   {
-    group: "Income",
+    group: msg("Income"),
     items: [
       {
         id: "incomeExpense",
-        label: "Income vs. expense",
+        label: msg("Income vs. expense"),
         icon: Scale,
-        blurb: "Income, spending and the surplus left in your budget.",
+        blurb: msg("Income, spending and the surplus left in your budget."),
         categories: true,
       },
       {
         id: "income",
-        label: "Income breakdown",
+        label: msg("Income breakdown"),
         icon: HandCoins,
-        blurb: "Where your income comes from, and how steady it is.",
+        blurb: msg("Where your income comes from, and how steady it is."),
       },
       {
         id: "cashflow",
-        label: "Money in and out",
+        label: msg("Money in and out"),
         icon: ArrowLeftRight,
-        blurb: "Account movements across your budget boundary, including credit purchases.",
+        blurb: msg("Account movements across your budget boundary, including credit purchases."),
         categories: true,
       },
     ],
   },
   {
-    group: "Wealth",
+    group: msg("Wealth"),
     items: [
       {
         id: "networth",
-        label: "Net worth",
+        label: msg("Net worth"),
         icon: TrendingUp,
-        blurb: "What you own minus what you owe, month by month.",
+        blurb: msg("What you own minus what you owe, month by month."),
       },
       {
         id: "balance",
-        label: "Balance sheet",
+        label: msg("Balance sheet"),
         icon: Landmark,
-        blurb: "Assets and liabilities by type, with the ratios that matter.",
+        blurb: msg("Assets and liabilities by type, with the ratios that matter."),
       },
       {
         id: "balances",
-        label: "Balance over time",
+        label: msg("Balance over time"),
         icon: ChartLine,
-        blurb: "Each account's balance at the end of every month.",
+        blurb: msg("Each account's balance at the end of every month."),
       },
       {
         id: "forecast",
-        label: "Forecast",
+        label: msg("Forecast"),
         icon: Telescope,
-        blurb: "Where your cash and card balances are heading, from what's scheduled.",
+        blurb: msg("Where your cash and card balances are heading, from what's scheduled."),
       },
       {
         id: "age",
-        label: "Cash age",
+        label: msg("Cash age"),
         icon: Hourglass,
-        blurb: "How long money waits in your accounts before you spend it.",
+        blurb: msg("How long money waits in your accounts before you spend it."),
       },
     ],
   },
@@ -174,12 +176,18 @@ const GROUP_VIEWS_KEY = "lb:reports:groupViews";
 function MultiFilter({
   label,
   allLabel,
+  searchLabel,
+  countLabel,
   groups,
   selected,
   onChange,
 }: {
   label: string;
   allLabel: string;
+  /** The search field's placeholder, such as "Search accounts". */
+  searchLabel: string;
+  /** How several chosen items read, such as "3 accounts". */
+  countLabel: (count: number) => string;
   groups: { name: string; items: { id: string; label: string }[] }[];
   selected: Set<string>;
   onChange: (ids: Set<string>) => void;
@@ -196,10 +204,10 @@ function MultiFilter({
   const summary = !selected.size
     ? allLabel
     : !chosen.length
-      ? "None"
+      ? t("None")
       : chosen.length === 1
         ? chosen[0].label
-        : `${chosen.length} ${label.toLowerCase()}`;
+        : countLabel(chosen.length);
   const toggle = (ids: string[], on: boolean) => {
     const next = new Set(selected.size ? chosen.map((i) => i.id) : all.map((i) => i.id));
     for (const id of ids) {
@@ -217,15 +225,15 @@ function MultiFilter({
       <Popover open={open} onClose={() => setOpen(false)} anchor={button} label={label} className="filter-popover">
         <div className="filter-popover-head">
           <input
-            placeholder={`Search ${label.toLowerCase()}`}
+            placeholder={searchLabel}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
           <button className="link-button" onClick={() => onChange(new Set())}>
-            All
+            {t("All")}
           </button>
           <button className="link-button" onClick={() => onChange(new Set([""]))}>
-            None
+            {t("None")}
           </button>
         </div>
         <div className="filter-popover-list">
@@ -264,6 +272,7 @@ export function Reports({
   onInspect: (filter: RegisterFilter) => void;
 }) {
   const toast = useToast();
+  const language = useLanguage();
   const earliest = useMemo(
     () => budget.transactions.reduce((m, t) => (t.date < m ? t.date : m), today()).slice(0, 7),
     [budget.transactions],
@@ -340,14 +349,16 @@ export function Reports({
   }, [budget, key, view === "forecast", attempt]);
 
   // Groups that can hold spending, in budget order; colours follow the group, not its rank.
+  // Spending with no category reads as its own group, in the language in use.
+  const needsCategory = t(NEEDS_CATEGORY);
   const reportCategories = useMemo<Budget["categories"]>(() => [...budget.categories, {
-    id: UNCATEGORIZED_CATEGORY, name: NEEDS_CATEGORY, group: NEEDS_CATEGORY, target: 0,
-  }], [budget.categories]);
+    id: UNCATEGORIZED_CATEGORY, name: needsCategory, group: needsCategory, target: 0,
+  }], [budget.categories, needsCategory]);
   const groupOf = useMemo(() => new Map(reportCategories.map((c) => [c.id, c.group])), [reportCategories]);
   const nameOf = useMemo(() => new Map(reportCategories.map((c) => [c.id, c.name])), [reportCategories]);
   const spendingGroups = useMemo(
-    () => [...new Set([...groupNames(budget).filter((g) => budget.categories.some((c) => c.group === g && !c.paymentAccountId)), NEEDS_CATEGORY])],
-    [budget.categories, budget.groupOrder],
+    () => [...new Set([...groupNames(budget).filter((g) => budget.categories.some((c) => c.group === g && !c.paymentAccountId)), needsCategory])],
+    [budget.categories, budget.groupOrder, needsCategory, language],
   );
   const colorOf = (group: string) => {
     const i = spendingGroups.indexOf(group);
@@ -370,12 +381,12 @@ export function Reports({
   };
 
   const accountGroups = [
-    { name: "Budget", items: budget.accounts.filter((a) => !a.archived && a.kind !== "tracking") },
-    { name: "Tracking", items: budget.accounts.filter((a) => !a.archived && a.kind === "tracking") },
-    { name: "Closed", items: budget.accounts.filter((a) => a.archived) },
+    { name: msg("Budget"), items: budget.accounts.filter((a) => !a.archived && a.kind !== "tracking") },
+    { name: msg("Tracking"), items: budget.accounts.filter((a) => !a.archived && a.kind === "tracking") },
+    { name: msg("Closed"), items: budget.accounts.filter((a) => a.archived) },
   ]
     .filter((g) => g.items.length && (view !== "forecast" || g.name === "Budget"))
-    .map((g) => ({ name: g.name, items: g.items.map((a) => ({ id: a.id, label: a.name })) }));
+    .map((g) => ({ name: t(g.name), items: g.items.map((a) => ({ id: a.id, label: a.name })) }));
   const categoryGroups = spendingGroups.map((g) => ({
     name: g,
     items: reportCategories
@@ -387,7 +398,7 @@ export function Reports({
     const fail = (e: unknown) => toast({ message: errorText(e), tone: "error" });
     try {
       const path = await api.exportReports(budget, filter);
-      toast({ message: "Report exported.", action: { label: "Show in folder", onClick: () => void api.reveal(path).catch(fail) } });
+      if (path) toast({ message: t("Report exported."), action: { label: t("Show in folder"), onClick: () => void api.reveal(path).catch(fail) } });
     } catch (e) {
       fail(e);
     }
@@ -442,8 +453,8 @@ export function Reports({
         {/* The groups switch in the page header, and the group's reports are tabs over the report. */}
         <HeaderSlot>
           <Tabs
-            label="Report group"
-            tabs={REPORTS.map((g) => ({ id: g.group, label: g.group }))}
+            label={t("Report group")}
+            tabs={REPORTS.map((g) => ({ id: g.group, label: t(g.group) }))}
             value={group.group}
             onChange={chooseGroup}
           />
@@ -452,13 +463,13 @@ export function Reports({
           <Tabs
             key={group.group}
             className="report-tabs"
-            label={`${group.group} reports`}
+            label={t("{group} reports", { group: t(group.group) })}
             tabs={group.items.map((r) => ({
               id: r.id,
               label: (
                 <>
                   <r.icon size={15} aria-hidden />
-                  {r.short ?? r.label}
+                  {t(r.short ?? r.label)}
                 </>
               ),
             }))}
@@ -468,8 +479,8 @@ export function Reports({
         </div>
         <div className="report-main">
           <header className="report-head">
-            <h1>{info.label}</h1>
-            <p>{info.blurb}</p>
+            <h1>{t(info.label)}</h1>
+            <p>{t(info.blurb)}</p>
           </header>
           <div className="report-filter-row">
             {view !== "forecast" && (
@@ -478,34 +489,38 @@ export function Reports({
                 onChange={setRange}
                 granularity="month"
                 earliest={earliest}
-                label="Months"
+                label={t("Months")}
               />
             )}
             <MultiFilter
-              label="Accounts"
-              allLabel={view === "forecast" ? "All budget accounts" : "All accounts"}
+              label={t("Accounts")}
+              allLabel={view === "forecast" ? t("All budget accounts") : t("All accounts")}
+              searchLabel={t("Search accounts")}
+              countLabel={(n) => tn(n, "{count} accounts", "{count} accounts")}
               groups={accountGroups}
               selected={accounts}
               onChange={setAccounts}
             />
             {info.categories && (
               <MultiFilter
-                label="Categories"
-                allLabel="All categories"
+                label={t("Categories")}
+                allLabel={t("All categories")}
+                searchLabel={t("Search categories")}
+                countLabel={(n) => tn(n, "{count} categories", "{count} categories")}
                 groups={categoryGroups}
                 selected={categories}
                 onChange={setCategories}
               />
             )}
-            {loading && view !== "forecast" && <LoaderCircle size={16} className="spin muted" aria-label="Updating" />}
+            {loading && view !== "forecast" && <LoaderCircle size={16} className="spin muted" aria-label={t("Updating")} />}
             <span className="spacer" />
             {view !== "forecast" && (
               <button className="secondary export-button" onClick={() => void exportCsv()}>
-                <Download size={15} /> Export CSV
+                <Download size={15} /> {t("Export CSV")}
               </button>
             )}
           </div>
-          {error && view !== "forecast" && <p className="form-error" role="alert">{error} <button className="link-button" onClick={() => setAttempt((n) => n + 1)}>Retry report</button></p>}
+          {error && view !== "forecast" && <p className="form-error" role="alert">{error} <button className="link-button" onClick={() => setAttempt((n) => n + 1)}>{t("Retry report")}</button></p>}
           {figure && lineQuery && (
           <TransactionsDialog
             budget={budget}
@@ -528,8 +543,10 @@ export function Reports({
             <div className={`report-body${loading ? " loading" : ""}`} key={view}>
               {!!scope.data.categories[UNCATEGORIZED_CATEGORY] && info.categories && (
                 <p className="notice">
-                  {money(scope.data.categories[UNCATEGORIZED_CATEGORY], { symbol: true })} of spending still needs a category.
-                  It is included in these totals. <button className="link-button" onClick={() => setFigure({ title: NEEDS_CATEGORY, categoryId: UNCATEGORIZED_CATEGORY })}>Review transactions</button>
+                  {t("{amount} of spending still needs a category. It is included in these totals.", {
+                    amount: money(scope.data.categories[UNCATEGORIZED_CATEGORY], { symbol: true }),
+                  })}{" "}
+                  <button className="link-button" onClick={() => setFigure({ title: needsCategory, categoryId: UNCATEGORIZED_CATEGORY })}>{t("Review transactions")}</button>
                 </p>
               )}
               {body(scope)}
