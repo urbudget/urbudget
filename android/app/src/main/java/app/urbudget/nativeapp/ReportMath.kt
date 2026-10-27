@@ -38,20 +38,18 @@ object ReportColors {
 
 /** The report-only bucket for spending without a category, as the engine names it. */
 const val UNCATEGORIZED_BUCKET = "__uncategorized"
+/** The spending group of that bucket, as reports key it; [ReportBudget.groupLabel] says it in the interface's language. */
 const val NEEDS_CATEGORY = "Needs a category"
 
 // ---------- Text ----------
-
-private val MonthLongFormat = DateTimeFormatter.ofPattern("MMMM yyyy", Locale.ENGLISH)
-private val MonthShortFormat = DateTimeFormatter.ofPattern("MMM yyyy", Locale.ENGLISH)
-private val MonthAbbrevFormat = DateTimeFormatter.ofPattern("MMM", Locale.ENGLISH)
+// Month and day names follow the interface's language (Money.pattern); the words come from Words.
 
 /** "2026-10" as "October 2026", or "Oct 2026" when short. */
 fun reportMonthName(month: String, short: Boolean = false): String =
-    runCatching { YearMonth.parse(month).format(if (short) MonthShortFormat else MonthLongFormat) }.getOrDefault(month)
+    runCatching { YearMonth.parse(month).format(Money.pattern(if (short) "MMM yyyy" else "MMMM yyyy")) }.getOrDefault(month)
 
 /** "2026-10" (or a day in it) as "Oct". */
-fun monthAbbrev(month: String): String = runCatching { YearMonth.parse(month.take(7)).format(MonthAbbrevFormat) }.getOrDefault(month)
+fun monthAbbrev(month: String): String = runCatching { YearMonth.parse(month.take(7)).format(Money.pattern("MMM")) }.getOrDefault(month)
 
 fun shiftMonth(month: String, delta: Long): String = runCatching { YearMonth.parse(month).plusMonths(delta).toString() }.getOrDefault(month)
 fun firstDay(month: String) = "$month-01"
@@ -59,8 +57,7 @@ fun lastDay(month: String): String = runCatching { YearMonth.parse(month).atEndO
 
 /** JavaScript's weekday numbering (0 is Sunday), which the desktop's calendar uses. */
 fun jsWeekday(date: LocalDate): Int = date.dayOfWeek.value % 7
-fun weekdayName(day: Int, short: Boolean = false): String =
-    DayOfWeek.of(if (day % 7 == 0) 7 else day % 7).getDisplayName(if (short) TextStyle.SHORT else TextStyle.FULL, Locale.ENGLISH)
+fun weekdayName(day: Int, short: Boolean = false): String = Money.weekday(DayOfWeek.of(if (day % 7 == 0) 7 else day % 7), short)
 
 /** The first day of the week where the phone is set, in JavaScript's numbering. */
 fun localeWeekStart(locale: Locale = Locale.getDefault()): Int = java.time.temporal.WeekFields.of(locale).firstDayOfWeek.value % 7
@@ -79,9 +76,10 @@ fun jsNumber(value: Double): String = when {
 }
 
 /** "12.5%" of a positive total, else a dash. */
-fun share(n: Long, total: Long): String = if (total > 0) "${fixed(n.toDouble() / total * 100, 1)}%" else "—"
-fun plural(n: Long, one: String, many: String) = if (n == 1L) one else many
-fun daysText(v: Long?): String = if (v == null) "—" else "$v ${plural(v, "day", "days")}"
+fun share(n: Long, total: Long): String = if (total > 0) Money.ltr("${fixed(n.toDouble() / total * 100, 1)}%") else "—"
+fun daysText(v: Long?): String = if (v == null) "—" else Words.count(R.plurals.report_days, v)
+/** A percentage with its sign either way, as trends and changes show it. */
+private fun signedPercent(value: Double, digits: Int): String = Money.ltr("${if (value >= 0) "+" else ""}${fixed(value, digits)}%")
 private fun roundDiv(total: Long, n: Int): Long = Math.round(total.toDouble() / n)
 
 /** Axis label for an amount in cents: 0, 950, 1.5K, 12K, 1.2M. */
@@ -89,11 +87,12 @@ fun compactMoney(cents: Double, decimal: String = Money.decimalMark()): String {
     val v = cents / 100 + 0.0
     val size = abs(v)
     fun part(n: Double, digits: Int) = fixed(n, digits).replace(Regex("\\.0+$"), "").replace(".", decimal)
-    return when {
+    // K and M stay as they are in Arabic too: they are part of how the budget writes numbers.
+    return Money.ltr(when {
         size >= 1e6 -> "${part(v / 1e6, if (size >= 1e7) 0 else 1)}M"
         size >= 1e3 -> "${part(v / 1e3, if (size >= 1e4) 0 else 1)}K"
         else -> part(v, 0)
-    }
+    })
 }
 
 // ---------- Scales ----------
@@ -240,7 +239,26 @@ private val Sections = mapOf(
 )
 private val Liabilities = setOf("creditCard", "lineOfCredit", "mortgage", "autoLoan", "studentLoan", "personalLoan", "medicalDebt", "otherDebt")
 fun isLiability(type: String) = type in Liabilities
+/** The balance sheet section an account type falls in, by its English key; [sectionLabel] names it. */
 fun sectionOf(type: String) = Sections[type] ?: if (isLiability(type)) "Other debts" else "Other assets"
+
+/** A balance sheet section's name in the interface's language. */
+fun sectionLabel(section: String): String = when (section) {
+    "Cash and bank" -> Words[R.string.section_cash_bank]
+    "Investments" -> Words[R.string.section_investments]
+    "Property" -> Words[R.string.section_property]
+    "Vehicles" -> Words[R.string.section_vehicles]
+    "Receivables" -> Words[R.string.section_receivables]
+    "Other assets" -> Words[R.string.section_other_assets]
+    "Credit cards" -> Words[R.string.section_credit_cards]
+    "Lines of credit" -> Words[R.string.section_lines_of_credit]
+    "Mortgages" -> Words[R.string.section_mortgages]
+    "Loans" -> Words[R.string.section_loans]
+    "Other debts" -> Words[R.string.section_other_debts]
+    "Accounts in credit" -> Words[R.string.section_in_credit]
+    "Overdrawn accounts" -> Words[R.string.section_overdrawn]
+    else -> section
+}
 
 /** An account's type: the one chosen, else the imported one, else a guess from its kind and balance. */
 fun accountType(chosen: String, imported: String, kind: String, balance: Long): String = when {
@@ -279,9 +297,13 @@ class ReportBudget(
     val earliestMonth: String,
 ) {
     val accountsById: Map<String, ReportAccount> = accounts.associateBy { it.id }
+    /** The spending-without-a-category group's name, in the language these reports were built in. */
+    val needsCategory: String = Words[R.string.category_needed]
     fun money(cents: Long): String = Money.format(cents, currency)
     fun money(cents: Double): String = Money.format(Math.round(cents), currency)
-    fun signed(cents: Long) = "${if (cents > 0) "+" else ""}${money(cents)}"
+    fun signed(cents: Long) = Money.signed(cents, currency)
+    /** A group as reports show it: the person's own name, or the spending that still needs a category. */
+    fun groupLabel(group: String) = if (group == NEEDS_CATEGORY) needsCategory else group
     /** A group's colour: the first seven groups in budget order have their own. */
     fun colorOf(group: String): Int = spendingGroups.indexOf(group).let { if (it in 0..6) it else ReportColors.OTHER }
     fun accountName(id: String?): String = accountsById[id]?.name.orEmpty()
@@ -310,7 +332,7 @@ fun parseReportBudget(budget: JSONObject, today: LocalDate): ReportBudget {
     val nameOf = LinkedHashMap<String, String>()
     categories.forEach { groupOf[it.id] = it.group; nameOf[it.id] = it.name }
     groupOf[UNCATEGORIZED_BUCKET] = NEEDS_CATEGORY
-    nameOf[UNCATEGORIZED_BUCKET] = NEEDS_CATEGORY
+    nameOf[UNCATEGORIZED_BUCKET] = Words[R.string.category_needed]
     val spending = LinkedHashSet<String>()
     groupNames(categories, order).filter { g -> categories.any { it.group == g && !it.payment } }.forEach { spending.add(it) }
     spending.add(NEEDS_CATEGORY)
@@ -323,9 +345,9 @@ fun parseReportBudget(budget: JSONObject, today: LocalDate): ReportBudget {
 
 // ---------- Ranges and filters ----------
 
-enum class RangePreset(val label: String) {
-    ThisMonth("This month"), LastMonth("Last month"), Last3("Last 3 months"), Last6("Last 6 months"), Last12("Last 12 months"),
-    Ytd("Year to date"), LastYear("Last year"), All("All dates"), Custom("Custom range"),
+enum class RangePreset(val label: Int) {
+    ThisMonth(R.string.range_this_month), LastMonth(R.string.range_last_month), Last3(R.string.range_last_3_months), Last6(R.string.range_last_6_months),
+    Last12(R.string.range_last_12_months), Ytd(R.string.range_year_to_date), LastYear(R.string.range_last_year), All(R.string.range_all_dates), Custom(R.string.range_custom),
 }
 
 /** Inclusive months ("YYYY-MM"); an empty end means unbounded. */
@@ -356,9 +378,9 @@ fun defaultRange(month: String, today: YearMonth): MonthRange =
     if (month == today.toString()) rangeFor(RangePreset.Last12, today, "") else MonthRange(RangePreset.Custom, shiftMonth(month, -11), month)
 
 fun describeRange(range: MonthRange): String {
-    if (range.preset != RangePreset.Custom) return range.preset.label
+    if (range.preset != RangePreset.Custom) return Words[range.preset.label]
     fun show(v: String) = if (v.isEmpty()) "…" else reportMonthName(v, short = true)
-    return "${show(range.from)} – ${show(range.to)}"
+    return Words[R.string.date_range, show(range.from), show(range.to)]
 }
 
 @Immutable data class FilterItem(val id: String, val label: String)
@@ -367,10 +389,14 @@ fun describeRange(range: MonthRange): String {
 /** An empty selection means all; a selection of only unknown ids (the empty id) means none. */
 fun filterIsOn(selected: Set<String>, id: String) = selected.isEmpty() || id in selected
 
-fun filterSummary(groups: List<FilterGroup>, selected: Set<String>, allLabel: String, noun: String): String {
+fun filterSummary(groups: List<FilterGroup>, selected: Set<String>, allLabel: String, noun: String): String =
+    filterSummary(groups, selected, allLabel) { "$it $noun" }
+
+/** All, none, the one chosen, or how many ([count] words the number). */
+fun filterSummary(groups: List<FilterGroup>, selected: Set<String>, allLabel: String, count: (Int) -> String): String {
     if (selected.isEmpty()) return allLabel
     val chosen = groups.flatMap { it.items }.filter { it.id in selected }
-    return when (chosen.size) { 0 -> "None"; 1 -> chosen[0].label; else -> "${chosen.size} $noun" }
+    return when (chosen.size) { 0 -> Words[R.string.filter_none]; 1 -> chosen[0].label; else -> count(chosen.size) }
 }
 
 fun filterToggle(groups: List<FilterGroup>, selected: Set<String>, ids: List<String>, on: Boolean): Set<String> {
@@ -382,16 +408,16 @@ fun filterToggle(groups: List<FilterGroup>, selected: Set<String>, ids: List<Str
 
 /** The accounts filter: budget, tracking and closed accounts (only budget accounts for the forecast). */
 fun accountFilterGroups(ctx: ReportBudget, budgetOnly: Boolean): List<FilterGroup> = listOf(
-    "Budget" to ctx.accounts.filter { !it.archived && it.kind != "tracking" },
-    "Tracking" to ctx.accounts.filter { !it.archived && it.kind == "tracking" },
-    "Closed" to ctx.accounts.filter { it.archived },
-).filter { it.second.isNotEmpty() && (!budgetOnly || it.first == "Budget") }
-    .map { (name, items) -> FilterGroup(name, items.map { FilterItem(it.id, it.name) }) }
+    Triple("budget", R.string.report_accounts_budget, ctx.accounts.filter { !it.archived && it.kind != "tracking" }),
+    Triple("tracking", R.string.report_accounts_tracking, ctx.accounts.filter { !it.archived && it.kind == "tracking" }),
+    Triple("closed", R.string.report_accounts_closed, ctx.accounts.filter { it.archived }),
+).filter { it.third.isNotEmpty() && (!budgetOnly || it.first == "budget") }
+    .map { (_, name, items) -> FilterGroup(Words[name], items.map { FilterItem(it.id, it.name) }) }
 
 /** The categories filter: categories that can hold spending, by group, "Needs a category" last. */
 fun categoryFilterGroups(ctx: ReportBudget): List<FilterGroup> = ctx.spendingGroups.map { g ->
     val items = ctx.categories.filter { it.group == g && !it.payment }.map { FilterItem(it.id, it.name) }
-    FilterGroup(g, if (g == NEEDS_CATEGORY) items + FilterItem(UNCATEGORIZED_BUCKET, NEEDS_CATEGORY) else items)
+    FilterGroup(ctx.groupLabel(g), if (g == NEEDS_CATEGORY) items + FilterItem(UNCATEGORIZED_BUCKET, ctx.needsCategory) else items)
 }
 
 // ---------- Chart models ----------
@@ -422,7 +448,7 @@ data class LinesModel(
     val unit: String?, val xTicks: List<XTick?>, val titles: List<String>, val readouts: List<List<Readout>>, val endLabels: List<String?>,
 )
 
-fun monthXTick(month: String): XTick? = runCatching { val m = YearMonth.parse(month); val name = m.format(MonthAbbrevFormat); XTick(name, "$name ${month.substring(2, 4)}", m.year) }.getOrNull()
+fun monthXTick(month: String): XTick? = runCatching { val m = YearMonth.parse(month); val name = m.format(Money.pattern("MMM")); XTick(name, "$name ${month.substring(2, 4)}", m.year) }.getOrNull()
 fun monthTitle(month: String): String = reportMonthName(month)
 fun plainTick(text: String) = XTick(text, text, 0)
 
@@ -443,11 +469,11 @@ fun columnModel(
             val total = series.sumOf { at(it, i) }
             val overlay = line?.values?.getOrNull(i)
             // A line that is the stack's total (net worth) is its total already.
-            if (series.size > 1 && !grouped && (overlay == null || kotlin.math.abs(overlay - total) >= 0.005)) add(Readout("Total", format(total), null))
+            if (series.size > 1 && !grouped && (overlay == null || kotlin.math.abs(overlay - total) >= 0.005)) add(Readout(Words[R.string.report_total], format(total), null))
             overlay?.let { add(Readout(line.label, format(it), line.color, line = true)) }
         }
     }
-    return ColumnModel(label, keys, series, grouped, line, average?.second, average?.let { "${it.first} ${format(it.second)}" }, ticks,
+    return ColumnModel(label, keys, series, grouped, line, average?.second, average?.let { Words[R.string.report_average_line, it.first, format(it.second)] }, ticks,
         ticks.map(axis), unit, keys.mapIndexed { i, k -> xTick(k, i) }, keys.map(title), readouts)
 }
 
@@ -597,24 +623,23 @@ fun categoryView(data: ReportData, ctx: ReportBudget, group: String?, today: Loc
     val totals = totalsBy(data.categories, ctx, group)
     data class Row(val key: String, val label: String, val value: Long, val color: Int)
     val rows = (if (group != null) totals.keys.toList() else ctx.spendingGroups)
-        .map { key -> Row(key, if (group != null) ctx.nameOf[key] ?: key else key, totals[key] ?: 0L, if (group != null) catColor(key) else ctx.colorOf(key)) }
+        .map { key -> Row(key, if (group != null) ctx.nameOf[key] ?: key else ctx.groupLabel(key), totals[key] ?: 0L, if (group != null) catColor(key) else ctx.colorOf(key)) }
         .filter { it.value != 0L }.sortedByDescending { it.value }
     val total = rows.sumOf { it.value }
     val other = rows.filter { it.color == ReportColors.OTHER && it.value > 0 }
     val slices = rows.filter { it.color != ReportColors.OTHER && it.value > 0 }.map { SliceModel(it.key, it.label, it.value, it.color) } +
-        (if (other.isNotEmpty()) listOf(SliceModel("__other", "Other", other.sumOf { it.value }, ReportColors.OTHER)) else emptyList())
+        (if (other.isNotEmpty()) listOf(SliceModel("__other", Words[R.string.report_other], other.sumOf { it.value }, ReportColors.OTHER)) else emptyList())
     val top = rows.firstOrNull()
     val tiles = listOf(
-        Tile(if (group != null) "Spent in $group" else "Spending", ctx.money(total),
-            if (group != null) "${share(total, data.spending)} of all spending" else "over $n ${plural(n.toLong(), "month", "months")}"),
-        Tile("Monthly average", ctx.money(roundDiv(total, n))),
-        Tile(if (group != null) "Biggest category" else "Biggest group", top?.label ?: "—", top?.let { "${ctx.money(it.value)} · ${share(it.value, total)}" }),
-        Tile(if (group != null) "Categories with spending" else "Groups with spending", rows.count { it.value > 0 }.toString()),
+        Tile(if (group != null) Words[R.string.report_spent_in, ctx.groupLabel(group)] else Words[R.string.report_spending], ctx.money(total),
+            if (group != null) Words[R.string.report_of_all_spending, share(total, data.spending)] else Words.count(R.plurals.report_over_months, n.toLong())),
+        Tile(Words[R.string.report_monthly_average], ctx.money(roundDiv(total, n))),
+        Tile(Words[if (group != null) R.string.report_biggest_category else R.string.report_biggest_group], top?.label ?: "—", top?.let { "${ctx.money(it.value)} · ${share(it.value, total)}" }),
+        Tile(Words[if (group != null) R.string.report_categories_with_spending else R.string.report_groups_with_spending], rows.count { it.value > 0 }.toString()),
     )
     val colors = rows.associate { it.key to it.color }
-    val help = (if (group != null) "Select a category to see its transactions." else "Select a group to see its categories.") +
-        " Refunds reduce spending, so a category can be negative. The ring shows only groups or categories with net spending; the total and list include refunds."
-    return CategoryView(group, tiles, slices, ctx.money(total), group ?: "Spent",
+    val help = Words[if (group != null) R.string.report_categories_help_group else R.string.report_categories_help_all] + " " + Words[R.string.report_categories_help_refunds]
+    return CategoryView(group, tiles, slices, ctx.money(total), group?.let(ctx::groupLabel) ?: Words[R.string.report_spent],
         barRows(rows.map { Triple(it.key, it.label, it.value) }, { colors[it] }, total, ctx, drill = true), help,
         if (data.months.size >= 2) changesView(data, ctx, group, YearMonth.from(today).toString()) else null)
 }
@@ -632,16 +657,16 @@ fun changesView(data: ReportData, ctx: ReportBudget, group: String?, todayMonth:
     data class Row(val key: String, val label: String, val value: Long, val detail: String)
     val rows = keys.map { key ->
         val avg = average[key] ?: 0.0
-        Row(key, if (group != null) ctx.nameOf[key] ?: key else key, Math.round((now[key] ?: 0L) - avg), "avg ${ctx.money(Math.round(avg))}")
+        Row(key, if (group != null) ctx.nameOf[key] ?: key else ctx.groupLabel(key), Math.round((now[key] ?: 0L) - avg), Words[R.string.report_avg, ctx.money(Math.round(avg))])
     }.filter { it.value != 0L }.sortedByDescending { abs(it.value) }.take(10)
     val most = max(1L, rows.maxOfOrNull { abs(it.value) } ?: 1L)
     val partial = last.month == todayMonth
     return ChangesView(
-        "${reportMonthName(last.month)}${if (partial) " so far" else ""} against your average",
-        "the ${earlier.size}-month average before it",
-        rows.map { DivRowModel(it.key, it.label, "${if (it.value > 0) "+" else ""}${ctx.money(it.value)}", it.detail, (it.value.toDouble() / most).toFloat(),
+        Words[if (partial) R.string.report_changes_title_partial else R.string.report_changes_title, reportMonthName(last.month)],
+        Words.count(R.plurals.report_changes_aside, earlier.size.toLong()),
+        rows.map { DivRowModel(it.key, it.label, ctx.signed(it.value), it.detail, (it.value.toDouble() / most).toFloat(),
             if (it.value > 0) ReportColors.DIVERGING_NEGATIVE else ReportColors.DIVERGING_POSITIVE) },
-        listOf(LegendItem("Spent less than average", ReportColors.DIVERGING_POSITIVE), LegendItem("Spent more than average", ReportColors.DIVERGING_NEGATIVE)),
+        listOf(LegendItem(Words[R.string.report_spent_less], ReportColors.DIVERGING_POSITIVE), LegendItem(Words[R.string.report_spent_more], ReportColors.DIVERGING_NEGATIVE)),
     )
 }
 
@@ -668,26 +693,25 @@ fun payeeView(data: ReportData, ctx: ReportBudget): PayeeView {
     val restTotal = rest.sumOf { it.amount }
     fun average(p: PayeeSpend) = ctx.money(Math.round(p.amount.toDouble() / max(1L, p.count)))
     val levels = heatLevels(big.map { it.amount })
+    val noPayee = Words[R.string.payee_none]
     val tiles = listOf(
-        Tile("Spending", ctx.money(total), "at ${all.size} ${plural(all.size.toLong(), "payee", "payees")}"),
-        Tile("Top payee", top?.let { it.name.ifEmpty { "No payee" } } ?: "—", top?.let { "${ctx.money(it.amount)} · ${share(it.amount, positiveTotal)} of spending shown" }),
-        Tile("Average per transaction", if (count != 0L) ctx.money(Math.round(total.toDouble() / count)) else "—", "$count transactions"),
-        Tile("Top 5 payees", share(positive.take(5).sumOf { it.amount }, positiveTotal), "of spending shown"),
+        Tile(Words[R.string.report_spending], ctx.money(total), Words.count(R.plurals.report_at_payees, all.size.toLong())),
+        Tile(Words[R.string.report_top_payee], top?.let { it.name.ifEmpty { noPayee } } ?: "—", top?.let { Words[R.string.report_amount_share_shown, ctx.money(it.amount), share(it.amount, positiveTotal)] }),
+        Tile(Words[R.string.report_average_per_transaction], if (count != 0L) ctx.money(Math.round(total.toDouble() / count)) else "—", Words.count(R.plurals.report_transactions_count, count)),
+        Tile(Words[R.string.report_top_5_payees], share(positive.take(5).sumOf { it.amount }, positiveTotal), Words[R.string.report_of_spending_shown]),
     )
     return PayeeView(
         tiles,
-        if (rest.isNotEmpty()) "Top ${big.size} payees" else "Where your money goes",
-        "${if (rest.isNotEmpty()) "${share(positiveTotal - restTotal, positiveTotal)} of spending shown · " else ""}Bigger tiles, more spent",
+        if (rest.isNotEmpty()) Words.count(R.plurals.report_top_payees, big.size.toLong()) else Words[R.string.report_where_money_goes],
+        if (rest.isNotEmpty()) Words[R.string.report_payees_aside_share, share(positiveTotal - restTotal, positiveTotal)] else Words[R.string.report_payees_aside],
         big.map { p ->
-            TreemapItem(p.name, p.name.ifEmpty { "No payee" }, p.amount, ctx.money(p.amount), "${share(p.amount, positiveTotal)} of spending shown",
-                "${p.count} ${plural(p.count, "transaction", "transactions")} · avg ${average(p)}", levels.level(p.amount))
+            TreemapItem(p.name, p.name.ifEmpty { noPayee }, p.amount, ctx.money(p.amount), Words[R.string.report_share_of_spending_shown, share(p.amount, positiveTotal)],
+                Words.count(R.plurals.report_payee_tile_more, p.count, average(p)), levels.level(p.amount))
         },
-        "Select a payee to see its transactions. Tiles show payees with net spending; the total and table include refunds." +
-            (if (refunds > 0) " Net refunds of ${ctx.money(refunds)} at other payees reduce the total." else ""),
-        if (rest.isNotEmpty()) "${rest.size} more ${plural(rest.size.toLong(), "payee", "payees")} · ${ctx.money(restTotal)}" else null,
+        Words[R.string.report_payees_help] + (if (refunds > 0) " " + Words[R.string.report_payees_help_refunds, ctx.money(refunds)] else ""),
+        if (rest.isNotEmpty()) Words.count(R.plurals.report_more_payees, rest.size.toLong(), ctx.money(restTotal)) else null,
         all.map { p ->
-            PayeeRow(p.name, p.name, p.name.ifEmpty { "No payee" }, ctx.money(p.amount),
-                "${share(p.amount, total)} · ${p.count} ${plural(p.count, "transaction", "transactions")} · avg ${average(p)}")
+            PayeeRow(p.name, p.name, p.name.ifEmpty { noPayee }, ctx.money(p.amount), Words.count(R.plurals.report_payee_row_detail, p.count, share(p.amount, total), average(p)))
         },
     )
 }
@@ -698,9 +722,9 @@ fun trendTile(totals: List<Long>): Tile {
     val recent = if (half > 0) totals.takeLast(half).sum().toDouble() / half else 0.0
     val before = if (half > 0) totals.take(half).sum().toDouble() / half else 0.0
     val known = half > 0 && before != 0.0
-    return Tile("Trend",
-        if (known) "${if (recent >= before) "+" else ""}${fixed((recent - before) / before * 100, 0)}%" else "—",
-        if (half > 0) "last $half months against the $half before" else "needs two months or more",
+    return Tile(Words[R.string.report_trend],
+        if (known) signedPercent((recent - before) / before * 100, 0) else "—",
+        if (half > 0) Words.count(R.plurals.report_trend_note, half.toLong()) else Words[R.string.report_trend_needs_two],
         if (known) (if (recent > before) Tone.Negative else Tone.Positive) else Tone.None)
 }
 
@@ -709,7 +733,7 @@ fun overTimeView(data: ReportData, ctx: ReportBudget, byGroup: Boolean): OverTim
     val series = ArrayList<ColumnSeries>()
     for (g in ctx.spendingGroups) {
         val color = ctx.colorOf(g)
-        val label = if (color == ReportColors.OTHER) "Other" else g
+        val label = if (color == ReportColors.OTHER) Words[R.string.report_other] else ctx.groupLabel(g)
         val values = data.months.map { m -> m.categories.entries.filter { ctx.groupOf[it.key] == g }.sumOf { it.value }.toDouble() }
         val existing = series.indexOfFirst { it.label == label }
         if (existing >= 0) series[existing] = series[existing].copy(values = series[existing].values.mapIndexed { i, v -> v + values[i] })
@@ -720,19 +744,19 @@ fun overTimeView(data: ReportData, ctx: ReportBudget, byGroup: Boolean): OverTim
     val average = if (totals.isNotEmpty()) roundDiv(totals.sum(), totals.size) else 0L
     val byAmount = data.months.sortedByDescending { it.spending }
     val fmt: (Double) -> String = { ctx.money(it) }
-    val chart = columnModel(if (byGroup) "Spending by month, stacked by category group" else "Spending by month", keys,
-        if (byGroup) shown else listOf(ColumnSeries("total", "Spending", 0, totals.map { it.toDouble() })), fmt, moneyAxis, ctx.axisUnit,
-        average = "Average" to average.toDouble())
+    val chart = columnModel(Words[if (byGroup) R.string.report_chart_spending_by_group else R.string.report_chart_spending_by_month], keys,
+        if (byGroup) shown else listOf(ColumnSeries("total", Words[R.string.report_spending], 0, totals.map { it.toDouble() })), fmt, moneyAxis, ctx.axisUnit,
+        average = Words[R.string.report_average] to average.toDouble())
     val rows = data.months.mapIndexed { i, m ->
         FigureRow(m.month, reportMonthName(m.month, short = true), ctx.money(m.spending),
-            if (byGroup) shown.filter { it.values[i] != 0.0 }.joinToString(" · ") { "${it.label} ${ctx.money(it.values[i])}" }.ifEmpty { null } else null)
-    } + FigureRow("__average", "Average", ctx.money(average),
-        if (byGroup) shown.joinToString(" · ") { s -> "${s.label} ${ctx.money(Math.round(s.values.sum() / max(1, keys.size)))}" }.ifEmpty { null } else null,
+            if (byGroup) shown.filter { it.values[i] != 0.0 }.joinToString(" · ") { "${Money.own(it.label)} ${ctx.money(it.values[i])}" }.ifEmpty { null } else null)
+    } + FigureRow("__average", Words[R.string.report_average], ctx.money(average),
+        if (byGroup) shown.joinToString(" · ") { s -> "${Money.own(s.label)} ${ctx.money(Math.round(s.values.sum() / max(1, keys.size)))}" }.ifEmpty { null } else null,
         style = RowStyle.Total)
     return OverTimeView(byGroup, listOf(
-        Tile("Monthly average", ctx.money(average)),
-        Tile("Highest month", byAmount.firstOrNull()?.let { ctx.money(it.spending) } ?: "—", byAmount.firstOrNull()?.let { reportMonthName(it.month) }),
-        Tile("Lowest month", byAmount.lastOrNull()?.let { ctx.money(it.spending) } ?: "—", byAmount.lastOrNull()?.let { reportMonthName(it.month) }),
+        Tile(Words[R.string.report_monthly_average], ctx.money(average)),
+        Tile(Words[R.string.report_highest_month], byAmount.firstOrNull()?.let { ctx.money(it.spending) } ?: "—", byAmount.firstOrNull()?.let { reportMonthName(it.month) }),
+        Tile(Words[R.string.report_lowest_month], byAmount.lastOrNull()?.let { ctx.money(it.spending) } ?: "—", byAmount.lastOrNull()?.let { reportMonthName(it.month) }),
         trendTile(totals),
     ), chart, if (byGroup) shown.map { LegendItem(it.label, it.color) } else emptyList(), rows)
 }
@@ -763,12 +787,12 @@ fun calendarView(data: ReportData, ctx: ReportBudget, scope: ReportScope): Calen
     val weekdays = (0 until 7).map { (it + scope.weekStart) % 7 }
     val byWeekday = weekdayAverages(days, values, scope.weekStart)
     val top = byWeekday.indexOf(byWeekday.maxOrNull() ?: 0L)
-    fun dayTitle(d: String) = "${weekdayName(jsWeekday(LocalDate.parse(d)))} ${Money.date(d)}"
+    fun dayTitle(d: String) = Words[R.string.report_day_title, weekdayName(jsWeekday(LocalDate.parse(d))), Money.date(d)]
     val tiles = listOf(
-        Tile("Average a day", if (days.isNotEmpty()) ctx.money(roundDiv(days.sumOf { values[it] ?: 0L }, days.size)) else "—"),
-        Tile("No-spend days", (days.size - spent.size).toString(), "of ${days.size} days · ${share((days.size - spent.size).toLong(), days.size.toLong())}"),
-        Tile("Biggest day", busiest.firstOrNull()?.let { ctx.money(values[it] ?: 0L) } ?: "—", busiest.firstOrNull()?.let { Money.date(it) }),
-        Tile("Busiest weekday", if (spent.isNotEmpty()) weekdayName(weekdays[top]) else "—", if (spent.isNotEmpty()) "${ctx.money(byWeekday[top])} on average" else null),
+        Tile(Words[R.string.report_average_a_day], if (days.isNotEmpty()) ctx.money(roundDiv(days.sumOf { values[it] ?: 0L }, days.size)) else "—"),
+        Tile(Words[R.string.report_no_spend_days], (days.size - spent.size).toString(), Words.count(R.plurals.report_of_days, days.size.toLong(), share((days.size - spent.size).toLong(), days.size.toLong()))),
+        Tile(Words[R.string.report_biggest_day], busiest.firstOrNull()?.let { ctx.money(values[it] ?: 0L) } ?: "—", busiest.firstOrNull()?.let { Money.date(it) }),
+        Tile(Words[R.string.report_busiest_weekday], if (spent.isNotEmpty()) weekdayName(weekdays[top]) else "—", if (spent.isNotEmpty()) Words[R.string.report_on_average, ctx.money(byWeekday[top])] else null),
     )
     val heat = if (days.isEmpty()) null else {
         val scale = heatLevels(days.map { values[it] ?: 0L })
@@ -779,8 +803,8 @@ fun calendarView(data: ReportData, ctx: ReportBudget, scope: ReportScope): Calen
             listOf(1, 3, 5).map { weekdayName((it + scope.weekStart) % 7, short = true) },
             days.map(::dayTitle), days.map { ctx.money(values[it] ?: 0L) }, days.map { (values[it] ?: 0L) > 0 })
     }
-    val weekdayChart = columnModel("Average spending on each day of the week", weekdays.map { it.toString() },
-        listOf(ColumnSeries("avg", "Average", 0, byWeekday.map { it.toDouble() })), { ctx.money(it) }, moneyAxis, ctx.axisUnit,
+    val weekdayChart = columnModel(Words[R.string.report_chart_weekdays], weekdays.map { it.toString() },
+        listOf(ColumnSeries("avg", Words[R.string.report_average], 0, byWeekday.map { it.toDouble() })), { ctx.money(it) }, moneyAxis, ctx.axisUnit,
         xTick = { k, _ -> plainTick(weekdayName(k.toInt(), short = true)) }, title = { weekdayName(it.toInt()) })
     return CalendarView(tiles, heat, weekdayChart, busiest.take(10).map { d ->
         FigureRow(d, Money.date(d), ctx.money(values[d] ?: 0L), weekdayName(jsWeekday(LocalDate.parse(d)), short = true),
@@ -800,29 +824,32 @@ fun incomeExpenseView(data: ReportData, ctx: ReportBudget, someCategories: Boole
     val saved = net.count { it > 0 }
     var best: ReportMonth? = null
     data.months.forEach { m -> if (best == null || m.netIncome > best!!.netIncome) best = m }
-    val rateText = if (data.income > 0) "${fixed(kept.toDouble() / data.income * 100, 1)}%" else "—"
+    val rateText = if (data.income > 0) Money.ltr("${fixed(kept.toDouble() / data.income * 100, 1)}%") else "—"
     val fmt: (Double) -> String = { ctx.money(it) }
-    val percent: (Double) -> String = { "${jsNumber(it)}%" }
+    val percent: (Double) -> String = { Money.ltr("${jsNumber(it)}%") }
+    val income = Words[R.string.report_income]
+    val spending = Words[R.string.report_spending]
+    val surplus = Words[R.string.report_budget_surplus]
+    val surplusRate = Words[R.string.report_budget_surplus_rate]
     val tiles = listOf(
-        Tile("Income", ctx.money(data.income), "${ctx.money(roundDiv(data.income, n))} a month"),
-        Tile("Spending", ctx.money(data.spending), "${ctx.money(roundDiv(data.spending, n))} a month"),
-        Tile("Budget surplus", ctx.money(kept), "${ctx.signed(roundDiv(kept, n))} a month", if (kept < 0) Tone.Negative else Tone.Positive),
-        Tile("Budget surplus rate", rateText, "surplus as a share of income"),
-        Tile("Positive-surplus months", "$saved of ${data.months.size}", best?.takeIf { it.netIncome > 0 }?.let { "best: ${reportMonthName(it.month)}" }),
+        Tile(income, ctx.money(data.income), Words[R.string.report_a_month, ctx.money(roundDiv(data.income, n))]),
+        Tile(spending, ctx.money(data.spending), Words[R.string.report_a_month, ctx.money(roundDiv(data.spending, n))]),
+        Tile(surplus, ctx.money(kept), Words[R.string.report_a_month, ctx.signed(roundDiv(kept, n))], if (kept < 0) Tone.Negative else Tone.Positive),
+        Tile(surplusRate, rateText, Words[R.string.report_surplus_share_of_income]),
+        Tile(Words[R.string.report_positive_surplus_months], Words[R.string.report_x_of_y, "$saved", "${data.months.size}"], best?.takeIf { it.netIncome > 0 }?.let { Words[R.string.report_best_month, reportMonthName(it.month)] }),
     )
-    val help = "Budget surplus compares income with spending. Categorized transfers to tracking investments and loans reduce it; use Net worth to see changes in wealth." +
-        (if (someCategories) " Income stays included; spending reflects the chosen categories." else "")
-    val chart = columnModel("Income and spending side by side each month, with budget surplus as a line", keys, listOf(
-        ColumnSeries("income", "Income", 0, data.months.map { it.income.toDouble() }),
-        ColumnSeries("spending", "Spending", 1, data.months.map { it.spending.toDouble() }),
-    ), fmt, moneyAxis, ctx.axisUnit, grouped = true, line = LineOverlay("Budget surplus", ReportColors.INK, net.map { it.toDouble() }))
-    val legend = listOf(LegendItem("Income", 0), LegendItem("Spending", 1), LegendItem("Budget surplus", ReportColors.INK, line = true))
-    val rate = linesModel("Budget surplus each month, as a percentage of income", keys, listOf(LineSeries("rate", "Budget surplus rate", 0, rates)), percent, percent, null)
-    val cumulativeChart = linesModel("Budget surplus added up month by month", keys,
-        listOf(LineSeries("surplus", "Cumulative budget surplus", 2, cumulative.map { it.toDouble() })), fmt, moneyAxis, ctx.axisUnit)
+    val help = Words[R.string.report_surplus_help] + (if (someCategories) " " + Words[R.string.report_surplus_help_categories] else "")
+    val chart = columnModel(Words[R.string.report_chart_income_spending], keys, listOf(
+        ColumnSeries("income", income, 0, data.months.map { it.income.toDouble() }),
+        ColumnSeries("spending", spending, 1, data.months.map { it.spending.toDouble() }),
+    ), fmt, moneyAxis, ctx.axisUnit, grouped = true, line = LineOverlay(surplus, ReportColors.INK, net.map { it.toDouble() }))
+    val legend = listOf(LegendItem(income, 0), LegendItem(spending, 1), LegendItem(surplus, ReportColors.INK, line = true))
+    val rate = linesModel(Words[R.string.report_chart_surplus_rate], keys, listOf(LineSeries("rate", surplusRate, 0, rates)), percent, percent, null)
+    val cumulativeChart = linesModel(Words[R.string.report_chart_surplus_cumulative], keys,
+        listOf(LineSeries("surplus", Words[R.string.report_cumulative_surplus], 2, cumulative.map { it.toDouble() })), fmt, moneyAxis, ctx.axisUnit)
     fun totalRow(key: String, title: String, values: List<Long>, style: RowStyle, expand: String? = null, tone: Boolean = false): FigureRow {
         val sum = values.sum()
-        return FigureRow(key, title, ctx.money(sum), "avg ${ctx.money(roundDiv(sum, n))} a month", if (tone && sum < 0) Tone.Negative else Tone.None, style, expand = expand)
+        return FigureRow(key, title, ctx.money(sum), Words[R.string.report_avg_a_month, ctx.money(roundDiv(sum, n))], if (tone && sum < 0) Tone.Negative else Tone.None, style, expand = expand)
     }
     val sources = data.incomeSources.entries.sortedByDescending { it.value }
     val groupRows = ctx.spendingGroups.map { g ->
@@ -831,21 +858,21 @@ fun incomeExpenseView(data: ReportData, ctx: ReportBudget, someCategories: Boole
             ids.map { id -> id to data.months.map { it.categories[id] ?: 0L } }.sortedByDescending { it.second.sum() })
     }.filter { (_, values, _) -> values.any { it != 0L } }
     val table = buildList {
-        add(FigureRow("__income", "Income", style = RowStyle.Section))
-        sources.forEach { (payee, _) -> add(totalRow("in:$payee", payee.ifEmpty { "No payee" }, data.months.map { it.incomeSources[payee] ?: 0L }, RowStyle.Plain)) }
-        add(totalRow("__totalIncome", "Total income", data.months.map { it.income }, RowStyle.Total, tone = true))
-        add(FigureRow("__spending", "Spending", style = RowStyle.Section))
-        groupRows.forEach { (g, values, _) -> add(totalRow("g:$g", g, values, RowStyle.Group, expand = g)) }
-        add(totalRow("__totalSpending", "Total spending", data.months.map { it.spending }, RowStyle.Total, tone = true))
-        add(totalRow("__surplus", "Budget surplus", net, RowStyle.Net, tone = true))
-        add(FigureRow("__rate", "Budget surplus rate", rateText, style = RowStyle.Net, tone = if (kept < 0 && data.income > 0) Tone.Negative else Tone.None))
+        add(FigureRow("__income", income, style = RowStyle.Section))
+        sources.forEach { (payee, _) -> add(totalRow("in:$payee", payee.ifEmpty { Words[R.string.payee_none] }, data.months.map { it.incomeSources[payee] ?: 0L }, RowStyle.Plain)) }
+        add(totalRow("__totalIncome", Words[R.string.report_total_income], data.months.map { it.income }, RowStyle.Total, tone = true))
+        add(FigureRow("__spending", spending, style = RowStyle.Section))
+        groupRows.forEach { (g, values, _) -> add(totalRow("g:$g", ctx.groupLabel(g), values, RowStyle.Group, expand = g)) }
+        add(totalRow("__totalSpending", Words[R.string.report_total_spending], data.months.map { it.spending }, RowStyle.Total, tone = true))
+        add(totalRow("__surplus", surplus, net, RowStyle.Net, tone = true))
+        add(FigureRow("__rate", surplusRate, rateText, style = RowStyle.Net, tone = if (kept < 0 && data.income > 0) Tone.Negative else Tone.None))
     }
     val children = groupRows.associate { (g, _, categories) ->
         g to categories.map { (id, values) -> totalRow("c:$id", ctx.nameOf[id] ?: id, values, RowStyle.Child) }
     }
     val months = data.months.mapIndexed { i, m ->
         FigureRow(m.month, reportMonthName(m.month, short = true), ctx.money(m.netIncome),
-            "Income ${ctx.money(m.income)} · Spending ${ctx.money(m.spending)} · Rate ${rates[i]?.let { "${jsNumber(it)}%" } ?: "—"}",
+            Words[R.string.report_income_month_detail, ctx.money(m.income), ctx.money(m.spending), rates[i]?.let { Money.ltr("${jsNumber(it)}%") } ?: "—"],
             if (m.netIncome < 0) Tone.Negative else Tone.None)
     }
     return IncomeExpenseView(tiles, help, chart, legend, rate, cumulativeChart, table, children, months)
@@ -854,12 +881,13 @@ fun incomeExpenseView(data: ReportData, ctx: ReportBudget, someCategories: Boole
 /** Where income comes from: sources ranked, as a whole and month by month. */
 fun incomeView(data: ReportData, ctx: ReportBudget): IncomeView {
     val n = max(1, data.months.size)
-    val all = data.incomeSources.entries.map { Triple(it.key, it.key.ifEmpty { "No payee" }, it.value) }
+    val noPayee = Words[R.string.payee_none]
+    val all = data.incomeSources.entries.map { Triple(it.key, it.key.ifEmpty { noPayee }, it.value) }
     val positive = all.filter { it.third > 0 }.sortedByDescending { it.third }
     val negative = all.filter { it.third < 0 }.sortedBy { it.third }
     val coloured = positive.mapIndexed { i, s -> SliceModel(s.first, s.second, s.third, if (i < 7) i else ReportColors.OTHER) }
     val rest = coloured.drop(7)
-    val folded = if (rest.isNotEmpty()) coloured.take(7) + SliceModel("__other", "Other sources", rest.sumOf { it.value }, ReportColors.OTHER) else coloured
+    val folded = if (rest.isNotEmpty()) coloured.take(7) + SliceModel("__other", Words[R.string.report_other_sources], rest.sumOf { it.value }, ReportColors.OTHER) else coloured
     val total = positive.sumOf { it.third }
     val topKeys = coloured.take(7).map { it.key }.toSet()
     val series = folded.map { s ->
@@ -870,24 +898,24 @@ fun incomeView(data: ReportData, ctx: ReportBudget): IncomeView {
     }
     val top = positive.firstOrNull()
     val tiles = listOf(
-        Tile("Income", ctx.money(data.income),
-            if (negative.isNotEmpty()) "after ${ctx.money(-negative.sumOf { it.third })} taken out" else "from ${positive.size} ${plural(positive.size.toLong(), "source", "sources")}"),
-        Tile("Monthly average", ctx.money(roundDiv(data.income, n))),
-        Tile("Largest source", top?.second ?: "—", top?.let { "${ctx.money(it.third)} · ${share(it.third, total)}" }),
-        Tile("Months with income", "${data.months.count { it.income > 0 }} of ${data.months.size}"),
+        Tile(Words[R.string.report_income], ctx.money(data.income),
+            if (negative.isNotEmpty()) Words[R.string.report_after_taken_out, ctx.money(-negative.sumOf { it.third })] else Words.count(R.plurals.report_from_sources, positive.size.toLong())),
+        Tile(Words[R.string.report_monthly_average], ctx.money(roundDiv(data.income, n))),
+        Tile(Words[R.string.report_largest_source], top?.second ?: "—", top?.let { "${ctx.money(it.third)} · ${share(it.third, total)}" }),
+        Tile(Words[R.string.report_months_with_income], Words[R.string.report_x_of_y, "${data.months.count { it.income > 0 }}", "${data.months.size}"]),
     )
     val most = max(1L, coloured.maxOfOrNull { it.value } ?: 1L)
     val bars = coloured.map { BarRowModel(it.key, it.label, ctx.money(it.value), share(it.value, total), it.color, (it.value.toDouble() / most).toFloat()) }
-    val monthly = if (positive.isNotEmpty()) columnModel("Income each month, stacked by source", data.months.map { it.month }, series, { ctx.money(it) }, moneyAxis, ctx.axisUnit) else null
+    val monthly = if (positive.isNotEmpty()) columnModel(Words[R.string.report_chart_income_by_source], data.months.map { it.month }, series, { ctx.money(it) }, moneyAxis, ctx.axisUnit) else null
     val sources = (positive + negative).map { (key, label, value) ->
         FigureRow("s:$key", label, ctx.money(value),
-            "Average ${ctx.money(roundDiv(value, n))} · Share ${if (value > 0) share(value, total) else "—"} · Months ${data.months.count { (it.incomeSources[key] ?: 0L) != 0L }}",
+            Words[R.string.report_source_detail, ctx.money(roundDiv(value, n)), if (value > 0) share(value, total) else "—", "${data.months.count { (it.incomeSources[key] ?: 0L) != 0L }}"],
             if (value < 0) Tone.Negative else Tone.None, drill = DrillTarget(label, "income", key))
     }
     return IncomeView(tiles, folded, ctx.money(total), bars,
-        if (negative.isNotEmpty()) "The charts show positive source contributions. The income total and source table include amounts taken out of Unassigned." else null,
+        if (negative.isNotEmpty()) Words[R.string.report_income_chart_help] else null,
         monthly, series.map { LegendItem(it.label, it.color) }, sources,
-        if (negative.isNotEmpty()) "Negative sources are amounts explicitly taken from Unassigned, such as a reconciliation adjustment or a transfer to a tracking account assigned to Unassigned." else null)
+        if (negative.isNotEmpty()) Words[R.string.report_income_sources_help] else null)
 }
 
 /** Flows across the budget-account boundary, from recorded account movements. */
@@ -902,22 +930,25 @@ fun cashFlowView(data: ReportData, ctx: ReportBudget): CashFlowView {
     val totalIn = inflow.sum()
     val totalOut = outflow.sum()
     val fmt: (Double) -> String = { ctx.money(it) }
-    val chart = columnModel("Money into budget accounts above the line, money out below, with the net as a line", keys, listOf(
-        ColumnSeries("in", "Money in", 0, inflow.map { it.toDouble() }),
-        ColumnSeries("out", "Money out", 1, outflow.map { -it.toDouble() }),
-    ), fmt, moneyAxis, ctx.axisUnit, line = LineOverlay("Net flow", ReportColors.INK, net.map { it.toDouble() }))
+    val moneyIn = Words[R.string.report_money_in]
+    val moneyOut = Words[R.string.report_money_out]
+    val netFlow = Words[R.string.report_net_flow]
+    val chart = columnModel(Words[R.string.report_chart_cash_flow], keys, listOf(
+        ColumnSeries("in", moneyIn, 0, inflow.map { it.toDouble() }),
+        ColumnSeries("out", moneyOut, 1, outflow.map { -it.toDouble() }),
+    ), fmt, moneyAxis, ctx.axisUnit, line = LineOverlay(netFlow, ReportColors.INK, net.map { it.toDouble() }))
     val months = keys.mapIndexed { i, m ->
         FigureRow(m, reportMonthName(m, short = true), ctx.money(net[i]),
-            "In ${ctx.money(inflow[i])} · Out ${ctx.money(outflow[i])} · Running total ${ctx.money(cumulative[i])}", if (net[i] < 0) Tone.Negative else Tone.None)
-    } + FigureRow("__average", "Average", ctx.money(roundDiv(totalIn - totalOut, n)),
-        "In ${ctx.money(roundDiv(totalIn, n))} · Out ${ctx.money(roundDiv(totalOut, n))}", style = RowStyle.Total)
+            Words[R.string.report_cash_flow_month_detail, ctx.money(inflow[i]), ctx.money(outflow[i]), ctx.money(cumulative[i])], if (net[i] < 0) Tone.Negative else Tone.None)
+    } + FigureRow("__average", Words[R.string.report_average], ctx.money(roundDiv(totalIn - totalOut, n)),
+        Words[R.string.report_cash_flow_average_detail, ctx.money(roundDiv(totalIn, n)), ctx.money(roundDiv(totalOut, n))], style = RowStyle.Total)
     return CashFlowView(listOf(
-        Tile("Money in", ctx.money(totalIn), "${ctx.money(roundDiv(totalIn, n))} a month"),
-        Tile("Money out", ctx.money(totalOut), "${ctx.money(roundDiv(totalOut, n))} a month"),
-        Tile("Net flow", ctx.money(totalIn - totalOut), tone = if (totalIn - totalOut < 0) Tone.Negative else Tone.Positive),
-        Tile("Months in the black", "${net.count { it > 0 }} of ${keys.size}"),
-    ), chart, listOf(LegendItem("Money in", 0), LegendItem("Money out", 1), LegendItem("Net flow", ReportColors.INK, line = true)),
-        linesModel("Net flow added up month by month", keys, listOf(LineSeries("running", "Running total", 2, cumulative.map { it.toDouble() })), fmt, moneyAxis, ctx.axisUnit),
+        Tile(moneyIn, ctx.money(totalIn), Words[R.string.report_a_month, ctx.money(roundDiv(totalIn, n))]),
+        Tile(moneyOut, ctx.money(totalOut), Words[R.string.report_a_month, ctx.money(roundDiv(totalOut, n))]),
+        Tile(netFlow, ctx.money(totalIn - totalOut), tone = if (totalIn - totalOut < 0) Tone.Negative else Tone.Positive),
+        Tile(Words[R.string.report_months_in_black], Words[R.string.report_x_of_y, "${net.count { it > 0 }}", "${keys.size}"]),
+    ), chart, listOf(LegendItem(moneyIn, 0), LegendItem(moneyOut, 1), LegendItem(netFlow, ReportColors.INK, line = true)),
+        linesModel(Words[R.string.report_chart_net_flow_cumulative], keys, listOf(LineSeries("running", Words[R.string.report_running_total], 2, cumulative.map { it.toDouble() })), fmt, moneyAxis, ctx.axisUnit),
         months)
 }
 
@@ -940,30 +971,44 @@ fun netWorthView(data: ReportData, ctx: ReportBudget, accounts: Set<String>): Ne
     val fmt: (Double) -> String = { ctx.money(it) }
     val startDate = Money.date(firstDay(first.month))
     val endDate = Money.date(lastDay(last.month))
+    val netWorth = Words[R.string.net_worth]
+    val assets = Words[R.string.report_assets]
+    val debts = Words[R.string.report_debts]
+    val grew = Words[R.string.report_grew]
+    val shrank = Words[R.string.report_shrank]
     val rows = shownAccounts.map { a ->
         val start = data.openingAccounts?.get(a.id) ?: first.accounts[a.id] ?: 0L
         val end = last.accounts[a.id] ?: 0L
-        FigureRow(a.id, a.name + (if (a.archived) " · closed" else "") + (if (!a.inNetWorth) " · not in net worth" else ""), ctx.money(end - start),
-            "${ctx.money(start)} → ${ctx.money(end)}", if (end - start < 0) Tone.Negative else Tone.None)
-    } + FigureRow("__networth", "Net worth", ctx.money(change), "${ctx.money(opening)} → ${ctx.money(last.netWorth)}", style = RowStyle.Total)
+        FigureRow(a.id, accountTitle(a, outsideNetWorth = true), ctx.money(end - start),
+            Words[R.string.change_from_to, ctx.money(start), ctx.money(end)], if (end - start < 0) Tone.Negative else Tone.None)
+    } + FigureRow("__networth", netWorth, ctx.money(change), Words[R.string.change_from_to, ctx.money(opening), ctx.money(last.netWorth)], style = RowStyle.Total)
     return NetWorthView(listOf(
-        Tile("Net worth", ctx.money(last.netWorth), "end of ${reportMonthName(last.month)}"),
-        Tile("Change", ctx.signed(change),
-            "since ${reportMonthName(first.month)} began${if (opening > 0) " · ${if (change >= 0) "+" else ""}${fixed(change.toDouble() / opening * 100, 1)}%" else ""}",
+        Tile(netWorth, ctx.money(last.netWorth), Words[R.string.report_end_of, reportMonthName(last.month)]),
+        Tile(Words[R.string.report_change], ctx.signed(change),
+            if (opening > 0) Words[R.string.report_since_began_percent, reportMonthName(first.month), signedPercent(change.toDouble() / opening * 100, 1)]
+            else Words[R.string.report_since_began, reportMonthName(first.month)],
             if (change < 0) Tone.Negative else Tone.Positive),
-        Tile("Assets", ctx.money(last.assets)),
-        Tile("Debts", ctx.money(last.debt), if (last.assets > 0) "${share(last.debt, last.assets)} of assets" else null),
-    ), columnModel("Assets and debts by month with net worth", keys, listOf(
-        ColumnSeries("assets", "Assets", 0, data.months.map { it.assets.toDouble() }),
-        ColumnSeries("debts", "Debts", 1, data.months.map { -it.debt.toDouble() }),
-    ), fmt, moneyAxis, ctx.axisUnit, line = LineOverlay("Net worth", ReportColors.INK, data.months.map { it.netWorth.toDouble() })),
-        listOf(LegendItem("Assets", 0), LegendItem("Debts", 1), LegendItem("Net worth", ReportColors.INK, line = true)),
-        columnModel("How much net worth grew or shrank each month", keys, listOf(
-            ColumnSeries("up", "Grew", ReportColors.DIVERGING_POSITIVE, monthly.map { max(0L, it).toDouble() }),
-            ColumnSeries("down", "Shrank", ReportColors.DIVERGING_NEGATIVE, monthly.map { min(0L, it).toDouble() }),
+        Tile(assets, ctx.money(last.assets)),
+        Tile(debts, ctx.money(last.debt), if (last.assets > 0) Words[R.string.report_of_assets, share(last.debt, last.assets)] else null),
+    ), columnModel(Words[R.string.report_chart_net_worth], keys, listOf(
+        ColumnSeries("assets", assets, 0, data.months.map { it.assets.toDouble() }),
+        ColumnSeries("debts", debts, 1, data.months.map { -it.debt.toDouble() }),
+    ), fmt, moneyAxis, ctx.axisUnit, line = LineOverlay(netWorth, ReportColors.INK, data.months.map { it.netWorth.toDouble() })),
+        listOf(LegendItem(assets, 0), LegendItem(debts, 1), LegendItem(netWorth, ReportColors.INK, line = true)),
+        columnModel(Words[R.string.report_chart_net_worth_change], keys, listOf(
+            ColumnSeries("up", grew, ReportColors.DIVERGING_POSITIVE, monthly.map { max(0L, it).toDouble() }),
+            ColumnSeries("down", shrank, ReportColors.DIVERGING_NEGATIVE, monthly.map { min(0L, it).toDouble() }),
         ), fmt, moneyAxis, ctx.axisUnit),
-        listOf(LegendItem("Grew", ReportColors.DIVERGING_POSITIVE), LegendItem("Shrank", ReportColors.DIVERGING_NEGATIVE)),
-        "Balances on $startDate and $endDate", rows)
+        listOf(LegendItem(grew, ReportColors.DIVERGING_POSITIVE), LegendItem(shrank, ReportColors.DIVERGING_NEGATIVE)),
+        Words[R.string.report_balances_on, startDate, endDate], rows)
+}
+
+/** An account's name in a report row, marked when it's closed (and, where it matters, left out of net worth). */
+private fun accountTitle(account: ReportAccount, outsideNetWorth: Boolean = false): String {
+    var title = account.name
+    if (account.archived) title = Words[R.string.report_account_closed, title]
+    if (outsideNetWorth && !account.inNetWorth) title = Words[R.string.report_account_not_in_net_worth, title]
+    return title
 }
 
 private const val IN_CREDIT = "Accounts in credit"
@@ -1006,47 +1051,51 @@ fun balanceSheetView(data: ReportData, ctx: ReportBudget, accounts: Set<String>)
     val monthlySpending = data.spending.toDouble() / max(1, data.months.size)
     // The list's own colour fills every bar (series-1 for what you own, series-2 for what you owe).
     fun sections(order: List<String>, ls: List<SheetLine>, of: Long): List<BarRowModel> {
-        val rows = order.map { s -> Triple(s, s, ls.filter { it.section == s }.sumOf { it.end }) }.filter { it.third > 0 }
+        val rows = order.map { s -> Triple(s, sectionLabel(s), ls.filter { it.section == s }.sumOf { it.end }) }.filter { it.third > 0 }
         return barRows(rows, { null }, of, ctx, drill = false)
     }
-    fun subtitle(start: Long, end: Long, of: Long?) = "From ${ctx.money(start)} · Change ${ctx.money(end - start)}${if (of != null) " · ${share(end, of)}" else ""}"
+    fun subtitle(start: Long, end: Long, of: Long?) =
+        if (of != null) Words[R.string.report_sheet_subtitle_share, ctx.money(start), ctx.money(end - start), share(end, of)]
+        else Words[R.string.report_sheet_subtitle, ctx.money(start), ctx.money(end - start)]
+    val netWorth = Words[R.string.net_worth]
     val statement = buildList {
-        fun part(title: String, order: List<String>, ls: List<SheetLine>, totalLabel: String, of: Long) {
-            add(FigureRow("h:$title", title, style = RowStyle.Section))
+        fun part(key: String, title: String, order: List<String>, ls: List<SheetLine>, totalLabel: String, of: Long) {
+            add(FigureRow("h:$key", title, style = RowStyle.Section))
             order.filter { s -> ls.any { it.section == s } }.forEach { s ->
                 val inSection = ls.filter { it.section == s }
                 val start = inSection.sumOf { it.start }
                 val end = inSection.sumOf { it.end }
-                add(FigureRow("s:$title:$s", s, ctx.money(end), subtitle(start, end, of), style = RowStyle.Group))
+                add(FigureRow("s:$key:$s", sectionLabel(s), ctx.money(end), subtitle(start, end, of), style = RowStyle.Group))
                 inSection.forEach { l ->
-                    add(FigureRow("a:${l.account.id}", l.account.name + (if (l.account.archived) " · closed" else ""), ctx.money(l.end),
+                    add(FigureRow("a:${l.account.id}", accountTitle(l.account), ctx.money(l.end),
                         subtitle(l.start, l.end, of), style = RowStyle.Child))
                 }
             }
-            if (ls.isEmpty()) add(FigureRow("n:$title", "None", style = RowStyle.Muted))
-            add(FigureRow("t:$title", totalLabel, ctx.money(ls.sumOf { it.end }), subtitle(ls.sumOf { it.start }, ls.sumOf { it.end }, null), style = RowStyle.Total))
+            if (ls.isEmpty()) add(FigureRow("n:$key", Words[R.string.filter_none], style = RowStyle.Muted))
+            add(FigureRow("t:$key", totalLabel, ctx.money(ls.sumOf { it.end }), subtitle(ls.sumOf { it.start }, ls.sumOf { it.end }, null), style = RowStyle.Total))
         }
-        part("Assets", AssetSections, assets, "Total assets", totalAssets)
-        part("Liabilities (owed)", DebtSections, debts, "Total liabilities", totalDebts)
-        add(FigureRow("__net", "Net worth", ctx.money(netEnd), subtitle(netStart, netEnd, null), if (netEnd < 0) Tone.Negative else Tone.None, RowStyle.Net))
+        part("Assets", Words[R.string.report_assets], AssetSections, assets, Words[R.string.report_total_assets], totalAssets)
+        part("Liabilities", Words[R.string.report_liabilities_owed], DebtSections, debts, Words[R.string.report_total_liabilities], totalDebts)
+        add(FigureRow("__net", netWorth, ctx.money(netEnd), subtitle(netStart, netEnd, null), if (netEnd < 0) Tone.Negative else Tone.None, RowStyle.Net))
         if (apart.isNotEmpty()) {
-            add(FigureRow("h:apart", "Not counted in net worth", style = RowStyle.Section))
-            apart.forEach { l -> add(FigureRow("x:${l.account.id}", "${l.account.name} · ${l.section.lowercase(Locale.ROOT)}", ctx.money(l.end), subtitle(l.start, l.end, null), style = RowStyle.Child)) }
+            add(FigureRow("h:apart", Words[R.string.report_not_counted], style = RowStyle.Section))
+            apart.forEach { l -> add(FigureRow("x:${l.account.id}", "${Money.own(l.account.name)} · ${sectionLabel(l.section).lowercase(Locale.ROOT)}", ctx.money(l.end), subtitle(l.start, l.end, null), style = RowStyle.Child)) }
         }
     }
     return BalanceSheetView(listOf(
-        Tile("Total assets", ctx.money(totalAssets)),
-        Tile("Total liabilities", ctx.money(totalDebts)),
-        Tile("Net worth", ctx.money(netEnd), "${ctx.signed(netEnd - netStart)} in this period", if (netEnd < 0) Tone.Negative else Tone.None),
-        Tile("Debt to assets", if (totalAssets > 0) share(totalDebts, totalAssets) else "—",
-            if (totalDebts > totalAssets) "you owe more than you own" else "of what you own is owed"),
-        Tile("Cash on hand", ctx.money(liquid), if (monthlySpending > 0) "${fixed(liquid / monthlySpending, 1)} months of spending" else "in cash and bank accounts"),
+        Tile(Words[R.string.report_total_assets], ctx.money(totalAssets)),
+        Tile(Words[R.string.report_total_liabilities], ctx.money(totalDebts)),
+        Tile(netWorth, ctx.money(netEnd), Words[R.string.report_in_this_period, ctx.signed(netEnd - netStart)], if (netEnd < 0) Tone.Negative else Tone.None),
+        Tile(Words[R.string.report_debt_to_assets], if (totalAssets > 0) share(totalDebts, totalAssets) else "—",
+            Words[if (totalDebts > totalAssets) R.string.report_owe_more_than_own else R.string.report_owned_is_owed]),
+        Tile(Words[R.string.report_cash_on_hand], ctx.money(liquid),
+            if (monthlySpending > 0) Words[R.string.report_months_of_spending, fixed(liquid / monthlySpending, 1)] else Words[R.string.report_in_cash_accounts]),
     ), ctx.money(totalAssets), if (totalAssets > 0) sections(AssetSections, assets, totalAssets) else emptyList(),
         ctx.money(totalDebts), if (totalDebts > 0) sections(DebtSections, debts, totalDebts) else emptyList(),
-        "Net worth on ${Money.date(lastDay(last.month))}: ${ctx.money(netEnd)}",
-        "Balances on ${Money.date(firstDay(first.month))} and ${Money.date(lastDay(last.month))}", statement,
-        "Balances at the start of ${reportMonthName(first.month)} and the end of ${reportMonthName(last.month)}. Set an account's type, or leave it out of net worth, in its settings." +
-            (if (lines.any { it.section == OVERDRAWN || it.section == IN_CREDIT }) " Accounts below zero count as owed and loans or cards above zero as owned, whatever their type." else ""))
+        Words[R.string.report_net_worth_on, Money.date(lastDay(last.month)), ctx.money(netEnd)],
+        Words[R.string.report_balances_on, Money.date(firstDay(first.month)), Money.date(lastDay(last.month))], statement,
+        Words[R.string.report_sheet_help, reportMonthName(first.month), reportMonthName(last.month)] +
+            (if (lines.any { it.section == OVERDRAWN || it.section == IN_CREDIT }) " " + Words[R.string.report_sheet_help_sides] else ""))
 }
 
 /** Accounts that can be charted: chosen, with balances in the range, closed ones only if they held money. */
@@ -1081,17 +1130,17 @@ fun balancesView(data: ReportData, ctx: ReportBudget, accounts: Set<String>, pic
     val stats = eligible.map { a -> val v = values(a.id); Stat(a, data.openingAccounts?.get(a.id) ?: v.first(), v.last(), v.min(), v.max()) }
     val mover = stats.sortedByDescending { abs(it.end - it.start) }.firstOrNull()
     val fmt: (Double) -> String = { ctx.money(it) }
-    val chart = if (shown.isEmpty()) null else linesModel("Balance of each chosen account at the end of each month", keys,
+    val chart = if (shown.isEmpty()) null else linesModel(Words[R.string.report_chart_balances], keys,
         shown.map { a -> LineSeries(a.id, a.name, chosen[a.id] ?: 0, values(a.id).map { it.toDouble() }) }, fmt, moneyAxis, ctx.axisUnit)
     return BalancesView(listOf(
-        Tile("On the chart", "${shown.size} of ${eligible.size}", "up to 8 at a time"),
-        Tile("Their balance now", ctx.money(shown.sumOf { last.accounts[it.id] ?: 0L })),
-        Tile("Biggest change", mover?.account?.name ?: "—", mover?.let { "${ctx.signed(it.end - it.start)} since ${reportMonthName(keys.first())} began" }),
+        Tile(Words[R.string.report_on_the_chart], Words[R.string.report_x_of_y, "${shown.size}", "${eligible.size}"], Words[R.string.report_up_to_8]),
+        Tile(Words[R.string.report_their_balance_now], ctx.money(shown.sumOf { last.accounts[it.id] ?: 0L })),
+        Tile(Words[R.string.report_biggest_change], mover?.account?.name ?: "—", mover?.let { Words[R.string.report_change_since_began, ctx.signed(it.end - it.start), reportMonthName(keys.first())] }),
     ), eligible.map { a -> AccountChip(a.id, a.name, chosen[a.id].takeIf { a.id in chosen }, a.id in chosen || shown.size < 8) }, chosen, chart,
         shown.map { LegendItem(it.name, chosen[it.id] ?: 0, line = true) },
         stats.map { s ->
-            FigureRow(s.account.id, s.account.name + (if (s.account.archived) " · closed" else ""), ctx.money(s.end),
-                "Start ${ctx.money(s.start)} · Change ${ctx.money(s.end - s.start)} · Lowest ${ctx.money(s.low)} · Highest ${ctx.money(s.high)}",
+            FigureRow(s.account.id, accountTitle(s.account), ctx.money(s.end),
+                Words[R.string.report_balance_stats, ctx.money(s.start), ctx.money(s.end - s.start), ctx.money(s.low), ctx.money(s.high)],
                 if (s.end - s.start < 0) Tone.Negative else Tone.None)
         })
 }
@@ -1102,14 +1151,16 @@ fun ageView(data: ReportData): AgeView {
     val known = values.filterNotNull()
     val changed = known.size > 1
     val delta = if (changed) known.last() - known.first() else 0L
+    val cashAge = Words[R.string.report_cash_age]
     return AgeView(listOf(
-        Tile("Cash age", daysText(data.ageOfMoney)),
-        Tile("Change", if (changed) "${if (delta >= 0) "+" else ""}$delta days" else "—", if (changed) "over these months" else null,
+        Tile(cashAge, daysText(data.ageOfMoney)),
+        Tile(Words[R.string.report_change], if (changed) Words.count(R.plurals.report_days_change, abs(delta), Money.ltr("${if (delta >= 0) "+" else ""}$delta")) else "—",
+            if (changed) Words[R.string.report_over_these_months] else null,
             if (changed) (if (known.last() >= known.first()) Tone.Positive else Tone.Negative) else Tone.None),
-        Tile("Highest", known.maxOrNull()?.let(::daysText) ?: "—"),
-        Tile("Lowest", known.minOrNull()?.let(::daysText) ?: "—"),
-    ), linesModel("Cash age at the end of each month, in days", keys, listOf(LineSeries("line", "Cash age", 0, values.map { it?.toDouble() })),
-        { "${jsNumber(it)} days" }, { "${jsNumber(it)}d" }, null),
+        Tile(Words[R.string.report_highest], known.maxOrNull()?.let(::daysText) ?: "—"),
+        Tile(Words[R.string.report_lowest], known.minOrNull()?.let(::daysText) ?: "—"),
+    ), linesModel(Words[R.string.report_chart_cash_age], keys, listOf(LineSeries("line", cashAge, 0, values.map { it?.toDouble() })),
+        { Words.count(R.plurals.report_days_value, Math.round(it)) }, { Words[R.string.report_days_axis, jsNumber(it)] }, null),
         keys.mapIndexed { i, m -> FigureRow(m, reportMonthName(m, short = true), values[i]?.toString() ?: "—") })
 }
 
@@ -1150,13 +1201,13 @@ data class OverviewModel(
 /** The income card's sentence, from the months with any income or spending. */
 fun incomeLead(months: List<ReportMonth>): String {
     val active = months.filter { it.income != 0L || it.spending != 0L }
-    if (active.isEmpty()) return "Nothing earned or spent in these months."
+    if (active.isEmpty()) return Words[R.string.report_lead_nothing]
     val income = active.sumOf { it.income }.toDouble() / active.size
     val spending = active.sumOf { it.spending }.toDouble() / active.size
     return when {
-        abs(income - spending) < max(income, spending) * 0.02 -> "On average, you're spending about what you make."
-        spending > income -> "On average, you're spending more than you make."
-        else -> "On average, you're spending less than you make."
+        abs(income - spending) < max(income, spending) * 0.02 -> Words[R.string.report_lead_about]
+        spending > income -> Words[R.string.report_lead_more]
+        else -> Words[R.string.report_lead_less]
     }
 }
 
@@ -1168,20 +1219,21 @@ fun overviewModel(data: ReportData, ctx: ReportBudget): OverviewModel? {
     val refundTotal = refunds.sumOf { it.value }
     val refundRows = refunds.take(top).map { SpendRow(it.key, ctx.nameOf[it.key] ?: it.key, ctx.money(it.value), ReportColors.OTHER, -it.value) }.toMutableList()
     val otherRefunds = refunds.drop(top).sumOf { it.value }
-    if (otherRefunds != 0L) refundRows.add(SpendRow("__refunds", "Other refund categories", ctx.money(otherRefunds), ReportColors.OTHER, -otherRefunds))
-    val rows = ranked.take(top).mapIndexed { i, e -> SpendRow(e.key, ctx.nameOf[e.key] ?: "Unassigned", ctx.money(e.value), i, e.value) }.toMutableList()
+    if (otherRefunds != 0L) refundRows.add(SpendRow("__refunds", Words[R.string.report_other_refund_categories], ctx.money(otherRefunds), ReportColors.OTHER, -otherRefunds))
+    val unassigned = Words[R.string.category_unassigned]
+    val rows = ranked.take(top).mapIndexed { i, e -> SpendRow(e.key, ctx.nameOf[e.key] ?: unassigned, ctx.money(e.value), i, e.value) }.toMutableList()
     val rest = ranked.drop(top).sumOf { it.value }
-    if (rest > 0) rows.add(SpendRow("__rest", "All others", ctx.money(rest), ReportColors.OTHER, rest))
+    if (rest > 0) rows.add(SpendRow("__rest", Words[R.string.report_all_others], ctx.money(rest), ReportColors.OTHER, rest))
     val labels = data.months.map { monthAbbrev(it.month) }
     return OverviewModel(
         reportMonthName(last.month), ctx.money(last.spending), rows, ranked.isEmpty() && refunds.isEmpty(),
-        if (refunds.isNotEmpty()) "Includes ${ctx.money(-refundTotal)} in net refunds.${if (ranked.isNotEmpty()) " The bar shows categories with net spending." else ""}" else null,
+        if (refunds.isNotEmpty()) Words[R.string.report_refund_lead, ctx.money(-refundTotal)] + (if (ranked.isNotEmpty()) " " + Words[R.string.report_refund_lead_bar] else "") else null,
         refundRows, incomeLead(data.months),
-        MiniBarsModel(labels, listOf(MiniSeries("Income", ReportColors.POSITIVE, data.months.map { it.income }), MiniSeries("Spending", 0, data.months.map { it.spending }))),
+        MiniBarsModel(labels, listOf(MiniSeries(Words[R.string.report_income], ReportColors.POSITIVE, data.months.map { it.income }), MiniSeries(Words[R.string.report_spending], 0, data.months.map { it.spending }))),
         ctx.money(last.netWorth), last.netWorth < 0, ctx.money(last.assets), ctx.money(-last.debt), last.debt != 0L,
-        MiniBarsModel(labels, listOf(MiniSeries("Net worth", 0, data.months.map { it.netWorth }))),
+        MiniBarsModel(labels, listOf(MiniSeries(Words[R.string.net_worth], 0, data.months.map { it.netWorth }))),
         daysText(data.ageOfMoney),
-        MiniBarsModel(labels, listOf(MiniSeries("Cash age", ReportColors.POSITIVE, data.months.map { data.ageOfMoneyByMonth[it.month] ?: 0L }))),
+        MiniBarsModel(labels, listOf(MiniSeries(Words[R.string.report_cash_age], ReportColors.POSITIVE, data.months.map { data.ageOfMoneyByMonth[it.month] ?: 0L }))),
     )
 }
 
@@ -1252,29 +1304,31 @@ fun forecastView(data: ForecastData, ctx: ReportBudget, accounts: Set<String>, m
     val knownOut = plan.events.filter { it.amount < 0 }.sumOf { -it.amount }
     val categoryName = ctx.categories.associate { it.id to it.name }
     val fmt: (Double) -> String = { ctx.money(it) }
-    val chart = linesModel("Forecast balance of budget accounts for the next $months months", plan.days, listOf(
-        LineSeries("forecast", "Forecast", 0, line.map { it.toDouble() }),
-        LineSeries("known", "Known transactions only", 1, plan.knownLine.map { it.toDouble() }, dashed = true),
+    val forecast = Words[R.string.report_forecast]
+    val knownOnly = Words[R.string.report_known_only]
+    val chart = linesModel(Words.count(R.plurals.report_chart_forecast, months.toLong()), plan.days, listOf(
+        LineSeries("forecast", forecast, 0, line.map { it.toDouble() }),
+        LineSeries("known", knownOnly, 1, plan.knownLine.map { it.toDouble() }, dashed = true),
     ), fmt, { compactMoney(it) }, ctx.axisUnit,
-        xTick = { d, i -> if (i == 0) plainTick("Today") else if (d.endsWith("-01")) plainTick(monthAbbrev(d)) else null }, title = { Money.date(it) })
+        xTick = { d, i -> if (i == 0) plainTick(Words[R.string.report_today]) else if (d.endsWith("-01")) plainTick(monthAbbrev(d)) else null }, title = { Money.date(it) })
     val rows = plan.events.mapIndexed { i, e ->
-        ForecastRow("$i:${e.date}:${e.scheduleId}:${e.accountId}", e.payee.ifEmpty { "No payee" } + (if (e.scheduleId == null) " · entered" else ""),
-            listOf(Money.date(e.date), ctx.accountName(e.accountId), if (e.peerId != null) "Transfer: ${ctx.accountName(e.peerId)}" else categoryName[e.categoryId].orEmpty())
-                .filter { it.isNotEmpty() }.joinToString(" · "),
+        val payee = e.payee.ifEmpty { Words[R.string.payee_none] }
+        ForecastRow("$i:${e.date}:${e.scheduleId}:${e.accountId}", if (e.scheduleId == null) Words[R.string.report_entered_suffix, payee] else payee,
+            Money.joined(listOf(Money.date(e.date), ctx.accountName(e.accountId), if (e.peerId != null) Words[R.string.transfer_to_account, ctx.accountName(e.peerId)] else categoryName[e.categoryId].orEmpty())
+                .filter { it.isNotEmpty() }),
             ctx.money(e.amount), e.amount >= 0, ctx.money(plan.balances[i]), plan.balances[i] < 0)
     }
     return ForecastView(listOf(
-        Tile("Today", ctx.money(plan.opening), "in ${plan.ids.size} budget ${plural(plan.ids.size.toLong(), "account", "accounts")}"),
-        Tile("Lowest point", ctx.money(line.getOrElse(low) { plan.opening }), if (low == 0) "today" else Money.date(plan.days[low]),
+        Tile(Words[R.string.report_today], ctx.money(plan.opening), Words.count(R.plurals.report_in_budget_accounts, plan.ids.size.toLong())),
+        Tile(Words[R.string.report_lowest_point], ctx.money(line.getOrElse(low) { plan.opening }), if (low == 0) Words[R.string.report_today_lower] else Money.date(plan.days[low]),
             if (line.getOrElse(low) { plan.opening } < 0) Tone.Negative else Tone.None),
-        Tile("In $months months", ctx.money(end), "${ctx.signed(end - plan.opening)} from today", if (end < 0) Tone.Negative else Tone.None),
-        Tile("Known money in", ctx.money(knownIn), "scheduled or entered"),
-        Tile("Known money out", ctx.money(knownOut), "scheduled or entered"),
-    ), chart, listOf(LegendItem("Forecast", 0, line = true), LegendItem("Known transactions only", 1, line = true, dashed = true)),
-        monthly, ctx.money(monthly), if (everyday != null && everyday != plan.suggested) "Use the suggested ${ctx.money(plan.suggested)}" else null,
-        "Spending that isn't scheduled, spread evenly over each day. Your last three months averaged ${ctx.money(data.recentSpending)} a month; " +
-            "scheduled spending covers about ${ctx.money(Math.round(plan.scheduledSpending))} a month, which suggests ${ctx.money(plan.suggested)} for the rest.",
-        "${plan.events.size} ${plural(plan.events.size.toLong(), "transaction", "transactions")}", rows)
+        Tile(Words.count(R.plurals.report_in_months, months.toLong()), ctx.money(end), Words[R.string.report_from_today, ctx.signed(end - plan.opening)], if (end < 0) Tone.Negative else Tone.None),
+        Tile(Words[R.string.report_known_money_in], ctx.money(knownIn), Words[R.string.report_scheduled_or_entered]),
+        Tile(Words[R.string.report_known_money_out], ctx.money(knownOut), Words[R.string.report_scheduled_or_entered]),
+    ), chart, listOf(LegendItem(forecast, 0, line = true), LegendItem(knownOnly, 1, line = true, dashed = true)),
+        monthly, ctx.money(monthly), if (everyday != null && everyday != plan.suggested) Words[R.string.report_use_suggested, ctx.money(plan.suggested)] else null,
+        Words[R.string.report_forecast_help, ctx.money(data.recentSpending), ctx.money(Math.round(plan.scheduledSpending)), ctx.money(plan.suggested)],
+        Words.count(R.plurals.report_transactions_plural, plan.events.size.toLong()), rows)
 }
 
 // ---------- The transactions behind a figure ----------
@@ -1302,19 +1356,21 @@ private fun newestFirst(entries: List<DrillEntry>): List<DrillEntry> {
     return entries.sortedWith(added).reversed()
 }
 
-private fun drillRange(from: String, to: String, accounts: Set<String>) =
-    (if (from == to) Money.date(from) else "${Money.date(from)} – ${Money.date(to)}") + if (accounts.isNotEmpty()) " · chosen accounts" else ""
+private fun drillRange(from: String, to: String, accounts: Set<String>): String {
+    val range = if (from == to) Money.date(from) else Words[R.string.date_range, Money.date(from), Money.date(to)]
+    return if (accounts.isNotEmpty()) Words[R.string.report_chosen_accounts_suffix, range] else range
+}
 
 private fun drillModel(entries: List<DrillEntry>, ctx: ReportBudget, income: Boolean, from: String, to: String, accounts: Set<String>, spentTotal: Long): DrillModel {
     val ordered = newestFirst(entries)
     val count = entries.map { it.transaction.str("id") }.toSet().size
     val records = LinkedHashMap<String, JSONObject>()
     entries.forEach { records[it.transaction.str("id")] = it.transaction }
-    return DrillModel(drillRange(from, to, accounts), if (income) "Received" else "Spent", ctx.money(spentTotal), count.toString(),
+    return DrillModel(drillRange(from, to, accounts), Words[if (income) R.string.report_received else R.string.report_spent], ctx.money(spentTotal), count.toString(),
         if (count > 0) ctx.money(Math.round(spentTotal.toDouble() / count)) else "—",
         ordered.map { e ->
             DrillLine("${e.transaction.str("id")}:${e.index}", e.transaction.str("id"), e.payee,
-                listOf(Money.date(e.date), e.account, e.category).filter { it.isNotEmpty() }.joinToString(" · "), ctx.money(e.amount), e.amount > 0)
+                Money.joined(listOf(Money.date(e.date), e.account, e.category).filter { it.isNotEmpty() }), ctx.money(e.amount), e.amount > 0)
         }, records)
 }
 
@@ -1330,8 +1386,8 @@ fun drillFromDetails(items: List<JSONObject>, budget: JSONObject, ctx: ReportBud
         val account = part.str("accountId")
         val transferPeer = t.str("transferAccountId").takeIf { it.isNotEmpty() }?.let { peer -> if (account == t.str("accountId")) peer else t.str("accountId") }
         val categoryId = part.str("categoryId")
-        DrillEntry(t, i, part.str("date"), if (transferPeer != null) "Transfer: ${ctx.accountName(transferPeer)}" else part.str("payee").ifEmpty { "No payee" },
-            ctx.accountName(account), if (categoryId == UNCATEGORIZED_BUCKET) NEEDS_CATEGORY else ctx.nameOf[categoryId] ?: "Unassigned", -part.optLong("amount"))
+        DrillEntry(t, i, part.str("date"), if (transferPeer != null) Words[R.string.transfer_to_account, ctx.accountName(transferPeer)] else part.str("payee").ifEmpty { Words[R.string.payee_none] },
+            ctx.accountName(account), if (categoryId == UNCATEGORIZED_BUCKET) ctx.needsCategory else ctx.nameOf[categoryId] ?: Words[R.string.category_unassigned], -part.optLong("amount"))
     }
     return drillModel(entries, ctx, false, from, to, accounts, items.sumOf { it.optLong("amount") })
 }
@@ -1368,18 +1424,18 @@ fun incomeDrill(budget: JSONObject, ctx: ReportBudget, payee: String, fromMonth:
                 var amount = s.optLong("amount")
                 var account = t.str("accountId")
                 val effective = s.str("payee").ifEmpty { t.str("payee") }
-                var shown = effective.ifEmpty { "No payee" }
+                var shown = effective.ifEmpty { Words[R.string.payee_none] }
                 if (other.isNotEmpty()) {
                     val fromBudget = onBudget(t.str("accountId"))
                     if (fromBudget == onBudget(other)) return@forEachIndexed
                     if (!fromBudget) { amount = -amount; account = other }
-                    shown = "Transfer: ${ctx.accountName(if (fromBudget) other else t.str("accountId"))}"
+                    shown = Words[R.string.transfer_to_account, ctx.accountName(if (fromBudget) other else t.str("accountId"))]
                 } else if (!onBudget(t.str("accountId"))) return@forEachIndexed
                 if (accounts.isNotEmpty() && account !in accounts) return@forEachIndexed
                 if (effective != payee) return@forEachIndexed
                 val income = !opening && s.str("categoryId").isEmpty() && (amount >= 0 || leftUnassigned(t, s, splits.size))
                 if (!income) return@forEachIndexed
-                entries.add(DrillEntry(t, index, date, shown, ctx.accountName(account), "Unassigned", amount))
+                entries.add(DrillEntry(t, index, date, shown, ctx.accountName(account), Words[R.string.category_unassigned], amount))
             }
         }
     }

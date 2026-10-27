@@ -41,7 +41,7 @@ struct AssistantProposalCard: View {
     private func settled(_ status: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Label {
-                Text("\(status == "applied" ? "Applied" : "Discarded"): \(proposal.text("title"))").font(.subheadline.weight(.semibold))
+                settledTitle(status).font(.subheadline.weight(.semibold))
             } icon: {
                 Image(systemName: status == "applied" ? "checkmark.circle.fill" : "xmark.circle")
                     .foregroundStyle(status == "applied" ? Color.urPositive : .secondary)
@@ -57,6 +57,11 @@ struct AssistantProposalCard: View {
         .background(Color.cardBackground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
+    private func settledTitle(_ status: String) -> Text {
+        let title = proposal.text("title")
+        return status == "applied" ? Text("Applied: \(title)") : Text("Discarded: \(title)")
+    }
+
     private func card(_ status: String) -> some View {
         let card = proposal["card"]
         let rows = card.rows("rows")
@@ -66,7 +71,7 @@ struct AssistantProposalCard: View {
         let kind = proposal.text("kind")
         return VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
-                Label(card.text("kicker").isEmpty ? "Proposal" : card.text("kicker"), systemImage: Self.symbol(kind))
+                Label(card.text("kicker").isEmpty ? String(localized: "Proposal") : card.text("kicker"), systemImage: Self.symbol(kind))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Color.urAccent)
                     .textCase(.uppercase)
@@ -99,7 +104,7 @@ struct AssistantProposalCard: View {
                 .background(Color.insetBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
             if pages > 1 {
-                AssistantPager(page: current, pages: pages, previous: "Previous rows", next: "Next rows") { page = $0 }
+                AssistantPager(page: current, pages: pages, previous: String(localized: "Previous rows"), next: String(localized: "Next rows")) { page = $0 }
             }
             if card.long("more") > 0 {
                 Text("\(card.long("more")) more rows").font(.caption).foregroundStyle(Color.secondary)
@@ -108,7 +113,7 @@ struct AssistantProposalCard: View {
             if !check.array.isEmpty {
                 let passed = check[0].bool
                 Label {
-                    Text(passed ? check[1].string : "Check: \(check[1].string)")
+                    Text(passed ? check[1].string : String(localized: "Check: \(check[1].string)"))
                 } icon: {
                     Image(systemName: passed ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                 }
@@ -145,7 +150,7 @@ struct AssistantProposalCard: View {
                 }
                 if row.has("before") || row.has("after") {
                     let after = row.long("after")
-                    (Text(money(row.long("before"), currency)) + Text(" → ") + Text(money(after, currency)).foregroundStyle(after < 0 ? Color.urNegative : Color.primary))
+                    change(row.long("before"), after)
                         .font(.footnote)
                         .monospacedDigit()
                         .foregroundStyle(Color.secondary)
@@ -174,6 +179,15 @@ struct AssistantProposalCard: View {
         .padding(.trailing, 12)
         .padding(.vertical, 9)
         .accessibilityElement(children: .combine)
+    }
+
+    /// "20.00 → 5.00", kept left to right as one piece in Arabic so the arrow still reads from before to after.
+    private func change(_ before: Int64, _ after: Int64) -> Text {
+        let open = AppLanguage.isRightToLeft ? "\u{2066}" : ""
+        let close = AppLanguage.isRightToLeft ? "\u{2069}" : ""
+        let ink: Color = after < 0 ? .urNegative : .primary
+        let amounts: Text = Text(money(before, currency)) + Text(" → ") + Text(money(after, currency)).foregroundStyle(ink)
+        return Text(verbatim: open) + amounts + Text(verbatim: close)
     }
 
     @ViewBuilder
@@ -236,7 +250,7 @@ struct AssistantProposalCard: View {
         .buttonStyle(.borderless)
     }
 
-    private func primary(_ title: String, _ symbol: String, _ action: @escaping () -> Void) -> some View {
+    private func primary(_ title: LocalizedStringKey, _ symbol: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 8) {
                 if busy { ProgressView().controlSize(.small).tint(.white) } else { Image(systemName: symbol) }
@@ -250,7 +264,7 @@ struct AssistantProposalCard: View {
         .disabled(busy)
     }
 
-    private func badge(_ text: String, _ color: Color) -> some View {
+    private func badge(_ text: LocalizedStringKey, _ color: Color) -> some View {
         Text(text)
             .font(.caption.weight(.semibold))
             .foregroundStyle(color)

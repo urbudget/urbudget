@@ -4,6 +4,7 @@ import { Popover } from "./ui";
 import { payeeIndex } from "./payees";
 import { sameTerm, suggest, termLabel, type Suggestion, type Term } from "./search";
 import type { Budget } from "./types";
+import { getDirection, t, useLanguage } from "./i18n";
 
 /**
  * The register's search bar. Filters show as chips; typing offers matching payees, categories,
@@ -39,9 +40,11 @@ export function SearchBox({
   const [active, setActive] = useState(0);
   const expanded = used || terms.length > 0 || !!text;
   const payees = useMemo(() => payeeIndex(budget).map((p) => p.name), [budget.transactions, budget.payees]);
+  // Suggestions' labels are in the language in use.
+  const language = useLanguage();
   const suggestions = useMemo(
-    () => suggest(text, budget, payees).filter((s) => !s.term || !terms.some((t) => sameTerm(t, s.term!))),
-    [text, budget.categories, budget.accounts, payees, terms],
+    () => suggest(text, budget, payees).filter((s) => !s.term || !terms.some((term) => sameTerm(term, s.term!))),
+    [text, budget.categories, budget.accounts, payees, terms, language],
   );
   useEffect(() => setActive(0), [text]);
   useEffect(() => {
@@ -49,13 +52,15 @@ export function SearchBox({
   }, [active]);
   const measure = () => {
     const s = scroller.current;
-    if (s) setHidden({ start: s.scrollLeft > 0, end: s.scrollLeft + s.clientWidth < s.scrollWidth - 1 });
+    // Right to left, scrollLeft runs from 0 at the start towards negative values.
+    const scrolled = s ? Math.abs(s.scrollLeft) : 0;
+    if (s) setHidden({ start: scrolled > 0, end: scrolled + s.clientWidth < s.scrollWidth - 1 });
   };
   // While you type, the end (where you type) is in view; otherwise the first chips are.
   useEffect(() => {
     const s = scroller.current;
     if (!s) return;
-    s.scrollLeft = focused ? s.scrollWidth : 0;
+    s.scrollLeft = focused ? (getDirection() === "rtl" ? -s.scrollWidth : s.scrollWidth) : 0;
     measure();
   }, [terms.length, focused]);
   useEffect(() => {
@@ -114,12 +119,12 @@ export function SearchBox({
         ref={scroller}
         onScroll={measure}
       >
-        {terms.map((t, i) => (
-          <span className={`chip chip-${t.field}`} key={`${i}:${termLabel(t, budget)}`}>
-            {termLabel(t, budget)}
+        {terms.map((term, i) => (
+          <span className={`chip chip-${term.field}`} key={`${i}:${termLabel(term, budget)}`}>
+            {termLabel(term, budget)}
             <button
               className="chip-remove"
-              aria-label={`Remove ${termLabel(t, budget)}`}
+              aria-label={t("Remove {filter}", { filter: termLabel(term, budget) })}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => onTerms(terms.filter((_, j) => j !== i))}
             >
@@ -130,12 +135,12 @@ export function SearchBox({
         <input
           ref={input}
           role="combobox"
-          aria-label="Search transactions"
+          aria-label={t("Search transactions")}
           aria-expanded={open}
           aria-controls={`${id}-list`}
           aria-autocomplete="list"
           aria-activedescendant={open && suggestions[active] ? `${id}-${active}` : undefined}
-          placeholder={terms.length ? "Add a filter…" : focused ? "Search, or type payee: category: amount: is:" : "Search"}
+          placeholder={terms.length ? t("Add a filter…") : focused ? t("Search, or type payee: category: amount: is:") : t("Search")}
           value={text}
           onChange={(e) => {
             onText(e.target.value);
@@ -163,8 +168,8 @@ export function SearchBox({
         role="presentation"
         className="search-suggestions"
       >
-        <ul id={`${id}-list`} role="listbox" aria-label="Search suggestions" ref={list} onMouseDown={(e) => e.preventDefault()}>
-          {!text.trim() && <li className="search-hint">Filter by…</li>}
+        <ul id={`${id}-list`} role="listbox" aria-label={t("Search suggestions")} ref={list} onMouseDown={(e) => e.preventDefault()}>
+          {!text.trim() && <li className="search-hint">{t("Filter by…")}</li>}
           {suggestions.map((s, i) => (
             <li
               key={`${i}:${s.label}`}

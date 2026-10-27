@@ -21,8 +21,11 @@ private func payeeLines(_ budget: JSON) -> [PayeeLine] {
     var categories: [String: String] = [:]
     for c in budget.rows("categories") { categories[c.text("id")] = c.text("name") }
     return payeeIndex(budget).map { info in
-        let usage = info.count > 0 ? "\(PayeeText.plural(info.count, "transaction")) · \(Money.date(info.last))" : "Not used in transactions yet"
-        let fixed = info.defaultCategory.map { "Default: \($0 == Unassigned ? "Unassigned" : categories[$0] ?? "Deleted category")" }
+        let usage = info.count > 0 ? "\(transactionCount(info.count)) · \(Money.date(info.last))" : String(localized: "Not used in transactions yet")
+        let fixed = info.defaultCategory.map { id -> String in
+            let name = id == Unassigned ? String(localized: "Unassigned") : categories[id] ?? String(localized: "Deleted category")
+            return String(localized: "Default: \(name)")
+        }
         return PayeeLine(name: info.name, subtitle: [usage, fixed].compactMap { $0 }.joined(separator: " · "))
     }
 }
@@ -31,9 +34,10 @@ private func ruleLines(_ budget: JSON) -> [PayeeRuleLine] {
     budget.rows("payeeRules").enumerated().map { index, rule in
         let rename = rule.text("payee").trimmingCharacters(in: .whitespaces)
         let category = rule.text("categoryId").isEmpty ? nil : planningCategoryName(budget, rule.text("categoryId"))
-        let subtitle = [rename.isEmpty ? nil : "Rename to \(rename)", category].compactMap { $0 }.joined(separator: " · ")
-        return PayeeRuleLine(id: rule.text("id").isEmpty ? "rule:\(index)" : rule.text("id"), rule: rule, title: "Contains “\(rule.text("match"))”",
-                             subtitle: subtitle.isEmpty ? "Keep payee name" : subtitle)
+        let subtitle = [rename.isEmpty ? nil : String(localized: "Rename to \(rename)"), category].compactMap { $0 }.joined(separator: " · ")
+        let match = rule.text("match")
+        return PayeeRuleLine(id: rule.text("id").isEmpty ? "rule:\(index)" : rule.text("id"), rule: rule, title: String(localized: "Contains “\(match)”"),
+                             subtitle: subtitle.isEmpty ? String(localized: "Keep payee name") : subtitle)
     }
 }
 
@@ -70,7 +74,7 @@ struct PayeesView: View {
         List {
             Section {
                 Picker("Show", selection: $tab) {
-                    Text(lines.map { "Payees (\($0.count))" } ?? "Payees").tag("payees")
+                    Text(lines.map { String(localized: "Payees (\($0.count))", locale: .app) } ?? String(localized: "Payees")).tag("payees")
                     Text("Import rules (\(rules.count))").tag("rules")
                 }
                 .pickerStyle(.segmented)
@@ -105,7 +109,7 @@ struct PayeesView: View {
         .confirmationDialog("Delete this rule?", isPresented: Binding(get: { deletingRule != nil }, set: { if !$0 { deletingRule = nil } }),
                             titleVisibility: .visible, presenting: deletingRule) { line in
             Button("Delete", role: .destructive) {
-                store.remove("payeeRules", id: line.rule.text("id")) { store.showToast("Deleted the rule.", undo: true) }
+                store.remove("payeeRules", id: line.rule.text("id")) { store.showToast(String(localized: "Deleted the rule."), undo: true) }
             }
         } message: { line in
             Text("\(line.title) won't rename or categorize imported transactions any more. Transactions it already changed stay as they are.")
@@ -117,7 +121,8 @@ struct PayeesView: View {
         if let lines {
             let shown = query.isEmpty ? lines : lines.filter { $0.name.localizedCaseInsensitiveContains(query) }
             if lines.isEmpty {
-                EmptyState(title: "No payees yet", detail: "Payees appear here as you enter transactions.", symbol: "person.2", action: "Add payee") {
+                EmptyState(title: String(localized: "No payees yet"), detail: String(localized: "Payees appear here as you enter transactions."),
+                           symbol: "person.2", action: String(localized: "Add payee")) {
                     editingPayee = PayeeEditorRequest()
                 }
                 .listRowBackground(Color.clear)
@@ -151,15 +156,16 @@ struct PayeesView: View {
         let shown = query.isEmpty ? all : all.filter { "\($0.rule.text("match")) \($0.rule.text("payee"))".localizedCaseInsensitiveContains(query) }
         if let pending, pending > 0 {
             Section {
-                Notice(text: "The rules would rename or categorize \(PayeeText.plural(pending, "transaction")) you already have.", tone: "info",
-                       icon: "wand.and.stars", action: "Apply") { reapply(pending) }
+                Notice(text: String(localized: "The rules would rename or categorize \(transactionCount(pending)) you already have."), tone: "info",
+                       icon: "wand.and.stars", action: String(localized: "Apply")) { reapply(pending) }
             }
             .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
             .listRowBackground(Color.clear)
         }
         if all.isEmpty {
-            EmptyState(title: "No import rules", detail: "Rules rename and categorize transactions as they come in from bank files and bank sync.",
-                       symbol: "wand.and.stars", action: "Add import rule") { editingRule = PayeeRuleRequest() }
+            EmptyState(title: String(localized: "No import rules"),
+                       detail: String(localized: "Rules rename and categorize transactions as they come in from bank files and bank sync."),
+                       symbol: "wand.and.stars", action: String(localized: "Add import rule")) { editingRule = PayeeRuleRequest() }
                 .listRowBackground(Color.clear)
         } else if shown.isEmpty {
             ContentUnavailableView.search(text: query).listRowBackground(Color.clear)
@@ -197,13 +203,13 @@ struct PayeesView: View {
 
     private func reapply(_ count: Int?) {
         store.workflow(["type": "reapplyPayeeRules"]) {
-            store.showToast(count.map { "Updated \(PayeeText.plural($0, "transaction"))." } ?? "Applied the rules.", undo: true)
+            store.showToast(count.map { String(localized: "Updated \(transactionCount($0)).") } ?? String(localized: "Applied the rules."), undo: true)
         }
     }
 
     private func apply(_ line: PayeeRuleLine) {
         store.workflow(["type": "reapplyPayeeRules", "ruleIds": JSON([line.rule.text("id")])]) {
-            store.showToast("Applied \(line.title) to existing transactions.", undo: true)
+            store.showToast(String(localized: "Applied \(line.title) to existing transactions."), undo: true)
         }
     }
 
@@ -250,7 +256,7 @@ private struct PayeeEditor: View {
                     Section {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(original).font(.title2.bold())
-                            Text(detail.map { $0.count == 0 ? "No transactions yet" : "\(PayeeText.plural($0.count, "transaction")) · total \(money($0.total, currency))" } ?? " ")
+                            Text(usageLine(currency))
                                 .font(.subheadline).foregroundStyle(Color.secondary).monospacedDigit()
                         }
                         .listRowBackground(Color.clear)
@@ -262,15 +268,15 @@ private struct PayeeEditor: View {
                     TextField(original == nil ? "Payee name" : "Name", text: $name).wordsCapitalized()
                 } footer: {
                     if merging {
-                        Text("\(trimmed) already exists, so saving merges the two\(usage.map { " (\($0.description))" } ?? "").")
-                            .foregroundStyle(Color.urWarning)
+                        mergeNote.foregroundStyle(Color.urWarning)
                     } else if original != nil {
                         Text("Renaming or merging updates saved transactions, split payees, schedules and import rules.")
                     }
                 }
                 Section {
                     NavigationLink(value: PayeeRoute.category) {
-                        PlanningPickerRow(icon: "tag", label: "Default category", value: planningCategoryName(store.budget, category), placeholder: placeholder)
+                        PlanningPickerRow(icon: "tag", label: String(localized: "Default category"), value: planningCategoryName(store.budget, category),
+                                          placeholder: placeholder)
                     }
                     if !category.isEmpty {
                         Button("Clear default category") { category = "" }
@@ -326,8 +332,24 @@ private struct PayeeEditor: View {
     }
 
     private var placeholder: String {
-        guard let lastUsed = info?.lastUsed else { return "No default" }
-        return "Last used: \(lastUsed.isEmpty ? "no category" : planningCategoryName(store.budget, lastUsed) ?? "no category")"
+        guard let lastUsed = info?.lastUsed else { return String(localized: "No default") }
+        let name = (lastUsed.isEmpty ? nil : planningCategoryName(store.budget, lastUsed)) ?? String(localized: "no category")
+        return String(localized: "Last used: \(name)")
+    }
+
+    /// "12 transactions · total -480.00 SAR", or that there are none yet.
+    private func usageLine(_ currency: String) -> String {
+        guard let detail else { return " " }
+        if detail.count == 0 { return String(localized: "No transactions yet") }
+        return String(localized: "\(transactionCount(detail.count)) · total \(money(detail.total, currency))")
+    }
+
+    /// Typing another payee's name merges into it: says so, with what that payee has.
+    private var mergeNote: Text {
+        if let described = usage?.description {
+            return Text("\(trimmed) already exists, so saving merges the two (\(described)).")
+        }
+        return Text("\(trimmed) already exists, so saving merges the two.")
     }
 
     private func load() {
@@ -339,8 +361,9 @@ private struct PayeeEditor: View {
 
     private func recentRow(_ line: PayeeRecent, _ currency: String) -> some View {
         let account = store.budget?.row("accounts", id: line.accountId)?.text("name")
-        let category: String? = line.splits > 1 ? "Split (\(line.splits))" : line.unassigned ? "Unassigned"
-            : line.categoryId.isEmpty ? "No category" : planningCategoryName(store.budget, line.categoryId)
+        let category: String? = line.splits > 1 ? String(localized: "Split (\(line.splits))", locale: .app)
+            : line.unassigned ? String(localized: "Unassigned")
+            : line.categoryId.isEmpty ? String(localized: "No category") : planningCategoryName(store.budget, line.categoryId)
         return HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(Money.date(line.date)).foregroundStyle(Color.primary)
@@ -354,12 +377,13 @@ private struct PayeeEditor: View {
     @ViewBuilder private func destination(_ route: PayeeRoute) -> some View {
         switch route {
         case .category:
-            CategoryPicker(title: "Default category", month: Dates.currentMonth, selected: category, includeUnassigned: true, includePayment: false) { picked in
+            CategoryPicker(title: String(localized: "Default category"), month: Dates.currentMonth, selected: category, includeUnassigned: true,
+                           includePayment: false) { picked in
                 category = picked
                 self.route = []
             }
         case .merge:
-            PayeeNameList(title: "Merge into", names: names.filter { $0 != original }, selected: merging ? trimmed : "") { picked in
+            PayeeNameList(title: String(localized: "Merge into"), names: names.filter { $0 != original }, selected: merging ? trimmed : "") { picked in
                 name = picked
                 self.route = []
             }
@@ -382,11 +406,12 @@ private struct PayeeEditor: View {
             do {
                 try await store.planningCommand("workflow", ["action": action], original: guarded)
                 if let from, merged {
-                    store.showToast("Merged \(from) into \(to)\(described.map { " (\($0))" } ?? "").", undo: true)
+                    store.showToast(described.map { String(localized: "Merged \(from) into \(to) (\($0)).") } ?? String(localized: "Merged \(from) into \(to)."),
+                                    undo: true)
                 } else if let from, from != to {
-                    store.showToast("Renamed \(from) to \(to).", undo: true)
+                    store.showToast(String(localized: "Renamed \(from) to \(to)."), undo: true)
                 } else {
-                    store.showToast(from == nil ? "Added \(to)." : "Saved \(to).", undo: true)
+                    store.showToast(from == nil ? String(localized: "Added \(to).") : String(localized: "Saved \(to)."), undo: true)
                 }
                 dismiss()
             } catch {
@@ -418,7 +443,7 @@ private struct PayeeBankNames: View {
                     Text("“\(rule.text("match"))”")
                     Spacer()
                     if !rule.text("categoryId").isEmpty {
-                        Text(planningCategoryName(store.budget, rule.text("categoryId")) ?? "Deleted category")
+                        Text(planningCategoryName(store.budget, rule.text("categoryId")) ?? String(localized: "Deleted category"))
                             .font(.footnote).foregroundStyle(Color.secondary)
                     }
                 }
@@ -446,7 +471,7 @@ private struct PayeeBankNames: View {
                 .accessibilityHint("Seen in a bank file")
             }
             if pending > 0 {
-                Button("Apply to \(PayeeText.plural(pending, "earlier transaction"))") { apply(rules) }
+                Button("Apply to \(pending) earlier transactions") { apply(rules) }
             }
         } header: {
             Text("Bank names")
@@ -480,14 +505,12 @@ private struct PayeeBankNames: View {
         guard !match.isEmpty else { return }
         let rules = store.budget?.rows("payeeRules") ?? []
         if let taken = rules.first(where: { BankNames.normalize($0.text("match")) == BankNames.normalize(match) }) {
-            let owner = taken.text("payee")
-            error = owner == payee ? "“\(match)” is already one of \(payee)'s bank names."
-                : "“\(match)” is already a rule\(owner.isEmpty ? "" : " for \(owner)"). Change it on the Import rules tab."
+            error = takenMessage(match, owner: taken.text("payee"))
             return
         }
         let rule: JSON = ["id": .string(UUID().uuidString.lowercased()), "match": .string(match), "payee": .string(payee), "categoryId": .null]
         let name = payee
-        store.edit(then: { store.showToast("Bank payees with “\(match)” are now named \(name).", undo: true) }) { budget in
+        store.edit(then: { store.showToast(String(localized: "Bank payees with “\(match)” are now named \(name)."), undo: true) }) { budget in
             var list = budget["payeeRules"].array
             list.append(rule)
             budget["payeeRules"] = .array(list)
@@ -496,11 +519,18 @@ private struct PayeeBankNames: View {
         error = nil
     }
 
+    /// Why a bank name can't be added: it's already this payee's, or another rule has it.
+    private func takenMessage(_ match: String, owner: String) -> String {
+        if owner == payee { return String(localized: "“\(match)” is already one of \(payee)'s bank names.") }
+        if owner.isEmpty { return String(localized: "“\(match)” is already a rule. Change it on the Import rules tab.") }
+        return String(localized: "“\(match)” is already a rule for \(owner). Change it on the Import rules tab.")
+    }
+
     private func remove(_ rule: JSON) {
         let match = rule.text("match")
         let id = rule.text("id")
         let name = payee
-        store.edit(then: { store.showToast("Removed “\(match)” from \(name).", undo: true) }) { budget in
+        store.edit(then: { store.showToast(String(localized: "Removed “\(match)” from \(name)."), undo: true) }) { budget in
             budget["payeeRules"] = .array(budget["payeeRules"].array.filter { $0.text("id") != id || $0.text("match") != match })
         }
     }
@@ -508,7 +538,7 @@ private struct PayeeBankNames: View {
     private func apply(_ rules: [JSON]) {
         let count = pending
         store.workflow(["type": "reapplyPayeeRules", "ruleIds": JSON(rules.map { $0.text("id") })]) {
-            store.showToast("Updated \(PayeeText.plural(count, "transaction")).", undo: true)
+            store.showToast(String(localized: "Updated \(transactionCount(count))."), undo: true)
         }
     }
 }
@@ -603,7 +633,8 @@ private struct PayeeRuleEditor: View {
                         }
                     }
                     NavigationLink(value: PayeeRuleRoute.category) {
-                        PlanningPickerRow(icon: "tag", label: "Category", value: planningCategoryName(store.budget, category), placeholder: "Keep category")
+                        PlanningPickerRow(icon: "tag", label: String(localized: "Category"), value: planningCategoryName(store.budget, category),
+                                          placeholder: String(localized: "Keep category"))
                     }
                     if !category.isEmpty {
                         Button("Keep the category instead") { category = "" }
@@ -614,7 +645,7 @@ private struct PayeeRuleEditor: View {
                 if ready, let count, count > 0 {
                     Section {
                         Button(action: { save(apply: true) }) {
-                            Label("Save & apply to \(PayeeText.plural(count, "transaction"))", systemImage: "wand.and.stars")
+                            Label("Save & apply to \(count) transactions", systemImage: "wand.and.stars")
                         }
                         .disabled(saving)
                     } footer: {
@@ -671,9 +702,10 @@ private struct PayeeRuleEditor: View {
             } else if !ready {
                 Text("Choose a new name, a category, or both.").foregroundStyle(Color.urWarning)
             } else if previewed {
-                if let count {
-                    Text(count > 0 ? "Applied to existing transactions, it would rename or categorize \(PayeeText.plural(count, "transaction"))."
-                         : "It wouldn't change any transactions you already have.")
+                if let count, count > 0 {
+                    Text("Applied to existing transactions, it would rename or categorize \(count) transactions.")
+                } else if count != nil {
+                    Text("It wouldn't change any transactions you already have.")
                 }
             } else {
                 HStack(spacing: 6) {
@@ -725,12 +757,12 @@ private struct PayeeRuleEditor: View {
     @ViewBuilder private func destination(_ route: PayeeRuleRoute) -> some View {
         switch route {
         case .category:
-            CategoryPicker(title: "Category", month: Dates.currentMonth, selected: category, includePayment: false) { picked in
+            CategoryPicker(title: String(localized: "Category"), month: Dates.currentMonth, selected: category, includePayment: false) { picked in
                 category = picked
                 self.route = []
             }
         case .payee:
-            PayeeNameList(title: "Rename to", names: names, selected: payee.trimmingCharacters(in: .whitespaces)) { picked in
+            PayeeNameList(title: String(localized: "Rename to"), names: names, selected: payee.trimmingCharacters(in: .whitespaces)) { picked in
                 payee = picked
                 self.route = []
             }
@@ -751,9 +783,9 @@ private struct PayeeRuleEditor: View {
             do {
                 try await store.planningEdit(original: guarded, then: commands) { try $0.upsertRecord("payeeRules", rule) }
                 if apply {
-                    store.showToast("Saved the rule and updated \(PayeeText.plural(count ?? 0, "transaction")).", undo: true)
+                    store.showToast(String(localized: "Saved the rule and updated \(transactionCount(count ?? 0))."), undo: true)
                 } else {
-                    store.showToast(guarded == nil ? "Added the rule." : "Saved the rule.", undo: true)
+                    store.showToast(guarded == nil ? String(localized: "Added the rule.") : String(localized: "Saved the rule."), undo: true)
                 }
                 dismiss()
             } catch {
@@ -784,7 +816,7 @@ private struct PayeeRuleEditor: View {
             defer { saving = false }
             do {
                 try await store.planningEdit(original: (collection: "payeeRules", record: original)) { try $0.removeRecord("payeeRules", id: id) }
-                store.showToast("Deleted the rule.", undo: true)
+                store.showToast(String(localized: "Deleted the rule."), undo: true)
                 dismiss()
             } catch {
                 self.error = BudgetStore.readable(error)

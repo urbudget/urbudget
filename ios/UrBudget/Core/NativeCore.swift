@@ -26,7 +26,8 @@ enum NativeCore {
     private static func call(_ function: (UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?, _ text: String) -> String {
         text.withCString { pointer in
             guard let reply = function(pointer) else {
-                return #"{"ok":false,"error":"The engine returned nothing."}"#
+                let nothing: JSON = ["ok": false, "error": .string(String(localized: "The engine returned nothing."))]
+                return nothing.serialized()
             }
             defer { urbudget_free(reply) }
             return String(cString: reply)
@@ -36,7 +37,7 @@ enum NativeCore {
     private static func decode(_ text: String) throws -> JSON {
         let reply = try JSON.parse(text)
         guard reply["ok"].bool else {
-            throw AppError(reply.text("error", "The service could not complete this request."))
+            throw AppError(reply.text("error", String(localized: "The service could not complete this request.")))
         }
         return reply["value"]
     }

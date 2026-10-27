@@ -314,10 +314,11 @@ final class ReportsTests: XCTestCase {
     func testFiltersReadAsAllNoneOneOrACount() {
         let groups = [ReportFilterGroup(name: "Budget", items: [ReportFilterItem(id: "a", label: "Checking"), ReportFilterItem(id: "b", label: "Savings")]),
                       ReportFilterGroup(name: "Tracking", items: [ReportFilterItem(id: "c", label: "House")])]
-        XCTAssertEqual(ReportMath.filterSummary(groups, [], allLabel: "All accounts", noun: "accounts"), "All accounts")
-        XCTAssertEqual(ReportMath.filterSummary(groups, ["a"], allLabel: "All accounts", noun: "accounts"), "Checking")
-        XCTAssertEqual(ReportMath.filterSummary(groups, ["a", "c"], allLabel: "All accounts", noun: "accounts"), "2 accounts")
-        XCTAssertEqual(ReportMath.filterSummary(groups, [""], allLabel: "All accounts", noun: "accounts"), "None")
+        let several: (Int) -> String = { String(localized: "\($0) accounts", locale: .app) }
+        XCTAssertEqual(ReportMath.filterSummary(groups, [], allLabel: "All accounts", several: several), "All accounts")
+        XCTAssertEqual(ReportMath.filterSummary(groups, ["a"], allLabel: "All accounts", several: several), "Checking")
+        XCTAssertEqual(ReportMath.filterSummary(groups, ["a", "c"], allLabel: "All accounts", several: several), "2 accounts")
+        XCTAssertEqual(ReportMath.filterSummary(groups, [""], allLabel: "All accounts", several: several), "None")
         XCTAssertEqual(ReportMath.filterToggle(groups, [], ["a"], on: false), ["b", "c"])
         XCTAssertEqual(ReportMath.filterToggle(groups, ["b", "c"], ["a"], on: true), [])
         XCTAssertEqual(ReportMath.filterToggle(groups, ["a"], ["a"], on: false), [""])

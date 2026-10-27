@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { os } from "./platform";
+import { t } from "./i18n";
 
 /**
  * On Windows the app draws its own title bar in place of the system one (turned off in
@@ -91,18 +92,18 @@ function WindowControls() {
   }, []);
   return (
     <div className="window-controls">
-      <button aria-label="Minimize" title="Minimize" onClick={() => void getCurrentWindow().minimize()}>
+      <button aria-label={t("Minimize")} title={t("Minimize")} onClick={() => void getCurrentWindow().minimize()}>
         <span aria-hidden="true">{""}</span>
       </button>
       <button
-        aria-label={maximized ? "Restore" : "Maximize"}
-        title={maximized ? "Restore" : "Maximize"}
+        aria-label={maximized ? t("Restore") : t("Maximize")}
+        title={maximized ? t("Restore") : t("Maximize")}
         onClick={() => void getCurrentWindow().toggleMaximize()}
       >
         <span aria-hidden="true">{maximized ? "" : ""}</span>
       </button>
       {/* Close goes through the same save-first handling as the system close button. */}
-      <button className="close" aria-label="Close" title="Close" onClick={() => void getCurrentWindow().close()}>
+      <button className="close" aria-label={t("Close")} title={t("Close")} onClick={() => void getCurrentWindow().close()}>
         <span aria-hidden="true">{""}</span>
       </button>
     </div>

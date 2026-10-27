@@ -3,12 +3,13 @@ import { CircleCheck, CreditCard, MessageSquareText, Settings2, Target, Triangle
 import { CategoryNotes, TargetEditor } from "./TargetEditor";
 import { AUTO_ASSIGN, QuickAssign } from "./QuickAssign";
 import { editableAmount, evaluateAmount, money, monthOnly, shiftMonth, tone } from "./format";
-import { categoryState, targetText, type CategorySummary } from "./CategoryRow";
-import { MoveList } from "./MovesPopover";
+import { categoryState, targetLine, targetSentence, targetText, type CategorySummary } from "./CategoryRow";
+import { MoveList, moveDay } from "./MovesPopover";
 import { categoryMoves } from "./moves";
 import { CategoryLoans } from "./LoanHeader";
 import type { Budget, Category, Summary } from "./types";
 import type { TargetMonthContext } from "./TargetFields";
+import { t, tn } from "./i18n";
 
 /**
  * History entries name a quick-assign option by its internal name; show its label. Older
@@ -62,9 +63,9 @@ function OptionalAmountInput({
       id={id}
       className={`amount-input${invalid ? " invalid" : ""}`}
       aria-invalid={invalid}
-      title={invalid ? "Enter an amount like 5000, or math like 2500*2" : undefined}
+      title={invalid ? t("Enter an amount like 5000, or math like 2500*2") : undefined}
       inputMode="decimal"
-      placeholder="Add"
+      placeholder={t("Add")}
       value={value}
       onFocus={(e) => {
         const input = e.currentTarget;
@@ -111,15 +112,15 @@ function TargetsAndIncome({
   const gap = income === undefined ? 0 : targets - income;
   return (
     <section className="month-cost">
-      <h3>Targets and income</h3>
+      <h3>{t("Targets and income")}</h3>
       <dl className="detail-list">
         <div>
-          <dt>{monthOnly(month)}'s targets</dt>
+          <dt>{t("{month}'s targets", { month: monthOnly(month) })}</dt>
           <dd>{money(targets)}</dd>
         </div>
         <div>
           <dt>
-            <label htmlFor="expected-income">Expected income</label>
+            <label htmlFor="expected-income">{t("Expected income")}</label>
           </dt>
           <dd>
             <OptionalAmountInput
@@ -136,20 +137,14 @@ function TargetsAndIncome({
         </div>
       </dl>
       {income === undefined ? (
-        <p className="help">The income you expect each month, to compare with what your targets ask for.</p>
+        <p className="help">{t("The income you expect each month, to compare with what your targets ask for.")}</p>
       ) : (
         <p className={`target-status${gap > 0 ? " short" : ""}`}>
           {gap > 0 ? <TriangleAlert size={14} /> : <CircleCheck size={14} />}
           <span>
-            {gap > 0 ? (
-              <>
-                Targets are <strong>{money(gap)}</strong> more than expected income
-              </>
-            ) : (
-              <>
-                <strong>{money(-gap)}</strong> left after targets
-              </>
-            )}
+            {gap > 0
+              ? t("Targets are {amount} more than expected income", { amount: <strong>{money(gap)}</strong> })
+              : t("{amount} left after targets", { amount: <strong>{money(-gap)}</strong> })}
           </span>
         </p>
       )}
@@ -215,48 +210,44 @@ export function BudgetInspector({
       <>
         <div className="inspector-head">
           <div>
-            <h2>This month</h2>
-            <p>Select categories to see their details.</p>
+            <h2>{t("This month")}</h2>
+            <p>{t("Select categories to see their details.")}</p>
           </div>
         </div>
-        <dl className="month-flow" aria-label="How Available adds up">
+        <dl className="month-flow" aria-label={t("How Available adds up")}>
           <div>
-            <dt title={`From ${monthOnly(shiftMonth(month, -1))}`}>Carried over</dt>
+            <dt title={t("From {month}", { month: monthOnly(shiftMonth(month, -1)) })}>{t("Carried over")}</dt>
             <dd>{money(carried)}</dd>
           </div>
           <div>
-            <dt>Assigned</dt>
+            <dt>{t("Assigned")}</dt>
             <dd>
               <Op n={summary.assigned} />
               {money(Math.abs(summary.assigned))}
             </dd>
           </div>
           <div>
-            <dt title="Includes uncategorized spending and movements into and out of credit-card payment reserves.">Activity</dt>
+            <dt title={t("Includes uncategorized spending and movements into and out of credit-card payment reserves.")}>{t("Activity")}</dt>
             <dd>
               <Op n={activity} />
               {money(Math.abs(activity))}
             </dd>
           </div>
           <div className="total">
-            <dt>Available</dt>
+            <dt>{t("Available")}</dt>
             <dd className={available < 0 ? "negative" : ""}>{money(available)}</dd>
           </div>
         </dl>
         {budget.categories.some((c) => c.paymentAccountId) && (
-          <p className="help">Activity includes credit-card payment reserves. See Reports for purchases and refunds.</p>
+          <p className="help">{t("Activity includes credit-card payment reserves. See Reports for purchases and refunds.")}</p>
         )}
         {(hasTargets || underfunded > 0) && (
           <p className={`target-status${underfunded ? " short" : ""}`}>
             {underfunded ? <TriangleAlert size={14} /> : <CircleCheck size={14} />}
             <span>
-              {underfunded ? (
-                <>
-                  <strong>{money(underfunded)}</strong> still needed this month
-                </>
-              ) : (
-                "This month's funding is complete"
-              )}
+              {underfunded
+                ? t("{amount} still needed this month", { amount: <strong>{money(underfunded)}</strong> })
+                : t("This month's funding is complete")}
             </span>
           </p>
         )}
@@ -271,14 +262,14 @@ export function BudgetInspector({
         />
         <TargetsAndIncome budget={budget} month={month} summaries={summaries} edit={edit} />
         <section className="recent-moves">
-          <h3>Recent changes</h3>
+          <h3>{t("Recent changes")}</h3>
           {moves.length ? (
             <ul>
               {(showMoves ? moves : moves.slice(0, 4)).map((m, i) => {
                 const { what, detail } = moveParts(m.description);
                 return (
                   <li key={i}>
-                    <time>{new Date(m.at).toLocaleDateString(undefined, { day: "numeric", month: "short" })}</time>
+                    <time>{moveDay(m.at)}</time>
                     <span>
                       {what}
                       {detail && <small>{detail}</small>}
@@ -288,11 +279,11 @@ export function BudgetInspector({
               })}
             </ul>
           ) : (
-            <p className="help">Assignments and moves you make this month appear here.</p>
+            <p className="help">{t("Assignments and moves you make this month appear here.")}</p>
           )}
           {moves.length > 4 && (
             <button className="link-button" onClick={() => setShowMoves(!showMoves)}>
-              {showMoves ? "Show fewer" : `Show all ${moves.length}`}
+              {showMoves ? t("Show fewer") : t("Show all {count}", { count: moves.length })}
             </button>
           )}
         </section>
@@ -319,71 +310,71 @@ export function BudgetInspector({
     <>
       <div className="inspector-head">
         <div>
-          <h2>{one ? one.name : `${selected.length} categories`}</h2>
-          <p>{one ? one.group : "Selected"}</p>
+          <h2>{one ? one.name : tn(selected.length, "{count} categories", "{count} categories")}</h2>
+          <p>{one ? one.group : t("Selected")}</p>
         </div>
         <span className="inspector-head-actions">
           {onAsk && (
             <button
               className="icon-button"
-              aria-label="Ask the assistant"
-              title="Ask the assistant about this"
+              aria-label={t("Ask the assistant")}
+              title={t("Ask the assistant about this")}
               onClick={() => onAsk(selected.map((c) => c.name))}
             >
               <MessageSquareText size={16} />
             </button>
           )}
-          <button className="icon-button" aria-label="Clear selection" title="Clear selection (Esc)" onClick={onClear}>
+          <button className="icon-button" aria-label={t("Clear selection")} title={t("Clear selection (Esc)")} onClick={onClear}>
             <X size={16} />
           </button>
         </span>
       </div>
       <div className={`inspector-amount ${tone(totals.available)}`}>
-        {money(totals.available, { symbol: true })} <small>{one?.paymentAccountId ? "set aside for the card" : "available"}</small>
+        {money(totals.available, { symbol: true })} <small>{one?.paymentAccountId ? t("set aside for the card") : t("available")}</small>
       </div>
       {one?.paymentAccountId && onPayCard && budget.accounts.some((a) => a.id === one.paymentAccountId && !a.archived) && (
         <button className="primary pay-card" onClick={() => onPayCard(one.paymentAccountId!)}>
-          <CreditCard size={15} aria-hidden /> Make a payment
+          <CreditCard size={15} aria-hidden /> {t("Make a payment")}
         </button>
       )}
       <dl className="detail-list">
         {s && (
           <div>
-            <dt>Carried from last month</dt>
+            <dt>{t("Carried from last month")}</dt>
             <dd>{money(s.carried)}</dd>
           </div>
         )}
         <div>
-          <dt>Assigned this month</dt>
+          <dt>{t("Assigned this month")}</dt>
           <dd>{money(totals.assigned)}</dd>
         </div>
         <div>
-          <dt>Activity this month</dt>
+          <dt>{t("Activity this month")}</dt>
           <dd>{money(totals.activity)}</dd>
         </div>
         {one && one.target > 0 && (
           <div>
             <dt>
               {one.goal?.goal_type === "DEBT"
-                ? "Loan payment target"
+                ? t("Loan payment target")
                 : one.goal?.goal_type === "TB"
-                  ? "Balance target"
+                  ? t("Balance target")
                   : one.goal?.goal_needs_whole_amount === false
-                    ? "Refill up to"
-                    : "Set aside"}
+                    ? t("Refill up to")
+                    : t("Set aside")}
             </dt>
             <dd>{money(one.target)}</dd>
           </div>
         )}
         {totals.needed > 0 && !sentenceNeeded && (
           <div>
-            <dt>Still needed</dt>
+            <dt>{t("Still needed")}</dt>
             <dd className="warning-text">{money(totals.needed)}</dd>
           </div>
         )}
         {s && (s.upcoming ?? 0) > 0 && (
           <div>
-            <dt>Upcoming this month</dt>
+            <dt>{t("Upcoming this month")}</dt>
             <dd>{money(s.upcoming ?? 0)}</dd>
           </div>
         )}
@@ -393,18 +384,14 @@ export function BudgetInspector({
         <p className={`target-status${oneTarget.amount === null ? "" : oneState?.status === "underfunded" ? " short" : " later"}`}>
           {oneTarget.amount === null ? <CircleCheck size={14} /> : oneState?.status === "underfunded" ? <TriangleAlert size={14} /> : <Target size={14} />}
           <span>
-            {oneTarget.amount !== null ? (
-              <>
-                <strong>{money(oneTarget.amount)}</strong> {oneTarget.words}
-              </>
-            ) : (
-              oneTarget.words
-            )}
+            {oneTarget.amount !== null
+              ? targetLine(oneTarget, <strong>{money(oneTarget.amount)}</strong>)
+              : targetSentence(oneTarget)}
           </span>
         </p>
       )}
       {totals.available < 0 && (
-        <p className="notice error">Overspent. Select the Available amount to cover it from another category.</p>
+        <p className="notice error">{t("Overspent. Select the Available amount to cover it from another category.")}</p>
       )}
       {/* A loan's payment category: the loan it pays, and paying it (LoanHeader.tsx). */}
       {one && !targetOpen && (
@@ -432,14 +419,14 @@ export function BudgetInspector({
       )}
       {one && oneMoves.length > 0 && (
         <section className="recent-moves">
-          <h3>Moves this month</h3>
+          <h3>{t("Moves this month")}</h3>
           <MoveList
             lines={allCategoryMoves ? oneMoves : oneMoves.slice(-MOVES_SHOWN)}
-            label={`${one.name} moves this month`}
+            label={t("{name} moves this month", { name: one.name })}
           />
           {oneMoves.length > MOVES_SHOWN && (
             <button className="link-button" onClick={() => setAllCategoryMoves(!allCategoryMoves)}>
-              {allCategoryMoves ? "Show fewer" : `Show all ${oneMoves.length}`}
+              {allCategoryMoves ? t("Show fewer") : t("Show all {count}", { count: oneMoves.length })}
             </button>
           )}
         </section>
@@ -448,7 +435,7 @@ export function BudgetInspector({
         <>
           <CategoryNotes category={one} edit={edit} />
           <button className="link-button" onClick={() => onEditCategory(one)}>
-            <Settings2 size={14} /> Name, group and visibility…
+            <Settings2 size={14} /> {t("Name, group and visibility…")}
           </button>
         </>
       )}

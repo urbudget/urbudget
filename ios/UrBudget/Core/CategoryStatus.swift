@@ -52,21 +52,28 @@ struct CategoryStatus: Equatable, Sendable {
         let available = s.long("available")
         if status == "underfunded" {
             let due = snoozed ? JSON.null : s["targetDue"]
-            let by: String
-            if !due.isObject { by = "this month" }
-            else if due["monthly"].bool {
-                let day = Int(due.text("date").dropFirst(8).prefix(2)) ?? 1
-                by = "by the \(Dates.ordinal(day))"
-            } else {
-                by = "by \(Dates.deadline(due.text("date"), monthFirst: monthFirst))"
-            }
             let more = available > 0 || (s.has("targetFundingFunded") ? s.long("targetFundingFunded") : s.long("assigned")) > 0
-            return Words(amount: needed, words: "\(more ? "more " : "")needed \(by)")
+            return Words(amount: needed, words: Self.neededWords(due: due, more: more, monthFirst: monthFirst))
         }
         if status == "negative" || status == "credit" { return nil }
-        if eventually > 0 { return Words(amount: eventually, words: "\(available > 0 ? "more " : "")needed eventually") }
+        if eventually > 0 {
+            return Words(amount: eventually, words: available > 0 ? String(localized: "more needed eventually") : String(localized: "needed eventually"))
+        }
         if category.long("target") <= 0 || snoozed || (progress ?? 0) < 100 { return nil }
-        if available > 0 { return Words(amount: nil, words: "Funded") }
-        return s.long("activity") < 0 ? Words(amount: nil, words: "Fully spent") : nil
+        if available > 0 { return Words(amount: nil, words: String(localized: "Funded")) }
+        return s.long("activity") < 0 ? Words(amount: nil, words: String(localized: "Fully spent")) : nil
+    }
+
+    /// "needed this month", "more needed by the 31st", "needed by 1 October": the words after the amount.
+    private static func neededWords(due: JSON, more: Bool, monthFirst: Bool) -> String {
+        if !due.isObject {
+            return more ? String(localized: "more needed this month") : String(localized: "needed this month")
+        }
+        if due["monthly"].bool {
+            let day = Dates.ordinal(Int(due.text("date").dropFirst(8).prefix(2)) ?? 1)
+            return more ? String(localized: "more needed by the \(day)") : String(localized: "needed by the \(day)")
+        }
+        let date = Dates.deadline(due.text("date"), monthFirst: monthFirst)
+        return more ? String(localized: "more needed by \(date)") : String(localized: "needed by \(date)")
     }
 }

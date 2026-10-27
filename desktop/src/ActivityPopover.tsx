@@ -5,6 +5,7 @@ import { money, monthName } from "./format";
 import { TransactionLines, type ActivityLine } from "./TransactionLines";
 import { newestFirst } from "./order";
 import type { Account, Budget, Transaction } from "./types";
+import { t, tn, useLanguage } from "./i18n";
 
 export type { ActivityLine };
 export const onBudget = (a?: Account) => !!a && (a.onBudget ?? a.kind !== "tracking");
@@ -19,24 +20,24 @@ export function categoryActivity(b: Budget, categoryId: string, month: string): 
   const accounts = new Map(b.accounts.map((a) => [a.id, a]));
   const name = (id: string | null | undefined) => accounts.get(id ?? "")?.name ?? "";
   const lines: { line: ActivityLine; t: Transaction }[] = [];
-  for (const t of b.transactions) {
-    if (!t.date.startsWith(month)) continue;
-    const source = accounts.get(t.accountId);
-    t.splits.forEach((s, i) => {
+  for (const tx of b.transactions) {
+    if (!tx.date.startsWith(month)) continue;
+    const source = accounts.get(tx.accountId);
+    tx.splits.forEach((s, i) => {
       if (s.categoryId !== categoryId) return;
-      const other = s.transferAccountId ?? t.transferAccountId;
+      const other = s.transferAccountId ?? tx.transferAccountId;
       let amount = s.amount,
-        payee = s.payee || t.payee || "No payee",
-        account = name(t.accountId);
+        payee = s.payee || tx.payee || t("No payee"),
+        account = name(tx.accountId);
       if (other) {
         // Only transfers that cross into or out of the budget carry a category.
         const fromBudget = onBudget(source);
         if (fromBudget === onBudget(accounts.get(other))) return;
         amount = fromBudget ? s.amount : -s.amount;
-        payee = `Transfer: ${name(fromBudget ? other : t.accountId)}`;
-        account = name(fromBudget ? t.accountId : other);
+        payee = t("Transfer: {account}", { account: name(fromBudget ? other : tx.accountId) });
+        account = name(fromBudget ? tx.accountId : other);
       } else if (!onBudget(source)) return;
-      lines.push({ t, line: { key: `${t.id}:${i}`, date: t.date, payee, account, memo: s.memo || t.memo, amount } });
+      lines.push({ t: tx, line: { key: `${tx.id}:${i}`, date: tx.date, payee, account, memo: s.memo || tx.memo, amount } });
     });
   }
   // Newest first, like the register.
@@ -60,25 +61,27 @@ export function ActivityPopover({
   onClose: () => void;
   onOpenRegister: () => void;
 }) {
-  const lines = useMemo(() => categoryActivity(budget, categoryId, month), [budget.transactions, budget.accounts, categoryId, month]);
+  // "No payee" and "Transfer: …" are in the language in use.
+  const language = useLanguage();
+  const lines = useMemo(() => categoryActivity(budget, categoryId, month), [budget.transactions, budget.accounts, categoryId, month, language]);
   const total = lines.reduce((n, l) => n + l.amount, 0);
   return (
-    <Popover open onClose={onClose} anchor={anchor} placement="bottom-end" label={`${categoryName} activity`} className="activity-popover">
+    <Popover open onClose={onClose} anchor={anchor} placement="bottom-end" label={t("{name} activity", { name: categoryName })} className="activity-popover">
       <div className="activity-head">
         <strong>{categoryName}</strong>
-        <span className="muted">Activity in {monthName(month)}</span>
+        <span className="muted">{t("Activity in {month}", { month: monthName(month) })}</span>
       </div>
       {lines.length ? (
-        <TransactionLines lines={lines} label={`${categoryName} transactions`} />
+        <TransactionLines lines={lines} label={t("{name} transactions", { name: categoryName })} />
       ) : (
-        <p className="muted activity-empty">No transactions in this category this month.</p>
+        <p className="muted activity-empty">{t("No transactions in this category this month.")}</p>
       )}
       <div className="activity-foot">
         <span>
-          {lines.length} {lines.length === 1 ? "transaction" : "transactions"} · <strong>{money(total)}</strong>
+          {tn(lines.length, "{count} transaction · {amount}", "{count} transactions · {amount}", { amount: <strong>{money(total)}</strong> })}
         </span>
         <button className="link-button" data-autofocus onClick={onOpenRegister}>
-          View in register <ArrowRight size={13} />
+          {t("View in register")} <ArrowRight size={13} />
         </button>
       </div>
     </Popover>

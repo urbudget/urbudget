@@ -42,7 +42,7 @@
   background: var(--surface);
   box-shadow: var(--shadow);
   color: var(--text);
-  text-align: left;
+  text-align: start;
   cursor: pointer;
   transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
 }
@@ -77,7 +77,7 @@
 .welcome-arrow {
   position: absolute;
   top: 16px;
-  right: 14px;
+  inset-inline-end: 14px;
   color: var(--muted);
 }
 .welcome-step {
@@ -137,7 +137,7 @@
   transition: width 0.3s var(--ease);
 }
 .gs-head .icon-button {
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 .gs-steps {
   display: flex;
@@ -152,7 +152,8 @@
   align-items: center;
   gap: 7px;
   height: 28px;
-  padding: 0 10px 0 5px;
+  padding-block: 0;
+  padding-inline: 5px 10px;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--surface);

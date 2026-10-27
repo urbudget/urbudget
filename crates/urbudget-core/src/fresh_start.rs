@@ -1,4 +1,5 @@
 //! Small pieces of settled history needed after a fresh start, without its transactions.
+use crate::t;
 use crate::domain::{validate, Budget, Transaction};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -12,7 +13,7 @@ const KEY: &str = "freshStartHistory";
 pub fn create(source: &Budget, name: &str, as_of: &str) -> Result<Budget, String> {
     use crate::domain::{Cleared, MAX_SAFE_TOTAL};
     validate(source)?;
-    if !crate::domain::valid_date(as_of) { return Err("Choose a valid fresh-start date.".into()); }
+    if !crate::domain::valid_date(as_of) { return Err(t!("Choose a valid fresh-start date.")); }
     let keep = |t: &Transaction| {
         t.date.as_str() > as_of || t.status == Cleared::Uncleared || t.extra.get("approved") == Some(&Value::Bool(false))
             || (t.transfer_account_id.is_some() && t.transfer_status.unwrap_or(Cleared::Uncleared) == Cleared::Uncleared)
@@ -21,9 +22,9 @@ pub fn create(source: &Budget, name: &str, as_of: &str) -> Result<Budget, String
     };
     let mut balances: HashMap<String, i128> = source.accounts.iter().map(|a| (a.id.clone(), a.opening_balance as i128)).collect();
     let mut add = |account: &str, amount: i128| -> Result<(), String> {
-        let balance = balances.get_mut(account).ok_or("A transaction references a missing account.")?;
+        let balance = balances.get_mut(account).ok_or_else(|| t!("A transaction references a missing account."))?;
         *balance += amount;
-        if balance.abs() > MAX_SAFE_TOTAL as i128 { return Err("Fresh-start balances exceed the supported amount.".into()); }
+        if balance.abs() > MAX_SAFE_TOTAL as i128 { return Err(t!("Fresh-start balances exceed the supported amount.")); }
         Ok(())
     };
     for t in source.transactions.iter().filter(|t| !keep(t)) {
@@ -86,11 +87,11 @@ pub fn prepare(mut next: Budget, source: &Budget) -> Result<Budget, String> {
     validate(source)?;
     validate(&next)?;
     if next.currency != source.currency {
-        return Err("A fresh start must keep the source budget's currency.".into());
+        return Err(t!("A fresh start must keep the source budget's currency."));
     }
     let mut history: History = serde_json::from_value(
         source.extra.get(KEY).cloned().unwrap_or(json!({})),
-    ).map_err(|_| "The fresh-start history could not be read.".to_string())?;
+    ).map_err(|_| t!("The fresh-start history could not be read."))?;
     let mut kept: HashMap<_, _> = next.transactions.iter_mut().map(|t| (t.id.clone(), t)).collect();
     for t in &source.transactions {
         if let Some(retained) = kept.get_mut(&t.id) {

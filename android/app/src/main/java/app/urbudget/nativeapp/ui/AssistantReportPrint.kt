@@ -19,6 +19,9 @@ import android.text.TextPaint
 import android.text.style.StyleSpan
 import android.text.style.RelativeSizeSpan
 import org.json.JSONObject
+import app.urbudget.nativeapp.Money
+import app.urbudget.nativeapp.R
+import app.urbudget.nativeapp.Words
 import java.io.FileOutputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -55,7 +58,7 @@ private class AssistantReportPrint(private val report: JSONObject) : PrintDocume
                         .setContentType(PrintDocumentInfo.CONTENT_TYPE_DOCUMENT).setPageCount(prepared.pages.size).build(), oldAttributes != newAttributes)
                 }
             } catch (cancel: CancellationException) { callback.onLayoutCancelled() }
-            catch (failure: Exception) { callback.onLayoutFailed(failure.message ?: "The report could not be laid out.") }
+            catch (failure: Exception) { callback.onLayoutFailed(failure.message ?: Words[R.string.assistant_report_layout_failed]) }
         }
         cancellationSignal.setOnCancelListener { job.cancel() }
     }
@@ -83,7 +86,7 @@ private class AssistantReportPrint(private val report: JSONObject) : PrintDocume
     }
 
     override fun onWrite(pageRanges: Array<out PageRange>, destination: ParcelFileDescriptor, cancellationSignal: CancellationSignal, callback: WriteResultCallback) {
-        val prepared = layout ?: run { callback.onWriteFailed("The report was not laid out."); return }
+        val prepared = layout ?: run { callback.onWriteFailed(Words[R.string.assistant_report_not_laid_out]); return }
         val job = scope.launch {
             try {
                 val written = withContext(Dispatchers.IO) {
@@ -115,7 +118,7 @@ private class AssistantReportPrint(private val report: JSONObject) : PrintDocume
                 }
                 callback.onWriteFinished(written)
             } catch (cancel: CancellationException) { callback.onWriteCancelled() }
-            catch (failure: Exception) { callback.onWriteFailed(failure.message ?: "The report could not be printed.") }
+            catch (failure: Exception) { callback.onWriteFailed(failure.message ?: Words[R.string.assistant_report_print_failed]) }
         }
         cancellationSignal.setOnCancelListener { job.cancel() }
     }
@@ -126,7 +129,7 @@ private class AssistantReportPrint(private val report: JSONObject) : PrintDocume
         append(report.text("title") + "\n")
         setSpan(StyleSpan(Typeface.BOLD), 0, length, 0)
         setSpan(RelativeSizeSpan(1.6f), 0, length, 0)
-        append("${report.text("budget")} · ${report.text("period")} · ${report.text("created").take(10)}\n\n")
+        append(Money.joined(listOf(report.text("budget"), report.text("period"), report.text("created").take(10))) + "\n\n")
         report.text("body").lines().forEach { source ->
             val heading = source.startsWith('#')
             val start = length

@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState, type PointerEvent } from "react";
+import { getDirection, t } from "../i18n";
 
 const MIN = 40;
 const load = (id: string): Record<string, number> => {
@@ -72,7 +73,9 @@ export function ColumnGrip({
   const start = useRef<{ x: number; width: number } | null>(null);
   const move = (e: PointerEvent<HTMLSpanElement>, done: boolean) => {
     if (!start.current) return;
-    onResize(start.current.width + e.clientX - start.current.x, done);
+    // Right to left a column's grip is on its left edge: dragging left widens it.
+    const moved = e.clientX - start.current.x;
+    onResize(start.current.width + (getDirection() === "rtl" ? -moved : moved), done);
     if (done) start.current = null;
   };
   return (
@@ -80,7 +83,7 @@ export function ColumnGrip({
       className="col-grip"
       aria-hidden
       data-column={label}
-      title="Drag to resize · double-click to reset"
+      title={t("Drag to resize · double-click to reset")}
       onClick={(e) => e.stopPropagation()}
       onDoubleClick={(e) => {
         e.stopPropagation();

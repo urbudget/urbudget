@@ -16,6 +16,7 @@ import { Tabs, useToast } from "../ui";
 import { useSteady } from "../useSteady";
 import { StatementGrid } from "./StatementGrid";
 import { applyToLatest, leftOut, needsEditor } from "./model";
+import { t, tn } from "../i18n";
 import "./import-editor.css";
 
 /** An import in progress, kept while someone looks elsewhere (the sidebar leads back to it). */
@@ -186,7 +187,7 @@ export function ImportPage({
       if (!applied || current.current !== fixes.scope.session) return;
       onState((was) => (was.session === applied.base ? { ...was, session: applied.session } : was));
       const refused = applied.results.filter((r) => !r.applied);
-      if (refused.length) setMessage(refused[0].problem ?? "That change no longer fits the file.");
+      if (refused.length) setMessage(refused[0].problem ?? t("That change no longer fits the file."));
     } catch (e) {
       setMessage(errorText(e));
     } finally {
@@ -203,7 +204,7 @@ export function ImportPage({
     try {
       let uncategorized: Uncategorized = { ids: [], accounts: [] };
       await transform(async (b) => {
-        if (b !== reviewed.base) throw Error("Your budget changed. The review is up to date again: check it and import.");
+        if (b !== reviewed.base) throw Error(t("Your budget changed. The review is up to date again: check it and import."));
         // The account keeps how its own file read, not the assistant's.
         const after = await api.importBank(b, account, choices, state.proposal ? null : reviewed.statement.remember);
         uncategorized = uncategorizedImports(b, after);
@@ -225,9 +226,9 @@ export function ImportPage({
       );
       if (!path) return;
       toast({
-        message: "Template saved.",
+        message: t("Template saved."),
         action: {
-          label: "Show in folder",
+          label: t("Show in folder"),
           onClick: () => void api.reveal(path).catch((e) => setMessage(errorText(e))),
         },
       });
@@ -258,7 +259,7 @@ export function ImportPage({
   const assisted = useMemo(() => new Set(state.assisted ?? []), [state.assisted]);
   const out = shown ? leftOut(shown) : 0;
   const attention = shown?.counts.attention ?? 0;
-  const problem = message || (shown && !shown.counts.ready ? "None of the file's lines could be read." : "");
+  const problem = message || (shown && !shown.counts.ready ? t("None of the file's lines could be read.") : "");
   return (
     <section className="bank-import import-page panel">
       <header className="import-page-head">
@@ -267,10 +268,10 @@ export function ImportPage({
           {file ? (
             <>
               <span className="import-file-name">{file.name}</span>
-              {accountName && <span className="import-into"> into {accountName}</span>}
+              {accountName && <span className="import-into"> {t("into {account}", { account: accountName })}</span>}
             </>
           ) : (
-            "Choose the file and its account"
+            t("Choose the file and its account")
           )}
         </h2>
         <span className="import-page-actions">
@@ -283,17 +284,17 @@ export function ImportPage({
                 setMessage("");
               }}
             >
-              Choose another file
+              {t("Choose another file")}
             </button>
           )}
           <button className="secondary small" disabled={saving} onClick={onCancel}>
-            {session ? "Cancel the import" : "Close"}
+            {session ? t("Cancel the import") : t("Close")}
           </button>
         </span>
       </header>
       {session && (state.sheets?.length ?? 0) > 1 && (
         <Tabs
-          label="Sheets"
+          label={t("Sheets")}
           className="statement-sheets"
           tabs={state.sheets!.map((name) => ({ id: name, label: name }))}
           value={state.sheet ?? state.sheets![0]}
@@ -303,11 +304,10 @@ export function ImportPage({
       {!session ? (
         <>
           <p className="import-lead">
-            Bring in the transactions your bank exported. You see every line of the file and fix anything that doesn't read, then check what
-            each transaction does before anything is saved.
+            {t("Bring in the transactions your bank exported. You see every line of the file and fix anything that doesn't read, then check what each transaction does before anything is saved.")}
           </p>
           <label className="import-account">
-            Into account
+            {t("Into account")}
             <select value={account} disabled={busy} onChange={(e) => onState({ account: e.target.value })}>
               {budget.accounts
                 .filter((a) => !a.archived)
@@ -329,20 +329,20 @@ export function ImportPage({
           >
             {file ? <FileText size={22} aria-hidden /> : <FileUp size={22} aria-hidden />}
             <span>
-              <strong>{file ? file.name : "Choose a file"}</strong>
+              <strong>{file ? file.name : t("Choose a file")}</strong>
               <small>
                 {busy
-                  ? "Reading the file…"
+                  ? t("Reading the file…")
                   : file
-                    ? `${Math.max(1, Math.round(file.size / 1024))} KB · click to choose another`
-                    : "or drop it here · CSV, Excel, OFX, QFX, QIF, CAMT.053 or MT940, or a PDF through the assistant"}
+                    ? t("{size} KB · click to choose another", { size: Math.max(1, Math.round(file.size / 1024)) })
+                    : t("or drop it here · CSV, Excel, OFX, QFX, QIF, CAMT.053 or MT940, or a PDF through the assistant")}
               </small>
             </span>
             {file && (
               <button
                 type="button"
                 className="icon-button"
-                aria-label="Remove the file"
+                aria-label={t("Remove the file")}
                 onClick={(e) => {
                   e.preventDefault();
                   onState({ account });
@@ -355,7 +355,7 @@ export function ImportPage({
             <input
               type="file"
               className="sr-only"
-              aria-label="Bank file"
+              aria-label={t("Bank file")}
               accept=".csv,.xlsx,.xls,.xlsm,.xlsb,.ods,.ofx,.qfx,.qif,.xml,.sta,.940,.mt940,.zip,.txt,.pdf"
               disabled={busy}
               onChange={(e: ChangeEvent<HTMLInputElement>) => {
@@ -367,19 +367,21 @@ export function ImportPage({
           </label>
           <div className="import-help">
             <p>
-              Any bank's <strong>CSV or Excel</strong> file, or its <strong>OFX, QFX, QIF, CAMT.053 or MT940</strong> statement. Lines that
-              don't read, or that the importer leaves out (pending payments, another account's, balances), are shown for you to fix or
-              include. The account remembers how its file read. A <strong>PDF</strong> statement goes through the assistant.
+              {t("Any bank's {spreadsheet} file, or its {statement} statement. Lines that don't read, or that the importer leaves out (pending payments, another account's, balances), are shown for you to fix or include. The account remembers how its file read. A {pdf} statement goes through the assistant.", {
+                spreadsheet: <strong>{t("CSV or Excel")}</strong>,
+                statement: <strong>{t("OFX, QFX, QIF, CAMT.053 or MT940")}</strong>,
+                pdf: <strong>PDF</strong>,
+              })}
             </p>
             <button type="button" className="secondary small" onClick={() => void template()}>
-              <Download size={14} /> Download a template
+              <Download size={14} /> {t("Download a template")}
             </button>
           </div>
         </>
       ) : !statement ? (
         reading && (
           <p className="help import-wait" role="status">
-            <LoaderCircle size={14} className="spin" aria-hidden /> Reading {file?.name}…
+            <LoaderCircle size={14} className="spin" aria-hidden /> {t("Reading {name}…", { name: file?.name ?? "" })}
           </p>
         )
       ) : state.view === "editor" || (continuing && !reviewed) ? (
@@ -400,14 +402,16 @@ export function ImportPage({
             }}
             onAssistant={
               onFixWithAssistant ??
-              (onAskAssistant && file ? () => onAskAssistant(file, `${attention} lines don't read.`, accountName) : undefined)
+              (onAskAssistant && file
+                ? () => onAskAssistant(file, tn(attention, "{count} lines don't read.", "{count} lines don't read."), accountName)
+                : undefined)
             }
           />
         </div>
       ) : !reviewed ? (
         checking && (
           <p className="help import-wait" role="status">
-            <LoaderCircle size={14} className="spin" aria-hidden /> Checking the lines against your budget…
+            <LoaderCircle size={14} className="spin" aria-hidden /> {t("Checking the lines against your budget…")}
           </p>
         )
       ) : (
@@ -422,12 +426,17 @@ export function ImportPage({
               <button className="link-button" disabled={busy} onClick={() => onState((was) => ({ ...was, view: "editor" }))}>
                 <Table2 size={14} aria-hidden />
                 {attention || out
-                  ? ` ${[attention && `${attention} need attention`, out && `${out} left out`].filter(Boolean).join(" · ")} · `
+                  ? ` ${[
+                      attention && tn(attention, "{count} need attention", "{count} need attention"),
+                      out && tn(out, "{count} left out", "{count} left out"),
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")} · `
                   : " "}
-                Check the file
+                {t("Check the file")}
               </button>
             }
-            cancelLabel="Back to the file"
+            cancelLabel={t("Back to the file")}
             onCancel={() => onState((was) => ({ ...was, view: "editor" }))}
             onImport={(choices, count) => void save(choices, count)}
             // Kept with the import, so the file looked at again (or another page) doesn't undo them.
@@ -450,18 +459,18 @@ export function ImportPage({
           <MessageSquareText size={16} aria-hidden />
           <p>
             {pdf
-              ? "PDF statements need the assistant. It reads the PDF, finds the transactions, checks them against the statement's totals and brings them to this review, where you decide on each row."
+              ? t("PDF statements need the assistant. It reads the PDF, finds the transactions, checks them against the statement's totals and brings them to this review, where you decide on each row.")
               : problem
-                ? "The assistant can read this file, find the transactions and ask you about anything unclear."
-                : "If something here doesn't look right, the assistant can go through the file with you."}
-            <small>Opens the assistant with this file attached. Nothing is sent until you press Send.</small>
+                ? t("The assistant can read this file, find the transactions and ask you about anything unclear.")
+                : t("If something here doesn't look right, the assistant can go through the file with you.")}
+            <small>{t("Opens the assistant with this file attached. Nothing is sent until you press Send.")}</small>
           </p>
           <button
             type="button"
             className={problem || pdf ? "primary small" : "secondary small"}
             onClick={() => onAskAssistant(file, problem, accountName)}
           >
-            {pdf ? "Read it with the assistant" : "Help with this import"}
+            {pdf ? t("Read it with the assistant") : t("Help with this import")}
           </button>
         </div>
       )}

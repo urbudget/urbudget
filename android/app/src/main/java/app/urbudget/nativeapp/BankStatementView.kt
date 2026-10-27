@@ -3,24 +3,22 @@ package app.urbudget.nativeapp
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.LocalDate
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 /** What a line left out is, by why (bank_statement.rs `Reason`, the desktop's LEFT_OUT). */
 internal val leftOutNames = mapOf(
-    "pending" to "Not booked yet", "declined" to "Declined or cancelled", "otherAccount" to "Another account's",
-    "otherCurrency" to "In another currency", "ownBalances" to "Between your own balances", "balance" to "A balance or a total",
-    "aboveHeader" to "Above the header", "noDate" to "No date", "noAmount" to "No amount", "zero" to "Nothing moved",
-    "corrected" to "Corrected by the bank", "repeatedHeader" to "The header row again", "inWholeBatch" to "In a batch imported as one entry",
-    "imported" to "Imported before",
+    "pending" to R.string.bank_left_out_pending, "declined" to R.string.bank_left_out_declined, "otherAccount" to R.string.bank_left_out_other_account,
+    "otherCurrency" to R.string.bank_left_out_other_currency, "ownBalances" to R.string.bank_left_out_own_balances, "balance" to R.string.bank_left_out_balance,
+    "aboveHeader" to R.string.bank_left_out_above_header, "noDate" to R.string.bank_left_out_no_date, "noAmount" to R.string.bank_left_out_no_amount,
+    "zero" to R.string.bank_left_out_zero, "corrected" to R.string.bank_left_out_corrected, "repeatedHeader" to R.string.bank_left_out_repeated_header,
+    "inWholeBatch" to R.string.bank_left_out_in_whole_batch, "imported" to R.string.bank_left_out_imported,
 )
 /** Lines left out for these reasons can be included anyway (`Reason::includable`). */
 internal val includableReasons = setOf("pending", "declined", "otherCurrency", "ownBalances", "balance", "noDate", "noAmount")
-/** The parts of a transaction a line gives, as a phone edits them. */
-internal val lineFields = listOf("date" to "Date", "payee" to "Payee", "memo" to "Memo", "amount" to "Amount")
+/** The parts of a transaction a line gives, as a phone edits them, with their labels. */
+internal val lineFields = listOf("date" to R.string.common_date, "payee" to R.string.payee_label, "memo" to R.string.memo_label, "amount" to R.string.amount_label)
 
 /** What the assistant is asked about the lines of an import that need attention: ready to send, not sent. */
-internal const val fixImportText = "Fix the lines of this import that need attention. Use only what the file itself supports, and ask me about anything that isn't clear."
+internal val fixImportText get() = Words[R.string.bank_fix_import_prompt]
 
 /** A line of a bank file as the import reads it now; `kind` is "ready", "attention" or "leftOut". */
 internal data class StatementLine(
@@ -32,8 +30,8 @@ internal data class StatementLine(
     val included: Boolean = false, val fixed: Boolean = false, val batch: Int? = null,
 ) {
     val includable get() = kind == "leftOut" && reason in includableReasons
-    /** Its payee, else what the file writes on it. */
-    val title get() = fields["payee"].orEmpty().ifBlank { cells.filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "Line $id" } }
+    /** Its payee, else what the file writes on it, each cell in its own direction. */
+    val title get() = fields["payee"].orEmpty().ifBlank { Money.joined(cells.filter { it.isNotBlank() }).ifBlank { Words[R.string.bank_line_number, id] } }
 }
 
 internal data class StatementSource(val label: String, val currency: String?, val lines: Int)
@@ -107,11 +105,11 @@ internal fun parseStatement(json: JSONObject): BankStatement {
 
 /** Why a line is left out, with what the file says of it. */
 internal fun leftOutText(line: StatementLine): String {
-    val name = leftOutNames[line.reason] ?: "Left out"
+    val name = Words[leftOutNames[line.reason] ?: R.string.bank_left_out]
     return when {
-        line.reason == "otherAccount" && line.detail.isNotBlank() -> "Account ${line.detail}"
-        line.reason == "otherCurrency" && line.detail.isNotBlank() -> "In ${line.detail}"
-        line.detail.isNotBlank() && line.reason in setOf("pending", "declined", "ownBalances") -> "$name (${line.detail})"
+        line.reason == "otherAccount" && line.detail.isNotBlank() -> Words[R.string.bank_left_out_account, line.detail]
+        line.reason == "otherCurrency" && line.detail.isNotBlank() -> Words[R.string.bank_left_out_in_currency, line.detail]
+        line.detail.isNotBlank() && line.reason in setOf("pending", "declined", "ownBalances") -> Words[R.string.bank_left_out_with_detail, name, line.detail]
         else -> name
     }
 }
@@ -151,11 +149,14 @@ internal fun wholeBatchFix(session: JSONObject, entry: String, on: Boolean) = re
     put("wholeBatches", JSONArray(if (on) (was + entry).distinct() else was - entry))
 }
 
-/** A date the orders read differently, read day first and month first: "1 February 2026" and "2 January 2026". */
+/**
+ * A date the orders read differently, read day first and month first: "1 February 2026" and
+ * "2 January 2026", with the interface's month names and Western digits.
+ */
 internal fun dateReadings(example: String): Pair<String, String>? {
     val (a, b, y) = Regex("(\\d{1,2})\\D(\\d{1,2})\\D(\\d{2,4})").find(example)?.destructured ?: return null
     val year = if (y.length == 2) 2000 + y.toInt() else y.toInt()
-    val named = DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.UK)
+    val named = Money.pattern("d MMMM yyyy")
     fun read(day: Int, month: Int) = runCatching { LocalDate.of(year, month, day).format(named) }.getOrNull()
     return (read(a.toInt(), b.toInt()) ?: return null) to (read(b.toInt(), a.toInt()) ?: return null)
 }
@@ -168,25 +169,26 @@ internal fun fixOutcome(applied: JSONObject): FixOutcome {
     val refused = results.filterNot { it.optBoolean("applied") }
     val done = results.size - refused.size
     val notice = when {
-        refused.isNotEmpty() -> "Applied $done of ${results.size} fixes. ${if (refused.size == 1) "One no longer fits" else "${refused.size} no longer fit"}: " +
-            refused[0].string("problem").ifBlank { "the line changed" }
-        done == 1 -> "Applied the assistant's fix."
-        else -> "Applied the assistant's $done fixes."
+        refused.isNotEmpty() -> Words[R.string.bank_fixes_applied_of, done.toString(), results.size.toString()] + " " +
+            Words.count(R.plurals.bank_fixes_refused, refused.size.toLong(), refused[0].string("problem").ifBlank { Words[R.string.bank_fix_line_changed] })
+        else -> Words.count(R.plurals.bank_fixes_applied, done.toLong())
     }
     return FixOutcome(results.filter { it.optBoolean("applied") && !it.isNull("line") }.map { it.string("line") }, done, notice)
 }
 
 /** "2 lines read · 1 needs attention and won't be imported" */
-internal fun statementCounts(statement: BankStatement) = buildString {
-    append(statement.ready).append(if (statement.ready == 1) " line reads" else " lines read")
-    if (statement.attention > 0) append(" · ").append(statement.attention).append(if (statement.attention == 1) " needs" else " need").append(" attention and won't be imported")
-    if (statement.leftOutCount > 0) append(" · ").append(statement.leftOutCount).append(" left out")
-}
+internal fun statementCounts(statement: BankStatement) = listOfNotNull(
+    Words.count(R.plurals.bank_lines_read, statement.ready.toLong()),
+    if (statement.attention > 0) Words.count(R.plurals.bank_lines_need_attention, statement.attention.toLong()) else null,
+    if (statement.leftOutCount > 0) Words.count(R.plurals.bank_lines_left_out, statement.leftOutCount.toLong()) else null,
+).joinToString(" · ")
 
 /** What money in may be: a refund of a purchase, with its category when the purchases agree on one. */
 internal fun refundText(refund: JSONObject, categories: Map<String, String>, currency: String): String {
     val payee = refund.string("payee")
     val category = categories[refund.string("categoryId")]
-    if (refund.optInt("purchases", 1) > 1 && refund.string("categoryId").isEmpty()) return "Possible refund · ${refund.optInt("purchases")} purchases from $payee match"
-    return "Refund of $payee · ${Money.format(-refund.optLong("amount"), currency)} on ${Money.date(refund.string("date"))}${category?.let { " · $it" }.orEmpty()}"
+    if (refund.optInt("purchases", 1) > 1 && refund.string("categoryId").isEmpty())
+        return Words.count(R.plurals.bank_possible_refund, refund.optInt("purchases").toLong(), payee)
+    return Words[R.string.bank_refund_of, payee, Money.format(-refund.optLong("amount"), currency), Money.date(refund.string("date"))] +
+        category?.let { " · ${Money.own(it)}" }.orEmpty()
 }

@@ -3,6 +3,7 @@ import { Pencil, Plus } from "lucide-react";
 import { TargetFields, type TargetMonthContext } from "./TargetFields";
 import { editableAmount, errorText, evaluateAmount, money } from "./format";
 import { today, type Budget, type Category } from "./types";
+import { t } from "./i18n";
 
 type Edit = (fn: (b: Budget) => void) => void;
 const newGoal = (): Record<string, unknown> => ({
@@ -53,15 +54,15 @@ export function TargetEditor({
     e.preventDefault();
     try {
       const value = amount.trim() ? evaluateAmount(amount) : 0;
-      if (value < 0) throw new Error("Targets can't be negative.");
-      if (!value) throw new Error("Enter a target amount, or remove the target.");
+      if (value < 0) throw new Error(t("Targets can't be negative."));
+      if (!value) throw new Error(t("Enter a target amount, or remove the target."));
       const keep = value === category.target && !changed && category.goal;
       update((c) => {
         c.target = value;
         c.goal = keep ? category.goal : { ...goal, goal_target: value * 10 };
       });
       onOpenChange(false);
-      onSaved(`${has ? "Updated" : "Set"} the target for ${category.name}.`);
+      onSaved(has ? t("Updated the target for {name}.", { name: category.name }) : t("Set the target for {name}.", { name: category.name }));
     } catch (err) {
       setError(errorText(err));
     }
@@ -69,21 +70,21 @@ export function TargetEditor({
   if (!open)
     return (
       <button className="secondary" onClick={() => onOpenChange(true)}>
-        {has ? <Pencil size={14} /> : <Plus size={14} />} {has ? "Edit target" : "Create target"}
+        {has ? <Pencil size={14} /> : <Plus size={14} />} {has ? t("Edit target") : t("Create target")}
       </button>
     );
   return (
-    <form className="target-editor" onSubmit={save} aria-label={`Target for ${category.name}`}>
-      <h3>{has ? "Edit target" : "Create target"}</h3>
+    <form className="target-editor" onSubmit={save} aria-label={t("Target for {name}", { name: category.name })}>
+      <h3>{has ? t("Edit target") : t("Create target")}</h3>
       <label>
-        Amount
+        {t("Amount")}
         <input
           autoFocus
           inputMode="decimal"
           placeholder="0.00"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
-          title="You can type math, like 1200/12"
+          title={t("You can type math, like 1200/12")}
         />
       </label>
       <TargetFields
@@ -112,16 +113,16 @@ export function TargetEditor({
                 c.goal = null;
               });
               onOpenChange(false);
-              onSaved(`Removed the ${money(category.target)} target from ${category.name}.`);
+              onSaved(t("Removed the {amount} target from {name}.", { amount: money(category.target), name: category.name }));
             }}
           >
-            Remove target
+            {t("Remove target")}
           </button>
         )}
         <button type="button" className="secondary small" onClick={() => onOpenChange(false)}>
-          Cancel
+          {t("Cancel")}
         </button>
-        <button className="primary small">Save target</button>
+        <button className="primary small">{t("Save target")}</button>
       </div>
     </form>
   );
@@ -133,10 +134,10 @@ export function CategoryNotes({ category, edit }: { category: Category; edit: Ed
   useEffect(() => setText(category.note ?? ""), [category.id, category.note]);
   return (
     <label className="category-notes">
-      Notes
+      {t("Notes")}
       <textarea
         rows={3}
-        placeholder="Anything to remember about this category"
+        placeholder={t("Anything to remember about this category")}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onBlur={() => {

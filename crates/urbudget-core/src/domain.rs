@@ -6,6 +6,7 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
+use crate::t;
 
 pub const SCHEMA_VERSION: u32 = 2;
 const MAX_AMOUNT: i64 = 1_000_000_000_000;
@@ -169,36 +170,36 @@ pub(crate) fn validate_history_workload(months: usize, categories: usize, accoun
     let rows = months.saturating_mul(categories.saturating_add(accounts).max(1));
     let matrix = categories.saturating_mul(credit);
     if rows > 2_000_000 || matrix > 2_000_000 || months.saturating_mul(matrix) > 50_000_000 {
-        return Err("This calculation exceeds the supported history size. Choose a shorter history or reduce the number of accounts and categories.".into());
+        return Err(t!("This calculation exceeds the supported history size. Choose a shorter history or reduce the number of accounts and categories."));
     }
     Ok(())
 }
 
 pub fn validate(b: &Budget) -> Result<(), String> {
     if !(1..=SCHEMA_VERSION).contains(&b.schema_version) {
-        return Err("Unsupported backup format.".into());
+        return Err(t!("Unsupported backup format."));
     }
     let currency = b.currency.as_bytes();
     if !valid_text(&b.name) || currency.len() != 3 || !currency.iter().all(u8::is_ascii_uppercase) {
-        return Err("Invalid budget name or currency.".into());
+        return Err(t!("Invalid budget name or currency."));
     }
     if b.accounts.len() > 1000
         || b.categories.len() > 5000
         || b.transactions.len() > 200_000
         || b.assignments.len() > 200_000
     {
-        return Err("This budget exceeds the supported size.".into());
+        return Err(t!("This budget exceeds the supported size."));
     }
     if b.extra.get("calculationAsOfMonth").filter(|v| !v.is_null())
         .is_some_and(|v| !v.as_str().is_some_and(valid_month))
     {
-        return Err("Invalid calculation reference month.".into());
+        return Err(t!("Invalid calculation reference month."));
     }
     // The monthly income someone expects, set beside the month's targets in the budget page.
     if b.extra.get("expectedIncome").filter(|v| !v.is_null())
         .is_some_and(|v| !v.as_i64().is_some_and(|n| (0..=MAX_AMOUNT).contains(&n)))
     {
-        return Err("Invalid expected income.".into());
+        return Err(t!("Invalid expected income."));
     }
     let mut accounts = HashMap::new();
     let mut categories = HashSet::new();
@@ -215,7 +216,7 @@ pub fn validate(b: &Budget) -> Result<(), String> {
             || accounts.insert(a.id.as_str(), a).is_some()
             || !valid_money(a.opening_balance)
         {
-            return Err("Account data is invalid or duplicated.".into());
+            return Err(t!("Account data is invalid or duplicated."));
         }
         absolute_total += i128::from(a.opening_balance).abs();
     }
@@ -226,7 +227,7 @@ pub fn validate(b: &Budget) -> Result<(), String> {
             || !categories.insert(&c.id)
             || !(0..=MAX_AMOUNT).contains(&c.target)
         {
-            return Err("Category data is invalid or duplicated.".into());
+            return Err(t!("Category data is invalid or duplicated."));
         }
         crate::targets::validate_goal(c)?;
         // A weekly target can request its amount five times in one month. Include
@@ -235,11 +236,11 @@ pub fn validate(b: &Budget) -> Result<(), String> {
             g["goal_type"] == "NEED" && g["goal_cadence"].as_i64() == Some(2)) { 5 } else { 1 };
         absolute_total += i128::from(c.target) * occurrences;
         if let Some(link) = c.extra.get("paymentAccountId").filter(|v| !v.is_null()) {
-            let id = link.as_str().ok_or("Invalid credit card payment category link.")?;
+            let id = link.as_str().ok_or_else(|| t!("Invalid credit card payment category link."))?;
             if !accounts.get(id).is_some_and(|a| a.on_budget() && a.kind == AccountKind::Credit)
                 || !payment_accounts.insert(id)
             {
-                return Err(format!("Payment category '{}' ({}) must link to a unique on-budget credit account; invalid or duplicate account '{}'.", c.name, c.id, id));
+                return Err(t!("Payment category '{name}' ({category}) must link to a unique on-budget credit account; invalid or duplicate account '{account}'.", name = c.name, category = c.id, account = id));
             }
             payment_categories.insert(&c.id);
         }
@@ -247,13 +248,13 @@ pub fn validate(b: &Budget) -> Result<(), String> {
     if let Some(a) = b.accounts.iter().find(|a| a.on_budget() && a.kind == AccountKind::Credit
         && !payment_accounts.contains(a.id.as_str()))
     {
-        return Err(format!("Credit account '{}' ({}) needs one linked payment category. Its payment category is missing from this budget.", a.name, a.id));
+        return Err(t!("Credit account '{name}' ({account}) needs one linked payment category. Its payment category is missing from this budget.", name = a.name, account = a.id));
     }
     for t in &b.transactions {
         split_count = split_count.saturating_add(t.splits.len());
         ledger_entries = ledger_entries.saturating_add(if t.splits.iter().any(|s| crate::ledger::transfer(s).is_some()) { t.splits.len() } else { 1 });
         if ledger_entries > MAX_LEDGER_ENTRIES || split_count > MAX_TRANSACTION_SPLITS {
-            return Err("This budget exceeds the supported number of transaction parts or expanded transfer entries.".into());
+            return Err(t!("This budget exceeds the supported number of transaction parts or expanded transfer entries."));
         }
         if !valid_id(&t.id)
             || !ids.insert(&t.id)
@@ -263,55 +264,53 @@ pub fn validate(b: &Budget) -> Result<(), String> {
             || t.memo.len() > 5000
             || !valid_money(t.amount)
         {
-            return Err(
-                "A transaction has an invalid date, amount, account, or duplicate ID.".into(),
-            );
+            return Err(t!("A transaction has an invalid date, amount, account, or duplicate ID."));
         }
         absolute_total += i128::from(t.amount).abs();
         if let Some(other) = &t.transfer_account_id {
             if other == &t.account_id || !accounts.contains_key(other.as_str()) || t.transfer_status.is_none() {
-                return Err("A transfer must connect two different accounts.".into());
+                return Err(t!("A transfer must connect two different accounts."));
             }
             if t.splits.is_empty() && accounts[t.account_id.as_str()].on_budget() != accounts[other.as_str()].on_budget() {
-                return Err("A transfer crossing the budget boundary needs a category or Unassigned split.".into());
+                return Err(t!("A transfer crossing the budget boundary needs a category or Unassigned split."));
             }
         }
         if t.transfer_account_id.is_none() || !t.splits.is_empty() {
             if t.splits.is_empty() || t.splits.len() > 100 {
-                return Err("A transaction needs at least one category, or Unassigned.".into());
+                return Err(t!("A transaction needs at least one category, or Unassigned."));
             }
             let mut total = 0i64;
             for s in &t.splits {
                 if s.extra.get("transferAccountId").filter(|v| !v.is_null()).is_some_and(|v| !v.is_string()) {
-                    return Err("A split transfer has an invalid account reference.".into());
+                    return Err(t!("A split transfer has an invalid account reference."));
                 }
                 if !valid_money(s.amount)
                     || s.category_id
                         .as_ref()
                         .is_some_and(|id| !categories.contains(id))
                 {
-                    return Err("A transaction split has an invalid amount or category.".into());
+                    return Err(t!("A transaction split has an invalid amount or category."));
                 }
                 if s.category_id.as_ref().is_some_and(|id| payment_categories.contains(id)) {
-                    return Err("Card payments must be recorded as transfers, not expense categories.".into());
+                    return Err(t!("Card payments must be recorded as transfers, not expense categories."));
                 }
                 if let Some(other) = crate::ledger::transfer(s) {
                     if t.transfer_account_id.is_some()
                         || other == t.account_id
                         || !accounts.contains_key(other)
                     {
-                        return Err("A split transfer must connect two different accounts.".into());
+                        return Err(t!("A split transfer must connect two different accounts."));
                     }
                     if let Some(status) = s.extra.get("transferStatus") {
                         serde_json::from_value::<Cleared>(status.clone())
-                            .map_err(|_| "Invalid split transfer status.")?;
+                            .map_err(|_| t!("Invalid split transfer status."))?;
                     }
                 }
                 total += s.amount;
                 absolute_total += i128::from(s.amount).abs();
             }
             if total != t.amount {
-                return Err("Split amounts must add up to the transaction total.".into());
+                return Err(t!("Split amounts must add up to the transaction total."));
             }
         }
     }
@@ -321,12 +320,12 @@ pub fn validate(b: &Budget) -> Result<(), String> {
             || !valid_money(a.amount)
             || !assignment_ids.insert((&a.month, &a.category_id))
         {
-            return Err("A monthly assignment is invalid or duplicated.".into());
+            return Err(t!("A monthly assignment is invalid or duplicated."));
         }
         absolute_total += i128::from(a.amount).abs();
     }
     if absolute_total > i128::from(MAX_SAFE_TOTAL) {
-        return Err("Budget totals exceed the safe numeric range.".into());
+        return Err(t!("Budget totals exceed the safe numeric range."));
     }
     crate::schedules::validate_schedules(b)?;
     Ok(())
@@ -433,7 +432,7 @@ impl Summary {
         ].into_iter().all(|n| n <= i128::from(MAX_SAFE_TOTAL));
         if !totals_safe || !accounts_safe || !categories_safe || !columns_safe
             || !self.future_shortfalls.iter().all(|s| safe(s.amount)) {
-            return Err("Calculated budget totals exceed the safe numeric range.".into());
+            return Err(t!("Calculated budget totals exceed the safe numeric range."));
         }
         Ok(())
     }
@@ -518,14 +517,14 @@ pub fn reconcile(
     if !valid_money(balance)
         || !valid_date(date)
     {
-        return Err("Invalid reconciliation balance or date.".into());
+        return Err(t!("Invalid reconciliation balance or date."));
     }
     let summary = calculate(&budget, &date[..7])?;
     let account = summary
         .accounts
         .iter()
         .find(|a| a.id == account_id)
-        .ok_or("Account not found.")?;
+        .ok_or_else(|| t!("Account not found."))?;
     let difference = balance - account.cleared;
     if difference != 0 {
         budget.transactions.push(Transaction {

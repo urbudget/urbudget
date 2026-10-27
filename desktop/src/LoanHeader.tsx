@@ -13,10 +13,11 @@ import {
   type Projection,
 } from "./Planning";
 import { today, type Account, type Budget, type Category, type LoanTerms } from "./types";
+import { t, tc } from "./i18n";
 import "./loans.css";
 
 const payoff = (owed: number, plan: Projection) =>
-  owed === 0 ? "Paid off" : plan.projection ? monthName(plan.projection.payoffDate.slice(0, 7), "short") : "—";
+  owed === 0 ? tc("status", "Paid off") : plan.projection ? monthName(plan.projection.payoffDate.slice(0, 7), "short") : "—";
 
 /**
  * Where a loan stands, over its register: what's owed, the rate and payment, when it's paid
@@ -37,37 +38,41 @@ export function LoanHeader({ budget, account, balance }: { budget: Budget; accou
       <div className="loan-header loan-prompt">
         <Landmark size={18} aria-hidden />
         <p>
-          <strong>When will it be paid off?</strong>
-          <span>Add the interest rate and monthly payment to see the payoff date and the interest left to pay.</span>
+          <strong>{t("When will it be paid off?")}</strong>
+          <span>{t("Add the interest rate and monthly payment to see the payoff date and the interest left to pay.")}</span>
         </p>
         <button className="secondary" onClick={() => actions.details(account)}>
-          Add loan details
+          {t("Add loan details")}
         </button>
       </div>
     );
   }
-  const fees = type === "mortgage" ? "escrow" : "fees";
+  const charges = !terms.monthlyFees
+    ? t("Interest is added to the loan with the first payment each month.")
+    : type === "mortgage"
+      ? t("Interest and escrow are added to the loan with the first payment each month.")
+      : t("Interest and fees are added to the loan with the first payment each month.");
   return (
-    <section className="loan-header" aria-label="Loan">
+    <section className="loan-header" aria-label={t("Loan")}>
       <dl className="loan-facts">
         <div>
-          <dt>Owed</dt>
+          <dt>{t("Owed")}</dt>
           <dd>{money(owed)}</dd>
         </div>
         <div>
-          <dt>Rate</dt>
+          <dt>{t("Rate")}</dt>
           <dd>{percent(rateIn(terms, today().slice(0, 7)))}</dd>
         </div>
         <div>
-          <dt>Payment</dt>
+          <dt>{t("Payment")}</dt>
           <dd>{money(terms.monthlyPayment)}</dd>
         </div>
         <div>
-          <dt>Paid off</dt>
+          <dt>{t("Paid off")}</dt>
           <dd>{payoff(owed, plan)}</dd>
         </div>
         <div>
-          <dt>Interest to pay</dt>
+          <dt>{t("Interest to pay")}</dt>
           <dd>{plan.projection ? money(plan.projection.totalInterest) : owed ? "—" : money(0)}</dd>
         </div>
       </dl>
@@ -75,11 +80,11 @@ export function LoanHeader({ budget, account, balance }: { budget: Budget; accou
         <div className="loan-actions">
           {!account.archived && (
             <button className="primary" onClick={() => actions.record(account)}>
-              <HandCoins size={15} aria-hidden /> Record payment
+              <HandCoins size={15} aria-hidden /> {t("Record payment")}
             </button>
           )}
           <button className="secondary" onClick={() => actions.plan(account)}>
-            <ChartSpline size={15} aria-hidden /> Payoff planner
+            <ChartSpline size={15} aria-hidden /> {t("Payoff planner")}
           </button>
         </div>
       )}
@@ -87,22 +92,20 @@ export function LoanHeader({ budget, account, balance }: { budget: Budget; accou
         {plan.error ? (
           <span className="warning-text">{plan.error}</span>
         ) : (
-          <span>
-            {terms.monthlyFees ? `Interest and ${fees} are` : "Interest is"} added to the loan with the first payment
-            each month.
-          </span>
+          <span>{charges}</span>
         )}
         {actions && (
           <button className="link-button" onClick={() => actions.details(account)}>
-            Edit loan details
+            {t("Edit loan details")}
           </button>
         )}
       </p>
       {!loanType && (
         <p className="loan-note">
           <span>
-            This account is set as {typeName(type).toLowerCase()}. Change its type to a loan, such as Personal loan, to
-            list it with your debts.
+            {t("This account is set as {type}. Change its type to a loan, such as Personal loan, to list it with your debts.", {
+              type: typeName(type).toLowerCase(),
+            })}
           </span>
         </p>
       )}
@@ -141,24 +144,30 @@ function CategoryLoan({
       c.target = terms.monthlyPayment;
       c.goal = { ...goal, goal_type: "DEBT", goal_needs_whole_amount: null, goal_target: terms.monthlyPayment * 10 };
     });
-    onSaved(`Set ${category.name}'s target to the ${money(terms.monthlyPayment)} ${account.name} payment.`);
+    onSaved(
+      t("Set {category}'s target to the {amount} {account} payment.", {
+        category: category.name,
+        amount: money(terms.monthlyPayment),
+        account: account.name,
+      }),
+    );
   };
   return (
-    <section className="loan-category" aria-label={`${account.name} loan`}>
+    <section className="loan-category" aria-label={t("{account} loan", { account: account.name })}>
       <h3>
-        <Landmark size={13} aria-hidden /> Pays {account.name}
+        <Landmark size={13} aria-hidden /> {t("Pays {account}", { account: account.name })}
       </h3>
       <dl className="detail-list">
         <div>
-          <dt>Still owed</dt>
+          <dt>{t("Still owed")}</dt>
           <dd>{money(owed)}</dd>
         </div>
         <div>
-          <dt>Paid off</dt>
+          <dt>{t("Paid off")}</dt>
           <dd>{payoff(owed, plan)}</dd>
         </div>
         <div>
-          <dt>Monthly payment</dt>
+          <dt>{t("Monthly payment")}</dt>
           <dd>{money(terms.monthlyPayment)}</dd>
         </div>
       </dl>
@@ -166,19 +175,19 @@ function CategoryLoan({
         <div className="button-row">
           {!account.archived && owed > 0 && (
             <button className="primary" onClick={() => actions.record(account)}>
-              <HandCoins size={15} aria-hidden /> Record payment
+              <HandCoins size={15} aria-hidden /> {t("Record payment")}
             </button>
           )}
           {owed > 0 && (
             <button className="secondary" onClick={() => actions.plan(account)}>
-              Open planner
+              {t("Open planner")}
             </button>
           )}
         </div>
       )}
       {!targeted && (
         <button className="link-button" onClick={useAsTarget}>
-          Use this payment as target
+          {t("Use this payment as target")}
         </button>
       )}
     </section>

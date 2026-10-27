@@ -1,4 +1,5 @@
 //! Funding targets operate on assignment history, separately from account balances.
+use crate::t;
 use crate::domain::*;
 use chrono::{Datelike, Duration, Months, NaiveDate};
 use std::collections::{BTreeMap, HashMap};
@@ -31,7 +32,7 @@ impl<'a> AssignmentIndex<'a> {
 /// interpret remain intact, and older targets may omit fields or store nulls.
 pub(crate) fn validate_goal(c: &Category) -> Result<(), String> {
     let Some(goal) = c.extra.get("goal").filter(|v| !v.is_null()) else { return Ok(()) };
-    let invalid = |field: &str| format!("Category “{}” ({}) has invalid target field {field}.", c.name, c.id);
+    let invalid = |field: &str| t!("Category “{name}” ({id}) has invalid target field {field}.", name = c.name, id = c.id, field);
     let goal = goal.as_object().ok_or_else(|| invalid("goal"))?;
     for field in ["goal_creation_month", "goal_target_date", "goal_target_month"] {
         if let Some(value) = goal.get(field).filter(|v| !v.is_null()) {
@@ -48,7 +49,7 @@ pub(crate) fn validate_goal(c: &Category) -> Result<(), String> {
             || (s.get(..10).is_some_and(valid_date)
                 && (chrono::DateTime::parse_from_rfc3339(s).is_ok()
                     || chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f").is_ok())));
-        if !valid { return Err(format!("{} It reads “{value}”.", invalid("goal_snoozed_at"))); }
+        if !valid { return Err(t!("{problem} It reads “{value}”.", problem = invalid("goal_snoozed_at"), value)); }
     }
     for (field, maximum) in [("goal_cadence", 14), ("goal_cadence_frequency", 100), ("goal_day", 31)] {
         if let Some(value) = goal.get(field).filter(|v| !v.is_null()) {

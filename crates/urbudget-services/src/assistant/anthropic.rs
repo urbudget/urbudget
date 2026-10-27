@@ -1,6 +1,7 @@
 //! Claude through Anthropic's Messages API, with the user's own API key. Replies are kept as
 //! the content blocks Claude sent (thinking included) and sent back unchanged, which keeps the
 //! conversation valid for models that check earlier turns.
+use crate::{i18n::tr, t};
 use super::attachments::Kind;
 use super::history::Item;
 use super::llm::{excerpt, user_text, Call, Credentials, Delta, Failure, FailureKind, Model, Part, Reply, Request, Sse};
@@ -216,7 +217,7 @@ pub async fn respond(
                 "error" => {
                     let e = &v["error"];
                     let kind = e["type"].as_str().unwrap_or_default();
-                    let message = e["message"].as_str().unwrap_or("Claude couldn't answer.");
+                    let message = e["message"].as_str().unwrap_or(tr("Claude couldn't answer."));
                     return Err(classify(if kind == "overloaded_error" { 529 } else { 0 }, kind, message));
                 }
                 _ => {}
@@ -224,10 +225,10 @@ pub async fn respond(
         }
     }
     if stop_reason == "refusal" {
-        return Err(Failure::new(FailureKind::Refused, "Claude declined this request. Try rephrasing it."));
+        return Err(Failure::new(FailureKind::Refused, t!("Claude declined this request. Try rephrasing it.")));
     }
     if !finished {
-        return Err(Failure::new(FailureKind::Busy, "The connection closed before the reply finished. Try again."));
+        return Err(Failure::new(FailureKind::Busy, t!("The connection closed before the reply finished. Try again.")));
     }
     blocks.retain(|b| !b.is_null());
     let boundary = blocks.iter().rposition(|b| b["type"] == "fallback").map_or(0, |i| i + 1);
@@ -257,12 +258,12 @@ fn failure(status: u16, body: &str) -> Failure {
 fn classify(status: u16, kind: &str, message: &str) -> Failure {
     use FailureKind::*;
     let (k, text) = match (status, kind) {
-        (401, _) | (_, "authentication_error") => (SignIn, "Anthropic didn't accept the API key. Check it in Settings.".to_string()),
-        (403, _) | (_, "permission_error") => (NotEligible, format!("This API key can't do that: {message}")),
-        (404, _) | (_, "not_found_error") => (Model, "That Claude model isn't available to this API key. Choose another in Settings.".to_string()),
-        (429, _) | (_, "rate_limit_error") => (Limit, "Anthropic's rate limit was reached. Wait a minute and try again.".to_string()),
-        (529, _) | (_, "overloaded_error") => (Busy, "Claude is busy right now. Try again in a moment.".to_string()),
-        (s, _) if s >= 500 => (Busy, "Anthropic's service had a problem. Try again in a moment.".to_string()),
+        (401, _) | (_, "authentication_error") => (SignIn, t!("Anthropic didn't accept the API key. Check it in Settings.")),
+        (403, _) | (_, "permission_error") => (NotEligible, t!("This API key can't do that: {message}", message)),
+        (404, _) | (_, "not_found_error") => (Model, t!("That Claude model isn't available to this API key. Choose another in Settings.")),
+        (429, _) | (_, "rate_limit_error") => (Limit, t!("Anthropic's rate limit was reached. Wait a minute and try again.")),
+        (529, _) | (_, "overloaded_error") => (Busy, t!("Claude is busy right now. Try again in a moment.")),
+        (s, _) if s >= 500 => (Busy, t!("Anthropic's service had a problem. Try again in a moment.")),
         _ => (Other, message.to_string()),
     };
     Failure { kind: k, message: text, detail: format!("{kind} {message}") }
@@ -281,7 +282,7 @@ pub async fn models(client: &reqwest::Client, credentials: &Credentials) -> Resu
     if !(200..300).contains(&status) {
         return Err(failure(status, &text));
     }
-    let v: Value = serde_json::from_str(&text).map_err(|_| Failure::new(FailureKind::Other, "The model list couldn't be read."))?;
+    let v: Value = serde_json::from_str(&text).map_err(|_| Failure::new(FailureKind::Other, t!("The model list couldn't be read.")))?;
     Ok(v["data"]
         .as_array()
         .map(|l| {

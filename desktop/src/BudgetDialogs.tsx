@@ -6,6 +6,7 @@ import { BudgetFormatFields, type FormatValue } from "./BudgetFormatFields";
 import { newBudget, type BudgetStart } from "./newBudget";
 import { errorText, numberFormatFor } from "./format";
 import { useToast } from "./ui";
+import { localDate, t, tc } from "./i18n";
 import type { Budget, Summary } from "./types";
 
 /** Creates a budget file and opens it. */
@@ -31,21 +32,21 @@ export function NewBudgetDialog({
   const pending = useRef(false);
   const [created, setCreated] = useState<string | null>(null);
   const options: [BudgetStart, string, string][] = [
-    ["starter", "Starter categories", "Bills, needs, wants and savings groups to rename or delete."],
-    ["blank", "Empty", "No accounts or categories."],
+    ["starter", t("Starter categories"), t("Bills, needs, wants and savings groups to rename or delete.")],
+    ["blank", t("Empty"), t("No accounts or categories.")],
     [
       "copy",
-      `Start over from “${current.budget.name}”`,
-      "Keeps the same currency, balances, pending and future transactions, categories, targets, payees, rules and schedules. Settled history is removed; bank accounts need linking again.",
+      t("Start over from “{budget}”", { budget: current.budget.name }),
+      t("Keeps the same currency, balances, pending and future transactions, categories, targets, payees, rules and schedules. Settled history is removed; bank accounts need linking again."),
     ],
   ];
   return (
-    <Modal title="New budget" close={() => { if (!pending.current) close(); }}>
+    <Modal title={t("New budget")} close={() => { if (!pending.current) close(); }}>
       <form
         onSubmit={async (e) => {
           e.preventDefault();
           if (pending.current) return;
-          if (!name.trim()) return setError("Give the budget a name.");
+          if (!name.trim()) return setError(t("Give the budget a name."));
           pending.current = true;
           setBusy(true);
           setError("");
@@ -67,19 +68,19 @@ export function NewBudgetDialog({
       >
         <fieldset disabled={busy || created !== null} style={{ border: 0, margin: 0, padding: 0, display: "contents" }}>
         <label>
-          Budget name
+          {t("Budget name")}
           <input
             autoFocus
             required
             maxLength={200}
-            placeholder="e.g. Household, Business, Travel 2027"
+            placeholder={t("e.g. Household, Business, Travel 2027")}
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
         </label>
         <BudgetFormatFields value={format} onChange={setFormat} />
         <fieldset className="choice-list">
-          <legend>Start with</legend>
+          <legend>{t("Start with")}</legend>
           {options.map(([value, title, help]) => (
             <label key={value} className={`choice${start === value ? " selected" : ""}`}>
               <input
@@ -97,7 +98,7 @@ export function NewBudgetDialog({
           ))}
         </fieldset>
         </fieldset>
-        {created && <p className="muted">Your new budget was created. Retry opening it after resolving the error, or find it later in Budgets.</p>}
+        {created && <p className="muted">{t("Your new budget was created. Retry opening it after resolving the error, or find it later in Budgets.")}</p>}
         {error && (
           <p className="form-error" role="alert">
             {error}
@@ -105,10 +106,10 @@ export function NewBudgetDialog({
         )}
         <div className="modal-actions">
           <button type="button" className="secondary" disabled={busy} onClick={close}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button className="primary" disabled={busy}>
-            {busy ? (created ? "Opening…" : "Creating…") : created ? "Open created budget" : "Create budget"}
+            {busy ? (created ? t("Opening…") : t("Creating…")) : created ? t("Open created budget") : t("Create budget")}
           </button>
         </div>
       </form>
@@ -136,30 +137,33 @@ export function ManageBudgetsDialog({
       .catch((e) => toast({ message: errorText(e), tone: "error" }));
   }, [toast]);
   return (
-    <Modal title="Budgets" close={close}>
+    <Modal title={t("Budgets")} close={close}>
       {confirm ? (
         <>
           <p>
-            Delete <strong>{confirm.name}</strong>? Its file moves to the <em>trash</em> folder
-            next to your budgets, so it can still be recovered by hand.
+            {/* "trash" is the folder's name on disk. */}
+            {t("Delete {budget}? Its file moves to the {folder} folder next to your budgets, so it can still be recovered by hand.", {
+              budget: <strong>{confirm.name}</strong>,
+              folder: <em>trash</em>,
+            })}
           </p>
           <div className="modal-actions">
             <button className="secondary" onClick={() => setConfirm(null)}>
-              Keep it
+              {tc("budget", "Keep it")}
             </button>
             <button
               className="danger"
               onClick={async () => {
                 try {
                   setBudgets(await api.deleteBudget(confirm.id));
-                  toast({ message: `Deleted ${confirm.name}.` });
+                  toast({ message: t("Deleted {budget}.", { budget: confirm.name }) });
                 } catch (e) {
                   toast({ message: errorText(e), tone: "error" });
                 }
                 setConfirm(null);
               }}
             >
-              Delete budget
+              {t("Delete budget")}
             </button>
           </div>
         </>
@@ -172,8 +176,8 @@ export function ManageBudgetsDialog({
                   <strong>{b.name}</strong>
                   <small>
                     {b.missing
-                      ? "File not found"
-                      : `${b.currency}${b.current ? " · Open now" : b.lastOpened ? ` · Opened ${new Date(b.lastOpened).toLocaleDateString()}` : ""}`}
+                      ? t("File not found")
+                      : `${b.currency}${b.current ? ` · ${t("Open now")}` : b.lastOpened ? ` · ${t("Opened {date}", { date: localDate(new Date(b.lastOpened)) })}` : ""}`}
                   </small>
                 </div>
                 <div className="row-actions">
@@ -189,13 +193,13 @@ export function ManageBudgetsDialog({
                         }
                       }}
                     >
-                      Open
+                      {t("Open")}
                     </button>
                   )}
                   <button
                     className="icon-button"
-                    title="Show in folder"
-                    aria-label={`Show ${b.name} in folder`}
+                    title={t("Show in folder")}
+                    aria-label={t("Show {budget} in folder", { budget: b.name })}
                     disabled={b.missing}
                     onClick={() => void api.reveal(b.path).catch((e) => toast({ message: errorText(e), tone: "error" }))}
                   >
@@ -203,8 +207,8 @@ export function ManageBudgetsDialog({
                   </button>
                   <button
                     className="icon-button"
-                    title={b.current ? "Open another budget to delete this one" : "Delete"}
-                    aria-label={`Delete ${b.name}`}
+                    title={b.current ? t("Open another budget to delete this one") : t("Delete")}
+                    aria-label={t("Delete {budget}", { budget: b.name })}
                     disabled={b.current || (budgets?.length ?? 0) < 2}
                     onClick={() => setConfirm(b)}
                   >
@@ -213,11 +217,11 @@ export function ManageBudgetsDialog({
                 </div>
               </li>
             ))}
-            {!budgets && <li className="muted">Loading…</li>}
+            {!budgets && <li className="muted">{t("Loading…")}</li>}
           </ul>
           <div className="modal-actions">
             <button className="secondary" onClick={close}>
-              Close
+              {t("Close")}
             </button>
             {onNew && <button
               className="primary"
@@ -226,7 +230,7 @@ export function ManageBudgetsDialog({
                 onNew();
               }}
             >
-              New budget…
+              {t("New budget…")}
             </button>}
           </div>
         </>

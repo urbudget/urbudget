@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -28,8 +29,11 @@ import app.urbudget.nativeapp.BankReviewSummary
 import app.urbudget.nativeapp.BankStatement
 import app.urbudget.nativeapp.BudgetViewModel
 import app.urbudget.nativeapp.DecodedStatement
+import app.urbudget.nativeapp.Money
+import app.urbudget.nativeapp.R
 import app.urbudget.nativeapp.StatementLine
 import app.urbudget.nativeapp.StatementSource
+import app.urbudget.nativeapp.Words
 import app.urbudget.nativeapp.bankReviewChoices
 import app.urbudget.nativeapp.bankReviewCounts
 import app.urbudget.nativeapp.dateReadings
@@ -107,18 +111,18 @@ private suspend fun BudgetViewModel.ask(method: String, params: JSONObject, anyR
 private suspend fun openStatement(context: Context, uri: Uri, sheet: String?): Pair<String, DecodedStatement?> = withContext(Dispatchers.IO) {
     val name = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
         if (it.moveToFirst()) it.getString(0) else null
-    } ?: "Bank statement"
+    } ?: context.getString(R.string.bank_statement_file)
     val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
         val output = ByteArrayOutputStream()
         val buffer = ByteArray(8192)
         while (true) {
             val size = input.read(buffer)
             if (size < 0) break
-            require(output.size() + size <= 8 * 1024 * 1024) { "Choose a statement smaller than 8 MiB." }
+            require(output.size() + size <= 8 * 1024 * 1024) { context.getString(R.string.bank_statement_too_large) }
             output.write(buffer, 0, size)
         }
         output.toByteArray()
-    } ?: error("The selected statement could not be opened.")
+    } ?: error(context.getString(R.string.bank_statement_unopened))
     // A PDF is the assistant's to read: no text.
     val pdf = name.endsWith(".pdf", ignoreCase = true) || bytes.take(4) == "%PDF".toByteArray().toList()
     name to (if (pdf) null else decodeStatementFile(bytes, sheet))
@@ -246,7 +250,7 @@ internal fun BankImportDialog(budget: JSONObject, vm: BudgetViewModel, draft: Ba
                 update { if (it.session === was) it.copy(session = next) else it }
                 val results = applied.optJSONArray("results")
                 (0 until (results?.length() ?: 0)).map { results!!.getJSONObject(it) }.firstOrNull { !it.optBoolean("applied") }
-                    ?.let { error = it.text("problem").ifBlank { "That change no longer fits the file." } }
+                    ?.let { error = it.text("problem").ifBlank { Words[R.string.bank_change_no_longer_fits] } }
             } catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { error = failure.message }
             loading = false
         }
@@ -254,7 +258,7 @@ internal fun BankImportDialog(budget: JSONObject, vm: BudgetViewModel, draft: Ba
 
     fun importRows() {
         if (previewBudget !== vm.state.value.budget || reviewed?.revision != session?.optLong("revision")) {
-            error = "Your budget changed. The review is up to date again: check it and import."
+            error = Words[R.string.bank_budget_changed_review]
             return
         }
         loading = true
@@ -265,7 +269,7 @@ internal fun BankImportDialog(budget: JSONObject, vm: BudgetViewModel, draft: Ba
         scope.launch {
             try {
                 val choices = withContext(Dispatchers.Default) { bankReviewChoices(imported, selected, true) }
-                require(source === vm.state.value.budget) { "Your budget changed. The review is up to date again: check it and import." }
+                require(source === vm.state.value.budget) { Words[R.string.bank_budget_changed_review] }
                 vm.runCommand("bankApply", JSONObject().put("accountId", accountId).put("choices", choices).put("remember", remember ?: JSONObject.NULL)) { onImported(); close() }
             } catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { error = failure.message; loading = false; saving = false }
         }
@@ -273,8 +277,9 @@ internal fun BankImportDialog(budget: JSONObject, vm: BudgetViewModel, draft: Ba
 
     val reviewing = rows
     val view = if (st == null) null else draft.view ?: "lines"
-    LazyFormDialog("Import bank file", close,
-        confirm = if (view == "review") (if (saving) "Importing…" else "Import $importing") else "Continue",
+    LazyFormDialog(stringResource(R.string.import_bank_file), close,
+        confirm = if (view == "review") (if (saving) stringResource(R.string.bank_importing) else stringResource(R.string.bank_import_count, "$importing"))
+            else stringResource(R.string.common_continue),
         onConfirm = when (view) { null -> null; "review" -> ({ if (!busy) importRows() }); else -> ({ if (!busy) update { it.copy(view = "review") } }) },
         enabled = !slow && !saving && when (view) {
             "review" -> reviewing != null && undecided == 0 && importing > 0
@@ -287,22 +292,28 @@ internal fun BankImportDialog(budget: JSONObject, vm: BudgetViewModel, draft: Ba
         draft.notice?.let { item(key = "import:notice") { Notice(it, tone = "info", icon = Icons.Outlined.AutoAwesome) } }
         when {
             session == null -> chooser(draft, accountChoices, loading, askAssistant, { account -> update { newBankImport(budget, account) } }) { picker.launch(arrayOf("*/*")) }
-            st == null -> item(key = "import:reading") { Text("Reading ${draft.fileName.ifEmpty { "the file" }}…", style = MaterialTheme.typography.bodyMedium, color = ur.text2) }
+            st == null -> item(key = "import:reading") {
+                Text(if (draft.fileName.isEmpty()) stringResource(R.string.bank_reading_file) else stringResource(R.string.bank_reading_named, draft.fileName),
+                    style = MaterialTheme.typography.bodyMedium, color = ur.text2)
+            }
             view == "review" -> {
                 item(key = "import:summary") {
-                    ImportHeading("${draft.fileName.ifEmpty { "Statement" }} into $accountName", summary?.let(::reviewCounts),
-                        if (draft.prepared == null) "Change file" else null, !saving) { update { newBankImport(budget, it.account) } }
+                    ImportHeading(stringResource(R.string.bank_source_into, draft.fileName.ifEmpty { stringResource(R.string.bank_statement_label) }, accountName),
+                        summary?.let(::reviewCounts), if (draft.prepared == null) stringResource(R.string.bank_change_file) else null, !saving) {
+                        update { newBankImport(budget, it.account) }
+                    }
                 }
                 val out = st.leftOutCount
                 if (st.attention > 0 || out > 0) item(key = "import:check") {
-                    Notice(listOfNotNull(st.attention.takeIf { it > 0 }?.let { "$it need attention" }, out.takeIf { it > 0 }?.let { "$it left out" }).joinToString(" · ") +
-                        ", not imported.", tone = "info", action = "Check the file", onAction = { update { it.copy(view = "lines") } }, icon = Icons.Outlined.TableRows)
+                    Notice(stringResource(R.string.bank_not_imported, listOfNotNull(st.attention.takeIf { it > 0 }?.let { countText(R.plurals.bank_need_attention, it) },
+                        out.takeIf { it > 0 }?.let { countText(R.plurals.bank_lines_left_out, it) }).joinToString(" · ")),
+                        tone = "info", action = stringResource(R.string.bank_check_file), onAction = { update { it.copy(view = "lines") } }, icon = Icons.Outlined.TableRows)
                 }
-                if (reviewing == null) item(key = "import:checking") { Text("Checking the lines against your budget…", style = MaterialTheme.typography.bodyMedium, color = ur.text2) }
+                if (reviewing == null) item(key = "import:checking") { Text(stringResource(R.string.bank_checking_lines), style = MaterialTheme.typography.bodyMedium, color = ur.text2) }
                 else {
                     val all = summary
                     if (all?.allIn == true && st.format == "csv" && session.optJSONObject("structure")?.optBoolean("flipSigns") != true) item(key = "import:all-in") {
-                        Notice("Every row came out as money in. If these are purchases, the file writes them as positive numbers.", action = "Reverse signs",
+                        Notice(stringResource(R.string.bank_all_in_note), action = stringResource(R.string.bank_reverse_signs_action),
                             onAction = { fix(restructured(session) { put("flipSigns", true) }) }, icon = Icons.Outlined.SwapVert)
                     }
                     all?.let { bankReviewNotes(it, undecided) }
@@ -329,24 +340,25 @@ internal fun BankImportDialog(budget: JSONObject, vm: BudgetViewModel, draft: Ba
 private fun LazyListScope.chooser(draft: BankImportDraft, accounts: List<Pair<String, String>>, loading: Boolean, askAssistant: ((Uri) -> Unit)?,
                                   account: (String) -> Unit, choose: () -> Unit) {
     item(key = "import:lead") {
-        Text("Bring in the transactions your bank exported. You see the lines that don't read and fix them, then check every transaction before anything is saved.",
+        Text(stringResource(R.string.bank_import_lead),
             style = MaterialTheme.typography.bodyMedium, color = ur.text2)
     }
-    item(key = "import:account") { Choice("Into account", draft.account, accounts) { if (!loading) account(it) } }
+    item(key = "import:account") { Choice(stringResource(R.string.bank_into_account), draft.account, accounts) { if (!loading) account(it) } }
     item(key = "import:file") {
         ListCard {
-            ListRow(draft.fileName.ifEmpty { "Choose a file" }, subtitle = if (draft.pdf) "PDF · tap to choose another" else if (draft.content == null) "CSV, Excel, OFX, QIF, CAMT.053 or MT940; PDF through the assistant" else "Reading…",
+            ListRow(draft.fileName.ifEmpty { stringResource(R.string.bank_choose_file) },
+                subtitle = stringResource(if (draft.pdf) R.string.bank_pdf_choose_another else if (draft.content == null) R.string.bank_file_formats else R.string.bank_reading),
                 icon = if (draft.fileName.isEmpty()) Icons.Outlined.FileOpen else Icons.Outlined.Description, onClick = { if (!loading) choose() })
         }
     }
     val file = draft.file
     if (draft.pdf && file != null) item(key = "import:pdf") {
-        if (askAssistant != null) Notice("PDF statements need the assistant. It reads the PDF, finds the transactions, checks them against the statement's totals and brings them to a review like this one, where you decide on each row.", tone = "info",
-            action = "Read it with the assistant", onAction = { askAssistant(file) }, icon = Icons.Outlined.AutoAwesome)
-        else Notice("PDF statements need the assistant. Open the assistant, attach this PDF and ask it to import the statement.", tone = "info")
+        if (askAssistant != null) Notice(stringResource(R.string.bank_pdf_note), tone = "info",
+            action = stringResource(R.string.bank_pdf_read_with_assistant), onAction = { askAssistant(file) }, icon = Icons.Outlined.AutoAwesome)
+        else Notice(stringResource(R.string.bank_pdf_attach_note), tone = "info")
     }
     item(key = "import:help") {
-        Text("Lines that don't read, or that the import leaves out (pending payments, another account's, balances), are shown for you to fix or include. The account remembers how its file read; on the desktop you can also choose which column holds what.",
+        Text(stringResource(R.string.bank_import_help),
             style = MaterialTheme.typography.bodySmall, color = ur.muted)
     }
 }
@@ -357,51 +369,55 @@ private fun LazyListScope.statementLines(st: BankStatement, session: JSONObject,
                                          edit: (StatementLine) -> Unit, fix: (JSONObject) -> Unit) {
     val structure = session.optJSONObject("structure") ?: JSONObject()
     item(key = "lines:summary") {
-        ImportHeading("${draft.fileName.ifEmpty { "Statement" }} into $accountName", statementCounts(st), if (draft.prepared == null) "Change file" else null, !saving, restart)
+        ImportHeading(stringResource(R.string.bank_source_into, draft.fileName.ifEmpty { stringResource(R.string.bank_statement_label) }, accountName), statementCounts(st),
+            if (draft.prepared == null) stringResource(R.string.bank_change_file) else null, !saving, restart)
     }
-    if (draft.sheets.size > 1) item(key = "lines:sheet") { Choice("Sheet", draft.sheet ?: draft.sheets.first(), draft.sheets.map { it to it }) { if (!busy && it != draft.sheet) sheet(it) } }
+    if (draft.sheets.size > 1) item(key = "lines:sheet") { Choice(stringResource(R.string.bank_sheet), draft.sheet ?: draft.sheets.first(), draft.sheets.map { it to it }) { if (!busy && it != draft.sheet) sheet(it) } }
     if (st.sources.size > 1) item(key = "lines:source") {
-        Choice("Account in the file", st.sources.getOrNull(st.source ?: 0)?.label.orEmpty(), st.sources.map { it.label to sourceText(it) }) { label ->
+        Choice(stringResource(R.string.bank_account_in_file), st.sources.getOrNull(st.source ?: 0)?.label.orEmpty(), st.sources.map { it.label to sourceText(it) }) { label ->
             if (!busy) fix(restructured(session) { put("source", label) })
         }
     }
     if (st.format == "csv") item(key = "lines:signs") {
         // Some card issuers write a purchase as a positive number and a payment as a negative one.
-        Choice("Purchases in the file", if (structure.optBoolean("flipSigns")) "positive" else "negative",
-            listOf("negative" to "Negative, as bank accounts write them", "positive" to "Positive, as many card statements write them")) { which ->
+        Choice(stringResource(R.string.bank_purchases_in_file), if (structure.optBoolean("flipSigns")) "positive" else "negative",
+            listOf("negative" to stringResource(R.string.bank_purchases_negative), "positive" to stringResource(R.string.bank_purchases_positive_cards))) { which ->
             if (!busy && (which == "positive") != structure.optBoolean("flipSigns")) fix(restructured(session) { put("flipSigns", which == "positive") })
         }
     }
     st.elsewhere?.let { other -> item(key = "lines:elsewhere") {
-        Notice("The file's amounts are in $other. Include a line to enter its amount in your budget's currency, or import the file into a budget in $other.", icon = Icons.Outlined.WarningAmber)
+        Notice(stringResource(R.string.bank_amounts_elsewhere, other), icon = Icons.Outlined.WarningAmber)
     } }
     st.currency?.let { other -> item(key = "lines:currency") {
-        Notice("This account's amounts are in $other. Choose another account in the file, or include its lines with their amounts in your budget's currency.", icon = Icons.Outlined.WarningAmber)
+        Notice(stringResource(R.string.bank_account_currency, other), icon = Icons.Outlined.WarningAmber)
     } }
     val example = st.dateExample
     // Answered once, the date order and the signs stay one choice away.
     if (!st.dateUnconfirmed && example != null) item(key = "lines:dates-chosen") {
         val named = dateReadings(example)
-        Choice("Dates", st.dateOrder ?: "dmy", listOf("dmy" to "Day first${named?.let { " ($example is ${it.first})" }.orEmpty()}",
-            "mdy" to "Month first${named?.let { " ($example is ${it.second})" }.orEmpty()}")) { which ->
+        Choice(stringResource(R.string.dates_title), st.dateOrder ?: "dmy", listOf(
+            "dmy" to (named?.let { stringResource(R.string.bank_day_first_example, example, it.first) } ?: stringResource(R.string.bank_day_first)),
+            "mdy" to (named?.let { stringResource(R.string.bank_month_first_example, example, it.second) } ?: stringResource(R.string.bank_month_first)))) { which ->
             if (!busy && which != st.dateOrder) fix(restructured(session) { put("dateOrder", JSONObject().put("order", which).put("confirmed", true)) })
         }
     }
     if (!st.signsUnconfirmed && st.signsByType != null) item(key = "lines:signs-chosen") {
-        Choice("Money out", if (st.signsByType) "type" else "written", listOf("type" to "Told by the transaction types", "written" to "As the amounts are written")) { which ->
+        Choice(stringResource(R.string.bank_money_out), if (st.signsByType) "type" else "written",
+            listOf("type" to stringResource(R.string.bank_signs_by_type), "written" to stringResource(R.string.bank_signs_as_written))) { which ->
             if (!busy && (which == "type") != st.signsByType) fix(restructured(session) { put("signsByType", which == "type") })
         }
     }
     if (st.dateUnconfirmed && example != null) item(key = "lines:dates") {
         val named = dateReadings(example)
         val order = { which: String -> fix(restructured(session) { put("dateOrder", JSONObject().put("order", which).put("confirmed", true)) }) }
-        ImportQuestion("The dates don't say whether the day or the month comes first: is $example", listOf(
-            (named?.first ?: "Day first") to { order("dmy") }, (named?.second ?: "Month first") to { order("mdy") }), if (st.dateOrder == "mdy") 1 else 0, !slow)
+        ImportQuestion(stringResource(R.string.bank_date_question, example), listOf(
+            (named?.first ?: stringResource(R.string.bank_day_first)) to { order("dmy") }, (named?.second ?: stringResource(R.string.bank_month_first)) to { order("mdy") }),
+            if (st.dateOrder == "mdy") 1 else 0, !slow)
     }
     if (st.signsUnconfirmed) item(key = "lines:types") {
-        ImportQuestion("Every amount that reads is positive. Is money out told by the transaction types (DEBIT, POS…)?", listOf(
-            "Yes, use the types" to { fix(restructured(session) { put("signsByType", true) }) },
-            "No, as written" to { fix(restructured(session) { put("signsByType", false) }) }), 0, !slow)
+        ImportQuestion(stringResource(R.string.bank_signs_question), listOf(
+            stringResource(R.string.bank_signs_yes) to { fix(restructured(session) { put("signsByType", true) }) },
+            stringResource(R.string.bank_signs_no) to { fix(restructured(session) { put("signsByType", false) }) }), 0, !slow)
     }
     val attention = st.attentionLines
     val out = st.leftOutLines
@@ -411,33 +427,33 @@ private fun LazyListScope.statementLines(st: BankStatement, session: JSONObject,
     fun batchAction(line: StatementLine): Pair<String, () -> Unit>? {
         val batch = line.batch?.let { st.batches.getOrNull(it) } ?: return null
         return when {
-            batch.addsUp == false && !batch.asOne && batch.payments.firstOrNull() == place[line.id] -> "Import as one entry" to { fix(wholeBatchFix(session, batch.entry, true)) }
-            batch.asOne && batch.line == place[line.id] -> "Import its payments" to { fix(wholeBatchFix(session, batch.entry, false)) }
+            batch.addsUp == false && !batch.asOne && batch.payments.firstOrNull() == place[line.id] -> Words[R.string.bank_batch_as_one] to { fix(wholeBatchFix(session, batch.entry, true)) }
+            batch.asOne && batch.line == place[line.id] -> Words[R.string.bank_batch_payments] to { fix(wholeBatchFix(session, batch.entry, false)) }
             else -> null
         }
     }
-    fun undo(line: StatementLine) = if (line.fixed || line.included) (if (line.id in draft.assisted) "Undo the assistant's fix" else "Undo") to { fix(revertFix(session, line)) } else null
+    fun undo(line: StatementLine) = if (line.fixed || line.included) Words[if (line.id in draft.assisted) R.string.bank_undo_assistant_fix else R.string.common_undo] to { fix(revertFix(session, line)) } else null
     if (attention.isNotEmpty()) {
-        item(key = "lines:attention") { SectionTitle("Needs attention", "Not imported until fixed: tap a line to give what doesn't read.") }
+        item(key = "lines:attention") { SectionTitle(stringResource(R.string.bank_needs_attention), stringResource(R.string.bank_needs_attention_detail)) }
         if (fixWithAssistant != null) item(key = "lines:assistant") {
-            Notice("The assistant can fix these lines from what the file says, and asks you about anything unclear. You see each fix before it's applied.", tone = "info",
-                action = "Fix with the assistant", onAction = { fixWithAssistant() }, icon = Icons.Outlined.AutoAwesome)
+            Notice(stringResource(R.string.bank_assistant_fix_note), tone = "info",
+                action = stringResource(R.string.bank_fix_with_assistant), onAction = { fixWithAssistant() }, icon = Icons.Outlined.AutoAwesome)
         }
         items(attention, key = { "attention:${it.id}" }, contentType = { "statement-line" }) { line ->
             StatementLineItem(line, line.problem, ur.warning, listOfNotNull(batchAction(line), undo(line)), !slow) { edit(line) }
         }
     }
     if (out.isNotEmpty()) {
-        item(key = "lines:out") { SectionTitle("Left out", "Not imported. Include a line if it belongs in the account.") }
+        item(key = "lines:out") { SectionTitle(stringResource(R.string.bank_left_out), stringResource(R.string.bank_left_out_section_detail)) }
         items(out, key = { "out:${it.id}" }, contentType = { "statement-line" }) { line ->
-            val include = if (line.includable && !line.included) "Include" to { fix(includeFix(session, line, true)) } else null
+            val include = if (line.includable && !line.included) stringResource(R.string.bank_include) to { fix(includeFix(session, line, true)) } else null
             StatementLineItem(line, leftOutText(line), ur.muted, listOfNotNull(include, batchAction(line), undo(line)), !slow)
         }
     }
     if (changed.isNotEmpty()) {
-        item(key = "lines:changed") { SectionTitle("Changed", "Imported as you changed them.") }
+        item(key = "lines:changed") { SectionTitle(stringResource(R.string.bank_changed), stringResource(R.string.bank_changed_detail)) }
         items(changed, key = { "changed:${it.id}" }, contentType = { "statement-line" }) { line ->
-            StatementLineItem(line, if (line.id in draft.assisted) "Fixed by the assistant" else if (line.included) "Included" else "Changed from the file", ur.accent,
+            StatementLineItem(line, stringResource(if (line.id in draft.assisted) R.string.bank_fixed_by_assistant else if (line.included) R.string.bank_included else R.string.bank_changed_from_file), ur.accent,
                 listOfNotNull(undo(line)), !slow) { edit(line) }
         }
     }
@@ -445,7 +461,7 @@ private fun LazyListScope.statementLines(st: BankStatement, session: JSONObject,
 
 /** "Account 1234 · EUR · 12 lines" */
 private fun sourceText(source: StatementSource) =
-    "${source.label}${source.currency?.let { " · $it" }.orEmpty()} · ${source.lines} ${if (source.lines == 1) "line" else "lines"}"
+    Money.joined(listOfNotNull(source.label, source.currency, Words.count(R.plurals.bank_source_lines, source.lines.toLong())))
 
 /** Where the file goes and how it reads, with a way to start again. */
 @Composable
@@ -482,8 +498,8 @@ private fun ImportQuestion(text: String, answers: List<Pair<String, () -> Unit>>
 private fun StatementLineItem(line: StatementLine, state: String, tone: androidx.compose.ui.graphics.Color, actions: List<Pair<String, () -> Unit>>, enabled: Boolean,
                               onClick: (() -> Unit)? = null) {
     Column(Modifier.cardSegment(0, 1, cardFill())) {
-        ListRow(line.title, subtitle = listOf(line.fields["date"].orEmpty(), line.fields["memo"].orEmpty()).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { null },
-            value = line.fields["amount"]?.ifBlank { null }, onClick = onClick?.takeIf { enabled }, chevron = onClick != null)
+        ListRow(line.title, subtitle = Money.joined(listOf(line.fields["date"].orEmpty(), line.fields["memo"].orEmpty()).filter { it.isNotBlank() }).ifBlank { null },
+            value = line.fields["amount"]?.ifBlank { null }?.let(Money::ltr), onClick = onClick?.takeIf { enabled }, chevron = onClick != null)
         Column(Modifier.padding(start = 16.dp, end = 8.dp, bottom = 8.dp)) {
             Text(state, style = MaterialTheme.typography.bodySmall, color = tone, fontWeight = FontWeight.SemiBold, maxLines = 3, overflow = TextOverflow.Ellipsis)
             if (actions.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -497,16 +513,17 @@ private fun StatementLineItem(line: StatementLine, state: String, tone: androidx
 @Composable
 private fun LineFixSheet(line: StatementLine, close: () -> Unit, save: (Map<String, String>) -> Unit) {
     val values = remember(line.id, line.version) { mutableStateMapOf<String, String>().apply { lineFields.forEach { (field, _) -> put(field, line.fields[field].orEmpty()) } } }
-    FormDialog("Fix line", close, confirm = "Done", onConfirm = { save(values.toMap()) }) {
-        Text("In the file: ${line.cells.filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "nothing" }}", style = MaterialTheme.typography.bodySmall, color = ur.muted)
+    FormDialog(stringResource(R.string.bank_fix_line), close, confirm = stringResource(R.string.common_done), onConfirm = { save(values.toMap()) }) {
+        Text(stringResource(R.string.bank_in_the_file, Money.joined(line.cells.filter { it.isNotBlank() }).ifBlank { stringResource(R.string.bank_nothing) }), style = MaterialTheme.typography.bodySmall, color = ur.muted)
         if (line.problem.isNotEmpty()) Notice(line.problem, icon = Icons.Outlined.WarningAmber)
         lineFields.forEach { (field, label) ->
-            // The amount takes a minus sign, which a decimal keypad may not have.
+            // The amount takes a minus sign, which a decimal keypad may not have. A date and an
+            // amount are typed left to right in Arabic too.
             Field(values[field].orEmpty(), { values[field] = it }, when (field) {
-                "date" -> "$label (YYYY-MM-DD)"
-                "amount" -> "$label (negative for money out)"
-                else -> label
-            })
+                "date" -> stringResource(R.string.bank_fix_date)
+                "amount" -> stringResource(R.string.bank_fix_amount)
+                else -> stringResource(label)
+            }, ltr = field == "date" || field == "amount")
         }
     }
 }

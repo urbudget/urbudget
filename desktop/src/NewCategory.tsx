@@ -3,6 +3,7 @@ import { Modal } from "./forms";
 import { groupNames } from "./categories";
 import { addCategory } from "./budgetEdits";
 import type { Budget } from "./types";
+import { t } from "./i18n";
 
 type Edit = (fn: (b: Budget) => void) => void;
 const NEW_GROUP = "\u0000new";
@@ -35,46 +36,46 @@ export function NewCategoryDialog({
   const [error, setError] = useState("");
   const adding = group === NEW_GROUP;
   return (
-    <Modal title="New category" close={close}>
+    <Modal title={t("New category")} close={close}>
       <form
         className="new-category"
         onSubmit={(e) => {
           e.preventDefault();
           const chosen = adding ? newGroup.trim() : group;
-          if (!text.trim()) return setError("Enter a name for the category.");
-          if (!chosen) return setError("Name the new group.");
+          if (!text.trim()) return setError(t("Enter a name for the category."));
+          if (!chosen) return setError(t("Name the new group."));
           lastGroup = chosen;
           create(text.trim(), chosen);
         }}
       >
         <label>
-          Name
+          {t("Name")}
           <input data-autofocus required maxLength={200} value={text} onChange={(e) => setText(e.target.value)} />
         </label>
         <label>
-          Group
+          {t("Group")}
           <select value={group} onChange={(e) => setGroup(e.target.value)}>
             {groups.map((g) => (
               <option key={g} value={g}>
                 {g}
               </option>
             ))}
-            <option value={NEW_GROUP}>New group…</option>
+            <option value={NEW_GROUP}>{t("New group…")}</option>
           </select>
         </label>
         {adding && (
           <label>
-            New group
-            <input autoFocus maxLength={200} placeholder="e.g. Pets" value={newGroup} onChange={(e) => setNewGroup(e.target.value)} />
+            {t("New group")}
+            <input autoFocus maxLength={200} placeholder={t("e.g. Pets")} value={newGroup} onChange={(e) => setNewGroup(e.target.value)} />
           </label>
         )}
-        <p className="help">It starts with nothing assigned. Give it money or a target from the budget.</p>
+        <p className="help">{t("It starts with nothing assigned. Give it money or a target from the budget.")}</p>
         {error && <p className="form-error">{error}</p>}
         <div className="modal-actions">
           <button type="button" className="secondary" onClick={close}>
-            Cancel
+            {t("Cancel")}
           </button>
-          <button className="primary">Create category</button>
+          <button className="primary">{t("Create category")}</button>
         </div>
       </form>
     </Modal>

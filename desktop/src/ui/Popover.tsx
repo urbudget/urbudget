@@ -7,11 +7,14 @@ import {
   type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
+import { getDirection } from "../i18n";
 
 /** An element to attach to, or a point (for right-click menus). */
 export type Anchor = RefObject<HTMLElement | null> | { x: number; y: number };
 export type Placement = "bottom-start" | "bottom-end" | "top-start" | "right-start";
 const isRef = (a: Anchor): a is RefObject<HTMLElement | null> => "current" in a;
+/** Where a menu opened from `rect` starts: its left edge, or its right edge right to left. */
+export const startEdge = (rect: DOMRect) => (getDirection() === "rtl" ? rect.right : rect.left);
 
 /**
  * A floating panel attached to an anchor. It stays inside the window, flips above the
@@ -76,12 +79,15 @@ export function Popover({
         margin = 8,
         w = el.offsetWidth,
         h = el.offsetHeight;
+      // Start and end are the anchor's left and right edges, the other way round right to left;
+      // "right-start" opens beside the anchor, on its left right to left.
+      const rtl = getDirection() === "rtl";
       let left =
         placement === "bottom-end"
-          ? rect.right - w
+          ? rtl ? rect.left : rect.right - w
           : placement === "right-start"
-            ? rect.right + gap
-            : rect.left;
+            ? rtl ? rect.left - gap - w : rect.right + gap
+            : rtl ? rect.right - w : rect.left;
       let top =
         placement === "top-start"
           ? rect.top - h - gap

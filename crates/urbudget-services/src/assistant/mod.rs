@@ -18,7 +18,7 @@ pub mod tools;
 pub mod workbook;
 
 use crate::patch::Patch;
-use crate::vault;
+use crate::{t, vault};
 use crate::Database;
 use history::{Item, Thread};
 use llm::{Credentials, Failure, FailureKind, Provider};
@@ -248,11 +248,11 @@ impl Assistant {
         let provider = settings.provider;
         if provider != Provider::Chatgpt {
             let secret = self.secret(provider).ok_or_else(|| {
-                Failure::new(FailureKind::SignIn, "Add your API key in Settings to use the assistant.")
+                Failure::new(FailureKind::SignIn, t!("Add your API key in Settings to use the assistant."))
             })?;
             return Ok(Credentials { provider, secret });
         }
-        let signed_out = || Failure::new(FailureKind::SignIn, "Sign in with ChatGPT to use the assistant.");
+        let signed_out = || Failure::new(FailureKind::SignIn, t!("Sign in with ChatGPT to use the assistant."));
         let client_id = settings.client_id.clone().ok_or_else(signed_out)?;
         let mut tokens = self.tokens.lock().await;
         let now = chrono::Utc::now().timestamp();
@@ -279,7 +279,7 @@ impl Assistant {
         if !t.plan_usage() {
             return Err(Failure::new(
                 FailureKind::NotEligible,
-                "UrBudget wasn't allowed to use your ChatGPT plan. Sign in again and allow it.",
+                t!("UrBudget wasn't allowed to use your ChatGPT plan. Sign in again and allow it."),
             ));
         }
         Ok(Credentials { provider, secret: t.access.clone() })
@@ -309,7 +309,7 @@ impl Assistant {
         let list = self.model_list(false).await?;
         list.first()
             .map(|m| m.id.clone())
-            .ok_or_else(|| Failure::new(FailureKind::Model, "No models are available on this account."))
+            .ok_or_else(|| Failure::new(FailureKind::Model, t!("No models are available on this account.")))
     }
 
     /// Runs `f` on a conversation, loading it first if needed, and saves it when history is kept.
@@ -320,7 +320,7 @@ impl Assistant {
         let mut threads = lock(&self.threads);
         // Abort can arrive while a local tool is doing synchronous work. Test cancellation
         // under the history lock so that no late tool result can resurrect a deleted chat.
-        if cancelled.is_some_and(|signal| signal.load(Ordering::SeqCst)) { return Err("Reply stopped.".into()); }
+        if cancelled.is_some_and(|signal| signal.load(Ordering::SeqCst)) { return Err(t!("Reply stopped.")); }
         if !threads.get(id).is_some_and(|(dir, _)| dir == folder) {
             let t = history::load(folder, id)?;
             threads.insert(id.to_owned(), (folder.to_owned(), t));
@@ -457,7 +457,7 @@ pub async fn assistant_sign_in(assistant: &Assistant) -> Result<StatusView, Stri
         }
     }
     if cancel.load(Ordering::Relaxed) {
-        return Err("Sign-in was cancelled.".into());
+        return Err(t!("Sign-in was cancelled."));
     }
     let signed = result?;
     a.keep_secret(Provider::Chatgpt, &signed.tokens.refresh);
@@ -470,7 +470,7 @@ pub async fn assistant_sign_in(assistant: &Assistant) -> Result<StatusView, Stri
         s.provider = Provider::Chatgpt;
     })?;
     if !plan {
-        return Err("You signed in, but didn't allow UrBudget to use your ChatGPT plan. Sign in again and allow it.".into());
+        return Err(t!("You signed in, but didn't allow UrBudget to use your ChatGPT plan. Sign in again and allow it."));
     }
     Ok(status(a))
 }
@@ -490,7 +490,7 @@ pub async fn assistant_sign_out(assistant: &Assistant) -> Result<StatusView, Str
     if let (Some(client), Some(token)) = (settings.client_id.as_deref(), refresh) {
         if !auth::revoke(&a.http, client, &token).await {
             // Keep the client id and host id for the next sign-in; only the tokens go.
-            return Err("Signed out here. ChatGPT didn't confirm it; you can also disconnect UrBudget in ChatGPT's settings.".into());
+            return Err(t!("Signed out here. ChatGPT didn't confirm it; you can also disconnect UrBudget in ChatGPT's settings."));
         }
     }
     Ok(status(a))
@@ -534,7 +534,7 @@ pub fn assistant_settings(assistant: &Assistant, change: SettingsChange) -> Resu
 pub async fn assistant_set_key(assistant: &Assistant, provider: Provider, key: String) -> Result<StatusView, String> {
     let key = key.trim().to_owned();
     if provider == Provider::Chatgpt || key.len() < 20 || key.len() > 400 || key.chars().any(char::is_whitespace) {
-        return Err("Paste the whole API key.".into());
+        return Err(t!("Paste the whole API key."));
     }
     let credentials = Credentials { provider, secret: key.clone() };
     // A key that can list models works.
@@ -611,9 +611,9 @@ pub fn assistant_attach(
     use base64::Engine;
     assistant.prune_once(&folder(&db)?);
     if data.len() > 40 << 20 {
-        return Err(format!("{name} is too large to attach."));
+        return Err(t!("{name} is too large to attach.", name));
     }
-    let bytes = base64::engine::general_purpose::STANDARD.decode(data.as_bytes()).map_err(|_| "The file couldn't be read.")?;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data.as_bytes()).map_err(|_| t!("The file couldn't be read."))?;
     attachments::Files::open(history::files(&folder(&db)?)).save(&name, &bytes)
 }
 
@@ -641,13 +641,13 @@ pub fn assistant_send(
 ) -> Result<String, String> {
     let text = text.trim().to_owned();
     if text.is_empty() && attachments.is_empty() {
-        return Err("Type a message or attach a file.".into());
+        return Err(t!("Type a message or attach a file."));
     }
     if text.len() > 20_000 {
-        return Err("That message is too long.".into());
+        return Err(t!("That message is too long."));
     }
     if attachments.len() > 5 {
-        return Err("Attach up to 5 files at a time.".into());
+        return Err(t!("Attach up to 5 files at a time."));
     }
     let folder = folder(&db)?;
     let budget = db.snapshot(patch)?;
@@ -657,7 +657,7 @@ pub fn assistant_send(
     let id = match thread_id {
         Some(id) => {
             if assistant.is_running(&id) {
-                return Err("Wait for the current reply, or stop it.".into());
+                return Err(t!("Wait for the current reply, or stop it."));
             }
             assistant.thread_copy(&folder, &id)?;
             id
@@ -666,7 +666,7 @@ pub fn assistant_send(
             let id = new_id("t");
             let mut title: String = text.chars().take(60).collect();
             if title.is_empty() {
-                title = metas.first().map(|m| m.name.clone()).unwrap_or_else(|| "New conversation".into());
+                title = metas.first().map(|m| m.name.clone()).unwrap_or_else(|| t!("New conversation"));
             }
             let thread = Thread {
                 id: id.clone(),
@@ -685,7 +685,7 @@ pub fn assistant_send(
         t.items.iter().map(|i| if let Item::User { attachments, .. } = i { attachments.len() } else { 0 }).sum()
     })?;
     if attached_before + metas.len() > 12 {
-        return Err("This conversation has as many files as it can hold. Start a new conversation to attach more.".into());
+        return Err(t!("This conversation has as many files as it can hold. Start a new conversation to attach more."));
     }
     // The file being imported, as it reads now: kept with the message, so a fix the assistant
     // proposes is for these lines as they are now (a line changed since won't take it).
@@ -729,7 +729,7 @@ pub fn assistant_retry(
     screen: prompt::Screen,
 ) -> Result<(), String> {
     if assistant.is_running(&thread_id) {
-        return Err("Wait for the current reply, or stop it.".into());
+        return Err(t!("Wait for the current reply, or stop it."));
     }
     let folder = folder(&db)?;
     let budget = db.snapshot(patch)?;
@@ -785,7 +785,7 @@ pub fn assistant_report(
         .iter()
         .find(|p| p.id == proposal_id)
         .and_then(|p| p.report.clone())
-        .ok_or("That report is gone.")?;
+        .ok_or_else(|| t!("That report is gone."))?;
     Ok(ReportView { title: doc.title, period: doc.period, body: doc.body, created: doc.created, budget })
 }
 
@@ -823,16 +823,16 @@ pub async fn assistant_report_reply(cloud: &crate::cloud::Cloud, text: String, r
         cloud.call(reqwest::Method::POST, "/assistant-reports", Some(payload), false),
     )
     .await
-    .map_err(|_| "The report timed out. Your text is still here; try again when you're online.".to_owned())?
+    .map_err(|_| t!("The report timed out. Your text is still here; try again when you're online."))?
     .map_err(|failure| {
         if failure.status == 404 {
-            "Reporting isn't available right now. Your text is still here; try again later.".to_owned()
+            t!("Reporting isn't available right now. Your text is still here; try again later.")
         } else {
             failure.message
         }
     })?;
     answer["id"].as_str().filter(|id| id.starts_with("rep_")).map(str::to_owned)
-        .ok_or_else(|| "The report service did not confirm a reference. Please try again later.".to_owned())
+        .ok_or_else(|| t!("The report service did not confirm a reference. Please try again later."))
 }
 
 fn report_payload(text: &str, reason: &str) -> Result<Value, String> {
@@ -840,7 +840,7 @@ fn report_payload(text: &str, reason: &str) -> Result<Value, String> {
     let reason = reason.trim();
     // Match the browser's maxlength and the API's JavaScript string lengths, including emoji.
     if text.is_empty() || text.encode_utf16().count() > 4000 || reason.encode_utf16().count() > 1000 {
-        return Err("Include 1–4,000 characters from the reply and at most 1,000 characters explaining the problem.".into());
+        return Err(t!("Include 1–4,000 characters from the reply and at most 1,000 characters explaining the problem."));
     }
     Ok(json!({ "text": text, "reason": reason }))
 }
@@ -881,9 +881,9 @@ pub fn assistant_apply(
         .proposals
         .into_iter()
         .find(|p| p.id == proposal_id)
-        .ok_or("That proposal is gone.")?;
+        .ok_or_else(|| t!("That proposal is gone."))?;
     if !matches!(proposal.status, Status::Proposed | Status::Undone) {
-        return Err("This proposal was already handled.".into());
+        return Err(t!("This proposal was already handled."));
     }
     let outcome = db.read(patch, |current| Ok(proposals::recheck(&proposal, current)))?;
     assistant.with_thread(&folder, &thread_id, |t| {
@@ -921,13 +921,13 @@ pub fn assistant_revise(
         .proposals
         .into_iter()
         .find(|p| p.id == proposal_id)
-        .ok_or("That proposal is gone.")?;
+        .ok_or_else(|| t!("That proposal is gone."))?;
     let revised = db.read(patch, |current| proposals::revise(&proposal, revision, current))?;
     assistant.with_thread(&folder, &thread_id, |t| {
-        let p = t.proposals.iter_mut().find(|p| p.id == proposal_id).ok_or("That proposal is gone.")?;
+        let p = t.proposals.iter_mut().find(|p| p.id == proposal_id).ok_or_else(|| t!("That proposal is gone."))?;
         // Applied or discarded meanwhile: the choice is for a card that's done.
         if p.status != proposal.status {
-            return Err("This proposal was already handled.".to_string());
+            return Err(t!("This proposal was already handled."));
         }
         *p = revised;
         Ok(history::proposal_view(p))
@@ -944,7 +944,7 @@ pub fn assistant_mark(
 ) -> Result<Value, String> {
     let folder = folder(&db)?;
     assistant.with_thread(&folder, &thread_id, |t| {
-        let p = t.proposals.iter_mut().find(|p| p.id == proposal_id).ok_or("That proposal is gone.")?;
+        let p = t.proposals.iter_mut().find(|p| p.id == proposal_id).ok_or_else(|| t!("That proposal is gone."))?;
         p.status = status;
         Ok(history::proposal_view(p))
     })?
@@ -955,8 +955,8 @@ pub fn assistant_mark(
 pub fn verify_undo_proposal(db: &Database, assistant: &Assistant, thread_id: &str, proposal_id: &str) -> Result<(), String> {
     let folder = folder(db)?;
     let thread = assistant.thread_copy(&folder, thread_id)?;
-    let proposal = thread.proposals.iter().find(|p| p.id == proposal_id).ok_or("That proposal is gone.")?;
-    if proposal.status != Status::Applied { return Err("That proposal is no longer applied.".into()); }
+    let proposal = thread.proposals.iter().find(|p| p.id == proposal_id).ok_or_else(|| t!("That proposal is gone."))?;
+    if proposal.status != Status::Applied { return Err(t!("That proposal is no longer applied.")); }
     Ok(())
 }
 
@@ -975,7 +975,7 @@ fn import_of(db: &Database, assistant: &Assistant, thread_id: &str, proposal_id:
         .iter()
         .find(|p| p.id == proposal_id)
         .and_then(|p| p.import.clone())
-        .ok_or("That import is gone.")?;
+        .ok_or_else(|| t!("That import is gone."))?;
     let stem: String = file
         .source
         .rsplit_once('.')
@@ -1027,7 +1027,7 @@ pub fn assistant_spreadsheet(
     let directory = folder.join("exports");
     std::fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
     let path = workbook::free_path(&directory, &title);
-    std::fs::write(&path, bytes).map_err(|e| format!("Couldn't save the spreadsheet: {e}"))?;
+    std::fs::write(&path, bytes).map_err(|e| t!("Couldn't save the spreadsheet: {e}", e))?;
     let shown = path.to_string_lossy().into_owned();
     spreadsheet_saved(db, assistant, &thread_id, &proposal_id, &shown)?;
     if open {
@@ -1041,7 +1041,7 @@ fn spreadsheet_card(assistant: &Assistant, folder: &Path, thread_id: &str, propo
         .proposals
         .into_iter()
         .find(|p| p.id == proposal_id)
-        .ok_or_else(|| "That spreadsheet is gone.".into())
+        .ok_or_else(|| t!("That spreadsheet is gone."))
 }
 /// A spreadsheet card's workbook (or a report's tables), with data sheets filled from the budget
 /// as the window has it: its title and the file's bytes.
@@ -1056,10 +1056,10 @@ pub fn spreadsheet_file(
     let (title, grids) = match (&p.workbook, &p.report) {
         (Some(w), _) => (w.title.clone(), db.read(patch, |b| w.sheets.iter().map(|s| workbook::fill(s, b)).collect())?),
         (None, Some(r)) => (r.title.clone(), workbook::report_tables(&r.body)),
-        _ => return Err("That spreadsheet is gone.".into()),
+        _ => return Err(t!("That spreadsheet is gone.")),
     };
     if grids.is_empty() {
-        return Err("This report has no tables to put in a spreadsheet.".into());
+        return Err(t!("This report has no tables to put in a spreadsheet."));
     }
     let bytes = workbook::write(&title, &grids)?;
     Ok((title, bytes))

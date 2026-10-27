@@ -5,6 +5,7 @@ use super::history::{self, Item};
 use super::llm::{self, Delta, FailureKind, Part, Request};
 use super::{lock, now, tools, Assistant};
 use crate::domain::Budget;
+use crate::t;
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
@@ -71,9 +72,11 @@ async fn turn(assistant: &Assistant, job: &Job, cancelled: &AtomicBool) -> Resul
         let credentials = assistant.credentials().await?;
         let model = assistant.model().await?;
         let thread = assistant.with_thread_guarded(&job.folder, &job.thread_id, Some(cancelled), |t| t.clone()).map_err(other)?;
+        // The app's language is read for every request, so a switch applies to the next reply.
+        let instructions = super::prompt::in_language(if thread.instructions.is_empty() { super::prompt::INSTRUCTIONS } else { &thread.instructions });
         let request = Request {
             model: &model,
-            instructions: if thread.instructions.is_empty() { super::prompt::INSTRUCTIONS } else { &thread.instructions },
+            instructions: &instructions,
             items: &thread.items,
             files: &files,
             tools: &specs,
@@ -170,7 +173,7 @@ async fn turn(assistant: &Assistant, job: &Job, cancelled: &AtomicBool) -> Resul
         if round == ROUNDS - 1 {
             return Err(llm::Failure::new(
                 FailureKind::Other,
-                "The assistant took too many steps and stopped. Ask again, a bit more specifically.",
+                t!("The assistant took too many steps and stopped. Ask again, a bit more specifically."),
             ));
         }
     }

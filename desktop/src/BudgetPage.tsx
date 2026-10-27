@@ -53,6 +53,7 @@ import {
 } from "./ui";
 import type { Budget, Category, Summary } from "./types";
 import { textWidth } from "./ui/columns";
+import { t, tn } from "./i18n";
 import "./budget.css";
 
 /** The last day of a month ("2026-02" → "2026-02-28"). */
@@ -121,8 +122,8 @@ function MonthNote({ budget, month, edit }: { budget: Budget; month: string; edi
   return (
     <CommitInput
       className="month-note"
-      aria-label="Month note"
-      placeholder={`Note for ${monthName(month, "short")}…`}
+      aria-label={t("Month note")}
+      placeholder={t("Note for {month}…", { month: monthName(month, "short") })}
       value={saved}
       onCommit={(note) =>
         edit((d) => {
@@ -306,7 +307,7 @@ export function BudgetPage({
     persistCollapsed(next);
   };
   const undoToast = (message: string) =>
-    toast({ message, action: undo ? { label: "Undo", onClick: undo } : undefined });
+    toast({ message, action: undo ? { label: t("Undo"), onClick: undo } : undefined });
 
   // Stable callbacks, so memoized rows only re-render when their own data changes.
   const monthRef = useRef(month);
@@ -354,13 +355,13 @@ export function BudgetPage({
   const categoryMenu = useCallback(
     (c: Category, x: number, y: number) => {
       const withUndo = (message: string) =>
-        toast({ message, action: undoRef.current ? { label: "Undo", onClick: undoRef.current } : undefined });
+        toast({ message, action: undoRef.current ? { label: t("Undo"), onClick: undoRef.current } : undefined });
       const items: MenuItem[] = [
         ...(!c.paymentAccountId
-          ? [{ label: "Rename", icon: <Pencil size={14} />, hint: "F2", onSelect: () => setRenaming({ kind: "category", id: c.id }) }]
+          ? [{ label: t("Rename"), icon: <Pencil size={14} />, hint: "F2", onSelect: () => setRenaming({ kind: "category", id: c.id }) }]
           : []),
         {
-          label: c.target > 0 ? "Edit target…" : "Create target…",
+          label: c.target > 0 ? t("Edit target…") : t("Create target…"),
           icon: <Target size={14} />,
           onSelect: () => {
             setSelected([c.id]);
@@ -368,26 +369,26 @@ export function BudgetPage({
           },
         },
         ...(moveStatsRef.current.get(c.id)?.count
-          ? [{ label: "Show moves", icon: <History size={14} />, onSelect: () => setMoves({ category: c, anchor: { x, y } }) }]
+          ? [{ label: t("Show moves"), icon: <History size={14} />, onSelect: () => setMoves({ category: c, anchor: { x, y } }) }]
           : []),
         c.hidden
-          ? { label: "Show category", icon: <Eye size={14} />, onSelect: () => edit((d) => setHidden(d, [c.id], false)) }
+          ? { label: t("Show category"), icon: <Eye size={14} />, onSelect: () => edit((d) => setHidden(d, [c.id], false)) }
           : {
-              label: "Hide category",
+              label: t("Hide category"),
               icon: <EyeOff size={14} />,
               onSelect: () => {
                 edit((d) => setHidden(d, [c.id], true));
-                withUndo(`${c.name} is hidden. Find it under Hidden categories.`);
+                withUndo(t("{name} is hidden. Find it under Hidden categories.", { name: c.name }));
               },
             },
         ...(!c.paymentAccountId
           ? ([
               "separator",
-              { label: "Delete…", icon: <Trash2 size={14} />, danger: true, onSelect: () => setDeleting({ kind: "category", category: c }) },
+              { label: t("Delete…"), icon: <Trash2 size={14} />, danger: true, onSelect: () => setDeleting({ kind: "category", category: c }) },
             ] as MenuItem[])
           : []),
       ];
-      setMenu({ x, y, items, label: `Actions for ${c.name}` });
+      setMenu({ x, y, items, label: t("Actions for {name}", { name: c.name }) });
     },
     [edit, toast],
   );
@@ -480,13 +481,14 @@ export function BudgetPage({
   const moveMoney = async (from: string, to: string, amount: number) => {
     await transform((b) => api.action(b, { type: "moveMoney", month, from, to, amount }));
     const name = (id: string) =>
-      id === READY_TO_ASSIGN ? "Unassigned" : (budget.categories.find((c) => c.id === id)?.name ?? id);
-    undoToast(`Moved ${money(amount, { symbol: true })} from ${name(from)} to ${name(to)}.`);
+      id === READY_TO_ASSIGN ? t("Unassigned") : (budget.categories.find((c) => c.id === id)?.name ?? id);
+    undoToast(t("Moved {amount} from {from} to {to}.", { amount: money(amount, { symbol: true }), from: name(from), to: name(to) }));
   };
   const autoAssign = async (mode: string, label: string, ids: string[], all: boolean, change: number, asOfMonth: string) => {
     try {
       await transform((b) => api.action(b, autoAssignAction(mode, month, ids, all, asOfMonth)));
-      undoToast(`${label}: ${change >= 0 ? "assigned" : "removed"} ${money(Math.abs(change), { symbol: true })}.`);
+      const amount = money(Math.abs(change), { symbol: true });
+      undoToast(change >= 0 ? t("{label}: assigned {amount}.", { label, amount }) : t("{label}: removed {amount}.", { label, amount }));
     } catch (e) {
       toast({ message: errorText(e), tone: "error" });
     }
@@ -530,14 +532,14 @@ export function BudgetPage({
       <div className="page">
         {gettingStarted}
         <div className="empty-state">
-          <h2>No accounts yet</h2>
-          <p>Add your accounts and their current balances, then create categories and assign the money you have.</p>
+          <h2>{t("No accounts yet")}</h2>
+          <p>{t("Add your accounts and their current balances, then create categories and assign the money you have.")}</p>
           <div className="button-row">
             <button className="primary" onClick={onAddAccount}>
-              <Plus size={15} /> Add account
+              <Plus size={15} /> {t("Add account")}
             </button>
             <button className="secondary" onClick={onOpenSample}>
-              <Sparkles size={15} /> Explore a sample budget
+              <Sparkles size={15} /> {t("Explore a sample budget")}
             </button>
           </div>
         </div>
@@ -546,16 +548,16 @@ export function BudgetPage({
 
   const groupMenu = (name: string, categories: Category[]): MenuItem[] => [
     {
-      label: "Rename group",
+      label: t("Rename group"),
       icon: <Pencil size={14} />,
       hint: "F2",
       onSelect: () => setRenaming({ kind: "group", id: name }),
     },
-    { label: "Add category", icon: <Plus size={14} />, onSelect: () => setAdding(name) },
+    { label: t("Add category"), icon: <Plus size={14} />, onSelect: () => setAdding(name) },
     ...(categories.length
       ? [
           {
-            label: "Hide all categories",
+            label: t("Hide all categories"),
             icon: <EyeOff size={14} />,
             onSelect: () => edit((d) => setHidden(d, categories.map((c) => c.id), true)),
           },
@@ -563,7 +565,7 @@ export function BudgetPage({
       : []),
     "separator",
     {
-      label: "Delete group…",
+      label: t("Delete group…"),
       icon: <Trash2 size={14} />,
       danger: true,
       onSelect: () => setDeleting({ kind: "group", name }),
@@ -574,7 +576,7 @@ export function BudgetPage({
     if (!to) return;
     const merging = realGroups.includes(to);
     edit((d) => renameGroup(d, name, to));
-    if (merging) undoToast(`Merged ${name} into ${to}.`);
+    if (merging) undoToast(t("Merged {name} into {to}.", { name, to }));
   };
   const addCategoryTo = (group: string, name: string | null) => {
     setAdding(null);
@@ -584,7 +586,7 @@ export function BudgetPage({
     setAddingGroup(false);
     if (!name) return;
     if (realGroups.includes(name)) {
-      toast({ message: `There is already a group called ${name}.`, tone: "error" });
+      toast({ message: t("There is already a group called {name}.", { name }), tone: "error" });
       return;
     }
     edit((d) => void addGroup(d, name));
@@ -592,12 +594,12 @@ export function BudgetPage({
   };
 
   const tabs: { id: View; label: string; count?: number }[] = [
-    { id: "all", label: "All" },
-    { id: "underfunded", label: "Underfunded", count: counts.underfunded },
-    { id: "overfunded", label: "Overfunded", count: counts.overfunded },
-    { id: "available", label: "Money available", count: counts.available },
-    { id: "overspent", label: "Overspent", count: counts.overspent },
-    { id: "snoozed", label: "Snoozed", count: counts.snoozed },
+    { id: "all", label: t("All") },
+    { id: "underfunded", label: t("Underfunded"), count: counts.underfunded },
+    { id: "overfunded", label: t("Overfunded"), count: counts.overfunded },
+    { id: "available", label: t("Money available"), count: counts.available },
+    { id: "overspent", label: t("Overspent"), count: counts.overspent },
+    { id: "snoozed", label: t("Snoozed"), count: counts.snoozed },
   ];
   // One toggle: collapse every group, or expand them all once they're collapsed.
   const foldable = groups.filter((g) => g.name !== HIDDEN_GROUP);
@@ -614,36 +616,36 @@ export function BudgetPage({
             <button
               ref={rtaButton}
               className={`rta ${tone(rta)}`}
-              title={rta >= 0 ? "Assign this money" : "Take money back from categories"}
-              onClick={() => setMover({ source: READY_TO_ASSIGN, name: "Unassigned", available: rta, anchor: rtaButton })}
+              title={rta >= 0 ? t("Assign this money") : t("Take money back from categories")}
+              onClick={() => setMover({ source: READY_TO_ASSIGN, name: t("Unassigned"), available: rta, anchor: rtaButton })}
             >
-              <span>Unassigned</span>
+              <span>{t("Unassigned")}</span>
               <strong>{money(rta, { symbol: true })}</strong>
               <small className="rta-hint">
                 {rta < 0
-                  ? "More is assigned than you have"
+                  ? t("More is assigned than you have")
                   : rta === 0
-                    ? "All of it is assigned"
-                    : "Select to assign"}
+                    ? t("All of it is assigned")
+                    : t("Select to assign")}
               </small>
             </button>
             <dl className="stats">
               <div>
-                <dt>Assigned</dt>
+                <dt>{t("Assigned")}</dt>
                 <dd>{money(summary.assigned)}</dd>
               </div>
               <div>
-                <dt title="Changes to category balances, including uncategorized spending and credit-card payment reserves. See Reports for spending totals.">Activity</dt>
+                <dt title={t("Changes to category balances, including uncategorized spending and credit-card payment reserves. See Reports for spending totals.")}>{t("Activity")}</dt>
                 <dd>{money(monthActivity)}</dd>
               </div>
               <div>
-                <dt>Available</dt>
+                <dt>{t("Available")}</dt>
                 <dd>{money(monthAvailable)}</dd>
               </div>
               {showAgeOfMoney && (
-                <div title="How long your money waits before you spend it: the average age, in days, of the money in your last 10 payments from cash accounts, spending the oldest money first. Until there are 10, the missing ones count as 0 days. An estimate.">
-                  <dt>Cash age</dt>
-                  <dd>{ageOfMoney === undefined ? "…" : ageOfMoney === null ? "—" : `${ageOfMoney} ${ageOfMoney === 1 ? "day" : "days"}`}</dd>
+                <div title={t("How long your money waits before you spend it: the average age, in days, of the money in your last 10 payments from cash accounts, spending the oldest money first. Until there are 10, the missing ones count as 0 days. An estimate.")}>
+                  <dt>{t("Cash age")}</dt>
+                  <dd>{ageOfMoney === undefined ? "…" : ageOfMoney === null ? "—" : tn(ageOfMoney, "{count} day", "{count} days")}</dd>
                 </div>
               )}
             </dl>
@@ -652,11 +654,11 @@ export function BudgetPage({
               money that came in later funds the later months, so a past month lists none. */}
           {(!!summary.futureAssigned || !!summary.futureShortfalls?.length) && (
             <div className={`notice${summary.futureShortfalls?.length ? " error" : ""}`}>
-              {!!summary.futureAssigned && <>Assigned in future months: {money(summary.futureAssigned, { symbol: true })}. </>}
+              {!!summary.futureAssigned && <>{t("Assigned in future months: {amount}.", { amount: money(summary.futureAssigned, { symbol: true }) })} </>}
               {summary.futureShortfalls?.length
-                ? <>{summary.futureShortfalls.map((s) => `${monthName(s.month)} is short by ${money(s.amount)}.`).join(" ")} Move funds back from a future month.</>
+                ? <>{summary.futureShortfalls.map((s) => t("{month} is short by {amount}.", { month: monthName(s.month), amount: money(s.amount) })).join(" ")} {t("Move funds back from a future month.")}</>
                 : (summary.futureAssigned ?? 0) > 0 && (summary.futureReadyToAssign ?? 0) + (summary.futureAssigned ?? 0) >= 0
-                  && "It is held back from this month's unassigned money."}
+                  && t("It is held back from this month's unassigned money.")}
             </div>
           )}
           {uncategorized.total > 0 && (
@@ -665,17 +667,20 @@ export function BudgetPage({
               <Info size={18} aria-hidden />
               <p>
                 <strong>
-                  {uncategorized.total === 1 ? "1 transaction needs" : `${uncategorized.total} transactions need`} a
-                  category
+                  {tn(uncategorized.total, "{count} transaction needs a category", "{count} transactions need a category")}
                 </strong>
                 <span>
-                  {money(uncategorized.amount, { symbol: true })} counts as overspending until{" "}
-                  {uncategorized.total === 1 ? "it has one" : "they have one"}.
+                  {tn(
+                    uncategorized.total,
+                    "{amount} counts as overspending until it has one.",
+                    "{amount} counts as overspending until they have one.",
+                    { amount: money(uncategorized.amount, { symbol: true }) },
+                  )}
                 </span>
               </p>
               {onOpenRegister && (
                 <button className="needs-banner-review" onClick={() => onOpenRegister({ accountId: "all", uncategorized: true })}>
-                  Review
+                  {t("Review")}
                   <ChevronRight size={15} aria-hidden />
                 </button>
               )}
@@ -683,35 +688,35 @@ export function BudgetPage({
           )}
           <div className="budget-toolbar">
             <Tabs<View>
-              label="Show categories"
+              label={t("Show categories")}
               value={view}
               onChange={setView}
-              tabs={tabs.filter((t) => t.id === "all" || t.id === view || t.count)}
+              tabs={tabs.filter((tab) => tab.id === "all" || tab.id === view || tab.count)}
             />
             <MonthNote budget={budget} month={month} edit={edit} />
             <span className="toolbar-buttons">
               <button
                 className="secondary"
-                title={folded ? "Show every group's categories" : "Show only group totals"}
+                title={folded ? t("Show every group's categories") : t("Show only group totals")}
                 onClick={foldAll}
               >
                 {folded ? <ChevronsUpDown size={15} /> : <ChevronsDownUp size={15} />}
-                {folded ? "Expand all" : "Collapse all"}
+                {folded ? t("Expand all") : t("Collapse all")}
               </button>
               <button className="secondary" onClick={() => setAddingGroup(true)}>
-                <FolderPlus size={15} /> Group
+                <FolderPlus size={15} /> {t("Group")}
               </button>
             </span>
           </div>
         </div>
-        <div className="budget-table" style={amountColumns} role="grid" aria-label="Monthly plan" aria-multiselectable>
+        <div className="budget-table" style={amountColumns} role="grid" aria-label={t("Monthly plan")} aria-multiselectable>
           <div className="budget-head" role="row">
             <span role="columnheader" className="row-gutter">
               {/* Selects every category on screen; a dash when only some are selected. */}
               <input
                 type="checkbox"
                 className="row-select"
-                aria-label="Select all categories"
+                aria-label={t("Select all categories")}
                 checked={allChosen}
                 disabled={!visibleOrder.length}
                 ref={(el) => {
@@ -722,19 +727,19 @@ export function BudgetPage({
             </span>
             <span role="columnheader" className="category-cell">
               <span className="category-name">
-                <span className="name">Category</span>
+                <span className="name">{t("Category")}</span>
                 <span />
-                <span className="row-status">Target</span>
+                <span className="row-status">{t("Target")}</span>
               </span>
             </span>
             <span role="columnheader" className="num">
-              Assigned
+              {t("Assigned")}
             </span>
             <span role="columnheader" className="num">
-              Activity
+              {t("Activity")}
             </span>
             <span role="columnheader" className="num">
-              Available
+              {t("Available")}
             </span>
             <span aria-hidden className="row-actions" />
           </div>
@@ -742,7 +747,7 @@ export function BudgetPage({
             <div className="group-row adding" role="row">
               <span className="row-gutter" />
               <div className="group-cell">
-                <NameInput value="" label="New group name" placeholder="New group name" onDone={addGroupNamed} />
+                <NameInput value="" label={t("New group name")} placeholder={t("New group name")} onDone={addGroupNamed} />
               </div>
             </div>
           )}
@@ -787,7 +792,7 @@ export function BudgetPage({
                     const before = delta < 0 ? realGroups[i - 1] : (realGroups[i + 2] ?? null);
                     edit((d) => moveGroup(d, name, before));
                   }}
-                  onMenu={(x, y) => setMenu({ x, y, label: `Actions for group ${name}`, items: groupMenu(name, categories) })}
+                  onMenu={(x, y) => setMenu({ x, y, label: t("Actions for group {name}", { name }), items: groupMenu(name, categories) })}
                 />
                 {!closed &&
                   categories.map((c) => (
@@ -821,8 +826,8 @@ export function BudgetPage({
                     <div className="category-cell">
                       <NameInput
                         value=""
-                        label={`New category in ${name}`}
-                        placeholder="New category name"
+                        label={t("New category in {name}", { name })}
+                        placeholder={t("New category name")}
                         onDone={(categoryName) => addCategoryTo(name, categoryName)}
                       />
                     </div>
@@ -831,7 +836,7 @@ export function BudgetPage({
                 {real && !closed && !categories.length && adding !== name && view === "all" && (
                   <div className="group-empty" role="row">
                     <button className="link-button" onClick={() => setAdding(name)}>
-                      <Plus size={13} /> Add a category
+                      <Plus size={13} /> {t("Add a category")}
                     </button>
                   </div>
                 )}
@@ -842,20 +847,20 @@ export function BudgetPage({
             <div className="empty-state compact">
               {view === "all" ? (
                 <>
-                  <p>Create a group, then categories for rent, groceries, saving, or anything you care about.</p>
+                  <p>{t("Create a group, then categories for rent, groceries, saving, or anything you care about.")}</p>
                   <button className="secondary" onClick={() => setAddingGroup(true)}>
-                    Add a group
+                    {t("Add a group")}
                   </button>
                 </>
               ) : (
-                <p>No categories match this view this month.</p>
+                <p>{t("No categories match this view this month.")}</p>
               )}
             </div>
           )}
           <div className="budget-total" role="row">
             <span className="row-gutter" />
             <span role="rowheader" className="category-cell">
-              Total
+              {t("Total")}
             </span>
             <span role="gridcell" className="num">
               {money(summary.assigned)}
@@ -870,7 +875,7 @@ export function BudgetPage({
           </div>
         </div>
       </div>
-      <aside className={`inspector${selected.length ? " open" : ""}`} aria-label="Details">
+      <aside className={`inspector${selected.length ? " open" : ""}`} aria-label={t("Details")}>
         <BudgetInspector
           budget={budget}
           summary={summary}
@@ -949,7 +954,7 @@ export function BudgetPage({
             edit((d) => deleteCategory(d, c.id, replacement));
             setSelected((s) => s.filter((id) => id !== c.id));
             setDeleting(null);
-            undoToast(`Deleted ${c.name}.`);
+            undoToast(t("Deleted {name}.", { name: c.name }));
           }}
         />
       )}
@@ -963,7 +968,7 @@ export function BudgetPage({
             const name = deleting.name;
             edit((d) => deleteGroup(d, name, moveTo));
             setDeleting(null);
-            undoToast(moveTo ? `Deleted ${name}; its categories moved to ${moveTo}.` : `Deleted ${name}.`);
+            undoToast(moveTo ? t("Deleted {name}; its categories moved to {group}.", { name, group: moveTo }) : t("Deleted {name}.", { name }));
           }}
         />
       )}
@@ -989,7 +994,7 @@ function DeleteCategory({
     budget.transactions.some((t) => t.splits.some((s) => s.categoryId === category.id)) ||
     budget.assignments.some((a) => a.categoryId === category.id);
   return (
-    <Modal title={`Delete ${category.name}?`} close={close}>
+    <Modal title={t("Delete {name}?", { name: category.name })} close={close}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -998,27 +1003,27 @@ function DeleteCategory({
       >
         {used ? (
           <label>
-            Move its transactions, scheduled transactions and assigned money to
+            {t("Move its transactions, scheduled transactions and assigned money to")}
             <CategoryPicker
               budget={budget}
               value={target}
               onChange={setTarget}
               available={available}
               exclude={category.id}
-              readyToAssign="Unassigned (release its money)"
+              readyToAssign={t("Unassigned (release its money)")}
               includeHidden
-              label="Move history to"
+              label={t("Move history to")}
             />
           </label>
         ) : (
-          <p>It has no transactions or assigned money.</p>
+          <p>{t("It has no transactions or assigned money.")}</p>
         )}
         <div className="modal-actions">
           <button type="button" className="secondary" onClick={close}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button className="danger" disabled={!target}>
-            Delete category
+            {t("Delete category")}
           </button>
         </div>
       </form>
@@ -1041,7 +1046,7 @@ function DeleteGroup({
 }) {
   const [moveTo, setMoveTo] = useState(groups[0] ?? "");
   return (
-    <Modal title={`Delete ${name}?`} close={close}>
+    <Modal title={t("Delete {name}?", { name })} close={close}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -1051,7 +1056,7 @@ function DeleteGroup({
         {count ? (
           groups.length ? (
             <label>
-              Move its {count} {count === 1 ? "category" : "categories"} to
+              {tn(count, "Move its {count} category to", "Move its {count} categories to")}
               <select value={moveTo} onChange={(e) => setMoveTo(e.target.value)}>
                 {groups.map((g) => (
                   <option key={g}>{g}</option>
@@ -1059,17 +1064,17 @@ function DeleteGroup({
               </select>
             </label>
           ) : (
-            <p>This is the only group. Create another group first, or delete its categories.</p>
+            <p>{t("This is the only group. Create another group first, or delete its categories.")}</p>
           )
         ) : (
-          <p>The group is empty.</p>
+          <p>{t("The group is empty.")}</p>
         )}
         <div className="modal-actions">
           <button type="button" className="secondary" onClick={close}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button className="danger" disabled={!!count && !groups.length}>
-            Delete group
+            {t("Delete group")}
           </button>
         </div>
       </form>

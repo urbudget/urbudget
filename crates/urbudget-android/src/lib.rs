@@ -2,8 +2,8 @@
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use urbudget_core::{
-    bank_csv, bank_import, bank_statement, domain, engine, ledger, loans, patch, reports, schedules, workflows,
-    ynab, ynab_files,
+    bank_csv, bank_import, bank_statement, domain, engine, ledger, loans, patch, reports, schedules, t,
+    workflows, ynab, ynab_files,
 };
 
 const API_VERSION: u32 = 1;
@@ -125,7 +125,7 @@ fn apply_workflow(
     let reference =
         optional::<String>(params, "asOfMonth")?.unwrap_or_else(|| current_month.to_owned());
     if !domain::valid_month(&reference) {
-        return Err("Invalid calculation reference month.".into());
+        return Err(t!("Invalid calculation reference month."));
     }
     // Never let a saved/imported reference or an old preview bypass the calendar
     // guard. Android supplies the instant at which it prepared this request.
@@ -134,10 +134,9 @@ fn apply_workflow(
             .get("expectedAsOfMonth")
             .is_some_and(|expected| expected.as_str() != Some(current_month))
     {
-        return Err(
+        return Err(t!(
             "The calendar month changed. Refresh the Quick assign preview before applying it."
-                .into(),
-        );
+        ));
     }
     let previous = budget
         .extra
@@ -387,27 +386,30 @@ fn dispatch(request: Request) -> Result<Value, String> {
     }
 }
 
+/// A new budget to look around in. Its names become the person's data, so they're written in
+/// the language in use when it's made (the ids stay the same in every language).
 fn sample_budget(params: &Value) -> Result<domain::Budget, String> {
     let month: String = required(params, "month")?;
     if !domain::valid_month(&month) {
-        return Err("Invalid sample budget month".into());
+        return Err(t!("Invalid sample budget month"));
     }
-    let name = optional::<String>(params, "name")?.unwrap_or_else(|| "Sample budget".into());
+    let name = optional::<String>(params, "name")?.unwrap_or_else(|| t!("Sample budget"));
     let currency = optional::<String>(params, "currency")?.unwrap_or_else(|| "SAR".into());
+    let everyday = t!("Everyday");
     serde_json::from_value(json!({
         "schemaVersion": 2, "name": name, "currency": currency,
-        "accounts": [{"id":"sample-checking","name":"Checking","kind":"cash","openingBalance":500000,"archived":false}],
+        "accounts": [{"id":"sample-checking","name":t!("Checking"),"kind":"cash","openingBalance":500000,"archived":false}],
         "categories": [
-            {"id":"sample-groceries","name":"Groceries","group":"Everyday","target":60000},
-            {"id":"sample-transport","name":"Transport","group":"Everyday","target":20000},
-            {"id":"sample-emergency","name":"Emergency fund","group":"Savings","target":100000}
+            {"id":"sample-groceries","name":t!("Groceries"),"group":everyday,"target":60000},
+            {"id":"sample-transport","name":t!("Transport"),"group":everyday,"target":20000},
+            {"id":"sample-emergency","name":t!("Emergency fund"),"group":t!("Savings"),"target":100000}
         ],
         "assignments": [
             {"month":month,"categoryId":"sample-groceries","amount":60000},
             {"month":month,"categoryId":"sample-transport","amount":20000},
             {"month":month,"categoryId":"sample-emergency","amount":100000}
         ],
-        "transactions": [{"id":"sample-market","date":format!("{month}-01"),"accountId":"sample-checking","payee":"Neighborhood market","memo":"Sample purchase","amount":-12500,"status":"cleared","splits":[{"categoryId":"sample-groceries","amount":-12500}],"transferAccountId":null,"transferStatus":null}]
+        "transactions": [{"id":"sample-market","date":format!("{month}-01"),"accountId":"sample-checking","payee":t!("Neighborhood market"),"memo":t!("Sample purchase"),"amount":-12500,"status":"cleared","splits":[{"categoryId":"sample-groceries","amount":-12500}],"transferAccountId":null,"transferStatus":null}]
     })).map_err(|error| error.to_string())
 }
 
@@ -422,7 +424,7 @@ pub fn invoke_json(input: &str) -> String {
             .map_err(|error| format!("Invalid engine request: {error}"))?;
         dispatch(request)
     })
-    .unwrap_or_else(|_| Err("The engine could not complete this request".into()));
+    .unwrap_or_else(|_| Err(t!("The engine could not complete this request")));
     match result {
         Ok(value) => json!({"ok":true,"value":value}).to_string(),
         Err(error) => json!({"ok":false,"error":error}).to_string(),
@@ -498,6 +500,6 @@ pub extern "system" fn Java_app_urbudget_nativeapp_NativeBridge_service(
         if request.version != API_VERSION { return Err("Unsupported service version".into()); }
         let runtime = SERVICES.get().ok_or("Initialize the native services first.")?;
         urbudget_services::block_on(runtime.dispatch(&request.method, request.params))
-    })).unwrap_or_else(|_| Err("The service could not complete this request.".into()));
+    })).unwrap_or_else(|_| Err(t!("The service could not complete this request.")));
     env.new_string(native_result(result)).map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut())
 }

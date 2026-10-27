@@ -1,6 +1,7 @@
 // Number, currency and date display for the open budget. Formatting is hand-rolled
 // (not Intl per call) because tables format thousands of amounts.
 import { today } from "./types";
+import { ltr, monthNames, stripIsolates, t, weekdayNames } from "./i18n";
 export type NumberFormat = {
   decimal: "." | ",";
   group: "," | "." | " " | "'" | "";
@@ -99,28 +100,31 @@ export function money(value: number, options?: {
   const currency = options?.currency === undefined ? active.currency : options.currency;
   const cents = Math.round(Math.abs(value));
   const text = `${value < 0 && cents ? "-" : ""}${grouped(Math.floor(cents / 100), group)}${decimal}${String(cents % 100).padStart(2, "0")}`;
-  if (options?.symbol === false || symbol === "none" || currency === null) return text;
+  // In Arabic an amount keeps its left-to-right order: "-1,234.56 SAR", never "SAR 1,234.56-".
+  if (options?.symbol === false || symbol === "none" || currency === null) return ltr(text);
   const sign = currencySymbol(currency);
   const prefix = sign === currency ? `${sign} ` : sign;
-  return symbol === "before"
-    ? text.startsWith("-")
-      ? `-${prefix}${text.slice(1)}`
-      : `${prefix}${text}`
-    : `${text} ${sign}`;
+  return ltr(
+    symbol === "before"
+      ? text.startsWith("-")
+        ? `-${prefix}${text.slice(1)}`
+        : `${prefix}${text}`
+      : `${text} ${sign}`,
+  );
 }
-/** "2026-10-15" in the budget's date format. */
+/** "2026-10-15" in the budget's date format (whatever the app's language), kept left to right. */
 export function formatDate(iso: string) {
   const [y, m, d] = iso.split("-");
   if (!d) return iso;
   switch (active.date) {
     case "dmy":
-      return `${d}/${m}/${y}`;
+      return ltr(`${d}/${m}/${y}`);
     case "mdy":
-      return `${m}/${d}/${y}`;
+      return ltr(`${m}/${d}/${y}`);
     case "dmmmy":
-      return `${Number(d)} ${MONTHS[Number(m) - 1]} ${y}`;
+      return ltr(`${Number(d)} ${MONTHS[Number(m) - 1]} ${y}`);
     default:
-      return iso;
+      return ltr(iso);
   }
 }
 const pad2 = (n: number) => String(n).padStart(2, "0");
@@ -143,7 +147,7 @@ export function shiftDate(iso: string, days: number, months = 0) {
  * Returns null when it isn't a date.
  */
 export function parseDate(text: string, base: string, format: DateFormat = active.date): string | null {
-  const t = text.trim().toLowerCase();
+  const t = stripIsolates(text).trim().toLowerCase();
   if (!t) return null;
   if (t === "today" || t === "t") return today();
   if (t === "yesterday" || t === "y") return shiftDate(new Date().toLocaleDateString("en-CA"), -1);
@@ -163,18 +167,27 @@ export function parseDate(text: string, base: string, format: DateFormat = activ
   const [a, b2, y] = parts;
   return format === "mdy" ? isoOf(year(y), Number(a), Number(b2)) : isoOf(year(y), Number(b2), Number(a));
 }
-/** "2026-10" to "October 2026" (or "Oct 2026"). */
-export const monthName = (month: string, style: "long" | "short" = "long") =>
-  new Date(`${month}-02T12:00:00`).toLocaleDateString("en-GB", {
+/** "2026-10" to "October 2026" (or "Oct 2026"); Arabic has no short month names. */
+export const monthName = (month: string, style: "long" | "short" = "long") => {
+  const names = monthNames();
+  if (names) return `${names[Number(month.slice(5, 7)) - 1]} ${month.slice(0, 4)}`;
+  return new Date(`${month}-02T12:00:00`).toLocaleDateString("en-GB", {
     month: style,
     year: "numeric",
   });
+};
 /** "2026-10-15" as a heading: "Today", "Yesterday", "Tomorrow", or "Thu, 15 Oct" (with the year when it isn't this one). */
 export function dayName(iso: string) {
   const now = today();
-  if (iso === now) return "Today";
-  if (iso === shiftDate(now, -1)) return "Yesterday";
-  if (iso === shiftDate(now, 1)) return "Tomorrow";
+  if (iso === now) return t("Today");
+  if (iso === shiftDate(now, -1)) return t("Yesterday");
+  if (iso === shiftDate(now, 1)) return t("Tomorrow");
+  const months = monthNames(), weekdays = weekdayNames();
+  if (months && weekdays) {
+    const date = new Date(`${iso}T12:00:00`);
+    const year = iso.slice(0, 4) === now.slice(0, 4) ? "" : ` ${iso.slice(0, 4)}`;
+    return `${weekdays[date.getDay()]}، ${date.getDate()} ${months[date.getMonth()]}${year}`;
+  }
   return new Date(`${iso}T12:00:00`).toLocaleDateString("en-GB", {
     weekday: "short",
     day: "numeric",
@@ -184,6 +197,7 @@ export function dayName(iso: string) {
 }
 /** "2026-10" to "October". */
 export const monthOnly = (month: string) =>
+  monthNames()?.[Number(month.slice(5, 7)) - 1] ??
   new Date(`${month}-02T12:00:00`).toLocaleDateString("en-GB", { month: "long" });
 /** 1 to "1st", 22 to "22nd", 13 to "13th". */
 export const ordinal = (n: number) =>
@@ -192,7 +206,8 @@ export const ordinal = (n: number) =>
 export const deadline = (iso: string) => {
   const day = Number(iso.slice(8, 10));
   const month = monthOnly(iso.slice(0, 7));
-  return active.date === "mdy" ? `${month} ${ordinal(day)}` : `${day} ${month}`;
+  // Arabic writes the day first whatever the budget's date order: "1 أكتوبر".
+  return active.date === "mdy" && !monthNames() ? `${month} ${ordinal(day)}` : `${day} ${month}`;
 };
 export const shiftMonth =(month: string, delta: number) => {
   const d = new Date(`${month}-02T12:00:00`);
@@ -214,19 +229,18 @@ export const errorText = (e: unknown) =>
  */
 export const editableAmount = (cents: number) => (cents / 100).toFixed(2).replace(".", active.number.decimal);
 
-const AMOUNT_HELP = "Enter an amount like 12.50, or math like 10+2.50.";
 /**
  * Evaluates an amount a person typed, in cents: "1,234.50", "12 + 3.5", "(10+5)*2", "-20".
  * Literals keep at most two decimals; only multiplication and division round.
  */
 export function evaluateAmount(text: string, decimal: "." | "," = active.number.decimal): number {
-  let s = text.replace(/[\s']/g, "");
+  let s = stripIsolates(text).replace(/[\s']/g, "");
   if (!s) return 0;
   s = decimal === "." ? s.replace(/,/g, "") : s.replace(/\./g, "").replace(/,/g, ".");
   const tokens = s.match(/\d+(?:\.\d*)?|\.\d+|[-+*/()]|./g) ?? [];
   let i = 0;
   const fail = () => {
-    throw new Error(AMOUNT_HELP);
+    throw new Error(t("Enter an amount like 12.50, or math like 10+2.50."));
   };
   // Values are cents as floats: + and - stay exact; * and / rescale.
   const primary = (): number => {
@@ -262,6 +276,6 @@ export function evaluateAmount(text: string, decimal: "." | "," = active.number.
   if (i !== tokens.length || !Number.isFinite(value)) fail();
   const cents = Math.sign(value) * Math.round(Math.abs(value));
   if (!Number.isSafeInteger(cents) || Math.abs(cents) > 1_000_000_000_000)
-    throw new Error("Amount is too large.");
+    throw new Error(t("Amount is too large."));
   return cents === 0 ? 0 : cents;
 }

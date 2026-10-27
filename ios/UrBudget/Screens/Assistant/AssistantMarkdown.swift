@@ -216,8 +216,13 @@ enum AssistantMarkdown {
     /// The report as a self-contained HTML page for the print system. Every piece of text is
     /// escaped, so a reply can't add markup, scripts or remote images.
     static func html(title: String, meta: String, body: String) -> String {
+        // An Arabic app prints right to left: quote bars and list indents move to the right.
+        let rtl = AppLanguage.isRightToLeft
+        let rtlStyle = rtl ? " blockquote { border-left: none; padding-left: 0; border-right: 2pt solid #999; padding-right: 8pt; }" : ""
+        let direction = rtl ? " dir='rtl'" : ""
+        let indentSide = rtl ? "margin-right" : "margin-left"
         var out = """
-        <!doctype html><html><head><meta charset="utf-8"><style>
+        <!doctype html><html\(direction)><head><meta charset="utf-8"><style>
         body { font-family: -apple-system, Helvetica, sans-serif; font-size: 11pt; color: #000; line-height: 1.35; }
         h1 { font-size: 19pt; margin: 0 0 4pt; } h2 { font-size: 14pt; margin: 14pt 0 4pt; }
         h3, h4, h5, h6 { font-size: 12pt; margin: 12pt 0 3pt; }
@@ -230,7 +235,7 @@ enum AssistantMarkdown {
         pre { font-family: Menlo, monospace; font-size: 9pt; background: #f2f2f2; padding: 6pt; white-space: pre-wrap; }
         code { font-family: Menlo, monospace; font-size: 9.5pt; }
         blockquote { border-left: 2pt solid #999; margin: 6pt 0; padding-left: 8pt; color: #333; }
-        hr { border: none; border-top: 0.5pt solid #999; margin: 10pt 0; }
+        hr { border: none; border-top: 0.5pt solid #999; margin: 10pt 0; }\(rtlStyle)
         </style></head><body>
         """
         out += "<h1>\(escape(title))</h1>"
@@ -244,7 +249,7 @@ enum AssistantMarkdown {
             case "rule": out += "<hr>"
             case "quote": out += "<blockquote>\(inlineHTML(block.text))</blockquote>"
             case "item":
-                out += "<p class=\"item\" style=\"margin-left: \(block.level * 14)pt\"><span class=\"marker\">\(escape(block.marker))</span>\(inlineHTML(block.text))</p>"
+                out += "<p class=\"item\" style=\"\(indentSide): \(block.level * 14)pt\"><span class=\"marker\">\(escape(block.marker))</span>\(inlineHTML(block.text))</p>"
             case "table":
                 out += "<table><thead><tr>"
                 for (column, cell) in (block.rows.first ?? []).enumerated() {
@@ -266,10 +271,11 @@ enum AssistantMarkdown {
     }
 
     private static func cssAlignment(_ block: AssistantMarkdownBlock, _ column: Int) -> String {
+        let rtl = AppLanguage.isRightToLeft
         switch column < block.alignments.count ? block.alignments[column] : "leading" {
         case "center": return "center"
-        case "trailing": return "right"
-        default: return "left"
+        case "trailing": return rtl ? "left" : "right"
+        default: return rtl ? "right" : "left"
         }
     }
 
@@ -363,9 +369,11 @@ struct AssistantMarkdownBlockView: View {
                 .padding(.top, 4)
                 .accessibilityAddTraits(.isHeader)
         case "code":
+            // Code reads left to right in every language.
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(block.text).font(.footnote.monospaced()).padding(10).textSelection(.enabled)
             }
+            .environment(\.layoutDirection, .leftToRight)
             .background(Color.insetBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         case "rule":
             Divider().padding(.vertical, 2)
@@ -461,8 +469,8 @@ private struct AssistantTableView: View {
 struct AssistantPager: View {
     var page: Int
     var pages: Int
-    var previous = "Previous"
-    var next = "Next"
+    var previous = String(localized: "Previous")
+    var next = String(localized: "Next")
     var select: (Int) -> Void
 
     var body: some View {

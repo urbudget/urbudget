@@ -98,8 +98,9 @@ extension BudgetStore {
         var rule = learned
         rule["id"] = .string(UUID().uuidString.lowercased())
         let offer = rule
-        showToast("Always use \(rule.text("payee")) for bank payees with “\(rule.text("match"))”?",
-                  action: ToastAction(label: "Add rule") { self.addPayeeRule(offer) })
+        let payee = rule.text("payee"), match = rule.text("match")
+        showToast(String(localized: "Always use \(payee) for bank payees with “\(match)”?"),
+                  action: ToastAction(label: String(localized: "Add rule")) { self.addPayeeRule(offer) })
     }
 
     private func addPayeeRule(_ rule: JSON) {
@@ -116,10 +117,10 @@ extension BudgetStore {
                     budget.flatMap { try? PayeeRulePreview.changes(budget: $0, only: [id]) } ?? 0
                 }.value
                 if others > 0 {
-                    showToast("Rule added. Apply it to \(PayeeText.plural(others, "earlier transaction")) too?",
-                              action: ToastAction(label: "Apply") { self.reapplyPayeeRule(id, count: others) })
+                    showToast(Self.applyRuleOffer(others),
+                              action: ToastAction(label: String(localized: "Apply")) { self.reapplyPayeeRule(id, count: others) })
                 } else {
-                    showToast("Rule added.", undo: true)
+                    showToast(String(localized: "Rule added."), undo: true)
                 }
             } catch {
                 self.error = Self.readable(error)
@@ -129,7 +130,21 @@ extension BudgetStore {
 
     private func reapplyPayeeRule(_ id: String, count: Int) {
         workflow(["type": "reapplyPayeeRules", "ruleIds": JSON([id])]) {
-            self.showToast("Updated \(PayeeText.plural(count, "transaction")).", undo: true)
+            self.showToast(Self.updatedText(count), undo: true)
         }
+    }
+
+    /// "Rule added. Apply it to 3 earlier transactions too?", grouped from 1,000 as counts always were.
+    private static func applyRuleOffer(_ count: Int) -> String {
+        if count < 1000 { return String(localized: "Rule added. Apply it to \(count) earlier transactions too?", locale: .app) }
+        let grouped = count.formatted(.number.locale(.app))
+        return String(localized: "Rule added. Apply it to \(grouped) earlier transactions too?")
+    }
+
+    /// "Updated 3 transactions.", grouped from 1,000 as counts always were.
+    private static func updatedText(_ count: Int) -> String {
+        if count < 1000 { return String(localized: "Updated \(count) transactions.", locale: .app) }
+        let grouped = count.formatted(.number.locale(.app))
+        return String(localized: "Updated \(grouped) transactions.")
     }
 }

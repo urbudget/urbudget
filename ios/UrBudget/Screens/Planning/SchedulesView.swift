@@ -38,19 +38,20 @@ private struct ScheduleListModel {
             if !t.text("transferAccountId").isEmpty && splits.allSatisfy({ $0.text("categoryId").isEmpty && !$0.flag("unassigned") }) {
                 category = nil
             } else if splits.count > 1 {
-                category = "Split"
+                category = String(localized: "category.split", defaultValue: "Split", comment: "In place of a category: the transaction is split.")
             } else if splits.first?.flag("unassigned") == true {
-                category = "Unassigned"
+                category = String(localized: "Unassigned")
             } else {
                 category = splits.first.flatMap { categories[$0.text("categoryId")] }
             }
             let frequency = schedule.text("frequency")
-            let when = next.isEmpty ? "Finished" : (due ? "Due " : "") + Money.date(next)
+            let date = Money.date(next)
+            let when = next.isEmpty ? String(localized: "Finished") : due ? String(localized: "Due \(date)") : date
             let title = t.text("payee").isEmpty
-                ? accounts[t.text("transferAccountId")].map { "Transfer: \($0)" } ?? "Scheduled transaction"
+                ? accounts[t.text("transferAccountId")].map { String(localized: "Transfer: \($0)") } ?? String(localized: "Scheduled transaction")
                 : t.text("payee")
             return ScheduleItem(id: schedule.text("id"), schedule: schedule, title: title,
-                                subtitle: [when, ScheduleFrequency.label(frequency), accounts[t.text("accountId")], category].compactMap { $0 }.joined(separator: " · "),
+                                subtitle: planningJoined([when, ScheduleFrequency.label(frequency), accounts[t.text("accountId")], category].compactMap { $0 }, separator: " · "),
                                 amount: t.long("amount"), due: due, paused: paused, once: !ScheduleFrequency.repeats(frequency), next: next)
         }
         let all = budget.rows("schedules")
@@ -85,8 +86,9 @@ struct SchedulesView: View {
         let model = ScheduleListModel(budget: store.budget ?? [:], today: Dates.today)
         List {
             if model.isEmpty {
-                EmptyState(title: "Nothing scheduled", detail: "Add a transaction with a later date, or choose how often it repeats, and it waits here.",
-                           symbol: "calendar.badge.clock", action: "Add schedule") { editing = ScheduleEditorRequest() }
+                EmptyState(title: String(localized: "Nothing scheduled"),
+                           detail: String(localized: "Add a transaction with a later date, or choose how often it repeats, and it waits here."),
+                           symbol: "calendar.badge.clock", action: String(localized: "Add schedule")) { editing = ScheduleEditorRequest() }
                     .listRowBackground(Color.clear)
             } else {
                 Section {
@@ -101,7 +103,8 @@ struct SchedulesView: View {
                     Button {
                         let due = model.due
                         store.runCommand("applySchedules", ["through": .string(Dates.today)]) {
-                            store.showToast(due.count == 1 ? "Entered \(due[0].title)." : "Entered the \(due.count) schedules that were due.", undo: true)
+                            store.showToast(due.count == 1 ? String(localized: "Entered \(due[0].title).")
+                                            : String(localized: "Entered the \(due.count) schedules that were due.", locale: .app), undo: true)
                         }
                     } label: {
                         Label(model.due.count == 1 ? "Enter the one that's due" : "Enter all \(model.due.count) due", systemImage: "arrow.down.to.line")
@@ -139,7 +142,7 @@ struct SchedulesView: View {
         .confirmationDialog("Delete this schedule?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
                             titleVisibility: .visible, presenting: deleting) { item in
             Button("Delete", role: .destructive) {
-                store.remove("schedules", id: item.id) { store.showToast("Deleted the schedule for \(item.title).", undo: true) }
+                store.remove("schedules", id: item.id) { store.showToast(String(localized: "Deleted the schedule for \(item.title)."), undo: true) }
             }
         } message: { item in
             Text("\(item.title) won't be entered again. Transactions it already entered stay. You can undo this.")
@@ -149,18 +152,24 @@ struct SchedulesView: View {
     private func summary(_ summary: ScheduleSummary, _ currency: String) -> some View {
         Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 12) {
             GridRow {
-                Figure(label: "Scheduled", value: "\(summary.active)" + (summary.paused > 0 ? " · \(summary.paused) paused" : ""))
+                Figure(label: String(localized: "Scheduled"), value: scheduledCount(summary))
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Figure(label: "Due in 30 days", value: "\(summary.dueSoon)").frame(maxWidth: .infinity, alignment: .leading)
+                Figure(label: String(localized: "Due in 30 days"), value: "\(summary.dueSoon)").frame(maxWidth: .infinity, alignment: .leading)
             }
             GridRow {
-                Figure(label: "Going out", value: money(summary.goingOut, currency)).frame(maxWidth: .infinity, alignment: .leading)
-                Figure(label: "Coming in", value: money(summary.comingIn, currency), color: summary.comingIn > 0 ? .urPositive : .primary)
+                Figure(label: String(localized: "Going out"), value: money(summary.goingOut, currency)).frame(maxWidth: .infinity, alignment: .leading)
+                Figure(label: String(localized: "Coming in"), value: money(summary.comingIn, currency), color: summary.comingIn > 0 ? .urPositive : .primary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
+    }
+
+    /// "4", or "4 · 1 paused" with paused ones.
+    private func scheduledCount(_ summary: ScheduleSummary) -> String {
+        guard summary.paused > 0 else { return "\(summary.active)" }
+        return String(localized: "\(summary.active) · \(summary.paused) paused", locale: .app)
     }
 
     private func row(_ item: ScheduleItem, _ currency: String) -> some View {
@@ -173,7 +182,7 @@ struct SchedulesView: View {
                     Text(item.subtitle).font(.footnote).foregroundStyle(item.due ? Color.urWarning : .secondary).lineLimit(2)
                 }
                 Spacer(minLength: 8)
-                Text((item.amount > 0 ? "+" : "") + money(item.amount, currency)).monospacedDigit().fontWeight(.semibold)
+                Text(AppLanguage.leftToRight((item.amount > 0 ? "+" : "") + money(item.amount, currency))).monospacedDigit().fontWeight(.semibold)
                     .foregroundStyle(item.amount > 0 ? Color.urPositive : .primary)
             }
             .opacity(item.paused || item.next.isEmpty ? 0.6 : 1)
@@ -206,19 +215,22 @@ struct SchedulesView: View {
 
     private func enter(_ item: ScheduleItem) {
         store.runCommand("applySchedules", ["through": .string(Dates.today), "selected": .string(item.id)]) {
-            store.showToast("Entered \(item.title).", undo: true)
+            store.showToast(String(localized: "Entered \(item.title)."), undo: true)
         }
     }
 
     private func skip(_ item: ScheduleItem) {
+        let date = Money.date(item.next)
         store.runCommand("applySchedules", ["through": .string(Dates.today), "selected": .string(item.id), "skip": true]) {
-            store.showToast(item.once ? "Skipped \(item.title). It won't be entered." : "Skipped \(item.title) on \(Money.date(item.next)).", undo: true)
+            store.showToast(item.once ? String(localized: "Skipped \(item.title). It won't be entered.")
+                            : String(localized: "Skipped \(item.title) on \(date)."), undo: true)
         }
     }
 
     private func pause(_ item: ScheduleItem) {
         store.upsert("schedules", ["id": .string(item.id), "paused": .bool(!item.paused)]) {
-            store.showToast(item.paused ? "Resumed \(item.title)." : "Paused \(item.title). It won't be entered until you resume it.", undo: true)
+            store.showToast(item.paused ? String(localized: "Resumed \(item.title).")
+                            : String(localized: "Paused \(item.title). It won't be entered until you resume it."), undo: true)
         }
     }
 }

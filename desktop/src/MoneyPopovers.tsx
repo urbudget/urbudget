@@ -3,6 +3,7 @@ import { CategoryPicker, Popover, READY_TO_ASSIGN } from "./ui";
 import { editableAmount, errorText, evaluateAmount, money } from "./format";
 import type { Budget } from "./types";
 import { AppliedChangeError } from "./useBudget";
+import { t } from "./i18n";
 
 /**
  * Move funds into or out of a category (or assign unassigned money).
@@ -38,10 +39,12 @@ export function MoveMoneyPopover({
   const [retrySave, setRetrySave] = useState<(() => Promise<void>) | null>(null);
   const withReady = new Map(balances).set(READY_TO_ASSIGN, readyToAssign);
   const title = fromReady
-    ? "Assign money"
+    ? t("Assign money")
     : available < 0 && direction === "in"
-      ? `Cover overspending in ${sourceName}`
-      : `Move funds ${direction === "out" ? "from" : "to"} ${sourceName}`;
+      ? t("Cover overspending in {name}", { name: sourceName })
+      : direction === "out"
+        ? t("Move funds from {name}", { name: sourceName })
+        : t("Move funds to {name}", { name: sourceName });
   return (
     <Popover open onClose={onClose} anchor={anchor} placement="bottom-end" label={title} className="money-popover">
       <form
@@ -56,8 +59,8 @@ export function MoveMoneyPopover({
               return;
             }
             const cents = evaluateAmount(amount);
-            if (cents <= 0) throw new Error("Enter an amount above zero.");
-            if (!other) throw new Error(direction === "out" ? "Choose where the money goes." : "Choose where the money comes from.");
+            if (cents <= 0) throw new Error(t("Enter an amount above zero."));
+            if (!other) throw new Error(direction === "out" ? t("Choose where the money goes.") : t("Choose where the money comes from."));
             setBusy(true);
             await onMove(direction === "out" ? source : other, direction === "out" ? other : source, cents);
             onClose();
@@ -71,17 +74,17 @@ export function MoveMoneyPopover({
         <strong className="popover-title">{title}</strong>
         <fieldset disabled={busy || !!retrySave} style={{ border: 0, padding: 0, margin: 0, minWidth: 0, display: "grid", gap: 12 }}>
         {!fromReady && (
-          <div className="segmented small" role="radiogroup" aria-label="Direction">
+          <div className="segmented small" role="radiogroup" aria-label={t("Direction")}>
             <button type="button" role="radio" aria-checked={direction === "out"} className={direction === "out" ? "selected" : ""} onClick={() => setDirection("out")}>
-              Move to…
+              {t("Move to…")}
             </button>
             <button type="button" role="radio" aria-checked={direction === "in"} className={direction === "in" ? "selected" : ""} onClick={() => setDirection("in")}>
-              {available < 0 ? "Cover from…" : "Take from…"}
+              {available < 0 ? t("Cover from…") : t("Take from…")}
             </button>
           </div>
         )}
         <label>
-          Amount
+          {t("Amount")}
           <input
             autoFocus
             inputMode="decimal"
@@ -91,15 +94,15 @@ export function MoveMoneyPopover({
           />
         </label>
         <label>
-          {direction === "out" ? "To" : "From"}
+          {direction === "out" ? t("To") : t("From")}
           <CategoryPicker
             budget={budget}
             value={other}
             onChange={setOther}
             available={withReady}
-            readyToAssign={fromReady ? false : `Unassigned (${money(readyToAssign)})`}
+            readyToAssign={fromReady ? false : t("Unassigned ({amount})", { amount: money(readyToAssign) })}
             exclude={fromReady ? undefined : source}
-            label={direction === "out" ? "Move to" : "Take from"}
+            label={direction === "out" ? t("Move to") : t("Take from")}
           />
         </label>
         </fieldset>
@@ -110,10 +113,10 @@ export function MoveMoneyPopover({
         )}
         <div className="modal-actions">
           <button type="button" className="secondary" onClick={onClose}>
-            {retrySave ? "Close (draft kept)" : "Cancel"}
+            {retrySave ? t("Close (draft kept)") : t("Cancel")}
           </button>
           <button className="primary" disabled={busy}>
-            {retrySave ? "Retry saving" : fromReady ? "Assign" : "Move"}
+            {retrySave ? t("Retry saving") : fromReady ? t("Assign") : t("Move")}
           </button>
         </div>
       </form>

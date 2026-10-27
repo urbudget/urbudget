@@ -19,64 +19,17 @@ struct MoreView: View {
     }
 
     var body: some View {
-        let budget = store.budget ?? [:]
         NavigationStack(path: $path) {
+            // One small function per section keeps the list quick to type-check.
             List {
-                Section {
-                    NavigationLink(value: MoreRoute.library) {
-                        HStack(spacing: 12) {
-                            Text(initials(budget.text("name")))
-                                .font(.headline).foregroundStyle(.white)
-                                .frame(width: 44, height: 44)
-                                .background(Color.urAccent, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(budget.text("name")).font(.headline)
-                                Text("\(budget.text("currency")) · Switch or manage budgets").font(.footnote).foregroundStyle(Color.secondary)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
-                Section {
-                    NavigationLink(value: MoreRoute.sync) {
-                        MoreRow(title: "Account & sync", detail: syncDetail, symbol: "arrow.triangle.2.circlepath.icloud", tint: .urAccent,
-                                badge: sync.conflicts)
-                    }
-                    Button { sheet = .assistant } label: {
-                        MoreRow(title: "Assistant", detail: "Ask about your budget and review its changes", symbol: "sparkles", tint: .urBrand)
-                    }
-                    .foregroundStyle(Color.primary)
-                }
-                Section("Planning") {
-                    NavigationLink(value: MoreRoute.schedules) {
-                        MoreRow(title: "Scheduled", detail: "Bills, income and repeating transactions", symbol: "calendar.badge.clock", tint: .urAccent)
-                    }
-                    NavigationLink(value: MoreRoute.loans) {
-                        MoreRow(title: "Loan planner", detail: "Payoff dates and extra payments", symbol: "percent", tint: .urWarning)
-                    }
-                    NavigationLink(value: MoreRoute.payees) {
-                        MoreRow(title: "Payees & rules", detail: "Default categories and import rules", symbol: "person.2", tint: .urPositive)
-                    }
-                    NavigationLink(value: RegisterTarget(category: NeedsCategory)) {
-                        MoreRow(title: "Needs a category", detail: "Spending still waiting for a category", symbol: "tag", tint: .urWarning)
-                    }
-                }
-                Section("Bring in transactions") {
-                    NavigationLink(value: MoreRoute.banks) {
-                        MoreRow(title: "Bank connections", detail: "Link accounts and review downloads", symbol: "building.columns", tint: .urAccent)
-                    }
-                    Button { sheet = .bankImport } label: {
-                        MoreRow(title: "Import bank file", detail: "CSV, OFX, QFX or QIF, reviewed first", symbol: "doc.badge.arrow.up", tint: .urAccent)
-                    }
-                    .foregroundStyle(Color.primary)
-                    Button { sheet = .ynabImport } label: {
-                        MoreRow(title: "Import from YNAB", detail: "From YNAB's API or its export files", symbol: "square.and.arrow.down.on.square", tint: .urAccent)
-                    }
-                    .foregroundStyle(Color.primary)
-                }
+                budgetSection(store.budget ?? [:])
+                accountSection
+                planningSection
+                importSection
                 Section {
                     NavigationLink(value: MoreRoute.settings) {
-                        MoreRow(title: "Settings & data", detail: "Backups, imports, formats and appearance", symbol: "gearshape", tint: .secondary)
+                        MoreRow(title: String(localized: "Settings & data"), detail: String(localized: "Backups, imports, formats and appearance"),
+                                symbol: "gearshape", tint: .secondary)
                     }
                 }
             }
@@ -106,10 +59,81 @@ struct MoreView: View {
         }
     }
 
+    // MARK: Sections
+
+    private func budgetSection(_ budget: JSON) -> some View {
+        Section {
+            NavigationLink(value: MoreRoute.library) {
+                HStack(spacing: 12) {
+                    Text(initials(budget.text("name")))
+                        .font(.headline).foregroundStyle(.white)
+                        .frame(width: 44, height: 44)
+                        .background(Color.urAccent, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(budget.text("name")).font(.headline)
+                        Text("\(budget.text("currency")) · Switch or manage budgets").font(.footnote).foregroundStyle(Color.secondary)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+        }
+    }
+
+    private var accountSection: some View {
+        Section {
+            NavigationLink(value: MoreRoute.sync) {
+                MoreRow(title: String(localized: "Account & sync"), detail: syncDetail, symbol: "arrow.triangle.2.circlepath.icloud", tint: .urAccent,
+                        badge: sync.conflicts)
+            }
+            Button { sheet = .assistant } label: {
+                MoreRow(title: String(localized: "Assistant"), detail: String(localized: "Ask about your budget and review its changes"),
+                        symbol: "sparkles", tint: .urBrand)
+            }
+            .foregroundStyle(Color.primary)
+        }
+    }
+
+    private var planningSection: some View {
+        Section("Planning") {
+            NavigationLink(value: MoreRoute.schedules) {
+                MoreRow(title: String(localized: "Scheduled"), detail: String(localized: "Bills, income and repeating transactions"),
+                        symbol: "calendar.badge.clock", tint: .urAccent)
+            }
+            NavigationLink(value: MoreRoute.loans) {
+                MoreRow(title: String(localized: "Loan planner"), detail: String(localized: "Payoff dates and extra payments"), symbol: "percent", tint: .urWarning)
+            }
+            NavigationLink(value: MoreRoute.payees) {
+                MoreRow(title: String(localized: "Payees & rules"), detail: String(localized: "Default categories and import rules"), symbol: "person.2", tint: .urPositive)
+            }
+            NavigationLink(value: RegisterTarget(category: NeedsCategory)) {
+                MoreRow(title: String(localized: "Needs a category"), detail: String(localized: "Spending still waiting for a category"), symbol: "tag", tint: .urWarning)
+            }
+        }
+    }
+
+    private var importSection: some View {
+        Section("Bring in transactions") {
+            NavigationLink(value: MoreRoute.banks) {
+                MoreRow(title: String(localized: "Bank connections"), detail: String(localized: "Link accounts and review downloads"),
+                        symbol: "building.columns", tint: .urAccent)
+            }
+            Button { sheet = .bankImport } label: {
+                MoreRow(title: String(localized: "Import bank file"), detail: String(localized: "CSV, OFX, QFX or QIF, reviewed first"),
+                        symbol: "doc.badge.arrow.up", tint: .urAccent)
+            }
+            .foregroundStyle(Color.primary)
+            Button { sheet = .ynabImport } label: {
+                MoreRow(title: String(localized: "Import from YNAB"), detail: String(localized: "From YNAB's API or its export files"),
+                        symbol: "square.and.arrow.down.on.square", tint: .urAccent)
+            }
+            .foregroundStyle(Color.primary)
+        }
+    }
+
     private var syncDetail: String {
-        guard sync.signedIn else { return "Sign in to sync with your other devices" }
-        if sync.conflicts > 0 { return sync.conflicts == 1 ? "1 budget needs review" : "\(sync.conflicts) budgets need review" }
-        return sync.unlocked ? "Encrypted sync is on" : "Signed in · sync is locked"
+        guard sync.signedIn else { return String(localized: "Sign in to sync with your other devices") }
+        if sync.conflicts > 0 { return String(localized: "\(sync.conflicts) budgets need review", locale: .app) }
+        return sync.unlocked ? String(localized: "Encrypted sync is on") : String(localized: "Signed in · sync is locked")
     }
 
     private func initials(_ name: String) -> String {

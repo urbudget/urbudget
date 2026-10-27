@@ -4,7 +4,7 @@ import SwiftUI
 struct FormSheet<Content: View>: View {
     @Environment(\.dismiss) private var dismiss
     var title: String
-    var confirm = "Save"
+    var confirm = String(localized: "Save")
     var enabled = true
     var destructive = false
     /// Runs the change and waits for it to save; the sheet closes only when it has.
@@ -64,7 +64,7 @@ struct NewCategoryForm: View {
 
     var body: some View {
         let existing = store.budget.map(groupNames) ?? []
-        FormSheet(title: "New category", confirm: "Add",
+        FormSheet(title: String(localized: "New category"), confirm: String(localized: "Add"),
                   enabled: !name.trimmingCharacters(in: .whitespaces).isEmpty && !group.trimmingCharacters(in: .whitespaces).isEmpty) {
             let id = try await store.saveCategory(name: name, group: group)
             onCreated?(id)
@@ -85,7 +85,8 @@ struct NewCategoryForm: View {
             guard !started else { return }
             started = true
             name = presetName
-            group = presetGroup ?? existing.first ?? "Everyday"
+            // A budget's first group is named in the app's language, as the engine names its own.
+            group = presetGroup ?? existing.first ?? String(localized: "Everyday", comment: "The group of a budget's first category.")
         }
     }
 }
@@ -99,7 +100,7 @@ struct NewGroupForm: View {
         let existing = store.budget.map(groupNames) ?? []
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         let taken = existing.contains(trimmed)
-        FormSheet(title: "New category group", confirm: "Add", enabled: !trimmed.isEmpty && !taken) {
+        FormSheet(title: String(localized: "New category group"), confirm: String(localized: "Add"), enabled: !trimmed.isEmpty && !taken) {
             try await store.editing { budget in
                 var order = budget["groupOrder"].array
                 if order.isEmpty { order = existing.map(JSON.string) }
@@ -108,7 +109,7 @@ struct NewGroupForm: View {
             }
         } content: {
             TextField("Group name", text: $name).wordsCapitalized()
-            if taken { FormErrorView(message: "There is already a group called \(trimmed).") }
+            if taken { FormErrorView(message: String(localized: "There is already a group called \(trimmed).")) }
         }
         .presentationDetents([.medium])
     }
@@ -122,9 +123,9 @@ struct RenameGroupForm: View {
     var body: some View {
         let existing = store.budget.map(groupNames) ?? []
         let trimmed = name.trimmingCharacters(in: .whitespaces)
-        FormSheet(title: "Rename group", enabled: !trimmed.isEmpty && trimmed != group) {
+        FormSheet(title: String(localized: "Rename group"), enabled: !trimmed.isEmpty && trimmed != group) {
             try await store.committingWorkflow(["type": "renameGroup", "from": .string(group), "to": .string(trimmed)])
-            if existing.contains(trimmed) { store.showToast("Merged \(group) into \(trimmed).", undo: true) }
+            if existing.contains(trimmed) { store.showToast(String(localized: "Merged \(group) into \(trimmed)."), undo: true) }
         } content: {
             Section {
                 TextField("Group name", text: $name).wordsCapitalized()
@@ -149,15 +150,15 @@ struct DeleteGroupForm: View {
         let members = (store.budget?.rows("categories") ?? []).filter { $0.text("group") == group }
         let count = members.count
         let hidden = members.count { $0.flag("hidden") }
-        FormSheet(title: "Delete \(group)", confirm: "Delete", enabled: count == 0 || !target.isEmpty, destructive: true) {
+        FormSheet(title: String(localized: "Delete \(group)"), confirm: String(localized: "Delete"), enabled: count == 0 || !target.isEmpty, destructive: true) {
             if count == 0 {
                 try await store.editing { budget in
                     budget["groupOrder"] = .array(budget["groupOrder"].array.filter { $0.string != group })
                 }
-                store.showToast("Deleted \(group).", undo: true)
+                store.showToast(String(localized: "Deleted \(group)."), undo: true)
             } else {
                 try await store.committingWorkflow(["type": "renameGroup", "from": .string(group), "to": .string(target)])
-                store.showToast("Deleted \(group). Its categories moved to \(target).", undo: true)
+                store.showToast(String(localized: "Deleted \(group). Its categories moved to \(target)."), undo: true)
             }
         } content: {
             if count == 0 {
@@ -166,11 +167,13 @@ struct DeleteGroupForm: View {
                 Text("This is the only group. Add another group to move its categories to first.").foregroundStyle(Color.secondary)
             } else {
                 Section {
-                    Picker("Move its \(count) \(count == 1 ? "category" : "categories") to", selection: $target) {
+                    Picker(selection: $target) {
                         ForEach(others, id: \.self) { Text($0).tag($0) }
+                    } label: {
+                        Text("Move its \(count) categories to")
                     }
                 } footer: {
-                    if hidden > 0 { Text("Including \(hidden) hidden \(hidden == 1 ? "category" : "categories").") }
+                    if hidden > 0 { Text("Including \(hidden) hidden categories.") }
                 }
             }
         }
@@ -190,7 +193,7 @@ struct BudgetPlanningForm: View {
     var body: some View {
         FormSheet(title: Dates.monthLabel(month)) {
             let expected: Int64? = income.trimmingCharacters(in: .whitespaces).isEmpty ? nil : try Money.parse(income)
-            if let expected, expected < 0 { throw AppError("Expected income must be zero or positive.") }
+            if let expected, expected < 0 { throw AppError(String(localized: "Expected income must be zero or positive.")) }
             try await store.committingWorkflow(["type": "setBudgetPlanning", "month": .string(month), "note": .string(note),
                             "expectedIncome": expected.map(JSON.int) ?? .null])
         } content: {
@@ -198,7 +201,7 @@ struct BudgetPlanningForm: View {
                 TextField("Note", text: $note, axis: .vertical).lineLimit(4...10)
             }
             Section {
-                AmountField(title: "Expected monthly income (\(store.currency))", text: $income)
+                AmountField(title: String(localized: "Expected monthly income (\(store.currency))"), text: $income)
             } footer: {
                 Text("Expected income helps compare your targets with your plan. It doesn’t add money to Unassigned.")
             }
@@ -223,10 +226,16 @@ struct MoveToGroupForm: View {
         let groups = store.budget.map(groupNames) ?? []
         let current = store.budget?.row("categories", id: categoryId)
         let target = group == "__new" ? newGroup.trimmingCharacters(in: .whitespaces) : group
-        FormSheet(title: "Move \(current?.text("name") ?? "category")", confirm: "Move",
+        let name = current?.text("name")
+        let shown = name ?? String(localized: "category")
+        FormSheet(title: String(localized: "Move \(shown)"), confirm: String(localized: "Move"),
                   enabled: !target.isEmpty && target != current?.text("group")) {
             try await store.committingWorkflow(["type": "organizeCategory", "id": .string(categoryId), "group": .string(target), "beforeId": .null])
-            store.showToast("Moved \(current?.text("name") ?? "the category") to \(target).", undo: true)
+            if let name {
+                store.showToast(String(localized: "Moved \(name) to \(target)."), undo: true)
+            } else {
+                store.showToast(String(localized: "Moved the category to \(target)."), undo: true)
+            }
         } content: {
             Picker("Group", selection: $group) {
                 ForEach(groups, id: \.self) { Text($0).tag($0) }

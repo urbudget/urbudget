@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { X } from "lucide-react";
+import { t } from "../i18n";
 
 export type ToastInput = {
   message: string;
@@ -59,7 +60,7 @@ function ToastItem({ item, dismiss }: { item: Item; dismiss: (id: number) => voi
           {item.action.label}
         </button>
       )}
-      <button className="icon-button" aria-label="Dismiss" onClick={() => dismiss(item.id)}>
+      <button className="icon-button" aria-label={t("Dismiss")} onClick={() => dismiss(item.id)}>
         <X size={14} />
       </button>
     </div>

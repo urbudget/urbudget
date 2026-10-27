@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 /// The first screen: create a budget, try the sample, or bring a backup from desktop or Android.
 struct WelcomeView: View {
     @Environment(BudgetStore.self) private var store
-    @State private var name = "My budget"
+    @State private var name = String(localized: "My budget")
     @State private var currency = Locale.current.currency?.identifier ?? "SAR"
     @State private var importing = false
     @State private var fileError: String?
@@ -17,7 +17,7 @@ struct WelcomeView: View {
             Form {
                 Section {
                     VStack(alignment: .leading, spacing: 14) {
-                        Text("Ur")
+                        Text(verbatim: "Ur")
                             .font(.system(size: 26, weight: .heavy, design: .rounded))
                             .foregroundStyle(.white)
                             .frame(width: 64, height: 64)
@@ -58,7 +58,7 @@ struct WelcomeView: View {
                     Text("Next, add the accounts your money is in. You can change the formats in Settings.")
                 }
                 Section {
-                    Button { store.createBudget(name: "Sample budget", currency: currency, sample: true) } label: {
+                    Button { store.createBudget(name: String(localized: "Sample budget"), currency: currency, sample: true) } label: {
                         Label { rowText("Explore with sample money", "A filled-in budget to try things on") } icon: { Image(systemName: "sparkles") }
                     }
                     Button { importing = true } label: {
@@ -91,7 +91,7 @@ struct WelcomeView: View {
         }
     }
 
-    private func rowText(_ title: String, _ detail: String) -> some View {
+    private func rowText(_ title: LocalizedStringKey, _ detail: LocalizedStringKey) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title).foregroundStyle(Color.primary)
             Text(detail).font(.footnote).foregroundStyle(Color.secondary)
@@ -115,6 +115,6 @@ func readPickedFile(_ result: Result<URL, Error>) throws -> Data {
     let scoped = url.startAccessingSecurityScopedResource()
     defer { if scoped { url.stopAccessingSecurityScopedResource() } }
     let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-    guard size <= 32 * 1024 * 1024 else { throw AppError("Choose a JSON backup smaller than 32 MB.") }
+    guard size <= 32 * 1024 * 1024 else { throw AppError(String(localized: "Choose a JSON backup smaller than 32 MB.")) }
     return try Data(contentsOf: url)
 }

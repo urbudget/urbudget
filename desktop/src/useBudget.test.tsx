@@ -647,6 +647,67 @@ it("allows installer shutdown only after saving and resets the normal close poli
   expect(mocked.destroy).not.toHaveBeenCalled();
 });
 
+it("runs a waiting update on close only after saving, and closes even if it fails", async () => {
+  const { result } = await start();
+  const close = () => mocked.onCloseRequested.mock.calls.at(-1)![0] as (event: { preventDefault: () => void }) => Promise<void>;
+  const steps: string[] = [];
+  mocked.commit.mockImplementation(async () => {
+    steps.push("save");
+    return { ...status, token: "saved-on-close" };
+  });
+  mocked.destroy.mockImplementation(async () => { steps.push("close"); });
+  act(() => result.current.edit((b) => { b.name = "Unsaved at close"; }));
+  act(() => result.current.setExitTask(async () => { steps.push("update"); }));
+  const event = { preventDefault: vi.fn() };
+  await act(async () => { await close()(event); });
+  expect(event.preventDefault).toHaveBeenCalledOnce();
+  expect(steps).toEqual(["save", "update", "close"]);
+
+  steps.length = 0;
+  mocked.status.mockResolvedValue({ ...status, token: "saved-on-close" });
+  act(() => result.current.setExitTask(async () => { throw new Error("Windows declined"); }));
+  await act(async () => { await close()({ preventDefault: vi.fn() }); });
+  expect(steps).toEqual(["close"]);
+});
+
+it("holds the edit lock while a Store update installs on close, so nothing changes after the save (Codex review R1)", async () => {
+  const { result } = await start();
+  const close = () => mocked.onCloseRequested.mock.calls.at(-1)![0] as (event: { preventDefault: () => void }) => Promise<void>;
+  const installing = deferred<void>();
+  act(() => result.current.edit((b) => { b.name = "Saved before the update"; }));
+  act(() => result.current.setExitTask(() => installing.promise));
+  let closing!: Promise<void>;
+  await act(async () => { closing = close()({ preventDefault: vi.fn() }); });
+  expect(result.current.operation).toBe("Installing the update…");
+  // Edits, undo and switching budgets all wait for the update.
+  act(() => result.current.edit((b) => { b.name = "Changed while installing"; }));
+  act(() => result.current.undo());
+  await expect(result.current.switchBudget("other")).rejects.toThrow("Finish the current operation");
+  expect(result.current.budget?.name).toBe("Saved before the update");
+  expect(result.current.dirty()).toBe(false);
+  // Windows (or a second close) may end the app meanwhile: everything is saved.
+  const second = { preventDefault: vi.fn() };
+  await act(async () => { await close()(second); });
+  expect(second.preventDefault).not.toHaveBeenCalled();
+  mocked.destroy.mockImplementation(async () => {
+    expect(result.current.dirty()).toBe(false);
+  });
+  await act(async () => { installing.resolve(); await closing; });
+  expect(mocked.destroy).toHaveBeenCalledOnce();
+  expect(result.current.operation).toBe("");
+});
+
+it("closes without waiting on a Store update that never answers", async () => {
+  const { result } = await start();
+  const close = () => mocked.onCloseRequested.mock.calls.at(-1)![0] as (event: { preventDefault: () => void }) => Promise<void>;
+  act(() => result.current.setExitTask(() => new Promise<void>(() => {})));
+  let closing!: Promise<void>;
+  await act(async () => { closing = close()({ preventDefault: vi.fn() }); });
+  expect(mocked.destroy).not.toHaveBeenCalled();
+  await act(async () => { await vi.advanceTimersByTimeAsync(2 * 60_000); await closing; });
+  expect(mocked.destroy).toHaveBeenCalledOnce();
+});
+
 it("switching budgets saves first, then starts the other budget with fresh history", async () => {
   const other = { ...status, token: "other:3:1", budget: { ...budget, name: "Other" } };
   mocked.openBudget.mockResolvedValue(other);

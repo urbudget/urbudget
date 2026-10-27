@@ -70,9 +70,9 @@ struct CardPaymentSheet: View {
         return Form {
             Section {
                 HStack(alignment: .top) {
-                    Figure(label: "Owed on the card", value: money(owed, currency), color: owed > 0 ? .urNegative : .primary)
+                    Figure(label: String(localized: "Owed on the card"), value: money(owed, currency), color: owed > 0 ? .urNegative : .primary)
                     Spacer()
-                    Figure(label: "Set aside to pay it", value: category == nil ? "—" : money(aside, currency),
+                    Figure(label: String(localized: "Set aside to pay it"), value: category == nil ? "—" : money(aside, currency),
                            color: category != nil && aside >= owed && owed > 0 ? .urPositive : .primary, alignment: .trailing)
                 }
                 .accessibilityElement(children: .combine)
@@ -82,9 +82,10 @@ struct CardPaymentSheet: View {
             }
             Section("Amount") {
                 if let category {
-                    option("aside", "What's set aside", "In the \(category.text("name")) payment category", aside, currency)
+                    let name = category.text("name")
+                    option("aside", String(localized: "What's set aside"), String(localized: "In the \(name) payment category"), aside, currency)
                 }
-                option("balance", "The whole balance", "Pays the card off", owed, currency)
+                option("balance", String(localized: "The whole balance"), String(localized: "Pays the card off"), owed, currency)
                 Button {
                     choice = "other"
                     keypad = true
@@ -94,7 +95,7 @@ struct CardPaymentSheet: View {
                         mark(choice == "other")
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Another amount").foregroundStyle(Color.primary)
-                            Text(choice == "other" ? (pad.isSum ? pad.display : money(pad.cents ?? 0, currency)) : "Type it on the keypad")
+                            Text(otherAmount(currency))
                                 .font(.footnote).monospacedDigit().foregroundStyle(choice == "other" ? Color.urAccent : .secondary)
                         }
                         Spacer()
@@ -105,10 +106,11 @@ struct CardPaymentSheet: View {
             }
             Section {
                 if sources.isEmpty {
-                    Notice(text: "Add a cash account in your budget to pay the card from.", tone: "info")
+                    Notice(text: String(localized: "Add a cash account in your budget to pay the card from."), tone: "info")
                 } else {
                     NavigationLink(value: CardPaymentRoute.from) {
-                        PlanningPickerRow(icon: "building.columns", label: "From", value: source?.text("name"), placeholder: "Choose account")
+                        PlanningPickerRow(icon: "building.columns", label: String(localized: "From"), value: source?.text("name"),
+                                          placeholder: String(localized: "Choose account"))
                     }
                 }
                 DatePicker(selection: Binding(get: { Dates.pickerDate(date) }, set: { date = Dates.fromPicker($0) }), displayedComponents: .date) {
@@ -116,7 +118,7 @@ struct CardPaymentSheet: View {
                 }
                 TextField("Memo (optional)", text: $memo)
             } footer: {
-                Text("Recorded as a transfer from \(source?.text("name") ?? "the account you choose") to \(card.text("name")), so it isn't spending: it uses up what's set aside and lowers what the card owes.\(date > Dates.today ? " Dated ahead, it waits in Scheduled until then." : "")")
+                footer(card, source)
             }
             if let error { FormErrorView(message: error) }
         }
@@ -148,6 +150,22 @@ struct CardPaymentSheet: View {
                 .disabled(saving)
             }
         }
+    }
+
+    /// Another amount's line: the sum or amount on the keypad once chosen, else how to enter one.
+    private func otherAmount(_ currency: String) -> String {
+        guard choice == "other" else { return String(localized: "Type it on the keypad") }
+        return pad.isSum ? AppLanguage.leftToRight(pad.display) : money(pad.cents ?? 0, currency)
+    }
+
+    /// What the payment is recorded as, and when it waits for its date.
+    private func footer(_ card: JSON, _ source: JSON?) -> Text {
+        let from = source?.text("name") ?? String(localized: "the account you choose")
+        let to = card.text("name")
+        if date > Dates.today {
+            return Text("Recorded as a transfer from \(from) to \(to), so it isn't spending: it uses up what's set aside and lowers what the card owes. Dated ahead, it waits in Scheduled until then.")
+        }
+        return Text("Recorded as a transfer from \(from) to \(to), so it isn't spending: it uses up what's set aside and lowers what the card owes.")
     }
 
     private func option(_ id: String, _ title: String, _ detail: String, _ figure: Int64, _ currency: String) -> some View {
@@ -201,12 +219,12 @@ struct CardPaymentSheet: View {
 
     private func pay() {
         attempt($error) {
-            guard let card else { throw AppError("This account was deleted.") }
-            guard sources.contains(where: { $0.text("id") == from }) else { throw AppError("Choose the account the payment comes from.") }
-            guard choice != "other" || pad.cents != nil else { throw AppError("Finish the sum first.") }
+            guard let card else { throw AppError(String(localized: "This account was deleted.")) }
+            guard sources.contains(where: { $0.text("id") == from }) else { throw AppError(String(localized: "Choose the account the payment comes from.")) }
+            guard choice != "other" || pad.cents != nil else { throw AppError(String(localized: "Finish the sum first.")) }
             let value = amount
-            guard value > 0 else { throw AppError("Enter an amount to pay.") }
-            guard Dates.day(date) != nil else { throw AppError("Choose a date.") }
+            guard value > 0 else { throw AppError(String(localized: "Enter an amount to pay.")) }
+            guard Dates.day(date) != nil else { throw AppError(String(localized: "Choose a date.")) }
             let record: JSON = [
                 "id": .string(paymentId), "accountId": .string(from), "date": .string(date), "payee": "", "memo": .string(memo),
                 "amount": .int(-value), "status": "uncleared", "approved": true, "flag": .null,
@@ -222,7 +240,9 @@ struct CardPaymentSheet: View {
                 defer { saving = false }
                 do {
                     try await store.planningCommand("saveTransaction", ["transaction": record, "through": .string(Dates.today)])
-                    store.showToast(ahead ? "Scheduled \(money(value, currency)) to \(name) for \(Money.date(when))." : "Paid \(money(value, currency)) to \(name).", undo: true)
+                    let paid = money(value, currency)
+                    store.showToast(ahead ? String(localized: "Scheduled \(paid) to \(name) for \(Money.date(when)).")
+                                    : String(localized: "Paid \(paid) to \(name)."), undo: true)
                     dismiss()
                 } catch {
                     self.error = BudgetStore.readable(error)

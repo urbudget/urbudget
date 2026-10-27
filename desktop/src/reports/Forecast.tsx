@@ -7,6 +7,7 @@ import { Tabs, useVirtualRows } from "../ui";
 import { today, type Budget } from "../types";
 import type { RegisterFilter } from "../Register";
 import { Panel, SERIES, Tiles, fmt, signed, sum, useReportColumns } from "./shared";
+import { monthNames, t, tn } from "../i18n";
 
 type Event = {
   date: string;
@@ -86,14 +87,18 @@ export function Forecast({
   const rows = useVirtualRows(scroller, view?.events.length ?? 0, ROW);
   const table = useReportColumns("forecast", 5, 130);
   const rangeControl = <Tabs<"3" | "6" | "12">
-    label="How far ahead" value={ahead} onChange={setAhead}
-    tabs={[{ id: "3", label: "3 months" }, { id: "6", label: "6 months" }, { id: "12", label: "12 months" }]}
+    label={t("How far ahead")} value={ahead} onChange={setAhead}
+    tabs={[
+      { id: "3", label: tn(3, "{count} month", "{count} months") },
+      { id: "6", label: tn(6, "{count} month", "{count} months") },
+      { id: "12", label: tn(12, "{count} month", "{count} months") },
+    ]}
   />;
   if (!view || !data)
     return (
       <div className="report-body">
-        <Panel title="Balance ahead" aside={rangeControl}>
-          {error ? <p className="form-error" role="alert">{error} <button className="link-button" onClick={() => setAttempt((n) => n + 1)}>Retry forecast</button></p>
+        <Panel title={t("Balance ahead")} aside={rangeControl}>
+          {error ? <p className="form-error" role="alert">{error} <button className="link-button" onClick={() => setAttempt((n) => n + 1)}>{t("Retry forecast")}</button></p>
             : <div className="empty-state compact"><LoaderCircle className="spin" /></div>}
         </Panel>
       </div>
@@ -122,57 +127,62 @@ export function Forecast({
       <Tiles
         items={[
           {
-            label: "Today",
+            label: t("Today"),
             value: fmt(view.opening),
-            note: `in ${view.ids.size} budget ${view.ids.size === 1 ? "account" : "accounts"}`,
+            note: tn(view.ids.size, "in {count} budget account", "in {count} budget accounts"),
           },
           {
-            label: "Lowest point",
+            label: t("Lowest point"),
             value: fmt(forecast[low]),
             tone: forecast[low] < 0 ? "negative" : undefined,
-            note: low === 0 ? "today" : formatDate(view.days[low]),
+            note: low === 0 ? t("today") : formatDate(view.days[low]),
           },
           {
-            label: `In ${ahead} months`,
+            label: tn(Number(ahead), "In {count} months", "In {count} months"),
             value: fmt(end),
             tone: end < 0 ? "negative" : undefined,
-            note: `${signed(end - view.opening)} from today`,
+            note: t("{amount} from today", { amount: signed(end - view.opening) }),
           },
-          { label: "Known money in", value: fmt(knownIn), note: "scheduled or entered" },
-          { label: "Known money out", value: fmt(knownOut), note: "scheduled or entered" },
+          { label: t("Known money in"), value: fmt(knownIn), note: t("scheduled or entered") },
+          { label: t("Known money out"), value: fmt(knownOut), note: t("scheduled or entered") },
         ]}
       />
       <Panel
-        title="Balance ahead"
+        title={t("Balance ahead")}
         aside={rangeControl}
       >
         <LinesChart
           keys={view.days}
           series={[
-            { key: "forecast", label: "Forecast", color: SERIES(0), values: forecast },
-            { key: "known", label: "Known transactions only", color: SERIES(1), values: view.knownLine, dashed: true },
+            { key: "forecast", label: t("Forecast"), color: SERIES(0), values: forecast },
+            { key: "known", label: t("Known transactions only"), color: SERIES(1), values: view.knownLine, dashed: true },
           ]}
-          label={`Forecast balance of budget accounts for the next ${ahead} months`}
+          label={tn(
+            Number(ahead),
+            "Forecast balance of budget accounts for the next {count} months",
+            "Forecast balance of budget accounts for the next {count} months",
+          )}
           format={fmt}
           height={280}
           tick={(d, i) =>
             i === 0
-              ? "Today"
+              ? t("Today")
               : d.endsWith("-01")
-                ? new Date(`${d}T12:00:00`).toLocaleDateString("en-GB", { month: "short" })
+                ? (monthNames()?.[Number(d.slice(5, 7)) - 1] ??
+                  new Date(`${d}T12:00:00`).toLocaleDateString("en-GB", { month: "short" }))
                 : null
           }
           title={formatDate}
         />
         <Legend
           items={[
-            { label: "Forecast", color: SERIES(0), line: true },
-            { label: "Known transactions only", color: SERIES(1), line: true, dashed: true },
+            { label: t("Forecast"), color: SERIES(0), line: true },
+            { label: t("Known transactions only"), color: SERIES(1), line: true, dashed: true },
           ]}
         />
         <div className="forecast-assumption">
           <label className="field inline">
-            <span>Everyday spending a month</span>
+            <span>{t("Everyday spending a month")}</span>
             <input
               inputMode="decimal"
               value={draft ?? (focused ? editableAmount(monthly) : money(monthly))}
@@ -194,29 +204,37 @@ export function Forecast({
           </label>
           {everyday !== null && everyday !== view.suggested && (
             <button className="link-button" onClick={() => setEveryday(null)}>
-              Use the suggested {money(view.suggested)}
+              {t("Use the suggested {amount}", { amount: money(view.suggested) })}
             </button>
           )}
           <p className="help">
-            Spending that isn't scheduled, spread evenly over each day. Your last three months averaged{" "}
-            {fmt(data.recentSpending)} a month; scheduled spending covers about{" "}
-            {fmt(Math.round(view.scheduledSpending))} a month, which suggests {fmt(view.suggested)} for the rest.
+            {t(
+              "Spending that isn't scheduled, spread evenly over each day. Your last three months averaged {recent} a month; scheduled spending covers about {scheduled} a month, which suggests {suggested} for the rest.",
+              {
+                recent: fmt(data.recentSpending),
+                scheduled: fmt(Math.round(view.scheduledSpending)),
+                suggested: fmt(view.suggested),
+              },
+            )}
           </p>
         </div>
       </Panel>
-      <Panel title="Coming up" aside={<span className="muted">{view.events.length} transactions</span>}>
+      <Panel
+        title={t("Coming up")}
+        aside={<span className="muted">{tn(view.events.length, "{count} transactions", "{count} transactions")}</span>}
+      >
         {view.events.length ? (
           <div className="report-table scrolls forecast-table" ref={scroller}>
             <table className="fixed" style={table.style}>
               {table.cols}
               <thead>
                 <tr>
-                  <th>Date{table.grip("label", "Date")}</th>
-                  <th>Payee{table.grip("value", "Payee")}</th>
-                  <th>Account{table.grip("value", "Account")}</th>
-                  <th>Category{table.grip("value", "Category")}</th>
-                  <th className="num">Amount{table.grip("value", "amount")}</th>
-                  <th className="num">Balance{table.grip("value", "amount")}</th>
+                  <th>{t("Date")}{table.grip("label", "Date")}</th>
+                  <th>{t("Payee")}{table.grip("value", "Payee")}</th>
+                  <th>{t("Account")}{table.grip("value", "Account")}</th>
+                  <th>{t("Category")}{table.grip("value", "Category")}</th>
+                  <th className="num">{t("Amount")}{table.grip("value", "amount")}</th>
+                  <th className="num">{t("Balance")}{table.grip("value", "amount")}</th>
                   <th aria-hidden />
                 </tr>
               </thead>
@@ -232,11 +250,11 @@ export function Forecast({
                     <tr key={`${e.date}-${e.scheduleId}-${e.accountId}-${index}`}>
                       <td>{formatDate(e.date)}</td>
                       <td>
-                        {e.payee || "No payee"}
-                        {!e.scheduleId && <span className="muted"> · entered</span>}
+                        {e.payee || t("No payee")}
+                        {!e.scheduleId && <span className="muted">{` · ${t("entered")}`}</span>}
                       </td>
                       <td>{name(e.accountId)}</td>
-                      <td>{e.peerId ? `Transfer: ${name(e.peerId)}` : category(e.categoryId)}</td>
+                      <td>{e.peerId ? t("Transfer: {account}", { account: name(e.peerId) }) : category(e.categoryId)}</td>
                       <td className={`num${e.amount < 0 ? "" : " positive"}`}>{money(e.amount)}</td>
                       <td className={`num${view.balances[index] < 0 ? " negative" : ""}`}>
                         {money(view.balances[index])}
@@ -255,16 +273,16 @@ export function Forecast({
           </div>
         ) : (
           <div className="empty-state compact">
-            <p>Nothing is scheduled or entered for later dates.</p>
+            <p>{t("Nothing is scheduled or entered for later dates.")}</p>
             <p className="help">
-              Schedule your income and bills (Scheduled, in the sidebar) to make this forecast more exact.
+              {t("Schedule your income and bills (Scheduled, in the sidebar) to make this forecast more exact.")}
             </p>
           </div>
         )}
         <p className="help">
-          Balances here count known transactions only.{" "}
+          {t("Balances here count known transactions only.")}{" "}
           <button className="link-button" onClick={() => inspect({ accountIds: [...accounts], from: shiftDate(start, 1), to: through })}>
-            See entered ones in the register
+            {t("See entered ones in the register")}
           </button>
         </p>
       </Panel>

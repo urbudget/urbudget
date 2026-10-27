@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -18,7 +19,9 @@ import app.urbudget.nativeapp.BankReviewRow
 import app.urbudget.nativeapp.BankReviewSummary
 import app.urbudget.nativeapp.BudgetViewModel
 import app.urbudget.nativeapp.Money
+import app.urbudget.nativeapp.R
 import app.urbudget.nativeapp.ScopedResult
+import app.urbudget.nativeapp.Words
 import app.urbudget.nativeapp.bankReviewChoices
 import app.urbudget.nativeapp.bankReviewCounts
 import app.urbudget.nativeapp.prepareBankReview
@@ -70,7 +73,7 @@ internal fun BankConnectionsScreen(budget: JSONObject, vm: BudgetViewModel) {
     val accounts = remember(budget) { budget.rows("accounts") }
     val linkedAccounts = remember(accounts) { accounts.mapNotNull { account -> account.optJSONObject("simplefin")?.text("id")?.let { it to account } }.toMap() }
     val bankAccounts = remember(status) { status?.rows("accounts").orEmpty() }
-    val prepared = rememberPrepared(download, budget) { download to syncEntries(download, budget) }
+    val prepared = rememberPrepared(download, budget, languageKey()) { download to syncEntries(download, budget) }
     // The rows on screen belong to this download, not one still being prepared.
     val ready = prepared != null && prepared.first === download
     val entries = prepared?.second.orEmpty()
@@ -109,19 +112,19 @@ internal fun BankConnectionsScreen(budget: JSONObject, vm: BudgetViewModel) {
     LaunchedEffect(Unit) { call("simplefin_status") }
     LaunchedEffect(reviewing, pending, loading, ready) { if (reviewing && ready && !loading && pending.isEmpty()) reviewing = false }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 4.dp, bottom = DockRoom), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { Text("SimpleFIN Bridge · Nothing is added until you review it.", Modifier.padding(horizontal = 4.dp), color = ur.muted, style = MaterialTheme.typography.bodyMedium) }
+        item { Text(stringResource(R.string.bank_sync_intro), Modifier.padding(horizontal = 4.dp), color = ur.muted, style = MaterialTheme.typography.bodyMedium) }
         if (loading) item { LinearProgressIndicator(Modifier.fillMaxWidth(), color = ur.accent) }
         error?.let { item { FormError(it) } }
         if (status?.optBoolean("connected") != true) {
             item {
                 ListCard {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Your bank login stays with SimpleFIN. The connection token is protected by this device's credential store and kept out of budget backups.",
+                        Text(stringResource(R.string.bank_login_note),
                             color = ur.text2, style = MaterialTheme.typography.bodyMedium)
-                        FilledField(token, { token = it }, Modifier.fillMaxWidth(), label = { Text("SimpleFIN setup token") }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
+                        FilledField(token, { token = it }, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.bank_setup_token)) }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            PrimaryButton("Connect", { val pasted = token; token = ""; call("simplefin_connect", JSONObject().put("token", pasted)) }, Modifier.weight(1f), enabled = token.isNotBlank() && !loading)
-                            SecondaryButton("Get a token", { call("simplefin_open") }, Modifier.weight(1f), enabled = !loading)
+                            PrimaryButton(stringResource(R.string.bank_connect), { val pasted = token; token = ""; call("simplefin_connect", JSONObject().put("token", pasted)) }, Modifier.weight(1f), enabled = token.isNotBlank() && !loading)
+                            SecondaryButton(stringResource(R.string.bank_get_token), { call("simplefin_open") }, Modifier.weight(1f), enabled = !loading)
                         }
                     }
                 }
@@ -129,22 +132,24 @@ internal fun BankConnectionsScreen(budget: JSONObject, vm: BudgetViewModel) {
         } else {
             item {
                 ListCard {
-                    ListRow("Connected", subtitle = "${status?.optInt("requestsToday")} of ${status?.optInt("dailyLimit")} requests used today", icon = Icons.Outlined.Link,
+                    ListRow(stringResource(R.string.bank_connected), subtitle = stringResource(R.string.bank_requests_used, "${status?.optInt("requestsToday")}", "${status?.optInt("dailyLimit")}"), icon = Icons.Outlined.Link,
                         iconTint = ur.positive, iconFill = ur.positiveSoft, chevron = false, divider = true)
-                    ListRow("Download activity", subtitle = if (linkedAccounts.isEmpty()) "Link a budget account first" else "From every linked account, then review one account at a time",
+                    ListRow(stringResource(R.string.bank_download_activity), subtitle = stringResource(if (linkedAccounts.isEmpty()) R.string.bank_link_first else R.string.bank_download_detail),
                         icon = Icons.Outlined.CloudDownload, onClick = if (!loading && linkedAccounts.isNotEmpty()) ({ downloadActivity() }) else null, chevron = false, divider = true)
-                    ListRow("Refresh accounts", icon = Icons.Outlined.Refresh, onClick = { if (!loading) call("simplefin_accounts") }, chevron = false, divider = true)
-                    ListRow("Disconnect this device", titleColor = ur.negative, onClick = { if (!loading) call("simplefin_disconnect") { status = it; download = null; reviewing = false } }, chevron = false)
+                    ListRow(stringResource(R.string.bank_refresh_accounts), icon = Icons.Outlined.Refresh, onClick = { if (!loading) call("simplefin_accounts") }, chevron = false, divider = true)
+                    ListRow(stringResource(R.string.bank_disconnect), titleColor = ur.negative, onClick = { if (!loading) call("simplefin_disconnect") { status = it; download = null; reviewing = false } }, chevron = false)
                 }
             }
             if (bankAccounts.isNotEmpty()) {
-                item { SectionTitle("Bank accounts", "Tap one to link it to a budget account.") }
+                item { SectionTitle(stringResource(R.string.bank_accounts), stringResource(R.string.bank_accounts_detail)) }
                 item {
+                    val never = stringResource(R.string.bank_never_synced)
+                    val notLinked = stringResource(R.string.bank_not_linked)
                     ListCard {
                         bankAccounts.forEachIndexed { index, bank ->
                             val linked = linkedAccounts[bank.text("id")]
-                            ListRow(bank.text("name"), subtitle = listOfNotNull(bank.text("org").ifBlank { null },
-                                linked?.let { "Linked to ${it.text("name")} · Last sync ${it.optJSONObject("simplefin")?.text("lastSync").orEmpty().ifBlank { "never" }}" } ?: "Not linked").joinToString(" · "),
+                            ListRow(bank.text("name"), subtitle = listOfNotNull(bank.text("org").ifBlank { null }?.let(Money::own),
+                                linked?.let { stringResource(R.string.bank_linked_to, it.text("name"), it.optJSONObject("simplefin")?.text("lastSync").orEmpty().ifBlank { never }) } ?: notLinked).joinToString(" · "),
                                 value = if (bank.isNull("balance")) null else money(bank.optLong("balance"), bank.text("currency", budget.text("currency"))),
                                 icon = Icons.Outlined.AccountBalance, iconTint = if (linked != null) ur.accent else ur.text2, iconFill = if (linked != null) ur.accentSoft else ur.zeroSoft,
                                 onClick = { linking = bank }, divider = index < bankAccounts.lastIndex)
@@ -156,18 +161,18 @@ internal fun BankConnectionsScreen(budget: JSONObject, vm: BudgetViewModel) {
         val messages = (status?.optJSONArray("messages")?.let { (0 until it.length()).map(it::optString) }.orEmpty() + download?.optJSONArray("messages")?.let { (0 until it.length()).map(it::optString) }.orEmpty()).distinct()
         items(messages) { Notice(it, tone = "attention", icon = Icons.Outlined.WarningAmber) }
         if (download != null) {
-            item { SectionTitle("Downloaded activity", "Through ${Money.date(download?.text("through").orEmpty())} · ${download?.optInt("requestsToday")} of ${download?.optInt("dailyLimit")} requests today") }
+            item { SectionTitle(stringResource(R.string.bank_downloaded_activity), stringResource(R.string.bank_downloaded_detail, Money.date(download?.text("through").orEmpty()), "${download?.optInt("requestsToday")}", "${download?.optInt("dailyLimit")}")) }
             if (entries.isNotEmpty()) item {
                 ListCard {
                     entries.forEachIndexed { index, entry ->
                         val open = !entry.quiet && entry.error.isBlank() && entry.accountId !in imported
                         ListRow(entry.name, subtitle = listOfNotNull(when {
                             entry.error.isNotBlank() -> entry.error
-                            entry.accountId in imported -> "Reviewed"
-                            entry.quiet -> "Up to date"
-                            entry.accountId in skipped -> "Skipped for now · ${entry.fresh} new"
-                            else -> "${entry.fresh} new to review"
-                        }, entry.bankBalance?.let { "Bank balance $it${entry.bankDate?.let { date -> " on $date" }.orEmpty()}" }).joinToString(" · "),
+                            entry.accountId in imported -> stringResource(R.string.bank_reviewed)
+                            entry.quiet -> stringResource(R.string.bank_up_to_date)
+                            entry.accountId in skipped -> countText(R.plurals.bank_skipped_new, entry.fresh)
+                            else -> countText(R.plurals.bank_new_to_review, entry.fresh)
+                        }, entry.bankBalance?.let { balance -> entry.bankDate?.let { stringResource(R.string.bank_balance_on, balance, it) } ?: stringResource(R.string.bank_balance, balance) }).joinToString(" · "),
                             icon = Icons.AutoMirrored.Outlined.FactCheck, iconTint = if (entry.error.isNotBlank()) ur.negative else if (open) ur.accent else ur.positive,
                             iconFill = if (entry.error.isNotBlank()) ur.negativeSoft else if (open) ur.accentSoft else ur.positiveSoft,
                             onClick = if (open && !loading) ({ skipped = skipped - entry.accountId; first = entry.accountId; reviewing = true }) else null, divider = index < entries.lastIndex)
@@ -175,7 +180,7 @@ internal fun BankConnectionsScreen(budget: JSONObject, vm: BudgetViewModel) {
                 }
             }
             if (pending.isNotEmpty() && !reviewing) item {
-                PrimaryButton(if (pending.size == 1) "Review 1 account" else "Review ${pending.size} accounts", { first = null; reviewing = true }, Modifier.fillMaxWidth(), enabled = !loading)
+                PrimaryButton(countText(R.plurals.bank_review_accounts, pending.size), { first = null; reviewing = true }, Modifier.fillMaxWidth(), enabled = !loading)
             }
         }
     }
@@ -196,17 +201,18 @@ internal fun BankConnectionsScreen(budget: JSONObject, vm: BudgetViewModel) {
 private fun BankLinkDialog(bank: JSONObject, budget: JSONObject, vm: BudgetViewModel, close: () -> Unit) {
     val openedBudget = remember { budget }
     val existing = remember(budget, bank) { budget.rows("accounts").firstOrNull { it.optJSONObject("simplefin")?.text("id") == bank.text("id") } }
-    val accountChoices = remember(budget) { listOf("" to "Choose account") + budget.rows("accounts").filterNot { it.optBoolean("archived") }.map { it.text("id") to it.text("name") } }
+    val chooseAccount = stringResource(R.string.bank_choose_account)
+    val accountChoices = remember(budget, chooseAccount) { listOf("" to chooseAccount) + budget.rows("accounts").filterNot { it.optBoolean("archived") }.map { it.text("id") to it.text("name") } }
     var account by remember { mutableStateOf(existing?.text("id") ?: "") }
     var from by remember { mutableStateOf(existing?.optJSONObject("simplefin")?.text("from")?.ifBlank { null } ?: LocalDate.now().minusDays(30).toString()) }
     var flip by remember { mutableStateOf(existing?.optJSONObject("simplefin")?.optBoolean("flipSigns") ?: false) }
     var error by remember { mutableStateOf<String?>(null) }
-    FormDialog("Link ${bank.text("name")}", close, enabled = account.isNotBlank(), onConfirm = {
+    FormDialog(stringResource(R.string.bank_link_title, bank.text("name")), close, enabled = account.isNotBlank(), onConfirm = {
         runCatching {
             requireCurrentBudget(openedBudget, vm)
-            val date = LocalDate.parse(from); require(!date.isAfter(LocalDate.now())) { "Choose today or an earlier date." }
-            val chosen = budget.row("accounts", account) ?: error("Choose an account.")
-            require(bank.text("currency").isBlank() || bank.text("currency") == budget.text("currency")) { "This bank account uses a different currency." }
+            val date = LocalDate.parse(from); require(!date.isAfter(LocalDate.now())) { Words[R.string.bank_date_not_future] }
+            val chosen = budget.row("accounts", account) ?: error(Words[R.string.bank_choose_an_account])
+            require(bank.text("currency").isBlank() || bank.text("currency") == budget.text("currency")) { Words[R.string.bank_currency_differs] }
             val link = (if (existing?.text("id") == account) existing.optJSONObject("simplefin")?.copyJson() else null) ?: JSONObject()
             link.put("id", bank.text("id")).put("from", from).put("flipSigns", flip)
             val changes = mutableListOf(chosen.copyJson().put("simplefin", link))
@@ -214,11 +220,11 @@ private fun BankLinkDialog(bank: JSONObject, budget: JSONObject, vm: BudgetViewM
             vm.upsertMany("accounts", changes); close()
         }.onFailure { error = it.message }
     }) {
-        Choice("Budget account", account, accountChoices, { account = it })
-        DateField(from, { from = it }, "First import from")
-        CheckRow("Reverse bank amount signs", flip, { flip = it })
-        Text("Up to one year of history, downloaded in 45-day windows. Each window uses one request.", style = MaterialTheme.typography.bodySmall, color = ur.muted)
-        if (existing != null) TextButton({ withCurrentBudget(openedBudget, vm) { vm.upsert("accounts", existing.copyJson().put("simplefin", JSONObject.NULL)); close() } }) { Text("Unlink account", color = ur.negative) }
+        Choice(stringResource(R.string.bank_budget_account), account, accountChoices, { account = it })
+        DateField(from, { from = it }, stringResource(R.string.bank_first_import))
+        CheckRow(stringResource(R.string.bank_reverse_signs), flip, { flip = it })
+        Text(stringResource(R.string.bank_history_note), style = MaterialTheme.typography.bodySmall, color = ur.muted)
+        if (existing != null) TextButton({ withCurrentBudget(openedBudget, vm) { vm.upsert("accounts", existing.copyJson().put("simplefin", JSONObject.NULL)); close() } }) { Text(stringResource(R.string.bank_unlink), color = ur.negative) }
         FormError(error)
     }
 }
@@ -233,7 +239,8 @@ private fun BankConnectionReview(entry: SyncEntry, through: String, reviewedBudg
     val review = entry.review
     val scope = rememberCoroutineScope()
     val requests = rememberPreviewJobs(review)
-    val preparationKey = remember(review, reviewedBudget, budget) { Any() }
+    // The options name themselves in the interface language; the choices made so far stay.
+    val preparationKey = remember(review, reviewedBudget, budget, languageKey()) { Any() }
     val prepared by produceState<ScopedResult<Pair<List<BankReviewRow>, BankReviewSummary>>?>(null, preparationKey) {
         value = withContext(Dispatchers.Default) {
             val rows = prepareBankReview(review.rows("rows"), reviewedBudget ?: budget, false, review.optJSONArray("candidateSets"))
@@ -247,16 +254,16 @@ private fun BankConnectionReview(entry: SyncEntry, through: String, reviewedBudg
     val (importing, undecided) = counts
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
-    LazyFormDialog("Review bank activity", close, confirm = if (loading) "Importing…" else if (importing > 0) "Import $importing" else "Mark checked",
+    LazyFormDialog(stringResource(R.string.bank_review_title), close, confirm = if (loading) stringResource(R.string.bank_importing) else if (importing > 0) stringResource(R.string.bank_import_count, "$importing") else stringResource(R.string.bank_mark_checked),
         enabled = rows != null && !loading && undecided == 0 && review.text("error").isBlank(), onConfirm = {
-        if (reviewedBudget !== vm.state.value.budget) error = "The budget changed. Close and download activity again to review current matches."
+        if (reviewedBudget !== vm.state.value.budget) error = Words[R.string.bank_budget_changed_close]
         else {
             loading = true
             val selected = decisions.toMap(); val sourceRows = rows.orEmpty()
             scope.launch {
                 try {
                     val choices = withContext(Dispatchers.Default) { bankReviewChoices(sourceRows, selected, false) }
-                    require(reviewedBudget === vm.state.value.budget) { "The budget changed. Download activity again to review current matches." }
+                    require(reviewedBudget === vm.state.value.budget) { Words[R.string.bank_budget_changed_download] }
                     requests.track(vm.service("simplefin_import", JSONObject().put("account", review.text("accountId")).put("through", through).put("choices", choices), onError = { loading = false; error = it }) { imported() })
                 } catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { loading = false; error = failure.message }
             }
@@ -265,18 +272,18 @@ private fun BankConnectionReview(entry: SyncEntry, through: String, reviewedBudg
         item(key = "sync:title") {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("${entry.bank.ifBlank { "SimpleFIN" }} into ${entry.name}", style = MaterialTheme.typography.titleSmall, color = ur.text)
-                    Text(listOfNotNull(ready?.second?.let(::reviewCounts), if (after > 0) "$after more after this" else null).joinToString(" · ").ifEmpty { "Checking matches…" },
+                    Text(stringResource(R.string.bank_source_into, entry.bank.ifBlank { "SimpleFIN" }, entry.name), style = MaterialTheme.typography.titleSmall, color = ur.text)
+                    Text(listOfNotNull(ready?.second?.let(::reviewCounts), if (after > 0) countText(R.plurals.bank_more_after, after) else null).joinToString(" · ").ifEmpty { stringResource(R.string.bank_checking_matches) },
                         style = MaterialTheme.typography.bodySmall, color = ur.muted)
                 }
-                TextButton(skip, enabled = !loading) { Text("Skip this account", color = ur.accent, fontWeight = FontWeight.SemiBold) }
+                TextButton(skip, enabled = !loading) { Text(stringResource(R.string.bank_skip_account), color = ur.accent, fontWeight = FontWeight.SemiBold) }
             }
         }
         item(key = "sync:balances") {
             ListCard {
                 Row(Modifier.padding(16.dp)) {
-                    Figure(entry.bankDate?.let { "At the bank on $it" } ?: "At the bank", entry.bankBalance ?: "Not sent", Modifier.weight(1f))
-                    Figure("UrBudget, before this import", ours, Modifier.weight(1f))
+                    Figure(entry.bankDate?.let { stringResource(R.string.bank_at_bank_on, it) } ?: stringResource(R.string.bank_at_bank), entry.bankBalance ?: stringResource(R.string.bank_not_sent), Modifier.weight(1f))
+                    Figure(stringResource(R.string.bank_ours_before), ours, Modifier.weight(1f))
                 }
             }
         }
@@ -284,7 +291,7 @@ private fun BankConnectionReview(entry: SyncEntry, through: String, reviewedBudg
         error?.let { item(key = "sync:error") { FormError(it) } }
         ready?.second?.let { bankReviewNotes(it, undecided) }
         rows?.let { suggestedTransfers(it, decisions, !loading) }
-        if (rows?.isEmpty() == true) item(key = "sync:none") { Text("No new transactions. Confirm to record the account as checked through ${Money.date(through)}.", color = ur.text2) }
+        if (rows?.isEmpty() == true) item(key = "sync:none") { Text(stringResource(R.string.bank_no_new, Money.date(through)), color = ur.text2) }
         bankReviewRows(rows.orEmpty(), decisions, !loading) { index, value -> decisions[index] = value }
     }
 }

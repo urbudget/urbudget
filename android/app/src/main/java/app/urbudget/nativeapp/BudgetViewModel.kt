@@ -61,7 +61,7 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
                     throw cancel
                 } catch (error: Throwable) {
                     retryOperation = operation
-                    mutableState.update { it.copy(error = error.message ?: "The action could not be saved. Please retry.", recoveryAvailable = repository.hasRecovery()) }
+                    mutableState.update { it.copy(error = error.message ?: Words[R.string.model_action_not_saved], recoveryAvailable = repository.hasRecovery()) }
                 } finally {
                     mutableState.update { it.copy(busy = false, loading = false) }
                 }
@@ -141,14 +141,14 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
                 withContext(Dispatchers.Main) {
                     if (active()) {
                         if (NativeServicePolicy.budgetRead(method) && (state.value.budget !== shown.budget || state.value.budgetIdentity != shown.budgetIdentity || state.value.budgetRevision != shown.budgetRevision)) {
-                            onError(if (NativeServicePolicy.review(method)) "The budget changed while downloading. Refresh the bank review before importing." else "The budget changed. Refresh to use its latest information.")
+                            onError(Words[if (NativeServicePolicy.review(method)) R.string.model_changed_while_downloading else R.string.model_changed_refresh])
                         } else callback(result)
                     }
                 }
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (error: Exception) {
-                withContext(Dispatchers.Main) { if (active()) onError(error.message ?: "The service could not complete this request.") }
+                withContext(Dispatchers.Main) { if (active()) onError(error.message ?: Words[R.string.model_service_failed]) }
                 if (!independent) throw error
             } finally {
                 // A JNI commit can finish after its screen's coroutine was cancelled. Always
@@ -201,12 +201,12 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
                     val objectValue = value as? JSONObject ?: JSONObject().put("items", value ?: JSONObject.NULL)
                     withContext(Dispatchers.Main) {
                         if ((anyRevision || state.value.budget === shown.budget) && state.value.budgetIdentity == shown.budgetIdentity) callback(objectValue)
-                        else onError("The budget changed. Refresh this preview to use the latest values.")
+                        else onError(Words[R.string.model_changed_preview])
                     }
                 } catch (cancel: CancellationException) {
                     throw cancel
                 } catch (error: Exception) {
-                    val message = error.message ?: "The shared engine could not complete this action."
+                    val message = error.message ?: Words[R.string.model_engine_failed]
                     withContext(Dispatchers.Main) { onError(message) }
                 }
             }
@@ -279,7 +279,7 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
         val guard = recordGuard("categories", category)
         val frozen = target?.toString()
         enqueue { publish(repository.edit(guard) { budget ->
-            val record = budget.records("categories").firstOrNull { it.optString("id") == category } ?: error("Category not found.")
+            val record = budget.records("categories").firstOrNull { it.optString("id") == category } ?: error(Words[R.string.model_category_not_found])
             if (frozen == null) { record.remove("goal"); record.put("target", 0) }
             else { val goal = JSONObject(frozen); record.put("goal", goal); goal.opt("goal_amount")?.let { record.put("target", it) } }
         }) }

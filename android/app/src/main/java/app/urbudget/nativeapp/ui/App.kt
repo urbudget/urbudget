@@ -40,6 +40,8 @@ import app.urbudget.nativeapp.AssistantController
 import app.urbudget.nativeapp.BudgetViewModel
 import app.urbudget.nativeapp.NativePreferences
 import app.urbudget.nativeapp.BudgetUiState
+import app.urbudget.nativeapp.R
+import androidx.compose.ui.res.stringResource
 import app.urbudget.nativeapp.fixImportText
 import app.urbudget.nativeapp.fixOutcome
 import kotlinx.coroutines.Dispatchers
@@ -62,28 +64,36 @@ fun UrBudgetApp(vm: BudgetViewModel = viewModel()) {
 }
 
 /** Shows `message` above the tab bar, with Undo for the last change when asked. */
-private fun SnackbarHostState.toast(scope: kotlinx.coroutines.CoroutineScope, vm: BudgetViewModel, message: String, undo: Boolean) {
+private fun SnackbarHostState.toast(scope: kotlinx.coroutines.CoroutineScope, vm: BudgetViewModel, message: String, undo: Boolean, undoLabel: String) {
     scope.launch {
         currentSnackbarData?.dismiss()
-        if (showSnackbar(message, actionLabel = if (undo) "Undo" else null, duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) vm.undo()
+        if (showSnackbar(message, actionLabel = if (undo) undoLabel else null, duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) vm.undo()
     }
 }
 
 /** Budget, Transactions, Accounts and Reports are tabs; More opens a drawer of everything else. */
-private val tabs = listOf("Budget" to Icons.Outlined.GridView, "Transactions" to Icons.Outlined.SwapHoriz,
-    "Accounts" to Icons.Outlined.AccountBalance, "Reports" to Icons.Outlined.BarChart, "More" to Icons.Outlined.Menu)
+private val tabs = listOf(R.string.tab_budget to Icons.Outlined.GridView, R.string.tab_transactions to Icons.Outlined.SwapHoriz,
+    R.string.tab_accounts to Icons.Outlined.AccountBalance, R.string.tab_reports to Icons.Outlined.BarChart, R.string.tab_more to Icons.Outlined.Menu)
 
-/** The pages More leads to, with what each is for. */
-internal data class MorePage(val title: String, val detail: String, val icon: ImageVector)
+/**
+ * The pages More leads to, with what each is for. A page is known by its English `key`, which the
+ * navigation state keeps; people see its title in their language.
+ */
+internal data class MorePage(val key: String, val title: Int, val detail: Int, val icon: ImageVector)
 internal val morePages = listOf(
-    MorePage("Scheduled", "Bills, income and repeating transactions", Icons.Outlined.EventRepeat),
-    MorePage("Loan planner", "Payoff dates and extra payments", Icons.Outlined.Calculate),
-    MorePage("Payees & rules", "Default categories and import rules", Icons.Outlined.People),
-    MorePage("Bank connections", "Link accounts and review downloads", Icons.Outlined.AccountBalance),
-    MorePage("Account & sync", "Encrypted sync and your account", Icons.Outlined.CloudSync),
-    MorePage("Budget library", "Budgets, backups and fresh starts", Icons.Outlined.FolderOpen),
-    MorePage("Settings & data", "Backups, imports and appearance", Icons.Outlined.Settings),
+    MorePage("Scheduled", R.string.page_scheduled, R.string.page_scheduled_detail, Icons.Outlined.EventRepeat),
+    MorePage("Loan planner", R.string.page_loans, R.string.page_loans_detail, Icons.Outlined.Calculate),
+    MorePage("Payees & rules", R.string.page_payees, R.string.page_payees_detail, Icons.Outlined.People),
+    MorePage("Bank connections", R.string.page_banks, R.string.page_banks_detail, Icons.Outlined.AccountBalance),
+    MorePage("Account & sync", R.string.page_account_sync, R.string.page_account_sync_detail, Icons.Outlined.CloudSync),
+    MorePage("Budget library", R.string.page_library, R.string.page_library_detail, Icons.Outlined.FolderOpen),
+    MorePage("Settings & data", R.string.page_settings, R.string.page_settings_detail, Icons.Outlined.Settings),
 )
+
+/** A page's title in the interface's language, from its key. */
+@Composable
+internal fun pageTitle(page: String): String = morePages.firstOrNull { it.key == page }?.let { stringResource(it.title) }
+    ?: if (page == "Assistant") stringResource(R.string.assistant_title) else page
 
 @Composable
 private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
@@ -130,15 +140,15 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
                         while (true) {
                             val count = input.read(buffer)
                             if (count < 0) break
-                            require(output.size() + count <= 32 * 1024 * 1024) { "Choose a JSON backup smaller than 32 MB." }
+                            require(output.size() + count <= 32 * 1024 * 1024) { context.getString(R.string.backup_too_large) }
                             output.write(buffer, 0, count)
                         }
                         output.toString("UTF-8")
-                    } ?: error("The selected file could not be opened.")
+                    } ?: error(context.getString(R.string.error_file_not_opened))
                 }
             }.onSuccess { json ->
                 if (vm.exportBudget() == null) vm.importBudget(json) else pendingImport = json
-            }.onFailure { fileError = it.message ?: "Could not open this backup." }
+            }.onFailure { fileError = it.message ?: context.getString(R.string.backup_open_failed) }
         }
     }
     val saveFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
@@ -146,8 +156,8 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
             val json = vm.exportBudget()
             if (json != null) scope.launch {
                 runCatching {
-                    withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri)?.use { it.write(json.toByteArray(Charsets.UTF_8)) } ?: error("The backup could not be saved.") }
-                }.onSuccess { snack.showSnackbar("Backup exported") }.onFailure { fileError = it.message ?: "Could not save this backup." }
+                    withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri)?.use { it.write(json.toByteArray(Charsets.UTF_8)) } ?: error(context.getString(R.string.backup_not_saved)) }
+                }.onSuccess { snack.showSnackbar(context.getString(R.string.backup_exported)) }.onFailure { fileError = it.message ?: context.getString(R.string.backup_save_failed) }
             }
         }
     }
@@ -164,8 +174,8 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
         val open = importing
         val fixes = proposal.optJSONObject("fixes")
         val session = open?.session
-        if (open == null || fixes == null || session == null) return assistantController.note("Open the import these fixes are for.")
-        if (fixes.optJSONObject("scope")?.optString("session") != open.sessionId) return assistantController.note("These fixes are for another import.")
+        if (open == null || fixes == null || session == null) return assistantController.note(context.getString(R.string.assistant_fix_open_import))
+        if (fixes.optJSONObject("scope")?.optString("session") != open.sessionId) return assistantController.note(context.getString(R.string.assistant_fix_other_import))
         vm.query("bankApplyFixes", JSONObject().put("accountId", open.account).put("content", open.content).put("session", session).put("fixes", fixes),
             onError = { assistantController.note(it) }, anyRevision = true) { applied ->
             val outcome = fixOutcome(applied)
@@ -228,17 +238,18 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     }
     // Captures only stable holders, so it stays the same lambda across state emissions.
     val common: @Composable RowScope.() -> Unit = {
-        RoundIconButton(Icons.AutoMirrored.Outlined.Chat, "Assistant", { assistant = true })
+        RoundIconButton(Icons.AutoMirrored.Outlined.Chat, stringResource(R.string.assistant_title), { assistant = true })
         OverflowMenu(vm) { openPage("Settings & data") }
     }
     val budget = state.budget
-    val toast = remember(snack, scope, vm) { { message: String, undo: Boolean -> snack.toast(scope, vm, message, undo) } }
+    val undoLabel = stringResource(R.string.common_undo)
+    val toast = remember(snack, scope, vm, undoLabel) { { message: String, undo: Boolean -> snack.toast(scope, vm, message, undo, undoLabel) } }
     CompositionLocalProvider(LocalToast provides toast) {
     Box(Modifier.fillMaxSize().background(ur.bg).nestedScroll(scrollWatcher)) {
         when {
             state.loading -> CircularProgressIndicator(Modifier.align(Alignment.Center), color = ur.accent)
             morePage == "Account & sync" && budget == null -> Column(Modifier.fillMaxSize()) {
-                PhoneTopBar("Account & sync", onBack = { morePage = ""; tab = 0 })
+                PhoneTopBar(pageTitle("Account & sync"), onBack = { morePage = ""; tab = 0 })
                 Box(Modifier.weight(1f)) { CloudScreen(vm) }
             }
             budget == null -> WelcomeScreen(state.busy, { name, currency, sample ->
@@ -246,7 +257,7 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
             }, importFile, if (vm.exportBudget() != null) exportFile else null, if (state.recoveryAvailable) ({ confirmRestore = true }) else null,
                 { tab = 4; morePage = "Account & sync" })
             tab == 4 && morePage.isNotEmpty() -> pageStates.SaveableStateProvider("page:$morePage") { Column(Modifier.fillMaxSize()) {
-                PhoneTopBar(morePage, budget.text("name"), onBack = ::closePage, actions = common)
+                PhoneTopBar(pageTitle(morePage), budget.text("name"), onBack = ::closePage, actions = common)
                 Box(Modifier.weight(1f)) {
                     when (morePage) {
                         "Account & sync" -> CloudScreen(vm)
@@ -330,20 +341,20 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
         "ynabImport" -> YnabImportDialog(budget, vm) { editor = null }
     }
     val error = state.error ?: fileError
-    if (error != null) AlertDialog(onDismissRequest = { vm.dismissError(); fileError = null }, title = { Text("Couldn’t complete that") },
-        text = { Text(error) }, confirmButton = { TextButton({ vm.dismissError(); fileError = null }) { Text("OK") } }, containerColor = ur.surface)
-    if (pendingImport != null) AlertDialog(onDismissRequest = { pendingImport = null }, title = { Text("Replace the open budget?") },
-        text = { Text("Import replaces the budget on this device. Export your current budget first if you want a separate copy. Unknown desktop fields are preserved in JSON backups.") },
-        confirmButton = { TextButton({ vm.importBudget(pendingImport!!); pendingImport = null }) { Text("Import backup") } },
-        dismissButton = { TextButton({ pendingImport = null }) { Text("Cancel") } }, containerColor = ur.surface)
-    if (confirmRestore) AlertDialog(onDismissRequest = { confirmRestore = false }, title = { Text("Restore the previous budget?") },
-        text = { Text("Restore the budget saved before your last import or replacement. Export the current budget first to keep a separate copy.") },
-        confirmButton = { TextButton({ vm.restorePreviousBudget(); confirmRestore = false }) { Text("Restore") } }, dismissButton = { TextButton({ confirmRestore = false }) { Text("Cancel") } },
+    if (error != null) AlertDialog(onDismissRequest = { vm.dismissError(); fileError = null }, title = { Text(stringResource(R.string.error_title)) },
+        text = { Text(error) }, confirmButton = { TextButton({ vm.dismissError(); fileError = null }) { Text(stringResource(R.string.common_ok)) } }, containerColor = ur.surface)
+    if (pendingImport != null) AlertDialog(onDismissRequest = { pendingImport = null }, title = { Text(stringResource(R.string.import_replace_title)) },
+        text = { Text(stringResource(R.string.import_replace_message)) },
+        confirmButton = { TextButton({ vm.importBudget(pendingImport!!); pendingImport = null }) { Text(stringResource(R.string.import_backup_action)) } },
+        dismissButton = { TextButton({ pendingImport = null }) { Text(stringResource(R.string.common_cancel)) } }, containerColor = ur.surface)
+    if (confirmRestore) AlertDialog(onDismissRequest = { confirmRestore = false }, title = { Text(stringResource(R.string.restore_previous_title)) },
+        text = { Text(stringResource(R.string.restore_previous_message)) },
+        confirmButton = { TextButton({ vm.restorePreviousBudget(); confirmRestore = false }) { Text(stringResource(R.string.common_restore)) } }, dismissButton = { TextButton({ confirmRestore = false }) { Text(stringResource(R.string.common_cancel)) } },
         containerColor = ur.surface)
-    if (pendingCreate != null) AlertDialog(onDismissRequest = { pendingCreate = null }, title = { Text("Replace existing data?") },
-        text = { Text("Existing budget data is still stored on this device. Export it for recovery before creating a new budget.") },
-        confirmButton = { TextButton({ pendingCreate?.let { vm.createBudget(it.first, it.second, it.third) }; pendingCreate = null }) { Text("Create budget") } },
-        dismissButton = { TextButton({ pendingCreate = null }) { Text("Cancel") } }, containerColor = ur.surface)
+    if (pendingCreate != null) AlertDialog(onDismissRequest = { pendingCreate = null }, title = { Text(stringResource(R.string.create_replace_title)) },
+        text = { Text(stringResource(R.string.create_replace_message)) },
+        confirmButton = { TextButton({ pendingCreate?.let { vm.createBudget(it.first, it.second, it.third) }; pendingCreate = null }) { Text(stringResource(R.string.create_budget_action)) } },
+        dismissButton = { TextButton({ pendingCreate = null }) { Text(stringResource(R.string.common_cancel)) } }, containerColor = ur.surface)
     }
 }
 
@@ -353,9 +364,10 @@ private fun TabDock(tab: Int, onTab: (Int) -> Unit) {
     val shape = RoundedCornerShape(32.dp)
     Row(Modifier.navigationBarsPadding().padding(start = 12.dp, end = 12.dp, bottom = 10.dp).fillMaxWidth().height(66.dp)
         .floating(shape, ur.dark, ur.border).clip(shape).background(ur.glass).border(0.5.dp, ur.border, shape).padding(5.dp)) {
-        tabs.forEachIndexed { index, (label, icon) ->
+        tabs.forEachIndexed { index, (labelId, icon) ->
             val active = index == tab
-            Column(Modifier.weight(if (label == "Transactions") 1.35f else 1f).fillMaxHeight().clip(RoundedCornerShape(28.dp))
+            val label = stringResource(labelId)
+            Column(Modifier.weight(if (index == 1) 1.35f else 1f).fillMaxHeight().clip(RoundedCornerShape(28.dp))
                 .background(if (active) ur.tabActive else androidx.compose.ui.graphics.Color.Transparent)
                 .clickable(role = Role.Tab, onClickLabel = label) { onTab(index) },
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
@@ -371,10 +383,10 @@ private fun TabDock(tab: Int, onTab: (Int) -> Unit) {
 private fun AddButton(expanded: Boolean, onClick: () -> Unit) {
     val shape = RoundedCornerShape(26.dp)
     Row(Modifier.height(52.dp).floating(shape, ur.dark, ur.borderStrong).clip(shape).background(ur.glass).border(0.5.dp, ur.border, shape)
-        .clickable(role = Role.Button, onClickLabel = "Add transaction", onClick = onClick).animateContentSize()
+        .clickable(role = Role.Button, onClickLabel = stringResource(R.string.transaction_add), onClick = onClick).animateContentSize()
         .padding(horizontal = if (expanded) 20.dp else 14.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(Icons.Outlined.Add, "Add transaction", Modifier.size(24.dp), tint = ur.text)
-        if (expanded) { Spacer(Modifier.width(8.dp)); Text("Transaction", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = ur.text) }
+        Icon(Icons.Outlined.Add, stringResource(R.string.transaction_add), Modifier.size(24.dp), tint = ur.text)
+        if (expanded) { Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.transaction_add_short), fontSize = 17.sp, fontWeight = FontWeight.Bold, color = ur.text) }
     }
 }
 
@@ -394,14 +406,14 @@ private fun OverflowMenu(vm: BudgetViewModel, settings: () -> Unit) {
     val (undoAvailable, redoAvailable, busy) = state
     var open by remember { mutableStateOf(false) }
     Box {
-        RoundIconButton(Icons.Outlined.MoreHoriz, "More actions", { open = true })
+        RoundIconButton(Icons.Outlined.MoreHoriz, stringResource(R.string.common_more_actions), { open = true })
         DropdownMenu(open, { open = false }, shape = RoundedCornerShape(16.dp), containerColor = ur.surface) {
-            DropdownMenuItem(text = { Text("Undo") }, leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Undo, null) }, enabled = undoAvailable && !busy,
+            DropdownMenuItem(text = { Text(stringResource(R.string.common_undo)) }, leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Undo, null) }, enabled = undoAvailable && !busy,
                 onClick = { vm.undo(); open = false })
-            DropdownMenuItem(text = { Text("Redo") }, leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Redo, null) }, enabled = redoAvailable && !busy,
+            DropdownMenuItem(text = { Text(stringResource(R.string.common_redo)) }, leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Redo, null) }, enabled = redoAvailable && !busy,
                 onClick = { vm.redo(); open = false })
             HorizontalDivider(color = ur.border)
-            DropdownMenuItem(text = { Text("Settings & data") }, leadingIcon = { Icon(Icons.Outlined.Settings, null) }, onClick = { settings(); open = false })
+            DropdownMenuItem(text = { Text(stringResource(R.string.page_settings)) }, leadingIcon = { Icon(Icons.Outlined.Settings, null) }, onClick = { settings(); open = false })
         }
     }
 }
@@ -419,29 +431,33 @@ private fun MoreDrawer(budget: JSONObject, close: () -> Unit, open: (String) -> 
                 }
                 Column(Modifier.weight(1f).padding(start = 12.dp)) {
                     Text(budget.text("name"), style = MaterialTheme.typography.titleMedium, color = ur.text)
-                    Text("${budget.text("currency")} · Switch or manage budgets", style = MaterialTheme.typography.bodySmall, color = ur.muted)
+                    Text(stringResource(R.string.drawer_budget_detail, budget.text("currency")), style = MaterialTheme.typography.bodySmall, color = ur.muted)
                 }
                 Icon(Icons.Outlined.UnfoldMore, null, tint = ur.muted)
             }
             ListCard {
-                morePages.filter { it.title != "Budget library" && it.title != "Settings & data" }.forEachIndexed { index, page ->
-                    ListRow(page.title, subtitle = page.detail, icon = page.icon, onClick = { open(page.title) }, divider = true)
+                morePages.filter { it.key != "Budget library" && it.key != "Settings & data" }.forEachIndexed { index, page ->
+                    ListRow(stringResource(page.title), subtitle = stringResource(page.detail), icon = page.icon, onClick = { open(page.key) }, divider = true)
                 }
-                ListRow("Assistant", subtitle = "Ask about your budget and review changes", icon = Icons.AutoMirrored.Outlined.Chat, onClick = { open("Assistant") })
+                ListRow(stringResource(R.string.assistant_title), subtitle = stringResource(R.string.drawer_assistant_detail), icon = Icons.AutoMirrored.Outlined.Chat, onClick = { open("Assistant") })
             }
             ListCard {
-                ListRow("Import bank file", subtitle = "CSV, OFX, QFX or QIF, reviewed first", icon = Icons.Outlined.FileOpen, onClick = bankImport, divider = true)
-                ListRow("Import from YNAB", subtitle = "From YNAB's API or its export files", icon = Icons.Outlined.FileDownload, onClick = ynabImport)
+                ListRow(stringResource(R.string.import_bank_file), subtitle = stringResource(R.string.import_bank_file_detail), icon = Icons.Outlined.FileOpen, onClick = bankImport, divider = true)
+                ListRow(stringResource(R.string.import_ynab), subtitle = stringResource(R.string.import_ynab_detail), icon = Icons.Outlined.FileDownload, onClick = ynabImport)
             }
-            ListCard { ListRow("Settings & data", icon = Icons.Outlined.Settings, iconTint = ur.text2, iconFill = ur.zeroSoft, onClick = { open("Settings & data") }) }
+            ListCard { ListRow(stringResource(R.string.page_settings), icon = Icons.Outlined.Settings, iconTint = ur.text2, iconFill = ur.zeroSoft, onClick = { open("Settings & data") }) }
         }
     }
 }
 
 @Composable
 private fun WelcomeScreen(busy: Boolean, create: (String, String, Boolean) -> Unit, importFile: () -> Unit, exportFile: (() -> Unit)?, restore: (() -> Unit)?, signIn: () -> Unit) {
-    var name by rememberSaveable { mutableStateOf("My budget") }
-    var currency by rememberSaveable { mutableStateOf(runCatching { Currency.getInstance(Locale.getDefault()).currencyCode }.getOrDefault("SAR")) }
+    // A new budget's name starts in the language in use; after that it's the person's data.
+    val defaultName = stringResource(R.string.welcome_default_name)
+    val sampleName = stringResource(R.string.welcome_sample_name)
+    var name by rememberSaveable { mutableStateOf(defaultName) }
+    // The device's region suggests the currency, whatever language the app is in.
+    var currency by rememberSaveable { mutableStateOf(runCatching { Currency.getInstance(android.content.res.Resources.getSystem().configuration.locales[0]).currencyCode }.getOrDefault("SAR")) }
     Column(Modifier.fillMaxSize().background(ur.bg).verticalScroll(rememberScrollState()).statusBarsPadding().navigationBarsPadding().padding(horizontal = 24.dp, vertical = 28.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Spacer(Modifier.height(24.dp))
@@ -449,25 +465,25 @@ private fun WelcomeScreen(busy: Boolean, create: (String, String, Boolean) -> Un
             Text("Ur", color = androidx.compose.ui.graphics.Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 26.sp)
         }
         Spacer(Modifier.height(8.dp))
-        Text("Make room for\nwhat matters.", style = MaterialTheme.typography.displaySmall, color = ur.text)
-        Text("A plan for every part of your money. Your budget lives on this device, and your desktop backups work here too.",
+        Text(stringResource(R.string.welcome_title), style = MaterialTheme.typography.displaySmall, color = ur.text)
+        Text(stringResource(R.string.welcome_message),
             style = MaterialTheme.typography.bodyLarge, color = ur.text2)
         Spacer(Modifier.height(8.dp))
         ListCard {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Field(name, { name = it }, "Budget name")
-                Choice("Currency", currency, (listOf(currency, "SAR", "USD", "EUR", "GBP", "CAD", "AUD", "AED", "INR").distinct()).map { it to it }, { currency = it })
-                PrimaryButton("Create my budget", { create(name, currency, false) }, Modifier.fillMaxWidth(), enabled = !busy && name.isNotBlank())
+                Field(name, { name = it }, stringResource(R.string.budget_name))
+                Choice(stringResource(R.string.budget_currency), currency, (listOf(currency, "SAR", "USD", "EUR", "GBP", "CAD", "AUD", "AED", "INR").distinct()).map { it to it }, { currency = it })
+                PrimaryButton(stringResource(R.string.welcome_create), { create(name, currency, false) }, Modifier.fillMaxWidth(), enabled = !busy && name.isNotBlank())
             }
         }
         ListCard {
-            ListRow("Explore with sample money", subtitle = "A filled-in budget to try things on", icon = Icons.Outlined.AutoAwesome, onClick = { if (!busy) create("Sample budget", currency, true) }, divider = true)
-            ListRow("Import UrBudget backup", subtitle = "A JSON backup from desktop or Android", icon = Icons.Outlined.FileOpen, onClick = { if (!busy) importFile() }, divider = true)
-            ListRow("Sign in and sync", subtitle = "Bring down a budget you sync", icon = Icons.Outlined.CloudSync, onClick = { if (!busy) signIn() })
+            ListRow(stringResource(R.string.welcome_sample), subtitle = stringResource(R.string.welcome_sample_detail), icon = Icons.Outlined.AutoAwesome, onClick = { if (!busy) create(sampleName, currency, true) }, divider = true)
+            ListRow(stringResource(R.string.welcome_import), subtitle = stringResource(R.string.welcome_import_detail), icon = Icons.Outlined.FileOpen, onClick = { if (!busy) importFile() }, divider = true)
+            ListRow(stringResource(R.string.welcome_sign_in), subtitle = stringResource(R.string.welcome_sign_in_detail), icon = Icons.Outlined.CloudSync, onClick = { if (!busy) signIn() })
         }
         if (exportFile != null || restore != null) ListCard {
-            if (exportFile != null) ListRow("Export existing data for recovery", icon = Icons.Outlined.FileUpload, onClick = exportFile, divider = restore != null)
-            if (restore != null) ListRow("Restore previous budget", icon = Icons.Outlined.Restore, onClick = restore)
+            if (exportFile != null) ListRow(stringResource(R.string.welcome_export_recovery), icon = Icons.Outlined.FileUpload, onClick = exportFile, divider = restore != null)
+            if (restore != null) ListRow(stringResource(R.string.welcome_restore_previous), icon = Icons.Outlined.Restore, onClick = restore)
         }
     }
 }

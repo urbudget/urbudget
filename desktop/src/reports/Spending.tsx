@@ -13,6 +13,7 @@ import {
 import { formatDate, money, monthName } from "../format";
 import { Tabs, useFirstWeekday, useVirtualRows } from "../ui";
 import { today } from "../types";
+import { ltr, t, tn, weekdayNames } from "../i18n";
 import {
   OTHER,
   Panel,
@@ -68,7 +69,7 @@ export function ByCategory({ scope }: { scope: Scope }) {
   const other = rows.filter((r) => r.color === OTHER && r.value > 0);
   const slices = [
     ...rows.filter((r) => r.color !== OTHER && r.value > 0),
-    ...(other.length ? [{ key: "__other", label: "Other", value: sum(other.map((r) => r.value)), color: OTHER }] : []),
+    ...(other.length ? [{ key: "__other", label: t("Other"), value: sum(other.map((r) => r.value)), color: OTHER }] : []),
   ];
   const top = rows[0];
   const open = (key: string) => {
@@ -81,20 +82,20 @@ export function ByCategory({ scope }: { scope: Scope }) {
       <Tiles
         items={[
           {
-            label: group ? `Spent in ${group}` : "Spending",
+            label: group ? t("Spent in {group}", { group }) : t("Spending"),
             value: fmt(total),
             note: group
-              ? `${share(total, data.spending)} of all spending`
-              : `over ${n} ${n === 1 ? "month" : "months"}`,
+              ? t("{share} of all spending", { share: share(total, data.spending) })
+              : tn(n, "over {count} month", "over {count} months"),
           },
-          { label: "Monthly average", value: fmt(Math.round(total / n)) },
+          { label: t("Monthly average"), value: fmt(Math.round(total / n)) },
           {
-            label: group ? "Biggest category" : "Biggest group",
+            label: group ? t("Biggest category") : t("Biggest group"),
             value: top?.label ?? "—",
             note: top ? `${fmt(top.value)} · ${share(top.value, total)}` : undefined,
           },
           {
-            label: group ? "Categories with spending" : "Groups with spending",
+            label: group ? t("Categories with spending") : t("Groups with spending"),
             value: rows.filter((r) => r.value > 0).length,
           },
         ]}
@@ -104,12 +105,12 @@ export function ByCategory({ scope }: { scope: Scope }) {
           group ? (
             <>
               <button className="link-button" onClick={() => setGroup(null)}>
-                <ChevronLeft size={15} /> All groups
+                <ChevronLeft size={15} /> {t("All groups")}
               </button>
               <span className="muted">/</span> {group}
             </>
           ) : (
-            "Spending by group"
+            t("Spending by group")
           )
         }
       >
@@ -117,9 +118,9 @@ export function ByCategory({ scope }: { scope: Scope }) {
           <div className="donut-layout">
             <Donut
               slices={slices}
-              label={group ? `Spending in ${group} by category` : "Spending by group"}
+              label={group ? t("Spending in {group} by category", { group }) : t("Spending by group")}
               format={fmt}
-              center={{ value: money(total), label: group ?? "Spent" }}
+              center={{ value: money(total), label: group ?? t("Spent") }}
               onSelect={open}
             />
             <BarList
@@ -127,20 +128,19 @@ export function ByCategory({ scope }: { scope: Scope }) {
                 ...r,
                 detail: share(r.value, total),
                 onSelect: () => open(r.key),
-                hint: group ? "List these transactions" : `Show categories in ${r.key}`,
+                hint: group ? t("List these transactions") : t("Show categories in {group}", { group: r.key }),
               }))}
               color={SERIES(0)}
               format={fmt}
-              label={group ? `Spending in ${group}` : "Spending by group"}
+              label={group ? t("Spending in {group}", { group }) : t("Spending by group")}
             />
           </div>
         ) : (
-          <p className="empty-state compact">No spending in these months.</p>
+          <p className="empty-state compact">{t("No spending in these months.")}</p>
         )}
         <p className="help">
-          {group ? "Select a category to see its transactions." : "Select a group to see its categories."} Refunds
-          reduce spending, so a category can be negative. The ring shows only groups or categories with net spending;
-          the total and list include refunds.
+          {group ? t("Select a category to see its transactions.") : t("Select a group to see its categories.")}{" "}
+          {t("Refunds reduce spending, so a category can be negative. The ring shows only groups or categories with net spending; the total and list include refunds.")}
         </p>
       </Panel>
       {data.months.length >= 2 && <Changes scope={scope} group={group} />}
@@ -164,7 +164,7 @@ function Changes({ scope, group }: { scope: Scope; group: string | null }) {
       key,
       label: group ? (scope.nameOf.get(key) ?? key) : key,
       value: Math.round((now.get(key) ?? 0) - (average.get(key) ?? 0)),
-      detail: `avg ${money(Math.round(average.get(key) ?? 0))}`,
+      detail: t("avg {amount}", { amount: money(Math.round(average.get(key) ?? 0)) }),
     }))
     .filter((r) => r.value !== 0)
     .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
@@ -172,26 +172,34 @@ function Changes({ scope, group }: { scope: Scope; group: string | null }) {
   const partial = last.month === today().slice(0, 7);
   return (
     <Panel
-      title={`${monthName(last.month)}${partial ? " so far" : ""} against your average`}
-      aside={<span className="muted">the {earlier.length}-month average before it</span>}
+      title={
+        partial
+          ? t("{month} so far against your average", { month: monthName(last.month) })
+          : t("{month} against your average", { month: monthName(last.month) })
+      }
+      aside={
+        <span className="muted">
+          {tn(earlier.length, "the {count}-month average before it", "the {count}-month average before it")}
+        </span>
+      }
     >
       {rows.length ? (
         <>
           <DivergingList
             rows={rows}
             format={money}
-            label={`Change in spending in ${monthName(last.month)}`}
+            label={t("Change in spending in {month}", { month: monthName(last.month) })}
             colors={{ more: "var(--diverging-negative)", less: "var(--diverging-positive)" }}
           />
           <Legend
             items={[
-              { label: "Spent less than average", color: "var(--diverging-positive)" },
-              { label: "Spent more than average", color: "var(--diverging-negative)" },
+              { label: t("Spent less than average"), color: "var(--diverging-positive)" },
+              { label: t("Spent more than average"), color: "var(--diverging-negative)" },
             ]}
           />
         </>
       ) : (
-        <p className="empty-state compact">Spending matched the average.</p>
+        <p className="empty-state compact">{t("Spending matched the average.")}</p>
       )}
     </Panel>
   );
@@ -217,16 +225,16 @@ function PayeeTable({ payees, total, onOpen }: { payees: PayeeSpending[]; total:
   const rows = useVirtualRows(box, payees.length, PAYEE_ROW);
   const table = useReportColumns("payees", 4, 220);
   return (
-    <div className="report-table scrolls payee-table" ref={box} tabIndex={0} role="region" aria-label="Payee spending rows">
-      <table className="fixed" style={table.style} aria-label="Payee spending" aria-rowcount={payees.length + 1}>
+    <div className="report-table scrolls payee-table" ref={box} tabIndex={0} role="region" aria-label={t("Payee spending rows")}>
+      <table className="fixed" style={table.style} aria-label={t("Payee spending")} aria-rowcount={payees.length + 1}>
         {table.cols}
         <thead>
           <tr aria-rowindex={1}>
-            <th>Payee{table.grip("label", "Payee")}</th>
-            <th className="num">Spent{table.grip("value", "amount")}</th>
-            <th className="num">Share{table.grip("value", "amount")}</th>
-            <th className="num">Transactions{table.grip("value", "amount")}</th>
-            <th className="num">Average{table.grip("value", "amount")}</th>
+            <th>{t("Payee")}{table.grip("label", "Payee")}</th>
+            <th className="num">{t("Spent")}{table.grip("value", "amount")}</th>
+            <th className="num">{t("Share")}{table.grip("value", "amount")}</th>
+            <th className="num">{t("Transactions")}{table.grip("value", "amount")}</th>
+            <th className="num">{t("Average")}{table.grip("value", "amount")}</th>
             <th aria-hidden />
           </tr>
         </thead>
@@ -235,8 +243,8 @@ function PayeeTable({ payees, total, onOpen }: { payees: PayeeSpending[]; total:
           {payees.slice(rows.start, rows.end).map((p, i) => (
             <tr key={p.name} aria-rowindex={rows.start + i + 2}>
               <td>
-                <button className="link-button cell-link" onClick={() => onOpen(p.name)} title="Show these transactions">
-                  {p.name || "No payee"}
+                <button className="link-button cell-link" onClick={() => onOpen(p.name)} title={t("Show these transactions")}>
+                  {p.name || t("No payee")}
                 </button>
               </td>
               <td className="num">{money(p.amount)}</td>
@@ -247,7 +255,7 @@ function PayeeTable({ payees, total, onOpen }: { payees: PayeeSpending[]; total:
             </tr>
           ))}
           {rows.after > 0 && <tr aria-hidden className="spacer-row" style={{ height: rows.after }}><td colSpan={6} /></tr>}
-          {!payees.length && <tr><td colSpan={6} className="muted">No payees match.</td></tr>}
+          {!payees.length && <tr><td colSpan={6} className="muted">{t("No payees match.")}</td></tr>}
         </tbody>
       </table>
     </div>
@@ -276,75 +284,81 @@ export function ByPayee({ scope }: { scope: Scope }) {
   const restTotal = sum(rest.map((p) => p.amount));
   const tiles = big.map((p) => ({
     key: p.name,
-    label: p.name || "No payee",
+    label: p.name || t("No payee"),
     value: p.amount,
-    detail: `${share(p.amount, positiveTotal)} of spending shown`,
-    more: `${p.count} ${p.count === 1 ? "transaction" : "transactions"} · avg ${money(Math.round(p.amount / Math.max(1, p.count)))}`,
+    detail: t("{share} of spending shown", { share: share(p.amount, positiveTotal) }),
+    more: t("{transactions} · avg {amount}", {
+      transactions: tn(p.count, "{count} transaction", "{count} transactions"),
+      amount: money(Math.round(p.amount / Math.max(1, p.count))),
+    }),
   }));
   const shown = useMemo(() => {
     const search = query.trim().toLowerCase();
     return search ? all.filter((p) => p.name.toLowerCase().includes(search)) : all;
   }, [all, query]);
-  const open = (name: string) => scope.show({ title: name || "No payee", payee: name });
+  const open = (name: string) => scope.show({ title: name || t("No payee"), payee: name });
   return (
     <>
       <Tiles
         items={[
-          { label: "Spending", value: fmt(total), note: `at ${all.length} ${all.length === 1 ? "payee" : "payees"}` },
+          { label: t("Spending"), value: fmt(total), note: tn(all.length, "at {count} payee", "at {count} payees") },
           {
-            label: "Top payee",
-            value: top ? top.name || "No payee" : "—",
-            note: top ? `${fmt(top.amount)} · ${share(top.amount, positiveTotal)} of spending shown` : undefined,
+            label: t("Top payee"),
+            value: top ? top.name || t("No payee") : "—",
+            note: top
+              ? t("{amount} · {share} of spending shown", { amount: fmt(top.amount), share: share(top.amount, positiveTotal) })
+              : undefined,
           },
           {
-            label: "Average per transaction",
+            label: t("Average per transaction"),
             value: count ? fmt(Math.round(total / count)) : "—",
-            note: `${count} transactions`,
+            note: tn(count, "{count} transactions", "{count} transactions"),
           },
           {
-            label: "Top 5 payees",
+            label: t("Top 5 payees"),
             value: share(sum(positive.slice(0, 5).map((p) => p.amount)), positiveTotal),
-            note: "of spending shown",
+            note: t("of spending shown"),
           },
         ]}
       />
       <Panel
-        title={rest.length ? `Top ${big.length} payees` : "Where your money goes"}
+        title={rest.length ? tn(big.length, "Top {count} payees", "Top {count} payees") : t("Where your money goes")}
         aside={
           <span className="muted">
-            {rest.length ? `${share(positiveTotal - restTotal, positiveTotal)} of spending shown · ` : ""}Bigger tiles, more spent
+            {rest.length ? `${t("{share} of spending shown", { share: share(positiveTotal - restTotal, positiveTotal) })} · ` : ""}
+            {t("Bigger tiles, more spent")}
           </span>
         }
       >
         {positive.length ? (
-          <Treemap items={tiles} format={fmt} label="Spending by payee" onSelect={open} height={320} />
+          <Treemap items={tiles} format={fmt} label={t("Spending by payee")} onSelect={open} height={320} />
         ) : (
-          <p className="empty-state compact">No payees with net spending in these months.</p>
+          <p className="empty-state compact">{t("No payees with net spending in these months.")}</p>
         )}
         <div className="treemap-foot">
           <p className="help">
-            Select a payee to see its transactions. Tiles show payees with net spending; the total and table include refunds.
-            {refunds > 0 && ` Net refunds of ${fmt(refunds)} at other payees reduce the total.`}
+            {t("Select a payee to see its transactions. Tiles show payees with net spending; the total and table include refunds.")}
+            {refunds > 0 && ` ${t("Net refunds of {amount} at other payees reduce the total.", { amount: fmt(refunds) })}`}
           </p>
           {rest.length > 0 && (
             <button
               className="link-button"
               onClick={() => allPayees.current?.scrollIntoView?.({ behavior: "smooth", block: "start" })}
             >
-              {rest.length} more {rest.length === 1 ? "payee" : "payees"} · {fmt(restTotal)} <ArrowDown size={13} />
+              {tn(rest.length, "{count} more payee", "{count} more payees")} · {fmt(restTotal)} <ArrowDown size={13} />
             </button>
           )}
         </div>
       </Panel>
       <div ref={allPayees} className="scroll-anchor">
         <Panel
-          title="All payees"
+          title={t("All payees")}
           aside={
             <label className="report-search">
               <Search size={14} aria-hidden />
               <input
-                aria-label="Find a payee"
-                placeholder="Find a payee"
+                aria-label={t("Find a payee")}
+                placeholder={t("Find a payee")}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
@@ -366,7 +380,7 @@ export function OverTime({ scope }: { scope: Scope }) {
   const series: Series[] = [];
   for (const g of spendingGroups) {
     const color = colorOf(g);
-    const label = color === OTHER ? "Other" : g;
+    const label = color === OTHER ? t("Other") : g;
     const values = data.months.map((m) =>
       sum(
         Object.entries(m.categories)
@@ -390,47 +404,49 @@ export function OverTime({ scope }: { scope: Scope }) {
     <>
       <Tiles
         items={[
-          { label: "Monthly average", value: fmt(average) },
+          { label: t("Monthly average"), value: fmt(average) },
           {
-            label: "Highest month",
+            label: t("Highest month"),
             value: byAmount[0] ? fmt(byAmount[0].spending) : "—",
             note: byAmount[0] && monthName(byAmount[0].month),
           },
           {
-            label: "Lowest month",
+            label: t("Lowest month"),
             value: byAmount.length ? fmt(byAmount[byAmount.length - 1].spending) : "—",
             note: byAmount.length ? monthName(byAmount[byAmount.length - 1].month) : undefined,
           },
           {
-            label: "Trend",
+            label: t("Trend"),
             value:
               half && before
-                ? `${recent >= before ? "+" : ""}${(((recent - before) / before) * 100).toFixed(0)}%`
+                ? ltr(`${recent >= before ? "+" : ""}${(((recent - before) / before) * 100).toFixed(0)}%`)
                 : "—",
-            note: half ? `last ${half} months against the ${half} before` : "needs two months or more",
+            note: half
+              ? tn(half, "last {count} months against the {count} before", "last {count} months against the {count} before")
+              : t("needs two months or more"),
             tone: half && before ? (recent > before ? "negative" : "positive") : undefined,
           },
         ]}
       />
       <Panel
-        title="Spending by month"
+        title={t("Spending by month")}
         aside={
           <Tabs<"groups" | "total">
-            label="Show"
+            label={t("Show")}
             value={mode}
             onChange={setMode}
             tabs={[
-              { id: "groups", label: "By group" },
-              { id: "total", label: "Total" },
+              { id: "groups", label: t("By group") },
+              { id: "total", label: t("Total") },
             ]}
           />
         }
       >
         <ColumnChart
           months={months}
-          series={mode === "total" ? [{ key: "total", label: "Spending", color: SERIES(0), values: totals }] : shown}
-          average={{ label: "Average", value: average }}
-          label={`Spending by month${mode === "groups" ? ", stacked by category group" : ""}`}
+          series={mode === "total" ? [{ key: "total", label: t("Spending"), color: SERIES(0), values: totals }] : shown}
+          average={{ label: t("Average"), value: average }}
+          label={mode === "groups" ? t("Spending by month, stacked by category group") : t("Spending by month")}
           format={fmt}
         />
         {mode === "groups" && <Legend items={shown.map((s) => ({ label: s.label, color: s.color }))} />}
@@ -439,7 +455,7 @@ export function OverTime({ scope }: { scope: Scope }) {
             {table.cols}
             <thead>
               <tr>
-                <th>Month{table.grip("label", "Month")}</th>
+                <th>{t("Month")}{table.grip("label", "Month")}</th>
                 {mode === "groups" &&
                   shown.map((s) => (
                     <th key={s.key} className="num">
@@ -447,7 +463,7 @@ export function OverTime({ scope }: { scope: Scope }) {
                       {table.grip("value", "amount")}
                     </th>
                   ))}
-                <th className="num">Total{table.grip("value", "amount")}</th>
+                <th className="num">{t("Total")}{table.grip("value", "amount")}</th>
                 <th aria-hidden />
               </tr>
             </thead>
@@ -470,7 +486,7 @@ export function OverTime({ scope }: { scope: Scope }) {
             </tbody>
             <tfoot>
               <tr>
-                <th>Average</th>
+                <th>{t("Average")}</th>
                 {mode === "groups" &&
                   shown.map((s) => (
                     <th key={s.key} className="num">
@@ -488,8 +504,9 @@ export function OverTime({ scope }: { scope: Scope }) {
   );
 }
 
+// Arabic weekday names have no short forms.
 const weekdayName = (d: number, style: "short" | "long" = "long") =>
-  new Date(2026, 1, 1 + d, 12).toLocaleDateString("en-GB", { weekday: style });
+  weekdayNames()?.[d] ?? new Date(2026, 1, 1 + d, 12).toLocaleDateString("en-GB", { weekday: style });
 
 export function SpendingCalendar({ scope }: { scope: Scope }) {
   const { data } = scope;
@@ -518,27 +535,29 @@ export function SpendingCalendar({ scope }: { scope: Scope }) {
       <Tiles
         items={[
           {
-            label: "Average a day",
+            label: t("Average a day"),
             value: days.length ? fmt(Math.round(sum(days.map((d) => values[d] ?? 0)) / days.length)) : "—",
           },
           {
-            label: "No-spend days",
+            label: t("No-spend days"),
             value: days.length - spent.length,
-            note: `of ${days.length} days · ${share(days.length - spent.length, days.length)}`,
+            note: tn(days.length, "of {count} days · {share}", "of {count} days · {share}", {
+              share: share(days.length - spent.length, days.length),
+            }),
           },
           {
-            label: "Biggest day",
+            label: t("Biggest day"),
             value: busiest[0] ? fmt(values[busiest[0]]) : "—",
             note: busiest[0] && formatDate(busiest[0]),
           },
           {
-            label: "Busiest weekday",
+            label: t("Busiest weekday"),
             value: spent.length ? weekdayName(weekdays[topWeekday]) : "—",
-            note: spent.length ? `${fmt(byWeekday[topWeekday])} on average` : undefined,
+            note: spent.length ? t("{amount} on average", { amount: fmt(byWeekday[topWeekday]) }) : undefined,
           },
         ]}
       />
-      <Panel title="Spending by day">
+      <Panel title={t("Spending by day")}>
         {days.length ? (
           <HeatCalendar
             from={from}
@@ -547,34 +566,34 @@ export function SpendingCalendar({ scope }: { scope: Scope }) {
             format={fmt}
             formatDay={(d) => `${weekdayName(new Date(`${d}T12:00:00`).getDay())} ${formatDate(d)}`}
             weekStart={weekStart}
-            label="Spending on each day, darker for more"
+            label={t("Spending on each day, darker for more")}
             onSelect={(d) => scope.show({ title: `${weekdayName(new Date(`${d}T12:00:00`).getDay())} ${formatDate(d)}`, from: d, to: d })}
           />
         ) : (
-          <p className="empty-state compact">These months haven't started yet.</p>
+          <p className="empty-state compact">{t("These months haven't started yet.")}</p>
         )}
       </Panel>
       <div className="report-pair">
-        <Panel title="By day of the week" aside={<span className="muted">Average spent</span>}>
+        <Panel title={t("By day of the week")} aside={<span className="muted">{t("Average spent")}</span>}>
           <ColumnChart
             months={weekdays.map(String)}
-            series={[{ key: "avg", label: "Average", color: SERIES(0), values: byWeekday }]}
-            label="Average spending on each day of the week"
+            series={[{ key: "avg", label: t("Average"), color: SERIES(0), values: byWeekday }]}
+            label={t("Average spending on each day of the week")}
             format={fmt}
             tick={(k) => weekdayName(Number(k), "short")}
             title={(k) => weekdayName(Number(k))}
             height={200}
           />
         </Panel>
-        <Panel title="Biggest days">
+        <Panel title={t("Biggest days")}>
           <ReportTable>
             <table className="fixed" style={table.style}>
               {table.cols}
               <thead>
                 <tr>
-                  <th>Date{table.grip("label", "Date")}</th>
-                  <th>Day{table.grip("value", "Day")}</th>
-                  <th className="num">Spent{table.grip("value", "amount")}</th>
+                  <th>{t("Date")}{table.grip("label", "Date")}</th>
+                  <th>{t("Day")}{table.grip("value", "Day")}</th>
+                  <th className="num">{t("Spent")}{table.grip("value", "amount")}</th>
                   <th aria-hidden />
                 </tr>
               </thead>
@@ -585,7 +604,7 @@ export function SpendingCalendar({ scope }: { scope: Scope }) {
                       <button
                         className="link-button cell-link"
                         onClick={() => scope.show({ title: `${weekdayName(new Date(`${d}T12:00:00`).getDay())} ${formatDate(d)}`, from: d, to: d })}
-                        title="Show this day's transactions"
+                        title={t("Show this day's transactions")}
                       >
                         {formatDate(d)}
                       </button>
@@ -598,7 +617,7 @@ export function SpendingCalendar({ scope }: { scope: Scope }) {
                 {!busiest.length && (
                   <tr>
                     <td colSpan={4} className="muted">
-                      No spending in these months.
+                      {t("No spending in these months.")}
                     </td>
                   </tr>
                 )}

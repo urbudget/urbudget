@@ -2,6 +2,7 @@ import { api } from "./bridge";
 import { learnFromRename, ruleChanges } from "./bankNames";
 import { errorText } from "./format";
 import { useToast } from "./ui";
+import { formatCount, t, tn } from "./i18n";
 import { id, type Budget, type Transaction } from "./types";
 
 type Transform = (fn: (b: Budget) => Promise<Budget>) => Promise<void>;
@@ -14,6 +15,7 @@ type Transform = (fn: (b: Budget) => Promise<Budget>) => Promise<void>;
 export function useLearnPayee(transform: Transform, undo?: () => void) {
   const toast = useToast();
   const fail = (e: unknown) => toast({ message: errorText(e), tone: "error" });
+  const count = formatCount;
   return (before: Budget, saved: Transaction) => {
     const learned = learnFromRename(before, saved);
     if (!learned) return;
@@ -27,23 +29,32 @@ export function useLearnPayee(transform: Transform, undo?: () => void) {
       });
       const reapply = () =>
         transform((b) => api.action(b, { type: "reapplyPayeeRules", ruleIds: [rule.id] })).then(
-          () => toast({ message: `Updated ${others === 1 ? "1 transaction" : `${others.toLocaleString()} transactions`}.`, action: undo && { label: "Undo", onClick: undo } }),
+          () =>
+            toast({
+              message: tn(others, "Updated {count} transaction.", "Updated {count} transactions.", { count: count(others) }),
+              action: undo && { label: t("Undo"), onClick: undo },
+            }),
           fail,
         );
       toast(
         others
           ? {
-              message: `Rule added. Apply it to ${others === 1 ? "1 earlier transaction" : `${others.toLocaleString()} earlier transactions`} too?`,
+              message: tn(
+                others,
+                "Rule added. Apply it to {count} earlier transaction too?",
+                "Rule added. Apply it to {count} earlier transactions too?",
+                { count: count(others) },
+              ),
               duration: 10000,
-              action: { label: "Apply", onClick: () => void reapply() },
+              action: { label: t("Apply"), onClick: () => void reapply() },
             }
-          : { message: "Rule added.", action: undo && { label: "Undo", onClick: undo } },
+          : { message: t("Rule added."), action: undo && { label: t("Undo"), onClick: undo } },
       );
     };
     toast({
-      message: `Always use ${rule.payee} for bank payees with “${rule.match}”?`,
+      message: t("Always use {payee} for bank payees with “{match}”?", { payee: rule.payee, match: rule.match }),
       duration: 10000,
-      action: { label: "Add rule", onClick: () => void add().catch(fail) },
+      action: { label: t("Add rule"), onClick: () => void add().catch(fail) },
     });
   };
 }

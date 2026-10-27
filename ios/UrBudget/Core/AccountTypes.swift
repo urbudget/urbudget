@@ -4,12 +4,16 @@ import Foundation
 /// type a YNAB import gave the account, else a guess from its kind, tracking accounts by the sign
 /// of their balance. The type sets the kind; a kind is never changed by reading a type.
 enum AccountTypes {
+    /// Each type's id (stored) and its name in the app's language.
     static let all: [(id: String, label: String)] = [
-        ("checking", "Checking"), ("savings", "Savings"), ("cash", "Cash"), ("creditCard", "Credit card"),
-        ("lineOfCredit", "Line of credit"), ("investment", "Investment"), ("retirement", "Retirement"),
-        ("mortgage", "Mortgage"), ("autoLoan", "Auto loan"), ("studentLoan", "Student loan"),
-        ("personalLoan", "Personal loan"), ("medicalDebt", "Medical debt"), ("property", "Property"),
-        ("vehicle", "Vehicle"), ("receivable", "Receivable"), ("otherAsset", "Other asset"), ("otherDebt", "Other debt"),
+        ("checking", String(localized: "Checking")), ("savings", String(localized: "Savings")), ("cash", String(localized: "Cash")),
+        ("creditCard", String(localized: "Credit card")), ("lineOfCredit", String(localized: "Line of credit")),
+        ("investment", String(localized: "Investment")), ("retirement", String(localized: "Retirement")),
+        ("mortgage", String(localized: "Mortgage")), ("autoLoan", String(localized: "Auto loan")),
+        ("studentLoan", String(localized: "Student loan")), ("personalLoan", String(localized: "Personal loan")),
+        ("medicalDebt", String(localized: "Medical debt")), ("property", String(localized: "Property")),
+        ("vehicle", String(localized: "Vehicle")), ("receivable", String(localized: "Receivable")),
+        ("otherAsset", String(localized: "Other asset")), ("otherDebt", String(localized: "Other debt")),
     ]
     private static let known = Set(all.map(\.id))
     private static let liabilities: Set<String> = ["creditCard", "lineOfCredit", "mortgage", "autoLoan", "studentLoan", "personalLoan", "medicalDebt", "otherDebt"]
@@ -58,7 +62,11 @@ enum AccountTypes {
     static func typeLabel(_ account: JSON) -> String {
         let chosen = account.text("accountType")
         if known.contains(chosen) { return label(chosen) }
-        switch account.text("kind") { case "credit": return "Credit card"; case "tracking": return "Tracking"; default: return "Cash" }
+        switch account.text("kind") {
+        case "credit": return String(localized: "Credit card")
+        case "tracking": return String(localized: "Tracking")
+        default: return String(localized: "Cash")
+        }
     }
 
     /// An SF Symbol for the type, as the desktop's accounts list draws them.

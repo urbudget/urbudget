@@ -56,16 +56,16 @@ struct SyncSubscriptionSection: View {
     private var statusDetail: String {
         switch provider {
         case "comp":
-            return active ? "Included with this account by UrBudget" : ""
+            return active ? String(localized: "Included with this account by UrBudget") : ""
         case "apple":
-            if plan.text("status") == "unpaid" { return "The App Store couldn't renew it. Check your payment method in Manage subscription." }
-            if let renews = date(plan.text("renewsAt")), active { return "Renews \(renews)" }
-            if let ends = date(plan.text("endsAt")) { return active ? "Ends \(ends)" : "Ended \(ends)" }
+            if plan.text("status") == "unpaid" { return String(localized: "The App Store couldn't renew it. Check your payment method in Manage subscription.") }
+            if let renews = date(plan.text("renewsAt")), active { return String(localized: "Renews \(renews)") }
+            if let ends = date(plan.text("endsAt")) { return active ? String(localized: "Ends \(ends)") : String(localized: "Ended \(ends)") }
             return ""
         case "":
             return ""
         default:
-            return active ? "Manage it where you subscribed." : ""
+            return active ? String(localized: "Manage it where you subscribed.") : ""
         }
     }
 
@@ -129,29 +129,48 @@ struct SyncSubscriptionSection: View {
         }
     }
 
+    /// What the price is for: "month" in "Subscribe for $2.99 a month", or "3 months".
     private func unit(_ product: Product) -> String {
-        guard let period = product.subscription?.subscriptionPeriod else { return "month" }
-        return period.value == 1 ? name(period.unit) : "\(period.value) \(name(period.unit))s"
+        guard let period = product.subscription?.subscriptionPeriod else { return String(localized: "month") }
+        guard period.value != 1 else { return name(period.unit) }
+        let count = period.value
+        switch period.unit {
+        // Keys of their own: Arabic words these after "a" ("لكل") differently from a count on its own.
+        case .day: return String(localized: "subscription.days", defaultValue: "\(count) days", locale: .app)
+        case .week: return String(localized: "subscription.weeks", defaultValue: "\(count) weeks", locale: .app)
+        case .month: return String(localized: "subscription.months", defaultValue: "\(count) months", locale: .app)
+        case .year: return String(localized: "subscription.years", defaultValue: "\(count) years", locale: .app)
+        @unknown default: return String(localized: "subscription.periods", defaultValue: "\(count) periods", locale: .app)
+        }
     }
 
+    /// How long the subscription runs: "1-month" in "a 1-month subscription".
     private func length(_ product: Product) -> String {
-        guard let period = product.subscription?.subscriptionPeriod else { return "1-month" }
-        return "\(period.value)-\(name(period.unit))"
+        guard let period = product.subscription?.subscriptionPeriod else { return String(localized: "1-month") }
+        let count = period.value
+        switch period.unit {
+        case .day: return String(localized: "\(count)-day", locale: .app)
+        case .week: return String(localized: "\(count)-week", locale: .app)
+        case .month: return String(localized: "\(count)-month", locale: .app)
+        case .year: return String(localized: "\(count)-year", locale: .app)
+        @unknown default: return String(localized: "\(count)-period", locale: .app)
+        }
     }
 
     private func name(_ unit: Product.SubscriptionPeriod.Unit) -> String {
         switch unit {
-        case .day: return "day"
-        case .week: return "week"
-        case .month: return "month"
-        case .year: return "year"
-        @unknown default: return "period"
+        case .day: return String(localized: "day")
+        case .week: return String(localized: "week")
+        case .month: return String(localized: "month")
+        case .year: return String(localized: "year")
+        @unknown default: return String(localized: "period")
         }
     }
 
     private func date(_ iso: String) -> String? {
         let parser = ISO8601DateFormatter()
         parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return (parser.date(from: iso) ?? ISO8601DateFormatter().date(from: iso))?.formatted(date: .abbreviated, time: .omitted)
+        let parsed = parser.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
+        return parsed?.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted).locale(.app))
     }
 }

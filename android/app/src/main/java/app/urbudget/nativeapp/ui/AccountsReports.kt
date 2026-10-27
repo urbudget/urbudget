@@ -19,6 +19,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.urbudget.nativeapp.AccountTypes
 import app.urbudget.nativeapp.BudgetViewModel
+import app.urbudget.nativeapp.R
+import app.urbudget.nativeapp.Words
+import androidx.compose.ui.res.stringResource
 import app.urbudget.nativeapp.accountBadges
 import app.urbudget.nativeapp.records
 import app.urbudget.nativeapp.upsertRecord
@@ -46,7 +49,7 @@ internal fun iconForType(type: String, kind: String): ImageVector = when (type) 
 
 internal fun accountIcon(account: JSONObject): ImageVector = iconForType(AccountTypes.infer(account), account.text("kind"))
 
-private fun typeLabel(type: String) = accountTypes.firstOrNull { it.first == type }?.second ?: type
+private fun typeLabel(type: String) = accountTypes().firstOrNull { it.first == type }?.second ?: type
 
 /** One account as its row shows it, prepared away from composition. */
 private data class AccountLine(val id: String, val account: JSONObject, val name: String, val type: String, val kind: String, val subtitle: String,
@@ -67,10 +70,11 @@ private suspend fun accountSections(budget: JSONObject, summary: JSONObject?, to
         val type = AccountTypes.infer(account, balance)
         val worth = AccountTypes.inNetWorth(account)
         return AccountLine(id, account, account.text("name"), type, account.text("kind"),
-            typeLabel(type) + if (worth) "" else " · Not in net worth", balance, if (balances == null) "—" else money(balance, currency),
+            if (worth) typeLabel(type) else Words[R.string.account_not_in_net_worth, typeLabel(type)], balance, if (balances == null) "—" else money(balance, currency),
             badges.approvals[id] ?: 0, badges.uncategorized[id] ?: 0, worth, AccountTypes.hasLoan(account, balance, loans), account.optBoolean("archived"))
     }
-    return listOf("cash" to "Cash", "credit" to "Credit", "tracking" to "Tracking", "closed" to "Closed").mapNotNull { (key, name) ->
+    return listOf("cash" to Words[R.string.accounts_section_cash], "credit" to Words[R.string.accounts_section_credit], "tracking" to Words[R.string.accounts_section_tracking],
+        "closed" to Words[R.string.accounts_section_closed]).mapNotNull { (key, name) ->
         val lines = all.filter { if (key == "closed") it.optBoolean("archived") else !it.optBoolean("archived") && it.text("kind") == key }.map(::line)
         // Accounts left out of net worth are left out of the total too, as in the sidebar.
         val total = lines.sumOf { if (it.inNetWorth) it.balance else 0L }
@@ -95,7 +99,8 @@ internal fun AccountsScreen(budget: JSONObject, summary: JSONObject?, open: (JSO
     val currency = budget.text("currency")
     val identity = remember { vm.state.value.budgetIdentity.orEmpty() }
     var folded by remember(identity) { mutableStateOf(AccountSectionMemory.get(identity)) }
-    val sections = rememberPrepared(budget, summary) { accountSections(budget, summary, LocalDate.now().toString()) }
+    val sections = rememberPrepared(budget, summary, languageKey()) { accountSections(budget, summary, LocalDate.now().toString()) }
+    val undo = stringResource(R.string.common_undo)
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var loanFor by remember { mutableStateOf<JSONObject?>(null) }
@@ -108,23 +113,27 @@ internal fun AccountsScreen(budget: JSONObject, summary: JSONObject?, open: (JSO
     }
     fun setClosed(line: AccountLine, archived: Boolean) = withCurrentBudget(budget, vm) {
         vm.upsert("accounts", JSONObject().put("id", line.id).put("archived", archived))
-        val message = if (archived) "Closed ${line.name}${if (line.balance != 0L) ". It still has a balance of ${line.balanceText}" else ""}." else "Reopened ${line.name}."
+        val message = when {
+            !archived -> Words[R.string.account_reopened, line.name]
+            line.balance != 0L -> Words[R.string.account_closed_with_balance, line.name, line.balanceText]
+            else -> Words[R.string.account_closed_toast, line.name]
+        }
         scope.launch {
             snackbar.currentSnackbarData?.dismiss()
-            if (snackbar.showSnackbar(message, actionLabel = "Undo", withDismissAction = true, duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed)
+            if (snackbar.showSnackbar(message, actionLabel = undo, withDismissAction = true, duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed)
                 vm.upsert("accounts", JSONObject().put("id", line.id).put("archived", !archived))
         }
     }
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            PhoneTopBar("Accounts", actions = { RoundIconButton(Icons.Outlined.Add, "Add account", add); bar() })
+            PhoneTopBar(stringResource(R.string.tab_accounts), actions = { RoundIconButton(Icons.Outlined.Add, stringResource(R.string.account_add), add); bar() })
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Gutter, end = Gutter, bottom = DockRoom)) {
                 if (summary != null) item(key = "networth", contentType = "networth") {
                     val worth = summary.optLong("netWorth")
                     Row(Modifier.fillMaxWidth().padding(bottom = 4.dp).clip(RoundedCornerShape(18.dp)).background(ur.surface).padding(horizontal = 18.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("Net worth", color = ur.muted, style = MaterialTheme.typography.bodyMedium)
+                            Text(stringResource(R.string.net_worth), color = ur.muted, style = MaterialTheme.typography.bodyMedium)
                             Text(money(worth, currency), fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, style = Tabular, color = if (worth < 0) ur.negative else ur.text)
                         }
                         Icon(Icons.Outlined.AccountBalanceWallet, null, Modifier.size(28.dp), tint = ur.accent)
@@ -132,7 +141,7 @@ internal fun AccountsScreen(budget: JSONObject, summary: JSONObject?, open: (JSO
                 }
                 when {
                     sections == null -> item(key = "loading") { LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 16.dp), color = ur.accent) }
-                    sections.isEmpty() -> item(key = "empty") { EmptyState("Add your first account", "Start with your checking or spending account and its current balance.", "Add account", add) }
+                    sections.isEmpty() -> item(key = "empty") { EmptyState(stringResource(R.string.accounts_empty_title), stringResource(R.string.accounts_empty_detail), stringResource(R.string.account_add), add) }
                 }
                 sections.orEmpty().forEach { section ->
                     val isOpen = section.key !in folded
@@ -178,14 +187,14 @@ private fun AccountRow(line: AccountLine, modifier: Modifier, divider: Boolean, 
                 }
             })
         DropdownMenu(menu, { menu = false }, shape = RoundedCornerShape(16.dp), containerColor = ur.surface) {
-            DropdownMenuItem(text = { Text("Edit account") }, leadingIcon = { Icon(Icons.Outlined.Edit, null) }, onClick = { menu = false; edit() })
-            DropdownMenuItem(text = { Text("Reconcile") }, leadingIcon = { Icon(Icons.Outlined.Lock, null) }, enabled = !line.archived, onClick = { menu = false; reconcile() })
-            if (loan != null) DropdownMenuItem(text = { Text("Loan details & payoff") }, leadingIcon = { Icon(Icons.Outlined.Calculate, null) }, onClick = { menu = false; loan() })
+            DropdownMenuItem(text = { Text(stringResource(R.string.account_edit)) }, leadingIcon = { Icon(Icons.Outlined.Edit, null) }, onClick = { menu = false; edit() })
+            DropdownMenuItem(text = { Text(stringResource(R.string.reconcile_action)) }, leadingIcon = { Icon(Icons.Outlined.Lock, null) }, enabled = !line.archived, onClick = { menu = false; reconcile() })
+            if (loan != null) DropdownMenuItem(text = { Text(stringResource(R.string.account_loan_details)) }, leadingIcon = { Icon(Icons.Outlined.Calculate, null) }, onClick = { menu = false; loan() })
             HorizontalDivider(color = ur.border)
-            DropdownMenuItem(text = { Text("Move up") }, leadingIcon = { Icon(Icons.Outlined.ArrowUpward, null) }, enabled = moveUp != null, onClick = { menu = false; moveUp?.invoke() })
-            DropdownMenuItem(text = { Text("Move down") }, leadingIcon = { Icon(Icons.Outlined.ArrowDownward, null) }, enabled = moveDown != null, onClick = { menu = false; moveDown?.invoke() })
+            DropdownMenuItem(text = { Text(stringResource(R.string.common_move_up)) }, leadingIcon = { Icon(Icons.Outlined.ArrowUpward, null) }, enabled = moveUp != null, onClick = { menu = false; moveUp?.invoke() })
+            DropdownMenuItem(text = { Text(stringResource(R.string.common_move_down)) }, leadingIcon = { Icon(Icons.Outlined.ArrowDownward, null) }, enabled = moveDown != null, onClick = { menu = false; moveDown?.invoke() })
             HorizontalDivider(color = ur.border)
-            DropdownMenuItem(text = { Text(if (line.archived) "Reopen account" else "Close account") },
+            DropdownMenuItem(text = { Text(if (line.archived) stringResource(R.string.account_reopen) else stringResource(R.string.account_close)) },
                 leadingIcon = { Icon(if (line.archived) Icons.Outlined.Unarchive else Icons.Outlined.Archive, null) }, onClick = { menu = false; toggleClosed() })
         }
     }
@@ -194,8 +203,9 @@ private fun AccountRow(line: AccountLine, modifier: Modifier, divider: Boolean, 
 /** Adds an account as the view model's saveAccount does, with the note and net-worth choice the form also takes. */
 private fun createAccount(budget: JSONObject, record: JSONObject) {
     val id = record.getString("id")
-    require(budget.records("accounts").none { it.optString("id") == id }) { "This account already exists." }
+    require(budget.records("accounts").none { it.optString("id") == id }) { Words[R.string.account_exists] }
     budget.upsertRecord("accounts", record)
+    // The payment group keeps the name every device and the YNAB import know it by, whatever the app's language.
     if (record.optString("kind") == "credit" && budget.records("categories").none { it.optString("paymentAccountId") == id }) {
         budget.upsertRecord("categories", JSONObject().put("id", UUID.randomUUID().toString()).put("name", record.getString("name"))
             .put("group", "Credit Card Payments").put("target", 0).put("paymentAccountId", id))
@@ -216,11 +226,12 @@ internal fun AccountDialog(original: JSONObject?, budget: JSONObject, vm: Budget
     var archived by remember { mutableStateOf(original?.optBoolean("archived") ?: false) }
     var netWorth by remember { mutableStateOf(original?.let(AccountTypes::inNetWorth) ?: true) }
     var error by remember { mutableStateOf<String?>(null) }
-    val typeChoices = remember(existingKind) { accountTypes.filter { existingKind == null || AccountTypes.kindFor(it.first) == existingKind } }
-    FormDialog(if (original == null) "Add account" else "Edit account", close, confirm = if (original == null) "Add" else "Save", onConfirm = {
+    val typeChoices = remember(existingKind, languageKey()) { accountTypes().filter { existingKind == null || AccountTypes.kindFor(it.first) == existingKind } }
+    FormDialog(if (original == null) stringResource(R.string.account_add) else stringResource(R.string.account_edit), close,
+        confirm = if (original == null) stringResource(R.string.common_add) else stringResource(R.string.common_save), onConfirm = {
         runCatching {
             requireCurrentBudget(openedBudget, vm)
-            require(name.isNotBlank()) { "Enter an account name." }
+            require(name.isNotBlank()) { Words[R.string.account_name_required] }
             val opening = amountValue(balance)
             // Only tracking accounts can stay out of net worth.
             val counted = kind != "tracking" || netWorth
@@ -235,21 +246,21 @@ internal fun AccountDialog(original: JSONObject?, budget: JSONObject, vm: Budget
                 .put("archived", archived).put("netWorth", counted))
         }.onSuccess { close() }.onFailure { error = it.message }
     }) {
-        Field(name, { name = it }, "Account name")
-        Choice("Account type", type, typeChoices, { type = it })
-        Notice(when (kind) { "cash" -> "Its money is in your budget, ready to assign."; "credit" -> "A credit card payment category is created for it."; else -> "Tracked outside the budget, in net worth." },
+        Field(name, { name = it }, stringResource(R.string.account_name))
+        Choice(stringResource(R.string.account_type), type, typeChoices, { type = it })
+        Notice(when (kind) { "cash" -> stringResource(R.string.account_kind_cash_help); "credit" -> stringResource(R.string.account_kind_credit_help); else -> stringResource(R.string.account_kind_tracking_help) },
             tone = "info", icon = iconForType(type, kind))
-        Field(balance, { balance = it }, if (original == null) "Current balance (${budget.text("currency")})" else "Opening balance (${budget.text("currency")})", true)
-        Text(listOfNotNull(if (AccountTypes.isLiability(type)) "Enter what you owe as a negative amount." else if (original == null) "For debt, enter a negative balance." else null,
-            if (original == null) null else "Changing an opening balance changes the account’s entire history.").joinToString(" "),
+        Field(balance, { balance = it }, if (original == null) stringResource(R.string.account_current_balance, budget.text("currency")) else stringResource(R.string.account_opening_balance, budget.text("currency")), true)
+        Text(listOfNotNull(if (AccountTypes.isLiability(type)) stringResource(R.string.account_owed_negative) else if (original == null) stringResource(R.string.account_debt_negative) else null,
+            if (original == null) null else stringResource(R.string.account_opening_changes_history)).joinToString(" "),
             style = MaterialTheme.typography.bodySmall, color = ur.muted)
-        if (original != null) Text("To switch between cash, credit and tracking, create a new account so past transactions keep their budget treatment.",
+        if (original != null) Text(stringResource(R.string.account_kind_switch_help),
             style = MaterialTheme.typography.bodySmall, color = ur.muted)
-        Field(note, { note = it }, "Note", lines = 3)
+        Field(note, { note = it }, stringResource(R.string.note_label), lines = 3)
         if (kind == "tracking" || original != null) ListCard {
-            if (kind == "tracking") SwitchRow("Count in net worth", netWorth, { netWorth = it }, divider = original != null,
-                subtitle = if (netWorth) null else "Its balance still shows and appears in reports, but isn't added to net worth.")
-            if (original != null) SwitchRow("Account closed", archived, { archived = it }, subtitle = "History and balance stay in the budget.")
+            if (kind == "tracking") SwitchRow(stringResource(R.string.account_count_in_net_worth), netWorth, { netWorth = it }, divider = original != null,
+                subtitle = if (netWorth) null else stringResource(R.string.account_count_in_net_worth_off))
+            if (original != null) SwitchRow(stringResource(R.string.account_closed), archived, { archived = it }, subtitle = stringResource(R.string.account_closed_detail))
         }
         FormError(error)
     }
@@ -280,7 +291,8 @@ internal fun ReconcileDialog(account: JSONObject, budget: JSONObject, summary: J
             if (currentContext == contextKey) { preview = candidate.row("transactions", adjustmentId)?.optLong("amount") ?: 0; loading = false }
         })
     }.onFailure { error = it.message }
-    FormDialog("Reconcile ${account.text("name")}", close, confirm = if (preview == null) "Review" else if (preview == 0L) "Reconcile" else "Adjust & finish", onConfirm = {
+    FormDialog(stringResource(R.string.reconcile_title, account.text("name")), close,
+        confirm = if (preview == null) stringResource(R.string.common_review) else if (preview == 0L) stringResource(R.string.reconcile_action) else stringResource(R.string.reconcile_adjust_finish), onConfirm = {
         runCatching {
             requireCurrentBudget(openedBudget, vm)
             if (preview == null) review()
@@ -288,26 +300,34 @@ internal fun ReconcileDialog(account: JSONObject, budget: JSONObject, summary: J
         }.onFailure { error = it.message }
     }, enabled = total != null && !loading && (differs || preview != null)) {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Is your cleared balance", color = ur.text2, style = MaterialTheme.typography.bodyLarge)
+            Text(stringResource(R.string.reconcile_question_start), color = ur.text2, style = MaterialTheme.typography.bodyLarge)
             Text(money(total?.optLong("cleared") ?: 0, currency), fontSize = 34.sp, fontWeight = FontWeight.ExtraBold, style = Tabular, color = ur.text)
-            Text("what your bank shows?", color = ur.text2, style = MaterialTheme.typography.bodyLarge)
+            Text(stringResource(R.string.reconcile_question_end), color = ur.text2, style = MaterialTheme.typography.bodyLarge)
         }
         if (!differs && preview == null) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            SecondaryButton("No", { differs = true }, Modifier.weight(1f))
-            PrimaryButton("Yes", { balance = amountText(total?.optLong("cleared") ?: 0); review() }, Modifier.weight(1f), enabled = total != null && !loading, color = ur.positive)
+            SecondaryButton(stringResource(R.string.common_no), { differs = true }, Modifier.weight(1f))
+            PrimaryButton(stringResource(R.string.common_yes), { balance = amountText(total?.optLong("cleared") ?: 0); review() }, Modifier.weight(1f), enabled = total != null && !loading, color = ur.positive)
         }
         if (differs) {
-            Field(balance, { balance = it; preview = null; loading = false }, "Bank's balance", true)
-            DateField(date, { date = it; preview = null; loading = false }, "Statement date")
-            Text("Mark the transactions on your statement as cleared first; any difference left becomes an adjustment.", color = ur.muted, style = MaterialTheme.typography.bodySmall)
+            Field(balance, { balance = it; preview = null; loading = false }, stringResource(R.string.reconcile_bank_balance), true)
+            DateField(date, { date = it; preview = null; loading = false }, stringResource(R.string.reconcile_statement_date))
+            Text(stringResource(R.string.reconcile_help), color = ur.muted, style = MaterialTheme.typography.bodySmall)
         }
         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth(), color = ur.accent)
         preview?.let {
-            if (it == 0L) Notice("Balances match. Cleared transactions will be locked as reconciled.", tone = "positive", icon = Icons.Outlined.Lock)
-            else Notice("An adjustment of ${money(it, currency)} will be recorded. Look for missing or incorrect transactions first.", tone = "attention", icon = Icons.Outlined.WarningAmber)
+            if (it == 0L) Notice(stringResource(R.string.reconcile_match), tone = "positive", icon = Icons.Outlined.Lock)
+            else Notice(stringResource(R.string.reconcile_adjustment, money(it, currency)), tone = "attention", icon = Icons.Outlined.WarningAmber)
         }
         FormError(error)
     }
 }
 
-internal val accountTypes = listOf("checking" to "Checking", "savings" to "Savings", "cash" to "Cash", "creditCard" to "Credit card", "lineOfCredit" to "Line of credit", "investment" to "Investment", "retirement" to "Retirement", "mortgage" to "Mortgage", "autoLoan" to "Auto loan", "studentLoan" to "Student loan", "personalLoan" to "Personal loan", "medicalDebt" to "Medical debt", "property" to "Property", "vehicle" to "Vehicle", "receivable" to "Receivable", "otherAsset" to "Other asset", "otherDebt" to "Other debt")
+/** The account types, as stored ids and their names in the interface's language. */
+internal fun accountTypes(): List<Pair<String, String>> = listOf(
+    "checking" to R.string.account_type_checking, "savings" to R.string.account_type_savings, "cash" to R.string.account_type_cash,
+    "creditCard" to R.string.account_kind_credit, "lineOfCredit" to R.string.account_type_line_of_credit, "investment" to R.string.account_type_investment,
+    "retirement" to R.string.account_type_retirement, "mortgage" to R.string.account_type_mortgage, "autoLoan" to R.string.account_type_auto_loan,
+    "studentLoan" to R.string.account_type_student_loan, "personalLoan" to R.string.account_type_personal_loan, "medicalDebt" to R.string.account_type_medical_debt,
+    "property" to R.string.account_type_property, "vehicle" to R.string.account_type_vehicle, "receivable" to R.string.account_type_receivable,
+    "otherAsset" to R.string.account_type_other_asset, "otherDebt" to R.string.account_type_other_debt,
+).map { (id, name) -> id to Words[name] }

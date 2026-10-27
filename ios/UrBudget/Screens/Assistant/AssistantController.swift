@@ -70,7 +70,7 @@ final class AssistantController {
     // MARK: Service calls
 
     private func call(_ method: String, _ params: JSON = [:], changesBudget: Bool = false) async throws -> JSON {
-        guard let store else { throw AppError("Budget services are still starting. Try again.") }
+        guard let store else { throw AppError(String(localized: "Budget services are still starting. Try again.")) }
         return try await store.service(method, params, changesBudget: changesBudget)
     }
 
@@ -92,7 +92,7 @@ final class AssistantController {
 
     private static func message(_ error: Error) -> String {
         let text = BudgetStore.readable(error)
-        return text.isEmpty ? "The assistant could not complete that action." : text
+        return text.isEmpty ? String(localized: "The assistant could not complete that action.") : text
     }
 
     private func proposalParams(_ thread: String, _ proposal: String) -> JSON {
@@ -363,7 +363,7 @@ final class AssistantController {
         operation("attach") { [self] in
             let generation = generation
             for url in files {
-                guard attachments.count < AssistantAttachments.limit else { throw AppError("Attach up to five files per message.") }
+                guard attachments.count < AssistantAttachments.limit else { throw AppError(String(localized: "Attach up to five files per message.")) }
                 let file = try await Task.detached(priority: .userInitiated) { () throws -> (name: String, data: Data) in
                     let read = try AssistantAttachments.read(url)
                     return AssistantAttachments.prepare(name: read.name, data: read.data)
@@ -378,17 +378,17 @@ final class AssistantController {
         operation("attach") { [self] in
             let generation = generation
             for item in photos {
-                guard attachments.count < AssistantAttachments.limit else { throw AppError("Attach up to five files per message.") }
+                guard attachments.count < AssistantAttachments.limit else { throw AppError(String(localized: "Attach up to five files per message.")) }
                 guard let data = try await item.loadTransferable(type: Data.self) else {
-                    throw AppError("This photo couldn't be read. Choose another, or attach it as a file.")
+                    throw AppError(String(localized: "This photo couldn't be read. Choose another, or attach it as a file."))
                 }
-                guard data.count <= AssistantAttachments.maxBytes * 2 else { throw AppError("Choose a photo smaller than 50 MiB.") }
+                guard data.count <= AssistantAttachments.maxBytes * 2 else { throw AppError(String(localized: "Choose a photo smaller than 50 MiB.")) }
                 let type = item.supportedContentTypes.first { $0.conforms(to: .image) }
                 let number = attachments.count + 1
                 let file = try await Task.detached(priority: .userInitiated) {
                     try AssistantAttachments.photo(data, type: type, number: number)
                 }.value
-                guard file.data.count <= AssistantAttachments.maxBytes else { throw AppError("Choose a file smaller than 25 MiB.") }
+                guard file.data.count <= AssistantAttachments.maxBytes else { throw AppError(String(localized: "Choose a file smaller than 25 MiB.")) }
                 try await upload(file.name, file.data, generation: generation)
             }
         }
@@ -406,7 +406,7 @@ final class AssistantController {
 
     func send(_ text: String, selected: [String], importing: JSON? = nil, done: @escaping @MainActor () -> Void) {
         operation("send") { [self] in
-            guard selected.count <= 200 else { throw AppError("Select up to 200 transactions per message.") }
+            guard selected.count <= 200 else { throw AppError(String(localized: "Select up to 200 transactions per message.")) }
             let generation = generation
             clearStream()
             streaming = ""
@@ -455,10 +455,10 @@ final class AssistantController {
                 if token.isEmpty { token = try await call("database_status").text("token") }
                 undoToken = token
                 undoProposal = outcome["undoAvailable"].bool ? proposal : nil
-                notice = "Proposal applied"
+                notice = String(localized: "Proposal applied")
                 successes += 1
             } else {
-                notice = "Your budget changed. Review the refreshed proposal before applying it."
+                notice = String(localized: "Your budget changed. Review the refreshed proposal before applying it.")
             }
             try await loadThread(id)
         }
@@ -470,7 +470,7 @@ final class AssistantController {
             let id = threadId
             let token = try await call("database_status").text("token")
             guard token == undoToken && proposal == undoProposal else {
-                throw AppError("Your budget changed after this proposal. Use the budget's undo history to review subsequent changes.")
+                throw AppError(String(localized: "Your budget changed after this proposal. Use the budget's undo history to review subsequent changes."))
             }
             var params = proposalParams(id, proposal)
             params["expectedToken"] = .string(token)
@@ -530,7 +530,7 @@ final class AssistantController {
     func reportReply(text: String, reason: String, done: @escaping @MainActor () -> Void) {
         operation("reportReply") { [self] in
             let reference = try await call("assistant_report_reply", ["text": .string(text), "reason": .string(reason)]).string
-            notice = "Report sent · \(reference)"
+            notice = String(localized: "Report sent · \(reference)")
             done()
         }
     }

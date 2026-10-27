@@ -8,9 +8,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
@@ -108,6 +111,21 @@ private val UrType = Typography(
     labelMedium = base.labelMedium.copy(fontSize = 13.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp),
     labelSmall = base.labelSmall.copy(fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp),
 )
+/**
+ * Arabic is joined script: tracking would pull its letters apart, and Android measures tracked
+ * Arabic wider than it draws, cutting titles short. Right-to-left text sets none.
+ */
+private val UrTypeRtl = with(UrType) {
+    fun TextStyle.untracked() = copy(letterSpacing = 0.sp)
+    Typography(displayLarge = displayLarge.untracked(), displayMedium = displayMedium.untracked(), displaySmall = displaySmall.untracked(),
+        headlineLarge = headlineLarge.untracked(), headlineMedium = headlineMedium.untracked(), headlineSmall = headlineSmall.untracked(),
+        titleLarge = titleLarge.untracked(), titleMedium = titleMedium.untracked(), titleSmall = titleSmall.untracked(),
+        bodyLarge = bodyLarge.untracked(), bodyMedium = bodyMedium.untracked(), bodySmall = bodySmall.untracked(),
+        labelLarge = labelLarge.untracked(), labelMedium = labelMedium.untracked(), labelSmall = labelSmall.untracked())
+}
+/** The small capitals over a list's sections are tracked out a little; Arabic is never tracked. */
+internal val headerTracking: TextUnit
+    @Composable get() = if (LocalLayoutDirection.current == LayoutDirection.Rtl) 0.sp else .6.sp
 private val UrShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp), small = RoundedCornerShape(10.dp), medium = RoundedCornerShape(12.dp),
     large = RoundedCornerShape(18.dp), extraLarge = RoundedCornerShape(28.dp),
@@ -137,7 +155,8 @@ fun UrBudgetTheme(content: @Composable () -> Unit) {
     }
     CompositionLocalProvider(LocalUr provides colors) {
         // Text takes the theme's colour even where no Surface sets one (the shell draws its own pages).
-        MaterialTheme(colorScheme = remember(colors) { scheme(colors) }, typography = UrType, shapes = UrShapes) {
+        val typography = if (LocalLayoutDirection.current == LayoutDirection.Rtl) UrTypeRtl else UrType
+        MaterialTheme(colorScheme = remember(colors) { scheme(colors) }, typography = typography, shapes = UrShapes) {
             CompositionLocalProvider(LocalContentColor provides colors.text, content = content)
         }
     }

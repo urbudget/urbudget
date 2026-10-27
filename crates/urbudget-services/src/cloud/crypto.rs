@@ -1,6 +1,7 @@
 //! End-to-end encryption for sync. The key comes from the sync passphrase (Argon2id with a salt
 //! the server keeps); budgets are compressed, then sealed with XChaCha20-Poly1305 and bound to
 //! their budget id, so the server can neither read nor swap them.
+use crate::t;
 use argon2::{Algorithm, Argon2, Params, Version};
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
@@ -37,14 +38,14 @@ pub fn seal(key: &Key, aad: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, String> 
     let cipher = XChaCha20Poly1305::new_from_slice(key).map_err(|e| e.to_string())?;
     let sealed = cipher
         .encrypt(&XNonce::from(nonce), Payload { msg: plaintext, aad })
-        .map_err(|_| "Encryption failed.".to_string())?;
+        .map_err(|_| t!("Encryption failed."))?;
     Ok([MAGIC.as_slice(), &nonce, &sealed].concat())
 }
 
 /// Opens what `seal` made; a wrong key (or tampering) fails with `WRONG_KEY`.
 pub fn open(key: &Key, aad: &[u8], data: &[u8]) -> Result<Vec<u8>, String> {
     if data.len() < MAGIC.len() + NONCE + 16 || &data[..4] != MAGIC {
-        return Err("This isn't an UrBudget sync file.".into());
+        return Err(t!("This isn't an UrBudget sync file."));
     }
     let nonce: [u8; NONCE] = data[4..4 + NONCE].try_into().expect("length checked");
     let cipher = XChaCha20Poly1305::new_from_slice(key).map_err(|e| e.to_string())?;
@@ -74,7 +75,7 @@ pub fn decompress(bytes: &[u8]) -> Result<Vec<u8>, String> {
         .read_to_end(&mut out)
         .map_err(|e| e.to_string())?;
     if out.len() as u64 > MAX_PLAINTEXT {
-        return Err("This synced budget is too large to open.".into());
+        return Err(t!("This synced budget is too large to open."));
     }
     Ok(out)
 }

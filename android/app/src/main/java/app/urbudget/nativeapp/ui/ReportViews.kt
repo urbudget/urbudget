@@ -24,8 +24,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.ChevronLeft
-import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.Checkbox
@@ -52,7 +51,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
 import app.urbudget.nativeapp.AccountChip
+import app.urbudget.nativeapp.Money
+import app.urbudget.nativeapp.R
 import app.urbudget.nativeapp.AgeView
 import app.urbudget.nativeapp.BalanceSheetView
 import app.urbudget.nativeapp.BalancesView
@@ -190,14 +192,14 @@ internal fun FigureRowView(row: FigureRow, onClick: (() -> Unit)?, divider: Bool
                 Spacer(Modifier.width(4.dp))
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(row.title, color = if (row.style == RowStyle.Muted) ur.muted else ur.text, style = MaterialTheme.typography.bodyLarge,
+                Text(Money.own(row.title), color = if (row.style == RowStyle.Muted) ur.muted else ur.text, style = MaterialTheme.typography.bodyLarge,
                     fontWeight = if (strong) FontWeight.Bold else FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 row.subtitle?.let { Text(it, color = ur.muted, style = MaterialTheme.typography.bodySmall.merge(Tabular), maxLines = 3, overflow = TextOverflow.Ellipsis) }
             }
             if (row.value.isNotEmpty()) Text(row.value, Modifier.padding(start = 10.dp),
                 color = when (row.tone) { Tone.Negative -> ur.negative; Tone.Positive -> ur.positive; Tone.None -> ur.text },
                 style = MaterialTheme.typography.bodyLarge.merge(Tabular), fontWeight = if (strong) FontWeight.Bold else FontWeight.SemiBold, maxLines = 1)
-            if (onClick != null && row.expand == null) Icon(Icons.Outlined.ChevronRight, null, Modifier.padding(start = 4.dp).size(18.dp), tint = ur.muted)
+            if (onClick != null && row.expand == null) Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.padding(start = 4.dp).size(18.dp), tint = ur.muted)
         }
         if (divider) Hairline(start = 16.dp)
     }
@@ -233,13 +235,13 @@ private fun LazyListScope.categoryBody(v: CategoryView, a: ReportActions) {
     card("categories:list", v.rows, { it.key }, "bar", head = {
         if (v.group != null) Row(verticalAlignment = Alignment.CenterVertically) {
             Row(Modifier.clip(RoundedCornerShape(8.dp)).clickable { a.setGroup(null) }.padding(end = 6.dp, top = 2.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.ChevronLeft, null, Modifier.size(20.dp), tint = ur.accent)
-                Text("All groups", color = ur.accent, style = MaterialTheme.typography.titleMedium)
+                Icon(Icons.AutoMirrored.Outlined.KeyboardArrowLeft, null, Modifier.size(20.dp), tint = ur.accent)
+                Text(stringResource(R.string.reports_all_groups), color = ur.accent, style = MaterialTheme.typography.titleMedium)
             }
-            Text("/ ${v.group}", color = ur.text, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        } else PanelTitle("Spending by group")
+            Text("/ ${v.centerLabel}", color = ur.text, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        } else PanelTitle(stringResource(R.string.reports_spending_by_group))
         if (v.rows.isNotEmpty()) Donut(v.slices, v.centerValue, v.centerLabel, if (LocalStale.current) null else open, Modifier.align(Alignment.CenterHorizontally))
-        else EmptyText("No spending in these months.")
+        else EmptyText(stringResource(R.string.reports_no_spending))
     }, foot = { HelpText(v.help) }) { row, divider ->
         BarRowView(row, 0, live { open(row.key) })
         if (divider) Hairline(start = 16.dp)
@@ -247,7 +249,7 @@ private fun LazyListScope.categoryBody(v: CategoryView, a: ReportActions) {
     v.changes?.let { c ->
         card("categories:changes", c.rows, { it.key }, "diverging", head = {
             PanelTitle(c.title, c.aside)
-            if (c.rows.isEmpty()) EmptyText("Spending matched the average.")
+            if (c.rows.isEmpty()) EmptyText(stringResource(R.string.reports_matched_average))
         }, foot = if (c.rows.isEmpty()) null else ({ ChartLegend(c.legend) })) { row, divider ->
             DivergingRowView(row)
             if (divider) Hairline(start = 16.dp)
@@ -262,7 +264,7 @@ private fun LazyListScope.payeeBody(v: PayeeView, a: ReportActions, query: Strin
         if (v.map.isNotEmpty()) {
             val stale = LocalStale.current
             Treemap(v.map, { if (!stale) a.drill(DrillTarget(it.label, "payee", it.key)) })
-        } else EmptyText("No payees with net spending in these months.")
+        } else EmptyText(stringResource(R.string.reports_no_payees))
         HelpText(v.help)
         v.more?.let { more ->
             Text("$more ↓", Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = a.showAllPayees).padding(vertical = 4.dp),
@@ -270,9 +272,9 @@ private fun LazyListScope.payeeBody(v: PayeeView, a: ReportActions, query: Strin
         }
     }
     card("payees:all", payees, { it.key }, "payee", head = {
-        PanelTitle("All payees")
-        SearchField(query, onQuery, "Find a payee")
-        if (payees.isEmpty()) EmptyText("No payees match.")
+        PanelTitle(stringResource(R.string.reports_all_payees))
+        SearchField(query, onQuery, stringResource(R.string.reports_find_payee))
+        if (payees.isEmpty()) EmptyText(stringResource(R.string.reports_no_payees_match))
     }) { p, divider ->
         val click = live { a.drill(DrillTarget(p.label, "payee", p.name)) }
         Column {
@@ -292,8 +294,8 @@ private fun LazyListScope.payeeBody(v: PayeeView, a: ReportActions, query: Strin
 private fun LazyListScope.overTimeBody(v: OverTimeView, a: ReportActions) {
     tileRows("trends", v.tiles)
     card("trends:months", v.rows, { it.key }, "month", head = {
-        PanelTitle("Spending by month")
-        Segmented(listOf("groups" to "By group", "total" to "Total"), if (v.byGroup) "groups" else "total", { a.setByGroup(it == "groups") })
+        PanelTitle(stringResource(R.string.report_chart_spending_by_month))
+        Segmented(listOf("groups" to stringResource(R.string.reports_by_group), "total" to stringResource(R.string.report_total)), if (v.byGroup) "groups" else "total", { a.setByGroup(it == "groups") })
         ColumnChart(v.chart)
         if (v.legend.isNotEmpty()) ChartLegend(v.legend)
     }) { row, divider -> FigureRowView(row, null, divider) }
@@ -304,8 +306,8 @@ private fun HeatPanel(heat: HeatModel, drill: (DrillTarget) -> Unit) {
     var day by remember(heat) { mutableIntStateOf(-1) }
     val stale = LocalStale.current
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(if (day in heat.days.indices) "${heat.titles[day]} · ${heat.amounts[day]} ${if (heat.spent[day]) "spent" else "nothing spent"}"
-            else "Tap a day for its spending. Darker means more.", color = if (day >= 0) ur.text else ur.muted, style = MaterialTheme.typography.bodySmall)
+        Text(if (day in heat.days.indices) stringResource(if (heat.spent[day]) R.string.reports_heat_spent else R.string.reports_heat_nothing, heat.titles[day], heat.amounts[day])
+            else stringResource(R.string.reports_heat_help), color = if (day >= 0) ur.text else ur.muted, style = MaterialTheme.typography.bodySmall)
         HeatCalendar(heat, day, { i ->
             day = i
             if (!stale && heat.spent[i]) drill(DrillTarget(heat.titles[i], "day", heat.days[i], heat.days[i], heat.days[i]))
@@ -317,16 +319,16 @@ private fun HeatPanel(heat: HeatModel, drill: (DrillTarget) -> Unit) {
 private fun LazyListScope.calendarBody(v: CalendarView, a: ReportActions) {
     tileRows("calendar", v.tiles)
     panel("calendar:heat") {
-        PanelTitle("Spending by day")
-        if (v.heat != null) HeatPanel(v.heat, a.drill) else EmptyText("These months haven't started yet.")
+        PanelTitle(stringResource(R.string.reports_spending_by_day))
+        if (v.heat != null) HeatPanel(v.heat, a.drill) else EmptyText(stringResource(R.string.reports_not_started))
     }
     panel("calendar:weekdays") {
-        PanelTitle("By day of the week", "Average spent")
+        PanelTitle(stringResource(R.string.reports_by_weekday), stringResource(R.string.reports_average_spent))
         ColumnChart(v.weekdays, height = 200.dp)
     }
     card("calendar:biggest", v.biggest, { it.key }, "day", head = {
-        PanelTitle("Biggest days")
-        if (v.biggest.isEmpty()) EmptyText("No spending in these months.")
+        PanelTitle(stringResource(R.string.reports_biggest_days))
+        if (v.biggest.isEmpty()) EmptyText(stringResource(R.string.reports_no_spending))
     }) { row, divider -> FigureRowView(row, row.drill?.let { t -> { a.drill(t) } }, divider) }
 }
 
@@ -334,43 +336,43 @@ private fun LazyListScope.incomeExpenseBody(v: IncomeExpenseView, a: ReportActio
     tileRows("incomeExpense", v.tiles)
     item(key = "incomeExpense:help", contentType = "help") { HelpText(v.help, Modifier.padding(top = 12.dp, start = 4.dp, end = 4.dp)) }
     panel("incomeExpense:chart") {
-        PanelTitle("Income and spending by month")
+        PanelTitle(stringResource(R.string.reports_income_spending_by_month))
         ColumnChart(v.chart)
         ChartLegend(v.legend)
     }
     panel("incomeExpense:rate") {
-        PanelTitle("Budget surplus rate", "Surplus as a share of income")
+        PanelTitle(stringResource(R.string.report_budget_surplus_rate), stringResource(R.string.reports_surplus_share))
         LinesChart(v.rate, height = 200.dp)
     }
     panel("incomeExpense:cumulative") {
-        PanelTitle("Cumulative budget surplus", "Surplus added up")
+        PanelTitle(stringResource(R.string.report_cumulative_surplus), stringResource(R.string.reports_surplus_added_up))
         LinesChart(v.cumulative, height = 200.dp)
     }
     val rows = v.table.flatMap { r -> if (r.expand != null && r.expand in expanded) listOf(r) + v.children[r.expand].orEmpty() else listOf(r) }
-    card("incomeExpense:table", rows, { it.key }, "figure", head = { PanelTitle("Income and spending", "Select a group to see its categories") }) { row, divider ->
+    card("incomeExpense:table", rows, { it.key }, "figure", head = { PanelTitle(stringResource(R.string.reports_income_and_spending), stringResource(R.string.reports_select_group)) }) { row, divider ->
         FigureRowView(row, row.expand?.let { g -> { a.toggleExpand(g) } }, divider, expanded = row.expand in expanded)
     }
-    card("incomeExpense:months", v.months, { it.key }, "figure", head = { PanelTitle("By month", "Budget surplus each month") }) { row, divider -> FigureRowView(row, null, divider) }
+    card("incomeExpense:months", v.months, { it.key }, "figure", head = { PanelTitle(stringResource(R.string.reports_by_month), stringResource(R.string.reports_surplus_each_month)) }) { row, divider -> FigureRowView(row, null, divider) }
 }
 
 private fun LazyListScope.incomeBody(v: IncomeView, a: ReportActions) {
     tileRows("income", v.tiles)
     card("income:bars", v.bars, { it.key }, "bar", head = {
-        PanelTitle("Where your income comes from")
-        if (v.bars.isNotEmpty()) Donut(v.slices, v.centerValue, "Positive sources", null, Modifier.align(Alignment.CenterHorizontally))
-        else EmptyText("No income in these months.")
+        PanelTitle(stringResource(R.string.reports_income_from))
+        if (v.bars.isNotEmpty()) Donut(v.slices, v.centerValue, stringResource(R.string.reports_positive_sources), null, Modifier.align(Alignment.CenterHorizontally))
+        else EmptyText(stringResource(R.string.reports_no_income))
     }, foot = v.chartHelp?.let { help -> { HelpText(help) } }) { row, divider ->
         BarRowView(row, 0, null)
         if (divider) Hairline(start = 16.dp)
     }
     v.monthly?.let { chart ->
         panel("income:monthly") {
-            PanelTitle("Income by month")
+            PanelTitle(stringResource(R.string.reports_income_by_month))
             ColumnChart(chart)
             ChartLegend(v.legend)
         }
     }
-    card("income:sources", v.sources, { it.key }, "figure", head = { PanelTitle("Sources") }, foot = v.sourcesHelp?.let { help -> { HelpText(help) } }) { row, divider ->
+    card("income:sources", v.sources, { it.key }, "figure", head = { PanelTitle(stringResource(R.string.reports_sources)) }, foot = v.sourcesHelp?.let { help -> { HelpText(help) } }) { row, divider ->
         FigureRowView(row, row.drill?.let { t -> { a.drill(t) } }, divider)
     }
 }
@@ -378,58 +380,56 @@ private fun LazyListScope.incomeBody(v: IncomeView, a: ReportActions) {
 private fun LazyListScope.cashFlowBody(v: CashFlowView) {
     tileRows("cashflow", v.tiles)
     panel("cashflow:chart") {
-        PanelTitle("Money in and out by month")
+        PanelTitle(stringResource(R.string.reports_money_in_out_by_month))
         ColumnChart(v.chart)
         ChartLegend(v.legend)
-        HelpText("Account movements across your budget boundary, including credit-card purchases and transfers to tracking accounts. Card payments, " +
-            "other transfers between budget accounts and starting balances are excluded. Split inflows and outflows may be netted; these are account " +
-            "movements rather than gross category splits.")
+        HelpText(stringResource(R.string.reports_cash_flow_help))
     }
     panel("cashflow:running") {
-        PanelTitle("Running total", "Net flow added up")
+        PanelTitle(stringResource(R.string.report_running_total), stringResource(R.string.reports_net_flow_added_up))
         LinesChart(v.running, height = 200.dp)
     }
-    card("cashflow:months", v.months, { it.key }, "figure", head = { PanelTitle("By month", "Net flow each month") }) { row, divider -> FigureRowView(row, null, divider) }
+    card("cashflow:months", v.months, { it.key }, "figure", head = { PanelTitle(stringResource(R.string.reports_by_month), stringResource(R.string.reports_net_flow_each_month)) }) { row, divider -> FigureRowView(row, null, divider) }
 }
 
 private fun LazyListScope.netWorthBody(v: NetWorthView) {
     tileRows("networth", v.tiles)
     panel("networth:chart") {
-        PanelTitle("Assets, debts and net worth")
+        PanelTitle(stringResource(R.string.reports_assets_debts_net_worth))
         ColumnChart(v.chart)
         ChartLegend(v.legend)
     }
     panel("networth:change") {
-        PanelTitle("Change each month")
+        PanelTitle(stringResource(R.string.reports_change_each_month))
         ColumnChart(v.change, height = 200.dp)
         ChartLegend(v.changeLegend)
     }
-    card("networth:accounts", v.accounts, { it.key }, "figure", head = { PanelTitle("By account", v.dates) }) { row, divider -> FigureRowView(row, null, divider) }
+    card("networth:accounts", v.accounts, { it.key }, "figure", head = { PanelTitle(stringResource(R.string.reports_by_account), v.dates) }) { row, divider -> FigureRowView(row, null, divider) }
 }
 
 private fun LazyListScope.balanceSheetBody(v: BalanceSheetView) {
     tileRows("balance", v.tiles)
     card("balance:own", v.own, { it.key }, "bar", head = {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.weight(1f)) { PanelTitle("What you own") }
+            Box(Modifier.weight(1f)) { PanelTitle(stringResource(R.string.reports_what_you_own)) }
             Text(v.ownTotal, color = ur.text, style = MaterialTheme.typography.titleMedium.merge(Tabular))
         }
-        if (v.own.isEmpty()) EmptyText("No assets.")
+        if (v.own.isEmpty()) EmptyText(stringResource(R.string.reports_no_assets))
     }) { row, divider ->
         BarRowView(row, 0, null)
         if (divider) Hairline(start = 16.dp)
     }
     card("balance:owe", v.owe, { it.key }, "bar", head = {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.weight(1f)) { PanelTitle("What you owe") }
+            Box(Modifier.weight(1f)) { PanelTitle(stringResource(R.string.reports_what_you_owe)) }
             Text(v.oweTotal, color = ur.text, style = MaterialTheme.typography.titleMedium.merge(Tabular))
         }
-        if (v.owe.isEmpty()) EmptyText("Nothing owed.")
+        if (v.owe.isEmpty()) EmptyText(stringResource(R.string.reports_nothing_owed))
     }) { row, divider ->
         BarRowView(row, 1, null)
         if (divider) Hairline(start = 16.dp)
     }
-    card("balance:statement", v.statement, { it.key }, "figure", head = { PanelTitle("Statement", v.statementAside); HelpText(v.dates) },
+    card("balance:statement", v.statement, { it.key }, "figure", head = { PanelTitle(stringResource(R.string.reports_statement), v.statementAside); HelpText(v.dates) },
         foot = { HelpText(v.help) }) { row, divider -> FigureRowView(row, null, divider && row.style != RowStyle.Section) }
 }
 
@@ -457,14 +457,14 @@ private fun AccountChips(chips: List<AccountChip>, toggle: (String) -> Unit) {
 private fun LazyListScope.balancesBody(v: BalancesView, a: ReportActions) {
     tileRows("balances", v.tiles)
     panel("balances:chart") {
-        PanelTitle("Balances at the end of each month")
+        PanelTitle(stringResource(R.string.reports_balances_month_end))
         AccountChips(v.chips, a.toggleChart)
         if (v.chart != null) {
             LinesChart(v.chart, height = 260.dp)
             ChartLegend(v.legend)
-        } else EmptyText("Choose accounts above to chart them.")
+        } else EmptyText(stringResource(R.string.reports_choose_accounts))
     }
-    card("balances:accounts", v.rows, { it.key }, "figure", head = { PanelTitle("All accounts") }, foot = { HelpText("Month-end balances; lowest and highest are among those.") }) { row, divider ->
+    card("balances:accounts", v.rows, { it.key }, "figure", head = { PanelTitle(stringResource(R.string.reports_all_accounts)) }, foot = { HelpText(stringResource(R.string.reports_balances_help)) }) { row, divider ->
         FigureRowView(row, null, divider)
     }
 }
@@ -472,10 +472,9 @@ private fun LazyListScope.balancesBody(v: BalancesView, a: ReportActions) {
 private fun LazyListScope.ageBody(v: AgeView) {
     tileRows("age", v.tiles)
     card("age:months", v.rows, { it.key }, "figure", head = {
-        PanelTitle("Cash age at the end of each month")
+        PanelTitle(stringResource(R.string.reports_cash_age_month_end))
         LinesChart(v.chart)
-        HelpText("How long money sits in your cash accounts before you spend it: the average age of the last ten cash outflows, first in, first out, " +
-            "to the nearest day. Until there are ten, the missing ones count as zero days. It is an estimate when opening balances have no known dates.")
+        HelpText(stringResource(R.string.reports_cash_age_help))
     }) { row, divider -> FigureRowView(row, null, divider) }
 }
 
@@ -484,7 +483,7 @@ private fun ForecastRowView(row: ForecastRow, divider: Boolean) {
     Column {
         Row(Modifier.fillMaxWidth().heightIn(min = 54.dp).padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(row.title, color = ur.text, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(Money.own(row.title), color = ur.text, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(row.detail, color = ur.muted, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             Column(Modifier.padding(start = 10.dp), horizontalAlignment = Alignment.End) {
@@ -502,37 +501,37 @@ internal fun LazyListScope.forecastBody(
 ) {
     if (v != null) tileRows("forecast", v.tiles)
     panel("forecast:chart") {
-        PanelTitle("Balance ahead")
-        Segmented(listOf("3" to "3 months", "6" to "6 months", "12" to "12 months"), ahead.toString(), { setAhead(it.toInt()) })
+        PanelTitle(stringResource(R.string.reports_balance_ahead))
+        Segmented(listOf(3, 6, 12).map { it.toString() to countText(R.plurals.report_months_option, it) }, ahead.toString(), { setAhead(it.toInt()) })
         when {
             v != null -> {
                 LinesChart(v.chart, height = 260.dp)
                 ChartLegend(v.legend)
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(fieldFill()).clickable(onClickLabel = "Change everyday spending", onClick = editEveryday)
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(fieldFill()).clickable(onClickLabel = stringResource(R.string.reports_change_everyday), onClick = editEveryday)
                     .padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Everyday spending a month", color = ur.muted, style = MaterialTheme.typography.bodySmall)
+                        Text(stringResource(R.string.reports_everyday_a_month), color = ur.muted, style = MaterialTheme.typography.bodySmall)
                         Text(v.everydayText, color = ur.text, style = MaterialTheme.typography.titleMedium.merge(Tabular))
                     }
-                    Text("Change", color = ur.accent, fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.common_change), color = ur.accent, fontWeight = FontWeight.SemiBold)
                 }
                 v.suggestion?.let { TextButton(useSuggested) { Text(it, color = ur.accent, fontWeight = FontWeight.SemiBold) } }
                 HelpText(v.help)
             }
             error != null -> {
                 FormError(error)
-                TextButton(retry) { Text("Retry forecast", color = ur.accent, fontWeight = FontWeight.Bold) }
+                TextButton(retry) { Text(stringResource(R.string.reports_retry_forecast), color = ur.accent, fontWeight = FontWeight.Bold) }
             }
             else -> LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 24.dp), color = ur.accent)
         }
     }
     if (v != null) card("forecast:events", v.rows, { it.key }, "event", head = {
-        PanelTitle("Coming up", v.count)
+        PanelTitle(stringResource(R.string.reports_coming_up), v.count)
         if (v.rows.isEmpty()) {
-            EmptyText("Nothing is scheduled or entered for later dates.")
-            HelpText("Schedule your income and bills to make this forecast more exact.")
+            EmptyText(stringResource(R.string.reports_nothing_ahead))
+            HelpText(stringResource(R.string.reports_schedule_more))
         }
-    }, foot = { HelpText("Balances here count known transactions only.") }) { row, divider -> ForecastRowView(row, divider) }
+    }, foot = { HelpText(stringResource(R.string.reports_known_balances)) }) { row, divider -> ForecastRowView(row, divider) }
 }
 
 // ---------- Sheets ----------
@@ -543,20 +542,20 @@ internal fun RangeSheet(range: MonthRange, earliest: String, onPick: (MonthRange
     val now = remember { YearMonth.now() }
     var from by remember { mutableStateOf(range.from.ifEmpty { earliest }) }
     var to by remember { mutableStateOf(range.to.ifEmpty { now.toString() }) }
-    FormDialog("Months", onDismiss, confirm = "Apply", onConfirm = { onPick(customRange(from, to)) }) {
+    FormDialog(stringResource(R.string.reports_months), onDismiss, confirm = stringResource(R.string.common_apply), onConfirm = { onPick(customRange(from, to)) }) {
         ListCard {
             val presets = RangePreset.entries.filter { it != RangePreset.Custom }
             presets.forEachIndexed { i, preset ->
-                ListRow(preset.label, onClick = { onPick(rangeFor(preset, now, earliest)) }, chevron = false, divider = i < presets.lastIndex,
+                ListRow(stringResource(preset.label), onClick = { onPick(rangeFor(preset, now, earliest)) }, chevron = false, divider = i < presets.lastIndex,
                     trailing = if (range.preset == preset) ({ Icon(Icons.Outlined.Check, null, tint = ur.accent) }) else null)
             }
         }
-        Text("Custom range", color = ur.text, style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.range_custom), color = ur.text, style = MaterialTheme.typography.titleMedium)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(Modifier.weight(1f)) { MonthField(from, { from = it }, "From") }
-            Box(Modifier.weight(1f)) { MonthField(to, { to = it }, "To") }
+            Box(Modifier.weight(1f)) { MonthField(from, { from = it }, stringResource(R.string.date_from)) }
+            Box(Modifier.weight(1f)) { MonthField(to, { to = it }, stringResource(R.string.move_to_label)) }
         }
-        HelpText("Apply uses the custom months. A preset applies as soon as you choose it.")
+        HelpText(stringResource(R.string.reports_range_help))
     }
 }
 
@@ -572,9 +571,9 @@ internal fun MultiFilterSheet(title: String, groups: List<FilterGroup>, selected
     UrSheet(onDismiss) {
         SheetHeader(title, onDismiss, null, null)
         Row(Modifier.fillMaxWidth().padding(horizontal = Gutter), verticalAlignment = Alignment.CenterVertically) {
-            SearchField(query, { query = it }, "Search ${title.lowercase()}", Modifier.weight(1f))
-            TextButton({ onChange(emptySet()) }) { Text("All", color = ur.accent, fontWeight = FontWeight.SemiBold) }
-            TextButton({ onChange(setOf("")) }) { Text("None", color = ur.accent, fontWeight = FontWeight.SemiBold) }
+            SearchField(query, { query = it }, stringResource(R.string.search_named, title.lowercase()), Modifier.weight(1f))
+            TextButton({ onChange(emptySet()) }) { Text(stringResource(R.string.view_all), color = ur.accent, fontWeight = FontWeight.SemiBold) }
+            TextButton({ onChange(setOf("")) }) { Text(stringResource(R.string.filter_none), color = ur.accent, fontWeight = FontWeight.SemiBold) }
         }
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = height * .62f), contentPadding = PaddingValues(start = 10.dp, end = 16.dp, top = 6.dp, bottom = 28.dp)) {
             shown.forEach { g ->
@@ -591,7 +590,7 @@ internal fun MultiFilterSheet(title: String, groups: List<FilterGroup>, selected
                     Box(Modifier.padding(start = 24.dp)) { CheckRow(item.label, filterIsOn(selected, item.id), { onChange(filterToggle(groups, selected, listOf(item.id), it)) }) }
                 }
             }
-            if (shown.isEmpty()) item(key = "none") { Text("Nothing matches.", Modifier.padding(16.dp), color = ur.muted) }
+            if (shown.isEmpty()) item(key = "none") { Text(stringResource(R.string.nothing_matches), Modifier.padding(16.dp), color = ur.muted) }
         }
     }
 }
@@ -602,7 +601,7 @@ internal fun DrillLineRow(line: DrillLine, onClick: () -> Unit) {
     Column {
         Row(Modifier.fillMaxWidth().clickable(onClick = onClick).heightIn(min = 56.dp).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(line.payee, color = ur.text, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(Money.own(line.payee), color = ur.text, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(line.detail, color = ur.muted, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             Text(line.amount, Modifier.padding(start = 10.dp), color = if (line.positive) ur.positive else ur.text,

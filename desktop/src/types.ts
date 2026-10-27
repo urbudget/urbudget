@@ -1,3 +1,5 @@
+import { t } from "./i18n";
+
 export type Status = "uncleared" | "cleared" | "reconciled";
 export type Account = {
   id: string;
@@ -329,13 +331,13 @@ export const scheduledAhead = (t: Transaction) =>
 export const parseMoney = (text: string): number => {
   const cleaned = text.trim().replace(/,/g, "");
   if (!/^-?\d+(\.\d{0,2})?$/.test(cleaned))
-    throw new Error("Enter an amount with at most two decimal places.");
+    throw new Error(t("Enter an amount with at most two decimal places."));
   const [whole, decimal = ""] = cleaned.replace("-", "").split(".");
   const amount =
     (Number(whole) * 100 + Number(decimal.padEnd(2, "0"))) *
     (cleaned.startsWith("-") ? -1 : 1);
   if (!Number.isSafeInteger(amount) || Math.abs(amount) > 1_000_000_000_000)
-    throw new Error("Amount is too large.");
+    throw new Error(t("Amount is too large."));
   return amount;
 };
 export const fingerprint = (b: Budget) =>

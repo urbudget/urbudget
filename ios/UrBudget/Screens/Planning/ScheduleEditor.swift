@@ -60,6 +60,15 @@ struct ScheduleEditor: View {
 
     private func accountName(_ id: String) -> String? { budget.row("accounts", id: id)?.text("name") }
 
+    /// The payee row's value: the payee, or the transfer it makes.
+    private var payeeValue: String? {
+        guard !transfer.isEmpty else { return payee.isEmpty ? nil : payee }
+        if let name = accountName(transfer) {
+            return direction == "out" ? String(localized: "Transfer to \(name)") : String(localized: "Transfer from \(name)")
+        }
+        return direction == "out" ? String(localized: "Transfer to account") : String(localized: "Transfer from account")
+    }
+
     var body: some View {
         let currency = store.currency
         NavigationStack(path: $route) {
@@ -89,23 +98,22 @@ struct ScheduleEditor: View {
                     .accessibilityLabel("Amount, \(money(pad.cents ?? 0, currency)). Edit amount")
                 }
                 if accounts.isEmpty {
-                    Notice(text: "Create an account in Accounts before scheduling a transaction.", tone: "info")
+                    Notice(text: String(localized: "Create an account in Accounts before scheduling a transaction."), tone: "info")
                 }
                 Section {
                     NavigationLink(value: ScheduleRoute.payee) {
-                        PlanningPickerRow(icon: "storefront", label: "Payee",
-                                          value: transfer.isEmpty ? (payee.isEmpty ? nil : payee)
-                                            : "\(direction == "out" ? "Transfer to" : "Transfer from") \(accountName(transfer) ?? "account")",
-                                          placeholder: "Choose payee")
+                        PlanningPickerRow(icon: "storefront", label: String(localized: "Payee"), value: payeeValue,
+                                          placeholder: String(localized: "Choose payee"))
                     }
                     if !splitMode && needsCategory {
                         NavigationLink(value: ScheduleRoute.category) {
-                            PlanningPickerRow(icon: "tag", label: "Category", value: planningCategoryName(store.budget, category),
-                                              placeholder: "Choose category", attention: category.isEmpty)
+                            PlanningPickerRow(icon: "tag", label: String(localized: "Category"), value: planningCategoryName(store.budget, category),
+                                              placeholder: String(localized: "Choose category"), attention: category.isEmpty)
                         }
                     }
                     NavigationLink(value: ScheduleRoute.account) {
-                        PlanningPickerRow(icon: "building.columns", label: "Account", value: accountName(account), placeholder: "Choose account")
+                        PlanningPickerRow(icon: "building.columns", label: String(localized: "Account"), value: accountName(account),
+                                          placeholder: String(localized: "Choose account"))
                     }
                 }
                 if splitMode && needsCategory { splitSection(currency) }
@@ -187,7 +195,7 @@ struct ScheduleEditor: View {
                 if paused {
                     Text("A paused schedule isn't entered until you resume it.")
                 } else if ScheduleFrequency.repeats(frequency) && !following.isEmpty {
-                    Text("Then \(following.map(Money.date).joined(separator: ", ")) and on.")
+                    Text("Then \(planningList(following.map(Money.date))) and on.")
                 } else if !ScheduleFrequency.repeats(frequency) {
                     Text("Entered once, then it's done.")
                 }
@@ -251,7 +259,7 @@ struct ScheduleEditor: View {
                 self.route = []
             })
         case .category:
-            CategoryPicker(title: "Category", month: String(nextDate.prefix(7)), selected: category, includeUnassigned: true,
+            CategoryPicker(title: String(localized: "Category"), month: String(nextDate.prefix(7)), selected: category, includeUnassigned: true,
                            includeUncategorized: true, includePayment: false, onSplit: { self.route = []; startSplit() }) { picked in
                 category = picked
                 self.route = []
@@ -263,7 +271,7 @@ struct ScheduleEditor: View {
                 self.route = []
             }
         case .splitCategory(let index):
-            CategoryPicker(title: "Split category", month: String(nextDate.prefix(7)), selected: splits.indices.contains(index) ? splits[index].category : "",
+            CategoryPicker(title: String(localized: "Split category"), month: String(nextDate.prefix(7)), selected: splits.indices.contains(index) ? splits[index].category : "",
                            includeUnassigned: true, includeUncategorized: true, includePayment: false) { picked in
                 if splits.indices.contains(index) { splits[index].category = picked }
                 self.route = []
@@ -289,10 +297,10 @@ struct ScheduleEditor: View {
                     HStack {
                         Button { route.append(.splitCategory(index)) } label: {
                             HStack {
-                                Text(!part.transfer.isEmpty ? "Transfer" : planningCategoryName(store.budget, part.category) ?? "Choose category")
+                                Text(splitTitle(part))
                                     .fontWeight(.semibold)
                                     .foregroundStyle(part.category.isEmpty && part.transfer.isEmpty ? Color.urWarning : .primary)
-                                Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(Color.urTertiary)
+                                Image(systemName: "chevron.forward").font(.caption.weight(.bold)).foregroundStyle(Color.urTertiary)
                             }
                         }
                         .buttonStyle(.borderless)
@@ -303,7 +311,7 @@ struct ScheduleEditor: View {
                             .accessibilityLabel("Remove split line \(index + 1)")
                     }
                     HStack {
-                        AmountField(title: "Amount", text: $part.amount, labeled: false).frame(maxWidth: 130)
+                        AmountField(title: String(localized: "Amount"), text: $part.amount, labeled: false).frame(maxWidth: 130)
                         TextField("Memo", text: $part.memo)
                     }
                     .textFieldStyle(.roundedBorder)
@@ -325,7 +333,7 @@ struct ScheduleEditor: View {
             HStack {
                 Text("Split").textCase(nil).font(.headline).foregroundStyle(Color.primary)
                 Spacer()
-                Text(left == 0 ? "Fully split" : (total < 0) == (left < 0) ? "\(money(Int64(left.magnitude), currency)) left to split" : "\(money(Int64(left.magnitude), currency)) over the total")
+                splitStatus(left: left, total: total, currency: currency)
                     .textCase(nil)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(left == 0 ? Color.urPositive : Color.urWarning)
@@ -335,13 +343,26 @@ struct ScheduleEditor: View {
         }
     }
 
+    /// A split line's title: its category, or Transfer.
+    private func splitTitle(_ part: ScheduleSplitDraft) -> String {
+        if !part.transfer.isEmpty { return String(localized: "Transfer") }
+        return planningCategoryName(store.budget, part.category) ?? String(localized: "Choose category")
+    }
+
+    /// How much of the total the split lines leave, or go over it by.
+    private func splitStatus(left: Int64, total: Int64, currency: String) -> Text {
+        let amount = money(Int64(left.magnitude), currency)
+        if left == 0 { return Text("Fully split") }
+        return (total < 0) == (left < 0) ? Text("\(amount) left to split") : Text("\(amount) over the total")
+    }
+
     /// The schedule as edited, keeping every field of the original this editor doesn't show.
     private func record() throws -> JSON {
-        guard !account.isEmpty else { throw AppError("Choose an account.") }
-        guard Dates.day(nextDate) != nil else { throw AppError("Choose a valid date.") }
-        guard let parsed = pad.cents else { throw AppError("Finish the sum first.") }
-        guard parsed >= 0 else { throw AppError("Use Outflow or Inflow to choose the direction.") }
-        guard transfer != account else { throw AppError("Choose a different transfer account.") }
+        guard !account.isEmpty else { throw AppError(String(localized: "Choose an account.")) }
+        guard Dates.day(nextDate) != nil else { throw AppError(String(localized: "Choose a valid date.")) }
+        guard let parsed = pad.cents else { throw AppError(String(localized: "Finish the sum first.")) }
+        guard parsed >= 0 else { throw AppError(String(localized: "Use Outflow or Inflow to choose the direction.")) }
+        guard transfer != account else { throw AppError(String(localized: "Choose a different transfer account.")) }
         let sign: Int64 = direction == "out" ? -1 : 1
         let cents = parsed * sign
         var t: JSON = original == nil ? ["id": .string("schedule:\(id)"), "status": "uncleared"] : template
@@ -363,7 +384,7 @@ struct ScheduleEditor: View {
             part["amount"] = .int(cents)
             parts = [part]
         } else if splitMode {
-            guard splits.count >= 2 else { throw AppError("Add at least two split lines.") }
+            guard splits.count >= 2 else { throw AppError(String(localized: "Add at least two split lines.")) }
             parts = try splits.map { draft in
                 var part = draft.original
                 part["categoryId"] = draft.category.isEmpty || draft.category == Unassigned ? .null : .string(draft.category)
@@ -375,7 +396,7 @@ struct ScheduleEditor: View {
                 part["transferStatus"] = draft.transfer.isEmpty ? .null : "uncleared"
                 return part
             }
-            guard parts.reduce(Int64(0), { $0 + $1.long("amount") }) == cents else { throw AppError("The split amounts must equal the transaction total.") }
+            guard parts.reduce(Int64(0), { $0 + $1.long("amount") }) == cents else { throw AppError(String(localized: "The split amounts must equal the transaction total.")) }
         } else {
             var part = single
             part["categoryId"] = category.isEmpty || category == Unassigned ? .null : .string(category)
@@ -407,9 +428,8 @@ struct ScheduleEditor: View {
         let isNew = original == nil
         let guarded = original.map { (collection: "schedules", record: $0) }
         let id = id
-        let t = schedule["transaction"]
-        let name = t.text("payee").isEmpty ? "the transfer to \(accountName(t.text("transferAccountId")) ?? "another account")" : t.text("payee")
-        let often = ScheduleFrequency.repeats(frequency) ? ScheduleFrequency.label(frequency).lowercased() : nil
+        let entered = enteredMessage(schedule["transaction"])
+        let scheduled = scheduledMessage(frequency, from: Money.date(nextDate))
         saving = true
         error = nil
         Task {
@@ -418,14 +438,14 @@ struct ScheduleEditor: View {
                 // A due schedule is entered with the save, as one change: every occurrence up to today, on its own date.
                 try await store.planningEdit(original: guarded, then: enter ? [("applySchedules", ["through": .string(today)])] : []) { budget in
                     if !isNew && budget.row("schedules", id: id) == nil {
-                        throw AppError("This schedule was entered or deleted since you opened it. Close the editor to see the latest.")
+                        throw AppError(String(localized: "This schedule was entered or deleted since you opened it. Close the editor to see the latest."))
                     }
                     try budget.upsertRecord("schedules", schedule)
                 }
                 if enter {
-                    store.showToast("Entered \(name).\(often.map { " It repeats \($0)." } ?? "")", undo: true)
+                    store.showToast(entered, undo: true)
                 } else if isNew {
-                    store.showToast(often.map { "Scheduled \($0) from \(Money.date(nextDate))." } ?? "Scheduled for \(Money.date(nextDate)). It's entered on that day.", undo: true)
+                    store.showToast(scheduled, undo: true)
                 }
                 dismiss()
             } catch {
@@ -443,11 +463,62 @@ struct ScheduleEditor: View {
             defer { saving = false }
             do {
                 try await store.planningEdit(original: guarded) { try $0.removeRecord("schedules", id: id) }
-                store.showToast("Deleted the schedule.", undo: true)
+                store.showToast(String(localized: "Deleted the schedule."), undo: true)
                 dismiss()
             } catch {
                 self.error = BudgetStore.readable(error)
             }
+        }
+    }
+
+    /// "Entered Rent. It repeats monthly.", once a due schedule is saved and entered.
+    private func enteredMessage(_ t: JSON) -> String {
+        let entered: String
+        if !t.text("payee").isEmpty {
+            entered = String(localized: "Entered \(t.text("payee")).")
+        } else if let other = accountName(t.text("transferAccountId")) {
+            entered = String(localized: "Entered the transfer to \(other).")
+        } else {
+            entered = String(localized: "Entered the transfer to another account.")
+        }
+        return Self.repeats(frequency).map { entered + " " + $0 } ?? entered
+    }
+
+    /// "It repeats monthly.", in a sentence of its own for each frequency.
+    private static func repeats(_ frequency: String) -> String? {
+        switch frequency {
+        case "daily": return String(localized: "It repeats daily.")
+        case "weekly": return String(localized: "It repeats weekly.")
+        case "everyOtherWeek": return String(localized: "It repeats every other week.")
+        case "every4Weeks": return String(localized: "It repeats every 4 weeks.")
+        case "twiceAMonth": return String(localized: "It repeats twice a month.")
+        case "monthly": return String(localized: "It repeats monthly.")
+        case "everyOtherMonth": return String(localized: "It repeats every other month.")
+        case "every3Months": return String(localized: "It repeats every 3 months.")
+        case "every4Months": return String(localized: "It repeats every 4 months.")
+        case "twiceAYear": return String(localized: "It repeats twice a year.")
+        case "yearly": return String(localized: "It repeats yearly.")
+        case "everyOtherYear": return String(localized: "It repeats every other year.")
+        default: return nil
+        }
+    }
+
+    /// "Scheduled monthly from 21/10/2026.", or a one-time schedule's date, once a new schedule is saved.
+    private func scheduledMessage(_ frequency: String, from date: String) -> String {
+        switch frequency {
+        case "daily": return String(localized: "Scheduled daily from \(date).")
+        case "weekly": return String(localized: "Scheduled weekly from \(date).")
+        case "everyOtherWeek": return String(localized: "Scheduled every other week from \(date).")
+        case "every4Weeks": return String(localized: "Scheduled every 4 weeks from \(date).")
+        case "twiceAMonth": return String(localized: "Scheduled twice a month from \(date).")
+        case "monthly": return String(localized: "Scheduled monthly from \(date).")
+        case "everyOtherMonth": return String(localized: "Scheduled every other month from \(date).")
+        case "every3Months": return String(localized: "Scheduled every 3 months from \(date).")
+        case "every4Months": return String(localized: "Scheduled every 4 months from \(date).")
+        case "twiceAYear": return String(localized: "Scheduled twice a year from \(date).")
+        case "yearly": return String(localized: "Scheduled yearly from \(date).")
+        case "everyOtherYear": return String(localized: "Scheduled every other year from \(date).")
+        default: return String(localized: "Scheduled for \(date). It's entered on that day.")
         }
     }
 }

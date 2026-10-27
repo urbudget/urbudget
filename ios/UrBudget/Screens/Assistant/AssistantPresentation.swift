@@ -78,7 +78,7 @@ enum AssistantExport {
             if entry.text("kind") == "proposal" {
                 let proposal = entry["proposal"]
                 guard proposal.isObject else { continue }
-                out += "## Proposal: \(proposal.text("title")) (\(proposal.text("status")))\n\n"
+                out += "## " + String(localized: "Proposal: \(proposal.text("title")) (\(statusWord(proposal.text("status"))))") + "\n\n"
                 let card = proposal["card"]
                 if card.isObject {
                     for stat in card.rows("stats") {
@@ -100,14 +100,39 @@ enum AssistantExport {
                 }
                 out += "\n"
             } else {
-                let kind = entry.text("kind")
-                out += "## \(kind.prefix(1).uppercased() + kind.dropFirst())\n\n\(entry.text("text"))\n\n"
+                out += "## \(heading(entry.text("kind")))\n\n\(entry.text("text"))\n\n"
                 for file in entry.rows("attachments") {
-                    out += "Attachment: \(file.text("name")) (\(file.long("size")) bytes)\n"
+                    // The size as a plain number ("2048"): a localized count would group its digits.
+                    let name = file.text("name"), size = String(file.long("size"))
+                    out += String(localized: "Attachment: \(name) (\(size) bytes)", comment: "Exported conversation: an attached file's name and size") + "\n"
                 }
             }
         }
         return out
+    }
+
+    /// A conversation row's heading in the export: "User", "Assistant", "Step"…
+    private static func heading(_ kind: String) -> String {
+        switch kind {
+        case "user": return String(localized: "User", comment: "Heading for the person's messages in an exported conversation")
+        case "assistant": return String(localized: "Assistant")
+        case "step": return String(localized: "Step", comment: "Heading for a step the assistant took, in an exported conversation")
+        case "error": return String(localized: "Error", comment: "Heading for an error in an exported conversation")
+        case "stopped": return String(localized: "Stopped", comment: "Heading for a reply that was stopped, in an exported conversation")
+        default: return kind.prefix(1).uppercased() + kind.dropFirst()
+        }
+    }
+
+    /// A proposal's status in the export, lowercase as it follows the title.
+    private static func statusWord(_ status: String) -> String {
+        switch status {
+        case "proposed": return String(localized: "proposed", comment: "A proposal's status in an exported conversation")
+        case "applied": return String(localized: "applied", comment: "A proposal's status in an exported conversation")
+        case "discarded": return String(localized: "discarded", comment: "A proposal's status in an exported conversation")
+        case "undone": return String(localized: "undone", comment: "A proposal's status in an exported conversation")
+        case "failed": return String(localized: "failed", comment: "A proposal's status in an exported conversation")
+        default: return status
+        }
     }
 
     /// A title as a file name: letters, digits, spaces, "_" and "-" only, at most 60 characters.
@@ -131,8 +156,8 @@ enum AssistantExport {
     static func savedFile(_ path: String) throws -> URL {
         let url = URL(fileURLWithPath: path)
         let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
-        guard values?.isRegularFile == true else { throw AppError("The generated file is unavailable.") }
-        guard (values?.fileSize ?? 0) <= 64 * 1024 * 1024 else { throw AppError("This file is too large to share.") }
+        guard values?.isRegularFile == true else { throw AppError(String(localized: "The generated file is unavailable.")) }
+        guard (values?.fileSize ?? 0) <= 64 * 1024 * 1024 else { throw AppError(String(localized: "This file is too large to share.")) }
         return url
     }
 }
@@ -157,9 +182,9 @@ enum AssistantAttachments {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-        guard size <= maxBytes else { throw AppError("Choose a file smaller than 25 MiB.") }
+        guard size <= maxBytes else { throw AppError(String(localized: "Choose a file smaller than 25 MiB.")) }
         let data = try Data(contentsOf: url)
-        guard data.count <= maxBytes else { throw AppError("Choose a file smaller than 25 MiB.") }
+        guard data.count <= maxBytes else { throw AppError(String(localized: "Choose a file smaller than 25 MiB.")) }
         return (url.lastPathComponent.isEmpty ? "attachment.txt" : url.lastPathComponent, data)
     }
 
@@ -178,7 +203,7 @@ enum AssistantAttachments {
         if let type, let match = kept.first(where: { type.conforms(to: $0.0) }) {
             return prepare(name: "Photo \(number).\(match.1)", data: data)
         }
-        guard let jpeg = jpeg(data) else { throw AppError("This photo couldn't be read. Choose another, or attach it as a file.") }
+        guard let jpeg = jpeg(data) else { throw AppError(String(localized: "This photo couldn't be read. Choose another, or attach it as a file.")) }
         return ("Photo \(number).jpg", jpeg)
     }
 

@@ -13,6 +13,7 @@
 //! Earlier versions kept each secret as its own item; one moves into the file the first time it's
 //! read, and the item is removed.
 use crate::cloud::crypto::{self, Key};
+use crate::{i18n::tr, t};
 use std::collections::{BTreeMap, HashSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -28,6 +29,17 @@ pub const STORE: Option<&str> = if cfg!(any(target_os = "macos", target_os = "io
 } else {
     None
 };
+/// `STORE` as a message names it, in the app's language ("The system" where there is none).
+/// The services' status fields keep `STORE` itself.
+pub fn store_name() -> &'static str {
+    match STORE {
+        Some("Keychain") => tr("Keychain"),
+        Some("Windows encrypted storage") => tr("Windows encrypted storage"),
+        Some("Android Keystore") => tr("Android Keystore"),
+        Some(other) => other,
+        None => tr("The system"),
+    }
+}
 const AAD: &[u8] = b"urbudget:secrets";
 
 // Debug builds on a computer, and tests, keep their own file with a plain key (`plain`).
@@ -50,12 +62,12 @@ pub fn save(service: &str, secret: &str) -> Result<(), String> {
         .get()
         .ok_or(())
         .and_then(|v| v.save(service, secret))
-        .map_err(|_| format!("{} couldn't save this.", STORE.unwrap_or("The system")))
+        .map_err(|_| t!("{store} couldn't save this.", store = store_name()))
 }
 /// Removes a secret; Ok(false) when there was none.
 pub fn delete(service: &str) -> Result<bool, String> {
     match VAULT.get() {
-        Some(v) => v.delete(service).map_err(|_| format!("{} couldn't remove it.", STORE.unwrap_or("The system"))),
+        Some(v) => v.delete(service).map_err(|_| t!("{store} couldn't remove it.", store = store_name())),
         None => Ok(false),
     }
 }

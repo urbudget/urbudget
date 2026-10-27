@@ -15,7 +15,7 @@ import { ArrowDown, ArrowLeftRight, ArrowUp, CalendarClock, CheckCheck, ChevronD
 import { transferView, type TransferView } from "./transfers";
 import { api } from "./bridge";
 import { errorText, formatDate, money, tone } from "./format";
-import { Menu, usePinned, useToast, type MenuItem } from "./ui";
+import { Menu, startEdge, usePinned, useToast, type MenuItem } from "./ui";
 import { useLearnPayee } from "./useLearnPayee";
 import { useCategoryCreator } from "./NewCategory";
 import { textWidth, useColumns } from "./ui/columns";
@@ -52,6 +52,7 @@ import {
   type Summary,
   type Transaction,
 } from "./types";
+import { formatCount, msg, t, tn, useLanguage } from "./i18n";
 import "./register.css";
 /** What the register opens on when another page sends you there (dates are ISO days). */
 export type RegisterFilter = {
@@ -187,13 +188,15 @@ export async function saveSchedule(b: Budget, s: Schedule) {
 }
 /** A scheduled transaction's toast: when it's entered, and how often (`repeat`). */
 const scheduledFor = (date: string, repeat?: string) => {
-  const often = repeat && (frequencies[repeat] ?? repeat).toLowerCase();
-  return often ? `Scheduled ${often} from ${formatDate(date)}.` : `Scheduled for ${formatDate(date)}. It's entered on that day.`;
+  const often = repeat && t(frequencies[repeat] ?? repeat).toLowerCase();
+  return often
+    ? t("Scheduled {often} from {date}.", { often, date: formatDate(date) })
+    : t("Scheduled for {date}. It's entered on that day.", { date: formatDate(date) });
 };
-/** What saving `t` scheduled, for its toast; empty when it was simply saved. */
-export function scheduledMessage(t: Transaction, repeat?: string) {
-  if (scheduledAhead(t)) return scheduledFor(t.date, repeat);
-  return repeat ? `Saved. It repeats ${(frequencies[repeat] ?? repeat).toLowerCase()}.` : "";
+/** What saving `tx` scheduled, for its toast; empty when it was simply saved. */
+export function scheduledMessage(tx: Transaction, repeat?: string) {
+  if (scheduledAhead(tx)) return scheduledFor(tx.date, repeat);
+  return repeat ? t("Saved. It repeats {often}.", { often: t(frequencies[repeat] ?? repeat).toLowerCase() }) : "";
 }
 
 type SortKey = "date" | "payee" | "account" | "category" | "flag" | "memo" | "outflow" | "inflow";
@@ -229,7 +232,13 @@ const collator = new Intl.Collator(undefined, { sensitivity: "base", numeric: tr
 const amountKeys: SortKey[] = ["date", "outflow", "inflow"];
 
 /** What a transfer between budget accounts has in place of a category. */
-const TRANSFER_CATEGORY = "No Category (Transfer)";
+const TRANSFER_CATEGORY = msg("No Category (Transfer)");
+/** A cleared mark's state, as its button names it. */
+const STATUS_NAMES: Record<Status, string> = {
+  uncleared: msg("Uncleared"),
+  cleared: msg("Cleared"),
+  reconciled: msg("Reconciled"),
+};
 /**
  * A transfer's payee cell: "To: Savings" or "From: Checking", after a button that opens the
  * transfer in the other account's register.
@@ -241,8 +250,8 @@ function TransferPayee({ view, onOpen }: { view: TransferView; onOpen?: () => vo
       <button
         type="button"
         className="transfer-link"
-        aria-label={`Show in ${view.peer}`}
-        title={onOpen ? `Show in ${view.peer}` : undefined}
+        aria-label={t("Show in {account}", { account: view.peer })}
+        title={onOpen ? t("Show in {account}", { account: view.peer }) : undefined}
         disabled={!onOpen}
         onClick={(e) => {
           e.stopPropagation();
@@ -261,23 +270,23 @@ function TransferPayee({ view, onOpen }: { view: TransferView; onOpen?: () => vo
  * budget side (`budgetAmount`), or nothing at all off budget (null).
  */
 const noCategory = (budgetAmount: number | null) =>
-  budgetAmount === null ? "No Category (Tracking)" : budgetAmount < 0 ? "From Unassigned" : "To Unassigned";
+  budgetAmount === null ? t("No Category (Tracking)") : budgetAmount < 0 ? t("From Unassigned") : t("To Unassigned");
 
 /** Spending with no category yet, as YNAB marks it: a filled label in the attention colour. */
 const NeedsCategory = () => (
   <span className="needs-pill">
     <Info size={13} aria-hidden />
-    {NEEDS_CATEGORY}
+    {t(NEEDS_CATEGORY)}
   </span>
 );
-const categoryLabel = (t: Transaction, names: Map<string, string>, none: string) =>
-  t.transferAccountId && !t.splits.length
-    ? "Transfer"
-    : t.splits.length > 1
-      ? `Split (${t.splits.length})`
-      : t.splits[0]?.transferAccountId
-        ? "Transfer"
-        : (names.get(t.splits[0]?.categoryId ?? "") ?? none);
+const categoryLabel = (tx: Transaction, names: Map<string, string>, none: string) =>
+  tx.transferAccountId && !tx.splits.length
+    ? t("Transfer")
+    : tx.splits.length > 1
+      ? t("Split ({count})", { count: tx.splits.length })
+      : tx.splits[0]?.transferAccountId
+        ? t("Transfer")
+        : (names.get(tx.splits[0]?.categoryId ?? "") ?? none);
 /** The editor field for a clicked cell. */
 const fieldOf = (target: HTMLElement) =>
   (target.closest("[data-field]")?.getAttribute("data-field") as EditorField | null) ?? undefined;
@@ -290,7 +299,7 @@ const fromInitial = (initial: RegisterFilter | undefined, b: Budget): Filters =>
   ...emptyFilters(),
   reportQuery: initial?.reportQuery,
   terms: [
-    ...(initial?.accountIds ?? []).map((id) => ({ field: "account" as const, id: id || "__no_account", value: b.accounts.find((a) => a.id === id)?.name ?? "No accounts" })),
+    ...(initial?.accountIds ?? []).map((id) => ({ field: "account" as const, id: id || "__no_account", value: b.accounts.find((a) => a.id === id)?.name ?? t("No accounts") })),
     ...(initial?.category
       ? [
           {
@@ -359,7 +368,7 @@ export function TransactionsPage({
           <>
             <div className="register-summary">
               <div className="stat">
-                <span>{account ? "Working balance" : "Net worth"}</span>
+                <span>{account ? t("Working balance") : t("Net worth")}</span>
                 <strong className={tone(balance)}>
                   {money(balance)}
                 </strong>
@@ -367,11 +376,11 @@ export function TransactionsPage({
               {summary && (
                 <>
                   <div className="stat">
-                    <span>Cleared</span>
+                    <span>{t("Cleared")}</span>
                     <strong>{money(summary.cleared)}</strong>
                   </div>
                   <div className="stat">
-                    <span>Uncleared</span>
+                    <span>{t("Uncleared")}</span>
                     <strong>{money(summary.uncleared)}</strong>
                   </div>
                 </>
@@ -381,16 +390,16 @@ export function TransactionsPage({
                 <>
                   {account.kind === "credit" && !account.archived && onPayCard && (
                     <button className="primary" onClick={() => onPayCard(account)}>
-                      <CreditCard size={15} /> Make payment
+                      <CreditCard size={15} /> {t("Make payment")}
                     </button>
                   )}
                   <button className="secondary" onClick={() => onReconcile(account)}>
-                    <CheckCheck size={15} /> Reconcile
+                    <CheckCheck size={15} /> {t("Reconcile")}
                   </button>
                   <button
                     className="icon-button bordered"
-                    title="Edit account"
-                    aria-label="Edit account"
+                    title={t("Edit account")}
+                    aria-label={t("Edit account")}
                     onClick={() => onEditAccount(account)}
                   >
                     <Pencil size={15} />
@@ -467,6 +476,8 @@ export function Register({
   onOpenTransfer?: (accountId: string, transactionId: string) => void;
 }) {
   const toast = useToast();
+  // Rows' labels (Transfer, Split, No payee) are worked out ahead, in the language in use.
+  const language = useLanguage();
   const learn = useLearnPayee(transform, undo);
   const categories = useCategoryCreator(budget, edit);
   const [filters, setFilters] = useState(() => fromInitial(initialFilter, budget));
@@ -579,51 +590,51 @@ export function Register({
   const indexed = useMemo(
     () =>
       entries.map((r) => {
-        const t = r.t;
-        const part = r.part === undefined ? undefined : t.splits[r.part];
-        const source = r.reverse ? (part?.transferSource ?? t.transferSource) : undefined;
-        const memo = String(source?.memo ?? t.memo ?? "");
+        const tx = r.t;
+        const part = r.part === undefined ? undefined : tx.splits[r.part];
+        const source = r.reverse ? (part?.transferSource ?? tx.transferSource) : undefined;
+        const memo = String(source?.memo ?? tx.memo ?? "");
         const searchMemo = r.reverse
-          ? String((part ? part.transferSource : t.transferSource)?.memo ?? t.memo)
-          : t.memo;
-        const peer = r.reverse ? t.accountId : t.transferAccountId;
-        const self = r.reverse ? (part?.transferAccountId ?? t.transferAccountId) : t.accountId;
+          ? String((part ? part.transferSource : tx.transferSource)?.memo ?? tx.memo)
+          : tx.memo;
+        const peer = r.reverse ? tx.accountId : tx.transferAccountId;
+        const self = r.reverse ? (part?.transferAccountId ?? tx.transferAccountId) : tx.accountId;
         const budgetAmount = onBudget(self) ? r.amount : onBudget(peer) ? -r.amount : null;
-        const uncategorized = needsCategory(t);
+        const uncategorized = needsCategory(tx);
         // One line with no category that needs one says so; a split says so on the line.
         const categoryName =
-          uncategorized && t.splits.length < 2 ? NEEDS_CATEGORY : categoryLabel(t, categoryNames, noCategory(budgetAmount));
-        const flag = r.reverse ? source?.flag_color : t.flag;
-        const payee = peer ? `Transfer: ${accountNames.get(peer) ?? ""}` : t.payee || "No payee";
-        const account = accountNames.get(r.reverse ? accountId : t.accountId) ?? "";
-        const lines = t.splits.filter((s) => !s.transferAccountId);
-        const splitMemos = t.splits.map((s) => s.memo ?? "").join(" ");
+          uncategorized && tx.splits.length < 2 ? t(NEEDS_CATEGORY) : categoryLabel(tx, categoryNames, noCategory(budgetAmount));
+        const flag = r.reverse ? source?.flag_color : tx.flag;
+        const payee = peer ? t("Transfer: {account}", { account: accountNames.get(peer) ?? "" }) : tx.payee || t("No payee");
+        const account = accountNames.get(r.reverse ? accountId : tx.accountId) ?? "";
+        const lines = tx.splits.filter((s) => !s.transferAccountId);
+        const splitMemos = tx.splits.map((s) => s.memo ?? "").join(" ");
         // A transfer names the other account from this row's side ("To: Savings"); one between
         // budget accounts needs no category and says so quietly.
         const transfer = transferView(accountsById, self, peer, r.amount);
-        const isTransfer = !!part || categoryName === "Transfer";
+        const isTransfer = !!part || categoryName === t("Transfer");
         return {
           ...r,
           memo,
           flag: typeof flag === "string" && flag ? flag : "",
-          category: isTransfer ? TRANSFER_CATEGORY : categoryName,
+          category: isTransfer ? t(TRANSFER_CATEGORY) : categoryName,
           noCategory: isTransfer,
           uncategorized,
           transfer,
           payee,
           account,
           // Lower-case fields for search chips (see search.ts).
-          approved: t.approved !== false,
+          approved: tx.approved !== false,
           searchPayee: payee.toLowerCase(),
           searchMemo: `${searchMemo} ${splitMemos}`.toLowerCase(),
           categoryIds: new Set<string | null>(lines.map((s) => s.categoryId ?? null)),
           categories: lines.map((s) => categoryNames.get(s.categoryId ?? "") ?? "unassigned").join(" ").toLowerCase(),
-          accountIds: new Set<string | null>([t.accountId, t.transferAccountId, ...t.splits.map((s) => s.transferAccountId ?? null)]),
+          accountIds: new Set<string | null>([tx.accountId, tx.transferAccountId, ...tx.splits.map((s) => s.transferAccountId ?? null)]),
           searchAccount: `${account} ${peer ? (accountNames.get(peer) ?? "") : ""}`.toLowerCase(),
-          text: `${t.payee} ${searchMemo} ${categoryName} ${splitMemos} ${t.date} ${money(Math.abs(r.amount))}`.toLowerCase(),
+          text: `${tx.payee} ${searchMemo} ${categoryName} ${splitMemos} ${tx.date} ${money(Math.abs(r.amount))}`.toLowerCase(),
         };
       }),
-    [entries, categoryNames, accountNames, accountsById, accountId, onBudget, needsCategory, sampleMoney],
+    [entries, categoryNames, accountNames, accountsById, accountId, onBudget, needsCategory, sampleMoney, language],
   );
   type Row = (typeof indexed)[number];
   // Chips plus whatever is being typed (which searches everything as you type).
@@ -675,31 +686,31 @@ export function Register({
     // Paused ones too, so they can be resumed here; finished ones have no next date to list.
     for (const s of budget.schedules ?? []) {
       if (!s.nextDate) continue;
-      const t = s.transaction;
-      const own = all || t.accountId === accountId;
-      const part = t.splits.find((p) => p.transferAccountId === accountId);
-      const value = own ? t.amount : t.transferAccountId === accountId ? -t.amount : part ? -part.amount : null;
+      const tx = s.transaction;
+      const own = all || tx.accountId === accountId;
+      const part = tx.splits.find((p) => p.transferAccountId === accountId);
+      const value = own ? tx.amount : tx.transferAccountId === accountId ? -tx.amount : part ? -part.amount : null;
       if (value === null) continue;
-      const peer = own ? t.transferAccountId : t.accountId;
-      const self = own ? t.accountId : accountId;
+      const peer = own ? tx.transferAccountId : tx.accountId;
+      const self = own ? tx.accountId : accountId;
       const transfer = transferView(accountsById, self, peer, value);
       const budgetAmount = onBudget(self) ? value : onBudget(peer) ? -value : null;
-      const category = categoryLabel(t, categoryNames, noCategory(budgetAmount));
-      const isTransfer = !!transfer && category === "Transfer";
+      const category = categoryLabel(tx, categoryNames, noCategory(budgetAmount));
+      const isTransfer = !!transfer && category === t("Transfer");
       list.push({
         s,
         amount: value,
         date: s.nextDate,
         transfer,
-        payee: peer ? `Transfer: ${accountNames.get(peer) ?? ""}` : t.payee || "No payee",
-        category: isTransfer ? TRANSFER_CATEGORY : category,
+        payee: peer ? t("Transfer: {account}", { account: accountNames.get(peer) ?? "" }) : tx.payee || t("No payee"),
+        category: isTransfer ? t(TRANSFER_CATEGORY) : category,
         noCategory: isTransfer,
-        memo: t.memo,
-        account: accountNames.get(t.accountId) ?? "",
+        memo: tx.memo,
+        account: accountNames.get(tx.accountId) ?? "",
       });
     }
     return list.sort((a, b) => b.date.localeCompare(a.date));
-  }, [budget.schedules, accountId, all, accountNames, accountsById, categoryNames, onBudget]);
+  }, [budget.schedules, accountId, all, accountNames, accountsById, categoryNames, onBudget, language]);
   // What the date and amount columns need, without their padding: their widest value (over the
   // whole register, so filtering doesn't change them) or their heading, whichever is wider.
   const sampleDate = formatDate("2026-12-28");
@@ -727,15 +738,15 @@ export function Register({
       field = Math.max(field, textWidth(text, 12.5) + 34 - 12);
     }
     // Outflow and Inflow match, so the two read as a pair.
-    const amounts = Math.max(figures(amount), headingWidth("Outflow") + SORT_ARROW);
+    const amounts = Math.max(figures(amount), headingWidth(t("Outflow")) + SORT_ARROW);
     return {
-      date: Math.max(date, field, headingWidth("Date") + SORT_ARROW),
+      date: Math.max(date, field, headingWidth(t("Date")) + SORT_ARROW),
       outflow: amounts,
       inflow: amounts,
-      balance: Math.max(figures(high), figures(low), headingWidth("Balance")),
+      balance: Math.max(figures(high), figures(low), headingWidth(t("Balance"))),
     };
-    // Samples change with the date and currency display formats.
-  }, [entries, upcoming, all, accountId, accountsById, sampleDate, sampleMoney]);
+    // Samples change with the date and currency display formats, headings with the language.
+  }, [entries, upcoming, all, accountId, accountsById, sampleDate, sampleMoney, language]);
   // Its padding and the 1px line on its left.
   const fittedWidth = (k: Fitted, compact = false) => Math.ceil(fitted[k]) + 2 * pad(compact) + 1;
   const columns = useColumns(
@@ -854,7 +865,7 @@ export function Register({
 
   const fail = (e: unknown) => toast({ message: errorText(e), tone: "error" });
   const undoable = (message: string) =>
-    toast({ message, action: undo ? { label: "Undo", onClick: undo } : undefined });
+    toast({ message, action: undo ? { label: t("Undo"), onClick: undo } : undefined });
   const run = async (operation: string, value: string | null, message: string) => {
     try {
       await transform((b) => api.action(b, { type: "bulk", ids: chosen, operation, value, accountId }));
@@ -872,8 +883,11 @@ export function Register({
       if (!path) return;
       const n = listed ? listed.length : null;
       toast({
-        message: n === null ? "Transactions exported." : `Exported ${n} listed ${n === 1 ? "transaction" : "transactions"}.`,
-        action: { label: "Show in folder", onClick: () => void api.reveal(path).catch(fail) },
+        message:
+          n === null
+            ? t("Transactions exported.")
+            : tn(n, "Exported {count} listed transaction.", "Exported {count} listed transactions."),
+        action: { label: t("Show in folder"), onClick: () => void api.reveal(path).catch(fail) },
       });
     } catch (e) {
       fail(e);
@@ -885,7 +899,11 @@ export function Register({
       await transform((b) => api.action(b, { type: "bulk", ids: list, operation: "delete", value: "", accountId }));
       setSelected(new Set());
       setEditing(null);
-      undoable(list.length === 1 ? "Transaction deleted." : `${list.length.toLocaleString()} transactions deleted.`);
+      undoable(
+        list.length === 1
+          ? t("Transaction deleted.")
+          : tn(list.length, "{count} transactions deleted.", "{count} transactions deleted.", { count: formatCount(list.length) }),
+      );
     } catch (e) {
       fail(e);
     }
@@ -909,16 +927,20 @@ export function Register({
     edit((b) => {
       b.schedules = (b.schedules ?? []).filter((x) => x.id !== u.s.id);
     });
-    undoable(`Deleted the schedule for ${u.payee}.`);
+    undoable(t("Deleted the schedule for {payee}.", { payee: u.payee }));
   };
   const storeSchedule = async (s: Schedule, isNew: boolean) => {
     await transform((b) => saveSchedule(b, s));
-    const t = s.transaction;
-    const name = t.payee || `the transfer to ${accountNames.get(t.transferAccountId ?? "") ?? "another account"}`;
+    const tx = s.transaction;
+    const name =
+      tx.payee ||
+      t("the transfer to {account}", { account: accountNames.get(tx.transferAccountId ?? "") ?? t("another account") });
     const repeat = s.frequency === "never" ? undefined : s.frequency;
     const message =
       s.nextDate && s.nextDate <= today() && !s.paused
-        ? `Entered ${name}.${repeat ? ` It repeats ${(frequencies[repeat] ?? repeat).toLowerCase()}.` : ""}`
+        ? repeat
+          ? t("Entered {name}. It repeats {often}.", { name, often: t(frequencies[repeat] ?? repeat).toLowerCase() })
+          : t("Entered {name}.", { name })
         : isNew && s.nextDate
           ? scheduledFor(s.nextDate, repeat)
           : "";
@@ -929,10 +951,10 @@ export function Register({
       await transform((b) => api.previewSchedules(b, today(), u.s.id, skip));
       undoable(
         !skip
-          ? `Entered ${u.payee}.`
+          ? t("Entered {name}.", { name: u.payee })
           : u.s.frequency === "never"
-            ? `Skipped ${u.payee}. It won't be entered.`
-            : `Skipped ${u.payee} on ${formatDate(u.date)}.`,
+            ? t("Skipped {name}. It won't be entered.", { name: u.payee })
+            : t("Skipped {name} on {date}.", { name: u.payee, date: formatDate(u.date) }),
       );
     } catch (e) {
       fail(e);
@@ -1030,7 +1052,7 @@ export function Register({
     const checkbox = target instanceof HTMLInputElement && target.type === "checkbox";
     if (target.closest(".reg-editor, select, textarea") || (target.closest("input") && !checkbox)) return;
     const plain = !e.ctrlKey && !e.metaKey && !e.altKey;
-    const n = chosen.length === 1 ? "1 transaction" : `${chosen.length.toLocaleString()} transactions`;
+    const n = tn(chosen.length, "{count} transaction", "{count} transactions", { count: formatCount(chosen.length) });
     const index = cursor ? (position.get(cursor) ?? -1) : -1;
     const move = (to: number) => {
       const next = sorted[Math.min(sorted.length - 1, Math.max(0, to))];
@@ -1073,22 +1095,28 @@ export function Register({
       setSelected(new Set(ids));
     } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "d" && chosen.length) {
       e.preventDefault();
-      void run("duplicate", "", `Duplicated ${n}.`);
+      void run("duplicate", "", t("Duplicated {transactions}.", { transactions: n }));
     } else if (plain && e.key.toLowerCase() === "c" && chosen.length) {
       // Clears the selection, or unclears it when it's all cleared already.
       e.preventDefault();
       const uncleared = sorted.some((r) => selected.has(r.t.id) && r.status === "uncleared");
-      void run("status", uncleared ? "cleared" : "uncleared", `Marked ${n} ${uncleared ? "cleared" : "uncleared"}.`);
+      void run(
+        "status",
+        uncleared ? "cleared" : "uncleared",
+        uncleared
+          ? t("Marked {transactions} cleared.", { transactions: n })
+          : t("Marked {transactions} uncleared.", { transactions: n }),
+      );
     } else if (plain && e.key.toLowerCase() === "a" && chosen.length && needsApproval) {
       e.preventDefault();
-      void run("approve", "", `Approved ${n}.`);
+      void run("approve", "", t("Approved {transactions}.", { transactions: n }));
     } else if (plain && (e.key.toLowerCase() === "n" || e.key === "Insert") && canAdd) {
       e.preventDefault();
       setEditing(null);
       setAdding(true);
     } else if (e.key === "/" || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f")) {
       e.preventDefault();
-      document.querySelector<HTMLInputElement>('[aria-label="Search transactions"]')?.focus();
+      document.querySelector<HTMLInputElement>(`[aria-label="${t("Search transactions")}"]`)?.focus();
     }
   };
   // Esc clears the selection from anywhere on the page, unless it belongs to a field, a dialog or
@@ -1206,8 +1234,8 @@ export function Register({
     r.t.approved === false && (
       <button
         className="approve"
-        title="Waiting for approval: click to approve (A)"
-        aria-label={`Approve ${r.payee} ${r.t.date}`}
+        title={t("Waiting for approval: click to approve (A)")}
+        aria-label={t("Approve {payee} {date}", { payee: r.payee, date: r.t.date })}
         onClick={() =>
           edit((b) => {
             b.transactions.find((x) => x.id === r.t.id)!.approved = true;
@@ -1219,8 +1247,8 @@ export function Register({
     <button
       className={`clear-button ${r.status}`}
       disabled={r.status === "reconciled"}
-      title={r.status === "reconciled" ? "Reconciled" : `${r.status[0].toUpperCase() + r.status.slice(1)} (C)`}
-      aria-label={`${r.status[0].toUpperCase() + r.status.slice(1)}: ${r.payee} ${r.t.date}`}
+      title={r.status === "reconciled" ? t("Reconciled") : t("{status} (C)", { status: t(STATUS_NAMES[r.status]) })}
+      aria-label={t("{status}: {payee} {date}", { status: t(STATUS_NAMES[r.status]), payee: r.payee, date: r.t.date })}
       onClick={() =>
         edit((b) => {
           const row = b.transactions.find((x) => x.id === r.t.id)!;
@@ -1321,7 +1349,7 @@ export function Register({
         className="register-table"
         style={{ minWidth }}
         role="grid"
-        aria-label="Transactions"
+        aria-label={t("Transactions")}
         aria-rowcount={items.length + 1}
         aria-multiselectable
       >
@@ -1335,7 +1363,7 @@ export function Register({
           >
             <input
               type="checkbox"
-              aria-label="Select all filtered transactions"
+              aria-label={t("Select all filtered transactions")}
               checked={allChosen}
               ref={(el) => {
                 if (el) el.indeterminate = someChosen && !allChosen;
@@ -1343,30 +1371,30 @@ export function Register({
               onChange={() => setSelected(new Set(allChosen ? [] : ids))}
             />
           </span>
-          {header("flag", "Flag", "flag-cell icon-col", true, <FlagIcon size={13} />)}
-          {header("date", "Date")}
-          {header("payee", "Payee")}
-          {all && header("account", "Account")}
-          {header("category", "Category")}
-          {header("memo", "Memo", "memo", false)}
-          {header("outflow", "Outflow", "num")}
-          {header("inflow", "Inflow", "num")}
+          {header("flag", t("Flag"), "flag-cell icon-col", true, <FlagIcon size={13} />)}
+          {header("date", t("Date"))}
+          {header("payee", t("Payee"))}
+          {all && header("account", t("Account"))}
+          {header("category", t("Category"))}
+          {header("memo", t("Memo"), "memo", false)}
+          {header("outflow", t("Outflow"), "num")}
+          {header("inflow", t("Inflow"), "num")}
           {!all && (
             <span
               role="columnheader"
               className="num balance"
-              title={showBalance ? undefined : "Running balances show when sorted by date"}
+              title={showBalance ? undefined : t("Running balances show when sorted by date")}
             >
-              {showBalance ? "Balance" : ""}
-              {columns.grip("balance", "Balance")}
+              {showBalance ? t("Balance") : ""}
+              {columns.grip("balance", t("Balance"))}
             </span>
           )}
-          <span role="columnheader" className="icon-col" title="Cleared">
+          <span role="columnheader" className="icon-col" title={t("Cleared")}>
             <span className="col-icon" aria-hidden>
               <CircleCheck size={14} />
             </span>
-            <span className="col-label">Cleared</span>
-            {columns.grip("cleared", "Cleared")}
+            <span className="col-label">{t("Cleared")}</span>
+            {columns.grip("cleared", t("Cleared"))}
           </span>
         </div>
         {adding && editor()}
@@ -1383,16 +1411,16 @@ export function Register({
                       onClick={() => setShowUpcoming(!showUpcoming)}
                     >
                       {showUpcoming ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                      Scheduled
+                      {t("Scheduled")}
                       <span className="schedules-count">{matchingUpcoming.length}</span>
                     </button>
-                    {paused > 0 && <span className="schedules-note">{paused} paused</span>}
+                    {paused > 0 && <span className="schedules-note">{tn(paused, "{count} paused", "{count} paused")}</span>}
                     <span className="spacer" />
                     {(dueSoon.out > 0 || dueSoon.in > 0) && (
-                      <span className="schedules-note" title="Due in the next 30 days (each schedule's next date)">
-                        Next 30 days
-                        {dueSoon.out > 0 && <strong>{money(dueSoon.out)} out</strong>}
-                        {dueSoon.in > 0 && <strong className="positive">{money(dueSoon.in)} in</strong>}
+                      <span className="schedules-note" title={t("Due in the next 30 days (each schedule's next date)")}>
+                        {t("Next 30 days")}
+                        {dueSoon.out > 0 && <strong>{t("{amount} out", { amount: money(dueSoon.out) })}</strong>}
+                        {dueSoon.in > 0 && <strong className="positive">{t("{amount} in", { amount: money(dueSoon.in) })}</strong>}
                       </span>
                     )}
                   </span>
@@ -1401,13 +1429,13 @@ export function Register({
             }
             if (item.kind === "upcoming") {
               const u = item.u;
-              const often = frequencies[u.s.frequency] ?? u.s.frequency;
+              const often = t(frequencies[u.s.frequency] ?? u.s.frequency);
               return (
                 <div
                   key={item.key}
                   role="row"
                   className={`reg-row upcoming${u.s.paused ? " paused" : ""}`}
-                  title={`Scheduled · ${often}${u.s.paused ? " · Paused" : ""}`}
+                  title={u.s.paused ? t("Scheduled · {often} · Paused", { often }) : t("Scheduled · {often}", { often })}
                   onDoubleClick={(e) => {
                     if (!(e.target as HTMLElement).closest("button")) onEditSchedule?.(u.s);
                   }}
@@ -1419,11 +1447,11 @@ export function Register({
                   <span role="cell">
                     <button
                       className="schedule-menu-button"
-                      aria-label={`Schedule options: ${u.payee}`}
-                      title="Schedule options"
+                      aria-label={t("Schedule options: {payee}", { payee: u.payee })}
+                      title={t("Schedule options")}
                       onClick={(e) => {
                         const box = e.currentTarget.getBoundingClientRect();
-                        setScheduleMenu({ id: u.s.id, x: box.left, y: box.bottom + 2 });
+                        setScheduleMenu({ id: u.s.id, x: startEdge(box), y: box.bottom + 2 });
                       }}
                     >
                       <CalendarClock size={13} aria-hidden />
@@ -1449,8 +1477,8 @@ export function Register({
                     {u.category}
                   </span>
                   {/* How often it repeats leads the memo cell, which is empty on most schedules. */}
-                  <span role="cell" className="memo" title={[often, u.s.paused && "Paused", u.memo].filter(Boolean).join(" · ")}>
-                    {u.s.paused && <span className="repeat-label paused-label">Paused</span>}
+                  <span role="cell" className="memo" title={[often, u.s.paused && t("Paused"), u.memo].filter(Boolean).join(" · ")}>
+                    {u.s.paused && <span className="repeat-label paused-label">{t("Paused")}</span>}
                     <span className="repeat-label">{often}</span>
                     {u.memo}
                   </span>
@@ -1468,18 +1496,18 @@ export function Register({
                       <button
                         className="row-action"
                         onClick={() => void schedule(u, false)}
-                        title="Enter now: adds it to the register dated today"
+                        title={t("Enter now: adds it to the register dated today")}
                       >
                         <CornerDownLeft size={14} aria-hidden />
-                        <span className="action-label">Enter</span>
+                        <span className="action-label">{t("Enter")}</span>
                       </button>
                       <button
                         className="row-action"
                         onClick={() => void schedule(u, true)}
-                        title={`Skip ${formatDate(u.date)}: the schedule moves on to its next date`}
+                        title={t("Skip {date}: the schedule moves on to its next date", { date: formatDate(u.date) })}
                       >
                         <SkipForward size={13} aria-hidden />
-                        <span className="action-label">Skip</span>
+                        <span className="action-label">{t("Skip")}</span>
                       </button>
                     </span>
                   </span>
@@ -1492,12 +1520,12 @@ export function Register({
                   key={item.key}
                   role="row"
                   className="reg-row opening"
-                  title="The account's balance when it was added, before any transaction here. Change it from Edit account."
+                  title={t("The account's balance when it was added, before any transaction here. Change it from Edit account.")}
                 >
                   <span role="cell" />
                   <span role="cell" className="flag-cell" />
                   <span role="cell" className="date" />
-                  <span role="cell">Starting balance</span>
+                  <span role="cell">{t("Starting balance")}</span>
                   <span role="cell">{openingNote}</span>
                   <span role="cell" className="memo" />
                   <span role="cell" className="num">
@@ -1516,9 +1544,9 @@ export function Register({
               const s = item.s;
               const uncategorized = needsCategory(item.r.t, s);
               const name = s.transferAccountId
-                ? `Transfer: ${accountNames.get(s.transferAccountId) ?? ""}`
+                ? t("Transfer: {account}", { account: accountNames.get(s.transferAccountId) ?? "" })
                 : uncategorized
-                  ? NEEDS_CATEGORY
+                  ? t(NEEDS_CATEGORY)
                   : (categoryNames.get(s.categoryId ?? "") ?? noCategory(onBudget(item.r.t.accountId) ? s.amount : null));
               return (
                 <div key={item.key} role="row" className="reg-row split-line">
@@ -1547,19 +1575,19 @@ export function Register({
               );
             }
             const r = item.r;
-            const t = r.t;
-            if (editing?.key === r.key) return editor(t, editing.focus, r.reverse);
-            const picked = isChosen(t.id);
-            const split = !r.reverse && t.splits.length > 1;
+            const tx = r.t;
+            if (editing?.key === r.key) return editor(tx, editing.focus, r.reverse);
+            const picked = isChosen(tx.id);
+            const split = !r.reverse && tx.splits.length > 1;
             // Dated after today: it hasn't happened yet, so it reads quieter.
-            const future = t.date > now;
+            const future = tx.date > now;
             return (
               <div
                 key={r.key}
                 id={`reg-${r.key}`}
                 role="row"
                 aria-selected={picked}
-                className={`reg-row${picked ? " selected" : ""}${cursor === r.key ? " cursor" : ""}${t.approved === false ? " unapproved" : ""}${future ? " future" : ""}`}
+                className={`reg-row${picked ? " selected" : ""}${cursor === r.key ? " cursor" : ""}${tx.approved === false ? " unapproved" : ""}${future ? " future" : ""}`}
                 onClick={rowClick(r)}
                 onDoubleClick={(e) => {
                   const target = e.target as HTMLElement;
@@ -1569,36 +1597,40 @@ export function Register({
                 <span role="cell" className="select-cell">
                   <input
                     type="checkbox"
-                    aria-label={`Select ${r.payee} ${t.date}`}
+                    aria-label={t("Select {payee} {date}", { payee: r.payee, date: tx.date })}
                     checked={picked}
                     onChange={(e) => check(r, (e.nativeEvent as globalThis.MouseEvent).shiftKey)}
                   />
                   {/* In the margin beside the row (.reg-row .approve). */}
                   {approveButton(r)}
                 </span>
-                {r.flag && <i className="flag-bar" data-flag={r.flag} title={`${flagName(r.flag, budget)} flag`} aria-hidden />}
+                {r.flag && <i className="flag-bar" data-flag={r.flag} title={t("{name} flag", { name: flagName(r.flag, budget) })} aria-hidden />}
                 <span role="cell" className="flag-cell icon-col">
                   <button
                     className={`flag-pick${r.flag ? "" : " empty"}`}
-                    aria-label={r.flag ? `${flagName(r.flag, budget)} flag: change` : `Flag ${r.payee} ${t.date}`}
-                    title={r.flag ? `${flagName(r.flag, budget)} flag` : "Add a flag"}
+                    aria-label={
+                      r.flag
+                        ? t("{name} flag: change", { name: flagName(r.flag, budget) })
+                        : t("Flag {payee} {date}", { payee: r.payee, date: tx.date })
+                    }
+                    title={r.flag ? t("{name} flag", { name: flagName(r.flag, budget) }) : t("Add a flag")}
                     onClick={(e) => {
                       const box = e.currentTarget.getBoundingClientRect();
-                      setFlagMenu({ key: r.key, x: box.left, y: box.bottom + 2 });
+                      setFlagMenu({ key: r.key, x: startEdge(box), y: box.bottom + 2 });
                     }}
                   >
                     {r.flag ? <FlagTag flag={r.flag} name={flagName(r.flag, budget)} /> : <FlagIcon size={11} outline />}
                   </button>
                 </span>
-                <span role="cell" className="date" data-field="Date" title={future ? "Dated in the future" : undefined}>
-                  {r.flag && <span className="sr-only">{flagName(r.flag, budget)} flag, </span>}
-                  {formatDate(t.date)}
+                <span role="cell" className="date" data-field="Date" title={future ? t("Dated in the future") : undefined}>
+                  {r.flag && <span className="sr-only">{t("{name} flag, ", { name: flagName(r.flag, budget) })}</span>}
+                  {formatDate(tx.date)}
                 </span>
                 <span role="cell" data-field="Payee" title={r.transfer?.label ?? r.payee} className={r.transfer ? "transfer-payee" : undefined}>
                   {r.transfer ? (
                     <TransferPayee
                       view={r.transfer}
-                      onOpen={onOpenTransfer && (() => onOpenTransfer(r.transfer!.account, t.id))}
+                      onOpen={onOpenTransfer && (() => onOpenTransfer(r.transfer!.account, tx.id))}
                     />
                   ) : (
                     r.payee
@@ -1663,19 +1695,19 @@ export function Register({
           />
           {adding ? null : empty ? (
             <div className="register-empty">
-              <h3>No transactions yet</h3>
+              <h3>{t("No transactions yet")}</h3>
               <p>
                 {all
-                  ? "Add a transaction, or open an account to import a file from your bank."
-                  : "Add a transaction, or import a file from your bank."}
+                  ? t("Add a transaction, or open an account to import a file from your bank.")
+                  : t("Add a transaction, or import a file from your bank.")}
               </p>
               <div className="button-row">
                 <button className="primary" disabled={!canAdd} onClick={add}>
-                  Add transaction
+                  {t("Add transaction")}
                 </button>
                 {onImport && (
                   <button className="secondary" onClick={onImport}>
-                    Import file
+                    {t("Import file")}
                   </button>
                 )}
               </div>
@@ -1683,10 +1715,10 @@ export function Register({
           ) : (
             !items.length && (
               <div className="register-empty">
-                <h3>No transactions match these filters.</h3>
+                <h3>{t("No transactions match these filters.")}</h3>
                 {anyFilter(filters) && (
                   <button className="secondary" onClick={() => setFilters(emptyFilters())}>
-                    Clear filters
+                    {t("Clear filters")}
                   </button>
                 )}
               </div>
@@ -1696,7 +1728,7 @@ export function Register({
       </div>
       {schedulesOpen && (
         <SchedulesModal
-          title={all ? "Scheduled transactions" : `Scheduled · ${accountNames.get(accountId) ?? ""}`}
+          title={all ? t("Scheduled transactions") : t("Scheduled · {account}", { account: accountNames.get(accountId) ?? "" })}
           items={upcoming}
           showAccount={all}
           close={() => setSchedulesOpen(false)}
@@ -1722,22 +1754,22 @@ export function Register({
           const u = upcoming.find((x) => x.s.id === scheduleMenu.id);
           if (!u) return null;
           const items: MenuItem[] = [
-            { label: "Enter now", icon: <CornerDownLeft size={14} />, onSelect: () => void schedule(u, false) },
-            { label: `Skip ${formatDate(u.date)}`, icon: <SkipForward size={14} />, onSelect: () => void schedule(u, true) },
+            { label: t("Enter now"), icon: <CornerDownLeft size={14} />, onSelect: () => void schedule(u, false) },
+            { label: t("Skip {date}", { date: formatDate(u.date) }), icon: <SkipForward size={14} />, onSelect: () => void schedule(u, true) },
             u.s.paused
-              ? { label: "Resume", icon: <Play size={14} />, onSelect: () => pauseSchedule(u.s, false) }
-              : { label: "Pause", icon: <Pause size={14} />, onSelect: () => pauseSchedule(u.s, true) },
+              ? { label: t("Resume"), icon: <Play size={14} />, onSelect: () => pauseSchedule(u.s, false) }
+              : { label: t("Pause"), icon: <Pause size={14} />, onSelect: () => pauseSchedule(u.s, true) },
             "separator",
-            { label: "Delete schedule", icon: <Trash2 size={14} />, danger: true, onSelect: () => deleteSchedule(u) },
+            { label: t("Delete schedule"), icon: <Trash2 size={14} />, danger: true, onSelect: () => deleteSchedule(u) },
           ];
           if (onEditSchedule)
-            items.unshift({ label: "Edit schedule…", icon: <Pencil size={14} />, onSelect: () => onEditSchedule(u.s) });
+            items.unshift({ label: t("Edit schedule…"), icon: <Pencil size={14} />, onSelect: () => onEditSchedule(u.s) });
           return (
             <Menu
               open
               onClose={() => setScheduleMenu(null)}
               anchor={{ x: scheduleMenu.x, y: scheduleMenu.y }}
-              label={`Schedule for ${u.payee}`}
+              label={t("Schedule for {payee}", { payee: u.payee })}
               items={items}
             />
           );
@@ -1761,7 +1793,7 @@ export function Register({
               open
               onClose={() => setFlagMenu(null)}
               anchor={{ x: flagMenu.x, y: flagMenu.y }}
-              label="Flag"
+              label={t("Flag")}
               items={[
                 ...flagsOf(budget).map(([flag, name]) => ({
                   label: name,
@@ -1770,8 +1802,8 @@ export function Register({
                   onSelect: () => set(flag),
                 })),
                 "separator" as const,
-                { label: "No flag", disabled: !r.flag, onSelect: () => set(null) },
-                { label: "Name the flags…", onSelect: () => setNamingFlags(true) },
+                { label: t("No flag"), disabled: !r.flag, onSelect: () => set(null) },
+                { label: t("Name the flags…"), onSelect: () => setNamingFlags(true) },
               ]}
             />
           );

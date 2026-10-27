@@ -16,6 +16,8 @@ struct UrBudgetApp: App {
                 .environment(store)
                 .environment(sync)
                 .environment(appStore)
+                // The app's language, with Western digits in counts and other numbers, as budgets write them.
+                .environment(\.locale, .app)
                 .tint(.urAccent)
                 .preferredColorScheme(theme == "dark" ? .dark : theme == "light" ? .light : nil)
                 .task {
@@ -108,7 +110,7 @@ struct RootView: View {
         .sheet(item: $opened) { file in
             if file.kind == .ynab { YnabImportView(files: [file.url]) } else { BankFileImportView(file: file.url) }
         }
-        .confirmationDialog("Open \(backup?.url.lastPathComponent ?? "this backup")?",
+        .confirmationDialog(backupTitle,
                             isPresented: Binding(get: { backup != nil }, set: { if !$0 { backup = nil } }), titleVisibility: .visible) {
             Button("Add as a new budget") { openBackup(replace: false) }
             if store.budget != nil { Button("Replace this budget", role: .destructive) { openBackup(replace: true) } }
@@ -137,6 +139,12 @@ struct RootView: View {
         }
     }
 
+    /// "Open UrBudget-2026-10-21.json?"
+    private var backupTitle: Text {
+        if let name = backup?.url.lastPathComponent { return Text("Open \(name)?") }
+        return Text("Open this backup?")
+    }
+
     private func takeAction() {
         guard AppActions.shared.pending == .newTransaction, !store.loading, store.budget != nil else { return }
         AppActions.shared.pending = nil
@@ -145,11 +153,12 @@ struct RootView: View {
 
     private func open(_ url: URL) {
         guard let file = OpenedFile(url) else {
-            if url.isFileURL { store.error = "UrBudget opens JSON backups, bank statements (CSV, OFX, QFX, QIF or MT940) and YNAB exports." }
+            if url.isFileURL { store.error = String(localized: "UrBudget opens JSON backups, bank statements (CSV, OFX, QFX, QIF or MT940) and YNAB exports.") }
             return
         }
+        let name = url.lastPathComponent
         if file.kind == .backup { backup = file }
-        else if store.budget == nil { store.error = "Create or open a budget first, then import \(url.lastPathComponent)." }
+        else if store.budget == nil { store.error = String(localized: "Create or open a budget first, then import \(name).") }
         else { opened = file }
     }
 
@@ -159,18 +168,25 @@ struct RootView: View {
         Task {
             do {
                 let data = try await Task.detached(priority: .userInitiated) {
-                    try ImportFiles.read(file.url, limit: 32 * 1024 * 1024, tooLarge: "Choose a JSON backup smaller than 32 MB.").data
+                    try ImportFiles.read(file.url, limit: 32 * 1024 * 1024, tooLarge: String(localized: "Choose a JSON backup smaller than 32 MB.")).data
                 }.value
                 if replace { store.importBudget(data) }
-                else { store.importAsNewBudget(data) { store.showToast("Opened \(store.budget?.text("name") ?? "the backup") as a new budget.") } }
+                else { store.importAsNewBudget(data) { store.showToast(openedAsNew(store.budget?.text("name"))) } }
             } catch {
                 store.error = BudgetStore.readable(error)
             }
         }
     }
 
+    private func openedAsNew(_ name: String?) -> String {
+        guard let name else { return String(localized: "Opened the backup as a new budget.") }
+        return String(localized: "Opened \(name) as a new budget.")
+    }
+
     private func startForegroundWork() {
         guard !store.loading else { return }
+        // The engine writes its messages in the app's language; it's told again on each return.
+        Task.detached(priority: .utility) { AppLanguage.tellEngine() }
         HostEvents.shared.start()
         sync.start()
         appStore.start()
@@ -203,8 +219,11 @@ struct MainTabs: View {
     @State private var tab = LaunchRoute.initialTab
 
     private static let tabs: [(tab: AppTab, title: String, symbol: String)] = [
-        (.budget, "Budget", "square.grid.2x2"), (.transactions, "Transactions", "arrow.left.arrow.right"),
-        (.accounts, "Accounts", "building.columns"), (.reports, "Reports", "chart.bar.xaxis"), (.more, "More", "ellipsis.circle"),
+        (.budget, String(localized: "Budget"), "square.grid.2x2"),
+        (.transactions, String(localized: "Transactions"), "arrow.left.arrow.right"),
+        (.accounts, String(localized: "Accounts"), "building.columns"),
+        (.reports, String(localized: "Reports"), "chart.bar.xaxis"),
+        (.more, String(localized: "More"), "ellipsis.circle"),
     ]
 
     var body: some View {
@@ -212,7 +231,7 @@ struct MainTabs: View {
             .background {
             // Hidden buttons carry ⌘1–⌘5, as the desktop's sidebar shortcuts do.
                 ForEach(Array(Self.tabs.enumerated()), id: \.offset) { index, destination in
-                    Button("") { tab = destination.tab }
+                    Button { tab = destination.tab } label: { Text(verbatim: "") }
                         .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
                         .hidden()
                 }
@@ -283,8 +302,8 @@ struct ToastView: View {
                 .gesture(DragGesture(minimumDistance: 12).onEnded { if $0.translation.height > 12 { store.toast = nil } })
                 .task(id: toast.id) {
                     // VoiceOver reads it out; one with Undo stays long enough to reach the button.
-                    let offer = toast.action?.label ?? (toast.undo ? "Undo" : nil)
-                    AccessibilityNotification.Announcement(offer.map { "\(toast.message) \($0) available." } ?? toast.message).post()
+                    let offer = toast.action?.label ?? (toast.undo ? String(localized: "Undo") : nil)
+                    AccessibilityNotification.Announcement(announcement(toast.message, offer: offer)).post()
                     // An offer (Add rule, Apply) waits longest, as the desktop's does.
                     let seconds = toast.action != nil ? 10 : toast.undo ? 8 : 4
                     try? await Task.sleep(for: .seconds(UIAccessibility.isVoiceOverRunning && offer != nil ? 14 : seconds))
@@ -294,6 +313,12 @@ struct ToastView: View {
         }
         .animation(.spring(duration: 0.3), value: store.toast)
         .sensoryFeedback(.success, trigger: store.toast?.id) { _, new in new != nil }
+    }
+
+    /// What VoiceOver reads: the message, then the button it offers ("Rule added. Undo available.").
+    private func announcement(_ message: String, offer: String?) -> String {
+        guard let offer else { return message }
+        return String(localized: "\(message) \(offer) available.")
     }
 }
 
@@ -417,7 +442,7 @@ struct BudgetActionsMenu: View {
                     if sync.conflicts > 0 { Circle().fill(Color.urWarning).frame(width: 8, height: 8).offset(x: 2, y: -2) }
                 }
         }
-        .accessibilityLabel(sync.conflicts > 0 ? "More actions, a synced budget needs review" : "More actions")
+        .accessibilityLabel(sync.conflicts > 0 ? Text("More actions, a synced budget needs review") : Text("More actions"))
         .sheet(item: $page) { page in
             switch page {
             case .assistant:

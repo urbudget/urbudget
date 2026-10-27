@@ -56,6 +56,20 @@ Style
 - Don't describe the lookups you made; the user already sees them. Don't repeat the question back.
 - Match the user's language."#;
 
+/// Added to the instructions while the app is in Arabic. The instructions stay in English; this
+/// asks for replies in Arabic unless the person writes in another language.
+pub const ARABIC: &str = "Language
+- The app is set to Arabic. Reply in Modern Standard Arabic unless the user writes to you in another language; then reply in theirs. Write proposal titles and notes, reports and spreadsheet headings in the language of your reply.
+- Keep budget, account, category and payee names exactly as the budget has them, even when they are in English, and write numbers with the digits 0-9 as the budget does.";
+
+/// The instructions for one request, in the app's current language (see `ARABIC`).
+pub fn in_language(instructions: &str) -> String {
+    match crate::i18n::language() {
+        crate::i18n::Language::English => instructions.to_owned(),
+        crate::i18n::Language::Arabic => format!("{instructions}\n\n{ARABIC}"),
+    }
+}
+
 /// What the user was looking at when they sent a message.
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]

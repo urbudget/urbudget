@@ -19,6 +19,12 @@ use tauri::{Manager, State, WebviewWindow};
 // draft held here (empty when they match). Commands that change it return a patch.
 pub use urbudget_services::{Database, Library};
 
+/// The language of the engine's messages from now on, "ar" or "en" (docs/LOCALIZATION.md).
+#[tauri::command]
+fn set_language(language: String) {
+    urbudget_services::i18n::set_language(&language);
+}
+
 #[tauri::command(async)]
 fn load_budget(db: State<'_, Database>, legacy_backup_keep: Option<usize>) -> Result<Snapshot, String> {
     let mut store = db.store()?;
@@ -136,7 +142,7 @@ fn prepare_captured_ynab(db: State<'_, Database>, path: String) -> Result<Budget
         .canonicalize()
         .map_err(|e| e.to_string())?;
     if !path.starts_with(directory) {
-        return Err("Choose a downloaded YNAB export.".into());
+        return Err(urbudget_services::t!("Choose a downloaded YNAB export."));
     }
     ynab::import_export(
         &serde_json::from_slice(&std::fs::read(path).map_err(|e| e.to_string())?)
@@ -154,7 +160,7 @@ fn export_ynab_csv(window: WebviewWindow, db: State<'_, Database>, patch: Option
     let Some(directory) = save::ask(&window, &name, save::Kind::Folder) else {
         return Ok(None);
     };
-    std::fs::create_dir_all(&directory).map_err(|e| format!("Couldn't make the folder {}: {e}", directory.display()))?;
+    std::fs::create_dir_all(&directory).map_err(|e| urbudget_services::t!("Couldn't make the folder {folder}: {e}", folder = directory.display(), e))?;
     for (file, contents) in files {
         save::write(&directory.join(file), &contents)?;
     }
@@ -195,7 +201,7 @@ fn write_export(window: WebviewWindow, name: String, contents: String) -> Result
         && !name.starts_with('.')
         && name.chars().all(|c| c.is_ascii_alphanumeric() || " ._-".contains(c));
     if !plain {
-        return Err("Choose a plain .csv file name.".into());
+        return Err(urbudget_services::t!("Choose a plain .csv file name."));
     }
     save::file(&window, &name, save::Kind::Csv, contents.as_bytes())
 }
@@ -522,9 +528,9 @@ fn reveal_path(library: State<'_, Library>, saved: State<'_, save::Saved>, path:
         .map_err(|e| e.to_string())?;
     let target = std::path::PathBuf::from(&path)
         .canonicalize()
-        .map_err(|_| "That file no longer exists.".to_string())?;
+        .map_err(|_| urbudget_services::t!("That file no longer exists."))?;
     if !target.starts_with(&root) && !saved.contains(&target) {
-        return Err("Only files in the app's data folder, or ones it just saved, can be shown.".into());
+        return Err(urbudget_services::t!("Only files in the app's data folder, or ones it just saved, can be shown."));
     }
     let shown = if cfg!(target_os = "windows") {
         // canonicalize returns a verbatim `\\?\` path, which Explorer does not accept.
@@ -571,6 +577,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            set_language,
             upsert_transaction,
             source_loan_terms,
             preview_bank_file,
@@ -636,6 +643,8 @@ pub fn run() {
             updates::update_channel,
             updates::check_store_update,
             updates::install_store_update,
+            updates::download_store_update,
+            updates::apply_store_update,
             updates::open_update_store,
             updates::report_usage,
             cloud::cloud_status,

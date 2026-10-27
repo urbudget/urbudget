@@ -1,3 +1,4 @@
+use crate::{i18n::tr, t};
 use crate::domain::*;
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
@@ -6,35 +7,35 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 fn text<'a>(v: &'a Value, key: &str) -> Result<&'a str, String> {
     v[key]
         .as_str()
-        .ok_or_else(|| format!("YNAB export is missing {key}."))
+        .ok_or_else(|| t!("YNAB export is missing {key}.", key))
 }
 fn rows<'a>(v: &'a Value, key: &str) -> Result<&'a Vec<Value>, String> {
     v[key]
         .as_array()
-        .ok_or_else(|| format!("YNAB export is missing {key}."))
+        .ok_or_else(|| t!("YNAB export is missing {key}.", key))
 }
 fn source_date<'a>(v: &'a Value, key: &str) -> Result<&'a str, String> {
     let date = text(v, key)?;
     if !valid_date(date) {
-        return Err(format!("Invalid YNAB {key} “{date}”: expected a date in YYYY-MM-DD format."));
+        return Err(t!("Invalid YNAB {key} “{date}”: expected a date in YYYY-MM-DD format.", key, date));
     }
     Ok(date)
 }
 fn source_month(v: &Value) -> Result<&str, String> {
     let date = source_date(v, "month")?;
-    if !date.ends_with("-01") { return Err("Invalid month in YNAB export: expected the first day of the month.".into()); }
+    if !date.ends_with("-01") { return Err(t!("Invalid month in YNAB export: expected the first day of the month.")); }
     Ok(&date[..7])
 }
 fn live(v: &&Value) -> bool {
     v["deleted"] != true
 }
 fn money(v: &Value) -> Result<i64, String> {
-    let n = v.as_i64().ok_or("Invalid YNAB money value.")?;
+    let n = v.as_i64().ok_or_else(|| t!("Invalid YNAB money value."))?;
     if n % 10 != 0 {
-        return Err("This export contains sub-cent precision. The original export is preserved; import cannot round your money.".into());
+        return Err(t!("This export contains sub-cent precision. The original export is preserved; import cannot round your money."));
     }
     let amount = n / 10;
-    if !valid_money(amount) { return Err("YNAB amount exceeds the supported money range.".into()); }
+    if !valid_money(amount) { return Err(t!("YNAB amount exceeds the supported money range.")); }
     Ok(amount)
 }
 /// A milliunit amount YNAB works out, such as a target's shortfall, rounded to the cent it
@@ -44,7 +45,7 @@ fn shown_money(v: &Value) -> i64 {
     n.saturating_add(n.signum() * 5) / 10
 }
 fn status(v: &Value) -> Result<Cleared, String> {
-    serde_json::from_value(v.clone()).map_err(|_| "Invalid cleared status.".into())
+    serde_json::from_value(v.clone()).map_err(|_| t!("Invalid cleared status."))
 }
 fn meta(v: Value) -> Map<String, Value> {
     v.as_object().unwrap().clone()
@@ -228,11 +229,17 @@ pub fn import_export(export: &Value) -> Result<Budget, String> {
     if let Some(diffs) = b.extra.get("importAudit").and_then(|a| a["accountDifferences"].as_array()).filter(|a| !a.is_empty()) {
         let each: Vec<String> = diffs.iter().map(|d| {
             let field = d["field"].as_str().unwrap_or("balance").replace('_', " ");
-            format!("{} {field} {} here, {} in YNAB",
-                d["account"].as_str().unwrap_or("An account"),
-                cents(d["actual"].as_i64().unwrap_or(0)), cents(d["expected"].as_i64().unwrap_or(0)))
+            let field = match field.as_str() {
+                "balance" => tr("balance").to_owned(),
+                "cleared balance" => tr("cleared balance").to_owned(),
+                "uncleared balance" => tr("uncleared balance").to_owned(),
+                _ => field,
+            };
+            t!("{account} {field} {actual} here, {expected} in YNAB",
+                account = d["account"].as_str().unwrap_or(tr("An account")), field,
+                actual = cents(d["actual"].as_i64().unwrap_or(0)), expected = cents(d["expected"].as_i64().unwrap_or(0)))
         }).collect();
-        return Err(format!("Account totals don't match YNAB, so nothing was imported: {}.", each.join("; ")));
+        return Err(t!("Account totals don't match YNAB, so nothing was imported: {differences}.", differences = each.join(crate::i18n::list_separator())));
     }
     Ok(b)
 }
@@ -258,7 +265,7 @@ pub fn import_unverified(export: &Value) -> Result<Budget, String> {
     let p = export
         .pointer("/data/plan")
         .or_else(|| export.pointer("/data/budget"))
-        .ok_or("Choose a full YNAB API export.")?;
+        .ok_or_else(|| t!("Choose a full YNAB API export."))?;
     let accounts = rows(p, "accounts")?;
     let categories = rows(p, "categories")?;
     let transactions = rows(p, "transactions")?;
@@ -278,7 +285,7 @@ pub fn import_unverified(export: &Value) -> Result<Budget, String> {
         .filter_map(|c| c["id"].as_str())
         .collect();
     if inflow.is_empty() {
-        return Err("Could not identify YNAB’s Ready to Assign category.".into());
+        return Err(t!("Could not identify YNAB’s Ready to Assign category."));
     }
     let mut b = Budget {
         schema_version: SCHEMA_VERSION,
@@ -289,7 +296,7 @@ pub fn import_unverified(export: &Value) -> Result<Budget, String> {
     for a in accounts.iter().filter(live) {
         let on_budget = a["on_budget"]
             .as_bool()
-            .ok_or("Missing account classification")?;
+            .ok_or_else(|| t!("Missing account classification"))?;
         b.accounts.push(Account {
             id: text(a, "id")?.into(),
             name: text(a, "name")?.into(),
@@ -318,18 +325,18 @@ pub fn import_unverified(export: &Value) -> Result<Budget, String> {
         source_date(t, "date")?;
         let account = text(t, "account_id")?;
         if !is_budget.contains_key(account) {
-            return Err(format!("YNAB transaction {id} references missing account {account}."));
+            return Err(t!("YNAB transaction {id} references missing account {account}.", id, account));
         }
         if !t["transfer_account_id"].is_null() {
             let other = text(t, "transfer_account_id")?;
             if !is_budget.contains_key(other) {
-                return Err(format!("YNAB transaction {id} references missing transfer account {other}."));
+                return Err(t!("YNAB transaction {id} references missing transfer account {other}.", id, other));
             }
         }
         if !t["transfer_transaction_id"].is_null() {
             text(t, "transfer_transaction_id")?;
             if t["transfer_account_id"].is_null() {
-                return Err(format!("YNAB transaction {id} has a transfer counterpart without a transfer account."));
+                return Err(t!("YNAB transaction {id} has a transfer counterpart without a transfer account.", id));
             }
         }
     }
@@ -346,7 +353,7 @@ pub fn import_unverified(export: &Value) -> Result<Budget, String> {
         if c["internal"] == true && !payment_group && !transactions.iter().any(|t| t["category_id"] == id) {
             continue;
         }
-        let group = group.ok_or("Missing category group")?;
+        let group = group.ok_or_else(|| t!("Missing category group"))?;
         let name = text(c, "name")?;
         // The public API has no account-to-payment-category ID. A name is usable
         // only when it identifies exactly one credit account and one category.
@@ -355,16 +362,16 @@ pub fn import_unverified(export: &Value) -> Result<Budget, String> {
                 .filter(|a| a.on_budget() && a.kind == AccountKind::Credit && a.name == name)
                 .collect();
             match matches.as_slice() {
-                [] => return Err(format!("YNAB payment category “{name}” ({id}) has no matching on-budget credit account. Check the account and payment category names in YNAB, then export again.")),
+                [] => return Err(t!("YNAB payment category “{name}” ({id}) has no matching on-budget credit account. Check the account and payment category names in YNAB, then export again.", name, id)),
                 [account] => {
                     if let Some(other) = payment_categories.insert(account.id.as_str(), id) {
-                        return Err(format!("YNAB payment categories “{name}” ({other} and {id}) both match credit account “{}” ({}). The export does not identify which category belongs to the account.", account.name, account.id));
+                        return Err(t!("YNAB payment categories “{name}” ({other} and {id}) both match credit account “{account}” ({account_id}). The export does not identify which category belongs to the account.", name, other, id, account = account.name, account_id = account.id));
                     }
                     Some(*account)
                 }
                 _ => {
                     let ids = matches.iter().map(|a| a.id.as_str()).collect::<Vec<_>>().join(", ");
-                    return Err(format!("YNAB payment category “{name}” ({id}) matches multiple on-budget credit accounts ({ids}). Give those accounts distinct names in YNAB, then export again."));
+                    return Err(t!("YNAB payment category “{name}” ({id}) matches multiple on-budget credit accounts ({ids}). Give those accounts distinct names in YNAB, then export again.", name, id, ids));
                 }
             }
         } else { None };
@@ -379,7 +386,7 @@ pub fn import_unverified(export: &Value) -> Result<Budget, String> {
     }
     for account in b.accounts.iter().filter(|a| a.on_budget() && a.kind == AccountKind::Credit) {
         if !payment_categories.contains_key(account.id.as_str()) {
-            return Err(format!("YNAB credit account “{}” ({}) has no matching category in Credit Card Payments. Check the account and payment category names in YNAB, then export again.", account.name, account.id));
+            return Err(t!("YNAB credit account “{name}” ({id}) has no matching category in Credit Card Payments. Check the account and payment category names in YNAB, then export again.", name = account.name, id = account.id));
         }
     }
     let known: HashSet<_> = b.categories.iter().map(|c| c.id.clone()).collect();
@@ -388,13 +395,13 @@ pub fn import_unverified(export: &Value) -> Result<Budget, String> {
             None => Ok(None),
             Some(id) if inflow.contains(id) => Ok(None),
             Some(id) if known.contains(id) => Ok(Some(id.into())),
-            Some(id) => Err(format!("Unknown category {id}.")),
+            Some(id) => Err(t!("Unknown category {id}.", id)),
         }
     };
     let mut txmap = HashMap::new();
     for t in transactions.iter().filter(live) {
         let id = text(t, "id")?;
-        if txmap.insert(id, t).is_some() { return Err(format!("Duplicate YNAB transaction ID {id}.")); }
+        if txmap.insert(id, t).is_some() { return Err(t!("Duplicate YNAB transaction ID {id}.", id)); }
     }
     let mut subs: HashMap<&str, Vec<&Value>> = HashMap::new();
     // Each split transfer leg's counterpart in the other account. A plan export can leave the
@@ -414,29 +421,29 @@ pub fn import_unverified(export: &Value) -> Result<Budget, String> {
             continue;
         }
         if !leg_ids.insert(leg) {
-            return Err(format!("Duplicate YNAB split ID {leg}."));
+            return Err(t!("Duplicate YNAB split ID {leg}.", leg));
         }
         let Some(owner) = txmap.get(parent).copied() else {
-            return Err(format!("YNAB split {leg} references missing transaction {parent}."));
+            return Err(t!("YNAB split {leg} references missing transaction {parent}.", leg, parent));
         };
         if !s["transfer_account_id"].is_null() {
             let account = text(s, "transfer_account_id")?;
             if !is_budget.contains_key(account) {
-                return Err(format!("YNAB split {leg} references missing transfer account {account}."));
+                return Err(t!("YNAB split {leg} references missing transfer account {account}.", leg, account));
             }
             if let Some(peer) = s["transfer_transaction_id"].as_str() {
                 if peer == parent || !txmap.contains_key(peer) {
-                    return Err(format!("YNAB split {leg} references missing or invalid transfer counterpart {peer}."));
+                    return Err(t!("YNAB split {leg} references missing or invalid transfer counterpart {peer}.", leg, peer));
                 }
                 if !used_peers.insert(peer) {
-                    return Err(format!("YNAB split {leg} reuses transfer counterpart {peer}, already used by another split."));
+                    return Err(t!("YNAB split {leg} reuses transfer counterpart {peer}, already used by another split.", leg, peer));
                 }
                 leg_peers.insert(leg, peer);
             } else {
                 unresolved.push((s, owner));
             }
         } else if !s["transfer_transaction_id"].is_null() {
-            return Err(format!("YNAB split {leg} has a transfer counterpart without a transfer account."));
+            return Err(t!("YNAB split {leg} has a transfer counterpart without a transfer account.", leg));
         }
         subs.entry(parent).or_default().push(s)
     }
@@ -458,7 +465,7 @@ pub fn import_unverified(export: &Value) -> Result<Budget, String> {
         let naming: Vec<&Value> = candidates.iter().copied().filter(|u| u["transfer_transaction_id"] == leg).collect();
         let peer = match (naming.as_slice(), candidates.as_slice()) {
             ([u], _) | ([], [u]) => text(u, "id")?,
-            _ => return Err(format!("YNAB split {leg} is a transfer to account {account}, but its counterpart there can't be identified. No data was written.")),
+            _ => return Err(t!("YNAB split {leg} is a transfer to account {account}, but its counterpart there can't be identified. No data was written.", leg, account)),
         };
         used_peers.insert(peer);
         leg_peers.insert(leg, peer);
@@ -476,18 +483,16 @@ pub fn import_unverified(export: &Value) -> Result<Budget, String> {
         if let Some(otherid) = t["transfer_transaction_id"].as_str() {
             let other = *txmap
                 .get(otherid)
-                .ok_or("A transfer is missing its counterpart.")?;
+                .ok_or_else(|| t!("A transfer is missing its counterpart."))?;
             if other["transfer_transaction_id"] != t["id"]
                 || other["transfer_account_id"] != t["account_id"]
                 || money(&other["amount"])? != -money(&t["amount"])?
                 || other["date"] != t["date"]
             {
-                return Err(
-                    "Inconsistent transfer pair. The source export is preserved for review.".into(),
-                );
+                return Err(t!("Inconsistent transfer pair. The source export is preserved for review."));
             }
-            let budget_side = *is_budget.get(text(t, "account_id")?).ok_or("Missing transfer account")?;
-            let other_budget = *is_budget.get(text(other, "account_id")?).ok_or("Missing transfer account")?;
+            let budget_side = *is_budget.get(text(t, "account_id")?).ok_or_else(|| t!("Missing transfer account"))?;
+            let other_budget = *is_budget.get(text(other, "account_id")?).ok_or_else(|| t!("Missing transfer account"))?;
             if (!budget_side && other_budget)
                 || (budget_side == other_budget && money(&t["amount"])? > 0)
             {
@@ -499,9 +504,7 @@ pub fn import_unverified(export: &Value) -> Result<Budget, String> {
             consumed.insert(text(counterpart.unwrap(), "id")?.to_string());
             pairs += 1;
         } else if !t["transfer_account_id"].is_null() {
-            return Err(
-                "Split transfers require review before import; no data was written.".into(),
-            );
+            return Err(t!("Split transfers require review before import; no data was written."));
         }
         consumed.insert(text(t, "id")?.to_string());
         let amount = money(&t["amount"])?;
@@ -518,7 +521,7 @@ pub fn import_unverified(export: &Value) -> Result<Budget, String> {
                     let peer = leg_peers
                         .get(text(s, "id")?)
                         .and_then(|id| txmap.get(id))
-                        .ok_or("A split transfer is missing its counterpart.")?;
+                        .ok_or_else(|| t!("A split transfer is missing its counterpart."))?;
                     // A counterpart found by date and amount (above) may name nothing back.
                     let names_back = !peer["transfer_transaction_id"].is_null() || !s["transfer_transaction_id"].is_null();
                     if peer["account_id"] != other
@@ -529,7 +532,7 @@ pub fn import_unverified(export: &Value) -> Result<Budget, String> {
                         || peer["date"] != t["date"]
                         || money(&peer["amount"])? != -money(&s["amount"])?
                     {
-                        return Err("Inconsistent split transfer counterpart.".into());
+                        return Err(t!("Inconsistent split transfer counterpart."));
                     }
                     extra.insert("transferAccountId".into(), json!(other));
                     extra.insert("transferStatus".into(), json!(status(&peer["cleared"])?));
@@ -543,8 +546,8 @@ pub fn import_unverified(export: &Value) -> Result<Budget, String> {
                 });
             }
         } else if counterpart.is_none()
-            || is_budget.get(text(t, "account_id")?).ok_or("Missing transaction account")?
-                != is_budget.get(text(counterpart.unwrap(), "account_id")?).ok_or("Missing transfer account")?
+            || is_budget.get(text(t, "account_id")?).ok_or_else(|| t!("Missing transaction account"))?
+                != is_budget.get(text(counterpart.unwrap(), "account_id")?).ok_or_else(|| t!("Missing transfer account"))?
         {
             splits.push(Split {
                 category_id: category(&t["category_id"])?,
@@ -597,11 +600,11 @@ pub fn audit(b: &Budget) -> Result<Value, String> {
     let source = b
         .extra
         .get("sourceExport")
-        .ok_or("No source export attached.")?;
+        .ok_or_else(|| t!("No source export attached."))?;
     let p = source
         .pointer("/data/plan")
         .or_else(|| source.pointer("/data/budget"))
-        .ok_or("Missing plan")?;
+        .ok_or_else(|| t!("Missing plan"))?;
     let mut account_diffs = vec![];
     let mut category_diffs = vec![];
     let mut ready_diffs = vec![];
@@ -613,8 +616,8 @@ pub fn audit(b: &Budget) -> Result<Value, String> {
     let mut underfunded_diffs = vec![];
     let months = rows(p, "months")?.iter().filter(live)
         .map(|m| Ok((source_month(m)?, m))).collect::<Result<Vec<_>, String>>()?;
-    let first = months.iter().map(|(month, _)| *month).min().ok_or("Missing plan months")?;
-    let last = months.iter().map(|(month, _)| *month).max().ok_or("Missing plan months")?;
+    let first = months.iter().map(|(month, _)| *month).min().ok_or_else(|| t!("Missing plan months"))?;
+    let last = months.iter().map(|(month, _)| *month).max().ok_or_else(|| t!("Missing plan months"))?;
     let history = crate::engine::calculate_history(b, last)?;
     let as_of = crate::engine::calculation_month(b);
     let ages = crate::reports::calculate(b, &crate::reports::Filter {
@@ -630,13 +633,13 @@ pub fn audit(b: &Budget) -> Result<Value, String> {
     let s = history
         .values()
         .next_back()
-        .ok_or("Missing calculated months")?;
+        .ok_or_else(|| t!("Missing calculated months"))?;
     for a in rows(p, "accounts")?.iter().filter(live) {
         let result = s
             .accounts
             .iter()
             .find(|x| Some(x.id.as_str()) == a["id"].as_str())
-            .ok_or("Account omitted")?;
+            .ok_or_else(|| t!("Account omitted"))?;
         for (field, got) in [
             ("balance", result.balance),
             ("cleared_balance", result.cleared),
@@ -656,7 +659,7 @@ pub fn audit(b: &Budget) -> Result<Value, String> {
         }
     }
     for (month, m) in months {
-        let summary = history.get(month).ok_or("Missing calculated month")?;
+        let summary = history.get(month).ok_or_else(|| t!("Missing calculated month"))?;
         let expected = money(&m["to_be_budgeted"])?;
         if summary.ready_to_assign != expected {
             ready_diffs
@@ -899,7 +902,7 @@ pub fn export_plan(b: &Budget) -> Result<String, String> {
     // makes a long-history export repeat the same accounting work once per output month.
     let history = crate::engine::calculate_history(b, months.last().expect("current month included"))?;
     for month in months {
-        let s = history.get(&month).ok_or("Could not calculate export month")?;
+        let s = history.get(&month).ok_or_else(|| t!("Could not calculate export month"))?;
         let label = chrono::NaiveDate::parse_from_str(&format!("{month}-01"), "%Y-%m-%d")
             .map_err(|e| e.to_string())?
             .format("%b %Y")

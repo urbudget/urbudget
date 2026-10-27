@@ -1,5 +1,6 @@
 //! UI effects are handled by each host. Android drains these events and uses native intents;
 //! desktop installs a listener that forwards them to Tauri's event bus.
+use crate::t;
 use serde_json::{json, Value};
 use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -25,8 +26,8 @@ pub fn drain() -> Vec<Value> {
     std::mem::take(&mut *EVENTS.lock().unwrap_or_else(|e| e.into_inner()))
 }
 pub fn open_browser(url: &str) -> Result<(), String> {
-    let parsed = reqwest::Url::parse(url).map_err(|_| "Invalid browser address.".to_string())?;
-    if !matches!(parsed.scheme(), "https" | "http") { return Err("Only web addresses can be opened.".into()); }
+    let parsed = reqwest::Url::parse(url).map_err(|_| t!("Invalid browser address."))?;
+    if !matches!(parsed.scheme(), "https" | "http") { return Err(t!("Only web addresses can be opened.")); }
     #[cfg(any(target_os = "android", target_os = "ios"))]
     { emit("host://open-url", json!({"url":url})); Ok(()) }
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -38,7 +39,7 @@ pub fn open_browser(url: &str) -> Result<(), String> {
             let action: Vec<u16> = std::ffi::OsStr::new("open").encode_wide().chain(Some(0)).collect();
             let address: Vec<u16> = std::ffi::OsStr::new(url).encode_wide().chain(Some(0)).collect();
             let result = unsafe { ShellExecuteW(std::ptr::null_mut(), action.as_ptr(), address.as_ptr(), std::ptr::null(), std::ptr::null(), 1) };
-            if result as isize <= 32 { return Err("Couldn't open your browser.".into()); }
+            if result as isize <= 32 { return Err(t!("Couldn't open your browser.")); }
             Ok(())
         }
         #[cfg(not(target_os = "windows"))]
@@ -46,7 +47,7 @@ pub fn open_browser(url: &str) -> Result<(), String> {
     }
 }
 pub fn open_file(path: &Path) -> Result<(), String> {
-    if !path.is_file() { return Err("That file no longer exists.".into()); }
+    if !path.is_file() { return Err(t!("That file no longer exists.")); }
     #[cfg(any(target_os = "android", target_os = "ios"))]
     { emit("host://open-file", json!({"path":path.to_string_lossy()})); Ok(()) }
     #[cfg(target_os = "windows")]
@@ -56,7 +57,7 @@ pub fn open_file(path: &Path) -> Result<(), String> {
         let action: Vec<u16> = std::ffi::OsStr::new("open").encode_wide().chain(Some(0)).collect();
         let file: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
         let result = unsafe { ShellExecuteW(std::ptr::null_mut(), action.as_ptr(), file.as_ptr(), std::ptr::null(), std::ptr::null(), 1) };
-        if result as isize <= 32 { return Err("Couldn't open that file.".into()); }
+        if result as isize <= 32 { return Err(t!("Couldn't open that file.")); }
         Ok(())
     }
     #[cfg(not(any(target_os = "windows", target_os = "android", target_os = "ios")))]

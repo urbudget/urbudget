@@ -1,19 +1,20 @@
 //! A delta is merged into the immutable source snapshot before validation. Local
 //! edits then merge against that snapshot; competing edits never silently win.
-use crate::{domain::*, ynab};
+use crate::i18n::{language, tr, Language};
+use crate::{domain::*, t, ynab};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
 fn plan(v: &Value) -> Result<&Value, String> {
     v.pointer("/data/plan")
         .or_else(|| v.pointer("/data/budget"))
-        .ok_or("Missing YNAB plan".into())
+        .ok_or_else(|| t!("Missing YNAB plan"))
 }
 pub fn merge_delta(base: &Value, delta: &Value) -> Result<Value, String> {
     let a = plan(base)?;
     let d = plan(delta)?;
     if a["id"] != d["id"] {
-        return Err("The response belongs to a different YNAB plan.".into());
+        return Err(t!("The response belongs to a different YNAB plan."));
     }
     fn overlay(a: &Value, d: &Value) -> Value {
         if let (Some(a), Some(d)) = (a.as_object(), d.as_object()) {
@@ -77,6 +78,26 @@ pub struct Conflict {
     pub local_text: Option<String>,
     pub remote_text: Option<String>,
 }
+/// A schedule's repeat for the review: the stored key, or its words in Arabic.
+fn repeat(key: &str) -> &str {
+    let word = match key {
+        "never" => tr("never"),
+        "daily" => tr("daily"),
+        "weekly" => tr("weekly"),
+        "everyOtherWeek" => tr("everyOtherWeek"),
+        "twiceAMonth" => tr("twiceAMonth"),
+        "every4Weeks" => tr("every4Weeks"),
+        "monthly" => tr("monthly"),
+        "everyOtherMonth" => tr("everyOtherMonth"),
+        "every3Months" => tr("every3Months"),
+        "every4Months" => tr("every4Months"),
+        "twiceAYear" => tr("twiceAYear"),
+        "yearly" => tr("yearly"),
+        "everyOtherYear" => tr("everyOtherYear"),
+        _ => key,
+    };
+    if language() == Language::English { key } else { word }
+}
 fn cents(n: i64) -> String {
     format!("{}{}.{:02}", if n < 0 { "−" } else { "" }, n.abs() / 100, n.abs() % 100)
 }
@@ -87,13 +108,13 @@ fn value_text(path: &str, value: &Value, local: &Budget, remote: &Budget) -> Opt
     let lines = |splits: &Value| -> Option<String> {
         let list: Vec<String> = splits.as_array()?.iter().map(|s| {
             let what = if let Some(id) = s["categoryId"].as_str() {
-                category(id).unwrap_or_else(|| "Unknown category".into())
+                category(id).unwrap_or_else(|| t!("Unknown category"))
             } else if let Some(id) = s["transferAccountId"].as_str() {
-                format!("Transfer: {}", account(id))
+                t!("Transfer: {account}", account = account(id))
             } else if s["unassigned"] == true {
-                "Ready to Assign".into()
+                t!("Ready to Assign")
             } else {
-                "No category".into()
+                t!("No category")
             };
             let memo = s["memo"].as_str().filter(|m| !m.is_empty()).map(|m| format!(" ({m})")).unwrap_or_default();
             format!("{what} {}{memo}", cents(s["amount"].as_i64().unwrap_or(0)))
@@ -103,14 +124,16 @@ fn value_text(path: &str, value: &Value, local: &Budget, remote: &Budget) -> Opt
     let (head, field) = path.split_once('.').map_or((path, None), |(h, f)| (h, Some(f)));
     match (head.split_once(' ').map(|(kind, _)| kind), field) {
         (Some("Transaction"), None) => {
-            let payee = value["payee"].as_str().filter(|p| !p.is_empty()).unwrap_or("No payee");
-            Some(format!("{payee}, {}, {}, {}", value["date"].as_str().unwrap_or(""), account(value["accountId"].as_str().unwrap_or("")), cents(value["amount"].as_i64()?)))
+            let payee = value["payee"].as_str().filter(|p| !p.is_empty()).unwrap_or(tr("No payee"));
+            let amount = cents(value["amount"].as_i64()?);
+            Some(t!("{payee}, {date}, {account}, {amount}", payee, date = value["date"].as_str().unwrap_or(""), account = account(value["accountId"].as_str().unwrap_or("")), amount))
         }
         (Some("Transaction"), Some("splits")) => lines(value),
         (Some("Schedule"), None) => {
             let t = &value["transaction"];
-            let payee = t["payee"].as_str().filter(|p| !p.is_empty()).unwrap_or("No payee");
-            Some(format!("{payee}, {}, next {}, {}", value["frequency"].as_str().unwrap_or(""), value["nextDate"].as_str().unwrap_or(""), cents(t["amount"].as_i64()?)))
+            let payee = t["payee"].as_str().filter(|p| !p.is_empty()).unwrap_or(tr("No payee"));
+            let amount = cents(t["amount"].as_i64()?);
+            Some(t!("{payee}, {frequency}, next {date}, {amount}", payee, frequency = repeat(value["frequency"].as_str().unwrap_or("")), date = value["nextDate"].as_str().unwrap_or(""), amount))
         }
         _ => None,
     }
@@ -121,8 +144,8 @@ fn describe(path: &str, local: &Budget, remote: &Budget) -> (Option<String>, Opt
     let category = |id: &str| local.categories.iter().chain(&remote.categories).find(|c| c.id == id).map(|c| c.name.clone());
     let transaction = |id: &str| {
         local.transactions.iter().chain(&remote.transactions).find(|t| t.id == id).map(|t| {
-            let payee = if t.payee.is_empty() { "No payee" } else { t.payee.as_str() };
-            format!("{payee}, {}, {}", t.date, account(&t.account_id).unwrap_or_default())
+            let payee = if t.payee.is_empty() { tr("No payee") } else { t.payee.as_str() };
+            t!("{payee}, {date}, {account}", payee, date = t.date, account = account(&t.account_id).unwrap_or_default())
         })
     };
     let (head, field) = match path.split_once('.') {
@@ -132,7 +155,7 @@ fn describe(path: &str, local: &Budget, remote: &Budget) -> (Option<String>, Opt
     let about = if let Some(id) = head.strip_prefix("Transaction ") {
         transaction(id)
     } else if let Some(id) = head.strip_prefix("Duplicate scheduled entry ") {
-        transaction(id).map(|t| format!("Scheduled entry: {t}"))
+        transaction(id).map(|entry| t!("Scheduled entry: {entry}", entry))
     } else if let Some(id) = head.strip_prefix("Category ") {
         category(id)
     } else if let Some(id) = head.strip_prefix("Account ") {
@@ -141,11 +164,11 @@ fn describe(path: &str, local: &Budget, remote: &Budget) -> (Option<String>, Opt
         // Assignments are keyed by their month and category, each as JSON: "2026-10":"food".
         let (month, id) = key.split_once(':').unwrap_or((key, ""));
         let id = id.trim_matches('"');
-        Some(format!("{}, assigned in {}", category(id).unwrap_or_else(|| id.into()), month.trim_matches('"')))
+        Some(t!("{category}, assigned in {month}", category = category(id).unwrap_or_else(|| id.into()), month = month.trim_matches('"')))
     } else if let Some(month) = head.strip_prefix("Month ") {
-        Some(format!("Note for {}", month.trim_end_matches(" note").trim_matches('"')))
+        Some(t!("Note for {month}", month = month.trim_end_matches(" note").trim_matches('"')))
     } else if head == "name" || head == "currency" {
-        return (Some("This budget".into()), Some(head.into()));
+        return (Some(t!("This budget")), Some(head.into()));
     } else {
         None
     };
@@ -170,7 +193,7 @@ fn field(
         match context.choices.get(path).map(String::as_str) {
             Some("local") => return Ok(local.cloned()),
             Some("remote") => return Ok(remote.cloned()),
-            Some(_) => return Err("Choose Local or YNAB for each conflict.".into()),
+            Some(_) => return Err(t!("Choose Local or YNAB for each conflict.")),
             None => {}
         }
     }
@@ -203,7 +226,7 @@ fn field(
     match context.choices.get(path).map(String::as_str) {
         Some("local") => Ok(local.cloned()),
         Some("remote") => Ok(remote.cloned()),
-        Some(_) => Err("Choose Local or YNAB for each conflict.".into()),
+        Some(_) => Err(t!("Choose Local or YNAB for each conflict.")),
         None => {
             context.conflicts.push(Conflict {
                 path: path.into(),
@@ -321,10 +344,7 @@ pub fn keep_name(local: &Budget, mut imported: Budget) -> Budget {
 pub fn merge_local(local: &Budget, remote: Budget) -> Result<Budget, String> {
     let (budget, conflicts) = merge_review(local, remote, BTreeMap::new())?;
     if !conflicts.is_empty() {
-        return Err(format!(
-            "IMPORT CONFLICT: {} competing edits need review. Nothing was overwritten.",
-            conflicts.len()
-        ));
+        return Err(t!("IMPORT CONFLICT: {count} competing edits need review. Nothing was overwritten.", count = conflicts.len()));
     }
     Ok(budget)
 }
@@ -352,10 +372,10 @@ pub fn merge_review(
         if local.transactions.is_empty() && local.accounts.is_empty() {
             return Ok((keep_name(&local, remote), vec![]));
         }
-        return Err("This budget has no YNAB import baseline. Choose Replace from YNAB; a backup is created first.".into());
+        return Err(t!("This budget has no YNAB import baseline. Choose Replace from YNAB; a backup is created first."));
     };
     if local.extra.get("ynabPlanId") != remote.extra.get("ynabPlanId") {
-        return Err("Different YNAB plan. Select Replace from YNAB to switch plans.".into());
+        return Err(t!("Different YNAB plan. Select Replace from YNAB to switch plans."));
     }
     // The last import, as it was saved: its totals may differ from YNAB's when the person
     // chose to import anyway, so it's rebuilt without refusing them again.

@@ -3,6 +3,7 @@ import { BarList, ColumnChart, Legend, LineChart, LinesChart } from "../charts/C
 import { formatDate, money, monthName } from "../format";
 import { accountType, inNetWorth, isLiability, sectionOf } from "../accounts";
 import type { Account } from "../types";
+import { ltr, msg, t, tn } from "../i18n";
 import {
   Panel,
   ReportTable,
@@ -44,75 +45,75 @@ export function NetWorth({ scope }: { scope: Scope }) {
     <>
       <Tiles
         items={[
-          { label: "Net worth", value: fmt(last.netWorth), note: `end of ${monthName(last.month)}` },
+          { label: t("Net worth"), value: fmt(last.netWorth), note: t("end of {month}", { month: monthName(last.month) }) },
           {
-            label: "Change",
+            label: t("Change"),
             value: signed(change),
             tone: change < 0 ? "negative" : "positive",
-            note: `since ${monthName(first.month)} began${opening > 0 ? ` · ${change >= 0 ? "+" : ""}${((change / opening) * 100).toFixed(1)}%` : ""}`,
+            note: `${t("since {month} began", { month: monthName(first.month) })}${opening > 0 ? ` · ${ltr(`${change >= 0 ? "+" : ""}${((change / opening) * 100).toFixed(1)}%`)}` : ""}`,
           },
-          { label: "Assets", value: fmt(last.assets) },
+          { label: t("Assets"), value: fmt(last.assets) },
           {
-            label: "Debts",
+            label: t("Debts"),
             value: fmt(last.debt),
-            note: last.assets > 0 ? `${share(last.debt, last.assets)} of assets` : undefined,
+            note: last.assets > 0 ? t("{share} of assets", { share: share(last.debt, last.assets) }) : undefined,
           },
         ]}
       />
-      <Panel title="Assets, debts and net worth">
+      <Panel title={t("Assets, debts and net worth")}>
         <ColumnChart
           months={months}
           series={[
-            { key: "assets", label: "Assets", color: SERIES(0), values: data.months.map((m) => m.assets) },
-            { key: "debts", label: "Debts", color: SERIES(1), values: data.months.map((m) => -m.debt) },
+            { key: "assets", label: t("Assets"), color: SERIES(0), values: data.months.map((m) => m.assets) },
+            { key: "debts", label: t("Debts"), color: SERIES(1), values: data.months.map((m) => -m.debt) },
           ]}
-          line={{ label: "Net worth", color: "var(--text)", values: data.months.map((m) => m.netWorth) }}
-          label="Assets and debts by month with net worth"
+          line={{ label: t("Net worth"), color: "var(--text)", values: data.months.map((m) => m.netWorth) }}
+          label={t("Assets and debts by month with net worth")}
           format={fmt}
         />
         <Legend
           items={[
-            { label: "Assets", color: SERIES(0) },
-            { label: "Debts", color: SERIES(1) },
-            { label: "Net worth", color: "var(--text)", line: true },
+            { label: t("Assets"), color: SERIES(0) },
+            { label: t("Debts"), color: SERIES(1) },
+            { label: t("Net worth"), color: "var(--text)", line: true },
           ]}
         />
       </Panel>
-      <Panel title="Change each month">
+      <Panel title={t("Change each month")}>
         <ColumnChart
           months={months}
           series={[
             {
               key: "up",
-              label: "Grew",
+              label: t("Grew"),
               color: "var(--diverging-positive)",
               values: monthly.map((v) => Math.max(0, v)),
             },
             {
               key: "down",
-              label: "Shrank",
+              label: t("Shrank"),
               color: "var(--diverging-negative)",
               values: monthly.map((v) => Math.min(0, v)),
             },
           ]}
-          label="How much net worth grew or shrank each month"
+          label={t("How much net worth grew or shrank each month")}
           format={fmt}
           height={200}
         />
         <Legend
           items={[
-            { label: "Grew", color: "var(--diverging-positive)" },
-            { label: "Shrank", color: "var(--diverging-negative)" },
+            { label: t("Grew"), color: "var(--diverging-positive)" },
+            { label: t("Shrank"), color: "var(--diverging-negative)" },
           ]}
         />
       </Panel>
-      <Panel title="By account">
+      <Panel title={t("By account")}>
         <ReportTable>
           <table className="fixed" style={table.style}>
             {table.cols}
             <thead>
               <tr>
-                <th>Account{table.grip("label", "Account")}</th>
+                <th>{t("Account")}{table.grip("label", "Account")}</th>
                 <th className="num">
                   {formatDate(firstDay(first.month))}
                   {table.grip("value", "amount")}
@@ -121,7 +122,7 @@ export function NetWorth({ scope }: { scope: Scope }) {
                   {formatDate(lastDay(last.month))}
                   {table.grip("value", "amount")}
                 </th>
-                <th className="num">Change{table.grip("value", "amount")}</th>
+                <th className="num">{t("Change")}{table.grip("value", "amount")}</th>
                 <th aria-hidden />
               </tr>
             </thead>
@@ -133,8 +134,8 @@ export function NetWorth({ scope }: { scope: Scope }) {
                   <tr key={a.id}>
                     <td>
                       {a.name}
-                      {a.archived && <span className="muted"> · closed</span>}
-                      {!inNetWorth(a) && <span className="muted"> · not in net worth</span>}
+                      {a.archived && <span className="muted">{` · ${t("closed")}`}</span>}
+                      {!inNetWorth(a) && <span className="muted">{` · ${t("not in net worth")}`}</span>}
                     </td>
                     <td className="num">{money(start)}</td>
                     <td className="num">{money(end)}</td>
@@ -146,7 +147,7 @@ export function NetWorth({ scope }: { scope: Scope }) {
             </tbody>
             <tfoot>
               <tr>
-                <th>Net worth</th>
+                <th>{t("Net worth")}</th>
                 <th className="num">{money(opening)}</th>
                 <th className="num">{money(last.netWorth)}</th>
                 <th className="num">{money(change)}</th>
@@ -161,18 +162,19 @@ export function NetWorth({ scope }: { scope: Scope }) {
 }
 
 // The last section on each side holds accounts on the other side of zero from their type.
-const IN_CREDIT = "Accounts in credit",
-  OVERDRAWN = "Overdrawn accounts";
+// Section names are keys (accounts.ts's sectionOf gives the same English); they're translated when shown.
+const IN_CREDIT = msg("Accounts in credit"),
+  OVERDRAWN = msg("Overdrawn accounts");
 const ASSET_SECTIONS = [
-  "Cash and bank",
-  "Investments",
-  "Property",
-  "Vehicles",
-  "Receivables",
-  "Other assets",
+  msg("Cash and bank"),
+  msg("Investments"),
+  msg("Property"),
+  msg("Vehicles"),
+  msg("Receivables"),
+  msg("Other assets"),
   IN_CREDIT,
 ];
-const DEBT_SECTIONS = ["Credit cards", "Lines of credit", "Mortgages", "Loans", "Other debts", OVERDRAWN];
+const DEBT_SECTIONS = [msg("Credit cards"), msg("Lines of credit"), msg("Mortgages"), msg("Loans"), msg("Other debts"), OVERDRAWN];
 /** Sections whose money can be spent straight away. */
 const LIQUID = new Set(["Cash and bank"]);
 
@@ -218,7 +220,7 @@ export function BalanceSheet({ scope }: { scope: Scope }) {
     order
       .map((section) => ({
         key: section,
-        label: section,
+        label: t(section),
         value: total(
           ls.filter((l) => l.section === section),
           "end",
@@ -244,7 +246,7 @@ export function BalanceSheet({ scope }: { scope: Scope }) {
           const inSection = ls.filter((l) => l.section === section);
           return [
             <tr key={section} className="group-line">
-              <td>{section}</td>
+              <td>{t(section)}</td>
               <td className="num">{money(total(inSection, "start"))}</td>
               <td className="num">{money(total(inSection, "end"))}</td>
               <td className="num">{money(total(inSection, "end") - total(inSection, "start"))}</td>
@@ -255,7 +257,7 @@ export function BalanceSheet({ scope }: { scope: Scope }) {
               <tr key={l.a.id} className="child-line">
                 <td>
                   {l.a.name}
-                  {l.a.archived && <span className="muted"> · closed</span>}
+                  {l.a.archived && <span className="muted">{` · ${t("closed")}`}</span>}
                 </td>
                 <td className="num">{money(l.start)}</td>
                 <td className="num">{money(l.end)}</td>
@@ -269,7 +271,7 @@ export function BalanceSheet({ scope }: { scope: Scope }) {
       {!ls.length && (
         <tr>
           <td className="muted" colSpan={6}>
-            None
+            {t("None")}
           </td>
         </tr>
       )}
@@ -280,60 +282,65 @@ export function BalanceSheet({ scope }: { scope: Scope }) {
     <>
       <Tiles
         items={[
-          { label: "Total assets", value: fmt(totals.assets) },
-          { label: "Total liabilities", value: fmt(totals.debts) },
+          { label: t("Total assets"), value: fmt(totals.assets) },
+          { label: t("Total liabilities"), value: fmt(totals.debts) },
           {
-            label: "Net worth",
+            label: t("Net worth"),
             value: fmt(net.end),
             tone: net.end < 0 ? "negative" : undefined,
-            note: `${signed(net.end - net.start)} in this period`,
+            note: t("{amount} in this period", { amount: signed(net.end - net.start) }),
           },
           {
-            label: "Debt to assets",
+            label: t("Debt to assets"),
             value: totals.assets > 0 ? share(totals.debts, totals.assets) : "—",
-            note: totals.debts > totals.assets ? "you owe more than you own" : "of what you own is owed",
+            note: totals.debts > totals.assets ? t("you owe more than you own") : t("of what you own is owed"),
           },
           {
-            label: "Cash on hand",
+            label: t("Cash on hand"),
             value: fmt(liquid),
             note:
               monthlySpending > 0
-                ? `${(liquid / monthlySpending).toFixed(1)} months of spending`
-                : "in cash and bank accounts",
+                ? tn(
+                    Number((liquid / monthlySpending).toFixed(1)),
+                    "{count} months of spending",
+                    "{count} months of spending",
+                    { count: (liquid / monthlySpending).toFixed(1) },
+                  )
+                : t("in cash and bank accounts"),
           },
         ]}
       />
       <div className="report-pair">
-        <Panel title="What you own" aside={<strong>{fmt(totals.assets)}</strong>}>
+        <Panel title={t("What you own")} aside={<strong>{fmt(totals.assets)}</strong>}>
           {totals.assets > 0 ? (
             <BarList
               rows={sections(ASSET_SECTIONS, assets).map((s) => ({ ...s, detail: share(s.value, totals.assets) }))}
               color={SERIES(0)}
               format={fmt}
-              label="Assets by type"
+              label={t("Assets by type")}
             />
           ) : (
-            <p className="empty-state compact">No assets.</p>
+            <p className="empty-state compact">{t("No assets.")}</p>
           )}
         </Panel>
-        <Panel title="What you owe" aside={<strong>{fmt(totals.debts)}</strong>}>
+        <Panel title={t("What you owe")} aside={<strong>{fmt(totals.debts)}</strong>}>
           {totals.debts > 0 ? (
             <BarList
               rows={sections(DEBT_SECTIONS, debts).map((s) => ({ ...s, detail: share(s.value, totals.debts) }))}
               color={SERIES(1)}
               format={fmt}
-              label="Liabilities by type"
+              label={t("Liabilities by type")}
             />
           ) : (
-            <p className="empty-state compact">Nothing owed.</p>
+            <p className="empty-state compact">{t("Nothing owed.")}</p>
           )}
         </Panel>
       </div>
       <Panel
-        title="Statement"
+        title={t("Statement")}
         aside={
           <span className="muted">
-            Net worth on {formatDate(lastDay(last.month))}: {fmt(net.end)}
+            {t("Net worth on {date}: {amount}", { date: formatDate(lastDay(last.month)), amount: fmt(net.end) })}
           </span>
         }
       >
@@ -342,7 +349,7 @@ export function BalanceSheet({ scope }: { scope: Scope }) {
             {table.cols}
             <thead>
               <tr>
-                <th>Account{table.grip("label", "Account")}</th>
+                <th>{t("Account")}{table.grip("label", "Account")}</th>
                 <th className="num">
                   {formatDate(firstDay(first.month))}
                   {table.grip("value", "amount")}
@@ -351,22 +358,22 @@ export function BalanceSheet({ scope }: { scope: Scope }) {
                   {formatDate(lastDay(last.month))}
                   {table.grip("value", "amount")}
                 </th>
-                <th className="num">Change{table.grip("value", "amount")}</th>
-                <th className="num">Share{table.grip("value", "amount")}</th>
+                <th className="num">{t("Change")}{table.grip("value", "amount")}</th>
+                <th className="num">{t("Share")}{table.grip("value", "amount")}</th>
                 <th aria-hidden />
               </tr>
             </thead>
             <tbody>
-              {part("Assets", ASSET_SECTIONS, assets, "Total assets", totals.assets)}
-              {part("Liabilities (owed)", DEBT_SECTIONS, debts, "Total liabilities", totals.debts)}
-              {row("Net worth", net.start, net.end, null, "net-row")}
+              {part(t("Assets"), ASSET_SECTIONS, assets, t("Total assets"), totals.assets)}
+              {part(t("Liabilities (owed)"), DEBT_SECTIONS, debts, t("Total liabilities"), totals.debts)}
+              {row(t("Net worth"), net.start, net.end, null, "net-row")}
               {apart.length > 0 && (
                 <>
-                  <SectionRow title="Not counted in net worth" columns={6} />
+                  <SectionRow title={t("Not counted in net worth")} columns={6} />
                   {apart.map((l) => (
                     <tr key={l.a.id} className="child-line">
                       <td>
-                        {l.a.name} <span className="muted">· {l.section.toLowerCase()}</span>
+                        {l.a.name} <span className="muted">· {t(l.section).toLowerCase()}</span>
                       </td>
                       <td className="num">{money(l.start)}</td>
                       <td className="num">{money(l.end)}</td>
@@ -381,10 +388,12 @@ export function BalanceSheet({ scope }: { scope: Scope }) {
           </table>
         </ReportTable>
         <p className="help">
-          Balances at the start of {monthName(first.month)} and the end of {monthName(last.month)}. Set an account's
-          type, or leave it out of net worth, in its settings.
+          {t("Balances at the start of {start} and the end of {end}. Set an account's type, or leave it out of net worth, in its settings.", {
+            start: monthName(first.month),
+            end: monthName(last.month),
+          })}
           {lines.some((l) => l.section === OVERDRAWN || l.section === IN_CREDIT) &&
-            " Accounts below zero count as owed and loans or cards above zero as owned, whatever their type."}
+            ` ${t("Accounts below zero count as owed and loans or cards above zero as owned, whatever their type.")}`}
         </p>
       </Panel>
     </>
@@ -434,17 +443,23 @@ export function Balances({ scope }: { scope: Scope }) {
     <>
       <Tiles
         items={[
-          { label: "On the chart", value: `${shown.length} of ${eligible.length}`, note: "up to 8 at a time" },
-          { label: "Their balance now", value: fmt(sum(shown.map((a) => last.accounts[a.id] ?? 0))) },
           {
-            label: "Biggest change",
+            label: t("On the chart"),
+            value: t("{count} of {total}", { count: shown.length, total: eligible.length }),
+            note: t("up to {count} at a time", { count: 8 }),
+          },
+          { label: t("Their balance now"), value: fmt(sum(shown.map((a) => last.accounts[a.id] ?? 0))) },
+          {
+            label: t("Biggest change"),
             value: mover ? mover.a.name : "—",
-            note: mover ? `${signed(mover.end - mover.start)} since ${monthName(months[0])} began` : undefined,
+            note: mover
+              ? t("{amount} since {month} began", { amount: signed(mover.end - mover.start), month: monthName(months[0]) })
+              : undefined,
           },
         ]}
       />
-      <Panel title="Balances at the end of each month">
-        <div className="account-chips" role="group" aria-label="Accounts on the chart">
+      <Panel title={t("Balances at the end of each month")}>
+        <div className="account-chips" role="group" aria-label={t("Accounts on the chart")}>
           {eligible.map((a) => {
             const on = chosen.has(a.id);
             return (
@@ -471,28 +486,28 @@ export function Balances({ scope }: { scope: Scope }) {
                 color: SERIES(chosen.get(a.id)!),
                 values: values(a.id),
               }))}
-              label="Balance of each chosen account at the end of each month"
+              label={t("Balance of each chosen account at the end of each month")}
               format={fmt}
               height={280}
             />
             <Legend items={shown.map((a) => ({ label: a.name, color: SERIES(chosen.get(a.id)!), line: true }))} />
           </>
         ) : (
-          <p className="empty-state compact">Choose accounts above to chart them.</p>
+          <p className="empty-state compact">{t("Choose accounts above to chart them.")}</p>
         )}
       </Panel>
-      <Panel title="All accounts">
+      <Panel title={t("All accounts")}>
         <ReportTable>
           <table className="fixed" style={table.style}>
             {table.cols}
             <thead>
               <tr>
-                <th>Account{table.grip("label", "Account")}</th>
-                <th className="num">Start{table.grip("value", "amount")}</th>
-                <th className="num">End{table.grip("value", "amount")}</th>
-                <th className="num">Change{table.grip("value", "amount")}</th>
-                <th className="num">Lowest{table.grip("value", "amount")}</th>
-                <th className="num">Highest{table.grip("value", "amount")}</th>
+                <th>{t("Account")}{table.grip("label", "Account")}</th>
+                <th className="num">{t("Start")}{table.grip("value", "amount")}</th>
+                <th className="num">{t("End")}{table.grip("value", "amount")}</th>
+                <th className="num">{t("Change")}{table.grip("value", "amount")}</th>
+                <th className="num">{t("Lowest")}{table.grip("value", "amount")}</th>
+                <th className="num">{t("Highest")}{table.grip("value", "amount")}</th>
                 <th aria-hidden />
               </tr>
             </thead>
@@ -501,7 +516,7 @@ export function Balances({ scope }: { scope: Scope }) {
                 <tr key={s.a.id}>
                   <td>
                     {s.a.name}
-                    {s.a.archived && <span className="muted"> · closed</span>}
+                    {s.a.archived && <span className="muted">{` · ${t("closed")}`}</span>}
                   </td>
                   <td className="num">{money(s.start)}</td>
                   <td className="num">{money(s.end)}</td>
@@ -514,7 +529,7 @@ export function Balances({ scope }: { scope: Scope }) {
             </tbody>
           </table>
         </ReportTable>
-        <p className="help">Month-end balances; lowest and highest are among those.</p>
+        <p className="help">{t("Month-end balances; lowest and highest are among those.")}</p>
       </Panel>
     </>
   );
@@ -528,47 +543,46 @@ export function AgeOfMoney({ scope }: { scope: Scope }) {
   const firstKnown = known[0];
   const table = useReportColumns("age", 1);
   const days = (v: number | null | undefined) =>
-    v === null || v === undefined ? "—" : `${v} ${v === 1 ? "day" : "days"}`;
+    v === null || v === undefined ? "—" : tn(v, "{count} day", "{count} days");
+  const change = known.length > 1 ? known[known.length - 1] - firstKnown : 0;
   return (
     <>
       <Tiles
         items={[
-          { label: "Cash age", value: days(data.ageOfMoney) },
+          { label: t("Cash age"), value: days(data.ageOfMoney) },
           {
-            label: "Change",
+            label: t("Change"),
             value:
               known.length > 1
-                ? `${known[known.length - 1] - firstKnown >= 0 ? "+" : ""}${known[known.length - 1] - firstKnown} days`
+                ? tn(Math.abs(change), "{change} days", "{change} days", { change: `${change >= 0 ? "+" : ""}${change}` })
                 : "—",
             tone: known.length > 1 ? (known[known.length - 1] >= firstKnown ? "positive" : "negative") : undefined,
-            note: known.length > 1 ? "over these months" : undefined,
+            note: known.length > 1 ? t("over these months") : undefined,
           },
-          { label: "Highest", value: known.length ? days(Math.max(...known)) : "—" },
-          { label: "Lowest", value: known.length ? days(Math.min(...known)) : "—" },
+          { label: t("Highest"), value: known.length ? days(Math.max(...known)) : "—" },
+          { label: t("Lowest"), value: known.length ? days(Math.min(...known)) : "—" },
         ]}
       />
-      <Panel title="Cash age at the end of each month">
+      <Panel title={t("Cash age at the end of each month")}>
         <LineChart
           months={months}
           values={values}
           color={SERIES(0)}
-          label="Cash age at the end of each month, in days"
-          seriesLabel="Cash age"
-          format={(v) => `${v} days`}
-          axisFormat={(v) => `${v}d`}
+          label={t("Cash age at the end of each month, in days")}
+          seriesLabel={t("Cash age")}
+          format={(v) => tn(v, "{count} days", "{count} days")}
+          axisFormat={(v) => t("{count}d", { count: v })}
         />
         <p className="help">
-          How long money sits in your cash accounts before you spend it: the average age of the last ten cash outflows,
-          first in, first out, to the nearest day. Until there are ten, the missing ones count as zero days. It is an
-          estimate when opening balances have no known dates.
+          {t("How long money sits in your cash accounts before you spend it: the average age of the last ten cash outflows, first in, first out, to the nearest day. Until there are ten, the missing ones count as zero days. It is an estimate when opening balances have no known dates.")}
         </p>
         <ReportTable>
           <table className="fixed" style={table.style}>
             {table.cols}
             <thead>
               <tr>
-                <th>Month{table.grip("label", "Month")}</th>
-                <th className="num">Days{table.grip("value", "Days")}</th>
+                <th>{t("Month")}{table.grip("label", "Month")}</th>
+                <th className="num">{t("Days")}{table.grip("value", "Days")}</th>
                 <th aria-hidden />
               </tr>
             </thead>

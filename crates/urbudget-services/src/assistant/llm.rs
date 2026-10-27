@@ -1,5 +1,6 @@
 //! Talking to a model: which service, what a reply is made of, and the server-sent events both
 //! services stream. Each service's request and stream format lives in its own file.
+use crate::t;
 use super::attachments::{self, Files, Kind};
 use super::history::Item;
 use super::tools::Spec;
@@ -83,11 +84,11 @@ impl Failure {
     }
     pub fn network(e: reqwest::Error) -> Self {
         let message = if e.is_timeout() {
-            "The model took too long to answer. Try again."
+            t!("The model took too long to answer. Try again.")
         } else if e.is_connect() {
-            "Couldn't reach the model. Check your internet connection."
+            t!("Couldn't reach the model. Check your internet connection.")
         } else {
-            "The connection to the model was interrupted. Try again."
+            t!("The connection to the model was interrupted. Try again.")
         };
         Self::new(FailureKind::Busy, message)
     }

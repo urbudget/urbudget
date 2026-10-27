@@ -8,6 +8,7 @@ import { newestFirst } from "../order";
 import { effectivePayee, splitRole, UNCATEGORIZED_CATEGORY } from "../accounting";
 import { NEEDS_CATEGORY } from "../uncategorized";
 import type { Budget, Transaction } from "../types";
+import { t, useLanguage } from "../i18n";
 
 /** Which transactions a report figure is made of. Dates are ISO days, inclusive. */
 export type LineQuery = {
@@ -32,25 +33,25 @@ function reportEntries(b: Budget, q: LineQuery) {
   const categories = new Map(b.categories.map((c) => [c.id, c]));
   const name = (id: string | null | undefined) => accounts.get(id ?? "")?.name ?? "";
   const lines: { line: ActivityLine; t: Transaction }[] = [];
-  for (const t of b.transactions) {
-    if (t.date < q.from || t.date > q.to) continue;
-    const source = accounts.get(t.accountId);
-    t.splits.forEach((s, i) => {
-      const other = s.transferAccountId ?? t.transferAccountId;
+  for (const tx of b.transactions) {
+    if (tx.date < q.from || tx.date > q.to) continue;
+    const source = accounts.get(tx.accountId);
+    tx.splits.forEach((s, i) => {
+      const other = s.transferAccountId ?? tx.transferAccountId;
       let amount = s.amount,
-        account = t.accountId,
-        payee = effectivePayee(t, s) || "No payee";
+        account = tx.accountId,
+        payee = effectivePayee(tx, s) || t("No payee");
       if (other) {
         const fromBudget = onBudget(source);
         if (fromBudget === onBudget(accounts.get(other))) return;
         amount = fromBudget ? s.amount : -s.amount;
-        account = fromBudget ? t.accountId : other;
-        payee = `Transfer: ${name(fromBudget ? other : t.accountId)}`;
+        account = fromBudget ? tx.accountId : other;
+        payee = t("Transfer: {account}", { account: name(fromBudget ? other : tx.accountId) });
       } else if (!onBudget(source)) return;
       if (q.accountIds?.size && !q.accountIds.has(account)) return;
-      if (q.payee !== undefined && effectivePayee(t, s) !== q.payee) return;
+      if (q.payee !== undefined && effectivePayee(tx, s) !== q.payee) return;
       const category = s.categoryId ? categories.get(s.categoryId) : undefined;
-      const role = splitRole(t, s, amount);
+      const role = splitRole(tx, s, amount);
       if (role === "opening") return;
       if (q.income) {
         if (role !== "income") return;
@@ -61,15 +62,15 @@ function reportEntries(b: Budget, q: LineQuery) {
         if (q.categoryIds && !q.categoryIds.has(id)) return;
       }
       lines.push({
-        t,
+        t: tx,
         line: {
-          key: `${t.id}:${i}`,
-          date: t.date,
+          key: `${tx.id}:${i}`,
+          date: tx.date,
           payee,
           account: name(account),
-          memo: s.memo || t.memo,
+          memo: s.memo || tx.memo,
           amount,
-          category: role === "uncategorized" ? NEEDS_CATEGORY : category?.name ?? "Unassigned",
+          category: role === "uncategorized" ? t(NEEDS_CATEGORY) : category?.name ?? t("Unassigned"),
         },
       });
     });
@@ -99,13 +100,14 @@ export function TransactionsDialog({
   onClose: () => void;
   onOpenRegister: () => void;
 }) {
+  const language = useLanguage();
   const { lines, count } = useMemo(() => {
     const entries = reportEntries(budget, query);
     return {
       lines: newestFirst(entries, (entry) => entry.t).map((entry) => entry.line),
       count: new Set(entries.map((entry) => entry.t.id)).size,
     };
-  }, [budget.transactions, budget.accounts, budget.categories, query]);
+  }, [budget.transactions, budget.accounts, budget.categories, query, language]);
   const total = lines.reduce((n, l) => n + l.amount, 0);
   // Spending reads as a positive amount spent; income as received.
   const shown = query.income ? total : -total;
@@ -114,33 +116,33 @@ export function TransactionsDialog({
       <div className="txn-dialog">
         <p className="muted txn-dialog-range">
           {query.from === query.to ? formatDate(query.from) : `${formatDate(query.from)} – ${formatDate(query.to)}`}
-          {query.accountIds?.size ? " · chosen accounts" : ""}
+          {query.accountIds?.size ? ` · ${t("chosen accounts")}` : ""}
         </p>
         <dl className="txn-dialog-figures">
           <div>
-            <dt>{query.income ? "Received" : "Spent"}</dt>
+            <dt>{query.income ? t("Received") : t("Spent")}</dt>
             <dd>{money(shown, { symbol: true })}</dd>
           </div>
           <div>
-            <dt>Transactions</dt>
+            <dt>{t("Transactions")}</dt>
             <dd>{count}</dd>
           </div>
           <div>
-            <dt>Average</dt>
+            <dt>{t("Average")}</dt>
             <dd>{count ? money(Math.round(shown / count), { symbol: true }) : "—"}</dd>
           </div>
         </dl>
         {lines.length ? (
-          <TransactionLines lines={lines} label={`${title} transactions`} showCategory maxHeight={440} />
+          <TransactionLines lines={lines} label={t("{title} transactions", { title })} showCategory maxHeight={440} />
         ) : (
-          <p className="muted activity-empty">No transactions.</p>
+          <p className="muted activity-empty">{t("No transactions.")}</p>
         )}
         <div className="modal-actions">
           <button className="secondary" onClick={onOpenRegister}>
-            Open in register <ArrowRight size={14} />
+            {t("Open in register")} <ArrowRight size={14} />
           </button>
           <button className="primary" onClick={onClose}>
-            Done
+            {t("Done")}
           </button>
         </div>
       </div>

@@ -15,7 +15,7 @@ enum JSON: Equatable, Sendable {
 
 extension JSON {
     struct ParseError: LocalizedError {
-        var errorDescription: String? { "This file is not valid JSON." }
+        var errorDescription: String? { String(localized: "This file is not valid JSON.") }
     }
 
     /// Converts what JSONSerialization produces. NSNumber keeps booleans, integers and decimals apart.
@@ -186,10 +186,10 @@ let editableCollections: Set<String> = ["accounts", "categories", "transactions"
 extension JSON {
     /// Merges edited fields into a record (adding it when new) and never drops fields this app doesn't know.
     mutating func upsertRecord(_ collection: String, _ patch: JSON) throws {
-        guard editableCollections.contains(collection) else { throw AppError("Unsupported record collection.") }
+        guard editableCollections.contains(collection) else { throw AppError(String(localized: "Unsupported record collection.")) }
         let identity = collection == "loans" ? "accountId" : "id"
         let id = patch.text(identity)
-        guard !id.isEmpty else { throw AppError("Every record needs an ID.") }
+        guard !id.isEmpty else { throw AppError(String(localized: "Every record needs an ID.")) }
         var rows = self[collection].array
         self[collection] = .null
         if let index = rows.firstIndex(where: { $0.text(identity) == id }) {
@@ -203,7 +203,7 @@ extension JSON {
     }
 
     mutating func removeRecord(_ collection: String, id: String) throws {
-        guard editableCollections.contains(collection) else { throw AppError("Unsupported record collection.") }
+        guard editableCollections.contains(collection) else { throw AppError(String(localized: "Unsupported record collection.")) }
         let identity = collection == "loans" ? "accountId" : "id"
         let rows = self[collection].array.filter { $0.text(identity) != id }
         self[collection] = .array(rows)

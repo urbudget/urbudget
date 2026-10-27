@@ -2,6 +2,7 @@ import { READY_TO_ASSIGN } from "./ui";
 import { evaluateAmount, money } from "./format";
 import { FLAGS, flagName } from "./TransactionRow";
 import type { Budget, Status } from "./types";
+import { msg, t } from "./i18n";
 
 /**
  * One search filter, shown as a chip in the register's search bar. Chips on the same field
@@ -20,33 +21,43 @@ export type Term =
 export type Field = Term["field"];
 
 const STATUS: Record<string, string> = {
-  uncleared: "Uncleared",
-  cleared: "Cleared",
-  reconciled: "Reconciled",
-  unreconciled: "Not reconciled",
+  uncleared: msg("Uncleared"),
+  cleared: msg("Cleared"),
+  reconciled: msg("Reconciled"),
+  unreconciled: msg("Not reconciled"),
 };
-export function termLabel(t: Term, b?: Pick<Budget, "flagNames">) {
-  switch (t.field) {
+/** A chip's text. Search words (payee:, is:cleared) stay as typed; the chips speak the app's language. */
+export function termLabel(term: Term, b?: Pick<Budget, "flagNames">) {
+  switch (term.field) {
     case "text":
-      return `“${t.value}”`;
+      return `“${term.value}”`;
     case "payee":
-      return `Payee: ${t.value}`;
+      return t("Payee: {value}", { value: term.value });
     case "memo":
-      return `Memo: ${t.value}`;
+      return t("Memo: {value}", { value: term.value });
     case "category":
-      return `Category: ${t.value}`;
+      return t("Category: {value}", { value: term.id === READY_TO_ASSIGN ? t("Unassigned") : term.value });
     case "account":
-      return `Account: ${t.value}`;
+      return t("Account: {value}", { value: term.value });
     case "amount":
-      return `Amount ${t.op === "=" ? "=" : t.op === ">=" ? "≥" : "≤"} ${money(t.value)}`;
+      // The sign isn't isolated, so Arabic mirrors it with the sentence.
+      return term.op === "="
+        ? t("Amount = {amount}", { amount: money(term.value) })
+        : term.op === ">="
+          ? t("Amount ≥ {amount}", { amount: money(term.value) })
+          : t("Amount ≤ {amount}", { amount: money(term.value) });
     case "flag":
-      return t.value === "any" ? "Flagged" : t.value === "none" ? "No flag" : `${flagName(t.value, b)} flag`;
+      return term.value === "any"
+        ? t("Flagged")
+        : term.value === "none"
+          ? t("No flag")
+          : t("{name} flag", { name: flagName(term.value, b) });
     case "status":
-      return STATUS[t.value];
+      return t(STATUS[term.value]);
     case "approval":
-      return "Needs approval";
+      return t("Needs approval");
     case "categorization":
-      return "Needs a category";
+      return t("Needs a category");
   }
 }
 export const sameTerm = (a: Term, b: Term) => JSON.stringify(a) === JSON.stringify(b);
@@ -121,12 +132,12 @@ export function parseAmountTerm(text: string): Term | null {
 
 export type Suggestion = { term?: Term; prefix?: string; label: string; hint?: string };
 const PREFIXES: [string, Field, string][] = [
-  ["payee:", "payee", "Payee"],
-  ["category:", "category", "Category"],
-  ["account:", "account", "Account"],
-  ["memo:", "memo", "Memo"],
-  ["amount:", "amount", "Amount"],
-  ["is:", "status", "Status, flag, approval or category"],
+  ["payee:", "payee", msg("Payee")],
+  ["category:", "category", msg("Category")],
+  ["account:", "account", msg("Account")],
+  ["memo:", "memo", msg("Memo")],
+  ["amount:", "amount", msg("Amount")],
+  ["is:", "status", msg("Status, flag, approval or category")],
 ];
 const ALIASES: Record<string, string> = { cat: "category", acct: "account", amt: "amount", flag: "is", status: "is" };
 /** What "is:" offers. A named flag answers to its name and its color. */
@@ -153,7 +164,7 @@ export function suggest(
   payees: string[],
 ): Suggestion[] {
   const raw = input.trim();
-  if (!raw) return PREFIXES.map(([prefix, , label]) => ({ prefix, label: `${label}…`, hint: prefix }));
+  if (!raw) return PREFIXES.map(([prefix, , label]) => ({ prefix, label: `${t(label)}…`, hint: prefix }));
   const fielded = raw.match(/^([a-z]+):\s*(.*)$/i);
   const field = fielded ? (ALIASES[fielded[1].toLowerCase()] ?? fielded[1].toLowerCase()) : null;
   const q = (fielded ? fielded[2] : raw).toLowerCase();
@@ -172,7 +183,8 @@ export function suggest(
     if (field && q) add({ field: "payee", value: fielded![2] });
   }
   if (!field || field === "category") {
-    if ("unassigned".includes(q)) add({ field: "category", value: "Unassigned", id: READY_TO_ASSIGN });
+    if ("unassigned".includes(q) || t("Unassigned").toLowerCase().includes(q))
+      add({ field: "category", value: "Unassigned", id: READY_TO_ASSIGN });
     // "is:" offers it too; here only when asked for by field, so it isn't listed twice.
     if (field && q && ("needs a category".startsWith(q) || "uncategorized".startsWith(q)))
       add({ field: "categorization", value: "needed" });

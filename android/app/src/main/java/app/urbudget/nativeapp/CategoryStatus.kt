@@ -2,8 +2,6 @@ package app.urbudget.nativeapp
 
 import org.json.JSONObject
 import java.time.LocalDate
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 /**
  * What a category needs this month, as YNAB shows it (desktop/src/CategoryRow.tsx categoryState):
@@ -18,9 +16,10 @@ data class CategoryStatus(
 )
 
 /** A target in words: an amount that leads the sentence (if any) and the rest. */
-data class TargetWords(val amount: Long?, val words: String)
-
-private val MonthName = DateTimeFormatter.ofPattern("MMMM", Locale.ENGLISH)
+data class TargetWords(val amount: Long?, val words: String) {
+    /** The whole line, with the amount written as [amountText] where the language puts it. */
+    fun text(amountText: String): String = if (amount == null) words else Words[R.string.target_amount_words, amountText, words]
+}
 
 object CategoryStatuses {
     private fun JSONObject.long(key: String) = if (isNull(key)) 0L else optLong(key)
@@ -63,30 +62,34 @@ object CategoryStatuses {
         val available = s.long("available")
         if (state.status == "underfunded") {
             val due = if (state.snoozed) null else s.optJSONObject("targetDue")
-            val by = when {
-                due == null -> "this month"
-                due.optBoolean("monthly") -> "by the ${ordinal(due.optString("date").drop(8).take(2).toIntOrNull() ?: 1)}"
-                else -> "by ${deadline(due.optString("date"), monthFirst)}"
-            }
             val more = available > 0 || (if (s.has("targetFundingFunded")) s.long("targetFundingFunded") else s.long("assigned")) > 0
-            return TargetWords(state.needed, "${if (more) "more " else ""}needed $by")
+            val words = when {
+                due == null -> Words[if (more) R.string.target_more_needed_this_month else R.string.target_needed_this_month]
+                due.optBoolean("monthly") -> Words[if (more) R.string.target_more_needed_by_day else R.string.target_needed_by_day,
+                    ordinal(due.optString("date").drop(8).take(2).toIntOrNull() ?: 1)]
+                else -> Words[if (more) R.string.target_more_needed_by_date else R.string.target_needed_by_date, deadline(due.optString("date"), monthFirst)]
+            }
+            return TargetWords(state.needed, words)
         }
         if (state.status == "negative" || state.status == "credit") return null
-        if (state.eventually > 0) return TargetWords(state.eventually, "${if (available > 0) "more " else ""}needed eventually")
+        if (state.eventually > 0) return TargetWords(state.eventually, Words[if (available > 0) R.string.target_more_needed_eventually else R.string.target_needed_eventually])
         if (category.long("target") <= 0 || state.snoozed || (state.progress ?: 0) < 100) return null
-        if (available > 0) return TargetWords(null, "Funded")
-        return if (s.long("activity") < 0) TargetWords(null, "Fully spent") else null
+        if (available > 0) return TargetWords(null, Words[R.string.target_funded])
+        return if (s.long("activity") < 0) TargetWords(null, Words[R.string.target_fully_spent]) else null
     }
 
+    /** A day of the month as an ordinal: "31st" in English; Arabic writes the number alone. */
     fun ordinal(n: Int): String {
-        val suffix = if (n % 100 in 11..13) "th" else when (n % 10) { 1 -> "st"; 2 -> "nd"; 3 -> "rd"; else -> "th" }
-        return "$n$suffix"
+        val form = if (n % 100 in 11..13) R.string.ordinal_other else when (n % 10) {
+            1 -> R.string.ordinal_ends_1; 2 -> R.string.ordinal_ends_2; 3 -> R.string.ordinal_ends_3; else -> R.string.ordinal_other
+        }
+        return Words[form, n.toString()]
     }
 
-    /** "2026-10-01" in a sentence: "October 1st" when dates go month first, else "1 October". */
+    /** "2026-10-01" in a sentence: "October 1st" when dates go month first, else "1 October", in the interface's language. */
     fun deadline(iso: String, monthFirst: Boolean): String = runCatching {
         val date = LocalDate.parse(iso)
-        val month = date.format(MonthName)
-        if (monthFirst) "$month ${ordinal(date.dayOfMonth)}" else "${date.dayOfMonth} $month"
+        val month = date.format(Money.pattern("MMMM"))
+        if (monthFirst) Words[R.string.deadline_month_first, month, ordinal(date.dayOfMonth)] else Words[R.string.deadline_day_first, date.dayOfMonth.toString(), month]
     }.getOrDefault(iso)
 }

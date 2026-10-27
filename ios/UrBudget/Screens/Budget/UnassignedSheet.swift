@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Quick assign's options, grouped as the desktop groups them.
+/// Quick assign's options, grouped as the desktop groups them. `group` identifies the group (in
+/// English); `quickAssignGroupName` names it.
 struct QuickMode: Identifiable, Hashable {
     var id: String
     var label: String
@@ -8,16 +9,39 @@ struct QuickMode: Identifiable, Hashable {
     var hint: String
 }
 
-let quickAssignModes = [
-    QuickMode(id: "underfunded", label: "Underfunded", group: "Fund targets", hint: "Assign what targets still need and cover overspending."),
-    QuickMode(id: "assignedLastMonth", label: "Assigned last month", group: "Repeat past months", hint: "Assign what each category got last month."),
-    QuickMode(id: "spentLastMonth", label: "Spent last month", group: "Repeat past months", hint: "Assign what each category spent last month."),
-    QuickMode(id: "averageAssigned", label: "Average assigned", group: "Repeat past months", hint: "Assign each category's 12-month average assignment."),
-    QuickMode(id: "averageSpent", label: "Average spent", group: "Repeat past months", hint: "Assign each category's 12-month average spending."),
-    QuickMode(id: "reduceOverfunding", label: "Reduce overfunding", group: "Clean up", hint: "Return what's beyond each target to Unassigned."),
-    QuickMode(id: "resetAvailable", label: "Reset available amounts", group: "Clean up", hint: "Bring every Available to 0.00."),
-    QuickMode(id: "resetAssigned", label: "Reset assigned amounts", group: "Clean up", hint: "Set this month's assignments to 0.00."),
-]
+let quickAssignModes: [QuickMode] = { () -> [QuickMode] in
+    var modes: [QuickMode] = []
+    modes.append(QuickMode(id: "underfunded", label: String(localized: "Underfunded"), group: "Fund targets",
+                           hint: String(localized: "Assign what targets still need and cover overspending.")))
+    modes.append(QuickMode(id: "assignedLastMonth", label: String(localized: "Assigned last month"), group: "Repeat past months",
+                           hint: String(localized: "Assign what each category got last month.")))
+    modes.append(QuickMode(id: "spentLastMonth", label: String(localized: "Spent last month"), group: "Repeat past months",
+                           hint: String(localized: "Assign what each category spent last month.")))
+    modes.append(QuickMode(id: "averageAssigned", label: String(localized: "Average assigned"), group: "Repeat past months",
+                           hint: String(localized: "Assign each category's 12-month average assignment.")))
+    modes.append(QuickMode(id: "averageSpent", label: String(localized: "Average spent"), group: "Repeat past months",
+                           hint: String(localized: "Assign each category's 12-month average spending.")))
+    modes.append(QuickMode(id: "reduceOverfunding", label: String(localized: "Reduce overfunding"), group: "Clean up",
+                           hint: String(localized: "Return what's beyond each target to Unassigned.")))
+    modes.append(QuickMode(id: "resetAvailable", label: String(localized: "Reset available amounts"), group: "Clean up",
+                           hint: String(localized: "Bring every Available to 0.00.")))
+    modes.append(QuickMode(id: "resetAssigned", label: String(localized: "Reset assigned amounts"), group: "Clean up",
+                           hint: String(localized: "Set this month's assignments to 0.00.")))
+    return modes
+}()
+
+/// The groups of Quick assign options, in order.
+let quickAssignGroups = ["Fund targets", "Repeat past months", "Clean up"]
+
+/// A Quick assign group's name in the app's language.
+func quickAssignGroupName(_ group: String) -> String {
+    switch group {
+    case "Fund targets": return String(localized: "Fund targets")
+    case "Repeat past months": return String(localized: "Repeat past months")
+    case "Clean up": return String(localized: "Clean up")
+    default: return group
+    }
+}
 
 /// Unassigned's sheet: the month in figures, how far this month's targets are funded, targets against
 /// expected income, ways to give the money jobs (Quick assign with what each option would do, or one
@@ -61,9 +85,9 @@ struct UnassignedSheet: View {
                 }
                 Section {
                     if needed > 0 {
-                        Notice(text: "\(money(needed, currency)) still needed this month", tone: "attention", icon: "target")
+                        Notice(text: String(localized: "\(money(needed, currency)) still needed this month"), tone: "attention", icon: "target")
                     } else {
-                        Notice(text: "This month's funding is complete", tone: "positive", icon: "checkmark.circle.fill")
+                        Notice(text: String(localized: "This month's funding is complete"), tone: "positive", icon: "checkmark.circle.fill")
                     }
                     Button(action: assignTo) {
                         Label(rta < 0 ? "Take money back" : "Assign to a category", systemImage: "arrow.left.arrow.right")
@@ -73,52 +97,16 @@ struct UnassignedSheet: View {
                 }
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
-                Section {
-                    ValueRow(title: "Carried over", value: money(carried, currency))
-                    ValueRow(title: "Income this month", value: money(summary.long("income"), currency))
-                    ValueRow(title: "Assigned", value: money(summary.long("assigned"), currency))
-                    // The month's activity and available include spending that still needs a category.
-                    ValueRow(title: "Activity", value: money(summary.long("activity") + summary.long("uncategorized"), currency))
-                    let available = summary.long("available") + summary.long("uncategorized")
-                    ValueRow(title: "Available", value: money(available, currency), color: available < 0 ? .urNegative : .primary)
-                    ValueRow(title: "Cash age", value: cashAge.map { $0 < 0 ? "—" : "\($0) \($0 == 1 ? "day" : "days")" } ?? "…",
-                             subtitle: "How long money waits before you spend it")
-                }
-                Section("Targets & income") {
-                    ValueRow(title: "\(Dates.shortMonthLabel(month)) targets", value: money(targets, currency))
-                    Button(action: editIncome) {
-                        ValueRow(title: "Expected income", value: income.map { money($0, currency) } ?? "Add",
-                                 subtitle: income == nil ? "Compare your targets with what you expect to earn"
-                                    : targets > income! ? "Targets are \(money(targets - income!, currency)) more than expected income"
-                                    : "\(money(income! - targets, currency)) left after targets",
-                                 color: income == nil ? .urAccent : .primary)
-                            .foregroundStyle(Color.primary)
-                    }
-                    Button(action: editIncome) {
-                        HStack(alignment: .firstTextBaseline) {
-                            Text("Month note").foregroundStyle(Color.primary)
-                            Spacer(minLength: 16)
-                            Text(note.isEmpty ? "Add" : note).lineLimit(2).multilineTextAlignment(.trailing)
-                                .foregroundStyle(note.isEmpty ? Color.urAccent : Color.secondary)
-                        }
-                    }
-                }
-                ForEach(["Fund targets", "Repeat past months", "Clean up"], id: \.self) { group in
-                    Section(group == "Fund targets" ? "Quick assign · \(group)" : group) {
+                figuresSection(summary, carried: carried, currency: currency)
+                targetsSection(month, targets: targets, income: income, note: note, currency: currency)
+                ForEach(quickAssignGroups, id: \.self) { group in
+                    Section(groupTitle(group)) {
                         ForEach(quickAssignModes.filter { $0.group == group }) { mode in
                             QuickModeRow(mode: mode, outcome: outcomes[mode.id], currency: currency)
                         }
                     }
                 }
-                if !changes.isEmpty {
-                    Section("Recent changes") {
-                        ForEach(Array((allChanges ? changes : Array(changes.prefix(4))).enumerated()), id: \.offset) { _, change in
-                            ValueRow(title: change.text("description").isEmpty ? "Change" : change.text("description"), value: "",
-                                     subtitle: Dates.dayAndMonth(change.text("at")))
-                        }
-                        if changes.count > 4 && !allChanges { Button("Show all \(changes.count)") { allChanges = true } }
-                    }
-                }
+                if !changes.isEmpty { changesSection(changes) }
             }
             .groupedList()
             .navigationTitle(Dates.monthLabel(month))
@@ -135,6 +123,73 @@ struct UnassignedSheet: View {
             guard !Task.isCancelled else { return }
             cashAge = report.map { $0["ageOfMoney"].isNull ? -1 : $0.long("ageOfMoney") } ?? -1
         }
+    }
+
+    // MARK: Sections
+
+    private func figuresSection(_ summary: JSON, carried: Int64, currency: String) -> some View {
+        // The month's activity and available include spending that still needs a category.
+        let activity = summary.long("activity") + summary.long("uncategorized")
+        let available = summary.long("available") + summary.long("uncategorized")
+        return Section {
+            ValueRow(title: String(localized: "Carried over"), value: money(carried, currency))
+            ValueRow(title: String(localized: "Income this month"), value: money(summary.long("income"), currency))
+            ValueRow(title: String(localized: "Assigned"), value: money(summary.long("assigned"), currency))
+            ValueRow(title: String(localized: "Activity"), value: money(activity, currency))
+            ValueRow(title: String(localized: "Available"), value: money(available, currency), color: available < 0 ? .urNegative : .primary)
+            ValueRow(title: String(localized: "Cash age"), value: cashAgeText, subtitle: String(localized: "How long money waits before you spend it"))
+        }
+    }
+
+    private func targetsSection(_ month: String, targets: Int64, income: Int64?, note: String, currency: String) -> some View {
+        let expected = income.map { money($0, currency) } ?? String(localized: "Add")
+        let comparison = incomeComparison(income: income, targets: targets, currency: currency)
+        return Section("Targets & income") {
+            ValueRow(title: String(localized: "\(Dates.shortMonthLabel(month)) targets"), value: money(targets, currency))
+            Button(action: editIncome) {
+                ValueRow(title: String(localized: "Expected income"), value: expected, subtitle: comparison, color: income == nil ? .urAccent : .primary)
+                    .foregroundStyle(Color.primary)
+            }
+            Button(action: editIncome) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Month note").foregroundStyle(Color.primary)
+                    Spacer(minLength: 16)
+                    Text(note.isEmpty ? String(localized: "Add") : note).lineLimit(2).multilineTextAlignment(.trailing)
+                        .foregroundStyle(note.isEmpty ? Color.urAccent : Color.secondary)
+                }
+            }
+        }
+    }
+
+    private func changesSection(_ changes: [JSON]) -> some View {
+        Section("Recent changes") {
+            ForEach(Array((allChanges ? changes : Array(changes.prefix(4))).enumerated()), id: \.offset) { _, change in
+                ValueRow(title: change.text("description").isEmpty ? String(localized: "Change") : change.text("description"), value: "",
+                         subtitle: Dates.dayAndMonth(change.text("at")))
+            }
+            if changes.count > 4 && !allChanges { Button("Show all \(changes.count)") { allChanges = true } }
+        }
+    }
+
+    // MARK: Words
+
+    /// Cash age in days, "—" when there's none yet.
+    private var cashAgeText: String {
+        guard let cashAge else { return "…" }
+        return cashAge < 0 ? "—" : String(localized: "\(Int(cashAge)) days", locale: .app)
+    }
+
+    /// Expected income against this month's targets.
+    private func incomeComparison(income: Int64?, targets: Int64, currency: String) -> String {
+        guard let income else { return String(localized: "Compare your targets with what you expect to earn") }
+        if targets > income { return String(localized: "Targets are \(money(targets - income, currency)) more than expected income") }
+        return String(localized: "\(money(income - targets, currency)) left after targets")
+    }
+
+    /// The first group carries the Quick assign name, as the desktop's sheet heads it.
+    private func groupTitle(_ group: String) -> String {
+        let name = quickAssignGroupName(group)
+        return group == "Fund targets" ? String(localized: "Quick assign · \(name)") : name
     }
 }
 
@@ -163,7 +218,7 @@ private struct QuickModeRow: View {
             Text(mode.label).foregroundStyle(outcome == 0 ? Color.secondary : Color.primary)
             Text(mode.hint).font(.footnote).foregroundStyle(Color.secondary)
         }
-        let value = Text(outcome.map { $0 == 0 ? "No change" : ($0 > 0 ? "+" : "") + money($0, currency) } ?? "…")
+        let value = Text(outcomeText)
             .monospacedDigit()
             .foregroundStyle(outcome == nil || outcome == 0 ? Color.secondary : outcome! > 0 ? Color.urPositive : Color.urNegative)
         if outcome == 0 {
@@ -171,6 +226,13 @@ private struct QuickModeRow: View {
         } else {
             NavigationLink(value: mode) { HStack { label; Spacer(); value } }
         }
+    }
+
+    /// "+45.00", "No change", or "…" while it's worked out.
+    private var outcomeText: String {
+        guard let outcome else { return "…" }
+        if outcome == 0 { return String(localized: "No change") }
+        return AppLanguage.leftToRight((outcome > 0 ? "+" : "") + money(outcome, currency))
     }
 }
 
@@ -189,8 +251,8 @@ struct GroupQuickAssignSheet: View {
         let ids = ids
         NavigationStack {
             List {
-                ForEach(["Fund targets", "Repeat past months", "Clean up"], id: \.self) { section in
-                    Section(section) {
+                ForEach(quickAssignGroups, id: \.self) { section in
+                    Section(quickAssignGroupName(section)) {
                         ForEach(quickAssignModes.filter { $0.group == section }) { mode in
                             QuickModeRow(mode: mode, outcome: outcomes[mode.id], currency: store.currency)
                         }
@@ -244,42 +306,24 @@ private struct QuickAssignPreview: View {
             Section {
                 Text(explain(mode.id, month)).foregroundStyle(Color.secondary)
             } footer: {
-                Text(scope.map { "The \(visible) \(visible == 1 ? "category" : "categories") in \($0), for \(Dates.monthLabel(month))." }
-                     ?? "All \(visible) visible categories in \(Dates.monthLabel(month)).")
+                Text(scopeText(visible: visible, month: month))
             }
             if let failed { FormErrorView(message: failed) }
             if preview == nil && failed == nil { ProgressView().frame(maxWidth: .infinity) }
             if let after {
-                Section {
-                    HStack(alignment: .top) {
-                        Figure(label: returns > assigns ? "Returns" : "Assigns", value: money(returns > assigns ? returns - assigns : assigns - returns, currency),
-                               color: returns > assigns ? .urNegative : .urPositive)
-                        Spacer()
-                        Figure(label: "Unassigned", value: "\(money(summary.long("readyToAssign"), currency)) → \(money(after.long("readyToAssign"), currency))",
-                               color: after.long("readyToAssign") < 0 ? .urNegative : .primary, alignment: .trailing)
-                    }
-                } footer: {
-                    Text("\(rows.count) of \(visible) categories change.")
-                }
+                figuresSection(after, summary: summary, assigns: assigns, returns: returns, changed: rows.count, visible: visible, currency: currency)
                 if after.long("readyToAssign") < 0 {
-                    Notice(text: "This assigns more than you have: Unassigned would be \(money(after.long("readyToAssign"), currency)).", tone: "negative",
-                           icon: "exclamationmark.triangle.fill")
+                    Notice(text: String(localized: "This assigns more than you have: Unassigned would be \(money(after.long("readyToAssign"), currency))."),
+                           tone: "negative", icon: "exclamationmark.triangle.fill")
                 }
                 let overspent = after.rows("categories").count { $0.long("available") < 0 }
                 if overspent > 0 {
-                    Notice(text: "\(overspent == 1 ? "1 category stays" : "\(overspent) categories stay") overspent.", tone: "attention")
+                    Notice(text: String(localized: "\(overspent) categories stay overspent.", locale: .app), tone: "attention")
                 }
                 if rows.isEmpty {
-                    Notice(text: "Nothing to change for \(Dates.monthLabel(month)).", tone: "info")
+                    Notice(text: String(localized: "Nothing to change for \(Dates.monthLabel(month))."), tone: "info")
                 } else {
-                    Section {
-                        ForEach(rows) { row in
-                            let change = row.after - row.before
-                            ValueRow(title: row.name, value: (change > 0 ? "+" : "") + money(change, currency),
-                                     subtitle: "\(money(row.before, currency)) → \(money(row.after, currency)) · Available \(money(row.availableAfter, currency))",
-                                     color: change > 0 ? .urPositive : .urNegative)
-                        }
-                    }
+                    rowsSection(rows, currency: currency)
                 }
             }
         }
@@ -290,7 +334,7 @@ private struct QuickAssignPreview: View {
             Button(action: apply) {
                 HStack(spacing: 8) {
                     if saving { ProgressView().tint(.white) }
-                    Text(rows.isEmpty ? "Nothing to apply" : "Apply to \(rows.count) \(rows.count == 1 ? "category" : "categories")")
+                    applyLabel(rows.count)
                 }
                 .fontWeight(.semibold).frame(maxWidth: .infinity, minHeight: 34)
             }
@@ -306,6 +350,53 @@ private struct QuickAssignPreview: View {
             params["previewMonth"] = .string(month)
             do { preview = try await store.query("workflow", params) } catch { failed = BudgetStore.readable(error) }
         }
+    }
+
+    // MARK: Parts
+
+    private func figuresSection(_ after: JSON, summary: JSON, assigns: Int64, returns: Int64, changed: Int, visible: Int,
+                                currency: String) -> some View {
+        let returning = returns > assigns
+        let net = money(returning ? returns - assigns : assigns - returns, currency)
+        let unassigned = AppLanguage.leftToRight("\(money(summary.long("readyToAssign"), currency)) → \(money(after.long("readyToAssign"), currency))")
+        return Section {
+            HStack(alignment: .top) {
+                Figure(label: returning ? String(localized: "Returns") : String(localized: "Assigns"), value: net,
+                       color: returning ? .urNegative : .urPositive)
+                Spacer()
+                Figure(label: String(localized: "Unassigned"), value: unassigned,
+                       color: after.long("readyToAssign") < 0 ? .urNegative : .primary, alignment: .trailing)
+            }
+        } footer: {
+            Text("\(changed) of \(visible) categories change.")
+        }
+    }
+
+    private func rowsSection(_ rows: [QuickRow], currency: String) -> some View {
+        Section {
+            ForEach(rows) { row in
+                let change = row.after - row.before
+                ValueRow(title: row.name, value: AppLanguage.leftToRight((change > 0 ? "+" : "") + money(change, currency)),
+                         subtitle: rowDetail(row, currency: currency), color: change > 0 ? .urPositive : .urNegative)
+            }
+        }
+    }
+
+    /// "120.00 → 150.00 · Available 30.00".
+    private func rowDetail(_ row: QuickRow, currency: String) -> String {
+        let change = AppLanguage.leftToRight("\(money(row.before, currency)) → \(money(row.after, currency))")
+        return String(localized: "\(change) · Available \(money(row.availableAfter, currency))")
+    }
+
+    /// Which categories the option works on, under its explanation.
+    private func scopeText(visible: Int, month: String) -> String {
+        let label = Dates.monthLabel(month)
+        guard let scope else { return String(localized: "All \(visible) visible categories in \(label).", locale: .app) }
+        return String(localized: "The \(visible) categories in \(scope), for \(label).", locale: .app)
+    }
+
+    private func applyLabel(_ count: Int) -> Text {
+        count == 0 ? Text("Nothing to apply") : Text("Apply to \(count) categories")
     }
 
     private func changedRows(_ result: JSON) -> [QuickRow] {
@@ -329,7 +420,9 @@ private struct QuickAssignPreview: View {
         let change = rows.reduce(Int64(0)) { $0 + $1.after - $1.before }
         attempt($failed, saving: $saving) {
             try await store.committing("workflow", params)
-            store.showToast("\(mode.label): \(change >= 0 ? "assigned" : "returned") \(money(Int64(change.magnitude), store.currency)).", undo: true)
+            let amount = money(Int64(change.magnitude), store.currency)
+            store.showToast(change >= 0 ? String(localized: "\(mode.label): assigned \(amount).")
+                                        : String(localized: "\(mode.label): returned \(amount)."), undo: true)
             done()
         }
     }
@@ -339,14 +432,22 @@ private struct QuickAssignPreview: View {
         let now = Dates.monthName(month)
         let last = Dates.monthName(Dates.addMonths(month, -1))
         switch mode {
-        case "underfunded": return "Assigns what each category still needs for its \(now) target, and covers overspending. It never assigns more than Unassigned holds: overspent categories go first, then the targets due soonest, then credit card payments."
-        case "assignedLastMonth": return "Replaces each category's \(now) assignment with what you assigned to it in \(last)."
-        case "spentLastMonth": return "Replaces each category's \(now) assignment with what it spent in \(last). Categories that spent nothing get 0.00, and credit card payments stay as they are."
-        case "averageAssigned": return "Replaces each category's \(now) assignment with its average monthly assignment over the last 12 months."
-        case "averageSpent": return "Replaces each category's \(now) assignment with its average monthly spending over the last 12 months. Credit card payments stay as they are."
-        case "reduceOverfunding": return "Lowers the \(now) assignment of categories holding more than their target needs, and returns the extra to Unassigned."
-        case "resetAvailable": return "Changes each category's \(now) assignment so its Available becomes 0.00. Money set aside, including what carried over from \(last), returns to Unassigned."
-        case "resetAssigned": return "Sets each category's \(now) assignment to 0.00. Carried-over money and spending stay, so each Available drops by what was assigned."
+        case "underfunded":
+            return String(localized: "Assigns what each category still needs for its \(now) target, and covers overspending. It never assigns more than Unassigned holds: overspent categories go first, then the targets due soonest, then credit card payments.")
+        case "assignedLastMonth":
+            return String(localized: "Replaces each category's \(now) assignment with what you assigned to it in \(last).")
+        case "spentLastMonth":
+            return String(localized: "Replaces each category's \(now) assignment with what it spent in \(last). Categories that spent nothing get 0.00, and credit card payments stay as they are.")
+        case "averageAssigned":
+            return String(localized: "Replaces each category's \(now) assignment with its average monthly assignment over the last 12 months.")
+        case "averageSpent":
+            return String(localized: "Replaces each category's \(now) assignment with its average monthly spending over the last 12 months. Credit card payments stay as they are.")
+        case "reduceOverfunding":
+            return String(localized: "Lowers the \(now) assignment of categories holding more than their target needs, and returns the extra to Unassigned.")
+        case "resetAvailable":
+            return String(localized: "Changes each category's \(now) assignment so its Available becomes 0.00. Money set aside, including what carried over from \(last), returns to Unassigned.")
+        case "resetAssigned":
+            return String(localized: "Sets each category's \(now) assignment to 0.00. Carried-over money and spending stay, so each Available drops by what was assigned.")
         default: return ""
         }
     }

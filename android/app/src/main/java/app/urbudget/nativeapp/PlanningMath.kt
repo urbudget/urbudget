@@ -73,10 +73,15 @@ internal fun defaultLoanSource(budget: JSONObject, loanId: String, sources: List
         .firstOrNull()?.str("id").orEmpty()
 }
 
-/** "2 years 3 months" */
+/** "2 years 3 months", in the interface's language. */
 internal fun span(months: Int): String {
-    fun part(n: Int, unit: String) = if (n != 0) "$n $unit${if (n == 1) "" else "s"}" else ""
-    return listOf(part(months / 12, "year"), part(months % 12, "month")).filter { it.isNotEmpty() }.joinToString(" ").ifEmpty { "0 months" }
+    val years = months / 12
+    val rest = months % 12
+    return when {
+        years != 0 && rest != 0 -> Words[R.string.span_years_months, Words.count(R.plurals.span_years, years.toLong()), Words.count(R.plurals.span_months, rest.toLong())]
+        years != 0 -> Words.count(R.plurals.span_years, years.toLong())
+        else -> Words.count(R.plurals.span_months, rest.toLong())
+    }
 }
 
 /** The annual rate in effect in a month, in thousandths of a percent, as loans.rs reads it. */
@@ -100,8 +105,8 @@ internal fun rateText(milli: Long, decimal: String = "."): String =
  */
 internal fun parseRateChange(text: String, decimal: String = "."): Long {
     val typed = text.trim().removeSuffix("%").trim().let { if (decimal == ",") it.replace(",", ".") else it }
-    require(Regex("^\\d+(\\.\\d{1,3})?$").matches(typed)) { "Enter a rate with up to three decimals." }
+    require(Regex("^\\d+(\\.\\d{1,3})?$").matches(typed)) { Words[R.string.rate_three_decimals] }
     val value = BigDecimal(typed).movePointRight(3)
-    require(value <= BigDecimal(1_000_000)) { "Rate must be between 0 and 1,000%." }
+    require(value <= BigDecimal(1_000_000)) { Words[R.string.rate_range] }
     return value.longValueExact()
 }

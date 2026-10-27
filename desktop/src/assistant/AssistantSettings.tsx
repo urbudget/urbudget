@@ -4,11 +4,12 @@ import { errorText } from "../format";
 import { useToast } from "../ui";
 import { assistant, type Model, type Provider, type Status } from "./api";
 import "./assistant.css";
+import { msg, t } from "../i18n";
 
 const SERVICES: [Provider, string][] = [
-  ["chatgpt", "ChatGPT plan (sign in)"],
-  ["openai", "OpenAI API key"],
-  ["anthropic", "Anthropic API key (Claude)"],
+  ["chatgpt", msg("ChatGPT plan (sign in)")],
+  ["openai", msg("OpenAI API key")],
+  ["anthropic", msg("Anthropic API key (Claude)")],
 ];
 
 /** Settings › Assistant: which service it uses, privacy, conversations, and (on a computer) other AI apps. */
@@ -43,7 +44,7 @@ export function AssistantSettings() {
   if (!status)
     return (
       <section className="panel">
-        <h2>Assistant</h2>
+        <h2>{t("Assistant")}</h2>
         <LoaderCircle size={16} className="spin" />
       </section>
     );
@@ -53,26 +54,25 @@ export function AssistantSettings() {
   return (
     <>
       <section className="panel assistant-settings">
-        <h2>Assistant</h2>
+        <h2>{t("Assistant")}</h2>
         <p className="help">
-          It answers questions about your budget, reads the files you attach, and proposes changes. Nothing changes until you
-          apply it.
+          {t("It answers questions about your budget, reads the files you attach, and proposes changes. Nothing changes until you apply it.")}
         </p>
         <div className="setting-list">
           <div className="setting-row">
             <span>
-              <strong>Service</strong>
-              <small>Your ChatGPT Plus or Pro plan, or your own API key, pays for the assistant.</small>
+              <strong>{t("Service")}</strong>
+              <small>{t("Your ChatGPT Plus or Pro plan, or your own API key, pays for the assistant.")}</small>
             </span>
             <select
-              aria-label="Service"
+              aria-label={t("Service")}
               value={status.provider}
               disabled={!!busy}
               onChange={(e) => void run("provider", () => assistant.settings({ provider: e.target.value as Provider }))}
             >
               {SERVICES.map(([id, label]) => (
                 <option key={id} value={id}>
-                  {label}
+                  {t(label)}
                 </option>
               ))}
             </select>
@@ -81,42 +81,46 @@ export function AssistantSettings() {
           {!keyed ? (
             <div className="setting-row">
               <span>
-                <strong>ChatGPT account</strong>
+                <strong>{t("ChatGPT account")}</strong>
                 <small>
                   {status.ready
-                    ? `Signed in${status.account?.email ? ` as ${status.account.email}` : ""}. ${
-                        status.storage ? `The sign-in is kept in ${status.storage}.` : "You'll sign in again next time."
-                      }`
-                    : "Opens your browser to sign in, then comes back here."}
+                    ? `${
+                        status.account?.email ? t("Signed in as {email}.", { email: status.account.email }) : t("Signed in.")
+                      } ${status.storage ? t("The sign-in is kept in {storage}.", { storage: status.storage }) : t("You'll sign in again next time.")}`
+                    : t("Opens your browser to sign in, then comes back here.")}
                 </small>
               </span>
               {status.ready ? (
                 <button className="secondary" disabled={!!busy} onClick={() => void run("out", assistant.signOut)}>
-                  Sign out
+                  {t("Sign out")}
                 </button>
               ) : busy === "in" ? (
                 <button className="secondary" onClick={() => void assistant.cancelSignIn()}>
-                  <LoaderCircle size={14} className="spin" /> Cancel sign-in
+                  <LoaderCircle size={14} className="spin" /> {t("Cancel sign-in")}
                 </button>
               ) : (
                 <button className="primary" disabled={!!busy} onClick={() => void run("in", assistant.signIn)}>
-                  Continue with ChatGPT
+                  {t("Continue with ChatGPT")}
                 </button>
               )}
             </div>
           ) : (
             <div className="setting-row">
               <span>
-                <strong>API key</strong>
+                <strong>{t("API key")}</strong>
                 <small>
                   {hasKey
-                    ? `Saved${status.storage ? ` in ${status.storage}` : " until the app closes"}.`
-                    : `Create one in your ${status.provider === "openai" ? "OpenAI" : "Anthropic"} account. Usage is billed there.`}
+                    ? status.storage
+                      ? t("Saved in {storage}.", { storage: status.storage })
+                      : t("Saved until the app closes.")
+                    : t("Create one in your {provider} account. Usage is billed there.", {
+                        provider: status.provider === "openai" ? "OpenAI" : "Anthropic",
+                      })}
                 </small>
               </span>
               {hasKey ? (
                 <button className="secondary" disabled={!!busy} onClick={() => void run("forget", () => assistant.forgetKey(status.provider))}>
-                  Remove key
+                  {t("Remove key")}
                 </button>
               ) : (
                 <form
@@ -132,21 +136,21 @@ export function AssistantSettings() {
                 >
                   <input
                     type="password"
-                    aria-label="API key"
+                    aria-label={t("API key")}
                     placeholder={status.provider === "openai" ? "sk-…" : "sk-ant-…"}
                     value={key}
                     onChange={(e) => setKey(e.target.value)}
                     autoComplete="off"
                   />
                   <button className="primary" disabled={!key.trim() || !!busy}>
-                    {busy === "key" ? <LoaderCircle size={14} className="spin" /> : null} Save key
+                    {busy === "key" ? <LoaderCircle size={14} className="spin" /> : null} {t("Save key")}
                   </button>
                   <button
                     type="button"
                     className="link-button"
                     onClick={() => void assistant.open(status.provider === "openai" ? "openaiKeys" : "anthropicKeys")}
                   >
-                    Get a key
+                    {t("Get a key")}
                   </button>
                 </form>
               )}
@@ -155,16 +159,18 @@ export function AssistantSettings() {
 
           <div className="setting-row">
             <span>
-              <strong>Model</strong>
-              <small>{status.ready ? "The list comes from your account." : "Sign in or add a key to choose."}</small>
+              <strong>{t("Model")}</strong>
+              <small>{status.ready ? t("The list comes from your account.") : t("Sign in or add a key to choose.")}</small>
             </span>
             <select
-              aria-label="Model"
+              aria-label={t("Model")}
               value={status.model ?? ""}
               disabled={!status.ready || !!busy}
               onChange={(e) => void run("model", () => assistant.settings({ model: e.target.value }))}
             >
-              <option value="">Default{models[0] && status.provider !== "anthropic" ? ` (${models[0].name})` : ""}</option>
+              <option value="">
+                {models[0] && status.provider !== "anthropic" ? t("Default ({model})", { model: models[0].name }) : t("Default")}
+              </option>
               {models.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.name}
@@ -175,8 +181,8 @@ export function AssistantSettings() {
 
           <label className="setting-row toggle">
             <span>
-              <strong>Share memos</strong>
-              <small>Dates, payees, amounts and categories are always shared when the assistant looks something up.</small>
+              <strong>{t("Share memos")}</strong>
+              <small>{t("Dates, payees, amounts and categories are always shared when the assistant looks something up.")}</small>
             </span>
             <input
               type="checkbox"
@@ -187,8 +193,8 @@ export function AssistantSettings() {
           </label>
           <label className="setting-row toggle">
             <span>
-              <strong>Keep conversations</strong>
-              <small>Saved with each budget's files on this computer. When off, they're forgotten when the app closes.</small>
+              <strong>{t("Keep conversations")}</strong>
+              <small>{t("Saved with each budget's files on this computer. When off, they're forgotten when the app closes.")}</small>
             </span>
             <input
               type="checkbox"
@@ -199,13 +205,13 @@ export function AssistantSettings() {
           </label>
           <div className="setting-row">
             <span>
-              <strong>Conversations and attachments</strong>
-              <small>For the open budget.</small>
+              <strong>{t("Conversations and attachments")}</strong>
+              <small>{t("For the open budget.")}</small>
             </span>
             {confirmDelete ? (
               <span className="assistant-key">
                 <button className="secondary" onClick={() => setConfirmDelete(false)}>
-                  Cancel
+                  {t("Cancel")}
                 </button>
                 <button
                   className="danger"
@@ -213,27 +219,27 @@ export function AssistantSettings() {
                     void run("delete", async () => {
                       await assistant.deleteAll();
                       setConfirmDelete(false);
-                      toast({ message: "Deleted the assistant's conversations and attachments." });
+                      toast({ message: t("Deleted the assistant's conversations and attachments.") });
                     })
                   }
                 >
-                  Delete all
+                  {t("Delete all")}
                 </button>
               </span>
             ) : (
               <button className="secondary" onClick={() => setConfirmDelete(true)}>
-                Delete all conversations
+                {t("Delete all conversations")}
               </button>
             )}
           </div>
           {!keyed && (
             <div className="setting-row">
               <span>
-                <strong>Usage</strong>
-                <small>Counts toward your ChatGPT plan, like using ChatGPT. You can set a limit for UrBudget in ChatGPT.</small>
+                <strong>{t("Usage")}</strong>
+                <small>{t("Counts toward your ChatGPT plan, like using ChatGPT. You can set a limit for UrBudget in ChatGPT.")}</small>
               </span>
               <button className="secondary" onClick={() => void assistant.open("usage")}>
-                Manage usage
+                {t("Manage usage")}
               </button>
             </div>
           )}
@@ -241,10 +247,9 @@ export function AssistantSettings() {
       </section>
 
       <section className="panel assistant-settings">
-        <h2>Use your budget in other AI apps</h2>
+        <h2>{t("Use your budget in other AI apps")}</h2>
         <p className="help">
-          Claude Desktop and other apps that support MCP can read the open budget: months, transactions, reports and forecasts.
-          They can't change anything. Add this to the app's MCP settings (in Claude Desktop: Settings › Developer › Edit Config).
+          {t("Claude Desktop and other apps that support MCP can read the open budget: months, transactions, reports and forecasts. They can't change anything. Add this to the app's MCP settings (in Claude Desktop: Settings › Developer › Edit Config).")}
         </p>
         <pre className="assistant-mcp">{config}</pre>
         <div>
@@ -253,11 +258,11 @@ export function AssistantSettings() {
             onClick={() =>
               void navigator.clipboard
                 .writeText(config)
-                .then(() => toast({ message: "Copied." }))
+                .then(() => toast({ message: t("Copied.") }))
                 .catch(fail)
             }
           >
-            <Copy size={14} /> Copy
+            <Copy size={14} /> {t("Copy")}
           </button>
         </div>
       </section>

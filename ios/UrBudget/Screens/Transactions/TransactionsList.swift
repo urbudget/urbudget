@@ -36,9 +36,9 @@ private func registerSections(_ entries: [RegisterIndex.Entry], order: String, a
     var categories: [String: String] = [:]
     for c in budget.rows("categories") { categories[c.text("id")] = c.text("name") }
     func splitName(_ part: JSON) -> String {
-        if part.flag("unassigned") { return "Unassigned" }
-        if !part.text("transferAccountId").isEmpty { return "Transfer" }
-        return categories[part.text("categoryId")] ?? "Uncategorized"
+        if part.flag("unassigned") { return String(localized: "Unassigned") }
+        if !part.text("transferAccountId").isEmpty { return String(localized: "Transfer") }
+        return categories[part.text("categoryId")] ?? String(localized: "Uncategorized")
     }
     let lines = entries.map { entry -> TransactionLine in
         let t = entry.transaction
@@ -54,21 +54,21 @@ private func registerSections(_ entries: [RegisterIndex.Entry], order: String, a
         if splits.count > 1 {
             for (i, part) in splits.prefix(2).enumerated() {
                 let needs = entry.needsCategory.contains(i)
-                chips.append(.init(text: "\(needs ? "Needs a category" : splitName(part)) \(money(part.long("amount"), currency))", attention: needs))
+                chips.append(.init(text: "\(needs ? String(localized: "Needs a category") : splitName(part)) \(money(part.long("amount"), currency))", attention: needs))
             }
-            if splits.count > 2 { chips.append(.init(text: "+\(splits.count - 2)", attention: false)) }
+            if splits.count > 2 { chips.append(.init(text: AppLanguage.leftToRight("+\(splits.count - 2)"), attention: false)) }
         } else if entry.needsCategory.contains(0) {
-            chips = [.init(text: "Needs a category", attention: true)]
+            chips = [.init(text: String(localized: "Needs a category"), attention: true)]
         } else if let first = splits.first {
-            if first.flag("unassigned") { chips = [.init(text: "Unassigned", attention: false)] }
-            else if !first.text("categoryId").isEmpty { chips = [.init(text: categories[first.text("categoryId")] ?? "Category", attention: false)] }
+            if first.flag("unassigned") { chips = [.init(text: String(localized: "Unassigned"), attention: false)] }
+            else if !first.text("categoryId").isEmpty { chips = [.init(text: categories[first.text("categoryId")] ?? String(localized: "Category"), attention: false)] }
         }
         let statuses = account.isEmpty ? [entry.status] : entry.accountStatuses[account] ?? [entry.status]
         return TransactionLine(
             id: entry.id, date: entry.date,
-            payee: !transferId.isEmpty ? "\(amount < 0 ? "To" : "From"): \(otherAccount?.text("name") ?? "Account")" : (t.text("payee").isEmpty ? "No payee" : t.text("payee")),
+            payee: !transferId.isEmpty ? transferLabel(amount: amount, otherAccount?.text("name")) : (t.text("payee").isEmpty ? String(localized: "No payee") : t.text("payee")),
             transfer: !transferId.isEmpty, card: !transferId.isEmpty && otherAccount?.text("kind") == "credit", otherAccount: other,
-            amount: amount, amountText: (amount > 0 ? "+" : "") + money(amount, currency), chips: chips,
+            amount: amount, amountText: AppLanguage.leftToRight((amount > 0 ? "+" : "") + money(amount, currency)), chips: chips,
             accountName: account.isEmpty ? accounts[t.text("accountId")]?.text("name") ?? "" : "",
             memo: source.text("memo").isEmpty ? t.text("memo") : source.text("memo"),
             cleared: statuses.first ?? entry.status, future: entry.date > today,
@@ -83,10 +83,17 @@ private func registerSections(_ entries: [RegisterIndex.Entry], order: String, a
     return sections
 }
 
+/// A transfer's payee line: "To: Savings" for money going out, "From: Savings" for money coming in.
+private func transferLabel(amount: Int64, _ account: String?) -> String {
+    let name = account ?? String(localized: "Account")
+    return amount < 0 ? String(localized: "To: \(name)") : String(localized: "From: \(name)")
+}
+
 /// Date range presets, as the desktop's register offers them.
 private let datePresets: [(id: String, label: String)] = [
-    ("thisMonth", "This month"), ("lastMonth", "Last month"), ("last3", "Last 3 months"), ("last6", "Last 6 months"),
-    ("last12", "Last 12 months"), ("ytd", "Year to date"), ("lastYear", "Last year"),
+    ("thisMonth", String(localized: "This month")), ("lastMonth", String(localized: "Last month")),
+    ("last3", String(localized: "Last 3 months")), ("last6", String(localized: "Last 6 months")),
+    ("last12", String(localized: "Last 12 months")), ("ytd", String(localized: "Year to date")), ("lastYear", String(localized: "Last year")),
 ]
 
 private func datePreset(_ id: String) -> (String, String) {
@@ -109,9 +116,9 @@ private func datePreset(_ id: String) -> (String, String) {
 private func dateRangeLabel(_ from: String, _ through: String) -> String {
     switch (from.isEmpty, through.isEmpty) {
     case (false, false): return "\(Dates.shortDay(from)) – \(Dates.shortDay(through))"
-    case (false, true): return "From \(Dates.shortDay(from))"
-    case (true, false): return "Through \(Dates.shortDay(through))"
-    default: return "Any date"
+    case (false, true): return String(localized: "From \(Dates.shortDay(from))")
+    case (true, false): return String(localized: "Through \(Dates.shortDay(through))")
+    default: return String(localized: "Any date")
     }
 }
 
@@ -120,7 +127,10 @@ private func bulkAction(_ ids: Set<String>, _ operation: String, _ value: String
 }
 
 /// "1 transaction", "3 transactions".
-func transactionCount(_ count: Int) -> String { count == 1 ? "1 transaction" : "\(count) transactions" }
+func transactionCount(_ count: Int) -> String {
+    String(localized: "transactions.inSentence", defaultValue: "\(count) transactions", locale: .app,
+           comment: "A number of transactions inside a sentence (“Delete 3 transactions?”).")
+}
 
 /// A CSV file for the share sheet and Files.
 struct TextFile: FileDocument {
@@ -200,16 +210,32 @@ struct TransactionsList: View {
     private var title: String {
         if let account { return account.text("name") }
         switch category {
-        case NeedsCategory: return "Uncategorized"
-        case Unassigned: return "Unassigned"
-        case "": return "Transactions"
-        default: return store.budget?.row("categories", id: category)?.text("name") ?? "Category"
+        case NeedsCategory: return String(localized: "Uncategorized")
+        case Unassigned: return String(localized: "Unassigned")
+        case "": return String(localized: "Transactions")
+        default: return store.budget?.row("categories", id: category)?.text("name") ?? String(localized: "Category")
         }
+    }
+
+    /// The export's file name, in English whatever the app's language, as file names stay.
+    private var exportName: String {
+        if let account { return "UrBudget \(account.text("name")).csv" }
+        switch category {
+        case NeedsCategory: return "UrBudget Uncategorized.csv"
+        case Unassigned: return "UrBudget Unassigned.csv"
+        case "": return "UrBudget Transactions.csv"
+        default: return "UrBudget \(store.budget?.row("categories", id: category)?.text("name") ?? "Category").csv"
+        }
+    }
+
+    /// The title, or how many are selected while selecting.
+    private var screenTitle: String {
+        selecting ? String(localized: "\(selected.count) selected", locale: .app) : title
     }
 
     var body: some View {
         list
-            .navigationTitle(selecting ? "\(selected.count) selected" : title)
+            .navigationTitle(screenTitle)
             .searchable(text: $search, prompt: "Payee, category, memo, amount")
             .toolbar { toolbar }
             .tabBarHidden(selecting)
@@ -231,18 +257,19 @@ struct TransactionsList: View {
             .sheet(item: Binding(get: { reconciling.map { IdentifiedJSON(value: $0) } }, set: { reconciling = $0?.value })) { ReconcileSheet(account: $0.value) }
             .sheet(isPresented: $bulkCategory) {
                 NavigationStack {
-                    CategoryPicker(title: "Categorize \(selected.count)", month: Dates.currentMonth, selected: "", includeUnassigned: true, includePayment: false) { id in
+                    CategoryPicker(title: String(localized: "Categorize \(selected.count)", locale: .app), month: Dates.currentMonth, selected: "",
+                                   includeUnassigned: true, includePayment: false) { id in
                         bulkCategory = false
-                        onSelection("category", id) { "Categorized \($0) as \(categoryName(id))." }
+                        onSelection("category", id) { String(localized: "Categorized \($0) as \(categoryName(id)).") }
                     }
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { bulkCategory = false } } }
                 }
             }
             .sheet(item: Binding(get: { categorizing.map { IdentifiedText(value: $0) } }, set: { categorizing = $0?.value })) { item in
                 NavigationStack {
-                    CategoryPicker(title: "Category", month: Dates.currentMonth, selected: "", includeUnassigned: true, includePayment: false) { id in
+                    CategoryPicker(title: String(localized: "Category"), month: Dates.currentMonth, selected: "", includeUnassigned: true, includePayment: false) { id in
                         categorizing = nil
-                        bulk([item.value], "category", id, done: "Categorized \(payee(item.value)) as \(categoryName(id)).")
+                        bulk([item.value], "category", id, done: String(localized: "Categorized \(payee(item.value)) as \(categoryName(id))."))
                     }
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { categorizing = nil } } }
                 }
@@ -251,13 +278,15 @@ struct TransactionsList: View {
                 BulkTextSheet(request: request, count: selected.count) { value in
                     let ids = selected
                     try await store.committingWorkflow(bulkAction(ids, request.operation, value, target.account))
-                    store.showToast("Changed the \(request.operation) of \(transactionCount(ids.count)).", undo: true)
+                    let changed = transactionCount(ids.count)
+                    store.showToast(request.operation == "payee" ? String(localized: "Changed the payee of \(changed).")
+                                    : String(localized: "Changed the memo of \(changed)."), undo: true)
                     endSelection()
                 }
             }
             .sheet(isPresented: $pickingCategory) {
                 NavigationStack {
-                    CategoryPicker(title: "Show category", month: Dates.currentMonth, selected: category, includeUnassigned: true) { id in
+                    CategoryPicker(title: String(localized: "register.showCategory", defaultValue: "Show category", comment: "Shows one category's transactions."), month: Dates.currentMonth, selected: category, includeUnassigned: true) { id in
                         category = id
                         pickingCategory = false
                     }
@@ -273,11 +302,11 @@ struct TransactionsList: View {
                 RegisterFiltersSheet(minimum: $minimum, maximum: $maximum, from: $from, through: $through)
             }
             .confirmationDialog("Delete \(transactionCount(selected.count))?", isPresented: $confirmDelete, titleVisibility: .visible) {
-                Button("Delete", role: .destructive) { onSelection("delete") { "Deleted \($0)." } }
+                Button("Delete", role: .destructive) { onSelection("delete") { String(localized: "Deleted \($0).") } }
             } message: {
                 Text("Both sides of transfers are removed too. You can undo this.")
             }
-            .fileExporter(isPresented: $exporting, document: exportFile, contentType: .commaSeparatedText, defaultFilename: "UrBudget \(title).csv") { _ in }
+            .fileExporter(isPresented: $exporting, document: exportFile, contentType: .commaSeparatedText, defaultFilename: exportName) { _ in }
     }
 
     /// A bulk workflow on `ids`; once it's saved, `done` (if any) says what changed, with Undo.
@@ -295,12 +324,12 @@ struct TransactionsList: View {
     }
 
     private func payee(_ id: String) -> String {
-        sections?.lazy.flatMap(\.lines).first { $0.id == id }?.payee ?? "the transaction"
+        sections?.lazy.flatMap(\.lines).first { $0.id == id }?.payee ?? String(localized: "the transaction")
     }
 
     private func approveAll() {
         guard let ids = index?.awaitingApprovalIds(target.account), !ids.isEmpty else { return }
-        bulk(ids, "approve", done: "Approved \(transactionCount(ids.count)).")
+        bulk(ids, "approve", done: String(localized: "Approved \(transactionCount(ids.count))."))
     }
 
     private func recompute() async {
@@ -359,8 +388,9 @@ struct TransactionsList: View {
             }
             if toApprove > 0 && !selecting {
                 Section {
-                    Notice(text: "\(transactionCount(toApprove)) to approve", tone: "info", icon: "sparkle",
-                           action: status == "approval" ? nil : "Review", secondary: .init(label: "Approve all", action: approveAll)) { status = "approval" }
+                    Notice(text: String(localized: "\(toApprove) transactions to approve", locale: .app), tone: "info", icon: "sparkle",
+                           action: status == "approval" ? nil : String(localized: "Review"),
+                           secondary: .init(label: String(localized: "Approve all"), action: approveAll)) { status = "approval" }
                 }
                 .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
                 .listRowBackground(Color.clear)
@@ -381,11 +411,13 @@ struct TransactionsList: View {
                 if sections.isEmpty || sections.allSatisfy(\.lines.isEmpty) {
                     Section {
                         if !query.isEmpty || activeFilters > 0 {
-                            EmptyState(title: "No matches", detail: "Nothing matches this search and these filters.", symbol: "magnifyingglass",
-                                       action: "Clear filters") { search = ""; clearFilters() }
+                            EmptyState(title: String(localized: "No matches"), detail: String(localized: "Nothing matches this search and these filters."),
+                                       symbol: "magnifyingglass", action: String(localized: "Clear filters")) { search = ""; clearFilters() }
                         } else {
-                            EmptyState(title: "No transactions here", detail: "Add a purchase, income, or a transfer to see your money in motion.",
-                                       symbol: "arrow.left.arrow.right", action: account?.flag("archived") == true ? nil : "Add a transaction") {
+                            EmptyState(title: String(localized: "No transactions here"),
+                                       detail: String(localized: "Add a purchase, income, or a transfer to see your money in motion."),
+                                       symbol: "arrow.left.arrow.right",
+                                       action: account?.flag("archived") == true ? nil : String(localized: "Add a transaction")) {
                                 editing = TransactionEditorRequest(account: target.account)
                             }
                         }
@@ -416,25 +448,39 @@ struct TransactionsList: View {
         var parts: [String] = []
         if !from.isEmpty || !through.isEmpty { parts.append(dateRangeLabel(from, through)) }
         switch status {
-        case "approval": parts.append("Needs approval")
-        case "uncleared": parts.append("Uncleared")
-        case "cleared": parts.append("Cleared")
-        case "reconciled": parts.append("Reconciled")
-        case "notReconciled": parts.append("Not reconciled")
+        case "approval": parts.append(String(localized: "Needs approval"))
+        case "uncleared": parts.append(String(localized: "Uncleared"))
+        case "cleared": parts.append(String(localized: "Cleared"))
+        case "reconciled": parts.append(String(localized: "Reconciled"))
+        case "notReconciled": parts.append(String(localized: "Not reconciled"))
         default: break
         }
-        if flag == "__any" { parts.append("Flagged") } else if !flag.isEmpty { parts.append("Flag: \(flag.capitalized)") }
-        if category == NeedsCategory && target.category != NeedsCategory { parts.append("Needs a category") }
+        if flag == "__any" { parts.append(String(localized: "Flagged")) }
+        else if !flag.isEmpty { parts.append(String(localized: "Flag: \(flagColorName(flag))")) }
+        if category == NeedsCategory && target.category != NeedsCategory { parts.append(String(localized: "Needs a category")) }
         else if !category.isEmpty && category != target.category { parts.append(categoryName(category)) }
-        if order != "newest" { parts.append(["oldest": "Oldest first", "amount": "By amount", "payee": "By payee"][order] ?? order) }
-        if !minimum.isEmpty || !maximum.isEmpty {
-            parts.append(minimum.isEmpty ? "Up to \(maximum)" : maximum.isEmpty ? "At least \(minimum)" : "\(minimum) to \(maximum)")
-        }
+        if order != "newest" { parts.append(orderLabel) }
+        if !minimum.isEmpty || !maximum.isEmpty { parts.append(amountRange) }
         return parts.joined(separator: " · ")
     }
 
+    private var orderLabel: String {
+        switch order {
+        case "oldest": return String(localized: "Oldest first")
+        case "amount": return String(localized: "By amount")
+        case "payee": return String(localized: "By payee")
+        default: return order
+        }
+    }
+
+    private var amountRange: String {
+        if minimum.isEmpty { return String(localized: "Up to \(maximum)") }
+        if maximum.isEmpty { return String(localized: "At least \(minimum)") }
+        return String(localized: "\(minimum) to \(maximum)")
+    }
+
     private func categoryName(_ id: String) -> String {
-        id == Unassigned ? "Unassigned" : store.budget?.row("categories", id: id)?.text("name") ?? "Category"
+        id == Unassigned ? String(localized: "Unassigned") : store.budget?.row("categories", id: id)?.text("name") ?? String(localized: "Category")
     }
 
     private func clearFilters() {
@@ -470,7 +516,7 @@ struct TransactionsList: View {
             }
             .swipeActions(edge: .trailing) {
                 if !selecting {
-                    Button(role: .destructive) { bulk([line.id], "delete", done: "Deleted \(line.payee).") } label: { Label("Delete", systemImage: "trash") }
+                    Button(role: .destructive) { bulk([line.id], "delete", done: String(localized: "Deleted \(line.payee).")) } label: { Label("Delete", systemImage: "trash") }
                 }
             }
             .contextMenu {
@@ -494,17 +540,19 @@ struct TransactionsList: View {
                     }
                     if line.transfer, line.otherAccount != target.account, let other = store.budget?.row("accounts", id: line.otherAccount) {
                         Button { jump = RegisterTarget(account: line.otherAccount) } label: {
-                            Label("Go to \(other.text("name"))", systemImage: "arrow.right.circle")
+                            Label("Go to \(other.text("name"))", systemImage: "arrow.forward.circle")
                         }
                     }
-                    Button { bulk([line.id], "duplicate", done: "Duplicated \(line.payee).") } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
+                    Button { bulk([line.id], "duplicate", done: String(localized: "Duplicated \(line.payee).")) } label: {
+                        Label("Duplicate", systemImage: "plus.square.on.square")
+                    }
                     Button { asking = AssistantRequest(selected: [line.id]) } label: { Label("Ask the assistant", systemImage: "sparkles") }
                     Button {
                         selecting = true
                         selected = [line.id]
                     } label: { Label("Select", systemImage: "checkmark.circle") }
                     Divider()
-                    Button(role: .destructive) { bulk([line.id], "delete", done: "Deleted \(line.payee).") } label: { Label("Delete", systemImage: "trash") }
+                    Button(role: .destructive) { bulk([line.id], "delete", done: String(localized: "Deleted \(line.payee).")) } label: { Label("Delete", systemImage: "trash") }
                 }
             }
     }
@@ -528,17 +576,17 @@ struct TransactionsList: View {
             ToolbarItemGroup(placement: .bottomBarItems) {
                 let lines = sections?.flatMap(\.lines).filter { selected.contains($0.id) } ?? []
                 if lines.contains(where: { !$0.approved }) {
-                    Button { onSelection("approve") { "Approved \($0)." } } label: { Label("Approve", systemImage: "hand.thumbsup") }
+                    Button { onSelection("approve") { String(localized: "Approved \($0).") } } label: { Label("Approve", systemImage: "hand.thumbsup") }
                 }
                 Button { bulkCategory = true } label: { Label("Category", systemImage: "tag") }.disabled(selected.isEmpty)
                 Spacer()
-                Button { onSelection("status", "cleared") { "Marked \($0) cleared." } } label: { Label("Cleared", systemImage: "checkmark.circle") }
+                Button { onSelection("status", "cleared") { String(localized: "Marked \($0) cleared.") } } label: { Label("Cleared", systemImage: "checkmark.circle") }
                     .disabled(selected.isEmpty)
                 Spacer()
                 Menu {
-                    Button("No flag") { onSelection("flag") { "Removed the flag from \($0)." } }
+                    Button("No flag") { onSelection("flag") { String(localized: "Removed the flag from \($0).") } }
                     ForEach(flagChoices(store.budget ?? [:]), id: \.id) { choice in
-                        Button(choice.name) { onSelection("flag", choice.id) { "Flagged \($0) \(choice.name)." } }
+                        Button(choice.name) { onSelection("flag", choice.id) { String(localized: "Flagged \($0) \(choice.name).") } }
                     }
                 } label: { Label("Flag", systemImage: "flag") }
                 .disabled(selected.isEmpty)
@@ -546,10 +594,10 @@ struct TransactionsList: View {
                 Menu {
                     Button { bulkText = BulkTextRequest(operation: "payee") } label: { Label("Change payee…", systemImage: "storefront") }
                     Button { bulkText = BulkTextRequest(operation: "memo") } label: { Label("Change memo…", systemImage: "text.alignleft") }
-                    Button { onSelection("status", "uncleared") { "Marked \($0) uncleared." } } label: {
+                    Button { onSelection("status", "uncleared") { String(localized: "Marked \($0) uncleared.") } } label: {
                         Label("Mark uncleared", systemImage: "circle.dashed")
                     }
-                    Button { onSelection("duplicate") { "Duplicated \($0)." } } label: {
+                    Button { onSelection("duplicate") { String(localized: "Duplicated \($0).") } } label: {
                         Label("Duplicate", systemImage: "plus.square.on.square")
                     }
                     Button {
@@ -711,35 +759,31 @@ private struct ScheduleLine: View {
         let today = Dates.today
         let next = schedule.text("nextDate")
         let due = !paused && next <= today
-        let splits = t.rows("splits")
-        let categoryName: String? = splits.count > 1 ? "Split"
-            : splits.first?.flag("unassigned") == true ? "To Unassigned"
-            : splits.first.flatMap { store.budget?.row("categories", id: $0.text("categoryId"))?.text("name") }
-        let transferName = store.budget?.row("accounts", id: t.text("transferAccountId"))?.text("name")
+        let categoryName = categoryLabel(t.rows("splits"))
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Image(systemName: "repeat").foregroundStyle(Color.secondary)
-                Text(t.text("payee").isEmpty ? transferName.map { "Transfer: \($0)" } ?? "Scheduled" : t.text("payee"))
+                Text(title(t))
                     .font(.body.weight(.semibold)).foregroundStyle(Color.secondary).lineLimit(1)
                 Spacer()
-                Text((amount > 0 ? "+" : "") + money(amount, currency)).figure(17, weight: .semibold)
+                Text(AppLanguage.leftToRight((amount > 0 ? "+" : "") + money(amount, currency))).figure(17, weight: .semibold)
                     .foregroundStyle(amount > 0 ? Color.urPositive : .secondary)
             }
             HStack(spacing: 8) {
                 if let categoryName { TagChip(text: categoryName) }
-                Text(paused ? "Paused" : when(next, today: today, due: due))
+                Text(paused ? String(localized: "Paused") : when(next, today: today, due: due))
                     .font(.subheadline).foregroundStyle(due ? Color.urWarning : .secondary)
                 Spacer()
                 if !paused {
                     Button("Enter") {
                         store.runCommand("applySchedules", ["through": .string(today), "selected": .string(schedule.text("id"))]) {
-                            store.showToast("Entered \(name).", undo: true)
+                            store.showToast(String(localized: "Entered \(name)."), undo: true)
                         }
                     }
                     .buttonStyle(.bordered).buttonBorderShape(.capsule).controlSize(.small).tint(.urAccent)
                     Button("Skip") {
                         store.runCommand("applySchedules", ["through": .string(today), "selected": .string(schedule.text("id")), "skip": true]) {
-                            store.showToast("Skipped \(name) on \(Money.date(next)).", undo: true)
+                            store.showToast(String(localized: "Skipped \(name) on \(Money.date(next))."), undo: true)
                         }
                     }
                     .buttonStyle(.bordered).buttonBorderShape(.capsule).controlSize(.small)
@@ -758,24 +802,41 @@ private struct ScheduleLine: View {
         }
         .confirmationDialog("Delete the \(name) schedule?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete schedule", role: .destructive) {
-                store.remove("schedules", id: schedule.text("id")) { store.showToast("Deleted the \(name) schedule.", undo: true) }
+                store.remove("schedules", id: schedule.text("id")) { store.showToast(String(localized: "Deleted the \(name) schedule."), undo: true) }
             }
         } message: {
             Text("Transactions it already entered stay.")
         }
     }
 
+    /// The payee, else the account a transfer goes to, else "Scheduled".
+    private func title(_ t: JSON) -> String {
+        if !t.text("payee").isEmpty { return t.text("payee") }
+        guard let transferName = store.budget?.row("accounts", id: t.text("transferAccountId"))?.text("name") else { return String(localized: "Scheduled") }
+        return String(localized: "Transfer: \(transferName)")
+    }
+
+    /// "Split", "To Unassigned" or the category's name, for the chip.
+    private func categoryLabel(_ splits: [JSON]) -> String? {
+        if splits.count > 1 { return String(localized: "category.split", defaultValue: "Split", comment: "In place of a category: the transaction is split.") }
+        if splits.first?.flag("unassigned") == true { return String(localized: "To Unassigned") }
+        return splits.first.flatMap { store.budget?.row("categories", id: $0.text("categoryId"))?.text("name") }
+    }
+
     /// "Due today", "Tomorrow", or the date, as a reminders list words it.
     private func when(_ next: String, today: String, due: Bool) -> String {
-        if next == today { return "Due today" }
-        if due { return "Due \(Money.date(next))" }
-        return next == Dates.addDays(today, 1) ? "Tomorrow" : Money.date(next)
+        if next == today { return String(localized: "Due today") }
+        if due { return String(localized: "Due \(Money.date(next))") }
+        return next == Dates.addDays(today, 1) ? String(localized: "Tomorrow") : Money.date(next)
     }
 
     private var name: String {
         let t = schedule["transaction"]
         if !t.text("payee").isEmpty { return t.text("payee") }
-        return store.budget?.row("accounts", id: t.text("transferAccountId")).map { "Transfer: \($0.text("name"))" } ?? "scheduled transaction"
+        guard let account = store.budget?.row("accounts", id: t.text("transferAccountId"))?.text("name") else {
+            return String(localized: "scheduled transaction")
+        }
+        return String(localized: "Transfer: \(account)")
     }
 }
 
@@ -801,8 +862,8 @@ private struct AccountSummary: View {
                     .foregroundStyle(balance < 0 ? Color.urNegative : .primary)
             }
             HStack(spacing: 24) {
-                Figure(label: "Cleared", value: money(total?.long("cleared") ?? 0, currency))
-                Figure(label: "Uncleared", value: money(total?.long("uncleared") ?? 0, currency))
+                Figure(label: String(localized: "Cleared"), value: money(total?.long("cleared") ?? 0, currency))
+                Figure(label: String(localized: "Uncleared"), value: money(total?.long("uncleared") ?? 0, currency))
             }
             if account.text("kind") == "credit" && !account.flag("archived") {
                 Button(action: pay) { Label("Make a payment", systemImage: "creditcard").frame(maxWidth: .infinity) }
@@ -847,14 +908,16 @@ private struct BulkTextSheet: View {
     @State private var value = ""
 
     var body: some View {
-        FormSheet(title: request.operation == "payee" ? "Change payee" : "Change memo", confirm: "Apply",
+        FormSheet(title: request.operation == "payee" ? String(localized: "Change payee") : String(localized: "Change memo"),
+                  confirm: String(localized: "Apply"),
                   enabled: request.operation == "memo" || !value.trimmingCharacters(in: .whitespaces).isEmpty) {
             try await apply(value.trimmingCharacters(in: .whitespaces))
         } content: {
             Section {
                 TextField(request.operation == "payee" ? "Payee" : "Memo", text: $value)
             } footer: {
-                Text("Applies to \(count == 1 ? "the selected transaction" : "all \(count) selected transactions"). You can undo it.")
+                // One selected transaction reads "Applies to the selected transaction. …" (the singular form).
+                Text("Applies to all \(count) selected transactions. You can undo it.")
             }
         }
         .presentationDetents([.medium])
@@ -874,8 +937,8 @@ private struct RegisterFiltersSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    AmountField(title: "At least", text: $minimum)
-                    AmountField(title: "At most", text: $maximum)
+                    AmountField(title: String(localized: "At least"), text: $minimum)
+                    AmountField(title: String(localized: "At most"), text: $maximum)
                 } header: {
                     Text("Amount")
                 } footer: {
@@ -884,8 +947,8 @@ private struct RegisterFiltersSheet: View {
                 Section("Dates") {
                     Toggle("Custom range", isOn: $custom.animation())
                     if custom {
-                        DayPicker(title: "From", iso: Binding(get: { from.isEmpty ? Dates.addDays(Dates.today, -30) : from }, set: { from = $0 }))
-                        DayPicker(title: "Through", iso: Binding(get: { through.isEmpty ? Dates.today : through }, set: { through = $0 }))
+                        DayPicker(title: String(localized: "From"), iso: Binding(get: { from.isEmpty ? Dates.addDays(Dates.today, -30) : from }, set: { from = $0 }))
+                        DayPicker(title: String(localized: "Through"), iso: Binding(get: { through.isEmpty ? Dates.today : through }, set: { through = $0 }))
                     }
                 }
                 Section {

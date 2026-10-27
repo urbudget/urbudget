@@ -1,5 +1,6 @@
 //! Integer-money envelope accounting. Cash overspending has priority over credit;
 //! funded card spending reserves cash in the corresponding payment category.
+use crate::t;
 use crate::domain::*;
 use chrono::{Datelike, Months, NaiveDate};
 use std::collections::{BTreeMap, HashMap};
@@ -10,7 +11,7 @@ pub fn calculate(b: &Budget, month: &str) -> Result<Summary, String> {
 pub fn calculate_at(b: &Budget, month: &str, as_of: &str) -> Result<Summary, String> {
     let summary = calculate_range_at(b, month, as_of, false)?
         .remove(month)
-        .ok_or("Could not calculate budget.")?;
+        .ok_or_else(|| t!("Could not calculate budget."))?;
     hold_back_future(b, month, as_of, summary)
 }
 /// `month`'s summary as the budget screen shows it, from the one `calculate_history` keeps.
@@ -88,9 +89,9 @@ fn calculate_history_at(b: &Budget, month: &str, as_of: &str) -> Result<BTreeMap
 fn calculate_range_at(b: &Budget, month: &str, as_of: &str, retain_history: bool) -> Result<BTreeMap<String, Summary>, String> {
     validate(b)?;
     let end = NaiveDate::parse_from_str(&format!("{month}-01"), "%Y-%m-%d")
-        .map_err(|_| "Invalid budget month.")?;
+        .map_err(|_| t!("Invalid budget month."))?;
     if !valid_month(month) || !valid_month(as_of) {
-        return Err("Invalid budget month.".into());
+        return Err(t!("Invalid budget month."));
     }
     let na = b.accounts.len();
     let nc = b.categories.len();
@@ -105,9 +106,9 @@ fn calculate_range_at(b: &Budget, month: &str, as_of: &str, retain_history: bool
         if a.month < first { first = a.month.clone(); }
     }
     let mut date = NaiveDate::parse_from_str(&format!("{first}-01"), "%Y-%m-%d")
-        .map_err(|_| "Invalid start month")?;
+        .map_err(|_| t!("Invalid start month"))?;
     if end.year() - date.year() > 200 {
-        return Err("Budget history exceeds 200 years.".into());
+        return Err(t!("Budget history exceeds 200 years."));
     }
     let months = ((end.year() - date.year()) * 12 + end.month() as i32 - date.month() as i32 + 1) as usize;
     validate_history_workload(months, nc, na, nk)?;
@@ -425,7 +426,7 @@ fn calculate_range_at(b: &Budget, month: &str, as_of: &str, retain_history: bool
         if retain_target_history { available_history.insert(m, carry.clone()); }
         date = date
             .checked_add_months(Months::new(1))
-            .ok_or("Invalid month")?;
+            .ok_or_else(|| t!("Invalid month"))?;
     }
     Ok(result)
 }

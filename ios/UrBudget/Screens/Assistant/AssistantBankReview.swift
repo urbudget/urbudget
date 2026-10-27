@@ -39,9 +39,9 @@ struct AssistantBankSummary: Equatable, Sendable {
 
     /// "12 rows · 3 already imported · 2 renamed by your payee rules".
     var text: String {
-        var out = "\(rows) \(rows == 1 ? "row" : "rows")"
-        if duplicates > 0 { out += " · \(duplicates) already imported" }
-        if renamed > 0 { out += " · \(renamed) renamed by your payee rules" }
+        var out = String(localized: "\(rows) rows", locale: .app)
+        if duplicates > 0 { out += " · " + String(localized: "\(duplicates) already imported", locale: .app) }
+        if renamed > 0 { out += " · " + String(localized: "\(renamed) renamed by your payee rules", locale: .app) }
         return out
     }
 }
@@ -62,15 +62,19 @@ enum AssistantBankReview {
         var candidates: [String]
         var previouslyMatched: Set<String>
         var choose: [AssistantBankOption] {
-            [.init(value: "review", label: "Choose a match or add it"), .init(value: "new", label: "Add as a new transaction"), .init(value: "skip", label: "Skip")] + matches
+            let review = AssistantBankOption(value: "review", label: String(localized: "Choose a match or add it"))
+            return [review, Self.add, Self.skip] + matches
         }
         var possible: [AssistantBankOption] {
-            [.init(value: "review", label: "May already be imported — choose"), .init(value: "new", label: "Add as a new transaction"), .init(value: "skip", label: "Skip")] + matches
+            let review = AssistantBankOption(value: "review", label: String(localized: "May already be imported — choose"))
+            return [review, Self.add, Self.skip] + matches
         }
+        static var add: AssistantBankOption { AssistantBankOption(value: "new", label: String(localized: "Add as a new transaction")) }
+        static var skip: AssistantBankOption { AssistantBankOption(value: "skip", label: String(localized: "Skip")) }
     }
 
-    private static let alreadyImported = [AssistantBankOption(value: "skip", label: "Already imported — skip"),
-                                          AssistantBankOption(value: "new", label: "Add as a separate transaction")]
+    private static let alreadyImported = [AssistantBankOption(value: "skip", label: String(localized: "Already imported — skip")),
+                                          AssistantBankOption(value: "new", label: String(localized: "Add as a separate transaction"))]
 
     /// Rows from the engine's `bankPreview`, whose candidates are a shared pool (`candidateSets`).
     static func prepare(_ rows: [JSON], budget: JSON, candidateSets: [JSON], allowIdlessDuplicate: Bool = true) throws -> [AssistantBankRow] {
@@ -96,7 +100,7 @@ enum AssistantBankReview {
                 if let known = pools[number] {
                     set = known
                 } else {
-                    guard number >= 0, number < candidateSets.count else { throw AppError("Bank match details are missing. Preview again.") }
+                    guard number >= 0, number < candidateSets.count else { throw AppError(String(localized: "Bank match details are missing. Preview again.")) }
                     set = pool(candidateSets[number])
                     pools[number] = set
                 }
@@ -116,7 +120,7 @@ enum AssistantBankReview {
                 id: "\(index):\(row.text("id"))", source: small(row), options: options,
                 initial: defaultChoice(duplicate: duplicate, possibleDuplicate: possible, candidates: set.candidates, previouslyMatched: set.previouslyMatched),
                 manualImportId: "bank:manual:\(UUID().uuidString.lowercased())", previouslyMatched: set.previouslyMatched,
-                locked: duplicate && !separate, payee: payee.trimmingCharacters(in: .whitespaces).isEmpty ? "No payee" : payee,
+                locked: duplicate && !separate, payee: payee.trimmingCharacters(in: .whitespaces).isEmpty ? String(localized: "No payee") : payee,
                 bankText: renamed ? row.text("payee") : nil, amount: row.long("amount"), amountText: money(row.long("amount"), currency),
                 duplicate: duplicate, possibleDuplicate: possible, idless: idless,
                 detail: [Money.date(row.text("date")), row.text("memo")].filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.joined(separator: " · "))
@@ -125,16 +129,19 @@ enum AssistantBankReview {
 
     /// "Match: 3 Oct 2026 · Shop · Split 2 · memo · Previously imported", as the desktop labels a match.
     private static func matchLabel(_ id: String, _ saved: JSON?, _ detail: JSON?, _ previously: Bool) -> String {
-        guard let saved else { return "Match: \(id)\(previously ? " · Previously imported" : "")" }
+        guard let saved else {
+            let parts = previously ? [id, String(localized: "Previously imported")] : [id]
+            return String(localized: "Match: \(parts.joined(separator: " · "))")
+        }
         let splits = saved.rows("splits")
         let splitIndex = detail.map { Int($0.long("splitIndex")) }
         let part = splitIndex.flatMap { $0 >= 0 && $0 < splits.count ? splits[$0] : nil }
         let memo = part.map { $0.text("memo") }.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 } ?? saved.text("memo")
-        var out = "Match: \(Money.date(saved.text("date"))) · \(saved.text("payee").isEmpty ? "Transfer" : saved.text("payee"))"
-        if let splitIndex, detail != nil { out += " · Split \(splitIndex + 1)" }
-        if !memo.trimmingCharacters(in: .whitespaces).isEmpty { out += " · \(memo)" }
-        if previously { out += " · Previously imported" }
-        return out
+        var parts = [Money.date(saved.text("date")), saved.text("payee").isEmpty ? String(localized: "Transfer") : saved.text("payee")]
+        if let splitIndex, detail != nil { parts.append(String(localized: "Split \(splitIndex + 1)", locale: .app)) }
+        if !memo.trimmingCharacters(in: .whitespaces).isEmpty { parts.append(memo) }
+        if previously { parts.append(String(localized: "Previously imported")) }
+        return String(localized: "Match: \(parts.joined(separator: " · "))")
     }
 
     /// The row without its candidate pool: matching revalidates against the current ledger.

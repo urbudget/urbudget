@@ -83,6 +83,11 @@
 		F1E8E35F09C6B8671D3A247C /* MoveMoneySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE84C1E0A913660AE476CE4B /* MoveMoneySheet.swift */; };
 		F6FC8ACF989ADC43D9A80DE1 /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C64F66A7BC7889ECE75562D0 /* WelcomeView.swift */; };
 		FE9E42F0F847011D8DB25450 /* BudgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 434CC7B1D9814E9D19D051CB /* BudgetView.swift */; };
+		357FEB019E182EA0232C1675 /* AppLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 452D723F4E4E373B7B036630 /* AppLanguage.swift */; };
+		0EF948DB5AD77351060FF940 /* AppShortcuts.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = D9C74967A325313E646D3E88 /* AppShortcuts.xcstrings */; };
+		D5A1A7F7CF7847EDB4E199D0 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 8CCA2443B49EDADEE953E945 /* InfoPlist.xcstrings */; };
+		A041BEDF18FF9D9E3848DFA0 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = F9E0767DA59FC6B8BB55D2FE /* Localizable.xcstrings */; };
+		8DFFBC6A29B5AD0300229A5C /* LocalizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88C68ABE890E0FF8FA32EA39 /* LocalizationTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -177,6 +182,11 @@
 		F8D38E2F1A866D1AE77F98DF /* HostEvents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostEvents.swift; sourceTree = "<group>"; };
 		FCBC01AC237EAE7D676A6409 /* NativeCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCore.swift; sourceTree = "<group>"; };
 		FE466CE45337249619FDFA75 /* AssistantReport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantReport.swift; sourceTree = "<group>"; };
+		452D723F4E4E373B7B036630 /* AppLanguage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguage.swift; sourceTree = "<group>"; };
+		D9C74967A325313E646D3E88 /* AppShortcuts.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = AppShortcuts.xcstrings; sourceTree = "<group>"; };
+		8CCA2443B49EDADEE953E945 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
+		F9E0767DA59FC6B8BB55D2FE /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		88C68ABE890E0FF8FA32EA39 /* LocalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizationTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -241,6 +251,7 @@
 			children = (
 				1A4206489464FD1DEF185A1A /* AccountTypes.swift */,
 				9DE9E591DFF9E261331301F1 /* AmountPad.swift */,
+				452D723F4E4E373B7B036630 /* AppLanguage.swift */,
 				472FCAAC6103C2C264BADD54 /* AppStoreSubscription.swift */,
 				2381B29DB1FB8DF428D699D9 /* BankNames.swift */,
 				376E302779D401DFE622957F /* BudgetModel.swift */,
@@ -330,8 +341,11 @@
 		A8D402A93A08934824BF9286 /* UrBudget */ = {
 			isa = PBXGroup;
 			children = (
+				D9C74967A325313E646D3E88 /* AppShortcuts.xcstrings */,
 				B74674DCD250F1208F2FC4EA /* Assets.xcassets */,
 				A71B9E79372A9CEE48196154 /* Info.plist */,
+				8CCA2443B49EDADEE953E945 /* InfoPlist.xcstrings */,
+				F9E0767DA59FC6B8BB55D2FE /* Localizable.xcstrings */,
 				E59BC2B3FBCE26F8A765D33C /* App */,
 				E946A216FEDB97330067BF43 /* Bridge */,
 				5FF780264687A16772ABCAC7 /* Core */,
@@ -386,6 +400,7 @@
 				2308A4D9E15006FAC1156CC0 /* AssistantTests.swift */,
 				A06EDC3834B31CCE82F50D45 /* ImportsTests.swift */,
 				120AA288E4DA6DD0D0B3B5FC /* LibraryTests.swift */,
+				88C68ABE890E0FF8FA32EA39 /* LocalizationTests.swift */,
 				D1F850BBE7FADE0098EAD587 /* NewBudgetTests.swift */,
 				C9E8D7981D5A132034CC902C /* PlanningTests.swift */,
 				51F97959B54A7EEF1FDDE0B1 /* ReportsTests.swift */,
@@ -496,6 +511,7 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				Base,
+				ar,
 				en,
 			);
 			mainGroup = CACC658133AB08CAADB923E1;
@@ -517,6 +533,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				9C550AFA0ADECC3EA68E305C /* Assets.xcassets in Resources */,
+				0EF948DB5AD77351060FF940 /* AppShortcuts.xcstrings in Resources */,
+				D5A1A7F7CF7847EDB4E199D0 /* InfoPlist.xcstrings in Resources */,
+				A041BEDF18FF9D9E3848DFA0 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -552,6 +571,7 @@
 				80A7B93D0EAD062457F5F12F /* AssistantTests.swift in Sources */,
 				DFC90330CCFE3C8C2643A568 /* ImportsTests.swift in Sources */,
 				C31059AFBC51D1EE5A66FB1B /* LibraryTests.swift in Sources */,
+				8DFFBC6A29B5AD0300229A5C /* LocalizationTests.swift in Sources */,
 				BBAF9AF2816D33ADEFC2A407 /* NewBudgetTests.swift in Sources */,
 				8E05DDF4C0351C8C6C8EACDC /* PlanningTests.swift in Sources */,
 				06F27676111040868F1514C9 /* ReportsTests.swift in Sources */,
@@ -566,6 +586,7 @@
 				0ED7F7DDC4792231B8AC43D1 /* AccountSyncView.swift in Sources */,
 				17DDE4C42D36D5855B7AD69A /* SyncSubscriptionSection.swift in Sources */,
 				60DB769187A619DA88E1241D /* AppStoreSubscription.swift in Sources */,
+				357FEB019E182EA0232C1675 /* AppLanguage.swift in Sources */,
 				B77086CA620B069A36F8C53F /* AccountTypes.swift in Sources */,
 				4BF85E03BF62E33F9A850FCD /* AccountsView.swift in Sources */,
 				6B4BD0746FF232AF327CD7E5 /* AmountPad.swift in Sources */,
@@ -750,10 +771,12 @@
 					"@executable_path/Frameworks",
 				);
 				LIBRARY_SEARCH_PATHS = "$(BUILT_PRODUCTS_DIR)/rust";
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				OTHER_LDFLAGS = "-lurbudget_ios -liconv";
 				PRODUCT_BUNDLE_IDENTIFIER = app.urbudget.native;
 				PRODUCT_NAME = UrBudget;
 				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "UrBudget/Bridge/UrBudget-Bridging-Header.h";
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -771,10 +794,12 @@
 					"@executable_path/Frameworks",
 				);
 				LIBRARY_SEARCH_PATHS = "$(BUILT_PRODUCTS_DIR)/rust";
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				OTHER_LDFLAGS = "-lurbudget_ios -liconv";
 				PRODUCT_BUNDLE_IDENTIFIER = app.urbudget;
 				PRODUCT_NAME = UrBudget;
 				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "UrBudget/Bridge/UrBudget-Bridging-Header.h";
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};

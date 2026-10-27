@@ -11,20 +11,22 @@ import {
   type LoanTerms,
   type Transaction,
 } from "./types";
+import { msg, t } from "./i18n";
+/** How often a schedule repeats, in English; show with t(). */
 export const frequencies: Record<string, string> = {
-  never: "Once",
-  daily: "Daily",
-  weekly: "Weekly",
-  everyOtherWeek: "Every other week",
-  twiceAMonth: "Twice a month",
-  every4Weeks: "Every four weeks",
-  monthly: "Monthly",
-  everyOtherMonth: "Every other month",
-  every3Months: "Every three months",
-  every4Months: "Every four months",
-  twiceAYear: "Twice a year",
-  yearly: "Yearly",
-  everyOtherYear: "Every other year",
+  never: msg("Once"),
+  daily: msg("Daily"),
+  weekly: msg("Weekly"),
+  everyOtherWeek: msg("Every other week"),
+  twiceAMonth: msg("Twice a month"),
+  every4Weeks: msg("Every four weeks"),
+  monthly: msg("Monthly"),
+  everyOtherMonth: msg("Every other month"),
+  every3Months: msg("Every three months"),
+  every4Months: msg("Every four months"),
+  twiceAYear: msg("Twice a year"),
+  yearly: msg("Yearly"),
+  everyOtherYear: msg("Every other year"),
 };
 
 /*
@@ -58,8 +60,8 @@ export const percent = (milli: number) => `${Number((milli / 1000).toFixed(3))}%
 
 /** A rate as typed, with the budget's decimal mark ("5,25"), as written the usual way ("5.25"). */
 const pointed = (text: string) => {
-  const t = text.trim().replace("%", "");
-  return activeFormat().number.decimal === "," ? t.replace(",", ".") : t;
+  const typed = text.trim().replace("%", "");
+  return activeFormat().number.decimal === "," ? typed.replace(",", ".") : typed;
 };
 /** Basis points as someone would type the rate: "5.25", or "5,25" with a comma decimal mark. */
 export const rateText = (basisPoints: number) => String(basisPoints / 100).replace(".", activeFormat().number.decimal);
@@ -69,18 +71,18 @@ export function parseRate(text: string) {
   try {
     n = parseMoney(pointed(text));
   } catch {
-    throw new Error("Enter the interest rate as a percentage, like 5.25.");
+    throw new Error(t("Enter the interest rate as a percentage, like 5.25."));
   }
-  if (n < 0 || n > 100000) throw new Error("The interest rate must be from 0 to 1,000%.");
+  if (n < 0 || n > 100000) throw new Error(t("The interest rate must be from 0 to 1,000%."));
   return n;
 }
 /** A dated rate change ("5.125") in thousandths of a percent. */
 export function parseRateChange(text: string) {
-  const t = pointed(text);
-  if (!/^\d+(\.\d{1,3})?$/.test(t)) throw new Error("Enter a rate with up to three decimals.");
-  const [whole, fraction = ""] = t.split(".");
+  const typed = pointed(text);
+  if (!/^\d+(\.\d{1,3})?$/.test(typed)) throw new Error(t("Enter a rate with up to three decimals."));
+  const [whole, fraction = ""] = typed.split(".");
   const n = Number(whole) * 1000 + Number(fraction.padEnd(3, "0"));
-  if (n > 1000000) throw new Error("Rate must be between 0 and 1,000%.");
+  if (n > 1000000) throw new Error(t("Rate must be between 0 and 1,000%."));
   return n;
 }
 

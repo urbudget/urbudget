@@ -17,6 +17,10 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.urbudget.nativeapp.BudgetViewModel
+import app.urbudget.nativeapp.Money
+import app.urbudget.nativeapp.R
+import app.urbudget.nativeapp.Words
+import androidx.compose.ui.res.stringResource
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.LocalDate
@@ -58,17 +62,17 @@ internal fun CardPaymentSheet(cardId: String, budget: JSONObject, summary: JSONO
     val pay = {
         runCatching {
             requireCurrentBudget(openedBudget, vm)
-            require(from.isNotBlank()) { "Choose the account the payment comes from." }
-            require(amount > 0) { "Enter an amount to pay." }
+            require(from.isNotBlank()) { Words[R.string.loan_payment_account_required] }
+            require(amount > 0) { Words[R.string.loan_payment_amount_required] }
             vm.saveTransaction(JSONObject().put("id", paymentId).put("accountId", from).put("date", date).put("payee", "").put("memo", memo)
                 .put("amount", -amount).put("status", "uncleared").put("approved", true).put("flag", JSONObject.NULL)
                 .put("transferAccountId", cardId).put("transferStatus", "uncleared")
                 .put("splits", JSONArray().put(JSONObject().put("categoryId", JSONObject.NULL).put("unassigned", false).put("amount", -amount))))
-            toast("Paid ${money(amount, currency)} to ${card.text("name")}.", true)
+            toast(Words[R.string.card_paid_toast, money(amount, currency), card.text("name")], true)
         }.onSuccess { close() }.onFailure { error = it.message }
     }
     UrSheet(close) {
-        SheetHeader("Pay ${card.text("name")}", close, null, null, cancelFirst = true)
+        SheetHeader(stringResource(R.string.loan_pay_title, card.text("name")), close, null, null, cancelFirst = true)
         Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = Gutter).padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             ListCard {
                 @Composable
@@ -83,26 +87,26 @@ internal fun CardPaymentSheet(cardId: String, budget: JSONObject, summary: JSONO
                         figure?.let { Text(money(it, currency), style = MaterialTheme.typography.bodyLarge.merge(Tabular), fontWeight = FontWeight.SemiBold, color = ur.text) }
                     }
                 }
-                if (category != null) { Option("aside", "What's set aside", "In the ${category.text("name")} payment category", aside); Hairline(start = 52.dp) }
-                Option("balance", "The whole balance", "Pays the card off", owed)
+                if (category != null) { Option("aside", stringResource(R.string.card_set_aside_option), stringResource(R.string.card_set_aside_detail, category.text("name")), aside); Hairline(start = 52.dp) }
+                Option("balance", stringResource(R.string.card_whole_balance), stringResource(R.string.card_whole_balance_detail), owed)
                 Hairline(start = 52.dp)
-                Option("other", "Another amount", if (choice == "other") (if (pad.isSum) pad.display() else money(pad.cents ?: 0, currency)) else "Type it on the keypad", null)
+                Option("other", stringResource(R.string.card_another_amount), if (choice == "other") (if (pad.isSum) Money.ltr(pad.display()) else money(pad.cents ?: 0, currency)) else stringResource(R.string.card_type_on_keypad), null)
             }
             ListCard {
-                ListRow("From", subtitle = sources.firstOrNull { it.text("id") == from }?.text("name") ?: "Choose account", onClick = { picking = true; keypad = false }, divider = true)
-                ListRow("Date", subtitle = app.urbudget.nativeapp.Money.date(date), onClick = { dating = true; keypad = false })
+                ListRow(stringResource(R.string.date_from), subtitle = sources.firstOrNull { it.text("id") == from }?.text("name") ?: stringResource(R.string.account_choose), onClick = { picking = true; keypad = false }, divider = true)
+                ListRow(stringResource(R.string.common_date), subtitle = Money.date(date), onClick = { dating = true; keypad = false })
             }
-            Field(memo, { memo = it }, "Memo (optional)")
-            Text("The payment is a transfer from the cash account to the card: it uses money already set aside, so it doesn't change any category.",
+            Field(memo, { memo = it }, stringResource(R.string.memo_optional))
+            Text(stringResource(R.string.card_payment_help),
                 color = ur.muted, style = MaterialTheme.typography.bodySmall)
             FormError(error)
-            if (!keypad) PrimaryButton("Pay ${money(amount, currency)}", { pay() }, Modifier.fillMaxWidth(), enabled = amount > 0, icon = Icons.Outlined.CreditCard)
+            if (!keypad) PrimaryButton(stringResource(R.string.loan_pay_amount, money(amount, currency)), { pay() }, Modifier.fillMaxWidth(), enabled = amount > 0, icon = Icons.Outlined.CreditCard)
         }
         if (keypad) AmountKeypad(pad, { keypad = false })
     }
     if (dating) DatePickerSheet(date, { date = it; dating = false }) { dating = false }
     if (picking) UrSheet({ picking = false }) {
-        SheetHeader("Pay from", { picking = false }, null, null)
+        SheetHeader(stringResource(R.string.card_pay_from), { picking = false }, null, null)
         Column(Modifier.padding(horizontal = Gutter).padding(bottom = 24.dp)) {
             ListCard {
                 sources.forEachIndexed { index, account ->

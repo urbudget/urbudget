@@ -3,6 +3,7 @@ import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight } from "lucide-rea
 import { Popover } from "./Popover";
 import { DateInput } from "./DateInput";
 import { formatDate, monthName } from "../format";
+import { monthNames, msg, t } from "../i18n";
 
 const SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -16,7 +17,7 @@ const thisMonth = () => iso(new Date()).slice(0, 7);
 export function MonthPicker({
   value,
   onChange,
-  label = "Choose month",
+  label = t("Choose month"),
   text,
 }: {
   value: string;
@@ -51,16 +52,16 @@ export function MonthPicker({
       </button>
       <Popover open={open} onClose={() => setOpen(false)} anchor={button} label={label} className="month-grid">
         <div className="month-grid-head">
-          <button className="icon-button" aria-label="Previous year" onClick={() => setYear(year - 1)}>
+          <button className="icon-button" aria-label={t("Previous year")} onClick={() => setYear(year - 1)}>
             <ChevronLeft size={15} />
           </button>
           <strong>{year}</strong>
-          <button className="icon-button" aria-label="Next year" onClick={() => setYear(year + 1)}>
+          <button className="icon-button" aria-label={t("Next year")} onClick={() => setYear(year + 1)}>
             <ChevronRight size={15} />
           </button>
         </div>
         <div className="month-grid-body">
-          {SHORT.map((name, i) => {
+          {(monthNames() ?? SHORT).map((name, i) => {
             const month = `${year}-${pad(i + 1)}`;
             return (
               <button
@@ -85,7 +86,7 @@ export function MonthPicker({
             setOpen(false);
           }}
         >
-          This month
+          {t("This month")}
         </button>
       </Popover>
     </>
@@ -104,16 +105,17 @@ export type RangePreset =
   | "custom";
 /** `from`/`to` are inclusive dates ("YYYY-MM-DD") or months ("YYYY-MM"); "" means unbounded. */
 export type DateRange = { preset: RangePreset; from: string; to: string };
+/** English labels, to show with `t(presetLabels[preset])`. */
 export const presetLabels: Record<RangePreset, string> = {
-  thisMonth: "This month",
-  lastMonth: "Last month",
-  last3: "Last 3 months",
-  last6: "Last 6 months",
-  last12: "Last 12 months",
-  ytd: "Year to date",
-  lastYear: "Last year",
-  all: "All dates",
-  custom: "Custom range",
+  thisMonth: msg("This month"),
+  lastMonth: msg("Last month"),
+  last3: msg("Last 3 months"),
+  last6: msg("Last 6 months"),
+  last12: msg("Last 12 months"),
+  ytd: msg("Year to date"),
+  lastYear: msg("Last year"),
+  all: msg("All dates"),
+  custom: msg("Custom range"),
 };
 
 /** The dates a preset covers, at day or month granularity, relative to `today`. */
@@ -146,7 +148,7 @@ export function rangeFor(
 }
 
 const describe = (r: DateRange, granularity: "day" | "month") => {
-  if (r.preset !== "custom") return presetLabels[r.preset];
+  if (r.preset !== "custom") return t(presetLabels[r.preset]);
   const show = (v: string) => (!v ? "…" : granularity === "month" ? monthName(v, "short") : formatDate(v));
   return `${show(r.from)} – ${show(r.to)}`;
 };
@@ -157,7 +159,7 @@ export function DateRangePicker({
   onChange,
   granularity = "day",
   earliest = "",
-  label = "Date range",
+  label = t("Date range"),
 }: {
   value: DateRange;
   onChange: (range: DateRange) => void;
@@ -187,7 +189,7 @@ export function DateRangePicker({
         <CalendarDays size={15} /> {describe(value, granularity)}
       </button>
       <Popover open={open} onClose={() => setOpen(false)} anchor={button} label={label} className="range-popover">
-        <div className="range-presets" role="listbox" aria-label="Presets">
+        <div className="range-presets" role="listbox" aria-label={t("Presets")}>
           {(Object.keys(presetLabels) as RangePreset[])
             .filter((p) => p !== "custom")
             .map((p) => (
@@ -202,7 +204,7 @@ export function DateRangePicker({
                   setOpen(false);
                 }}
               >
-                {presetLabels[p]}
+                {t(presetLabels[p])}
               </button>
             ))}
         </div>
@@ -215,24 +217,24 @@ export function DateRangePicker({
             setOpen(false);
           }}
         >
-          <strong>Custom range</strong>
+          <strong>{t("Custom range")}</strong>
           <label>
-            From
+            {t("From")}
             {type === "date" ? (
-              <DateInput label="From" value={from} onChange={setFrom} />
+              <DateInput label={t("From")} value={from} onChange={setFrom} />
             ) : (
               <input type={type} value={from} onChange={(e) => setFrom(e.target.value)} />
             )}
           </label>
           <label>
-            To
+            {t("To")}
             {type === "date" ? (
-              <DateInput label="To" value={to} onChange={setTo} />
+              <DateInput label={t("To")} value={to} onChange={setTo} />
             ) : (
               <input type={type} value={to} onChange={(e) => setTo(e.target.value)} />
             )}
           </label>
-          <button className="primary">Apply</button>
+          <button className="primary">{t("Apply")}</button>
         </form>
       </Popover>
     </>

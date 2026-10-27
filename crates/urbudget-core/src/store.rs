@@ -1,3 +1,4 @@
+use crate::t;
 use crate::domain::*;
 use crate::patch::{Collection, Keyed, Patch};
 use chrono::Utc;
@@ -431,7 +432,7 @@ impl Store {
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .map_err(error)?;
         if version > SCHEMA_VERSION {
-            return Err("This database was created by a newer UrBudget version.".into());
+            return Err(t!("This database was created by a newer UrBudget version."));
         }
         connection.execute_batch("BEGIN IMMEDIATE;
             CREATE TABLE IF NOT EXISTS metadata (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, saved_at TEXT NOT NULL, name TEXT NOT NULL, currency TEXT NOT NULL);
@@ -478,14 +479,14 @@ impl Store {
         };
         let preferences: BackupPreferences = serde_json::from_slice(&bytes).map_err(error)?;
         if ![0, 5, 10, 30].contains(&preferences.keep) {
-            return Err("Invalid backup retention setting.".into());
+            return Err(t!("Invalid backup retention setting."));
         }
         Ok(preferences.keep)
     }
 
     pub fn set_backup_retention(&self, keep: usize) -> Result<()> {
         if ![0, 5, 10, 30].contains(&keep) {
-            return Err("Choose all backups, or the newest 5, 10 or 30.".into());
+            return Err(t!("Choose all backups, or the newest 5, 10 or 30."));
         }
         write_atomic(&self.backup_preferences, &serde_json::to_vec(&BackupPreferences { keep }).map_err(error)?)
     }
@@ -707,7 +708,7 @@ impl Store {
     /// A fresh start must use the same source snapshot the window used for its balances.
     pub fn fresh_start_source(&mut self, patch: Option<Patch>, expected_token: &str) -> Result<Budget> {
         if self.status()?.token != expected_token || self.cache()?.token != expected_token {
-            return Err("CONFLICT: The source budget changed. Fetch it and try the fresh start again.".into());
+            return Err(t!("CONFLICT: The source budget changed. Fetch it and try the fresh start again."));
         }
         self.full_draft(patch)
     }
@@ -759,7 +760,7 @@ impl Store {
             .map_err(error)?;
         let current = Self::status_from(&tx, path, id)?;
         if current.token != expected_token || cache.token != expected_token {
-            return Err("CONFLICT: The database changed. Your edits are safe in the recovery draft. Fetch the database or export your draft before continuing.".into());
+            return Err(t!("CONFLICT: The database changed. Your edits are safe in the recovery draft. Fetch the database or export your draft before continuing."));
         }
         if patch.is_empty() && !cache.heavy_dirty {
             return Ok(current);
@@ -785,7 +786,7 @@ impl Store {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(error)?;
         if Self::status_from(&tx, &self.path, &self.id)?.token != expected_token {
-            return Err("CONFLICT: The database changed. Your edits are safe in the recovery draft. Fetch the database or export your draft before continuing.".into());
+            return Err(t!("CONFLICT: The database changed. Your edits are safe in the recovery draft. Fetch the database or export your draft before continuing."));
         }
         // A complete snapshot commits atomically; a crash can never leave half a transfer or split.
         tx.execute_batch("DELETE FROM transactions; DELETE FROM assignments; DELETE FROM accounts; DELETE FROM categories;").map_err(error)?;
@@ -882,7 +883,7 @@ impl Store {
     /// and heavy extras stay as they are. Refused while the window has unsaved edits.
     pub fn save_synced(&mut self, budget: &Budget, expected_token: &str, revision: u64, base: &Budget) -> Result<Status> {
         if self.has_unsaved_draft() {
-            return Err("Save your changes first.".into());
+            return Err(t!("Save your changes first."));
         }
         validate(budget)?;
         self.cache()?;
@@ -900,7 +901,7 @@ impl Store {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(error)?;
         if Self::status_from(&tx, path, id)?.token != expected_token || cache.token != expected_token {
-            return Err("CONFLICT: The database changed while syncing. Sync tries again shortly.".into());
+            return Err(t!("CONFLICT: The database changed while syncing. Sync tries again shortly."));
         }
         if !patch.is_empty() {
             write_changes(&tx, &cache.persisted, &budget, &patch, &cache.heavy_json, false)?;
@@ -918,10 +919,10 @@ impl Store {
     pub fn run_schedules(&mut self, expected_token: &str, through: &str) -> Result<Snapshot> {
         let mut status = self.status()?;
         if status.token != expected_token || self.cache()?.token != expected_token {
-            return Err("CONFLICT: Database changed before scheduled posting.".into());
+            return Err(t!("CONFLICT: Database changed before scheduled posting."));
         }
         if self.has_unsaved_draft() {
-            return Err("Save your changes before posting scheduled transactions.".into());
+            return Err(t!("Save your changes before posting scheduled transactions."));
         }
         let cache = self.cache()?;
         let mut next = cache.persisted.clone();
@@ -952,7 +953,7 @@ impl Store {
         let directory = self
             .path
             .parent()
-            .ok_or("Missing database directory")?
+            .ok_or_else(|| t!("Missing database directory"))?
             .join("backups");
         std::fs::create_dir_all(&directory).map_err(error)?;
         let path = directory.join(format!(
@@ -988,7 +989,7 @@ impl Store {
     pub fn restore_backup(&mut self, budget: &Budget, expected_token: &str) -> Result<Snapshot> {
         validate(budget)?;
         if self.status()?.token != expected_token {
-            return Err("CONFLICT: The database changed. Fetch the saved budget before restoring.".into());
+            return Err(t!("CONFLICT: The database changed. Fetch the saved budget before restoring."));
         }
         self.backup()?;
         self.save(budget, expected_token)?;
@@ -1003,7 +1004,7 @@ impl Store {
         let directory = self
             .path
             .parent()
-            .ok_or("Missing database directory")?
+            .ok_or_else(|| t!("Missing database directory"))?
             .join("backups");
         let Ok(entries) = std::fs::read_dir(&directory) else {
             return Ok(0);

@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { read, type BankFixes, type BankSession } from "../bridge";
 import type { Patch } from "../patch";
 import type { Budget } from "../types";
+import { t } from "../i18n";
 
 export type Provider = "chatgpt" | "openai" | "anthropic";
 export type Status = {
@@ -172,7 +173,7 @@ const dataUrl = (file: Blob, name: string) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error(`${name} couldn't be read.`));
+    reader.onerror = () => reject(new Error(t("{name} couldn't be read.", { name })));
     reader.readAsDataURL(file);
   });
 /** Photos over this size are scaled down first; some models refuse images above 5 MB. */

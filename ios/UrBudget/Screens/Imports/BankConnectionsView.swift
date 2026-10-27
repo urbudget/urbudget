@@ -1,6 +1,6 @@
 import SwiftUI
 
-private let checkedAgain = "Your budget changed, so these rows were checked again. Look them over, then import."
+private let checkedAgain = String(localized: "Your budget changed, so these rows were checked again. Look them over, then import.")
 
 /// Nothing to import: every row is already in the budget (BankSync.tsx's nothingNew).
 private func nothingNew(_ review: JSON) -> Bool {
@@ -143,7 +143,7 @@ struct BankConnectionsView: View {
         } message: {
             Text("UrBudget forgets the connection. Linked accounts keep their transactions. SimpleFIN Bridge keeps the bank connection until you remove it there too.")
         }
-        .confirmationDialog("Unlink \(unlinking?.text("name") ?? "this account")?", isPresented: Binding(get: { unlinking != nil }, set: { if !$0 { unlinking = nil } }),
+        .confirmationDialog(unlinkTitle, isPresented: Binding(get: { unlinking != nil }, set: { if !$0 { unlinking = nil } }),
                             titleVisibility: .visible) {
             Button("Unlink", role: .destructive) {
                 if let bank = unlinking { unlink(bank) }
@@ -159,6 +159,11 @@ struct BankConnectionsView: View {
         }
     }
 
+    private var unlinkTitle: Text {
+        guard let unlinking else { return Text("Unlink this account?") }
+        return Text("Unlink \(unlinking.text("name"))?")
+    }
+
     private var messages: [String] {
         var seen: [String] = []
         for message in (status?["messages"].array ?? []) + (download?["messages"].array ?? []) where !message.string.isEmpty {
@@ -171,9 +176,10 @@ struct BankConnectionsView: View {
 
     private var connectSection: some View {
         let available = !(status?["store"].isNull ?? true)
+        let keptIn = credentialStore.isEmpty ? String(localized: "this device's credential store") : credentialStore
         return Section {
             if !available {
-                Notice(text: "Bank sync needs a system credential store, which this device doesn't have.", tone: "negative")
+                Notice(text: String(localized: "Bank sync needs a system credential store, which this device doesn't have."), tone: "negative")
                     .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
             }
             SecureField("SimpleFIN setup token", text: $token)
@@ -185,12 +191,14 @@ struct BankConnectionsView: View {
         } header: {
             Text("Connect your bank")
         } footer: {
-            Text("Make a setup token at SimpleFIN Bridge and paste it here. It works once. Your bank login stays with SimpleFIN. The connection is kept in \(credentialStore.isEmpty ? "this device's credential store" : credentialStore), out of budget backups.")
+            Text("Make a setup token at SimpleFIN Bridge and paste it here. It works once. Your bank login stays with SimpleFIN. The connection is kept in \(keptIn), out of budget backups.")
         }
     }
 
     private var connectionSection: some View {
-        let requests = "\(status?.long("requestsToday") ?? 0) of \(status?.long("dailyLimit") ?? 0) requests used today"
+        let used = status?.long("requestsToday") ?? 0
+        let limit = status?.long("dailyLimit") ?? 0
+        let requests = String(localized: "\(used) of \(limit) requests used today", locale: .app)
         let linked = !linkedAccounts.isEmpty
         return Section {
             HStack(spacing: 12) {
@@ -201,12 +209,14 @@ struct BankConnectionsView: View {
                 }
             }
             Button { downloadActivity() } label: {
-                BankActionRow(title: "Download activity", detail: linked ? "From every linked account, then review one account at a time" : "Link a budget account first",
+                BankActionRow(title: String(localized: "Download activity"),
+                              detail: linked ? String(localized: "From every linked account, then review one account at a time") : String(localized: "Link a budget account first"),
                               symbol: "icloud.and.arrow.down")
             }
             .disabled(busy || !linked)
             Button { run { status = try await store.service("simplefin_accounts") } } label: {
-                BankActionRow(title: "Refresh accounts", detail: "Lists your bank accounts and balances again. Uses one request.", symbol: "arrow.clockwise")
+                BankActionRow(title: String(localized: "Refresh accounts"), detail: String(localized: "Lists your bank accounts and balances again. Uses one request."),
+                              symbol: "arrow.clockwise")
             }
             .disabled(busy)
         } footer: {
@@ -252,10 +262,7 @@ struct BankConnectionsView: View {
     }
 
     private func bankRow(_ bank: JSON, linked: JSON?) -> some View {
-        let lastSync = linked?["simplefin"].text("lastSync") ?? ""
-        let subtitle = [bank.text("org").isEmpty ? nil : bank.text("org"),
-                        linked.map { "Linked to \($0.text("name")) · Last sync \(lastSync.isEmpty ? "never" : Money.date(lastSync))" } ?? "Not linked"]
-            .compactMap { $0 }.joined(separator: " · ")
+        let subtitle = ImportsText.line([bank.text("org").isEmpty ? nil : bank.text("org"), linkText(linked)].compactMap { $0 })
         return HStack(spacing: 12) {
             BankRowIcon(symbol: "building.columns", tint: linked == nil ? .secondary : .urAccent)
             VStack(alignment: .leading, spacing: 2) {
@@ -268,6 +275,16 @@ struct BankConnectionsView: View {
                     .monospacedDigit().foregroundStyle(bank.long("balance") < 0 ? Color.urNegative : .primary)
             }
         }
+    }
+
+    /// "Linked to Checking · Last sync 2026-10-01", or "Not linked".
+    private func linkText(_ linked: JSON?) -> String {
+        guard let linked else { return String(localized: "Not linked") }
+        let name = linked.text("name")
+        let lastSync = linked["simplefin"].text("lastSync")
+        guard !lastSync.isEmpty else { return String(localized: "Linked to \(name) · Last sync never") }
+        let date = Money.date(lastSync)
+        return String(localized: "Linked to \(name) · Last sync \(date)")
     }
 
     private var downloadSection: some View {
@@ -291,7 +308,7 @@ struct BankConnectionsView: View {
                     first = nil
                     reviewing = true
                 } label: {
-                    Text(pending.count == 1 ? "Review 1 account" : "Review \(pending.count) accounts")
+                    Text("Review \(pending.count) accounts")
                         .fontWeight(.semibold).frame(maxWidth: .infinity)
                 }
                 .disabled(busy)
@@ -304,23 +321,32 @@ struct BankConnectionsView: View {
     }
 
     private func entryRow(_ entry: SyncEntry, open: Bool) -> some View {
-        let state: String
-        if !entry.error.isEmpty { state = entry.error }
-        else if imported.contains(entry.accountId) { state = "Reviewed" }
-        else if entry.quiet { state = "Up to date" }
-        else if skipped.contains(entry.accountId) { state = "Skipped for now · \(entry.fresh) new" }
-        else { state = "\(entry.fresh) new to review" }
-        let balance = entry.bankBalance.map { "Bank balance \($0)\(entry.bankDate.map { " on \($0)" } ?? "")" }
         let tint: Color = !entry.error.isEmpty ? .urNegative : open ? .urAccent : .urPositive
         return HStack(spacing: 12) {
             BankRowIcon(symbol: !entry.error.isEmpty ? "exclamationmark.triangle" : open ? "checklist" : "checkmark", tint: tint)
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.name).foregroundStyle(Color.primary)
-                Text([state, balance].compactMap { $0 }.joined(separator: " · ")).font(.footnote).foregroundStyle(Color.secondary)
+                Text(entryDetail(entry)).font(.footnote).foregroundStyle(Color.secondary)
             }
             Spacer(minLength: 0)
-            if open { Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Color.urTertiary) }
+            if open { Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(Color.urTertiary) }
         }
+    }
+
+    /// Where a downloaded account is up to, and the bank's balance: "3 new to review · Bank balance 120.00 SAR on 2026-10-21".
+    private func entryDetail(_ entry: SyncEntry) -> String {
+        let state: String
+        let fresh = entry.fresh
+        if !entry.error.isEmpty { state = entry.error }
+        else if imported.contains(entry.accountId) { state = String(localized: "Reviewed") }
+        else if entry.quiet { state = String(localized: "Up to date") }
+        else if skipped.contains(entry.accountId) { state = String(localized: "Skipped for now · \(fresh) new", locale: .app) }
+        else { state = String(localized: "\(fresh) new to review", locale: .app) }
+        guard let amount = entry.bankBalance else { return state }
+        let balance: String
+        if let date = entry.bankDate { balance = String(localized: "Bank balance \(amount) on \(date)") }
+        else { balance = String(localized: "Bank balance \(amount)") }
+        return ImportsText.line([state, balance])
     }
 
     @ViewBuilder private var reviewSheet: some View {
@@ -345,7 +371,8 @@ struct BankConnectionsView: View {
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
-                        EmptyState(title: "Nothing left to review", detail: error ?? "Every downloaded account is reviewed or skipped.", symbol: "checkmark.circle")
+                        EmptyState(title: String(localized: "Nothing left to review"),
+                                   detail: error ?? String(localized: "Every downloaded account is reviewed or skipped."), symbol: "checkmark.circle")
                     }
                 }
                 .navigationTitle("Review bank activity")
@@ -424,7 +451,7 @@ struct BankConnectionsView: View {
         attempted = revision
         let result = try await store.service("simplefin_sync", ["refresh": .bool(refresh), "expectedToken": .string(revision)])
         guard store.revision == revision else {
-            throw AppError("The budget changed while downloading. Refresh the bank review before importing.")
+            throw AppError(String(localized: "The budget changed while downloading. Refresh the bank review before importing."))
         }
         download = result
         reviewBudget = budget
@@ -459,7 +486,7 @@ struct BankConnectionsView: View {
             if !pending.isEmpty {
                 reviewing = true
             } else if entries.allSatisfy({ $0.error.isEmpty }) {
-                notice = "Nothing new to import."
+                notice = String(localized: "Nothing new to import.")
             }
         }
     }
@@ -472,8 +499,10 @@ struct BankConnectionsView: View {
                                                              "expectedToken": .string(revision)], changesBudget: true)
             imported.insert(entry.accountId)
             if first == entry.accountId { first = nil }
-            store.showToast(count > 0 ? "Imported \(count) \(count == 1 ? "transaction" : "transactions") into \(entry.name). They're waiting for your approval."
-                                      : "\(entry.name) is checked through \(Money.date(through)).", undo: true)
+            let name = entry.name
+            let date = Money.date(through)
+            store.showToast(count > 0 ? String(localized: "Imported \(count) transactions into \(name). They're waiting for your approval.", locale: .app)
+                                      : String(localized: "\(name) is checked through \(date)."), undo: true)
             importing = false
             // The other accounts' rows are checked against the budget with this import in it.
             try await sync(refresh: false)
@@ -551,7 +580,7 @@ private struct BankLinkSheet: View {
                 }
                 Section {
                     NavigationLink(value: LinkRoute.account) {
-                        LabeledContent("Budget account", value: chosen?.text("name") ?? "Choose")
+                        LabeledContent("Budget account", value: chosen?.text("name") ?? String(localized: "Choose"))
                     }
                     DatePicker("First import from", selection: Binding(get: { Dates.pickerDate(from) }, set: { from = Dates.fromPicker($0) }),
                                in: Dates.pickerDate(Dates.addDays(today, -365))...Dates.pickerDate(today), displayedComponents: .date)
@@ -599,25 +628,28 @@ private struct BankLinkSheet: View {
     }
 
     private func footer(otherLink: Bool, chosen: String, lastSync: String) -> String {
-        var parts = ["Up to one year of history, downloaded in 45-day windows. Each window uses one request.",
-                     "Reverse the signs for a card whose purchases arrive as money in."]
-        if !lastSync.isEmpty { parts.append("Synced through \(Money.date(lastSync)); the next download starts a week before that.") }
-        if otherLink { parts.append("\(chosen) is linked to another bank account now. Linking it here replaces that link.") }
+        var parts = [String(localized: "Up to one year of history, downloaded in 45-day windows. Each window uses one request."),
+                     String(localized: "Reverse the signs for a card whose purchases arrive as money in.")]
+        if !lastSync.isEmpty {
+            let date = Money.date(lastSync)
+            parts.append(String(localized: "Synced through \(date); the next download starts a week before that."))
+        }
+        if otherLink { parts.append(String(localized: "\(chosen) is linked to another bank account now. Linking it here replaces that link.")) }
         return parts.joined(separator: " ")
     }
 
     private func save() {
         attempt($error) {
-            guard Dates.day(from) != nil, from <= Dates.today else { throw AppError("Choose today or an earlier date.") }
+            guard Dates.day(from) != nil, from <= Dates.today else { throw AppError(String(localized: "Choose today or an earlier date.")) }
             let currency = bank.text("currency")
-            guard currency.isEmpty || currency == store.currency else { throw AppError("This bank account uses a different currency.") }
+            guard currency.isEmpty || currency == store.currency else { throw AppError(String(localized: "This bank account uses a different currency.")) }
             let bankId = bankId
             let accountId = account
             let from = from
             let flip = flip
             store.edit { budget in
                 var rows = budget["accounts"].array
-                guard let index = rows.firstIndex(where: { $0.text("id") == accountId }) else { throw AppError("Choose an account.") }
+                guard let index = rows.firstIndex(where: { $0.text("id") == accountId }) else { throw AppError(String(localized: "Choose an account.")) }
                 // The same account staying linked keeps its last sync, so the next download continues from there.
                 var link: JSON = rows[index]["simplefin"].text("id") == bankId ? rows[index]["simplefin"] : [:]
                 link["id"] = .string(bankId)
@@ -675,7 +707,7 @@ private struct BankSyncReview: View {
             if let message = error ?? problem { FormErrorView(message: message) }
             if let summary {
                 if summary.allIn && entry.credit {
-                    Notice(text: "Every new row from this card came in as money in. If these are purchases, the bank sends signs the other way round: turn on Reverse bank amount signs for its link.",
+                    Notice(text: String(localized: "Every new row from this card came in as money in. If these are purchases, the bank sends signs the other way round: turn on Reverse bank amount signs for its link."),
                            icon: "arrow.up.arrow.down")
                         .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
                 }
@@ -721,18 +753,24 @@ private struct BankSyncReview: View {
     }
 
     private var headerSection: some View {
-        let details = [summary.map(BankReview.countsText), after > 0 ? "\(after) more after this" : nil].compactMap { $0 }.joined(separator: " · ")
+        let parts = [summary.map(BankReview.countsText), after > 0 ? String(localized: "\(after) more after this", locale: .app) : nil].compactMap { $0 }
+        let details = parts.isEmpty ? String(localized: "Checking matches…") : ImportsText.line(parts)
         return Section {
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(entry.bank.isEmpty ? "SimpleFIN" : entry.bank) into \(entry.name)").font(.headline)
-                Text(details.isEmpty ? "Checking matches…" : details).font(.footnote).foregroundStyle(Color.secondary)
+                Text(details).font(.footnote).foregroundStyle(Color.secondary)
             }
             HStack(alignment: .top) {
-                Figure(label: entry.bankDate.map { "At the bank on \($0)" } ?? "At the bank", value: entry.bankBalance ?? "Not sent")
+                Figure(label: bankLabel, value: entry.bankBalance ?? String(localized: "Not sent"))
                 Spacer(minLength: 12)
-                Figure(label: "UrBudget, before this import", value: ours, alignment: .trailing)
+                Figure(label: String(localized: "UrBudget, before this import"), value: ours, alignment: .trailing)
             }
         }
+    }
+
+    private var bankLabel: String {
+        guard let date = entry.bankDate else { return String(localized: "At the bank") }
+        return String(localized: "At the bank on \(date)")
     }
 
     private func prepare() async {
