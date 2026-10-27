@@ -1,4 +1,5 @@
 import { Download, LoaderCircle, RefreshCw } from "lucide-react";
+import { usePref } from "./prefs";
 import type { Updates } from "./updates";
 
 const percent = (share: number | null) =>
@@ -58,6 +59,8 @@ export function UpdateSetting({
   onInstall: () => void;
 }) {
   const { available, phase } = updates;
+  const [automatic] = usePref("autoUpdate");
+  const store = updates.channel === "microsoftStore";
   return (
     <div className="setting-row update-setting">
       <span>
@@ -70,18 +73,24 @@ export function UpdateSetting({
             </small>
             {updates.ready && (
               <small>
-                {updates.channel === "microsoftStore"
-                  ? "UrBudget installs it when you close it, or after it sits unused for a while, and reopens. Your budget is saved first."
-                  : "UrBudget installs it after it sits unused for a while, and reopens. Your budget is saved first."}
+                {!automatic
+                  ? "It installs when you choose. Your budget is saved first."
+                  : !updates.automatic
+                    ? "It didn't install by itself last time, so it waits for you. Your budget is saved first."
+                    : store
+                      ? "UrBudget installs it when you close it, or after it sits unused for a while and then reopens. Your budget is saved first."
+                      : "UrBudget installs it after it sits unused for a while, and reopens. Your budget is saved first."}
               </small>
             )}
           </>
         ) : (
           <small>
             {version && `You have version ${version}. `}
-            {updates.channel === "microsoftStore"
-              ? `${updates.current ? "Microsoft Store reports no updates available for this copy. " : ""}UrBudget checks the Store at launch and daily, downloads updates in the background, and installs them when you close it or leave it unused.`
-              : `${updates.current ? "You're up to date. " : ""}UrBudget looks for updates when it starts and once a day, downloads them in the background, and installs them after it sits unused for a while.`}
+            {updates.channel === "development"
+              ? "This development build doesn't look for updates."
+              : store
+                ? `${updates.current ? "Microsoft Store reports no updates available for this copy. " : ""}UrBudget checks the Store at launch and daily, downloads updates in the background, and ${automatic ? "installs them when you close it or leave it unused" : "lets you install them when you choose"}.`
+                : `${updates.current ? "You're up to date. " : ""}UrBudget looks for updates when it starts and once a day, downloads them in the background, and ${automatic ? "installs them after it sits unused for a while" : "lets you install them when you choose"}.`}
           </small>
         )}
         {updates.error && <small className="form-error">{updates.error}</small>}

@@ -19,6 +19,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: mocked.invoke }));
 vi.mock("@tauri-apps/api/app", () => ({ getVersion: mocked.version }));
 import { IDLE_BEFORE_UPDATE, useAutomaticUpdate, useUpdatedNotice, useUpdates } from "./updates";
 import { UpdateChip, UpdateSetting } from "./UpdateNotice";
+import { setPref } from "./prefs";
 const saveAndInstall = async (install: () => Promise<void>) => {
   mocked.steps.push("save");
   await install();
@@ -47,6 +48,8 @@ const update = () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   mocked.steps = [];
+  mocked.version.mockResolvedValue("0.4.0");
+  localStorage.clear();
   mocked.invoke.mockImplementation(async (command: string) => {
     if (command === "update_channel") return "direct";
     mocked.steps.push(command);
@@ -398,15 +401,114 @@ describe("updates", () => {
     expect(next.install).toHaveBeenCalledTimes(1);
   });
 
-  function store(download: string) {
+  function store(download: string, apply: string | Error = "installed") {
     mocked.invoke.mockImplementation(async (command: string, args?: unknown) => {
       if (command === "update_channel") return "microsoftStore";
       if (command === "check_store_update") return true;
       if (command === "download_store_update") return download;
       mocked.steps.push(args ? `${command} ${JSON.stringify(args)}` : command);
+      if (command === "apply_store_update") {
+        if (apply instanceof Error) throw apply;
+        return apply;
+      }
       return true;
     });
   }
+  async function downloaded(download: string, apply: string | Error = "installed") {
+    store(download, apply);
+    const hook = renderHook(() => useUpdates());
+    await act(async () => {
+      await hook.result.current.check(true);
+    });
+    return hook;
+  }
+
+  it("asks Windows when a downloaded Store update can no longer install without asking (Codex review R3)", async () => {
+    const { result } = await downloaded("ready", "consent");
+    expect(result.current.ready).toBe(true);
+    await act(async () => {
+      await result.current.install(saveAndInstall);
+    });
+    expect(mocked.steps).toEqual(["save", 'apply_store_update {"relaunch":true}', "install_store_update", "restart_app"]);
+    expect(result.current.ready).toBe(false);
+  });
+
+  it("never asks Windows by itself: an update that now needs permission waits for the person", async () => {
+    const { result } = await downloaded("ready", "consent");
+    await act(async () => {
+      await result.current.install(saveAndInstall, true);
+    });
+    expect(mocked.steps).toEqual(["save", 'apply_store_update {"relaunch":true}']);
+    expect(result.current).toMatchObject({ ready: false, automatic: false, error: null });
+    expect(result.current.available).not.toBeNull();
+    // Installing it by hand asks.
+    mocked.steps = [];
+    await act(async () => {
+      await result.current.install(saveAndInstall);
+    });
+    expect(mocked.steps).toEqual(["save", "install_store_update", "restart_app"]);
+  });
+
+  it("doesn't try a Store update that failed to install quietly again quietly, nor by itself", async () => {
+    const { result } = await downloaded("ready", new Error("Microsoft Store hasn't installed the update."));
+    await act(async () => {
+      await result.current.install(saveAndInstall, true).catch(() => {});
+    });
+    expect(result.current).toMatchObject({ ready: false, automatic: false, error: "Microsoft Store hasn't installed the update." });
+    mocked.steps = [];
+    await act(async () => {
+      await result.current.install(saveAndInstall);
+    });
+    expect(mocked.steps).toEqual(["save", "install_store_update", "restart_app"]);
+  });
+
+  it("closes without installing when the Store update now needs permission", async () => {
+    const { result } = await downloaded("ready", "consent");
+    expect(await result.current.installOnExit()).toBe(false);
+  });
+
+  it("doesn't install by itself again an update it already tried from this version", async () => {
+    const next = update();
+    const first = await found(next);
+    expect(first.result.current.automatic).toBe(true);
+    next.install.mockImplementation(async () => {
+      throw new Error("The installer failed");
+    });
+    await act(async () => {
+      await first.result.current.install(saveAndInstall, true).catch(() => {});
+    });
+    first.unmount();
+    // Opened again on the same version, as when the install didn't take: by hand only.
+    const again = await found(update());
+    expect(again.result.current).toMatchObject({ ready: true, automatic: false });
+    again.unmount();
+    // A version later, the next one installs by itself again.
+    mocked.version.mockResolvedValue("0.4.1");
+    const later = await found({ ...update(), version: "0.4.2" });
+    expect(later.result.current).toMatchObject({ ready: true, automatic: true });
+  });
+
+  it("says a downloaded update waits for you when it won't install by itself", async () => {
+    const { result } = await found(update());
+    const { rerender } = render(<UpdateSetting updates={result.current} version="0.4.0" onInstall={() => {}} />);
+    expect(screen.getByText("UrBudget installs it after it sits unused for a while, and reopens. Your budget is saved first.")).toBeTruthy();
+    act(() => setPref("autoUpdate", false));
+    rerender(<UpdateSetting updates={result.current} version="0.4.0" onInstall={() => {}} />);
+    expect(screen.getByText("It installs when you choose. Your budget is saved first.")).toBeTruthy();
+    act(() => setPref("autoUpdate", true));
+    rerender(<UpdateSetting updates={{ ...result.current, automatic: false }} version="0.4.0" onInstall={() => {}} />);
+    expect(screen.getByText("It didn't install by itself last time, so it waits for you. Your budget is saved first.")).toBeTruthy();
+  });
+
+  it("leaves development builds alone", async () => {
+    mocked.invoke.mockImplementation(async (command: string) => (command === "update_channel" ? "development" : undefined));
+    const { result } = renderHook(() => useUpdates());
+    await act(async () => {
+      await result.current.check(true);
+    });
+    expect(mocked.check).not.toHaveBeenCalled();
+    expect(result.current).toMatchObject({ available: null, ready: false, error: "This is a development build, which doesn't update itself." });
+  });
 
   it("installs a downloaded Store update without a prompt and reopens UrBudget", async () => {
     store("ready");

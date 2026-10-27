@@ -26,8 +26,14 @@ pub fn use_local_server<R: tauri::Runtime>(mut context: tauri::Context<R>) -> ta
 
 /// Packaged Windows copies must use Store updates, never the standalone installer.
 /// An unknown package identity is an error rather than permission to switch channels.
+/// Debug builds (`tauri dev`, the QA window) are `"development"` and don't update, so a published
+/// version never installs itself over the copy being worked on; with URBUDGET_API they look for
+/// updates on that local server, to try updating out.
 #[tauri::command]
 pub fn update_channel() -> Result<&'static str, String> {
+    if cfg!(debug_assertions) && std::env::var_os("URBUDGET_API").is_none() {
+        return Ok("development");
+    }
     if packaged()? {
         Ok("microsoftStore")
     } else {
@@ -112,9 +118,11 @@ pub async fn download_store_update(window: tauri::WebviewWindow) -> Result<&'sta
 }
 
 /// Installs a downloaded Store update without asking. Windows closes UrBudget to replace it and,
-/// with `relaunch`, opens it again afterwards. False when there was nothing to install.
+/// with `relaunch`, opens it again afterwards. `"installed"`, `"none"` when there was nothing to
+/// install, or `"consent"` when Windows won't now without the person's go-ahead (they turned the
+/// Store's automatic updates off, or the connection is metered): `install_store_update` asks.
 #[tauri::command]
-pub async fn apply_store_update(window: tauri::WebviewWindow, relaunch: bool) -> Result<bool, String> {
+pub async fn apply_store_update(window: tauri::WebviewWindow, relaunch: bool) -> Result<&'static str, String> {
     #[cfg(windows)]
     {
         microsoft::apply(window, relaunch).await
@@ -301,41 +309,51 @@ mod microsoft {
         })
         .await?;
         let Some(request) = request else { return Ok("consent") };
-        let result = request.await.map_err(store_error)?;
+        // A download Windows never finishes would hold every later check off.
+        let result = match tokio::time::timeout(Duration::from_secs(30 * 60), async { request.clone().await }).await {
+            Ok(result) => result.map_err(store_error)?,
+            Err(_) => {
+                let _ = request.Cancel();
+                return Err("Microsoft Store took too long to download the update. It will try again later.".into());
+            }
+        };
         Ok(match result.OverallState().map_err(store_error)? {
             StorePackageUpdateState::Completed => "ready",
             _ => "consent",
         })
     }
 
-    pub async fn apply(window: tauri::WebviewWindow, relaunch: bool) -> Result<bool, String> {
+    pub async fn apply(window: tauri::WebviewWindow, relaunch: bool) -> Result<&'static str, String> {
         let _operation = Operation::start()?;
         let updates = pending(&window).await?;
         if updates.is_empty() {
-            return Ok(false);
+            return Ok("none");
         }
         reopen_after_update(relaunch);
         // The frontend has saved the budget and holds its edit lock. Windows closes the app
         // to replace its package, so this may be the last thing this process does.
-        let request = on_ui(&window, move |context| {
-            if !context.CanSilentlyDownloadStorePackageUpdates()? {
-                return Ok(None);
-            }
-            let updates: windows_collections::IIterable<StorePackageUpdate> = updates.into();
-            context.TrySilentDownloadAndInstallStorePackageUpdatesAsync(&updates).map(Some)
-        })
-        .await?;
-        let Some(request) = request else {
-            reopen_after_update(false);
-            return Err("Windows needs your permission to install this update. Use Install Store update in Settings.".into());
-        };
-        let result = request.await.map_err(store_error);
-        let state = result.and_then(|result| result.OverallState().map_err(store_error));
-        if !matches!(state, Ok(StorePackageUpdateState::Completed)) {
+        let state: Result<Option<StorePackageUpdateState>, String> = async {
+            let request = on_ui(&window, move |context| {
+                if !context.CanSilentlyDownloadStorePackageUpdates()? {
+                    return Ok(None);
+                }
+                let updates: windows_collections::IIterable<StorePackageUpdate> = updates.into();
+                context.TrySilentDownloadAndInstallStorePackageUpdatesAsync(&updates).map(Some)
+            })
+            .await?;
+            let Some(request) = request else { return Ok(None) };
+            request.await.map_err(store_error)?.OverallState().map_err(store_error).map(Some)
+        }
+        .await;
+        // Only an update that went through reopens the app: not one Windows wouldn't make
+        // without asking, nor one that failed.
+        if !matches!(state, Ok(Some(StorePackageUpdateState::Completed))) {
             reopen_after_update(false);
         }
-        completed(state?)?;
-        Ok(true)
+        match state? {
+            None => Ok("consent"),
+            Some(state) => completed(state).map(|()| "installed"),
+        }
     }
 
     pub async fn install(window: tauri::WebviewWindow) -> Result<bool, String> {
@@ -347,16 +365,17 @@ mod microsoft {
         // Windows may close UrBudget to replace it; it reopens it afterwards.
         reopen_after_update(true);
         // The frontend holds the saved-budget operation lock through this request.
-        // Windows asks for consent and may close the app to replace its package.
-        let request = on_ui(&window, move |context| {
-            let updates: windows_collections::IIterable<StorePackageUpdate> = updates.into();
-            context.RequestDownloadAndInstallStorePackageUpdatesAsync(&updates)
-        })
-        .await?;
-        let state = request
-            .await
-            .map_err(store_error)
-            .and_then(|result| result.OverallState().map_err(store_error));
+        // Windows asks for consent and may close the app to replace its package. Any failure,
+        // even before Windows answers, takes the reopening back.
+        let state: Result<StorePackageUpdateState, String> = async {
+            let request = on_ui(&window, move |context| {
+                let updates: windows_collections::IIterable<StorePackageUpdate> = updates.into();
+                context.RequestDownloadAndInstallStorePackageUpdatesAsync(&updates)
+            })
+            .await?;
+            request.await.map_err(store_error)?.OverallState().map_err(store_error)
+        }
+        .await;
         if !matches!(state, Ok(StorePackageUpdateState::Completed)) {
             reopen_after_update(false);
         }
