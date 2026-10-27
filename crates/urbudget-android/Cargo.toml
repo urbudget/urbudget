@@ -1,6 +1,6 @@
 [package]
 name = "urbudget-android"
-version = "1.0.9"
+version = "1.0.10"
 description = "Versioned JSON/JNI adapter for the native UrBudget Android app"
 edition = "2021"
 license = "AGPL-3.0-or-later"

@@ -4,8 +4,11 @@ Notable changes to UrBudget, organized using [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [1.0.10] - 2026-10-27
+
 ### Added
 
+- UrBudget speaks Arabic, on the desktop and the phones. On the desktop, Settings › General › Language chooses System (the default, following the computer), English or العربية, and switches in place; the phones offer the same choice through the system's per-app language. In Arabic the whole window runs right to left, while amounts, dates and names keep their own direction; digits stay 0–9, and a new budget gets Arabic starter categories. Your budget's names, memos, number and date formats and exports are never translated. On a computer already set to Arabic, UrBudget opens in Arabic after this update; choose English there to keep it in English.
 - Updates install themselves. A new version downloads in the background, then installs once UrBudget has sat unused in the background for a quarter of an hour with nothing to lose: no unsaved change, dialog or form open, no import under way (on its page or not) and nothing unsent in the assistant. Your budget is saved first, and UrBudget reopens on the new version. A copy from Microsoft Store also installs a downloaded update when you close it, keeping your budget locked from the save until the window goes. Settings › General › Install updates by themselves turns this off; updates then wait for Restart to update.
 - When Windows wants your permission for a Microsoft Store update (the Store's automatic app updates are off, or the connection is metered), the update waits for you, and Install Store update asks. UrBudget never asks by itself while nobody's there.
 - An update that installed by itself but left the same version running isn't tried by itself again for three days; installing it by hand still works.
@@ -203,6 +206,7 @@ Also
 - Quick Assign's Underfunded now funds "maintain a balance" targets.
 - Notifications are easier to read in dark mode.
 
-[Unreleased]: https://github.com/urbudget/urbudget/compare/desktop-v1.0.9...HEAD
+[Unreleased]: https://github.com/urbudget/urbudget/compare/desktop-v1.0.10...HEAD
+[1.0.10]: https://github.com/urbudget/urbudget/releases/tag/desktop-v1.0.10
 [1.0.9]: https://github.com/urbudget/urbudget/releases/tag/desktop-v1.0.9
 [1.0.8]: https://github.com/urbudget/urbudget/releases/tag/desktop-v1.0.8

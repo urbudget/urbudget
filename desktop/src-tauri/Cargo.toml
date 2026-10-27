@@ -1,6 +1,6 @@
 [package]
 name = "urbudget"
-version = "1.0.9"
+version = "1.0.10"
 description = "A private, local envelope budget"
 edition = "2021"
 license = "AGPL-3.0-or-later"

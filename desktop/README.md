@@ -163,7 +163,7 @@ Debug builds take `URBUDGET_API` (the server, e.g. `wrangler dev`) for testing; 
 
 Current publication state is in [release status](../docs/RELEASE-STATUS.md). User-facing changes are recorded in [CHANGELOG.md](CHANGELOG.md). Desktop, Android and iOS are released separately, each with its own version and tag ([RELEASING.md](../RELEASING.md)). Before tagging a desktop release, run `node ../scripts/versions.mjs desktop 1.2.3` (it writes the version into `package.json`, `package-lock.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, `src-tauri/tauri.conf.json` and the shared crates), then `npm run check`. Copy that version's changelog entry into the draft release description before publishing; it also appears on the download page and in the app's update notice.
 
-Desktop source is currently **1.0.9**. `npm run check:versions` verifies the desktop package/Cargo/config versions agree and the app keeps its installed identity (`com.localbudget.desktop`). It also runs before every frontend build.
+Desktop source is currently **1.0.10**. `npm run check:versions` verifies the desktop package/Cargo/config versions agree and the app keeps its installed identity (`com.localbudget.desktop`). It also runs before every frontend build.
 
 Bump only the app being released; a desktop bump never changes the native apps' versions. The shared Cargo crate version follows the desktop package. Desktop releases are tagged `desktop-v1.2.3`; releases up to 1.0.7 are tagged `v1.0.7` and so on, and those tags stay. The Release, Publish and Microsoft Store workflows act only on desktop tags.
 
