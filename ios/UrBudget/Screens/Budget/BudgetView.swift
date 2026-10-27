@@ -147,8 +147,8 @@ struct BudgetView: View {
 
     @ViewBuilder private var content: some View {
         if let error = store.calculationError {
-            EmptyState(title: "Budget calculation unavailable",
-                       detail: "\(error) Your saved data remains available to export in Settings & data.", symbol: "exclamationmark.triangle")
+            EmptyState(title: String(localized: "Budget calculation unavailable"),
+                       detail: String(localized: "\(error) Your saved data remains available to export in Settings & data."), symbol: "exclamationmark.triangle")
         } else if let model {
             list(model)
         } else {
@@ -208,25 +208,24 @@ struct BudgetView: View {
                 }
                 // The getting-started steps say this too, with their own button.
                 if store.budget?.rows("accounts").isEmpty == true && !checklist {
-                    Notice(text: "Add the account your money is in. Its balance becomes money to assign.", tone: "info",
-                           icon: "building.columns.fill", action: "Add account") { sheet = .addAccount }
+                    Notice(text: String(localized: "Add the account your money is in. Its balance becomes money to assign."), tone: "info",
+                           icon: "building.columns.fill", action: String(localized: "Add account")) { sheet = .addAccount }
                 }
                 if model.futureAssigned != 0 || !model.shortfalls.isEmpty {
                     Notice(text: futureText(model, currency), tone: model.shortfalls.isEmpty ? "info" : "negative",
                            icon: model.shortfalls.isEmpty ? "info.circle.fill" : "exclamationmark.triangle.fill")
                 }
                 if model.needsCategory.total > 0 {
-                    let n = model.needsCategory.total
-                    Notice(text: "\(n == 1 ? "1 transaction needs" : "\(n) transactions need") a category. \(money(model.needsCategory.amount, currency)) counts as overspending until \(n == 1 ? "it has one" : "they have one").",
-                           tone: "attention", icon: "tag.fill", action: "Review") { path.append(RegisterTarget(category: NeedsCategory)) }
+                    Notice(text: needsCategoryText(model.needsCategory.total, money(model.needsCategory.amount, currency)),
+                           tone: "attention", icon: "tag.fill", action: String(localized: "Review")) { path.append(RegisterTarget(category: NeedsCategory)) }
                 }
                 if overspent > 0 && filter == "all" {
-                    Notice(text: overspent == 1 ? "1 overspent category" : "\(overspent) overspent categories", tone: "negative",
-                           icon: "exclamationmark.circle.fill", action: "Show") { filter = "overspent" }
+                    Notice(text: String(localized: "\(overspent) overspent categories", locale: .app), tone: "negative",
+                           icon: "exclamationmark.circle.fill", action: String(localized: "Show")) { filter = "overspent" }
                 }
                 if filter != "all" {
                     HStack {
-                        Text("Showing ").foregroundStyle(Color.secondary) + Text(budgetViews.first { $0.id == filter }?.label ?? "").bold()
+                        showingText(budgetViews.first { $0.id == filter }?.label ?? "")
                         Spacer()
                         Button("Show all") { filter = "all" }.buttonStyle(.borderless)
                     }
@@ -253,10 +252,12 @@ struct BudgetView: View {
             if visible.isEmpty {
                 Section {
                     if filter == "all" {
-                        EmptyState(title: "Start your plan", detail: "Create categories for bills, everyday spending, and the things you’re saving for.",
-                                   action: "Add category") { sheet = .newCategory(group: nil) }
+                        EmptyState(title: String(localized: "Start your plan"),
+                                   detail: String(localized: "Create categories for bills, everyday spending, and the things you’re saving for."),
+                                   action: String(localized: "Add category")) { sheet = .newCategory(group: nil) }
                     } else {
-                        EmptyState(title: "Nothing to show", detail: "No categories match this view this month.", action: "Show all") { filter = "all" }
+                        EmptyState(title: String(localized: "Nothing to show"), detail: String(localized: "No categories match this view this month."),
+                                   action: String(localized: "Show all")) { filter = "all" }
                     }
                 }
                 .listRowSeparator(.hidden)
@@ -291,7 +292,8 @@ struct BudgetView: View {
                 Section {
                     HStack(spacing: 12) {
                         Button { sheet = .newCategory(group: nil) } label: {
-                            Label("Category", systemImage: "plus").frame(maxWidth: .infinity)
+                            Label(String(localized: "budget.addCategory", defaultValue: "Category", comment: "Button that adds a category."),
+                                  systemImage: "plus").frame(maxWidth: .infinity)
                         }
                         Button { sheet = .newGroup } label: {
                             Label("Category group", systemImage: "folder.badge.plus").frame(maxWidth: .infinity)
@@ -316,21 +318,39 @@ struct BudgetView: View {
         }
     }
 
+    /// The sentences about money assigned in later months, one after another.
     private func futureText(_ model: BudgetModel, _ currency: String) -> String {
-        var text = ""
-        if model.futureAssigned != 0 { text += "Assigned in future months: \(money(model.futureAssigned, currency)). " }
-        if !model.shortfalls.isEmpty {
-            text += model.shortfalls.map { "\(Dates.monthLabel($0.month)) is short by \(money($0.amount, currency))." }.joined(separator: " ")
-            text += " Move funds back from a future month."
-        } else if model.futureAssigned > 0 && model.futureReadyToAssign + model.futureAssigned >= 0 {
-            text += "It is held back from this month's unassigned money."
+        var sentences: [String] = []
+        if model.futureAssigned != 0 {
+            sentences.append(String(localized: "Assigned in future months: \(money(model.futureAssigned, currency))."))
         }
-        return text.trimmingCharacters(in: .whitespaces)
+        if !model.shortfalls.isEmpty {
+            for shortfall in model.shortfalls {
+                sentences.append(String(localized: "\(Dates.monthLabel(shortfall.month)) is short by \(money(shortfall.amount, currency))."))
+            }
+            sentences.append(String(localized: "Move funds back from a future month."))
+        } else if model.futureAssigned > 0 && model.futureReadyToAssign + model.futureAssigned >= 0 {
+            sentences.append(String(localized: "It is held back from this month's unassigned money."))
+        }
+        return sentences.joined(separator: " ")
+    }
+
+    /// "3 transactions need a category. 45.00 counts as overspending until they have one."
+    private func needsCategoryText(_ count: Int, _ amount: String) -> String {
+        let first = String(localized: "\(count) transactions need a category.", locale: .app)
+        let second = count == 1 ? String(localized: "\(amount) counts as overspending until it has one.")
+            : String(localized: "\(amount) counts as overspending until they have one.")
+        return first + " " + second
+    }
+
+    /// "Showing Overspent", the view's name in bold.
+    private func showingText(_ view: String) -> Text {
+        Text("Showing \(Text(view).bold().foregroundStyle(Color.primary))").foregroundStyle(Color.secondary)
     }
 
     private var monthSwitcher: some View {
         HStack(spacing: 2) {
-            Button { store.selectMonth(Dates.addMonths(store.month, -1)) } label: { Image(systemName: "chevron.left") }
+            Button { store.selectMonth(Dates.addMonths(store.month, -1)) } label: { Image(systemName: "chevron.backward") }
                 .accessibilityLabel("Previous month")
             Button { sheet = .month } label: {
                 HStack(spacing: 3) {
@@ -339,7 +359,7 @@ struct BudgetView: View {
                 }
             }
             .accessibilityLabel("Choose month, \(Dates.monthLabel(store.month))")
-            Button { store.selectMonth(Dates.addMonths(store.month, 1)) } label: { Image(systemName: "chevron.right") }
+            Button { store.selectMonth(Dates.addMonths(store.month, 1)) } label: { Image(systemName: "chevron.forward") }
                 .accessibilityLabel("Next month")
         }
     }
@@ -383,7 +403,8 @@ struct BudgetView: View {
 
     private func setHidden(_ row: CategoryRowModel, _ hidden: Bool) {
         store.upsert("categories", ["id": .string(row.id), "hidden": .bool(hidden)]) {
-            store.showToast(hidden ? "Hid \(row.name). Find it under Hidden categories." : "\(row.name) is shown again.", undo: true)
+            store.showToast(hidden ? String(localized: "Hid \(row.name). Find it under Hidden categories.")
+                                   : String(localized: "\(row.name) is shown again."), undo: true)
         }
     }
 
@@ -395,7 +416,7 @@ struct BudgetView: View {
         case "quickAssign": sheet = .quickAssign(group: group.name)
         case "hide":
             store.upsertMany("categories", group.rows.map { ["id": .string($0.id), "hidden": true] }) {
-                store.showToast("Hid the categories in \(group.name). Find them under Hidden categories.", undo: true)
+                store.showToast(String(localized: "Hid the categories in \(group.name). Find them under Hidden categories."), undo: true)
             }
         case "up", "down": moveGroup(group.name, up: action == "up")
         default: break
@@ -474,7 +495,7 @@ struct UnassignedBanner: View {
                 }
                 Spacer()
                 Text("Unassigned").font(.headline)
-                Image(systemName: "chevron.right").font(.subheadline.weight(.bold))
+                Image(systemName: "chevron.forward").font(.subheadline.weight(.bold))
             }
             .foregroundStyle(ink)
             .padding(.horizontal, 18)
@@ -530,20 +551,26 @@ private struct GroupHeader: View {
         .padding(.vertical, 4)
     }
 
+    /// The group's name; the hidden categories' own group is named in the app's language.
+    private var displayName: String { name == HiddenGroup ? String(localized: "Hidden categories") : name }
+
     private func title(wraps: Bool) -> some View {
-        HStack(spacing: 6) {
+        let displayName = displayName
+        return HStack(spacing: 6) {
             Button(action: toggle) {
                 HStack(spacing: 6) {
+                    // Points the way text reads while folded (mirrored right to left), down when open.
                     Image(systemName: "chevron.right")
                         .font(.footnote.weight(.bold))
                         .rotationEffect(.degrees(open ? 90 : 0))
+                        .flipsForRightToLeftLayoutDirection(true)
                         .foregroundStyle(Color.secondary)
-                    Text(name).font(.headline).foregroundStyle(Color.primary).lineLimit(wraps ? 2 : 1).multilineTextAlignment(.leading)
+                    Text(displayName).font(.headline).foregroundStyle(Color.primary).lineLimit(wraps ? 2 : 1).multilineTextAlignment(.leading)
                         .fixedSize(horizontal: !wraps, vertical: false)
                 }
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(open ? "Collapse \(name)" : "Expand \(name)")
+            .accessibilityLabel(open ? "Collapse \(displayName)" : "Expand \(displayName)")
             if let action {
                 Menu {
                     Button { action("add") } label: { Label("Add category", systemImage: "plus") }
@@ -566,7 +593,7 @@ private struct GroupHeader: View {
         }
     }
 
-    private func column(_ label: String, _ value: String, _ color: Color, _ width: CGFloat?) -> some View {
+    private func column(_ label: LocalizedStringKey, _ value: String, _ color: Color, _ width: CGFloat?) -> some View {
         VStack(alignment: .trailing, spacing: 1) {
             Text(label).font(.caption2.weight(.medium)).foregroundStyle(Color.secondary)
             Text(value).figure(14, weight: .bold).foregroundStyle(color).lineLimit(1).minimumScaleFactor(0.7)
@@ -741,7 +768,7 @@ private struct ReorderGroupsSheet: View {
                                 let rest = budget["groupOrder"].array.filter { !order.contains($0.string) }
                                 budget["groupOrder"] = .array(order.map(JSON.string) + rest)
                             }
-                            store.showToast("Reordered the groups.", undo: true)
+                            store.showToast(String(localized: "Reordered the groups."), undo: true)
                             dismiss()
                         }
                     }

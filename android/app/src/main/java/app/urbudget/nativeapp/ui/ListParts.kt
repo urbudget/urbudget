@@ -21,6 +21,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.compose.ui.res.stringResource
+import app.urbudget.nativeapp.R
 
 /**
  * One row of a card split across lazy-list items, so long lists stay virtualized: the first row
@@ -65,7 +67,7 @@ internal fun AttentionDot(modifier: Modifier = Modifier) {
 /** A section heading that folds its rows away, with a figure at the end. */
 @Composable
 internal fun FoldingHeader(title: String, open: Boolean, onToggle: () -> Unit, trailing: String? = null, trailingColor: Color = ur.text) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(role = Role.Button, onClickLabel = if (open) "Collapse $title" else "Expand $title", onClick = onToggle)
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(role = Role.Button, onClickLabel = if (open) stringResource(R.string.fold_collapse, title) else stringResource(R.string.fold_expand, title), onClick = onToggle)
         .padding(top = 10.dp, bottom = 2.dp, start = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(if (open) Icons.Outlined.KeyboardArrowDown else Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(22.dp), tint = ur.muted)
         Text(title, Modifier.weight(1f).padding(start = 4.dp), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = ur.text)

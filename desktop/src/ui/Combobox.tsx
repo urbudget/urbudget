@@ -9,6 +9,7 @@ import {
 } from "react";
 import { ChevronDown, Plus } from "lucide-react";
 import { Popover } from "./Popover";
+import { t, useLanguage } from "../i18n";
 
 /** The id of the "Create “…”" row that `create` adds. */
 const CREATE = "\u0000create";
@@ -42,7 +43,7 @@ export function Combobox({
   placeholder,
   autoFocus,
   className = "",
-  emptyText = "No matches",
+  emptyText = t("No matches"),
   onKeyDown,
   disabled,
   groupHints = true,
@@ -92,6 +93,7 @@ export function Combobox({
   const emptied = !!onClear && !freeText && query !== null && !query.trim();
 
   const typed = (freeText ? (text ?? "") : (query ?? "")).trim();
+  const language = useLanguage();
   const { matches, strong } = useMemo(() => {
     let found: Option[],
       strong = 0;
@@ -118,9 +120,9 @@ export function Combobox({
       strong = Math.min(found.length, starts.length + words.length);
     }
     const exact = !!search && options.some((o) => o.label.toLowerCase() === search);
-    const row = search && !exact ? `${create?.label} “${typed}”` : create?.blank;
+    const row = search && !exact ? t("{action} “{name}”", { action: create?.label ?? "", name: typed }) : create?.blank;
     return { matches: create && row ? [...found, { id: CREATE, label: row }] : found, strong };
-  }, [options, search, create, typed]);
+  }, [options, search, create, typed, language]);
   const grouped = !search && options.some((o) => o.group);
   const creating = matches.at(-1)?.id === CREATE;
 
@@ -196,7 +198,7 @@ export function Combobox({
         aria-controls={`${id}-list`}
         aria-autocomplete="list"
         aria-activedescendant={open && matches[active] ? `${id}-${active}` : undefined}
-        placeholder={placeholder ?? (freeText ? undefined : selected ? undefined : "Choose…")}
+        placeholder={placeholder ?? (freeText ? undefined : selected ? undefined : t("Choose…"))}
         value={shown}
         autoFocus={autoFocus}
         disabled={disabled}

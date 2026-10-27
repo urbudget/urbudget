@@ -1,4 +1,5 @@
 import type { Account } from "./types";
+import { t } from "./i18n";
 
 /** How a transfer reads from one of its two accounts. */
 export type TransferView = {
@@ -28,7 +29,7 @@ export function transferView(
   const direction = amount < 0 ? "to" : "from";
   const card =
     direction === "to" ? other?.kind === "credit" && mine?.kind === "cash" : mine?.kind === "credit" && other?.kind === "cash";
-  const name = other?.name ?? "another account";
-  const label = `${direction === "to" ? "To" : "From"}: ${name}`;
+  const name = other?.name ?? t("another account");
+  const label = direction === "to" ? t("To: {account}", { account: name }) : t("From: {account}", { account: name });
   return { account: peer, peer: name, direction, card, label };
 }

@@ -59,14 +59,17 @@ struct CategoryPicker: View {
                         Button { onSplit() } label: { Label("Split between categories", systemImage: "arrow.triangle.branch") }
                     }
                     if includeUnassigned {
-                        row(id: Unassigned, name: "Unassigned", detail: "Available to assign", available: store.summary?.long("readyToAssign"),
+                        row(id: Unassigned, name: String(localized: "Unassigned"), detail: String(localized: "Available to assign"),
+                            available: store.summary?.long("readyToAssign"),
                             status: nil, currency: currency)
                     }
-                    if includeUncategorized { row(id: "", name: "Uncategorized", detail: nil, available: nil, status: nil, currency: currency) }
+                    if includeUncategorized {
+                        row(id: "", name: String(localized: "Uncategorized"), detail: nil, available: nil, status: nil, currency: currency)
+                    }
                 }
             }
             ForEach(groups, id: \.name) { group in
-                Section(group.name) {
+                Section(groupDisplayName(group.name)) {
                     ForEach(group.entries) { entry in
                         row(id: entry.id, name: entry.name, detail: nil, available: entry.available, status: entry.status, currency: currency)
                     }
@@ -86,7 +89,7 @@ struct CategoryPicker: View {
             }
         }
         .groupedList()
-        .searchable(text: $search, isPresented: $searching, prompt: allowsCreate ? "Search or create a category" : "Search categories")
+        .searchable(text: $search, isPresented: $searching, prompt: allowsCreate ? Text("Search or create a category") : Text("Search categories"))
         .modifier(PickedAfterSearch(searching: $searching, picked: $picked, report: onPick))
         .navigationTitle(title)
         .inlineTitle()
@@ -267,9 +270,9 @@ struct MonthPickerSheet: View {
         NavigationStack {
             VStack(spacing: 18) {
                 HStack {
-                    Button { year -= 1 } label: { Image(systemName: "chevron.left") }.accessibilityLabel("Previous year")
+                    Button { year -= 1 } label: { Image(systemName: "chevron.backward") }.accessibilityLabel("Previous year")
                     Text(String(year)).font(.title2.bold()).monospacedDigit().frame(maxWidth: .infinity)
-                    Button { year += 1 } label: { Image(systemName: "chevron.right") }.accessibilityLabel("Next year")
+                    Button { year += 1 } label: { Image(systemName: "chevron.forward") }.accessibilityLabel("Next year")
                 }
                 .font(.title3)
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 4), spacing: 10) {

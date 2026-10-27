@@ -177,14 +177,14 @@
   justify-content: flex-end;
 }
 .bank-import .form-actions .help {
-  margin-right: auto;
+  margin-inline-end: auto;
 }
 .import-review tr.muted td {
   color: var(--muted);
 }
 /* The bank's own payee text, beside the name a payee rule gave it. */
 .import-review .bank-text {
-  margin-left: 8px;
+  margin-inline-start: 8px;
   color: var(--muted);
   font-size: 0.85em;
 }
@@ -237,7 +237,7 @@
   flex-direction: column;
   gap: 4px;
   margin: 0;
-  padding-left: 20px;
+  padding-inline-start: 20px;
   color: var(--text-2);
 }
 .bank-sync-token {
@@ -254,7 +254,7 @@
   justify-content: flex-end;
 }
 .bank-sync .form-actions > :first-child:not(:only-child) {
-  margin-right: auto;
+  margin-inline-end: auto;
 }
 .bank-sync-accounts {
   width: 100%;
@@ -289,7 +289,7 @@
   flex-direction: column;
   gap: 4px;
   margin: 0;
-  padding-left: 18px;
+  padding-inline-start: 18px;
 }
 .bank-sync-accounts select {
   width: 100%;
@@ -313,7 +313,7 @@
   margin: 0;
 }
 .bank-sync-details .bank-text {
-  margin-left: 8px;
+  margin-inline-start: 8px;
   color: var(--muted);
   font-size: 0.85em;
 }
@@ -324,7 +324,7 @@
   justify-content: flex-end;
 }
 .bank-sync-details .form-actions .text-button {
-  margin-right: auto;
+  margin-inline-end: auto;
 }
 
 /* The YNAB import: a token (pasted, or a saved one), a plan, how to combine it with this budget. */
@@ -348,7 +348,8 @@
   align-items: center;
   gap: 8px;
   min-height: 34px;
-  padding: 4px 6px 4px 10px;
+  padding-block: 4px;
+  padding-inline: 10px 6px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface-2);
@@ -370,7 +371,7 @@
 }
 .saved-token .text-button {
   flex: none;
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 .token-options {
   display: flex;
@@ -455,7 +456,7 @@
 }
 .ynab-problem ul {
   margin: 6px 0 0;
-  padding-left: 18px;
+  padding-inline-start: 18px;
   font-variant-numeric: tabular-nums;
 }
 .ynab-problem .form-actions {
@@ -474,7 +475,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 8px 8px 10px;
+  padding-block: 8px;
+  padding-inline: 10px 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }

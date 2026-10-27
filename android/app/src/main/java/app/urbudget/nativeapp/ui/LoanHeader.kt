@@ -24,6 +24,9 @@ import androidx.compose.ui.unit.dp
 import app.urbudget.nativeapp.AccountTypes
 import app.urbudget.nativeapp.BudgetViewModel
 import app.urbudget.nativeapp.defaultLoanSource
+import app.urbudget.nativeapp.R
+import app.urbudget.nativeapp.Words
+import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -36,8 +39,8 @@ internal fun LoanFacts(owed: String, rate: String, payment: String, payoff: Stri
                        action: (@Composable () -> Unit)? = null) {
     ListCard(modifier) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row { Figure("Owed", owed, Modifier.weight(1f)); Figure("Rate", rate, Modifier.weight(1f)); Figure("Payment", payment, Modifier.weight(1f)) }
-            Row { Figure("Paid off", payoff, Modifier.weight(1f)); Figure("Interest to pay", interest, Modifier.weight(2f)) }
+            Row { Figure(stringResource(R.string.loan_owed), owed, Modifier.weight(1f)); Figure(stringResource(R.string.loan_rate), rate, Modifier.weight(1f)); Figure(stringResource(R.string.loan_payment), payment, Modifier.weight(1f)) }
+            Row { Figure(stringResource(R.string.loan_paid_off), payoff, Modifier.weight(1f)); Figure(stringResource(R.string.loan_interest_to_pay), interest, Modifier.weight(2f)) }
             action?.invoke()
         }
     }
@@ -46,13 +49,13 @@ internal fun LoanFacts(owed: String, rate: String, payment: String, payoff: Stri
 /** A labelled value that opens a picker of its own, such as the category sheet. */
 @Composable
 internal fun PickerField(label: String, value: String?, placeholder: String, onClick: () -> Unit, onClear: (() -> Unit)? = null) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(fieldFill()).clickable(onClickLabel = "Choose $label", onClick = onClick)
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(fieldFill()).clickable(onClickLabel = stringResource(R.string.choose_field, label), onClick = onClick)
         .padding(start = 16.dp, end = 6.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.bodySmall, color = ur.muted)
             Text(value ?: placeholder, style = MaterialTheme.typography.bodyLarge, color = if (value != null) ur.text else ur.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        if (onClear != null && value != null) IconButton(onClear) { Icon(Icons.Outlined.Close, "Clear $label", tint = ur.muted) }
+        if (onClear != null && value != null) IconButton(onClear) { Icon(Icons.Outlined.Close, stringResource(R.string.clear_field, label), tint = ur.muted) }
         else Icon(Icons.Outlined.UnfoldMore, null, Modifier.padding(end = 4.dp), tint = ur.muted)
     }
 }
@@ -86,14 +89,18 @@ internal fun LoanPaymentSheet(loan: JSONObject, terms: JSONObject, budget: JSONO
     var error by remember { mutableStateOf<String?>(null) }
     val owed = maxOf(0L, -(balances[loanId] ?: loan.optLong("openingBalance")))
     val mortgage = AccountTypes.infer(loan, balances[loanId] ?: loan.optLong("openingBalance")) == "mortgage"
-    val charges = if (terms.optLong("monthlyFees") > 0) "interest and ${if (mortgage) "escrow" else "fees"} are" else "interest is"
+    val note = when {
+        terms.optLong("monthlyFees") <= 0 -> R.string.loan_payment_note_interest
+        mortgage -> R.string.loan_payment_note_escrow
+        else -> R.string.loan_payment_note_fees
+    }
     val save = {
         runCatching {
             requireCurrentBudget(openedBudget, vm)
-            val amount = pad.cents ?: error("Finish the sum first.")
-            require(from.isNotBlank()) { "Choose the account the payment comes from." }
-            require(amount > 0) { "Enter an amount to pay." }
-            require(category.isNotBlank()) { "Choose the category the payment comes from." }
+            val amount = pad.cents ?: error(Words[R.string.transaction_finish_sum])
+            require(from.isNotBlank()) { Words[R.string.loan_payment_account_required] }
+            require(amount > 0) { Words[R.string.loan_payment_amount_required] }
+            require(category.isNotBlank()) { Words[R.string.loan_category_required] }
             LocalDate.parse(date)
             vm.runCommand("loanRecord", JSONObject().put("terms", terms.copyJson().put("categoryId", category)).put("from", from)
                 .put("amount", amount).put("date", date).put("id", paymentId)) { close() }
@@ -101,27 +108,27 @@ internal fun LoanPaymentSheet(loan: JSONObject, terms: JSONObject, budget: JSONO
         Unit
     }
     UrSheet(close) {
-        SheetHeader("Pay ${loan.text("name")}", close, "Pay ${money(pad.cents ?: 0L, currency)}", save, enabled = sources.isNotEmpty() && (pad.cents ?: 0L) > 0)
+        SheetHeader(stringResource(R.string.loan_pay_title, loan.text("name")), close, stringResource(R.string.loan_pay_amount, money(pad.cents ?: 0L, currency)), save, enabled = sources.isNotEmpty() && (pad.cents ?: 0L) > 0)
         Column(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp).padding(bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Row { Figure("Owed on the loan", money(owed, currency), Modifier.weight(1f)); Figure("Monthly payment", money(terms.optLong("monthlyPayment"), currency), Modifier.weight(1f)) }
+            Row { Figure(stringResource(R.string.loan_owed_on_loan), money(owed, currency), Modifier.weight(1f)); Figure(stringResource(R.string.loan_monthly_payment), money(terms.optLong("monthlyPayment"), currency), Modifier.weight(1f)) }
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(if (keypad) ur.accentSoft else ur.surface2)
-                .clickable(onClickLabel = "Edit amount") { keypad = true; pad.fresh = true }.padding(vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                .clickable(onClickLabel = stringResource(R.string.amount_edit)) { keypad = true; pad.fresh = true }.padding(vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 PadAmount(pad, currency)
-                Text(if (keypad) "Type the amount" else "Tap to change", color = ur.muted, style = MaterialTheme.typography.bodySmall)
+                Text(if (keypad) stringResource(R.string.amount_type) else stringResource(R.string.amount_tap_to_change), color = ur.muted, style = MaterialTheme.typography.bodySmall)
             }
-            if (sources.isEmpty()) Notice("Add a cash account in your budget to pay the loan from.", tone = "info")
-            else Choice("From", from, sourceChoices) { from = it }
+            if (sources.isEmpty()) Notice(stringResource(R.string.loan_needs_cash_account), tone = "info")
+            else Choice(stringResource(R.string.date_from), from, sourceChoices) { from = it }
             DateField(date, { date = it })
-            PickerField("Category", categoryNames[category], "Where the payment comes from", { keypad = false; picking = true })
-            Text("Recorded as a transfer from ${sources.firstOrNull { it.text("id") == from }?.text("name") ?: "the account you choose"} to ${loan.text("name")}, " +
-                "spending the category. The month's $charges added to the loan with its first payment that month.", style = MaterialTheme.typography.bodySmall, color = ur.muted)
+            PickerField(stringResource(R.string.category_label), categoryNames[category], stringResource(R.string.loan_payment_category_hint), { keypad = false; picking = true })
+            Text(stringResource(note, sources.firstOrNull { it.text("id") == from }?.text("name") ?: stringResource(R.string.loan_account_you_choose), loan.text("name")),
+                style = MaterialTheme.typography.bodySmall, color = ur.muted)
             FormError(error)
         }
         AnimatedVisibility(keypad, enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
             AmountKeypad(pad, { keypad = false })
         }
     }
-    if (picking) CategoryPickerSheet(budget, summary, date.take(7), category, "Payment category", includePayment = false,
+    if (picking) CategoryPickerSheet(budget, summary, date.take(7), category, stringResource(R.string.loan_payment_category), includePayment = false,
         onPick = { category = it; picking = false }) { picking = false }
 }

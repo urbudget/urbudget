@@ -5,6 +5,7 @@ import { simplefin, type AccountReview, type SimpleFinAccount, type SimpleFinSta
 import { errorText, formatDate, money } from "./format";
 import { today, type Account, type Budget, type Summary } from "./types";
 import { DateInput, useToast } from "./ui";
+import { t, tn } from "./i18n";
 import "./import.css";
 
 /** A first sync brings in this many days unless the user picks another start. */
@@ -40,9 +41,9 @@ export function listedAccounts(budget: Budget, listed: SimpleFinAccount[]): Simp
 /** What the assistant is asked about an account's bank sync: ready to send, not sent. */
 export function syncHelpText(account: string, problem = "") {
   return [
-    `Help me with bank sync for ${account}.`,
-    problem && `The sync said: ${problem}`,
-    "Check how it's linked, when it last synced, and whether its balance and signs look right.",
+    t("Help me with bank sync for {account}.", { account }),
+    problem && t("The sync said: {problem}", { problem }),
+    t("Check how it's linked, when it last synced, and whether its balance and signs look right."),
   ]
     .filter(Boolean)
     .join(" ");
@@ -88,29 +89,27 @@ export function BankSyncSettings({
   const accounts = listedAccounts(budget, status.accounts);
   return (
     <section className="panel bank-sync">
-      <h2>Bank sync</h2>
+      <h2>{t("Bank sync")}</h2>
       {!status.store ? (
         <p className="import-lead">
-          Bank sync keeps its connection in the system&apos;s credential store, which this computer doesn&apos;t have.
+          {t("Bank sync keeps its connection in the system's credential store, which this computer doesn't have.")}
         </p>
       ) : !status.connected ? (
         <>
           <p className="import-lead">
-            Bring in transactions from US and Canadian banks through SimpleFIN Bridge, a subscription you pay SimpleFIN
-            for. Your bank login stays with SimpleFIN, and the transactions come straight to this computer. You review
-            every one before it&apos;s added.
+            {t("Bring in transactions from US and Canadian banks through SimpleFIN Bridge, a subscription you pay SimpleFIN for. Your bank login stays with SimpleFIN, and the transactions come straight to this computer. You review every one before it's added.")}
           </p>
           <ol className="bank-sync-steps">
             <li>
-              At SimpleFIN Bridge, add your bank and make a setup token for UrBudget.{" "}
+              {t("At SimpleFIN Bridge, add your bank and make a setup token for UrBudget.")}{" "}
               <button type="button" className="link-button" onClick={() => void simplefin.openBridge().catch((e) => setMessage(errorText(e)))}>
-                Open SimpleFIN Bridge
+                {t("Open SimpleFIN Bridge")}
               </button>
             </li>
-            <li>Paste the setup token here. It works once.</li>
+            <li>{t("Paste the setup token here. It works once.")}</li>
           </ol>
           <label className="bank-sync-token">
-            Setup token
+            {t("Setup token")}
             <textarea
               rows={3}
               value={token}
@@ -120,7 +119,9 @@ export function BankSyncSettings({
             />
           </label>
           <div className="form-actions">
-            <span className="help">UrBudget keeps the connection in {status.store}, never in the budget file.</span>
+            <span className="help">
+              {t("UrBudget keeps the connection in {store}, never in the budget file.", { store: status.store })}
+            </span>
             <button
               className="primary"
               disabled={!token.trim() || !!busy}
@@ -128,15 +129,14 @@ export function BankSyncSettings({
                 if (await run("connect", () => simplefin.connect(token))) setToken("");
               }}
             >
-              {busy === "connect" ? "Connecting…" : "Connect"}
+              {busy === "connect" ? t("Connecting…") : t("Connect")}
             </button>
           </div>
         </>
       ) : (
         <>
           <p className="import-lead">
-            Connected to SimpleFIN Bridge. Choose the account each bank account syncs into, then press Sync on the
-            account or here. You review every transaction before it&apos;s added.
+            {t("Connected to SimpleFIN Bridge. Choose the account each bank account syncs into, then press Sync on the account or here. You review every transaction before it's added.")}
           </p>
           {status.messages.map((m) => (
             <p key={m} className="notice">
@@ -148,10 +148,10 @@ export function BankSyncSettings({
               <table className="bank-sync-accounts">
                 <thead>
                   <tr>
-                    <th>At the bank</th>
-                    <th className="num">Balance</th>
-                    <th>Syncs into</th>
-                    <th>Since</th>
+                    <th>{t("At the bank")}</th>
+                    <th className="num">{t("Balance")}</th>
+                    <th>{t("Syncs into")}</th>
+                    <th>{t("Since")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -168,19 +168,22 @@ export function BankSyncSettings({
                         <td>
                           {foreign && !into ? (
                             <span className="help">
-                              In {sf.currency ?? "a currency of its own"}; this budget uses {budget.currency}
+                              {sf.currency
+                                ? t("In {currency}; this budget uses {budget}", { currency: sf.currency, budget: budget.currency })
+                                : t("In a currency of its own; this budget uses {budget}", { budget: budget.currency })}
                             </span>
                           ) : (
                             <select
-                              aria-label={`Account for ${sf.name}`}
+                              aria-label={t("Account for {name}", { name: sf.name })}
                               value={into?.id ?? ""}
                               onChange={(e) => edit((d) => linkAccount(d, sf, e.target.value || null))}
                             >
-                              <option value="">Don&apos;t sync</option>
+                              <option value="">{t("Don't sync")}</option>
                               {open.map((a) => (
                                 <option key={a.id} value={a.id}>
-                                  {a.name}
-                                  {a.simplefin && a.simplefin.id !== sf.id ? " (linked to another)" : ""}
+                                  {a.simplefin && a.simplefin.id !== sf.id
+                                    ? t("{name} (linked to another)", { name: a.name })
+                                    : a.name}
                                 </option>
                               ))}
                             </select>
@@ -190,10 +193,10 @@ export function BankSyncSettings({
                           {into?.simplefin && (
                             <div className="bank-sync-since">
                               {into.simplefin.lastSync ? (
-                                <span>Synced {formatDate(into.simplefin.lastSync)}</span>
+                                <span>{t("Synced {date}", { date: formatDate(into.simplefin.lastSync) })}</span>
                               ) : (
                                 <DateInput
-                                  label={`First day to bring in for ${sf.name}`}
+                                  label={t("First day to bring in for {name}", { name: sf.name })}
                                   value={into.simplefin.from}
                                   onChange={(from) =>
                                     edit((d) => {
@@ -214,7 +217,7 @@ export function BankSyncSettings({
                                       })
                                     }
                                   />
-                                  Purchases arrive as money in
+                                  {t("Purchases arrive as money in")}
                                 </label>
                               )}
                             </div>
@@ -227,21 +230,21 @@ export function BankSyncSettings({
               </table>
             </div>
           ) : (
-            <p className="help">SimpleFIN hasn&apos;t listed your accounts yet.</p>
+            <p className="help">{t("SimpleFIN hasn't listed your accounts yet.")}</p>
           )}
           <p className="help">
-            SimpleFIN allows about 24 requests a day. A sync is one request for every account; a first sync that reaches
-            further back takes one per 45 days. Used today: {status.requestsToday} of {status.dailyLimit}.
+            {t("SimpleFIN allows about 24 requests a day. A sync is one request for every account; a first sync that reaches further back takes one per 45 days. Used today: {used} of {limit}.", {
+              used: status.requestsToday,
+              limit: status.dailyLimit,
+            })}
           </p>
           {removing ? (
             <div className="notice bank-sync-remove">
               <span>
-                Remove the connection? UrBudget forgets the SimpleFIN access and unlinks this budget&apos;s accounts.
-                Transactions already imported stay. To stop SimpleFIN reading your bank, remove the bank at SimpleFIN
-                Bridge too.
+                {t("Remove the connection? UrBudget forgets the SimpleFIN access and unlinks this budget's accounts. Transactions already imported stay. To stop SimpleFIN reading your bank, remove the bank at SimpleFIN Bridge too.")}
               </span>
               <button className="secondary small" onClick={() => setRemoving(false)}>
-                Keep it
+                {t("Keep it")}
               </button>
               <button
                 className="primary small"
@@ -256,20 +259,20 @@ export function BankSyncSettings({
                   }
                 }}
               >
-                Remove connection
+                {t("Remove connection")}
               </button>
             </div>
           ) : (
             <div className="form-actions">
               <button className="text-button" onClick={() => setRemoving(true)}>
-                Remove connection
+                {t("Remove connection")}
               </button>
               <button className="secondary" disabled={!!busy} onClick={() => void run("refresh", simplefin.refresh)}>
                 <RefreshCw size={14} className={busy === "refresh" ? "spin" : undefined} />{" "}
-                {accounts.length ? "Refresh the list" : "List my accounts"}
+                {accounts.length ? t("Refresh the list") : t("List my accounts")}
               </button>
               <button className="primary" disabled={!linked.length || !!busy} onClick={onSync}>
-                Sync now
+                {t("Sync now")}
               </button>
             </div>
           )}
@@ -377,11 +380,11 @@ export function BankSync({
         // Something else changed the budget (a schedule posting): check the rows again first.
         setSynced(await simplefin.sync(latest.current, false));
         setBase(latest.current);
-        setMessage("Your budget changed, so these rows were checked again. Look them over, then import.");
+        setMessage(t("Your budget changed, so these rows were checked again. Look them over, then import."));
         return;
       }
       await commit(async (b) => {
-        if (b !== base) throw Error("Your budget changed. Sync again before importing.");
+        if (b !== base) throw Error(t("Your budget changed. Sync again before importing."));
         return simplefin.import(b, r.accountId, choices, synced!.through);
       }, count);
     } catch (e) {
@@ -396,10 +399,14 @@ export function BankSync({
     if (quietOnly && imported) {
       close();
       toast({
-        message: `Imported ${imported} ${imported === 1 ? "transaction" : "transactions"} from your bank for review.`,
+        message: tn(
+          imported,
+          "Imported {count} transaction from your bank for review.",
+          "Imported {count} transactions from your bank for review.",
+        ),
         offer:
           onCategorize && left.ids.length
-            ? { label: "Categorize with the assistant", onClick: () => onCategorize(left) }
+            ? { label: t("Categorize with the assistant"), onClick: () => onCategorize(left) }
             : undefined,
       });
     }
@@ -411,7 +418,7 @@ export function BankSync({
   const failed = done ? reviews.find((r) => r.error) : undefined;
   const about = account ?? budget.accounts.find((a) => a.id === (failed ?? reviews[0])?.accountId);
   const problem = allIn
-    ? "Every new row from the card came in as money in."
+    ? t("Every new row from the card came in as money in.")
     : (failed?.error ?? (done || account ? synced?.messages[0] : undefined));
   return (
     <div className="bank-import bank-sync-review">
@@ -425,13 +432,13 @@ export function BankSync({
           <p className="notice error">{error}</p>
           <div className="form-actions">
             <button className="primary" onClick={close}>
-              Close
+              {t("Close")}
             </button>
           </div>
         </>
       ) : !synced ? (
         <p className="bank-sync-wait">
-          <LoaderCircle size={16} className="spin" aria-hidden /> Getting your transactions from SimpleFIN…
+          <LoaderCircle size={16} className="spin" aria-hidden /> {t("Getting your transactions from SimpleFIN…")}
         </p>
       ) : current && account ? (
         <>
@@ -441,21 +448,31 @@ export function BankSync({
             rows={current.rows}
             busy={busy}
             icon={<Landmark size={18} aria-hidden />}
-            title={
-              <>
-                <strong>{current.name || "SimpleFIN"}</strong> into {account.name}
-              </>
+            title={t("{source} into {account}", {
+              source: <strong>{current.name || "SimpleFIN"}</strong>,
+              account: account.name,
+            })}
+            action={
+              pending.length > 1 ? (
+                <span className="help">{tn(pending.length - 1, "{count} more after this", "{count} more after this")}</span>
+              ) : undefined
             }
-            action={pending.length > 1 ? <span className="help">{pending.length - 1} more after this</span> : undefined}
-            cancelLabel="Skip this account"
+            cancelLabel={t("Skip this account")}
             onCancel={() => setSkipped([...skipped, current.accountId])}
             onImport={(choices, count) => void save(current, choices, count)}
           />
           {current.balance !== null && (
             <p className="help">
-              The bank&apos;s balance: {money(current.balance, { symbol: true })}
-              {current.balanceDate && ` on ${formatDate(current.balanceDate)}`}. UrBudget&apos;s, before this import:{" "}
-              {money(balances.get(account.id)?.balance ?? account.openingBalance, { symbol: true })}.
+              {current.balanceDate
+                ? t("The bank's balance: {bank} on {date}. UrBudget's, before this import: {ours}.", {
+                    bank: money(current.balance, { symbol: true }),
+                    date: formatDate(current.balanceDate),
+                    ours: money(balances.get(account.id)?.balance ?? account.openingBalance, { symbol: true }),
+                  })
+                : t("The bank's balance: {bank}. UrBudget's, before this import: {ours}.", {
+                    bank: money(current.balance, { symbol: true }),
+                    ours: money(balances.get(account.id)?.balance ?? account.openingBalance, { symbol: true }),
+                  })}
             </p>
           )}
         </>
@@ -463,8 +480,12 @@ export function BankSync({
         <>
           <p className="import-lead">
             {imported
-              ? `Imported ${imported} ${imported === 1 ? "transaction" : "transactions"}. They're waiting for your approval.`
-              : "Nothing new to import."}
+              ? tn(
+                  imported,
+                  "Imported {count} transaction. They're waiting for your approval.",
+                  "Imported {count} transactions. They're waiting for your approval.",
+                )
+              : t("Nothing new to import.")}
           </p>
           {onCategorize && left.ids.length > 0 && (
             <CategorizeOffer
@@ -479,13 +500,13 @@ export function BankSync({
             {reviews.map((r) => (
               <li key={r.accountId}>
                 <strong>{name(r.accountId)}</strong>{" "}
-                {r.error ?? (skipped.includes(r.accountId) ? "Skipped for now." : "Up to date.")}
+                {r.error ?? (skipped.includes(r.accountId) ? t("Skipped for now.") : t("Up to date."))}
               </li>
             ))}
           </ul>
           <div className="form-actions">
             <button className="primary" onClick={close}>
-              Done
+              {t("Done")}
             </button>
           </div>
         </>
@@ -500,18 +521,18 @@ export function BankSync({
           <MessageSquareText size={16} aria-hidden />
           <p>
             {allIn
-              ? "Every new row from this card came in as money in. If these are purchases, the bank sends signs the other way round, and the assistant can check it with you."
-              : "The assistant can look at this sync with you and say what to try."}
-            <small>Opens the assistant with a question ready. Nothing is sent until you press Send.</small>
+              ? t("Every new row from this card came in as money in. If these are purchases, the bank sends signs the other way round, and the assistant can check it with you.")
+              : t("The assistant can look at this sync with you and say what to try.")}
+            <small>{t("Opens the assistant with a question ready. Nothing is sent until you press Send.")}</small>
           </p>
           <button type="button" className="secondary small" onClick={() => onAsk(about, problem)}>
-            Ask the assistant
+            {t("Ask the assistant")}
           </button>
         </div>
       )}
       {synced && (
         <p className="help">
-          Requests to SimpleFIN today: {synced.requestsToday} of {synced.dailyLimit}.
+          {t("Requests to SimpleFIN today: {used} of {limit}.", { used: synced.requestsToday, limit: synced.dailyLimit })}
         </p>
       )}
     </div>
@@ -560,9 +581,9 @@ export function BankSyncDetails({
     });
     close();
     toast({
-      message: `${account.name} no longer syncs with its bank.`,
+      message: t("{name} no longer syncs with its bank.", { name: account.name }),
       action: {
-        label: "Undo",
+        label: t("Undo"),
         onClick: () =>
           edit((d) => {
             d.accounts.find((a) => a.id === account.id)!.simplefin = link;
@@ -573,47 +594,53 @@ export function BankSyncDetails({
   return (
     <div className="bank-sync-details">
       <dl>
-        <dt>At the bank</dt>
+        <dt>{t("At the bank")}</dt>
         <dd>
-          {listed?.name ?? link.name ?? "Bank account"}
+          {listed?.name ?? link.name ?? t("Bank account")}
           {org && <small className="bank-text">{org}</small>}
         </dd>
-        <dt>Last synced</dt>
-        <dd>{link.lastSync ? formatDate(link.lastSync) : "Not yet"}</dd>
-        <dt>Next sync</dt>
-        <dd>Brings in what posted from {formatDate(next)} on</dd>
-        <dt>The bank&apos;s balance</dt>
+        <dt>{t("Last synced")}</dt>
+        <dd>{link.lastSync ? formatDate(link.lastSync) : t("Not yet")}</dd>
+        <dt>{t("Next sync")}</dt>
+        <dd>{t("Brings in what posted from {date} on", { date: formatDate(next) })}</dd>
+        <dt>{t("The bank's balance")}</dt>
         <dd>
           {listed?.balance != null
-            ? `${money(listed.balance, { currency: listed.currency })}${listed.balanceDate ? ` on ${formatDate(listed.balanceDate)}` : ""}`
-            : "Shown after a sync"}
+            ? listed.balanceDate
+              ? t("{amount} on {date}", {
+                  amount: money(listed.balance, { currency: listed.currency }),
+                  date: formatDate(listed.balanceDate),
+                })
+              : money(listed.balance, { currency: listed.currency })
+            : t("Shown after a sync")}
         </dd>
-        <dt>UrBudget&apos;s balance</dt>
+        <dt>{t("UrBudget's balance")}</dt>
         <dd>{money(balance, { symbol: true })}</dd>
         {account.kind === "credit" && (
           <>
-            <dt>Card amounts</dt>
-            <dd>{link.flipSigns ? "Reversed: purchases arrive as money in" : "As the bank sends them"}</dd>
+            <dt>{t("Card amounts")}</dt>
+            <dd>{link.flipSigns ? t("Reversed: purchases arrive as money in") : t("As the bank sends them")}</dd>
           </>
         )}
-        <dt>Connection</dt>
+        <dt>{t("Connection")}</dt>
         <dd>
           {!status
-            ? "Checking…"
+            ? t("Checking…")
             : status.connected
-              ? `SimpleFIN Bridge · ${status.requestsToday} of ${status.dailyLimit} requests today`
-              : "Not connected on this computer. Connect in Settings & data › Import."}
+              ? t("SimpleFIN Bridge · {used} of {limit} requests today", { used: status.requestsToday, limit: status.dailyLimit })
+              : t("Not connected on this computer. Connect in Settings & data › Import.")}
         </dd>
       </dl>
       {reversed && (
         <p className="notice">
-          The bank&apos;s balance and UrBudget&apos;s have opposite signs. If the card&apos;s purchases came in as money
-          in, turn on Purchases arrive as money in, in Bank sync settings.
+          {t("The bank's balance and UrBudget's have opposite signs. If the card's purchases came in as money in, turn on Purchases arrive as money in, in Bank sync settings.")}
         </p>
       )}
       {listed && listed.currency !== budget.currency && (
         <p className="notice error">
-          This bank account is in {listed.currency ?? "a currency of its own"}, but this budget uses {budget.currency}.
+          {listed.currency
+            ? t("This bank account is in {currency}, but this budget uses {budget}.", { currency: listed.currency, budget: budget.currency })
+            : t("This bank account is in a currency of its own, but this budget uses {budget}.", { budget: budget.currency })}
         </p>
       )}
       {status?.messages.map((m) => (
@@ -623,18 +650,18 @@ export function BankSyncDetails({
       ))}
       <div className="form-actions">
         <button className="text-button" onClick={unlink}>
-          Unlink
+          {t("Unlink")}
         </button>
         <button className="secondary" onClick={onSettings}>
-          Bank sync settings
+          {t("Bank sync settings")}
         </button>
         {onAsk && (
           <button className="secondary" onClick={onAsk}>
-            <MessageSquareText size={14} /> Ask the assistant
+            <MessageSquareText size={14} /> {t("Ask the assistant")}
           </button>
         )}
         <button className="primary" disabled={!status?.connected} onClick={onSync}>
-          <RefreshCw size={14} /> Sync now
+          <RefreshCw size={14} /> {t("Sync now")}
         </button>
       </div>
     </div>

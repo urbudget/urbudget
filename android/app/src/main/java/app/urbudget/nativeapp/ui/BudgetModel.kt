@@ -2,6 +2,8 @@ package app.urbudget.nativeapp.ui
 
 import androidx.compose.runtime.Immutable
 import app.urbudget.nativeapp.CategoryStatuses
+import app.urbudget.nativeapp.R
+import app.urbudget.nativeapp.Words
 import app.urbudget.nativeapp.Uncategorized
 import org.json.JSONArray
 import org.json.JSONObject
@@ -76,10 +78,10 @@ internal fun buildBudgetModel(budget: JSONObject, summary: JSONObject, month: St
         val target = category.optLong("target")
         val words = if (state.status == "underfunded" || state.eventually > 0) CategoryStatuses.targetWords(category, total, state, monthFirst) else null
         val detail = when {
-            state.status == "credit" -> "Overspent on a card"
-            state.status == "negative" -> "Overspent"
-            words != null -> if (words.amount == null) words.words else "${money(words.amount, currency)} ${words.words}"
-            state.snoozed -> "Snoozed"
+            state.status == "credit" -> Words[R.string.category_overspent_card]
+            state.status == "negative" -> Words[R.string.category_overspent]
+            words != null -> words.text(money(words.amount ?: 0, currency))
+            state.snoozed -> Words[R.string.category_snoozed]
             else -> null
         }
         CategoryRowModel(
@@ -111,8 +113,8 @@ internal fun buildBudgetModel(budget: JSONObject, summary: JSONObject, month: St
 }
 
 /** The views a phone's filter button offers, with what each counts. */
-internal val BudgetViews = listOf("all" to "All", "underfunded" to "Underfunded", "overfunded" to "Overfunded", "available" to "Money available",
-    "overspent" to "Overspent", "snoozed" to "Snoozed")
+internal val BudgetViews = listOf("all" to R.string.view_all, "underfunded" to R.string.view_underfunded, "overfunded" to R.string.view_overfunded,
+    "available" to R.string.view_available, "overspent" to R.string.view_overspent, "snoozed" to R.string.view_snoozed)
 
 internal fun CategoryRowModel.inView(view: String) = when (view) {
     "underfunded" -> underfunded

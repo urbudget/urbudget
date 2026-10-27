@@ -90,18 +90,18 @@ enum BankReview {
 
     /// "12 rows · 3 already imported · 2 renamed by your payee rules".
     static func countsText(_ summary: BankReviewSummary) -> String {
-        var text = summary.rows == 1 ? "1 row" : "\(summary.rows) rows"
-        if summary.duplicates > 0 { text += " · \(summary.duplicates) already imported" }
-        if summary.renamed > 0 { text += " · \(summary.renamed) renamed by your payee rules" }
-        if summary.refunds > 0 { text += " · \(summary.refunds) \(summary.refunds == 1 ? "refund" : "refunds")" }
-        return text
+        var parts = [String(localized: "\(summary.rows) rows", locale: .app)]
+        if summary.duplicates > 0 { parts.append(String(localized: "\(summary.duplicates) already imported", locale: .app)) }
+        if summary.renamed > 0 { parts.append(String(localized: "\(summary.renamed) renamed by your payee rules", locale: .app)) }
+        if summary.refunds > 0 { parts.append(String(localized: "\(summary.refunds) refunds", locale: .app)) }
+        return ImportsText.line(parts)
     }
 
     /// Under every review's rows.
-    static let matchingNote = "Matching keeps your category and memo and marks the transaction cleared. Imported transactions wait for your approval."
+    static let matchingNote = String(localized: "Matching keeps your category and memo and marks the transaction cleared. Imported transactions wait for your approval.")
 
-    private static let alreadyImported = [BankReviewOption(id: "skip", label: "Already imported — skip"),
-                                          BankReviewOption(id: "new", label: "Add as a separate transaction")]
+    private static let alreadyImported = [BankReviewOption(id: "skip", label: String(localized: "Already imported — skip")),
+                                          BankReviewOption(id: "new", label: String(localized: "Add as a separate transaction"))]
 
     /// One candidate pool's choices, built once and shared by every row that uses the pool.
     private struct Pool {
@@ -139,12 +139,15 @@ enum BankReview {
                 let other = transfers.contains(id) ? saved.flatMap { accountNames[$0.text("accountId")] } : nil
                 return BankReviewOption(id: "match:\(id)", label: matchLabel(id, saved, detail, previouslyMatched.contains(id), other: other))
             }
+            let add = BankReviewOption(id: "new", label: String(localized: "Add as a new transaction"))
+            let skip = BankReviewOption(id: "skip", label: String(localized: "Skip"))
             return Pool(
-                choose: [.init(id: "review", label: "Choose a match or add it"), .init(id: "new", label: "Add as a new transaction"), .init(id: "skip", label: "Skip")] + matches,
-                possible: [.init(id: "review", label: "May already be imported — choose"), .init(id: "new", label: "Add as a new transaction"), .init(id: "skip", label: "Skip")] + matches,
+                choose: [.init(id: "review", label: String(localized: "Choose a match or add it")), add, skip] + matches,
+                possible: [.init(id: "review", label: String(localized: "May already be imported — choose")), add, skip] + matches,
                 candidates: candidates, previouslyMatched: previouslyMatched, transfer: transfer, transferSure: source.flag("transferSure"))
         }
 
+        let noPayee = String(localized: "No payee")
         var prepared: [BankReviewRow] = []
         prepared.reserveCapacity(rows.count)
         for (index, row) in rows.enumerated() {
@@ -156,7 +159,7 @@ enum BankReview {
                     set = cached
                 } else {
                     guard let sets = candidateSets, sets.indices.contains(setIndex) else {
-                        throw AppError("Bank match details are missing. Preview again.")
+                        throw AppError(String(localized: "Bank match details are missing. Preview again."))
                     }
                     set = pool(sets[setIndex])
                     pools[setIndex] = set
@@ -183,10 +186,10 @@ enum BankReview {
                                        suggestedTransfer: set.transferSure ? nil : set.transfer),
                 manualImportId: "bank:manual:\(UUID().uuidString.lowercased())", previouslyMatched: set.previouslyMatched,
                 locked: duplicate && !separate, date: date,
-                payee: shownPayee.trimmingCharacters(in: .whitespaces).isEmpty ? "No payee" : shownPayee,
+                payee: shownPayee.trimmingCharacters(in: .whitespaces).isEmpty ? noPayee : shownPayee,
                 bankText: rename == nil ? nil : bankPayee, memo: memo, amount: amount,
                 amountText: Money.format(amount, currency: currency), duplicate: duplicate, possibleDuplicate: possible, idless: idless,
-                detail: [date, memo].filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.joined(separator: " · "),
+                detail: ImportsText.line([date, memo].filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }),
                 transfer: duplicate ? nil : set.transfer, transferSure: set.transferSure,
                 refund: duplicate || !row["refundOf"].isObject ? nil : BankStatementText.refund(row["refundOf"], categories: categoryNames, currency: currency)))
         }
@@ -196,19 +199,28 @@ enum BankReview {
     /// "Match: 3 Oct 2026 · Shop · Split 2 · memo · Previously imported", as the desktop labels a match;
     /// "Transfer from Savings: 2 Oct 2026 · TO EVERYDAY" for the other side of money moved from `other`.
     private static func matchLabel(_ id: String, _ saved: JSON?, _ detail: JSON?, _ previously: Bool, other: String? = nil) -> String {
-        guard let saved else { return "Match: \(id)\(previously ? " · Previously imported" : "")" }
+        let previous = String(localized: "Previously imported")
+        guard let saved else {
+            let about = ImportsText.line(previously ? [id, previous] : [id])
+            return String(localized: "Match: \(about)")
+        }
         let splits = saved.rows("splits")
         let splitIndex = detail.map { Int($0.long("splitIndex")) }
         let part = splitIndex.flatMap { splits.indices.contains($0) ? splits[$0] : nil }
         let partMemo = part?.text("memo") ?? ""
         let memo = partMemo.trimmingCharacters(in: .whitespaces).isEmpty ? saved.text("memo") : partMemo
         let payee = saved.text("payee")
-        let start = other.map { "Transfer \(saved.long("amount") < 0 ? "from" : "to") \($0): " } ?? "Match: "
-        var label = "\(start)\(Money.date(saved.text("date"))) · \(payee.trimmingCharacters(in: .whitespaces).isEmpty ? "Transfer" : payee)"
-        if let splitIndex { label += " · Split \(splitIndex + 1)" }
-        if !memo.trimmingCharacters(in: .whitespaces).isEmpty { label += " · \(memo)" }
-        if previously { label += " · Previously imported" }
-        return label
+        var parts = [Money.date(saved.text("date")), payee.trimmingCharacters(in: .whitespaces).isEmpty ? String(localized: "Transfer") : payee]
+        if let splitIndex {
+            let number = splitIndex + 1
+            parts.append(String(localized: "Split \(number)", locale: .app))
+        }
+        if !memo.trimmingCharacters(in: .whitespaces).isEmpty { parts.append(memo) }
+        if previously { parts.append(previous) }
+        let about = ImportsText.line(parts)
+        guard let other else { return String(localized: "Match: \(about)") }
+        // Money out of the other account is money into this one, and the other way round.
+        return saved.long("amount") < 0 ? String(localized: "Transfer from \(other): \(about)") : String(localized: "Transfer to \(other): \(about)")
     }
 
     /// Matching revalidates against the current ledger; only the selected prior match is needed.
@@ -352,7 +364,7 @@ struct BankReviewHeader: View {
 
     var body: some View {
         HStack {
-            Text(rows.count == 1 ? "1 row" : "\(rows.count) rows")
+            Text("\(rows.count) rows")
             Spacer()
             if undecided > 0 && enabled {
                 Menu {
@@ -361,14 +373,14 @@ struct BankReviewHeader: View {
                         Button {
                             for index in suggested { decisions[index] = "match:\(rows[index].transfer!)" }
                         } label: {
-                            Label(suggested.count == 1 ? "Pair the suggested transfer" : "Pair \(suggested.count) suggested transfers",
-                                  systemImage: "arrow.left.arrow.right")
+                            // One reads "Pair the suggested transfer".
+                            Label("Pair \(suggested.count) suggested transfers", systemImage: "arrow.left.arrow.right")
                         }
                     }
                     Button { decide("new") } label: { Label("Add them as new", systemImage: "plus.circle") }
                     Button { decide("skip") } label: { Label("Skip them", systemImage: "forward") }
                 } label: {
-                    Text(undecided == 1 ? "Decide 1 row" : "Decide \(undecided) rows").font(.footnote.weight(.semibold)).textCase(nil)
+                    Text("Decide \(undecided) rows").font(.footnote.weight(.semibold)).textCase(nil)
                 }
             }
         }
@@ -388,17 +400,17 @@ struct BankReviewNotes: View {
 
     var body: some View {
         if summary.transfers {
-            Notice(text: "A transfer joins a row to the uncategorized entry it mirrors in another account, so the money you moved isn't counted as spending or income. It's chosen for you when the bank's text names the other account or matches earlier transfers between them; otherwise it's suggested for you to check.",
+            Notice(text: String(localized: "A transfer joins a row to the uncategorized entry it mirrors in another account, so the money you moved isn't counted as spending or income. It's chosen for you when the bank's text names the other account or matches earlier transfers between them; otherwise it's suggested for you to check."),
                    tone: "info", icon: "arrow.left.arrow.right")
                 .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
         }
         if summary.idless {
-            Notice(text: "This file has no bank transaction IDs. A row may already be imported; compare its memo and amount. Skip it if it's the same payment, or add it separately if it's a different one.",
+            Notice(text: String(localized: "This file has no bank transaction IDs. A row may already be imported; compare its memo and amount. Skip it if it's the same payment, or add it separately if it's a different one."),
                    tone: "info", icon: "info.circle.fill")
                 .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
         }
         if undecided > 0 {
-            Notice(text: undecided == 1 ? "1 row needs a choice before importing." : "\(undecided) rows need a choice before importing.",
+            Notice(text: String(localized: "\(undecided) rows need a choice before importing.", locale: .app),
                    icon: "exclamationmark.triangle.fill")
                 .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
         }

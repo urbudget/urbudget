@@ -1,4 +1,4 @@
-use crate::{domain::Budget, import_sync, store::Snapshot, ynab, Database};
+use crate::{domain::Budget, i18n::tr, import_sync, store::Snapshot, t, ynab, Database};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, io::Write, sync::Mutex, time::Instant};
@@ -61,13 +61,13 @@ fn client() -> Result<reqwest::Client, String> {
         .redirect(reqwest::redirect::Policy::none())
         .timeout(std::time::Duration::from_secs(60))
         .build()
-        .map_err(|_| "Could not start import".into())
+        .map_err(|_| t!("Could not start import"))
 }
 fn refusal(status: u16) -> String {
     match status {
-        401 | 403 => "YNAB rejected the token. Paste an active personal access token.".into(),
-        429 => "YNAB’s hourly request limit was reached. Try again later.".into(),
-        n => format!("YNAB returned HTTP {n}. Your local budget is unchanged."),
+        401 | 403 => t!("YNAB rejected the token. Paste an active personal access token."),
+        429 => t!("YNAB’s hourly request limit was reached. Try again later."),
+        n => t!("YNAB returned HTTP {n}. Your local budget is unchanged.", n),
     }
 }
 fn review_id() -> String {
@@ -80,7 +80,7 @@ fn token_for(token: String, saved_token: Option<&str>) -> Result<String, String>
         None => token,
     };
     if token.trim().is_empty() {
-        return Err("Enter your personal access token.".into());
+        return Err(t!("Enter your personal access token."));
     }
     Ok(token)
 }
@@ -102,7 +102,7 @@ fn plan_choices(listing: &Value) -> Vec<PlanChoice> {
         .filter_map(|p| {
             Some(PlanChoice {
                 id: p["id"].as_str()?.to_owned(),
-                name: p["name"].as_str().unwrap_or("Untitled plan").to_owned(),
+                name: p["name"].as_str().unwrap_or(tr("Untitled plan")).to_owned(),
                 last_modified_on: p["last_modified_on"].as_str().map(str::to_owned),
             })
         })
@@ -122,15 +122,15 @@ async fn download_plan(http: &reqwest::Client, endpoint: &str, token: &str, plan
     let url = format!("{endpoint}/{plan}");
     let mut request = http.get(&url).bearer_auth(token);
     if let Some(knowledge) = knowledge { request = request.query(&[("last_knowledge_of_server", knowledge)]); }
-    let mut response = request.send().await.map_err(|_| "Could not reach YNAB. Check your connection and retry.")?;
+    let mut response = request.send().await.map_err(|_| t!("Could not reach YNAB. Check your connection and retry."))?;
     let mut incremental = knowledge.is_some();
     if response.status().as_u16() == 400 && incremental {
-        progress("Refreshing the full YNAB snapshot…");
+        progress(tr("Refreshing the full YNAB snapshot…"));
         incremental = false;
-        response = http.get(&url).bearer_auth(token).send().await.map_err(|_| "Could not refresh the YNAB snapshot. Retry when connected.")?;
+        response = http.get(&url).bearer_auth(token).send().await.map_err(|_| t!("Could not refresh the YNAB snapshot. Retry when connected."))?;
     }
     if !response.status().is_success() { return Err(refusal(response.status().as_u16())); }
-    let value = response.json().await.map_err(|_| "YNAB returned invalid data. Your local budget is unchanged.")?;
+    let value = response.json().await.map_err(|_| t!("YNAB returned invalid data. Your local budget is unchanged."))?;
     Ok((value, incremental))
 }
 
@@ -142,7 +142,7 @@ pub async fn ynab_plans(token: String, saved_token: Option<String>) -> Result<Ve
         .bearer_auth(token.trim())
         .send()
         .await
-        .map_err(|_| "Could not reach YNAB. Check your connection and retry.")?;
+        .map_err(|_| t!("Could not reach YNAB. Check your connection and retry."))?;
     drop(token);
     let plans = match response.status().as_u16() {
         404 => vec![],
@@ -151,11 +151,11 @@ pub async fn ynab_plans(token: String, saved_token: Option<String>) -> Result<Ve
             &response
                 .json::<Value>()
                 .await
-                .map_err(|_| "YNAB returned invalid data. Try again.")?,
+                .map_err(|_| t!("YNAB returned invalid data. Try again."))?,
         ),
     };
     if plans.is_empty() {
-        return Err("This YNAB account has no plans to import.".into());
+        return Err(t!("This YNAB account has no plans to import."));
     }
     Ok(plans)
 }
@@ -179,14 +179,14 @@ pub async fn sync_ynab(
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '-')
     {
-        return Err("Choose a plan to import.".into());
+        return Err(t!("Choose a plan to import."));
     }
     let token = token_for(token, saved_token.as_deref())?;
     let local = {
         let mut store = db.store()?;
         let s = store.load()?;
         if s.token != expected_token {
-            return Err("CONFLICT: Database changed. Fetch it before importing.".into());
+            return Err(t!("CONFLICT: Database changed. Fetch it before importing."));
         }
         s.budget
     };
@@ -213,9 +213,9 @@ pub async fn sync_ynab(
     };
     progress(
         if knowledge.is_some() {
-            "Downloading changes from YNAB…"
+            tr("Downloading changes from YNAB…")
         } else {
-            "Downloading your YNAB plan…"
+            tr("Downloading your YNAB plan…")
         },
     );
     let (downloaded, used_delta) = download_plan(&client()?, "https://api.ynab.com/v1/plans", token.trim(), requested, knowledge).await?;
@@ -232,7 +232,7 @@ pub async fn sync_ynab(
     };
     drop(token);
     {
-        progress("Validating balances and merging changes…");
+        progress(tr("Validating balances and merging changes…"));
         let incremental = knowledge.is_some();
         let source = if let Some(base) = baseline.as_ref().filter(|_| incremental) {
             import_sync::merge_delta(base, &downloaded)?
@@ -251,9 +251,7 @@ pub async fn sync_ynab(
             let mut store = state.store()?;
             let snapshot = store.load()?;
             if snapshot.token != expected_token {
-                return Err(
-                    "CONFLICT: Database changed during import. Retry after fetching.".into(),
-                );
+                return Err(t!("CONFLICT: Database changed during import. Retry after fetching."));
             }
             ImportResult { unchanged: true, ..ImportResult::of(snapshot, started, incremental) }
         } else {
@@ -269,7 +267,7 @@ pub async fn sync_ynab(
                 let mut store = state.store()?;
                 let snapshot = store.load()?;
                 if snapshot.token != expected_token {
-                    return Err("CONFLICT: Database changed during import. Fetch and retry.".into());
+                    return Err(t!("CONFLICT: Database changed during import. Fetch and retry."));
                 }
                 let id = review_id();
                 *pending_import.0.lock().map_err(|e| e.to_string())? = Some(Pending {
@@ -318,7 +316,7 @@ fn finish(
             let mut store = state.store()?;
             let snapshot = store.load()?;
             if snapshot.token != expected_token {
-                return Err("CONFLICT: Database changed during import. Fetch and retry.".into());
+                return Err(t!("CONFLICT: Database changed during import. Fetch and retry."));
             }
             *pending_import.0.lock().map_err(|e| e.to_string())? = Some(Pending {
                 id: id.clone(),
@@ -333,7 +331,7 @@ fn finish(
         merged
     };
     let directory = state.store()?.folder().join("imports");
-    std::fs::create_dir_all(&directory).map_err(|_| "Cannot create import directory")?;
+    std::fs::create_dir_all(&directory).map_err(|_| t!("Cannot create import directory"))?;
     let path = directory.join(format!(
         "ynab-{}.json",
         chrono::Utc::now().format("%Y%m%d-%H%M%S-%f")
@@ -347,16 +345,14 @@ fn finish(
     }
     let mut file = options
         .open(path)
-        .map_err(|_| "Cannot preserve the source export")?;
-    file.write_all(&serde_json::to_vec(source).map_err(|_| "Cannot encode source")?)
-        .map_err(|_| "Cannot write source export")?;
-    file.sync_all().map_err(|_| "Cannot flush source export")?;
-    progress("Backing up and saving your budget…");
+        .map_err(|_| t!("Cannot preserve the source export"))?;
+    file.write_all(&serde_json::to_vec(source).map_err(|_| t!("Cannot encode source"))?)
+        .map_err(|_| t!("Cannot write source export"))?;
+    file.sync_all().map_err(|_| t!("Cannot flush source export"))?;
+    progress(tr("Backing up and saving your budget…"));
     let mut store = state.store()?;
     if store.status()?.token != expected_token {
-        return Err(
-            "CONFLICT: Database changed during import. Nothing was overwritten.".into(),
-        );
+        return Err(t!("CONFLICT: Database changed during import. Nothing was overwritten."));
     }
     let backup = store.backup()?;
     store.save(&budget, expected_token)?;
@@ -371,15 +367,15 @@ fn pending(db: &Database, pending_import: &PendingImport, review_id: &str, expec
         .lock()
         .map_err(|e| e.to_string())?
         .clone()
-        .ok_or("The import review expired. Import again.")?;
+        .ok_or_else(|| t!("The import review expired. Import again."))?;
     if pending.id != review_id {
-        return Err("The import review was replaced. Import again.".into());
+        return Err(t!("The import review was replaced. Import again."));
     }
     if pending.expected_token != expected_token {
-        return Err("CONFLICT: The budget changed since this review. Import again to review the latest changes.".into());
+        return Err(t!("CONFLICT: The budget changed since this review. Import again to review the latest changes."));
     }
     if db.store()?.id() != pending.budget_id {
-        return Err("This import review belongs to another budget. Import again.".into());
+        return Err(t!("This import review belongs to another budget. Import again."));
     }
     Ok(pending)
 }
@@ -395,7 +391,7 @@ pub async fn accept_ynab_import(
         let started = Instant::now();
         let pending = pending(db, pending_import, &review_id, &expected_token)?;
         let Review::Differences { incoming, source, replace, differences } = pending.review else {
-            return Err("This import is waiting on a choice for each competing change.".into());
+            return Err(t!("This import is waiting on a choice for each competing change."));
         };
         let result = finish(db, pending_import, pending.local, incoming, &source, replace, pending.incremental, &expected_token, started, &differences)?;
         // A save ends the review; competing changes found while merging replace it with theirs.
@@ -417,16 +413,16 @@ pub async fn resolve_ynab(
         let started = Instant::now();
         let pending = pending(db, pending_import, &review_id, &expected_token)?;
         let Review::Conflicts { remote } = pending.review else {
-            return Err("This import is waiting for its differences from YNAB to be accepted.".into());
+            return Err(t!("This import is waiting for its differences from YNAB to be accepted."));
         };
         let (budget, conflicts) = import_sync::merge_review(&pending.local, remote, choices)?;
         if !conflicts.is_empty() {
-            return Err("Choose Local or YNAB for every conflict.".into());
+            return Err(t!("Choose Local or YNAB for every conflict."));
         }
         let state = db;
         let mut store = state.store()?;
         if store.status()?.token != expected_token {
-            return Err("CONFLICT: Database changed before import. Nothing was overwritten.".into());
+            return Err(t!("CONFLICT: Database changed before import. Nothing was overwritten."));
         }
         let backup = store.backup()?;
         store.save(&budget, &expected_token)?;

@@ -14,6 +14,9 @@ import androidx.compose.ui.unit.dp
 import app.urbudget.nativeapp.AccountTypes
 import app.urbudget.nativeapp.BudgetViewModel
 import app.urbudget.nativeapp.Money
+import app.urbudget.nativeapp.R
+import app.urbudget.nativeapp.Words
+import androidx.compose.ui.res.stringResource
 import app.urbudget.nativeapp.ScopedResult
 import app.urbudget.nativeapp.nextLoanPayment
 import app.urbudget.nativeapp.parseRateChange
@@ -41,20 +44,20 @@ private fun draftOf(saved: JSONObject?): LoanDraft = if (saved == null) LoanDraf
 
 /** The typed details as loan terms, or a sentence saying what doesn't read. */
 private fun termsOf(draft: LoanDraft, accountId: String, saved: JSONObject?, requireCategory: Boolean): JSONObject {
-    require(accountId.isNotBlank()) { "Choose the loan account." }
+    require(accountId.isNotBlank()) { Words[R.string.loan_choose_account] }
     val payment = if (draft.payment.isBlank()) 0L else amountValue(draft.payment)
-    require(payment > 0) { "Enter the loan's monthly payment as a positive amount." }
+    require(payment > 0) { Words[R.string.loan_payment_positive] }
     val fees = if (draft.fees.isBlank()) 0L else amountValue(draft.fees)
-    require(fees >= 0) { "Enter the monthly fees as a positive amount." }
+    require(fees >= 0) { Words[R.string.loan_fees_positive] }
     val rate = if (draft.rate.isBlank()) 0L else runCatching { amountValue(draft.rate.trim().removeSuffix("%").trim()) }
-        .getOrElse { throw IllegalArgumentException("Enter the interest rate as a percentage, like 5.25.") }
-    require(rate in 0..100_000) { "The interest rate must be from 0 to 1,000%." }
+        .getOrElse { throw IllegalArgumentException(Words[R.string.loan_rate_format]) }
+    require(rate in 0..100_000) { Words[R.string.loan_rate_range] }
     val history = draft.rates.map { row ->
-        val month = runCatching { YearMonth.parse(row.month).toString() }.getOrElse { throw IllegalArgumentException("Choose the month each rate change starts.") }
+        val month = runCatching { YearMonth.parse(row.month).toString() }.getOrElse { throw IllegalArgumentException(Words[R.string.loan_rate_month_required]) }
         (row.source?.copyJson() ?: JSONObject()).put("month", month).put("annualRateMilliPercent", parseRateChange(row.rate, Money.decimalMark()))
     }.sortedBy { it.text("month") }
-    require(history.map { it.text("month") }.distinct().size == history.size) { "Keep one interest rate per month." }
-    if (requireCategory) require(draft.category.isNotBlank()) { "Choose the category the payment comes from." }
+    require(history.map { it.text("month") }.distinct().size == history.size) { Words[R.string.loan_one_rate_per_month] }
+    if (requireCategory) require(draft.category.isNotBlank()) { Words[R.string.loan_category_required] }
     return (saved?.copyJson() ?: JSONObject()).put("accountId", accountId).put("categoryId", draft.category)
         .put("annualRateBasisPoints", rate).put("monthlyPayment", payment).put("monthlyFees", fees).put("rateHistory", JSONArray(history))
 }
@@ -75,23 +78,23 @@ private fun buildView(base: JSONObject, then: JSONObject?, changed: Boolean, pai
     fun payoff(p: JSONObject) = monthLabel(p.text("payoffDate").take(7))
     val rows = buildList {
         fun row(label: String, value: (JSONObject) -> String) = add(CompareRow(label, value(base), if (!changed) null else then?.let(value) ?: if (paidNow) "—" else ""))
-        row("Paid off") { payoff(it) }
-        row("Time left") { span(it.optInt("months")) }
-        row("Interest") { money(it.optLong("totalInterest"), currency) }
+        row(Words[R.string.loan_paid_off]) { payoff(it) }
+        row(Words[R.string.loan_time_left]) { span(it.optInt("months")) }
+        row(Words[R.string.loan_interest]) { money(it.optLong("totalInterest"), currency) }
         if (fees > 0) row(feeLabel) { money(it.optLong("totalFees"), currency) }
-        row("Total cost") { money(owed + it.optLong("totalInterest") + it.optLong("totalFees"), currency) }
+        row(Words[R.string.loan_total_cost]) { money(owed + it.optLong("totalInterest") + it.optLong("totalFees"), currency) }
     }
     val savings = if (changed && (then != null || paidNow)) listOf(
-        "Interest saved" to money(base.optLong("totalInterest") - (then?.optLong("totalInterest") ?: 0L), currency),
-        "Time saved" to span(base.optInt("months") - (then?.optInt("months") ?: 0)),
-        "Paid off" to if (paidNow || then == null) "Now" else payoff(then)) else emptyList()
+        Words[R.string.loan_interest_saved] to money(base.optLong("totalInterest") - (then?.optLong("totalInterest") ?: 0L), currency),
+        Words[R.string.loan_time_saved] to span(base.optInt("months") - (then?.optInt("months") ?: 0)),
+        Words[R.string.loan_paid_off] to if (paidNow || then == null) Words[R.string.loan_now] else payoff(then)) else emptyList()
     val shown = (then ?: base).rows("schedule")
     val years = shown.mapIndexed { index, r ->
         r.text("date").take(4) to PaymentLine("$index:${r.text("date")}", Money.date(r.text("date")), money(r.optLong("payment"), currency),
-            "Interest ${money(r.optLong("interest"), currency)} · $feeLabel ${money(r.optLong("fees"), currency)} · Principal ${money(r.optLong("principal"), currency)} · Still owed ${money(r.optLong("balance"), currency)}")
+            Words[R.string.loan_schedule_line, money(r.optLong("interest"), currency), feeLabel, money(r.optLong("fees"), currency), money(r.optLong("principal"), currency), money(r.optLong("balance"), currency)])
     }.groupBy({ it.first }, { it.second }).map { (year, lines) -> ScheduleYear(year, lines) }
     return LoanView(payoff(base), money(base.optLong("totalInterest"), currency), rows, savings, years, shown.size,
-        "Payment schedule${if (then != null) " with changes" else ""} · ${shown.size} payments")
+        Words.count(if (then != null) R.plurals.loan_schedule_title_changes else R.plurals.loan_schedule_title, shown.size.toLong()))
 }
 
 /**
@@ -139,9 +142,10 @@ internal fun LoanDialog(original: JSONObject?, budget: JSONObject, summary: JSON
     val balance = balances[account] ?: accountRecord?.optLong("openingBalance") ?: 0L
     val owed = maxOf(0L, -balance)
     val mortgage = accountRecord != null && AccountTypes.infer(accountRecord, balance) == "mortgage"
-    val feeLabel = if (mortgage) "Escrow" else "Fees"
+    val feeLabel = stringResource(if (mortgage) R.string.loan_fee_escrow else R.string.loan_fee_fees)
     val start = rememberPrepared(budget, account) { if (account.isBlank()) null else nextLoanPayment(budget, account, today) }
-    val terms = remember(draft, account, saved) { runCatching { termsOf(draft, account, saved, requireCategory = false) } }
+    val language = languageKey()
+    val terms = remember(draft, account, saved, language) { runCatching { termsOf(draft, account, saved, requireCategory = false) } }
     val termsValue = terms.getOrNull()
     val termsText = remember(termsValue) { termsValue?.toString() }
     val extra = plannerAmount(extraText)
@@ -192,7 +196,7 @@ internal fun LoanDialog(original: JSONObject?, budget: JSONObject, summary: JSON
     val paidNow = changed && (if (thenProjection != null) thenProjection.optInt("months") == 1 &&
         (oneOff ?: 0L) >= (thenProjection.rows("schedule").firstOrNull()?.optLong("payment") ?: Long.MAX_VALUE) else left == 0L)
     val fees = termsValue?.optLong("monthlyFees") ?: 0L
-    val view = rememberPrepared(baseProjection, thenProjection, changed, paidNow, owed) {
+    val view = rememberPrepared(baseProjection, thenProjection, changed, paidNow, owed, language) {
         baseProjection?.let { buildView(it, thenProjection, changed, paidNow, owed, fees, feeLabel, currency) }
     }
     val waiting = termsValue != null && owed > 0 && start != null && (now == null || changed && left > 0 && then == null)
@@ -207,11 +211,11 @@ internal fun LoanDialog(original: JSONObject?, budget: JSONObject, summary: JSON
         }.onSuccess { close() }.onFailure { error = it.message }
     }
 
-    LazyFormDialog(accountRecord?.text("name")?.let { "Loan · $it" } ?: "Loan payoff planner", close, confirm = "Save",
+    LazyFormDialog(accountRecord?.text("name")?.let { stringResource(R.string.loan_title_named, it) } ?: stringResource(R.string.loan_title), close, confirm = stringResource(R.string.common_save),
         onConfirm = ::save, enabled = account.isNotBlank() && termsValue != null) {
         if (locked == null) item(key = "loan:account") {
-            if (loanAccounts.isEmpty()) Notice("Add a tracking account of a loan type, such as Mortgage or Auto loan, with what you owe as a negative balance first.", tone = "info")
-            else Choice("Debt account", account, accountChoices) {
+            if (loanAccounts.isEmpty()) Notice(stringResource(R.string.loan_needs_account), tone = "info")
+            else Choice(stringResource(R.string.loan_debt_account), account, accountChoices) {
                 if (it != account) {
                     account = it
                     val fresh = draftOf(budget.rows("loans").firstOrNull { loan -> loan.text("accountId") == it })
@@ -221,42 +225,43 @@ internal fun LoanDialog(original: JSONObject?, budget: JSONObject, summary: JSON
         }
         error?.let { item(key = "loan:error") { FormError(it) } }
         if (account.isNotBlank()) item(key = "loan:facts") {
-            val rate = termsValue?.let { "${rateText(rateIn(it, today.take(7)))}%" } ?: "—"
+            val rate = termsValue?.let { Money.ltr("${rateText(rateIn(it, today.take(7)))}%") } ?: "—"
             LoanFacts(money(owed, currency), rate, termsValue?.let { money(it.optLong("monthlyPayment"), currency) } ?: "—",
-                when { owed == 0L -> "Paid off"; view != null -> view.payoff; else -> "—" }, when { owed == 0L -> money(0, currency); view != null -> view.interest; else -> "—" }) {
+                when { owed == 0L -> stringResource(R.string.loan_status_paid_off); view != null -> view.payoff; else -> "—" }, when { owed == 0L -> money(0, currency); view != null -> view.interest; else -> "—" }) {
                 if (owed > 0 && accountRecord?.optBoolean("archived") != true) {
-                    PrimaryButton("Record payment", { paying = true }, Modifier.fillMaxWidth(), enabled = saved != null && !dirty, icon = Icons.Outlined.Payments)
+                    PrimaryButton(stringResource(R.string.loan_record_payment), { paying = true }, Modifier.fillMaxWidth(), enabled = saved != null && !dirty, icon = Icons.Outlined.Payments)
                     Text(when {
-                        saved == null -> "Save the loan details first to record a payment with them."
-                        dirty -> "Save your changes first: a payment uses the saved details."
-                        else -> "${if (fees > 0) "Interest and ${feeLabel.lowercase()} are" else "Interest is"} added to the loan with the first payment each month."
+                        saved == null -> stringResource(R.string.loan_save_first)
+                        dirty -> stringResource(R.string.loan_save_changes_first)
+                        fees > 0 -> stringResource(if (mortgage) R.string.loan_interest_escrow_added else R.string.loan_interest_fees_added)
+                        else -> stringResource(R.string.loan_interest_added)
                     }, style = MaterialTheme.typography.bodySmall, color = ur.muted)
                 }
             }
         }
-        item(key = "loan:details-title") { SectionTitle("Loan details", "What the payoff date and the interest are worked out from") }
-        item(key = "loan:rate", contentType = "field") { Field(draft.rate, { draft = draft.copy(rate = it) }, "Interest rate (%)", true) }
-        item(key = "loan:payment", contentType = "field") { Field(draft.payment, { draft = draft.copy(payment = it) }, "Monthly payment ($currency)", true) }
-        item(key = "loan:fees", contentType = "field") { Field(draft.fees, { draft = draft.copy(fees = it) }, "Monthly ${feeLabel.lowercase()} ($currency)", true) }
+        item(key = "loan:details-title") { SectionTitle(stringResource(R.string.loan_details), stringResource(R.string.loan_details_detail)) }
+        item(key = "loan:rate", contentType = "field") { Field(draft.rate, { draft = draft.copy(rate = it) }, stringResource(R.string.loan_rate_field), true) }
+        item(key = "loan:payment", contentType = "field") { Field(draft.payment, { draft = draft.copy(payment = it) }, stringResource(R.string.loan_payment_field, currency), true) }
+        item(key = "loan:fees", contentType = "field") { Field(draft.fees, { draft = draft.copy(fees = it) }, stringResource(if (mortgage) R.string.loan_escrow_field else R.string.loan_fees_field, currency), true) }
         item(key = "loan:category") {
-            PickerField("Payment category", categoryNames[draft.category], "Where the payment comes from", { picking = true })
+            PickerField(stringResource(R.string.loan_payment_category), categoryNames[draft.category], stringResource(R.string.loan_payment_category_hint), { picking = true })
         }
         item(key = "loan:rates-title") {
             Column {
-                Text("Rate changes", style = MaterialTheme.typography.titleSmall, color = ur.text)
-                Text("For a variable rate: each one replaces the rate above from its month.", style = MaterialTheme.typography.bodySmall, color = ur.muted)
+                Text(stringResource(R.string.loan_rate_changes), style = MaterialTheme.typography.titleSmall, color = ur.text)
+                Text(stringResource(R.string.loan_rate_changes_detail), style = MaterialTheme.typography.bodySmall, color = ur.muted)
             }
         }
         itemsIndexed(draft.rates, key = { index, _ -> "loan:rate:$index" }, contentType = { _, _ -> "rate" }) { index, row ->
             ListCard {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MonthField(row.month, { month -> draft = draft.copy(rates = draft.rates.mapIndexed { i, r -> if (i == index) r.copy(month = month) else r }) }, "From")
+                    MonthField(row.month, { month -> draft = draft.copy(rates = draft.rates.mapIndexed { i, r -> if (i == index) r.copy(month = month) else r }) }, stringResource(R.string.date_from))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.weight(1f)) {
-                            Field(row.rate, { rate -> draft = draft.copy(rates = draft.rates.mapIndexed { i, r -> if (i == index) r.copy(rate = rate) else r }) }, "New annual rate (%)", true)
+                            Field(row.rate, { rate -> draft = draft.copy(rates = draft.rates.mapIndexed { i, r -> if (i == index) r.copy(rate = rate) else r }) }, stringResource(R.string.loan_new_rate_field), true)
                         }
                         IconButton({ draft = draft.copy(rates = draft.rates.filterIndexed { i, _ -> i != index }) }) {
-                            Icon(Icons.Outlined.DeleteOutline, "Remove the ${monthLabel(row.month)} rate", tint = ur.negative)
+                            Icon(Icons.Outlined.DeleteOutline, stringResource(R.string.loan_remove_rate, monthLabel(row.month)), tint = ur.negative)
                         }
                     }
                 }
@@ -266,30 +271,30 @@ internal fun LoanDialog(original: JSONObject?, budget: JSONObject, summary: JSON
             TextButton({
                 val month = YearMonth.now().toString()
                 draft = draft.copy(rates = draft.rates + RateRow(if (draft.rates.any { it.month == month }) YearMonth.now().plusMonths(1).toString() else month, draft.rate))
-            }) { Icon(Icons.Outlined.Add, null, tint = ur.accent); Spacer(Modifier.width(6.dp)); Text("Add rate change", color = ur.accent, fontWeight = FontWeight.SemiBold) }
+            }) { Icon(Icons.Outlined.Add, null, tint = ur.accent); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.loan_add_rate_change), color = ur.accent, fontWeight = FontWeight.SemiBold) }
         }
         terms.exceptionOrNull()?.let { problem -> if (draft != LoanDraft()) item(key = "loan:terms-error") { FormError(problem.message) } }
-        if (dirty && saved != null) item(key = "loan:unsaved") { Notice("Unsaved changes. The planner below already tries them; Save keeps them.", tone = "info") }
+        if (dirty && saved != null) item(key = "loan:unsaved") { Notice(stringResource(R.string.loan_unsaved), tone = "info") }
 
-        item(key = "loan:planner-title") { SectionTitle("Payoff planner", "Only a sandbox: nothing here changes your budget or the loan's details.") }
-        if (owed == 0L && account.isNotBlank()) item(key = "loan:paid") { Notice("Nothing is owed on this account.", tone = "positive", icon = Icons.Outlined.CheckCircle) }
-        item(key = "loan:extra", contentType = "field") { Field(extraText, { extraText = it }, "Extra each month ($currency)", true) }
-        item(key = "loan:lump", contentType = "field") { Field(oneOffText, { oneOffText = it }, "One-off payment now ($currency)", true) }
+        item(key = "loan:planner-title") { SectionTitle(stringResource(R.string.loan_planner), stringResource(R.string.loan_planner_detail)) }
+        if (owed == 0L && account.isNotBlank()) item(key = "loan:paid") { Notice(stringResource(R.string.loan_nothing_owed), tone = "positive", icon = Icons.Outlined.CheckCircle) }
+        item(key = "loan:extra", contentType = "field") { Field(extraText, { extraText = it }, stringResource(R.string.loan_extra_field, currency), true) }
+        item(key = "loan:lump", contentType = "field") { Field(oneOffText, { oneOffText = it }, stringResource(R.string.loan_lump_field, currency), true) }
         item(key = "loan:by") {
-            if (by.isBlank()) SecondaryButton("Pay off by a date…", { by = LocalDate.now().plusYears(5).toString() }, Modifier.fillMaxWidth(), icon = Icons.Outlined.Event)
+            if (by.isBlank()) SecondaryButton(stringResource(R.string.loan_pay_off_by_date), { by = LocalDate.now().plusYears(5).toString() }, Modifier.fillMaxWidth(), icon = Icons.Outlined.Event)
             else Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.weight(1f)) { DateField(by, { by = it }, "Pay off by") }
-                IconButton({ by = ""; needed = null }) { Icon(Icons.Outlined.Close, "Clear the payoff date", tint = ur.muted) }
+                Box(Modifier.weight(1f)) { DateField(by, { by = it }, stringResource(R.string.loan_pay_off_by)) }
+                IconButton({ by = ""; needed = null }) { Icon(Icons.Outlined.Close, stringResource(R.string.loan_clear_payoff_date), tint = ur.muted) }
             }
         }
-        if (extra == null || oneOff == null) item(key = "loan:amount-error") { FormError("Enter amounts like 50 or 25.50.") }
+        if (extra == null || oneOff == null) item(key = "loan:amount-error") { FormError(stringResource(R.string.loan_amounts_format)) }
         if (by.isNotBlank() && neededResult != null && termsValue != null) item(key = "loan:needed") {
             val amount = neededResult.getOrNull()
             val month = monthLabel(by.take(7))
             Notice(when {
-                amount == null -> neededResult.exceptionOrNull()?.message ?: "No monthly payment repays the loan by then."
-                amount > termsValue.optLong("monthlyPayment") -> "To pay it off by $month, pay ${money(amount, currency)} a month: ${money(amount - termsValue.optLong("monthlyPayment"), currency)} more than now, tried below as the extra."
-                else -> "Your current payment already pays it off by $month."
+                amount == null -> neededResult.exceptionOrNull()?.message ?: stringResource(R.string.loan_no_payment_repays)
+                amount > termsValue.optLong("monthlyPayment") -> stringResource(R.string.loan_pay_by_needed, month, money(amount, currency), money(amount - termsValue.optLong("monthlyPayment"), currency))
+                else -> stringResource(R.string.loan_already_pays_by, month)
             }, tone = if (amount == null) "attention" else "info", icon = Icons.Outlined.Event)
         }
         now?.exceptionOrNull()?.let { problem -> item(key = "loan:base-error") { FormError(problem.message) } }
@@ -305,8 +310,8 @@ internal fun LoanDialog(original: JSONObject?, budget: JSONObject, summary: JSON
                 ListCard {
                     Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp)) {
                         Spacer(Modifier.weight(1.1f))
-                        Text("Current plan", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = ur.muted)
-                        if (changed) Text("With changes", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = ur.accent)
+                        Text(stringResource(R.string.loan_current_plan), Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = ur.muted)
+                        if (changed) Text(stringResource(R.string.loan_with_changes), Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = ur.accent)
                     }
                     plan.rows.forEachIndexed { index, row ->
                         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -340,23 +345,23 @@ internal fun LoanDialog(original: JSONObject?, budget: JSONObject, summary: JSON
                     }
                 }
                 if (plan.years.size > 2) item(key = "loan:schedule-more") {
-                    TextButton({ showAll = !showAll }) { Text(if (showAll) "Show fewer" else "Show all ${plan.payments} payments", color = ur.accent, fontWeight = FontWeight.SemiBold) }
+                    TextButton({ showAll = !showAll }) { Text(if (showAll) stringResource(R.string.show_fewer) else countText(R.plurals.loan_show_all_payments, plan.payments), color = ur.accent, fontWeight = FontWeight.SemiBold) }
                 }
             }
         }
         item(key = "loan:note") {
-            Text("Interest compounds monthly and each charge is rounded to the cent, so a lender's own figures may differ a little. Recording a payment adds local transactions; it doesn't pay your bank.",
+            Text(stringResource(R.string.loan_note),
                 style = MaterialTheme.typography.bodySmall, color = ur.muted)
         }
         if (saved != null) item(key = "loan:remove") {
-            TextButton({ confirmRemove = true }) { Text("Remove loan details", color = ur.negative) }
+            TextButton({ confirmRemove = true }) { Text(stringResource(R.string.loan_remove_details), color = ur.negative) }
         }
     }
-    if (picking) CategoryPickerSheet(budget, summary, today.take(7), draft.category, "Payment category", includePayment = false,
+    if (picking) CategoryPickerSheet(budget, summary, today.take(7), draft.category, stringResource(R.string.loan_payment_category), includePayment = false,
         onPick = { draft = draft.copy(category = it); picking = false }) { picking = false }
     if (paying && saved != null && accountRecord != null) LoanPaymentSheet(accountRecord, saved, budget, summary, vm) { paying = false }
-    if (confirmRemove) AlertDialog(onDismissRequest = { confirmRemove = false }, containerColor = ur.surface, title = { Text("Remove loan details?") },
-        text = { Text("The payoff date and interest are no longer worked out for ${accountRecord?.text("name") ?: "this account"}. Its transactions stay. You can undo this.") },
-        confirmButton = { TextButton({ confirmRemove = false; withCurrentBudget(openedBudget, vm) { vm.remove("loans", account); close() } }) { Text("Remove", color = ur.negative) } },
-        dismissButton = { TextButton({ confirmRemove = false }) { Text("Cancel") } })
+    if (confirmRemove) AlertDialog(onDismissRequest = { confirmRemove = false }, containerColor = ur.surface, title = { Text(stringResource(R.string.loan_remove_title)) },
+        text = { Text(stringResource(R.string.loan_remove_message, accountRecord?.text("name") ?: stringResource(R.string.account_this))) },
+        confirmButton = { TextButton({ confirmRemove = false; withCurrentBudget(openedBudget, vm) { vm.remove("loans", account); close() } }) { Text(stringResource(R.string.common_remove), color = ur.negative) } },
+        dismissButton = { TextButton({ confirmRemove = false }) { Text(stringResource(R.string.common_cancel)) } })
 }

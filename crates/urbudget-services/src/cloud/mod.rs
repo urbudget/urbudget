@@ -4,6 +4,7 @@ pub mod crypto;
 pub mod sync;
 
 pub(crate) use crate::vault;
+use crate::t;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -34,7 +35,6 @@ pub fn service(name: &str) -> String {
     }
     name.to_owned()
 }
-const OFFLINE: &str = "Couldn't reach urbudget.app. Check your internet connection and try again.";
 
 /// An API answer other than success.
 #[derive(Debug)]
@@ -50,7 +50,7 @@ impl From<Failure> for String {
     }
 }
 fn offline(_: reqwest::Error) -> Failure {
-    Failure { status: 0, code: "offline".into(), message: OFFLINE.into(), body: Value::Null }
+    Failure { status: 0, code: "offline".into(), message: t!("Couldn't reach urbudget.app. Check your internet connection and try again."), body: Value::Null }
 }
 async fn failure(response: reqwest::Response) -> Failure {
     let status = response.status().as_u16();
@@ -58,10 +58,11 @@ async fn failure(response: reqwest::Response) -> Failure {
     Failure {
         status,
         code: body["error"].as_str().unwrap_or("error").to_owned(),
+        // The server writes its messages in English; the ones people see have their Arabic too.
         message: body["message"]
             .as_str()
-            .map(str::to_owned)
-            .unwrap_or_else(|| format!("urbudget.app answered with an error ({status}). Try again later.")),
+            .map(crate::i18n::translate)
+            .unwrap_or_else(|| t!("urbudget.app answered with an error ({status}). Try again later.", status)),
         body,
     }
 }
@@ -77,7 +78,7 @@ struct AccountFile {
 
 fn credential_hash(token: &str) -> String { format!("{:x}", Sha256::digest(token.as_bytes())) }
 fn account_changed() -> Failure {
-    Failure { status: 409, code: "account_changed".into(), message: "Your account changed in another window. Restart this window before continuing.".into(), body: Value::Null }
+    Failure { status: 409, code: "account_changed".into(), message: t!("Your account changed in another window. Restart this window before continuing."), body: Value::Null }
 }
 
 pub struct Cloud {
@@ -247,7 +248,7 @@ impl Cloud {
     }
     fn session_with(&self, account: &AccountFile, read: impl FnOnce() -> Option<String>) -> Result<Session, Failure> {
         let token = self.checked_token(account, read)?.ok_or_else(|| Failure {
-            status: 401, code: "signed_out".into(), message: "Sign in to your UrBudget account first.".into(), body: Value::Null,
+            status: 401, code: "signed_out".into(), message: t!("Sign in to your UrBudget account first."), body: Value::Null,
         })?;
         Ok(Session { token, epoch: self.account_epoch.load(Ordering::SeqCst) })
     }
@@ -357,7 +358,7 @@ pub async fn account_verify(cloud: &Cloud, email: String, code: String) -> Resul
             false,
         )
         .await?;
-    let token = answer["token"].as_str().ok_or("The sign-in answer had no session.")?;
+    let token = answer["token"].as_str().ok_or_else(|| t!("The sign-in answer had no session."))?;
     let email = answer["user"]["email"].as_str().unwrap_or(email.trim()).to_owned();
     cloud.remember(Some(email), Some(token))?;
     Ok(cloud.status())
@@ -377,7 +378,7 @@ pub async fn account_sign_out(cloud: &Cloud) -> Result<Status, String> {
 pub async fn account_open(cloud: &Cloud, next: String) -> Result<(), String> {
     #[cfg(target_os = "android")]
     if !matches!(next.as_str(), "/privacy/app/" | "/privacy/app/#your-choices") {
-        return Err("Use Google Play for your Sync subscription, or Account settings to delete your account.".into());
+        return Err(t!("Use Google Play for your Sync subscription, or Account settings to delete your account."));
     }
     let next = if next.starts_with('/') && !next.starts_with("//") { next } else { "/".into() };
     if cloud.token().is_some() {

@@ -1,4 +1,5 @@
 import type { Budget } from "./types";
+import { t } from "./i18n";
 
 const encoder = new TextEncoder();
 const MAX_SUFFIX = 0xffff_ffff;
@@ -38,5 +39,5 @@ export async function scheduleId(budget: Budget, transactionId: string, source =
     const candidate = suffix ? `${base}:${suffix}` : base;
     if (!reserved.has(candidate)) return candidate;
   }
-  throw new Error("Couldn't assign a unique scheduled transaction ID.");
+  throw new Error(t("Couldn't assign a unique scheduled transaction ID."));
 }

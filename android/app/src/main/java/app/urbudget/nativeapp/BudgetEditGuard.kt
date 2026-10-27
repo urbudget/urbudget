@@ -12,7 +12,7 @@ class BudgetEditGuard private constructor(
     private val fields: List<String>,
 ) {
     internal fun verify(current: JSONObject, currentIdentity: String?) {
-        require(identity == currentIdentity) { "The open budget changed. Reopen this editor in the intended budget." }
+        require(identity == currentIdentity) { Words[R.string.guard_budget_switched] }
         require(!whole || source == null || sameJson(source, current)) { STALE }
         for ((collection, keys) in selected) {
             val before = source?.records(collection)?.firstOrNull { row -> matches(row, collection, keys) }
@@ -25,7 +25,7 @@ class BudgetEditGuard private constructor(
     }
 
     companion object {
-        private const val STALE = "The values you edited changed before this action could be saved. Reopen the editor and review the latest values."
+        private val STALE get() = Words[R.string.guard_values_changed]
         private fun matches(row: JSONObject, collection: String, keys: Map<String, String>) = keys.all { (key, value) ->
             if (collection == "ynabMonths" && key == "month") row.optString(key).take(7) == value.take(7) else row.optString(key) == value
         }
@@ -67,11 +67,11 @@ internal fun sameJson(left: Any?, right: Any?): Boolean = when {
 /** Whole-budget replacement also supports unreadable source bytes and an empty new file. */
 class BudgetReplacementGuard internal constructor(private val source: JSONObject?, private val expected: String?, private val identity: String?) {
     internal fun verify(current: String?, currentIdentity: String?) {
-        require(identity == currentIdentity) { "The open budget changed. Review the replacement in the intended budget." }
+        require(identity == currentIdentity) { Words[R.string.guard_replacement_switched] }
         val before = source ?: expected?.let { runCatching { JSONObject(it) }.getOrNull() }
         val now = current?.let { runCatching { JSONObject(it) }.getOrNull() }
         require(if (before != null && now != null) sameJson(before, now) else source == null && expected == current) {
-            "The budget changed before it could be replaced. Review the latest budget and try again."
+            Words[R.string.guard_replacement_changed]
         }
     }
 }

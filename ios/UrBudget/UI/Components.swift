@@ -200,15 +200,27 @@ struct AmountField: View {
             LabeledContent {
                 // Room for the amount; the label keeps the rest of the row.
                 TextField(title, text: $text, prompt: Text(Money.editable(0)))
-                    .decimalKeyboard().monospacedDigit().multilineTextAlignment(.trailing)
+                    .decimalKeyboard().monospacedDigit().multilineTextAlignment(Self.endAlignment)
+                    .amountDirection()
                     .frame(maxWidth: 150)
             } label: {
                 Text(title).layoutPriority(1)
             }
         } else {
             TextField(title, text: $text).decimalKeyboard().monospacedDigit()
+                .multilineTextAlignment(Self.startAlignment).amountDirection()
         }
     }
+
+    // A typed amount reads left to right in every language ("-12.50", never "12.50-"), so in Arabic
+    // the field is laid out left to right and its alignment swapped to stay at the row's end or start.
+    private static var endAlignment: TextAlignment { AppLanguage.isRightToLeft ? .leading : .trailing }
+    private static var startAlignment: TextAlignment { AppLanguage.isRightToLeft ? .trailing : .leading }
+}
+
+extension View {
+    /// Amounts and sums are typed left to right, also in right-to-left languages.
+    func amountDirection() -> some View { environment(\.layoutDirection, .leftToRight) }
 }
 
 /// A month as a form row that opens the month grid.
@@ -267,7 +279,7 @@ func attempt(_ message: Binding<String?>, _ action: () throws -> Void) {
 
 /// A sheet's Save button, a spinner while it saves.
 struct SaveButton: View {
-    var title = "Save"
+    var title = String(localized: "Save")
     var saving: Bool
     var action: () -> Void
 

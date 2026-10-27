@@ -7,6 +7,8 @@ import org.junit.Test
 import java.time.LocalDate
 
 class PlanningMathTest {
+    @org.junit.Before fun english() = EnglishWords.install()
+
     private fun schedule(id: String, next: String?, amount: Long, paused: Boolean = false) = JSONObject().put("id", id).put("paused", paused)
         .put("nextDate", next ?: JSONObject.NULL).put("transaction", JSONObject().put("amount", amount))
 

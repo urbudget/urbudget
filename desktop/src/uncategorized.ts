@@ -1,10 +1,11 @@
 import { placeholder } from "./bankNames";
 import { today, type Budget, type Split, type Transaction } from "./types";
 import { leftUnassigned } from "./accounting";
+import { msg } from "./i18n";
 export { leftUnassigned } from "./accounting";
 
-/** "Needs a category": what spending with no category shows instead of a category's name. */
-export const NEEDS_CATEGORY = "Needs a category";
+/** "Needs a category": what spending with no category shows instead of a category's name; show it with t(). */
+export const NEEDS_CATEGORY = msg("Needs a category");
 
 /**
  * Spending with no category yet, as YNAB's "This needs a category". Until it has one it's

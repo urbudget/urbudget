@@ -1,3 +1,4 @@
+use crate::{i18n::tr, t};
 use crate::domain::*;
 use chrono::{Datelike, Months, NaiveDate};
 use serde::{Deserialize, Serialize};
@@ -68,7 +69,7 @@ fn valid(t: &Terms) -> Result<(), String> {
         || !(0..=1_000_000_000_000).contains(&t.monthly_fees)
         || !(1..=1_000_000_000_000).contains(&t.monthly_payment)
     {
-        Err("Enter a positive payment, a rate from 0–1,000%, and non-negative fees.".into())
+        Err(t!("Enter a positive payment, a rate from 0–1,000%, and non-negative fees."))
     } else {
         Ok(())
     }
@@ -82,32 +83,30 @@ pub fn project(balance: i64, terms: &Terms, start: &str, extra: i64) -> Result<P
 pub fn project_with(balance: i64, terms: &Terms, start: &str, extra: i64, lump: i64) -> Result<Projection, String> {
     valid(terms)?;
     if ![balance, extra, lump].iter().all(|v| (0..=1_000_000_000_000).contains(v)) {
-        return Err("Invalid balance or extra payment.".into());
+        return Err(t!("Invalid balance or extra payment."));
     }
-    if !valid_date(start) { return Err("Invalid first payment date".into()); }
+    if !valid_date(start) { return Err(t!("Invalid first payment date")); }
     let anchor =
-        NaiveDate::parse_from_str(start, "%Y-%m-%d").map_err(|_| "Invalid first payment date")?;
+        NaiveDate::parse_from_str(start, "%Y-%m-%d").map_err(|_| t!("Invalid first payment date"))?;
     let mut balance = balance;
     let mut rows = vec![];
     let mut total_interest = 0;
     let mut total_fees = 0;
     while balance > 0 {
         if rows.len() >= 1200 {
-            return Err("This payment takes more than 100 years to repay the loan.".into());
+            return Err(t!("This payment takes more than 100 years to repay the loan."));
         }
         let fee = terms.monthly_fees;
         let date = anchor
             .checked_add_months(Months::new(rows.len() as u32))
-            .ok_or("Date exceeds supported range")?
+            .ok_or_else(|| t!("Date exceeds supported range"))?
             .to_string();
-        if !valid_date(&date) { return Err("Date exceeds supported range".into()); }
+        if !valid_date(&date) { return Err(t!("Date exceeds supported range")); }
         let charge = interest(balance, rate_at(terms, &date));
         let once = if rows.is_empty() { lump } else { 0 };
         let payment = (terms.monthly_payment + extra + once).min(balance + charge + fee);
         if payment <= charge + fee {
-            return Err(
-                "Payment does not cover monthly interest and fees. Increase the payment.".into(),
-            );
+            return Err(t!("Payment does not cover monthly interest and fees. Increase the payment."));
         }
         let principal = payment - charge - fee;
         balance -= principal;
@@ -138,17 +137,17 @@ pub fn payment_by_date_with(balance: i64, terms: &Terms, start: &str, due: &str,
     valid(terms)?;
     const LIMIT: i64 = 1_000_000_000_000;
     if ![balance, lump].iter().all(|n| (0..=LIMIT).contains(n)) {
-        return Err("Invalid loan balance or one-off payment.".into());
+        return Err(t!("Invalid loan balance or one-off payment."));
     }
     let date = |value: &str, error: &str| -> Result<NaiveDate, String> {
         if !valid_date(value) { return Err(error.into()); }
         let parsed = NaiveDate::parse_from_str(value, "%Y-%m-%d").map_err(|_| error.to_owned())?;
         Ok(parsed)
     };
-    let due_date = date(due, "Invalid payoff date")?;
-    let start_date = date(start, "Invalid first payment date")?;
+    let due_date = date(due, tr("Invalid payoff date"))?;
+    let start_date = date(start, tr("Invalid first payment date"))?;
     if due_date < start_date {
-        return Err("Payoff date must follow the first payment date.".into());
+        return Err(t!("Payoff date must follow the first payment date."));
     }
     if balance == 0 { return Ok(0); }
     let months = ((due_date.year() - start_date.year()) * 12
@@ -159,7 +158,7 @@ pub fn payment_by_date_with(balance: i64, terms: &Terms, start: &str, due: &str,
     let fits = |monthly: i64| -> Result<bool, String> {
         let mut remaining = balance;
         for step in 0..months {
-            let date = start_date.checked_add_months(Months::new(step)).ok_or("Date exceeds supported range")?;
+            let date = start_date.checked_add_months(Months::new(step)).ok_or_else(|| t!("Date exceeds supported range"))?;
             if date > due_date { return Ok(false); }
             let charge = interest(remaining, rate_at(terms, &date.to_string())) + terms.monthly_fees;
             let payment = (monthly + if step == 0 { lump } else { 0 }).min(remaining + charge);
@@ -172,7 +171,7 @@ pub fn payment_by_date_with(balance: i64, terms: &Terms, start: &str, due: &str,
     let mut low = 1;
     let mut high = (balance + interest(balance, rate_at(terms, start)) + terms.monthly_fees - lump).clamp(1, LIMIT);
     if !fits(high)? {
-        return Err("No supported monthly payment can repay this loan by the selected date.".into());
+        return Err(t!("No supported monthly payment can repay this loan by the selected date."));
     }
     while low < high {
         let mid = (low + high) / 2;
@@ -186,7 +185,7 @@ pub fn payment_by_date_with(balance: i64, terms: &Terms, start: &str, due: &str,
     selected.monthly_payment = low;
     let projection = project_with(balance, &selected, start, 0, lump)?;
     if projection.payoff_date.as_str() > due {
-        return Err("No supported monthly payment can repay this loan by the selected date.".into());
+        return Err(t!("No supported monthly payment can repay this loan by the selected date."));
     }
     Ok(low)
 }
@@ -201,22 +200,22 @@ pub fn record(
     // Command draft patches are untrusted until validated, including existing ledger rows.
     validate(b)?;
     valid(terms)?;
-    if !valid_date(date) { return Err("Invalid payment date".into()); }
+    if !valid_date(date) { return Err(t!("Invalid payment date")); }
     if amount <= 0 || amount > 1_000_000_000_000 || b.transactions.iter().any(|t| t.id == id) {
-        return Err("Invalid or duplicate payment.".into());
+        return Err(t!("Invalid or duplicate payment."));
     }
     let account = b
         .accounts
         .iter()
         .find(|a| a.id == terms.account_id && a.kind == AccountKind::Tracking)
-        .ok_or("Choose a tracking loan account")?;
+        .ok_or_else(|| t!("Choose a tracking loan account"))?;
     if !b
         .accounts
         .iter()
         .any(|a| a.id == from && a.kind == AccountKind::Cash && a.on_budget())
         || !b.categories.iter().any(|c| c.id == terms.category_id)
     {
-        return Err("Choose a cash account and payment category.".into());
+        return Err(t!("Choose a cash account and payment category."));
     }
     let balance = -(account.opening_balance
         + crate::ledger::transactions(b)
@@ -233,7 +232,7 @@ pub fn record(
             })
             .sum::<i64>());
     if balance <= 0 {
-        return Err("This account has no loan balance to repay on the payment date.".into());
+        return Err(t!("This account has no loan balance to repay on the payment date."));
     }
     let month = &date[..7];
     let interest_id = format!("loan-interest:{}:{month}", account.id);
@@ -297,7 +296,7 @@ pub fn apply_new_payments(
     validate(b)?;
     let terms: Vec<Terms> =
         serde_json::from_value(b.extra.get("loans").cloned().unwrap_or(json!([])))
-            .map_err(|_| "Invalid loan terms")?;
+            .map_err(|_| t!("Invalid loan terms"))?;
     if terms.is_empty() {
         return Ok(());
     }
@@ -319,7 +318,7 @@ pub fn apply_new_payments(
             .accounts
             .iter()
             .find(|a| a.id == t.account_id)
-            .ok_or("Missing loan account")?
+            .ok_or_else(|| t!("Missing loan account"))?
             .clone();
         // Either register may own the saved transfer. A payment increases the loan
         // balance, whether that is a receiving-side inflow or a payer-side outflow.
@@ -400,14 +399,14 @@ pub fn source_terms(b: &Budget, account_id: &str) -> Result<Terms, String> {
         .accounts
         .iter()
         .find(|a| a.id == account_id)
-        .ok_or("Account not found")?;
+        .ok_or_else(|| t!("Account not found"))?;
     let s = a
         .extra
         .get("source")
-        .ok_or("No imported loan terms are available")?;
+        .ok_or_else(|| t!("No imported loan terms are available"))?;
     let rates = s["debt_interest_rates"]
         .as_object()
-        .ok_or("This account has no imported loan rates")?;
+        .ok_or_else(|| t!("This account has no imported loan rates"))?;
     let mut history: Vec<_> = rates
         .iter()
         .filter_map(|(date, rate)| {
@@ -440,7 +439,7 @@ pub fn source_terms(b: &Budget, account_id: &str) -> Result<Terms, String> {
     let payment = latest("debt_minimum_payments");
     let fees = latest("debt_escrow_amounts");
     if payment % 10 != 0 || fees % 10 != 0 {
-        return Err("Imported loan payment or fees contain sub-cent values.".into());
+        return Err(t!("Imported loan payment or fees contain sub-cent values."));
     }
     Ok(Terms {
         account_id: account_id.into(),

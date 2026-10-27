@@ -1,4 +1,5 @@
 import { activeFormat } from "../format";
+import { monthNames } from "../i18n";
 
 /** Round tick values (in the data's units) covering [min, max], always including 0. */
 export function niceTicks(min: number, max: number, count = 5): number[] {
@@ -29,9 +30,11 @@ export function compactMoney(cents: number) {
   return fixed(v, 0);
 }
 
-/** "Oct" for each month; "Oct 26" when the year changes or on the first label. */
+/** "Oct" for each month; "Oct 26" when the year changes or on the first label. Arabic has no short month names. */
 export function monthTick(month: string, previous?: string) {
-  const name = new Date(`${month}-02T12:00:00`).toLocaleDateString("en-GB", { month: "short" });
+  const name =
+    monthNames()?.[Number(month.slice(5, 7)) - 1] ??
+    new Date(`${month}-02T12:00:00`).toLocaleDateString("en-GB", { month: "short" });
   return !previous || previous.slice(0, 4) !== month.slice(0, 4) ? `${name} ${month.slice(2, 4)}` : name;
 }
 

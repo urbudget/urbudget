@@ -1,9 +1,12 @@
-import { memo, useEffect, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
+import { memo, useEffect, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, CreditCard, GripVertical, History, MoonStar, MoreHorizontal, Plus } from "lucide-react";
 import { deadline, editableAmount, evaluateAmount, money, ordinal } from "./format";
 import { usePref } from "./prefs";
 import type { Category, Summary } from "./types";
 import { NEEDS_CATEGORY } from "./uncategorized";
+import { HIDDEN_GROUP } from "./categories";
+import { getLanguage, msg, t, tn, useLanguage } from "./i18n";
+import { startEdge } from "./ui/Popover";
 
 export type CategorySummary = Summary["categories"][number];
 export type Drop = "before" | "after" | "into" | null;
@@ -44,34 +47,52 @@ export function categoryState(c: Category, s: CategorySummary, month: string) {
   return { needed, eventually, snoozed, credit, progress, status };
 }
 
+/** A target's sentence: an English key with `{amount}` (unless `amount` is null) and its other values. */
+export type TargetText = { amount: number | null; text: string; values: Record<string, string> };
+
 /**
  * A category's target as YNAB words it: what's needed and by when ("120.00 needed by the 31st",
  * "20.00 more needed by 1 October", "45.00 more needed this month", "2,000.00 more needed
  * eventually" for a balance with no date), or "Funded" and "Fully spent" once the month's target
- * is met. `amount` leads the sentence; the deadline comes from Rust's target_due (targets.rs).
- * Overspending has its own words, so it gets none here.
+ * is met. The deadline comes from Rust's target_due (targets.rs). Overspending has its own
+ * words, so it gets none here.
  */
 export function targetText(
   c: Category,
   s: CategorySummary,
   state: ReturnType<typeof categoryState>,
-): { amount: number | null; words: string } | null {
+): TargetText | null {
   if (state.status === "underfunded") {
     // A snoozed target asks for nothing, so what's needed is scheduled spending this month.
     const due = state.snoozed ? undefined : s.targetDue;
-    const by = !due ? "this month" : due.monthly ? `by the ${ordinal(Number(due.date.slice(8, 10)))}` : `by ${deadline(due.date)}`;
     const more = s.available > 0 || (s.targetFundingFunded ?? s.assigned) > 0;
-    return { amount: state.needed, words: `${more ? "more " : ""}needed ${by}` };
+    const amount = state.needed;
+    if (!due) return { amount, text: more ? msg("{amount} more needed this month") : msg("{amount} needed this month"), values: {} };
+    if (due.monthly) {
+      // English says "the 31st"; Arabic just the day's number.
+      const day = Number(due.date.slice(8, 10));
+      const values = { day: getLanguage() === "en" ? ordinal(day) : String(day) };
+      return { amount, text: more ? msg("{amount} more needed by the {day}") : msg("{amount} needed by the {day}"), values };
+    }
+    return { amount, text: more ? msg("{amount} more needed by {date}") : msg("{amount} needed by {date}"), values: { date: deadline(due.date) } };
   }
   if (state.status === "negative" || state.status === "credit") return null;
-  if (state.eventually > 0) return { amount: state.eventually, words: `${s.available > 0 ? "more " : ""}needed eventually` };
+  if (state.eventually > 0)
+    return {
+      amount: state.eventually,
+      text: s.available > 0 ? msg("{amount} more needed eventually") : msg("{amount} needed eventually"),
+      values: {},
+    };
   if (c.target <= 0 || state.snoozed || (state.progress ?? 0) < 100) return null;
-  if (s.available > 0) return { amount: null, words: "Funded" };
-  return s.activity < 0 ? { amount: null, words: "Fully spent" } : null;
+  if (s.available > 0) return { amount: null, text: msg("Funded"), values: {} };
+  return s.activity < 0 ? { amount: null, text: msg("Fully spent"), values: {} } : null;
 }
 /** targetText as one line, for a tooltip or a screen reader: "120.00 needed by the 31st". */
-export const targetSentence = (t: { amount: number | null; words: string }) =>
-  t.amount === null ? t.words : `${money(t.amount)} ${t.words}`;
+export const targetSentence = (target: TargetText) =>
+  target.amount === null ? t(target.text) : t(target.text, { ...target.values, amount: money(target.amount) });
+/** targetText with its amount shown as `amount` (bold in a row, strong in the inspector). */
+export const targetLine = (target: TargetText, amount: ReactNode) =>
+  target.amount === null ? t(target.text) : t(target.text, { ...target.values, amount });
 
 /** Shows the budget's currency format; switches to the raw number while focused. Accepts math. Enter moves down. */
 export function AmountInput({
@@ -104,7 +125,7 @@ export function AmountInput({
       className={`amount-input${invalid ? " invalid" : ""}`}
       aria-label={label}
       aria-invalid={invalid}
-      title={invalid ? "Enter an amount like 12.50, or math like 10+2.50" : label}
+      title={invalid ? t("Enter an amount like 12.50, or math like 10+2.50") : label}
       inputMode="decimal"
       value={value}
       onFocus={(e) => {
@@ -224,6 +245,8 @@ export const CategoryRow = memo(function CategoryRow({
   onMoves: (c: Category, anchor: HTMLElement) => void;
   onStep: (id: string, delta: -1 | 1) => void;
 }) {
+  // Memoized: follow a change of language too.
+  useLanguage();
   const state = categoryState(category, s, month);
   const target = targetText(category, s, state);
   const [showNeeded] = usePref("showNeeded");
@@ -241,23 +264,23 @@ export const CategoryRow = memo(function CategoryRow({
   // Overspending and scheduled commitments remain visible when a target is snoozed.
   const status = state.status === "negative" ? (
     <span className="row-status over">
-      <b>{money(-s.available)}</b> overspent
+      {t("{amount} overspent", { amount: <b>{money(-s.available)}</b> })}
     </span>
   ) : state.status === "credit" ? (
     <span className="row-status">
-      <b>{money(-s.available)}</b> overspent on a card
+      {t("{amount} overspent on a card", { amount: <b>{money(-s.available)}</b> })}
     </span>
   ) : showNeeded && target?.amount != null ? (
     // Only this month's need is a warning; a balance with no date is needed "eventually".
     <span className={`row-status${state.status === "underfunded" ? "" : " later"}`} title={targetSentence(target)}>
-      <b>{money(target.amount)}</b> {target.words}
+      {targetLine(target, <b>{money(target.amount)}</b>)}
     </span>
   ) : state.snoozed ? (
-    <span className="snoozed" title="Target snoozed this month">
-      <MoonStar size={11} /> Snoozed
+    <span className="snoozed" title={t("Target snoozed this month")}>
+      <MoonStar size={11} /> {t("Snoozed")}
     </span>
   ) : showNeeded && target ? (
-    <span className="row-status">{target.words}</span>
+    <span className="row-status">{targetSentence(target)}</span>
   ) : (
     <span className="row-status" />
   );
@@ -280,7 +303,7 @@ export const CategoryRow = memo(function CategoryRow({
         onDragStart={canDrag ? dragStart : undefined}
         onDragEnd={dnd?.end}
       >
-        <span className={`drag-handle${dnd ? " can-drag" : ""}`} aria-hidden title={dnd ? "Drag to reorder" : undefined}>
+        <span className={`drag-handle${dnd ? " can-drag" : ""}`} aria-hidden title={dnd ? t("Drag to reorder") : undefined}>
           {dnd && <GripVertical size={14} />}
         </span>
         {/* Out of the tab order (Space on the name toggles instead), so rows keep one stop each. */}
@@ -288,7 +311,7 @@ export const CategoryRow = memo(function CategoryRow({
           type="checkbox"
           className="row-select"
           tabIndex={-1}
-          aria-label={`Select ${category.name}`}
+          aria-label={t("Select {name}", { name: category.name })}
           checked={selected}
           // Focus stays where it was, so Escape and the arrow keys keep working after a click.
           onMouseDown={(e) => e.preventDefault()}
@@ -306,7 +329,7 @@ export const CategoryRow = memo(function CategoryRow({
         onDragEnd={dnd?.end}
       >
         {renaming ? (
-          <NameInput value={category.name} label={`Rename ${category.name}`} onDone={(name) => onRename(category.id, name)} />
+          <NameInput value={category.name} label={t("Rename {name}", { name: category.name })} onDone={(name) => onRename(category.id, name)} />
         ) : (
           <button
             className="category-name"
@@ -327,7 +350,7 @@ export const CategoryRow = memo(function CategoryRow({
               else if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
                 e.preventDefault();
                 const r = e.currentTarget.getBoundingClientRect();
-                onMenu(category, r.left, r.bottom);
+                onMenu(category, startEdge(r), r.bottom);
               }
             }}
             title={category.note ?? undefined}
@@ -338,7 +361,7 @@ export const CategoryRow = memo(function CategoryRow({
             {state.progress !== null ? (
               <span
                 className={`target-bar${state.status === "negative" ? " over" : state.progress >= 100 ? " funded" : ""}`}
-                title={category.goal?.goal_type === "TB" ? (state.progress >= 100 ? "Target balance reached" : `${Math.round(state.progress)}% of target balance`) : (state.progress >= 100 ? "This month's target funding is complete" : `${Math.round(state.progress)}% of this month's target funding`)}
+                title={category.goal?.goal_type === "TB" ? (state.progress >= 100 ? t("Target balance reached") : t("{percent}% of target balance", { percent: Math.round(state.progress) })) : (state.progress >= 100 ? t("This month's target funding is complete") : t("{percent}% of this month's target funding", { percent: Math.round(state.progress) }))}
               >
                 <i style={{ width: `${state.progress}%` }} />
               </span>
@@ -357,21 +380,21 @@ export const CategoryRow = memo(function CategoryRow({
         {moveCount > 0 && (
           <button
             className="moves-button"
-            aria-label={`${moveCount} ${moveCount === 1 ? "move" : "moves"} in ${category.name} this month`}
-            title={movedMoney ? "Money moved this month. Show moves" : "Show this month's moves"}
+            aria-label={tn(moveCount, "{count} move in {name} this month", "{count} moves in {name} this month", { name: category.name })}
+            title={movedMoney ? t("Money moved this month. Show moves") : t("Show this month's moves")}
             onClick={(e) => onMoves(category, e.currentTarget)}
           >
             <History size={13} />
           </button>
         )}
-        <AmountInput label={`Assigned to ${category.name}`} amount={s.assigned} onSave={(v) => onAssign(category.id, v)} />
+        <AmountInput label={t("Assigned to {name}", { name: category.name })} amount={s.assigned} onSave={(v) => onAssign(category.id, v)} />
       </div>
       <div role="gridcell" className={`num muted${s.activity ? "" : " zero"}`}>
         {s.activity ? (
           <button
             className="activity-button"
-            aria-label={`${money(s.activity)} activity in ${category.name}. Show transactions`}
-            title={category.paymentAccountId ? "Open this card's transactions for the month" : "Show these transactions"}
+            aria-label={t("{amount} activity in {name}. Show transactions", { amount: money(s.activity), name: category.name })}
+            title={category.paymentAccountId ? t("Open this card's transactions for the month") : t("Show these transactions")}
             onClick={(e) => {
               e.stopPropagation();
               onActivity(category, e.currentTarget);
@@ -386,15 +409,21 @@ export const CategoryRow = memo(function CategoryRow({
       <div role="gridcell" className="num">
         <button
           className={`available ${state.status}`}
-          aria-label={`${money(s.available)} available in ${category.name}${state.status === "credit" ? ", overspent on a credit card" : state.status === "underfunded" && target ? `, ${targetSentence(target)}` : ""}. Move funds`}
+          aria-label={
+            state.status === "credit"
+              ? t("{amount} available in {name}, overspent on a credit card. Move funds", { amount: money(s.available), name: category.name })
+              : state.status === "underfunded" && target
+                ? t("{amount} available in {name}, {target}. Move funds", { amount: money(s.available), name: category.name, target: targetSentence(target) })
+                : t("{amount} available in {name}. Move funds", { amount: money(s.available), name: category.name })
+          }
           title={
             state.status === "credit"
-              ? "Overspent on a credit card: this becomes card debt unless you cover it"
+              ? t("Overspent on a credit card: this becomes card debt unless you cover it")
               : state.status === "negative"
-                ? "Overspent: cover it from another category"
+                ? t("Overspent: cover it from another category")
                 : state.status === "underfunded" && target
                   ? targetSentence(target)
-                  : "Move funds"
+                  : t("Move funds")
           }
           onClick={(e) => {
             e.stopPropagation();
@@ -409,11 +438,11 @@ export const CategoryRow = memo(function CategoryRow({
       <div role="gridcell" className="row-actions">
         <button
           className="icon-button"
-          aria-label={`Actions for ${category.name}`}
+          aria-label={t("Actions for {name}", { name: category.name })}
           onClick={(e) => {
             e.stopPropagation();
             const r = e.currentTarget.getBoundingClientRect();
-            onMenu(category, r.left, r.bottom);
+            onMenu(category, startEdge(r), r.bottom);
           }}
         >
           <MoreHorizontal size={16} />
@@ -436,10 +465,10 @@ export function UncategorizedRow({ activity, credit, onReview }: { activity: num
     <div role="row" className="budget-row uncategorized-row">
       <div role="gridcell" className="row-gutter" />
       <div role="gridcell" className="category-cell">
-        <button className="category-name" data-row-focus onClick={onReview} title="Show this month's spending that needs a category">
-          <span className="name">Uncategorized</span>
+        <button className="category-name" data-row-focus onClick={onReview} title={t("Show this month's spending that needs a category")}>
+          <span className="name">{t("Uncategorized")}</span>
           <span className="target-bar none" />
-          <span className="row-status">{NEEDS_CATEGORY}</span>
+          <span className="row-status">{t(NEEDS_CATEGORY)}</span>
         </button>
       </div>
       <div role="gridcell" className="num muted zero">
@@ -451,11 +480,15 @@ export function UncategorizedRow({ activity, credit, onReview }: { activity: num
       <div role="gridcell" className="num">
         <button
           className={`available ${status}`}
-          aria-label={`${money(activity)} uncategorized this month${status === "credit" ? ", overspent on a credit card" : ""}. Show transactions`}
+          aria-label={
+            status === "credit"
+              ? t("{amount} uncategorized this month, overspent on a credit card. Show transactions", { amount: money(activity) })
+              : t("{amount} uncategorized this month. Show transactions", { amount: money(activity) })
+          }
           title={
             status === "credit"
-              ? "Spent on a card with no category: this is card debt until it has one"
-              : "Spent with no category: like overspending, it comes out of next month's Unassigned"
+              ? t("Spent on a card with no category: this is card debt until it has one")
+              : t("Spent with no category: like overspending, it comes out of next month's Unassigned")
           }
           onClick={onReview}
         >
@@ -526,7 +559,7 @@ export function GroupRow({
         onDragStart={canDrag ? (e) => dnd.start("group", name, e) : undefined}
         onDragEnd={dnd?.end}
       >
-        <span className={`drag-handle${canDrag ? " can-drag" : ""}`} aria-hidden title={canDrag ? "Drag to reorder" : undefined}>
+        <span className={`drag-handle${canDrag ? " can-drag" : ""}`} aria-hidden title={canDrag ? t("Drag to reorder") : undefined}>
           {canDrag && <GripVertical size={14} />}
         </span>
         {/* The name button carries the state for keyboards and screen readers; this is a bigger
@@ -545,7 +578,7 @@ export function GroupRow({
         onClick={(e) => e.target === e.currentTarget && onToggle()}
       >
         {renaming ? (
-          <NameInput value={name} label={`Rename group ${name}`} onDone={onRename} />
+          <NameInput value={name} label={t("Rename group {name}", { name })} onDone={onRename} />
         ) : (
           <button
             className="group-name"
@@ -563,12 +596,12 @@ export function GroupRow({
               } else if (e.key === "F2" && editable) onStartRename();
             }}
           >
-            <span>{name}</span>
+            <span>{name === HIDDEN_GROUP ? t(HIDDEN_GROUP) : name}</span>
             <small className="group-count">{count}</small>
           </button>
         )}
         {editable && !renaming && (
-          <button className="icon-button group-add" aria-label={`Add a category to ${name}`} title="Add category" onClick={onAdd}>
+          <button className="icon-button group-add" aria-label={t("Add a category to {name}", { name })} title={t("Add category")} onClick={onAdd}>
             <Plus size={14} />
           </button>
         )}
@@ -586,10 +619,10 @@ export function GroupRow({
         {editable && !renaming && (
           <button
             className="icon-button"
-            aria-label={`Actions for group ${name}`}
+            aria-label={t("Actions for group {name}", { name })}
             onClick={(e) => {
               const r = e.currentTarget.getBoundingClientRect();
-              onMenu(r.left, r.bottom);
+              onMenu(startEdge(r), r.bottom);
             }}
           >
             <MoreHorizontal size={16} />

@@ -3,12 +3,15 @@
 //! plans it reads. The window only ever sees those names and each token's last four characters;
 //! the tokens themselves stay here. Where secrets can't be kept, a token is pasted for each import.
 use crate::vault::{self, STORE};
+use crate::{i18n::tr, t};
 use serde::{Deserialize, Serialize};
 
 const SERVICE: &str = "com.localbudget.desktop.ynab.tokens";
 /// The one token earlier versions kept, moved into the list the first time tokens are read.
 const EARLIER: &str = "com.localbudget.desktop.ynab";
-const UNSUPPORTED: &str = "This system has no supported credential store. Paste a one-time token.";
+fn unsupported() -> String {
+    t!("This system has no supported credential store. Paste a one-time token.")
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -34,8 +37,9 @@ pub struct SavedToken {
 
 /// Adds a token, or renames and touches the one already saved with the same value. Returns its id.
 fn remember(saved: &mut Vec<Saved>, token: &str, label: &str, now: &str) -> String {
+    // An unnamed token is named in the language in use when it's saved; after that the name is the person's.
     let label = match label.trim() {
-        "" => "YNAB token",
+        "" => tr("YNAB token"),
         named => named,
     };
     if let Some(s) = saved.iter_mut().find(|s| s.token == token) {
@@ -70,25 +74,25 @@ fn listed(saved: &[Saved]) -> Vec<SavedToken> {
 }
 
 fn load() -> Result<Vec<Saved>, String> {
-    let store = STORE.ok_or(UNSUPPORTED)?;
+    STORE.ok_or_else(unsupported)?;
     let mut saved: Vec<Saved> = match vault::read(SERVICE) {
-        Some(json) => serde_json::from_str(&json).map_err(|_| format!("The YNAB tokens saved in {store} can't be read."))?,
+        Some(json) => serde_json::from_str(&json).map_err(|_| t!("The YNAB tokens saved in {store} can't be read.", store = vault::store_name()))?,
         None => vec![],
     };
     if let Some(token) = vault::read(EARLIER) {
-        remember(&mut saved, &token, "Saved token", &crate::domain::stamp_now());
+        remember(&mut saved, &token, tr("Saved token"), &crate::domain::stamp_now());
         keep(&saved)?;
         let _ = vault::delete(EARLIER);
     }
     Ok(saved)
 }
 fn keep(saved: &[Saved]) -> Result<(), String> {
-    let store = STORE.ok_or(UNSUPPORTED)?;
+    STORE.ok_or_else(unsupported)?;
     if saved.is_empty() {
         return vault::delete(SERVICE).map(|_| ());
     }
     let json = serde_json::to_string(saved).map_err(|e| e.to_string())?;
-    vault::save(SERVICE, &json).map_err(|_| format!("{store} could not save the token."))
+    vault::save(SERVICE, &json).map_err(|_| t!("{store} could not save the token.", store = vault::store_name()))
 }
 
 /// The saved token with this id, marked as just used.
@@ -97,7 +101,7 @@ pub fn read(id: &str) -> Result<String, String> {
     let s = saved
         .iter_mut()
         .find(|s| s.id == id)
-        .ok_or("That saved token is no longer here. Choose another, or paste one.")?;
+        .ok_or_else(|| t!("That saved token is no longer here. Choose another, or paste one."))?;
     s.last_used = Some(crate::domain::stamp_now());
     let token = s.token.clone();
     keep(&saved)?;
@@ -133,7 +137,7 @@ pub fn forget_ynab_token(id: String) -> Result<(), String> {
     let before = saved.len();
     saved.retain(|s| s.id != id);
     if saved.len() == before {
-        return Err("That token was already removed.".into());
+        return Err(t!("That token was already removed."));
     }
     keep(&saved)
 }

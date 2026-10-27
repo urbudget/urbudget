@@ -17,6 +17,7 @@
 //!
 //! A record one side deleted while the other still uses it (an account the other side added
 //! transactions to) is kept. The merged budget is then checked like any save.
+use crate::t;
 use crate::domain::{Account, AccountKind, Assignment, Budget, Category, Transaction};
 use crate::patch::Keyed;
 use serde::Serialize;
@@ -161,7 +162,7 @@ impl Names {
     }
     fn category(&self, id: &str) -> String {
         if id == "__rta" {
-            return "Ready to Assign".into();
+            return t!("Ready to Assign");
         }
         self.categories.get(id).cloned().unwrap_or_else(|| id.to_owned())
     }
@@ -441,7 +442,7 @@ fn merge_list<T: Record>(
 
 fn month_name(month: &str) -> String {
     chrono::NaiveDate::parse_from_str(&format!("{month}-01"), "%Y-%m-%d")
-        .map(|d| d.format("%B %Y").to_string())
+        .map(crate::i18n::month_year)
         .unwrap_or_else(|_| month.to_owned())
 }
 
@@ -463,10 +464,10 @@ fn assignments(cx: &mut Cx, base: Option<&Budget>, local: &Budget, remote: &Budg
             (Some(pick), _) => pick.copied(),
             // Each side moved money in or out of the category: both moves happen.
             (None, Some(_)) => {
-                cx.notes.push(format!(
-                    "{} in {}: money was assigned on both devices, so both changes are kept.",
-                    cx.names.category(category),
-                    month_name(month)
+                cx.notes.push(t!(
+                    "{category} in {month}: money was assigned on both devices, so both changes are kept.",
+                    category = cx.names.category(category),
+                    month = month_name(month)
                 ));
                 let (a, l, r) = (a.copied().unwrap_or(0), lv.copied().unwrap_or(0), rv.copied().unwrap_or(0));
                 Some(l.saturating_add(r).saturating_sub(a))
@@ -737,7 +738,7 @@ fn restore(cx: &mut Cx, merged: &mut Budget, local: &Budget, remote: &Budget) {
         for id in accounts.iter().filter(|id| !have.contains(*id)) {
             for side in [&local.accounts, &remote.accounts] {
                 if let Some(a) = side.iter().find(|a| &a.id == id) {
-                    cx.notes.push(format!("Kept the account “{}”: one device deleted it while the other still used it.", a.name));
+                    cx.notes.push(t!("Kept the account “{name}”: one device deleted it while the other still used it.", name = a.name));
                     insert_like(&mut merged.accounts, a.clone(), side);
                     break;
                 }
@@ -758,7 +759,7 @@ fn restore(cx: &mut Cx, merged: &mut Budget, local: &Budget, remote: &Budget) {
         for id in categories.iter().filter(|id| !have.contains(*id)) {
             for side in [&local.categories, &remote.categories] {
                 if let Some(c) = side.iter().find(|c| &c.id == id) {
-                    cx.notes.push(format!("Kept the category “{}”: one device deleted it while the other still used it.", c.name));
+                    cx.notes.push(t!("Kept the category “{name}”: one device deleted it while the other still used it.", name = c.name));
                     insert_like(&mut merged.categories, c.clone(), side);
                     break;
                 }
@@ -797,7 +798,7 @@ pub fn merge(base: Option<&Budget>, local: &Budget, remote: &Budget, choices: &C
     };
     restore(&mut cx, &mut budget, local, remote);
     if cx.conflicts.is_empty() {
-        crate::domain::validate(&budget).map_err(|e| format!("The two versions couldn't be combined: {e}"))?;
+        crate::domain::validate(&budget).map_err(|e| t!("The two versions couldn't be combined: {error}", error = e))?;
     }
     Ok(Merged { budget, conflicts: cx.conflicts, notes: cx.notes })
 }

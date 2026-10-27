@@ -32,14 +32,14 @@
   flex-direction: column;
   gap: 1px;
   padding: 6px 12px;
-  border-left: 3px solid transparent;
+  border-inline-start: 3px solid transparent;
   cursor: pointer;
 }
 .payee-list li:hover {
   background: var(--hover);
 }
 .payee-list li.selected {
-  border-left-color: var(--accent);
+  border-inline-start-color: var(--accent);
   background: var(--accent-soft);
 }
 .payee-list li small {
@@ -96,7 +96,8 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 2px 4px 2px 10px;
+  padding-block: 2px;
+  padding-inline: 10px 4px;
   border: 1px solid var(--border);
   border-radius: 999px;
   font-size: 12.5px;
@@ -185,7 +186,7 @@
 
 .status-badge {
   display: inline-block;
-  margin-left: 8px;
+  margin-inline-start: 8px;
   padding: 0 6px;
   border-radius: 9px;
   background: var(--zero-soft);

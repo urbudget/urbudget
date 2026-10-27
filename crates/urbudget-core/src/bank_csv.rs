@@ -4,6 +4,8 @@
 use crate::bank_import::{dates, money, read_dates, BankTransaction, DateReading};
 use crate::bank_statement::{Field, Reason, Status, DECLINED};
 use crate::domain::Budget;
+use crate::i18n::tr;
+use crate::t;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -89,7 +91,7 @@ pub fn remember(b: &mut Budget, account: &str, chosen: FileSettings) -> Result<(
     if let Some(source) = named(chosen.source) {
         kept.source = Some(source);
     }
-    let a = b.accounts.iter_mut().find(|a| a.id == account).ok_or("Account not found")?;
+    let a = b.accounts.iter_mut().find(|a| a.id == account).ok_or_else(|| t!("Account not found"))?;
     a.extra.insert("fileImport".into(), serde_json::to_value(kept).map_err(|e| e.to_string())?);
     Ok(())
 }
@@ -108,7 +110,9 @@ pub struct Decoded {
 }
 
 /// What a PDF statement needs.
-pub const PDF: &str = "A PDF statement can't be read directly. The assistant can read it, check it against the statement's totals and bring its rows to this review.";
+pub fn pdf() -> &'static str {
+    tr("A PDF statement can't be read directly. The assistant can read it, check it against the statement's totals and bring its rows to this review.")
+}
 
 /// A statement file's text, whatever it came as: an Excel or OpenDocument workbook (its sheet that
 /// looks most like a statement, as CSV), a ZIP of statements (CAMT.053 files a day, MT940), or text
@@ -119,7 +123,7 @@ pub fn read_statement(bytes: &[u8]) -> Result<Decoded, String> {
 /// The same, reading a workbook's sheet by its name, when it has one by that name.
 pub fn read_sheet(bytes: &[u8], sheet: Option<&str>) -> Result<Decoded, String> {
     if bytes.starts_with(b"%PDF") {
-        return Err(PDF.into());
+        return Err(pdf().into());
     }
     let zip = bytes.starts_with(b"PK\x03\x04");
     if zip || bytes.starts_with(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]) {
@@ -137,7 +141,7 @@ pub fn read_sheet(bytes: &[u8], sheet: Option<&str>) -> Result<Decoded, String> 
 fn workbook(bytes: &[u8], chosen: Option<&str>) -> Result<Decoded, String> {
     use calamine::{Data, Reader};
     let mut book = calamine::open_workbook_auto_from_rs(std::io::Cursor::new(bytes))
-        .map_err(|e| format!("The spreadsheet couldn't be opened: {e}"))?;
+        .map_err(|e| t!("The spreadsheet couldn't be opened: {e}", e))?;
     let text = |d: &Data| match d {
         Data::Empty | Data::Error(_) => String::new(),
         Data::String(s) => s.trim().to_owned(),
@@ -167,7 +171,7 @@ fn workbook(bytes: &[u8], chosen: Option<&str>) -> Result<Decoded, String> {
             best = Some((score, name, rows));
         }
     }
-    let (_, sheet, rows) = best.ok_or("The spreadsheet has no sheets.")?;
+    let (_, sheet, rows) = best.ok_or_else(|| t!("The spreadsheet has no sheets."))?;
     let mut out = csv::WriterBuilder::new().flexible(true).from_writer(vec![]);
     for row in &rows {
         let end = row.iter().rposition(|c| !c.is_empty()).map_or(0, |i| i + 1);
@@ -180,7 +184,7 @@ fn workbook(bytes: &[u8], chosen: Option<&str>) -> Result<Decoded, String> {
 /// A ZIP of statements, as some banks hand out a day's CAMT.053 files or MT940 together: those,
 /// read as one (each statement's entries are its own); anything else, its first file.
 fn zipped(bytes: &[u8]) -> Result<Decoded, String> {
-    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|_| "This file is a ZIP archive that doesn't hold a statement.".to_string())?;
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|_| t!("This file is a ZIP archive that doesn't hold a statement."))?;
     let mut files = vec![];
     for i in 0..archive.len().min(400) {
         let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
@@ -199,10 +203,10 @@ fn zipped(bytes: &[u8]) -> Result<Decoded, String> {
         Some(kind) if ["camt053", "mt940"].contains(&kind) && kinds.iter().all(|k| *k == Some(kind)) => {
             files.iter().map(|(_, t)| t.as_str()).collect::<Vec<_>>().join("\n")
         }
-        _ => files.into_iter().next().map(|(_, t)| t).ok_or("This ZIP archive is empty.")?,
+        _ => files.into_iter().next().map(|(_, t)| t).ok_or_else(|| t!("This ZIP archive is empty."))?,
     };
     if text.len() > 20_000_000 {
-        return Err("Import a file smaller than 20 MB.".into());
+        return Err(t!("Import a file smaller than 20 MB."));
     }
     Ok(Decoded { text, encoding: "UTF-8", ..Decoded::default() })
 }
@@ -239,7 +243,7 @@ fn central_european(bytes: &[u8]) -> bool {
 /// crosses the apps' text boundary unchanged.
 pub fn decode_latin1(latin1: &str, sheet: Option<&str>) -> Result<Decoded, String> {
     let bytes = latin1.chars().map(|c| u8::try_from(c as u32)).collect::<Result<Vec<u8>, _>>()
-        .map_err(|_| "The statement's bytes didn't come through as they were.".to_string())?;
+        .map_err(|_| t!("The statement's bytes didn't come through as they were."))?;
     read_sheet(&bytes, sheet)
 }
 
@@ -268,10 +272,10 @@ pub struct Layout {
 /// account's.
 pub fn layout(b: &Budget, account: &str, content: &str, columns: Option<&Columns>) -> Result<Layout, String> {
     if !b.accounts.iter().any(|a| a.id == account) {
-        return Err("Choose an account.".into());
+        return Err(t!("Choose an account."));
     }
     if content.len() > 20_000_000 {
-        return Err("Import a file smaller than 20 MB.".into());
+        return Err(t!("Import a file smaller than 20 MB."));
     }
     if let Some(format) = crate::bank_statements::sniff(content) {
         let none = Columns::default();
@@ -423,19 +427,19 @@ pub(crate) fn records(b: &Budget, account: &str, content: &str, o: &Options) -> 
     if let Some(c) = chosen.filter(|c| o.columns.is_some() && c.date.is_some() && !sheet.saved) {
         let missing = c.names().into_iter().flatten().find(|n| position(&sheet.headers, n).is_none());
         return Err(match missing {
-            Some(n) => format!("This file has no column named ‘{n}’. Choose its columns again."),
-            None => "Choose the file's columns again.".into(),
+            Some(n) => t!("This file has no column named ‘{name}’. Choose its columns again.", name = n),
+            None => t!("Choose the file's columns again."),
         });
     }
     let p = &sheet.picked;
-    let d = p.date.ok_or("CSV needs Date, Payee/Description, and Amount (or Outflow/Inflow) headers.")?;
+    let d = p.date.ok_or_else(|| t!("CSV needs Date, Payee/Description, and Amount (or Outflow/Inflow) headers."))?;
     if p.amount.is_none() && p.outflow.is_none() && p.inflow.is_none() {
         let named_code = sheet.headers.iter().map(|s| header(s)).find_map(|(s, code)| {
             [AMOUNTS, OUTFLOWS, INFLOWS].iter().any(|n| named(&s, n, &b.currency)).then_some(code).flatten()
         });
         return Err(match named_code {
-            Some(code) => format!("The file's amounts are in {code}, but this budget uses {}.", b.currency),
-            None => "CSV needs Amount or Outflow/Inflow columns.".into(),
+            Some(code) => t!("The file's amounts are in {code}, but this budget uses {currency}.", code, currency = b.currency),
+            None => t!("CSV needs Amount or Outflow/Inflow columns."),
         });
     }
     fn cell(r: &csv::StringRecord, i: Option<usize>) -> &str {
@@ -484,7 +488,7 @@ pub(crate) fn records(b: &Budget, account: &str, content: &str, o: &Options) -> 
         let day = cell(r, Some(d));
         // (Included, with a date given, it reads.)
         if !(dated(r) || lift(Reason::NoDate) && value(Field::Date).is_some()) {
-            return (None, if lift(Reason::NoDate) { attention(Field::Date, Some(d), "This line has no date.".into()) } else { left(Reason::NoDate, day) });
+            return (None, if lift(Reason::NoDate) { attention(Field::Date, Some(d), t!("This line has no date.")) } else { left(Reason::NoDate, day) });
         }
         let day = Some(value(Field::Date).unwrap_or(day).to_string());
         let given_amount = value(Field::Amount);
@@ -518,7 +522,7 @@ pub(crate) fn records(b: &Budget, account: &str, content: &str, o: &Options) -> 
             }
             converted = amount_written;
             if given_amount.is_none() && !amount_written {
-                return (day, attention(Field::Amount, p.amount.or(p.outflow).or(p.inflow), format!("This line is in {code}: enter the amount in {}.", b.currency)));
+                return (day, attention(Field::Amount, p.amount.or(p.outflow).or(p.inflow), t!("This line is in {code}: enter the amount in {currency}.", code, currency = b.currency)));
             }
         }
         // Money moved between the holder's own balances, by the file's own account.
@@ -533,14 +537,14 @@ pub(crate) fn records(b: &Budget, account: &str, content: &str, o: &Options) -> 
                 return (day, left(Reason::NoAmount, ""));
             }
             if given_amount.is_none() {
-                return (day, attention(Field::Amount, p.amount.or(p.outflow).or(p.inflow), "This line has no amount.".into()));
+                return (day, attention(Field::Amount, p.amount.or(p.outflow).or(p.inflow), t!("This line has no amount.")));
             }
         }
         // An amount given for the line is what it moved, whatever its columns and signs say.
         let amount = if let Some(given) = given_amount {
             match money(given, &b.currency) {
                 Err(e) => return (day, attention(Field::Amount, None, e)),
-                Ok(0) => return (day, attention(Field::Amount, None, "Enter an amount other than zero.".into())),
+                Ok(0) => return (day, attention(Field::Amount, None, t!("Enter an amount other than zero."))),
                 Ok(n) => n,
             }
         // An empty amount, with money out and in in columns of their own, is read from those.
@@ -856,7 +860,7 @@ pub(crate) fn read(
         }
     }
     if let (true, Some(code)) = (raw.is_empty(), &read.foreign) {
-        return Err(format!("The file's amounts are in {code}, but this budget uses {}.", b.currency));
+        return Err(t!("The file's amounts are in {code}, but this budget uses {currency}.", code, currency = b.currency));
     }
     for (t, day) in raw.iter_mut().zip(dates(&days, date_format)?) {
         t.date = day;
@@ -916,7 +920,7 @@ pub(crate) fn read_lines(b: &Budget, account: &str, content: &str, o: &Options, 
     let dated = |day: &Option<String>, fit: &str, payee: &str, memo: &str, amount: i64| -> Result<BankTransaction, String> {
         let day = day.as_deref().unwrap_or("");
         let date = read.borrow_mut().entry(day.to_string())
-            .or_insert_with(|| crate::bank_import::date(day, dates.order).map_err(|_| format!("Can't read the date ‘{day}’.")))
+            .or_insert_with(|| crate::bank_import::date(day, dates.order).map_err(|_| t!("Can't read the date ‘{date}’.", date = day)))
             .clone()?;
         Ok(BankTransaction { fit: fit.into(), date, payee: payee.into(), memo: memo.into(), amount })
     };
@@ -1571,7 +1575,7 @@ impl Sheet {
             hidden.push(!seen);
         }
         if first && !numbered {
-            return Err("Empty file".into());
+            return Err(t!("Empty file"));
         }
         let headers = if numbered {
             // As wide as most rows: a total under them can run wider.
@@ -1947,7 +1951,7 @@ mod tests {
         assert_ne!(other.text, found.text);
         assert_eq!(read_sheet(&book, Some("Gone")).unwrap(), found);
         // A PDF is the assistant's to read; a ZIP or an Excel file that isn't one says so.
-        assert_eq!(read_statement(b"%PDF-1.7\n1 0 obj").err().as_deref(), Some(PDF));
+        assert_eq!(read_statement(b"%PDF-1.7\n1 0 obj").err().as_deref(), Some(pdf()));
         assert!(read_statement(b"PK\x03\x04 not really a zip").is_err());
         assert!(read_statement(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1, 0, 0, 0]).is_err());
     }

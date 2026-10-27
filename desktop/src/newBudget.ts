@@ -1,5 +1,6 @@
 import type { DateFormat, NumberFormat } from "./format";
 import { id, today, type Budget, type Summary, type Transaction } from "./types";
+import { msg, msgc, t } from "./i18n";
 
 export type BudgetStart = "starter" | "blank" | "copy";
 export type NewBudgetOptions = {
@@ -10,19 +11,22 @@ export type NewBudgetOptions = {
   start: BudgetStart;
 };
 
-const STARTER: Record<string, string[]> = {
-  Bills: ["Rent or mortgage", "Electricity", "Water", "Internet", "Phone"],
-  Needs: ["Groceries", "Transportation", "Medical", "Insurance"],
-  Wants: ["Dining out", "Entertainment", "Shopping", "Subscriptions"],
-  Savings: ["Emergency fund", "Vacation", "Gifts"],
-};
+// A new budget's starter categories are made in the language in use; from then on they're the
+// person's own names (docs/LOCALIZATION.md). "Savings" the group isn't the savings account type,
+// so its key has a context.
+const STARTER: [string, string[]][] = [
+  [msg("Bills"), [msg("Rent or mortgage"), msg("Electricity"), msg("Water"), msg("Internet"), msg("Phone")]],
+  [msg("Needs"), [msg("Groceries"), msg("Transportation"), msg("Medical"), msg("Insurance")]],
+  [msg("Wants"), [msg("Dining out"), msg("Entertainment"), msg("Shopping"), msg("Subscriptions")]],
+  [msgc("category group", "Savings"), [msg("Emergency fund"), msg("Vacation"), msg("Gifts")]],
+];
 
 /** Bills, needs, wants and savings categories to rename or delete, and their group order. */
 export const starterCategories = (): Pick<Budget, "categories" | "groupOrder"> => ({
-  categories: Object.entries(STARTER).flatMap(([group, names]) =>
-    names.map((name) => ({ id: id(), name, group, target: 0 })),
+  categories: STARTER.flatMap(([group, names]) =>
+    names.map((name) => ({ id: id(), name: t(name), group: t(group), target: 0 })),
   ),
-  groupOrder: Object.keys(STARTER),
+  groupOrder: STARTER.map(([group]) => t(group)),
 });
 
 /** Drops imported YNAB metadata that belongs to the old budget's history. */
@@ -52,7 +56,7 @@ export function newBudget(o: NewBudgetOptions, current?: { budget: Budget; summa
   if (o.start === "copy" && current) {
     const { budget: b } = current;
     if (o.currency !== b.currency)
-      throw new Error(`A fresh start must use the same currency (${b.currency}). Choose an empty budget to use another currency.`);
+      throw new Error(t("A fresh start must use the same currency ({currency}). Choose an empty budget to use another currency.", { currency: b.currency }));
     // Pending entries must remain available for clearing and bank matching. Keep
     // the entire transfer if either side is pending so both balances stay intact.
     const keep = (t: Transaction) => t.date > asOf || t.status === "uncleared" || t.approved === false ||

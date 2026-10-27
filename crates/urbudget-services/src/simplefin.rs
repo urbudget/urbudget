@@ -9,6 +9,7 @@
 //! one request brings every account (a long first sync takes one per 45 days). The transactions
 //! go to the same review as a bank file: nothing reaches the budget until the user imports it,
 //! and one that comes again is recognised by its SimpleFIN id.
+use crate::t;
 use crate::{
     bank_import::{self, BankTransaction, Row},
     domain::{stamp, Account, Budget},
@@ -40,12 +41,21 @@ const DEFAULT_DAYS: i64 = 30;
 /// Requests a day this app makes at most, under SimpleFIN's 24.
 const DAILY_LIMIT: u32 = 20;
 
-const BAD_TOKEN: &str =
-    "That isn't a SimpleFIN setup token. Copy the whole token from SimpleFIN Bridge and paste it again.";
-const TOKEN_USED: &str = "That setup token was already used. If you didn't use it yourself, someone else may have it: disable it at SimpleFIN Bridge, then make a new one.";
-const OFFLINE: &str = "Couldn't reach SimpleFIN. Check your connection and try again.";
-const UNREADABLE: &str = "SimpleFIN sent an answer UrBudget couldn't read. Nothing was imported.";
-const NOT_CONNECTED: &str = "Connect SimpleFIN first, in Settings › Import.";
+fn bad_token() -> String {
+    t!("That isn't a SimpleFIN setup token. Copy the whole token from SimpleFIN Bridge and paste it again.")
+}
+fn token_used() -> String {
+    t!("That setup token was already used. If you didn't use it yourself, someone else may have it: disable it at SimpleFIN Bridge, then make a new one.")
+}
+fn offline() -> String {
+    t!("Couldn't reach SimpleFIN. Check your connection and try again.")
+}
+fn unreadable() -> String {
+    t!("SimpleFIN sent an answer UrBudget couldn't read. Nothing was imported.")
+}
+fn not_connected() -> String {
+    t!("Connect SimpleFIN first, in Settings › Import.")
+}
 
 /// The credential's name. A QA run (debug builds on a scratch data folder) keeps its own, so a
 /// demo connection never replaces a real one.
@@ -239,7 +249,7 @@ fn plan<Tz: TimeZone>(b: &Budget, now: i64, tz: &Tz) -> Result<Vec<(i64, i64)>, 
         .filter_map(link)
         .map(|l| since(&l, today))
         .min()
-        .ok_or("Link an account to SimpleFIN first, in Settings › Import.")?;
+        .ok_or_else(|| t!("Link an account to SimpleFIN first, in Settings › Import."))?;
     Ok(windows(midnight(start, tz), now))
 }
 
@@ -277,15 +287,15 @@ fn unescape(s: &str) -> String {
 }
 impl Access {
     pub fn parse(text: &str) -> Result<Access, String> {
-        let bad = "SimpleFIN sent an access address UrBudget can't use. Make a new setup token and connect again.";
-        let mut base = Url::parse(text.trim()).map_err(|_| bad)?;
+        let bad = || t!("SimpleFIN sent an access address UrBudget can't use. Make a new setup token and connect again.");
+        let mut base = Url::parse(text.trim()).map_err(|_| bad())?;
         if !allowed(&base) || base.username().is_empty() {
-            return Err(bad.into());
+            return Err(bad());
         }
         let user = unescape(base.username());
         let password = unescape(base.password().unwrap_or_default());
-        base.set_username("").map_err(|_| bad)?;
-        base.set_password(None).map_err(|_| bad)?;
+        base.set_username("").map_err(|_| bad())?;
+        base.set_password(None).map_err(|_| bad())?;
         Ok(Access { base, user, password })
     }
     fn accounts(&self) -> String {
@@ -301,10 +311,10 @@ pub fn claim_url(token: &str) -> Result<Url, String> {
         base64::engine::general_purpose::STANDARD_NO_PAD,
         base64::engine::general_purpose::URL_SAFE_NO_PAD,
     ];
-    let decoded = engines.iter().find_map(|e| e.decode(&compact).ok()).ok_or(BAD_TOKEN)?;
-    let url = Url::parse(String::from_utf8(decoded).map_err(|_| BAD_TOKEN)?.trim()).map_err(|_| BAD_TOKEN)?;
+    let decoded = engines.iter().find_map(|e| e.decode(&compact).ok()).ok_or_else(bad_token)?;
+    let url = Url::parse(String::from_utf8(decoded).map_err(|_| bad_token())?.trim()).map_err(|_| bad_token())?;
     if !allowed(&url) || url.host_str().is_none() {
-        return Err(BAD_TOKEN.into());
+        return Err(bad_token());
     }
     Ok(url)
 }
@@ -316,7 +326,7 @@ pub fn http() -> Result<reqwest::Client, String> {
         .connect_timeout(std::time::Duration::from_secs(20))
         .timeout(std::time::Duration::from_secs(120))
         .build()
-        .map_err(|_| "Couldn't start bank sync.".into())
+        .map_err(|_| t!("Couldn't start bank sync."))
 }
 /// Trades a setup token's claim address for the Access URL. It works once.
 pub async fn claim(http: &reqwest::Client, url: Url) -> Result<String, String> {
@@ -325,13 +335,13 @@ pub async fn claim(http: &reqwest::Client, url: Url) -> Result<String, String> {
         .header(reqwest::header::CONTENT_LENGTH, "0")
         .send()
         .await
-        .map_err(|_| OFFLINE)?;
+        .map_err(|_| offline())?;
     match response.status().as_u16() {
         200..=299 => {}
-        403 => return Err(TOKEN_USED.into()),
-        n => return Err(format!("SimpleFIN couldn't accept the setup token (HTTP {n}). Try again later.")),
+        403 => return Err(token_used()),
+        n => return Err(t!("SimpleFIN couldn't accept the setup token (HTTP {n}). Try again later.", n)),
     }
-    let access = response.text().await.map_err(|_| OFFLINE)?.trim().to_string();
+    let access = response.text().await.map_err(|_| offline())?.trim().to_string();
     Access::parse(&access)?;
     Ok(access)
 }
@@ -344,12 +354,12 @@ async fn fetch(http: &reqwest::Client, access: &Access, query: &[(&str, String)]
         .query(query)
         .send()
         .await
-        .map_err(|_| OFFLINE)?;
+        .map_err(|_| offline())?;
     match response.status().as_u16() {
-        200..=299 => response.json().await.map_err(|_| UNREADABLE.into()),
-        402 => Err("SimpleFIN needs a payment before it sends more. Check your subscription at SimpleFIN Bridge, then sync again.".into()),
-        403 => Err("SimpleFIN turned down this connection. It may have been revoked. Remove it here, then connect again with a new setup token.".into()),
-        n => Err(format!("SimpleFIN couldn't send your transactions (HTTP {n}). Try again later.")),
+        200..=299 => response.json().await.map_err(|_| unreadable()),
+        402 => Err(t!("SimpleFIN needs a payment before it sends more. Check your subscription at SimpleFIN Bridge, then sync again.")),
+        403 => Err(t!("SimpleFIN turned down this connection. It may have been revoked. Remove it here, then connect again with a new setup token.")),
+        n => Err(t!("SimpleFIN couldn't send your transactions (HTTP {n}). Try again later.", n)),
     }
 }
 /// Every account's transactions over the windows, as one answer: each transaction once, and the
@@ -490,9 +500,9 @@ fn account_transactions<Tz: TimeZone>(
     if !currency.eq_ignore_ascii_case(&b.currency) {
         let name = clean(&sf.name);
         return Err(if is_code(currency) {
-            format!("{name} is in {}, but this budget uses {}.", currency.to_ascii_uppercase(), b.currency)
+            t!("{name} is in {currency}, but this budget uses {budget}.", name, currency = currency.to_ascii_uppercase(), budget = b.currency)
         } else {
-            format!("{name} uses a currency of its own, but this budget uses {}.", b.currency)
+            t!("{name} uses a currency of its own, but this budget uses {budget}.", name, budget = b.currency)
         });
     }
     let mut raw = vec![];
@@ -504,7 +514,7 @@ fn account_transactions<Tz: TimeZone>(
             continue;
         }
         let amount = cents(&t.amount).ok_or_else(|| {
-            format!("SimpleFIN sent an amount UrBudget can't read for {}: {}", clean(&sf.name), clean(&t.amount))
+            t!("SimpleFIN sent an amount UrBudget can't read for {account}: {amount}", account = clean(&sf.name), amount = clean(&t.amount))
         })?;
         // The Bridge sends a tidied payee beside the bank's description and memo; the memo
         // keeps whichever of those says something more.
@@ -567,9 +577,9 @@ fn reviews_with<Tz: TimeZone, R>(
             let sf = set.accounts.iter().find(|s| s.id == l.id);
             let rows = match sf {
                 Some(sf) => render(b, a, &l, sf, (since(&l, today), fetched), tz),
-                None => Err(format!(
-                    "SimpleFIN didn't send {} this time. Its bank may need you to sign in again at SimpleFIN Bridge.",
-                    a.name
+                None => Err(t!(
+                    "SimpleFIN didn't send {account} this time. Its bank may need you to sign in again at SimpleFIN Bridge.",
+                    account = a.name
                 )),
             };
             let (rows, candidate_sets, error) = match rows {
@@ -627,12 +637,12 @@ impl SimpleFin {
         let mut usage = self.used();
         if usage.requests + n > DAILY_LIMIT {
             return Err(if n > 1 && usage.requests < DAILY_LIMIT {
-                format!(
-                    "This sync needs {n} requests to SimpleFIN, and only {} are left today. Sync again tomorrow, or link the account from a later date.",
-                    DAILY_LIMIT - usage.requests
+                t!(
+                    "This sync needs {n} requests to SimpleFIN, and only {left} are left today. Sync again tomorrow, or link the account from a later date.",
+                    n, left = DAILY_LIMIT - usage.requests
                 )
             } else {
-                format!("UrBudget has asked SimpleFIN for data {} times today. SimpleFIN allows about 24 requests a day and can switch off a connection that goes over, so sync again tomorrow.", usage.requests)
+                t!("UrBudget has asked SimpleFIN for data {count} times today. SimpleFIN allows about 24 requests a day and can switch off a connection that goes over, so sync again tomorrow.", count = usage.requests)
             });
         }
         usage.requests += n;
@@ -671,7 +681,7 @@ impl SimpleFin {
     }
 }
 fn access() -> Result<Access, String> {
-    Access::parse(&vault::read(&service()).ok_or(NOT_CONNECTED)?)
+    Access::parse(&vault::read(&service()).ok_or_else(not_connected)?)
 }
 
 #[derive(Serialize)]
@@ -708,11 +718,11 @@ async fn list(state: &SimpleFin, access: &Access) -> Result<Status, String> {
 }
 /// Claims a setup token, keeps the Access URL in the credential store, and lists the accounts.
 pub async fn simplefin_connect(state: &SimpleFin, token: String) -> Result<Status, String> {
-    let store = vault::STORE.ok_or("Bank sync needs a system credential store, which this computer doesn't have.")?;
+    vault::STORE.ok_or_else(|| t!("Bank sync needs a system credential store, which this computer doesn't have."))?;
     let url = claim_url(&token)?;
     let access = claim(&http()?, url).await?;
     vault::save(&service(), &access).map_err(|_| {
-        format!("{store} couldn't keep the connection. Make a new setup token at SimpleFIN Bridge and connect again.")
+        t!("{store} couldn't keep the connection. Make a new setup token at SimpleFIN Bridge and connect again.", store = vault::store_name())
     })?;
     if let Ok(mut last) = state.last.lock() {
         *last = None;
@@ -770,10 +780,10 @@ async fn simplefin_sync_with<R>(
         state.spend(windows.len() as u32)?;
         let set = download(&http()?, &access, &windows).await?;
         state.remember(&set);
-        *state.last.lock().map_err(|_| "Bank sync stopped. Try again.")? = Some(Downloaded { set, at: now });
+        *state.last.lock().map_err(|_| t!("Bank sync stopped. Try again."))? = Some(Downloaded { set, at: now });
     }
-    let last = state.last.lock().map_err(|_| "Bank sync stopped. Try again.")?;
-    let last = last.as_ref().ok_or(NOT_CONNECTED)?;
+    let last = state.last.lock().map_err(|_| t!("Bank sync stopped. Try again."))?;
+    let last = last.as_ref().ok_or_else(not_connected)?;
     let usage = state.used();
     Ok(Synced {
         reviews: render(&budget, &last.set, last.at),
@@ -795,14 +805,14 @@ pub fn simplefin_import(
     db.change(patch, |b| mark_synced(bank_import::apply(b, &account, choices)?, &account, &through))
 }
 fn mark_synced(mut b: Budget, account: &str, through: &str) -> Result<Budget, String> {
-    NaiveDate::parse_from_str(through, "%Y-%m-%d").map_err(|_| "Invalid sync date")?;
+    NaiveDate::parse_from_str(through, "%Y-%m-%d").map_err(|_| t!("Invalid sync date"))?;
     let link = b
         .accounts
         .iter_mut()
         .find(|a| a.id == account)
         .and_then(|a| a.extra.get_mut("simplefin"))
         .and_then(Value::as_object_mut)
-        .ok_or("This account isn't linked to SimpleFIN anymore.")?;
+        .ok_or_else(|| t!("This account isn't linked to SimpleFIN anymore."))?;
     link.insert("lastSync".into(), json!(through));
     Ok(b)
 }

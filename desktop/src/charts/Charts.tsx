@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { compactMoney, heatLevels, linear, monthTick, niceTicks, squarify } from "./scale";
-import { activeFormat } from "../format";
+import { activeFormat, monthName } from "../format";
+import { list, ltr, monthNames, rtlRun, t, weekdayNames } from "../i18n";
 
 // Hand-written SVG charts. Marks follow the data-viz method: bars at most 24px wide
 // with a 4px rounded data end, 2px surface gaps between stacked segments and slices, 2px lines,
@@ -15,8 +16,7 @@ const PAD = { top: 26, right: 16, bottom: 26, left: 52 };
 const BAR = 24,
   GAP = 2,
   RADIUS = 4;
-const monthTitle = (m: string) =>
-  new Date(`${m}-02T12:00:00`).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+const monthTitle = (m: string) => monthName(m);
 
 function useWidth(fallback = 720) {
   const ref = useRef<HTMLDivElement>(null);
@@ -217,7 +217,7 @@ export function ColumnChart({
   const lastLine = line ? line.values.reduce<number>((last, v, i) => (v === null ? last : i), -1) : -1;
   const rows = (i: number): TooltipRow[] => [
     ...series.filter((s) => s.values[i]).map((s) => ({ label: s.label, value: format(s.values[i]), color: s.color })),
-    ...(series.length > 1 && !grouped ? [{ label: "Total", value: format(series.reduce((n, s) => n + (s.values[i] ?? 0), 0)) }] : []),
+    ...(series.length > 1 && !grouped ? [{ label: t("Total"), value: format(series.reduce((n, s) => n + (s.values[i] ?? 0), 0)) }] : []),
     ...(line && line.values[i] !== null ? [{ label: line.label, value: format(line.values[i]!), color: line.color, line: true }] : []),
   ];
   return (
@@ -232,7 +232,7 @@ export function ColumnChart({
           <g className="chart-average">
             <line x1={PAD.left} x2={width - PAD.right} y1={y(average.value)} y2={y(average.value)} />
             <text x={width - PAD.right} y={y(average.value) - 5} textAnchor="end">
-              {average.label} {format(average.value)}
+              {rtlRun(`${average.label} ${format(average.value)}`)}
             </text>
           </g>
         )}
@@ -253,7 +253,7 @@ export function ColumnChart({
             width={band}
             height={plot.h}
             tabIndex={0}
-            aria-label={`${title(m)}: ${rows(i).map((r) => `${r.label} ${r.value}`).join(", ")}`}
+            aria-label={t("{label}: {value}", { label: title(m), value: list(rows(i).map((r) => `${r.label} ${r.value}`)) })}
             onPointerEnter={() => setHover(i)}
             onPointerLeave={() => setHover(null)}
             onFocus={() => setHover(i)}
@@ -477,7 +477,7 @@ export function Donut({
             className={`donut-slice${arcs.length === 1 ? " whole" : ""}${hover !== null && hover !== i ? " dim" : ""}${onSelect ? " selectable" : ""}`}
             tabIndex={0}
             role={onSelect ? "button" : "img"}
-            aria-label={`${a.s.label}: ${format(a.s.value)}, ${share(a.s.value)}`}
+            aria-label={t("{label}: {amount}, {share}", { label: a.s.label, amount: format(a.s.value), share: share(a.s.value) })}
             onPointerEnter={() => setHover(i)}
             onPointerLeave={() => setHover(null)}
             onFocus={() => setHover(i)}
@@ -510,7 +510,8 @@ export function Donut({
   );
 }
 
-const WEEKDAY = (d: number) => new Date(2026, 1, 1 + d, 12).toLocaleDateString("en-GB", { weekday: "short" });
+const WEEKDAY = (d: number) =>
+  weekdayNames()?.[d] ?? new Date(2026, 1, 1 + d, 12).toLocaleDateString("en-GB", { weekday: "short" });
 const addDays = (iso: string, n: number) => {
   const d = new Date(`${iso}T12:00:00`);
   d.setDate(d.getDate() + n);
@@ -547,7 +548,8 @@ export function HeatCalendar({
   const days: string[] = [];
   for (let d = from; d <= to && days.length < 3700; d = addDays(d, 1)) days.push(d);
   const weeks = Math.ceil((days.length + lead) / 7);
-  const left = 30,
+  // Arabic weekday names are full words, so their column is wider.
+  const left = weekdayNames() ? 50 : 30,
     top = 18;
   const cell = Math.max(9, Math.min(18, Math.floor((width - left) / Math.max(1, weeks)) - 3));
   const pitch = cell + 3;
@@ -562,7 +564,8 @@ export function HeatCalendar({
             {months.map((m, k) =>
               k && m.x - months[k - 1].x < 28 ? null : (
                 <text key={m.d} x={m.x} y={11}>
-                  {new Date(`${m.d}T12:00:00`).toLocaleDateString("en-GB", { month: "short" })}
+                  {monthNames()?.[Number(m.d.slice(5, 7)) - 1] ??
+                    new Date(`${m.d}T12:00:00`).toLocaleDateString("en-GB", { month: "short" })}
                 </text>
               ),
             )}
@@ -598,15 +601,15 @@ export function HeatCalendar({
           width={width}
           title={formatDay(hover.day)}
           rows={[
-            { label: (values[hover.day] ?? 0) > 0 ? "spent" : "nothing spent", value: format(values[hover.day] ?? 0) },
-            ...(onSelect && (values[hover.day] ?? 0) > 0 ? [{ label: "Click to list the transactions", value: "" }] : []),
+            { label: (values[hover.day] ?? 0) > 0 ? t("spent") : t("nothing spent"), value: format(values[hover.day] ?? 0) },
+            ...(onSelect && (values[hover.day] ?? 0) > 0 ? [{ label: t("Click to list the transactions"), value: "" }] : []),
           ]}
         />
       )}
       <div className="heat-legend" aria-hidden>
-        <i className="heat-cell level-0" /> No spending
+        <i className="heat-cell level-0" /> {t("No spending")}
         <span className="heat-scale">
-          Less {[1, 2, 3, 4, 5].map((l) => <i key={l} className={`heat-cell level-${l}`} />)} More
+          {t("Less")} {[1, 2, 3, 4, 5].map((l) => <i key={l} className={`heat-cell level-${l}`} />)} {t("More")}
         </span>
       </div>
     </div>
@@ -642,32 +645,36 @@ export function Treemap({
   return (
     <div className="treemap" ref={ref} style={{ height }}>
       <div role="list" aria-label={label}>
-        {tiles.map((t) => {
-          const roomy = t.w > 76 && t.h > 40,
-            labelled = t.w > 44 && t.h > 22;
-          const text = [`${t.label}: ${format(t.value)}`, t.detail, t.more].filter(Boolean).join(", ");
+        {tiles.map((tile) => {
+          const roomy = tile.w > 76 && tile.h > 40,
+            labelled = tile.w > 44 && tile.h > 22;
+          const text = list(
+            [t("{label}: {value}", { label: tile.label, value: format(tile.value) }), tile.detail, tile.more].filter(
+              (s): s is string => !!s,
+            ),
+          );
           return (
             <button
-              key={t.key}
+              key={tile.key}
               role="listitem"
-              className={`tm-tile level-${level(t.value)}${hover?.key === t.key ? " active" : ""}`}
-              style={{ left: t.x + 1, top: t.y + 1, width: Math.max(0, t.w - 2), height: Math.max(0, t.h - 2) }}
+              className={`tm-tile level-${level(tile.value)}${hover?.key === tile.key ? " active" : ""}`}
+              style={{ left: tile.x + 1, top: tile.y + 1, width: Math.max(0, tile.w - 2), height: Math.max(0, tile.h - 2) }}
               aria-label={text}
               tabIndex={onSelect ? 0 : -1}
               onClick={() => {
                 setHover(null);
-                onSelect?.(t.key);
+                onSelect?.(tile.key);
               }}
               onPointerMove={(e) => {
                 const box = ref.current!.getBoundingClientRect();
-                place(t.key, e.clientX - box.left, e.clientY - box.top);
+                place(tile.key, e.clientX - box.left, e.clientY - box.top);
               }}
               onPointerLeave={() => setHover(null)}
-              onFocus={() => place(t.key, t.x + t.w / 2, t.y + t.h / 2)}
+              onFocus={() => place(tile.key, tile.x + tile.w / 2, tile.y + tile.h / 2)}
               onBlur={() => setHover(null)}
             >
-              {labelled && <span className="tm-label">{t.label}</span>}
-              {roomy && <span className="tm-value">{format(t.value)}</span>}
+              {labelled && <span className="tm-label">{tile.label}</span>}
+              {roomy && <span className="tm-value">{format(tile.value)}</span>}
             </button>
           );
         })}
@@ -681,7 +688,7 @@ export function Treemap({
           rows={[
             { label: tip.detail ?? "", value: format(tip.value) },
             ...(tip.more ? [{ label: tip.more, value: "" }] : []),
-            ...(onSelect ? [{ label: "Click to list the transactions", value: "" }] : []),
+            ...(onSelect ? [{ label: t("Click to list the transactions"), value: "" }] : []),
           ]}
         />
       )}
@@ -717,10 +724,7 @@ export function DivergingList({
               {r.value > 0 && <i style={{ width: `${(r.value / max) * 100}%`, background: colors.more }} />}
             </span>
           </span>
-          <strong className="num">
-            {r.value > 0 ? "+" : ""}
-            {format(r.value)}
-          </strong>
+          <strong className="num">{ltr(`${r.value > 0 ? "+" : ""}${format(r.value)}`)}</strong>
           <span className="num muted">{r.detail}</span>
         </li>
       ))}

@@ -1,4 +1,6 @@
 import type { Budget, MoneyMove } from "./types";
+import { AUTO_ASSIGN } from "./QuickAssign";
+import { getLanguage, t } from "./i18n";
 
 /** One line of a category's moves for a month. */
 export type CategoryMove = {
@@ -14,17 +16,27 @@ export type CategoryMove = {
 const changeTo = (m: MoneyMove, categoryId: string) =>
   m.changes?.find((c) => c.categoryId === categoryId)?.amount ?? 0;
 
+/** A quick-assign option as the engine records it ("spent last month"), in the language in use. */
+const optionName = (detail: string) => {
+  if (getLanguage() === "en") return detail;
+  const option = AUTO_ASSIGN.find((o) => o.label.toLowerCase() === detail.toLowerCase());
+  return option ? t(option.label) : detail;
+};
+
 /** Names a move from one category's side: where its money came from or went. */
 function describe(m: MoneyMove, categoryId: string, amount: number, names: Map<string, string>) {
   const other = m.changes?.find((c) => c.categoryId !== categoryId);
-  if (m.kind === "quickAssign") return { what: m.detail ? `Quick assign: ${m.detail}` : "Quick assign" };
-  if (m.kind === "merge") return { what: `Merged from ${m.detail ?? "a deleted category"}` };
+  if (m.kind === "quickAssign") return { what: m.detail ? t("Quick assign: {option}", { option: optionName(m.detail) }) : t("Quick assign") };
+  if (m.kind === "merge")
+    return { what: m.detail ? t("Merged from {name}", { name: m.detail }) : t("Merged from a deleted category") };
   if (m.kind === "move" && other) {
-    const name = names.get(other.categoryId) ?? "a deleted category";
-    return { what: amount > 0 ? `Moved from ${name}` : `Moved to ${name}` };
+    const name = names.get(other.categoryId);
+    if (name === undefined) return { what: amount > 0 ? t("Moved from a deleted category") : t("Moved to a deleted category") };
+    return { what: amount > 0 ? t("Moved from {name}", { name }) : t("Moved to {name}", { name }) };
   }
   // Typed amounts, and moves to or from Unassigned.
-  if (m.kind === "move" || m.kind === "assign") return { what: amount > 0 ? "Assigned" : "Returned to Unassigned" };
+  if (m.kind === "move" || m.kind === "assign") return { what: amount > 0 ? t("Assigned") : t("Returned to Unassigned") };
+  // The engine's own record, kept as it was written.
   return { what: m.description };
 }
 
@@ -43,7 +55,7 @@ export function categoryMoves(b: Budget, categoryId: string, month: string, assi
   });
   const recorded = lines.reduce((n, l) => n + l.amount, 0);
   if (lines.length && recorded !== assigned)
-    lines.unshift({ key: "earlier", at: null, what: "Earlier changes", detail: "Not itemised", amount: assigned - recorded });
+    lines.unshift({ key: "earlier", at: null, what: t("Earlier changes"), detail: t("Not itemised"), amount: assigned - recorded });
   return lines;
 }
 

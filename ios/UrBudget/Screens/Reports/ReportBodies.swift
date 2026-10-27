@@ -124,7 +124,7 @@ private struct ReportCategoryBody: View {
                 }
             }
         } header: {
-            ReportSectionHeader(title: model.group ?? "Spending by group")
+            ReportSectionHeader(title: model.group ?? String(localized: "Spending by group"))
         } footer: {
             Text(model.help)
         }
@@ -181,7 +181,7 @@ private struct ReportPayeeBody: View {
             Text(model.help)
         }
         Section {
-            Text(query.isEmpty ? "\(model.rows.count) \(ReportMath.plural(model.rows.count, "payee", "payees"))" : "\(rows.count) of \(model.rows.count) payees")
+            Text(countText)
                 .font(.footnote).foregroundStyle(Color.secondary)
                 .id("payees:all")
             if rows.isEmpty {
@@ -201,8 +201,14 @@ private struct ReportPayeeBody: View {
                 }
             }
         } header: {
-            ReportSectionHeader(title: "All payees")
+            ReportSectionHeader(title: String(localized: "All payees"))
         }
+    }
+
+    /// "12 payees", or "3 of 12 payees" while searching.
+    private var countText: String {
+        query.isEmpty ? String(localized: "\(model.rows.count) payees", locale: .app)
+            : String(localized: "\(rows.count) of \(model.rows.count) payees", locale: .app)
     }
 }
 
@@ -224,12 +230,12 @@ private struct ReportOverTimeBody: View {
             }
             .padding(.vertical, 6)
         } header: {
-            ReportSectionHeader(title: "Spending by month")
+            ReportSectionHeader(title: String(localized: "Spending by month"))
         }
         Section {
             ForEach(model.rows) { ReportFigureRowView(row: $0) }
         } header: {
-            ReportSectionHeader(title: "Month by month")
+            ReportSectionHeader(title: String(localized: "Month by month"))
         }
     }
 }
@@ -242,7 +248,7 @@ private struct ReportHeatPanel: View {
     var body: some View {
         let chosen = heat.days.indices.contains(day)
         VStack(alignment: .leading, spacing: 10) {
-            Text(chosen ? "\(heat.titles[day]) · \(heat.amounts[day]) \(heat.spent[day] ? "spent" : "nothing spent")" : "Tap a day for its spending. Darker means more.")
+            Text(caption)
                 .font(.footnote)
                 .foregroundStyle(chosen ? .primary : .secondary)
             ReportHeatCalendar(model: heat, selected: day) { index in
@@ -256,6 +262,14 @@ private struct ReportHeatPanel: View {
         }
         .padding(.vertical, 6)
         .onChange(of: heat.days) { day = -1 }
+    }
+
+    /// The chosen day ("Thursday 2026-10-01 · 12.00 spent"), or how to choose one.
+    private var caption: String {
+        guard heat.days.indices.contains(day) else { return String(localized: "Tap a day for its spending. Darker means more.") }
+        let amount = heat.amounts[day]
+        let spent = heat.spent[day] ? String(localized: "\(amount) spent") : String(localized: "\(amount) nothing spent")
+        return "\(heat.titles[day]) · \(spent)"
     }
 }
 
@@ -275,12 +289,12 @@ private struct ReportCalendarBody: View {
                 ContentUnavailableView("Not started yet", systemImage: "calendar", description: Text("These months haven't started yet."))
             }
         } header: {
-            ReportSectionHeader(title: "Spending by day")
+            ReportSectionHeader(title: String(localized: "Spending by day"))
         }
         Section {
             ReportColumnChart(model: model.weekdays, height: 200).padding(.vertical, 6)
         } header: {
-            ReportSectionHeader(title: "By day of the week", aside: "Average spent")
+            ReportSectionHeader(title: String(localized: "By day of the week"), aside: String(localized: "Average spent"))
         }
         Section {
             if model.biggest.isEmpty { Text("No spending in these months.").foregroundStyle(Color.secondary) }
@@ -288,7 +302,7 @@ private struct ReportCalendarBody: View {
                 ReportLinkRow(value: row.drill.map(actions.drill)) { ReportFigureRowView(row: row) }
             }
         } header: {
-            ReportSectionHeader(title: "Biggest days")
+            ReportSectionHeader(title: String(localized: "Biggest days"))
         }
     }
 }
@@ -345,26 +359,26 @@ private struct ReportIncomeExpenseBody: View {
             }
             .padding(.vertical, 6)
         } header: {
-            ReportSectionHeader(title: "Income and spending by month")
+            ReportSectionHeader(title: String(localized: "Income and spending by month"))
         } footer: {
             Text(model.help)
         }
         Section {
             ReportLinesChart(model: model.rate, height: 200).padding(.vertical, 6)
         } header: {
-            ReportSectionHeader(title: "Budget surplus rate", aside: "Surplus as a share of income")
+            ReportSectionHeader(title: String(localized: "Budget surplus rate"), aside: String(localized: "Surplus as a share of income"))
         }
         Section {
             ReportLinesChart(model: model.cumulative, height: 200).padding(.vertical, 6)
         } header: {
-            ReportSectionHeader(title: "Cumulative budget surplus", aside: "Surplus added up")
+            ReportSectionHeader(title: String(localized: "Cumulative budget surplus"), aside: String(localized: "Surplus added up"))
         }
-        ReportTableSections(key: "table", rows: model.table, children: model.children, header: "Income and spending",
-                            aside: "Open a group to see its categories")
+        ReportTableSections(key: "table", rows: model.table, children: model.children, header: String(localized: "Income and spending"),
+                            aside: String(localized: "Open a group to see its categories"))
         Section {
             ForEach(model.months) { ReportFigureRowView(row: $0) }
         } header: {
-            ReportSectionHeader(title: "By month", aside: "Budget surplus each month")
+            ReportSectionHeader(title: String(localized: "By month"), aside: String(localized: "Budget surplus each month"))
         }
     }
 }
@@ -379,11 +393,11 @@ private struct ReportIncomeBody: View {
             if model.bars.isEmpty {
                 ContentUnavailableView("No income", systemImage: "banknote", description: Text("No income in these months."))
             } else {
-                ReportDonut(slices: model.slices, centerValue: model.centerValue, centerLabel: "Positive sources").padding(.vertical, 8)
+                ReportDonut(slices: model.slices, centerValue: model.centerValue, centerLabel: String(localized: "Positive sources")).padding(.vertical, 8)
                 ForEach(model.bars) { ReportBarRowView(row: $0) }
             }
         } header: {
-            ReportSectionHeader(title: "Where your income comes from")
+            ReportSectionHeader(title: String(localized: "Where your income comes from"))
         } footer: {
             if let help = model.chartHelp { Text(help) }
         }
@@ -395,7 +409,7 @@ private struct ReportIncomeBody: View {
                 }
                 .padding(.vertical, 6)
             } header: {
-                ReportSectionHeader(title: "Income by month")
+                ReportSectionHeader(title: String(localized: "Income by month"))
             }
         }
         Section {
@@ -404,7 +418,7 @@ private struct ReportIncomeBody: View {
                 ReportLinkRow(value: row.drill.map(actions.drill)) { ReportFigureRowView(row: row) }
             }
         } header: {
-            ReportSectionHeader(title: "Sources")
+            ReportSectionHeader(title: String(localized: "Sources"))
         } footer: {
             if let help = model.sourcesHelp { Text(help) }
         }
@@ -423,19 +437,19 @@ private struct ReportCashFlowBody: View {
             }
             .padding(.vertical, 6)
         } header: {
-            ReportSectionHeader(title: "Money in and out by month")
+            ReportSectionHeader(title: String(localized: "Money in and out by month"))
         } footer: {
             Text("Account movements across your budget boundary, including credit-card purchases and transfers to tracking accounts. Card payments, other transfers between budget accounts and starting balances are excluded. Split inflows and outflows may be netted; these are account movements rather than gross category splits.")
         }
         Section {
             ReportLinesChart(model: model.running, height: 200).padding(.vertical, 6)
         } header: {
-            ReportSectionHeader(title: "Running total", aside: "Net flow added up")
+            ReportSectionHeader(title: String(localized: "Running total"), aside: String(localized: "Net flow added up"))
         }
         Section {
             ForEach(model.months) { ReportFigureRowView(row: $0) }
         } header: {
-            ReportSectionHeader(title: "By month", aside: "Net flow each month")
+            ReportSectionHeader(title: String(localized: "By month"), aside: String(localized: "Net flow each month"))
         }
     }
 }
@@ -452,7 +466,7 @@ private struct ReportNetWorthBody: View {
             }
             .padding(.vertical, 6)
         } header: {
-            ReportSectionHeader(title: "Assets, debts and net worth")
+            ReportSectionHeader(title: String(localized: "Assets, debts and net worth"))
         }
         Section {
             VStack(alignment: .leading, spacing: 10) {
@@ -461,12 +475,12 @@ private struct ReportNetWorthBody: View {
             }
             .padding(.vertical, 6)
         } header: {
-            ReportSectionHeader(title: "Change each month")
+            ReportSectionHeader(title: String(localized: "Change each month"))
         }
         Section {
             ForEach(model.accounts) { ReportFigureRowView(row: $0) }
         } header: {
-            ReportSectionHeader(title: "By account", aside: model.dates)
+            ReportSectionHeader(title: String(localized: "By account"), aside: model.dates)
         }
     }
 }
@@ -476,9 +490,9 @@ private struct ReportBalanceSheetBody: View {
 
     var body: some View {
         ReportTilesSection(tiles: model.tiles)
-        side("What you own", total: model.ownTotal, rows: model.own, empty: "No assets.", color: 0)
-        side("What you owe", total: model.oweTotal, rows: model.owe, empty: "Nothing owed.", color: 1)
-        ReportTableSections(key: "statement", rows: model.statement, header: "Statement", aside: "\(model.statementAside)\n\(model.dates)", footer: model.help)
+        side(String(localized: "What you own"), total: model.ownTotal, rows: model.own, empty: String(localized: "No assets."), color: 0)
+        side(String(localized: "What you owe"), total: model.oweTotal, rows: model.owe, empty: String(localized: "Nothing owed."), color: 1)
+        ReportTableSections(key: "statement", rows: model.statement, header: String(localized: "reports.section.statement", defaultValue: "Statement", comment: "Balance sheet section listing each account."), aside: "\(model.statementAside)\n\(model.dates)", footer: model.help)
     }
 
     private func side(_ title: String, total: String, rows: [ReportBarRow], empty: String, color: Int) -> some View {
@@ -517,12 +531,12 @@ private struct ReportBalancesBody: View {
                 Text("Choose accounts above to chart them.").foregroundStyle(Color.secondary)
             }
         } header: {
-            ReportSectionHeader(title: "Balances at the end of each month")
+            ReportSectionHeader(title: String(localized: "Balances at the end of each month"))
         }
         Section {
             ForEach(model.rows) { ReportFigureRowView(row: $0) }
         } header: {
-            ReportSectionHeader(title: "All accounts")
+            ReportSectionHeader(title: String(localized: "All accounts"))
         } footer: {
             Text("Month-end balances; lowest and highest are among those.")
         }
@@ -558,14 +572,14 @@ private struct ReportAgeBody: View {
         Section {
             ReportLinesChart(model: model.chart).padding(.vertical, 6)
         } header: {
-            ReportSectionHeader(title: "Cash age at the end of each month")
+            ReportSectionHeader(title: String(localized: "Cash age at the end of each month"))
         } footer: {
             Text("How long money sits in your cash accounts before you spend it: the average age of the last ten cash outflows, first in, first out, to the nearest day. Until there are ten, the missing ones count as zero days. It is an estimate when opening balances have no known dates.")
         }
         Section {
             ForEach(model.rows) { ReportFigureRowView(row: $0) }
         } header: {
-            ReportSectionHeader(title: "By month")
+            ReportSectionHeader(title: String(localized: "By month"))
         }
     }
 }
@@ -619,7 +633,7 @@ struct ReportForecastBody: View {
                 ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
             }
         } header: {
-            ReportSectionHeader(title: "Balance ahead")
+            ReportSectionHeader(title: String(localized: "Balance ahead"))
         } footer: {
             if let model { Text(model.help) }
         }
@@ -645,7 +659,7 @@ struct ReportForecastBody: View {
                     .accessibilityElement(children: .combine)
                 }
             } header: {
-                ReportSectionHeader(title: "Coming up", aside: model.count)
+                ReportSectionHeader(title: String(localized: "Coming up"), aside: model.count)
             } footer: {
                 Text("Balances here count known transactions only.")
             }

@@ -2,10 +2,11 @@
 //! data sheets from the budget when the file is written, so every row and amount is exact. A
 //! summary table the model wrote is checked cell by cell before the card is shown.
 use super::proposals::{Card, Proposal, Row, Stat, Status};
-use super::tools::{arg, date_arg, hidden, month_arg, month_label, plural, strings, truncate, Names};
+use super::tools::{arg, date_arg, hidden, month_arg, month_label, strings, truncate, Names};
 use super::{money, new_id, parse_money};
 use crate::domain::*;
-use crate::{engine, ledger, reports};
+use crate::i18n::comma;
+use crate::{engine, ledger, reports, t};
 use rust_xlsxwriter::{Color, DocProperties, ExcelDateTime, Format, FormatAlign, FormatBorder, Formula, Workbook, XlsxError};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -582,58 +583,73 @@ fn months(from: &str, to: &str, account_ids: &[String], b: &Budget) -> Result<Ro
 
 // --- The card ----------------------------------------------------------------------------------
 
+/// A range of months as the card names it, in the app's language.
 fn range_label(from: &str, to: &str) -> String {
     if from == to {
         month_label(from)
     } else {
-        format!("{} – {}", short_month(from), short_month(to))
+        let short = |m: &str| {
+            chrono::NaiveDate::parse_from_str(&format!("{m}-01"), "%Y-%m-%d").map_or_else(|_| m.to_owned(), crate::i18n::short_month_year)
+        };
+        format!("{} – {}", short(from), short(to))
     }
 }
 
 fn day_label(day: &str) -> String {
-    chrono::NaiveDate::parse_from_str(day, "%Y-%m-%d").map_or_else(|_| day.to_owned(), |d| d.format("%b %-d, %Y").to_string())
+    chrono::NaiveDate::parse_from_str(day, "%Y-%m-%d").map_or_else(|_| day.to_owned(), crate::i18n::day_month_year)
 }
 
-/// What a sheet holds, and what one of its rows is called.
-fn describe(source: &Source, names: &Names) -> (String, &'static str, &'static str) {
+fn rows_badge(n: usize) -> String {
+    t!("{n|# row|# rows}", n)
+}
+fn categories_badge(n: usize) -> String {
+    t!("{n|# category|# categories}", n)
+}
+fn months_badge(n: usize) -> String {
+    t!("{n|# month|# months}", n)
+}
+
+/// What a sheet holds, and how its row count reads.
+fn describe(source: &Source, names: &Names) -> (String, fn(usize) -> String) {
     let list = |ids: &[String], name: &dyn Fn(&str) -> String| -> String {
         let shown: Vec<String> = ids.iter().take(2).map(|id| name(id)).collect();
         match ids.len() {
-            0..=2 => shown.join(" and "),
-            n => format!("{} and {} more", shown.join(", "), n - 2),
+            0 | 1 => shown.concat(),
+            2 => t!("{first} and {second}", first = shown[0], second = shown[1]),
+            n => t!("{shown} and {count} more", shown = shown.join(comma()), count = n - 2),
         }
     };
     match source {
-        Source::Table { .. } => ("Summary from the assistant".into(), "row", "rows"),
+        Source::Table { .. } => (t!("Summary from the assistant"), rows_badge),
         Source::Transactions { filter: f } => {
             let mut parts = vec![];
             if !f.category_ids.is_empty() {
-                parts.push(list(&f.category_ids, &|id| names.category(Some(id))));
+                parts.push(list(&f.category_ids, &|id| names.category_shown(Some(id))));
             }
             if !f.account_ids.is_empty() {
                 parts.push(list(&f.account_ids, &|id| names.account(id)));
             }
             if let Some(p) = f.payee.as_ref().or(f.text.as_ref()) {
-                parts.push(format!("\u{201c}{}\u{201d}", truncate(p, 30)));
+                parts.push(t!("\u{201c}{text}\u{201d}", text = truncate(p, 30)));
             }
             if f.uncategorized {
-                parts.push("uncategorized".into());
+                parts.push(t!("uncategorized"));
             }
             if f.unapproved {
-                parts.push("waiting for approval".into());
+                parts.push(t!("waiting for approval"));
             }
             match (&f.from, &f.to) {
                 (Some(a), Some(b)) => parts.push(format!("{} – {}", day_label(a), day_label(b))),
-                (Some(a), None) => parts.push(format!("since {}", day_label(a))),
-                (None, Some(b)) => parts.push(format!("through {}", day_label(b))),
+                (Some(a), None) => parts.push(t!("since {date}", date = day_label(a))),
+                (None, Some(b)) => parts.push(t!("through {date}", date = day_label(b))),
                 (None, None) => {}
             }
-            let what = if parts.is_empty() { "All transactions".into() } else { format!("Transactions: {}", parts.join(", ")) };
-            (what, "row", "rows")
+            let what = if parts.is_empty() { t!("All transactions") } else { t!("Transactions: {filters}", filters = parts.join(comma())) };
+            (what, rows_badge)
         }
-        Source::Budget { month } => (format!("Budget for {}", month_label(month)), "category", "categories"),
-        Source::Spending { from, to, .. } => (format!("Spending by category, {}", range_label(from, to)), "category", "categories"),
-        Source::Months { from, to, .. } => (format!("Income and spending, {}", range_label(from, to)), "month", "months"),
+        Source::Budget { month } => (t!("Budget for {month}", month = month_label(month)), categories_badge),
+        Source::Spending { from, to, .. } => (t!("Spending by category, {range}", range = range_label(from, to)), categories_badge),
+        Source::Months { from, to, .. } => (t!("Income and spending, {range}", range = range_label(from, to)), months_badge),
     }
 }
 
@@ -646,13 +662,13 @@ pub fn build(title: String, sheets: Vec<Sheet>, b: &Budget) -> Result<Proposal, 
     let mut empty = false;
     for s in &sheets {
         let n = fill(s, b)?.rows.len();
-        let (what, one, many) = describe(&s.source, &names);
+        let (what, badge) = describe(&s.source, &names);
         count += n;
         empty |= n == 0;
         rows.push(Row {
             label: s.name.clone(),
             detail: Some(what),
-            badge: Some(if n == 0 { "Empty".into() } else { plural(n, one, many) }),
+            badge: Some(if n == 0 { t!("Empty") } else { badge(n) }),
             tone: (n == 0).then(|| "warn".into()),
             ..Row::default()
         });
@@ -660,17 +676,17 @@ pub fn build(title: String, sheets: Vec<Sheet>, b: &Budget) -> Result<Proposal, 
     }
     let from_budget = sheets.iter().any(|s| !matches!(s.source, Source::Table { .. }));
     let card = Card {
-        kicker: "Spreadsheet".into(),
+        kicker: t!("Spreadsheet"),
         rows,
         stats: vec![
-            Stat { label: "Sheets".into(), text: Some(sheets.len().to_string()), amount: None },
-            Stat { label: "Rows".into(), text: Some(thousands(count)), amount: None },
+            Stat { label: t!("Sheets"), text: Some(sheets.len().to_string()), amount: None },
+            Stat { label: t!("Rows"), text: Some(thousands(count)), amount: None },
         ],
-        warning: empty.then(|| "A sheet is empty: nothing in the budget matched it.".into()),
+        warning: empty.then(|| t!("A sheet is empty: nothing in the budget matched it.")),
         note: Some(if from_budget {
-            "Rows from your budget are filled in when you open or save it, so they're exact.".into()
+            t!("Rows from your budget are filled in when you open or save it, so they're exact.")
         } else {
-            "Open it in your spreadsheet app, or save a copy.".into()
+            t!("Open it in your spreadsheet app, or save a copy.")
         }),
         ..Card::default()
     };
@@ -866,7 +882,7 @@ fn shown_width(cell: &Cell) -> usize {
 /// The workbook as .xlsx bytes: a bold header that stays in view, filters, real numbers and
 /// dates, and a totals row where the sheet adds up.
 pub fn write(title: &str, grids: &[Grid]) -> Result<Vec<u8>, String> {
-    let x = |e: XlsxError| format!("Couldn't write the spreadsheet: {e}");
+    let x = |e: XlsxError| t!("Couldn't write the spreadsheet: {e}", e);
     let mut book = Workbook::new();
     book.set_properties(&DocProperties::new().set_title(title).set_author("UrBudget"));
     let rtl = right_to_left(title) || grids.iter().any(|g| right_to_left(&g.name));

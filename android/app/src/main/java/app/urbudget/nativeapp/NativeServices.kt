@@ -4,6 +4,8 @@ import android.content.Context
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -24,6 +26,11 @@ object NativeServices {
     private val automaticSyncRunning = AtomicBoolean(false)
     val saved = savedSource.asSharedFlow()
     fun notifySaved() { savedSource.tryEmit(Unit) }
+    /** The interface's language, "en" or "ar", for the engine's own messages (docs/LOCALIZATION.md). */
+    @Volatile private var language: String? = null
+    /** One at a time and in order, so the engine always ends on the latest language. */
+    private val languageLane = Dispatchers.IO.limitedParallelism(1)
+    private val languageScope = CoroutineScope(SupervisorJob() + languageLane)
 
     @Synchronized fun initialize(context: Context) {
         if (ready) return
@@ -31,10 +38,24 @@ object NativeServices {
         val directory = if (File(context.filesDir, "budgets.json").exists() || File(context.filesDir, "budget.sqlite3").exists()) context.filesDir else File(context.filesDir, "native")
         decode(NativeBridge.initialize(context.applicationContext, directory.absolutePath))
         ready = true
+        runBlocking(languageLane) { sendLanguage() }
+    }
+
+    /** Tells the engine the language the interface resolved to, now if it has started, else as it starts. */
+    fun setLanguage(code: String) {
+        if (language == code) return
+        language = code
+        if (ready) languageScope.launch { sendLanguage() }
+    }
+
+    /** An engine without `set_language` keeps its own messages in English; that's not an error here. */
+    private fun sendLanguage() {
+        val code = language ?: return
+        runCatching { call("set_language", JSONObject().put("language", code)) }
     }
 
     fun call(method: String, params: JSONObject = JSONObject()): Any? {
-        check(ready) { "Budget services are still starting. Try again." }
+        check(ready) { Words[R.string.error_services_starting] }
         val changesReadContext = method in setOf("account_verify", "account_sign_out", "account_delete", "simplefin_connect", "simplefin_disconnect", "billing_verify")
         if (changesReadContext) readEpoch.incrementAndGet()
         try {
@@ -73,7 +94,7 @@ object NativeServices {
 
     private fun decode(json: String): Any? {
         val response = JSONObject(json)
-        check(response.optBoolean("ok")) { response.optString("error", "The service could not complete this request.") }
+        check(response.optBoolean("ok")) { response.optString("error").ifEmpty { Words[R.string.error_service_failed] } }
         return response.opt("value").takeUnless { it == JSONObject.NULL }
     }
 }

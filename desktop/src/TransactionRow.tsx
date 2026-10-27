@@ -9,18 +9,20 @@ import { uncategorizedTest } from "./uncategorized";
 import { frequencies } from "./Planning";
 import { payeeHabits } from "./payees";
 import { keyLabel, os } from "./platform";
+import { msg, t, tn } from "./i18n";
 
+/** The flags and their colors' names (translate a name with t() when showing it). */
 export const FLAGS: [string, string][] = [
-  ["red", "Red"],
-  ["orange", "Orange"],
-  ["yellow", "Yellow"],
-  ["green", "Green"],
-  ["blue", "Blue"],
-  ["purple", "Purple"],
+  ["red", msg("Red")],
+  ["orange", msg("Orange")],
+  ["yellow", msg("Yellow")],
+  ["green", msg("Green")],
+  ["blue", msg("Blue")],
+  ["purple", msg("Purple")],
 ];
-/** A flag's name: what this budget calls it, or its color. */
+/** A flag's name: what this budget calls it, or its color in the language in use. */
 export const flagName = (flag: string, b?: Pick<Budget, "flagNames"> | null) =>
-  b?.flagNames?.[flag]?.trim() || (FLAGS.find(([f]) => f === flag)?.[1] ?? flag);
+  b?.flagNames?.[flag]?.trim() || t(FLAGS.find(([f]) => f === flag)?.[1] ?? flag);
 /** The flags in order, each with this budget's name for it. */
 export const flagsOf = (b?: Pick<Budget, "flagNames"> | null): [string, string][] =>
   FLAGS.map(([f]) => [f, flagName(f, b)]);
@@ -109,8 +111,8 @@ const movedBy = (text: string, sign: RegExp) => (sign.test(text) && /^[\d\s.,']*
 /** The picker's Unassigned, as the register says it: income goes to it. Spending isn't offered it,
  * as YNAB steers spending to a category; one already taken from it (a YNAB import, a deleted
  * category) still shows as that until it's given a category. */
-export const INCOME = "To Unassigned";
-export const FROM_UNASSIGNED = "From Unassigned";
+export const INCOME = msg("To Unassigned");
+export const FROM_UNASSIGNED = msg("From Unassigned");
 const safeAmount = (l: { outflow: string; inflow: string }) => {
   try {
     return amountOf(l);
@@ -307,8 +309,13 @@ export function TransactionEditor({
   // How many were saved with Save & add another. Once one is, the row is adding several, and
   // Enter saves and adds another too.
   const [added, setAdded] = useState(0);
-  const clearWord = status === "uncleared" ? "clears" : "unclears";
-  const enterWord = added ? "saves & adds another" : "saves";
+  // The hint's parts: what Space and the clear key do now, and what Enter does.
+  const clears = status === "uncleared";
+  const enters = added
+    ? t("{key} saves & adds another", { key: <kbd>Enter</kbd> })
+    : t("{key} saves", { key: <kbd>Enter</kbd> });
+  const clearHint = (key: string) =>
+    clears ? t("{key} clears", { key: <kbd>{key}</kbd> }) : t("{key} unclears", { key: <kbd>{key}</kbd> });
   useEffect(() => {
     focusField(focus ?? (initial ? "Date" : "Payee"));
   }, []);
@@ -403,14 +410,21 @@ export function TransactionEditor({
     }
     try {
       const amount = total();
-      if (!account) throw new Error("Choose an account.");
-      if (!date) throw new Error("Choose a date.");
-      if (!amount) throw new Error("Enter an outflow or an inflow.");
-      if (transfer && transfer === account) throw new Error("Choose a different account to transfer to.");
+      if (!account) throw new Error(t("Choose an account."));
+      if (!date) throw new Error(t("Choose a date."));
+      if (!amount) throw new Error(t("Enter an outflow or an inflow."));
+      if (transfer && transfer === account) throw new Error(t("Choose a different account to transfer to."));
       if (lines) {
         const parts = lines.map(amountOf);
         const sum = parts.reduce((n, a) => n + a, 0);
-        if (sum !== amount) throw new Error(`The split lines must add up to the total (${money(Math.abs(amount - sum))} ${Math.abs(sum) > Math.abs(amount) ? "over" : "left"}).`);
+        if (sum !== amount) {
+          const difference = money(Math.abs(amount - sum));
+          throw new Error(
+            Math.abs(sum) > Math.abs(amount)
+              ? t("The split lines must add up to the total ({amount} over).", { amount: difference })
+              : t("The split lines must add up to the total ({amount} left).", { amount: difference }),
+          );
+        }
         // Spending can be saved with no category, as in YNAB: it says "Needs a category" until
         // it has one (uncategorized.ts).
       }
@@ -518,18 +532,18 @@ export function TransactionEditor({
       { categoryId: null, memo: "", outflow: "", inflow: "" },
     ]);
     requestAnimationFrame(() =>
-      row.current?.querySelectorAll<HTMLInputElement>(".split-line [aria-label^='Category']")[1]?.focus(),
+      row.current?.querySelectorAll<HTMLInputElement>(`.split-line [aria-label^='${t("Category")}']`)[1]?.focus(),
     );
   };
   const setLine = (index: number, patch: Partial<Line>) =>
     setLines((ls) => ls && ls.map((l, i) => (i === index ? { ...l, ...patch } : l)));
-  /** A category named in a category field: create it, choose it, and carry on from that field. */
+  /** A category named in a category field (by its label): create it, choose it, and carry on from that field. */
   const createCategory = (field: string, choose: (id: string) => void) =>
     onCreateCategory &&
     ((name: string) =>
       void onCreateCategory(name).then((created) => {
         if (created) choose(created);
-        focusField(field as EditorField);
+        focusField(field);
       }));
   const removeLine = (index: number) => {
     if (!lines) return;
@@ -547,21 +561,24 @@ export function TransactionEditor({
           className: "num-input suggested",
         }
       : null;
-  // Money in typed into Outflow ("+25") goes over to Inflow, and money out typed into Inflow
-  // ("-25") to Outflow.
+  /** The outflow and inflow fields, of the transaction or of split `line` (from 1). Money in typed
+   * into Outflow ("+25") goes over to Inflow, and money out typed into Inflow ("-25") to Outflow. */
   const amountInputs = (
     value: { outflow: string; inflow: string },
     set: (patch: { outflow?: string; inflow?: string }) => void,
-    label = "",
-  ) => (
+    line?: number,
+  ) => {
+    // The fields' names for Tab and the arrows (fieldOf), the same in any language.
+    const label = line ? `Line ${line} ` : "";
+    return (
     <>
       <span role="cell" data-field={`${label}Outflow`}>
         <input
-          aria-label={`${label}Outflow`}
+          aria-label={line ? t("Line {number} Outflow", { number: line }) : t("Outflow")}
           inputMode="decimal"
           className="num-input"
-          placeholder="Outflow"
-          {...(label ? null : suggested("Outflow"))}
+          placeholder={t("Outflow")}
+          {...(line ? null : suggested("Outflow"))}
           value={value.outflow}
           onChange={(e) => {
             const text = e.target.value;
@@ -575,11 +592,11 @@ export function TransactionEditor({
       </span>
       <span role="cell" data-field={`${label}Inflow`}>
         <input
-          aria-label={`${label}Inflow`}
+          aria-label={line ? t("Line {number} Inflow", { number: line }) : t("Inflow")}
           inputMode="decimal"
           className="num-input"
-          placeholder="Inflow"
-          {...(label ? null : suggested("Inflow"))}
+          placeholder={t("Inflow")}
+          {...(line ? null : suggested("Inflow"))}
           value={value.inflow}
           onChange={(e) => {
             const text = e.target.value;
@@ -592,22 +609,23 @@ export function TransactionEditor({
         />
       </span>
     </>
-  );
+    );
+  };
   return (
     <div
       className="reg-row reg-editor"
       role="row"
       ref={row}
       onKeyDown={keys}
-      aria-label={initial ? "Edit transaction" : "New transaction"}
+      aria-label={initial ? t("Edit transaction") : t("New transaction")}
     >
       <span role="cell" />
       {/* The flag's menu, drawn as the flag itself while the column is narrow. */}
       <span role="cell" className="flag-cell icon-col">
         <span className={`flag-select${flag ? "" : " empty"}`}>
           <FlagIcon flag={flag || undefined} size={11} outline={!flag} />
-          <select aria-label="Flag" value={flag} onChange={(e) => setFlag(e.target.value)}>
-            <option value="">No flag</option>
+          <select aria-label={t("Flag")} value={flag} onChange={(e) => setFlag(e.target.value)}>
+            <option value="">{t("No flag")}</option>
             {flagsOf(budget).map(([f, name]) => (
               <option key={f} value={f}>
                 {name}
@@ -647,7 +665,7 @@ export function TransactionEditor({
       </span>
       {all && (
         <span role="cell" data-field="Account">
-          <select aria-label="Account" value={account} onChange={(e) => setAccount(e.target.value)} disabled={reverse}>
+          <select aria-label={t("Account")} value={account} onChange={(e) => setAccount(e.target.value)} disabled={reverse}>
             {accounts.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.name}
@@ -658,9 +676,9 @@ export function TransactionEditor({
       )}
       <span role="cell" data-field="Category">
         {lines ? (
-          <span className="muted">Split ({lines.length} lines)</span>
+          <span className="muted">{tn(lines.length, "Split ({count} lines)", "Split ({count} lines)")}</span>
         ) : !needsCategory ? (
-          <span className="muted">{transfer ? "No Category (Transfer)" : "No Category (Tracking)"}</span>
+          <span className="muted">{transfer ? t("No Category (Transfer)") : t("No Category (Tracking)")}</span>
         ) : (
           <CategoryPicker
             budget={budget}
@@ -678,16 +696,16 @@ export function TransactionEditor({
               setCategory(created);
             })}
             available={available}
-            readyToAssign={incoming ? INCOME : category === READY_TO_ASSIGN ? FROM_UNASSIGNED : false}
+            readyToAssign={incoming ? t(INCOME) : category === READY_TO_ASSIGN ? t(FROM_UNASSIGNED) : false}
             readyToAssignLast={!incoming}
             includeHidden
             includePayment={payment}
-            placeholder="Category"
+            placeholder={t("Category")}
           />
         )}
       </span>
       <span role="cell" className="memo" data-field="Memo">
-        <input aria-label="Memo" placeholder="Memo" value={memo} onChange={(e) => setMemo(e.target.value)} />
+        <input aria-label={t("Memo")} placeholder={t("Memo")} value={memo} onChange={(e) => setMemo(e.target.value)} />
       </span>
       {amountInputs({ outflow, inflow }, (patch) => {
         setAmountTyped(true);
@@ -699,8 +717,8 @@ export function TransactionEditor({
         <button
           type="button"
           className={`clear-button ${status}`}
-          aria-label="Cleared"
-          title={status === "reconciled" ? "Reconciled" : "Cleared"}
+          aria-label={t("Cleared")}
+          title={status === "reconciled" ? t("Reconciled") : t("Cleared")}
           aria-keyshortcuts={mac ? "Control+C" : "Alt+C"}
           aria-pressed={status !== "uncleared"}
           disabled={status === "reconciled"}
@@ -712,41 +730,41 @@ export function TransactionEditor({
         </button>
       </span>
       {lines?.map((l, i) => (
-        <div className="split-line" role="row" aria-label={`Split line ${i + 1}`} key={i}>
+        <div className="split-line" role="row" aria-label={t("Split line {number}", { number: i + 1 })} key={i}>
           <span role="cell" />
           <span role="cell" className="flag-cell" />
           <span role="cell" />
           <span role="cell" className="split-line-label muted">
-            Line {i + 1}
+            {t("Line {number}", { number: i + 1 })}
           </span>
           {all && <span role="cell" />}
           <span role="cell" data-field={`Category ${i + 1}`}>
             <CategoryPicker
               budget={budget}
-              label={`Category ${i + 1}`}
+              label={t("Category {number}", { number: i + 1 })}
               value={l.categoryId}
               onChange={(categoryId) => setLine(i, { categoryId })}
               onClear={() => setLine(i, { categoryId: null })}
               onCreate={createCategory(`Category ${i + 1}`, (categoryId) => setLine(i, { categoryId }))}
               available={available}
-              readyToAssign={isIncome(l) ? INCOME : l.categoryId === READY_TO_ASSIGN ? FROM_UNASSIGNED : false}
+              readyToAssign={isIncome(l) ? t(INCOME) : l.categoryId === READY_TO_ASSIGN ? t(FROM_UNASSIGNED) : false}
               readyToAssignLast={!isIncome(l)}
               includeHidden
-              placeholder="Category"
+              placeholder={t("Category")}
             />
           </span>
           <span role="cell" className="memo">
             <input
-              aria-label={`Memo ${i + 1}`}
-              placeholder="Memo"
+              aria-label={t("Memo {number}", { number: i + 1 })}
+              placeholder={t("Memo")}
               value={l.memo}
               onChange={(e) => setLine(i, { memo: e.target.value })}
             />
           </span>
-          {amountInputs(l, (patch) => setLine(i, patch), `Line ${i + 1} `)}
+          {amountInputs(l, (patch) => setLine(i, patch), i + 1)}
           {!all && <span role="cell" className="balance" />}
           <span role="cell" className="status-cell icon-col">
-            <button type="button" className="icon-button" aria-label={`Remove line ${i + 1}`} onClick={() => removeLine(i)}>
+            <button type="button" className="icon-button" aria-label={t("Remove line {number}", { number: i + 1 })} onClick={() => removeLine(i)}>
               <X size={14} />
             </button>
           </span>
@@ -760,44 +778,46 @@ export function TransactionEditor({
               className="link-button"
               onClick={() => setLines((ls) => ls && [...ls, { categoryId: null, memo: "", outflow: "", inflow: "" }])}
             >
-              <Plus size={14} /> Add line
+              <Plus size={14} /> {t("Add line")}
             </button>
             <span className={`remaining${remaining ? " warning-text" : ""}`} aria-live="polite">
-              {Number.isNaN(remaining) ? "Check the amounts" : remaining
-                ? `${money(Math.abs(remaining))} ${Math.sign(remaining) === Math.sign(safeAmount({ outflow, inflow })) ? "left to split" : "over the total"}`
-                : "Fully split"}
+              {Number.isNaN(remaining) ? t("Check the amounts") : remaining
+                ? Math.sign(remaining) === Math.sign(safeAmount({ outflow, inflow }))
+                  ? t("{amount} left to split", { amount: money(Math.abs(remaining)) })
+                  : t("{amount} over the total", { amount: money(Math.abs(remaining)) })
+                : t("Fully split")}
             </span>
           </>
         ) : (
           !transfer && (
-            <button type="button" className="link-button" onClick={split} title="Divide it between categories">
-              <SplitIcon size={14} /> Split
+            <button type="button" className="link-button" onClick={split} title={t("Divide it between categories")}>
+              <SplitIcon size={14} /> {t("Split")}
             </button>
           )
         )}
         {!initial && (
           <label
             className={`repeat-field${repeat === "never" && !ahead ? "" : " on"}`}
-            title={ahead ? "Dated ahead, it's scheduled and entered on that day" : "Repeat it on a schedule"}
+            title={ahead ? t("Dated ahead, it's scheduled and entered on that day") : t("Repeat it on a schedule")}
           >
             <Repeat size={14} aria-hidden />
             {/* The choice as text, so the field is as wide as it (the select, laid over it, is as
                 wide as its longest option). */}
-            <span aria-hidden>{repeat === "never" ? (ahead ? "Once" : "Doesn't repeat") : frequencies[repeat]}</span>
-            <select aria-label="Repeat" value={repeat} onChange={(e) => setRepeat(e.target.value)}>
-              <option value="never">{ahead ? "Once" : "Doesn't repeat"}</option>
+            <span aria-hidden>{repeat === "never" ? (ahead ? t("Once") : t("Doesn't repeat")) : t(frequencies[repeat])}</span>
+            <select aria-label={t("Repeat")} value={repeat} onChange={(e) => setRepeat(e.target.value)}>
+              <option value="never">{ahead ? t("Once") : t("Doesn't repeat")}</option>
               {Object.entries(frequencies)
                 .filter(([v]) => v !== "never")
                 .map(([v, n]) => (
                   <option key={v} value={v}>
-                    {n}
+                    {t(n)}
                   </option>
                 ))}
             </select>
           </label>
         )}
-        <button type="button" className="link-button" onClick={more} title="The full form, for split transfers and more">
-          <MoreHorizontal size={14} /> More options
+        <button type="button" className="link-button" onClick={more} title={t("The full form, for split transfers and more")}>
+          <MoreHorizontal size={14} /> {t("More options")}
         </button>
         {error && (
           <span className="form-error" role="alert">
@@ -806,43 +826,29 @@ export function TransactionEditor({
         )}
         <span className="spacer" />
         <span className="editor-added" aria-live="polite">
-          {added ? `${added.toLocaleString()} added` : ""}
+          {added ? tn(added, "{count} added", "{count} added") : ""}
         </span>
         {/* Its parts, most useful first (Save & add another shows its own key): short of room, the
             last ones drop off (register.css). */}
         <span className="editor-hint" aria-hidden>
           {onMark ? (
             <>
-              <span>
-                <kbd>Space</kbd> {clearWord}
-              </span>
-              <span>
-                · <kbd>Enter</kbd> {enterWord}
-              </span>
+              <span>{clearHint("Space")}</span>
+              <span>· {enters}</span>
             </>
           ) : (
             <>
-              <span>
-                <kbd>Enter</kbd> {enterWord}
-              </span>
+              <span>{enters}</span>
               {status !== "reconciled" && (
-                <span>
-                  · <kbd>{CLEAR_KEY}</kbd> {clearWord}
-                </span>
+                <span>· {clearHint(CLEAR_KEY)}</span>
               )}
-              {!initial && !added && (
-                <span>
-                  · <kbd>{keyLabel("Shift+Enter")}</kbd> adds another
-                </span>
-              )}
-              <span>
-                · <kbd>Esc</kbd> {added ? "closes" : "cancels"}
-              </span>
+              {!initial && !added && <span>· {t("{key} adds another", { key: <kbd>{keyLabel("Shift+Enter")}</kbd> })}</span>}
+              <span>· {added ? t("{key} closes", { key: <kbd>Esc</kbd> }) : t("{key} cancels", { key: <kbd>Esc</kbd> })}</span>
             </>
           )}
         </span>
         <button type="button" className="secondary small" onClick={onCancel}>
-          {added ? "Close" : "Cancel"}
+          {added ? t("Close") : t("Cancel")}
         </button>
         {/* The blue button is what Enter does: Save & add another once one has been. */}
         {!initial && (
@@ -855,7 +861,7 @@ export function TransactionEditor({
             aria-keyshortcuts={added ? "Enter" : "Shift+Enter"}
             onClick={() => void save(true)}
           >
-            {ahead ? "Schedule & add another" : "Save & add another"}
+            {ahead ? t("Schedule & add another") : t("Save & add another")}
           </button>
         )}
         <button
@@ -866,7 +872,7 @@ export function TransactionEditor({
           aria-keyshortcuts={added ? undefined : "Enter"}
           onClick={() => void save()}
         >
-          {ahead ? "Schedule" : "Save"}
+          {ahead ? t("Schedule") : t("Save")}
         </button>
       </div>
     </div>

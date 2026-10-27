@@ -35,6 +35,7 @@ struct SettingsView: View {
                     Text("Dark").tag("dark")
                 }
                 .pickerStyle(.segmented)
+                languageRow
             }
             if let budget = store.budget {
                 budgetSection(budget)
@@ -61,7 +62,7 @@ struct SettingsView: View {
         .sheet(isPresented: $editingFlags) { FlagNamesForm() }
         .fileExporter(isPresented: $exporting, document: export?.file, contentType: export?.type ?? .json, defaultFilename: export?.name) { result in
             switch result {
-            case .success: store.showToast(export?.done ?? "Exported")
+            case .success: store.showToast(export?.done ?? String(localized: "Exported"))
             case .failure(let failure): error = BudgetStore.readable(failure)
             }
         }
@@ -83,6 +84,19 @@ struct SettingsView: View {
     }
 
     // MARK: Sections
+
+    /// The app's language, as iOS keeps it (Settings → UrBudget → Language): System by default.
+    private var languageRow: some View {
+        Button { openAppSettings() } label: {
+            HStack {
+                Text("Language").foregroundStyle(Color.primary)
+                Spacer(minLength: 8)
+                Text(AppLanguage.name).foregroundStyle(Color.secondary)
+                Image(systemName: "arrow.up.forward.app").foregroundStyle(Color.secondary).accessibilityHidden(true)
+            }
+        }
+        .accessibilityHint("Opens UrBudget in the Settings app, where you can choose its language")
+    }
 
     private func budgetSection(_ budget: JSON) -> some View {
         Section {
@@ -169,11 +183,11 @@ struct SettingsView: View {
         Section {
             if store.budget != nil {
                 Button { exportBackup() } label: {
-                    rowLabel("Export full backup", "A portable JSON file with every desktop field", "square.and.arrow.up")
+                    rowLabel(String(localized: "Export full backup"), String(localized: "A portable JSON file with every desktop field"), "square.and.arrow.up")
                 }
             }
             Button { importing = true } label: {
-                rowLabel("Import full backup", "A UrBudget JSON budget from desktop or Android", "square.and.arrow.down")
+                rowLabel(String(localized: "Import full backup"), String(localized: "A UrBudget JSON budget from desktop or Android"), "square.and.arrow.down")
             }
             .disabled(store.busy)
         } header: {
@@ -186,26 +200,26 @@ struct SettingsView: View {
     @ViewBuilder
     private var exportSections: some View {
         Section {
-            exportButton("Register", "Every transaction, in YNAB's register columns", "tablecells", key: "register") {
+            exportButton(String(localized: "Register"), String(localized: "Every transaction, in YNAB's register columns"), "tablecells", key: "register") {
                 try await store.query("exportRegister")
-            } file: { ("urbudget-register.csv", "Register exported") }
-            exportButton("Plan", "Assigned, activity and available for each category and month", "square.grid.3x3", key: "plan") {
+            } file: { ("urbudget-register.csv", String(localized: "Register exported")) }
+            exportButton(String(localized: "Plan"), String(localized: "Assigned, activity and available for each category and month"), "square.grid.3x3", key: "plan") {
                 try await store.query("exportPlan")
-            } file: { ("urbudget-plan.csv", "Plan exported") }
+            } file: { ("urbudget-plan.csv", String(localized: "Plan exported")) }
         } header: {
             Text("CSV exports")
         } footer: {
             Text("Spreadsheets and YNAB can read both files.")
         }
         Section {
-            MonthRow(title: "From", month: $reportFrom)
-            MonthRow(title: "Through", month: $reportThrough)
+            MonthRow(title: String(localized: "From"), month: $reportFrom)
+            MonthRow(title: String(localized: "Through"), month: $reportThrough)
             let from = reportFrom, through = reportThrough
-            exportButton("Export report", "Income, spending and net worth by month, then each category and income source", "chart.bar.doc.horizontal",
-                         key: "report", enabled: from <= through) {
+            exportButton(String(localized: "Export report"), String(localized: "Income, spending and net worth by month, then each category and income source"),
+                         "chart.bar.doc.horizontal", key: "report", enabled: from <= through) {
                 try await store.query("reportCsv", ["from": .string(from), "to": .string(through)])
-            } file: { ("urbudget-report-\(from)-\(through).csv", "Report exported") }
-            if from > through { FormErrorView(message: "Choose a From month on or before the Through month.") }
+            } file: { ("urbudget-report-\(from)-\(through).csv", String(localized: "Report exported")) }
+            if from > through { FormErrorView(message: String(localized: "Choose a From month on or before the Through month.")) }
         } header: {
             Text("Report CSV")
         }
@@ -255,7 +269,7 @@ struct SettingsView: View {
             let name = budget["flagNames"].text(color)
             return name.isEmpty ? nil : name
         }
-        return named.isEmpty ? "Name colours such as Reimburse or Tax" : named.joined(separator: ", ")
+        return named.isEmpty ? String(localized: "Name colours such as Reimburse or Tax") : planningList(named)
     }
 
     private var version: String {
@@ -283,7 +297,7 @@ struct SettingsView: View {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed != saved else { nameError = nil; return }
         guard LibrarySettings.validName(trimmed) else {
-            nameError = trimmed.isEmpty ? "Enter a budget name." : "Use a shorter budget name."
+            nameError = trimmed.isEmpty ? String(localized: "Enter a budget name.") : String(localized: "Use a shorter budget name.")
             return
         }
         nameError = nil
@@ -293,7 +307,7 @@ struct SettingsView: View {
     private func exportBackup() {
         Task {
             guard let data = await store.exportData() else { return }
-            export = LibraryExport(file: TextFile(data: data), type: .json, name: "UrBudget-\(Dates.today).json", done: "Backup exported")
+            export = LibraryExport(file: TextFile(data: data), type: .json, name: "UrBudget-\(Dates.today).json", done: String(localized: "Backup exported"))
             exporting = true
         }
     }
@@ -320,7 +334,8 @@ struct SettingsView: View {
             do {
                 _ = try await store.service("backup_database")
             } catch {
-                self.error = "Nothing was imported: the open budget couldn't be backed up first. \(BudgetStore.readable(error))"
+                let reason = BudgetStore.readable(error)
+                self.error = String(localized: "Nothing was imported: the open budget couldn't be backed up first. \(reason)")
                 return
             }
             store.importBudget(data)
@@ -335,7 +350,7 @@ private struct FlagNamesForm: View {
     @State private var started = false
 
     var body: some View {
-        FormSheet(title: "Flag names") {
+        FormSheet(title: String(localized: "Flag names")) {
             let edited = names
             try await store.editing { budget in LibrarySettings.set(flagNames: edited, in: &budget) }
         } content: {
@@ -343,7 +358,7 @@ private struct FlagNamesForm: View {
                 ForEach(flagColors, id: \.self) { color in
                     HStack(spacing: 12) {
                         FlagDot(color: color, size: 12).accessibilityHidden(true)
-                        TextField("\(color.prefix(1).uppercased() + color.dropFirst()) flag", text: Binding(
+                        TextField(Self.placeholder(color), text: Binding(
                             get: { names[color] ?? "" },
                             set: { names[color] = String($0.prefix(40)) }))
                     }
@@ -358,6 +373,19 @@ private struct FlagNamesForm: View {
             started = true
             let saved = store.budget?["flagNames"] ?? .null
             names = Dictionary(uniqueKeysWithValues: flagColors.map { ($0, saved.text($0)) })
+        }
+    }
+
+    /// "Red flag": what an unnamed flag is called.
+    private static func placeholder(_ color: String) -> String {
+        switch color {
+        case "red": return String(localized: "Red flag")
+        case "orange": return String(localized: "Orange flag")
+        case "yellow": return String(localized: "Yellow flag")
+        case "green": return String(localized: "Green flag")
+        case "blue": return String(localized: "Blue flag")
+        case "purple": return String(localized: "Purple flag")
+        default: return color.prefix(1).uppercased() + color.dropFirst() + " flag"
         }
     }
 }

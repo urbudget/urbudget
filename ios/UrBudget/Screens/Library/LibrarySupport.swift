@@ -11,9 +11,13 @@ struct LibraryNumberFormat: Equatable, Sendable {
     var group = ","
     var symbol = "after"
 
-    static let decimalChoices: [(id: String, label: String)] = [(".", "Dot · 1234.56"), (",", "Comma · 1234,56")]
-    static let groupChoices: [(id: String, label: String)] = [(",", "Comma"), (".", "Dot"), (" ", "Space"), ("'", "Apostrophe"), ("", "None")]
-    static let placementChoices: [(id: String, label: String)] = [("before", "Before amount"), ("after", "After amount"), ("none", "Hide symbol")]
+    static let decimalChoices: [(id: String, label: String)] = [(".", String(localized: "Dot · 1234.56")), (",", String(localized: "Comma · 1234,56"))]
+    static let groupChoices: [(id: String, label: String)] = [
+        (",", String(localized: "Comma")), (".", String(localized: "Dot")), (" ", String(localized: "Space")), ("'", String(localized: "Apostrophe")), ("", String(localized: "None")),
+    ]
+    static let placementChoices: [(id: String, label: String)] = [
+        ("before", String(localized: "Before amount")), ("after", String(localized: "After amount")), ("none", String(localized: "Hide symbol")),
+    ]
 
     init(decimal: String = ".", group: String = ",", symbol: String = "after") {
         self.decimal = decimal
@@ -47,8 +51,13 @@ struct LibraryNumberFormat: Equatable, Sendable {
         return next
     }
 
-    /// Cents as text in this format, exactly as `Money.format` writes them, for a live example.
+    /// Cents as text in this format, exactly as `Money.format` writes them (left to right as a whole
+    /// in Arabic), for a live example.
     func format(_ amount: Int64, currency: String) -> String {
+        AppLanguage.leftToRight(plain(amount, currency: currency))
+    }
+
+    private func plain(_ amount: Int64, currency: String) -> String {
         var digits = String(amount.magnitude)
         while digits.count < 3 { digits = "0" + digits }
         let whole = Array(digits.dropLast(2))
@@ -84,7 +93,9 @@ enum LibrarySettings {
     static let dateFormats = ["iso", "dmy", "mdy", "dmmmy"]
 
     /// How many automatic and manual backups each budget keeps (0 keeps all), as `set_backup_retention` accepts.
-    static let retentionChoices: [(keep: Int, label: String)] = [(0, "All of them"), (5, "The newest 5"), (10, "The newest 10"), (30, "The newest 30")]
+    static let retentionChoices: [(keep: Int, label: String)] = [
+        (0, String(localized: "All of them")), (5, String(localized: "The newest 5")), (10, String(localized: "The newest 10")), (30, String(localized: "The newest 30")),
+    ]
 
     private static let datePatterns: [String: DateFormatter] = {
         var formatters: [String: DateFormatter] = [:]
@@ -174,7 +185,15 @@ enum LibraryDates {
 
     /// A moment as this budget writes dates, with the time: "21/10/2026, 14:30".
     static func label(_ date: Date) -> String {
-        Money.date(Dates.fromPicker(date)) + ", " + date.formatted(date: .omitted, time: .shortened)
+        let day = Money.date(Dates.fromPicker(date))
+        let time = date.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(.app))
+        return String(localized: "\(day), \(time)", comment: "A date and a time, as in “21/10/2026, 14:30”.")
+    }
+
+    /// A file's size ("2.1 MB"), with Western digits in Arabic as budgets write numbers.
+    static func size(_ bytes: Int64) -> String {
+        guard AppLanguage.isRightToLeft else { return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file) }
+        return bytes.formatted(.byteCount(style: .file).locale(.app))
     }
 }
 
@@ -198,7 +217,8 @@ struct LibraryBackup: Identifiable, Equatable, Sendable {
     var portable: Bool { name.hasSuffix(".json") }
     var title: String { date.map(LibraryDates.label) ?? name }
     var detail: String {
-        (portable ? "Portable backup" : "Safety copy") + " · " + ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+        let size = LibraryDates.size(bytes)
+        return portable ? String(localized: "Portable backup · \(size)") : String(localized: "Safety copy · \(size)")
     }
 
     /// How many backups `prune_backups` would remove to keep the newest `keep` (0 keeps all).
@@ -236,7 +256,9 @@ enum LibraryCurrencies {
 
     static func entry(_ code: String) -> LibraryCurrency {
         let symbol = Money.currencySymbol(code)
-        return LibraryCurrency(code: code, name: english.localizedString(forCurrencyCode: code) ?? code, symbol: symbol == code ? "" : symbol)
+        // Names in the app's language (English as before, Arabic in Arabic); the code and symbol stay as budgets write them.
+        let names = AppLanguage.isRightToLeft ? Locale.app : english
+        return LibraryCurrency(code: code, name: names.localizedString(forCurrencyCode: code) ?? code, symbol: symbol == code ? "" : symbol)
     }
 
     /// Every currency, with `current` added when the list doesn't have it (an older code from a backup).
@@ -247,7 +269,7 @@ enum LibraryCurrencies {
 
 /// The budget's currency as a form row that opens a searchable list of every currency.
 struct LibraryCurrencyPicker: View {
-    var title = "Currency"
+    var title = String(localized: "Currency")
     @Binding var selection: String
 
     var body: some View {
@@ -276,7 +298,7 @@ private struct LibraryCurrencyList: View {
                     ForEach(currencyChoices(selection).filter(LibraryCurrencies.valid), id: \.self) { row(LibraryCurrencies.entry($0)) }
                 }
             }
-            Section(query.isEmpty ? "All currencies" : "Results") {
+            Section(query.isEmpty ? String(localized: "All currencies") : String(localized: "Results")) {
                 ForEach(matches, id: \.code) { row($0) }
             }
         }

@@ -110,7 +110,7 @@ class AssistantController : ViewModel() {
         viewModelScope.launch {
             try { work() }
             catch (cancel: CancellationException) { throw cancel }
-            catch (failure: Exception) { mutable.update { it.copy(error = failure.message ?: "The assistant could not complete that action.") } }
+            catch (failure: Exception) { mutable.update { it.copy(error = failure.message ?: Words[R.string.assistant_action_failed]) } }
             finally { mutable.update { it.copy(busy = it.busy - label) } }
         }
     }
@@ -195,7 +195,7 @@ class AssistantController : ViewModel() {
     fun openLink(link: String) = operation("link") { call("assistant_open", JSONObject().put("link", link)) }
 
     fun attach(context: Context, uri: Uri) = operation("attach") {
-        require(state.value.attachments.size < 5) { "Attach up to five files per message." }
+        require(state.value.attachments.size < 5) { Words[R.string.assistant_attach_limit] }
         val generation = conversationGeneration
         val params = withContext(Dispatchers.IO) {
             val file = readAttachment(context, uri)
@@ -207,7 +207,7 @@ class AssistantController : ViewModel() {
     fun removeAttachment(id: String) { mutable.update { it.copy(attachments = it.attachments.filterNot { file -> file.optString("id") == id }) } }
     /** `import` is the bank file being imported, when the assistant is open over its import: the assistant is told its lines. */
     fun send(text: String, month: String, selected: List<String> = emptyList(), import: JSONObject? = null, done: () -> Unit) = operation("send") {
-        require(selected.size <= 200) { "Select up to 200 transactions per message." }
+        require(selected.size <= 200) { Words[R.string.assistant_select_limit] }
         val current = state.value
         val generation = conversationGeneration
         clearStream()
@@ -233,15 +233,15 @@ class AssistantController : ViewModel() {
         if (patch != null) {
             undoToken = outcome.optJSONObject("snapshot")?.optString("token")
                 ?: (call("database_status") as JSONObject).optString("token")
-            mutable.update { it.copy(undoProposal = if (outcome.optBoolean("undoAvailable")) proposal else null, notice = "Proposal applied") }
+            mutable.update { it.copy(undoProposal = if (outcome.optBoolean("undoAvailable")) proposal else null, notice = Words[R.string.assistant_proposal_applied]) }
             NativeServices.notifySaved(); changed()
-        } else mutable.update { it.copy(notice = "Your budget changed. Review the refreshed proposal before applying it.") }
+        } else mutable.update { it.copy(notice = Words[R.string.assistant_budget_changed_review]) }
         loadThread(id)
     }
     fun undoProposal(proposal: String, changed: () -> Unit) = operation("proposal") {
         val id = state.value.threadId
         val token = (call("database_status") as JSONObject).optString("token")
-        require(token == undoToken && proposal == state.value.undoProposal) { "Your budget changed after this proposal. Use the budget's undo history to review subsequent changes." }
+        require(token == undoToken && proposal == state.value.undoProposal) { Words[R.string.assistant_budget_changed_undo] }
         call("assistant_undo_commit", proposalParams(id, proposal).put("expectedToken", token))
         undoToken = null; mutable.update { it.copy(undoProposal = null) }; NativeServices.notifySaved(); changed(); loadThread(id)
     }
@@ -266,7 +266,7 @@ class AssistantController : ViewModel() {
     }
     fun reportReply(text: String, reason: String, done: () -> Unit) = operation("reportReply") {
         val reference = call("assistant_report_reply", JSONObject().put("text", text).put("reason", reason)) as String
-        mutable.update { it.copy(notice = "Report sent · $reference") }; done()
+        mutable.update { it.copy(notice = Words[R.string.assistant_report_sent, reference]) }; done()
     }
 
     override fun onCleared() { reloads.close(); super.onCleared() }
@@ -286,9 +286,9 @@ class AssistantController : ViewModel() {
             var bytes = context.contentResolver.openInputStream(uri)?.use { input ->
                 val output = ByteArrayOutputStream(); val buffer = ByteArray(8192)
                 while (true) { val n = input.read(buffer); if (n < 0) break
-                    require(output.size() + n <= 25 * 1024 * 1024) { "Choose a file smaller than 25 MiB." }; output.write(buffer, 0, n) }
+                    require(output.size() + n <= 25 * 1024 * 1024) { Words[R.string.assistant_file_too_large] }; output.write(buffer, 0, n) }
                 output.toByteArray()
-            } ?: error("The attachment could not be opened.")
+            } ?: error(Words[R.string.assistant_attachment_unopened])
             if (bytes.size > 3_500_000 && name.substringAfterLast('.').lowercase() in setOf("jpg", "jpeg", "png", "webp")) {
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)

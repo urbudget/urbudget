@@ -23,8 +23,11 @@ private func loanLines(budget: JSON, balances: [String: Int64], month: String) -
         let balance = balances[id] ?? account.long("openingBalance")
         let terms = loans[id]
         if account.flag("archived") && terms == nil || !LoanMath.hasLoan(account, balance: balance, saved: saved) { return nil }
-        let subtitle = terms.map { "Payment \(money($0.long("monthlyPayment"), currency)) · \(LoanMath.rateText(LoanMath.rateIn($0, month: month), decimal: Money.decimalMark()))%" }
-            ?? "Add loan details to see the payoff date"
+        let subtitle = terms.map { terms -> String in
+            let payment = money(terms.long("monthlyPayment"), currency)
+            let rate = LoanMath.rateText(LoanMath.rateIn(terms, month: month), decimal: Money.decimalMark()) + "%"
+            return String(localized: "Payment \(payment) · \(rate)")
+        } ?? String(localized: "Add loan details to see the payoff date")
         return LoanLine(id: id, account: account, name: account.text("name"), subtitle: subtitle, owed: max(0, -balance), terms: terms)
     }
 }
@@ -47,13 +50,13 @@ struct LoanPlannerView: View {
         let lines = store.budget.map { loanLines(budget: $0, balances: store.planningBalances, month: month) } ?? []
         List {
             if lines.isEmpty {
-                EmptyState(title: "Make a payoff plan",
-                           detail: "Add a tracking account of a loan type, such as Mortgage or Auto loan, with what you owe as a negative balance. Then add its rate and payment here.",
+                EmptyState(title: String(localized: "Make a payoff plan"),
+                           detail: String(localized: "Add a tracking account of a loan type, such as Mortgage or Auto loan, with what you owe as a negative balance. Then add its rate and payment here."),
                            symbol: "chart.line.downtrend.xyaxis")
                     .listRowBackground(Color.clear)
             } else {
                 Section {
-                    Figure(label: "Owed on \(lines.count == 1 ? "1 loan" : "\(lines.count) loans")", value: money(lines.reduce(0) { $0 + $1.owed }, currency))
+                    Figure(label: String(localized: "Owed on \(lines.count) loans", locale: .app), value: money(lines.reduce(0) { $0 + $1.owed }, currency))
                         .padding(.vertical, 4)
                 }
                 Section {
@@ -98,11 +101,12 @@ struct LoanPlannerView: View {
         var found: [String: String] = [:]
         for line in lines {
             guard let terms = line.terms else { continue }
-            if line.owed == 0 { found[line.id] = "Paid off"; continue }
+            if line.owed == 0 { found[line.id] = String(localized: "Paid off"); continue }
             let start = await Task.detached(priority: .utility) { LoanMath.nextPayment(budget, accountId: line.id, today: today) }.value
             guard !Task.isCancelled else { return }
             if let projection = try? await store.planningPure("loanProjection", ["balance": .int(line.owed), "terms": terms, "start": .string(start)]) {
-                found[line.id] = "Paid off \(Dates.shortMonthLabel(String(projection.text("payoffDate").prefix(7))))"
+                let month = Dates.shortMonthLabel(String(projection.text("payoffDate").prefix(7)))
+                found[line.id] = String(localized: "Paid off \(month)")
             }
         }
         if !Task.isCancelled { payoffs = found }
@@ -181,7 +185,9 @@ struct LoanEditor: View {
     private var saved: JSON? { store.budget?.rows("loans").first { $0.text("accountId") == accountId } }
     private var balance: Int64 { store.planningBalances[accountId] ?? account?.long("openingBalance") ?? 0 }
     private var owed: Int64 { max(0, -balance) }
-    private var feeLabel: String { account.map { AccountTypes.infer($0, balance: balance) } == "mortgage" ? "Escrow" : "Fees" }
+    /// A mortgage's monthly charges are escrow; any other loan's are fees.
+    private var mortgage: Bool { account.map { AccountTypes.infer($0, balance: balance) } == "mortgage" }
+    private var feeLabel: String { mortgage ? String(localized: "Escrow") : String(localized: "Fees") }
     private var dirty: Bool { draft != baseline }
     private var terms: Result<JSON, Error> { Result { try draft.terms(accountId: accountId, saved: saved, requireCategory: false) } }
     private var extra: Int64? { LoanMath.plannerAmount(extraText) }
@@ -239,8 +245,15 @@ struct LoanEditor: View {
         .confirmationDialog("Remove loan details?", isPresented: $confirmRemove, titleVisibility: .visible) {
             Button("Remove", role: .destructive, action: remove)
         } message: {
-            Text("The payoff date and interest are no longer worked out for \(account?.text("name") ?? "this account"). Its transactions stay. You can undo this.")
+            removeMessage
         }
+    }
+
+    private var removeMessage: Text {
+        guard let name = account?.text("name") else {
+            return Text("The payoff date and interest are no longer worked out for this account. Its transactions stay. You can undo this.")
+        }
+        return Text("The payoff date and interest are no longer worked out for \(name). Its transactions stay. You can undo this.")
     }
 
     private func load() {
@@ -311,7 +324,8 @@ struct LoanEditor: View {
             if let saved, !dirty { interestNotice(saved, currency: currency) }
             if saved == nil, let imported {
                 Section {
-                    Notice(text: "Your import has this loan's rate and payment.", tone: "info", icon: "square.and.arrow.down", action: "Use them") {
+                    Notice(text: String(localized: "Your import has this loan's rate and payment."), tone: "info", icon: "square.and.arrow.down",
+                           action: String(localized: "Use them")) {
                         var fresh = LoanDraft(saved: imported)
                         if fresh.category.isEmpty { fresh.category = draft.category }
                         draft = fresh
@@ -324,7 +338,7 @@ struct LoanEditor: View {
             ratesSection
             if case .failure(let problem) = terms, !draft.isEmpty { FormErrorView(message: BudgetStore.readable(problem)) }
             if dirty && saved != nil {
-                Notice(text: "Unsaved changes. The planner below already tries them; Save keeps them.", tone: "info")
+                Notice(text: String(localized: "Unsaved changes. The planner below already tries them; Save keeps them."), tone: "info")
                     .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
                     .listRowBackground(Color.clear)
             }
@@ -369,18 +383,18 @@ struct LoanEditor: View {
     private func facts(_ account: JSON, saved: JSON?, terms: JSON?, base: JSON?, currency: String) -> some View {
         let month = String(today.prefix(7))
         let rate = terms.map { "\(LoanMath.rateText(LoanMath.rateIn($0, month: month), decimal: Money.decimalMark()))%" } ?? "—"
-        let payoff = owed == 0 ? "Paid off" : base.map { Dates.shortMonthLabel(String($0.text("payoffDate").prefix(7))) } ?? "—"
+        let payoff = owed == 0 ? String(localized: "Paid off") : base.map { Dates.shortMonthLabel(String($0.text("payoffDate").prefix(7))) } ?? "—"
         let interest = owed == 0 ? money(0, currency) : base.map { money($0.long("totalInterest"), currency) } ?? "—"
         return Section {
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 12) {
                 GridRow {
-                    Figure(label: "Owed", value: money(owed, currency))
-                    Figure(label: "Rate", value: rate)
-                    Figure(label: "Payment", value: terms.map { money($0.long("monthlyPayment"), currency) } ?? "—")
+                    Figure(label: String(localized: "Owed"), value: money(owed, currency))
+                    Figure(label: String(localized: "Rate"), value: rate)
+                    Figure(label: String(localized: "Payment"), value: terms.map { money($0.long("monthlyPayment"), currency) } ?? "—")
                 }
                 GridRow {
-                    Figure(label: "Paid off", value: payoff)
-                    Figure(label: "Interest to pay", value: interest).gridCellColumns(2)
+                    Figure(label: String(localized: "Paid off"), value: payoff)
+                    Figure(label: String(localized: "Interest to pay"), value: interest).gridCellColumns(2)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -392,11 +406,18 @@ struct LoanEditor: View {
             }
         } footer: {
             if owed > 0 && !account.flag("archived") {
-                Text(saved == nil ? "Save the loan details first to record a payment with them."
-                     : dirty ? "Save your changes first: a payment uses the saved details."
-                     : "\((terms?.long("monthlyFees") ?? 0) > 0 ? "Interest and \(feeLabel.lowercased()) are" : "Interest is") added to the loan with the first payment each month.")
+                factsFooter(saved: saved, terms: terms)
             }
         }
+    }
+
+    /// What recording a payment needs, or what it adds to the loan.
+    private func factsFooter(saved: JSON?, terms: JSON?) -> Text {
+        if saved == nil { return Text("Save the loan details first to record a payment with them.") }
+        if dirty { return Text("Save your changes first: a payment uses the saved details.") }
+        guard (terms?.long("monthlyFees") ?? 0) > 0 else { return Text("Interest is added to the loan with the first payment each month.") }
+        return mortgage ? Text("Interest and escrow are added to the loan with the first payment each month.")
+            : Text("Interest and fees are added to the loan with the first payment each month.")
     }
 
     /// This month's payment is in, but not its interest: a transfer entered before the loan had details.
@@ -406,14 +427,20 @@ struct LoanEditor: View {
         let payments = charges ? (store.budget.map { LoanMath.paymentsWithoutInterest($0, accountId: accountId, today: today) } ?? []) : []
         if !payments.isEmpty {
             Section {
-                Notice(text: "This month's payment is in, but its interest\(saved.long("monthlyFees") > 0 ? " and \(feeLabel.lowercased())" : "") isn't on the loan yet.",
-                       tone: "attention", icon: "percent", action: "Add") {
+                Notice(text: interestMissing(fees: saved.long("monthlyFees") > 0), tone: "attention", icon: "percent", action: String(localized: "Add")) {
                     addInterest(payments.map { $0.text("id") })
                 }
             }
             .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
             .listRowBackground(Color.clear)
         }
+    }
+
+    /// "This month's payment is in, but its interest isn't on the loan yet."
+    private func interestMissing(fees: Bool) -> String {
+        guard fees else { return String(localized: "This month's payment is in, but its interest isn't on the loan yet.") }
+        return mortgage ? String(localized: "This month's payment is in, but its interest and escrow isn't on the loan yet.")
+            : String(localized: "This month's payment is in, but its interest and fees isn't on the loan yet.")
     }
 
     private func detailsSection(_ currency: String) -> some View {
@@ -424,12 +451,14 @@ struct LoanEditor: View {
             LabeledContent("Monthly payment") {
                 TextField(money(0, currency), text: $draft.payment).decimalKeyboard().multilineTextAlignment(.trailing).monospacedDigit()
             }
-            LabeledContent("Monthly \(feeLabel.lowercased())") {
+            LabeledContent {
                 TextField(money(0, currency), text: $draft.fees).decimalKeyboard().multilineTextAlignment(.trailing).monospacedDigit()
+            } label: {
+                mortgage ? Text("Monthly escrow") : Text("Monthly fees")
             }
             NavigationLink(value: LoanRoute.category) {
-                PlanningPickerRow(icon: "tag", label: "Payment category", value: planningCategoryName(store.budget, draft.category),
-                                  placeholder: "Where the payment comes from")
+                PlanningPickerRow(icon: "tag", label: String(localized: "Payment category"), value: planningCategoryName(store.budget, draft.category),
+                                  placeholder: String(localized: "Where the payment comes from"))
             }
         } header: {
             Text("Loan details")
@@ -442,7 +471,7 @@ struct LoanEditor: View {
         Section {
             ForEach($draft.rates) { $row in
                 VStack(alignment: .leading, spacing: 8) {
-                    MonthRow(title: "From", month: $row.month)
+                    MonthRow(title: String(localized: "From"), month: $row.month)
                     LabeledContent("New annual rate (%)") {
                         TextField("0", text: $row.rate).decimalKeyboard().multilineTextAlignment(.trailing).monospacedDigit()
                     }
@@ -471,7 +500,7 @@ struct LoanEditor: View {
     private func plannerSection(_ currency: String, terms: JSON?) -> some View {
         Section {
             if owed == 0 {
-                Notice(text: "Nothing is owed on this account.", tone: "positive", icon: "checkmark.circle.fill")
+                Notice(text: String(localized: "Nothing is owed on this account."), tone: "positive", icon: "checkmark.circle.fill")
                     .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
             }
             LabeledContent("Extra each month") {
@@ -484,7 +513,7 @@ struct LoanEditor: View {
                 Button { by = Dates.addDays(today, 365 * 5) } label: { Label("Pay off by a date…", systemImage: "calendar.badge.clock") }
             } else {
                 HStack {
-                    DayPicker(title: "Pay off by", iso: $by)
+                    DayPicker(title: String(localized: "Pay off by"), iso: $by)
                     Button {
                         by = ""
                         needed = nil
@@ -495,7 +524,7 @@ struct LoanEditor: View {
                     .accessibilityLabel("Clear the payoff date")
                 }
             }
-            if extra == nil || oneOff == nil { FormErrorView(message: "Enter amounts like 50 or 25.50.") }
+            if extra == nil || oneOff == nil { FormErrorView(message: String(localized: "Enter amounts like 50 or 25.50.")) }
             if let terms, let key = neededKey, let needed, needed.key == key {
                 neededNotice(needed.outcome, terms: terms, currency: currency)
             }
@@ -515,12 +544,16 @@ struct LoanEditor: View {
                 .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
         case .value(let reply):
             let amount = reply.isObject ? reply.long("items") : reply.int
-            Notice(text: amount > payment
-                   ? "To pay it off by \(month), pay \(money(amount, currency)) a month: \(money(amount - payment, currency)) more than now, tried below as the extra."
-                   : "Your current payment already pays it off by \(month).",
-                   tone: "info", icon: "calendar")
+            Notice(text: neededText(amount: amount, payment: payment, month: month, currency: currency), tone: "info", icon: "calendar")
                 .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
         }
+    }
+
+    /// The payment that pays the loan off by the chosen month, or that the current one already does.
+    private func neededText(amount: Int64, payment: Int64, month: String, currency: String) -> String {
+        guard amount > payment else { return String(localized: "Your current payment already pays it off by \(month).") }
+        let monthly = money(amount, currency), more = money(amount - payment, currency)
+        return String(localized: "To pay it off by \(month), pay \(monthly) a month: \(more) more than now, tried below as the extra.")
     }
 
     @ViewBuilder private func results(base: JSON, then: JSON?, paidNow: Bool, fees: Int64, updating: Bool, currency: String) -> some View {
@@ -528,11 +561,14 @@ struct LoanEditor: View {
         if showChanges {
             Section {
                 HStack(alignment: .top) {
-                    Figure(label: "Interest saved", value: money(base.long("totalInterest") - (then?.long("totalInterest") ?? 0), currency), color: .urPositive)
+                    Figure(label: String(localized: "Interest saved"), value: money(base.long("totalInterest") - (then?.long("totalInterest") ?? 0), currency),
+                           color: .urPositive)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Figure(label: "Time saved", value: LoanMath.span(Int(base.long("months") - (then?.long("months") ?? 0))), color: .urPositive)
+                    Figure(label: String(localized: "Time saved"), value: LoanMath.span(Int(base.long("months") - (then?.long("months") ?? 0))), color: .urPositive)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Figure(label: "Paid off", value: paidNow || then == nil ? "Now" : Dates.shortMonthLabel(String(then!.text("payoffDate").prefix(7))), color: .urPositive)
+                    Figure(label: String(localized: "Paid off"),
+                           value: paidNow || then == nil ? String(localized: "Now") : Dates.shortMonthLabel(String(then!.text("payoffDate").prefix(7))),
+                           color: .urPositive)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .padding(.vertical, 4)
@@ -546,27 +582,32 @@ struct LoanEditor: View {
             let shown = (then ?? base).rows("schedule")
             if !shown.isEmpty {
                 NavigationLink(value: LoanRoute.schedule) {
-                    Label("Payment schedule\(then != nil ? " with changes" : "") · \(shown.count) payments", systemImage: "list.bullet.rectangle")
+                    Label { scheduleLinkTitle(count: shown.count, changes: then != nil) } icon: { Image(systemName: "list.bullet.rectangle") }
                 }
             }
         } header: {
             HStack {
-                Text("Current plan\(changed ? " and with changes" : "")")
+                changed ? Text("Current plan and with changes") : Text("Current plan")
                 Spacer()
                 if updating { ProgressView().controlSize(.small) }
             }
         }
     }
 
+    /// "Payment schedule · 120 payments", or the schedule with the changes tried.
+    private func scheduleLinkTitle(count: Int, changes: Bool) -> Text {
+        changes ? Text("Payment schedule with changes · \(count) payments") : Text("Payment schedule · \(count) payments")
+    }
+
     private func comparison(base: JSON, then: JSON?, paidNow: Bool, fees: Int64, currency: String) -> some View {
         func payoff(_ p: JSON) -> String { Dates.shortMonthLabel(String(p.text("payoffDate").prefix(7))) }
         var rows: [(String, (JSON) -> String)] = [
-            ("Paid off", payoff),
-            ("Time left", { LoanMath.span(Int($0.long("months"))) }),
-            ("Interest", { money($0.long("totalInterest"), currency) }),
+            (String(localized: "Paid off"), payoff),
+            (String(localized: "Time left"), { LoanMath.span(Int($0.long("months"))) }),
+            (String(localized: "Interest"), { money($0.long("totalInterest"), currency) }),
         ]
         if fees > 0 { rows.append((feeLabel, { money($0.long("totalFees"), currency) })) }
-        rows.append(("Total cost", { money(owed + $0.long("totalInterest") + $0.long("totalFees"), currency) }))
+        rows.append((String(localized: "Total cost"), { money(owed + $0.long("totalInterest") + $0.long("totalFees"), currency) }))
         return Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 8) {
             GridRow {
                 Color.clear.frame(height: 1)
@@ -590,28 +631,33 @@ struct LoanEditor: View {
     /// The balance after each payment, the current plan against the changes, from today's balance (LoanPlanner.tsx's PayoffChart).
     @ViewBuilder private func chart(base: JSON, then: JSON?) -> some View {
         let now = Dates.pickerDate(today)
-        let points = chartPoints(base, series: "Current plan", from: owed, now: now) + (then.map { chartPoints($0, series: "With changes", from: left, now: now) } ?? [])
+        // The series' names are the legend's words.
+        let current = String(localized: "Current plan")
+        let changes = String(localized: "With changes")
+        let points = chartPoints(base, series: current, from: owed, now: now) + (then.map { chartPoints($0, series: changes, from: left, now: now) } ?? [])
         if points.count > 2 {
             Chart(points) { point in
                 LineMark(x: .value("Date", point.date), y: .value("Owed", point.owed), series: .value("Plan", point.series))
                     .foregroundStyle(by: .value("Plan", point.series))
-                    .lineStyle(StrokeStyle(lineWidth: 2, dash: point.series == "Current plan" && then != nil ? [5, 4] : []))
+                    .lineStyle(StrokeStyle(lineWidth: 2, dash: point.series == current && then != nil ? [5, 4] : []))
                     .interpolationMethod(.monotone)
             }
-            .chartForegroundStyleScale(["Current plan": Color.secondary, "With changes": Color.urAccent])
+            .chartForegroundStyleScale([current: Color.secondary, changes: Color.urAccent])
             .chartLegend(then != nil ? .visible : .hidden)
             .chartYAxis {
                 AxisMarks { value in
                     AxisGridLine()
-                    AxisValueLabel { if let owed = value.as(Double.self) { Text(owed.formatted(.number.notation(.compactName))) } }
+                    AxisValueLabel { if let owed = value.as(Double.self) { Text(owed.formatted(.number.notation(.compactName).locale(.app))) } }
                 }
             }
             .chartXAxis {
                 AxisMarks(values: .automatic(desiredCount: 5)) { _ in
                     AxisGridLine()
-                    AxisValueLabel(format: .dateTime.year())
+                    AxisValueLabel(format: .dateTime.year().locale(.app))
                 }
             }
+            // Time runs left to right in every language, as the reports' charts do.
+            .environment(\.layoutDirection, .leftToRight)
             .frame(height: 200)
             .padding(.vertical, 6)
             .accessibilityLabel("Balance owed after each payment")
@@ -628,14 +674,14 @@ struct LoanEditor: View {
     @ViewBuilder private func destination(_ route: LoanRoute) -> some View {
         switch route {
         case .category:
-            CategoryPicker(title: "Payment category", month: Dates.currentMonth, selected: draft.category, includePayment: false) { picked in
+            CategoryPicker(title: String(localized: "Payment category"), month: Dates.currentMonth, selected: draft.category, includePayment: false) { picked in
                 draft.category = picked
                 self.route = []
             }
         case .schedule:
             let current = planKey != nil ? plan : nil
             let shown = (changed && left > 0 ? current?.scenario?.value : nil) ?? current?.base?.value
-            LoanScheduleList(rows: shown?.rows("schedule") ?? [], feeLabel: feeLabel, currency: store.currency)
+            LoanScheduleList(rows: shown?.rows("schedule") ?? [], mortgage: mortgage, currency: store.currency)
         }
     }
 
@@ -650,14 +696,15 @@ struct LoanEditor: View {
             return
         }
         let guarded = saved.map { (collection: "loans", record: $0) }
-        let name = account?.text("name") ?? "the loan"
+        let done = account.map { String(localized: "Saved the loan details for \($0.text("name")).") }
+            ?? String(localized: "Saved the loan details for the loan.")
         saving = true
         error = nil
         Task {
             defer { saving = false }
             do {
                 try await store.planningEdit(original: guarded) { try $0.upsertRecord("loans", record) }
-                store.showToast("Saved the loan details for \(name).", undo: true)
+                store.showToast(done, undo: true)
                 baseline = draft
                 dismiss()
             } catch {
@@ -674,7 +721,7 @@ struct LoanEditor: View {
             defer { saving = false }
             do {
                 try await store.planningEdit(original: (collection: "loans", record: saved)) { try $0.removeRecord("loans", id: accountId) }
-                store.showToast("Removed the loan details.", undo: true)
+                store.showToast(String(localized: "Removed the loan details."), undo: true)
                 dismiss()
             } catch {
                 self.error = BudgetStore.readable(error)
@@ -690,7 +737,7 @@ struct LoanEditor: View {
             defer { saving = false }
             do {
                 try await store.planningCommand("applyLoanPayments", ["ids": JSON(ids)], original: saved.map { (collection: "loans", record: $0) })
-                store.showToast("Added this month's interest to the loan.", undo: true)
+                store.showToast(String(localized: "Added this month's interest to the loan."), undo: true)
             } catch {
                 self.error = BudgetStore.readable(error)
             }
@@ -701,7 +748,8 @@ struct LoanEditor: View {
 /// Every payment until the loan is paid off, a section a year.
 private struct LoanScheduleList: View {
     var rows: [JSON]
-    var feeLabel: String
+    /// A mortgage's charges are escrow; any other loan's are fees.
+    var mortgage: Bool
     var currency: String
 
     var body: some View {
@@ -709,7 +757,8 @@ private struct LoanScheduleList: View {
         let order = years.keys.sorted()
         List {
             if rows.isEmpty {
-                EmptyState(title: "No payments", detail: "Nothing is owed, or the plan is still being worked out.", symbol: "list.bullet.rectangle")
+                EmptyState(title: String(localized: "No payments"), detail: String(localized: "Nothing is owed, or the plan is still being worked out."),
+                           symbol: "list.bullet.rectangle")
             }
             ForEach(order, id: \.self) { year in
                 let lines = years[year] ?? []
@@ -721,7 +770,7 @@ private struct LoanScheduleList: View {
                                 Spacer()
                                 Text(money(row.long("payment"), currency)).monospacedDigit().fontWeight(.semibold)
                             }
-                            Text("Interest \(money(row.long("interest"), currency)) · \(feeLabel) \(money(row.long("fees"), currency)) · Principal \(money(row.long("principal"), currency))")
+                            breakdown(row)
                                 .font(.footnote).foregroundStyle(Color.secondary)
                             Text("Still owed \(money(row.long("balance"), currency))").font(.footnote).monospacedDigit().foregroundStyle(Color.secondary)
                         }
@@ -740,6 +789,14 @@ private struct LoanScheduleList: View {
         .groupedList()
         .navigationTitle("Payment schedule")
         .inlineTitle()
+    }
+
+    /// "Interest 12.00 · Fees 5.00 · Principal 300.00" for one payment.
+    private func breakdown(_ row: JSON) -> Text {
+        let interest = money(row.long("interest"), currency), fees = money(row.long("fees"), currency)
+        let principal = money(row.long("principal"), currency)
+        return mortgage ? Text("Interest \(interest) · Escrow \(fees) · Principal \(principal)")
+            : Text("Interest \(interest) · Fees \(fees) · Principal \(principal)")
     }
 }
 
@@ -784,15 +841,14 @@ private struct LoanPaymentSheet: View {
         let balances = store.planningBalances
         let balance = balances[loanId] ?? account.long("openingBalance")
         let mortgage = AccountTypes.infer(account, balance: balance) == "mortgage"
-        let charges = terms.long("monthlyFees") > 0 ? "interest and \(mortgage ? "escrow" : "fees") are" : "interest is"
         let source = sources.first { $0.text("id") == from }
         NavigationStack(path: $route) {
             Form {
                 Section {
                     HStack(alignment: .top) {
-                        Figure(label: "Owed on the loan", value: money(max(0, -balance), currency))
+                        Figure(label: String(localized: "Owed on the loan"), value: money(max(0, -balance), currency))
                         Spacer()
-                        Figure(label: "Monthly payment", value: money(terms.long("monthlyPayment"), currency), alignment: .trailing)
+                        Figure(label: String(localized: "Monthly payment"), value: money(terms.long("monthlyPayment"), currency), alignment: .trailing)
                     }
                     .accessibilityElement(children: .combine)
                 }
@@ -813,21 +869,22 @@ private struct LoanPaymentSheet: View {
                 }
                 Section {
                     if sources.isEmpty {
-                        Notice(text: "Add a cash account in your budget to pay the loan from.", tone: "info")
+                        Notice(text: String(localized: "Add a cash account in your budget to pay the loan from."), tone: "info")
                     } else {
                         NavigationLink(value: LoanPaymentRoute.from) {
-                            PlanningPickerRow(icon: "building.columns", label: "From", value: source?.text("name"), placeholder: "Choose account")
+                            PlanningPickerRow(icon: "building.columns", label: String(localized: "From"), value: source?.text("name"),
+                                              placeholder: String(localized: "Choose account"))
                         }
                     }
                     DatePicker(selection: Binding(get: { Dates.pickerDate(date) }, set: { date = Dates.fromPicker($0) }), displayedComponents: .date) {
                         Label("Date", systemImage: "calendar")
                     }
                     NavigationLink(value: LoanPaymentRoute.category) {
-                        PlanningPickerRow(icon: "tag", label: "Category", value: store.budget?.row("categories", id: category)?.text("name"),
-                                          placeholder: "Where the payment comes from", attention: category.isEmpty)
+                        PlanningPickerRow(icon: "tag", label: String(localized: "Category"), value: store.budget?.row("categories", id: category)?.text("name"),
+                                          placeholder: String(localized: "Where the payment comes from"), attention: category.isEmpty)
                     }
                 } footer: {
-                    Text("Recorded as a transfer from \(source?.text("name") ?? "the account you choose") to \(account.text("name")), spending the category. The month's \(charges) added to the loan with its first payment that month.")
+                    paymentFooter(source: source?.text("name"), mortgage: mortgage)
                 }
                 if let error { FormErrorView(message: error) }
             }
@@ -858,6 +915,22 @@ private struct LoanPaymentSheet: View {
         }
     }
 
+    /// How the payment is recorded, and what the month's first payment brings onto the loan.
+    private func paymentFooter(source: String?, mortgage: Bool) -> Text {
+        let loan = account.text("name")
+        let recorded = source.map { Text("Recorded as a transfer from \($0) to \(loan), spending the category.") }
+            ?? Text("Recorded as a transfer from the account you choose to \(loan), spending the category.")
+        let charges: Text
+        if terms.long("monthlyFees") <= 0 {
+            charges = Text("The month's interest is added to the loan with its first payment that month.")
+        } else if mortgage {
+            charges = Text("The month's interest and escrow are added to the loan with its first payment that month.")
+        } else {
+            charges = Text("The month's interest and fees are added to the loan with its first payment that month.")
+        }
+        return recorded + Text(verbatim: " ") + charges
+    }
+
     @ViewBuilder private func destination(_ route: LoanPaymentRoute) -> some View {
         switch route {
         case .from:
@@ -882,7 +955,7 @@ private struct LoanPaymentSheet: View {
             .navigationTitle("Pay from")
             .inlineTitle()
         case .category:
-            CategoryPicker(title: "Payment category", month: String(date.prefix(7)), selected: category, includePayment: false) { picked in
+            CategoryPicker(title: String(localized: "Payment category"), month: String(date.prefix(7)), selected: category, includePayment: false) { picked in
                 category = picked
                 self.route = []
             }
@@ -891,11 +964,11 @@ private struct LoanPaymentSheet: View {
 
     private func save() {
         attempt($error) {
-            guard let amount = pad.cents else { throw AppError("Finish the sum first.") }
-            guard !from.isEmpty else { throw AppError("Choose the account the payment comes from.") }
-            guard amount > 0 else { throw AppError("Enter an amount to pay.") }
-            guard !category.isEmpty else { throw AppError("Choose the category the payment comes from.") }
-            guard Dates.day(date) != nil else { throw AppError("Choose a valid date.") }
+            guard let amount = pad.cents else { throw AppError(String(localized: "Finish the sum first.")) }
+            guard !from.isEmpty else { throw AppError(String(localized: "Choose the account the payment comes from.")) }
+            guard amount > 0 else { throw AppError(String(localized: "Enter an amount to pay.")) }
+            guard !category.isEmpty else { throw AppError(String(localized: "Choose the category the payment comes from.")) }
+            guard Dates.day(date) != nil else { throw AppError(String(localized: "Choose a valid date.")) }
             var chosen = terms
             chosen["categoryId"] = .string(category)
             let params: JSON = ["terms": chosen, "from": .string(from), "amount": .int(amount), "date": .string(date), "id": .string(paymentId)]
@@ -907,7 +980,7 @@ private struct LoanPaymentSheet: View {
                 defer { saving = false }
                 do {
                     try await store.planningCommand("loanRecord", params, original: original)
-                    store.showToast("Recorded a payment of \(money(amount, currency)) to \(name).", undo: true)
+                    store.showToast(String(localized: "Recorded a payment of \(money(amount, currency)) to \(name)."), undo: true)
                     dismiss()
                 } catch {
                     self.error = BudgetStore.readable(error)

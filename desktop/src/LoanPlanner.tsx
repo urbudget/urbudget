@@ -8,6 +8,7 @@ import { monthTick } from "./charts/scale";
 import { editableAmount, errorText, evaluateAmount, formatDate, money, monthName } from "./format";
 import { nextPayment, owedOn, percent, rateIn, useProjection } from "./Planning";
 import { today, type Account, type Budget, type LoanProjection, type LoanTerms } from "./types";
+import { t, tn } from "./i18n";
 import "./reports.css";
 import "./loans.css";
 
@@ -15,8 +16,10 @@ import "./loans.css";
 export function span(months: number) {
   const years = Math.floor(months / 12);
   const rest = months % 12;
-  const part = (n: number, unit: string) => (n ? `${n} ${unit}${n === 1 ? "" : "s"}` : "");
-  return [part(years, "year"), part(rest, "month")].filter(Boolean).join(" ") || "0 months";
+  const y = years ? tn(years, "{count} year", "{count} years") : "";
+  const m = rest ? tn(rest, "{count} month", "{count} months") : "";
+  if (y && m) return t("{years} {months}", { years: y, months: m });
+  return y || m || tn(0, "{count} month", "{count} months");
 }
 /** A typed amount, or null when it doesn't read; blank is 0. */
 const amountOf = (text: string) => {
@@ -46,17 +49,17 @@ function PayoffChart({ owed, start, base, scenario }: { owed: number; start: num
       <LinesChart
         keys={keys}
         series={[
-          ...(base ? [{ key: "current", label: "Current plan", color: CURRENT, values: values(base, owed), dashed: !!scenario }] : []),
-          ...(scenario ? [{ key: "changed", label: "With changes", color: CHANGED, values: values(scenario, start) }] : []),
+          ...(base ? [{ key: "current", label: t("Current plan"), color: CURRENT, values: values(base, owed), dashed: !!scenario }] : []),
+          ...(scenario ? [{ key: "changed", label: t("With changes"), color: CHANGED, values: values(scenario, start) }] : []),
         ]}
-        label="Balance owed after each payment"
+        label={t("Balance owed after each payment")}
         format={money}
         height={200}
-        title={(k) => (k === "now" ? "Today" : formatDate(k))}
+        title={(k) => (k === "now" ? t("Today") : formatDate(k))}
         // Every month's name when there are few, else each new year.
         tick={(k, i) =>
           k === "now"
-            ? "Now"
+            ? t("Now")
             : many
               ? k.slice(5, 7) === "01"
                 ? k.slice(0, 4)
@@ -67,8 +70,8 @@ function PayoffChart({ owed, start, base, scenario }: { owed: number; start: num
       {base && scenario && (
         <Legend
           items={[
-            { label: "Current plan", color: CURRENT, line: true, dashed: true },
-            { label: "With changes", color: CHANGED, line: true },
+            { label: t("Current plan"), color: CURRENT, line: true, dashed: true },
+            { label: t("With changes"), color: CHANGED, line: true },
           ]}
         />
       )}
@@ -79,17 +82,19 @@ function PayoffChart({ owed, start, base, scenario }: { owed: number; start: num
 function Schedule({ projection, fees }: { projection: LoanProjection; fees: string }) {
   return (
     <details className="loan-schedule">
-      <summary>Payment schedule ({projection.schedule.length} payments)</summary>
+      <summary>
+        {tn(projection.schedule.length, "Payment schedule ({count} payments)", "Payment schedule ({count} payments)")}
+      </summary>
       <div className="loan-schedule-scroll">
         <table className="data-table">
           <thead>
             <tr>
-              <th>Date</th>
-              <th className="num">Payment</th>
-              <th className="num">Interest</th>
+              <th>{t("Date")}</th>
+              <th className="num">{t("Payment")}</th>
+              <th className="num">{t("Interest")}</th>
               <th className="num">{fees}</th>
-              <th className="num">Principal</th>
-              <th className="num">Still owed</th>
+              <th className="num">{t("Principal")}</th>
+              <th className="num">{t("Still owed")}</th>
             </tr>
           </thead>
           <tbody>
@@ -170,36 +175,36 @@ export function LoanPlanner({
   const then = changed && left > 0 ? scenario.projection : null;
   // Paid off now: the one-off alone clears the loan, with any interest and fees it brings.
   const paidNow = changed && (then ? then.months === 1 && (oneOff ?? 0) >= then.schedule[0].payment : left === 0);
-  const fees = accountType(account, balance) === "mortgage" ? "Escrow" : "Fees";
+  const fees = accountType(account, balance) === "mortgage" ? t("Escrow") : t("Fees");
   // Each plan's figures; the total includes what's owed now (a one-off payment is part of it).
   const rows = [
-    { label: "Paid off", value: (p: LoanProjection) => monthName(p.payoffDate.slice(0, 7)) },
-    { label: "Time left", value: (p: LoanProjection) => span(p.months) },
-    { label: "Interest", value: (p: LoanProjection) => money(p.totalInterest) },
+    { label: t("Paid off"), value: (p: LoanProjection) => monthName(p.payoffDate.slice(0, 7)) },
+    { label: t("Time left"), value: (p: LoanProjection) => span(p.months) },
+    { label: t("Interest"), value: (p: LoanProjection) => money(p.totalInterest) },
     ...(terms.monthlyFees ? [{ label: fees, value: (p: LoanProjection) => money(p.totalFees) }] : []),
-    { label: "Total cost", value: (p: LoanProjection) => money(owed + p.totalInterest + p.totalFees) },
+    { label: t("Total cost"), value: (p: LoanProjection) => money(owed + p.totalInterest + p.totalFees) },
   ];
   return (
-    <Modal title={`Payoff planner · ${account.name}`} close={close} wide className="loan-planner">
+    <Modal title={t("Payoff planner · {account}", { account: account.name })} close={close} wide className="loan-planner">
       <dl className="loan-facts">
         <div>
-          <dt>Owed</dt>
+          <dt>{t("Owed")}</dt>
           <dd>{money(owed)}</dd>
         </div>
         <div>
-          <dt>Interest rate</dt>
+          <dt>{t("Interest rate")}</dt>
           <dd>{percent(rateIn(terms, today().slice(0, 7)))}</dd>
         </div>
         <div>
-          <dt>Monthly payment</dt>
+          <dt>{t("Monthly payment")}</dt>
           <dd>{money(terms.monthlyPayment)}</dd>
         </div>
       </dl>
       <div className="form-grid loan-try">
         <label>
-          Extra each month
+          {t("Extra each month")}
           <input
-            aria-label="Extra each month"
+            aria-label={t("Extra each month")}
             inputMode="decimal"
             placeholder="0.00"
             value={extraText}
@@ -207,9 +212,9 @@ export function LoanPlanner({
           />
         </label>
         <label>
-          One-off payment now
+          {t("One-off payment now")}
           <input
-            aria-label="One-off payment"
+            aria-label={t("One-off payment")}
             inputMode="decimal"
             placeholder="0.00"
             value={oneOffText}
@@ -217,13 +222,13 @@ export function LoanPlanner({
           />
         </label>
         <label>
-          Pay off by
-          <DateInput label="Pay off by" value={by} onChange={setBy} />
+          {t("Pay off by")}
+          <DateInput label={t("Pay off by")} value={by} onChange={setBy} />
         </label>
       </div>
       {(extra === null || oneOff === null) && (
         <p className="form-error" role="alert">
-          Enter amounts like 50 or 25.50.
+          {t("Enter amounts like 50 or 25.50.")}
         </p>
       )}
       {needed && by && (
@@ -231,8 +236,12 @@ export function LoanPlanner({
           {needed.error
             ? needed.error
             : needed.amount > terms.monthlyPayment
-              ? `To pay it off by ${monthName(by.slice(0, 7))}, pay ${money(needed.amount, { symbol: true })} a month: ${money(needed.amount - terms.monthlyPayment)} more than now, tried below as the extra.`
-              : `Your current payment already pays it off by ${monthName(by.slice(0, 7))}.`}
+              ? t("To pay it off by {month}, pay {amount} a month: {more} more than now, tried below as the extra.", {
+                  month: monthName(by.slice(0, 7)),
+                  amount: money(needed.amount, { symbol: true }),
+                  more: money(needed.amount - terms.monthlyPayment),
+                })
+              : t("Your current payment already pays it off by {month}.", { month: monthName(by.slice(0, 7)) })}
         </p>
       )}
       {base.error && (
@@ -248,16 +257,16 @@ export function LoanPlanner({
       {now && (then || paidNow) && (
         <div className="loan-savings">
           <div>
-            <span>Interest saved</span>
+            <span>{t("Interest saved")}</span>
             <strong>{money(now.totalInterest - (then?.totalInterest ?? 0))}</strong>
           </div>
           <div>
-            <span>Time saved</span>
+            <span>{t("Time saved")}</span>
             <strong>{span(now.months - (then?.months ?? 0))}</strong>
           </div>
           <div>
-            <span>Paid off</span>
-            <strong>{paidNow || !then ? "Now" : monthName(then.payoffDate.slice(0, 7))}</strong>
+            <span>{t("Paid off")}</span>
+            <strong>{paidNow || !then ? t("Now") : monthName(then.payoffDate.slice(0, 7))}</strong>
           </div>
         </div>
       )}
@@ -266,8 +275,8 @@ export function LoanPlanner({
           <thead>
             <tr>
               <th />
-              <th className="num">Current plan</th>
-              {changed && <th className="num">With changes</th>}
+              <th className="num">{t("Current plan")}</th>
+              {changed && <th className="num">{t("With changes")}</th>}
             </tr>
           </thead>
           <tbody>
@@ -284,8 +293,7 @@ export function LoanPlanner({
       <PayoffChart owed={owed} start={left} base={now} scenario={then} />
       {(then ?? now) && <Schedule projection={(then ?? now)!} fees={fees} />}
       <p className="help">
-        Only a sandbox: nothing here changes your budget or the loan's details. Interest compounds monthly and
-        each charge is rounded to the cent, so a lender's own figures may differ a little.
+        {t("Only a sandbox: nothing here changes your budget or the loan's details. Interest compounds monthly and each charge is rounded to the cent, so a lender's own figures may differ a little.")}
       </p>
     </Modal>
   );

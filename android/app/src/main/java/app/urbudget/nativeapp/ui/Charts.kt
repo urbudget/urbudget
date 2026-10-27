@@ -75,7 +75,13 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.LayoutDirection
 import app.urbudget.nativeapp.BarRowModel
+import app.urbudget.nativeapp.Money
+import app.urbudget.nativeapp.R
 import app.urbudget.nativeapp.ColumnModel
 import app.urbudget.nativeapp.DivRowModel
 import app.urbudget.nativeapp.HeatModel
@@ -161,7 +167,7 @@ internal fun ChartLegend(items: List<LegendItem>, modifier: Modifier = Modifier)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 LegendKey(palette.color(item.color), item.line, item.dashed)
                 Spacer(Modifier.width(6.dp))
-                Text(item.label, color = ur.text2, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(Money.own(item.label), color = ur.text2, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }
@@ -175,7 +181,7 @@ internal fun ChartReadout(title: String, rows: List<Readout>, modifier: Modifier
     Column(modifier.fillMaxWidth().heightIn(min = 40.dp)) {
         Text(title, color = ur.muted, style = MaterialTheme.typography.bodySmall, maxLines = 1)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            if (rows.isEmpty()) Text("Nothing", color = ur.muted, style = MaterialTheme.typography.bodyMedium)
+            if (rows.isEmpty()) Text(stringResource(R.string.chart_nothing), color = ur.muted, style = MaterialTheme.typography.bodyMedium)
             rows.forEach { row ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (row.color != null) { LegendKey(palette.color(row.color), row.line, row.dashed); Spacer(Modifier.width(6.dp)) }
@@ -495,7 +501,7 @@ internal fun BarRowView(row: BarRowModel, defaultColor: Int, onClick: (() -> Uni
         verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (row.color != null) { LegendKey(palette.color(row.color)); Spacer(Modifier.width(8.dp)) }
-            Text(row.label, Modifier.weight(1f), color = ur.text, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(Money.own(row.label), Modifier.weight(1f), color = ur.text, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(row.valueText, Modifier.padding(start = 8.dp), color = ur.text, style = MaterialTheme.typography.bodyMedium.merge(Tabular), fontWeight = FontWeight.SemiBold, maxLines = 1)
             row.detail?.let { Text(it, Modifier.widthIn(min = 52.dp), color = ur.muted, style = MaterialTheme.typography.bodySmall.merge(Tabular), textAlign = TextAlign.End, maxLines = 1) }
         }
@@ -513,11 +519,12 @@ internal fun DivergingRowView(row: DivRowModel) {
     val color = palette.color(row.color)
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 9.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(row.label, Modifier.weight(1f), color = ur.text, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(Money.own(row.label), Modifier.weight(1f), color = ur.text, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(row.valueText, Modifier.padding(start = 8.dp), color = ur.text, style = MaterialTheme.typography.bodyMedium.merge(Tabular), fontWeight = FontWeight.SemiBold, maxLines = 1)
             Text(row.detail, Modifier.padding(start = 8.dp), color = ur.muted, style = MaterialTheme.typography.bodySmall.merge(Tabular), maxLines = 1)
         }
-        Row(Modifier.fillMaxWidth().height(14.dp)) {
+        // A number line: less to the left and more to the right in either language, as the charts draw.
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) { Row(Modifier.fillMaxWidth().height(14.dp)) {
             Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.CenterEnd) {
                 if (row.fraction < 0f) Box(Modifier.fillMaxHeight().fillMaxWidth(-row.fraction).clip(RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp)).background(color))
             }
@@ -525,7 +532,7 @@ internal fun DivergingRowView(row: DivRowModel) {
             Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.CenterStart) {
                 if (row.fraction > 0f) Box(Modifier.fillMaxHeight().fillMaxWidth(row.fraction).clip(RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp)).background(color))
             }
-        }
+        } }
     }
 }
 
@@ -542,7 +549,8 @@ internal fun HeatCalendar(model: HeatModel, selected: Int, onDay: (Int) -> Unit,
         val end = snapshotFlow { scroll.maxValue }.first { it in 1 until Int.MAX_VALUE }
         scroll.scrollTo(end)
     }
-    BoxWithConstraints(modifier.fillMaxWidth()) {
+    // Weeks run left to right in either language, as the grid is drawn, and it opens on the latest.
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) { BoxWithConstraints(modifier.fillMaxWidth()) {
         val left = 30.dp
         val top = 18.dp
         val cell = (floor((maxWidth - left).value / max(1, model.weeks)) - 3f).coerceIn(9f, 18f).dp
@@ -585,7 +593,7 @@ internal fun HeatCalendar(model: HeatModel, selected: Int, onDay: (Int) -> Unit,
                     }
                 })
         }
-    }
+    } }
 }
 
 /** The heat calendar's key: an empty day, then less to more. */
@@ -594,11 +602,11 @@ internal fun HeatLegend() {
     val palette = reportPalette()
     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         HeatSwatch(palette, 0)
-        Text(" No spending", color = ur.text2, fontSize = 12.sp)
+        Text(stringResource(R.string.chart_no_spending), Modifier.padding(start = 4.dp), color = ur.text2, fontSize = 12.sp)
         Spacer(Modifier.weight(1f))
-        Text("Less ", color = ur.text2, fontSize = 12.sp)
+        Text(stringResource(R.string.chart_less), Modifier.padding(end = 4.dp), color = ur.text2, fontSize = 12.sp)
         (1..5).forEach { HeatSwatch(palette, it); Spacer(Modifier.width(3.dp)) }
-        Text("More", color = ur.text2, fontSize = 12.sp)
+        Text(stringResource(R.string.chart_more), color = ur.text2, fontSize = 12.sp)
     }
 }
 
@@ -610,7 +618,7 @@ private fun HeatSwatch(palette: ReportPalette, level: Int) {
 
 /** Tiles with areas in proportion to their values, shaded by magnitude; labels where they fit. */
 @Composable
-internal fun Treemap(items: List<TreemapItem>, onSelect: (TreemapItem) -> Unit, modifier: Modifier = Modifier, height: Dp = 280.dp, label: String = "Spending by payee") {
+internal fun Treemap(items: List<TreemapItem>, onSelect: (TreemapItem) -> Unit, modifier: Modifier = Modifier, height: Dp = 280.dp, label: String = stringResource(R.string.chart_spending_by_payee)) {
     val palette = reportPalette()
     val measurer = rememberTextMeasurer()
     var box by remember { mutableStateOf(IntSize.Zero) }
@@ -629,7 +637,7 @@ internal fun Treemap(items: List<TreemapItem>, onSelect: (TreemapItem) -> Unit, 
                 val labelled = t.w > 44.dp.toPx() && t.h > 22.dp.toPx()
                 val roomy = t.w > 76.dp.toPx() && t.h > 40.dp.toPx()
                 val width = Constraints(maxWidth = (t.w - 2 * padX).toInt().coerceAtLeast(1))
-                (if (labelled) measurer.measure(t.item.label, labelStyle, TextOverflow.Ellipsis, maxLines = 1, constraints = width) else null) to
+                (if (labelled) measurer.measure(Money.own(t.item.label), labelStyle, TextOverflow.Ellipsis, maxLines = 1, constraints = width) else null) to
                     (if (roomy) measurer.measure(t.item.valueText, valueStyle, TextOverflow.Ellipsis, maxLines = 1, constraints = width) else null)
             }
             val corner = CornerRadius(3.dp.toPx())
@@ -654,9 +662,13 @@ internal fun Treemap(items: List<TreemapItem>, onSelect: (TreemapItem) -> Unit, 
 internal fun MiniBars(model: MiniBarsModel, modifier: Modifier = Modifier) {
     val palette = reportPalette()
     val legend = remember(model) { if (model.series.size > 1) model.series.map { LegendItem(it.label, it.color) } else emptyList() }
+    val both = stringResource(R.string.chart_and)
+    val description = stringResource(R.string.chart_by_month, model.series.map { it.label }.reduceOrNull { a, b -> both.format(a, b) }.orEmpty())
     Column(modifier.fillMaxWidth()) {
+    // Months run left to right in either language, so each label stays under its columns.
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
     Column(Modifier.fillMaxWidth().height(136.dp).padding(top = 6.dp)) {
-        Box(Modifier.fillMaxWidth().weight(1f).semantics { contentDescription = model.series.joinToString(" and ") { it.label } + " by month" }
+        Box(Modifier.fillMaxWidth().weight(1f).semantics { contentDescription = description }
             .drawWithCache {
                 val n = max(1, model.labels.size)
                 val colGap = 6.dp.toPx()
@@ -695,6 +707,7 @@ internal fun MiniBars(model: MiniBarsModel, modifier: Modifier = Modifier) {
         Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             model.labels.forEach { Text(it, Modifier.weight(1f), color = ur.text2, fontSize = 12.5.sp, textAlign = TextAlign.Center, maxLines = 1) }
         }
+    }
     }
     // Two or more series say which colour is which.
     if (legend.isNotEmpty()) ChartLegend(legend)

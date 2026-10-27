@@ -1,22 +1,23 @@
 import type { BankField, BankFixes, BankSession, BankStructure, FixResult, LeftOutReason, Statement, StatementLine } from "../bridge";
 import type { BankColumns } from "../types";
+import { getLanguage, localDate, msg, t } from "../i18n";
 
-/** What a line left out is, by why. */
+/** What a line left out is, by why (in English: translate it with `t`). */
 export const LEFT_OUT: Record<LeftOutReason, string> = {
-  pending: "Not booked yet",
-  declined: "Declined or cancelled",
-  otherAccount: "Another account's",
-  otherCurrency: "In another currency",
-  ownBalances: "Between your own balances",
-  balance: "A balance or a total",
-  aboveHeader: "Above the header",
-  noDate: "No date",
-  noAmount: "No amount",
-  zero: "Nothing moved",
-  corrected: "Corrected by the bank",
-  repeatedHeader: "The header row again",
-  inWholeBatch: "In a batch imported as one entry",
-  imported: "Imported before",
+  pending: msg("Not booked yet"),
+  declined: msg("Declined or cancelled"),
+  otherAccount: msg("Another account's"),
+  otherCurrency: msg("In another currency"),
+  ownBalances: msg("Between your own balances"),
+  balance: msg("A balance or a total"),
+  aboveHeader: msg("Above the header"),
+  noDate: msg("No date"),
+  noAmount: msg("No amount"),
+  zero: msg("Nothing moved"),
+  corrected: msg("Corrected by the bank"),
+  repeatedHeader: msg("The header row again"),
+  inWholeBatch: msg("In a batch imported as one entry"),
+  imported: msg("Imported before"),
 };
 /** Lines left out for these reasons can be included anyway (bank_statement.rs `includable`). */
 export const INCLUDABLE: ReadonlySet<LeftOutReason> = new Set([
@@ -28,15 +29,18 @@ export const INCLUDABLE: ReadonlySet<LeftOutReason> = new Set([
   "noDate",
   "noAmount",
 ]);
+/** The fields' names as a statement's own headings have them (matched against them, so never translated). */
 export const FIELDS: Record<BankField, string> = { date: "Date", payee: "Payee", memo: "Memo", amount: "Amount" };
 
 /** Why a line is left out, with what the file says of it (the state, the currency, the account). */
 export function leftOutText(line: StatementLine) {
   if (line.status.kind !== "leftOut") return "";
   const { reason, detail } = line.status;
-  if (reason === "otherAccount" && detail) return `Account ${detail}`;
-  if (reason === "otherCurrency" && detail) return `In ${detail}`;
-  return detail && ["pending", "declined", "ownBalances"].includes(reason) ? `${LEFT_OUT[reason]} (${detail})` : LEFT_OUT[reason];
+  if (reason === "otherAccount" && detail) return t("Account {account}", { account: detail });
+  if (reason === "otherCurrency" && detail) return t("In {currency}", { currency: detail });
+  return detail && ["pending", "declined", "ownBalances"].includes(reason)
+    ? t("{reason} ({detail})", { reason: t(LEFT_OUT[reason]), detail })
+    : t(LEFT_OUT[reason]);
 }
 
 export type Filter = "all" | "attention" | "leftOut" | "edited";
@@ -84,7 +88,7 @@ export async function applyToLatest(
     base = latest;
   }
   if (!base) return null;
-  throw new Error("The import kept changing while this was made. Try it again.");
+  throw new Error(t("The import kept changing while this was made. Try it again."));
 }
 /** The session each change made, by the one it was made on: one that lands before it shows is still the latest. */
 const replaced = new WeakMap<BankSession, BankSession>();
@@ -97,15 +101,15 @@ const latestOf = (session: BankSession | undefined) => {
 export const restructure = (session: BankSession, change: Partial<BankStructure>) =>
   fixesFor(session, { structure: { ...session.structure, ...change } });
 
-/** What a CSV column can hold, for choosing it. */
+/** What a CSV column can hold, for choosing it (in English: translate it with `t`). */
 export const ROLES: [keyof BankColumns, string][] = [
-  ["date", "Date"],
-  ["payee", "Payee"],
-  ["memo", "Memo"],
-  ["amount", "Amount"],
-  ["outflow", "Money out"],
-  ["inflow", "Money in"],
-  ["id", "Bank ID"],
+  ["date", msg("Date")],
+  ["payee", msg("Payee")],
+  ["memo", msg("Memo")],
+  ["amount", msg("Amount")],
+  ["outflow", msg("Money out")],
+  ["inflow", msg("Money in")],
+  ["id", msg("Bank ID")],
 ];
 /** What each column holds now, by its place. */
 /** Where a chosen column is: by its name, or by its place ("#4") where its name doesn't say which (bank_csv.rs `position`). */
@@ -150,7 +154,11 @@ export function readings(example: string): { dmy: string; mdy: string } | null {
   if (!parts) return null;
   const [, a, b, y] = parts;
   const year = y.length === 2 ? 2000 + Number(y) : Number(y);
-  const name = (d: number, m: number) =>
-    new Date(Date.UTC(year, m - 1, d)).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+  // In Arabic, with Arabic month names and Western digits.
+  const options: Intl.DateTimeFormatOptions = { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" };
+  const name = (d: number, m: number) => {
+    const date = new Date(Date.UTC(year, m - 1, d));
+    return getLanguage() === "ar" ? localDate(date, options) : date.toLocaleDateString("en-GB", options);
+  };
   return { dmy: name(Number(a), Number(b)), mdy: name(Number(b), Number(a)) };
 }

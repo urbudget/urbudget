@@ -6,33 +6,59 @@ import UniformTypeIdentifiers
 struct ReportInfo: Identifiable, Hashable {
     var id: String
     var label: String
+    /// "Spending", "Income" or "Wealth": an identifier; `groupName` is what people see.
     var group: String
     var icon: String
     var blurb: String
     var categories = false
 
     static let all: [ReportInfo] = [
-        ReportInfo(id: "categories", label: "Spending by category", group: "Spending", icon: "chart.pie",
-                   blurb: "Where your money went, by group and category, and how last month compares.", categories: true),
-        ReportInfo(id: "payees", label: "Spending by payee", group: "Spending", icon: "storefront", blurb: "Who you pay most, and how often.", categories: true),
-        ReportInfo(id: "trends", label: "Spending over time", group: "Spending", icon: "chart.bar", blurb: "Spending month by month, by group or in total.", categories: true),
-        ReportInfo(id: "calendar", label: "Spending calendar", group: "Spending", icon: "calendar",
-                   blurb: "Spending day by day: busy days, quiet days and weekdays.", categories: true),
-        ReportInfo(id: "incomeExpense", label: "Income vs. expense", group: "Income", icon: "arrow.left.arrow.right",
-                   blurb: "Income, spending and the surplus left in your budget.", categories: true),
-        ReportInfo(id: "income", label: "Income breakdown", group: "Income", icon: "banknote", blurb: "Where your income comes from, and how steady it is."),
-        ReportInfo(id: "cashflow", label: "Money in and out", group: "Income", icon: "arrow.up.arrow.down",
-                   blurb: "Account movements across your budget boundary, including credit purchases.", categories: true),
-        ReportInfo(id: "networth", label: "Net worth", group: "Wealth", icon: "chart.line.uptrend.xyaxis", blurb: "What you own minus what you owe, month by month."),
-        ReportInfo(id: "balance", label: "Balance sheet", group: "Wealth", icon: "building.columns", blurb: "Assets and liabilities by type, with the ratios that matter."),
-        ReportInfo(id: "balances", label: "Balance over time", group: "Wealth", icon: "chart.xyaxis.line", blurb: "Each account's balance at the end of every month."),
-        ReportInfo(id: "forecast", label: "Forecast", group: "Wealth", icon: "chart.line.flattrend.xyaxis",
-                   blurb: "Where your cash and card balances are heading, from what's scheduled."),
-        ReportInfo(id: "age", label: "Cash age", group: "Wealth", icon: "hourglass", blurb: "How long money waits in your accounts before you spend it."),
+        ReportInfo(id: "categories", label: String(localized: "Spending by category"), group: "Spending", icon: "chart.pie",
+                   blurb: String(localized: "Where your money went, by group and category, and how last month compares."), categories: true),
+        ReportInfo(id: "payees", label: String(localized: "Spending by payee"), group: "Spending", icon: "storefront",
+                   blurb: String(localized: "Who you pay most, and how often."), categories: true),
+        ReportInfo(id: "trends", label: String(localized: "Spending over time"), group: "Spending", icon: "chart.bar",
+                   blurb: String(localized: "Spending month by month, by group or in total."), categories: true),
+        ReportInfo(id: "calendar", label: String(localized: "Spending calendar"), group: "Spending", icon: "calendar",
+                   blurb: String(localized: "Spending day by day: busy days, quiet days and weekdays."), categories: true),
+        ReportInfo(id: "incomeExpense", label: String(localized: "Income vs. expense"), group: "Income", icon: "arrow.left.arrow.right",
+                   blurb: String(localized: "Income, spending and the surplus left in your budget."), categories: true),
+        ReportInfo(id: "income", label: String(localized: "Income breakdown"), group: "Income", icon: "banknote",
+                   blurb: String(localized: "Where your income comes from, and how steady it is.")),
+        ReportInfo(id: "cashflow", label: String(localized: "Money in and out"), group: "Income", icon: "arrow.up.arrow.down",
+                   blurb: String(localized: "Account movements across your budget boundary, including credit purchases."), categories: true),
+        ReportInfo(id: "networth", label: String(localized: "Net worth"), group: "Wealth", icon: "chart.line.uptrend.xyaxis",
+                   blurb: String(localized: "What you own minus what you owe, month by month.")),
+        ReportInfo(id: "balance", label: String(localized: "Balance sheet"), group: "Wealth", icon: "building.columns",
+                   blurb: String(localized: "Assets and liabilities by type, with the ratios that matter.")),
+        ReportInfo(id: "balances", label: String(localized: "Balance over time"), group: "Wealth", icon: "chart.xyaxis.line",
+                   blurb: String(localized: "Each account's balance at the end of every month.")),
+        ReportInfo(id: "forecast", label: String(localized: "Forecast"), group: "Wealth", icon: "chart.line.flattrend.xyaxis",
+                   blurb: String(localized: "Where your cash and card balances are heading, from what's scheduled.")),
+        ReportInfo(id: "age", label: String(localized: "Cash age"), group: "Wealth", icon: "hourglass",
+                   blurb: String(localized: "How long money waits in your accounts before you spend it.")),
     ]
     static let groups = ["Spending", "Income", "Wealth"]
 
     static func find(_ id: String) -> ReportInfo { all.first { $0.id == id } ?? all[0] }
+
+    /// A group's name, as the title menu lists it.
+    static func groupName(_ group: String) -> String {
+        switch group {
+        case "Spending": return String(localized: "Spending")
+        case "Income": return String(localized: "Income")
+        default: return String(localized: "Wealth")
+        }
+    }
+
+    /// A group's heading in the list of reports.
+    static func groupHeader(_ group: String) -> String {
+        switch group {
+        case "Spending": return String(localized: "Spending reports")
+        case "Income": return String(localized: "Income reports")
+        default: return String(localized: "Wealth reports")
+        }
+    }
 }
 
 /// Where the reports' navigation goes: a report (or one group of Spending by category), or the transactions behind a figure.
@@ -161,7 +187,8 @@ private struct ReportsOverview: View {
             monthSection
             if let failed {
                 Section {
-                    EmptyState(title: "Reports unavailable", detail: failed, symbol: "exclamationmark.triangle", action: "Retry") { attempt += 1 }
+                    EmptyState(title: String(localized: "Reports unavailable"), detail: failed, symbol: "exclamationmark.triangle",
+                               action: String(localized: "Retry")) { attempt += 1 }
                 }
             } else if let result {
                 if let model = result.value {
@@ -212,7 +239,7 @@ private struct ReportsOverview: View {
         Section {
             HStack {
                 Button { store.selectMonth(Dates.addMonths(store.month, -1)) } label: {
-                    Image(systemName: "chevron.left").font(.body.weight(.semibold))
+                    Image(systemName: "chevron.backward").font(.body.weight(.semibold))
                 }
                 .accessibilityLabel("Previous month")
                 Spacer()
@@ -222,7 +249,7 @@ private struct ReportsOverview: View {
                 .accessibilityHint("Chooses another month")
                 Spacer()
                 Button { store.selectMonth(Dates.addMonths(store.month, 1)) } label: {
-                    Image(systemName: "chevron.right").font(.body.weight(.semibold))
+                    Image(systemName: "chevron.forward").font(.body.weight(.semibold))
                 }
                 .accessibilityLabel("Next month")
             }
@@ -232,7 +259,7 @@ private struct ReportsOverview: View {
         }
     }
 
-    private func header(_ title: String, icon: String, id: String) -> some View {
+    private func header(_ title: LocalizedStringKey, icon: String, id: String) -> some View {
         NavigationLink(value: ReportNav.report(id, group: nil)) {
             Label(title, systemImage: icon).font(.headline).foregroundStyle(Color.urAccent)
         }
@@ -299,7 +326,8 @@ private struct ReportsOverview: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text(model.incomeLead).font(.title3.weight(.semibold))
                 ReportMiniBars(model: model.incomeBars)
-                ReportLegendView(items: [ReportLegendItem(label: "Income", color: ReportColors.positive), ReportLegendItem(label: "Spending", color: 0)])
+                ReportLegendView(items: [ReportLegendItem(label: String(localized: "Income"), color: ReportColors.positive),
+                                         ReportLegendItem(label: String(localized: "Spending"), color: 0)])
             }
             .padding(.vertical, 4)
         }
@@ -307,8 +335,8 @@ private struct ReportsOverview: View {
             header("Net worth", icon: "chart.line.uptrend.xyaxis", id: "networth")
             VStack(alignment: .leading, spacing: 8) {
                 bigFigure(model.netWorthText, negative: model.netWorthNegative)
-                ValueRow(title: "Assets", value: model.assetsText)
-                ValueRow(title: "Debts", value: model.debtsText, color: model.debtsNegative ? .urNegative : .primary)
+                ValueRow(title: String(localized: "Assets"), value: model.assetsText)
+                ValueRow(title: String(localized: "Debts"), value: model.debtsText, color: model.debtsNegative ? .urNegative : .primary)
                 ReportMiniBars(model: model.netWorthBars)
             }
             .padding(.vertical, 4)
@@ -339,7 +367,7 @@ private struct ReportsOverview: View {
                     }
                 }
             } header: {
-                Text("\(group) reports")
+                Text(ReportInfo.groupHeader(group))
             }
         }
     }
@@ -417,7 +445,7 @@ private struct ReportTitleMenu: ViewModifier {
         if enabled {
             content.toolbarTitleMenu {
                 ForEach(ReportInfo.groups, id: \.self) { group in
-                    Section(group) {
+                    Section(ReportInfo.groupName(group)) {
                         ForEach(ReportInfo.all.filter { $0.group == group }) { report in
                             Button { choose(report.id) } label: {
                                 Label(report.label, systemImage: report.id == current ? "checkmark" : report.icon)
@@ -540,10 +568,12 @@ private struct ReportPage: View {
             ReportRangeSheet(range: range, earliest: context?.earliestMonth ?? Dates.currentMonth) { filters.range = $0 }
         }
         .sheet(isPresented: $choosingAccounts) {
-            ReportFilterSheet(title: "Accounts", groups: accountGroups, selected: Binding(get: { filters.accounts }, set: { filters.accounts = $0 }))
+            ReportFilterSheet(title: String(localized: "Accounts"), groups: accountGroups,
+                              selected: Binding(get: { filters.accounts }, set: { filters.accounts = $0 }))
         }
         .sheet(isPresented: $choosingCategories) {
-            ReportFilterSheet(title: "Categories", groups: categoryGroups, selected: Binding(get: { filters.categories }, set: { filters.categories = $0 }))
+            ReportFilterSheet(title: String(localized: "Categories"), groups: categoryGroups,
+                              selected: Binding(get: { filters.categories }, set: { filters.categories = $0 }))
         }
         .sheet(isPresented: $editingEveryday) {
             ReportEverydaySheet(current: forecastShown?.value.everyday ?? 0) { everyday = $0 }
@@ -562,7 +592,8 @@ private struct ReportPage: View {
             notice(key)
             if let failed, !isForecast {
                 Section {
-                    EmptyState(title: "Report unavailable", detail: failed, symbol: "exclamationmark.triangle", action: "Retry report") { attempt += 1 }
+                    EmptyState(title: String(localized: "Report unavailable"), detail: failed, symbol: "exclamationmark.triangle",
+                               action: String(localized: "Retry report")) { attempt += 1 }
                 }
             }
             if let exportError {
@@ -604,19 +635,22 @@ private struct ReportPage: View {
     }
 
     private var filterSection: some View {
-        let accountLabel = ReportMath.filterSummary(accountGroups, filters.accounts, allLabel: isForecast ? "All budget accounts" : "All accounts", noun: "accounts")
-        let categoryLabel = ReportMath.filterSummary(categoryGroups, filters.categories, allLabel: "All categories", noun: "categories")
+        let accountLabel = ReportMath.filterSummary(accountGroups, filters.accounts,
+                                                    allLabel: isForecast ? String(localized: "All budget accounts") : String(localized: "All accounts"),
+                                                    several: { String(localized: "\($0) accounts", locale: .app) })
+        let categoryLabel = ReportMath.filterSummary(categoryGroups, filters.categories, allLabel: String(localized: "All categories"),
+                                                     several: { String(localized: "\($0) categories", locale: .app) })
         return Section {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     if !isForecast { rangeMenu }
                     Button { choosingAccounts = true } label: {
-                        ReportChip(title: "Accounts", text: accountLabel, icon: "wallet.pass", active: !filters.accounts.isEmpty)
+                        ReportChip(title: String(localized: "Accounts"), text: accountLabel, icon: "wallet.pass", active: !filters.accounts.isEmpty)
                     }
                     .buttonStyle(.plain)
                     if info.categories {
                         Button { choosingCategories = true } label: {
-                            ReportChip(title: "Categories", text: categoryLabel, icon: "square.grid.2x2", active: !filters.categories.isEmpty)
+                            ReportChip(title: String(localized: "Categories"), text: categoryLabel, icon: "square.grid.2x2", active: !filters.categories.isEmpty)
                         }
                         .buttonStyle(.plain)
                     }
@@ -646,18 +680,23 @@ private struct ReportPage: View {
                 Label("Custom range…", systemImage: current.preset == .custom ? "checkmark" : "calendar")
             }
         } label: {
-            ReportChip(title: "Months", text: ReportMath.describeRange(current), icon: "calendar", active: false)
+            ReportChip(title: String(localized: "Months"), text: ReportMath.describeRange(current), icon: "calendar", active: false)
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
+    }
+
+    /// "12.00 of spending still needs a category…", for the notice above a report.
+    private func uncategorizedText(_ amount: Int64) -> String {
+        let text = money(amount, store.currency)
+        return String(localized: "\(text) of spending still needs a category. It is included in these totals.")
     }
 
     @ViewBuilder private func notice(_ key: ReportKey) -> some View {
         let amount = info.categories ? (data?.forScope(key)?.categories[ReportMath.uncategorized] ?? 0) : 0
         if amount != 0 {
             Section {
-                Notice(text: "\(money(amount, store.currency)) of spending still needs a category. It is included in these totals.",
-                       icon: "exclamationmark.triangle.fill", action: "Review") {
+                Notice(text: uncategorizedText(amount), icon: "exclamationmark.triangle.fill", action: String(localized: "Review")) {
                     navigate(.drill(drillRequest(key, ReportDrillTarget(title: ReportMath.needsCategory, dimension: "category", key: ReportMath.uncategorized))))
                 }
                 .listRowInsets(EdgeInsets())
@@ -799,8 +838,8 @@ private struct ReportRangeSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    MonthRow(title: "From", month: $from)
-                    MonthRow(title: "To", month: $to)
+                    MonthRow(title: String(localized: "From"), month: $from)
+                    MonthRow(title: String(localized: "To"), month: $to)
                 } footer: {
                     Text("Reports cover whole months, from the start of the first to the end of the last.")
                 }
@@ -908,7 +947,7 @@ private struct ReportEverydaySheet: View {
         NavigationStack {
             Form {
                 Section {
-                    AmountField(title: "Everyday spending a month", text: $text)
+                    AmountField(title: String(localized: "Everyday spending a month"), text: $text)
                     FormErrorView(message: error)
                 } footer: {
                     Text("Spending that isn't scheduled, spread evenly over each day.")
@@ -990,11 +1029,11 @@ private struct ReportDrillView: View {
 
     @ViewBuilder private func figures(_ drill: ReportDrillModel?) -> some View {
         let income = request.target.dimension == "income"
-        Figure(label: drill?.figureLabel ?? (income ? "Received" : "Spent"), value: drill?.figure ?? "—")
+        Figure(label: drill?.figureLabel ?? (income ? String(localized: "Received") : String(localized: "Spent")), value: drill?.figure ?? "—")
         Spacer(minLength: 12)
-        Figure(label: "Transactions", value: drill?.count ?? "—")
+        Figure(label: String(localized: "Transactions"), value: drill?.count ?? "—")
         Spacer(minLength: 12)
-        Figure(label: "Average", value: drill?.average ?? "—", alignment: .trailing)
+        Figure(label: String(localized: "Average"), value: drill?.average ?? "—", alignment: .trailing)
     }
 
     private func row(_ line: ReportDrillLine) -> some View {

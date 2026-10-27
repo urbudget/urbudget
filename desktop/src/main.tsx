@@ -5,8 +5,11 @@ import "./styles.css";
 import App from "./App";
 import { ToastProvider, TooltipLayer } from "./ui";
 import { describe, installErrorLog, logError } from "./assistant/errors";
+import { applyLanguage, t } from "./i18n";
 
 installErrorLog();
+// <html lang dir> and the engine's language, before the first paint.
+applyLanguage();
 
 class RenderBoundary extends React.Component<
   { children: React.ReactNode },
@@ -23,16 +26,15 @@ class RenderBoundary extends React.Component<
     if (this.state.failed)
       return (
         <div className="loading-screen">
-          <h1>Let’s reopen your budget.</h1>
+          <h1>{t("Let’s reopen your budget.")}</h1>
           <p>
-            The screen encountered an error. Your last database save is safe,
-            and any available recovery draft will be offered when you reload.
+            {t("The screen encountered an error. Your last database save is safe, and any available recovery draft will be offered when you reload.")}
           </p>
           <button className="primary" onClick={() => location.reload()}>
-            Reload application
+            {t("Reload application")}
           </button>
           <details className="crash-details">
-            <summary>Details</summary>
+            <summary>{t("Details")}</summary>
             <pre>{this.state.detail}</pre>
           </details>
         </div>

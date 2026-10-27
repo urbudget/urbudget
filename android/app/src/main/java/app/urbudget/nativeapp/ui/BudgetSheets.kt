@@ -29,17 +29,18 @@ import androidx.compose.ui.unit.sp
 import app.urbudget.nativeapp.BudgetViewModel
 import app.urbudget.nativeapp.CategoryStatuses
 import app.urbudget.nativeapp.Money
+import app.urbudget.nativeapp.R
+import app.urbudget.nativeapp.Words
+import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.LocalDate
 import java.time.YearMonth
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
-private val DayMonth = DateTimeFormatter.ofPattern("d MMM", Locale.ENGLISH)
-private fun shortDay(iso: String?) = iso?.take(10)?.let { runCatching { LocalDate.parse(it).format(DayMonth) }.getOrNull() }
+/** "5 Oct", with the interface's month names. */
+private fun shortDay(iso: String?) = iso?.take(10)?.let { runCatching { Money.ltr(LocalDate.parse(it).format(Money.pattern("d MMM"))) }.getOrNull() }
 
 /** One line of a category's moves in a month (desktop/src/moves.ts). */
 internal data class MoveLine(val key: String, val at: String?, val what: String, val detail: String?, val amount: Long)
@@ -58,42 +59,42 @@ internal fun categoryMoves(budget: JSONObject, categoryId: String, month: String
         if (amount == 0L) return@forEachIndexed
         val other = changes.firstOrNull { it.text("categoryId") != categoryId }
         val what = when (m.text("kind")) {
-            "quickAssign" -> m.text("detail").ifBlank { null }?.let { "Quick assign: $it" } ?: "Quick assign"
-            "merge" -> "Merged from ${m.text("detail").ifBlank { "a deleted category" }}"
-            "move" -> if (other != null) { val name = names[other.text("categoryId")] ?: "a deleted category"; if (amount > 0) "Moved from $name" else "Moved to $name" }
-                else if (amount > 0) "Assigned" else "Returned to Unassigned"
-            "assign" -> if (amount > 0) "Assigned" else "Returned to Unassigned"
+            "quickAssign" -> m.text("detail").ifBlank { null }?.let { Words[R.string.move_quick_assign_named, it] } ?: Words[R.string.quick_assign]
+            "merge" -> Words[R.string.move_merged_from, m.text("detail").ifBlank { Words[R.string.move_deleted_category] }]
+            "move" -> if (other != null) { val name = names[other.text("categoryId")] ?: Words[R.string.move_deleted_category]; Words[if (amount > 0) R.string.move_moved_from else R.string.move_moved_to, name] }
+                else Words[if (amount > 0) R.string.move_assigned else R.string.move_returned]
+            "assign" -> Words[if (amount > 0) R.string.move_assigned else R.string.move_returned]
             else -> m.text("description")
         }
         lines.add(MoveLine("$i", m.text("at"), what, null, amount))
     }
     val recorded = lines.sumOf { it.amount }
-    if (lines.isNotEmpty() && recorded != assigned) lines.add(0, MoveLine("earlier", null, "Earlier changes", "Not itemised", assigned - recorded))
+    if (lines.isNotEmpty() && recorded != assigned) lines.add(0, MoveLine("earlier", null, Words[R.string.move_earlier], Words[R.string.move_not_itemised], assigned - recorded))
     return lines
 }
 
 /** A target's kind, as the desktop's inspector names it. */
 private fun targetLabel(category: JSONObject): String {
-    val goal = category.optJSONObject("goal") ?: return "Set aside"
+    val goal = category.optJSONObject("goal") ?: return Words[R.string.target_kind_set_aside]
     return when (goal.text("goal_type")) {
-        "NEED" -> if (goal.optBoolean("goal_needs_whole_amount", true)) "Set aside" else "Refill up to"
-        "TB", "TBD" -> "Balance target"
-        "DEBT" -> "Loan payment target"
-        "MF" -> "Monthly funding"
-        else -> "Set aside"
+        "NEED" -> Words[if (goal.optBoolean("goal_needs_whole_amount", true)) R.string.target_kind_set_aside else R.string.target_kind_refill]
+        "TB", "TBD" -> Words[R.string.target_kind_balance]
+        "DEBT" -> Words[R.string.target_kind_debt]
+        "MF" -> Words[R.string.target_kind_monthly_funding]
+        else -> Words[R.string.target_kind_set_aside]
     }
 }
 
 private fun cadenceLabel(goal: JSONObject?): String? {
-    if (goal == null || goal.text("goal_type") != "NEED") return goal?.takeIf { it.text("goal_type") == "TBD" }?.let { "by ${Money.date(it.text("goal_target_date"))}" }
+    if (goal == null || goal.text("goal_type") != "NEED") return goal?.takeIf { it.text("goal_type") == "TBD" }?.let { Words[R.string.cadence_by_date, Money.date(it.text("goal_target_date"))] }
     val every = goal.optInt("goal_cadence_frequency", 1)
     return when (val cadence = goal.optInt("goal_cadence", 1)) {
-        0 -> "once, by ${Money.date(goal.text("goal_target_date"))}"
-        1 -> if (every > 1) "every $every months" else "each month"
-        2 -> if (every > 1) "every $every weeks" else "each week"
-        13 -> if (every > 1) "every $every years" else "each year"
-        14 -> "every two years"
-        else -> "every ${cadence - 1} months"
+        0 -> Words[R.string.cadence_once_by, Money.date(goal.text("goal_target_date"))]
+        1 -> if (every > 1) Words.count(R.plurals.cadence_every_months, every.toLong()) else Words[R.string.cadence_each_month]
+        2 -> if (every > 1) Words.count(R.plurals.cadence_every_weeks, every.toLong()) else Words[R.string.cadence_each_week]
+        13 -> if (every > 1) Words.count(R.plurals.cadence_every_years, every.toLong()) else Words[R.string.cadence_each_year]
+        14 -> Words[R.string.cadence_every_two_years]
+        else -> Words.count(R.plurals.cadence_every_months, (cadence - 1).toLong())
     }
 }
 
@@ -109,7 +110,8 @@ internal fun CategorySheet(category: JSONObject, budget: JSONObject, total: JSON
     val id = category.text("id")
     val toast = LocalToast.current
     val state = remember(category, total, month) { CategoryStatuses.of(category, total, month) }
-    val words = remember(category, total, state) { CategoryStatuses.targetWords(category, total, state, budget.text("dateFormat") == "mdy") }
+    val language = languageKey()
+    val words = remember(category, total, state, language) { CategoryStatuses.targetWords(category, total, state, budget.text("dateFormat") == "mdy") }
     var page by remember { mutableStateOf("main") }
     var editingAssigned by remember { mutableStateOf(startAssigning) }
     var noting by remember { mutableStateOf(false) }
@@ -120,7 +122,7 @@ internal fun CategorySheet(category: JSONObject, budget: JSONObject, total: JSON
     var error by remember { mutableStateOf<String?>(null) }
     val paymentAccount = category.text("paymentAccountId")
     val payment = paymentAccount.isNotBlank()
-    val moves = remember(budget, id, month, assigned) { categoryMoves(budget, id, month, assigned) }
+    val moves = remember(budget, id, month, assigned, language) { categoryMoves(budget, id, month, assigned) }
     // What the per-category Quick assign options would set Assigned to, worked out while the keypad is open.
     val suggestions = remember(id, month) { mutableStateMapOf<String, Long>() }
     val jobs = rememberPreviewJobs(id, month, editingAssigned)
@@ -141,37 +143,37 @@ internal fun CategorySheet(category: JSONObject, budget: JSONObject, total: JSON
             Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(category.text("name"), style = MaterialTheme.typography.headlineSmall, color = ur.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text(if (category.optBoolean("hidden")) "${category.text("group")} · Hidden" else category.text("group"), style = MaterialTheme.typography.bodyMedium, color = ur.muted)
+                    Text(if (category.optBoolean("hidden")) stringResource(R.string.category_group_hidden, category.text("group")) else category.text("group"), style = MaterialTheme.typography.bodyMedium, color = ur.muted)
                 }
                 CategoryMenu(payment, category.optBoolean("hidden"), { action ->
                     if (action == "hide" || action == "show") withCurrentBudget(budget, vm) {
                         vm.upsert("categories", category.copyJson().put("hidden", action == "hide"))
-                        toast(if (action == "hide") "Hid ${category.text("name")}. Find it under Hidden categories." else "${category.text("name")} is shown again.", true)
+                        toast(Words[if (action == "hide") R.string.category_hid else R.string.category_shown_again, category.text("name")], true)
                         close()
                     } else page = action
                 })
-                IconButton(close) { Icon(Icons.Outlined.Close, "Close", tint = ur.muted) }
+                IconButton(close) { Icon(Icons.Outlined.Close, stringResource(R.string.common_close), tint = ur.muted) }
             }
             val colors = statusColors(state.status)
             Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(money(available, currency), color = if (state.status == "zero") ur.text else colors.ink, fontSize = 36.sp, fontWeight = FontWeight.ExtraBold, style = Tabular)
                 Text(when {
-                    state.status == "negative" -> "Overspent"
-                    state.status == "credit" -> "Overspent on a card"
-                    payment -> "Set aside for the card"
-                    else -> "Available"
+                    state.status == "negative" -> stringResource(R.string.category_overspent)
+                    state.status == "credit" -> stringResource(R.string.category_overspent_card)
+                    payment -> stringResource(R.string.card_set_aside)
+                    else -> stringResource(R.string.budget_available)
                 }, color = ur.muted, style = MaterialTheme.typography.bodyMedium)
-                if (words != null) Text(if (words.amount == null) words.words else "${money(words.amount, currency)} ${words.words}",
+                if (words != null) Text(words.text(money(words.amount ?: 0, currency)),
                     Modifier.padding(top = 6.dp), fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium,
                     color = when { state.status == "underfunded" -> ur.warning; state.eventually > 0 -> ur.muted; else -> ur.positive })
                 if (state.progress != null && !state.snoozed) TargetBar(state.progress, state.status, Modifier.padding(top = 10.dp).fillMaxWidth(.7f))
             }
             ListCard(Modifier.padding(horizontal = Gutter)) {
-                ListRow("Carried from last month", value = money(total?.optLong("carried") ?: 0, currency), divider = true)
+                ListRow(stringResource(R.string.category_carried), value = money(total?.optLong("carried") ?: 0, currency), divider = true)
                 Column(Modifier.fillMaxWidth().background(if (editingAssigned) ur.accentSoft else Color.Transparent)) {
-                    ListRow("Assigned in ${shortMonthLabel(month)}", onClick = { editingAssigned = true; pad.set(assigned) }, chevron = false,
+                    ListRow(stringResource(R.string.category_assigned_in, shortMonthLabel(month)), onClick = { editingAssigned = true; pad.set(assigned) }, chevron = false,
                         trailing = {
-                            if (editingAssigned) Text(if (pad.isSum) pad.display() else money(pad.cents ?: 0, currency), color = ur.accent, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, style = Tabular)
+                            if (editingAssigned) Text(if (pad.isSum) Money.ltr(pad.display()) else money(pad.cents ?: 0, currency), color = ur.accent, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, style = Tabular)
                             else Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(money(assigned, currency), style = MaterialTheme.typography.bodyLarge.merge(Tabular), fontWeight = FontWeight.SemiBold, color = ur.accent)
                                 Icon(Icons.Outlined.Edit, null, Modifier.padding(start = 6.dp).size(16.dp), tint = ur.accent)
@@ -180,59 +182,60 @@ internal fun CategorySheet(category: JSONObject, budget: JSONObject, total: JSON
                 }
                 // A card payment's activity is the card's own register for the month.
                 val (from, through) = monthBounds(month)
-                ListRow("Activity", value = money(total?.optLong("activity") ?: 0, currency),
+                ListRow(stringResource(R.string.budget_activity), value = money(total?.optLong("activity") ?: 0, currency),
                     onClick = { transactions(if (payment) RegisterTarget(account = paymentAccount, from = from, through = through) else RegisterTarget(category = id, from = from, through = through)) },
                     divider = (total?.optLong("upcoming") ?: 0) > 0 || category.optLong("target") > 0)
-                if ((total?.optLong("upcoming") ?: 0) > 0) ListRow("Upcoming", subtitle = "Scheduled this month", value = money(total!!.optLong("upcoming"), currency), divider = category.optLong("target") > 0)
-                if (category.optLong("target") > 0) ListRow("Target", subtitle = listOfNotNull(targetLabel(category), cadenceLabel(category.optJSONObject("goal"))).joinToString(" "),
+                if ((total?.optLong("upcoming") ?: 0) > 0) ListRow(stringResource(R.string.category_upcoming), subtitle = stringResource(R.string.category_upcoming_detail), value = money(total!!.optLong("upcoming"), currency), divider = category.optLong("target") > 0)
+                if (category.optLong("target") > 0) ListRow(stringResource(R.string.target_label), subtitle = listOfNotNull(targetLabel(category), cadenceLabel(category.optJSONObject("goal"))).joinToString(" "),
                     value = money(category.optLong("target"), currency), onClick = { page = "target" })
             }
             error?.let { Box(Modifier.padding(horizontal = Gutter, vertical = 8.dp)) { FormError(it) } }
             if (!editingAssigned) {
-                if (payment) PrimaryButton("Make a payment", { payCard(paymentAccount) }, Modifier.fillMaxWidth().padding(horizontal = Gutter).padding(top = 14.dp), icon = Icons.Outlined.CreditCard)
+                if (payment) PrimaryButton(stringResource(R.string.card_make_payment), { payCard(paymentAccount) }, Modifier.fillMaxWidth().padding(horizontal = Gutter).padding(top = 14.dp), icon = Icons.Outlined.CreditCard)
                 Row(Modifier.fillMaxWidth().padding(horizontal = Gutter, vertical = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SecondaryButton(if (available < 0) "Cover" else "Move money", { move(if (available < 0) "from" else "to") }, Modifier.weight(1f), icon = Icons.Outlined.SwapHoriz)
-                    SecondaryButton(if (category.optLong("target") > 0 || category.optJSONObject("goal") != null) "Edit target" else "Create target", { page = "target" },
+                    SecondaryButton(if (available < 0) stringResource(R.string.category_cover) else stringResource(R.string.move_money), { move(if (available < 0) "from" else "to") }, Modifier.weight(1f), icon = Icons.Outlined.SwapHoriz)
+                    SecondaryButton(if (category.optLong("target") > 0 || category.optJSONObject("goal") != null) stringResource(R.string.target_edit) else stringResource(R.string.target_create), { page = "target" },
                         Modifier.weight(1f), icon = Icons.Outlined.TrackChanges)
                 }
                 ListCard(Modifier.padding(horizontal = Gutter)) {
-                    ListRow(if (category.text("note").isBlank()) "Add a note" else "Note", subtitle = category.text("note").ifBlank { null },
+                    ListRow(if (category.text("note").isBlank()) stringResource(R.string.note_add) else stringResource(R.string.note_label), subtitle = category.text("note").ifBlank { null },
                         icon = Icons.AutoMirrored.Outlined.Notes, iconTint = ur.text2, iconFill = ur.zeroSoft,
                         titleColor = if (category.text("note").isBlank()) ur.accent else ur.text, onClick = { noting = true })
                 }
                 if (moves.isNotEmpty()) {
-                    Text("Moves this month", Modifier.padding(start = Gutter + 4.dp, top = 16.dp, bottom = 6.dp), style = MaterialTheme.typography.titleSmall, color = ur.text)
+                    Text(stringResource(R.string.category_moves_this_month), Modifier.padding(start = Gutter + 4.dp, top = 16.dp, bottom = 6.dp), style = MaterialTheme.typography.titleSmall, color = ur.text)
                     ListCard(Modifier.padding(horizontal = Gutter)) {
                         val shownMoves = moves.takeLast(5)
                         shownMoves.forEachIndexed { index, line ->
-                            ListRow(line.what, subtitle = line.detail ?: shortDay(line.at), value = (if (line.amount > 0) "+" else "") + money(line.amount, currency),
+                            ListRow(line.what, subtitle = line.detail ?: shortDay(line.at), value = Money.signed(line.amount, currency),
                                 valueColor = if (line.amount < 0) ur.negative else ur.text, divider = index < shownMoves.lastIndex || moves.size > 5)
                         }
-                        if (moves.size > 5) ListRow("Show all ${moves.size}", titleColor = ur.accent, onClick = { page = "history" })
+                        if (moves.size > 5) ListRow(stringResource(R.string.show_all_count, "${moves.size}"), titleColor = ur.accent, onClick = { page = "history" })
                     }
                 }
             } else {
                 Row(Modifier.fillMaxWidth().horizontalScrollRow().padding(horizontal = Gutter, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    if (state.needed > 0 && !payment) FilterPill("Needed +${money(state.needed, currency)}", false, { pad.set(assigned + state.needed) })
-                    if (available < 0) FilterPill("Cover +${money(-available, currency)}", false, { pad.set(assigned - available) })
-                    listOf("assignedLastMonth" to "Last month", "spentLastMonth" to "Spent last month", "averageAssigned" to "Avg assigned", "averageSpent" to "Avg spent").forEach { (mode, label) ->
-                        suggestions[mode]?.takeIf { it != assigned }?.let { value -> FilterPill("$label ${money(value, currency)}", false, { pad.set(value) }) }
+                    if (state.needed > 0 && !payment) FilterPill(stringResource(R.string.assign_needed, Money.signed(state.needed, currency)), false, { pad.set(assigned + state.needed) })
+                    if (available < 0) FilterPill(stringResource(R.string.assign_cover, Money.signed(-available, currency)), false, { pad.set(assigned - available) })
+                    listOf("assignedLastMonth" to R.string.range_last_month, "spentLastMonth" to R.string.assign_spent_last_month, "averageAssigned" to R.string.assign_average_assigned,
+                        "averageSpent" to R.string.assign_average_spent).forEach { (mode, label) ->
+                        suggestions[mode]?.takeIf { it != assigned }?.let { value -> FilterPill(stringResource(R.string.assign_suggestion, stringResource(label), money(value, currency)), false, { pad.set(value) }) }
                     }
-                    TextButton({ editingAssigned = false; error = null }) { Text("Cancel", color = ur.muted) }
+                    TextButton({ editingAssigned = false; error = null }) { Text(stringResource(R.string.common_cancel), color = ur.muted) }
                 }
             }
         }
         if (editingAssigned) AmountKeypad(pad, onDone = {
             val cents = pad.cents
-            if (cents == null) { error = "Finish the sum before saving."; return@AmountKeypad }
+            if (cents == null) { error = Words[R.string.sum_finish_before_saving]; return@AmountKeypad }
             // The sheet stays open on the new figures, as the desktop's inspector does.
             withCurrentBudget(budget, vm) {
                 vm.runCommand("workflow", JSONObject().put("action", JSONObject().put("type", "assignAmount").put("month", month).put("categoryId", id).put("amount", cents)))
                 editingAssigned = false
                 error = null
             }
-        }, doneLabel = "Assign")
+        }, doneLabel = stringResource(R.string.assign_action))
     }
     if (noting) NoteDialog(category, budget, vm) { noting = false }
 }
@@ -250,19 +253,19 @@ internal fun monthBounds(month: String): Pair<String, String> = runCatching {
 private fun CategoryMenu(payment: Boolean, hidden: Boolean, open: (String) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        IconButton({ expanded = true }) { Icon(Icons.Outlined.MoreHoriz, "Category actions", tint = ur.text2) }
+        IconButton({ expanded = true }) { Icon(Icons.Outlined.MoreHoriz, stringResource(R.string.category_actions), tint = ur.text2) }
         DropdownMenu(expanded, { expanded = false }, shape = RoundedCornerShape(16.dp), containerColor = ur.surface) {
             val items = buildList {
-                if (!payment) add(Triple("details", "Name, group & note", Icons.Outlined.Edit))
-                add(Triple("organize", "Move or reorder", Icons.Outlined.SwapVert))
-                if (!payment) add(Triple("renameGroup", "Rename or merge group", Icons.Outlined.DriveFileRenameOutline))
-                add(Triple("history", "Money moves this month", Icons.Outlined.History))
-                add(if (hidden) Triple("show", "Show category", Icons.Outlined.Visibility) else Triple("hide", "Hide category", Icons.Outlined.VisibilityOff))
+                if (!payment) add(Triple("details", R.string.category_details, Icons.Outlined.Edit))
+                add(Triple("organize", R.string.category_organize, Icons.Outlined.SwapVert))
+                if (!payment) add(Triple("renameGroup", R.string.group_rename_or_merge, Icons.Outlined.DriveFileRenameOutline))
+                add(Triple("history", R.string.category_moves_menu, Icons.Outlined.History))
+                add(if (hidden) Triple("show", R.string.category_show, Icons.Outlined.Visibility) else Triple("hide", R.string.category_hide, Icons.Outlined.VisibilityOff))
             }
-            items.forEach { (id, label, icon) -> DropdownMenuItem(text = { Text(label) }, leadingIcon = { Icon(icon, null) }, onClick = { open(id); expanded = false }) }
+            items.forEach { (id, label, icon) -> DropdownMenuItem(text = { Text(stringResource(label)) }, leadingIcon = { Icon(icon, null) }, onClick = { open(id); expanded = false }) }
             if (!payment) {
                 HorizontalDivider(color = ur.border)
-                DropdownMenuItem(text = { Text("Delete category", color = ur.negative) }, leadingIcon = { Icon(Icons.Outlined.DeleteOutline, null, tint = ur.negative) },
+                DropdownMenuItem(text = { Text(stringResource(R.string.category_delete), color = ur.negative) }, leadingIcon = { Icon(Icons.Outlined.DeleteOutline, null, tint = ur.negative) },
                     onClick = { open("delete"); expanded = false })
             }
         }
@@ -272,17 +275,17 @@ private fun CategoryMenu(payment: Boolean, hidden: Boolean, open: (String) -> Un
 @Composable
 private fun NoteDialog(category: JSONObject, budget: JSONObject, vm: BudgetViewModel, close: () -> Unit) {
     var note by remember { mutableStateOf(category.text("note")) }
-    FormDialog("Note", close, onConfirm = { withCurrentBudget(budget, vm) { vm.upsert("categories", category.copyJson().put("note", note)) }; close() }) {
+    FormDialog(stringResource(R.string.note_label), close, onConfirm = { withCurrentBudget(budget, vm) { vm.upsert("categories", category.copyJson().put("note", note)) }; close() }) {
         Field(note, { note = it }, category.text("name"), lines = 6)
     }
 }
 
 /** The target kinds the desktop offers, in its words. Imported kinds stay available only to targets that already use them. */
 private val targetBehaviours = listOf(
-    Triple("set", "Set aside each period", "Assign the whole amount every period, whatever is left over."),
-    Triple("refill", "Refill up to each period", "Top up to the amount; money carried forward counts."),
-    Triple("TB", "Maintain a category balance", "Keep at least this much available."),
-    Triple("TBD", "Reach a balance by a date", "Save up to the amount by a chosen date."),
+    Triple("set", R.string.target_behaviour_set, R.string.target_behaviour_set_hint),
+    Triple("refill", R.string.target_behaviour_refill, R.string.target_behaviour_refill_hint),
+    Triple("TB", R.string.target_behaviour_balance, R.string.target_behaviour_balance_hint),
+    Triple("TBD", R.string.target_behaviour_by_date, R.string.target_behaviour_by_date_hint),
 )
 
 /** The category's editors a step in from its details: target, name and note, order, group, history, delete. */
@@ -294,7 +297,8 @@ private fun CategoryEditor(section: String, category: JSONObject, budget: JSONOb
     val toast = LocalToast.current
     val currency = budget.text("currency")
     val categories = remember(budget, category) { budget.rows("categories").filter { it.text("id") != category.text("id") } }
-    val replacements = remember(categories) { listOf(Unassigned to "Unassigned") + categories.filter { it.text("paymentAccountId").isBlank() }.map { it.text("id") to it.text("name") } }
+    val unassignedName = stringResource(R.string.category_unassigned)
+    val replacements = remember(categories, unassignedName) { listOf(Unassigned to unassignedName) + categories.filter { it.text("paymentAccountId").isBlank() }.map { it.text("id") to it.text("name") } }
     val groups = remember(budget) { groupNames(budget) }
     var note by remember { mutableStateOf(category.text("note")) }
     var name by remember { mutableStateOf(category.text("name")) }
@@ -312,63 +316,67 @@ private fun CategoryEditor(section: String, category: JSONObject, budget: JSONOb
         budget.rows("assignments").any { it.text("categoryId") == id && it.optLong("amount") != 0L } ||
             budget.rows("transactions").any { t -> t.rows("splits").any { it.text("categoryId") == id } }
     }
-    val moves = remember(budget, category, month, total) { categoryMoves(budget, category.text("id"), month, total?.optLong("assigned") ?: 0) }
+    val moves = remember(budget, category, month, total, languageKey()) { categoryMoves(budget, category.text("id"), month, total?.optLong("assigned") ?: 0) }
     val save: (() -> Unit)? = if (section == "history") null else ({
         runCatching {
             requireCurrentBudget(openedBudget, vm)
             when (section) {
                 "organize" -> vm.runCommand("workflow", JSONObject().put("action", JSONObject().put("type", "organizeCategory").put("id", category.text("id")).put("group", group).put("beforeId", before.ifBlank { null } ?: JSONObject.NULL).also { if (groupBefore != "__keep") it.put("groupBefore", groupBefore.ifBlank { null } ?: JSONObject.NULL) }))
                 "renameGroup" -> {
-                    require(renameGroup.isNotBlank()) { "Enter a group name." }
+                    require(renameGroup.isNotBlank()) { Words[R.string.group_name_required] }
                     vm.runCommand("workflow", JSONObject().put("action", JSONObject().put("type", "renameGroup").put("from", category.text("group")).put("to", renameGroup.trim())))
-                    if (renameGroup.trim() in groups && renameGroup.trim() != category.text("group")) toast("Merged ${category.text("group")} into ${renameGroup.trim()}.", true)
+                    if (renameGroup.trim() in groups && renameGroup.trim() != category.text("group")) toast(Words[R.string.group_merged, category.text("group"), renameGroup.trim()], true)
                 }
                 "delete" -> {
-                    require(!used || deleteConfirmed) { "Confirm the category deletion." }
+                    require(!used || deleteConfirmed) { Words[R.string.category_delete_confirm_required] }
                     vm.runCommand("workflow", JSONObject().put("action", JSONObject().put("type", "deleteCategory").put("id", category.text("id")).put("replacement", if (used) replacement else Unassigned)))
-                    toast("Deleted ${category.text("name")}.", true)
+                    toast(Words[R.string.deleted_named, category.text("name")], true)
                 }
-                "details" -> { require(name.isNotBlank() && group.isNotBlank()) { "Enter a name and group." }; vm.upsert("categories", category.copyJson().put("name", name.trim()).put("group", group.trim()).put("note", note).put("hidden", hidden)) }
+                "details" -> { require(name.isNotBlank() && group.isNotBlank()) { Words[R.string.category_name_group_required] }; vm.upsert("categories", category.copyJson().put("name", name.trim()).put("group", group.trim()).put("note", note).put("hidden", hidden)) }
             }
         }.onSuccess { close() }.onFailure { error = it.message }
     })
-    val title = when (section) { "details" -> "Name, group & note"; "organize" -> "Move or reorder"; "renameGroup" -> "Rename group"; "history" -> "Money moves"; else -> "Delete category" }
+    val title = when (section) { "details" -> stringResource(R.string.category_details); "organize" -> stringResource(R.string.category_organize)
+        "renameGroup" -> stringResource(R.string.group_rename); "history" -> stringResource(R.string.category_money_moves); else -> stringResource(R.string.category_delete) }
+    val endOfGroup = stringResource(R.string.organize_end_of_group)
+    val keepPosition = stringResource(R.string.organize_keep_group_position)
+    val endOfGroups = stringResource(R.string.organize_end_of_groups)
     UrSheet(close) {
-        SheetHeader(title, close, if (section == "delete") "Delete" else "Save", save, enabled = section != "delete" || !used || deleteConfirmed, onBack = back)
+        SheetHeader(title, close, if (section == "delete") stringResource(R.string.common_delete) else stringResource(R.string.common_save), save, enabled = section != "delete" || !used || deleteConfirmed, onBack = back)
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = screenHeight() * .8f),
             contentPadding = PaddingValues(start = 18.dp, end = 18.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (section == "history") {
-                if (moves.isEmpty()) item { Text("No money moved for this category this month.", color = ur.muted) }
+                if (moves.isEmpty()) item { Text(stringResource(R.string.category_no_moves), color = ur.muted) }
                 else item {
                     ListCard {
                         moves.forEachIndexed { index, line ->
-                            ListRow(line.what, subtitle = line.detail ?: shortDay(line.at), value = (if (line.amount > 0) "+" else "") + money(line.amount, currency),
+                            ListRow(line.what, subtitle = line.detail ?: shortDay(line.at), value = Money.signed(line.amount, currency),
                                 valueColor = if (line.amount < 0) ur.negative else ur.text, divider = index < moves.lastIndex)
                         }
                     }
                 }
-                item { Text("Moves add up to what's assigned in ${monthLabel(month)}.", color = ur.muted, style = MaterialTheme.typography.bodySmall) }
+                item { Text(stringResource(R.string.category_moves_add_up, monthLabel(month)), color = ur.muted, style = MaterialTheme.typography.bodySmall) }
             } else item {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     when (section) {
                         "details" -> {
-                            Field(name, { name = it }, "Name")
-                            Choice("Group", group, groups.map { it to it } + if (group !in groups) listOf(group to group) else emptyList(), { group = it })
-                            Field(note, { note = it }, "Note", lines = 4)
-                            ListCard { SwitchRow("Hidden", hidden, { hidden = it }, subtitle = "Hidden categories keep their money and history") }
+                            Field(name, { name = it }, stringResource(R.string.name_label))
+                            Choice(stringResource(R.string.group_label), group, groups.map { it to it } + if (group !in groups) listOf(group to group) else emptyList(), { group = it })
+                            Field(note, { note = it }, stringResource(R.string.note_label), lines = 4)
+                            ListCard { SwitchRow(stringResource(R.string.category_hidden), hidden, { hidden = it }, subtitle = stringResource(R.string.category_hidden_detail)) }
                         }
                         "organize" -> {
-                            Choice("Group", group, groups.map { it to it }, { group = it; before = "" })
-                            Choice("Place before", before, remember(categories, group) { listOf("" to "End of group") + categories.filter { it.text("group") == group }.map { it.text("id") to it.text("name") } }, { before = it })
-                            Choice("Place group before", groupBefore, remember(budget, group) { listOf("__keep" to "Keep group position", "" to "End of groups") + groups.filter { it != group }.map { it to it } }, { groupBefore = it })
+                            Choice(stringResource(R.string.group_label), group, groups.map { it to it }, { group = it; before = "" })
+                            Choice(stringResource(R.string.organize_place_before), before, remember(categories, group, endOfGroup) { listOf("" to endOfGroup) + categories.filter { it.text("group") == group }.map { it.text("id") to it.text("name") } }, { before = it })
+                            Choice(stringResource(R.string.organize_place_group_before), groupBefore, remember(budget, group, keepPosition, endOfGroups) { listOf("__keep" to keepPosition, "" to endOfGroups) + groups.filter { it != group }.map { it to it } }, { groupBefore = it })
                         }
-                        "renameGroup" -> { Field(renameGroup, { renameGroup = it }, "Group name"); Text("All categories in this group move together. An existing group name merges the groups.", color = ur.muted, style = MaterialTheme.typography.bodySmall) }
+                        "renameGroup" -> { Field(renameGroup, { renameGroup = it }, stringResource(R.string.group_name)); Text(stringResource(R.string.group_rename_help), color = ur.muted, style = MaterialTheme.typography.bodySmall) }
                         "delete" -> if (!used) {
-                            Text("It has no transactions or assigned money.", color = ur.text2, style = MaterialTheme.typography.bodyMedium)
+                            Text(stringResource(R.string.category_delete_unused), color = ur.text2, style = MaterialTheme.typography.bodyMedium)
                         } else {
-                            Choice("Move its history into", replacement, replacements, { replacement = it })
-                            Text("Transactions, schedules, defaults and loan categories move to the destination. Monthly assignments combine with its assignments; Unassigned takes them back.", color = ur.text2, style = MaterialTheme.typography.bodyMedium)
-                            CheckRow("Delete this category and move its history", deleteConfirmed, { deleteConfirmed = it })
+                            Choice(stringResource(R.string.category_delete_move_history), replacement, replacements, { replacement = it })
+                            Text(stringResource(R.string.category_delete_help), color = ur.text2, style = MaterialTheme.typography.bodyMedium)
+                            CheckRow(stringResource(R.string.category_delete_confirm), deleteConfirmed, { deleteConfirmed = it })
                         }
                     }
                     FormError(error)
@@ -402,14 +410,14 @@ private fun TargetEditor(category: JSONObject, budget: JSONObject, month: String
     val need = behaviour == "set" || behaviour == "refill"
     val payment = category.text("paymentAccountId").isNotBlank()
     val options = targetBehaviours + listOfNotNull(
-        if (existingType == "MF") Triple("MF", "Monthly funding", "An imported target: fund this amount each month.") else null,
-        if (existingType == "DEBT") Triple("DEBT", "Monthly debt payment", "An imported target for a loan payment.") else null,
+        if (existingType == "MF") Triple("MF", R.string.target_kind_monthly_funding, R.string.target_behaviour_monthly_funding_hint) else null,
+        if (existingType == "DEBT") Triple("DEBT", R.string.target_behaviour_debt, R.string.target_behaviour_debt_hint) else null,
     )
     val save = {
         runCatching {
             requireCurrentBudget(openedBudget, vm)
-            val amount = pad.cents ?: error("Finish the sum first.")
-            require(amount > 0) { "Enter a target amount, or remove the target." }
+            val amount = pad.cents ?: error(Words[R.string.transaction_finish_sum])
+            require(amount > 0) { Words[R.string.target_amount_required] }
             val type = if (need) "NEED" else behaviour
             val sameGoal = existingType == type
             val goal = (if (sameGoal) existing!!.copyJson() else JSONObject().put("goal_creation_month", "${YearMonth.now()}-01")).put("goal_type", type)
@@ -418,24 +426,24 @@ private fun TargetEditor(category: JSONObject, budget: JSONObject, month: String
             if (month == YearMonth.now().toString() && !payment) goal.put("goal_snoozed_at", if (snoozed) "$month-01" else JSONObject.NULL)
             if (type == "NEED") {
                 val every = interval.toIntOrNull() ?: 1
-                require(every in 1..100) { "Choose an interval from 1 to 100." }
+                require(every in 1..100) { Words[R.string.target_interval_range] }
                 goal.put("goal_cadence", cadence.toInt()).put("goal_cadence_frequency", every).put("goal_needs_whole_amount", behaviour == "set")
                 if (cadence == "2") { goal.put("goal_day", weekday.toInt()); goal.remove("goal_target_date"); goal.remove("goal_target_month") }
                 else if (cadence != "1" || every > 1) { LocalDate.parse(due); goal.put("goal_target_date", due); goal.remove("goal_target_month"); goal.remove("goal_day") }
                 else { goal.remove("goal_target_date"); goal.remove("goal_target_month"); goal.remove("goal_day") }
             } else if (type == "TBD") { LocalDate.parse(due); goal.put("goal_target_date", due) }
             vm.upsert("categories", category.copyJson().put("target", amount).put("goal", goal))
-            toast("Set the ${category.text("name")} target to ${money(amount, currency)}.", true)
+            toast(Words[R.string.target_set_toast, category.text("name"), money(amount, currency)], true)
         }.onSuccess { close() }.onFailure { error = it.message }
     }
     UrSheet(close) {
-        SheetHeader(if (existing != null || category.optLong("target") > 0) "Edit target" else "Create target", close, "Save", { save() }, onBack = back)
+        SheetHeader(if (existing != null || category.optLong("target") > 0) stringResource(R.string.target_edit) else stringResource(R.string.target_create), close, stringResource(R.string.common_save), { save() }, onBack = back)
         LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false), contentPadding = PaddingValues(start = 18.dp, end = 18.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item(key = "amount") {
                 Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(if (keypad) ur.accentSoft else ur.surface2).clickable { keypad = true; pad.fresh = true }.padding(vertical = 14.dp),
                     horizontalAlignment = Alignment.CenterHorizontally) {
                     PadAmount(pad, currency, color = if (keypad) ur.accent else ur.text)
-                    Text(if (behaviour == "TB" || behaviour == "TBD") "Balance to reach" else "Amount each period", color = ur.muted, style = MaterialTheme.typography.bodySmall)
+                    Text(if (behaviour == "TB" || behaviour == "TBD") stringResource(R.string.target_balance_to_reach) else stringResource(R.string.target_amount_each_period), color = ur.muted, style = MaterialTheme.typography.bodySmall)
                 }
             }
             item(key = "behaviours") {
@@ -444,8 +452,8 @@ private fun TargetEditor(category: JSONObject, budget: JSONObject, month: String
                         Row(Modifier.fillMaxWidth().clickable(role = Role.RadioButton) { behaviour = id }.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(behaviour == id, { behaviour = id }, colors = RadioButtonDefaults.colors(selectedColor = ur.accent))
                             Column(Modifier.weight(1f).padding(start = 4.dp)) {
-                                Text(label, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, color = ur.text)
-                                Text(hint, style = MaterialTheme.typography.bodySmall, color = ur.muted)
+                                Text(stringResource(label), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, color = ur.text)
+                                Text(stringResource(hint), style = MaterialTheme.typography.bodySmall, color = ur.muted)
                             }
                         }
                         if (index < options.lastIndex) Hairline(start = 52.dp)
@@ -455,19 +463,24 @@ private fun TargetEditor(category: JSONObject, budget: JSONObject, month: String
             item(key = "cadence") {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (need) {
-                        Choice("Repeats", cadence, listOf("0" to "Once by a date", "1" to "Monthly", "2" to "Weekly", "13" to "Yearly") + (3..12).map { it.toString() to "Every ${it - 1} months" } + listOf("14" to "Every two years"),
-                            { cadence = it; interval = "1" })
-                        if (cadence in listOf("1", "2", "13")) Field(interval, { interval = it }, "Every how many ${when (cadence) { "2" -> "weeks"; "13" -> "years"; else -> "months" }}", true)
-                        if (cadence == "2") Choice("Day of week", weekday, listOf("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday").mapIndexed { i, label -> i.toString() to label }, { weekday = it })
-                        else if (cadence != "1" || interval != "1") DateField(due, { due = it }, if (cadence == "0") "Needed by" else "First due date")
+                        val language = languageKey()
+                        val cadences = remember(language) {
+                            listOf("0" to Words[R.string.cadence_option_once], "1" to Words[R.string.repeat_monthly], "2" to Words[R.string.repeat_weekly], "13" to Words[R.string.repeat_yearly]) +
+                                (3..12).map { it.toString() to Words.count(R.plurals.cadence_option_every_months, (it - 1).toLong()) } + listOf("14" to Words[R.string.cadence_option_every_two_years])
+                        }
+                        Choice(stringResource(R.string.target_repeats), cadence, cadences, { cadence = it; interval = "1" })
+                        if (cadence in listOf("1", "2", "13")) Field(interval, { interval = it }, stringResource(when (cadence) { "2" -> R.string.target_interval_weeks; "13" -> R.string.target_interval_years; else -> R.string.target_interval_months }), true)
+                        // Day 0 is Sunday, as the desktop and YNAB number them.
+                        if (cadence == "2") Choice(stringResource(R.string.target_day_of_week), weekday, remember(language) { (0..6).map { i -> i.toString() to Money.weekday(java.time.DayOfWeek.of(if (i == 0) 7 else i)) } }, { weekday = it })
+                        else if (cadence != "1" || interval != "1") DateField(due, { due = it }, if (cadence == "0") stringResource(R.string.target_needed_by) else stringResource(R.string.target_first_due))
                     }
-                    if (behaviour == "TBD") DateField(due, { due = it }, "Reach it by")
-                    if (behaviour != "TB") MonthField(start, { start = it }, "Starts")
-                    if (month == YearMonth.now().toString() && !payment && (existing != null || category.optLong("target") > 0)) ListCard { SwitchRow("Snooze this month", snoozed, { snoozed = it }, subtitle = "It asks for nothing until next month") }
+                    if (behaviour == "TBD") DateField(due, { due = it }, stringResource(R.string.target_reach_by))
+                    if (behaviour != "TB") MonthField(start, { start = it }, stringResource(R.string.target_starts))
+                    if (month == YearMonth.now().toString() && !payment && (existing != null || category.optLong("target") > 0)) ListCard { SwitchRow(stringResource(R.string.target_snooze), snoozed, { snoozed = it }, subtitle = stringResource(R.string.target_snooze_detail)) }
                     FormError(error)
                     if (existing != null || category.optLong("target") > 0) TextButton({
-                        withCurrentBudget(openedBudget, vm) { vm.saveTarget(category.text("id"), null); toast("Removed the ${category.text("name")} target.", true); close() }
-                    }) { Text("Remove target", color = ur.negative) }
+                        withCurrentBudget(openedBudget, vm) { vm.saveTarget(category.text("id"), null); toast(Words[R.string.target_removed_toast, category.text("name")], true); close() }
+                    }) { Text(stringResource(R.string.target_remove), color = ur.negative) }
                 }
             }
         }
@@ -502,7 +515,9 @@ internal fun MoveMoneySheet(request: MoveRequest, budget: JSONObject, summary: J
     val totals = remember(summary) { summary?.rows("categories")?.associateBy { it.text("id") }.orEmpty() }
     val names = remember(budget) { budget.rows("categories").associate { it.text("id") to it.text("name") } }
     fun available(id: String) = if (id == Unassigned) summary?.optLong("readyToAssign") ?: 0 else totals[id]?.optLong("available") ?: 0
-    fun name(id: String) = if (id == Unassigned) "Unassigned" else names[id] ?: "Choose a category"
+    val unassignedName = stringResource(R.string.category_unassigned)
+    val chooseCategory = stringResource(R.string.category_choose_a)
+    fun name(id: String) = if (id == Unassigned) unassignedName else names[id] ?: chooseCategory
     val start = available(request.category)
     val rta = summary?.optLong("readyToAssign") ?: 0
     var from by remember { mutableStateOf(when { request.direction == "to" -> request.category; start < 0 && rta > 0 && request.category != Unassigned -> Unassigned; else -> "" }) }
@@ -512,9 +527,9 @@ internal fun MoveMoneySheet(request: MoveRequest, budget: JSONObject, summary: J
     var picking by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     val title = when {
-        request.category == Unassigned && start >= 0 -> "Assign money"
-        start < 0 && request.category != Unassigned -> "Cover overspending"
-        else -> "Move money"
+        request.category == Unassigned && start >= 0 -> stringResource(R.string.unassigned_assign)
+        start < 0 && request.category != Unassigned -> stringResource(R.string.cover_overspending)
+        else -> stringResource(R.string.move_money)
     }
     UrSheet(close) {
         SheetHeader(title, close, null, null, cancelFirst = true)
@@ -524,51 +539,51 @@ internal fun MoveMoneySheet(request: MoveRequest, budget: JSONObject, summary: J
                 PadAmount(pad, currency, color = if (keypad) ur.accent else ur.text)
             }
             ListCard(Modifier.border(1.dp, ur.border, RoundedCornerShape(18.dp))) {
-                MoveEnd("From", from, ::name, ::available, currency) { picking = "from" }
+                MoveEnd(stringResource(R.string.date_from), from, ::name, ::available, currency) { picking = "from" }
                 Box(Modifier.fillMaxWidth()) {
                     Hairline(Modifier.align(Alignment.Center))
                     Box(Modifier.align(Alignment.Center).size(34.dp).clip(CircleShape).background(ur.surface).border(1.dp, ur.border, CircleShape)
-                        .clickable(onClickLabel = "Swap") { val f = from; from = to; to = f }, contentAlignment = Alignment.Center) {
-                        Icon(Icons.Outlined.SwapVert, "Swap", Modifier.size(18.dp), tint = ur.accent)
+                        .clickable(onClickLabel = stringResource(R.string.move_swap)) { val f = from; from = to; to = f }, contentAlignment = Alignment.Center) {
+                        Icon(Icons.Outlined.SwapVert, stringResource(R.string.move_swap), Modifier.size(18.dp), tint = ur.accent)
                     }
                 }
-                MoveEnd("To", to, ::name, ::available, currency) { picking = "to" }
+                MoveEnd(stringResource(R.string.move_to_label), to, ::name, ::available, currency) { picking = "to" }
             }
             FormError(error)
-            if (!keypad) PrimaryButton(if (from == Unassigned) "Assign" else "Move", {
+            if (!keypad) PrimaryButton(if (from == Unassigned) stringResource(R.string.assign_action) else stringResource(R.string.move_action), {
                 runCatching {
                     requireCurrentBudget(openedBudget, vm)
-                    require(from.isNotBlank() && to.isNotBlank()) { "Choose where the money comes from and where it goes." }
-                    require(from != to) { "Choose two different places." }
-                    val amount = pad.cents ?: error("Finish the sum first.")
-                    require(amount > 0) { "Enter an amount to move." }
+                    require(from.isNotBlank() && to.isNotBlank()) { Words[R.string.move_choose_both] }
+                    require(from != to) { Words[R.string.move_choose_different] }
+                    val amount = pad.cents ?: error(Words[R.string.transaction_finish_sum])
+                    require(amount > 0) { Words[R.string.move_amount_required] }
                     vm.runCommand("workflow", JSONObject().put("action", JSONObject().put("type", "moveMoney").put("month", month).put("from", from).put("to", to).put("amount", amount)))
-                    toast("Moved ${money(amount, currency)} from ${name(from)} to ${name(to)}.", true)
+                    toast(Words[R.string.move_toast, money(amount, currency), name(from), name(to)], true)
                 }.onSuccess { close() }.onFailure { error = it.message }
             }, Modifier.fillMaxWidth(), icon = Icons.Outlined.SwapHoriz)
         }
         if (keypad) AmountKeypad(pad, { keypad = false })
     }
     picking?.let { end ->
-        CategoryPickerSheet(budget, summary, month, if (end == "from") from else to, if (end == "from") "Move from" else "Move to",
+        CategoryPickerSheet(budget, summary, month, if (end == "from") from else to, if (end == "from") stringResource(R.string.move_from_title) else stringResource(R.string.move_to_title),
             includeUnassigned = true, includePayment = false, onPick = { if (end == "from") from = it else to = it; picking = null }) { picking = null }
     }
 }
 
 @Composable
 private fun MoveEnd(label: String, id: String, name: (String) -> String, available: (String) -> Long, currency: String, pick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(onClickLabel = "Choose $label", onClick = pick).heightIn(min = 64.dp).padding(horizontal = 16.dp, vertical = 10.dp),
+    Row(Modifier.fillMaxWidth().clickable(onClickLabel = stringResource(R.string.choose_field, label), onClick = pick).heightIn(min = 64.dp).padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.bodySmall, color = ur.muted)
-            Text(if (id.isBlank()) "Choose a category" else name(id), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold,
+            Text(if (id.isBlank()) stringResource(R.string.category_choose_a) else name(id), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold,
                 color = if (id.isBlank()) ur.accent else ur.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (id.isNotBlank()) {
             val amount = available(id)
             AvailablePill(amount, currency, if (amount < 0) "negative" else if (amount > 0) "positive" else "zero")
         }
-        Icon(Icons.Outlined.ChevronRight, null, Modifier.padding(start = 6.dp), tint = ur.muted)
+        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.padding(start = 6.dp), tint = ur.muted)
     }
 }
 
@@ -604,23 +619,23 @@ internal fun CategoryPickerSheet(budget: JSONObject, summary: JSONObject?, month
     }
     UrSheet(onDismiss) {
         SheetHeader(title, onDismiss, null, null)
-        SearchField(search, { search = it }, "Search categories", Modifier.padding(horizontal = Gutter))
+        SearchField(search, { search = it }, stringResource(R.string.category_search), Modifier.padding(horizontal = Gutter))
         LazyColumn(Modifier.fillMaxWidth().height(screenHeight() * .66f), contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)) {
             if (top != null && search.isBlank()) item(key = "top") { top() }
             if (includeUnassigned && search.isBlank()) item(key = "unassigned") {
-                PickerRow("Unassigned", "Available to assign", summary?.optLong("readyToAssign"), currency, selected == Unassigned) { onPick(Unassigned) }
+                PickerRow(stringResource(R.string.category_unassigned), stringResource(R.string.unassigned_available_to_assign), summary?.optLong("readyToAssign"), currency, selected == Unassigned) { onPick(Unassigned) }
             }
-            if (includeUncategorized && search.isBlank()) item(key = "uncategorized") { PickerRow("Uncategorized", null, null, currency, selected == "") { onPick("") } }
+            if (includeUncategorized && search.isBlank()) item(key = "uncategorized") { PickerRow(stringResource(R.string.category_uncategorized), null, null, currency, selected == "") { onPick("") } }
             shown.forEach { (group, categories) ->
                 item(key = "g:$group", contentType = "group") {
-                    Text(group.uppercase(), Modifier.fillMaxWidth().background(ur.surface2).padding(horizontal = 20.dp, vertical = 8.dp),
-                        style = MaterialTheme.typography.labelSmall, color = ur.muted, letterSpacing = .6.sp)
+                    Text(groupTitle(group).uppercase(), Modifier.fillMaxWidth().background(ur.surface2).padding(horizontal = 20.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.labelSmall, color = ur.muted, letterSpacing = headerTracking)
                 }
                 items(categories, key = { "c:${it.id}" }, contentType = { "category" }) { entry ->
                     PickerRow(entry.name, null, entry.available, currency, selected == entry.id, status = entry.status) { onPick(entry.id) }
                 }
             }
-            if (shown.isEmpty() && search.isNotBlank()) item(key = "none") { Text("No categories match “$search”.", Modifier.padding(24.dp), color = ur.muted) }
+            if (shown.isEmpty() && search.isNotBlank()) item(key = "none") { Text(stringResource(R.string.category_search_none, search), Modifier.padding(24.dp), color = ur.muted) }
         }
     }
 }
@@ -629,7 +644,7 @@ internal fun CategoryPickerSheet(budget: JSONObject, summary: JSONObject?, month
 private fun PickerRow(name: String, detail: String?, available: Long?, currency: String, chosen: Boolean, status: String? = null, pick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = pick).heightIn(min = 54.dp).padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(name, style = MaterialTheme.typography.bodyLarge, fontWeight = if (chosen) FontWeight.Bold else FontWeight.Medium, color = ur.text)
+            Text(Money.own(name), style = MaterialTheme.typography.bodyLarge, fontWeight = if (chosen) FontWeight.Bold else FontWeight.Medium, color = ur.text)
             detail?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = ur.muted) }
         }
         if (chosen) Icon(Icons.Outlined.Check, null, Modifier.padding(end = 8.dp), tint = ur.accent)
@@ -637,17 +652,17 @@ private fun PickerRow(name: String, detail: String?, available: Long?, currency:
     }
 }
 
-/** Quick assign's options, grouped as the desktop groups them. */
-internal data class QuickMode(val id: String, val label: String, val group: String, val hint: String)
+/** Quick assign's options, grouped as the desktop groups them; the words are string resources. */
+internal data class QuickMode(val id: String, val label: Int, val group: Int, val hint: Int)
 internal val quickAssignModes = listOf(
-    QuickMode("underfunded", "Underfunded", "Fund targets", "Assign what targets still need and cover overspending."),
-    QuickMode("assignedLastMonth", "Assigned last month", "Repeat past months", "Assign what each category got last month."),
-    QuickMode("spentLastMonth", "Spent last month", "Repeat past months", "Assign what each category spent last month."),
-    QuickMode("averageAssigned", "Average assigned", "Repeat past months", "Assign each category's 12-month average assignment."),
-    QuickMode("averageSpent", "Average spent", "Repeat past months", "Assign each category's 12-month average spending."),
-    QuickMode("reduceOverfunding", "Reduce overfunding", "Clean up", "Return what's beyond each target to Unassigned."),
-    QuickMode("resetAvailable", "Reset available amounts", "Clean up", "Bring every Available to 0.00."),
-    QuickMode("resetAssigned", "Reset assigned amounts", "Clean up", "Set this month's assignments to 0.00."),
+    QuickMode("underfunded", R.string.quick_underfunded, R.string.quick_group_fund, R.string.quick_underfunded_hint),
+    QuickMode("assignedLastMonth", R.string.quick_assigned_last_month, R.string.quick_group_repeat, R.string.quick_assigned_last_month_hint),
+    QuickMode("spentLastMonth", R.string.quick_spent_last_month, R.string.quick_group_repeat, R.string.quick_spent_last_month_hint),
+    QuickMode("averageAssigned", R.string.quick_average_assigned, R.string.quick_group_repeat, R.string.quick_average_assigned_hint),
+    QuickMode("averageSpent", R.string.quick_average_spent, R.string.quick_group_repeat, R.string.quick_average_spent_hint),
+    QuickMode("reduceOverfunding", R.string.quick_reduce_overfunding, R.string.quick_group_clean, R.string.quick_reduce_overfunding_hint),
+    QuickMode("resetAvailable", R.string.quick_reset_available, R.string.quick_group_clean, R.string.quick_reset_available_hint),
+    QuickMode("resetAssigned", R.string.quick_reset_assigned, R.string.quick_group_clean, R.string.quick_reset_assigned_hint),
 )
 private val resets = setOf("resetAvailable", "resetAssigned")
 
@@ -659,21 +674,22 @@ internal fun quickAssignParams(budget: JSONObject, month: String, mode: String, 
         .put("limitToAvailable", limit).put("expectedAsOfMonth", reference)).put("asOfMonth", reference)
 }
 
-/** What an option does, in words, for this month (desktop QuickAssign.tsx explain). */
+/** What an option does, in words, for this month (desktop QuickAssign.tsx explain): this month's name, then last month's. */
 private fun explain(mode: String, month: String): String {
-    val now = runCatching { YearMonth.parse(month).month.getDisplayName(java.time.format.TextStyle.FULL, Locale.ENGLISH) }.getOrDefault(month)
-    val last = runCatching { YearMonth.parse(month).minusMonths(1).month.getDisplayName(java.time.format.TextStyle.FULL, Locale.ENGLISH) }.getOrDefault("last month")
-    return when (mode) {
-        "underfunded" -> "Assigns what each category still needs for its $now target, and covers overspending. It never assigns more than Unassigned holds: overspent categories go first, then the targets due soonest, then credit card payments."
-        "assignedLastMonth" -> "Replaces each category's $now assignment with what you assigned to it in $last."
-        "spentLastMonth" -> "Replaces each category's $now assignment with what it spent in $last. Categories that spent nothing get 0.00, and credit card payments stay as they are."
-        "averageAssigned" -> "Replaces each category's $now assignment with its average monthly assignment over the last 12 months."
-        "averageSpent" -> "Replaces each category's $now assignment with its average monthly spending over the last 12 months. Credit card payments stay as they are."
-        "reduceOverfunding" -> "Lowers the $now assignment of categories holding more than their target needs, and returns the extra to Unassigned."
-        "resetAvailable" -> "Changes each category's $now assignment so its Available becomes 0.00. Money set aside, including what carried over from $last, returns to Unassigned."
-        "resetAssigned" -> "Sets each category's $now assignment to 0.00. Carried-over money and spending stay, so each Available drops by what was assigned."
-        else -> ""
+    val now = runCatching { YearMonth.parse(month).format(Money.pattern("MMMM")) }.getOrDefault(month)
+    val last = runCatching { YearMonth.parse(month).minusMonths(1).format(Money.pattern("MMMM")) }.getOrDefault(Words[R.string.last_month_lower])
+    val words = when (mode) {
+        "underfunded" -> R.string.quick_explain_underfunded
+        "assignedLastMonth" -> R.string.quick_explain_assigned_last_month
+        "spentLastMonth" -> R.string.quick_explain_spent_last_month
+        "averageAssigned" -> R.string.quick_explain_average_assigned
+        "averageSpent" -> R.string.quick_explain_average_spent
+        "reduceOverfunding" -> R.string.quick_explain_reduce_overfunding
+        "resetAvailable" -> R.string.quick_explain_reset_available
+        "resetAssigned" -> R.string.quick_explain_reset_assigned
+        else -> return ""
     }
+    return Words[words, now, last]
 }
 
 /**
@@ -716,53 +732,53 @@ internal fun UnassignedSheet(budget: JSONObject, summary: JSONObject, month: Str
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(money(rta, currency), fontSize = 36.sp, fontWeight = FontWeight.ExtraBold, style = Tabular,
                     color = when { rta > 0 -> ur.positive; rta < 0 -> ur.negative; else -> ur.text })
-                Text(when { rta > 0 -> "Unassigned: ready for a job"; rta < 0 -> "More is assigned than you have"; else -> "All of it is assigned" }, color = ur.muted)
+                Text(when { rta > 0 -> stringResource(R.string.unassigned_ready); rta < 0 -> stringResource(R.string.unassigned_over_assigned); else -> stringResource(R.string.unassigned_all_assigned) }, color = ur.muted)
             }
-            if (needed > 0) Notice("${money(needed, currency)} still needed this month", tone = "attention", icon = Icons.Outlined.TrackChanges)
-            else Notice("This month's funding is complete", tone = "positive", icon = Icons.Outlined.CheckCircle)
-            PrimaryButton(if (rta < 0) "Take money back" else "Assign to a category", assignTo, Modifier.fillMaxWidth(), icon = Icons.Outlined.SwapHoriz)
+            if (needed > 0) Notice(stringResource(R.string.unassigned_still_needed, money(needed, currency)), tone = "attention", icon = Icons.Outlined.TrackChanges)
+            else Notice(stringResource(R.string.unassigned_funding_complete), tone = "positive", icon = Icons.Outlined.CheckCircle)
+            PrimaryButton(if (rta < 0) stringResource(R.string.unassigned_take_back) else stringResource(R.string.unassigned_assign_to_category), assignTo, Modifier.fillMaxWidth(), icon = Icons.Outlined.SwapHoriz)
             ListCard {
-                ListRow("Carried over", value = money(carried, currency), divider = true)
-                ListRow("Income this month", value = money(summary.optLong("income"), currency), divider = true)
-                ListRow("Assigned", value = money(summary.optLong("assigned"), currency), divider = true)
+                ListRow(stringResource(R.string.unassigned_carried), value = money(carried, currency), divider = true)
+                ListRow(stringResource(R.string.unassigned_income), value = money(summary.optLong("income"), currency), divider = true)
+                ListRow(stringResource(R.string.budget_assigned), value = money(summary.optLong("assigned"), currency), divider = true)
                 // The month's activity and available include spending that still needs a category.
-                ListRow("Activity", value = money(summary.optLong("activity") + summary.optLong("uncategorized"), currency), divider = true)
+                ListRow(stringResource(R.string.budget_activity), value = money(summary.optLong("activity") + summary.optLong("uncategorized"), currency), divider = true)
                 val available = summary.optLong("available") + summary.optLong("uncategorized")
-                ListRow("Available", value = money(available, currency), valueColor = if (available < 0) ur.negative else ur.text)
+                ListRow(stringResource(R.string.budget_available), value = money(available, currency), valueColor = if (available < 0) ur.negative else ur.text)
             }
-            SectionTitle("Targets & income")
+            SectionTitle(stringResource(R.string.unassigned_targets_income))
             ListCard {
-                ListRow("${shortMonthLabel(month)} targets", value = money(targets, currency), divider = true)
-                ListRow("Expected income", value = income?.let { money(it, currency) } ?: "Add", valueColor = if (income == null) ur.accent else ur.text, onClick = editIncome,
+                ListRow(stringResource(R.string.unassigned_month_targets, shortMonthLabel(month)), value = money(targets, currency), divider = true)
+                ListRow(stringResource(R.string.expected_income), value = income?.let { money(it, currency) } ?: stringResource(R.string.common_add), valueColor = if (income == null) ur.accent else ur.text, onClick = editIncome,
                     subtitle = when {
-                        income == null -> "Compare your targets with what you expect to earn"
-                        targets > income -> "Targets are ${money(targets - income, currency)} more than expected income"
-                        else -> "${money(income - targets, currency)} left after targets"
+                        income == null -> stringResource(R.string.expected_income_compare)
+                        targets > income -> stringResource(R.string.expected_income_short, money(targets - income, currency))
+                        else -> stringResource(R.string.expected_income_left, money(income - targets, currency))
                     })
             }
-            SectionTitle("Quick assign")
+            SectionTitle(stringResource(R.string.quick_assign))
             quickAssignModes.groupBy { it.group }.forEach { (group, modes) ->
-                Text(group.uppercase(), Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelSmall, color = ur.muted, letterSpacing = .6.sp)
+                Text(stringResource(group).uppercase(), Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelSmall, color = ur.muted, letterSpacing = headerTracking)
                 ListCard {
                     modes.forEachIndexed { index, mode ->
                         val outcome = outcomes[mode.id]
                         val changes0 = outcome != null && outcome != 0L
-                        ListRow(mode.label, subtitle = mode.hint, onClick = if (outcome == null || changes0) ({ strategy = mode.id }) else null, chevron = false,
+                        ListRow(stringResource(mode.label), subtitle = stringResource(mode.hint), onClick = if (outcome == null || changes0) ({ strategy = mode.id }) else null, chevron = false,
                             titleColor = if (outcome == 0L) ur.muted else ur.text,
-                            value = when { outcome == null -> "…"; outcome == 0L -> "No change"; else -> (if (outcome > 0) "+" else "") + money(outcome, currency) },
+                            value = when { outcome == null -> "…"; outcome == 0L -> stringResource(R.string.quick_no_change); else -> Money.signed(outcome, currency) },
                             valueColor = when { outcome == null || outcome == 0L -> ur.muted; outcome > 0 -> ur.positive; else -> ur.negative },
                             divider = index < modes.lastIndex)
                     }
                 }
             }
             if (changes.isNotEmpty()) {
-                SectionTitle("Recent changes")
+                SectionTitle(stringResource(R.string.unassigned_recent_changes))
                 ListCard {
                     val shownChanges = if (allChanges) changes else changes.take(4)
                     shownChanges.forEachIndexed { index, m ->
-                        ListRow(m.text("description").ifBlank { "Change" }, subtitle = shortDay(m.text("at")), divider = index < shownChanges.lastIndex || changes.size > 4 && !allChanges)
+                        ListRow(m.text("description").ifBlank { stringResource(R.string.unassigned_change) }, subtitle = shortDay(m.text("at")), divider = index < shownChanges.lastIndex || changes.size > 4 && !allChanges)
                     }
-                    if (changes.size > 4 && !allChanges) ListRow("Show all ${changes.size}", titleColor = ur.accent, onClick = { allChanges = true })
+                    if (changes.size > 4 && !allChanges) ListRow(stringResource(R.string.show_all_count, "${changes.size}"), titleColor = ur.accent, onClick = { allChanges = true })
                 }
             }
         }
@@ -810,43 +826,43 @@ internal fun QuickAssignDialog(budget: JSONObject, summary: JSONObject, month: S
         withCurrentBudget(budget, vm) {
             vm.runCommand("workflow", params)
             val change = assigns - returns
-            toast("${option.label}: ${if (change >= 0) "assigned" else "removed"} ${money(kotlin.math.abs(change), currency)}.", true)
+            toast(Words[if (change >= 0) R.string.quick_toast_assigned else R.string.quick_toast_removed, Words[option.label], money(kotlin.math.abs(change), currency)], true)
             close()
         }
     }
     UrSheet(close) {
-        SheetHeader(option.label, close, null, null, cancelFirst = true)
+        SheetHeader(stringResource(option.label), close, null, null, cancelFirst = true)
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = screenHeight() * .78f), contentPadding = PaddingValues(start = 18.dp, end = 18.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item(key = "explain") {
-                Text(explain(mode, month), color = ur.text2, style = MaterialTheme.typography.bodyMedium)
-                Text("All $visible visible categories in ${monthLabel(month)}.", Modifier.padding(top = 4.dp), color = ur.muted, style = MaterialTheme.typography.bodySmall)
+                Text(remember(mode, month, languageKey()) { explain(mode, month) }, color = ur.text2, style = MaterialTheme.typography.bodyMedium)
+                Text(countText(R.plurals.quick_visible_categories, visible, monthLabel(month)), Modifier.padding(top = 4.dp), color = ur.muted, style = MaterialTheme.typography.bodySmall)
             }
             failed?.let { item(key = "error") { FormError(it) } }
             if (list == null && failed == null) item(key = "loading") { LinearProgressIndicator(Modifier.fillMaxWidth(), color = ur.accent) }
             if (list != null && after != null) {
                 item(key = "figures") {
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(ur.surface2).padding(14.dp)) {
-                        Figure(if (returns > assigns) "Returns" else "Assigns", money(if (returns > assigns) returns - assigns else assigns - returns, currency), Modifier.weight(1f),
+                        Figure(if (returns > assigns) stringResource(R.string.quick_returns) else stringResource(R.string.quick_assigns), money(if (returns > assigns) returns - assigns else assigns - returns, currency), Modifier.weight(1f),
                             color = if (returns > assigns) ur.negative else ur.positive)
-                        Figure("Unassigned", "${money(summary.optLong("readyToAssign"), currency)} → ${money(after.optLong("readyToAssign"), currency)}", Modifier.weight(1.6f),
+                        Figure(stringResource(R.string.category_unassigned), stringResource(R.string.change_from_to, money(summary.optLong("readyToAssign"), currency), money(after.optLong("readyToAssign"), currency)), Modifier.weight(1.6f),
                             color = if (after.optLong("readyToAssign") < 0) ur.negative else ur.text)
                     }
-                    Text("${list.size} of $visible categories change.", Modifier.padding(top = 6.dp), color = ur.muted, style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.quick_categories_change, "${list.size}", "$visible"), Modifier.padding(top = 6.dp), color = ur.muted, style = MaterialTheme.typography.bodySmall)
                 }
                 if (after.optLong("readyToAssign") < 0) item(key = "over") {
-                    Notice("This assigns more than you have: Unassigned would be ${money(after.optLong("readyToAssign"), currency)}.", tone = "negative", icon = Icons.Outlined.WarningAmber)
+                    Notice(stringResource(R.string.quick_over_assigns, money(after.optLong("readyToAssign"), currency)), tone = "negative", icon = Icons.Outlined.WarningAmber)
                 }
                 val overspentAfter = after.rows("categories").count { it.optLong("available") < 0 }
                 if (overspentAfter > 0) item(key = "overspent") {
-                    Notice("${if (overspentAfter == 1) "1 category stays" else "$overspentAfter categories stay"} overspent.", tone = "attention", icon = Icons.Outlined.Info)
+                    Notice(countText(R.plurals.quick_categories_stay_overspent, overspentAfter), tone = "attention", icon = Icons.Outlined.Info)
                 }
-                if (list.isEmpty()) item(key = "nothing") { Notice("Nothing to change for ${monthLabel(month)}.", tone = "info") }
+                if (list.isEmpty()) item(key = "nothing") { Notice(stringResource(R.string.quick_nothing_to_change, monthLabel(month)), tone = "info") }
                 else item(key = "rows") {
                     ListCard {
                         list.forEachIndexed { index, row ->
                             val change = row.after - row.before
-                            ListRow(row.name, subtitle = "${money(row.before, currency)} → ${money(row.after, currency)} · Available ${money(row.availableAfter, currency)}",
-                                value = (if (change > 0) "+" else "") + money(change, currency), valueColor = if (change > 0) ur.positive else ur.negative,
+                            ListRow(row.name, subtitle = stringResource(R.string.quick_row_detail, money(row.before, currency), money(row.after, currency), money(row.availableAfter, currency)),
+                                value = Money.signed(change, currency), valueColor = if (change > 0) ur.positive else ur.negative,
                                 divider = index < list.lastIndex)
                         }
                     }
@@ -854,7 +870,7 @@ internal fun QuickAssignDialog(budget: JSONObject, summary: JSONObject, month: S
             }
         }
         val count = list?.size ?: 0
-        PrimaryButton(if (count == 0) "Nothing to apply" else "Apply to $count ${if (count == 1) "category" else "categories"}", apply,
+        PrimaryButton(if (count == 0) stringResource(R.string.quick_nothing_to_apply) else countText(R.plurals.quick_apply_to, count), apply,
             Modifier.fillMaxWidth().padding(horizontal = Gutter).padding(bottom = 16.dp), enabled = count > 0, color = if (mode in resets) ur.negative else ur.accent)
     }
 }
@@ -863,12 +879,14 @@ internal fun QuickAssignDialog(budget: JSONObject, summary: JSONObject, month: S
 internal fun NewCategoryDialog(budget: JSONObject, vm: BudgetViewModel, presetGroup: String? = null, close: () -> Unit) {
     val existing = remember(budget) { groupNames(budget) }
     var name by remember { mutableStateOf("") }
-    var group by remember { mutableStateOf(presetGroup ?: existing.firstOrNull() ?: "Everyday") }
+    // A budget's first group is named in the language in use; after that it's the person's own name.
+    val starterGroup = stringResource(R.string.starter_group_everyday)
+    var group by remember { mutableStateOf(presetGroup ?: existing.firstOrNull() ?: starterGroup) }
     var newGroup by remember { mutableStateOf(existing.isEmpty()) }
-    FormDialog("New category", close, confirm = "Add", onConfirm = { vm.saveCategory(name = name.trim(), group = group.trim()); close() }, enabled = name.isNotBlank() && group.isNotBlank()) {
-        Field(name, { name = it }, "Category name")
-        if (!newGroup) Choice("Group", group, existing.map { it to it } + ("__new" to "New group…"), { if (it == "__new") { newGroup = true; group = "" } else group = it })
-        else Field(group, { group = it }, "New group name")
+    FormDialog(stringResource(R.string.category_new), close, confirm = stringResource(R.string.common_add), onConfirm = { vm.saveCategory(name = name.trim(), group = group.trim()); close() }, enabled = name.isNotBlank() && group.isNotBlank()) {
+        Field(name, { name = it }, stringResource(R.string.category_name))
+        if (!newGroup) Choice(stringResource(R.string.group_label), group, existing.map { it to it } + ("__new" to stringResource(R.string.group_new_ellipsis)), { if (it == "__new") { newGroup = true; group = "" } else group = it })
+        else Field(group, { group = it }, stringResource(R.string.group_new_name))
     }
 }
 
@@ -878,14 +896,14 @@ internal fun NewGroupDialog(budget: JSONObject, vm: BudgetViewModel, close: () -
     val existing = remember(budget) { groupNames(budget) }
     var name by remember { mutableStateOf("") }
     val taken = name.trim() in existing
-    FormDialog("New group", close, confirm = "Add", onConfirm = {
+    FormDialog(stringResource(R.string.group_new), close, confirm = stringResource(R.string.common_add), onConfirm = {
         withCurrentBudget(budget, vm) {
             vm.editBudget { b -> b.put("groupOrder", (b.optJSONArray("groupOrder") ?: JSONArray(existing)).put(name.trim())) }
         }
         close()
     }, enabled = name.isNotBlank() && !taken) {
-        Field(name, { name = it }, "Group name")
-        if (taken) FormError("There is already a group called ${name.trim()}.")
+        Field(name, { name = it }, stringResource(R.string.group_name))
+        if (taken) FormError(stringResource(R.string.group_name_taken, name.trim()))
     }
 }
 
@@ -894,15 +912,15 @@ internal fun RenameGroupDialog(group: String, budget: JSONObject, vm: BudgetView
     val toast = LocalToast.current
     val existing = remember(budget) { groupNames(budget) }
     var name by remember { mutableStateOf(group) }
-    FormDialog("Rename group", close, onConfirm = {
+    FormDialog(stringResource(R.string.group_rename), close, onConfirm = {
         withCurrentBudget(budget, vm) {
             vm.runCommand("workflow", JSONObject().put("action", JSONObject().put("type", "renameGroup").put("from", group).put("to", name.trim())))
-            if (name.trim() in existing) toast("Merged $group into ${name.trim()}.", true)
+            if (name.trim() in existing) toast(Words[R.string.group_merged, group, name.trim()], true)
         }
         close()
     }, enabled = name.isNotBlank() && name != group) {
-        Field(name, { name = it }, "Group name")
-        Text("An existing group's name merges the two groups.", color = ur.muted, style = MaterialTheme.typography.bodySmall)
+        Field(name, { name = it }, stringResource(R.string.group_name))
+        Text(stringResource(R.string.group_rename_merges), color = ur.muted, style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -913,20 +931,20 @@ internal fun DeleteGroupDialog(group: String, budget: JSONObject, vm: BudgetView
     val others = remember(budget) { groupNames(budget).filter { it != group } }
     val count = remember(budget) { budget.rows("categories").count { !it.optBoolean("hidden") && it.text("group") == group } }
     var target by remember { mutableStateOf(others.firstOrNull().orEmpty()) }
-    FormDialog("Delete $group", close, confirm = "Delete", onConfirm = {
+    FormDialog(stringResource(R.string.delete_named, group), close, confirm = stringResource(R.string.common_delete), onConfirm = {
         withCurrentBudget(budget, vm) {
             if (count == 0) vm.editBudget { b ->
                 val order = b.optJSONArray("groupOrder") ?: JSONArray()
                 b.put("groupOrder", JSONArray((0 until order.length()).map { order.optString(it) }.filter { it != group }))
             } else vm.runCommand("workflow", JSONObject().put("action", JSONObject().put("type", "renameGroup").put("from", group).put("to", target)))
-            toast(if (count == 0) "Deleted $group." else "Deleted $group; its categories moved to $target.", true)
+            toast(if (count == 0) Words[R.string.deleted_named, group] else Words[R.string.group_deleted_moved, group, target], true)
         }
         close()
     }, enabled = count == 0 || target.isNotBlank()) {
-        if (count == 0) Text("The group is empty.", color = ur.text2)
+        if (count == 0) Text(stringResource(R.string.group_empty), color = ur.text2)
         else {
-            Text("Move its $count ${if (count == 1) "category" else "categories"} to", color = ur.text2)
-            Choice("Group", target, others.map { it to it }, { target = it })
+            Text(countText(R.plurals.group_move_categories_to, count), color = ur.text2)
+            Choice(stringResource(R.string.group_label), target, others.map { it to it }, { target = it })
         }
     }
 }
@@ -938,11 +956,11 @@ internal fun BudgetPlanningDialog(budget: JSONObject, month: String, vm: BudgetV
     var income by remember { mutableStateOf(if (budget.isNull("expectedIncome") || !budget.has("expectedIncome")) "" else amountText(budget.optLong("expectedIncome"))) }
     var error by remember { mutableStateOf<String?>(null) }
     FormDialog(monthLabel(month), close, onConfirm = {
-        runCatching { requireCurrentBudget(openedBudget, vm); val expected = if (income.isBlank()) null else amountValue(income).also { require(it >= 0) { "Expected income must be zero or positive." } }; vm.runCommand("workflow", JSONObject().put("action", JSONObject().put("type", "setBudgetPlanning").put("month", month).put("note", note).put("expectedIncome", expected ?: JSONObject.NULL))); close() }.onFailure { error = it.message }
+        runCatching { requireCurrentBudget(openedBudget, vm); val expected = if (income.isBlank()) null else amountValue(income).also { require(it >= 0) { Words[R.string.expected_income_not_negative] } }; vm.runCommand("workflow", JSONObject().put("action", JSONObject().put("type", "setBudgetPlanning").put("month", month).put("note", note).put("expectedIncome", expected ?: JSONObject.NULL))); close() }.onFailure { error = it.message }
     }) {
-        Field(note, { note = it }, "Month note", lines = 5)
-        Field(income, { income = it }, "Expected monthly income (${budget.text("currency")})", true)
-        Text("Expected income helps compare your targets with your plan. It doesn’t add money to Unassigned.", style = MaterialTheme.typography.bodySmall, color = ur.muted)
+        Field(note, { note = it }, stringResource(R.string.month_note), lines = 5)
+        Field(income, { income = it }, stringResource(R.string.expected_income_field, budget.text("currency")), true)
+        Text(stringResource(R.string.expected_income_help), style = MaterialTheme.typography.bodySmall, color = ur.muted)
         FormError(error)
     }
 }

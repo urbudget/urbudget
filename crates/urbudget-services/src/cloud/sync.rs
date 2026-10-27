@@ -15,6 +15,7 @@
 //! the upload after it fails.
 //!
 //! Budgets are encrypted on this device before upload (see `crypto`); the server only keeps bytes.
+use crate::t;
 use super::{crypto, device_name, service, vault, Cloud, Failure, Session};
 use crate::budgets::Listing;
 use crate::domain::{Budget, SCHEMA_VERSION};
@@ -196,7 +197,7 @@ fn with_store<T>(ctx: &Ctx, id: &str, f: impl FnOnce(&mut Store, bool) -> Result
     let library = ctx.library.lock();
     let mut open = ctx.db.store()?;
     if open.id() != ctx.open_id {
-        return Err("The open budget changed during sync. Sync again to continue.".into());
+        return Err(t!("The open budget changed during sync. Sync again to continue."));
     }
     if id == ctx.open_id {
         f(&mut open, true)
@@ -283,11 +284,11 @@ fn absorb(
 /// the person chose to replace has not changed while its download was pending.
 fn replace_with_cloud(store: &mut Store, expected_revision: i64, budget: &Budget, revision: u64) -> Result<i64, String> {
     if store.has_unsaved_draft() {
-        return Err("Save your changes first.".into());
+        return Err(t!("Save your changes first."));
     }
     let (local, status) = store.saved()?;
     if status.revision != expected_revision {
-        return Err("The local budget changed during the download. Review it and try again.".into());
+        return Err(t!("The local budget changed during the download. Review it and try again."));
     }
     if !local.accounts.is_empty() || !local.transactions.is_empty() {
         store.backup()?;
@@ -325,7 +326,7 @@ impl Engine {
         }).await.map_err(|e| e.to_string())??;
         // The previous process may have reset sync or updated tracking while we waited.
         let state = match std::fs::read(&self.file) {
-            Ok(raw) => serde_json::from_slice(&raw).map_err(|e| format!("Could not read sync state: {e}"))?,
+            Ok(raw) => serde_json::from_slice(&raw).map_err(|e| t!("Could not read sync state: {e}", e))?,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ledger::default(),
             Err(e) => return Err(e.to_string()),
         };
@@ -415,7 +416,7 @@ impl Engine {
     fn open_budget(key: &crypto::Key, id: &str, bytes: &[u8]) -> Result<Option<Budget>, String> {
         let plain = crypto::open(key, &budget_aad(id), bytes).map_err(|e| {
             if e == crypto::WRONG_KEY {
-                "This budget was encrypted with a different sync passphrase.".to_string()
+                t!("This budget was encrypted with a different sync passphrase.")
             } else {
                 e
             }
@@ -426,7 +427,7 @@ impl Engine {
         if newer {
             return Ok(None);
         }
-        let envelope: Envelope = serde_json::from_value(raw).map_err(|e| format!("The synced budget couldn't be read: {e}"))?;
+        let envelope: Envelope = serde_json::from_value(raw).map_err(|e| t!("The synced budget couldn't be read: {e}", e))?;
         crate::domain::validate(&envelope.budget)?;
         Ok(Some(without_heavy(envelope.budget)))
     }
@@ -533,7 +534,7 @@ impl Engine {
         match absorbed {
             Absorbed::Later => Ok("waiting".into()),
             Absorbed::Conflicts(conflicts) => Ok(Step { conflicts, ..Step::from("conflict") }),
-            Absorbed::Unmergeable(e) => Ok(Step { message: Some(format!("{e} Choose which version to keep.")), ..Step::from("conflict") }),
+            Absorbed::Unmergeable(e) => Ok(Step { message: Some(t!("{problem} Choose which version to keep.", problem = e)), ..Step::from("conflict") }),
             Absorbed::Saved { merged, local_revision, local_changed, upload, notes } => {
                 self.track_at(id, revision, if upload { -1 } else { local_revision })?;
                 let state = if !upload {
@@ -607,7 +608,7 @@ impl Engine {
             let name = local
                 .map(|l| l.name.clone())
                 .or_else(|| remote.and_then(|r| Self::decode_meta(&ctx.key, &id, &r.meta)))
-                .unwrap_or_else(|| "Budget".into());
+                .unwrap_or_else(|| t!("Budget"));
             let mut entry = BudgetSync {
                 id: id.clone(),
                 name,
@@ -641,7 +642,7 @@ impl Engine {
                     let _ = self.set_state(|s| {
                         s.budgets.remove(&id);
                     });
-                    entry.message = Some("Removed from sync on another computer. It's still here.".into());
+                    entry.message = Some(t!("Removed from sync on another computer. It's still here."));
                     Ok("local_only".into())
                 }
                 // Here and in the cloud but not synced from here yet (signed out and in again):
@@ -670,7 +671,7 @@ impl Engine {
                 }
             }
             if entry.state == "update_app" {
-                entry.message = Some("A newer UrBudget synced this budget. Update the app on this computer.".into());
+                entry.message = Some(t!("A newer UrBudget synced this budget. Update the app on this computer."));
             }
             budgets.push(entry);
         }
@@ -702,7 +703,7 @@ pub async fn sync_has_key(cloud: &Cloud) -> Result<bool, String> {
 pub async fn sync_setup(cloud: &Cloud, library: &Library, passphrase: String) -> Result<Value, String> {
     let _one = cloud.sync.operation().await?;
     if passphrase.chars().count() < 8 {
-        return Err("Use a passphrase of at least 8 characters.".into());
+        return Err(t!("Use a passphrase of at least 8 characters."));
     }
     let session = cloud.session()?;
     match cloud.call_session(reqwest::Method::GET, "/sync/key", None, Some(&session), None).await {
@@ -713,7 +714,7 @@ pub async fn sync_setup(cloud: &Cloud, library: &Library, passphrase: String) ->
                 .await
                 .map_err(|e| e.to_string())??;
             if !crypto::matches_check(&key, &check) {
-                return Err("That isn't the sync passphrase for this account.".into());
+                return Err(t!("That isn't the sync passphrase for this account."));
             }
             cloud.check_session(&session)?;
             cloud.sync.install_key(key, found["generation"].as_u64().unwrap_or(0))?;
@@ -762,7 +763,7 @@ fn track(cloud: &Cloud, ids: &[String]) -> Result<(), String> {
 pub async fn sync_reset(cloud: &Cloud, library: &Library, passphrase: String) -> Result<(), String> {
     let _one = cloud.sync.operation().await?;
     if passphrase.chars().count() < 8 {
-        return Err("Use a passphrase of at least 8 characters.".into());
+        return Err(t!("Use a passphrase of at least 8 characters."));
     }
     create_key(&cloud, passphrase, true).await?;
     cloud.sync.set_state(|s| s.budgets.clear())?;
@@ -782,17 +783,17 @@ pub async fn sync_download(cloud: &Cloud, library: &Library, id: String) -> Resu
     let _one = cloud.sync.operation().await?;
     let session = cloud.session()?;
     let generation = cloud.sync.state().generation;
-    let key = cloud.sync.key().ok_or("Enter your sync passphrase first.")?;
+    let key = cloud.sync.key().ok_or_else(|| t!("Enter your sync passphrase first."))?;
     let remote = cloud
         .sync
         .remotes(&cloud, &session, generation)
         .await?
         .into_iter()
         .find(|r| r.id == id)
-        .ok_or("That budget is no longer in the cloud.")?;
+        .ok_or_else(|| t!("That budget is no longer in the cloud."))?;
     let (bytes, revision) = cloud.sync.download(&cloud, &session, generation, &id, remote.revision).await?;
     let budget = Engine::open_budget(&key, &id, &bytes)?
-        .ok_or("A newer UrBudget synced this budget. Update the app on this computer first.")?;
+        .ok_or_else(|| t!("A newer UrBudget synced this budget. Update the app on this computer first."))?;
     cloud.check_session(&session)?;
     let (path, data_dir) = {
         let mut library = library.lock();
@@ -835,11 +836,11 @@ pub async fn sync_resolve(
     let one = cloud.sync.operation().await?;
     let session = cloud.session()?;
     let generation = cloud.sync.state().generation;
-    let key = cloud.sync.key().ok_or("Enter your sync passphrase first.")?;
+    let key = cloud.sync.key().ok_or_else(|| t!("Enter your sync passphrase first."))?;
     let remote = cloud.sync.remotes(&cloud, &session, generation).await?.into_iter().find(|r| r.id == id);
     let open_id = library.lock().current().to_owned();
     if !open_clean && id == open_id && keep != "local" {
-        return Err("Save your changes first.".into());
+        return Err(t!("Save your changes first."));
     }
     let ctx = Ctx { cloud: &cloud, db: &db, library: &library, open_id, open_clean, key, session, generation };
     let engine = &cloud.sync;
@@ -850,10 +851,10 @@ pub async fn sync_resolve(
                 .bring_in(&ctx, &id, remote.revision, tracked, None, &choices.unwrap_or_default())
                 .await?;
             match step.state {
-                "waiting" => return Err("Save your changes first, then try again.".into()),
-                "update_app" => return Err("A newer UrBudget synced this budget. Update the app on this computer first.".into()),
+                "waiting" => return Err(t!("Save your changes first, then try again.")),
+                "update_app" => return Err(t!("A newer UrBudget synced this budget. Update the app on this computer first.")),
                 "conflict" if step.conflicts.is_empty() => {
-                    return Err(step.message.unwrap_or_else(|| "The two versions couldn't be combined.".into()))
+                    return Err(step.message.unwrap_or_else(|| t!("The two versions couldn't be combined.")))
                 }
                 // New conflicts (the cloud copy changed again) show in the report.
                 "conflict" => {}
@@ -872,20 +873,20 @@ pub async fn sync_resolve(
         ("local", remote) => {
             let expected = remote.map_or(0, |r| r.revision);
             if !matches!(engine.push(&ctx, &id, expected).await?, "uploaded" | "synced") {
-                return Err("The cloud copy changed again. Try once more.".into());
+                return Err(t!("The cloud copy changed again. Try once more."));
             }
         }
         ("cloud", Some(remote)) => {
             let expected_local_revision = with_store(&ctx, &id, |store, _| store.revision())?;
             let (bytes, revision) = engine.download(&cloud, &ctx.session, generation, &id, remote.revision).await?;
             let budget = Engine::open_budget(&ctx.key, &id, &bytes)?
-                .ok_or("A newer UrBudget synced this budget. Update the app on this computer first.")?;
+                .ok_or_else(|| t!("A newer UrBudget synced this budget. Update the app on this computer first."))?;
             let local_revision = with_store(&ctx, &id, |store, _| {
                 replace_with_cloud(store, expected_local_revision, &budget, revision)
             })?;
             engine.track_at(&id, revision, local_revision)?;
         }
-        _ => return Err("That budget is no longer in the cloud.".into()),
+        _ => return Err(t!("That budget is no longer in the cloud.")),
     }
     drop(one);
     Ok(engine.run(&cloud, &db, &library, open_clean).await)

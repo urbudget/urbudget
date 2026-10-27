@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { Archive, ArchiveRestore, ArrowDown, ArrowLeftRight, ArrowUp, ChartColumn, Check, CheckCheck, ChevronDown, ChevronRight, ChevronsUpDown, Download, FileUp, FolderOpen, Info, Landmark, LayoutGrid, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pencil, Plus, RefreshCw, Settings2, Tags } from "lucide-react";
-import { Menu, useContextMenu, useToast, type MenuItem } from "./ui";
+import { Menu, startEdge, useContextMenu, useToast, type MenuItem } from "./ui";
 import { accountType, inNetWorth, typeName } from "./accounts";
 import { uncategorizedCounts } from "./uncategorized";
 import { api, type BudgetListing } from "./bridge";
@@ -8,6 +8,7 @@ import { formatDate, money, tone } from "./format";
 import { staleSync } from "./BankSync";
 import { hasLoan } from "./Planning";
 import { keyLabel } from "./platform";
+import { getDirection, t, tn } from "./i18n";
 import type { Account, Budget, Summary } from "./types";
 
 export type Page =
@@ -74,17 +75,19 @@ function ResizeHandle({ width, setWidth }: { width: number; setWidth: (w: number
       className="sidebar-resize"
       role="separator"
       aria-orientation="vertical"
-      aria-label="Resize sidebar"
+      aria-label={t("Resize sidebar")}
       aria-valuemin={WIDTH.min}
       aria-valuemax={WIDTH.max}
       aria-valuenow={width}
       tabIndex={0}
-      title="Drag to resize · double-click to reset"
+      title={t("Drag to resize · double-click to reset")}
       onPointerDown={(e) => {
         e.preventDefault();
         const handle = e.currentTarget;
         handle.setPointerCapture(e.pointerId);
-        const move = (m: PointerEvent) => setWidth(m.clientX);
+        // The sidebar is on the right, right to left.
+        const move = (m: PointerEvent) =>
+          setWidth(getDirection() === "rtl" ? document.documentElement.clientWidth - m.clientX : m.clientX);
         const up = () => {
           handle.removeEventListener("pointermove", move);
           handle.removeEventListener("pointerup", up);
@@ -94,8 +97,8 @@ function ResizeHandle({ width, setWidth }: { width: number; setWidth: (w: number
       }}
       onDoubleClick={() => setWidth(WIDTH.default)}
       onKeyDown={(e) => {
-        if (e.key === "ArrowLeft") setWidth(width - 16);
-        if (e.key === "ArrowRight") setWidth(width + 16);
+        const wider = getDirection() === "rtl" ? "ArrowLeft" : "ArrowRight";
+        if (e.key === "ArrowLeft" || e.key === "ArrowRight") setWidth(width + (e.key === wider ? 16 : -16));
       }}
     />
   );
@@ -126,17 +129,17 @@ function BudgetSwitcher({
       onSelect: () => !b.current && onSwitch(b.id),
     })),
     "separator" as const,
-    { label: "New budget…", icon: <Plus size={14} />, onSelect: onNew },
-    { label: "Manage budgets…", icon: <FolderOpen size={14} />, onSelect: onManage },
+    { label: t("New budget…"), icon: <Plus size={14} />, onSelect: onNew },
+    { label: t("Manage budgets…"), icon: <FolderOpen size={14} />, onSelect: onManage },
   ];
   return (
     <>
       <button
         ref={button}
         className="budget-switcher"
-        aria-label={`Budget: ${budget.name}. Switch budget`}
+        aria-label={t("Budget: {name}. Switch budget", { name: budget.name })}
         aria-expanded={open}
-        title={collapsed ? budget.name : "Switch budget"}
+        title={collapsed ? budget.name : t("Switch budget")}
         onClick={() => {
           void api.listBudgets().then(setBudgets).catch(() => setBudgets([]));
           setOpen(!open);
@@ -153,7 +156,7 @@ function BudgetSwitcher({
           </>
         )}
       </button>
-      <Menu open={open} onClose={() => setOpen(false)} anchor={button} items={items} label="Budgets" />
+      <Menu open={open} onClose={() => setOpen(false)} anchor={button} items={items} label={t("Budgets")} />
     </>
   );
 }
@@ -267,9 +270,9 @@ export function Sidebar({
     [budget.transactions, budget.accounts, budget.categories],
   );
   const sections: Section[] = [
-    { key: "budget", name: "Budget", accounts: budget.accounts.filter((a) => !a.archived && a.kind !== "tracking") },
-    { key: "tracking", name: "Tracking", accounts: budget.accounts.filter((a) => !a.archived && a.kind === "tracking") },
-    { key: "closed", name: "Closed", accounts: budget.accounts.filter((a) => a.archived) },
+    { key: "budget", name: t("Budget"), accounts: budget.accounts.filter((a) => !a.archived && a.kind !== "tracking") },
+    { key: "tracking", name: t("Tracking"), accounts: budget.accounts.filter((a) => !a.archived && a.kind === "tracking") },
+    { key: "closed", name: t("Closed"), accounts: budget.accounts.filter((a) => a.archived) },
   ];
 
   const [drag, setDrag] = useState<{ id: string; section: string } | null>(null);
@@ -295,10 +298,12 @@ export function Sidebar({
     const balance = balances.get(a.id)?.balance ?? 0;
     toast({
       message: archived
-        ? `Closed ${a.name}${balance ? `. It still has a balance of ${money(balance, { symbol: true })}` : ""}.`
-        : `Reopened ${a.name}.`,
+        ? balance
+          ? t("Closed {account}. It still has a balance of {amount}.", { account: a.name, amount: money(balance, { symbol: true }) })
+          : t("Closed {account}.", { account: a.name })
+        : t("Reopened {account}.", { account: a.name }),
       action: {
-        label: "Undo",
+        label: t("Undo"),
         onClick: () =>
           edit((d) => {
             d.accounts.find((x) => x.id === a.id)!.archived = !archived;
@@ -309,27 +314,27 @@ export function Sidebar({
   const menu = useContextMenu();
   const [menuFor, setMenuFor] = useState<{ account: Account; list: Account[] } | null>(null);
   const menuItems = (a: Account, list: Account[]): MenuItem[] => [
-    { label: "Edit account…", icon: <Pencil size={14} />, onSelect: () => onEditAccount(a) },
-    { label: "Reconcile…", icon: <CheckCheck size={14} />, disabled: a.archived, onSelect: () => onReconcile(a) },
+    { label: t("Edit account…"), icon: <Pencil size={14} />, onSelect: () => onEditAccount(a) },
+    { label: t("Reconcile…"), icon: <CheckCheck size={14} />, disabled: a.archived, onSelect: () => onReconcile(a) },
     ...(onLoan && hasLoan(budget, a, balances.get(a.id)?.balance)
-      ? [{ label: "Loan details & payoff…", icon: <Landmark size={14} />, onSelect: () => onLoan(a) }]
+      ? [{ label: t("Loan details & payoff…"), icon: <Landmark size={14} />, onSelect: () => onLoan(a) }]
       : []),
     ...(onSync && a.simplefin && !a.archived
-      ? [{ label: "Sync with bank", icon: <RefreshCw size={14} />, onSelect: () => onSync(a) }]
+      ? [{ label: t("Sync with bank"), icon: <RefreshCw size={14} />, onSelect: () => onSync(a) }]
       : []),
     ...(onSyncDetails && a.simplefin
-      ? [{ label: "Bank sync details…", icon: <Info size={14} />, onSelect: () => onSyncDetails(a) }]
+      ? [{ label: t("Bank sync details…"), icon: <Info size={14} />, onSelect: () => onSyncDetails(a) }]
       : []),
     ...(onExportAccount
-      ? [{ label: "Export transactions", icon: <Download size={14} />, onSelect: () => onExportAccount(a) }]
+      ? [{ label: t("Export transactions"), icon: <Download size={14} />, onSelect: () => onExportAccount(a) }]
       : []),
     "separator",
-    { label: "Move up", icon: <ArrowUp size={14} />, disabled: list[0] === a, onSelect: () => step(a, list, -1) },
-    { label: "Move down", icon: <ArrowDown size={14} />, disabled: list.at(-1) === a, onSelect: () => step(a, list, 1) },
+    { label: t("Move up"), icon: <ArrowUp size={14} />, disabled: list[0] === a, onSelect: () => step(a, list, -1) },
+    { label: t("Move down"), icon: <ArrowDown size={14} />, disabled: list.at(-1) === a, onSelect: () => step(a, list, 1) },
     "separator",
     a.archived
-      ? { label: "Reopen account", icon: <ArchiveRestore size={14} />, onSelect: () => setClosed(a, false) }
-      : { label: "Close account", icon: <Archive size={14} />, onSelect: () => setClosed(a, true) },
+      ? { label: t("Reopen account"), icon: <ArchiveRestore size={14} />, onSelect: () => setClosed(a, false) }
+      : { label: t("Close account"), icon: <Archive size={14} />, onSelect: () => setClosed(a, true) },
   ];
 
   const dragProps = (a: Account, section: Section) => ({
@@ -360,8 +365,8 @@ export function Sidebar({
   const collapseButton = (
     <button
       className="icon-button collapse-button"
-      aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-      title={keyLabel(`${collapsed ? "Expand" : "Collapse"} sidebar (Ctrl+B)`)}
+      aria-label={collapsed ? t("Expand sidebar") : t("Collapse sidebar")}
+      title={keyLabel(collapsed ? t("Expand sidebar (Ctrl+B)") : t("Collapse sidebar (Ctrl+B)"))}
       onClick={layout.toggle}
     >
       {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
@@ -383,19 +388,19 @@ export function Sidebar({
       {/* Collapsed, the band has room for the budget mark only. */}
       {collapsed && collapseButton}
       <div className="sidebar-scroll">
-        <nav aria-label="Main navigation">
+        <nav aria-label={t("Main navigation")}>
           <NavItem collapsed={collapsed} active={page === "budget"} icon={<LayoutGrid size={16} strokeWidth={1.75} />} onClick={() => onNavigate("budget")}>
-            Budget
+            {t("Budget")}
           </NavItem>
           <NavItem collapsed={collapsed} active={page === "reports"} icon={<ChartColumn size={16} strokeWidth={1.75} />} onClick={() => onNavigate("reports")}>
-            Reports
+            {t("Reports")}
           </NavItem>
           <NavItem collapsed={collapsed} active={page === "payees"} icon={<Tags size={16} strokeWidth={1.75} />} onClick={() => onNavigate("payees")}>
-            Payees & rules
+            {t("Payees & rules")}
           </NavItem>
           {importing !== undefined && (
             <NavItem collapsed={collapsed} active={page === "import"} icon={<FileUp size={16} strokeWidth={1.75} />} onClick={() => onNavigate("import")}>
-              {importing ? `Importing into ${importing}` : "Importing a file"}
+              {importing ? t("Importing into {account}", { account: importing }) : t("Importing a file")}
             </NavItem>
           )}
           {/* All transactions sits last, just above the accounts it covers. */}
@@ -406,14 +411,14 @@ export function Sidebar({
             count={budget.transactions.length}
             onClick={() => onAccount("all")}
           >
-            All transactions
+            {t("All transactions")}
           </NavItem>
         </nav>
         {!collapsed && (
           <div className="accounts">
             <div className="accounts-heading">
-              <span>Accounts</span>
-              <button className="icon-button" title="Add account" aria-label="Add account" onClick={onAddAccount}>
+              <span>{t("Accounts")}</span>
+              <button className="icon-button" title={t("Add account")} aria-label={t("Add account")} onClick={onAddAccount}>
                 <Plus size={15} />
               </button>
             </div>
@@ -445,7 +450,15 @@ export function Sidebar({
                         const current = page === "transactions" && accountId === a.id;
                         const link = a.simplefin;
                         const synced = link
-                          ? `Syncs with ${link.name ?? "the bank"}${link.org ? ` at ${link.org}` : ""} · ${link.lastSync ? `last synced ${formatDate(link.lastSync)}` : "not synced yet"}`
+                          ? `${
+                              link.name != null
+                                ? link.org
+                                  ? t("Syncs with {name} at {bank}", { name: link.name, bank: link.org })
+                                  : t("Syncs with {name}", { name: link.name })
+                                : link.org
+                                  ? t("Syncs with the bank at {bank}", { bank: link.org })
+                                  : t("Syncs with the bank")
+                            } · ${link.lastSync ? t("last synced {date}", { date: formatDate(link.lastSync) }) : t("not synced yet")}`
                           : "";
                         return (
                           <div
@@ -461,7 +474,12 @@ export function Sidebar({
                               className={`account-item${current ? " active" : ""}${inNetWorth(a) ? "" : " outside"}`}
                               aria-current={current ? "page" : undefined}
                               onClick={() => onAccount(a.id)}
-                              title={`${a.name} · ${typeName(accountType(a, balance))}${inNetWorth(a) ? "" : " · not counted in net worth"}${link ? " · syncs with its bank" : ""}`}
+                              title={[
+                                a.name,
+                                typeName(accountType(a, balance)),
+                                ...(inNetWorth(a) ? [] : [t("not counted in net worth")]),
+                                ...(link ? [t("syncs with its bank")] : []),
+                              ].join(" · ")}
                             >
                               <span className="account-name">
                                 <span>{a.name}</span>
@@ -470,7 +488,7 @@ export function Sidebar({
                                   // "…" menu has Sync and the details for the keyboard.
                                   <span
                                     className={`sync-mark${staleSync(a) ? " stale" : ""}`}
-                                    title={`${synced}. Click for details.`}
+                                    title={t("{status}. Click for details.", { status: synced })}
                                     onClick={
                                       onSyncDetails
                                         ? (e) => {
@@ -485,12 +503,12 @@ export function Sidebar({
                                 )}
                               </span>
                               {!!needs && (
-                                <span className="needs-mark" title={`${needs} need${needs === 1 ? "s" : ""} a category`}>
-                                  <span className="sr-only">, {needs} need{needs === 1 ? "s" : ""} a category</span>
+                                <span className="needs-mark" title={tn(needs, "{count} needs a category", "{count} need a category")}>
+                                  <span className="sr-only">{tn(needs, ", {count} needs a category", ", {count} need a category")}</span>
                                 </span>
                               )}
                               {!!pending && (
-                                <span className="badge" title={`${pending} to approve`}>
+                                <span className="badge" title={tn(pending, "{count} to approve", "{count} to approve")}>
                                   {pending}
                                 </span>
                               )}
@@ -498,11 +516,11 @@ export function Sidebar({
                             </button>
                             <button
                               className="icon-button account-more"
-                              aria-label={`Actions for ${a.name}`}
+                              aria-label={t("Actions for {name}", { name: a.name })}
                               onClick={(e) => {
                                 const rect = e.currentTarget.getBoundingClientRect();
                                 setMenuFor({ account: a, list: section.accounts });
-                                menu.openAt(rect.left, rect.bottom);
+                                menu.openAt(startEdge(rect), rect.bottom);
                               }}
                             >
                               <MoreHorizontal size={14} />
@@ -514,14 +532,14 @@ export function Sidebar({
                 );
               })}
             {!budget.accounts.length && (
-              <p className="sidebar-hint">Add an account to give your money a home.</p>
+              <p className="sidebar-hint">{t("Add an account to give your money a home.")}</p>
             )}
           </div>
         )}
       </div>
       <div className="sidebar-bottom">
         <NavItem collapsed={collapsed} active={page === "settings"} icon={<Settings2 size={16} strokeWidth={1.75} />} onClick={() => onNavigate("settings")}>
-          Settings & data
+          {t("Settings & data")}
         </NavItem>
       </div>
       {!collapsed && <ResizeHandle width={layout.expandedWidth} setWidth={layout.setWidth} />}
@@ -534,7 +552,7 @@ export function Sidebar({
           }}
           anchor={menu.at}
           items={menuItems(menuFor.account, menuFor.list)}
-          label={`Actions for ${menuFor.account.name}`}
+          label={t("Actions for {name}", { name: menuFor.account.name })}
         />
       )}
     </aside>

@@ -5,53 +5,65 @@ import { formatDate, money, monthName } from "./format";
 import { Modal } from "./forms";
 import type { ImportDifference, ImportResult, SavedYnabToken, YnabImportRequest, YnabPlan } from "./types";
 import { tokenStore as systemStore } from "./platform";
+import { ltr, msg, msgc, t, tc, tn } from "./i18n";
 import "./import.css";
 
 const FIELDS: Record<string, string> = {
-  balance: "balance",
-  cleared_balance: "cleared balance",
-  uncleared_balance: "uncleared balance",
-  budgeted: "assigned",
-  activity: "activity",
+  balance: msg("balance"),
+  cleared_balance: msg("cleared balance"),
+  uncleared_balance: msg("uncleared balance"),
+  budgeted: msg("assigned"),
+  activity: msg("activity"),
 };
 /** A total that differs from YNAB's, in words: "Car Loan balance: −10,600.00 here, −10,831.27 in YNAB". */
 export function differenceText(d: ImportDifference) {
-  const amounts = `${money(d.actual)} here, ${money(d.expected)} in YNAB`;
+  const amounts = t("{actual} here, {expected} in YNAB", { actual: money(d.actual), expected: money(d.expected) });
   const month = d.month ? monthName(d.month.slice(0, 7)) : "";
-  if (d.kind === "account") return `${d.account} ${FIELDS[d.field ?? "balance"] ?? d.field}: ${amounts}`;
-  if (d.kind === "category") {
-    const field = d.field === "balance" ? "available" : (FIELDS[d.field ?? ""] ?? d.field);
-    return `${d.category}, ${month}, ${field}: ${amounts}`;
+  if (d.kind === "account") {
+    const known = FIELDS[d.field ?? "balance"];
+    return t("{account} {field}: {amounts}", { account: String(d.account), field: known ? t(known) : String(d.field), amounts });
   }
-  return `Ready to Assign, ${month}: ${amounts}`;
+  if (d.kind === "category") {
+    const known = d.field === "balance" ? msgc("field", "available") : FIELDS[d.field ?? ""];
+    return t("{category}, {month}, {field}: {amounts}", {
+      category: String(d.category),
+      month,
+      field: known ? t(known) : String(d.field),
+      amounts,
+    });
+  }
+  return t("Ready to Assign, {month}: {amounts}", { month, amounts });
 }
 const SHOWN = 12;
 const CONFLICT_FIELDS: Record<string, string> = {
-  splits: "split lines",
-  status: "cleared",
-  approved: "approval",
-  transferStatus: "transfer's cleared",
-  accountId: "account",
+  splits: msg("split lines"),
+  status: msg("cleared"),
+  approved: msg("approval"),
+  transferStatus: msg("transfer's cleared"),
+  accountId: msg("account"),
 };
 /** A value in the conflict review: the side in words, plain text, an amount as money, or the record's JSON. */
 function conflictValue(value: unknown, field?: string | null, text?: string | null) {
-  if (value === null || value === undefined) return "Deleted";
+  if (value === null || value === undefined) return t("Deleted");
   if (text) return text;
-  if (typeof value === "string") return value || "(empty)";
+  if (typeof value === "string") return value || t("(empty)");
   if (typeof value === "number") return field === "amount" ? money(value) : String(value);
-  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "boolean") return value ? t("Yes") : t("No");
   return JSON.stringify(value, null, 2);
 }
 /** What the assistant is asked after an import with differences, or one that stopped. */
 export function ynabHelpText(plan: string, problem: { differences: ImportDifference[] } | { error: string }) {
   if ("error" in problem) {
-    return `My YNAB import of ${plan} stopped with this message: "${problem.error}" Explain what it means and what I can change, in YNAB or here, so the import works.`;
+    return t(
+      "My YNAB import of {plan} stopped with this message: \"{error}\" Explain what it means and what I can change, in YNAB or here, so the import works.",
+      { plan, error: problem.error },
+    );
   }
   const lines = problem.differences.map((d) => `- ${differenceText(d)}`);
   return [
-    `I imported ${plan} from YNAB, but these totals came out different from what YNAB shows:`,
+    t("I imported {plan} from YNAB, but these totals came out different from what YNAB shows:", { plan }),
     ...lines,
-    "Find what's causing each difference by looking at the transactions involved, and suggest how to fix it.",
+    t("Find what's causing each difference by looking at the transactions involved, and suggest how to fix it."),
   ].join("\n");
 }
 
@@ -107,7 +119,7 @@ export function YnabImport({
   const [replace, setReplace] = useState(false);
   const secret = token.trim();
   const saved = tokens.find((t) => t.id === savedId) ?? null;
-  const planName = plans?.find((p) => p.id === planId)?.name ?? "my plan";
+  const planName = plans?.find((p) => p.id === planId)?.name ?? t("my plan");
   // Saved tokens, the most recently used one picked unless a token's already being pasted.
   const loadTokens = async (pick?: string) => {
     if (!tokenStore) return;
@@ -163,9 +175,10 @@ export function YnabImport({
   }, [secret, savedId, listPlans, initialPlan]);
   const shownName = (p: YnabPlan) =>
     p.lastModifiedOn && plans!.filter((q) => q.name === p.name).length > 1
-      ? `${p.name} · edited ${formatDate(p.lastModifiedOn.slice(0, 10))}`
+      ? t("{name} · edited {date}", { name: p.name, date: formatDate(p.lastModifiedOn.slice(0, 10)) })
       : p.name;
-  // A saved token is named for the plans it reads.
+  // A saved token is named for the plans it reads. The name is stored with the token, so it
+  // stays in English like other stored names.
   const tokenLabel = () => {
     const names = (plans ?? []).map((p) => p.name);
     return names.length > 3 ? `${names.slice(0, 3).join(", ")} +${names.length - 3} more` : names.join(", ");
@@ -174,10 +187,25 @@ export function YnabImport({
     setReview(null);
     setDifferences(null);
     setFailure("");
+    const seconds = (r.elapsedMs / 1000).toFixed(2);
+    const values = {
+      name: r.snapshot.budget.name,
+      accounts: tn(r.snapshot.budget.accounts.length, "{count} accounts", "{count} accounts"),
+      transactions: tn(r.snapshot.budget.transactions.length, "{count} transactions", "{count} transactions"),
+      seconds,
+    };
     setMessage(
       r.unchanged
-        ? `Already up to date · ${(r.elapsedMs / 1000).toFixed(2)} seconds.`
-        : `Imported and saved ${r.snapshot.budget.name} · ${r.snapshot.budget.accounts.length} accounts · ${r.snapshot.budget.transactions.length} transactions · ${(r.elapsedMs / 1000).toFixed(2)} seconds. ${r.incremental ? "Downloaded changes only. " : ""}A backup was saved automatically.`,
+        ? t("Already up to date · {seconds} seconds.", { seconds })
+        : r.incremental
+          ? t(
+              "Imported and saved {name} · {accounts} · {transactions} · {seconds} seconds. Downloaded changes only. A backup was saved automatically.",
+              values,
+            )
+          : t(
+              "Imported and saved {name} · {accounts} · {transactions} · {seconds} seconds. A backup was saved automatically.",
+              values,
+            ),
     );
   };
   // An import waits on a choice for each competing change, or on its differences from YNAB.
@@ -191,7 +219,7 @@ export function YnabImport({
       setDifferences(null);
       setReview(r);
       setChoices({});
-      setMessage("Review competing changes below. Nothing has been overwritten.");
+      setMessage(t("Review competing changes below. Nothing has been overwritten."));
       return;
     }
     done(r);
@@ -216,11 +244,9 @@ export function YnabImport({
     });
   return (
     <section className="panel ynab-import">
-      <h2>Import from YNAB</h2>
+      <h2>{t("Import from YNAB")}</h2>
       <p className="import-lead">
-        Brings over your accounts, categories, transactions, targets, notes and scheduled
-        transactions, and checks every total against YNAB. This budget is backed up first, and
-        UrBudget never changes anything in YNAB.
+        {t("Brings over your accounts, categories, transactions, targets, notes and scheduled transactions, and checks every total against YNAB. This budget is backed up first, and UrBudget never changes anything in YNAB.")}
       </p>
       {message && (
         <p className="import-result" role="status">
@@ -231,7 +257,7 @@ export function YnabImport({
         <div className="ynab-problem" role="alert">
           <TriangleAlert size={16} aria-hidden />
           <div>
-            <strong>The import stopped. Nothing was changed.</strong>
+            <strong>{t("The import stopped. Nothing was changed.")}</strong>
             <p>{failure}</p>
             <div className="form-actions">
               {onAsk && (
@@ -240,11 +266,11 @@ export function YnabImport({
                   className="secondary small"
                   onClick={() => onAsk(ynabHelpText(planName, { error: failure }))}
                 >
-                  <MessageSquareText size={14} /> Ask the assistant
+                  <MessageSquareText size={14} /> {t("Ask the assistant")}
                 </button>
               )}
               <button type="button" className="text-button" onClick={() => setFailure("")}>
-                Dismiss
+                {t("Dismiss")}
               </button>
             </div>
           </div>
@@ -256,36 +282,34 @@ export function YnabImport({
           <div>
             <strong>
               {differences.differences!.length === 1
-                ? "One total doesn't match YNAB"
-                : `${differences.differences!.length} totals don't match YNAB`}
+                ? t("One total doesn't match YNAB")
+                : tn(differences.differences!.length, "{count} totals don't match YNAB", "{count} totals don't match YNAB")}
             </strong>
             <p>
-              Nothing has been saved yet. UrBudget rebuilt {planName} from YNAB's transactions, and
-              these came out different from what YNAB shows:
+              {t("Nothing has been saved yet. UrBudget rebuilt {plan} from YNAB's transactions, and these came out different from what YNAB shows:", { plan: planName })}
             </p>
             <ul>
               {differences.differences!.slice(0, SHOWN).map((d, i) => (
                 <li key={i}>{differenceText(d)}</li>
               ))}
               {differences.differences!.length > SHOWN && (
-                <li>and {differences.differences!.length - SHOWN} more</li>
+                <li>{tn(differences.differences!.length - SHOWN, "and {count} more", "and {count} more")}</li>
               )}
             </ul>
             <p className="help">
-              Importing anyway brings everything over as YNAB has it, and keeps these listed under
-              Settings › Backup &amp; export. A later import asks again only if they change.
+              {t("Importing anyway brings everything over as YNAB has it, and keeps these listed under Settings › Backup & export. A later import asks again only if they change.")}
             </p>
             <div className="form-actions">
               <button type="button" className="text-button" disabled={busy} onClick={() => setDifferences(null)}>
-                Cancel
+                {t("Cancel")}
               </button>
               {onAsk && (
                 <button type="button" className="secondary" disabled={busy || !onAccept} onClick={() => void acceptDifferences(true)}>
-                  <MessageSquareText size={14} /> Import and ask the assistant
+                  <MessageSquareText size={14} /> {t("Import and ask the assistant")}
                 </button>
               )}
               <button type="button" className="primary" disabled={busy || !onAccept} onClick={() => void acceptDifferences(false)}>
-                Import anyway
+                {t("Import anyway")}
               </button>
             </div>
           </div>
@@ -293,18 +317,15 @@ export function YnabImport({
       )}
       {review?.reviewId && (
         <div className="conflict-review">
-          <h3>Choose which changes to keep</h3>
-          <p>
-            Independent edits are merged automatically. Only these competing
-            changes need a choice.
-          </p>
+          <h3>{t("Choose which changes to keep")}</h3>
+          <p>{t("Independent edits are merged automatically. Only these competing changes need a choice.")}</p>
           <table>
             <thead>
               <tr>
-                <th>Change</th>
-                <th>Here</th>
-                <th>In YNAB</th>
-                <th>Keep</th>
+                <th>{t("Change")}</th>
+                <th>{t("Here")}</th>
+                <th>{t("In YNAB")}</th>
+                <th>{t("Keep")}</th>
               </tr>
             </thead>
             <tbody>
@@ -312,7 +333,11 @@ export function YnabImport({
                 <tr key={c.path}>
                   <td>
                     <span className="conflict-about">{c.about ?? c.path}</span>
-                    {c.field && <small className="conflict-field">{CONFLICT_FIELDS[c.field] ?? c.field}</small>}
+                    {c.field && (
+                      <small className="conflict-field">
+                        {CONFLICT_FIELDS[c.field] ? t(CONFLICT_FIELDS[c.field]) : c.field}
+                      </small>
+                    )}
                   </td>
                   <td>
                     <pre>{conflictValue(c.local, c.field, c.localText)}</pre>
@@ -322,15 +347,15 @@ export function YnabImport({
                   </td>
                   <td>
                     <select
-                      aria-label={`Resolve ${c.path}`}
+                      aria-label={t("Resolve {path}", { path: c.path })}
                       value={choices[c.path] ?? ""}
                       onChange={(e) =>
                         setChoices({ ...choices, [c.path]: e.target.value })
                       }
                     >
-                      <option value="">Choose…</option>
-                      <option value="local">Keep this budget's</option>
-                      <option value="remote">Take YNAB's</option>
+                      <option value="">{t("Choose…")}</option>
+                      <option value="local">{t("Keep this budget's")}</option>
+                      <option value="remote">{t("Take YNAB's")}</option>
                     </select>
                   </td>
                 </tr>
@@ -348,14 +373,14 @@ export function YnabImport({
               void run(async () => {
                 await onResolve!(review.reviewId!, choices);
                 setReview(null);
-                setMessage("Reviewed changes imported and saved. A backup was created.");
+                setMessage(t("Reviewed changes imported and saved. A backup was created."));
               })
             }
           >
-            Apply reviewed import
+            {t("Apply reviewed import")}
           </button>
           <button className="text-button" onClick={() => setReview(null)}>
-            Cancel review
+            {t("Cancel review")}
           </button>
         </div>
       )}
@@ -363,7 +388,7 @@ export function YnabImport({
         className="ynab-form"
         onSubmit={(e) => {
           e.preventDefault();
-          setMessage("Importing…");
+          setMessage(t("Importing…"));
           setFailure("");
           setDifferences(null);
           const pasted = secret;
@@ -386,22 +411,22 @@ export function YnabImport({
         }}
       >
         <div className="ynab-field">
-          <span className="ynab-label" id="ynab-token-label">YNAB token</span>
+          <span className="ynab-label" id="ynab-token-label">{t("YNAB token")}</span>
           {saved ? (
             <div className="saved-token" aria-labelledby="ynab-token-label">
               <KeyRound size={15} aria-hidden />
               <span className="saved-token-name">{saved.label}</span>
-              <span className="saved-token-hint">••••{saved.hint}</span>
+              <span className="saved-token-hint">{ltr(`••••${saved.hint}`)}</span>
               <button type="button" className="text-button" onClick={() => setManaging(true)}>
-                Change
+                {tc("command", "Change")}
               </button>
             </div>
           ) : (
             <>
               <input
                 type="password"
-                aria-label="YNAB personal access token"
-                placeholder="Paste your personal access token"
+                aria-label={t("YNAB personal access token")}
+                placeholder={t("Paste your personal access token")}
                 autoComplete="off"
                 spellCheck={false}
                 required
@@ -415,30 +440,33 @@ export function YnabImport({
                 {tokenStore && (
                   <label className="checkbox-label">
                     <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
-                    Remember on this device
+                    {t("Remember on this device")}
                   </label>
                 )}
                 {tokens.length > 0 && (
                   <button type="button" className="text-button" onClick={() => setManaging(true)}>
-                    Use a saved token
+                    {t("Use a saved token")}
                   </button>
                 )}
               </div>
               <details className="token-help">
-                <summary>Where do I get a token?</summary>
+                <summary>{t("Where do I get a token?")}</summary>
                 <p>
-                  In YNAB on the web, open Account Settings, then Developer Settings, and choose New
-                  Token. Copy it right away: YNAB shows it only once.
                   {tokenStore
-                    ? ` A remembered token is kept in ${tokenStore}; otherwise it's used only for this import.`
-                    : " It's used only for this import and never stored."}
+                    ? t(
+                        "In YNAB on the web, open Account Settings, then Developer Settings, and choose New Token. Copy it right away: YNAB shows it only once. A remembered token is kept in {store}; otherwise it's used only for this import.",
+                        { store: t(tokenStore) },
+                      )
+                    : t(
+                        "In YNAB on the web, open Account Settings, then Developer Settings, and choose New Token. Copy it right away: YNAB shows it only once. It's used only for this import and never stored.",
+                      )}
                 </p>
               </details>
             </>
           )}
         </div>
         <label className="ynab-field">
-          <span className="ynab-label">Plan</span>
+          <span className="ynab-label">{t("Plan")}</span>
           <select
             required
             disabled={!plans || loadingPlans}
@@ -454,10 +482,10 @@ export function YnabImport({
             ) : (
               <option value={planId}>
                 {loadingPlans
-                  ? "Loading your plans…"
+                  ? t("Loading your plans…")
                   : plansError
-                    ? "No plans to show"
-                    : "Paste your token to choose a plan"}
+                    ? t("No plans to show")
+                    : t("Paste your token to choose a plan")}
               </option>
             )}
           </select>
@@ -465,26 +493,26 @@ export function YnabImport({
         {plansError && <p className="help">{plansError}</p>}
         {!blank && (
         <fieldset className="ynab-mode">
-          <legend>If this budget already has data</legend>
+          <legend>{t("If this budget already has data")}</legend>
           <label className={`ynab-choice${replace ? "" : " selected"}`}>
             <input type="radio" name="ynab-mode" checked={!replace} onChange={() => setReplace(false)} />
             <span>
-              Merge with this budget
-              <small>Brings in YNAB's changes and keeps edits made here. Competing changes are shown for review.</small>
+              {t("Merge with this budget")}
+              <small>{t("Brings in YNAB's changes and keeps edits made here. Competing changes are shown for review.")}</small>
             </span>
           </label>
           <label className={`ynab-choice${replace ? " selected" : ""}`}>
             <input type="radio" name="ynab-mode" checked={replace} onChange={() => setReplace(true)} />
             <span>
-              Replace this budget
-              <small>Starts over from YNAB's version. The current budget stays in a backup.</small>
+              {t("Replace this budget")}
+              <small>{t("Starts over from YNAB's version. The current budget stays in a backup.")}</small>
             </span>
           </label>
         </fieldset>
         )}
         <div className="form-actions">
           <button className="primary" disabled={busy || loadingPlans || !planId} type="submit">
-            {busy ? "Importing…" : "Import & save"}
+            {busy ? t("Importing…") : t("Import & save")}
           </button>
         </div>
       </form>
@@ -542,32 +570,36 @@ function SavedTokens({
   const [error, setError] = useState("");
   const day = (at: string) => formatDate(at.slice(0, 10));
   return (
-    <Modal title="Saved YNAB tokens" close={close} className="saved-tokens">
+    <Modal title={t("Saved YNAB tokens")} close={close} className="saved-tokens">
       <p className="help">
-        Kept in {store} on this device. Deleting one here doesn't switch it off in YNAB; to do
-        that, delete it under Developer Settings in YNAB.
+        {t("Kept in {store} on this device. Deleting one here doesn't switch it off in YNAB; to do that, delete it under Developer Settings in YNAB.", { store: t(store) })}
       </p>
       {error && <p className="danger-text" role="alert">{error}</p>}
       {tokens.length ? (
         <ul className="token-list">
-          {tokens.map((t) => (
-            <li key={t.id} className={t.id === current ? "current" : undefined}>
+          {tokens.map((token) => (
+            <li key={token.id} className={token.id === current ? "current" : undefined}>
               <KeyRound size={16} aria-hidden />
               <span className="token-text">
-                <strong>{t.label}</strong>
+                <strong>{token.label}</strong>
                 <small>
-                  ••••{t.hint} · saved {day(t.savedAt)}
-                  {t.lastUsed ? ` · last used ${day(t.lastUsed)}` : ""}
+                  {token.lastUsed
+                    ? t("••••{hint} · saved {saved} · last used {used}", {
+                        hint: token.hint,
+                        saved: day(token.savedAt),
+                        used: day(token.lastUsed),
+                      })
+                    : t("••••{hint} · saved {saved}", { hint: token.hint, saved: day(token.savedAt) })}
                 </small>
               </span>
-              {confirming === t.id ? (
+              {confirming === token.id ? (
                 <span className="token-actions">
                   <button
                     type="button"
                     className="danger small"
                     onClick={async () => {
                       try {
-                        await forget(t.id);
+                        await forget(token.id);
                         setConfirming(null);
                         setError("");
                       } catch (e) {
@@ -575,27 +607,27 @@ function SavedTokens({
                       }
                     }}
                   >
-                    Delete
+                    {t("Delete")}
                   </button>
                   <button type="button" className="text-button" onClick={() => setConfirming(null)}>
-                    Keep
+                    {t("Keep")}
                   </button>
                 </span>
               ) : (
                 <span className="token-actions">
-                  {t.id === current ? (
-                    <span className="token-current">In use</span>
+                  {token.id === current ? (
+                    <span className="token-current">{t("In use")}</span>
                   ) : (
-                    <button type="button" className="secondary small" onClick={() => use(t.id)}>
-                      Use
+                    <button type="button" className="secondary small" onClick={() => use(token.id)}>
+                      {t("Use")}
                     </button>
                   )}
                   <button
                     type="button"
                     className="icon-button"
-                    aria-label={`Delete ${t.label} (••••${t.hint})`}
-                    title="Delete"
-                    onClick={() => setConfirming(t.id)}
+                    aria-label={t("Delete {name} (••••{hint})", { name: token.label, hint: token.hint })}
+                    title={t("Delete")}
+                    onClick={() => setConfirming(token.id)}
                   >
                     <Trash2 size={15} />
                   </button>
@@ -605,14 +637,14 @@ function SavedTokens({
           ))}
         </ul>
       ) : (
-        <p className="empty">No saved tokens. Paste one and choose Remember on this device.</p>
+        <p className="empty">{t("No saved tokens. Paste one and choose Remember on this device.")}</p>
       )}
       <div className="form-actions">
         <button type="button" className="secondary" onClick={paste}>
-          Paste a different token
+          {t("Paste a different token")}
         </button>
         <button type="button" className="primary" onClick={close}>
-          Done
+          {t("Done")}
         </button>
       </div>
     </Modal>

@@ -1,7 +1,8 @@
 import type { Budget, Category } from "./types";
+import { msg } from "./i18n";
 
-/** Display-only group for hidden categories. It is never saved as a category's group. */
-export const HIDDEN_GROUP = "Hidden categories";
+/** Display-only group for hidden categories. It is never saved as a category's group; show it with t(). */
+export const HIDDEN_GROUP = msg("Hidden categories");
 export const groupOf = (c: Category) => (c.hidden ? HIDDEN_GROUP : c.group);
 const LAST = Number.MAX_SAFE_INTEGER;
 

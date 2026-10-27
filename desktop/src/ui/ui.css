@@ -32,7 +32,7 @@
   border: none;
   border-radius: var(--radius);
   background: transparent;
-  text-align: left;
+  text-align: start;
 }
 .menu-item + .menu-item {
   margin-top: var(--stack-gap);
@@ -46,7 +46,7 @@
   color: var(--negative);
 }
 .menu-item kbd {
-  margin-left: auto;
+  margin-inline-start: auto;
   color: var(--muted);
   font: 11px var(--font);
 }
@@ -69,7 +69,7 @@
 }
 .combobox input {
   width: 100%;
-  padding-right: 24px;
+  padding-inline-end: 24px;
   color: var(--text);
   font-size: 13px;
   font-weight: 400;
@@ -77,7 +77,7 @@
 .combobox-caret {
   position: absolute;
   top: 50%;
-  right: 8px;
+  inset-inline-end: 8px;
   color: var(--muted);
   transform: translateY(-50%);
   cursor: pointer;
@@ -137,8 +137,8 @@
 }
 .combobox-option.create:not(:first-child) {
   border-top: 1px solid var(--border);
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
+  border-start-start-radius: 0;
+  border-start-end-radius: 0;
 }
 .combobox-option.create > span {
   flex: 1;
@@ -210,8 +210,8 @@
   flex-direction: column;
   gap: var(--stack-gap);
   min-width: 140px;
-  padding-right: 6px;
-  border-right: 1px solid var(--border);
+  padding-inline-end: 6px;
+  border-inline-end: 1px solid var(--border);
 }
 .range-presets button {
   height: 28px;
@@ -219,7 +219,7 @@
   border: none;
   border-radius: 5px;
   background: transparent;
-  text-align: left;
+  text-align: start;
 }
 .range-presets button:hover {
   background: var(--hover);
@@ -254,7 +254,8 @@
   align-items: center;
   gap: 10px;
   max-width: min(560px, calc(100vw - 32px));
-  padding: 6px 6px 6px 14px;
+  padding-block: 6px;
+  padding-inline: 14px 6px;
   border-radius: var(--radius-lg);
   background: var(--toast-bg);
   color: var(--toast-text);
@@ -324,6 +325,13 @@
 .tabs[data-fade="both"] {
   mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
 }
+/* Right to left, the end is on the left. */
+[dir="rtl"] .tabs[data-fade="end"] {
+  mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
+}
+[dir="rtl"] .tabs[data-fade="start"] {
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+}
 .tabs button {
   flex: none;
   display: inline-flex;
@@ -360,7 +368,7 @@
 .col-divider {
   position: absolute;
   top: 0;
-  right: -6px;
+  inset-inline-end: -6px;
   bottom: 0;
   z-index: 2;
   width: 12px;
@@ -374,14 +382,14 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 5.5px;
+  inset-inline-start: 5.5px;
   width: 1px;
   background: transparent;
   content: "";
 }
 .col-grip:hover::after,
 .col-grip:active::after {
-  left: 4.5px;
+  inset-inline-start: 4.5px;
   width: 3px;
   background: var(--accent);
 }
@@ -395,7 +403,7 @@
 }
 .date-input input {
   width: 100%;
-  padding-right: 26px;
+  padding-inline-end: 26px;
   font-variant-numeric: tabular-nums;
 }
 .date-input.invalid input {
@@ -404,7 +412,7 @@
 .date-input-button {
   position: absolute;
   top: 50%;
-  right: 3px;
+  inset-inline-end: 3px;
   display: grid;
   place-items: center;
   width: 22px;

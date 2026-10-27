@@ -1,5 +1,6 @@
 //! Conversations, one JSON file each in `<budget folder>/assistant/threads`. The history is
 //! append-only: earlier turns are sent back exactly as they were, which some models require.
+use crate::t;
 use super::attachments::Meta;
 use super::proposals::{Card, Proposal, Status};
 use serde::{Deserialize, Serialize};
@@ -95,7 +96,7 @@ fn valid(id: &str) -> bool {
 
 pub fn save(folder: &Path, thread: &Thread) -> Result<(), String> {
     if !valid(&thread.id) {
-        return Err("Invalid conversation id.".into());
+        return Err(t!("Invalid conversation id."));
     }
     let dir = threads(folder);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -106,11 +107,11 @@ pub fn save(folder: &Path, thread: &Thread) -> Result<(), String> {
 }
 pub fn load(folder: &Path, id: &str) -> Result<Thread, String> {
     if !valid(id) {
-        return Err("That conversation no longer exists.".into());
+        return Err(t!("That conversation no longer exists."));
     }
     let raw = std::fs::read(threads(folder).join(format!("{id}.json")))
-        .map_err(|_| "That conversation no longer exists.".to_string())?;
-    serde_json::from_slice(&raw).map_err(|e| format!("That conversation couldn't be read: {e}"))
+        .map_err(|_| t!("That conversation no longer exists."))?;
+    serde_json::from_slice(&raw).map_err(|e| t!("That conversation couldn't be read: {e}", e))
 }
 pub fn list(folder: &Path) -> Vec<Listing> {
     let Ok(entries) = std::fs::read_dir(threads(folder)) else { return vec![] };

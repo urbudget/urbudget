@@ -1,5 +1,5 @@
 import "./ui.css";
-export { Popover, type Anchor, type Placement } from "./Popover";
+export { Popover, startEdge, type Anchor, type Placement } from "./Popover";
 export { Menu, useContextMenu, type MenuItem } from "./Menu";
 export { Combobox, type Option } from "./Combobox";
 export { CategoryPicker, PayeeInput, READY_TO_ASSIGN, transferPayee } from "./Pickers";

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The languages UrBudget speaks, so Android 13 and later list them in the app's language settings
+     (docs/LOCALIZATION.md). English is the source; it is also what other device languages see. -->
+<locale-config xmlns:android="http://schemas.android.com/apk/res/android">
+    <locale android:name="en" />
+    <locale android:name="ar" />
+</locale-config>

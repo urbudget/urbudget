@@ -1,6 +1,7 @@
 //! OpenAI's Responses API, used both with a ChatGPT sign-in (the plan pays) and with an API key.
 //! The ChatGPT route asks for `store: false` and streaming, takes guidance only as
 //! `instructions`, and wants tools grouped in a namespace; the same request works with a key.
+use crate::{i18n::tr, t};
 use super::attachments::Kind;
 use super::history::Item;
 use super::llm::{excerpt, user_text, Call, Credentials, Delta, Failure, FailureKind, Model, Part, Provider, Reply, Request, Sse};
@@ -126,7 +127,7 @@ pub async fn respond(
             other => return other,
         }
     }
-    Err(Failure::new(FailureKind::Unsupported, "This model doesn't support what the assistant needs. Choose another model in Settings."))
+    Err(Failure::new(FailureKind::Unsupported, t!("This model doesn't support what the assistant needs. Choose another model in Settings.")))
 }
 
 async fn stream(
@@ -206,23 +207,23 @@ async fn stream(
                     if reply.parts.iter().any(|p| matches!(p, Part::Text(_))) {
                         completed = true;
                     } else {
-                        return Err(Failure::new(FailureKind::Other, format!("The reply stopped early ({}).", reason.replace('_', " "))));
+                        return Err(Failure::new(FailureKind::Other, t!("The reply stopped early ({reason}).", reason = reason.replace('_', " "))));
                     }
                 }
                 "response.failed" => {
                     let e = &v["response"]["error"];
-                    return Err(classify(credentials.provider, 0, e["code"].as_str().unwrap_or_default(), e["message"].as_str().unwrap_or("The model couldn't answer.")));
+                    return Err(classify(credentials.provider, 0, e["code"].as_str().unwrap_or_default(), e["message"].as_str().unwrap_or(tr("The model couldn't answer."))));
                 }
                 "error" => {
                     let e = if v["error"].is_object() { &v["error"] } else { &v };
-                    return Err(classify(credentials.provider, 0, e["code"].as_str().unwrap_or_default(), e["message"].as_str().unwrap_or("The model couldn't answer.")));
+                    return Err(classify(credentials.provider, 0, e["code"].as_str().unwrap_or_default(), e["message"].as_str().unwrap_or(tr("The model couldn't answer."))));
                 }
                 _ => {}
             }
         }
     }
     if !completed {
-        return Err(Failure::new(FailureKind::Busy, "The connection closed before the reply finished. Try again."));
+        return Err(Failure::new(FailureKind::Busy, t!("The connection closed before the reply finished. Try again.")));
     }
     Ok(reply)
 }
@@ -243,17 +244,17 @@ pub fn classify(provider: Provider, status: u16, code: &str, message: &str) -> F
     use FailureKind::*;
     let plan = provider == Provider::Chatgpt;
     let (kind, text) = if code.contains("usage_limit_exceeded") {
-        (Limit, "You've reached your ChatGPT plan's usage limit.".to_string())
+        (Limit, t!("You've reached your ChatGPT plan's usage limit."))
     } else if code.contains("user_not_eligible") {
-        (NotEligible, "This ChatGPT account can't use its plan in other apps. ChatGPT Plus and Pro can.".to_string())
+        (NotEligible, t!("This ChatGPT account can't use its plan in other apps. ChatGPT Plus and Pro can."))
     } else if code.contains("client_not_enabled") {
-        (NotEligible, "ChatGPT plan usage isn't turned on for UrBudget yet.".to_string())
+        (NotEligible, t!("ChatGPT plan usage isn't turned on for UrBudget yet."))
     } else if code.contains("usage_unavailable") || code.contains("user_unavailable") || status == 503 || status >= 500 {
-        (Busy, format!("{} is busy right now. Try again in a moment.", if plan { "ChatGPT" } else { "OpenAI" }))
+        (Busy, t!("{service} is busy right now. Try again in a moment.", service = if plan { "ChatGPT" } else { "OpenAI" }))
     } else if code.contains("unsupported_capability") {
         (Unsupported, message.to_string())
     } else if code == "model_not_found" || status == 404 {
-        (Model, "That model isn't available on this account. Choose another model in Settings.".to_string())
+        (Model, t!("That model isn't available on this account. Choose another model in Settings."))
     } else if code == "invalid_token"
         || code == "invalid_api_key"
         || code.contains("invalid_user")
@@ -262,14 +263,14 @@ pub fn classify(provider: Provider, status: u16, code: &str, message: &str) -> F
         || status == 401
     {
         if plan {
-            (SignIn, "Sign in with ChatGPT again to keep using the assistant.".to_string())
+            (SignIn, t!("Sign in with ChatGPT again to keep using the assistant."))
         } else {
-            (SignIn, "OpenAI didn't accept the API key. Check it in Settings.".to_string())
+            (SignIn, t!("OpenAI didn't accept the API key. Check it in Settings."))
         }
     } else if status == 429 || code == "rate_limit_exceeded" {
-        (Limit, "Too many requests right now. Wait a minute and try again.".to_string())
+        (Limit, t!("Too many requests right now. Wait a minute and try again."))
     } else if status == 403 || code.contains("route_not_supported") {
-        (NotEligible, format!("The request was refused: {message}"))
+        (NotEligible, t!("The request was refused: {message}", message))
     } else {
         (Other, message.to_string())
     };
@@ -288,7 +289,7 @@ pub async fn models(client: &reqwest::Client, credentials: &Credentials) -> Resu
     if !(200..300).contains(&status) {
         return Err(failure(credentials.provider, status, &text));
     }
-    let v: Value = serde_json::from_str(&text).map_err(|_| Failure::new(FailureKind::Other, "The model list couldn't be read."))?;
+    let v: Value = serde_json::from_str(&text).map_err(|_| Failure::new(FailureKind::Other, t!("The model list couldn't be read.")))?;
     // The ChatGPT route lists the account's models in order; an API key lists every model.
     if let Some(list) = v["models"].as_array() {
         return Ok(list

@@ -5,6 +5,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::ffi::{c_char, CStr, CString};
 use std::sync::{Mutex, OnceLock};
+use urbudget_services::t;
 
 const API_VERSION: u32 = 1;
 const MAX_REQUEST_BYTES: usize = 64 * 1024 * 1024;
@@ -65,7 +66,7 @@ pub unsafe extern "C" fn urbudget_invoke(request: *const c_char) -> *mut c_char 
         Ok(input) => urbudget_android::invoke_json(&input),
         Err(error) => reply(Err(error)),
     })
-    .unwrap_or_else(|_| reply(Err("The engine could not complete this request".into())));
+    .unwrap_or_else(|_| reply(Err(t!("The engine could not complete this request"))));
     into_c(response)
 }
 
@@ -110,7 +111,7 @@ pub unsafe extern "C" fn urbudget_service(request: *const c_char) -> *mut c_char
         let runtime = SERVICES.get().ok_or("Initialize the native services first.")?;
         urbudget_services::block_on(runtime.dispatch(&request.method, request.params))
     })
-    .unwrap_or_else(|_| Err("The service could not complete this request.".into()));
+    .unwrap_or_else(|_| Err(t!("The service could not complete this request.")));
     into_c(reply(result))
 }
 

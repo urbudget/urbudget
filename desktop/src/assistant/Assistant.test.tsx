@@ -128,6 +128,24 @@ it("asks to sign in with ChatGPT before anything else", async () => {
   expect(screen.getByText("Using ChatGPT plan")).toBeTruthy();
 });
 
+it("says while a message is being written or sent, which an automatic update waits for", async () => {
+  vi.mocked(assistant.status).mockResolvedValue(ready);
+  vi.mocked(assistant.send).mockResolvedValue("t_1");
+  vi.mocked(assistant.thread).mockResolvedValue({ id: "t_1", title: "Cover", entries: [], running: true });
+  const onWorking = vi.fn();
+  panel({ onWorking });
+  const box = await screen.findByLabelText("Message the assistant");
+  expect(onWorking).toHaveBeenLastCalledWith(false);
+  fireEvent.change(box, { target: { value: "Cover what I overspent" } });
+  expect(onWorking).toHaveBeenLastCalledWith(true);
+  // Sent, and waiting for the reply: still at work.
+  fireEvent.keyDown(box, { key: "Enter" });
+  await waitFor(() => expect(assistant.send).toHaveBeenCalled());
+  expect(onWorking).toHaveBeenLastCalledWith(true);
+  cleanup();
+  expect(onWorking).toHaveBeenLastCalledWith(false);
+});
+
 it("offers starting points from the budget and sends one with the screen", async () => {
   vi.mocked(assistant.status).mockResolvedValue(ready);
   vi.mocked(assistant.send).mockResolvedValue("t_1");

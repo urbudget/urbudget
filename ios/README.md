@@ -33,6 +33,8 @@ and imports all happen in that Rust library (the shared crates); Swift draws the
 | `UrBudget/Bridge` | The C header for the Rust library, and the bridging header that shows it to Swift |
 | `UrBudgetTests` | Unit tests, run on the Simulator |
 | `scripts/build-rust.sh` | Builds the Rust library for the Simulator or a device |
+| `UrBudget/*.xcstrings` | English and Arabic text: the app's (`Localizable`), the Home Screen and Files names (`InfoPlist`) and Siri's phrases (`AppShortcuts`), as [the languages guide](../docs/LOCALIZATION.md) describes |
+| `scripts/check-translations.mjs` | `node ios/scripts/check-translations.mjs` checks every string has its Arabic, with the same placeholders and all plural forms |
 | `ExportOptions.plist` | How the release workflow signs and uploads to App Store Connect |
 | [`../crates/urbudget-ios`](../crates/urbudget-ios) | The Rust side of the C bridge |
 
@@ -101,6 +103,7 @@ SwiftUI screens -> BudgetStore (@Observable) -> BudgetRepository (actor) --+-> u
 | Around the app | A New transaction quick action on the app icon, an Add a transaction shortcut for Siri, Spotlight and the Action button, and on iPad (iOS 18 and later) tabs that open as a sidebar, with lists kept to a readable width |
 | Undo | Undo and redo in the ⋯ menu on every tab, Undo on each change's message, and shaking the phone |
 | Assistant | Streamed conversations with history, attachments and transaction context, proposals with review, apply and undo, reports with sharing and printing, workbooks, ChatGPT sign-in or OpenAI/Anthropic keys |
+| Languages | English and Arabic from String Catalogs, chosen with iOS's per-app language (Settings → UrBudget → Language, System by default), which the app's Settings links to; Arabic lays the app out right to left, keeping amounts and charts left to right ([languages guide](../docs/LOCALIZATION.md)) |
 | Library & settings | Multiple budgets (create in the device's formats with starter categories, sample, open, delete, fresh start), opening backups, statements and YNAB exports shared from Files, Mail or AirDrop, backups (now, retention, restore, prune), unsaved-change recovery, JSON backups compatible with desktop and Android, number and date formats, flag names, CSV exports, theme |
 
 Everything in the app works without an account or payment. Sync is the only paid part: the

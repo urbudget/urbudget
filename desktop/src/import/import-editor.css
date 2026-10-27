@@ -18,6 +18,12 @@
   color: var(--muted);
   font-weight: 500;
 }
+/* What comes from the file (its name, its headings, its cells) takes its own direction in the
+   Arabic layout, aligned as the layout's start, as the register's cells are. */
+[dir="rtl"] :is(.import-file-name, .line-col-name, .line-row:not(.line-editor) > .line-cell) {
+  unicode-bidi: plaintext;
+  text-align: right;
+}
 .statement-editor {
   display: flex;
   flex-direction: column;
@@ -102,8 +108,7 @@
   position: absolute;
   z-index: 4;
   top: 1px;
-  right: 1px;
-  left: 1px;
+  inset-inline: 1px;
   height: 2px;
   overflow: hidden;
   border-radius: var(--radius) var(--radius) 0 0;
@@ -127,6 +132,18 @@
     transform: translateX(340%);
   }
 }
+/* Right to left, it moves from the right. */
+[dir="rtl"] .statement-progress::before {
+  animation-name: statement-progress-rtl;
+}
+@keyframes statement-progress-rtl {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(-340%);
+  }
+}
 .statement-editor.slow .statement-progress {
   opacity: 1;
 }
@@ -138,7 +155,8 @@
   min-width: 0;
   color: var(--positive);
 }
-/* How a line imports: its date, and its amount aligned to the right. */
+/* How a line imports: its date, and its amount aligned to the right (in Arabic too, the two keep
+   their left-to-right order, so the amounts' decimals line up down the lines). */
 .line-state > span.line-ok:first-child {
   flex: 1 1 auto;
 }
@@ -153,6 +171,9 @@
   border-radius: 4px;
 }
 /* A line whose reading a change altered lights up for a moment. */
+[dir="rtl"] .line-reading {
+  direction: ltr;
+}
 .line-reading.moved {
   animation: line-moved 0.9s var(--ease);
 }
@@ -167,7 +188,7 @@
 }
 .line-ok .line-amount {
   min-width: 0;
-  margin-left: auto;
+  margin-inline-start: auto;
   color: var(--text);
   font-variant-numeric: tabular-nums;
   font-weight: 550;
@@ -185,12 +206,13 @@
   color: var(--attention-ink);
 }
 .line-attention svg {
-  margin-right: 4px;
+  margin-inline-end: 4px;
   vertical-align: -2px;
 }
 /* The file's lines, laid out as the register lists transactions (LineTable.tsx): a grid with a
    line between every column and row, each line 34px (LINE), the heading pinned on top, how each
-   line imports pinned on the left and what can be done to it on the right. */
+   line imports pinned at the start (the left; in Arabic, the right) and what can be done to it at
+   the end. */
 .line-scroll {
   /* Where the lines are measured from, to bring one into view (LineEditor). */
   position: relative;
@@ -225,13 +247,13 @@
   min-width: 0;
   padding: 0 10px;
   overflow: hidden;
-  border-left: 1px solid var(--border);
+  border-inline-start: 1px solid var(--border);
   line-height: 33px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .line-row > :first-child {
-  border-left: none;
+  border-inline-start: none;
 }
 .line-row:not(.line-head, .line-editor):hover {
   --line-tint: var(--hover);
@@ -275,7 +297,7 @@
   background: linear-gradient(var(--line-tint), var(--line-tint)), var(--surface);
 }
 .line-row > .line-state {
-  left: 0;
+  inset-inline-start: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -285,12 +307,13 @@
   font-size: 12.5px;
 }
 .line-row > .line-actions-cell {
-  right: 0;
+  inset-inline-end: 0;
   overflow: visible;
   box-shadow: inset 1px 0 0 var(--border);
 }
 /* Cells scrolled sideways pass under the pinned columns, which cast a soft shadow on them then
-   (LineTable sets under-left and under-right), so a sliver of a cell beside them reads as such. */
+   (LineTable sets under-left and under-right, for the start and the end), so a sliver of a cell
+   beside them reads as such. */
 .line-row > .line-state::after,
 .line-row > .line-actions-cell::before {
   position: absolute;
@@ -303,12 +326,18 @@
   transition: opacity 0.15s;
 }
 .line-row > .line-state::after {
-  right: -10px;
+  inset-inline-end: -10px;
   background: linear-gradient(to right, rgb(0 0 0 / 0.16), transparent);
 }
 .line-row > .line-actions-cell::before {
-  left: -10px;
+  inset-inline-start: -10px;
   background: linear-gradient(to left, rgb(0 0 0 / 0.16), transparent);
+}
+[dir="rtl"] .line-row > .line-state::after {
+  background: linear-gradient(to left, rgb(0 0 0 / 0.16), transparent);
+}
+[dir="rtl"] .line-row > .line-actions-cell::before {
+  background: linear-gradient(to right, rgb(0 0 0 / 0.16), transparent);
 }
 .line-scroll.under-left .line-row > .line-state::after,
 .line-scroll.under-right .line-row > .line-actions-cell::before {
@@ -320,7 +349,7 @@
   background: var(--surface-2);
   font-size: 11px;
 }
-/* An edge on the left says what the line needs: attention in its colour, a change in the accent. */
+/* An edge at the start says what the line needs: attention in its colour, a change in the accent. */
 .line-row.attention > .line-state {
   box-shadow:
     inset 3px 0 0 var(--attention),
@@ -337,6 +366,28 @@
     inset 2px 0 0 var(--accent),
     inset -1px 0 0 var(--border);
 }
+/* Right to left, those edges (and the pinned columns' rules) are on the other side. */
+[dir="rtl"] .line-row > .line-state {
+  box-shadow: inset 1px 0 0 var(--border);
+}
+[dir="rtl"] .line-row > .line-actions-cell {
+  box-shadow: inset -1px 0 0 var(--border);
+}
+[dir="rtl"] .line-row.attention > .line-state {
+  box-shadow:
+    inset -3px 0 0 var(--attention),
+    inset 1px 0 0 var(--border);
+}
+[dir="rtl"] .line-row.changed > .line-state {
+  box-shadow:
+    inset -3px 0 0 var(--accent),
+    inset 1px 0 0 var(--border);
+}
+[dir="rtl"] .line-scroll.keyed:focus .line-row.cursor > .line-state {
+  box-shadow:
+    inset -2px 0 0 var(--accent),
+    inset 1px 0 0 var(--border);
+}
 .line-row.leftOut > .line-cell {
   color: var(--muted);
 }
@@ -346,8 +397,10 @@
   flex: none;
   align-items: center;
   align-self: stretch;
-  margin: 0 -2px 0 -4px;
-  padding: 0 2px 0 4px;
+  margin-block: 0;
+  margin-inline: -4px -2px;
+  padding-block: 0;
+  padding-inline: 4px 2px;
   cursor: pointer;
 }
 .line-check input {
@@ -366,7 +419,7 @@
   color: var(--accent);
 }
 .line-editing svg {
-  margin-right: 5px;
+  margin-inline-end: 5px;
   vertical-align: -2px;
 }
 /* A second click on the selected line edits it, from the cell clicked. */
@@ -404,7 +457,7 @@
 }
 .line-empty {
   position: sticky;
-  left: 0;
+  inset-inline-start: 0;
   padding: 16px;
 }
 .line-empty .help {
@@ -420,7 +473,7 @@
   align-items: center;
   max-width: 68px;
   height: 20px;
-  margin-left: auto;
+  margin-inline-start: auto;
   padding: 0 7px;
   border: 1px dashed var(--border-strong);
   border-radius: 10px;
@@ -466,12 +519,12 @@
 }
 
 /* What can be done to a line, as the register's Enter and Skip on a scheduled row: quiet icons at
-   its right end. Pointing at the line or tabbing to them opens them into a raised, labelled row of
-   buttons, which grows leftward over the line's cells. */
+   its end (the right; in Arabic, the left). Pointing at the line or tabbing to them opens them into
+   a raised, labelled row of buttons, which grows over the line's cells. */
 .line-actions {
   position: absolute;
   top: 50%;
-  right: 4px;
+  inset-inline-end: 4px;
   z-index: 1;
   display: inline-flex;
   align-items: center;
@@ -529,7 +582,7 @@
 }
 :is(.line-row:hover, .line-actions:focus-within) .line-action-label {
   max-width: 5em;
-  margin-left: 5px;
+  margin-inline-start: 5px;
   opacity: 1;
 }
 /* A line that needs attention says so in its icon too, until it's pointed at. */
@@ -543,8 +596,7 @@
 /* The selection's bar, as the register's (register.css .bulk-dock), over the bottom of the lines;
    its changes are named, being fewer. */
 .bulk-dock.line-bulk {
-  right: 16px;
-  left: 16px;
+  inset-inline: 16px;
 }
 .bulk-action.named {
   display: inline-flex;
@@ -584,11 +636,14 @@
   align-items: center;
   height: 40px;
   overflow: visible;
-  border-left-color: transparent;
+  border-inline-start-color: transparent;
   line-height: normal;
 }
 .line-row.line-editor > .line-state {
   box-shadow: inset 3px 0 0 var(--accent);
+}
+[dir="rtl"] .line-row.line-editor > .line-state {
+  box-shadow: inset -3px 0 0 var(--accent);
 }
 .line-row.line-editor > .line-actions-cell {
   box-shadow: none;
@@ -614,7 +669,7 @@
 }
 .line-editor-buttons {
   position: sticky;
-  left: 0;
+  inset-inline-start: 0;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -631,20 +686,20 @@
   min-width: 72px;
 }
 .line-editor-buttons .editor-hint {
-  margin-left: 6px;
+  margin-inline-start: 6px;
 }
 .statement-actions {
   flex-wrap: wrap;
 }
 .statement-actions .help {
-  margin-right: auto;
+  margin-inline-end: auto;
 }
 /* In the review: what a row of money in may be a refund of. */
 .import-review .refund-note {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  margin-left: 8px;
+  margin-inline-start: 8px;
   color: var(--positive);
   font-size: 0.85em;
 }
@@ -653,6 +708,6 @@
   flex: none;
   align-items: center;
   gap: 14px;
-  margin-left: auto;
+  margin-inline-start: auto;
   white-space: nowrap;
 }

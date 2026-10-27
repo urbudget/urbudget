@@ -15,21 +15,22 @@ enum ImportFiles {
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         guard size <= limit else { throw AppError(tooLarge) }
         let data: Data
-        do { data = try Data(contentsOf: url) } catch { throw AppError("The selected file could not be opened.") }
+        do { data = try Data(contentsOf: url) } catch { throw AppError(String(localized: "The selected file could not be opened.")) }
         guard data.count <= limit else { throw AppError(tooLarge) }
         return ImportPickedFile(name: url.lastPathComponent, data: data)
     }
 
     /// YNAB's export: at most eight files, 8 MB each and 16 MB together (ynab_files.rs).
     static func readYnab(_ urls: [URL]) throws -> [ImportPickedFile] {
-        guard urls.count <= 8 else { throw AppError("Choose at most 8 export files at once.") }
+        guard urls.count <= 8 else { throw AppError(String(localized: "Choose at most 8 export files at once.")) }
         var total = 0
         return try urls.map { url in
+            let name = url.lastPathComponent
             let file = try read(url, limit: 8 * 1024 * 1024,
-                                tooLarge: "\(url.lastPathComponent) is larger than 8 MB. Use YNAB's token import for larger budgets.")
+                                tooLarge: String(localized: "\(name) is larger than 8 MB. Use YNAB's token import for larger budgets."))
             total += file.data.count
             guard total <= 16 * 1024 * 1024 else {
-                throw AppError("These export files total more than 16 MB. Use YNAB's token import for larger budgets.")
+                throw AppError(String(localized: "These export files total more than 16 MB. Use YNAB's token import for larger budgets."))
             }
             return file
         }
@@ -104,37 +105,67 @@ struct DecodedStatement: Equatable, Sendable {
 enum BankStatementText {
     /// What a line left out is, by why.
     static let leftOut: [String: String] = [
-        "pending": "Not booked yet", "declined": "Declined or cancelled", "otherAccount": "Another account's",
-        "otherCurrency": "In another currency", "ownBalances": "Between your own balances", "balance": "A balance or a total",
-        "aboveHeader": "Above the header", "noDate": "No date", "noAmount": "No amount", "zero": "Nothing moved",
-        "corrected": "Corrected by the bank", "repeatedHeader": "The header row again", "inWholeBatch": "In a batch imported as one entry",
-        "imported": "Imported before",
+        "pending": String(localized: "Not booked yet"), "declined": String(localized: "Declined or cancelled"),
+        "otherAccount": String(localized: "Another account's"), "otherCurrency": String(localized: "In another currency"),
+        "ownBalances": String(localized: "Between your own balances"), "balance": String(localized: "A balance or a total"),
+        "aboveHeader": String(localized: "Above the header"), "noDate": String(localized: "No date"), "noAmount": String(localized: "No amount"),
+        "zero": String(localized: "Nothing moved"), "corrected": String(localized: "Corrected by the bank"),
+        "repeatedHeader": String(localized: "The header row again"), "inWholeBatch": String(localized: "In a batch imported as one entry"),
+        "imported": String(localized: "Imported before"),
     ]
     /// Lines left out for these reasons can be included anyway (`Reason::includable`).
     static let includable: Set<String> = ["pending", "declined", "otherCurrency", "ownBalances", "balance", "noDate", "noAmount"]
     /// The parts of a transaction a line gives, as a phone edits them.
-    static let fields: [(id: String, label: String)] = [("date", "Date"), ("payee", "Payee"), ("memo", "Memo"), ("amount", "Amount")]
+    static let fields: [(id: String, label: String)] = [
+        ("date", String(localized: "Date")), ("payee", String(localized: "Payee")), ("memo", String(localized: "Memo")), ("amount", String(localized: "Amount")),
+    ]
     /// What the assistant is asked about the lines of an import that need attention: ready to send, not sent.
-    static let fixImport = "Fix the lines of this import that need attention. Use only what the file itself supports, and ask me about anything that isn't clear."
+    static let fixImport = String(localized: "Fix the lines of this import that need attention. Use only what the file itself supports, and ask me about anything that isn't clear.")
 
     /// Why a line is left out, with what the file says of it.
     static func leftOut(_ line: StatementLine) -> String {
-        let name = leftOut[line.reason] ?? "Left out"
-        if line.reason == "otherAccount" && !line.detail.isEmpty { return "Account \(line.detail)" }
-        if line.reason == "otherCurrency" && !line.detail.isEmpty { return "In \(line.detail)" }
-        if !line.detail.isEmpty && ["pending", "declined", "ownBalances"].contains(line.reason) { return "\(name) (\(line.detail))" }
+        let name = leftOut[line.reason] ?? String(localized: "Left out")
+        let detail = line.detail
+        if line.reason == "otherAccount" && !detail.isEmpty { return String(localized: "Account \(detail)") }
+        if line.reason == "otherCurrency" && !detail.isEmpty { return String(localized: "In \(detail)") }
+        if !detail.isEmpty && ["pending", "declined", "ownBalances"].contains(line.reason) { return String(localized: "\(name) (\(detail))") }
         return name
     }
 
     /// "2 lines read · 1 needs attention and won't be imported · 1 left out"
     static func counts(_ statement: BankStatement) -> String {
-        var text = statement.ready == 1 ? "1 line reads" : "\(statement.ready) lines read"
-        if statement.attention > 0 { text += " · \(statement.attention) \(statement.attention == 1 ? "needs" : "need") attention and won't be imported" }
-        if statement.leftOutCount > 0 { text += " · \(statement.leftOutCount) left out" }
-        return text
+        var parts = [String(localized: "\(statement.ready) lines read", locale: .app)]
+        if statement.attention > 0 { parts.append(String(localized: "\(statement.attention) need attention and won't be imported", locale: .app)) }
+        if statement.leftOutCount > 0 { parts.append(String(localized: "\(statement.leftOutCount) left out", locale: .app)) }
+        return ImportsText.line(parts)
     }
 
-    /// A date the orders read differently, read day first and month first: "1 February 2026" and "2 January 2026".
+    /// "1 need attention · 2 left out, not imported.", above the review of the lines that read.
+    static func notImported(_ statement: BankStatement) -> String {
+        var parts: [String] = []
+        if statement.attention > 0 { parts.append(String(localized: "\(statement.attention) need attention", locale: .app)) }
+        if statement.leftOutCount > 0 { parts.append(String(localized: "\(statement.leftOutCount) left out", locale: .app)) }
+        let lines = ImportsText.line(parts)
+        return String(localized: "\(lines), not imported.")
+    }
+
+    /// "A1 · EUR · 3 lines": an account in the file, its currency when it says one, and its lines.
+    static func source(_ source: StatementSource) -> String {
+        var parts = [source.label]
+        if let currency = source.currency { parts.append(currency) }
+        parts.append(String(localized: "\(source.lines) lines", locale: .app))
+        return ImportsText.line(parts)
+    }
+
+    /// A date order ("dmy" or "mdy") with what the ambiguous date reads as in it: "Day first (01/02/2026 is 1 February 2026)".
+    static func order(_ order: String, example: String, reading: String?) -> String {
+        let monthFirst = order == "mdy"
+        guard let reading else { return monthFirst ? String(localized: "Month first") : String(localized: "Day first") }
+        return monthFirst ? String(localized: "Month first (\(example) is \(reading))") : String(localized: "Day first (\(example) is \(reading))")
+    }
+
+    /// A date the orders read differently, read day first and month first: "1 February 2026" and "2 January 2026",
+    /// with Arabic month names in Arabic.
     static func readings(_ example: String) -> (dmy: String, mdy: String)? {
         guard let pattern = try? NSRegularExpression(pattern: #"(\d{1,2})\D(\d{1,2})\D(\d{2,4})"#),
               let match = pattern.firstMatch(in: example, range: NSRange(example.startIndex..., in: example)),
@@ -144,10 +175,11 @@ enum BankStatementText {
         let year = y.count == 2 ? 2000 + written : written
         let calendar = Calendar(identifier: .gregorian)
         let named = DateFormatter()
-        named.locale = Locale(identifier: "en_GB")
+        named.locale = AppLanguage.isRightToLeft ? Locale.app : Locale(identifier: "en_GB")
         named.calendar = calendar
         named.timeZone = TimeZone(identifier: "UTC")
-        named.dateFormat = "d MMMM yyyy"
+        // Arabic: the day, month name and year in the order of the person's Arabic region, with Western digits.
+        if AppLanguage.isRightToLeft { named.setLocalizedDateFormatFromTemplate("dMMMMy") } else { named.dateFormat = "d MMMM yyyy" }
         func read(_ day: Int, _ month: Int) -> String? {
             let parts = DateComponents(calendar: calendar, timeZone: named.timeZone, year: year, month: month, day: day)
             guard parts.isValidDate, let date = parts.date else { return nil }
@@ -161,9 +193,12 @@ enum BankStatementText {
     static func refund(_ refund: JSON, categories: [String: String], currency: String) -> String {
         let payee = refund.text("payee")
         let category = refund.text("categoryId")
-        if refund.long("purchases") > 1 && category.isEmpty { return "Possible refund · \(refund.long("purchases")) purchases from \(payee) match" }
-        let name = categories[category].map { " · \($0)" } ?? ""
-        return "Refund of \(payee) · \(Money.format(-refund.long("amount"), currency: currency)) on \(Money.date(refund.text("date")))\(name)"
+        let purchases = refund.long("purchases")
+        if purchases > 1 && category.isEmpty { return String(localized: "Possible refund · \(purchases) purchases from \(payee) match", locale: .app) }
+        let amount = Money.format(-refund.long("amount"), currency: currency)
+        let date = Money.date(refund.text("date"))
+        guard let name = categories[category] else { return String(localized: "Refund of \(payee) · \(amount) on \(date)") }
+        return String(localized: "Refund of \(payee) · \(amount) on \(date) · \(name)")
     }
 
     /// What became of fixes applied to an import (`bankApplyFixes`): the lines changed, how many applied, and what to say.
@@ -173,10 +208,15 @@ enum BankStatementText {
         let done = results.count - refused.count
         let notice: String
         if let first = refused.first {
-            let problem = first.text("problem").isEmpty ? "the line changed" : first.text("problem")
-            notice = "Applied \(done) of \(results.count) fixes. \(refused.count == 1 ? "One no longer fits" : "\(refused.count) no longer fit"): \(problem)"
+            let problem = first.text("problem").isEmpty ? String(localized: "the line changed") : first.text("problem")
+            let total = results.count
+            let refusedCount = refused.count
+            // "Applied 1 of 2 fixes. One no longer fits: …"
+            notice = String(localized: "Applied \(done) of \(total) fixes.", locale: .app) + " "
+                + String(localized: "\(refusedCount) no longer fit: \(problem)", locale: .app)
         } else {
-            notice = done == 1 ? "Applied the assistant's fix." : "Applied the assistant's \(done) fixes."
+            // One reads "Applied the assistant's fix."
+            notice = String(localized: "Applied the assistant's \(done) fixes.", locale: .app)
         }
         return (results.filter { $0.flag("applied") && !$0["line"].isNull }.map { $0.text("line") }, done, notice)
     }
@@ -204,8 +244,8 @@ struct StatementLine: Identifiable, Equatable, Sendable {
     var title: String {
         let payee = fields["payee"] ?? ""
         if !payee.trimmingCharacters(in: .whitespaces).isEmpty { return payee }
-        let written = cells.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.joined(separator: " · ")
-        return written.isEmpty ? "Line \(id)" : written
+        let written = cells.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        return written.isEmpty ? String(localized: "Line \(id)") : ImportsText.line(written)
     }
 }
 
@@ -367,6 +407,16 @@ enum BankFixes {
     }
 }
 
+/// Text the import and sync screens put together.
+enum ImportsText {
+    /// Parts of a detail line, joined with " · ". In Arabic the line reads right to left and each
+    /// part keeps its own direction (a date, a payee in Latin letters); English is joined as it is.
+    static func line(_ parts: [String]) -> String {
+        guard AppLanguage.isRightToLeft else { return parts.joined(separator: " · ") }
+        return "\u{200F}" + parts.map { "\u{2068}" + $0 + "\u{2069}" }.joined(separator: " · ")
+    }
+}
+
 /// Engine requests too large for the JSON value tree.
 enum ImportsEngine {
     private static let digits: [[UInt8]] = (0...255).map { Array(String($0).utf8) }
@@ -405,7 +455,7 @@ enum ImportsEngine {
             }
         }
         let value = try JSON.parse(reply)
-        guard value["ok"].bool else { throw AppError(value.text("error", "The shared engine couldn't read these files.")) }
+        guard value["ok"].bool else { throw AppError(value.text("error", String(localized: "The shared engine couldn't read these files."))) }
         return value["value"]
     }
 }

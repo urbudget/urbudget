@@ -1,4 +1,5 @@
 //! Shared authenticated receipt verification. The platform client never grants entitlements.
+use crate::t;
 use crate::cloud::{Cloud, Session};
 use serde_json::{json, Value};
 
@@ -41,7 +42,7 @@ where F: FnMut(Value) -> Fut, Fut: std::future::Future<Output = Result<Value, St
         for purchase in purchases {
             if purchase["state"] != "purchased" && purchase["state"] != "pending" { continue; }
             cloud.check_session(session)?;
-            let token = purchase["token"].as_str().filter(|s| !s.is_empty()).ok_or("Google Play returned no purchase token.")?;
+            let token = purchase["token"].as_str().filter(|s| !s.is_empty()).ok_or_else(|| t!("Google Play returned no purchase token."))?;
             let answer = send(json!({"token":token,"products":purchase["products"]})).await?;
             cloud.check_session(session)?;
             pending |= answer["pending"].as_bool().unwrap_or(false);

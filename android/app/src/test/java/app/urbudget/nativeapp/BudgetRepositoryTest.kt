@@ -9,6 +9,7 @@ import org.junit.Test
 import java.io.IOException
 
 class BudgetRepositoryTest {
+    @org.junit.Before fun english() = EnglishWords.install()
     private class MemoryStorage(var saved: String? = null) : BudgetStorage {
         override var identity: String? = "first-budget"
         var fail = false

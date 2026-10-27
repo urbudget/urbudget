@@ -112,7 +112,7 @@ struct AssistantView: View {
             switch result {
             case .success(let urls):
                 let room = max(0, AssistantAttachments.limit - controller.attachments.count)
-                if urls.count > room { localError = "Attach up to five files per message." }
+                if urls.count > room { localError = String(localized: "Attach up to five files per message.") }
                 controller.attach(files: Array(urls.prefix(room)))
             case .failure(let error):
                 localError = BudgetStore.readable(error)
@@ -208,7 +208,7 @@ struct AssistantView: View {
                     .padding(.top, 4)
             } else {
                 VStack(spacing: 8) {
-                    ForEach(["Where is my money going this month?", "Help me cover overspending", "Make a report of this month's budget"], id: \.self) { prompt in
+                    ForEach(Self.suggestions, id: \.self) { prompt in
                         Button {
                             message = prompt
                             composing = true
@@ -216,7 +216,7 @@ struct AssistantView: View {
                             HStack {
                                 Text(prompt).multilineTextAlignment(.leading)
                                 Spacer(minLength: 8)
-                                Image(systemName: "arrow.up.left").font(.footnote).foregroundStyle(Color.secondary)
+                                Image(systemName: "arrow.up.backward").font(.footnote).foregroundStyle(Color.secondary)
                             }
                             .padding(.horizontal, 14)
                             .padding(.vertical, 12)
@@ -233,6 +233,10 @@ struct AssistantView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// Questions to start with, put in the message field in the app's language.
+    private static let suggestions = [String(localized: "Where is my money going this month?"), String(localized: "Help me cover overspending"),
+                                      String(localized: "Make a report of this month's budget")]
+
     @ViewBuilder
     private func entryView(_ entry: AssistantEntry) -> some View {
         switch entry.kind {
@@ -247,7 +251,7 @@ struct AssistantView: View {
         case "step":
             let failed = entry.json.flag("failed")
             Label {
-                Text(failed ? "Couldn’t complete: \(entry.json.text("text"))" : entry.json.text("text"))
+                Text(failed ? String(localized: "Couldn’t complete: \(entry.json.text("text"))") : entry.json.text("text"))
             } icon: {
                 Image(systemName: failed ? "exclamationmark.circle" : "checkmark.circle")
             }
@@ -282,7 +286,7 @@ struct AssistantView: View {
             undo: { controller.undo(id) },
             discard: { controller.discard(id) },
             refine: {
-                message = "Revise the proposal ‘\(proposal.text("title"))’: "
+                message = String(localized: "Revise the proposal ‘\(proposal.text("title"))’: ")
                 composing = true
             },
             reviewImport: {
@@ -339,7 +343,7 @@ struct AssistantView: View {
                         ProgressView().controlSize(.mini).accessibilityLabel("Loading")
                     }
                 }
-                Text(controller.thread?.text("title").nilIfEmpty ?? "Your budget, with a second pair of eyes")
+                Text(controller.thread?.text("title").nilIfEmpty ?? String(localized: "Your budget, with a second pair of eyes"))
                     .font(.caption2).foregroundStyle(Color.secondary).lineLimit(1)
             }
             .accessibilityElement(children: .combine)
@@ -367,7 +371,7 @@ struct AssistantView: View {
     @ViewBuilder
     private var noticeBar: some View {
         if let notice = controller.notice {
-            Notice(text: notice, tone: "info", icon: "info.circle.fill", action: "Dismiss") { controller.dismissNotice() }
+            Notice(text: notice, tone: "info", icon: "info.circle.fill", action: String(localized: "Dismiss")) { controller.dismissNotice() }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 6)
                 .background(Color.groupedBackground)
@@ -401,7 +405,7 @@ struct AssistantView: View {
                     HStack(spacing: 8) {
                         ForEach(Array(controller.attachments.enumerated()), id: \.offset) { _, file in
                             AssistantChip(text: file.text("name"), symbol: AssistantAttachments.symbol(file.text("kind")),
-                                          removeLabel: "Remove attachment \(file.text("name"))") {
+                                          removeLabel: String(localized: "Remove attachment \(file.text("name"))")) {
                                 controller.removeAttachment(file.text("id"))
                             }
                         }
@@ -413,8 +417,8 @@ struct AssistantView: View {
                             .padding(.horizontal, 10)
                         }
                         if !selected.isEmpty {
-                            AssistantChip(text: "\(selected.count) selected \(selected.count == 1 ? "transaction" : "transactions")", symbol: "checklist",
-                                          removeLabel: "Clear selected transactions", onTap: { contextShown = true }) {
+                            AssistantChip(text: String(localized: "\(selected.count) selected transactions", locale: .app), symbol: "checklist",
+                                          removeLabel: String(localized: "Clear selected transactions"), onTap: { contextShown = true }) {
                                 selected = []
                             }
                         }

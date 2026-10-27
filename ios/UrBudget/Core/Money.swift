@@ -62,8 +62,14 @@ enum Money {
         return symbol
     }
 
-    /// Cents as text in the budget's format: no floating point, and no abs(Int64.min).
+    /// Cents as text in the budget's format: no floating point, and no abs(Int64.min). In Arabic the
+    /// amount is kept left to right as a whole, so its sign and symbol stay where the budget puts them.
     static func format(_ amount: Int64, currency: String) -> String {
+        AppLanguage.leftToRight(plain(amount, currency: currency))
+    }
+
+    /// `format` without the direction marks, for text that's built on further (a sign added in front).
+    static func plain(_ amount: Int64, currency: String) -> String {
         let style = format
         var digits = String(amount.magnitude)
         while digits.count < 3 { digits = "0" + digits }
@@ -100,7 +106,7 @@ enum Money {
         let grouped = separators.isEmpty ? "" : "|[0-9]{1,3}(?:\(separators)[0-9]{3})+"
         let pattern = "^[+-]?(?:[0-9]+\(grouped))(?:\(NSRegularExpression.escapedPattern(for: style.decimal))[0-9]{1,2})?$"
         guard normalized.range(of: pattern, options: .regularExpression) != nil else {
-            throw AppError("Enter an amount with up to two decimal places. Decimal separator: \(style.decimal)")
+            throw AppError(String(localized: "Enter an amount with up to two decimal places. Decimal separator: \(style.decimal)"))
         }
         var plain = separators.isEmpty ? normalized : normalized.replacingOccurrences(of: style.group, with: "")
         plain = plain.replacingOccurrences(of: style.decimal, with: ".")
@@ -109,7 +115,7 @@ enum Money {
         let parts = plain.split(separator: ".", omittingEmptySubsequences: false)
         let fraction = parts.count > 1 ? String(parts[1]).padding(toLength: 2, withPad: "0", startingAt: 0) : "00"
         guard let whole = Int64(parts[0]), whole <= 10_000_000_000, let cents = Int64(fraction) else {
-            throw AppError("The amount is too large.")
+            throw AppError(String(localized: "The amount is too large."))
         }
         let value = whole * 100 + cents
         return negative ? -value : value

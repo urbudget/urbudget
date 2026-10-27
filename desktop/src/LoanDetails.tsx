@@ -4,6 +4,7 @@ import { CategoryPicker } from "./ui";
 import { editableAmount, evaluateAmount, monthName } from "./format";
 import { parseRate, parseRateChange, rateText } from "./Planning";
 import { today, type Budget, type LoanTerms } from "./types";
+import { t } from "./i18n";
 import "./loans.css";
 
 type Rates = NonNullable<LoanTerms["rateHistory"]>;
@@ -11,12 +12,12 @@ type Rates = NonNullable<LoanTerms["rateHistory"]>;
 export type LoanDraft = { rate: string; payment: string; fees: string; category: string; rateHistory: Rates };
 
 const amountText = (cents: number) => (cents ? editableAmount(cents) : "");
-export const loanDraft = (t?: LoanTerms): LoanDraft => ({
-  rate: t ? rateText(t.annualRateBasisPoints) : "",
-  payment: t ? amountText(t.monthlyPayment) : "",
-  fees: t ? amountText(t.monthlyFees) : "",
-  category: t?.categoryId ?? "",
-  rateHistory: t?.rateHistory ?? [],
+export const loanDraft = (terms?: LoanTerms): LoanDraft => ({
+  rate: terms ? rateText(terms.annualRateBasisPoints) : "",
+  payment: terms ? amountText(terms.monthlyPayment) : "",
+  fees: terms ? amountText(terms.monthlyFees) : "",
+  category: terms?.categoryId ?? "",
+  rateHistory: terms?.rateHistory ?? [],
 });
 /**
  * The typed fields as loan details to save, or null for none: a blank payment (with nothing
@@ -28,11 +29,11 @@ export function loanTermsOf(accountId: string, d: LoanDraft): LoanTerms | null {
   const rate = d.rate.trim() ? parseRate(d.rate) : 0;
   if (!payment) {
     if (rate || fees || d.rateHistory.length)
-      throw new Error("Enter the loan's monthly payment, or clear its other details.");
+      throw new Error(t("Enter the loan's monthly payment, or clear its other details."));
     return null;
   }
-  if (payment < 0) throw new Error("Enter the monthly payment as a positive amount.");
-  if (fees < 0) throw new Error("Enter the monthly fees as a positive amount.");
+  if (payment < 0) throw new Error(t("Enter the monthly payment as a positive amount."));
+  if (fees < 0) throw new Error(t("Enter the monthly fees as a positive amount."));
   return {
     accountId,
     categoryId: d.category,
@@ -50,7 +51,7 @@ export function RateChanges({ value, onChange }: { value: Rates; onChange: (rate
   const [error, setError] = useState("");
   const add = () => {
     try {
-      if (!month) throw new Error("Choose the month the rate starts.");
+      if (!month) throw new Error(t("Choose the month the rate starts."));
       const n = parseRateChange(rate);
       onChange(
         [...value.filter((r) => r.month !== month), { month, annualRateMilliPercent: n }].sort((a, b) =>
@@ -65,17 +66,17 @@ export function RateChanges({ value, onChange }: { value: Rates; onChange: (rate
   };
   return (
     <details className="rate-changes">
-      <summary>Rate changes ({value.length})</summary>
-      <p className="help">For a variable rate: each one replaces the rate above from its month.</p>
+      <summary>{t("Rate changes ({count})", { count: value.length })}</summary>
+      <p className="help">{t("For a variable rate: each one replaces the rate above from its month.")}</p>
       <div className="rate-change-add">
         <label>
-          From
-          <input aria-label="Rate change month" type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
+          {t("From")}
+          <input aria-label={t("Rate change month")} type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
         </label>
         <label>
-          New rate (%)
+          {t("New rate (%)")}
           <input
-            aria-label="New annual rate"
+            aria-label={t("New annual rate")}
             inputMode="decimal"
             value={rate}
             onChange={(e) => setRate(e.target.value)}
@@ -87,7 +88,7 @@ export function RateChanges({ value, onChange }: { value: Rates; onChange: (rate
           />
         </label>
         <button type="button" className="secondary" onClick={add}>
-          Add rate change
+          {t("Add rate change")}
         </button>
       </div>
       {error && (
@@ -99,9 +100,9 @@ export function RateChanges({ value, onChange }: { value: Rates; onChange: (rate
         <table className="data-table">
           <thead>
             <tr>
-              <th>From</th>
-              <th className="num">Annual rate</th>
-              <th aria-label="Actions" />
+              <th>{t("From")}</th>
+              <th className="num">{t("Annual rate")}</th>
+              <th aria-label={t("Actions")} />
             </tr>
           </thead>
           <tbody>
@@ -113,7 +114,7 @@ export function RateChanges({ value, onChange }: { value: Rates; onChange: (rate
                   <button
                     type="button"
                     className="icon-button"
-                    aria-label={`Remove the ${monthName(r.month)} rate`}
+                    aria-label={t("Remove the {month} rate", { month: monthName(r.month) })}
                     onClick={() => onChange(value.filter((x) => x.month !== r.month))}
                   >
                     <X size={14} />
@@ -154,27 +155,28 @@ export function LoanDetailsFields({
   focus?: boolean;
 }) {
   const set = (patch: Partial<LoanDraft>) => onChange({ ...value, ...patch });
-  const fees = type === "mortgage" ? "escrow" : "fees";
+  const mortgage = type === "mortgage";
+  const monthlyFees = mortgage ? t("Monthly escrow") : t("Monthly fees");
   return (
     <fieldset className="loan-fields">
-      <legend>Loan details</legend>
+      <legend>{t("Loan details")}</legend>
       {imported ? (
-        <p className="help">Filled in from your YNAB import. Check them, then save.</p>
+        <p className="help">{t("Filled in from your YNAB import. Check them, then save.")}</p>
       ) : (
         onUseImported && (
           <p className="help">
-            Your YNAB import has this loan's terms.{" "}
+            {t("Your YNAB import has this loan's terms.")}{" "}
             <button type="button" className="link-button" onClick={onUseImported}>
-              Use them
+              {t("Use them")}
             </button>
           </p>
         )
       )}
       <div className="form-grid">
         <label>
-          Interest rate (%)
+          {t("Interest rate (%)")}
           <input
-            aria-label="Interest rate"
+            aria-label={t("Interest rate")}
             inputMode="decimal"
             placeholder="0"
             data-autofocus={focus || undefined}
@@ -183,9 +185,9 @@ export function LoanDetailsFields({
           />
         </label>
         <label>
-          Monthly payment
+          {t("Monthly payment")}
           <input
-            aria-label="Monthly payment"
+            aria-label={t("Monthly payment")}
             inputMode="decimal"
             placeholder="0.00"
             value={value.payment}
@@ -193,9 +195,9 @@ export function LoanDetailsFields({
           />
         </label>
         <label>
-          Monthly {fees}
+          {monthlyFees}
           <input
-            aria-label={`Monthly ${fees}`}
+            aria-label={monthlyFees}
             inputMode="decimal"
             placeholder="0.00"
             value={value.fees}
@@ -204,19 +206,20 @@ export function LoanDetailsFields({
         </label>
       </div>
       <div className="field">
-        <span>Payment category</span>
+        <span>{t("Payment category")}</span>
         <CategoryPicker
           budget={budget}
-          label="Payment category"
+          label={t("Payment category")}
           value={value.category || null}
           onChange={(category) => set({ category })}
-          placeholder="Where the payment comes from"
+          placeholder={t("Where the payment comes from")}
         />
       </div>
       <RateChanges value={value.rateHistory} onChange={(rateHistory) => set({ rateHistory })} />
       <p className="help">
-        The payment includes the {fees}. The month's interest and {fees} are added to the loan with its first
-        payment each month. Leave the payment blank for no loan details.
+        {mortgage
+          ? t("The payment includes the escrow. The month's interest and escrow are added to the loan with its first payment each month. Leave the payment blank for no loan details.")
+          : t("The payment includes the fees. The month's interest and fees are added to the loan with its first payment each month. Leave the payment blank for no loan details.")}
       </p>
     </fieldset>
   );

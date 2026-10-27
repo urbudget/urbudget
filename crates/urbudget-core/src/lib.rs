@@ -11,6 +11,7 @@ pub mod budgets;
 pub mod domain;
 pub mod engine;
 pub mod fresh_start;
+pub mod i18n;
 pub mod import_sync;
 pub mod ledger;
 pub mod loans;

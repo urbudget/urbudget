@@ -18,16 +18,28 @@ enum Dates {
         return formatter
     }
 
+    /// Month and weekday names for people: English as written here, or in Arabic the names and
+    /// order of the person's Arabic region, on the Gregorian calendar with Western digits.
+    private static func names(_ english: String, arabic template: String) -> DateFormatter {
+        guard AppLanguage.isRightToLeft else { return formatter(english) }
+        let arabic = DateFormatter()
+        arabic.locale = .app
+        arabic.calendar = Calendar(identifier: .gregorian)
+        arabic.timeZone = TimeZone(identifier: "UTC")
+        arabic.setLocalizedDateFormatFromTemplate(template)
+        return arabic
+    }
+
     private static let isoDay = formatter("yyyy-MM-dd")
     private static let localDay = formatter("yyyy-MM-dd", utc: false)
-    private static let monthYear = formatter("MMMM yyyy")
-    private static let shortMonthYear = formatter("MMM yyyy")
-    private static let shortMonth = formatter("MMM")
-    private static let monthName = formatter("MMMM")
-    private static let dayMonthFirst = formatter("EEEE, MMMM d, yyyy")
-    private static let dayFirst = formatter("EEEE, d MMMM yyyy")
-    private static let dayShort = formatter("d MMM yyyy")
-    private static let dayMonth = formatter("d MMM")
+    private static let monthYear = names("MMMM yyyy", arabic: "MMMMy")
+    private static let shortMonthYear = names("MMM yyyy", arabic: "MMMy")
+    private static let shortMonth = names("MMM", arabic: "MMM")
+    private static let monthName = names("MMMM", arabic: "MMMM")
+    private static let dayMonthFirst = names("EEEE, MMMM d, yyyy", arabic: "EEEEdMMMMy")
+    private static let dayFirst = names("EEEE, d MMMM yyyy", arabic: "EEEEdMMMMy")
+    private static let dayShort = names("d MMM yyyy", arabic: "dMMMy")
+    private static let dayMonth = names("d MMM", arabic: "dMMM")
 
     /// Today on this device, as the budget's day.
     static var today: String { localDay.string(from: Date()) }
@@ -109,7 +121,9 @@ enum Dates {
         return dayMonth.string(from: date)
     }
 
+    /// "1st", "22nd"; Arabic writes the day's number alone ("يوم 22").
     static func ordinal(_ n: Int) -> String {
+        if AppLanguage.isRightToLeft { return String(n) }
         let suffix: String
         if (11...13).contains(n % 100) { suffix = "th" } else {
             switch n % 10 { case 1: suffix = "st"; case 2: suffix = "nd"; case 3: suffix = "rd"; default: suffix = "th" }
@@ -122,6 +136,7 @@ enum Dates {
         guard let date = day(iso) else { return iso }
         let name = monthName.string(from: date)
         let dayNumber = utc.component(.day, from: date)
-        return monthFirst ? "\(name) \(ordinal(dayNumber))" : "\(dayNumber) \(name)"
+        // Arabic puts the day first whatever the budget's order: "1 أكتوبر".
+        return monthFirst && !AppLanguage.isRightToLeft ? "\(name) \(ordinal(dayNumber))" : "\(dayNumber) \(name)"
     }
 }

@@ -51,7 +51,7 @@ pub fn ask(window: &WebviewWindow, name: &str, kind: Kind) -> Option<PathBuf> {
     let panel = match kind {
         Kind::Csv => panel.add_filter("CSV", &["csv"]),
         Kind::Json => panel.add_filter("JSON", &["json"]),
-        Kind::Workbook => panel.add_filter("Excel workbook", &["xlsx"]),
+        Kind::Workbook => panel.add_filter(urbudget_services::i18n::tr("Excel workbook"), &["xlsx"]),
         Kind::Folder => panel,
     };
     panel.blocking_save_file()?.into_path().ok()
@@ -69,7 +69,7 @@ pub fn file(window: &WebviewWindow, name: &str, kind: Kind, contents: &[u8]) -> 
 
 /// Writes an export, readable only by you where the system has such permissions.
 pub fn write(path: &Path, contents: &[u8]) -> Result<(), String> {
-    std::fs::write(path, contents).map_err(|e| format!("Couldn't save {}: {e}", path.display()))?;
+    std::fs::write(path, contents).map_err(|e| urbudget_services::t!("Couldn't save {path}: {e}", path = path.display(), e))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

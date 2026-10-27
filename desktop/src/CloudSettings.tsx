@@ -5,6 +5,7 @@ import { errorText, formatDate } from "./format";
 import { Modal } from "./forms";
 import { SyncConflicts } from "./SyncConflicts";
 import { useToast } from "./ui";
+import { msg, t, tn } from "./i18n";
 import "./cloud.css";
 
 /** "just now", "5 minutes ago", "3 hours ago", or the date. */
@@ -12,9 +13,9 @@ export function ago(iso: string | null | undefined) {
   if (!iso) return "";
   const seconds = (Date.now() - Date.parse(iso)) / 1000;
   if (!Number.isFinite(seconds)) return "";
-  if (seconds < 60) return "just now";
-  if (seconds < 3600) return `${Math.round(seconds / 60)} min ago`;
-  if (seconds < 86_400) return `${Math.round(seconds / 3600)} h ago`;
+  if (seconds < 60) return t("just now");
+  if (seconds < 3600) return tn(Math.round(seconds / 60), "{count} min ago", "{count} min ago");
+  if (seconds < 86_400) return tn(Math.round(seconds / 3600), "{count} h ago", "{count} h ago");
   return formatDate(iso.slice(0, 10));
 }
 
@@ -40,7 +41,7 @@ function Confirm({
       {children}
       <div className="modal-actions">
         <button className="secondary" onClick={close} disabled={busy}>
-          Cancel
+          {t("Cancel")}
         </button>
         <button
           className={danger ? "danger" : "primary"}
@@ -70,19 +71,19 @@ function DeleteAccount({ cloud: state }: { cloud: Cloud }) {
   const [error, setError] = useState("");
   const email = state.status?.email ?? "";
   return <>
-    <button className="secondary danger-text" onClick={() => { setConfirm(""); setError(""); setOpen(true); }}>Delete account</button>
-    {open && <Modal title="Delete your UrBudget account?" close={() => { if (!busy) setOpen(false); }}>
-      <p>This deletes your account and cloud budgets and stops subscription renewals. Budgets saved on your devices stay there. Purchase records may be retained as described in the privacy policy.</p>
-      <label>Type {email} to confirm<input type="email" value={confirm} onChange={e => setConfirm(e.target.value)} autoComplete="off" disabled={busy} /></label>
+    <button className="secondary danger-text" onClick={() => { setConfirm(""); setError(""); setOpen(true); }}>{t("Delete account")}</button>
+    {open && <Modal title={t("Delete your UrBudget account?")} close={() => { if (!busy) setOpen(false); }}>
+      <p>{t("This deletes your account and cloud budgets and stops subscription renewals. Budgets saved on your devices stay there. Purchase records may be retained as described in the privacy policy.")}</p>
+      <label>{t("Type {email} to confirm", { email })}<input type="email" value={confirm} onChange={e => setConfirm(e.target.value)} autoComplete="off" disabled={busy} /></label>
       {error && <p role="alert" className="notice error">{error}</p>}
       <div className="modal-actions">
-        <button className="secondary" disabled={busy} onClick={() => setOpen(false)}>Cancel</button>
+        <button className="secondary" disabled={busy} onClick={() => setOpen(false)}>{t("Cancel")}</button>
         <button className="danger" disabled={busy || !email || confirm.trim().toLowerCase() !== email.toLowerCase()} onClick={async () => {
           setBusy(true); setError("");
           try { state.setStatus(await cloud.deleteAccount(confirm)); setOpen(false); }
           catch (e) { setError(errorText(e)); }
           finally { setBusy(false); }
-        }}>{busy ? "Deleting…" : "Delete account and cloud data"}</button>
+        }}>{busy ? t("Deleting…") : t("Delete account and cloud data")}</button>
       </div>
     </Modal>}
   </>;
@@ -129,17 +130,17 @@ function SignIn({ cloud: state }: { cloud: Cloud }) {
     >
       {!sent ? (
         <label>
-          Email
+          {t("Email")}
           <span className="inline-field">
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" disabled={busy} required />
             <button className="primary" disabled={busy || !email.includes("@")}>
-              {busy && <LoaderCircle size={14} className="spin" />} Email me a code
+              {busy && <LoaderCircle size={14} className="spin" />} {t("Email me a code")}
             </button>
           </span>
         </label>
       ) : (
         <label>
-          {reviewAccess ? "Review access code" : `The 6-digit code we sent to ${email}`}
+          {reviewAccess ? t("Review access code") : t("The 6-digit code we sent to {email}", { email })}
           <span className="inline-field">
             <input
               className="mono code-input"
@@ -150,39 +151,39 @@ function SignIn({ cloud: state }: { cloud: Cloud }) {
               autoComplete={reviewAccess ? "off" : "one-time-code"}
               minLength={reviewAccess ? 24 : 6}
               maxLength={reviewAccess ? 128 : 6}
-              placeholder={reviewAccess ? "Access code" : "123456"}
+              placeholder={reviewAccess ? t("Access code") : "123456"}
               spellCheck={false}
               autoFocus
             />
             <button className="primary" disabled={busy || (reviewAccess ? code.length < 24 : code.length !== 6)}>
-              {busy && <LoaderCircle size={14} className="spin" />} Sign in
+              {busy && <LoaderCircle size={14} className="spin" />} {t("Sign in")}
             </button>
             <button type="button" className="link-button" disabled={busy} onClick={() => { setSent(false); setCode(""); setReviewAccess(false); }}>
-              Use another email
+              {t("Use another email")}
             </button>
           </span>
         </label>
       )}
       <small className="muted">
         {sent
-          ? reviewAccess ? "Use the access code supplied with the app review instructions." : "It can take a minute to arrive. Not there? Check your Junk or Spam folder."
-          : "No password: each time you sign in, we email you a code."}
+          ? reviewAccess ? t("Use the access code supplied with the app review instructions.") : t("It can take a minute to arrive. Not there? Check your Junk or Spam folder.")
+          : t("No password: each time you sign in, we email you a code.")}
       </small>
     </form>
   );
 }
 
 const BUDGET_STATES: Record<BudgetSync["state"], string> = {
-  synced: "Synced",
-  uploaded: "Synced",
-  downloaded: "Updated from the cloud",
-  merged: "Synced, changes from both combined",
-  conflict: "Changed in two places",
-  cloud_only: "In the cloud",
-  local_only: `Only on this computer`,
-  waiting: "Waiting to sync",
-  update_app: "Needs a newer UrBudget",
-  error: "Couldn't sync",
+  synced: msg("Synced"),
+  uploaded: msg("Synced"),
+  downloaded: msg("Updated from the cloud"),
+  merged: msg("Synced, changes from both combined"),
+  conflict: msg("Changed in two places"),
+  cloud_only: msg("In the cloud"),
+  local_only: msg("Only on this computer"),
+  waiting: msg("Waiting to sync"),
+  update_app: msg("Needs a newer UrBudget"),
+  error: msg("Couldn't sync"),
 };
 
 function Passphrase({ cloud: state, onDone }: { cloud: Cloud; onDone: (created: boolean) => void }) {
@@ -215,27 +216,29 @@ function Passphrase({ cloud: state, onDone }: { cloud: Cloud; onDone: (created: 
     >
       <p className="help">
         {exists
-          ? `Enter the sync passphrase you chose on your other computer. It decrypts your budgets here.`
-          : `Choose a sync passphrase. Your budgets are encrypted with it on this computer before they're uploaded, so nobody else, including us, can read them. We never see it and can't recover it; if you forget it, you can reset sync from any computer that has your budgets.`}
+          ? t("Enter the sync passphrase you chose on your other computer. It decrypts your budgets here.")
+          : t("Choose a sync passphrase. Your budgets are encrypted with it on this computer before they're uploaded, so nobody else, including us, can read them. We never see it and can't recover it; if you forget it, you can reset sync from any computer that has your budgets.")}
       </p>
       <label>
-        Sync passphrase
+        {t("Sync passphrase")}
         <input type="password" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} autoComplete={exists ? "current-password" : "new-password"} minLength={8} required />
       </label>
       {!exists && (
         <label>
-          Type it again
+          {t("Type it again")}
           <input type="password" value={again} onChange={(e) => setAgain(e.target.value)} autoComplete="new-password" aria-invalid={mismatch} />
-          {mismatch && <small className="negative">The two don't match.</small>}
+          {mismatch && <small className="negative">{t("The two don't match.")}</small>}
         </label>
       )}
       <div>
         <button className="primary" disabled={busy || passphrase.length < 8 || (!exists && again !== passphrase)}>
-          {busy && <LoaderCircle size={14} className="spin" />} {exists ? "Unlock sync" : "Turn on sync"}
+          {busy && <LoaderCircle size={14} className="spin" />} {exists ? t("Unlock sync") : t("Turn on sync")}
         </button>
       </div>
       {state.status?.credentialStore && (
-        <small className="muted">This computer keeps the key in {state.status.credentialStore}, so you enter the passphrase once.</small>
+        <small className="muted">
+          {t("This computer keeps the key in {store}, so you enter the passphrase once.", { store: state.status.credentialStore })}
+        </small>
       )}
     </form>
   );
@@ -289,7 +292,7 @@ export function SyncSettings({
   if (!status)
     return (
       <section className="panel">
-        <h2>Account</h2>
+        <h2>{t("Account")}</h2>
         <LoaderCircle size={16} className="spin" />
       </section>
     );
@@ -312,16 +315,20 @@ export function SyncSettings({
       <span>
         <strong>
           {b.name}
-          {b.id === budgetId && <em className="muted"> · open</em>}
+          {b.id === budgetId && <em className="muted"> · {t("open")}</em>}
         </strong>
         <small className={`sync-state ${b.state}`}>
-          {BUDGET_STATES[b.state]}
+          {t(BUDGET_STATES[b.state])}
           {b.message
             ? ` · ${b.message}`
             : b.conflicts?.length
-              ? ` · ${b.conflicts.length === 1 ? "1 change" : `${b.conflicts.length} changes`} to choose`
+              ? ` · ${tn(b.conflicts.length, "{count} change to choose", "{count} changes to choose")}`
               : b.updatedAt && b.state !== "local_only"
-                ? ` · last change ${ago(b.updatedAt)}${b.device ? ` from ${b.device}` : ""}`
+                ? ` · ${
+                    b.device
+                      ? t("last change {when} from {device}", { when: ago(b.updatedAt), device: b.device })
+                      : t("last change {when}", { when: ago(b.updatedAt) })
+                  }`
                 : ""}
         </small>
         {b.notes?.map((note) => (
@@ -334,7 +341,7 @@ export function SyncSettings({
         {busyId === b.id && <LoaderCircle size={14} className="spin" />}
         {b.state === "local_only" && (
           <button className="secondary" disabled={!!busyId} onClick={() => void act(b.id, () => cloud.syncTrack([b.id]))}>
-            Sync this budget
+            {t("Sync this budget")}
           </button>
         )}
         {b.state === "cloud_only" && (
@@ -344,16 +351,16 @@ export function SyncSettings({
             onClick={() =>
               void act(b.id, async () => {
                 await cloud.syncDownload(b.id);
-                toast({ message: `Downloaded “${b.name}”.`, action: { label: "Open it", onClick: () => void openBudget(b.id).catch(fail) } });
+                toast({ message: t("Downloaded “{name}”.", { name: b.name }), action: { label: t("Open it"), onClick: () => void openBudget(b.id).catch(fail) } });
               })
             }
           >
-            Download
+            {t("Download")}
           </button>
         )}
         {b.state === "conflict" && !!b.conflicts?.length && (
           <button className="secondary" disabled={!!busyId} onClick={() => setReviewing(b)}>
-            Review
+            {t("Review")}
           </button>
         )}
         {b.state === "conflict" && !b.conflicts?.length && (
@@ -363,28 +370,34 @@ export function SyncSettings({
               disabled={!!busyId}
               onClick={() =>
                 setConfirm({
-                  title: `Keep this computer's version?`,
-                  text: <p>“{b.name}” as it is here replaces the cloud copy. Your other computers get this version on their next sync.</p>,
-                  label: `Keep this computer's`,
+                  title: t("Keep this computer's version?"),
+                  text: <p>{t("“{name}” as it is here replaces the cloud copy. Your other computers get this version on their next sync.", { name: b.name })}</p>,
+                  label: t("Keep this computer's"),
                   action: () => act(b.id, () => cloud.syncResolve(b.id, "local", isClean())),
                 })
               }
             >
-              Keep this computer's
+              {t("Keep this computer's")}
             </button>
             <button
               className="secondary"
               disabled={!!busyId}
               onClick={() =>
                 setConfirm({
-                  title: "Use the cloud copy?",
-                  text: <p>“{b.name}” here is replaced by the cloud copy{b.device ? ` from ${b.device}` : ""}. This computer's version is backed up first (Settings › Backup & export).</p>,
-                  label: "Use the cloud copy",
+                  title: t("Use the cloud copy?"),
+                  text: (
+                    <p>
+                      {b.device
+                        ? t("“{name}” here is replaced by the cloud copy from {device}. This computer's version is backed up first (Settings › Backup & export).", { name: b.name, device: b.device })
+                        : t("“{name}” here is replaced by the cloud copy. This computer's version is backed up first (Settings › Backup & export).", { name: b.name })}
+                    </p>
+                  ),
+                  label: t("Use the cloud copy"),
                   action: () => act(b.id, () => cloud.syncResolve(b.id, "cloud", isClean())),
                 })
               }
             >
-              Use the cloud copy
+              {t("Use the cloud copy")}
             </button>
           </>
         )}
@@ -394,15 +407,15 @@ export function SyncSettings({
             disabled={!!busyId}
             onClick={() =>
               setConfirm({
-                title: `Stop syncing “${b.name}”?`,
-                text: <p>Its cloud copy is deleted. The copies on your computers stay where they are.</p>,
-                label: "Stop syncing",
+                title: t("Stop syncing “{name}”?", { name: b.name }),
+                text: <p>{t("Its cloud copy is deleted. The copies on your computers stay where they are.")}</p>,
+                label: t("Stop syncing"),
                 danger: true,
                 action: () => act(b.id, () => cloud.syncRemove(b.id)),
               })
             }
           >
-            Stop syncing
+            {t("Stop syncing")}
           </button>
         )}
       </span>
@@ -412,28 +425,30 @@ export function SyncSettings({
   return (
     <>
       <section className="panel">
-        <h2>Account</h2>
+        <h2>{t("Account")}</h2>
         {status.email ? (
           <div className="setting-list">
             <div className="setting-row">
               <span>
-                <strong>Signed in as {status.email}</strong>
+                <strong>{t("Signed in as {email}", { email: status.email })}</strong>
                 <small>
-                  {status.credentialStore ? `The sign-in is kept in ${status.credentialStore}.` : "You'll sign in again next time you open UrBudget."}
+                  {status.credentialStore
+                    ? t("The sign-in is kept in {store}.", { store: status.credentialStore })
+                    : t("You'll sign in again next time you open UrBudget.")}
                 </small>
               </span>
               <span className="sync-actions">
                 <button className="secondary" onClick={() => void cloud.open("/account/").catch(fail)}>
-                  Manage account
+                  {t("Manage account")}
                 </button>
                 <DeleteAccount cloud={state} />
                 <button
                   className="secondary"
                   onClick={() =>
                     setConfirm({
-                      title: "Sign out of UrBudget?",
-                      text: <p>Sync stops on this computer and it forgets the sync key. Your budgets here stay as they are.</p>,
-                      label: "Sign out",
+                      title: t("Sign out of UrBudget?"),
+                      text: <p>{t("Sync stops on this computer and it forgets the sync key. Your budgets here stay as they are.")}</p>,
+                      label: t("Sign out"),
                       action: async () => {
                         state.setStatus(await cloud.signOut());
                         setOverview(null);
@@ -441,14 +456,14 @@ export function SyncSettings({
                     })
                   }
                 >
-                  Sign out
+                  {t("Sign out")}
                 </button>
               </span>
             </div>
           </div>
         ) : (
           <>
-            <p className="help">An account is optional: you need one only for sync. Budgeting never needs it.</p>
+            <p className="help">{t("An account is optional: you need one only for sync. Budgeting never needs it.")}</p>
             <SignIn cloud={state} />
           </>
         )}
@@ -457,25 +472,24 @@ export function SyncSettings({
       <section className="panel sync-panel">
         <div className="panel-title">
           <h2>
-            <CloudIcon size={18} /> Sync
+            <CloudIcon size={18} /> {t("Sync")}
           </h2>
           {status.email && status.sync.unlocked && subscribed && (
             <button className="secondary" disabled={state.syncing} onClick={() => void state.syncNow()}>
-              <RefreshCw size={14} className={state.syncing ? "spin" : ""} /> Sync now
+              <RefreshCw size={14} className={state.syncing ? "spin" : ""} /> {t("Sync now")}
             </button>
           )}
         </div>
         <p className="help">
-          Keeps your budgets the same on all your computers. End-to-end encrypted: they're encrypted on your computer before
-          upload, and only your sync passphrase opens them. $3/month, cancel anytime.
+          {t("Keeps your budgets the same on all your computers. End-to-end encrypted: they're encrypted on your computer before upload, and only your sync passphrase opens them. $3/month, cancel anytime.")}
         </p>
         {!status.email ? (
-          <p className="muted">Sign in above to use sync.</p>
+          <p className="muted">{t("Sign in above to use sync.")}</p>
         ) : overviewError && !overview ? (
           <p className="notice error">
             <CloudOff size={14} /> <span>{overviewError}</span>
             <button className="secondary" onClick={loadOverview}>
-              Try again
+              {t("Try again")}
             </button>
           </p>
         ) : !overview && !report ? (
@@ -483,19 +497,19 @@ export function SyncSettings({
         ) : !subscribed ? (
           <div className="plan-offer">
             <div>
-              <strong className="plan-price">$3 a month</strong>
+              <strong className="plan-price">{t("$3 a month")}</strong>
               <small>
                 {overview?.subscription?.status === "canceled"
-                  ? "Your sync plan has ended. Subscribe again to pick up where you left off."
-                  : "Subscribe on urbudget.app, then come back here."}
+                  ? t("Your sync plan has ended. Subscribe again to pick up where you left off.")
+                  : t("Subscribe on urbudget.app, then come back here.")}
               </small>
             </div>
             <span className="sync-actions">
               <button className="primary" onClick={() => void cloud.open("/account/?subscribe=1").catch(fail)}>
-                Subscribe
+                {t("Subscribe")}
               </button>
               <button className="link-button" onClick={loadOverview}>
-                I've subscribed
+                {t("I've subscribed")}
               </button>
             </span>
           </div>
@@ -504,7 +518,7 @@ export function SyncSettings({
             cloud={state}
             onDone={(created) => {
               toast({
-                message: created ? "Sync is on. Your budgets are uploading, encrypted." : `Sync is unlocked on this computer.`,
+                message: created ? t("Sync is on. Your budgets are uploading, encrypted.") : t("Sync is unlocked on this computer."),
                 tone: "success",
               });
               void state.syncNow();
@@ -515,11 +529,11 @@ export function SyncSettings({
             {overview?.subscription && (
               <p className="muted plan-line">
                 {overview.subscription.endsAt
-                  ? `Your plan ends on ${formatDate(overview.subscription.endsAt.slice(0, 10))}.`
+                  ? t("Your plan ends on {date}.", { date: formatDate(overview.subscription.endsAt.slice(0, 10)) })
                   : overview.subscription.status === "past_due"
-                    ? `The last payment didn't go through; sync keeps working while it's retried. Update your card under Manage account.`
+                    ? t("The last payment didn't go through; sync keeps working while it's retried. Update your card under Manage account.")
                     : overview.subscription.renewsAt
-                      ? `Renews on ${formatDate(overview.subscription.renewsAt.slice(0, 10))}.`
+                      ? t("Renews on {date}.", { date: formatDate(overview.subscription.renewsAt.slice(0, 10)) })
                       : ""}
               </p>
             )}
@@ -527,26 +541,26 @@ export function SyncSettings({
               <p className="notice">
                 <span>
                   {report.state === "offline"
-                    ? "Offline. Sync picks up when you're back online."
+                    ? t("Offline. Sync picks up when you're back online.")
                     : report.state === "locked"
-                      ? "Enter your sync passphrase to sync."
-                      : report.message ?? "Sync couldn't finish."}
+                      ? t("Enter your sync passphrase to sync.")
+                      : report.message ?? t("Sync couldn't finish.")}
                 </span>
               </p>
             )}
             <div className="setting-list">{report?.budgets.map(budgetRow)}</div>
             <p className="muted sync-footer">
-              {report?.state === "ok" ? `Last synced ${ago(report.at)}.` : ""}{" "}
+              {report?.state === "ok" ? t("Last synced {when}.", { when: ago(report.at) }) : ""}{" "}
               <button className="link-button" onClick={() => setResetting(true)}>
-                Reset passphrase…
+                {t("Reset passphrase…")}
               </button>{" "}
               <button
                 className="link-button"
                 onClick={() =>
                   setConfirm({
-                    title: `Lock sync on this computer?`,
-                    text: <p>This computer forgets the sync key and stops syncing until you enter the passphrase again.</p>,
-                    label: "Lock",
+                    title: t("Lock sync on this computer?"),
+                    text: <p>{t("This computer forgets the sync key and stops syncing until you enter the passphrase again.")}</p>,
+                    label: t("Lock"),
                     action: async () => {
                       await cloud.syncLock();
                       await state.refresh();
@@ -554,7 +568,7 @@ export function SyncSettings({
                   })
                 }
               >
-                <Lock size={12} /> Lock on this computer
+                <Lock size={12} /> {t("Lock on this computer")}
               </button>
             </p>
           </>
@@ -591,7 +605,7 @@ function ResetPassphrase({ cloud: state, close }: { cloud: Cloud; close: () => v
   const [again, setAgain] = useState("");
   const [busy, setBusy] = useState(false);
   return (
-    <Modal title="Choose a new sync passphrase" close={close}>
+    <Modal title={t("Choose a new sync passphrase")} close={close}>
       <form
         className="passphrase"
         onSubmit={async (e) => {
@@ -601,7 +615,7 @@ function ResetPassphrase({ cloud: state, close }: { cloud: Cloud; close: () => v
             await cloud.syncReset(passphrase);
             await state.refresh();
             void state.syncNow();
-            toast({ message: `New passphrase set. This computer's budgets are uploading again.`, tone: "success" });
+            toast({ message: t("New passphrase set. This computer's budgets are uploading again."), tone: "success" });
             close();
           } catch (err) {
             toast({ message: errorText(err), tone: "error" });
@@ -610,23 +624,22 @@ function ResetPassphrase({ cloud: state, close }: { cloud: Cloud; close: () => v
         }}
       >
         <p>
-          The cloud copies made with the old passphrase are deleted, and this computer's budgets upload again. Your other
-          computers keep their budgets and need the new passphrase to sync.
+          {t("The cloud copies made with the old passphrase are deleted, and this computer's budgets upload again. Your other computers keep their budgets and need the new passphrase to sync.")}
         </p>
         <label>
-          New passphrase
+          {t("New passphrase")}
           <input type="password" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} autoComplete="new-password" minLength={8} required />
         </label>
         <label>
-          Type it again
+          {t("Type it again")}
           <input type="password" value={again} onChange={(e) => setAgain(e.target.value)} autoComplete="new-password" />
         </label>
         <div className="modal-actions">
           <button type="button" className="secondary" onClick={close} disabled={busy}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button className="danger" disabled={busy || passphrase.length < 8 || passphrase !== again}>
-            {busy && <LoaderCircle size={14} className="spin" />} Reset sync
+            {busy && <LoaderCircle size={14} className="spin" />} {t("Reset sync")}
           </button>
         </div>
       </form>

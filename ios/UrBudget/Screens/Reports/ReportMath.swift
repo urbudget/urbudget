@@ -88,7 +88,8 @@ struct ReportScoped<Scope: Equatable, Value> {
 enum ReportMath {
     /// The report-only bucket for spending without a category, as the engine names it.
     static let uncategorized = "__uncategorized"
-    static let needsCategory = "Needs a category"
+    /// The bucket's name in the app's language; reports use it as that bucket's group and name throughout.
+    static let needsCategory = String(localized: "Needs a category")
 
     // MARK: Text
 
@@ -165,9 +166,17 @@ enum ReportMath {
         return ((value % 7) + 7) % 7
     }
 
+    private static let weekdayNames = [
+        String(localized: "Sunday"), String(localized: "Monday"), String(localized: "Tuesday"), String(localized: "Wednesday"),
+        String(localized: "Thursday"), String(localized: "Friday"), String(localized: "Saturday"),
+    ]
+    private static let shortWeekdayNames = [
+        String(localized: "Sun"), String(localized: "Mon"), String(localized: "Tue"), String(localized: "Wed"),
+        String(localized: "Thu"), String(localized: "Fri"), String(localized: "Sat"),
+    ]
+
     static func weekdayName(_ day: Int, short: Bool = false) -> String {
-        let names = short ? ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-            : ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+        let names = short ? shortWeekdayNames : weekdayNames
         return names[((day % 7) + 7) % 7]
     }
 
@@ -220,16 +229,14 @@ enum ReportMath {
         return String(value)
     }
 
-    /// "12.5%" of a positive total, else a dash.
+    /// "12.5%" of a positive total, else a dash. A negative share keeps its sign in front in Arabic.
     static func share(_ part: Int64, _ total: Int64) -> String {
-        total > 0 ? "\(fixed(Double(part) / Double(total) * 100, 1))%" : "—"
+        total > 0 ? AppLanguage.leftToRight("\(fixed(Double(part) / Double(total) * 100, 1))%") : "—"
     }
-
-    static func plural<N: BinaryInteger>(_ count: N, _ one: String, _ many: String) -> String { count == 1 ? one : many }
 
     static func daysText(_ days: Int64?) -> String {
         guard let days else { return "—" }
-        return "\(days) \(plural(days, "day", "days"))"
+        return String(localized: "\(days) days", locale: .app)
     }
 
     /// Axis label for an amount in cents: 0, 950, 1.5K, 12K, 1.2M.
@@ -240,9 +247,15 @@ enum ReportMath {
             fixed(number, digits).replacingOccurrences(of: #"\.0+$"#, with: "", options: .regularExpression)
                 .replacingOccurrences(of: ".", with: decimal)
         }
-        if size >= 1e6 { return part(value / 1e6, size >= 1e7 ? 0 : 1) + "M" }
-        if size >= 1e3 { return part(value / 1e3, size >= 1e4 ? 0 : 1) + "K" }
-        return part(value, 0)
+        if size >= 1e6 {
+            let millions = part(value / 1e6, size >= 1e7 ? 0 : 1)
+            return String(localized: "\(millions)M", comment: "An axis amount in millions, as 1.2M")
+        }
+        if size >= 1e3 {
+            let thousands = part(value / 1e3, size >= 1e4 ? 0 : 1)
+            return String(localized: "\(thousands)K", comment: "An axis amount in thousands, as 1.5K")
+        }
+        return AppLanguage.leftToRight(part(value, 0))
     }
 
     // MARK: Scales
@@ -351,17 +364,35 @@ enum ReportMath {
 
     // MARK: The budget, as reports read it
 
+    /// The balance sheet's sections, named in the app's language; a section's name is also its key.
+    enum SheetSection {
+        static let cash = String(localized: "Cash and bank")
+        static let investments = String(localized: "Investments")
+        static let property = String(localized: "reports.section.property", defaultValue: "Property", comment: "Balance sheet section: houses and land.")
+        static let vehicles = String(localized: "Vehicles")
+        static let receivables = String(localized: "Receivables")
+        static let otherAssets = String(localized: "Other assets")
+        static let creditCards = String(localized: "Credit cards")
+        static let linesOfCredit = String(localized: "Lines of credit")
+        static let mortgages = String(localized: "Mortgages")
+        static let loans = String(localized: "Loans")
+        static let otherDebts = String(localized: "Other debts")
+        static let inCredit = String(localized: "Accounts in credit")
+        static let overdrawn = String(localized: "Overdrawn accounts")
+    }
+
     private static let sections: [String: String] = [
-        "checking": "Cash and bank", "savings": "Cash and bank", "cash": "Cash and bank",
-        "investment": "Investments", "retirement": "Investments", "property": "Property", "vehicle": "Vehicles",
-        "receivable": "Receivables", "otherAsset": "Other assets", "creditCard": "Credit cards", "lineOfCredit": "Lines of credit",
-        "mortgage": "Mortgages", "autoLoan": "Loans", "studentLoan": "Loans", "personalLoan": "Loans",
-        "medicalDebt": "Other debts", "otherDebt": "Other debts",
+        "checking": SheetSection.cash, "savings": SheetSection.cash, "cash": SheetSection.cash,
+        "investment": SheetSection.investments, "retirement": SheetSection.investments, "property": SheetSection.property,
+        "vehicle": SheetSection.vehicles, "receivable": SheetSection.receivables, "otherAsset": SheetSection.otherAssets,
+        "creditCard": SheetSection.creditCards, "lineOfCredit": SheetSection.linesOfCredit, "mortgage": SheetSection.mortgages,
+        "autoLoan": SheetSection.loans, "studentLoan": SheetSection.loans, "personalLoan": SheetSection.loans,
+        "medicalDebt": SheetSection.otherDebts, "otherDebt": SheetSection.otherDebts,
     ]
     private static let liabilities: Set<String> = ["creditCard", "lineOfCredit", "mortgage", "autoLoan", "studentLoan", "personalLoan", "medicalDebt", "otherDebt"]
 
     static func isLiability(_ type: String) -> Bool { liabilities.contains(type) }
-    static func sectionOf(_ type: String) -> String { sections[type] ?? (isLiability(type) ? "Other debts" : "Other assets") }
+    static func sectionOf(_ type: String) -> String { sections[type] ?? (isLiability(type) ? SheetSection.otherDebts : SheetSection.otherAssets) }
 
     /// An account's type: the one chosen, else the imported one, else a guess from its kind and balance.
     static func accountType(chosen: String, imported: String, kind: String, balance: Int64) -> String {
@@ -459,13 +490,14 @@ enum ReportMath {
     /// An empty selection means all; a selection of only unknown ids (the empty id) means none.
     static func filterIsOn(_ selected: Set<String>, _ id: String) -> Bool { selected.isEmpty || selected.contains(id) }
 
-    static func filterSummary(_ groups: [ReportFilterGroup], _ selected: Set<String>, allLabel: String, noun: String) -> String {
+    /// What a filter has chosen: `allLabel`, one item's name, `several(count)` ("3 accounts"), or None.
+    static func filterSummary(_ groups: [ReportFilterGroup], _ selected: Set<String>, allLabel: String, several: (Int) -> String) -> String {
         if selected.isEmpty { return allLabel }
         let chosen = groups.flatMap(\.items).filter { selected.contains($0.id) }
         switch chosen.count {
-        case 0: return "None"
+        case 0: return String(localized: "None")
         case 1: return chosen[0].label
-        default: return "\(chosen.count) \(noun)"
+        default: return several(chosen.count)
         }
     }
 
@@ -482,13 +514,13 @@ enum ReportMath {
 
     /// The accounts filter: budget, tracking and closed accounts (only budget accounts for the forecast).
     static func accountFilterGroups(_ ctx: ReportBudget, budgetOnly: Bool) -> [ReportFilterGroup] {
-        let groups: [(String, [ReportAccount])] = [
-            ("Budget", ctx.accounts.filter { !$0.archived && $0.kind != "tracking" }),
-            ("Tracking", ctx.accounts.filter { !$0.archived && $0.kind == "tracking" }),
-            ("Closed", ctx.accounts.filter(\.archived)),
+        let groups: [(name: String, budget: Bool, accounts: [ReportAccount])] = [
+            (String(localized: "Budget"), true, ctx.accounts.filter { !$0.archived && $0.kind != "tracking" }),
+            (String(localized: "Tracking"), false, ctx.accounts.filter { !$0.archived && $0.kind == "tracking" }),
+            (String(localized: "Closed"), false, ctx.accounts.filter(\.archived)),
         ]
-        return groups.filter { !$0.1.isEmpty && (!budgetOnly || $0.0 == "Budget") }
-            .map { ReportFilterGroup(name: $0.0, items: $0.1.map { ReportFilterItem(id: $0.id, label: $0.name) }) }
+        return groups.filter { !$0.accounts.isEmpty && (!budgetOnly || $0.budget) }
+            .map { ReportFilterGroup(name: $0.name, items: $0.accounts.map { ReportFilterItem(id: $0.id, label: $0.name) }) }
     }
 
     /// The categories filter: categories that can hold spending, by group, "Needs a category" last.
@@ -527,7 +559,7 @@ enum ReportMath {
             let overlay: Double? = line.flatMap { i < $0.values.count ? $0.values[i] : nil }
             // A line that is the stack's total (net worth) is its total already.
             if series.count > 1 && !grouped && (overlay == nil || abs((overlay ?? 0) - total) >= 0.005) {
-                rows.append(ReportReadout(label: "Total", value: format(total), color: nil))
+                rows.append(ReportReadout(label: String(localized: "Total"), value: format(total), color: nil))
             }
             if let overlay, let line { rows.append(ReportReadout(label: line.label, value: format(overlay), color: line.color, line: true)) }
             return rows
@@ -668,13 +700,17 @@ struct ReportBudget: Sendable {
         self.spendingGroups = spendingGroups
         self.earliestMonth = earliestMonth
         accountsById = Dictionary(accounts.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
-        let zero = Money.format(0, currency: currency)
+        // Without the direction marks Arabic adds around an amount, which aren't a currency sign.
+        let zero = Money.plain(0, currency: currency)
         axisUnit = zero.contains { !("0"..."9").contains($0) && !".,' -".contains($0) } ? currency : nil
     }
 
     func money(_ cents: Int64) -> String { Money.format(cents, currency: currency) }
     func money(rounding cents: Double) -> String { Money.format(ReportMath.jround(cents), currency: currency) }
-    func signed(_ cents: Int64) -> String { (cents > 0 ? "+" : "") + money(cents) }
+    /// "+12.00" for a gain, kept whole left to right in Arabic.
+    func signed(_ cents: Int64) -> String {
+        cents > 0 ? AppLanguage.leftToRight("+" + Money.plain(cents, currency: currency)) : money(cents)
+    }
 
     /// A group's colour: the first seven groups in budget order have their own.
     func colorOf(_ group: String) -> Int {
@@ -692,15 +728,15 @@ enum ReportRangePreset: String, CaseIterable, Hashable, Sendable {
 
     var label: String {
         switch self {
-        case .thisMonth: return "This month"
-        case .lastMonth: return "Last month"
-        case .last3: return "Last 3 months"
-        case .last6: return "Last 6 months"
-        case .last12: return "Last 12 months"
-        case .ytd: return "Year to date"
-        case .lastYear: return "Last year"
-        case .all: return "All dates"
-        case .custom: return "Custom range"
+        case .thisMonth: return String(localized: "This month")
+        case .lastMonth: return String(localized: "Last month")
+        case .last3: return String(localized: "Last 3 months")
+        case .last6: return String(localized: "Last 6 months")
+        case .last12: return String(localized: "Last 12 months")
+        case .ytd: return String(localized: "Year to date")
+        case .lastYear: return String(localized: "Last year")
+        case .all: return String(localized: "All dates")
+        case .custom: return String(localized: "Custom range")
         }
     }
 }

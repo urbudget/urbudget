@@ -1,6 +1,7 @@
 //! Files the user attaches. They are kept in the budget's folder. Images and PDFs go to the model
 //! with the message; spreadsheets and CSV files are read here, a page at a time, so only the rows
 //! the model asks for leave the computer, and a column mapping converts every row exactly.
+use crate::t;
 use super::{new_id, tools::truncate};
 use base64::Engine;
 use calamine::{open_workbook_auto_from_rs, Data, Reader};
@@ -83,16 +84,14 @@ impl Files {
         !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
     }
     pub fn save(&self, name: &str, bytes: &[u8]) -> Result<Meta, String> {
-        let (kind, mime) = kind_of(name).ok_or(
-            "Attach an image, a PDF, a spreadsheet (xlsx, xls, ods), a CSV or a text file.",
-        )?;
+        let (kind, mime) = kind_of(name).ok_or_else(|| t!("Attach an image, a PDF, a spreadsheet (xlsx, xls, ods), a CSV or a text file."))?;
         if bytes.is_empty() {
-            return Err(format!("{name} is empty."));
+            return Err(t!("{name} is empty.", name));
         }
         if bytes.len() as u64 > limit(kind) {
-            return Err(format!("{name} is larger than {} MB.", limit(kind) >> 20));
+            return Err(t!("{name} is larger than {size} MB.", name, size = limit(kind) >> 20));
         }
-        let dir = self.dir.as_ref().ok_or("No folder for attachments.")?;
+        let dir = self.dir.as_ref().ok_or_else(|| t!("No folder for attachments."))?;
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
         let meta = Meta {
             id: new_id("file"),
@@ -110,7 +109,7 @@ impl Files {
         if let Some((meta, _)) = self.memory.get(id) {
             return Ok(meta.clone());
         }
-        let missing = || format!("No attachment has the id {id}.");
+        let missing = || t!("No attachment has the id {id}.", id);
         if !Self::valid_id(id) {
             return Err(missing());
         }
@@ -122,7 +121,7 @@ impl Files {
         if let Some((_, bytes)) = self.memory.get(id) {
             return Ok(bytes.clone());
         }
-        let missing = || format!("The file for attachment {id} is gone.");
+        let missing = || t!("The file for attachment {id} is gone.", id);
         if !Self::valid_id(id) {
             return Err(missing());
         }
@@ -389,11 +388,11 @@ pub fn convert(files: &Files, id: &str, m: &Mapping) -> Result<(Vec<ImportRow>, 
             (None, _) if get(date).is_empty() => {
                 // A note or a blank line between transactions.
                 if money.is_ok_and(|a| a != 0) {
-                    skipped.push(format!("row {} has an amount but no date", r.number));
+                    skipped.push(t!("row {row} has an amount but no date", row = r.number));
                 }
             }
-            (None, _) => skipped.push(format!("row {}: \u{201c}{}\u{201d} isn't a date", r.number, truncate(get(date), 20))),
-            (_, Err(())) => skipped.push(format!("row {}: the amount isn't a number", r.number)),
+            (None, _) => skipped.push(t!("row {row}: \u{201c}{text}\u{201d} isn't a date", row = r.number, text = truncate(get(date), 20))),
+            (_, Err(())) => skipped.push(t!("row {row}: the amount isn't a number", row = r.number)),
         }
     }
     Ok((rows, skipped))

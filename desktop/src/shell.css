@@ -16,7 +16,7 @@
   min-height: 0;
   padding: 0 8px 12px;
   background: var(--sidebar);
-  border-right: 1px solid var(--border);
+  border-inline-end: 1px solid var(--border);
 }
 /* Only the pages and accounts scroll; the budget band and Settings stay put. The list runs from
    the band's line to Settings' line and out to the sidebar's edges, so its scrollbar sits in the
@@ -28,7 +28,8 @@
   gap: 12px;
   min-height: 0;
   margin: -12px -8px;
-  padding: 12px calc(8px - var(--sidebar-scrollbar)) 12px 8px;
+  padding-block: 12px;
+  padding-inline: 8px calc(8px - var(--sidebar-scrollbar));
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-gutter: stable;
@@ -77,7 +78,7 @@ nav,
   background: transparent;
   color: var(--text-2);
   font-weight: 500;
-  text-align: left;
+  text-align: start;
   transition:
     background-color 0.12s var(--ease),
     color 0.12s var(--ease);
@@ -124,7 +125,7 @@ nav,
 .account-item.active::before {
   position: absolute;
   top: calc(50% - 8px);
-  left: 0;
+  inset-inline-start: 0;
   width: 3px;
   height: 16px;
   border-radius: 2px;
@@ -157,7 +158,8 @@ nav,
   justify-content: space-between;
   height: 24px;
   margin-bottom: -4px;
-  padding: 0 2px 0 8px;
+  padding-block: 0;
+  padding-inline: 8px 2px;
   color: var(--muted);
   font-size: 11px;
   font-weight: 600;
@@ -186,13 +188,14 @@ nav,
   gap: 6px;
   width: 100%;
   height: 30px;
-  padding: 0 8px 0 34px;
+  padding-block: 0;
+  padding-inline: 34px 8px;
   border: none;
   border-radius: var(--radius);
   background: transparent;
   color: var(--text-2);
   font-weight: 500;
-  text-align: left;
+  text-align: start;
   transition:
     background-color 0.12s var(--ease),
     color 0.12s var(--ease);
@@ -235,7 +238,8 @@ nav,
   justify-content: space-between;
   gap: 12px;
   height: var(--header);
-  padding: 0 12px 0 16px;
+  padding-block: 0;
+  padding-inline: 16px 12px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   container: app-header / inline-size;
@@ -262,7 +266,7 @@ nav,
   display: flex;
   align-items: center;
   min-width: 0;
-  margin-left: 4px;
+  margin-inline-start: 4px;
 }
 .header-slot:empty {
   display: none;
@@ -312,7 +316,7 @@ nav,
   flex: none;
   align-items: center;
   gap: 2px;
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 /* A page's own actions beside undo and redo (HeaderSlot with `actions`), such as the register's
    import and export, set off from them by a rule. */
@@ -320,9 +324,9 @@ nav,
   display: flex;
   align-items: center;
   gap: 2px;
-  margin-right: 6px;
-  padding-right: 6px;
-  border-right: 1px solid var(--border);
+  margin-inline-end: 6px;
+  padding-inline-end: 6px;
+  border-inline-end: 1px solid var(--border);
 }
 .header-page-actions:empty {
   display: none;
@@ -351,7 +355,7 @@ nav,
   align-items: center;
   gap: 6px;
   height: 26px;
-  margin-right: 6px;
+  margin-inline-end: 6px;
   padding: 0 10px;
   border: 1px solid var(--border);
   border-radius: 13px;
@@ -478,7 +482,7 @@ nav,
   }
 }
 .page-scroll:not(.fill) > .page {
-  padding-right: calc(16px - var(--scrollbar-size));
+  padding-inline-end: calc(16px - var(--scrollbar-size));
 }
 .loading-screen {
   display: grid;
@@ -527,7 +531,7 @@ nav,
   border: none;
   border-radius: var(--radius);
   background: transparent;
-  text-align: left;
+  text-align: start;
 }
 .budget-switcher:hover {
   background: var(--hover);
@@ -605,7 +609,7 @@ nav,
 .sidebar-resize {
   position: absolute;
   top: 0;
-  right: -4px;
+  inset-inline-end: -4px;
   bottom: 0;
   z-index: 5;
   width: 6px;
@@ -634,7 +638,7 @@ nav,
   color: var(--muted);
   font-size: 12px;
   font-weight: 600;
-  text-align: left;
+  text-align: start;
   transition:
     background-color 0.12s var(--ease),
     color 0.12s var(--ease);
@@ -673,21 +677,21 @@ nav,
 .account-row .account-item {
   flex: 1;
   min-width: 0;
-  padding-right: 8px;
+  padding-inline-end: 8px;
 }
 /* The name takes the free space, so a badge always sits just before the balance. */
 .account-item > span:first-child {
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  text-align: left;
+  text-align: start;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 /* The "…" takes the balance's place on the row's own fill, with a fill of its own when hovered. */
 .account-row .account-more {
   position: absolute;
-  right: 4px;
+  inset-inline-end: 4px;
   width: 22px;
   height: 22px;
   background: transparent;
@@ -712,8 +716,8 @@ nav,
 .account-row.drop-before::before,
 .account-row.drop-after::after {
   position: absolute;
-  right: 6px;
-  left: 6px;
+  inset-inline-end: 6px;
+  inset-inline-start: 6px;
   height: 2px;
   border-radius: 1px;
   background: var(--accent);
@@ -781,9 +785,9 @@ nav,
 /* Drawn over the bar's last pixel, so the sidebar, page header and assistant all start level. */
 .app-shell > .titlebar::after {
   position: absolute;
-  right: 0;
+  inset-inline-end: 0;
   bottom: 0;
-  left: var(--sidebar-width);
+  inset-inline-start: var(--sidebar-width);
   height: 1px;
   background: var(--border);
   content: "";
@@ -796,7 +800,7 @@ nav,
   align-items: center;
   gap: 10px;
   min-width: 0;
-  padding-left: 20px;
+  padding-inline-start: 20px;
   font-size: 12px;
 }
 .titlebar-name span {
@@ -812,7 +816,7 @@ nav,
 /* The mark stands for the name on its own; a preview build's label follows it. */
 .titlebar-name.wordmark {
   gap: 6px;
-  padding-left: 18px;
+  padding-inline-start: 18px;
 }
 .titlebar-name.wordmark .titlebar-mark {
   width: 20px;
@@ -873,6 +877,12 @@ nav,
   background: rgb(196 43 28 / 0.9);
   color: rgb(255 255 255 / 0.7);
 }
+/* Right to left the bar mirrors as Windows' does: the buttons on the left, Close in the corner,
+   and the Restore glyph turned round. */
+[dir="rtl"] .window-controls span {
+  display: inline-block;
+  transform: scaleX(-1);
+}
 /* Another window has focus: the name and window buttons fade, as the system bar's do. */
 .titlebar.inactive .titlebar-name,
 .titlebar.inactive .window-controls button:not(:hover) {
@@ -884,8 +894,8 @@ nav,
 .loading-titlebar {
   position: fixed;
   top: 0;
-  right: 0;
-  left: 0;
+  inset-inline-end: 0;
+  inset-inline-start: 0;
 }
 
 /* A bank-synced account's mark, just after its name, which opens its sync details. The name

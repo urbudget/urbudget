@@ -55,7 +55,7 @@
 }
 .report-body ul,
 .report-body ol {
-  padding-left: 16pt;
+  padding-inline-start: 16pt;
 }
 .report-body li {
   margin: 2pt 0;
@@ -74,8 +74,8 @@
   font-size: 0.9em;
 }
 .report-body blockquote {
-  padding-left: 9pt;
-  border-left: 3px solid #cdd2da;
+  padding-inline-start: 9pt;
+  border-inline-start: 3px solid #cdd2da;
   color: #454c56;
 }
 .report-body hr {
@@ -107,7 +107,7 @@
   font-size: 8.5pt;
   font-weight: 600;
   letter-spacing: 0.04em;
-  text-align: left;
+  text-align: start;
   text-transform: uppercase;
   white-space: normal;
 }

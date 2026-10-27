@@ -1,0 +1,100 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "Bank statement" : {
+      "comment" : "Document type: CSV, OFX, QFX, QIF and MT940 files UrBudget can open.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "كشف حساب"
+          }
+        }
+      }
+    },
+    "Budget backup or YNAB export" : {
+      "comment" : "Document type: JSON backups, YNAB ZIP and TSV exports.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "نسخة احتياطية لميزانية أو تصدير من YNAB"
+          }
+        }
+      }
+    },
+    "CFBundleDisplayName" : {
+      "comment" : "The app's name on the Home Screen: the same in every language.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "UrBudget"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "UrBudget"
+          }
+        }
+      }
+    },
+    "MT940 bank statement" : {
+      "comment" : "File type description (MT940).",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "كشف حساب MT940"
+          }
+        }
+      }
+    },
+    "New transaction" : {
+      "comment" : "The Home Screen quick action (UIApplicationShortcutItemTitle).",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "معاملة جديدة"
+          }
+        }
+      }
+    },
+    "OFX bank statement" : {
+      "comment" : "File type description.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "كشف حساب OFX"
+          }
+        }
+      }
+    },
+    "QIF bank statement" : {
+      "comment" : "File type description.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "كشف حساب QIF"
+          }
+        }
+      }
+    },
+    "Quicken bank statement" : {
+      "comment" : "File type description (QFX).",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "كشف حساب Quicken"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

@@ -4,6 +4,7 @@ import { HIDDEN_GROUP, orderedGroups } from "../categories";
 import { payeeIndex, type PayeeInfo } from "../payees";
 import { money, tone } from "../format";
 import type { Budget } from "../types";
+import { t, useLanguage } from "../i18n";
 
 /** Sentinel value for "Unassigned" (income, or no category). */
 export const READY_TO_ASSIGN = "__rta";
@@ -19,7 +20,7 @@ export function CategoryPicker({
   includeHidden = false,
   includePayment = false,
   exclude,
-  label = "Category",
+  label = t("Category"),
   placeholder,
   autoFocus,
   className,
@@ -52,17 +53,18 @@ export function CategoryPicker({
   /** Emptying the field leaves no category chosen (otherwise the last choice comes back). */
   onClear?: () => void;
 }) {
+  const language = useLanguage();
   const create = useMemo(
-    () => (onCreate ? { label: "Create category", blank: "New category…", onCreate } : undefined),
-    [onCreate],
+    () => (onCreate ? { label: t("Create category"), blank: t("New category…"), onCreate } : undefined),
+    [onCreate, language],
   );
   const options = useMemo<Option[]>(() => {
     const unassigned: Option[] = readyToAssign
       ? [
           {
             id: READY_TO_ASSIGN,
-            label: typeof readyToAssign === "string" ? readyToAssign : "Unassigned",
-            group: readyToAssignLast ? "Other" : "Income",
+            label: typeof readyToAssign === "string" ? readyToAssign : t("Unassigned"),
+            group: readyToAssignLast ? t("Other") : t("Income"),
             keywords: "income inflow unassigned ready to assign",
           },
         ]
@@ -75,20 +77,20 @@ export function CategoryPicker({
         list.push({
           id: c.id,
           label: c.name,
-          group: group.name === HIDDEN_GROUP ? "Hidden" : group.name,
+          group: group.name === HIDDEN_GROUP ? t("Hidden") : group.name,
           detail: amount === undefined ? undefined : money(amount),
           detailTone: amount === undefined ? undefined : tone(amount),
         });
       }
     return readyToAssignLast ? [...list, ...unassigned] : list;
-  }, [budget.categories, budget.categoryOrder, budget.groupOrder, available, readyToAssign, readyToAssignLast, includeHidden, includePayment, exclude]);
+  }, [budget.categories, budget.categoryOrder, budget.groupOrder, available, readyToAssign, readyToAssignLast, includeHidden, includePayment, exclude, language]);
   return (
     <Combobox
       options={options}
       value={value}
       onChange={onChange}
       label={label}
-      placeholder={placeholder ?? "Choose a category"}
+      placeholder={placeholder ?? t("Choose a category")}
       autoFocus={autoFocus}
       className={className}
       onKeyDown={onKeyDown}
@@ -100,7 +102,7 @@ export function CategoryPicker({
 
 const TRANSFER = "\u0000transfer:";
 /** How a transfer to or from another account reads in the payee field. */
-export const transferPayee = (name: string) => `Transfer: ${name}`;
+export const transferPayee = (name: string) => t("Transfer: {name}", { name });
 
 /**
  * Payee field with suggestions, most used first. `onPick` gets the payee's usual category.
@@ -113,8 +115,8 @@ export function PayeeInput({
   onPick,
   transfers,
   onTransfer,
-  label = "Payee",
-  placeholder = "Payee",
+  label = t("Payee"),
+  placeholder = t("Payee"),
   autoFocus,
   className,
   onKeyDown,
@@ -134,18 +136,19 @@ export function PayeeInput({
 }) {
   const payees = useMemo(() => payeeIndex(budget), [budget.transactions, budget.payees, budget.categories]);
   // A name no payee has yet is kept as typed: the transaction makes it a payee once it's saved.
-  const create = useMemo(() => ({ label: "New payee", onCreate: () => {} }), []);
+  const language = useLanguage();
+  const create = useMemo(() => ({ label: t("New payee"), onCreate: () => {} }), [language]);
   const options = useMemo<Option[]>(
     () => [
       ...(transfers ?? []).map((a) => ({
         id: TRANSFER + a.id,
         label: transferPayee(a.name),
-        group: "Transfers",
+        group: t("Transfers"),
         keywords: "transfer move",
       })),
-      ...payees.map((p) => ({ id: p.name, label: p.name, group: transfers?.length ? "Payees" : undefined })),
+      ...payees.map((p) => ({ id: p.name, label: p.name, group: transfers?.length ? t("Payees") : undefined })),
     ],
-    [payees, transfers],
+    [payees, transfers, language],
   );
   return (
     <Combobox

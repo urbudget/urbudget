@@ -1,7 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-private let changedAgain = "Your budget changed, so these rows were checked again. Look them over, then import."
+private let changedAgain = String(localized: "Your budget changed, so these rows were checked again. Look them over, then import.")
 
 private enum BankFileRoute: Hashable { case account }
 
@@ -186,15 +186,16 @@ struct BankFileImportView: View {
                     .listRowBackground(Color.clear)
             }
             if accounts.isEmpty {
-                EmptyState(title: "Add an account first", detail: "Imported transactions go into one of your accounts. Add it in Accounts, then import its statement.",
+                EmptyState(title: String(localized: "Add an account first"),
+                           detail: String(localized: "Imported transactions go into one of your accounts. Add it in Accounts, then import its statement."),
                            symbol: "building.columns")
             } else {
                 fileSection
                 if let pdf {
                     Section {
-                        Notice(text: "PDF statements need the assistant. It reads the PDF, finds the transactions, checks them against the statement's totals and brings them to a review like this one, where you decide on each row.",
-                               tone: "info", icon: "sparkles", action: "Read it with the assistant") {
-                            asking = AssistantRequest(text: "Import this statement into \(accountName). Find the transactions, ask me about anything unclear, and prepare them for the import review.", files: [pdf])
+                        Notice(text: String(localized: "PDF statements need the assistant. It reads the PDF, finds the transactions, checks them against the statement's totals and brings them to a review like this one, where you decide on each row."),
+                               tone: "info", icon: "sparkles", action: String(localized: "Read it with the assistant")) {
+                            readWithAssistant(pdf)
                         }
                     }
                     .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
@@ -213,7 +214,7 @@ struct BankFileImportView: View {
     private var fileSection: some View {
         Section {
             NavigationLink(value: BankFileRoute.account) {
-                LabeledContent("Into account", value: accountName.isEmpty ? "Choose" : accountName)
+                LabeledContent("Into account", value: accountName.isEmpty ? String(localized: "Choose") : accountName)
             }
             .disabled(loading)
             Button { picking = true } label: {
@@ -221,7 +222,7 @@ struct BankFileImportView: View {
                     Image(systemName: fileName.isEmpty ? "doc.badge.plus" : "doc.text")
                         .font(.title3).foregroundStyle(Color.urAccent).frame(width: 30)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(fileName.isEmpty ? "Choose a file" : fileName).foregroundStyle(Color.primary).lineLimit(1)
+                        Text(fileName.isEmpty ? String(localized: "Choose a file") : fileName).foregroundStyle(Color.primary).lineLimit(1)
                         Text(pdf != nil ? "PDF · tap to choose another" : "CSV, Excel, OFX, QIF, CAMT.053 or MT940; PDF through the assistant")
                             .font(.footnote).foregroundStyle(Color.secondary)
                     }
@@ -254,7 +255,7 @@ struct BankFileImportView: View {
                     Picker("Account in the file", selection: Binding(get: { shown.sources[min(shown.source ?? 0, shown.sources.count - 1)].label },
                                                                     set: { label in restructure { $0["source"] = .string(label) } })) {
                         ForEach(shown.sources, id: \.label) { source in
-                            Text("\(source.label)\(source.currency.map { " · \($0)" } ?? "") · \(source.lines) \(source.lines == 1 ? "line" : "lines")").tag(source.label)
+                            Text(BankStatementText.source(source)).tag(source.label)
                         }
                     }
                 }
@@ -263,8 +264,8 @@ struct BankFileImportView: View {
                     let named = BankStatementText.readings(example)
                     Picker("Dates", selection: Binding(get: { shown.dateOrder ?? "dmy" },
                                                        set: { order in restructure { $0["dateOrder"] = ["order": .string(order), "confirmed": true] } })) {
-                        Text("Day first\(named.map { " (\(example) is \($0.dmy))" } ?? "")").tag("dmy")
-                        Text("Month first\(named.map { " (\(example) is \($0.mdy))" } ?? "")").tag("mdy")
+                        Text(BankStatementText.order("dmy", example: example, reading: named?.dmy)).tag("dmy")
+                        Text(BankStatementText.order("mdy", example: example, reading: named?.mdy)).tag("mdy")
                     }
                 }
                 if let byType = answeredSigns(shown) {
@@ -286,8 +287,8 @@ struct BankFileImportView: View {
             notices(shown)
             if !attention.isEmpty {
                 Section {
-                    Notice(text: "The assistant can fix these lines from what the file says, and asks you about anything unclear. You see each fix before it's applied.",
-                           tone: "info", icon: "sparkles", action: "Fix with the assistant") { fixWithAssistant() }
+                    Notice(text: String(localized: "The assistant can fix these lines from what the file says, and asks you about anything unclear. You see each fix before it's applied."),
+                           tone: "info", icon: "sparkles", action: String(localized: "Fix with the assistant")) { fixWithAssistant() }
                         .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
                         .disabled(slow)
                     ForEach(attention) { line in
@@ -302,7 +303,7 @@ struct BankFileImportView: View {
             if !out.isEmpty {
                 Section {
                     ForEach(out) { line in
-                        let include: (String, () -> Void)? = line.includable && !line.included ? ("Include", { fix(BankFixes.include(session ?? [:], line, true)) }) : nil
+                        let include: (String, () -> Void)? = line.includable && !line.included ? (String(localized: "Include"), { fix(BankFixes.include(session ?? [:], line, true)) }) : nil
                         lineRow(line, state: BankStatementText.leftOut(line), tone: .secondary, actions: [include, batchAction(line, shown), undo(line)].compactMap { $0 })
                     }
                 } header: {
@@ -314,8 +315,7 @@ struct BankFileImportView: View {
             if !changed.isEmpty {
                 Section("Changed") {
                     ForEach(changed) { line in
-                        lineRow(line, state: assisted.contains(line.id) ? "Fixed by the assistant" : line.included ? "Included" : "Changed from the file",
-                                tone: .urAccent, actions: [undo(line)].compactMap { $0 }) { fixing = line }
+                        lineRow(line, state: changedState(line), tone: .urAccent, actions: [undo(line)].compactMap { $0 }) { fixing = line }
                     }
                 }
             }
@@ -328,10 +328,17 @@ struct BankFileImportView: View {
     /// How money out was said to be told, once it has been.
     private func answeredSigns(_ shown: BankStatement) -> Bool? { shown.signsUnconfirmed ? nil : shown.signsByType }
 
+    /// What became of a line that reads now: the assistant fixed it, it was included, or it was changed here.
+    private func changedState(_ line: StatementLine) -> String {
+        if assisted.contains(line.id) { return String(localized: "Fixed by the assistant") }
+        return line.included ? String(localized: "Included") : String(localized: "Changed from the file")
+    }
+
     private func heading(_ detail: String) -> some View {
-        HStack {
+        let source = fileName.isEmpty ? String(localized: "Statement") : fileName
+        return HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("\(fileName.isEmpty ? "Statement" : fileName) into \(accountName)").font(.headline)
+                Text("\(source) into \(accountName)").font(.headline)
                 Text(detail).font(.footnote).foregroundStyle(Color.secondary)
             }
             Spacer(minLength: 8)
@@ -346,29 +353,32 @@ struct BankFileImportView: View {
         }
         if let error { FormErrorView(message: error) }
         if let other = shown.elsewhere {
-            Notice(text: "The file's amounts are in \(other). Include a line to enter its amount in your budget's currency, or import the file into a budget in \(other).",
+            Notice(text: String(localized: "The file's amounts are in \(other). Include a line to enter its amount in your budget's currency, or import the file into a budget in \(other)."),
                    icon: "exclamationmark.triangle.fill")
                 .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
         }
         if let other = shown.currency {
-            Notice(text: "This account's amounts are in \(other). Choose another account in the file, or include its lines with their amounts in your budget's currency.",
+            Notice(text: String(localized: "This account's amounts are in \(other). Choose another account in the file, or include its lines with their amounts in your budget's currency."),
                    icon: "exclamationmark.triangle.fill")
                 .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
         }
         if shown.dateUnconfirmed, let example = shown.dateExample {
             let named = BankStatementText.readings(example)
             let order = { (which: String) in restructure { $0["dateOrder"] = ["order": .string(which), "confirmed": true] } }
+            let dayFirst: String = named?.dmy ?? String(localized: "Day first")
+            let monthFirst: String = named?.mdy ?? String(localized: "Month first")
             // The order the file reads in for now is the main answer.
-            let first = shown.dateOrder == "mdy" ? ("mdy", named?.mdy ?? "Month first") : ("dmy", named?.dmy ?? "Day first")
-            let second = shown.dateOrder == "mdy" ? ("dmy", named?.dmy ?? "Day first") : ("mdy", named?.mdy ?? "Month first")
-            Notice(text: "The dates don't say whether the day or the month comes first: is \(example)", icon: "exclamationmark.triangle.fill", action: first.1,
-                   secondary: .init(label: second.1) { order(second.0) }) { order(first.0) }
+            let first = shown.dateOrder == "mdy" ? ("mdy", monthFirst) : ("dmy", dayFirst)
+            let second = shown.dateOrder == "mdy" ? ("dmy", dayFirst) : ("mdy", monthFirst)
+            Notice(text: String(localized: "The dates don't say whether the day or the month comes first: is \(example)"), icon: "exclamationmark.triangle.fill",
+                   action: first.1, secondary: .init(label: second.1) { order(second.0) }) { order(first.0) }
                 .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
                 .disabled(slow)
         }
         if shown.signsUnconfirmed {
-            Notice(text: "Every amount that reads is positive. Is money out told by the transaction types (DEBIT, POS…)?", icon: "exclamationmark.triangle.fill",
-                   action: "Yes, use the types", secondary: .init(label: "No, as written") { restructure { $0["signsByType"] = false } }) {
+            Notice(text: String(localized: "Every amount that reads is positive. Is money out told by the transaction types (DEBIT, POS…)?"), icon: "exclamationmark.triangle.fill",
+                   action: String(localized: "Yes, use the types"),
+                   secondary: .init(label: String(localized: "No, as written")) { restructure { $0["signsByType"] = false } }) {
                 restructure { $0["signsByType"] = true }
             }
             .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
@@ -383,12 +393,13 @@ struct BankFileImportView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(line.title).font(.body.weight(.semibold)).foregroundStyle(Color.primary).lineLimit(2)
-                        let detail = [line.fields["date"] ?? "", line.fields["memo"] ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
+                        let detail = ImportsText.line([line.fields["date"] ?? "", line.fields["memo"] ?? ""].filter { !$0.isEmpty })
                         if !detail.isEmpty { Text(detail).font(.footnote).foregroundStyle(Color.secondary).lineLimit(1) }
                     }
                     Spacer(minLength: 8)
-                    Text(line.fields["amount"] ?? "").font(.body.weight(.semibold)).monospacedDigit().foregroundStyle(Color.primary).lineLimit(1)
-                    if edit != nil { Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Color.secondary) }
+                    // The amount as the file writes it, kept left to right ("-12.00", never "12.00-").
+                    Text(AppLanguage.leftToRight(line.fields["amount"] ?? "")).font(.body.weight(.semibold)).monospacedDigit().foregroundStyle(Color.primary).lineLimit(1)
+                    if edit != nil { Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(Color.secondary) }
                 }
             }
             .buttonStyle(.borderless)
@@ -411,15 +422,16 @@ struct BankFileImportView: View {
         let batch = shown.batches[index]
         let place = shown.places[line.id]
         if batch.addsUp == false && !batch.asOne && batch.payments.first == place {
-            return ("Import as one entry", { fix(BankFixes.wholeBatch(session, batch.entry, true)) })
+            return (String(localized: "Import as one entry"), { fix(BankFixes.wholeBatch(session, batch.entry, true)) })
         }
-        if batch.asOne && batch.line == place { return ("Import its payments", { fix(BankFixes.wholeBatch(session, batch.entry, false)) }) }
+        if batch.asOne && batch.line == place { return (String(localized: "Import its payments"), { fix(BankFixes.wholeBatch(session, batch.entry, false)) }) }
         return nil
     }
 
     private func undo(_ line: StatementLine) -> (String, () -> Void)? {
         guard line.fixed || line.included, let session else { return nil }
-        return (assisted.contains(line.id) ? "Undo the assistant's fix" : "Undo", { fix(BankFixes.revert(session, line)) })
+        let label = assisted.contains(line.id) ? String(localized: "Undo the assistant's fix") : String(localized: "Undo")
+        return (label, { fix(BankFixes.revert(session, line)) })
     }
 
     // MARK: Reviewing the rows
@@ -430,8 +442,7 @@ struct BankFileImportView: View {
         return List {
             Section { heading(BankReview.countsText(preview.summary)) }
             if shown.attention > 0 || shown.leftOutCount > 0 {
-                let parts = [shown.attention > 0 ? "\(shown.attention) need attention" : nil, shown.leftOutCount > 0 ? "\(shown.leftOutCount) left out" : nil].compactMap { $0 }
-                Notice(text: parts.joined(separator: " · ") + ", not imported.", tone: "info", icon: "tablecells", action: "Check the file") { stage = .lines }
+                Notice(text: BankStatementText.notImported(shown), tone: "info", icon: "tablecells", action: String(localized: "Check the file")) { stage = .lines }
                     .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
             }
             if let notice {
@@ -439,8 +450,8 @@ struct BankFileImportView: View {
             }
             if let error { FormErrorView(message: error) }
             if preview.summary.allIn && shown.format == "csv" && !(session?["structure"].flag("flipSigns") ?? false) {
-                Notice(text: "Every row came out as money in. If these are purchases, the file writes them as positive numbers.",
-                       icon: "arrow.up.arrow.down", action: "Reverse signs") {
+                Notice(text: String(localized: "Every row came out as money in. If these are purchases, the file writes them as positive numbers."),
+                       icon: "arrow.up.arrow.down", action: String(localized: "Reverse signs")) {
                     restructure { $0["flipSigns"] = true }
                 }
                 .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
@@ -494,7 +505,7 @@ struct BankFileImportView: View {
         Task {
             do {
                 let picked = try await Task.detached(priority: .userInitiated) {
-                    try ImportFiles.read(url, limit: 8 * 1024 * 1024, tooLarge: "Choose a statement smaller than 8 MB.")
+                    try ImportFiles.read(url, limit: 8 * 1024 * 1024, tooLarge: String(localized: "Choose a statement smaller than 8 MB."))
                 }.value
                 guard current == generation else { return }
                 fileName = picked.name
@@ -600,7 +611,7 @@ struct BankFileImportView: View {
                 guard generation == was else { return }
                 self.session = applied["session"]
                 if let refused = applied.rows("results").first(where: { !$0.flag("applied") }) {
-                    error = refused.text("problem").isEmpty ? "That change no longer fits the file." : refused.text("problem")
+                    error = refused.text("problem").isEmpty ? String(localized: "That change no longer fits the file.") : refused.text("problem")
                 }
                 preview = nil
                 refresh()
@@ -610,6 +621,13 @@ struct BankFileImportView: View {
             }
             loading = false
         }
+    }
+
+    /// The assistant, asked to read a PDF statement into the account, with the PDF attached.
+    private func readWithAssistant(_ pdf: URL) {
+        let name = accountName
+        asking = AssistantRequest(text: String(localized: "Import this statement into \(name). Find the transactions, ask me about anything unclear, and prepare them for the import review."),
+                                  files: [pdf])
     }
 
     /// The assistant, opened over the import with the request ready: it's told the file's lines,
@@ -625,7 +643,7 @@ struct BankFileImportView: View {
         let fixes = proposal["fixes"]
         guard fixes.isObject, let session, let content else { return }
         guard fixes["scope"].text("session") == sessionId else {
-            AssistantController.shared.notice = "These fixes are for another import."
+            AssistantController.shared.notice = String(localized: "These fixes are for another import.")
             return
         }
         let was = sessionId
@@ -667,7 +685,7 @@ struct BankFileImportView: View {
                 }.value
                 try await store.importsCommand("bankApply", ["accountId": .string(accountId), "choices": choices, "remember": remember],
                                                since: preview.revision, stale: changedAgain)
-                store.showToast("Imported \(importing) \(importing == 1 ? "transaction" : "transactions"). They're waiting for your approval.", undo: true)
+                store.showToast(String(localized: "Imported \(importing) transactions. They're waiting for your approval.", locale: .app), undo: true)
                 dismiss()
             } catch {
                 saving = false
@@ -688,11 +706,14 @@ private struct LineFixSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var values: [String: String] = [:]
 
+    /// The line's cells as the file writes them.
+    private var written: String { ImportsText.line(line.cells.filter { !$0.isEmpty }) }
+
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    Text("In the file: \(line.cells.filter { !$0.isEmpty }.joined(separator: " · "))").font(.footnote).foregroundStyle(Color.secondary)
+                    Text("In the file: \(written)").font(.footnote).foregroundStyle(Color.secondary)
                     if !line.problem.isEmpty {
                         Label(line.problem, systemImage: "exclamationmark.triangle.fill").font(.footnote).foregroundStyle(Color.urWarning)
                     }

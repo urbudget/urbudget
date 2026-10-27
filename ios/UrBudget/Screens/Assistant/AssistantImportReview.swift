@@ -19,7 +19,7 @@ struct AssistantImportReview: View {
     @State private var error: String?
     @State private var started = false
 
-    private var fileName: String { request.file.text("name").isEmpty ? "Statement" : request.file.text("name") }
+    private var fileName: String { request.file.text("name").isEmpty ? String(localized: "Statement") : request.file.text("name") }
 
     var body: some View {
         let accounts = (store.budget?.rows("accounts") ?? []).filter { !$0.flag("archived") }
@@ -47,15 +47,15 @@ struct AssistantImportReview: View {
                             Text(summary.text).font(.footnote).foregroundStyle(Color.secondary)
                         }
                         if summary.allIn && !flipSigns {
-                            Notice(text: "Every row came out as money in. If these are purchases, the file writes them as positive numbers.",
-                                   tone: "attention", icon: "arrow.up.arrow.down", action: "Reverse signs") { flipSigns = true }
+                            Notice(text: String(localized: "Every row came out as money in. If these are purchases, the file writes them as positive numbers."),
+                                   tone: "attention", icon: "arrow.up.arrow.down", action: String(localized: "Reverse signs")) { flipSigns = true }
                         }
                         if summary.idless {
-                            Notice(text: "This file has no bank transaction IDs. A row may already be imported; compare its memo and amount. Skip it if it's the same payment, or add it separately if it's a different one.",
+                            Notice(text: String(localized: "This file has no bank transaction IDs. A row may already be imported; compare its memo and amount. Skip it if it's the same payment, or add it separately if it's a different one."),
                                    tone: "info", icon: "info.circle.fill")
                         }
                         if counts.undecided > 0 {
-                            Notice(text: counts.undecided == 1 ? "1 row needs a choice before importing." : "\(counts.undecided) rows need a choice before importing.",
+                            Notice(text: String(localized: "\(counts.undecided) rows need a choice before importing.", locale: .app),
                                    icon: "exclamationmark.triangle.fill")
                         }
                     } footer: {
@@ -142,11 +142,11 @@ struct AssistantImportReview: View {
                 return (rows, AssistantBankReview.summary(rows))
             }.value
             try Task.checkCancellation()
-            guard store.version == version else { throw AppError("Your budget changed. Preview this statement again.") }
+            guard store.version == version else { throw AppError(String(localized: "Your budget changed. Preview this statement again.")) }
             rows = prepared.0
             summary = prepared.1
             previewVersion = version
-            if prepared.0.isEmpty { error = "The file has no transactions to import." }
+            if prepared.0.isEmpty { error = String(localized: "The file has no transactions to import.") }
         } catch is CancellationError {
             return
         } catch {
@@ -157,7 +157,7 @@ struct AssistantImportReview: View {
 
     private func importRows() {
         guard let rows, previewVersion == store.version else {
-            error = "Your budget changed. Preview this statement again."
+            error = String(localized: "Your budget changed. Preview this statement again.")
             Task { await preview() }
             return
         }
