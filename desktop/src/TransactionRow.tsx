@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { flushSync } from "react-dom";
 import { Lock, MoreHorizontal, Plus, Repeat, Split as SplitIcon, X } from "lucide-react";
 import { CategoryPicker, DateInput, PayeeInput, READY_TO_ASSIGN, transferPayee } from "./ui";
 import { editableAmount, errorText, evaluateAmount, money } from "./format";
@@ -6,6 +7,8 @@ import { id, scheduledAhead, today, type Budget, type Split, type Status, type T
 import { getPref } from "./prefs";
 import { uncategorizedTest } from "./uncategorized";
 import { frequencies } from "./Planning";
+import { payeeHabits } from "./payees";
+import { keyLabel, os } from "./platform";
 import { msg, t, tn } from "./i18n";
 
 /** The flags and their colors' names (translate a name with t() when showing it). */
@@ -99,6 +102,12 @@ const lineOf = (s: Split, needs: boolean): Line => ({
 const amountOf = (l: { outflow: string; inflow: string }) => evaluateAmount(l.inflow) - evaluateAmount(l.outflow);
 /** Money in (an inflow typed, no outflow): its "no category" is income for Unassigned. */
 const isIncome = (l: { outflow: string; inflow: string }) => !!l.inflow.trim() && !l.outflow.trim();
+/**
+ * "+25" typed into Outflow or "-25" into Inflow, a sign before at most a plain amount: that
+ * amount, which moves over to the other field. A longer expression ("-5+10") isn't moved, as it
+ * adds up as typed where it is.
+ */
+const movedBy = (text: string, sign: RegExp) => (sign.test(text) && /^[\d\s.,']*$/.test(text.slice(1)) ? text.slice(1) : null);
 /** The picker's Unassigned, as the register says it: income goes to it. Spending isn't offered it,
  * as YNAB steers spending to a category; one already taken from it (a YNAB import, a deleted
  * category) still shows as that until it's given a category. */
@@ -111,11 +120,31 @@ const safeAmount = (l: { outflow: string; inflow: string }) => {
     return NaN;
   }
 };
+/** The fields Tab goes on from by the payee's habits, in order ("Another" and "Save" are the
+ * Save & add another and Save buttons). */
+const STOPS = ["Payee", "Account", "Category", "Memo", "Outflow", "Inflow", "Cleared", "Another", "Save"];
+/** The fields ← and → move between, in the row's order. */
+const ACROSS = ["Date", "Payee", "Account", "Category", "Memo", "Outflow", "Inflow", "Cleared"];
+/** The C key, whatever the keyboard layout writes on it: its letter, or where a layout has none
+ * there (Arabic), the key itself. */
+const isC = (e: KeyboardEvent) => e.key.toLowerCase() === "c" || (e.code === "KeyC" && !/^[a-z]$/i.test(e.key));
+const mac = os === "macos";
+/** Clears the transaction from any field: Alt+C, or ⌃C on a Mac, where ⌥C types ç. */
+const clearKey = (e: KeyboardEvent) =>
+  isC(e) && !e.metaKey && !e.shiftKey && (mac ? e.ctrlKey && !e.altKey : e.altKey && !e.ctrlKey);
+const CLEAR_KEY = mac ? "⌃C" : "Alt+C";
+/** Right to left, as the nearest `dir` says (the window's, in Arabic). */
+const rtl = (el: Element | null) => el?.closest("[dir]")?.getAttribute("dir") === "rtl";
 
 /**
  * The register's add/edit row. Enter saves, Escape cancels, Tab moves through the fields.
  * Choosing a payee fills in the category last used with it; choosing "Transfer: <account>"
  * makes it a transfer. "Split" divides it into lines that must add up to the total.
+ * On a new row, Tab skips the memo and what the payee doesn't usually need (a category it fills
+ * in, the other way from its money), and its last amount is suggested; Shift+Tab still steps
+ * back through every field, and ← → move to the next field at the end of one's text. Once a
+ * transaction is saved with Save & add another, Enter keeps adding them until Escape. Alt+C
+ * clears it from any field.
  */
 export function TransactionEditor({
   budget,
@@ -214,10 +243,79 @@ export function TransactionEditor({
     [budget.accounts, account],
   );
 
-  // Fields are found by their (translated) labels.
-  const focusLabel = (label: string) =>
-    requestAnimationFrame(() => row.current?.querySelector<HTMLInputElement>(`[aria-label="${label}"]`)?.focus());
-  const focusField = (field: EditorField) => focusLabel(t(field));
+  /** A field's control by the name its cell carries (`data-field`, the same in any language):
+   * "Another" and "Save" are the Save & add another and Save buttons. */
+  const fieldOf = (field: string) =>
+    row.current?.querySelector<HTMLInputElement>(
+      field === "Another" || field === "Save"
+        ? `[data-action="${field}"]`
+        : `[data-field="${field}"] input, [data-field="${field}"] select, [data-field="${field}"] button`,
+    );
+  const focusField = (field: string) => requestAnimationFrame(() => fieldOf(field)?.focus());
+
+  // A new row goes by what the payee's transactions are usually like (payeeHabits).
+  const habits = useMemo(
+    () => (initial ? null : payeeHabits(budget)),
+    [budget.transactions, budget.categories, budget.payees, budget.accounts],
+  );
+  const known = transfer ? undefined : habits?.get(payee.trim());
+  // Until an amount is typed, the payee's last one shows in the field its money usually goes to.
+  const [amountTyped, setAmountTyped] = useState(false);
+  const suggestion =
+    known?.amount && !lines && !amountTyped && !outflow && !inflow
+      ? { field: known.income ? "Inflow" : "Outflow", text: editableAmount(Math.abs(known.amount)) }
+      : null;
+  // Money coming in, or about to: before its amount, a payee whose money usually comes in.
+  const incoming = income || (!outflow.trim() && !inflow.trim() && !!known?.income);
+  const takeSuggestion = () => {
+    if (!suggestion) return;
+    setAmountTyped(true);
+    if (suggestion.field === "Inflow") setInflow(suggestion.text);
+    else setOutflow(suggestion.text);
+  };
+  /**
+   * Where Tab goes from `from` on a new row: the next field this payee is likely to need (Shift+Tab
+   * and ← still reach the rest). The category is skipped when the payee filled it in and has had
+   * only that one lately (or it's the payee's default), and for money the payee usually pays in
+   * with none (it goes to Unassigned); the memo unless the payee usually has one; and the amount
+   * field its money doesn't go to. After the cleared mark come Save & add another, then Save.
+   */
+  const nextStop = (from: string) => {
+    const amount = !!(outflow.trim() || inflow.trim());
+    const filled = !touchedCategory.current && category !== null && category === known?.category;
+    const needed: Record<string, boolean> = {
+      Account: true,
+      Category: category === null ? !known?.income : !(filled && known?.oneCategory),
+      Memo: !memo.trim() && !!known?.memo,
+      Outflow: !amount && !known?.income,
+      // Tab from an empty Outflow is on its way to Inflow.
+      Inflow: !amount && (!!known?.income || from === "Outflow"),
+      Cleared: true,
+      Another: true,
+      Save: true,
+    };
+    return STOPS.slice(STOPS.indexOf(from) + 1).find((f) => needed[f] && fieldOf(f) && !fieldOf(f)!.disabled);
+  };
+  // Tab is decided after the row has rendered with the payee field's match (keys).
+  const route = useRef(nextStop);
+  route.current = nextStop;
+  const toggleCleared = () => {
+    if (status === "reconciled") return;
+    statusSet.current = true;
+    setStatus(status === "uncleared" ? "cleared" : "uncleared");
+  };
+  // The hint says what Space does while the cleared mark has focus.
+  const [onMark, setOnMark] = useState(false);
+  // How many were saved with Save & add another. Once one is, the row is adding several, and
+  // Enter saves and adds another too.
+  const [added, setAdded] = useState(0);
+  // The hint's parts: what Space and the clear key do now, and what Enter does.
+  const clears = status === "uncleared";
+  const enters = added
+    ? t("{key} saves & adds another", { key: <kbd>Enter</kbd> })
+    : t("{key} saves", { key: <kbd>Enter</kbd> });
+  const clearHint = (key: string) =>
+    clears ? t("{key} clears", { key: <kbd>{key}</kbd> }) : t("{key} unclears", { key: <kbd>{key}</kbd> });
   useEffect(() => {
     focusField(focus ?? (initial ? "Date" : "Payee"));
   }, []);
@@ -289,6 +387,7 @@ export function TransactionEditor({
     setFlag("");
     setOutflow("");
     setInflow("");
+    setAmountTyped(false);
     setStatus(date > today() ? "uncleared" : newStatus());
     statusSet.current = false;
     setLines(null);
@@ -334,21 +433,81 @@ export function TransactionEditor({
       const frequency = !initial && repeat !== "never" ? repeat : undefined;
       await (frequency ? onSave(build(amount), frequency) : onSave(build(amount)));
       setBusy(false);
-      if (another) reset();
-      else onCancel();
+      if (another) {
+        setAdded((n) => n + 1);
+        reset();
+      } else onCancel();
     } catch (e) {
       setError(errorText(e));
       setBusy(false);
     }
   };
   const keys = (e: KeyboardEvent) => {
-    if (e.defaultPrevented) return;
+    // Keys typed into an input method's composition (Japanese, Chinese…) are its own.
+    if (e.defaultPrevented || e.nativeEvent.isComposing || e.keyCode === 229) return;
+    const target = e.target as HTMLElement;
+    const from = target.closest<HTMLElement>("[data-field]")?.dataset.field ?? "";
+    const mark = !!target.closest(".clear-button");
+    const plain = !e.ctrlKey && !e.metaKey && !e.altKey;
     if (e.key === "Enter") {
+      // A focused button takes Enter as its click. The cleared mark is part of the transaction,
+      // like a field, so Enter there saves it.
+      if (target.closest("button") && !mark) return;
       e.preventDefault();
-      void save(!initial && e.shiftKey);
+      if (suggestion) {
+        // The suggested amount is filled in to be seen before it's saved: the next Enter saves.
+        flushSync(takeSuggestion);
+        const field = fieldOf(suggestion.field);
+        field?.focus();
+        field?.select();
+        return;
+      }
+      void save(!initial && (e.shiftKey || added > 0));
     } else if (e.key === "Escape") {
       e.preventDefault();
       onCancel();
+    } else if (clearKey(e)) {
+      e.preventDefault();
+      toggleCleared();
+    } else if (mark && plain && isC(e)) {
+      e.preventDefault();
+      toggleCleared();
+    } else if (e.key === "ArrowRight" && plain && !e.shiftKey && suggestion?.field === from) {
+      e.preventDefault();
+      takeSuggestion();
+    } else if (
+      (e.key === "ArrowLeft" || e.key === "ArrowRight") &&
+      plain &&
+      !e.shiftKey &&
+      ACROSS.includes(from) &&
+      target.getAttribute("aria-expanded") !== "true"
+    ) {
+      // ← and → go on to the field beside once there's no more text that way, or it's all
+      // selected; the field is then selected, as a spreadsheet's cell is. Right to left, the next
+      // field is the one on the left, and a field's text ends on whichever side its own runs to.
+      const right = e.key === "ArrowRight";
+      if (target instanceof HTMLInputElement) {
+        const { selectionStart: start, selectionEnd: end, value } = target;
+        const all = start === 0 && end === value.length;
+        if (!all && (right !== rtl(target) ? end !== value.length : start !== 0)) return;
+      }
+      const at = ACROSS.indexOf(from);
+      const next = (right !== rtl(row.current) ? ACROSS.slice(at + 1) : ACROSS.slice(0, at).reverse())
+        .map(fieldOf)
+        .find((el) => el && !el.disabled);
+      if (!next) return;
+      e.preventDefault();
+      next.focus();
+      if (next.tagName === "INPUT") next.select();
+    } else if (e.key === "Tab" && plain && !e.shiftKey && !initial && !lines && STOPS.includes(from)) {
+      e.preventDefault();
+      // Decided with the payee field's match and any amount taken in the row, and at once, so a
+      // key typed straight after goes to the next field. Tab out of the suggested amount takes it.
+      flushSync(() => {
+        if (suggestion?.field === from) takeSuggestion();
+      });
+      const to = route.current(from);
+      if (to) fieldOf(to)?.focus();
     }
   };
   const more = () => {
@@ -379,12 +538,12 @@ export function TransactionEditor({
   const setLine = (index: number, patch: Partial<Line>) =>
     setLines((ls) => ls && ls.map((l, i) => (i === index ? { ...l, ...patch } : l)));
   /** A category named in a category field (by its label): create it, choose it, and carry on from that field. */
-  const createCategory = (label: string, choose: (id: string) => void) =>
+  const createCategory = (field: string, choose: (id: string) => void) =>
     onCreateCategory &&
     ((name: string) =>
       void onCreateCategory(name).then((created) => {
         if (created) choose(created);
-        focusLabel(label);
+        focusField(field);
       }));
   const removeLine = (index: number) => {
     if (!lines) return;
@@ -394,35 +553,64 @@ export function TransactionEditor({
     setCategory(next[0]?.categoryId ?? null);
     setLines(null);
   };
-  /** The outflow and inflow fields, of the transaction or of split `line` (from 1). */
+  /** The suggested amount stands in for a field's placeholder. */
+  const suggested = (field: string) =>
+    suggestion?.field === field
+      ? {
+          placeholder: suggestion.text,
+          className: "num-input suggested",
+        }
+      : null;
+  /** The outflow and inflow fields, of the transaction or of split `line` (from 1). Money in typed
+   * into Outflow ("+25") goes over to Inflow, and money out typed into Inflow ("-25") to Outflow. */
   const amountInputs = (
     value: { outflow: string; inflow: string },
     set: (patch: { outflow?: string; inflow?: string }) => void,
     line?: number,
-  ) => (
+  ) => {
+    // The fields' names for Tab and the arrows (fieldOf), the same in any language.
+    const label = line ? `Line ${line} ` : "";
+    return (
     <>
-      <span role="cell">
+      <span role="cell" data-field={`${label}Outflow`}>
         <input
           aria-label={line ? t("Line {number} Outflow", { number: line }) : t("Outflow")}
           inputMode="decimal"
           className="num-input"
           placeholder={t("Outflow")}
+          {...(line ? null : suggested("Outflow"))}
           value={value.outflow}
-          onChange={(e) => set(e.target.value ? { outflow: e.target.value, inflow: "" } : { outflow: "" })}
+          onChange={(e) => {
+            const text = e.target.value;
+            const moved = movedBy(text, /^\+/);
+            if (moved !== null) {
+              set({ inflow: moved, outflow: "" });
+              fieldOf(`${label}Inflow`)?.focus();
+            } else set(text ? { outflow: text, inflow: "" } : { outflow: "" });
+          }}
         />
       </span>
-      <span role="cell">
+      <span role="cell" data-field={`${label}Inflow`}>
         <input
           aria-label={line ? t("Line {number} Inflow", { number: line }) : t("Inflow")}
           inputMode="decimal"
           className="num-input"
           placeholder={t("Inflow")}
+          {...(line ? null : suggested("Inflow"))}
           value={value.inflow}
-          onChange={(e) => set(e.target.value ? { inflow: e.target.value, outflow: "" } : { inflow: "" })}
+          onChange={(e) => {
+            const text = e.target.value;
+            const moved = movedBy(text, /^[-−]/);
+            if (moved !== null) {
+              set({ outflow: moved, inflow: "" });
+              fieldOf(`${label}Outflow`)?.focus();
+            } else set(text ? { inflow: text, outflow: "" } : { inflow: "" });
+          }}
         />
       </span>
     </>
-  );
+    );
+  };
   return (
     <div
       className="reg-row reg-editor"
@@ -446,10 +634,11 @@ export function TransactionEditor({
           </select>
         </span>
       </span>
-      <span role="cell" className="date-field">
+      {/* Each field's cell names it for Tab and the arrows (fieldOf), whatever its label's language. */}
+      <span role="cell" className="date-field" data-field="Date">
         <DateInput value={date} onChange={pickDate} />
       </span>
-      <span role="cell">
+      <span role="cell" data-field="Payee">
         <PayeeInput
           budget={budget}
           value={payee}
@@ -463,14 +652,19 @@ export function TransactionEditor({
             setLines(null);
           }}
           onPick={(info) => {
-            // A payee's usual "none" is Unassigned for income, and nothing chosen for spending.
-            if (!touchedCategory.current && info.categoryId !== undefined)
-              setCategory(info.categoryId === null ? (income ? READY_TO_ASSIGN : null) : info.categoryId);
+            // Its default, else its latest category (payeeHabits). A payee's usual "none" is
+            // Unassigned for income (and for a payee whose money comes in, left to it on purpose),
+            // and nothing chosen for spending.
+            const habit = habits?.get(info.name);
+            const usual = habit?.category ?? info.categoryId;
+            if (touchedCategory.current || usual === undefined) return;
+            const unassigned = usual === READY_TO_ASSIGN && !!habit?.income;
+            setCategory(usual !== null && usual !== READY_TO_ASSIGN ? usual : income || unassigned ? READY_TO_ASSIGN : null);
           }}
         />
       </span>
       {all && (
-        <span role="cell">
+        <span role="cell" data-field="Account">
           <select aria-label={t("Account")} value={account} onChange={(e) => setAccount(e.target.value)} disabled={reverse}>
             {accounts.map((a) => (
               <option key={a.id} value={a.id}>
@@ -480,7 +674,7 @@ export function TransactionEditor({
           </select>
         </span>
       )}
-      <span role="cell">
+      <span role="cell" data-field="Category">
         {lines ? (
           <span className="muted">{tn(lines.length, "Split ({count} lines)", "Split ({count} lines)")}</span>
         ) : !needsCategory ? (
@@ -497,39 +691,40 @@ export function TransactionEditor({
               touchedCategory.current = true;
               setCategory(null);
             }}
-            onCreate={createCategory(t("Category"), (created) => {
+            onCreate={createCategory("Category", (created) => {
               touchedCategory.current = true;
               setCategory(created);
             })}
             available={available}
-            readyToAssign={income ? t(INCOME) : category === READY_TO_ASSIGN ? t(FROM_UNASSIGNED) : false}
-            readyToAssignLast={!income}
+            readyToAssign={incoming ? t(INCOME) : category === READY_TO_ASSIGN ? t(FROM_UNASSIGNED) : false}
+            readyToAssignLast={!incoming}
             includeHidden
             includePayment={payment}
             placeholder={t("Category")}
           />
         )}
       </span>
-      <span role="cell" className="memo">
+      <span role="cell" className="memo" data-field="Memo">
         <input aria-label={t("Memo")} placeholder={t("Memo")} value={memo} onChange={(e) => setMemo(e.target.value)} />
       </span>
       {amountInputs({ outflow, inflow }, (patch) => {
+        setAmountTyped(true);
         if (patch.outflow !== undefined) setOutflow(patch.outflow);
         if (patch.inflow !== undefined) setInflow(patch.inflow);
       })}
       {!all && <span role="cell" className="balance" />}
-      <span role="cell" className="status-cell icon-col">
+      <span role="cell" className="status-cell icon-col" data-field="Cleared">
         <button
           type="button"
           className={`clear-button ${status}`}
           aria-label={t("Cleared")}
           title={status === "reconciled" ? t("Reconciled") : t("Cleared")}
+          aria-keyshortcuts={mac ? "Control+C" : "Alt+C"}
           aria-pressed={status !== "uncleared"}
           disabled={status === "reconciled"}
-          onClick={() => {
-            statusSet.current = true;
-            setStatus(status === "uncleared" ? "cleared" : "uncleared");
-          }}
+          onClick={toggleCleared}
+          onFocus={() => setOnMark(true)}
+          onBlur={() => setOnMark(false)}
         >
           <ClearedMark status={status} />
         </button>
@@ -543,14 +738,14 @@ export function TransactionEditor({
             {t("Line {number}", { number: i + 1 })}
           </span>
           {all && <span role="cell" />}
-          <span role="cell">
+          <span role="cell" data-field={`Category ${i + 1}`}>
             <CategoryPicker
               budget={budget}
               label={t("Category {number}", { number: i + 1 })}
               value={l.categoryId}
               onChange={(categoryId) => setLine(i, { categoryId })}
               onClear={() => setLine(i, { categoryId: null })}
-              onCreate={createCategory(t("Category {number}", { number: i + 1 }), (categoryId) => setLine(i, { categoryId }))}
+              onCreate={createCategory(`Category ${i + 1}`, (categoryId) => setLine(i, { categoryId }))}
               available={available}
               readyToAssign={isIncome(l) ? t(INCOME) : l.categoryId === READY_TO_ASSIGN ? t(FROM_UNASSIGNED) : false}
               readyToAssignLast={!isIncome(l)}
@@ -630,24 +825,53 @@ export function TransactionEditor({
           </span>
         )}
         <span className="spacer" />
+        <span className="editor-added" aria-live="polite">
+          {added ? tn(added, "{count} added", "{count} added") : ""}
+        </span>
+        {/* Its parts, most useful first (Save & add another shows its own key): short of room, the
+            last ones drop off (register.css). */}
         <span className="editor-hint" aria-hidden>
-          {t("{enter} saves · {esc} cancels", { enter: <kbd>Enter</kbd>, esc: <kbd>Esc</kbd> })}
+          {onMark ? (
+            <>
+              <span>{clearHint("Space")}</span>
+              <span>· {enters}</span>
+            </>
+          ) : (
+            <>
+              <span>{enters}</span>
+              {status !== "reconciled" && (
+                <span>· {clearHint(CLEAR_KEY)}</span>
+              )}
+              {!initial && !added && <span>· {t("{key} adds another", { key: <kbd>{keyLabel("Shift+Enter")}</kbd> })}</span>}
+              <span>· {added ? t("{key} closes", { key: <kbd>Esc</kbd> }) : t("{key} cancels", { key: <kbd>Esc</kbd> })}</span>
+            </>
+          )}
         </span>
         <button type="button" className="secondary small" onClick={onCancel}>
-          {t("Cancel")}
+          {added ? t("Close") : t("Cancel")}
         </button>
+        {/* The blue button is what Enter does: Save & add another once one has been. */}
         {!initial && (
           <button
             type="button"
-            className="secondary small"
+            className={`${added ? "primary" : "secondary"} small`}
+            data-action="Another"
             disabled={busy}
-            title="Shift+Enter"
+            title={added ? "Enter" : keyLabel("Shift+Enter")}
+            aria-keyshortcuts={added ? "Enter" : "Shift+Enter"}
             onClick={() => void save(true)}
           >
             {ahead ? t("Schedule & add another") : t("Save & add another")}
           </button>
         )}
-        <button type="button" className="primary small" disabled={busy} onClick={() => void save()}>
+        <button
+          type="button"
+          className={`${added ? "secondary" : "primary"} small`}
+          data-action="Save"
+          disabled={busy}
+          aria-keyshortcuts={added ? undefined : "Enter"}
+          onClick={() => void save()}
+        >
           {ahead ? t("Schedule") : t("Save")}
         </button>
       </div>
