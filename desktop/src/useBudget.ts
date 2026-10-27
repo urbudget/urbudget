@@ -25,6 +25,12 @@ type Recovery = { budget: Budget; matches: boolean };
 const RECOVERY_ERROR = msg(
   "The recovery draft could not be written. Keep this window open until the database save succeeds.",
 );
+const NOT_SAVED_ON_CLOSE = msg(
+  "The window is staying open because changes are not saved. Resolve the database conflict or export your draft first.",
+);
+/** How long closing waits for Windows to install a Store update before the window goes anyway
+ * (the update installs another time). */
+const EXIT_UPDATE_WAIT = 2 * 60_000;
 /** The operation is already in the draft. Retrying must save it, never apply it again. */
 export class AppliedChangeError extends Error {
   constructor(readonly retrySave: () => Promise<void>) {
@@ -364,18 +370,21 @@ export function useBudget(month: string, editorOpen = false) {
     };
   }, [accept]);
 
+  /** The on-close backup, when it's turned on. The native store applies the saved retention
+   * policy whenever it creates a backup; a failed one never keeps the window open. */
+  const backupOnClose = async () => {
+    if (!getPref("backupOnClose")) return;
+    try {
+      await api.backup();
+    } catch {
+      // Best effort: saving is what closing needs.
+    }
+  };
   /** What quitting needs first, for closing the window or installing an update: everything
    * saved, then the on-close backup. False when the changes can't be saved. */
   const prepareExit = useCallback(async (): Promise<boolean> => {
     if (operationRef.current || !(await flush())) return false;
-    // The native store applies the saved retention policy whenever it creates a backup.
-    if (getPref("backupOnClose")) {
-      try {
-        await api.backup();
-      } catch {
-        // A failed backup never keeps the window open.
-      }
-    }
+    await backupOnClose();
     return true;
   }, [flush]);
 
@@ -392,26 +401,33 @@ export function useBudget(month: string, editorOpen = false) {
           event.preventDefault();
           return;
         }
-        const task = exitTask.current;
-        if (task || pendingRecovery.current || dirty() || running.current || getPref("backupOnClose")) {
+        // An update waiting to install on close, unless a recovery draft is waiting too.
+        const task = pendingRecovery.current ? null : exitTask.current;
+        if (task) {
           event.preventDefault();
-          if (await prepareExit()) {
-            if (task) {
-              // Windows may end the app while it installs; otherwise the window closes after.
+          // As installing by hand does, it holds the edit lock from the save until the window
+          // goes, so nothing changes after it's saved, and Windows (or a second close) may end
+          // the app only while it's held. Closing never waits long on the update, nor on its failing.
+          let saved = false;
+          try {
+            await exclusive(msg("Installing the update…"), async () => {
+              saved = true;
+              await backupOnClose();
               updateReadyToClose.current = true;
-              try {
-                await task();
-              } catch {
-                // Closing never waits on an update; it installs another time.
-              } finally {
-                updateReadyToClose.current = false;
-              }
-            }
-            await getCurrentWindow().destroy();
-          } else
-            setError(
-              t("The window is staying open because changes are not saved. Resolve the database conflict or export your draft first."),
-            );
+              await Promise.race([task().catch(() => {}), new Promise((done) => setTimeout(done, EXIT_UPDATE_WAIT))]);
+              await getCurrentWindow().destroy();
+            });
+          } catch {
+            if (!saved) setError(t(NOT_SAVED_ON_CLOSE));
+          } finally {
+            updateReadyToClose.current = false;
+          }
+          return;
+        }
+        if (pendingRecovery.current || dirty() || running.current || getPref("backupOnClose")) {
+          event.preventDefault();
+          if (await prepareExit()) await getCurrentWindow().destroy();
+          else setError(t(NOT_SAVED_ON_CLOSE));
         }
       })
       .then((fn) => {
@@ -593,9 +609,7 @@ export function useBudget(month: string, editorOpen = false) {
     transform,
     installUpdate: (install: () => Promise<void>) =>
       exclusive(msg("Installing the update…"), async () => {
-        if (getPref("backupOnClose")) {
-          try { await api.backup(); } catch { /* As with a normal close, saving is required; backup is best effort. */ }
-        }
+        await backupOnClose();
         updateReadyToClose.current = true;
         try { await install(); } finally { updateReadyToClose.current = false; }
       }),

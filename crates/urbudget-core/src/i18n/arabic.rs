@@ -940,7 +940,7 @@ pub(super) const MESSAGES: &[(&str, &str)] = &[
     ("Microsoft Store couldn't complete the update request: {error}. Try again, or open Microsoft Store.", "تعذّر على Microsoft Store إكمال طلب التحديث: {error}. حاول مرة أخرى، أو افتح Microsoft Store."),
     ("The app window closed before Microsoft Store could respond.", "أُغلقت نافذة التطبيق قبل أن يستجيب Microsoft Store."),
     ("Microsoft Store took too long to check. Try again, or open Microsoft Store.", "استغرق Microsoft Store وقتًا طويلًا في البحث عن التحديثات. حاول مرة أخرى، أو افتح Microsoft Store."),
-    ("Windows needs your permission to install this update. Use Install Store update in Settings.", "يحتاج Windows إلى إذنك لتثبيت هذا التحديث. ثبّته من الإعدادات."),
+    ("Microsoft Store took too long to download the update. It will try again later.", "استغرق Microsoft Store وقتًا طويلًا في تنزيل التحديث. سيحاول مرة أخرى لاحقًا."),
     ("The Microsoft Store update was canceled. You can try again.", "أُلغي تحديث Microsoft Store. يمكنك المحاولة مرة أخرى."),
     ("Connect this computer to power, then try the update again.", "صِل هذا الكمبيوتر بالكهرباء، ثم أعد محاولة التحديث."),
     ("Connect to Wi-Fi, then try the update again, or open Microsoft Store.", "اتصل بشبكة Wi-Fi، ثم أعد محاولة التحديث، أو افتح Microsoft Store."),

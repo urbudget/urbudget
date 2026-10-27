@@ -46,7 +46,7 @@ import { useLearnPayee } from "./useLearnPayee";
 import { useSteady } from "./useSteady";
 import { useCategoryCreator } from "./NewCategory";
 import { CardPaymentForm } from "./CardPayment";
-import { getPref, resetLayout } from "./prefs";
+import { getPref, resetLayout, usePref } from "./prefs";
 import { TitleBar, customTitleBar } from "./WindowControls";
 import { keyLabel } from "./platform";
 import { getDirection, list, msg, t, tn, useLanguage } from "./i18n";
@@ -227,6 +227,8 @@ export default function App() {
   const [page, setPage] = useState<Page>(startPage);
   // A bank file being imported, kept while someone looks elsewhere.
   const [importing, setImporting] = useState<ImportState | null>(null);
+  /** The assistant has a message being written or sent (AssistantPanel's onWorking). */
+  const assistantWorking = useRef(false);
   // The import as it is now, for the assistant's fixes that land after a change of the user's.
   const importingNow = useRef(importing);
   importingNow.current = importing;
@@ -384,27 +386,34 @@ export default function App() {
     else void model.fetchDatabase();
   };
   // Saves the budget (and makes the on-close backup) before the installer replaces the app.
-  const installUpdate = () =>
+  const installUpdate = (automatic = false) =>
     void updates
-      .install(model.installUpdate)
+      .install(model.installUpdate, automatic)
       .catch((e) => fail(e, t("Couldn't install the update: ")));
-  // A downloaded Store update installs when the window closes, after the budget is saved.
-  const { ready: updateReady, channel: updateChannel, installOnExit } = updates;
+  // Unless Settings › General says not to, a downloaded update installs by itself: a Store one
+  // when the window closes, after the budget is saved,
+  const [autoUpdate] = usePref("autoUpdate");
+  const { channel: updateChannel, installOnExit } = updates;
+  const automaticUpdate = autoUpdate && updates.automatic;
   useEffect(() => {
-    model.setExitTask(updateReady && updateChannel === "microsoftStore" ? installOnExit : null);
+    model.setExitTask(automaticUpdate && updateChannel === "microsoftStore" ? installOnExit : null);
   });
-  // Or by itself once UrBudget has sat unused in the background with nothing to lose.
+  // or any once UrBudget has sat unused in the background with nothing to lose: no unsaved
+  // change, no dialog or form open, no import under way (on its page or not) and nothing unsent
+  // in the assistant, none of which a restart keeps.
   useAutomaticUpdate(
-    updates.ready,
+    automaticUpdate,
     () =>
       !model.operation &&
       !model.dirty() &&
       !cloud.syncing &&
       !dialog &&
       !planningEditor &&
+      !(importing?.file || importing?.session) &&
+      !assistantWorking.current &&
       !document.querySelector('[aria-modal="true"]') &&
       !document.activeElement?.matches("input, textarea, select, [contenteditable]"),
-    installUpdate,
+    () => installUpdate(true),
   );
   useUpdatedNotice((version) => toast({ message: t("UrBudget was updated to version {version}.", { version }) }));
   const switchBudget = (id: string) =>
@@ -881,7 +890,7 @@ export default function App() {
               setTheme={setTheme}
               cloud={cloud}
               updates={updates}
-              onInstallUpdate={installUpdate}
+              onInstallUpdate={() => installUpdate()}
               budgetId={budgetId}
               isClean={() => !model.dirty() && sync === "saved"}
               onResetLayout={() => {
@@ -896,6 +905,9 @@ export default function App() {
       {assistantOpen && (
         <AssistantBoundary budgetId={budgetId} onClose={() => showAssistant(false)}>
           <AssistantPanel
+            onWorking={(working) => {
+              assistantWorking.current = working;
+            }}
             budget={budget}
             budgetId={budgetId}
             summary={summary}

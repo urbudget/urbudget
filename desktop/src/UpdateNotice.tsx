@@ -1,4 +1,5 @@
 import { Download, LoaderCircle, RefreshCw } from "lucide-react";
+import { usePref } from "./prefs";
 import type { Updates } from "./updates";
 import { t } from "./i18n";
 
@@ -60,6 +61,8 @@ export function UpdateSetting({
   onInstall: () => void;
 }) {
   const { available, phase } = updates;
+  const [automatic] = usePref("autoUpdate");
+  const store = updates.channel === "microsoftStore";
   return (
     <div className="setting-row update-setting">
       <span>
@@ -74,9 +77,13 @@ export function UpdateSetting({
             </small>
             {updates.ready && (
               <small>
-                {updates.channel === "microsoftStore"
-                  ? t("UrBudget installs it when you close it, or after it sits unused for a while, and reopens. Your budget is saved first.")
-                  : t("UrBudget installs it after it sits unused for a while, and reopens. Your budget is saved first.")}
+                {!automatic
+                  ? t("It installs when you choose. Your budget is saved first.")
+                  : !updates.automatic
+                    ? t("It didn't install by itself last time, so it waits for you. Your budget is saved first.")
+                    : store
+                      ? t("UrBudget installs it when you close it, or after it sits unused for a while and then reopens. Your budget is saved first.")
+                      : t("UrBudget installs it after it sits unused for a while, and reopens. Your budget is saved first.")}
               </small>
             )}
           </>
@@ -84,15 +91,21 @@ export function UpdateSetting({
           <small>
             {[
               version && t("You have version {version}.", { version }),
-              ...(updates.channel === "microsoftStore"
-                ? [
-                    updates.current && t("Microsoft Store reports no updates available for this copy."),
-                    t("UrBudget checks the Store at launch and daily, downloads updates in the background, and installs them when you close it or leave it unused."),
-                  ]
-                : [
-                    updates.current && t("You're up to date."),
-                    t("UrBudget looks for updates when it starts and once a day, downloads them in the background, and installs them after it sits unused for a while."),
-                  ]),
+              ...(updates.channel === "development"
+                ? [t("This development build doesn't look for updates.")]
+                : store
+                  ? [
+                      updates.current && t("Microsoft Store reports no updates available for this copy."),
+                      automatic
+                        ? t("UrBudget checks the Store at launch and daily, downloads updates in the background, and installs them when you close it or leave it unused.")
+                        : t("UrBudget checks the Store at launch and daily, downloads updates in the background, and lets you install them when you choose."),
+                    ]
+                  : [
+                      updates.current && t("You're up to date."),
+                      automatic
+                        ? t("UrBudget looks for updates when it starts and once a day, downloads them in the background, and installs them after it sits unused for a while.")
+                        : t("UrBudget looks for updates when it starts and once a day, downloads them in the background, and lets you install them when you choose."),
+                    ]),
             ]
               .filter(Boolean)
               .join(" ")}

@@ -4,6 +4,13 @@ Notable changes to UrBudget, organized using [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Added
+
+- Updates install themselves. A new version downloads in the background, then installs once UrBudget has sat unused in the background for a quarter of an hour with nothing to lose: no unsaved change, dialog or form open, no import under way (on its page or not) and nothing unsent in the assistant. Your budget is saved first, and UrBudget reopens on the new version. A copy from Microsoft Store also installs a downloaded update when you close it, keeping your budget locked from the save until the window goes. Settings › General › Install updates by themselves turns this off; updates then wait for Restart to update.
+- When Windows wants your permission for a Microsoft Store update (the Store's automatic app updates are off, or the connection is metered), the update waits for you, and Install Store update asks. UrBudget never asks by itself while nobody's there.
+- An update that installed by itself but left the same version running isn't tried by itself again for three days; installing it by hand still works.
+- The first time UrBudget opens after an update, it says which version is now running.
+
 ## [1.0.9] - 2026-10-24
 
 ### Added

@@ -4,7 +4,8 @@
 // with everything saved, reopening it afterwards. Installing by hand stays available.
 // Rust checks the package's signature against the updater key in tauri.conf.json before
 // installing it. Microsoft Store copies use Windows' package-update APIs, never the standalone
-// installer. A failed channel lookup never enables another updater.
+// installer. A failed channel lookup never enables another updater. Development builds don't
+// update at all, so a published version never installs itself over the one being worked on.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
@@ -17,7 +18,11 @@ const FIRST_CHECK = 8_000;
 const DAY = 24 * 3600_000;
 /** How long UrBudget must sit unused in the background before it updates itself. */
 export const IDLE_BEFORE_UPDATE = 15 * 60_000;
-export type UpdateChannel = "direct" | "microsoftStore";
+/** How long an update that installed itself but left the same version running isn't tried by
+ * itself again (installing by hand still can), so a failing install never loops. */
+const RETRY_AFTER = 3 * DAY;
+const ATTEMPT_KEY = "lb:update-attempt";
+export type UpdateChannel = "direct" | "microsoftStore" | "development";
 
 export type UpdateState = {
   /** A newer version than this one, when the last check found one. */
@@ -34,6 +39,9 @@ export type UpdateState = {
   progress: number | null;
   /** The last check found nothing newer. */
   current: boolean;
+  /** `ready`, and it may install by itself: it isn't one already tried that way from this
+   * version without changing it, lately. */
+  automatic: boolean;
   channel: UpdateChannel | null;
   error: string | null;
 };
@@ -44,6 +52,24 @@ const storeNotes = {
   consent: msg("An update is available from Microsoft Store. Your budget is saved before Windows downloads and installs it."),
 };
 
+/** The update an automatic install last tried, from which version and when (ATTEMPT_KEY). */
+type Attempt = { from: string; to: string; at: number };
+const lastAttempt = (): Attempt | null => {
+  try {
+    const attempt = JSON.parse(localStorage.getItem(ATTEMPT_KEY) ?? "null") as Attempt | null;
+    return attempt && typeof attempt.from === "string" && typeof attempt.to === "string" ? attempt : null;
+  } catch {
+    return null;
+  }
+};
+const remember = (attempt: Attempt) => {
+  try {
+    localStorage.setItem(ATTEMPT_KEY, JSON.stringify(attempt));
+  } catch {
+    // Not remembered: a failing install could be tried again after the next quiet spell.
+  }
+};
+
 export function useUpdates() {
   const [state, setState] = useState<UpdateState>({
     available: null,
@@ -51,6 +77,7 @@ export function useUpdates() {
     phase: "idle",
     progress: null,
     current: false,
+    automatic: false,
     channel: null,
     error: null,
   });
@@ -63,12 +90,41 @@ export function useUpdates() {
   const storeUpdate = useRef(false);
   /** Windows has the Store update downloaded and installs it without asking. */
   const silentStore = useRef(false);
+  /** The version running, once known. */
+  const running = useRef<string | null>(null);
+  useEffect(() => {
+    if (desktop)
+      void getVersion()
+        .then((version) => {
+          running.current = version;
+        })
+        .catch(() => {});
+  }, []);
+  /** What the waiting update is called, for remembering an automatic attempt at it. */
+  const target = () => found.current?.version ?? (storeUpdate.current ? "store" : null);
+  /** Whether the waiting update may install by itself: not when it already did from this version
+   * lately, and this version is still running. */
+  const allowed = () => {
+    const attempt = lastAttempt();
+    return !(attempt && attempt.from === running.current && attempt.to === target() && Date.now() - attempt.at < RETRY_AFTER);
+  };
+  /** A downloaded Store update that Windows now won't install without asking: it waits for the
+   * person, who's asked when they install it. */
+  const needsConsent = () => {
+    silentStore.current = false;
+    setState((s) => ({
+      ...s,
+      ready: false,
+      automatic: false,
+      available: s.available && { ...s.available, notes: storeNotes.consent },
+    }));
+  };
   const identify = useCallback(async () => {
     if (channel.current) return channel.current;
     if (!channelRequest.current) {
       channelRequest.current = invoke<UpdateChannel>("update_channel")
         .then((value) => {
-          if (!["direct", "microsoftStore"].includes(value))
+          if (!["direct", "microsoftStore", "development"].includes(value))
             throw new Error(
               t("Couldn't identify this app's update channel. Try checking again."),
             );
@@ -115,6 +171,10 @@ export function useUpdates() {
       if (manual) setState((s) => ({ ...s, phase: "checking", error: null }));
       try {
         const source = await identify();
+        if (source === "development") {
+          if (manual) setState((s) => ({ ...s, error: t("This is a development build, which doesn't update itself.") }));
+          return;
+        }
         if (source === "microsoftStore") {
           const available = await invoke<boolean>("check_store_update");
           storeUpdate.current = available;
@@ -123,6 +183,7 @@ export function useUpdates() {
             ...s,
             available: available ? { version: null, notes: storeNotes.consent } : null,
             ready: false,
+            automatic: false,
             current: !available,
             error: null,
           }));
@@ -143,6 +204,7 @@ export function useUpdates() {
           setState((s) => ({
             ...s,
             ready: silentStore.current,
+            automatic: silentStore.current && allowed(),
             available: { version: null, notes: silentStore.current ? storeNotes.ready : storeNotes.consent },
           }));
           return;
@@ -158,13 +220,14 @@ export function useUpdates() {
             ? { version: next.version, notes: next.body?.trim() ?? "" }
             : null,
           ready: !!next && downloaded.current === next,
+          automatic: !!next && downloaded.current === next && allowed(),
           current: !next,
           error: null,
         }));
         if (!next) return;
         try {
           await fetchUpdate(next);
-          if (found.current === next) setState((s) => ({ ...s, ready: true }));
+          if (found.current === next) setState((s) => ({ ...s, ready: true, automatic: allowed() }));
         } catch (e) {
           // Installing by hand downloads it again.
           if (manual) setState((s) => ({ ...s, error: errorText(e) }));
@@ -202,11 +265,14 @@ export function useUpdates() {
   /**
    * Installs the update and reopens UrBudget on the new version. `withSavedBudget` must save
    * and hold the edit lock through installation/restart. Store requests can close the app
-   * while downloading, so the entire Windows request runs under that lock.
+   * while downloading, so the entire Windows request runs under that lock. `automatic` when
+   * UrBudget does it by itself: it's remembered, and Windows is never asked for permission then,
+   * since nobody is there to answer; the update waits for the person instead.
    */
   const install = useCallback(
     async (
       withSavedBudget: (install: () => Promise<void>) => Promise<void>,
+      automatic = false,
     ) => {
       const update = found.current;
       const fromStore = channel.current === "microsoftStore";
@@ -227,27 +293,39 @@ export function useUpdates() {
           error: null,
         }));
         await withSavedBudget(async () => {
+          // Saved: from here it's an attempt, whatever comes of it.
+          if (automatic && running.current) remember({ from: running.current, to: target() ?? "", at: Date.now() });
           if (fromStore) {
             // A downloaded update installs without a prompt; otherwise Windows asks first.
             // Either way Windows closes UrBudget to replace it and opens it again.
-            const installed = silentStore.current
-              ? await invoke<boolean>("apply_store_update", { relaunch: true })
-              : await invoke<boolean>("install_store_update");
-            if (!installed) {
+            let outcome = silentStore.current
+              ? await invoke<"installed" | "none" | "consent">("apply_store_update", { relaunch: true })
+              : null;
+            if (outcome === "consent") {
+              needsConsent();
+              // Nobody to ask: it waits for the person to install it.
+              if (automatic) return;
+            }
+            if (outcome === null || outcome === "consent")
+              outcome = (await invoke<boolean>("install_store_update")) ? "installed" : "none";
+            if (outcome === "none") {
               storeUpdate.current = false;
               silentStore.current = false;
-              setState((s) => ({ ...s, available: null, ready: false, current: true }));
+              setState((s) => ({ ...s, available: null, ready: false, automatic: false, current: true }));
               return;
             }
           } else {
             // Installing uses up the download, even when it fails.
             downloaded.current = null;
-            setState((s) => ({ ...s, ready: false }));
+            setState((s) => ({ ...s, ready: false, automatic: false }));
             await update!.install();
           }
           await invoke("restart_app");
         });
       } catch (e) {
+        // A Store update that didn't install quietly isn't tried quietly again: installing it
+        // asks Windows, which says what's wrong.
+        if (fromStore && silentStore.current) needsConsent();
         setState((s) => ({ ...s, error: errorText(e) }));
         throw e;
       } finally {
@@ -268,7 +346,8 @@ export function useUpdates() {
       return false;
     busy.current = true;
     try {
-      return await invoke<boolean>("apply_store_update", { relaunch: false });
+      if (running.current) remember({ from: running.current, to: "store", at: Date.now() });
+      return (await invoke<string>("apply_store_update", { relaunch: false })) === "installed";
     } catch {
       return false;
     } finally {

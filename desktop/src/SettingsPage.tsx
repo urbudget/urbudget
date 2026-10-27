@@ -389,6 +389,13 @@ export function SettingsPage({
             <p className="help">{t("These apply on this computer, to every budget.")}</p>
             <div className="setting-list">
               {desktop && <UpdateSetting updates={updates} version={version} onInstall={onInstallUpdate} />}
+              {desktop && (
+                <Toggle
+                  pref="autoUpdate"
+                  title={t("Install updates by themselves")}
+                  help={t("Once one has downloaded, UrBudget installs it when it has sat unused for a while (a Microsoft Store copy, also when you close it), saving your budget first. Off, updates wait for you to install them.")}
+                />
+              )}
               <LanguageChoice />
               <div className="setting-row">
                 <span>

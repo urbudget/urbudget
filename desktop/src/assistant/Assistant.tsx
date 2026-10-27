@@ -343,6 +343,7 @@ export function AssistantPanel({
   canUndo,
   onReviewImport,
   onHighlight,
+  onWorking,
 }: {
   budget: Budget;
   budgetId: string;
@@ -359,6 +360,8 @@ export function AssistantPanel({
   canUndo: (p: Proposal) => boolean;
   onReviewImport: (threadId: string, p: Proposal) => void;
   onHighlight: (highlight: Card["highlight"] | null) => void;
+  /** Whether there's a message being written, attached to or sent, which closing would lose. */
+  onWorking?: (working: boolean) => void;
 }) {
   const toast = useToast();
   const threadKey = `lb:assistant:thread:${budgetId}`;
@@ -524,6 +527,11 @@ export function AssistantPanel({
   };
 
   const waiting = pending(entries);
+  const working = running || uploading > 0 || !!draft.trim() || attachments.length > 0;
+  useEffect(() => {
+    onWorking?.(working);
+  }, [working]);
+  useEffect(() => () => onWorking?.(false), []);
   useEffect(() => {
     onHighlight(waiting ? waiting.card.highlight : null);
   }, [waiting]);

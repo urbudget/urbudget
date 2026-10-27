@@ -40,6 +40,14 @@ vi.mock("./bridge", async (importOriginal) => {
   const projection = { months: 13, totalInterest: 41234, totalFees: 0, payoffDate: "2027-10-01", schedule: [] };
   return { ...actual, api: { ...actual.api, projectLoan: vi.fn(async () => projection), export: vi.fn(), exportRecoveryDraft: vi.fn() } };
 });
+// What App tells automatic updates is safe to interrupt.
+const automatic = vi.hoisted(() => ({ safe: null as (() => boolean) | null }));
+vi.mock("./updates", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./updates")>(),
+  useAutomaticUpdate: (_ready: boolean, safe: () => boolean) => {
+    automatic.safe = safe;
+  },
+}));
 import App from "./App";
 import { api } from "./bridge";
 import { ToastProvider } from "./ui";
@@ -47,6 +55,21 @@ import { AppliedChangeError } from "./useBudget";
 
 beforeEach(() => { state.loaded = true; state.calculated = true; state.display = false; state.calculationError = ""; state.rejectedMonth = ""; state.canUndo = false; state.dirty = false; state.edit.mockClear(); state.retry.mockClear(); state.undo.mockReset(); state.fetch.mockReset(); });
 afterEach(cleanup);
+it("doesn't update by itself over an unfinished import, on its page or after leaving it (Codex review R2)", async () => {
+  render(<ToastProvider><App /></ToastProvider>);
+  expect(automatic.safe!()).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: /^Everyday account\d/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Import" }));
+  const statement = new File(["%PDF-1.4"], "statement.pdf", { type: "application/pdf" });
+  fireEvent.change(screen.getByLabelText("Bank file"), { target: { files: [statement] } });
+  await waitFor(() => expect(screen.getAllByText("statement.pdf").length).toBeGreaterThan(0));
+  (document.activeElement as HTMLElement | null)?.blur();
+  expect(automatic.safe!()).toBe(false);
+  // Away on another page, the import is still waiting.
+  fireEvent.click(screen.getByRole("button", { name: "Budget" }));
+  expect(automatic.safe!()).toBe(false);
+});
+
 it("renders newly created categories while Rust is still calculating their totals", () => {
   render(<App />);
   expect(screen.getByText("Groceries")).toBeTruthy();

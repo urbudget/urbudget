@@ -26,6 +26,9 @@ export type Prefs = {
   language: "system" | "en" | "ar";
   /** Count this copy as in use on urbudget.app, anonymously, once a day (usage.ts). */
   usageCounts: boolean;
+  /** Downloaded updates install by themselves (updates.ts useAutomaticUpdate); off, they wait to
+   * be installed by hand. */
+  autoUpdate: boolean;
 };
 export const DEFAULT_PREFS: Prefs = {
   weekStart: "auto",
@@ -40,6 +43,7 @@ export const DEFAULT_PREFS: Prefs = {
   keepBackups: 0,
   language: "system",
   usageCounts: true,
+  autoUpdate: true,
 };
 const KEY = "lb:prefs";
 /** The window event `setPref` sends, with the changed key and value as its detail. */
