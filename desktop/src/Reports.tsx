@@ -387,7 +387,7 @@ export function Reports({
     const fail = (e: unknown) => toast({ message: errorText(e), tone: "error" });
     try {
       const path = await api.exportReports(budget, filter);
-      toast({ message: "Report exported.", action: { label: "Show in folder", onClick: () => void api.reveal(path).catch(fail) } });
+      if (path) toast({ message: "Report exported.", action: { label: "Show in folder", onClick: () => void api.reveal(path).catch(fail) } });
     } catch (e) {
       fail(e);
     }

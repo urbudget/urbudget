@@ -94,8 +94,10 @@ export function Popover({
       setPosition({ left, top, minWidth: matchWidth ? rect.width : undefined });
     };
     place();
+    // It follows its own size, and its anchor's (a search box that widens as it opens).
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place);
     if (ref.current) observer?.observe(ref.current);
+    if (isRef(anchor) && anchor.current) observer?.observe(anchor.current);
     addEventListener("resize", place);
     addEventListener("scroll", place, true);
     return () => {

@@ -42,6 +42,7 @@ pub async fn dispatch(
         "assistant_retry" => encoded(assistant_retry(simplefin, db, assistant, optional(&params, "patch")?, argument(&params, "threadId")?, argument(&params, "screen")?)?),
         "assistant_stop" => encoded(assistant_stop(db, assistant, argument(&params, "threadId")?)?),
         "assistant_apply" => encoded(assistant_apply(db, assistant, optional(&params, "patch")?, argument(&params, "threadId")?, argument(&params, "proposalId")?)?),
+        "assistant_revise" => assistant_revise(db, assistant, optional(&params, "patch")?, argument(&params, "threadId")?, argument(&params, "proposalId")?, argument(&params, "revision")?),
         "assistant_mark" => assistant_mark(db, assistant, argument(&params, "threadId")?, argument(&params, "proposalId")?, argument(&params, "status")?),
         "assistant_report" => encoded(assistant_report(db, assistant, argument(&params, "threadId")?, argument(&params, "proposalId")?)?),
         "assistant_report_reply" => encoded(assistant_report_reply(cloud, argument(&params, "text")?, argument(&params, "reason")?).await?),

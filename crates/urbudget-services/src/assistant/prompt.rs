@@ -77,6 +77,18 @@ pub struct Screen {
     /// Today in the user's time zone, YYYY-MM-DD.
     #[serde(default)]
     pub today: String,
+    /// The bank file on the Import page, when that's where the user is.
+    #[serde(default)]
+    pub import: Option<ImportScreen>,
+}
+/// A bank file being imported, as the app has it: what the assistant is told of it is worked out
+/// from this when the message is sent, and kept with the message (see `Item::User::import`).
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportScreen {
+    pub account: String,
+    pub content: String,
+    pub session: crate::bank_statement::Session,
 }
 
 fn page_name(page: &str) -> &str {
@@ -89,12 +101,14 @@ fn page_name(page: &str) -> &str {
         "reports" => "Reports",
         "payees" => "Payees & rules",
         "settings" => "Settings & data",
+        "import" => "Import a bank file",
         other => other,
     }
 }
 
-/// The note sent with a message. `earlier` lists what happened to earlier proposals.
-pub fn context(b: &Budget, screen: &Screen, share_memos: bool, earlier: &[String]) -> String {
+/// The note sent with a message. `earlier` lists what happened to earlier proposals; `import` is
+/// the bank file the user is importing.
+pub fn context(b: &Budget, screen: &Screen, share_memos: bool, earlier: &[String], import: Option<&crate::bank_statement::Brief>) -> String {
     let names = Names::new(b);
     let mut lines = vec![format!(
         "Today is {}. Budget \u{201c}{}\u{201d}, currency {}.",
@@ -123,10 +137,42 @@ pub fn context(b: &Budget, screen: &Screen, share_memos: bool, earlier: &[String
             json!(rows)
         ));
     }
+    if let Some(brief) = import {
+        lines.push(import_note(b, brief));
+    }
     if !earlier.is_empty() {
         lines.push(format!("Earlier proposals: {}.", earlier.join("; ")));
     }
     lines.join("\n")
+}
+/// What the assistant is told of a bank file being imported: how it reads, and its lines that need
+/// attention, each with the values fix_import has to name to change them.
+fn import_note(b: &Budget, brief: &crate::bank_statement::Brief) -> String {
+    let account = b.accounts.iter().find(|a| a.id == brief.scope.account).map_or("an account", |a| a.name.as_str());
+    let line = |l: &crate::bank_statement::BriefLine| {
+        let mut v = json!({ "line": l.id, "cells": l.cells, "fields": l.fields });
+        if let crate::bank_statement::Status::Attention { reason, .. } | crate::bank_statement::Status::LeftOut { detail: reason, .. } = &l.status {
+            v["problem"] = json!(reason);
+        }
+        v
+    };
+    let note = json!({
+        "format": brief.format,
+        "headers": brief.headers,
+        "readAs": brief.structure,
+        "accounts": brief.sources,
+        "counts": brief.counts,
+        "dateOrderQuestion": brief.date_order,
+        "signsQuestion": brief.signs,
+        "currency": brief.currency,
+        "needAttention": brief.lines.iter().map(line).collect::<Vec<_>>(),
+        "moreNeedingAttention": brief.more,
+        "samplesThatRead": brief.samples.iter().map(line).collect::<Vec<_>>(),
+        "leftOutThatCanBeIncluded": brief.left_out.iter().map(line).collect::<Vec<_>>(),
+    });
+    format!(
+        "They are importing a bank file into {account} on the Import page. Lines that need attention are left out of the import until fixed. To fix them, call fix_import with values the file itself supports (another of the line's cells, the statement's totals, what the user said); never guess one, and ask when it's unclear. A line left out (pending, declined, in another currency…) is included with fix_import's include only when the user asks for it. The file: {note}"
+    )
 }
 
 #[cfg(test)]
@@ -153,7 +199,7 @@ mod tests {
         let b = apply(b, "cash", choices).unwrap();
         let ids: Vec<String> = rows.iter().map(|r| r.id.clone()).collect();
         let screen = Screen { page: "transactions".into(), selected: ids.clone(), today: "2026-10-18".into(), ..Screen::default() };
-        let note = context(&b, &screen, true, &[]);
+        let note = context(&b, &screen, true, &[], None);
         assert!(note.contains("They attached 2 selected transactions"), "{note}");
         for id in &ids {
             assert!(note.contains(id.as_str()), "{note}");
@@ -163,15 +209,15 @@ mod tests {
         assert!(!note.contains("\"id\":\"tx\""), "{note}");
         // Ids that no longer exist (deleted before sending) are left out rather than invented.
         let gone = Screen { selected: vec!["bank:gone".into()], ..screen };
-        assert!(!context(&b, &gone, true, &[]).contains("attached"));
+        assert!(!context(&b, &gone, true, &[], None).contains("attached"));
     }
 
     #[test]
     fn navigation_guidance_matches_the_native_platform_without_changing_desktop_context() {
         let desktop: Screen = serde_json::from_value(json!({ "page": "budget", "today": "2026-10-21" })).unwrap();
-        assert!(!context(&sample(), &desktop, false, &[]).contains("native Android"));
+        assert!(!context(&sample(), &desktop, false, &[], None).contains("native Android"));
         let android = Screen { platform: "android".into(), ..desktop };
-        let note = context(&sample(), &android, false, &[]);
+        let note = context(&sample(), &android, false, &[], None);
         assert!(note.contains("Bank connections") && note.contains("Budget library"));
     }
 }

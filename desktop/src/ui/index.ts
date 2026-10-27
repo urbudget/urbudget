@@ -17,4 +17,4 @@ export { Tabs } from "./Tabs";
 export { TooltipLayer } from "./Tooltip";
 export { useVirtualRows } from "./virtual";
 export { usePinned } from "./pinned";
-export { HeaderSlot, HeaderSlotElement } from "./headerSlot";
+export { HeaderSlot, HeaderSlotElements } from "./headerSlot";

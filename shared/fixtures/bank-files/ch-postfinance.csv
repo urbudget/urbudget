@@ -1,0 +1,17 @@
+Von-Datum:;14.09.2026;;;;;
+Bis-Datum:;22.10.2026;;;;;
+Konto:;CH0009000000123456789;;;;;
+Währung:;CHF;;;;;
+;;;;;;
+Datum;Bewegungstyp;Avisierungstext;Gutschrift in CHF;Lastschrift in CHF;Label;Kategorie
+;;;;;;
+21.10.2026;Vormerkung;KAUF/DIENSTLEISTUNG VOM 21.10.2026 KARTEN NR. XXXX1234 MIGROS ZUERICH;;-37.8;;Lebensmittel
+02.10.2026;Kontoauszug;E-FINANCE ELEKTRIZITÄTSWERK BEISPIELSTADT RECHNUNG 4711;;-85.4;;Wohnen
+01.10.2026;Kontoauszug;ÜBERTRAG AUF KONTO CH0009000000987654321 SPARKONTO;;-500;;Sparen
+25.09.2026;Kontoauszug;GUTSCHRIFT AUFTRAGGEBER: ARBEITGEBER MUSTER AG LOHN SEPTEMBER 2026;5200;;;Einkommen
+15.09.2026;Kontoauszug;KAUF/ONLINE SHOPPING VOM 15.09.2026 KARTEN NR. XXXX1234 AMAZON EU LUXEMBOURG EUR 49.00 KURS 0.942;;-46.16;;Shopping
+15.09.2026;Kontoauszug;BEARBEITUNGSGEBÜHR FREMDWÄHRUNG;;-0.69;;Gebühren
+14.09.2026;Kontoauszug;KAUF/DIENSTLEISTUNG VOM 14.09.2026 KARTEN NR. XXXX1234 COOP-1234 ZUERICH;;-12.9;;Lebensmittel
+;;;;;;
+Disclaimer:;;;;;;
+Der Inhalt dieses Dokuments wurde anhand der Filtereinstellungen der Kundinnen und Kunden erstellt.;;;;;;

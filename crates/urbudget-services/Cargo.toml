@@ -1,6 +1,6 @@
 [package]
 name = "urbudget-services"
-version = "1.0.8"
+version = "1.0.9"
 description = "Host-neutral local storage, cloud, bank and assistant services shared by desktop and native Android"
 edition = "2021"
 license = "AGPL-3.0-or-later"

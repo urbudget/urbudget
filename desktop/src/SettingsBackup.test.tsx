@@ -25,7 +25,7 @@ function setup(flush = vi.fn(async () => true)) {
   const onImportFile = vi.fn();
   const view = render(<ToastProvider><SettingsPage
     budget={demoBudget()} sync="saved" syncLabel="Saved" metadata={null}
-    edit={vi.fn()} transform={vi.fn()} flush={flush} onReload={vi.fn()} onExport={vi.fn()}
+    edit={vi.fn()} onBankImport={vi.fn()} flush={flush} onReload={vi.fn()} onExport={vi.fn()}
     onImportFile={onImportFile} importYnab={vi.fn()} resolveYnab={vi.fn()} acceptYnab={vi.fn()} openBudget={vi.fn()}
     onBankSync={vi.fn()} theme="system" setTheme={vi.fn()} onResetLayout={vi.fn()}
     initialTab="backup" cloud={{} as Cloud} updates={{} as Updates} onInstallUpdate={vi.fn()}

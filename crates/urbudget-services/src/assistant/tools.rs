@@ -22,6 +22,8 @@ pub struct Context<'a> {
     pub files: &'a Files,
     /// Bank sync as the app knows it this session (see SimpleFin::snapshot); null outside the app.
     pub bank_sync: &'a Value,
+    /// The bank file the latest message was sent from the Import page with, as it read then.
+    pub import: Option<&'a crate::bank_statement::Brief>,
 }
 
 pub struct Outcome {
@@ -262,6 +264,44 @@ pub fn specs() -> Vec<Spec> {
                     }
                 }),
                 &[],
+            ),
+            proposes: true,
+        },
+        Spec {
+            name: "fix_import",
+            description: "Propose fixes for the bank file the user is importing on the Import page: a value for a line's date (YYYY-MM-DD), payee, memo or amount (negative for money out, in the budget's currency), including or leaving out a line that's left out, or how the file reads (the date order, which column holds what, signs). Only for lines in the import's note, with `from` the value the note shows. Use values the file supports, never a guess, and give a reason for each. The user applies them from the card, and the import checks each again.",
+            parameters: object(
+                json!({
+                    "fields": {
+                        "type": "array",
+                        "items": object(json!({
+                            "line": { "type": "string", "description": "The line's id, from the import's note." },
+                            "field": { "type": "string", "enum": ["date", "payee", "memo", "amount"] },
+                            "from": { "type": "string", "description": "The value the note shows for it now." },
+                            "to": { "type": "string" },
+                            "reason": { "type": "string", "description": "Why, in a few words the user can check." }
+                        }), &["line", "field", "from", "to", "reason"])
+                    },
+                    "include": {
+                        "type": "array",
+                        "items": object(json!({
+                            "line": { "type": "string" },
+                            "include": { "type": "boolean", "description": "True to import a line that's left out, false to leave one out again." },
+                            "reason": { "type": "string" }
+                        }), &["line", "include", "reason"])
+                    },
+                    "readAs": object(json!({
+                        "dateOrder": { "type": "string", "enum": ["ymd", "dmy", "mdy"], "description": "The order the file writes day and month in." },
+                        "signsByType": { "type": "boolean", "description": "An OFX whose amounts are all positive: money out is told by the transaction types." },
+                        "flipSigns": { "type": "boolean", "description": "A CSV's purchases are written as positive numbers." },
+                        "columns": object(json!({
+                            "date": { "type": "string" }, "payee": { "type": "string" }, "memo": { "type": "string" },
+                            "amount": { "type": "string" }, "outflow": { "type": "string" }, "inflow": { "type": "string" }
+                        }), &[])
+                    }), &[]),
+                    "note": { "type": "string", "description": "One or two sentences for the card." }
+                }),
+                &["note"],
             ),
             proposes: true,
         },
@@ -510,6 +550,7 @@ pub fn call(name: &str, args: &Value, ctx: &Context) -> Outcome {
         "propose_transactions" => propose_transactions(args, ctx),
         "propose_payee_changes" => propose_payee_changes(args, ctx),
         "prepare_import" => prepare_import(args, ctx),
+        "fix_import" => fix_import(args, ctx),
         "create_report" => create_report(args),
         "create_spreadsheet" => create_spreadsheet(args, ctx),
         _ => Err(format!("There is no tool named {name}.")),
@@ -521,7 +562,7 @@ pub fn call(name: &str, args: &Value, ctx: &Context) -> Outcome {
     })
 }
 fn failed_step(name: &str) -> &'static str {
-    if name.starts_with("propose") || name == "prepare_import" {
+    if name.starts_with("propose") || name == "prepare_import" || name == "fix_import" {
         "Couldn't prepare that change"
     } else if name == "create_spreadsheet" {
         "Couldn't make that spreadsheet"
@@ -1411,6 +1452,136 @@ fn prepare_import(args: &Value, ctx: &Context) -> Result<Outcome, String> {
     Ok(Outcome { output, step, proposal: Some(proposal) })
 }
 
+/// Fixes for the bank file being imported, against its lines as they were when the message was
+/// sent: each names a line shown then and the value it had, and carries that line's version, so
+/// the import applies it only to a line that hasn't changed since.
+fn fix_import(args: &Value, ctx: &Context) -> Result<Outcome, String> {
+    use crate::bank_statement::{BriefLine, DateOrder, Field, FieldFix, Fixes, IncludeFix, Status as LineStatus};
+    let brief = ctx.import.ok_or("No bank file is open on the Import page. Ask the user to open it there, then try again.")?;
+    let shown: HashMap<&str, &BriefLine> = brief.lines.iter().chain(&brief.samples).chain(&brief.left_out).map(|l| (l.id.as_str(), l)).collect();
+    let line = |v: &Value| -> Result<&BriefLine, String> {
+        let id = v["line"].as_str().ok_or("Each fix needs its line's id.")?;
+        shown.get(id).copied().ok_or_else(|| format!("Line {id} isn't one the import's note shows. Fix only those."))
+    };
+    let reason = |v: &Value| -> Result<String, String> {
+        v["reason"].as_str().map(str::trim).filter(|r| !r.is_empty()).map(|r| truncate(r, 200)).ok_or_else(|| "Give a reason for each fix.".to_string())
+    };
+    let name = proposals::field_name;
+    let (mut fields, mut include, mut rows) = (vec![], vec![], vec![]);
+    for f in args["fields"].as_array().into_iter().flatten() {
+        let l = line(f)?;
+        let field: Field = serde_json::from_value(f["field"].clone()).map_err(|_| "A fix's field is date, payee, memo or amount.")?;
+        let (now, from) = (l.fields.get(field), f["from"].as_str().unwrap_or(""));
+        if now != from {
+            return Err(format!("Line {}'s {} is \u{201c}{now}\u{201d}, not \u{201c}{from}\u{201d}.", l.id, name(field)));
+        }
+        let given = f["to"].as_str().map(str::trim).ok_or("Each fix needs the value to give.")?;
+        let mut cents = None;
+        let to = match field {
+            Field::Date => {
+                chrono::NaiveDate::parse_from_str(given, "%Y-%m-%d").map_err(|_| format!("Give line {}'s date as YYYY-MM-DD.", l.id))?;
+                given.to_string()
+            }
+            Field::Amount => match parse_money(&json!(given))? {
+                0 => return Err(format!("Line {}'s amount can't be zero.", l.id)),
+                c => {
+                    cents = Some(c);
+                    money(c)
+                }
+            },
+            Field::Payee => truncate(given, 200),
+            Field::Memo => truncate(given, 500),
+        };
+        if to == from.trim() {
+            return Err(format!("Line {}'s {} is \u{201c}{from}\u{201d} already: fix only what needs it.", l.id, name(field)));
+        }
+        // An amount given can be another on the card before it's applied.
+        rows.push(proposals::Row {
+            label: proposals::fix_label(&l.id, field, from, &to),
+            detail: Some(reason(f)?),
+            amount: cents,
+            key: Some(proposals::fix_key(&l.id, field)),
+            edit: cents.map(|_| proposals::RowEdit { amount: true, ..Default::default() }),
+            ..Default::default()
+        });
+        fields.push(FieldFix { line: l.id.clone(), line_version: l.version, field, from: from.into(), to });
+    }
+    for f in args["include"].as_array().into_iter().flatten() {
+        let l = line(f)?;
+        let on = f["include"].as_bool().unwrap_or(true);
+        if on && !matches!(l.status, LineStatus::LeftOut { reason, .. } if reason.includable()) {
+            return Err(format!("Line {} can't be included: only lines left out for a reason someone can overrule can.", l.id));
+        }
+        rows.push(proposals::Row {
+            label: format!("Line {} · {}", l.id, if on { "include it" } else { "leave it out" }),
+            detail: Some(reason(f)?),
+            key: Some(format!("i:{}", l.id)),
+            ..Default::default()
+        });
+        include.push(IncludeFix { line: l.id.clone(), line_version: l.version, include: on });
+    }
+    let read = &args["readAs"];
+    let mut structure = brief.structure.clone();
+    if let Some(order) = read["dateOrder"].as_str() {
+        if !matches!(order, "ymd" | "dmy" | "mdy") {
+            return Err("The date order is ymd, dmy or mdy.".into());
+        }
+        structure.date_order = DateOrder { order: order.into(), confirmed: true };
+        rows.push(proposals::Row { label: format!("Dates written {}", match order { "dmy" => "day first", "mdy" => "month first", _ => "year first" }), ..Default::default() });
+    }
+    if let Some(on) = read["signsByType"].as_bool() {
+        structure.signs_by_type = Some(on);
+        rows.push(proposals::Row { label: if on { "Money out told by the transaction types" } else { "Amounts as written" }.into(), ..Default::default() });
+    }
+    if let Some(on) = read["flipSigns"].as_bool() {
+        structure.flip_signs = on;
+        rows.push(proposals::Row { label: if on { "Purchases written as positive" } else { "Amounts as written" }.into(), ..Default::default() });
+    }
+    if let Some(columns) = read.get("columns").filter(|c| c.is_object()) {
+        let mut chosen = structure.columns.clone().unwrap_or_default();
+        for (role, slot) in [("date", &mut chosen.date), ("payee", &mut chosen.payee), ("memo", &mut chosen.memo), ("amount", &mut chosen.amount), ("outflow", &mut chosen.outflow), ("inflow", &mut chosen.inflow)] {
+            if let Some(header) = columns[role].as_str() {
+                if !brief.headers.iter().any(|h| h.trim() == header.trim()) {
+                    return Err(format!("The file has no column named \u{201c}{header}\u{201d}."));
+                }
+                *slot = Some(header.into());
+                rows.push(proposals::Row { label: format!("{role} from \u{201c}{header}\u{201d}"), ..Default::default() });
+            }
+        }
+        structure.columns = Some(chosen);
+    }
+    let restructured = structure != brief.structure;
+    // How the file reads is one change, left out (or not) as a whole.
+    for row in rows.iter_mut().filter(|r| r.key.is_none()) {
+        row.key = Some("x".into());
+    }
+    if fields.is_empty() && include.is_empty() && !restructured {
+        return Err("Give at least one fix.".into());
+    }
+    if fields.len() + include.len() > 200 {
+        return Err("Give at most 200 fixes at a time.".into());
+    }
+    let n = fields.len() + include.len() + restructured as usize;
+    let fixes = Fixes {
+        scope: brief.scope.clone(),
+        base_revision: brief.revision,
+        base_structure: brief.structure.clone(),
+        structure: restructured.then_some(structure),
+        fields,
+        include,
+        ..Fixes::default()
+    };
+    let note = arg(args, "note").map(|n| truncate(n, 400));
+    let proposal = proposals::build_fix(fixes, rows, note);
+    let output = json!({
+        "proposalId": proposal.id,
+        "shownToUser": true,
+        "summary": proposal.summary,
+        "note": "The user applies these from the card, on the Import page. Each applies only to a line that hasn't changed since.",
+    });
+    Ok(Outcome { output, step: format!("Prepared {} for the import", plural(n, "fix", "fixes")), proposal: Some(proposal) })
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;
@@ -1444,7 +1615,118 @@ pub mod tests {
         .unwrap()
     }
     fn ctx<'a>(b: &'a Budget, files: &'a Files) -> Context<'a> {
-        Context { budget: b, today: "2026-10-16", month: "2026-10", share_memos: true, files, bank_sync: &Value::Null }
+        Context { budget: b, today: "2026-10-16", month: "2026-10", share_memos: true, files, bank_sync: &Value::Null, import: None }
+    }
+
+    /// A file with one line whose amount doesn't read and one left out (pending), its session, and
+    /// what the assistant is told of it.
+    fn importing() -> (Budget, String, crate::bank_statement::Session, crate::bank_statement::Brief) {
+        use crate::bank_statement::{statement, DateOrder, Session, Structure};
+        let b = sample();
+        let file = "Date,Payee,Amount,Status\n2026-10-01,Bakery,-3.20,Booked\n2026-10-02,Grocer,n/a,Booked\n2026-10-03,Cinema,-12.00,Pending\n".to_string();
+        let structure = Structure { format: "csv".into(), date_order: DateOrder { order: "ymd".into(), confirmed: false }, ..Structure::default() };
+        let session = Session::new("s1", "b", "checking", &file, structure);
+        let brief = statement(&b, "checking", &file, &session).unwrap().brief(true);
+        (b, file, session, brief)
+    }
+    fn fix(args: Value, brief: &crate::bank_statement::Brief, b: &Budget) -> Result<Proposal, String> {
+        let files = Files::empty();
+        let outcome = call("fix_import", &args, &Context { import: Some(brief), ..ctx(b, &files) });
+        match outcome.proposal {
+            Some(p) => Ok(p),
+            None => Err(outcome.output["error"].as_str().unwrap_or_default().to_string()),
+        }
+    }
+
+    #[test]
+    fn a_fix_includes_a_line_left_out_and_reads_another_amount_column() {
+        use crate::bank_statement::{apply_fixes, preview_statement, statement, DateOrder, Session, Structure};
+        let b = sample();
+        let file = "Date,Payee,Amount,Status,Corrected\n2026-10-01,Bakery,-3.20,Booked,-3.40\n2026-10-03,Cinema,-12.00,Pending,-12.00\n".to_string();
+        let structure = Structure { format: "csv".into(), date_order: DateOrder { order: "ymd".into(), confirmed: false }, ..Structure::default() };
+        let session = Session::new("s1", "b", "checking", &file, structure);
+        let brief = statement(&b, "checking", &file, &session).unwrap().brief(true);
+        // The pending line is shown, to include when the user asks.
+        let cinema = brief.left_out.iter().find(|l| l.cells[1] == "Cinema").unwrap().id.clone();
+        let p = fix(json!({ "include": [{ "line": cinema, "include": true, "reason": "The user asked for it" }], "note": "x" }), &brief, &b).unwrap();
+        let applied = apply_fixes(&b, "checking", &file, &session, p.fixes.as_ref().unwrap()).unwrap();
+        assert!(applied.results.iter().all(|r| r.applied));
+        assert_eq!(preview_statement(&b, "checking", &file, &applied.session).unwrap().review.items.len(), 2);
+        // Another amount column, named alone: the others stay as the file names them.
+        let p = fix(json!({ "readAs": { "columns": { "amount": "Corrected" } }, "note": "x" }), &brief, &b).unwrap();
+        let applied = apply_fixes(&b, "checking", &file, &session, p.fixes.as_ref().unwrap()).unwrap();
+        assert_eq!(preview_statement(&b, "checking", &file, &applied.session).unwrap().review.items[0].row.amount, -340);
+    }
+
+    #[test]
+    fn fixes_for_an_import_name_lines_it_was_shown_as_they_were() {
+        let (b, _, _, brief) = importing();
+        let grocer = brief.lines.iter().find(|l| l.cells[1] == "Grocer").unwrap().id.clone();
+        let amount = |from: &str, to: &str| json!({ "fields": [{ "line": grocer, "field": "amount", "from": from, "to": to, "reason": "The statement's total" }], "note": "x" });
+        // Nothing open: nothing to fix.
+        let files = Files::empty();
+        let none = call("fix_import", &amount("n/a", "-12.40"), &ctx(&b, &files));
+        assert!(none.output["error"].as_str().unwrap().contains("No bank file is open"));
+        // Only lines it was shown, as they were, with values that read.
+        assert!(fix(json!({ "fields": [{ "line": "999", "field": "amount", "from": "", "to": "1", "reason": "r" }], "note": "x" }), &brief, &b).unwrap_err().contains("isn't one"));
+        assert!(fix(amount("12", "-12.40"), &brief, &b).unwrap_err().contains("not \u{201c}12\u{201d}"));
+        assert!(fix(amount("n/a", "twelve"), &brief, &b).is_err());
+        assert!(fix(amount("n/a", "0"), &brief, &b).unwrap_err().contains("zero"));
+        let same = json!({ "fields": [{ "line": grocer, "field": "payee", "from": "Grocer", "to": " Grocer", "reason": "r" }], "note": "x" });
+        assert!(fix(same, &brief, &b).unwrap_err().contains("already"));
+        assert!(fix(json!({ "fields": [{ "line": grocer, "field": "date", "from": "2026-10-02", "to": "02/10/2026", "reason": "r" }], "note": "x" }), &brief, &b).unwrap_err().contains("YYYY-MM-DD"));
+        assert!(fix(json!({ "fields": [{ "line": grocer, "field": "amount", "from": "n/a", "to": "-12.40" }], "note": "x" }), &brief, &b).unwrap_err().contains("reason"));
+        assert!(fix(json!({ "note": "nothing" }), &brief, &b).unwrap_err().contains("at least one"));
+        // A line that reads can't be included, one pending can.
+        let bakery = brief.samples.iter().find(|l| l.cells[1] == "Bakery").map(|l| l.id.clone());
+        if let Some(bakery) = bakery {
+            assert!(fix(json!({ "include": [{ "line": bakery, "include": true, "reason": "r" }], "note": "x" }), &brief, &b).unwrap_err().contains("can't be included"));
+        }
+        // The fix set is made against the lines as they were shown: their versions, the revision
+        // and the way the file read then.
+        let p = fix(amount("n/a", "-12.4"), &brief, &b).unwrap();
+        let fixes = p.fixes.as_ref().unwrap();
+        assert_eq!((p.kind.as_str(), fixes.base_revision, &fixes.scope, &fixes.base_structure), ("fix", brief.revision, &brief.scope, &brief.structure));
+        assert_eq!((fixes.fields[0].line.as_str(), fixes.fields[0].line_version, fixes.fields[0].to.as_str()), (grocer.as_str(), 0, "-12.40"));
+        assert!(fixes.structure.is_none());
+        assert_eq!(p.card.rows[0].detail.as_deref(), Some("The statement's total"));
+        // How the file reads, too: confirmed, as it's the assistant's answer to the question.
+        let p = fix(json!({ "readAs": { "dateOrder": "dmy", "columns": { "amount": "Amount" } }, "note": "x" }), &brief, &b).unwrap();
+        let structure = p.fixes.unwrap().structure.unwrap();
+        assert_eq!((structure.date_order.order.as_str(), structure.date_order.confirmed), ("dmy", true));
+        assert!(fix(json!({ "readAs": { "columns": { "amount": "Betrag" } }, "note": "x" }), &brief, &b).unwrap_err().contains("no column"));
+    }
+
+    #[test]
+    fn a_fix_applies_to_the_import_only_where_its_line_hasnt_changed_since() {
+        use crate::bank_statement::{apply_fixes, statement, Fixes, IncludeFix};
+        let (b, file, session, brief) = importing();
+        let grocer = brief.lines.iter().find(|l| l.cells[1] == "Grocer").unwrap().id.clone();
+        let p = fix(json!({ "fields": [{ "line": grocer, "field": "amount", "from": "n/a", "to": "-12.40", "reason": "r" }], "note": "x" }), &brief, &b).unwrap();
+        let fixes: Fixes = p.fixes.unwrap();
+        // Applied to the import it was made for, it fixes the line.
+        let applied = apply_fixes(&b, "checking", &file, &session, &fixes).unwrap();
+        assert!(applied.results.iter().all(|r| r.applied));
+        assert_eq!(statement(&b, "checking", &file, &applied.session).unwrap().counts.attention, 0);
+        // The user changed that line while the assistant was answering: the fix is left alone.
+        let cinema = brief.lines.iter().chain(&brief.samples).find(|l| l.cells[1] == "Cinema");
+        let edited = apply_fixes(&b, "checking", &file, &session, &Fixes {
+            scope: session.scope.clone(),
+            base_structure: session.structure.clone(),
+            fields: vec![crate::bank_statement::FieldFix { line: grocer.clone(), line_version: 0, field: crate::bank_statement::Field::Amount, from: "n/a".into(), to: "-1.00".into() }],
+            include: cinema.map(|c| vec![IncludeFix { line: c.id.clone(), line_version: 0, include: true }]).unwrap_or_default(),
+            ..Fixes::default()
+        }).unwrap();
+        let late = apply_fixes(&b, "checking", &file, &edited.session, &fixes).unwrap();
+        assert_eq!(late.results[0].problem.as_deref(), Some("This line changed since this fix was made."));
+        // Nor does it reach another import.
+        let mut other = session.clone();
+        other.scope.session = "s2".into();
+        assert!(apply_fixes(&b, "checking", &file, &other, &fixes).is_err());
+        // The note says which lines need what.
+        let note = super::super::prompt::context(&b, &super::super::prompt::Screen { page: "import".into(), today: "2026-10-16".into(), ..Default::default() }, true, &[], Some(&brief));
+        assert!(note.contains("fix_import") && note.contains(&grocer) && note.contains("Invalid amount: n/a"), "{note}");
+        assert!(note.contains("on the Import page") && note.contains("into Everyday"), "{note}");
     }
 
     #[test]

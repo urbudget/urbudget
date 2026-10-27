@@ -1,0 +1,8 @@
+Type,Details,Particulars,Code,Reference,Amount,Date,ForeignCurrencyAmount,ConversionCharge
+Direct Credit,ACME LTD,Salary,,Oct,3200.00,25/09/2026,,
+Automatic Payment,ACME POWER CO,Power,,9876543,-145.60,29/09/2026,,
+Transfer,J EXAMPLE,Savings,,Topup,-600.00,02/10/2026,,
+Visa Purchase,EXAMPLE STORE LONDON,,,,-41.27,06/10/2026,20.00,1.03
+Visa Purchase,COUNTDOWN EXAMPLE,,,,-92.15,10/10/2026,,
+Direct Debit,EXAMPLE INSURANCE,Premium,,Policy123,-48.00,15/10/2026,,
+Payment,Jane Example,Dinner,,,35.00,19/10/2026,,

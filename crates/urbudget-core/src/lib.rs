@@ -3,7 +3,10 @@
 //! The platform adapters own UI, credentials, networking, and lifecycle. This
 //! crate owns integer money, ledger validation, targets, reporting, imports,
 //! portable data formats, merge rules, and SQLite persistence.
+pub mod bank_csv;
 pub mod bank_import;
+pub mod bank_statement;
+pub mod bank_statements;
 pub mod budgets;
 pub mod domain;
 pub mod engine;

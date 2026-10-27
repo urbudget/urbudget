@@ -1,0 +1,7 @@
+Filter,Date,Description,Sub-description,Type of Transaction,Amount,Balance
+2026-09-25 to 2026-10-22,2026-10-21,Service charge,MONTHLY ACCOUNT FEE,Debit,16.95,3388.48
+,2026-10-15,Deposit,INTERAC E-TRANSFER JANE EXAMPLE,Credit,75.00,3405.43
+,2026-10-08,POS purchase,GROCERY MART #12 TORONTO ON,Debit,63.27,3330.43
+,2026-10-01,Transfer to account,SAVINGS 00987 65,Debit,500.00,3393.70
+,2026-09-29,Bill payment,HYDRO EXAMPLE,Debit,86.40,3893.70
+,2026-09-25,Payroll deposit,ACME CORP,Credit,2450.00,3980.10

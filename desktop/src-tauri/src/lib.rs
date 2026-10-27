@@ -1,8 +1,9 @@
 // Desktop commands use the same accounting implementation as the native phone apps.
-pub use urbudget_core::{domain, engine, ledger, targets, schedules, workflows, reports, loans, patch, store, sync_merge, bank_import, ynab, ynab_files, fresh_start, import_sync, budgets};
+pub use urbudget_core::{domain, engine, ledger, targets, schedules, workflows, reports, loans, patch, store, sync_merge, bank_csv, bank_import, bank_statement, ynab, ynab_files, fresh_start, import_sync, budgets};
 pub mod assistant;
 mod cloud;
 mod credentials;
+mod save;
 mod simplefin;
 mod updates;
 mod vault;
@@ -11,7 +12,7 @@ use domain::{Budget, Summary};
 use patch::Patch;
 use std::sync::Mutex;
 use store::{Applied, Snapshot, Status, Store};
-use tauri::{Manager, State};
+use tauri::{Manager, State, WebviewWindow};
 
 // The window keeps a copy of the budget and sends only what changed. Commands that
 // read the budget take an optional `patch`: the window's version relative to the
@@ -81,11 +82,19 @@ fn restore_budget(db: State<'_, Database>, budget: Budget, expected_token: Strin
 fn prune_backups(db: State<'_, Database>, keep: usize) -> Result<usize, String> {
     db.store()?.prune_backups(keep)
 }
+/// Saves the budget as JSON where you choose and returns the path (`None` when cancelled). The
+/// budget is read before the panel opens, so it doesn't hold up saving while you choose.
 #[tauri::command(async)]
-fn export_budget(db: State<'_, Database>, patch: Option<Patch>, recovery: Option<bool>) -> Result<String, String> {
-    let mut store = db.store()?;
-    let budget = store.full_draft(patch)?;
-    if recovery == Some(true) { store.export_recovery_draft(&budget) } else { store.export(&budget) }
+fn export_budget(window: WebviewWindow, db: State<'_, Database>, patch: Option<Patch>, recovery: Option<bool>) -> Result<Option<String>, String> {
+    let (name, data) = {
+        let budget = db.store()?.full_draft(patch)?;
+        if recovery == Some(true) {
+            (save::dated(&format!("{} recovery draft", budget.name), "json"), store::export_recovery_draft(&budget)?)
+        } else {
+            (save::dated(&budget.name, "json"), store::export(&budget)?)
+        }
+    };
+    save::file(&window, &name, save::Kind::Json, &data)
 }
 #[tauri::command(async)]
 fn reconcile_budget(
@@ -134,23 +143,34 @@ fn prepare_captured_ynab(db: State<'_, Database>, path: String) -> Result<Budget
             .map_err(|e| e.to_string())?,
     )
 }
+/// Saves YNAB's Register and Plan CSVs, with the full JSON, in a folder you name and returns its
+/// path (`None` when cancelled).
 #[tauri::command(async)]
-fn export_ynab_csv(db: State<'_, Database>, patch: Option<Patch>) -> Result<String, String> {
-    let mut store = db.store()?;
-    let budget = store.full_draft(patch)?;
-    store.export_ynab(&budget)
+fn export_ynab_csv(window: WebviewWindow, db: State<'_, Database>, patch: Option<Patch>) -> Result<Option<String>, String> {
+    let (name, files) = {
+        let budget = db.store()?.full_draft(patch)?;
+        (save::dated(&format!("{} for YNAB", budget.name), ""), store::export_ynab(&budget)?)
+    };
+    let Some(directory) = save::ask(&window, &name, save::Kind::Folder) else {
+        return Ok(None);
+    };
+    std::fs::create_dir_all(&directory).map_err(|e| format!("Couldn't make the folder {}: {e}", directory.display()))?;
+    for (file, contents) in files {
+        save::write(&directory.join(file), &contents)?;
+    }
+    Ok(Some(save::saved(&window, &directory)))
 }
-/// Writes one account's transactions (or the ones listed) as a YNAB-style register CSV in the
-/// budget's exports folder, newest first, and returns its path.
+/// Saves one account's transactions (or the ones listed) as a YNAB-style register CSV, newest
+/// first, where you choose, and returns its path (`None` when cancelled).
 #[tauri::command(async)]
 fn export_transactions(
+    window: WebviewWindow,
     db: State<'_, Database>,
     patch: Option<Patch>,
     account_id: Option<String>,
     ids: Option<Vec<String>>,
-) -> Result<String, String> {
-    let mut store = db.store()?;
-    let budget = store.full_draft(patch)?;
+) -> Result<Option<String>, String> {
+    let budget = db.store()?.full_draft(patch)?;
     let ids: Option<std::collections::HashSet<String>> = ids.map(|v| v.into_iter().collect());
     let data = ynab::export_register_for(
         &budget,
@@ -164,23 +184,12 @@ fn export_transactions(
         .as_ref()
         .and_then(|id| budget.accounts.iter().find(|a| &a.id == id))
         .map_or("All accounts", |a| a.name.as_str());
-    let name: String = name
-        .chars()
-        .map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' { c } else { '_' })
-        .collect();
-    let directory = store.folder().join("exports");
-    std::fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
-    let path = directory.join(format!(
-        "{} {}.csv",
-        name.trim(),
-        chrono::Local::now().format("%Y-%m-%d %H%M%S")
-    ));
-    std::fs::write(&path, data).map_err(|e| e.to_string())?;
-    Ok(path.to_string_lossy().into_owned())
+    save::file(&window, &save::dated(name, "csv"), save::Kind::Csv, data.as_bytes())
 }
-/// Saves a small CSV the app made (such as the bank-file template) in the budget's exports folder.
+/// Saves a small CSV the app made (such as the bank-file template) where you choose, starting
+/// with `name`, and returns its path (`None` when cancelled).
 #[tauri::command(async)]
-fn write_export(db: State<'_, Database>, name: String, contents: String) -> Result<String, String> {
+fn write_export(window: WebviewWindow, name: String, contents: String) -> Result<Option<String>, String> {
     let plain = name.len() <= 80
         && name.ends_with(".csv")
         && !name.starts_with('.')
@@ -188,11 +197,7 @@ fn write_export(db: State<'_, Database>, name: String, contents: String) -> Resu
     if !plain {
         return Err("Choose a plain .csv file name.".into());
     }
-    let directory = db.store()?.folder().join("exports");
-    std::fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
-    let path = directory.join(name);
-    std::fs::write(&path, contents).map_err(|e| e.to_string())?;
-    Ok(path.to_string_lossy().into_owned())
+    save::file(&window, &name, save::Kind::Csv, contents.as_bytes())
 }
 #[tauri::command(async)]
 fn read_recovery(db: State<'_, Database>) -> Result<Option<serde_json::Value>, String> {
@@ -318,27 +323,16 @@ fn forecast(
 ) -> Result<reports::Forecast, String> {
     db.read(patch, |b| reports::forecast_for_accounts(b, &today, &through, &account_ids.unwrap_or_default()))
 }
+/// Saves the reports as CSV where you choose and returns the path (`None` when cancelled).
 #[tauri::command(async)]
 fn export_reports(
+    window: WebviewWindow,
     db: State<'_, Database>,
     patch: Option<Patch>,
     filter: reports::Filter,
-) -> Result<String, String> {
+) -> Result<Option<String>, String> {
     let data = db.read(patch, |b| reports::csv(b, &reports::calculate(b, &filter)?))?;
-    let directory = db.store()?.folder().join("exports");
-    std::fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
-    let path = directory.join(format!(
-        "reports-{}.csv",
-        chrono::Utc::now().format("%Y%m%d-%H%M%S-%f")
-    ));
-    std::fs::write(&path, data).map_err(|e| e.to_string())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(path.display().to_string())
+    save::file(&window, &save::dated("Reports", "csv"), save::Kind::Csv, data.as_bytes())
 }
 
 #[tauri::command(async)]
@@ -350,19 +344,97 @@ fn preview_bank_file(
     format: String,
     date_format: String,
     flip_signs: bool,
-) -> Result<Vec<bank_import::Row>, String> {
+    columns: Option<bank_csv::Columns>,
+) -> Result<bank_import::CompactReview, String> {
     db.read(patch, |b| {
-        bank_import::preview(b, &account, &content, &format, &date_format, flip_signs)
+        bank_import::preview_compact(b, &account, &content, &format, &date_format, flip_signs, columns.as_ref())
     })
 }
+/// A statement that isn't UTF-8, sent as ISO-8859-1 so its bytes cross unchanged: its text in the
+/// encoding they fit (with `sheet`, a workbook's sheet of that name).
+#[tauri::command(async)]
+fn decode_statement(latin1: String, sheet: Option<String>) -> Result<bank_csv::Decoded, String> {
+    bank_csv::decode_latin1(&latin1, sheet.as_deref())
+}
+/// An import of a file into an account, read as its last file was (see `bank_statement::start`).
+#[tauri::command(async)]
+fn bank_session(
+    db: State<'_, Database>,
+    patch: Option<Patch>,
+    account: String,
+    content: String,
+    session: String,
+    budget: String,
+    sheet: Option<String>,
+    // A file the assistant wrote the standard way.
+    prepared: Option<bool>,
+) -> Result<bank_statement::Session, String> {
+    if prepared == Some(true) {
+        return Ok(bank_statement::start_prepared(&content, &account, &session, &budget));
+    }
+    db.read(patch, |b| bank_statement::start(b, &account, &content, &session, &budget, sheet))
+}
+/// The file as lines, each with what became of it.
+#[tauri::command(async)]
+fn bank_statement(
+    db: State<'_, Database>,
+    patch: Option<Patch>,
+    account: String,
+    content: String,
+    session: bank_statement::Session,
+) -> Result<bank_statement::Statement, String> {
+    db.read(patch, |b| bank_statement::statement(b, &account, &content, &session))
+}
+/// The statement, and the review of its lines that read.
+#[tauri::command(async)]
+fn bank_statement_preview(
+    db: State<'_, Database>,
+    patch: Option<Patch>,
+    account: String,
+    content: String,
+    session: bank_statement::Session,
+) -> Result<bank_statement::StatementPreview, String> {
+    db.read(patch, |b| bank_statement::preview_statement(b, &account, &content, &session))
+}
+/// Changes to an import, where they still fit it.
+#[tauri::command(async)]
+fn bank_apply_fixes(
+    db: State<'_, Database>,
+    patch: Option<Patch>,
+    account: String,
+    content: String,
+    session: bank_statement::Session,
+    fixes: bank_statement::Fixes,
+) -> Result<bank_statement::Applied, String> {
+    db.read(patch, |b| bank_statement::apply_fixes(b, &account, &content, &session, &fixes))
+}
+/// A CSV's header row, first rows and the columns an import would read, for choosing them.
+#[tauri::command(async)]
+fn bank_file_columns(
+    db: State<'_, Database>,
+    patch: Option<Patch>,
+    account: String,
+    content: String,
+    columns: Option<bank_csv::Columns>,
+) -> Result<bank_csv::Layout, String> {
+    db.read(patch, |b| bank_csv::layout(b, &account, &content, columns.as_ref()))
+}
+/// With `remember`, the account keeps how this file read for its next one.
 #[tauri::command(async)]
 fn import_bank_file(
     db: State<'_, Database>,
     patch: Option<Patch>,
     account: String,
     choices: Vec<bank_import::Choice>,
+    remember: Option<bank_csv::FileSettings>,
 ) -> Result<Patch, String> {
-    db.change(patch, |b| bank_import::apply(b, &account, choices))
+    db.change(patch, |b| {
+        let mut b = bank_import::apply(b, &account, choices)?;
+        if let Some(settings) = remember {
+            bank_csv::remember(&mut b, &account, settings)?;
+        }
+        Ok(b)
+    })
 }
 
 #[tauri::command(async)]
@@ -440,9 +512,9 @@ fn delete_budget(library: State<'_, Library>, id: String) -> Result<Vec<budgets:
     Ok(library.list())
 }
 /// Shows a file in the system file manager; a phone, which has none, offers it to the share
-/// sheet instead. Only paths inside the app's data folder.
+/// sheet instead. Only paths inside the app's data folder, and exports saved since it started.
 #[tauri::command(async)]
-fn reveal_path(library: State<'_, Library>, path: String) -> Result<(), String> {
+fn reveal_path(library: State<'_, Library>, saved: State<'_, save::Saved>, path: String) -> Result<(), String> {
     let root = library
         .lock()
         .data_dir()
@@ -451,8 +523,8 @@ fn reveal_path(library: State<'_, Library>, path: String) -> Result<(), String> 
     let target = std::path::PathBuf::from(&path)
         .canonicalize()
         .map_err(|_| "That file no longer exists.".to_string())?;
-    if !target.starts_with(&root) {
-        return Err("Only files in the app's data folder can be shown.".into());
+    if !target.starts_with(&root) && !saved.contains(&target) {
+        return Err("Only files in the app's data folder, or ones it just saved, can be shown.".into());
     }
     let shown = if cfg!(target_os = "windows") {
         // canonicalize returns a verbatim `\\?\` path, which Explorer does not accept.
@@ -474,6 +546,7 @@ pub fn run() {
     let context = updates::use_local_server(context);
     let builder = tauri::Builder::default();
     let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    let builder = builder.plugin(tauri_plugin_dialog::init());
     builder
         .setup(|app| {
             let directory = app.path().app_data_dir()?;
@@ -491,6 +564,7 @@ pub fn run() {
             app.manage(Database(Mutex::new(store)));
             app.manage(Library(Mutex::new(library)));
             app.manage(ynab_capture::PendingImport::default());
+            app.manage(save::Saved::default());
             app.manage(cloud::Cloud::new(&directory));
             app.manage(simplefin::SimpleFin::new(&directory));
             assistant::manage(app, directory);
@@ -500,6 +574,12 @@ pub fn run() {
             upsert_transaction,
             source_loan_terms,
             preview_bank_file,
+            bank_file_columns,
+            decode_statement,
+            bank_session,
+            bank_statement,
+            bank_statement_preview,
+            bank_apply_fixes,
             import_bank_file,
             budget_action,
             auto_assign_preview,
@@ -600,6 +680,7 @@ pub fn run() {
             assistant::assistant_spreadsheet,
             assistant::assistant_log_error,
             assistant::assistant_apply,
+            assistant::assistant_revise,
             assistant::assistant_mark,
             assistant::assistant_import,
             assistant::assistant_save_import

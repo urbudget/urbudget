@@ -2,8 +2,8 @@
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use urbudget_core::{
-    bank_import, domain, engine, ledger, loans, patch, reports, schedules, workflows, ynab,
-    ynab_files,
+    bank_csv, bank_import, bank_statement, domain, engine, ledger, loans, patch, reports, schedules, workflows,
+    ynab, ynab_files,
 };
 
 const API_VERSION: u32 = 1;
@@ -178,6 +178,9 @@ fn dispatch(request: Request) -> Result<Value, String> {
         }
         "sampleBudget" => sample_budget(p).and_then(|budget| request.changed(budget)),
         "importYnab" => encode(ynab::import_export(&required::<Value>(p, "export")?)?),
+        // A statement that isn't UTF-8, sent as ISO-8859-1 so its bytes cross unchanged.
+        // With `sheet`, a workbook's sheet of that name.
+        "decodeStatement" => encode(bank_csv::decode_latin1(&required::<String>(p, "latin1")?, optional::<String>(p, "sheet")?.as_deref())?),
         "importYnabFiles" => encode(ynab_files::import_files(
             &required::<Vec<ynab_files::ExportFile>>(p, "files")?,
             optional::<String>(p, "dateOrder")?.as_deref(),
@@ -306,12 +309,58 @@ fn dispatch(request: Request) -> Result<Value, String> {
                     &required::<String>(p, "format")?,
                     &optional::<String>(p, "dateFormat")?.unwrap_or_else(|| "ymd".into()),
                     optional(p, "flipSigns")?.unwrap_or(false),
+                    optional::<bank_csv::Columns>(p, "columns")?.as_ref(),
                 )?),
-                "bankApply" => request.changed(bank_import::apply(
-                    budget,
+                // An import of a file into an account, as its last file read (see
+                // `bank_statement::start`); its statement, every line or with `problemsOnly` those
+                // that don't read; its review; and changes to it.
+                // With `prepared`, a file the assistant wrote the standard way.
+                "bankSession" => {
+                    let (account, content) = (required::<String>(p, "accountId")?, required::<String>(p, "content")?);
+                    let (id, budget_id) = (required::<String>(p, "sessionId")?, optional::<String>(p, "budgetId")?.unwrap_or_default());
+                    if optional(p, "prepared")?.unwrap_or(false) {
+                        encode(bank_statement::start_prepared(&content, &account, &id, &budget_id))
+                    } else {
+                        encode(bank_statement::start(&budget, &account, &content, &id, &budget_id, optional(p, "sheet")?)?)
+                    }
+                }
+                "bankStatement" => {
+                    let read = bank_statement::statement(
+                        &budget,
+                        &required::<String>(p, "accountId")?,
+                        &required::<String>(p, "content")?,
+                        &required(p, "session")?,
+                    )?;
+                    encode(if optional(p, "problemsOnly")?.unwrap_or(false) { read.problems() } else { read })
+                }
+                "bankImportPreview" => {
+                    let mut preview = bank_statement::preview_statement(
+                        &budget,
+                        &required::<String>(p, "accountId")?,
+                        &required::<String>(p, "content")?,
+                        &required(p, "session")?,
+                    )?;
+                    if optional(p, "problemsOnly")?.unwrap_or(false) {
+                        preview.statement = preview.statement.problems();
+                    }
+                    encode(preview)
+                }
+                "bankApplyFixes" => encode(bank_statement::apply_fixes(
+                    &budget,
                     &required::<String>(p, "accountId")?,
-                    required(p, "choices")?,
+                    &required::<String>(p, "content")?,
+                    &required(p, "session")?,
+                    &required(p, "fixes")?,
                 )?),
+                // With `remember`, the account keeps how this file read for its next one.
+                "bankApply" => {
+                    let account = required::<String>(p, "accountId")?;
+                    let mut budget = bank_import::apply(budget, &account, required(p, "choices")?)?;
+                    if let Some(settings) = optional(p, "remember")? {
+                        bank_csv::remember(&mut budget, &account, settings)?;
+                    }
+                    request.changed(budget)
+                }
                 // With `ids` or `accountId`, only those transactions (one account's side of a transfer),
                 // newest first as the register lists them; without, the whole register.
                 "exportRegister" => {

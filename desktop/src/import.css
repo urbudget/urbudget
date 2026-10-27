@@ -81,6 +81,48 @@
   align-self: end;
   min-height: 30px;
 }
+/* A CSV's columns: what will be read, or a choice for each part. */
+.column-choice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.column-choice > p {
+  margin: 0;
+}
+.column-choice:not(.open) > p {
+  flex: 1 1 320px;
+}
+.column-choice b {
+  color: var(--text);
+  font-weight: 600;
+}
+/* A grid, not a column of flex items: a flex column sizes the choices' own grid as one column tall. */
+.column-choice.open {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.column-choice legend {
+  padding: 0 4px;
+  color: var(--text);
+  font-weight: 600;
+}
+/* The first rows' value in the column chosen, to tell columns apart. */
+.column-sample {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 /* What a CSV needs, beside a template to start from. */
 .import-help {
   display: flex;

@@ -324,17 +324,22 @@ it("opens or saves a spreadsheet the assistant made", async () => {
     },
   };
   vi.mocked(assistant.thread).mockResolvedValue({ id: "t_4", title: "Sheet", running: false, entries: [{ kind: "proposal", proposal: sheet }] });
-  vi.mocked(assistant.spreadsheet).mockResolvedValue("/home/pat/UrBudget/exports/Groceries since June.xlsx");
+  vi.mocked(assistant.spreadsheet).mockResolvedValue("/home/pat/Downloads/Groceries since June.xlsx");
   panel();
   const card = await screen.findByLabelText("Proposal: Groceries since June");
   expect(card.textContent).toContain("214 rows");
   fireEvent.click(within(card).getByRole("button", { name: "Open" }));
   await waitFor(() => expect(assistant.spreadsheet).toHaveBeenCalledTimes(1));
   expect(vi.mocked(assistant.spreadsheet).mock.calls[0].slice(1)).toEqual(["t_4", "p_s", true]);
-  // Opening needs no message; saving says where the file went.
+  // Opening needs no message, and neither does a save panel that was cancelled.
   expect(screen.queryByText(/Saved/)).toBeNull();
+  vi.mocked(assistant.spreadsheet).mockResolvedValueOnce(null);
   fireEvent.click(within(card).getByRole("button", { name: "Save" }));
-  expect(await screen.findByText(/Saved “Groceries since June.xlsx” in the budget's exports folder/)).toBeTruthy();
+  await waitFor(() => expect(assistant.spreadsheet).toHaveBeenCalledTimes(2));
+  expect(screen.queryByText(/Saved/)).toBeNull();
+  // Saving says which file it was.
+  fireEvent.click(within(card).getByRole("button", { name: "Save" }));
+  expect(await screen.findByText("Saved “Groceries since June.xlsx”.")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Show in folder" })).toBeTruthy();
 });
 
@@ -437,9 +442,39 @@ it("suggests what fits the budget", () => {
 
 it("puts an import's request and transactions in the box without sending them", async () => {
   vi.mocked(assistant.status).mockResolvedValue(ready);
+  // A field's text is as tall as it is long here: two lines of it, or one of a placeholder.
+  const tall = vi.spyOn(HTMLTextAreaElement.prototype, "scrollHeight", "get").mockImplementation(function (this: HTMLTextAreaElement) {
+    return this.value ? 44 : 22;
+  });
   panel({ request: { key: 1, text: "Categorize the 2 new transactions in Checking.", selected: ["bank:a", "bank:b"] } });
   const box = (await screen.findByLabelText("Message the assistant")) as HTMLTextAreaElement;
   await waitFor(() => expect(box.value).toBe("Categorize the 2 new transactions in Checking."));
   expect(screen.getByText("2 selected transactions")).toBeTruthy();
   expect(assistant.send).not.toHaveBeenCalled();
+  // The box opens to the whole request, not a line of it.
+  expect(box.style.height).toBe("44px");
+  fireEvent.change(box, { target: { value: "" } });
+  expect(box.style.height).toBe("22px");
+  tall.mockRestore();
+});
+
+it("offers fixes for an import to apply there", async () => {
+  const { ProposalCard } = await import("./ProposalCard");
+  const onApply = vi.fn(async () => {});
+  const fix = {
+    id: "p1",
+    title: "1 fix for the import",
+    kind: "fix" as const,
+    status: "proposed" as const,
+    rows: 0,
+    sheets: 0,
+    card: { kicker: "Import fixes", rows: [{ label: "Line 30 · amount: n/a → -12.40", detail: "The statement's total" }], stats: [], more: 0, highlight: { categories: [], transactions: [] } },
+  };
+  render(
+    <ProposalCard proposal={fix} canUndo={false} onApply={onApply} onDiscard={async () => {}} onUndo={async () => {}} onReview={() => {}} onPreview={() => {}} onSave={async () => {}} />,
+  );
+  expect(screen.getByText("The statement's total")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Apply to the import" }));
+  await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1));
+  expect(screen.getByText("Each applies only to a line that hasn't changed")).toBeTruthy();
 });

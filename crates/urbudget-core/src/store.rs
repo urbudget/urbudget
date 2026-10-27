@@ -1106,57 +1106,28 @@ impl Store {
         }
         Ok(())
     }
-    pub fn export_ynab(&self, budget: &Budget) -> Result<String> {
-        let directory = self
-            .path
-            .parent()
-            .ok_or("Missing data directory")?
-            .join("exports")
-            .join(format!("ynab-{}", Utc::now().format("%Y%m%d-%H%M%S-%f")));
-        std::fs::create_dir_all(&directory).map_err(error)?;
-        std::fs::write(
-            directory.join("Register.csv"),
-            crate::ynab::export_register(budget)?,
-        )
-        .map_err(error)?;
-        std::fs::write(
-            directory.join("Plan.csv"),
-            crate::ynab::export_plan(budget)?,
-        )
-        .map_err(error)?;
-        std::fs::write(
-            directory.join("UrBudget.json"),
-            serde_json::to_vec_pretty(budget).map_err(error)?,
-        )
-        .map_err(error)?;
-        Ok(directory.to_string_lossy().into_owned())
-    }
+}
 
-    pub fn export(&self, budget: &Budget) -> Result<String> {
-        validate(budget)?;
-        self.write_json_export(budget, "budget")
-    }
+/// YNAB's Register and Plan CSVs, with the full JSON beside them: the files of a YNAB export
+/// folder, by name.
+pub fn export_ynab(budget: &Budget) -> Result<[(&'static str, Vec<u8>); 3]> {
+    Ok([
+        ("Register.csv", crate::ynab::export_register(budget)?.into_bytes()),
+        ("Plan.csv", crate::ynab::export_plan(budget)?.into_bytes()),
+        ("UrBudget.json", export_recovery_draft(budget)?),
+    ])
+}
 
-    /// Preserve an unsaved draft even when validation is what prevents recovery.
-    /// This is explicitly a recovery file, not a validated backup or a database write.
-    pub fn export_recovery_draft(&self, budget: &Budget) -> Result<String> {
-        self.write_json_export(budget, "recovery-draft")
-    }
+/// A full backup of the budget as JSON. Only a valid budget is exported this way.
+pub fn export(budget: &Budget) -> Result<Vec<u8>> {
+    validate(budget)?;
+    export_recovery_draft(budget)
+}
 
-    fn write_json_export(&self, budget: &Budget, prefix: &str) -> Result<String> {
-        let directory = self
-            .path
-            .parent()
-            .ok_or("Missing database directory")?
-            .join("exports");
-        std::fs::create_dir_all(&directory).map_err(error)?;
-        let path = directory.join(format!(
-            "{prefix}-{}.json",
-            Utc::now().format("%Y%m%d-%H%M%S-%f")
-        ));
-        std::fs::write(&path, serde_json::to_vec_pretty(budget).map_err(error)?).map_err(error)?;
-        Ok(path.to_string_lossy().into_owned())
-    }
+/// Preserve an unsaved draft even when validation is what prevents recovery.
+/// This is explicitly a recovery file, not a validated backup or a database write.
+pub fn export_recovery_draft(budget: &Budget) -> Result<Vec<u8>> {
+    serde_json::to_vec_pretty(budget).map_err(error)
 }
 
 #[cfg(test)]
@@ -1202,11 +1173,9 @@ mod tests {
         invalid.extra.insert("calculationAsOfMonth".into(), serde_json::json!("not-a-month"));
         invalid.extra.insert("sourceExport".into(), serde_json::json!({"preserve": "full source"}));
         store.replace_draft(invalid.clone()).unwrap();
-        assert!(store.export(&invalid).is_err());
+        assert!(export(&invalid).is_err());
         let full = store.full_draft(None).unwrap();
-        let path = store.export_recovery_draft(&full).unwrap();
-        assert!(Path::new(&path).file_name().unwrap().to_string_lossy().starts_with("recovery-draft-"));
-        let exported: Budget = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let exported: Budget = serde_json::from_slice(&export_recovery_draft(&full).unwrap()).unwrap();
         assert_eq!(exported, invalid);
         assert!(validate(&exported).is_err(), "exporting does not silently repair or certify the draft");
         assert_eq!(store.full_draft(None).unwrap(), invalid);

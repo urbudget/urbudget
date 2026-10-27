@@ -62,6 +62,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  container: register-toolbar / inline-size;
 }
 .search {
   position: relative;
@@ -86,9 +87,32 @@
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
-@media (max-width: 1080px) {
+/* A narrower toolbar keeps to one line by giving way in steps: the count goes; then Scheduled and
+   Filters show only their icons and counts; last, Add only its +. Their words stay for screen
+   readers. */
+@container register-toolbar (max-width: 999px) {
   .register-toolbar .count {
     display: none;
+  }
+}
+@container register-toolbar (max-width: 779px) {
+  :is(.schedules-button, .filters-button) .toolbar-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+@container register-toolbar (max-width: 639px) {
+  .add-button .toolbar-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }
 /* The scroll area runs to the window edge (its scrollbar sits outside the table); the table
@@ -1258,20 +1282,29 @@ body:has(.bulk-dock) .toasts {
 }
 
 /* ---------- Search with filter chips ---------- */
+/* One line, always: compact until it's first clicked, then wide, its chips scrolling sideways
+   rather than wrapping. It grows only into room the toolbar has spare (its basis stays
+   small), so widening never pushes a button onto another line. */
 .search-box {
   display: flex;
-  flex: 1 1 260px;
-  flex-wrap: wrap;
+  flex: 1 1 160px;
   align-items: center;
-  gap: 4px;
-  min-width: 200px;
-  max-width: 640px;
-  min-height: 30px;
-  padding: 2px 8px;
+  gap: 6px;
+  min-width: 140px;
+  max-width: 220px;
+  height: 30px;
+  padding: 0 8px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   background: var(--surface);
   cursor: text;
+  transition:
+    max-width 0.22s var(--ease),
+    border-color 0.12s var(--ease),
+    box-shadow 0.12s var(--ease);
+}
+.search-box.expanded {
+  max-width: 480px;
 }
 .search-box:focus-within {
   border-color: var(--accent);
@@ -1279,12 +1312,38 @@ body:has(.bulk-dock) .toasts {
 }
 .search-box > svg {
   flex: none;
-  margin-right: 2px;
   color: var(--muted);
 }
-.search-box input {
+.search-terms {
+  display: flex;
   flex: 1;
-  min-width: 140px;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  height: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.search-terms::-webkit-scrollbar {
+  display: none;
+}
+/* Chips scrolled out of view fade out at that edge. */
+.search-terms.hidden-start {
+  mask-image: linear-gradient(to right, transparent, #000 18px);
+}
+.search-terms.hidden-end {
+  mask-image: linear-gradient(to left, transparent, #000 18px);
+}
+.search-terms.hidden-start.hidden-end {
+  mask-image: linear-gradient(to right, transparent, #000 18px, #000 calc(100% - 18px), transparent);
+}
+.search-terms .chip {
+  flex: none;
+}
+.search-box input {
+  flex: 1 0 60px;
+  min-width: 60px;
+  text-overflow: ellipsis;
   height: 24px;
   padding: 0 2px;
   border: none;

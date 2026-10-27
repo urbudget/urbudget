@@ -1,0 +1,11 @@
+Account Statement - (@Jane-Example) ,,,,,,,,,,,,,,,,,,,,,
+Account Activity,,,,,,,,,,,,,,,,,,,,,
+,ID,Datetime,Type,Status,Note,From,To,Amount (total),Amount (tip),Amount (tax),Amount (fee),Tax Rate,Tax Exempt,Funding Source,Destination,Beginning Balance,Ending Balance,Statement Period Venmo Fees,Terminal Location,Year to Date Venmo Fees,Disclaimer
+,,,,,,,,,,,,,,,,"$1,000.00",,,,,
+,4183920571640283615,2026-09-27T18:22:11,Payment,Complete,Pizza night 🍕,Sam Sample,Jane Example,+ $24.00,,0,,0,,,Venmo balance,,,,Venmo,,
+,4187715203398861042,2026-10-03T09:41:57,Payment,Complete,"Rent share, October",Jane Example,Alex Placeholder,- $650.00,,0,,0,,Venmo balance,,,,,Venmo,,
+,4190028837164409921,2026-10-08T20:05:33,Payment,Pending,Concert tickets,Jane Example,Riley Example,- $45.00,,0,,0,,Venmo balance,,,,,Venmo,,
+,4192264119875530117,2026-10-12T12:00:04,Standard Transfer,Issued,,,,- $100.00,,,,,,,ACME Bank Checking *1234,,,,Venmo,,
+,4196640082213378450,2026-10-19T07:48:20,Instant Transfer,Issued,,,,- $200.00,,,- $3.50,,,,ACME Bank Checking *1234,,,,Venmo,,
+,4197981306647720238,2026-10-21T16:30:09,Payment,Complete,Groceries 🛒,Riley Example,Jane Example,+ $32.75,,0,,0,,,Venmo balance,,,,Venmo,,
+,,,,,,,,,,,,,,,,,$106.75,$3.50,,$3.50,"In case of errors or questions about your electronic transfers, contact Venmo support (sample text for this fixture)."

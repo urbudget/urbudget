@@ -37,6 +37,47 @@ class EditorPreparationTest {
         assertEquals(before, budget.toString())
     }
 
+    @Test fun theOtherSideOfMoneyMovedElsewhereIsOfferedAsATransfer() = runTest {
+        val budget = JSONObject("""{"accounts":[{"id":"checking","name":"Everyday"},{"id":"savings","name":"Savings"}],
+            "transactions":[{"id":"move","accountId":"savings","date":"2026-10-02","payee":"TO EVERYDAY","amount":-20000}]}""")
+        val sure = JSONObject("""{"candidates":["move"],"previouslyMatchedCandidates":[],"candidateDetails":[],"transferCandidates":["move"],"transferSure":true}""")
+        val rows = listOf(JSONObject("""{"id":"bank:in","candidateSet":0,"amount":20000}"""), JSONObject("""{"id":"bank:two","candidateSet":1,"amount":20000}"""))
+        val prepared = prepareBankReview(rows, budget, true, JSONArray().put(sure).put(JSONObject(sure.toString()).put("transferSure", false)))
+        // Backed up by the bank text, it's chosen; on amount and date alone it's only suggested.
+        assertEquals(listOf("match:move", "review"), prepared.map { it.initial })
+        assertEquals(listOf("move", "move"), prepared.map { it.transfer })
+        assertTrue(prepared[0].options.contains("match:move" to "Transfer from Savings: 2026-10-02 · TO EVERYDAY"))
+        assertTrue(summarizeBankReview(prepared).transfers)
+        val row = bankReviewChoices(prepared, emptyMap(), true).getJSONObject(0).getJSONObject("row")
+        assertFalse(row.has("transferCandidates") || row.has("transferSure"))
+    }
+
+    @Test fun statementsAreReadAsTheFormatTheirContentSays() {
+        assertEquals("mt940", statementFormat("umsaetze.txt", "{1:F01BANK}{2:I940}{4:\r\n:20:STARTUMS\r\n:25:1/2\r\n:61:2610011001DR1,00NMSC\r\n"))
+        assertEquals("camt053", statementFormat("export.xml", "<Document/>"))
+        assertEquals("camt053", statementFormat("x.dat", "\uFEFF<?xml version=\"1.0\"?><ns2:Document><ns2:BkToCstmrStmt>"))
+        assertEquals("qfx", statementFormat("Chase.QFX", "OFXHEADER:100\nDATA:OFXSGML"))
+        assertEquals("ofx", statementFormat("download.csv", "<OFX><STMTTRN>"))
+        assertEquals("qif", statementFormat("export.txt", "\n!Option:AutoSwitch\n!Account"))
+        assertEquals("mt940", statementFormat("konto.STA", ""))
+        assertEquals("csv", statementFormat("konto.csv", "Date,Payee,Amount"))
+        assertEquals(null, statementFormat("konto.txt", "Date,Payee,Amount"))
+    }
+
+    @Test fun statementsAreReadInTheEncodingsBanksWrite() {
+        fun bytes(vararg values: Int) = ByteArray(values.size) { values[it].toByte() }
+        // Not UTF-8: the engine tells the encoding, given a character for each byte.
+        assertEquals("Tytu\u00b3;\u00afABKA", decodeStatement(bytes(0x54, 0x79, 0x74, 0x75, 0xB3, 0x3B, 0xAF, 0x41, 0x42, 0x4B, 0x41)) { it })
+        // A workbook (a ZIP inside) is the engine's to read whole.
+        assertEquals("sheet", decodeStatement(bytes(0x50, 0x4B, 0x03, 0x04, 0x14, 0x00), binary = { "sheet" }))
+        // Without the engine (as here), Windows-1252.
+        assertEquals("Bäck;-3", decodeStatement(bytes(0x42, 0xE4, 0x63, 0x6B, 0x3B, 0x2D, 0x33)))
+        assertEquals("Bä", decodeStatement(bytes(0xEF, 0xBB, 0xBF, 0x42, 0xC3, 0xA4)))
+        assertEquals("Dä", decodeStatement(bytes(0xFF, 0xFE, 0x44, 0x00, 0xE4, 0x00)))
+        assertEquals("Dä", decodeStatement(bytes(0xFE, 0xFF, 0x00, 0x44, 0x00, 0xE4)))
+        assertEquals("Date", decodeStatement(bytes(0x44, 0x00, 0x61, 0x00, 0x74, 0x00, 0x65, 0x00)))
+    }
+
     @Test fun intentionalIdlessDuplicateGetsStableRetryIdWithoutMutatingSource() = runTest {
         val row = JSONObject("""{"duplicate":true,"idless":true,"importId":"original","candidates":[]}""")
         val before = row.toString()

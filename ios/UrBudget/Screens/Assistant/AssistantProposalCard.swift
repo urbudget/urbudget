@@ -11,6 +11,8 @@ struct AssistantProposalActions {
     var report: () -> Void
     /// `true` opens the spreadsheet, `false` exports it.
     var spreadsheet: (Bool) -> Void
+    /// Fixes for a bank file being imported go to that import, when the assistant is open over it.
+    var applyFix: (() -> Void)? = nil
 }
 
 /// A proposed change, shown in full before anything is applied: what changes, by how much, and
@@ -119,7 +121,7 @@ struct AssistantProposalCard: View {
             if !card.text("note").isEmpty {
                 Text(card.text("note")).font(.footnote).foregroundStyle(Color.secondary)
             }
-            if !proposal.text("problem").isEmpty {
+            if !proposal.text("problem").isEmpty && proposal.text("kind") != "fix" {
                 Label(proposal.text("problem"), systemImage: "exclamationmark.octagon.fill")
                     .font(.footnote)
                     .foregroundStyle(Color.urNegative)
@@ -189,6 +191,22 @@ struct AssistantProposalCard: View {
                 case "spreadsheet":
                     primary("Open spreadsheet", "tablecells", { actions.spreadsheet(true) })
                     Button("Export Excel file", systemImage: "square.and.arrow.up") { actions.spreadsheet(false) }
+                case "fix":
+                    // The import applies them, each only to a line that hasn't changed.
+                    if status == "proposed" || status == "undone" {
+                        if let applyFix = actions.applyFix {
+                            primary("Apply to the import", "checkmark", applyFix)
+                            Text("Each applies only to a line that hasn't changed.").font(.footnote).foregroundStyle(Color.secondary)
+                        } else {
+                            Text("Open the import these fixes are for, and apply them from there.").font(.footnote).foregroundStyle(Color.secondary)
+                        }
+                        HStack(spacing: 20) {
+                            Button("Ask for changes", systemImage: "text.bubble", action: actions.refine).disabled(busy)
+                            Button("Discard", role: .destructive, action: actions.discard).disabled(busy)
+                        }
+                    } else if status == "applied" {
+                        Label("Applied to the import", systemImage: "checkmark.circle.fill").foregroundStyle(Color.urPositive)
+                    }
                 default:
                     switch status {
                     case "proposed", "undone":
@@ -246,6 +264,7 @@ struct AssistantProposalCard: View {
         case "report": return "doc.text"
         case "import": return "tray.and.arrow.down"
         case "spreadsheet": return "tablecells"
+        case "fix": return "wrench.and.screwdriver"
         case "transactions": return "list.bullet.rectangle"
         case "payees": return "person.text.rectangle"
         default: return "arrow.left.arrow.right"

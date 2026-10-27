@@ -37,6 +37,31 @@ class NativeBankImportTest {
         assertEquals(142766L, summary.records("accounts").first { it.getString("id") == "checking" }.getLong("balance"))
     }
 
+    @Test fun aLineThatDoesntReadIsFixedOnThePhoneAndImportedWithTheRest() = runBlocking {
+        val budget = JSONObject(asset("native-roundtrip.json"))
+        val content = "Date,Payee,Amount\n2026-10-14,Bakery,-3.20\n2026-10-15,Grocer,n/a\n"
+        val base = { JSONObject().put("accountId", "checking").put("content", content) }
+        val session = call("bankSession", budget, base().put("sessionId", "s1").put("budgetId", "b")) as JSONObject
+        val shown = parseStatement(call("bankStatement", budget, base().put("session", session).put("problemsOnly", true)) as JSONObject)
+        assertEquals(listOf("attention"), shown.lines.map { it.kind })
+        assertTrue(shown.needsChecking)
+        val fixes = fieldFixes(session, shown.lines[0], mapOf("amount" to "-12.40"))!!
+        val applied = call("bankApplyFixes", budget, base().put("session", session).put("fixes", fixes)) as JSONObject
+        val fixed = applied.getJSONObject("session")
+        val preview = call("bankImportPreview", budget, base().put("session", fixed).put("problemsOnly", true)) as JSONObject
+        val review = preview.getJSONObject("review")
+        val rows = prepareBankReview(review.records("items"), budget, true, review.optJSONArray("candidateSets"))
+        assertEquals(listOf(-320L, -1240L), rows.map { it.amount })
+        val choices = bankReviewChoices(rows, rows.indices.associateWith { "new" }, true)
+        val remember = parseStatement(preview.getJSONObject("statement")).remember
+        val updated = call("bankApply", budget, JSONObject().put("accountId", "checking").put("choices", choices).put("remember", remember)) as JSONObject
+        assertEquals(budget.getJSONArray("transactions").length() + 2, updated.getJSONArray("transactions").length())
+        // The same broken file again: both lines are known, the fixed one by the line as the file writes it.
+        val again = call("bankSession", updated, base().put("sessionId", "s2").put("budgetId", "b")) as JSONObject
+        val seen = call("bankImportPreview", updated, base().put("session", again).put("problemsOnly", true)) as JSONObject
+        assertTrue(seen.getJSONObject("review").records("items").all { it.optBoolean("duplicate") })
+    }
+
     @Test fun repeatedLargeMatchSetsStayCompactAndKeepTheLastMatchUsable() = runBlocking {
         val budget = JSONObject(asset("native-roundtrip.json"))
         val transactions = budget.getJSONArray("transactions")

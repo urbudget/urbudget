@@ -14,6 +14,7 @@ for the account, encrypted sync, assistant and bank services.
 | Native SwiftUI iOS client, its Rust adapter and feature coverage | [Native iOS](../ios/README.md) |
 | Versions, tags and release workflows for each app | [Releasing](../RELEASING.md) |
 | Published versions and remaining release work | [Release status](RELEASE-STATUS.md) |
+| Agreed work not done yet | [Follow-ups](FOLLOW-UPS.md) |
 | Changes by release | [Changelog](../desktop/CHANGELOG.md) |
 | Website/API operation and deployment | [Website guide](../web/README.md), [API reference](../web/API.md) |
 | Local test artifacts and retained evidence | [Artifact retention](ARTIFACTS.md) |

@@ -1,6 +1,6 @@
 [package]
 name = "urbudget-ios"
-version = "1.0.8"
+version = "1.0.9"
 description = "Versioned JSON/C adapter for the native UrBudget iOS app"
 edition = "2021"
 license = "AGPL-3.0-or-later"

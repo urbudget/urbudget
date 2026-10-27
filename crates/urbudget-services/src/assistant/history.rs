@@ -18,6 +18,10 @@ pub enum Item {
         #[serde(default)]
         context: String,
         at: String,
+        /// The bank file they were importing, as it read then: fixes the assistant proposes for it
+        /// are made against this, never the import as it is later.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        import: Option<crate::bank_statement::Brief>,
     },
     Assistant {
         text: String,
@@ -153,6 +157,12 @@ pub struct ProposalView<'a> {
     pub rows: usize,
     /// Sheets the card can save as a spreadsheet: a spreadsheet's sheets, or a report's tables.
     pub sheets: usize,
+    /// Fixes for a bank file being imported, for the import to apply.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fixes: Option<&'a crate::bank_statement::Fixes>,
+    /// What the user left out or changed on the card, to change again.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub choices: Option<&'a super::proposals::Revision>,
 }
 pub fn proposal_view(p: &Proposal) -> Value {
     serde_json::to_value(ProposalView {
@@ -168,6 +178,8 @@ pub fn proposal_view(p: &Proposal) -> Value {
             (None, Some(r)) => super::workbook::report_tables(&r.body).len(),
             _ => 0,
         },
+        fixes: p.fixes.as_ref(),
+        choices: p.review.as_ref().map(|r| &r.revision),
     })
     .unwrap_or(Value::Null)
 }
@@ -241,7 +253,7 @@ mod tests {
             created: "2026-10-16T10:00:00Z".into(),
             updated: "2026-10-16T10:01:00Z".into(),
             instructions: "x".into(),
-            items: vec![Item::User { text: "hi".into(), attachments: vec![], context: String::new(), at: String::new() }],
+            items: vec![Item::User { text: "hi".into(), attachments: vec![], context: String::new(), at: String::new(), import: None }],
             proposals: vec![],
         };
         save(dir.path(), &t).unwrap();

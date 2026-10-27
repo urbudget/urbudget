@@ -1,0 +1,658 @@
+/* The import page and its editor: every line of a bank file, to fix. Imported by ImportPage.tsx. */
+.import-page {
+  margin: var(--gutter, 20px);
+}
+.import-page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+.import-page-head h2 {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.import-into {
+  color: var(--muted);
+  font-weight: 500;
+}
+.statement-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+/* Each stage (the file's lines, the review) comes in softly as it replaces the other. */
+/* Stands between the page and what it shows, which keeps the page's spacing. */
+.import-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  animation: import-stage-in 0.18s var(--ease);
+}
+@keyframes import-stage-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.import-wait {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  animation: import-stage-in 0.2s var(--ease);
+}
+/* A change that lasts dims the controls gradually rather than all at once. (Not the table's:
+   its actions animate on their own, and its fields answer at once.) */
+:is(.statement-bar, .statement-question, .statement-actions) :is(button, select, input) {
+  transition-property: opacity, background-color, border-color, color;
+  transition-duration: 0.18s;
+}
+.statement-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 18px;
+}
+.statement-bar:empty {
+  display: none;
+}
+.statement-source select {
+  min-width: 240px;
+}
+.statement-choice select {
+  max-width: 320px;
+}
+/* A question the file leaves open (the date order, the signs): answered here, once. */
+.statement-question {
+  animation: pop-in 0.16s var(--ease);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--attention) 55%, var(--border));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--attention) 12%, var(--surface));
+  color: var(--text);
+}
+.statement-question > svg {
+  flex: none;
+  color: var(--attention-ink);
+}
+/* The question takes the room it needs; its answers stay side by side, after it or under it. */
+.statement-question > span:not(.statement-answers) {
+  flex: 1 1 260px;
+}
+.statement-answers {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* A change that lasts: a line moving along the grid's top edge, and its lines a little faded. */
+.statement-grid-frame {
+  position: relative;
+}
+.statement-progress {
+  position: absolute;
+  z-index: 4;
+  top: 1px;
+  right: 1px;
+  left: 1px;
+  height: 2px;
+  overflow: hidden;
+  border-radius: var(--radius) var(--radius) 0 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+.statement-progress::before {
+  position: absolute;
+  inset: 0;
+  width: 30%;
+  background: var(--accent);
+  content: "";
+  animation: statement-progress 1.1s var(--ease) infinite;
+}
+@keyframes statement-progress {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+.statement-editor.slow .statement-progress {
+  opacity: 1;
+}
+.line-ok {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--positive);
+}
+/* How a line imports: its date, and its amount aligned to the right. */
+.line-state > span.line-ok:first-child {
+  flex: 1 1 auto;
+}
+.line-reading {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0 -4px;
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+/* A line whose reading a change altered lights up for a moment. */
+.line-reading.moved {
+  animation: line-moved 0.9s var(--ease);
+}
+@keyframes line-moved {
+  from {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+}
+.line-ok .line-date {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.line-ok .line-amount {
+  min-width: 0;
+  margin-left: auto;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-weight: 550;
+}
+.line-ok .line-amount.in {
+  color: var(--positive);
+}
+/* Changed from the file: its reading in the accent colour (its title says by whom). */
+.line-ok.line-changed :is(.line-date, .line-amount) {
+  color: var(--accent);
+}
+.line-attention {
+  display: inline-block;
+  gap: 5px;
+  color: var(--attention-ink);
+}
+.line-attention svg {
+  margin-right: 4px;
+  vertical-align: -2px;
+}
+/* The file's lines, laid out as the register lists transactions (LineTable.tsx): a grid with a
+   line between every column and row, each line 34px (LINE), the heading pinned on top, how each
+   line imports pinned on the left and what can be done to it on the right. */
+.line-scroll {
+  /* Where the lines are measured from, to bring one into view (LineEditor). */
+  position: relative;
+  max-height: max(320px, calc(100vh - 380px));
+  overflow: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.line-scroll:focus {
+  outline: none;
+}
+.line-scroll:focus-visible {
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.line-row {
+  /* The line's tint, laid over the page colour in the pinned cells so nothing shows through. */
+  --line-tint: transparent;
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--line-cols);
+  align-items: center;
+  height: 34px;
+  border-bottom: 1px solid var(--border);
+  background: var(--line-tint);
+  cursor: default;
+  user-select: none;
+}
+.line-row > [role="cell"],
+.line-row > [role="columnheader"] {
+  align-self: stretch;
+  min-width: 0;
+  padding: 0 10px;
+  overflow: hidden;
+  border-left: 1px solid var(--border);
+  line-height: 33px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.line-row > :first-child {
+  border-left: none;
+}
+.line-row:not(.line-head, .line-editor):hover {
+  --line-tint: var(--hover);
+}
+.line-row.selected,
+.line-row.selected:hover {
+  --line-tint: var(--accent-soft);
+}
+.line-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  height: 36px;
+  background: var(--surface-2);
+  border-bottom-color: var(--border-strong);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+/* Heading cells fill the heading, so the dividers (and the grips on them) reach its edges. */
+.line-head > [role="columnheader"] {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: visible;
+  line-height: normal;
+}
+.line-col-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* How the line imports stays in view as the cells scroll sideways, and so do its actions. */
+.line-row > .line-state,
+.line-row > .line-actions-cell {
+  position: sticky;
+  z-index: 1;
+  background: linear-gradient(var(--line-tint), var(--line-tint)), var(--surface);
+}
+.line-row > .line-state {
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* Its parts cut themselves short; the shadow beside it shows. */
+  overflow: visible;
+  box-shadow: inset -1px 0 0 var(--border);
+  font-size: 12.5px;
+}
+.line-row > .line-actions-cell {
+  right: 0;
+  overflow: visible;
+  box-shadow: inset 1px 0 0 var(--border);
+}
+/* Cells scrolled sideways pass under the pinned columns, which cast a soft shadow on them then
+   (LineTable sets under-left and under-right), so a sliver of a cell beside them reads as such. */
+.line-row > .line-state::after,
+.line-row > .line-actions-cell::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  opacity: 0;
+  pointer-events: none;
+  content: "";
+  transition: opacity 0.15s;
+}
+.line-row > .line-state::after {
+  right: -10px;
+  background: linear-gradient(to right, rgb(0 0 0 / 0.16), transparent);
+}
+.line-row > .line-actions-cell::before {
+  left: -10px;
+  background: linear-gradient(to left, rgb(0 0 0 / 0.16), transparent);
+}
+.line-scroll.under-left .line-row > .line-state::after,
+.line-scroll.under-right .line-row > .line-actions-cell::before {
+  opacity: 1;
+}
+.line-head > .line-state,
+.line-head > .line-actions-cell {
+  z-index: 4;
+  background: var(--surface-2);
+  font-size: 11px;
+}
+/* An edge on the left says what the line needs: attention in its colour, a change in the accent. */
+.line-row.attention > .line-state {
+  box-shadow:
+    inset 3px 0 0 var(--attention),
+    inset -1px 0 0 var(--border);
+}
+.line-row.changed > .line-state {
+  box-shadow:
+    inset 3px 0 0 var(--accent),
+    inset -1px 0 0 var(--border);
+}
+/* The keys' place among the lines: a bar along its edge while they move it, as the register's. */
+.line-scroll.keyed:focus .line-row.cursor > .line-state {
+  box-shadow:
+    inset 2px 0 0 var(--accent),
+    inset -1px 0 0 var(--border);
+}
+.line-row.leftOut > .line-cell {
+  color: var(--muted);
+}
+/* A line's checkbox, and the room beside it, which works it too (LineTable's check). */
+.line-check {
+  display: flex;
+  flex: none;
+  align-items: center;
+  align-self: stretch;
+  margin: 0 -2px 0 -4px;
+  padding: 0 2px 0 4px;
+  cursor: pointer;
+}
+.line-check input {
+  margin: 0;
+}
+.line-state > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.line-left-out {
+  color: var(--muted);
+}
+.line-editing {
+  color: var(--accent);
+}
+.line-editing svg {
+  margin-right: 5px;
+  vertical-align: -2px;
+}
+/* A second click on the selected line edits it, from the cell clicked. */
+.line-row.selected.cursor > .line-cell {
+  cursor: text;
+}
+.line-cell.bad {
+  background: color-mix(in srgb, var(--attention) 18%, transparent);
+  color: var(--text);
+  text-decoration: underline wavy var(--attention-ink);
+  text-underline-offset: 3px;
+}
+.line-cell.edited {
+  color: var(--accent);
+  font-weight: 550;
+}
+/* A value just given, shown while the file reads again. */
+.line-cell.waiting {
+  opacity: 0.7;
+}
+/* A change that lasts: the lines a little faded, all at once (the controls in them don't dim
+   on their own). */
+.line-table {
+  transition: opacity 0.2s;
+}
+.line-scroll.slow .line-table {
+  opacity: 0.6;
+}
+/* Room to scroll the last lines clear of the selection's bar. */
+.line-scroll.has-selection .line-table {
+  padding-bottom: 60px;
+}
+.line-scroll :is(button, select):disabled {
+  opacity: 1;
+}
+.line-empty {
+  position: sticky;
+  left: 0;
+  padding: 16px;
+}
+.line-empty .help {
+  margin: 0;
+}
+
+/* What a column holds, in its heading: a quiet chip until it's set, then in the accent. The menu
+   lies unseen over the chip. */
+.role-pick {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  max-width: 68px;
+  height: 20px;
+  margin-left: auto;
+  padding: 0 7px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  transition:
+    background-color 0.15s var(--ease),
+    color 0.15s var(--ease);
+}
+.role-pick > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.role-pick.on {
+  border: 1px solid transparent;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.role-pick:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.role-pick.on:hover {
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+  color: var(--accent);
+}
+.role-pick:focus-within {
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.role-pick select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* What can be done to a line, as the register's Enter and Skip on a scheduled row: quiet icons at
+   its right end. Pointing at the line or tabbing to them opens them into a raised, labelled row of
+   buttons, which grows leftward over the line's cells. */
+.line-actions {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  padding: 1px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  transform: translateY(-50%);
+  transition:
+    background-color 0.15s var(--ease),
+    border-color 0.15s var(--ease),
+    box-shadow 0.15s var(--ease);
+}
+.line-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 4px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: normal;
+  white-space: nowrap;
+  transition:
+    padding 0.15s var(--ease),
+    color 0.15s var(--ease);
+}
+.line-action:hover:not(:disabled),
+.line-action:focus-visible {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.line-action-label {
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    max-width 0.15s var(--ease),
+    margin 0.15s var(--ease),
+    opacity 0.15s var(--ease);
+}
+:is(.line-row:hover, .line-actions:focus-within) .line-actions,
+.line-actions:focus-within {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md);
+}
+:is(.line-row:hover, .line-actions:focus-within) .line-action {
+  padding: 0 8px;
+  color: var(--accent);
+}
+:is(.line-row:hover, .line-actions:focus-within) .line-action-label {
+  max-width: 5em;
+  margin-left: 5px;
+  opacity: 1;
+}
+/* A line that needs attention says so in its icon too, until it's pointed at. */
+.line-row.attention:not(:hover) .line-actions:not(:focus-within) .line-action {
+  color: var(--attention-ink);
+}
+.line-scroll.slow .line-action {
+  cursor: default;
+}
+
+/* The selection's bar, as the register's (register.css .bulk-dock), over the bottom of the lines;
+   its changes are named, being fewer. */
+.bulk-dock.line-bulk {
+  right: 16px;
+  left: 16px;
+}
+.bulk-action.named {
+  display: inline-flex;
+  gap: 6px;
+  width: auto;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.bulk-action.named small {
+  color: var(--muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.bulk-note {
+  padding: 0 10px 0 4px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+/* The line being edited, as the register's editor: one card across the table with a soft accent
+   tint and an accent edge, fields without column lines between them, and a footer of actions. Its
+   fields are 40px under 4px of padding and its footer 48px: EDIT in LineTable.tsx. */
+.line-row.line-editor {
+  --line-tint: color-mix(in srgb, var(--accent) 5%, var(--surface));
+  grid-auto-rows: auto;
+  align-content: start;
+  height: auto;
+  padding-top: 4px;
+  border-bottom-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--accent) 45%, transparent);
+  cursor: auto;
+  user-select: auto;
+}
+.line-row.line-editor > [role="cell"] {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  overflow: visible;
+  border-left-color: transparent;
+  line-height: normal;
+}
+.line-row.line-editor > .line-state {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.line-row.line-editor > .line-actions-cell {
+  box-shadow: none;
+}
+.line-editor input {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 0 9px;
+  font-size: 13px;
+}
+.line-editor input[readonly] {
+  background: var(--surface-2);
+  color: var(--muted);
+}
+/* The footer spans the line; its buttons stay in view where the fields start, however far the
+   table is scrolled sideways. */
+.line-editor-footer {
+  grid-column: 1 / -1;
+  height: 48px;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
+}
+.line-editor-buttons {
+  position: sticky;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+  padding: 0 10px;
+}
+.line-editor-buttons .primary.small,
+.line-editor-buttons .secondary.small {
+  height: 30px;
+  padding: 0 14px;
+  font-size: 13px;
+}
+.line-editor-buttons .primary.small {
+  min-width: 72px;
+}
+.line-editor-buttons .editor-hint {
+  margin-left: 6px;
+}
+.statement-actions {
+  flex-wrap: wrap;
+}
+.statement-actions .help {
+  margin-right: auto;
+}
+/* In the review: what a row of money in may be a refund of. */
+.import-review .refund-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 8px;
+  color: var(--positive);
+  font-size: 0.85em;
+}
+.import-page-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 14px;
+  margin-left: auto;
+  white-space: nowrap;
+}

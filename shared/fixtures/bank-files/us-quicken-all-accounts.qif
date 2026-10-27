@@ -1,0 +1,60 @@
+!Option:AutoSwitch
+!Account
+NChecking
+TBank
+^
+NSavings
+TBank
+^
+!Clear:AutoSwitch
+!Type:Cat
+NGroceries
+DFood at home
+E
+^
+NHousing
+E
+^
+!Account
+NChecking
+TBank
+D
+^
+!Type:Bank
+D10/ 1'26
+U-1,234.50
+T-1,234.50
+C*
+N1235
+PSunset Apartments
+LHousing
+^
+D10/ 1'26
+U12.00
+T12.00
+C*
+MInterest earned
+LInterest Inc
+^
+D10/ 2'26
+U-56.78
+T-56.78
+PCorner Grocery
+LGroceries
+SGroceries
+EFood
+$-40.00
+SHousehold
+$-16.78
+^
+!Account
+NSavings
+TBank
+^
+!Type:Bank
+D10/ 2'26
+U250.00
+T250.00
+PTransfer
+L[Checking]
+^

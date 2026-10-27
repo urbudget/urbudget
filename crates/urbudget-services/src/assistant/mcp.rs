@@ -74,7 +74,7 @@ fn call(params: &Value) -> Value {
     };
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
     let files = Files::empty();
-    let ctx = tools::Context { budget: &budget, today: &today, month: &today[..7], share_memos, files: &files, bank_sync: &Value::Null };
+    let ctx = tools::Context { budget: &budget, today: &today, month: &today[..7], share_memos, files: &files, bank_sync: &Value::Null, import: None };
     let outcome = tools::call(name, &args, &ctx);
     let failed = outcome.output.get("error").is_some();
     json!({

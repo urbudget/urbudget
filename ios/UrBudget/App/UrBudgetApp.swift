@@ -145,7 +145,7 @@ struct RootView: View {
 
     private func open(_ url: URL) {
         guard let file = OpenedFile(url) else {
-            if url.isFileURL { store.error = "UrBudget opens JSON backups, bank statements (CSV, OFX, QFX or QIF) and YNAB exports." }
+            if url.isFileURL { store.error = "UrBudget opens JSON backups, bank statements (CSV, OFX, QFX, QIF or MT940) and YNAB exports." }
             return
         }
         if file.kind == .backup { backup = file }
@@ -189,7 +189,7 @@ struct OpenedFile: Identifiable {
         switch url.pathExtension.lowercased() {
         case "json": kind = .backup
         case "zip", "tsv": kind = .ynab
-        case "csv", "ofx", "qfx", "qif", "txt": kind = .statement
+        case "csv", "ofx", "qfx", "qif", "sta", "940", "mt940", "txt": kind = .statement
         default: return nil
         }
         self.url = url

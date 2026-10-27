@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { read } from "../bridge";
+import { read, type BankFixes, type BankSession } from "../bridge";
 import type { Patch } from "../patch";
 import type { Budget } from "../types";
 
@@ -37,6 +37,19 @@ export type CardRow = {
   after?: number;
   badge?: string;
   tone?: "warn";
+  /** The part of the change the row shows, to leave out or change before applying. */
+  key?: string;
+  /** Left out: shown, not applied. */
+  skipped?: boolean;
+  /** Given another category or amount by the user. */
+  edited?: boolean;
+  /** What can be changed here: the category it gives (`categoryId`, absent for Ready to Assign), and the amount. */
+  edit?: { category: boolean; categoryId?: string; amount: boolean };
+};
+/** The user's choices on a card, by row key: rows left out, and categories (null: Ready to Assign) or amounts given. */
+export type Revision = {
+  skip: string[];
+  set: { key: string; category?: string | null; amount?: number }[];
 };
 export type Card = {
   kicker: string;
@@ -54,7 +67,7 @@ export type ProposalStatus = "proposed" | "applied" | "discarded" | "undone" | "
 export type Proposal = {
   id: string;
   title: string;
-  kind: "budget" | "transactions" | "payees" | "import" | "report" | "spreadsheet";
+  kind: "budget" | "transactions" | "payees" | "import" | "report" | "spreadsheet" | "fix";
   status: ProposalStatus;
   card: Card;
   problem?: string;
@@ -62,6 +75,10 @@ export type Proposal = {
   rows: number;
   /** Sheets it can save as a spreadsheet: a spreadsheet's sheets, or a report's tables. */
   sheets: number;
+  /** Fixes for a bank file being imported, for the import to apply. */
+  fixes?: BankFixes;
+  /** What the user left out or changed on the card. */
+  choices?: Revision;
 };
 export type Entry =
   | { kind: "user"; text: string; attachments: Attachment[]; selected?: number }
@@ -80,6 +97,8 @@ export type Screen = {
   categoryId?: string | null;
   selected: string[];
   today: string;
+  /** The bank file on the Import page, when that's where the user is: the assistant is told its lines. */
+  import?: { account: string; content: string; session: BankSession };
 };
 export type AssistantEvent = { threadId: string } & (
   | { type: "started" }
@@ -123,22 +142,26 @@ export const assistant = {
   /** The proposal's change as a patch for `budget`, or a refreshed card when the budget moved. */
   apply: (budget: Budget, threadId: string, proposalId: string) =>
     read<{ patch: Patch | null; proposal: Proposal }>(budget, "assistant_apply", { threadId, proposalId }),
+  /** The proposal as the user chose on its card, made again on `budget`: every row, those left out marked. */
+  revise: (budget: Budget, threadId: string, proposalId: string, revision: Revision) =>
+    read<Proposal>(budget, "assistant_revise", { threadId, proposalId, revision }),
   mark: (threadId: string, proposalId: string, status: ProposalStatus) =>
     invoke<Proposal>("assistant_mark", { threadId, proposalId, status }),
   importFile: (threadId: string, proposalId: string) =>
     invoke<{ account: string; name: string; csv: string }>("assistant_import", { threadId, proposalId }),
-  saveImport: (threadId: string, proposalId: string) => invoke<string>("assistant_save_import", { threadId, proposalId }),
+  /** Saves the converted file where the user chooses; null when they cancel. */
+  saveImport: (threadId: string, proposalId: string) => invoke<string | null>("assistant_save_import", { threadId, proposalId }),
   open: (link: Link) => invoke<void>("assistant_open", { link }),
   /** Sends only the text the user approved in the report form; returns its support reference. */
   reportReply: (text: string, reason: string) => invoke<string>("assistant_report_reply", { text, reason }),
   report: (threadId: string, proposalId: string) => invoke<ReportView>("assistant_report", { threadId, proposalId }),
   /**
-   * Writes the card's spreadsheet (or a report's tables) to the budget's exports folder, with
-   * data sheets filled from `budget`, and returns its path. `open` opens it in the user's
-   * spreadsheet app, reusing the file saved last.
+   * Saves the card's spreadsheet (or a report's tables) where the user chooses, with data sheets
+   * filled from `budget`, and returns its path, or null when they cancel. `open` opens it in the
+   * user's spreadsheet app instead, reusing the file saved last.
    */
   spreadsheet: (budget: Budget, threadId: string, proposalId: string, open: boolean) =>
-    read<string>(budget, "assistant_spreadsheet", { threadId, proposalId, open }),
+    read<string | null>(budget, "assistant_spreadsheet", { threadId, proposalId, open }),
   /** Opens the system print dialog for the window. */
   print: () => invoke<void>("assistant_print"),
   onEvent: (handler: (e: AssistantEvent) => void): Promise<UnlistenFn> =>

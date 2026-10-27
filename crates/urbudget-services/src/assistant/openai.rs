@@ -332,7 +332,7 @@ mod tests {
     #[test]
     fn calls_and_results_go_back_with_the_namespace() {
         let items = vec![
-            Item::User { text: "hi".into(), attachments: vec![], context: "Today".into(), at: String::new() },
+            Item::User { text: "hi".into(), attachments: vec![], context: "Today".into(), at: String::new(), import: None },
             Item::Raw { provider: "openai".into(), value: json!({ "type": "reasoning", "id": "rs_1" }) },
             Item::Call { call_id: "c1".into(), name: "get_month".into(), arguments: "{}".into() },
             Item::Result { call_id: "c1".into(), output: "{}".into(), step: String::new(), failed: false, proposal: None },

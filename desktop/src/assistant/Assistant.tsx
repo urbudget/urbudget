@@ -24,7 +24,7 @@ import { errorText, monthName } from "../format";
 import { keyLabel } from "../platform";
 import { today, type Budget, type Summary } from "../types";
 import { Menu, useToast } from "../ui";
-import { ACCEPT, assistant, fileData, type Attachment, type Card, type Entry, type Listing, type Proposal, type Screen, type Status } from "./api";
+import { ACCEPT, assistant, fileData, type Attachment, type Card, type Entry, type Listing, type Proposal, type Revision, type Screen, type Status } from "./api";
 import { Markdown } from "./Markdown";
 import { describe, logError } from "./errors";
 import { ProposalCard } from "./ProposalCard";
@@ -558,7 +558,6 @@ export function AssistantPanel({
     setAway(false);
     setEntries((list) => [...list, { kind: "user", text: message, attachments }]);
     setDraft("");
-    if (input.current) input.current.style.height = "auto";
     setAttachments([]);
     setSelected([]);
     setRunning(true);
@@ -592,6 +591,15 @@ export function AssistantPanel({
     else if (request.text) setDraft(request.text);
     setTimeout(() => input.current?.focus());
   }, [request, status]);
+  // The message field is as tall as its text (up to 160px) however the text got there: typed,
+  // filled in by a request from elsewhere (the import's "Fix with the assistant"), or put back
+  // after a send that failed. It appears once the assistant is ready, with any text already in it.
+  useLayoutEffect(() => {
+    const el = input.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [draft, status?.ready]);
 
   const newConversation = () => {
     if (running) return;
@@ -609,9 +617,9 @@ export function AssistantPanel({
   };
   const replace = (p: Proposal) =>
     setEntries((list) => list.map((e) => (e.kind === "proposal" && e.proposal.id === p.id ? { kind: "proposal", proposal: p } : e)));
-  const act = (work: () => Promise<Proposal>) => async () => {
+  const act = <A extends unknown[]>(work: (...args: A) => Promise<Proposal>) => async (...args: A) => {
     try {
-      replace(await work());
+      replace(await work(...args));
     } catch (e) {
       toast({ message: errorText(e), tone: "error" });
     }
@@ -664,8 +672,10 @@ export function AssistantPanel({
         return (
           <ProposalCard
             proposal={p}
+            budget={budget}
             canUndo={canUndo(p)}
             onApply={act(() => onApply(id, p))}
+            onRevise={act((revision: Revision) => assistant.revise(budget, id, p.id, revision))}
             onDiscard={act(() => assistant.mark(id, p.id, "discarded"))}
             onUndo={act(() => onUndo(id, p))}
             onReview={() => onReviewImport(id, p)}
@@ -680,11 +690,11 @@ export function AssistantPanel({
             onSheet={async (open) => {
               try {
                 const path = await assistant.spreadsheet(budget, id, p.id, open);
-                if (open) return;
+                if (open || !path) return;
                 const name = path.split(/[\\/]/).pop() ?? path;
                 const report = p.kind === "report";
                 toast({
-                  message: `Saved \u201c${name}\u201d in the budget's exports folder.`,
+                  message: `Saved \u201c${name}\u201d.`,
                   action: report
                     ? { label: "Open", onClick: () => void assistant.spreadsheet(budget, id, p.id, true).catch((e) => toast({ message: errorText(e), tone: "error" })) }
                     : { label: "Show in folder", onClick: () => void api.reveal(path).catch((e) => toast({ message: errorText(e), tone: "error" })) },
@@ -696,6 +706,7 @@ export function AssistantPanel({
             onSave={async () => {
               try {
                 const path = await assistant.saveImport(id, p.id);
+                if (!path) return;
                 toast({
                   message: "Saved the converted file.",
                   action: { label: "Show in folder", onClick: () => void api.reveal(path).catch((e) => toast({ message: errorText(e), tone: "error" })) },
@@ -989,11 +1000,7 @@ export function AssistantPanel({
                 value={draft}
                 aria-label="Message the assistant"
                 placeholder="Ask about your budget, or drop a file"
-                onChange={(e) => {
-                  setDraft(e.target.value);
-                  e.target.style.height = "auto";
-                  e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
-                }}
+                onChange={(e) => setDraft(e.target.value)}
                 onPaste={(e) => {
                   const files = [...e.clipboardData.files];
                   if (files.length) {

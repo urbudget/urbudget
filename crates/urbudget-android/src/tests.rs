@@ -295,3 +295,50 @@ fn register_export_can_be_limited_to_listed_transactions_and_one_account() {
     let none = value(call("exportRegister", &budget, json!({"accountId":"no-such-account"})));
     assert_eq!(none.as_str().unwrap().lines().count(), 1);
 }
+
+#[test]
+fn a_bank_file_import_is_a_session_the_phones_fix_and_review() {
+    let content = "Date,Payee,Amount
+2026-10-01,Bakery,-3.20
+2026-10-02,Grocer,n/a
+2026-10-03,Lunch,-8.50
+";
+    let base = json!({"accountId": "cash", "content": content});
+    let with = |more: Value| {
+        let mut params = base.clone();
+        params.as_object_mut().unwrap().extend(more.as_object().unwrap().clone());
+        params
+    };
+    let session = value(call("bankSession", sample(), with(json!({"sessionId": "s1", "budgetId": "b1"}))));
+    assert_eq!(session["scope"]["account"], "cash");
+    // Only the line that doesn't read, for a phone.
+    let problems = value(call("bankStatement", sample(), with(json!({"session": session, "problemsOnly": true}))));
+    let lines = problems["lines"].as_array().unwrap();
+    assert_eq!(lines.len(), 1);
+    assert_eq!(lines[0]["status"]["kind"], "attention");
+    assert_eq!(problems["counts"]["ready"], 2);
+    // Its amount given, it reads, and the review has all three.
+    let fixes = json!({
+        "scope": session["scope"], "baseRevision": 0, "baseStructure": session["structure"],
+        "fields": [{"line": lines[0]["id"], "lineVersion": 0, "field": "amount", "from": "n/a", "to": "-12.40"}],
+    });
+    let applied = value(call("bankApplyFixes", sample(), with(json!({"session": session, "fixes": fixes}))));
+    assert_eq!(applied["results"][0]["applied"], true);
+    let preview = value(call("bankImportPreview", sample(), with(json!({"session": applied["session"]}))));
+    let amounts: Vec<i64> = preview["review"]["items"].as_array().unwrap().iter().map(|i| i["amount"].as_i64().unwrap()).collect();
+    assert_eq!(amounts, [-320, -1240, -850]);
+    assert_eq!(preview["lines"].as_array().unwrap().len(), 3);
+    // A phone's review carries the line it fixed (to undo), not every line.
+    let short = value(call("bankImportPreview", sample(), with(json!({"session": applied["session"], "problemsOnly": true}))));
+    assert_eq!(short["statement"]["lines"].as_array().unwrap().len(), 1);
+    assert_eq!(short["statement"]["lines"][0]["fixed"], true);
+    assert_eq!(short["review"]["items"].as_array().unwrap().len(), 3);
+    // Another import's fix is refused.
+    let mut elsewhere = fixes.clone();
+    elsewhere["scope"]["session"] = json!("s2");
+    assert_eq!(call("bankApplyFixes", sample(), with(json!({"session": session, "fixes": elsewhere})))["ok"], false);
+    // A file the assistant prepared reads the standard way.
+    let prepared = value(call("bankSession", sample(), with(json!({"sessionId": "s3", "prepared": true}))));
+    assert_eq!(prepared["structure"]["dateOrder"], json!({"order": "ymd", "confirmed": true}));
+    assert_eq!(prepared["structure"]["columns"]["amount"], "Amount");
+}

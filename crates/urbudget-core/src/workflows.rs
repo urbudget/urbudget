@@ -794,7 +794,7 @@ pub fn payee_rule<'a>(b: &'a Budget, text: &str) -> Option<&'a Value> {
     best.map(|(r, _)| r)
 }
 /// A category id a bank import uses for rows that still need one.
-fn placeholder(b: &Budget, id: &str) -> bool {
+pub(crate) fn placeholder(b: &Budget, id: &str) -> bool {
     id == "local-uncategorized"
         || b.categories.iter().any(|c| {
             c.id == id && (c.name == "Uncategorized" || c.name == "Uncategorized Transactions")

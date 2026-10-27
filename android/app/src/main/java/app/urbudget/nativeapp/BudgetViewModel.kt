@@ -186,7 +186,9 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun query(method: String, params: JSONObject = JSONObject(), onError: (String) -> Unit = { notifyError(it) }, callback: (JSONObject) -> Unit): Job {
+    /** `anyRevision`: the reply still counts after an edit to the same budget (it doesn't depend on its transactions). */
+    fun query(method: String, params: JSONObject = JSONObject(), onError: (String) -> Unit = { notifyError(it) }, anyRevision: Boolean = false,
+              callback: (JSONObject) -> Unit): Job {
         val shown = state.value
         // Capture published data before scheduling; query work never occupies the write queue.
         // Parameters and published budgets are read-only after passing them to this method.
@@ -198,7 +200,7 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
                     ensureActive()
                     val objectValue = value as? JSONObject ?: JSONObject().put("items", value ?: JSONObject.NULL)
                     withContext(Dispatchers.Main) {
-                        if (state.value.budget === shown.budget && state.value.budgetIdentity == shown.budgetIdentity) callback(objectValue)
+                        if ((anyRevision || state.value.budget === shown.budget) && state.value.budgetIdentity == shown.budgetIdentity) callback(objectValue)
                         else onError("The budget changed. Refresh this preview to use the latest values.")
                     }
                 } catch (cancel: CancellationException) {

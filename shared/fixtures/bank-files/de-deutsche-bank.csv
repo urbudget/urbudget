@@ -1,0 +1,11 @@
+Umsätze Girokonto;Zeitraum: 14.09.2026 - 22.10.2026
+Neuer Kontostand;2.826,01 EUR
+
+Buchungstag;Wert;Umsatzart;Begünstigter / Auftraggeber;Verwendungszweck;IBAN / Kontonummer;BIC;Kundenreferenz;Mandatsreferenz;Gläubiger ID;Fremde Gebühren;Betrag;Abweichender Empfänger;Anzahl der Aufträge;Anzahl der Schecks;Soll;Haben;Währung
+20.10.2026;20.10.2026;Überweisung;Max Mustermann;Sparrate Oktober;DE00123456780000000099;DEUTDEDBXXX;;;;;;;;;-500,00;;EUR
+01.10.2026;01.10.2026;SEPA-Lastschrift;Stadtwerke Beispielstadt;Abschlag Strom Oktober Vertragskonto 4711;DE00987654320000000011;BYLADEM1001;4711-2026-10;MREF-4711-2026;DE00ZZZ00000000001;;;;;;-64,20;;EUR
+30.09.2026;30.09.2026;SEPA-Gutschrift;Arbeitgeber Muster GmbH;Gehalt September 2026;DE00555566660000000022;COBADEFFXXX;LOHN-2026-09;;;;;;;;;2.450,00;EUR
+15.09.2026;14.09.2026;Kartenzahlung;AMAZON.COM*AB12CD SEATTLE;Originalbetrag 50,00 USD Kurs 1,0850;;;;;;;;;;;-46,08;;EUR
+15.09.2026;14.09.2026;Entgelt;;Auslandseinsatzentgelt Kartenzahlung 14.09.2026;;;;;;;;;;;-0,81;;EUR
+14.09.2026;13.09.2026;Kartenzahlung;Café Süßholz;Girocard 13.09.2026 12:30 Hamburg;;;;;;;;;;;-12,90;;EUR
+Kontostand;22.10.2026;;;2.826,01;EUR

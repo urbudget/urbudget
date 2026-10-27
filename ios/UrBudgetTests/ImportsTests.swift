@@ -165,8 +165,170 @@ final class ImportYnabTests: XCTestCase {
         XCTAssertThrowsError(try ImportsEngine.importYnabFiles([ImportPickedFile(name: "notes.csv", data: Data("a,b\n1,2".utf8))], dateOrder: "mdy", currency: "SAR"))
     }
 
-    func testStatementTextFallsBackToWindowsLatin() {
-        XCTAssertEqual(ImportFiles.text(Data([0xEF, 0xBB, 0xBF]) + Data("Date".utf8)), "Date")
-        XCTAssertEqual(ImportFiles.text(Data([0x43, 0x61, 0x66, 0xE9])), "Café")
+    func testStatementTextFallsBackToWindowsLatin() throws {
+        XCTAssertEqual(try ImportFiles.text(Data([0xEF, 0xBB, 0xBF]) + Data("Date".utf8)), "Date")
+        XCTAssertEqual(try ImportFiles.text(Data([0x43, 0x61, 0x66, 0xE9])), "Café")
+        // A PDF is the assistant's to read.
+        XCTAssertThrowsError(try ImportFiles.text(Data("%PDF-1.7".utf8)))
+        // The engine tells other encodings apart: Windows-1251, as Russian banks write.
+        let russian = Data([0xC4, 0xE0, 0xF2, 0xE0, 0x3B, 0xD1, 0xF3, 0xEC, 0xEC, 0xE0, 0x3B, 0xCE, 0xEF, 0xE8, 0xF1, 0xE0, 0xED, 0xE8, 0xE5, 0x0A,
+                            0x32, 0x31, 0x2E, 0x31, 0x30, 0x2E, 0x32, 0x30, 0x32, 0x36, 0x3B, 0x2D, 0x31, 0x35, 0x33, 0x34, 0x2C, 0x39, 0x30, 0x3B,
+                            0xD1, 0xF3, 0xEF, 0xE5, 0xF0, 0xEC, 0xE0, 0xF0, 0xEA, 0xE5, 0xF2])
+        XCTAssertEqual(try ImportFiles.text(russian), "Дата;Сумма;Описание\n21.10.2026;-1534,90;Супермаркет")
+    }
+}
+
+/// A bank file's lines as a phone shows and fixes them (Android's BankStatementViewTest).
+final class BankStatementTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        Money.configure(budget: ["currency": "EUR"])
+    }
+
+    private let session: JSON = ["scope": ["session": "s1", "budget": "b", "account": "checking", "file": "f"], "revision": 3,
+                                 "structure": ["format": "csv", "dateOrder": ["order": "dmy", "confirmed": false], "flipSigns": false, "wholeBatches": ["e1"]],
+                                 "edits": ["cells": [:], "fields": [:], "include": []], "versions": [:]]
+
+    private func statement() throws -> JSON {
+        try JSON.parse(#"""
+        {"scope":{"session":"s1"},"revision":3,"format":"csv","order":"dmy",
+         "sources":[{"label":"A1","currency":"EUR","lines":3},{"label":"B2","lines":1}],"source":0,
+         "lines":[
+          {"id":"30","version":2,"cells":["02/10/2026","Grocer","n/a"],"fields":{"date":"2026-10-02","payee":"Grocer","memo":"","amount":"n/a"},
+           "status":{"kind":"attention","field":"amount","column":2,"reason":"Invalid amount: n/a"}},
+          {"id":"60","version":0,"cells":["03/10/2026","Cinema","-12.00"],"fields":{"date":"2026-10-03","payee":"Cinema","memo":"","amount":"-12.00"},
+           "status":{"kind":"leftOut","reason":"pending","detail":"Pending"}},
+          {"id":"90","version":1,"cells":["04/10/2026","","-3.00"],"fields":{"date":"2026-10-04","payee":"","memo":"","amount":"-3.00"},
+           "status":{"kind":"ready"},"fixed":true,"batch":0}],
+         "counts":{"ready":2,"attention":1,"leftOut":{"pending":1}},
+         "dateOrder":{"order":"dmy","example":"01/02/2026","unconfirmed":true},
+         "batches":[{"entry":"e1","line":null,"payments":[2],"addsUp":false,"asOne":false}],
+         "remember":{"dateFormat":"dmy","dateConfirmed":false,"flipSigns":false}}
+        """#)
+    }
+
+    func testAStatementReadsAsThePhoneShowsIt() throws {
+        let st = BankStatement(try statement())
+        XCTAssertEqual(st.lines.map(\.kind), ["attention", "leftOut", "ready"])
+        XCTAssertEqual(st.lines[0].problem, "Invalid amount: n/a")
+        XCTAssertTrue(st.lines[1].includable)
+        XCTAssertFalse(st.lines[0].includable)
+        XCTAssertEqual(BankStatementText.leftOut(st.lines[1]), "Not booked yet (Pending)")
+        // A line without a payee goes by what the file writes on it.
+        XCTAssertEqual(st.lines[2].title, "04/10/2026 · -3.00")
+        XCTAssertEqual(st.lines[2].batch, 0)
+        XCTAssertEqual(st.sources, [StatementSource(label: "A1", currency: "EUR", lines: 3), StatementSource(label: "B2", currency: nil, lines: 1)])
+        XCTAssertTrue(st.dateUnconfirmed)
+        XCTAssertTrue(st.needsChecking)
+        // A question still open: nothing goes on to the review yet.
+        XCTAssertFalse(st.canContinue)
+        XCTAssertNil(st.signsByType)
+        XCTAssertEqual(st.attentionLines.map(\.id), ["30"])
+        XCTAssertEqual(st.leftOutLines.map(\.id), ["60"])
+        XCTAssertEqual(st.changedLines.map(\.id), ["90"])
+        XCTAssertEqual(st.places["90"], 2)
+        XCTAssertEqual(BankStatementText.counts(st), "2 lines read · 1 needs attention and won't be imported · 1 left out")
+        XCTAssertEqual(st.batches, [StatementBatch(entry: "e1", line: nil, payments: [2], addsUp: false, asOne: false)])
+        XCTAssertNil(st.elsewhere)
+    }
+
+    func testFixesAreMadeAgainstTheSessionAndEachLineAsItIs() throws {
+        let line = BankStatement(try statement()).lines[0]
+        // Only the parts changed, each against the value it has now.
+        let fixes = try XCTUnwrap(BankFixes.fields(session, line, ["date": "2026-10-02", "payee": " Grocer ", "memo": "", "amount": " -12.40 "]))
+        XCTAssertEqual(fixes.long("baseRevision"), 3)
+        XCTAssertEqual(fixes["scope"].text("session"), "s1")
+        XCTAssertEqual(fixes["baseStructure"], session["structure"])
+        XCTAssertEqual(fixes["fields"], [["line": "30", "lineVersion": 2, "field": "amount", "from": "n/a", "to": "-12.40"]])
+        XCTAssertNil(BankFixes.fields(session, line, ["amount": "n/a"]))
+        XCTAssertTrue(BankFixes.include(session, line, true)["include"][0].flag("include"))
+        XCTAssertEqual(BankFixes.revert(session, line)["revert"][0].long("lineVersion"), 2)
+        // Reading the file another way changes a copy of how it reads now.
+        let order = BankFixes.restructured(session) { $0["dateOrder"] = ["order": "mdy", "confirmed": true] }
+        XCTAssertEqual(order["structure"]["dateOrder"].text("order"), "mdy")
+        XCTAssertEqual(session["structure"]["dateOrder"].text("order"), "dmy")
+        XCTAssertEqual(BankFixes.wholeBatch(session, "e2", true)["structure"]["wholeBatches"], ["e1", "e2"])
+        XCTAssertEqual(BankFixes.wholeBatch(session, "e1", false)["structure"]["wholeBatches"], [])
+    }
+
+    func testAReviewIsOnlyEverOfTheImportItWasAskedFor() {
+        let asked = BankReviewRequest(number: 1, generation: 1, session: "a", revision: 0, account: "checking")
+        XCTAssertEqual(asked, asked)
+        // Asked again (the budget changed): the earlier review shows until the new one lands.
+        XCTAssertTrue(asked.sameImport(as: BankReviewRequest(number: 2, generation: 1, session: "a", revision: 0, account: "checking")))
+        // Another file, though its session is at revision 0 too; a later change; another account: never.
+        XCTAssertFalse(asked.sameImport(as: BankReviewRequest(number: 2, generation: 2, session: "b", revision: 0, account: "checking")))
+        XCTAssertFalse(asked.sameImport(as: BankReviewRequest(number: 2, generation: 1, session: "a", revision: 1, account: "checking")))
+        XCTAssertFalse(asked.sameImport(as: BankReviewRequest(number: 2, generation: 1, session: "a", revision: 0, account: "savings")))
+    }
+
+    func testADateTheOrdersReadDifferentlyIsNamedBothWays() {
+        let named = BankStatementText.readings("01/02/2026")
+        XCTAssertEqual(named?.dmy, "1 February 2026")
+        XCTAssertEqual(named?.mdy, "2 January 2026")
+        XCTAssertEqual(BankStatementText.readings("3.4.26")?.dmy, "3 April 2026")
+        XCTAssertNil(BankStatementText.readings("2026-10-01"))
+    }
+
+    func testMoneyBackFromAShopSaysWhatItMayBeARefundOf() throws {
+        let one = try JSON.parse(#"{"id":"t1","date":"2026-10-07","payee":"Amazon EU","amount":-2399,"categoryId":"shopping","purchases":1}"#)
+        let text = BankStatementText.refund(one, categories: ["shopping": "Shopping"], currency: "EUR")
+        XCTAssertTrue(text.hasPrefix("Refund of Amazon EU · ") && text.hasSuffix(" · Shopping"), text)
+        let many = try JSON.parse(#"{"id":"t1","date":"2026-10-07","payee":"Amazon EU","amount":-2399,"purchases":2}"#)
+        XCTAssertEqual(BankStatementText.refund(many, categories: [:], currency: "EUR"), "Possible refund · 2 purchases from Amazon EU match")
+    }
+
+    func testTheAssistantsFixesSayWhichAppliedAndWhyOthersDidnt() throws {
+        let some = BankStatementText.outcome(try JSON.parse(#"""
+        {"session":{},"results":[{"line":"30","fix":"field","applied":true},
+         {"line":"60","fix":"field","applied":false,"problem":"This line changed since this fix was made."}]}
+        """#))
+        XCTAssertEqual(some.lines, ["30"])
+        XCTAssertEqual(some.applied, 1)
+        XCTAssertEqual(some.notice, "Applied 1 of 2 fixes. One no longer fits: This line changed since this fix was made.")
+        let all = BankStatementText.outcome(try JSON.parse(#"{"results":[{"line":"30","applied":true},{"fix":"structure","applied":true}]}"#))
+        XCTAssertEqual(all.notice, "Applied the assistant's 2 fixes.")
+    }
+
+    func testAWorkbookIsReadAtTheSheetAskedForAndSaysItsSheets() throws {
+        var asked: String?
+        let read = try ImportFiles.statement(Data([0x50, 0x4B, 0x03, 0x04, 1, 2, 3]), sheet: "Resumen") { _, sheet in
+            asked = sheet
+            return ["text": "Date,Amount\n", "sheet": "Resumen", "sheets": ["Movimientos", "Resumen"]]
+        }
+        XCTAssertEqual(asked, "Resumen")
+        XCTAssertEqual(read, DecodedStatement(text: "Date,Amount\n", sheet: "Resumen", sheets: ["Movimientos", "Resumen"]))
+        XCTAssertEqual(try ImportFiles.statement(Data("Date,Amount\n".utf8), sheet: nil), DecodedStatement(text: "Date,Amount\n"))
+    }
+
+    /// A line that doesn't read, fixed, imported with the rest through the real engine; the same
+    /// broken file again finds every line imported, the fixed one by the line as the file writes it.
+    func testALineThatDoesntReadIsFixedAndImportedThroughTheEngine() throws {
+        var budget = try NativeCore.engine("defaultBudget", params: ["name": "Test", "currency": "EUR"])
+        try budget.upsertRecord("accounts", ["id": "cash", "name": "Checking", "kind": "cash", "openingBalance": 10000, "archived": false])
+        let content = "Date,Payee,Amount\n2026-10-14,Bakery,-3.20\n2026-10-15,Grocer,n/a\n"
+        func params(_ more: JSON) -> JSON {
+            var all: JSON = ["accountId": "cash", "content": .string(content)]
+            for (key, value) in more.object { all[key] = value }
+            return all
+        }
+        let session = try NativeCore.engine("bankSession", budget: budget, params: params(["sessionId": "s1", "budgetId": ""]))
+        let shown = BankStatement(try NativeCore.engine("bankStatement", budget: budget, params: params(["session": session, "problemsOnly": true])))
+        XCTAssertEqual(shown.lines.map(\.kind), ["attention"])
+        let fixes = try XCTUnwrap(BankFixes.fields(session, shown.lines[0], ["amount": "-12.40"]))
+        let applied = try NativeCore.engine("bankApplyFixes", budget: budget, params: params(["session": session, "fixes": fixes]))
+        let preview = try NativeCore.engine("bankImportPreview", budget: budget, params: params(["session": applied["session"], "problemsOnly": true]))
+        let rows = try BankReview.prepare(rows: preview["review"].rows("items"), budget: budget, allowIdlessDuplicate: true,
+                                          candidateSets: preview["review"]["candidateSets"].array)
+        XCTAssertEqual(rows.map(\.amount), [-320, -1240])
+        let choices = BankReview.choices(rows, [:], allowIdlessDuplicate: true)
+        let done = try NativeCore.engine("bankApply", budget: budget, params: ["accountId": "cash", "choices": choices,
+                                                                                "remember": BankStatement(preview["statement"]).remember])
+        let changed = done["budget"].isObject ? done["budget"] : done
+        XCTAssertEqual(changed.rows("transactions").count, 2)
+        let again = try NativeCore.engine("bankSession", budget: changed, params: params(["sessionId": "s2", "budgetId": ""]))
+        let second = try NativeCore.engine("bankImportPreview", budget: changed, params: params(["session": again, "problemsOnly": true]))
+        XCTAssertTrue(second["review"].rows("items").allSatisfy { $0.flag("duplicate") })
+        XCTAssertEqual(BankStatement(second["statement"]).lines.map(\.reason), ["imported"])
     }
 }

@@ -404,7 +404,7 @@ final class AssistantController {
 
     // MARK: Messages
 
-    func send(_ text: String, selected: [String], done: @escaping @MainActor () -> Void) {
+    func send(_ text: String, selected: [String], importing: JSON? = nil, done: @escaping @MainActor () -> Void) {
         operation("send") { [self] in
             guard selected.count <= 200 else { throw AppError("Select up to 200 transactions per message.") }
             let generation = generation
@@ -413,7 +413,7 @@ final class AssistantController {
             thinking = ""
             let params: JSON = ["threadId": threadId.isEmpty ? .null : .string(threadId), "text": .string(text),
                                 "attachments": JSON(attachments.map { $0.text("id") }),
-                                "screen": AssistantScreen.context(month: month, selected: selected)]
+                                "screen": AssistantScreen.context(month: month, selected: selected, importing: importing)]
             let result = try await call("assistant_send", params).string
             guard generation == self.generation else { return }
             if threadId != result { thread = ["id": .string(result)] }
@@ -426,10 +426,10 @@ final class AssistantController {
     }
 
     /// Asks again after an error or an interrupted reply, without a new message.
-    func retry() {
+    func retry(importing: JSON? = nil) {
         operation("send") { [self] in
             let id = threadId
-            _ = try await call("assistant_retry", ["threadId": .string(id), "screen": AssistantScreen.context(month: month, selected: [])])
+            _ = try await call("assistant_retry", ["threadId": .string(id), "screen": AssistantScreen.context(month: month, selected: [], importing: importing)])
             try await loadThread(id)
         }
     }

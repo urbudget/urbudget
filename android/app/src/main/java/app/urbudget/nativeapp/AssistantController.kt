@@ -39,6 +39,8 @@ data class AssistantState(
     val error: String? = null,
     val notice: String? = null,
     val undoProposal: String? = null,
+    /** A message put in the composer for the user to send (or not), such as one asking to fix an import. */
+    val draft: String? = null,
 ) {
     val threadId get() = thread?.optString("id").orEmpty()
 }
@@ -157,6 +159,10 @@ class AssistantController : ViewModel() {
     private fun reloadHistory() = operation("history") { loadHistory() }
     fun dismissError() { mutable.update { it.copy(error = null) } }
     fun dismissNotice() { mutable.update { it.copy(notice = null) } }
+    fun note(text: String) { mutable.update { it.copy(notice = text) } }
+    /** Puts `text` in the composer, unsent. */
+    fun prefill(text: String) { mutable.update { it.copy(draft = text) } }
+    fun prefilled() { mutable.update { it.copy(draft = null) } }
     fun newChat() {
         conversationGeneration++; clearStream(); presentation = null
         mutable.update { it.copy(thread = null, entries = emptyList(), running = false, attachments = emptyList(), streaming = "", thinking = "", undoProposal = null) }; undoToken = null
@@ -199,7 +205,8 @@ class AssistantController : ViewModel() {
         if (generation == conversationGeneration) mutable.update { it.copy(attachments = it.attachments + attachment) }
     }
     fun removeAttachment(id: String) { mutable.update { it.copy(attachments = it.attachments.filterNot { file -> file.optString("id") == id }) } }
-    fun send(text: String, month: String, selected: List<String> = emptyList(), done: () -> Unit) = operation("send") {
+    /** `import` is the bank file being imported, when the assistant is open over its import: the assistant is told its lines. */
+    fun send(text: String, month: String, selected: List<String> = emptyList(), import: JSONObject? = null, done: () -> Unit) = operation("send") {
         require(selected.size <= 200) { "Select up to 200 transactions per message." }
         val current = state.value
         val generation = conversationGeneration
@@ -207,13 +214,13 @@ class AssistantController : ViewModel() {
         mutable.update { it.copy(streaming = "", thinking = "") }
         val result = call("assistant_send", JSONObject().put("threadId", current.threadId.takeIf(String::isNotEmpty) ?: JSONObject.NULL)
             .put("text", text).put("attachments", JSONArray(current.attachments.map { it.optString("id") }))
-            .put("screen", screen(month, selected))) as String
+            .put("screen", screen(month, selected, import))) as String
         if (generation != conversationGeneration) return@operation
         mutable.update { it.copy(thread = if (it.threadId == result) it.thread else JSONObject().put("id", result), running = true, attachments = emptyList()) }
         done(); loadThread(result); loadHistory()
     }
-    fun retry(month: String) = operation("send") {
-        call("assistant_retry", JSONObject().put("threadId", state.value.threadId).put("screen", screen(month, emptyList())))
+    fun retry(month: String, import: JSONObject? = null) = operation("send") {
+        call("assistant_retry", JSONObject().put("threadId", state.value.threadId).put("screen", screen(month, emptyList(), import)))
         loadThread(state.value.threadId)
     }
     fun stop() = operation("stop") { call("assistant_stop", JSONObject().put("threadId", state.value.threadId)); loadThread(state.value.threadId) }
@@ -265,8 +272,9 @@ class AssistantController : ViewModel() {
     override fun onCleared() { reloads.close(); super.onCleared() }
 
     companion object {
-        private fun screen(month: String, selected: List<String>) = JSONObject().put("platform", "android").put("page", "assistant").put("month", month)
-            .put("today", LocalDate.now().toString()).put("selected", JSONArray(selected))
+        private fun screen(month: String, selected: List<String>, import: JSONObject? = null) = JSONObject().put("platform", "android")
+            .put("page", if (import != null) "import" else "assistant").put("month", month)
+            .put("today", LocalDate.now().toString()).put("selected", JSONArray(selected)).put("import", import ?: JSONObject.NULL)
         private fun proposalParams(thread: String, proposal: String) = JSONObject().put("threadId", thread).put("proposalId", proposal)
         private fun JSONObject.copy() = JSONObject(toString())
         private fun Any?.objects(): List<JSONObject> = (this as? JSONArray)?.let { list -> (0 until list.length()).mapNotNull(list::optJSONObject) }.orEmpty()

@@ -62,8 +62,10 @@ struct AssistantThreadPresentation: Sendable {
 
 /// What the assistant is told about the screen a message was sent from.
 enum AssistantScreen {
-    static func context(month: String, selected: [String]) -> JSON {
-        ["platform": "ios", "page": "assistant", "month": .string(month), "today": .string(Dates.today), "selected": JSON(selected)]
+    /// `importing` is the bank file being imported, when the assistant is open over its import.
+    static func context(month: String, selected: [String], importing: JSON? = nil) -> JSON {
+        ["platform": "ios", "page": importing == nil ? "assistant" : "import", "month": .string(month), "today": .string(Dates.today),
+         "selected": JSON(selected), "import": importing ?? .null]
     }
 }
 

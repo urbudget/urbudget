@@ -1,0 +1,8 @@
+"Date Opération";"Date Valeur";Libellé;"Libellé Suggéré";Catégorie;"Catégorie Parente";Solde;Commentaire;"Numéro Compte";"Libellé Compte";Solde;Pointage
+2026-10-16;2026-10-16;"CARTE 15/10/26 BOULANGERIE EXEMPLE CB*1234";"Boulangerie Exemple";Alimentation;"Vie quotidienne";-6,40;;00040000000;"BoursoBank (Exemple)";1497.66;Non
+2026-10-14;2026-10-14;"FRAIS PAIEMENT HORS ZONE EURO CB*1234";;"Frais bancaires";Banque;-1,91;;00040000000;"BoursoBank (Exemple)";1504.06;Non
+2026-10-14;2026-10-14;"CARTE 12/10/26 HOTEL EXEMPLE LONDON CB*1234";"Hotel Exemple";Hôtels;Voyages;-98,01;;00040000000;"BoursoBank (Exemple)";1504.06;Non
+2026-10-05;2026-10-05;"VIR SEPA CAF EXEMPLE";"CAF Exemple";"Allocations et pensions";Revenus;312,50;;00040000000;"BoursoBank (Exemple)";1603.98;Non
+2026-10-03;2026-10-03;"VIR Virement interne vers Livret Bourso+";;"Virements émis de comptes à comptes";"Mouvements internes débiteurs";-200,00;"épargne octobre";00040000000;"BoursoBank (Exemple)";1291.48;Non
+2026-09-28;2026-09-28;"PRLV SEPA ENERGIE EXEMPLE";"Énergie Exemple";"Electricité, gaz";Logement;-64,20;;00040000000;"BoursoBank (Exemple)";1491.48;Oui
+2026-09-25;2026-09-25;"VIR SEPA CAISSE PRIMAIRE EXEMPLE";"Caisse Primaire Exemple";"Remboursements frais de santé";Santé;23,50;;00040000000;"BoursoBank (Exemple)";1555.68;Oui

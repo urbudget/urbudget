@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<?OFX OFXHEADER="200" VERSION="211" SECURITY="NONE" OLDFILEUID="NONE" NEWFILEUID="NONE"?>
+<OFX>
+  <SIGNONMSGSRSV1>
+    <SONRS>
+      <STATUS>
+        <CODE>0</CODE>
+        <SEVERITY>INFO</SEVERITY>
+        <MESSAGE>The operation succeeded.</MESSAGE>
+      </STATUS>
+      <DTSERVER>20261022093135.547[-7:PDT]</DTSERVER>
+      <LANGUAGE>ENG</LANGUAGE>
+      <FI>
+        <ORG>Example Credit Union</ORG>
+        <FID>1000</FID>
+      </FI>
+    </SONRS>
+  </SIGNONMSGSRSV1>
+  <BANKMSGSRSV1>
+    <STMTTRNRS>
+      <TRNUID>1001</TRNUID>
+      <STATUS>
+        <CODE>0</CODE>
+        <SEVERITY>INFO</SEVERITY>
+      </STATUS>
+      <STMTRS>
+        <CURDEF>USD</CURDEF>
+        <BANKACCTFROM>
+          <BANKID>321000000</BANKID>
+          <BRANCHID>0001</BRANCHID>
+          <ACCTID>000123456789</ACCTID>
+          <ACCTTYPE>CHECKING</ACCTTYPE>
+        </BANKACCTFROM>
+        <BANKTRANLIST>
+          <DTSTART>20260925000000.000[-7:PDT]</DTSTART>
+          <DTEND>20261022000000.000[-7:PDT]</DTEND>
+          <STMTTRN>
+            <TRNTYPE>DIRECTDEP</TRNTYPE>
+            <DTPOSTED>20260930120000.000[-7:PDT]</DTPOSTED>
+            <TRNAMT>3100.00</TRNAMT>
+            <FITID>2026093001</FITID>
+            <NAME>ACME Corp Payroll</NAME>
+            <MEMO>Salary September</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>DEBIT</TRNTYPE>
+            <DTPOSTED>20261001120000.000[-7:PDT]</DTPOSTED>
+            <TRNAMT>-1450.00</TRNAMT>
+            <FITID>2026100101</FITID>
+            <PAYEE>
+              <NAME>Oak Street Rentals LLC</NAME>
+              <ADDR1>100 Example Ave</ADDR1>
+              <CITY>Springfield</CITY>
+              <STATE>OR</STATE>
+              <POSTALCODE>97477</POSTALCODE>
+              <PHONE>555-0100</PHONE>
+            </PAYEE>
+            <MEMO>October rent</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>POS</TRNTYPE>
+            <DTPOSTED>20261004120000.000[-7:PDT]</DTPOSTED>
+            <TRNAMT>-23.80</TRNAMT>
+            <FITID>2026100401</FITID>
+            <NAME><![CDATA[Boulangerie Éclair & Café  ]]></NAME>
+            <MEMO>Card purchase – Portland</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>XFER</TRNTYPE>
+            <DTPOSTED>20261006120000.000[-7:PDT]</DTPOSTED>
+            <TRNAMT>-400.00</TRNAMT>
+            <FITID>2026100601</FITID>
+            <NAME>Transfer to Savings</NAME>
+            <BANKACCTTO>
+              <BANKID>321000000</BANKID>
+              <ACCTID>000123456790</ACCTID>
+              <ACCTTYPE>SAVINGS</ACCTTYPE>
+            </BANKACCTTO>
+            <MEMO>Online transfer to share 0002</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>SRVCHG</TRNTYPE>
+            <DTPOSTED>20261008120000.000[-7:PDT]</DTPOSTED>
+            <TRNAMT>-5.00</TRNAMT>
+            <FITID>2026100801</FITID>
+            <NAME>Monthly Maintenance Fee</NAME>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>CREDIT</TRNTYPE>
+            <DTPOSTED>20261012120000.000[-7:PDT]</DTPOSTED>
+            <TRNAMT>42.99</TRNAMT>
+            <FITID>2026101201</FITID>
+            <NAME>Online Store Refund</NAME>
+            <MEMO>Return of order 5551234</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>DEBIT</TRNTYPE>
+            <DTPOSTED>20261015120000.000[-7:PDT]</DTPOSTED>
+            <TRNAMT>-19.99</TRNAMT>
+            <FITID>2026101501</FITID>
+            <CORRECTFITID>2026092801</CORRECTFITID>
+            <CORRECTACTION>DELETE</CORRECTACTION>
+            <NAME>Streamflix Subscription</NAME>
+            <MEMO>Correction: duplicate posting removed</MEMO>
+          </STMTTRN>
+        </BANKTRANLIST>
+        <LEDGERBAL>
+          <BALAMT>2210.44</BALAMT>
+          <DTASOF>20261022093135.547[-7:PDT]</DTASOF>
+        </LEDGERBAL>
+        <AVAILBAL>
+          <BALAMT>2210.44</BALAMT>
+          <DTASOF>20261022093135.547[-7:PDT]</DTASOF>
+        </AVAILBAL>
+      </STMTRS>
+    </STMTTRNRS>
+  </BANKMSGSRSV1>
+</OFX>

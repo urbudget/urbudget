@@ -120,6 +120,11 @@ async fn turn(assistant: &Assistant, job: &Job, cancelled: &AtomicBool) -> Resul
         if calls.is_empty() {
             return Ok(());
         }
+        // The import the latest message was sent from, as it read then.
+        let import = thread.items.iter().rev().find_map(|i| match i {
+            Item::User { import, .. } => Some(import.as_ref()),
+            _ => None,
+        }).flatten();
         let context = tools::Context {
             budget: &job.budget,
             today: &job.today,
@@ -127,6 +132,7 @@ async fn turn(assistant: &Assistant, job: &Job, cancelled: &AtomicBool) -> Resul
             share_memos: job.share_memos,
             files: &files,
             bank_sync: &job.bank_sync,
+            import,
         };
         for call in calls {
             let outcome = match serde_json::from_str::<Value>(&call.arguments) {

@@ -1,0 +1,8 @@
+Día         Concepto / Referencia                                             Cargo      Abono       Saldo
+25-09-2026  DEPOSITO DE NOMINA/ACME CORP SA DE CV                                    18,500.00   30,845.67
+29-09-2026  PAGO SERVICIO LUZ EJEMPLO/REF 0123456789                         486.00              30,359.67
+02-10-2026  TRASP ENTRE CUENTAS PROPIAS/0123456789                         5,000.00              25,359.67
+07-10-2026  SUPERMERCADO EJEMPLO/******1234                                1,234.56              24,125.11
+10-10-2026  SPEI RECIBIDO/0012345 JANE EXAMPLE                                        1,250.00   25,375.11
+15-10-2026  COMISION MANEJO DE CUENTA                                        150.00              25,225.11
+15-10-2026  IVA COMISION MANEJO DE CUENTA                                     24.00              25,201.11

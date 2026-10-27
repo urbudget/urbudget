@@ -95,8 +95,9 @@ const PAYEE: Kind = Kind { name: "payee", groups: &[], append: false };
 const PAYEE_RULE: Kind = Kind { name: "payeeRule", groups: &[], append: false };
 const MONTH_NOTE: Kind = Kind { name: "monthNote", groups: &[], append: false };
 const LOAN: Kind = Kind { name: "loan", groups: &[], append: false };
-/// Bookkeeping from imports that no one edits: when both sides differ, this side's stays.
-const QUIET: &[&str] = &["source", "transferSource", "importedAt", "importAudit", "importCounts"];
+/// Bookkeeping from imports that no one edits: when both sides differ, this side's stays. An
+/// account's `fileImport` is how its last bank file read, which either side's next import resets.
+const QUIET: &[&str] = &["source", "transferSource", "importedAt", "importAudit", "importCounts", "fileImport"];
 
 trait Record: Clone + PartialEq {
     fn id(&self) -> String;

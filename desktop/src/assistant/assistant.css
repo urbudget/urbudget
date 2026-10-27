@@ -563,6 +563,10 @@
   font: inherit;
   resize: none;
 }
+/* The composer around it shows the focus, not the field's own ring. */
+.assistant-composer textarea:focus {
+  box-shadow: none;
+}
 .assistant-compose-row {
   display: flex;
   gap: 4px;
@@ -623,17 +627,92 @@
   font-size: 13.5px;
 }
 .proposal-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  display: flex;
   gap: 4px 10px;
   align-items: center;
   padding: 6px 12px;
   border-top: 1px solid var(--border);
+  transition: opacity 0.15s var(--ease);
 }
 .proposal-label {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   min-width: 0;
+}
+.proposal-row > :not(.proposal-label) {
+  flex: none;
+}
+/* Each part of a change waiting to be applied: a checkbox to leave it out, and a pencil to give
+   it another category or amount (ProposalCard). */
+.proposal-pick {
+  margin: 0 -2px 0 0;
+}
+.proposal-row.skipped > :not(.proposal-pick) {
+  opacity: 0.5;
+}
+.proposal-row.skipped .proposal-label > span:first-child {
+  text-decoration: line-through;
+  text-decoration-color: var(--muted);
+}
+.proposal-row.edited .num {
+  color: var(--accent);
+  font-weight: 600;
+}
+.proposal-edit {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin: 0 -6px 0 -4px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--muted);
+  transition:
+    background-color 0.12s var(--ease),
+    color 0.12s var(--ease);
+}
+.proposal-edit:hover:not(:disabled),
+.proposal-edit:focus-visible {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+/* The row being changed: its fields under it, on the accent's tint, as the register's editor. */
+.proposal-editor {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  align-items: center;
+  padding: 8px 12px 10px 34px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+  box-shadow: inset 3px 0 0 var(--accent);
+  animation: pop-in 0.14s var(--ease);
+}
+.proposal-editor .combobox {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+.proposal-editor input {
+  height: 30px;
+  font-size: 13px;
+}
+.proposal-amount {
+  flex: 0 1 110px;
+  width: 110px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.proposal-editor-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+.proposal-editor-problem {
+  flex: 1 0 100%;
+  color: var(--negative);
+  font-size: 12px;
 }
 .proposal-label > * {
   overflow: hidden;
@@ -643,6 +722,11 @@
 .proposal-label small {
   color: var(--muted);
   font-size: 11.5px;
+}
+/* What changes, as it was and as it will be, wraps rather than being cut short. */
+.proposal-label > small {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .proposal-row .num {
   font-variant-numeric: tabular-nums;
@@ -677,6 +761,17 @@
   border-top: 1px solid var(--border);
   color: var(--muted);
   font-size: 12px;
+}
+button.proposal-more {
+  display: block;
+  width: 100%;
+  border-radius: 0;
+  color: var(--accent);
+  text-align: left;
+}
+button.proposal-more:hover {
+  background: var(--hover);
+  text-decoration: none;
 }
 .proposal-stats {
   display: grid;

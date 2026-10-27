@@ -1,0 +1,391 @@
+{
+  "au-commbank.csv": [
+    ["bank:8b2503ee12be97c9e10f2d37b4ed71aa9ee0bb12b3ec08b1af9169bad2e5f7e0","2026-10-16",20000,"Transfer from xx4821 NetBank Savings"],
+    ["bank:593f3625c473ce36f1066cc5d806dfa218b581a4592f0aabda4f4d9174413b1b","2026-10-14",-210000,"Direct Debit 123456 EXAMPLE RENTALS RENT 778899"],
+    ["bank:9a4d258efc4b2c6a67642280ea13f5e7dbf68fe00bd1f3b593ca49836515ce98","2026-10-09",-8635,"WOOLWORTHS 1234 SYDNEY NS AUS Card xx9876 Value Date: 08/10/2026"],
+    ["bank:4160bc28bdb4a87c23f5ce6c7fac638360ff3f86965ff6526a3aaf9de9094fbd","2026-10-06",-115,"International Transaction Fee Card xx9876 Value Date: 04/10/2026"],
+    ["bank:86d1084dcfdf7ee359324b40434dd6106ca05d0dc3ccb8a91b08bf1c3937ad7c","2026-10-06",-3847,"AMAZON MKTPLC US SEATTLE WA USA Card xx9876 USD 24.99 Value Date: 04/10/2026"],
+    ["bank:4533ba1c2b0e88d3b6bc132e00c8c7af21a6ce35bbc4e03d9705cce03ca2efaf","2026-10-02",-100000,"Transfer to xx4821 NetBank Savings top up"],
+    ["bank:d416578c00b85a29bdd51d5774855edada4a60ec4513753b2bf22de342fa740c","2026-09-30",-18420,"NetBank BPAY ACME ENERGY 12345 6789012345 Electricity"],
+    ["bank:f1a0c93e43687166c733694a20ca1ce59e89f01ef4e96243859412def2fb2169","2026-09-28",325000,"Direct Credit 401234 ACME PTY LTD SALARY 2809"]
+  ],
+  "be-bnpparibasfortis.csv": [
+    ["bank:658a5240749e379f4618a59e295a541d1efb4a3fd36b1ccae9513e2359e0f5a7","2026-10-21",-3840,"SUPERMARKT VOORBEELD"],
+    ["bank:cba126b6244fde409e590f22bad6b86eb00d4b3a981183ed12828fd67562139d","2026-10-16",-25000,"JAN VOORBEELD"],
+    ["bank:19eec8a0ec59820df08130aa75a9859c732700e577884835d77370f4bbfa92c9","2026-10-12",-5499,"TELECOM VOORBEELD NV"],
+    ["bank:75a6444a91cc59729568aba4fa1b9d949b7ecb894ac85a98aa1fcc9cc5834f8c","2026-10-05",245000,"WERKGEVER VOORBEELD NV"],
+    ["bank:1f72fc904a6c52f38ef665f8b5242f309ecb729b66e39a32d0cc4a149c0f1a87","2026-09-29",1850,"WEBWINKEL VOORBEELD BV"]
+  ],
+  "ca-cibc.csv": [
+    ["bank:d68d746495c8eb3205c3d7db1c8951ceb50e4659af081c2a32303189fd6f3721","2026-10-20",50000,"PAYMENT THANK YOU/PAIEMENT MERCI"],
+    ["bank:313fa26926420d8deb9446529b3c6dbb3b63899b3756e2a2b7041cd5aae8623e","2026-10-14",-6327,"GROCERY MART #12 TORONTO, ON"],
+    ["bank:3281185c88ca94ef3c1a54e6bbca28c72408c5511261069b9e0c8ee20ffbf8f5","2026-10-09",2500,"SPORTS EXAMPLE TORONTO, ON"],
+    ["bank:486eb8f733106785bd5da9563aeda8e6e76eaffe0cfb5b086cc8db01b8e03dc1","2026-10-03",-1699,"STREAMING EXAMPLE 800-555-0100, ON"],
+    ["bank:d831dde62e5e5e6c212893b488d94ab9f5fbbe6b82dbb235ec33f4bbf711a5fa","2026-09-27",-785,"COFFEE EXAMPLE SEATTLE, WA"]
+  ],
+  "ca-rbc.csv": [
+    ["bank:1ef694305632af1a0c0d80a1bc201c92528090ff6672c9bf0e44f55ae66943cd","2026-09-25",245000,"ACME CORP"],
+    ["bank:b39dfe120eb3edd10eb500b4e4fc4249913f57af2121024307ffcffd068dfb76","2026-09-29",-8640,"HYDRO EXAMPLE"],
+    ["bank:61d3d2b009aee116c220122b70c42955c63b044980eed6b6228da31f293b775d","2026-10-02",-50000,"TFR-TO 01234-5000456"],
+    ["bank:60c6e06907a7b29ed9e25eaf111d368d842780a05882e15d7b5798cca1184d3a","2026-10-06",-15000,"Cheque - 117"],
+    ["bank:dc529c18fb88722928275e86999a91279c6d9205d73aa61736f1e0efd8a364ad","2026-10-14",7500,"JANE EXAMPLE"]
+  ],
+  "ca-scotiabank.csv": [
+    ["bank:18f094467ca49b73960517cff8a1e87b5f7dea8c5eb2f65bb91ec35012221782","2026-10-21",-1695,"MONTHLY ACCOUNT FEE"],
+    ["bank:850099de0f67a871e56e890d6d000754fae3f054dd75be5b125010100e584b1c","2026-10-15",7500,"INTERAC E-TRANSFER JANE EXAMPLE"],
+    ["bank:95e5af3319148bee54e643ea98ae8a50eb83d4a9f2c08fe4f6a68766a42bc5d3","2026-10-08",-6327,"GROCERY MART #12 TORONTO ON"],
+    ["bank:3847497deb2f90d403f4df66f87988d3aef6d408883af7ec52eb6e1725d692cd","2026-10-01",-50000,"SAVINGS 00987 65"],
+    ["bank:5733945764c70c26ab8dd016fe2d3c93278aec2bcb6559834b2a0ef3f576742e","2026-09-29",-8640,"HYDRO EXAMPLE"],
+    ["bank:78394679ab48f951188887640cd0c0d8cf073e8e3f867d5204f038735b8ac636","2026-09-25",245000,"ACME CORP"]
+  ],
+  "ca-td.csv": [
+    ["bank:9454de07856c2f120cdea616182ed23a601c98c0857325cfbacbea540ae31657","2026-09-25",245000,"ACME CORP PAY"],
+    ["bank:3e8e39ecba36a764042154e03db2b66058ee472c62cf2aeb5f4a91a2ad6f50f6","2026-09-29",-8640,"HYDRO EXAMPLE BPY"],
+    ["bank:6a6348150b64b2663e7679fea78625b6af311f06c473d5bc2d4cdff3248a459c","2026-10-02",-50000,"TFR-TO 6123456"],
+    ["bank:e33126afd755101f843f470164b8ad9125d834b4d86b93b78bc2e966d3c7b9ea","2026-10-07",-6327,"GROCERY MART #1"],
+    ["bank:10958de565ade862f188ce8af610b5dc8a9d57ca36fd2a32d880e8924ee52769","2026-10-14",7500,"E-TFR JANE EXAMPLE"],
+    ["bank:f280e6ec2cf6f64a2f142d2b662060adcae950e5fc87aacb8a8891411ad179a0","2026-10-20",-400,"MONTHLY ACCOUNT FEE"],
+    ["bank:d37e4dbb97e1861a556efa6a1e909b7c7693d6a366a34ee9db33b235f75db0ae","2026-10-21",-12000,"TD VISA A1B2C3"]
+  ],
+  "camt052-intraday.xml": [
+    ["bank:a1f8080e01e53b4a680d7cee89bd663ff6450318712d1a8591c72826be793ff2","2026-10-22",-2340,"Bäckerei Beispiel"],
+    ["bank:357c4b2ed158f816191812182b5a5358f29bc60e1fdfa866577c53e908616dc1","2026-10-22",1500,"Erika Musterfrau"],
+    ["bank:580e4bd994ffce3d0f65255e710650afebccdcde5ff15f57659d40dcee3ee772","2026-10-22",-25000,"Max Mustermann"]
+  ],
+  "camt053-pending.xml": [
+    ["bank:934d0254c6da0a0b83d3cb2a697efef4dfcd7195e3a45869aae77b02583de648","2026-10-15",-11250,"ACME Verzekeringen N.V."],
+    ["bank:f43bb6805503ac3777474d65c92915272e841d2ddaf15e1c31bfff3144de64d2","2026-10-15",285000,"ACME B.V."],
+    ["bank:322868bc2beafb4e1f9ee2f378cdfbbee315d41ca20e62d088ece9f3f134f17f","2026-10-15",-30000,"M. Musterman"],
+    ["bank:a05bbfe9fb93f19311f923d30a160ed8a2a6e409e03d02113e0def9df0abc6ef","2026-10-16",11250,"ACME Verzekeringen N.V."]
+  ],
+  "ch-postfinance.csv": [
+    ["bank:1c15374727c8ecef5c150b4769c488a870b60d76e9b8a38bb4b3e3f1ef6655ed","2026-10-02",-8540,"E-FINANCE ELEKTRIZITÄTSWERK BEISPIELSTADT RECHNUNG 4711"],
+    ["bank:cfe383156caf035d5cc176bd08981bc9353d632a157123d1d04911d458cf2e49","2026-10-01",-50000,"ÜBERTRAG AUF KONTO CH0009000000987654321 SPARKONTO"],
+    ["bank:1a61074b3a61eb0452264950bcd71ee0a7af56f9bd1942cdeb93d96a117f12d9","2026-09-25",520000,"GUTSCHRIFT AUFTRAGGEBER: ARBEITGEBER MUSTER AG LOHN SEPTEMBER 2026"],
+    ["bank:ec0e21085f2b0481376e8732c8488e525a8c0c8f43227ebabd51c5dbb257ab53","2026-09-15",-4616,"KAUF/ONLINE SHOPPING VOM 15.09.2026 KARTEN NR. XXXX1234 AMAZON EU LUXEMBOURG EUR 49.00 KURS 0.942"],
+    ["bank:d28230d1572387f0d5a1f13fcc029c7726680349293792fe4c8793a108334bbf","2026-09-15",-69,"BEARBEITUNGSGEBÜHR FREMDWÄHRUNG"],
+    ["bank:1fa6b994b68a0fec050a7e74584895b73897fc5d281e45a3cbf62c000392a683","2026-09-14",-1290,"KAUF/DIENSTLEISTUNG VOM 14.09.2026 KARTEN NR. XXXX1234 COOP-1234 ZUERICH"]
+  ],
+  "ch-ubs-classic.csv": [
+    ["bank:27af976502abe1ee21a083aa1e6a482f4c8c42d2402fbccfaeca0d761822bcee","2026-09-14",-1290,"Coop-1234 Zürich"],
+    ["bank:3f354742cd95986acef80840fc2cd0beccf3c32f1c061fcb18880e8bd5429cdf","2026-09-15",-4616,"AMAZON EU SARL Luxembourg"],
+    ["bank:1db5329fd44d72c5976e3cef64a030d820a543e20fe569c70f7720e2d81b4919","2026-09-15",-69,"Bearbeitungsgebühr Fremdwährung"],
+    ["bank:e1a119b184edf456463fa7334963e43b62ac7a9e20fd2ad8282b90529617831c","2026-09-25",520000,"Arbeitgeber Muster AG"],
+    ["bank:4af33877e293e94956d5a1fadcb0d50e35aee88975def525b5ace537418d7b7a","2026-10-01",-50000,"Max Muster"],
+    ["bank:9cfe87424e577a97e5104d817b1de32cc04130342496dfe4b72a612352d6fbd4","2026-10-02",-8540,"Elektrizitätswerk Beispielstadt"]
+  ],
+  "cn-alipay.csv": [
+    ["bank:22b5e6c90dc726ed5814a6587138a7f11d200a7e39b6281d2f714fd0315db494","2026-10-21",-3850,"示例餐厅"],
+    ["bank:5041c8d33d7c5e946e89cc95fc7b5f5eb9e86196abe647f04a8545e60e8c3e11","2026-10-18",20000,"李四"],
+    ["bank:f195c3cc4be9dbc3984c35c3f28193e558b779b877081a74d0b65e8fd6fbd014","2026-09-28",-9980,"示例通信公司"]
+  ],
+  "cn-wechatpay.csv": [
+    ["bank:eacce0c3c45f201c7e60656b60b24d4f3deb2ed1a9d0aea26f7ee84f312c3246","2026-10-21",-2350,"示例便利店"],
+    ["bank:907f73a627eef21d908856226a667b95a2c890604c9663dbf973531719b3e746","2026-10-17",-30000,"李四"],
+    ["bank:eea2b402dec8aeaf63bc88931abcd623120887e56bb7c8ca68729eeed506050b","2026-10-12",3500,"示例外卖平台"],
+    ["bank:f2f9284e25cd585b4c19011d8e7fda140110ae601eec973972d6ff384457d9f7","2026-10-11",-3500,"示例外卖平台"],
+    ["bank:150cc016bb0850751804f6f7493124c5a531bff5957d10a00b855fdec258dbee","2026-10-08",8800,"王五"],
+    ["bank:af4c57d4801fa12a4e75a98f659b66ffa6e03cc8c164326d381727f81d19fe72","2026-10-02",-1200,"示例水果店"]
+  ],
+  "cn-wechatpay.xlsx": [
+    ["bank:eacce0c3c45f201c7e60656b60b24d4f3deb2ed1a9d0aea26f7ee84f312c3246","2026-10-21",-2350,"示例便利店"],
+    ["bank:907f73a627eef21d908856226a667b95a2c890604c9663dbf973531719b3e746","2026-10-17",-30000,"李四"],
+    ["bank:eea2b402dec8aeaf63bc88931abcd623120887e56bb7c8ca68729eeed506050b","2026-10-12",3500,"示例外卖平台"],
+    ["bank:f2f9284e25cd585b4c19011d8e7fda140110ae601eec973972d6ff384457d9f7","2026-10-11",-3500,"示例外卖平台"],
+    ["bank:150cc016bb0850751804f6f7493124c5a531bff5957d10a00b855fdec258dbee","2026-10-08",8800,"王五"],
+    ["bank:af4c57d4801fa12a4e75a98f659b66ffa6e03cc8c164326d381727f81d19fe72","2026-10-02",-1200,"示例水果店"]
+  ],
+  "de-comdirect.csv": [
+    ["bank:3dfd64ef1878470435b9012e8b0e22aea93aec76d71730421fa610e64d18eca6","2026-10-20",-50000,"Empfänger: Max Mustermann Kto/IBAN: DE00123456780000000099 BLZ/BIC: COBADEHD001 Buchungstext: Sparrate Oktober"],
+    ["bank:7f97b92a4e213d1dc288dc1e4b67d59cd003c95fb5ada2decc7283354b6dc58f","2026-10-01",-6420,"Auftraggeber: Stadtwerke Beispielstadt Buchungstext: Abschlag Strom Oktober Vertragskonto 4711 Ref. 4711-2026-10"],
+    ["bank:7d01ff1418ba5900f6bdc9dd95590a43d01250542ac5d9a989e3313f0b61956b","2026-09-30",245000,"Auftraggeber: Arbeitgeber Muster GmbH Buchungstext: Gehalt September 2026 Ref. LOHN-2026-09"],
+    ["bank:8474f0d09dad773b9aef43f320fbb70f9723bd180e2097b18719e4bcae1583c7","2026-09-15",-4608,"Buchungstext: AMAZON.COM*AB12CD SEATTLE US Karte Nr. 4871 78XX XXXX 1234 Kartenzahlung Originalbetrag 50,00 USD"],
+    ["bank:831f45679548923cee603b8029ca1e72b2430734f159291d09266cd3800f6ffa","2026-09-15",-81,"Buchungstext: Währungsumrechnungsentgelt 1,75% Karte Nr. 4871 78XX XXXX 1234"],
+    ["bank:5901720e0d01420770177472e24c797410c6289b38c184d15413d3e7f656daf0","2026-09-14",-1290,"Buchungstext: Café Süßholz Hamburg DE Karte Nr. 4871 78XX XXXX 1234 Kartenzahlung"]
+  ],
+  "de-deutsche-bank.csv": [
+    ["bank:9c02debb5219ecd1cf8f32dd044e83d3faec1625bce041aefabe230b7df76860","2026-10-20",-50000,"Max Mustermann"],
+    ["bank:8acadc3a192591d34cf678f6004094ba9fe1fb1dc034d42f846c4fb4afbdbc72","2026-10-01",-6420,"Stadtwerke Beispielstadt"],
+    ["bank:695a05e7f5a3a8ad235c7bacfd9629a92999561405f671d19ed7f4bf441c6f50","2026-09-30",245000,"Arbeitgeber Muster GmbH"],
+    ["bank:7b146e2b5abb9900bfda8f1376707ad1ee344454a6c97c4f351a4f14b3a41e0a","2026-09-15",-4608,"AMAZON.COM*AB12CD SEATTLE"],
+    ["bank:57c97fb73dd04ce511a2a01b9d4b6b30d6f379c31e29f4cadead274c87937613","2026-09-15",-81,"Auslandseinsatzentgelt Kartenzahlung 14.09.2026"],
+    ["bank:86282eb6d7268921947c92fcbc60689e7d7e966fee73fcae3cfabc7d1800aeed","2026-09-14",-1290,"Café Süßholz"]
+  ],
+  "de-dkb-2023.csv": [
+    ["bank:724a36d8b1fe83984bff722557753e4b4a7e4e54c2cf6e91435afb726684ee01","2026-10-20",-50000,"Max Mustermann"],
+    ["bank:319b60419765062bfefbcabfb01c4344a33c1d656b67ab060b6be4867d540137","2026-10-01",-6420,"Stadtwerke Beispielstadt"],
+    ["bank:0715f51ceb3ea7061b700e3ca6fb908b09b91dc38bcc7d499b011138d57fd692","2026-09-30",245000,"Arbeitgeber Muster GmbH"],
+    ["bank:3625f403aa9c4c8555216e49177f0e16e46ea99fde23a1e250db762c29e9b9c6","2026-09-16",-4608,"AMAZON.COM*AB12CD//SEATTLE/US"],
+    ["bank:746126d0a727e1cc66e749ece9742851a7f532ecb37a510055f015b8cbdceaee","2026-09-16",-81,"DKB AG"],
+    ["bank:679de0e0ed5e2dd18ac69003eebc876d60d7a67607b9427b5ba8ba262da9a4d3","2026-09-14",-1290,"CAFÉ SÜSSHOLZ//HAMBURG/DE"]
+  ],
+  "de-postbank.mt940.sta": [
+    ["bank:417937cf347f3d7f88bf048e55f2a89dec1fd43a1b908a7d70b139d1f857b419","2026-10-01",-6420,"Stadtwerke Beispielstadt"],
+    ["bank:5cea35b3729857af9e4fab68d027f5c99fde720cc6f603574feb06a5d78466dc","2026-10-01",245000,"Arbeitgeber Beispiel GmbH"],
+    ["bank:5e03eeef83d46b29c82f7ad810812e37ec48888e6d8a9551a1f2fd4b5ce1e305","2026-10-02",-2345,"REWE Markt GmbH"],
+    ["bank:6b4e5db23fd2f821afa3c56a52bea703e95497848d20514f35a2d6ede93d1854","2026-10-02",-1299,"Netflix International B.V."]
+  ],
+  "de-sparkasse-camt-days.zip": [
+    ["bank:417937cf347f3d7f88bf048e55f2a89dec1fd43a1b908a7d70b139d1f857b419","2026-10-01",-6420,"Stadtwerke Beispielstadt"],
+    ["bank:5cea35b3729857af9e4fab68d027f5c99fde720cc6f603574feb06a5d78466dc","2026-10-01",245000,"Arbeitgeber Beispiel GmbH"],
+    ["bank:5e03eeef83d46b29c82f7ad810812e37ec48888e6d8a9551a1f2fd4b5ce1e305","2026-10-02",-2345,"REWE Markt GmbH"],
+    ["bank:a692a655c737b78db80585fadc3d80f3f2d6549a7e6b97cafc983f1da0e2b5ca","2026-10-02",-12000,"Garagenvermietung Beispiel"],
+    ["bank:9a867f10b36678ca05733d5b83011d128f1eff2e68a7ce128107778bde245d11","2026-10-02",-3000,"Sportverein Beispiel e.V."],
+    ["bank:b60c8e9058a53edcc0eacae459f6e09b2af9c76b6027876084a08022f11a23fb","2026-10-15",-6420,"Stadtwerke Beispielstadt"],
+    ["bank:f540c957c87bcf9e611761d4f0c416164f3444272250b0a379911307aab53ba2","2026-10-15",245000,"Arbeitgeber Beispiel GmbH"],
+    ["bank:8258aa9cd0239d747842c1962ef8cf37175903c2643a67587696c1580c627f76","2026-10-16",-2345,"REWE Markt GmbH"],
+    ["bank:0ca26e237117677a7c05650963aea336bd33651f901d79c025926834fe02553f","2026-10-16",-12000,"Garagenvermietung Beispiel"],
+    ["bank:d512cabfbb4b0d0366297747d72fd6eb61abca6b570056b4d6dab36d4c040682","2026-10-16",-3000,"Sportverein Beispiel e.V."]
+  ],
+  "de-sparkasse-camt.csv": [
+    ["bank:f70c652f7dacfbe738ec4f2ed24fcd8550d8acce6638dd89094c60d30fa8b62e","2026-10-20",-50000,"Max Mustermann"],
+    ["bank:8acadc3a192591d34cf678f6004094ba9fe1fb1dc034d42f846c4fb4afbdbc72","2026-10-01",-6420,"Stadtwerke Beispielstadt"],
+    ["bank:695a05e7f5a3a8ad235c7bacfd9629a92999561405f671d19ed7f4bf441c6f50","2026-09-30",245000,"Arbeitgeber Muster GmbH"],
+    ["bank:9326e268ced05a2cb1dc441c6b9b2848ad63a407d502ce763f0ad8b9c54a400e","2026-09-15",-4608,"AMAZON.COM*AB12CD//SEATTLE/US"],
+    ["bank:57ca94c8611006689eb7aa97412debc157d84c4c6d0340615bdd2fab73d28f75","2026-09-15",-81,"Auslandseinsatzentgelt 1,75% 2026-09-14 Debitk.1"],
+    ["bank:b00e96941d0cdc9e4d860ca932a8cee669663a51d50d7f4add8ec4cf49d5d952","2026-09-14",-1290,"Café Süßholz//Hamburg/DE"]
+  ],
+  "de-sparkasse.camt053.xml": [
+    ["bank:417937cf347f3d7f88bf048e55f2a89dec1fd43a1b908a7d70b139d1f857b419","2026-10-01",-6420,"Stadtwerke Beispielstadt"],
+    ["bank:5cea35b3729857af9e4fab68d027f5c99fde720cc6f603574feb06a5d78466dc","2026-10-01",245000,"Arbeitgeber Beispiel GmbH"],
+    ["bank:5e03eeef83d46b29c82f7ad810812e37ec48888e6d8a9551a1f2fd4b5ce1e305","2026-10-02",-2345,"REWE Markt GmbH"],
+    ["bank:a692a655c737b78db80585fadc3d80f3f2d6549a7e6b97cafc983f1da0e2b5ca","2026-10-02",-12000,"Garagenvermietung Beispiel"],
+    ["bank:9a867f10b36678ca05733d5b83011d128f1eff2e68a7ce128107778bde245d11","2026-10-02",-3000,"Sportverein Beispiel e.V."]
+  ],
+  "de-volksbank-legacy.csv": [
+    ["bank:724a36d8b1fe83984bff722557753e4b4a7e4e54c2cf6e91435afb726684ee01","2026-10-20",-50000,"Max Mustermann"],
+    ["bank:319b60419765062bfefbcabfb01c4344a33c1d656b67ab060b6be4867d540137","2026-10-01",-6420,"Stadtwerke Beispielstadt"],
+    ["bank:0715f51ceb3ea7061b700e3ca6fb908b09b91dc38bcc7d499b011138d57fd692","2026-09-30",245000,"Arbeitgeber Muster GmbH"],
+    ["bank:082a55e7ea528d18c87a9abed2b9563ccceed5cdcb8e736ad9e1d0b35bc0a705","2026-09-15",-4608,"AMAZON.COM*AB12CD SEATTLE"],
+    ["bank:9e5298dc375f33470a912f686aa371472bb06d2f7c92cc5ee5934e850aceea5a","2026-09-15",-81,"Volksbank Beispielstadt eG"],
+    ["bank:382b482b19b711fd2190c537fd3222b8d8de94ea47bcff52d56e2f48e8bf3bf8","2026-09-14",-1290,"Café Süßholz Hamburg"]
+  ],
+  "dk-danske.csv": [
+    ["bank:bb69dfb4b32ae62e5375034f4c7369d89ed7df0ac99edc188b403f228508c665","2026-10-16",-985000,"Husleje oktober Boligselskabet Eksempel"],
+    ["bank:0df0cee39d4e942c49471a5ac85087e6cca41324446db9ca295b76abf773c695","2026-10-14",-33575,"Visa køb EUR 45,00 Café Exempel Berlin"],
+    ["bank:bd4a61b841c1f164df7c8f5ce9ea6312d5aaf90677ec18a5ca5038a2eb766cc1","2026-10-08",-12500,"Gebyr Visa/Dankort"],
+    ["bank:7ab5fa153bd256e9ae3988021642301ad9eabfdaa8a0cf1a7001d5403479cd55","2026-10-05",-500000,"Overført til Opsparing"],
+    ["bank:6f3a8a828ca6f0d5aefce3ebb851d942c5f61e6f17f2c258a3c4ea2a93f9c655","2026-10-02",-31275,"Netto Frederiksberg"],
+    ["bank:93ef6d65f17925d04a6b35f0247bee3ceb2df56846a7eb9cbddca1a57be58619","2026-09-30",2450000,"Løn Eksempel ApS"]
+  ],
+  "es-bbva.xlsx": [
+    ["bank:659c8bc09e61bf35ce8678d154da50e2301164bfed0cf294926b7e951bab6c53","2026-09-25",215000,"Nómina ACME SL"],
+    ["bank:b513193cd81fe3672ed99e43ed4357db94f307b0430c6aaab4e26004b299bc48","2026-09-28",-6435,"Mercadona Valencia"],
+    ["bank:0417441f5e850f1fb5063433e36b23c0192b1dcf0d3870a769b61f266b7dabb2","2026-10-01",-4820,"Iberdrola Clientes"],
+    ["bank:80fcde36c2bb2c9ca282485c721107e718240977cac018376498922f27026e40","2026-10-03",-30000,"Transferencia a Ahorro"],
+    ["bank:69641605f25802ba34ed68859b62599f9108fa56145be74bc35cf50ddd9b1ec4","2026-10-07",-2399,"Amazon EU"],
+    ["bank:cf21758583800e9839468d0fb5e290e665b72cd12d3e58882f12763357697d2e","2026-10-12",2399,"Amazon EU"]
+  ],
+  "fr-bnpparibas.csv": [
+    ["bank:10dcbaacb4b959deb75169ec647f62466caf4e9031e6f9aa9e32dddc91b43952","2026-10-15",-460,"DU 141026 BOULANGERIE EXEMPLE CARTE 4974XXXXXXXX1234"],
+    ["bank:4a5a52de756c6f886b273c228b87c39930584014d0d7fd3204124db2cbc00225","2026-10-13",-276,"COMMISSION PAIEMENT PAR CARTE HORS ZONE EURO"],
+    ["bank:b18f9dea74e26c34f5aa2bd535cc586b966b047455cdfae21b183352f4000dfe","2026-10-13",-9840,"DU 121026 HOTEL EXEMPLE LONDON CARTE 4974XXXXXXXX1234 85,00 GBP"],
+    ["bank:1693c35521d9faba1d91cde786b2ffac070aea81cc1de532cac781c2a3bbd0a9","2026-10-05",8500,"/DE M JEAN DUPONT /MOTIF LOYER PARKING"],
+    ["bank:96731bf4a9f1e18a0dde33f26071834651da4df446bc3d5c114991f1d09d4ee6","2026-10-02",-10000,"/MOTIF EPARGNE /BEN M DUPONT JEAN LIVRET A"],
+    ["bank:275e0a3b981b4589db88d56df84bb17febce2bbaac59ee4bc74216dca26af3a1","2026-09-28",-6420,"ENERGIE EXEMPLE ECH/280926 ID EMETTEUR/FR00ZZZ000000"],
+    ["bank:534d88281d4c60c2a83d851ba0acbf3e7d1edda0b6ade0d11b8995fa3bad4f12","2026-09-25",185000,"/DE EMPLOYEUR EXEMPLE SAS /MOTIF SALAIRE SEPTEMBRE"]
+  ],
+  "fr-boursorama.csv": [
+    ["bank:fdf85662352798b33e2bfb1afe700016865df70cb7b1bf844b09b2d5aae2aadd","2026-10-16",-640,"Boulangerie Exemple"],
+    ["bank:79a2584b08523e727b3f5acce8d46149e4d4949543ea8bcde8ccc83b5f3cdf83","2026-10-14",-191,"FRAIS PAIEMENT HORS ZONE EURO CB*1234"],
+    ["bank:feed0354012f28eca2af058fbc46aacffdfe208c31ae6c7ccb54c53d28f1e3dc","2026-10-14",-9801,"Hotel Exemple"],
+    ["bank:612673bd577c6f77a9feec13bb3fa2a95c8a107cddc96ebd1fd6237feeca49e6","2026-10-05",31250,"CAF Exemple"],
+    ["bank:7a203a36862d4a20da81a35c13e102e039fcfe224282f0dd5a310f7c84444999","2026-10-03",-20000,"VIR Virement interne vers Livret Bourso+"],
+    ["bank:ac20ede70d28a89b738839322a699dd55f47529451be2c22c4880246d46b6d0c","2026-09-28",-6420,"Énergie Exemple"],
+    ["bank:ded5f8c0073f9ea6bd0fb0d83820fa172e5c39007b132f98a25815731852645d","2026-09-25",2350,"Caisse Primaire Exemple"]
+  ],
+  "fr-cic.csv": [
+    ["bank:2f750898c16f1c68c0557ff0325a9de41e8b469bfa9fcdb79377d244faafee73","2026-09-25",185000,"VIR EMPLOYEUR EXEMPLE SAS SALAIRE SEPTEMBRE 2026"],
+    ["bank:488931b3c532b15e3267062ad9bb17fbf10116eb11055111a71d08890d9a4231","2026-09-28",-6420,"PRLV SEPA ENERGIE EXEMPLE ECH 09/2026 FR00ZZZ000000"],
+    ["bank:08f5a4f08886b47eb4d7958577dad54140f915edbd07c6230f9e3ab86354c11c","2026-10-02",-10000,"VIR DUPONT JEAN VERS LIVRET CIC EPARGNE"],
+    ["bank:0435b74e21ebdd2032ef461a2abb2477f40b79e1165aff47114f93e5993a0076","2026-10-05",8500,"VIR M JEAN DUPONT LOYER PARKING OCTOBRE"],
+    ["bank:aebf970e1007b08f5825f61b4cbedf9ba9453740346ef8a4bceb0334d2a8b5d5","2026-10-13",-9840,"PAIEMENT PSC 1210 LONDON HOTEL EXEMPLE CARTE 00000000 85.00GBP"],
+    ["bank:b069784c4a97859bc82a8f99e34a6270cfa0e44a180ab8b70de044669ccb5098","2026-10-13",-276,"FRAIS PAIE CB OP ETRANGER 1210 HOTEL EXEMPLE"],
+    ["bank:335348ad9807d90da6e73c8f5d4f6b1d9e346f3ccbcf598942cf69cc9319132b","2026-10-15",-460,"PAIEMENT CB 1410 PARIS BOULANGERIE EXEMPLE CARTE 00000000"]
+  ],
+  "gb-lloyds.csv": [
+    ["bank:60da53143b13cd59646342539b74c825314432f9f4c5540b773e01c09824c24d","2026-10-20",1250,"J EXAMPLE PIZZA NIGHT"],
+    ["bank:872a5b0b43adf983cc7c0f24c0dcd08aebef27bf69a822ed3e6a57b95ab23b0b","2026-10-17",-2399,"AMAZON.CO.UK*AB12C3"],
+    ["bank:3f99307b2465c578ac09c79b7d6a1b9e94d1e45320ecc23733cf0790fb896232","2026-10-13",-3800,"THAMES WATER"],
+    ["bank:993f91f204c3ac9e17410351093a1f02787018d5a32c7cbc32df1d23d062a9c5","2026-10-06",-20000,"J EXAMPLE SAVINGS ACC"],
+    ["bank:9f30219ed05a02a9d0e2f26a51bb1029df1a274b7e345216bafd7bbbab0a0915","2026-10-03",-485,"PRET A MANGER CD 1234"],
+    ["bank:cb82be0be16e6c7460c30c3c7a75adc37ec9c8a8ff5aa487c60f3916b5c155d9","2026-10-01",215000,"ACME PAYROLL LTD"]
+  ],
+  "gb-wise-statement.csv": [
+    ["bank:a807c3f5a4efc49bb3cb599ec6823f5b8d258fa6a1c34f444bee06410108c82c","2026-10-15",-65000,"Oak Lettings Ltd"],
+    ["bank:0677b67b0f10f2193a5276beb419b2a9e8d2793e94a22bf228342c2de1f494ba","2026-10-08",-30000,"Converted GBP to EUR"],
+    ["bank:09f8a5832f8c019aff52ac5d58e793a6985bbeb58a98896e310396ebfa39da87","2026-10-08",-137,"Wise Charges for: BALANCE-3900000001"],
+    ["bank:035be010961ae4eb62413477859e4e5348beb42d1c6239b7dfc594732f41c461","2026-10-03",-2031,"Café Lumière"],
+    ["bank:f91d1a82d9a21cfbafc78e4f364a9ca64368dac75a68f3343436a5f60ecda289","2026-09-29",75000,"Jane Example"]
+  ],
+  "il-isracard.csv": [
+    ["bank:a5fb916088d8052e966344b8e0865cdb7b7e658f58a34a18a732d71b9eff5973","2026-09-27",-31240,"סופר לדוגמה"],
+    ["bank:a79084e9d2880278770926bdeddf13dc28781d1a884f1c3778e51ed359347140","2026-10-01",-5990,"סלולר לדוגמה"],
+    ["bank:ebf5f36107a98557b0f80e5b570f74e43c33df6c7e038c26e57bc9a5f3a4fafb","2026-10-04",-17123,"EXAMPLE BOOKS LONDON"],
+    ["bank:bad0863f3fd0ac2366de0c7b2110be904a1cae567f3ea34ad53b32dea49257f7","2026-10-08",-40000,"רהיטים לדוגמה"],
+    ["bank:66adf8887fe4a62ad1533060966a9049cf102b103ca63f86798213f8dcd03408","2026-10-12",14990,"חנות בגדים לדוגמה"],
+    ["bank:55d04284b62d6df69ad7ad6ec9cc78c42e3cc6a3ecc816df697e3228eb0352ed","2026-10-18",-22000,"תחנת דלק לדוגמה"],
+    ["bank:68e0fd6c11827dd896e0ea8a994fa63204aa751d75c21716ae8411e78d8b33a7","2026-10-21",-18650,"מסעדה לדוגמה"]
+  ],
+  "in-icici.csv": [
+    ["bank:90d5db841ba4e3450ac88c05e1eb96b69ed23c634f8498b7eff9d3c69d28f2af","2026-09-25",8500000,"NEFT-CITIN26092512345-ACME SOFTWARE PVT LTD-SALARY SEP 2026-0000123456789"],
+    ["bank:d80e8d96364d5e1979b8f730b6b8a7e3844f1f1e78107897f46ecaf2eb9cbc08","2026-09-27",-45000,"UPI/626912345678/Payment/shopexample@okaxis/AXIS BANK/ICI1a2b3c4d5e6f"],
+    ["bank:9fefe0836a22a2f464c7dfde456f6e74ec554e112d9c8c0c6172c6f556b41174","2026-10-01",-185000,"BIL/ONL/000123456789/EXAMPLE POWER/1234567890"],
+    ["bank:39a8e04e8ba2b15558afbd247d4d08992c7f68dac32d3b6cfe15cbd65d76b571","2026-10-03",-1000000,"INF/INFT/012345678901/Self transfer/RAVI EXAMPLE"],
+    ["bank:8ca44c2d7a7af126c7f286014cd58d7bfc14f59ef3a1d474a93dbc3f41d56048","2026-10-06",-320000,"CLG/EXAMPLE HOUSING SOCIETY/000123/HDF/06.10.2026"],
+    ["bank:7810a890680f41a60e11dc31c3e61f488a3e034705a580636091275f9b225c45","2026-10-08",60000,"UPI/628112345678/Dinner split/priya.example@oksbi/STATE BANK OF I/SBI0a1b2c3d4e5"],
+    ["bank:0a120a6fccc80512bcd0cfa47e18a1c3594c6de5b27f84cd4a64ef8580c50628","2026-10-12",-432150,"VPS/EXAMPLE STORE /202610121234/628512345678/LONDON"]
+  ],
+  "it-unicredit.csv": [
+    ["bank:8f8ee7d74145736ab9ff9590430d8d62ae76a8558ca1947f1a414cb15989dc73","2026-10-15",-460,"PAGAMENTO POS 4,60 EUR DEL 14.10.2026 A ROMA BAR ESEMPIO CARTA N. *1234"],
+    ["bank:be52ffc7f413c7d58ea2a786e3a823b53fa6d46fd6ee1f872898b51bbe27a382","2026-10-13",-10116,"PAGAMENTO POS 85,00 GBP DEL 12.10.2026 A LONDON HOTEL ESEMPIO CARTA N. *1234 COMM 2,76"],
+    ["bank:d7a0f0682edf9efd42c9b5134bb71cbf34a94a93f62e28ff24e3493f64eea11a","2026-10-05",8500,"BONIFICO A VOSTRO FAVORE BONIFICO SEPA DA LUCA ESEMPIO PER QUOTA ATTIVITÀ; GRAZIE TRN 0000000003"],
+    ["bank:f620f7c22e64bb02430d76c3770090275824a82bbbd450ce773a7b9c6f31993e","2026-10-02",-10000,"DISPOSIZIONE DI BONIFICO BONIFICO SEPA A MARIO ESEMPIO PER GIROCONTO SU CONTO DEPOSITO COMM 0,00 SPESE 0,00 TRN 0000000002"],
+    ["bank:665e0ef9b72479f6a534ff9d8fc55221c2063ffa334d45a8fc08fca88986f87d","2026-09-28",-6420,"ADDEBITO DIRETTO SDD ENERGIA ESEMPIO S.P.A. CID IT00ZZZ0000000000 RIF. MANDATO 0001"],
+    ["bank:5cc3c0ce9e31afe02290487580929e8dd2d0143af7ccf46b326abed7afdb45e6","2026-09-25",185000,"BONIFICO A VOSTRO FAVORE BONIFICO SEPA DA AZIENDA ESEMPIO SRL PER STIPENDIO SETTEMBRE 2026 TRN 0000000001"]
+  ],
+  "jp-mufg.csv": [
+    ["bank:8de44a22aefaac85219e8831b41fe92bb22b994898cd201980d35630e76d78fd","2026-09-25",28500000,"カ）サンプルシヨウジ"],
+    ["bank:32450ce3dbcf7b62abee75b5decb973be4d858ff0ebfd7f2354bbedd59f78d2f","2026-09-28",-864000,"サンプルデンキ"],
+    ["bank:9de395c2be366ed446ec59dcbf535e7a25ab5a62c7390d1f54c4ee078383f3a0","2026-10-01",-2000000,"カ－ド"],
+    ["bank:c2c44721bb20b10fb9dc24eacfcc632a13e02aeb5ab3e866a54927b2aff6a85b","2026-10-05",-10000000,"テイキヨキン"],
+    ["bank:1a4d13220e88398de84e7db63c1dd14155e993284542b8984dbe65f7fe1227cb","2026-10-14",-1000000,"リヨウキヨク０２３４５"],
+    ["bank:f17c71b5216ed9d3eaa1e2a4e576345827bbbfc94f12b64b6ce9ff9c20354fc8","2026-10-20",1200000,"ヤマダ ハナコ"],
+    ["bank:a292200746f700271ce1dcfee82eac4802b637c814b440fadb84a984451aefb2","2026-10-22",-500000,"カードＣ１"]
+  ],
+  "jp-rakuten.csv": [
+    ["bank:49f6e45aa347b6e051a67121b36d9b9885520dba2ed07562bd0c8549bb5047ca","2026-09-25",24500000,"給与 カ）サンフ゜ルシヨウシ゛"],
+    ["bank:7461c7c35a8e27406bf5ca45b58c833210d0df3740238a6b2f9d8c1fc1f9c245","2026-09-27",-864000,"ラクテンカ－ト゛サ－ヒ゛ス"],
+    ["bank:880fa32249dcf7cf38bd8fb501fcd4b67f3124494e6b76c73a4f792bea4e6a77","2026-10-01",-5000000,"振込 ヤマタ゛ タロウ"],
+    ["bank:fdfa76f3a5e41a768111cb008061208cacf40eadcff504cba5c1f13ce7266c2b","2026-10-06",-328000,"ＶＩＳＡテ゛ヒ゛ット サンフ゜ルストア"],
+    ["bank:b0dea07af6a22b9ada43b6889ae1b7e26a07ffe166eac8a7c58fddf2e2a6fefa","2026-10-14",120000,"振込 サンフ゜ルストア ヘンキン"],
+    ["bank:db318b547c5bbb51055541d02e440c1541f0a36dabd281a187a293b05450d754","2026-10-20",-16500,"振込手数料"]
+  ],
+  "lt-revolut.csv": [
+    ["bank:89893e29d180c9f100bd2a36b04b392c300410ef6c76957c9ab2fbcedc07023b","2026-09-28",50000,"Top-up by *4821"],
+    ["bank:e805cda70bca34599843ce2531e979a3f805f48f54200a6ab266a804ab39d1cf","2026-10-02",-1840,"Corner Café"],
+    ["bank:ddaf644aba67f7104f0600eaa10343f657f0c7d8a07fd1ee03409e76845f4635","2026-10-05",-4645,"Amazon"],
+    ["bank:733382230a4b97a179f89b511253ec8dd15b8cc13bbf6d8aa5543bf0a5191010","2026-10-07",-20000,"To pocket EUR Holiday"],
+    ["bank:92457b5c66c7eaeac8a9d2e4ed5bdf13631a85cbbae75805b17dd4ed89c18658","2026-10-14",8500,"Payment from Jane Example"]
+  ],
+  "lt-swedbank.csv": [
+    ["bank:c2291b129ae51ffe2c6ba3986dc213664708b0ac48d49ec9a8ea6ca99f5e1ff5","2026-09-25",240000,"UAB Pavyzdinė įmonė"],
+    ["bank:ee247a4fd287ad0a6afc782fa613d70a4edfcb738c1837217a6032ab61fc013d","2026-10-02",-2349,"MAXIMA LT, X-123"],
+    ["bank:613ab8421f3587d80a7ec47cd0178b73edc06858504d260fc0abdf3babbee9d3","2026-10-05",-50000,"Jonas Pavyzdys"],
+    ["bank:e41eea13b2bb353f4e0e4a83fdad850818221186c4eaea92aa91515b67c9e569","2026-10-14",-4590,"CAFE EXEMPEL"],
+    ["bank:c98df2757b8fbd51d0f8d249462273896d0c7f30378968f88842bc0952e51a93","2026-10-16",-1220,"UAB Pavyzdys\"\""],
+    ["bank:a4d3b47515cb738e4fec37dfcbffcf3f1eb26e0755f07b6276f585519a0dbc4d","2026-10-19",-30000,"GRYNIEJI 5168********1234 19.10.26 17:29 300.00 EUR (015318) SWEDBANK BANKOMATAS>VILNIUS LT"]
+  ],
+  "mx-bbva.txt": [
+    ["bank:1a317e56af7b2c792e344c884b49023a0e9c646f8a648661628bd1128bddcb4d","2026-09-25",1850000,"DEPOSITO DE NOMINA/ACME CORP SA DE CV"],
+    ["bank:4182ed95595dbff075378fc3ad79bef63bd135e1777fe68fe703f685654734e8","2026-09-29",-48600,"PAGO SERVICIO LUZ EJEMPLO/REF 0123456789"],
+    ["bank:923389e9f410f81586fec43d7293038b44ea81c6264c8dc0667fdea73fdf3f7d","2026-10-02",-500000,"TRASP ENTRE CUENTAS PROPIAS/0123456789"],
+    ["bank:34b64bd78c4f126e3a8585c2ad623b2b3e53b10fccf5a03fd3de2096e16d9a52","2026-10-07",-123456,"SUPERMERCADO EJEMPLO/******1234"],
+    ["bank:1c6c7831f4d051c0570bb6ef7d406635e2e24123f14a7ff9cd98e833f72d26e5","2026-10-10",125000,"SPEI RECIBIDO/0012345 JANE EXAMPLE"],
+    ["bank:3e44e19a757cf201dabf2efdca10e7aeff859622ed6f4b5baa38720315bbc327","2026-10-15",-15000,"COMISION MANEJO DE CUENTA"],
+    ["bank:b29491a6efcfcbaadeb89e6b2dda09be8569b74ff8eee5027a7d80e3387922a0","2026-10-15",-2400,"IVA COMISION MANEJO DE CUENTA"]
+  ],
+  "nl-ing.mt940.sta": [
+    ["bank:694f427fe1ed19a36c689deb663fb0f9796961e023c62911d5ab70da3560ae7b","2026-10-01",-6420,"Energie Voorbeeld BV"],
+    ["bank:71dcde39fac0b7c4b51f31d2ade45104d7206ae0369c4cee1dda1856f956da2f","2026-10-01",245000,"Werkgever Voorbeeld BV"],
+    ["bank:1058ace2ef20183d8ac260c02abd4805f100aceb10fdcf768246abfff8c5b1a2","2026-10-02",-2345,"Albert Heijn 1234"]
+  ],
+  "nz-anz.csv": [
+    ["bank:8ff2b4ab48d839b0760289bd611e9de90e6e2e806506804ee7f9016ebbf3a9f2","2026-09-25",320000,"ACME LTD"],
+    ["bank:48f8e08adc9782050aeb1193286be199f6c2ef2c53dd7558bd69cc8bb05363c0","2026-09-29",-14560,"ACME POWER CO"],
+    ["bank:17d067c968e331e2de109735a7b8a9de5fbb7613084ce478f9319007a5e47414","2026-10-02",-60000,"J EXAMPLE"],
+    ["bank:1f1ad4d18aabaaa773ca5e11656498294657c7c3e893ccd47f7137fc60a767c9","2026-10-06",-4230,"EXAMPLE STORE LONDON"],
+    ["bank:53dfd3651956f3742049fc8301ee8a809861b3e74d095ecefe73164761d8ea7d","2026-10-10",-9215,"COUNTDOWN EXAMPLE"],
+    ["bank:8ce32b1dedeb0092a369db029757080a91bb6262832ddbb5ad77f841899719ed","2026-10-15",-4800,"EXAMPLE INSURANCE"],
+    ["bank:ed0feb5eabb05ab72625d44c26ff35e1aa8dc8e844f0cfdb35aacf2ce4668bcc","2026-10-19",3500,"Jane Example"]
+  ],
+  "ofx2-xml.ofx": [
+    ["bank:7d98491cf38c9f44a46124b1b427de09e5db79b7873ca98b97c6cc975de42b71","2026-09-30",310000,"ACME Corp Payroll"],
+    ["bank:57da76ee1f7e963a0dea56e27f949698ba9b09c38a1c45a66904b8933d5a7a66","2026-10-01",-145000,"Oak Street Rentals LLC"],
+    ["bank:c219cda94a69e3f1d84e939fc74d6f5930b2efa448a77002de5817a88bef409b","2026-10-04",-2380,"Boulangerie Éclair & Café"],
+    ["bank:08f74978b411efd5af7d76ca4a243ce12a53b2e8ac8012c633d79382986f40c6","2026-10-06",-40000,"Transfer to Savings"],
+    ["bank:8184657f0dd113d646d73d1966df468587e21870ba2d533cd305960b797f60aa","2026-10-08",-500,"Monthly Maintenance Fee"],
+    ["bank:939a6d92bce09a33fd8cc3a5a40448422ec606242baa6dfdc954142b6ffec6a5","2026-10-12",4299,"Online Store Refund"]
+  ],
+  "pl-mbank-legacy.csv": [
+    ["bank:6b3f68f070ca2537c31c49c85e0d02acdab20e58ca9ff3163a6554689e4409ea","2026-10-17",-2199,"SPOTIFY P3A1B2C3 /STOCKHOLM DATA TRANSAKCJI: 2026-10-17"],
+    ["bank:aa880649d6f00c23aaf05713d6c57cee243f5dd33f169826b44861c5f1687651","2026-10-16",-61240,"SPÓŁDZIELNIA MIESZKANIOWA PRZYKŁAD UL. TESTOWA 5 00-950 WARSZAWA"],
+    ["bank:c732dfd5a032a0b466a5dce11619b92c818f9f63f3b008c526561a94323c2abe","2026-10-14",-700,"OPŁATA MIESIĘCZNA ZA KARTĘ 5375********1234"],
+    ["bank:989517231a6c84fda9b0685fb33aede70998e10c3d9b5e01a21bda6d01051067","2026-10-05",-100000,"JAN PRZYKŁADOWY UL. PRZYKŁADOWA 1/2 00-001 WARSZAWA"],
+    ["bank:cb8bb877c7dfe413f644ddfff65850cd032f56b8d34883eaa40c210bedd50cf2","2026-10-02",-2349,"ŻABKA Z1234 K.1 /WARSZAWA DATA TRANSAKCJI: 2026-10-02"],
+    ["bank:0e977adcb78ffd5e41e70fdf518191c6f2262958dfefba76eb75d1c8d353aee3","2026-09-28",560000,"PRZYKŁADOWA FIRMA SP. Z O.O. UL. FIKCYJNA 10 00-002 WARSZAWA"]
+  ],
+  "qif-iso-dates.qif": [
+    ["bank:629d2c3cdfd61f42762561d0224ab4cb199ab2cff856c0565a0cdcd8c5d6d615","2026-09-25",245000,"ACME CORP SALARY"],
+    ["bank:945082cf6f698ec8069acfca19ec825dac9d844d1593f466039f9e0d6964c1a9","2026-09-28",-18480,"FRESHMART GROCERY"],
+    ["bank:bda7910c4b3c190a97e90ba7ca96ad1e614b4f30bf785da396fbab0474799d80","2026-10-02",-30000,"TRANSFER TO SAVINGS"],
+    ["bank:2bedebb30350f1de093f8727166a5f71d2b75d0482936d10929bc8cac4e20e48","2026-10-08",-1316,"EXAMPLE TELECOM"],
+    ["bank:9eefa40c576042d1f420acd1ba2a4aa222b517347cf123483bf31ef59e146e63","2026-10-08",-50,"CARD FEE"],
+    ["bank:ea89913837354761f4c8c81834ce3ae9e8be5269ca1524edf44052268243d7f2","2026-10-14",1999,"REFUND ONLINE STORE"]
+  ],
+  "ru-tbank.csv": [
+    ["bank:f72f2ca4fe3dd665fcae95bf3906871d14da4d3474876869b45861016aa5a911","2026-10-21",-153490,"Супермаркет Пример"],
+    ["bank:c192ed51b3b1b16d4bf9c605fc19fab8522322102fef88834f9bd54c477801b1","2026-10-18",-268735,"EXAMPLE HOTEL BERLIN"],
+    ["bank:d517760545de3d8f0c3e5a9f8afdf0e499146e0e61c2be3e2153676a5d57afeb","2026-10-15",8500000,"Зарплата ООО Пример"],
+    ["bank:abc302382b37a6b7eb155eb4787f0b702aa925c4328c32e851bf49226e2321a6","2026-10-12",-2000000,"Перевод на накопительный счет"],
+    ["bank:75a7f990d108bfd15d341476a3a6c4d253306e2f5ca2daf063dda01addfce957","2026-10-08",129900,"Возврат: Магазин одежды Пример"],
+    ["bank:3b42c54829ef5baf9e6a5425df6a18dd3e266056c515328b837fdcf35d032b55","2026-10-03",-345000,"Оплата услуг ЖКХ Иван Примеров"]
+  ],
+  "se-nordea.csv": [
+    ["bank:b9573d6e6c0aa0cd705f5b51d1433fb18facebf76a017a64856045e92d0389d4","2026-10-19",25000,"Anna Exempel"],
+    ["bank:6ae7c48a265b4b0511382c3ae89e834626166bb62032c32e756e90f8816cf2a1","2026-10-16",-985000,"Bostadsbolaget Exempel AB"],
+    ["bank:9b835b6193c64f4c9331355e0ebf32e7a412fd73f614b87a4c2fb2981d88cc7e","2026-10-14",-52340,"Kortköp 261013 CAFE EXEMPEL BERLIN"],
+    ["bank:7477f5516eea174a19756f5b7efc16d47c8c8ea705755c7630c4173c90f43965","2026-10-05",-500000,"Överföring till sparkonto"],
+    ["bank:c475762f58b2407a68818456afc6480c1acef9c7332047f9ccfc19ff2fdd7a47","2026-10-02",-31275,"Kortköp 261001 ICA NARA SODER"],
+    ["bank:136187965c83ec662c3db58efac109d2ae8cb4c94f53dcb34cb86ac37a08b527","2026-09-25",3200000,"Exempelbolaget AB"]
+  ],
+  "ua-monobank.csv": [
+    ["bank:1cc6b80f1bab8b973407e7d646657659ace89082b9b0d7091c3b3d809d3123c4","2026-10-21",-52340,"Супермаркет «Приклад»"],
+    ["bank:05b8253994252a25dea9e32c2f205f1161582fffdc20f47d79b116d8e4665a0b","2026-10-20",-55280,"Example Music"],
+    ["bank:ba496d3245a2d329d430b9cb38e8faa24d48df5139559bd02fccf3aec9243b69","2026-10-18",-200000,"На банку «Відпустка»"],
+    ["bank:5e953ce9aef1c01ab5a47e68e466c35b52e090eae4a7cfae1a60cc37f1cffc66","2026-10-15",4500000,"Від: ТОВ «Приклад Софт»"],
+    ["bank:2f46710f74255b1e798216326b2f2331f4fcc25b3ff873222f399642ffefab26","2026-10-12",-100500,"Переказ на картку: Олена П."],
+    ["bank:b8c86834a6db966e1a777ae1d0967ee35d815d42a82bac300000aa77db753cb8","2026-10-05",-87300,"Залізничні квитки"]
+  ],
+  "us-amex.csv": [
+    ["bank:fa87f7c98f8914681ac8124fefd7c3cb80a9744ababb5b4994fee50df54d0665","2026-10-16",-1485,"TST* CORNER CAFE SEATTLE WA"],
+    ["bank:11ac4e4c99efa1290f527f8dc9dbd4b0f5eeec03d9ce013885c440df07ea4e26","2026-10-14",50000,"AUTOPAY PAYMENT RECEIVED - THANK YOU"],
+    ["bank:ddca1fa40e73854189c0f19d2a1fbbf8ad2b58ed34a2851b2231a3749fd41697","2026-10-09",-3742,"AMAZON MARKETPLACE NA PA AMZN.COM/BILLWA"],
+    ["bank:7184e79ce91be7ea8f69c06f385e4c0361eb0ce67436ccc4387ef65b627fe402","2026-10-07",1999,"AMAZON MARKETPLACE NA PA AMZN.COM/BILLWA"],
+    ["bank:59ba076cfeda587909e62e7253109b4961b37d215bd20a1541e7fbdf20e85963","2026-10-02",-2495,"CAFE EXEMPLE PARIS"],
+    ["bank:54c8df0359979a488eba02bd1762dc0a94509d91b61051a9bd7238c857a09b05","2026-09-24",-108995,"EXAMPLE FURNITURE CO SEATTLE WA"]
+  ],
+  "us-bofa-checking.csv": [
+    ["bank:879a9cb1bbc68dcf7cf2ce8cc0a27aaf17db11ae0a35b9600ff477d1d3db78f0","2026-09-18",-845,"CORNER CAFE 09/17 PURCHASE SEATTLE WA"],
+    ["bank:ecd7c5b6e810e85a745fc8027d6e8ef24205423b1828f9c9e720e85d867f1408","2026-10-01",247500,"EXAMPLE CORP DES:PAYROLL ID:XXXXX12345 INDN:EXAMPLE,JANE CO ID:XXXXX98765 PPD"],
+    ["bank:61ce3f383cfbeef547e1dc6e5e26da1c8a605567138a1a9b66dfe07e7ff6b676","2026-10-03",-100000,"Online Banking transfer to SAV 0000 Confirmation# XXXXX67890"],
+    ["bank:aad2ea840048b28c3dd8b2652865af495e7f66fad363df9369bbaae4a2269f07","2026-10-07",-2310,"CAFE EXEMPLE 10/06 PURCHASE PARIS FR"],
+    ["bank:8d9a3fff2709902652110b41837130766fd26b93a8100c3019d3cc08771a2051","2026-10-07",-69,"INTERNATIONAL TRANSACTION FEE"],
+    ["bank:f94b5c6e10fbdc7643598cd2708b66baec046fad04b19303085d1b82c3908225","2026-10-12",-8128,"CITY UTILITIES DES:WEB PMT ID:0000012345 INDN:JANE EXAMPLE CO ID:XXXXX00000 WEB"]
+  ],
+  "us-chase.qfx": [
+    ["bank:5791c6a9052f48c01ed6681d4613072382247661e7b2769287f38c6409bcb5bd","2026-10-01",-4567,"STARBUCKS STORE 12345"],
+    ["bank:6872e2e20b676a3e22743941dfe5ded35d26f2a91d2e0ff7c2ccb7ebdc689c30","2026-10-01",150000,"ACME CORP PAYROLL"],
+    ["bank:a9aaf2b00bba9779c1f90fcab0d401a9f62d0b9485adc4b975d37496058bc134","2026-10-02",-12000,"CHECK 1234"]
+  ],
+  "us-paypal-activity.csv": [
+    ["bank:2a7384cf88fd9cdf222faa4c1fa3dc25ce5f7a695a25aa7a83fcf3bc57525cf6","2026-09-28",-5420,"Example Outdoor Co"],
+    ["bank:5edd6165c36f7f00e2769b861a2083c063c464b1b4c74e9761975919ee1af9fd","2026-09-28",5420,"General Card Deposit"],
+    ["bank:4ce0bc9d477b21f15c3ce418d1f79dce9781f83ed519500f303e0899222c2495","2026-10-03",2500,"John Example"],
+    ["bank:8aeb8d9d57ed0cc957a77ad8e6276641832621e6203f6f7eb6aeff90f97cf306","2026-10-05",9621,"Sam Buyer"],
+    ["bank:087f8dfb2bbc65abd09306e1faf4653d816c3daf35fb33fbf6b3f2ab8dcc0ba9","2026-10-09",-2305,"General Currency Conversion"],
+    ["bank:7e3a1ed340a4b6d1c35ab2950e5996dbe2ce01bcb60bc454868b01fd50b31998","2026-10-14",-9000,"General Withdrawal"]
+  ],
+  "us-quicken-all-accounts.qif": [
+    ["bank:4eb125e121cd0dcccf6710a556a7485787937be18ce213829c64c54e8347ab27","2026-10-01",-123450,"Sunset Apartments"],
+    ["bank:ac34e8cbeffdab642c2d3dd78ba67deeb1b2d2aa4b5f6479bda74fa69ce33cc2","2026-10-01",1200,"Interest earned"],
+    ["bank:38d397c1a562f85b9bc149bd18d4ae600e94c3a6d6d8ffe19fd3a00075fe0776","2026-10-02",-5678,"Corner Grocery"]
+  ],
+  "us-venmo.csv": [
+    ["bank:ee108e18b2adf6d536fa66aae4ffd93e3c2d20eca989ddd3578ed936cf4760f4","2026-09-27",2400,"Sam Sample"],
+    ["bank:1c673dd976412b9edf0f14b608bf4be2eacf4b09ce06148f8f9392a223743e68","2026-10-03",-65000,"Alex Placeholder"],
+    ["bank:8e491cf258d8379d9b298886d1673912b5a7006d9ffde7b5db410fb35082f0d0","2026-10-12",-10000,"ACME Bank Checking *1234"],
+    ["bank:886e1867f47277962e15c3fdabb96cb7386945f0b5d138e3bfc753e1f8c43d2f","2026-10-19",-20000,"ACME Bank Checking *1234"],
+    ["bank:50f3941e468e0984af6facef3792b426d2a054ca69499fa7d8e268fbe1cec2a5","2026-10-21",3275,"Riley Example"]
+  ]
+}

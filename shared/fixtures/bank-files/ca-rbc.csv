@@ -1,0 +1,8 @@
+"Account Type","Account Number","Transaction Date","Cheque Number","Description 1","Description 2","CAD$","USD$"
+Chequing,01234-5000123,9/25/2026,,"PAYROLL DEPOSIT","ACME CORP",2450.00,
+Chequing,01234-5000123,9/29/2026,,"Online Banking payment - 4821","HYDRO EXAMPLE",-86.40,
+Chequing,01234-5000123,10/2/2026,,"Online Banking transfer - 5517","TFR-TO 01234-5000456",-500.00,
+Chequing,01234-5000123,10/6/2026,117,"Cheque - 117","",-150.00,
+Chequing,01234-5000123,10/14/2026,,"e-Transfer received","JANE EXAMPLE",75.00,
+Visa,4510000000001234,10/8/2026,,"GROCERY MART #12 TORONTO ON","",-63.27,
+Visa,4510000000001234,10/20/2026,,"PAYMENT - THANK YOU","",500.00,

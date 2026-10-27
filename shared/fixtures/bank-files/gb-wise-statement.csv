@@ -1,0 +1,6 @@
+"TransferWise ID",Date,"Date Time",Amount,Currency,Description,"Payment Reference","Running Balance","Exchange From","Exchange To","Exchange Rate","Payer Name","Payee Name","Payee Account Number",Merchant,"Card Last Four Digits","Card Holder Full Name",Attachment,Note,"Total fees","Exchange To Amount","Transaction Type","Transaction Details Type"
+TRANSFER-1900000002,15-10-2026,"15-10-2026 09:12:03.877",-650.00,GBP,"Sent money to Oak Lettings Ltd","Flat 2 rent Oct",778.32,,,,,"Oak Lettings Ltd",00000000,,,,,,0.00,,DEBIT,TRANSFER
+BALANCE-3900000001,08-10-2026,"08-10-2026 10:00:00.105",-300.00,GBP,"Converted GBP to EUR",,1428.32,GBP,EUR,1.15210,,,,,,,,,1.37,345.63,DEBIT,CONVERSION
+FEE-BALANCE-3900000001,08-10-2026,"08-10-2026 10:00:00.104",-1.37,GBP,"Wise Charges for: BALANCE-3900000001",,1728.32,,,,,,,,,,,,0,,DEBIT,CONVERSION
+CARD-2100000001,03-10-2026,"03-10-2026 12:41:09.551",-20.31,GBP,"Card transaction of 23.40 EUR issued by Café Lumière PARIS",,1729.69,GBP,EUR,1.15214,,,,"Café Lumière",1234,"Jane Example",,,0.00,23.40,DEBIT,CARD
+TRANSFER-1900000001,29-09-2026,"29-09-2026 15:20:11.204",750.00,GBP,"Received money from Jane Example with reference Rent share","Rent share",1750.00,,,,"Jane Example",,,,,,,,0.00,,CREDIT,DEPOSIT

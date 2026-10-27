@@ -1,0 +1,29 @@
+"Volksbank Beispielstadt eG"
+
+"Umsatzanzeige"
+
+"BLZ:";"12345678";;"Datum:";"22.10.2026"
+"Konto:";"1234567";;"Uhrzeit:";"09:41:07"
+"Abfrage von:";"Max Mustermann";;"Kontoinhaber:";"Max Mustermann"
+
+"Zeitraum:";;"von:";"14.09.2026";"bis:";"22.10.2026"
+"Betrag in EUR:";;"von:";" ";"bis:";" "
+"Sortiert nach:";"Buchungstag";"absteigend"
+
+"Buchungstag";"Valuta";"Auftraggeber/Zahlungsempfänger";"Empfänger/Zahlungspflichtiger";"Konto-Nr.";"IBAN";"BLZ";"BIC";"Vorgang/Verwendungszweck";"Kundenreferenz";"Währung";"Umsatz";" "
+"20.10.2026";"20.10.2026";"Max Mustermann";"Max Mustermann";"";"DE00123456780000000099";"";"GENODEF1XXX";"Überweisung
+Sparrate Oktober";"";"EUR";"500,00";"S"
+"01.10.2026";"01.10.2026";"Max Mustermann";"Stadtwerke Beispielstadt";"";"DE00987654320000000011";"";"BYLADEM1001";"Basislastschrift
+Abschlag Strom Oktober Vertragskonto 4711
+EREF: 4711-2026-10 MREF: MREF-4711-2026 CRED: DE00ZZZ00000000001";"";"EUR";"64,20";"S"
+"30.09.2026";"30.09.2026";"Max Mustermann";"Arbeitgeber Muster GmbH";"";"DE00555566660000000022";"";"COBADEFFXXX";"Lohn/Gehalt
+Gehalt September 2026";"";"EUR";"2.450,00";"H"
+"15.09.2026";"14.09.2026";"Max Mustermann";"AMAZON.COM*AB12CD SEATTLE";"";"";"";"";"Kartenzahlung
+2026-09-14T20:11 Debitk.0 Original 50,00 USD";"";"EUR";"46,08";"S"
+"15.09.2026";"14.09.2026";"Max Mustermann";"Volksbank Beispielstadt eG";"";"";"";"";"Entgelt
+Auslandseinsatzentgelt 1,75%";"";"EUR";"0,81";"S"
+"14.09.2026";"13.09.2026";"Max Mustermann";"Café Süßholz Hamburg";"";"";"";"";"Kartenzahlung
+2026-09-13T12:30 Debitk.0";"";"EUR";"12,90";"S"
+
+"14.09.2026";;;;;;;;;"Anfangssaldo";"EUR";"1.000,00";"H"
+"22.10.2026";;;;;;;;;"Endsaldo";"EUR";"2.826,01";"H"

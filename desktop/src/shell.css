@@ -314,6 +314,38 @@ nav,
   gap: 2px;
   margin-left: auto;
 }
+/* A page's own actions beside undo and redo (HeaderSlot with `actions`), such as the register's
+   import and export, set off from them by a rule. */
+.header-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 6px;
+  padding-right: 6px;
+  border-right: 1px solid var(--border);
+}
+.header-page-actions:empty {
+  display: none;
+}
+.header-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-2);
+  font-weight: 500;
+  transition:
+    background-color 0.12s var(--ease),
+    color 0.12s var(--ease);
+}
+.header-button:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
 .sync-status {
   display: inline-flex;
   align-items: center;
@@ -348,7 +380,7 @@ nav,
   background: var(--negative);
 }
 /* A narrow header (a small window, or the assistant open beside the sidebar) gives way in steps:
-   the save status and the assistant button keep their words for screen readers only; then the
+   the save status, a page's actions and the assistant button keep their words for screen readers only; then the
    month name abbreviates; then the month picker and Today step aside (the arrows still change
    the month); last, undo and redo leave for their shortcuts. */
 @container app-header (max-width: 720px) {
@@ -363,6 +395,11 @@ nav,
   .sync-status {
     justify-content: center;
     width: 26px;
+    padding: 0;
+  }
+  .header-button {
+    justify-content: center;
+    width: 28px;
     padding: 0;
   }
 }

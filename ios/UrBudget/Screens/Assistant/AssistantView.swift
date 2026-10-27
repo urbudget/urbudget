@@ -23,6 +23,13 @@ struct AssistantRequest: Identifiable {
     let id = UUID()
     var text = ""
     var selected: [String] = []
+    /// Files to attach, such as a PDF statement chosen to import.
+    var files: [URL] = []
+    /// The bank file being imported when the assistant is opened over its import ({account,
+    /// content, session}): the assistant is told its lines.
+    var importing: JSON?
+    /// Applies fixes the assistant proposes for that import, from their card (its thread, the proposal).
+    var applyFix: ((String, JSON) -> Void)?
 }
 
 /// The assistant: a conversation about the budget whose changes arrive as proposals to review,
@@ -77,6 +84,7 @@ struct AssistantView: View {
             if let request {
                 if !request.selected.isEmpty { selected = request.selected }
                 if !request.text.isEmpty && message.isEmpty { message = request.text }
+                if !request.files.isEmpty { controller.attach(files: request.files) }
                 composing = true
             }
         }
@@ -161,7 +169,7 @@ struct AssistantView: View {
                         .accessibilityElement(children: .combine)
                         .accessibilityLabel("The assistant is working")
                     } else if controller.entries.last?.kind == "user" {
-                        Button("Continue interrupted reply", systemImage: "arrow.clockwise") { controller.retry() }
+                        Button("Continue interrupted reply", systemImage: "arrow.clockwise") { controller.retry(importing: request?.importing) }
                             .font(.subheadline)
                             .disabled(controller.busy.contains("send"))
                             .padding(.vertical, 8)
@@ -253,7 +261,7 @@ struct AssistantView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label("Couldn’t finish", systemImage: "exclamationmark.triangle.fill").font(.subheadline.weight(.semibold)).foregroundStyle(Color.urNegative)
                 Text(entry.json.text("text")).font(.subheadline)
-                Button("Try again") { controller.retry() }
+                Button("Try again") { controller.retry(importing: request?.importing) }
                     .font(.subheadline.weight(.semibold))
                     .disabled(controller.running || controller.busy.contains("send"))
             }
@@ -292,7 +300,8 @@ struct AssistantView: View {
                         shareFile(path)
                     }
                 }
-            })
+            },
+            applyFix: request?.applyFix.map { fix -> () -> Void in { fix(controller.threadId, proposal) } })
     }
 
     private func shareFile(_ path: String) {
@@ -379,7 +388,7 @@ struct AssistantView: View {
         guard canSend else { return }
         let text = message
         sent += 1
-        controller.send(text, selected: selected) {
+        controller.send(text, selected: selected, importing: request?.importing) {
             if message == text { message = "" }
             selected = []
         }

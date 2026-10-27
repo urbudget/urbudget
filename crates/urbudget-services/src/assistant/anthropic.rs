@@ -309,7 +309,7 @@ mod tests {
             { "type": "tool_use", "id": "toolu_1", "name": "get_month", "input": {} }
         ]);
         let items = vec![
-            Item::User { text: "hi".into(), attachments: vec![], context: String::new(), at: String::new() },
+            Item::User { text: "hi".into(), attachments: vec![], context: String::new(), at: String::new(), import: None },
             Item::Raw { provider: "anthropic".into(), value: raw.clone() },
             Item::Assistant { text: "Checking.".into() },
             Item::Call { call_id: "toolu_1".into(), name: "get_month".into(), arguments: "{}".into() },
@@ -331,7 +331,7 @@ mod tests {
     #[test]
     fn calls_from_another_service_are_rebuilt() {
         let items = vec![
-            Item::User { text: "hi".into(), attachments: vec![], context: String::new(), at: String::new() },
+            Item::User { text: "hi".into(), attachments: vec![], context: String::new(), at: String::new(), import: None },
             Item::Raw { provider: "openai".into(), value: json!({ "type": "reasoning" }) },
             Item::Call { call_id: "call_1".into(), name: "get_month".into(), arguments: "{\"month\":\"2026-10\"}".into() },
             Item::Result { call_id: "call_1".into(), output: "{}".into(), step: String::new(), failed: true, proposal: None },

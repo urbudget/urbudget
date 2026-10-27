@@ -12,7 +12,7 @@ export function PrivacySettings() {
     <label className="setting-row toggle">
       <span>
         <strong>Count this copy as in use</strong>
-        <small>Once a day, tells urbudget.app that a copy of UrBudget was opened, and whether that's its first time, or its first this week or month, with its version, system and where it was installed from. Nothing identifies you, this computer or your budgets.</small>
+        <small>Once a day, tells urbudget.app that a copy of UrBudget was opened, and whether that's its first time, or its first this week or month, with its version, system, where it was installed from and the week it was first opened. Nothing identifies you, this computer or your budgets.</small>
       </span>
       <input type="checkbox" role="switch" checked={usageCounts} onChange={(e) => setUsageCounts(e.target.checked)} />
     </label>

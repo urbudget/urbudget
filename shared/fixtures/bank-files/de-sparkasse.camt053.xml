@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02 camt.053.001.02.xsd">
+  <BkToCstmrStmt>
+    <GrpHdr>
+      <MsgId>camt53_20261003000000_1234567</MsgId>
+      <CreDtTm>2026-10-03T06:12:41.0+02:00</CreDtTm>
+    </GrpHdr>
+    <Stmt>
+      <Id>camt053_20261003_DE00123456780000000000</Id>
+      <ElctrncSeqNb>183</ElctrncSeqNb>
+      <CreDtTm>2026-10-03T06:12:41.0+02:00</CreDtTm>
+      <FrToDt>
+        <FrDtTm>2026-10-01T00:00:00.0+02:00</FrDtTm>
+        <ToDtTm>2026-10-02T23:59:59.9+02:00</ToDtTm>
+      </FrToDt>
+      <Acct>
+        <Id><IBAN>DE00123456780000000000</IBAN></Id>
+        <Ccy>EUR</Ccy>
+        <Ownr><Nm>Max Mustermann</Nm></Ownr>
+        <Svcr><FinInstnId><BIC>SPKADE00XXX</BIC></FinInstnId></Svcr>
+      </Acct>
+      <Bal>
+        <Tp><CdOrPrtry><Cd>PRCD</Cd></CdOrPrtry></Tp>
+        <Amt Ccy="EUR">1000.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt><Dt>2026-09-30</Dt></Dt>
+      </Bal>
+      <Bal>
+        <Tp><CdOrPrtry><Cd>CLBD</Cd></CdOrPrtry></Tp>
+        <Amt Ccy="EUR">3212.35</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt><Dt>2026-10-02</Dt></Dt>
+      </Bal>
+      <!-- A direct debit -->
+      <Ntry>
+        <Amt Ccy="EUR">64.20</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2026-10-01</Dt></BookgDt>
+        <ValDt><Dt>2026-10-01</Dt></ValDt>
+        <AcctSvcrRef>2026100100001</AcctSvcrRef>
+        <BkTxCd><Prtry><Cd>NDDT+105+00931</Cd><Issr>DK</Issr></Prtry></BkTxCd>
+        <NtryDtls>
+          <TxDtls>
+            <Refs><EndToEndId>4711-2026-10</EndToEndId><MndtId>M-4711</MndtId></Refs>
+            <AmtDtls><TxAmt><Amt Ccy="EUR">64.20</Amt></TxAmt></AmtDtls>
+            <RltdPties>
+              <Dbtr><Nm>Max Mustermann</Nm></Dbtr>
+              <DbtrAcct><Id><IBAN>DE00123456780000000000</IBAN></Id></DbtrAcct>
+              <Cdtr><Nm>Stadtwerke Beispielstadt</Nm></Cdtr>
+              <CdtrAcct><Id><IBAN>DE00987654320000000011</IBAN></Id></CdtrAcct>
+            </RltdPties>
+            <RmtInf><Ustrd>Abschlag Strom Oktober</Ustrd><Ustrd>Vertragskonto 4711</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+        <AddtlNtryInf>FOLGELASTSCHRIFT</AddtlNtryInf>
+      </Ntry>
+      <!-- Salary -->
+      <Ntry>
+        <Amt Ccy="EUR">2450.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2026-10-01</Dt></BookgDt>
+        <ValDt><Dt>2026-10-01</Dt></ValDt>
+        <AcctSvcrRef>2026100100002</AcctSvcrRef>
+        <BkTxCd><Prtry><Cd>NTRF+153+00931</Cd><Issr>DK</Issr></Prtry></BkTxCd>
+        <NtryDtls>
+          <TxDtls>
+            <Refs><EndToEndId>NOTPROVIDED</EndToEndId></Refs>
+            <AmtDtls><TxAmt><Amt Ccy="EUR">2450.00</Amt></TxAmt></AmtDtls>
+            <RltdPties>
+              <Dbtr><Nm>Arbeitgeber Beispiel GmbH</Nm></Dbtr>
+              <Cdtr><Nm>Max Mustermann</Nm></Cdtr>
+            </RltdPties>
+            <RmtInf><Ustrd>Gehalt Oktober 2026</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+        <AddtlNtryInf>LOHN  GEHALT</AddtlNtryInf>
+      </Ntry>
+      <!-- A card payment -->
+      <Ntry>
+        <Amt Ccy="EUR">23.45</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2026-10-02</Dt></BookgDt>
+        <ValDt><Dt>2026-10-02</Dt></ValDt>
+        <AcctSvcrRef>2026100200003</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <AmtDtls><TxAmt><Amt Ccy="EUR">23.45</Amt></TxAmt></AmtDtls>
+            <RltdPties><Cdtr><Nm>REWE Markt GmbH</Nm></Cdtr></RltdPties>
+            <RmtInf><Ustrd>2026-10-02T10:12 Debitk.1 2028-12</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+        <AddtlNtryInf>KARTENZAHLUNG</AddtlNtryInf>
+      </Ntry>
+      <!-- Two transfers booked as one entry -->
+      <Ntry>
+        <Amt Ccy="EUR">150.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2026-10-02</Dt></BookgDt>
+        <ValDt><Dt>2026-10-02</Dt></ValDt>
+        <AcctSvcrRef>2026100200004</AcctSvcrRef>
+        <NtryDtls>
+          <Btch><NbOfTxs>2</NbOfTxs></Btch>
+          <TxDtls>
+            <Refs><EndToEndId>MIETE-2026-10</EndToEndId></Refs>
+            <AmtDtls><TxAmt><Amt Ccy="EUR">120.00</Amt></TxAmt></AmtDtls>
+            <RltdPties><Cdtr><Nm>Garagenvermietung Beispiel</Nm></Cdtr></RltdPties>
+            <RmtInf><Ustrd>Stellplatz Oktober</Ustrd></RmtInf>
+          </TxDtls>
+          <TxDtls>
+            <Refs><EndToEndId>BEITRAG-2026</EndToEndId></Refs>
+            <AmtDtls><TxAmt><Amt Ccy="EUR">30.00</Amt></TxAmt></AmtDtls>
+            <RltdPties><Cdtr><Nm>Sportverein Beispiel e.V.</Nm></Cdtr></RltdPties>
+            <RmtInf><Ustrd>Mitgliedsbeitrag Q4</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+        <AddtlNtryInf>SAMMLER-UEBERWEISUNG</AddtlNtryInf>
+      </Ntry>
+      <!-- Not booked yet -->
+      <Ntry>
+        <Amt Ccy="EUR">12.99</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>PDNG</Sts>
+        <BookgDt><Dt>2026-10-02</Dt></BookgDt>
+        <NtryDtls><TxDtls><RltdPties><Cdtr><Nm>Netflix International B.V.</Nm></Cdtr></RltdPties></TxDtls></NtryDtls>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>

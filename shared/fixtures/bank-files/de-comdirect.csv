@@ -1,0 +1,21 @@
+"Umsätze Girokonto";"Zeitraum: 30 Tage";
+"Neuer Kontostand";"2.826,01 EUR";
+
+"Buchungstag";"Wertstellung (Valuta)";"Vorgang";"Buchungstext";"Umsatz in EUR";
+"offen";"--";"Lastschrift / Belastung";"Auftraggeber: Telefonica Germany GmbH Buchungstext: Mobilfunk Rechnung Oktober Ref. MOB-2026-10";"-19,99";
+"20.10.2026";"20.10.2026";"Übertrag / Überweisung";"Empfänger: Max Mustermann Kto/IBAN: DE00123456780000000099 BLZ/BIC: COBADEHD001 Buchungstext: Sparrate Oktober";"-500,00";
+"01.10.2026";"01.10.2026";"Lastschrift / Belastung";"Auftraggeber: Stadtwerke Beispielstadt Buchungstext: Abschlag Strom Oktober Vertragskonto 4711 Ref. 4711-2026-10";"-64,20";
+"30.09.2026";"30.09.2026";"Lohn, Gehalt, Rente";"Auftraggeber: Arbeitgeber Muster GmbH Buchungstext: Gehalt September 2026 Ref. LOHN-2026-09";"2.450,00";
+"15.09.2026";"14.09.2026";"Kartenverfügung";"Buchungstext: AMAZON.COM*AB12CD SEATTLE US Karte Nr. 4871 78XX XXXX 1234 Kartenzahlung Originalbetrag 50,00 USD";"-46,08";
+"15.09.2026";"14.09.2026";"Entgelt";"Buchungstext: Währungsumrechnungsentgelt 1,75% Karte Nr. 4871 78XX XXXX 1234";"-0,81";
+"14.09.2026";"13.09.2026";"Kartenverfügung";"Buchungstext: Café Süßholz Hamburg DE Karte Nr. 4871 78XX XXXX 1234 Kartenzahlung";"-12,90";
+
+"Alter Kontostand";"1.000,00 EUR";
+
+"Umsätze Tagesgeld PLUS-Konto";"Zeitraum: 30 Tage";
+"Neuer Kontostand";"5.500,00 EUR";
+
+"Buchungstag";"Wertstellung (Valuta)";"Vorgang";"Buchungstext";"Umsatz in EUR";
+"20.10.2026";"20.10.2026";"Übertrag / Überweisung";"Auftraggeber: Max Mustermann Buchungstext: Sparrate Oktober";"500,00";
+
+"Alter Kontostand";"5.000,00 EUR";

@@ -4,9 +4,52 @@ Notable changes to UrBudget, organized using [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [1.0.9] - 2026-10-24
+
 ### Added
 
-- Once a day, UrBudget counts itself as in use on urbudget.app: only whether this is the copy's first opening, or its first today, this week or this month, with its version, system and whether it came from the Microsoft Store. Nothing identifies you, the computer or your budgets. Settings → Privacy & data → Count this copy as in use turns it off.
+- Importing a bank file no longer stops at a line it can't read. Every line of the file is shown with what became of it: it reads, it needs attention (a date or an amount that doesn't read, and why), or it's left out (pending, declined, another account's, in another currency, a balance or a total, a correction). Lines that need attention stay out of the import until they're fixed; the rest go ahead. On the desktop, importing is a page of its own with every line in a table like the register's: click a line and click it again (or press Enter) to edit its cells, saved with Enter; select several (with Ctrl, Shift or their checkboxes) to include, leave out or put them back together; choose what a column holds; and each line's actions (Fix, Include, Leave out, Use as the header row, Undo) sit at its right end, opening when the line is pointed at. It opens by itself only when something needs it; otherwise the review says what was left out, a click away. On the phones, the lines that need attention, those left out and those changed are listed, to fix a line's date, payee, memo or amount, include it, or undo the change.
+- Fix with the assistant: the assistant is told the lines that need attention and proposes fixes from what the file itself says (another of the line's cells, the statement's totals, what you tell it), each with its reason. Applied, each fix goes only to a line that hasn't changed since, and the lines it fixed are marked.
+- The assistant's proposals can be changed before they're applied. Each part of one has a checkbox to leave it out, and a pencil to give it another category or amount; Apply makes what's left ("Apply 2 of 3"), still as one undo step, and the assistant is told what you changed. Every part is listed (a long one a few rows at a time), and edits show each value as it was and as it will be ("Uncategorized → Dining out"). Use the assistant's version puts it back as proposed. For now this is on the desktop; the phones list every part too.
+- Money back from a shop you bought from in the last 90 days is offered as a refund of that purchase ("Refund of Amazon EU · 23.99 on 7 Oct"), and takes the purchase's category when it comes in without one. When several purchases match and their categories differ, it's only marked as a possible refund. This also applies to transactions downloaded through bank sync.
+- A file with several accounts' transactions (RBC, comdirect, an OFX or CAMT.053 with several statements) lets you choose which account's lines to import, and the account you import into remembers it, with the workbook sheet it was read from. comdirect's card and depot sections are read by their own columns, and each account is known by its heading, the same from one month's file to the next.
+- When a file's dates don't say whether the day or the month comes first, the import asks once (is 01/02/2026 1 February or 2 January?) before anything goes on to the review. An OFX whose every amount that reads is positive asks whether its transaction types tell money out, rather than guessing, when an amount it can't read could be the one that decides.
+- A CAMT.053 batch whose payments don't add up to its entry can be imported as the one entry instead, and a batch imported one way is never imported again the other way.
+- Choose which CSV column holds the date, payee and amount when a bank names them differently. Each account remembers its columns, date order and signs for its next file.
+- Importing an account's statement offers to pair a row with the uncategorized entry it mirrors in another of your accounts, within five days. Both become one transfer, so money moved between your accounts isn't counted as spending or income. A pair is chosen for you when the bank's text names the other account, matches earlier transfers between them, or recurs the same way throughout the file (a weekly top-up); otherwise it's suggested, and Pair suggested transfers takes them all at once.
+- Add them as new and Skip them decide every row still waiting for a choice.
+- Statements in Japanese, Chinese, Russian, Ukrainian, Hebrew and Arabic: their column names are known, and a file that isn't UTF-8 is read in the encoding its bytes fit (Shift_JIS, GBK, Windows-1251, -1255, -1256 and the European ones), however the bank saved it.
+- Import Excel and OpenDocument statements (.xlsx, .xls, .ods): the sheet that looks like a statement is read like a CSV, with its dates and amounts as the workbook holds them. A ZIP of statements, such as a bank's daily CAMT.053 files, imports in one go.
+- Choosing a PDF statement says it needs the assistant, and Read it with the assistant opens it with the PDF attached, on the desktop and the phones, instead of failing to read it.
+- Import CAMT.053 (ISO 20022 XML) and MT940 statements, the formats many European banks offer beside CSV. A batch the bank booked as one entry comes in as its payments, the payee is the other party, and the purpose text (SEPA's SVWZ+, Dutch banks' /REMI/) is the memo.
+- Once a day, UrBudget counts itself as in use on urbudget.app: only whether this is the copy's first opening, or its first today, this week or this month, with its version, system, whether it came from the Microsoft Store and the week it was first opened. Nothing identifies you, the computer or your budgets. Settings → Privacy & data → Count this copy as in use turns it off.
+
+### Changed
+
+- An account's Import, Export and (for an account linked to its bank) Sync sit in the page header beside undo and redo, leaving the register's toolbar to the list itself. Its search bar stays one line: compact until it's first clicked, it widens as it opens and stays wide, its filters scrolling sideways rather than taking another line. In a narrow window, Scheduled, Filters and then Add transaction show only their icons rather than the toolbar wrapping.
+- Exports are saved where you choose: a save panel opens in Downloads with a suggested name, rather than the file going into the budget's folder in the app's data. This applies to the full backup, the recovery draft, transaction and report CSVs, the YNAB export, the bank-file template and the assistant's spreadsheets and converted files.
+- CSV imports read more banks' exports as they come: Revolut's (leaving out declined and reverted payments, and taking off fees), column names in German, Dutch, French, Spanish, Italian, Portuguese, Polish, Baltic and Nordic exports, account details above the header row, totals and balances under it, dates with times, dots or month names, debit columns written with a minus, amounts marked CR or DR, and a column saying which way an unsigned amount went.
+- A CSV without a header row, or with column names UrBudget doesn't know, has its columns found by what's in them, including money out and money in in columns of their own (as TD and CIBC write them).
+- A CSV with every account's rows, each saying whose (as RBC exports), imports the first account's. Where a bank names the other party in a second description (RBC's Description 2, Scotiabank's Sub-description), that's the payee, and the first description is the memo.
+- Plain-text statements laid out in columns lined up with spaces (as BBVA México's) are read.
+- Pending rows are left out until the bank books them, so they aren't imported twice; you can include one anyway. A file with several accounts' transactions (as comdirect exports) starts with the account you imported last time, else the first in the budget's currency; a file that mixes currencies (PayPal, Wise) imports the rows in the budget's, and shows the others for you to include with their amount in your currency.
+- Files already imported are still recognised. A line 1.0.8 read another way (its payee from another column, a reference in the memo, a fee now taken off, spaces tidied) is also known by the ID 1.0.8 gave it, so the transactions it imported aren't offered again. A line fixed by hand is also known by the line as the file writes it, so importing the same broken file again finds it imported.
+- A file the assistant converted from a PDF is read the standard way, whatever the account's own files are like, and doesn't change what the account remembers.
+- A card's statement that's mostly money in ticks Purchases are positive for you.
+- The payee is the other party's name where a statement has a column for it (a merchant, a payee, the side of a transfer that isn't you), rather than the bank's description.
+- Statements saved in UTF-16, as Excel writes them, or in an older encoding keep their letters, accented or not.
+- Alipay and WeChat Pay statements read which way each amount went from 收/支, and leave out moves between your own balances. Refused (Geweigerd), only authorised (Autorizzato), closed (交易关闭) and held (等待确认收货) rows are left out until they're booked, like other pending ones.
+- In a file without a header row, a running balance beside a signed amount (CommBank's) isn't taken for the amount, and a total row under the transactions doesn't hide them.
+- Fees in columns of their own (ConversionCharge, Commission, Сума комісій) are taken off the amount, and a dash in a cell counts as empty.
+- Dates without a year (FNB's '26 Sep') are the latest such day that isn't more than a month ahead.
+- An OFX correction that deletes an earlier line is applied rather than imported, and OFX names in CDATA and files with an empty currency read. A QIF file with an empty first record reads. CAMT.052 account reports read like statements, and a returned direct debit names its creditor.
+- When a file's dates fit only one order, they're read that way, whichever order was chosen.
+- Files saved with old Mac line endings, and files whose columns come in another order, read the same as any other.
+- A statement imported into an account that already holds thousands of the same charge previews in seconds; each row lists the 50 nearest possible matches.
+- A statement is read as the format its content says, whatever it was chosen as or however it's named (an MT940 file saved as .txt, an OFX file saved as .csv).
+- OFX files with several accounts import the first account's; two transactions with one bank ID are both kept; zero-amount lines are left out; a payee written only in the memo becomes the payee; and a bank that writes every amount as positive has its debits read from the transaction type.
+- Quicken's every-account QIF export imports the first account's transactions, skipping its category and class lists. Amounts written only as U, and a last record without its closing ^, are read too.
+- Dates with the month as a word in German, Dutch, French, Spanish, Italian, Portuguese, Polish or a Nordic language ("15. Okt. 2026", "15-ene-2026"), with a time after them, or as a spreadsheet's day number (46310), are read.
 
 ## [1.0.8] - 2026-10-22
 
@@ -142,5 +185,6 @@ Also
 - Quick Assign's Underfunded now funds "maintain a balance" targets.
 - Notifications are easier to read in dark mode.
 
-[Unreleased]: https://github.com/urbudget/urbudget/compare/desktop-v1.0.8...HEAD
+[Unreleased]: https://github.com/urbudget/urbudget/compare/desktop-v1.0.9...HEAD
+[1.0.9]: https://github.com/urbudget/urbudget/releases/tag/desktop-v1.0.9
 [1.0.8]: https://github.com/urbudget/urbudget/releases/tag/desktop-v1.0.8
