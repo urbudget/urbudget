@@ -965,6 +965,10 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+/* A payee's last amount, suggested until one is typed (TransactionEditor). */
+.num-input.suggested::placeholder {
+  font-style: italic;
+}
 /* The footer starts where the first field does and stops as far from the right edge, so both
    sides keep the same margin. */
 .editor-actions {
@@ -1044,10 +1048,27 @@
 .editor-actions .primary.small {
   min-width: 72px;
 }
-.editor-hint {
+.editor-hint,
+.editor-added {
   color: var(--muted);
   font-size: 12px;
   white-space: nowrap;
+}
+/* The hint takes only the room the buttons leave, so they never give any up to it: its parts
+   wrap onto a second line that's cut off, and whole ones drop off the end. */
+.editor-hint {
+  display: flex;
+  flex-wrap: wrap;
+  flex: 1000 1 0;
+  justify-content: flex-end;
+  column-gap: 4px;
+  min-width: 0;
+  height: 20px;
+  line-height: 20px;
+  overflow: hidden;
+}
+.editor-added {
+  flex: none;
 }
 .editor-hint kbd {
   padding: 0 4px;

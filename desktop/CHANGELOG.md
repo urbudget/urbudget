@@ -4,6 +4,20 @@ Notable changes to UrBudget, organized using [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Added
+
+- On the desktop, entering transactions by keyboard takes fewer keys. In a new transaction, Tab goes on to the next field you're likely to need, by the payee's latest transactions. Choosing a payee fills in its default category, else its latest one (Unassigned for pay you leave to it); Tab goes past it when it's the default, or the only category the payee's latest 10 categorized transactions had, and stops there to check it otherwise. Tab stops at the memo only when more than half of the payee's latest 10 transactions you typed in had one (a bank's text on imported ones doesn't count), and goes to Inflow rather than Outflow for a payee money usually comes from. Then come the cleared mark, Save & add another and Save. Shift+Tab still steps back through every field.
+- ← and → move to the field beside once the caret reaches the end of the text, in a new transaction or one being edited, and past the Account field in All accounts without changing it. The field you arrive in is selected, so typing replaces it and the next arrow goes on.
+- Entering several transactions in a row: once one is saved with Save & add another (Shift+Enter), Enter saves and adds another too, keeping the date, until Esc closes the row. The button Enter presses is the blue one, and the row counts how many were added.
+- A payee's last amount is suggested in its amount field until you type one: Tab or → takes it, and Enter fills it in for you to see before the next Enter saves.
+- Type + first in Outflow to make it money in, or - first in Inflow to make it money out: the field switches as soon as the sign is typed. A sign put in front of a sum already there (-5+10) leaves it where it is, as it adds up there.
+- Alt+C (⌃C on a Mac, where ⌥C types ç) clears or unclears the transaction being entered or edited, from any of its fields. With the cleared mark itself focused, Space or C does it, and the hint below says so.
+
+### Fixed
+
+- Enter on one of the editing row's buttons (Cancel, Save & add another, Split, More options) presses that button. It used to save the transaction and close the row, even on Cancel.
+- A payee's last-used category (filled in for a new transaction, and shown on Payees & rules) is its latest transaction's with one category, even when a later one was split. Depending on the order transactions were stored in, it could be an older one or none.
+
 ## [1.0.9] - 2026-10-24
 
 ### Added
