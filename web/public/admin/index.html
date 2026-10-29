@@ -62,7 +62,7 @@
       </div>
       <section class="panel" aria-labelledby="weeks-title">
         <h2 id="weeks-title" class="h3">Week by week</h2>
-        <p class="muted small">Monday to Sunday (UTC), people only. Downloads are every channel's; link tags are the site's. <b>Copy</b> on a finished week gives its row for <code>marketing/weekly-log.md</code> with this page's downloads (top link tags) filled in; the other columns stay blank for you.</p>
+        <p class="muted small">Monday to Sunday (UTC). Downloads include filtered website clicks and the Store; unfiltered GitHub activity is excluded. Link tags are the site's. <b>Copy</b> on a finished week gives its row for <code>marketing/weekly-log.md</code> with this page's downloads (top link tags) filled in; the other columns stay blank for you.</p>
         <div class="table-wrap">
           <table class="data-table" id="weeks-table">
             <thead>
@@ -131,8 +131,8 @@
       </section>
       <figure class="chart-card chart-wide" id="chart-downloads-90"></figure>
       <section class="panel" aria-labelledby="opened-title">
-        <h2 id="opened-title" class="h3">Downloads that became a copy in use</h2>
-        <p class="muted small">Last 30 days. A download is a click, and bots, link checkers and people who change their minds click too. A first open is a copy that was installed and opened, so a person was there. Copies count themselves from the desktop release with usage counts on, so first opens trail downloads until most copies have it.</p>
+        <h2 id="opened-title" class="h3">Downloads and first opens</h2>
+        <p class="muted small">Last 30 days. First opens report installed copies, including copies from GitHub. GitHub cannot distinguish people from release, QA or automation downloads, so the combined website/GitHub download total and conversion rate are unavailable. Store counts and first opens are aggregate activity, not individually matched installs.</p>
         <div class="table-wrap"><table class="data-table" id="opened-table"><thead><tr><th scope="col">Installed from</th><th scope="col" class="num">Downloads</th><th scope="col" class="num">First opens</th><th scope="col" class="num">Opened per download</th></tr></thead><tbody></tbody></table></div>
       </section>
       <section class="panel" aria-labelledby="by-channel-title">
@@ -156,9 +156,10 @@
           <div class="table-wrap"><table class="data-table" id="versions-table"><thead><tr><th scope="col">Version</th><th scope="col">System</th><th scope="col" class="num">Clicks</th><th scope="col">Last</th></tr></thead><tbody></tbody></table></div>
         </section>
       </div>
+      <figure class="chart-card chart-wide" id="chart-github-downloads"></figure>
       <section class="panel">
-        <h2 class="h3">GitHub releases, all time</h2>
-        <p class="muted small">GitHub's count for each file right now. Each includes the publish workflow's own download of that file (the <code>.msix</code> twice, with the Store workflow's); signatures and update packages aren't people's downloads.</p>
+        <h2 class="h3">GitHub release files, all time (unfiltered)</h2>
+        <p class="muted small">GitHub's raw count for each file, including release workflows, QA and other automation. GitHub does not identify who downloaded a file or whether it was installed. These counts are excluded from user download totals and conversion rates.</p>
         <div id="github"></div>
       </section>
     </section>

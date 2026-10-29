@@ -85,10 +85,10 @@ async function eventDays(db: D1Database) {
 }
 
 /**
- * Downloads from every channel and first openings of the app, as one number per day of `days`:
+ * User download totals, separate GitHub activity and first opens, as one number per day of `days`:
  * people's clicks on urbudget.app's installers (bots and the team are left out) and on its Store
- * button, installers downloaded from GitHub, the Store's acquisitions and installs from Partner
- * Center, and copies opened for the first time, by where they came from.
+ * button, the Store's acquisitions and installs from Partner Center, and first opens. GitHub
+ * file downloads stay separate because release/QA/automation cannot be identified in their totals.
  */
 async function channelSeries(env: Env, days: string[]) {
   const db = env.DB;
@@ -131,9 +131,9 @@ async function channelSeries(env: Env, days: string[]) {
     website: websiteAll,
     github: githubAll,
     store: storeAll,
-    total: add(websiteAll, githubAll, storeAll),
-    windows: add(series.websiteWindows, series.githubWindows, storeAll),
-    macos: add(series.websiteMacos, series.githubMacos),
+    total: add(websiteAll, storeAll),
+    windows: add(series.websiteWindows, storeAll),
+    macos: series.websiteMacos,
     opens: add(series.opensDirect, series.opensStore),
     partnerCenter,
     githubSince: github.since,
@@ -319,7 +319,7 @@ admin.get("/overview", async (c) => {
       users: sync?.users ?? 0,
       bytes: sync?.bytes ?? 0,
     },
-    // People's downloads from every channel, last 30 days; the site's bots and team are counted apart.
+    // User download totals exclude unclassified GitHub file downloads; site bots/team stay separate.
     downloads: {
       last30: last30(series.downloads),
       website: last30(series.website),
@@ -531,8 +531,8 @@ admin.get("/downloads", async (c) => {
     days,
     // People's clicks on urbudget.app: its installers, and its button to the Microsoft Store.
     website: { windows: channels.websiteWindows, macos: channels.websiteMacos, store: channels.storeClicks },
-    // Installers downloaded from GitHub, per day since the first snapshot; and every file's count now.
-    github: { ...github, windows: channels.githubWindows, macos: channels.githubMacos, since: channels.githubSince, fetched: channels.status.github ?? null },
+    // Unfiltered GitHub file downloads, including release/QA/automation; excluded from user totals.
+    github: { ...github, includesAutomation: true, excludedFromUserTotals: true, windows: channels.githubWindows, macos: channels.githubMacos, since: channels.githubSince, fetched: channels.status.github ?? null },
     // Partner Center's numbers. Until it has answered, the site's Store button stands in for the Store.
     store: {
       configured: storeConfigured(c.env),
@@ -542,7 +542,7 @@ admin.get("/downloads", async (c) => {
       since: storeSince?.day ?? null,
       fetched: channels.status.store ?? null,
     },
-    // Every channel added up: the series the Overview's downloads are.
+    // Filtered website clicks plus Store acquisitions (or button clicks), as on Overview.
     total: channels.total,
     // Copies opened for the first time: the downloads that became a copy in use.
     opens: { direct: channels.opensDirect, store: channels.opensStore },

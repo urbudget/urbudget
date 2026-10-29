@@ -114,8 +114,9 @@ export async function snapshotGitHub(env: Env) {
 /**
  * Installers downloaded from GitHub per day and system, from `first` on: each file's rise from its
  * count the day before. Files already there when the snapshots began start from their count then,
- * since GitHub doesn't say when those downloads happened. A file that appears later starts from one:
- * the publish workflow downloads every file of a release once to put it on urbudget.app.
+ * since GitHub doesn't say when those downloads happened. A file that appears later starts from zero.
+ * These are unfiltered file downloads, including release workflows, QA and other automation.
+ * GitHub cannot identify people; never include these counts in user totals or conversion rates.
  */
 export async function githubDaily(db: D1Database, first: string) {
   const rows = await db
@@ -123,7 +124,7 @@ export async function githubDaily(db: D1Database, first: string) {
       `SELECT day, asset, n FROM (
          SELECT day, asset, count - COALESCE(
            LAG(count) OVER (PARTITION BY tag, asset ORDER BY day),
-           CASE WHEN day > (SELECT MIN(day) FROM github_downloads) THEN MIN(count, 1) ELSE count END
+           CASE WHEN day > (SELECT MIN(day) FROM github_downloads) THEN 0 ELSE count END
          ) AS n FROM github_downloads
        ) WHERE day >= ?1 AND n > 0`,
     )
