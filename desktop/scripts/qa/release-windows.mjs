@@ -34,13 +34,44 @@ const started = Date.now(), deadline = started + 180_000;
 const owned = new Set(), sockets = new Set();
 const rule = "UrBudget-release-smoke-" + randomUUID();
 const report = {version: args["--version"], installer: basename(installer), startedAt: new Date(started).toISOString(), checks: [], status: "running"};
-let firewallAttempted = false, failure;
+let firewallAttempted = false, policyAttempted = false, failure, currentLaunch;
+// Runtime 150+ ignores environment/HKCU overrides in elevated hosts (including hosted runners).
+// https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/security
+// Only this executable receives HKLM overrides; refuse existing settings and remove only our values.
+const policyRoot = String.raw`Software\Policies\Microsoft\Edge\WebView2`;
+const policyValues = new Map([['AdditionalBrowserArguments', []], ['UserDataFolder', []]]);
 const ps = value => "'" + value.replaceAll("'", "''") + "'";
 const sha = bytes => createHash("sha256").update(bytes).digest("hex");
 function limit(ms, cleanup = false) {
   const remaining = deadline - Date.now() - (cleanup ? 0 : 20_000);
   assert(remaining > 0, "Global 180-second smoke deadline reached (20 seconds reserved for cleanup).");
   return Math.min(ms, remaining);
+}
+function policyCleanup() {
+  return [...policyValues].map(([name, values]) => {
+    if (!values.length) return '';
+    return `$key = $base.OpenSubKey(${ps(policyRoot + '\\' + name)}, $true); if ($key) { try { if (@(${values.map(ps).join(',')}) -contains $key.GetValue('urbudget.exe')) { $key.DeleteValue('urbudget.exe', $false) } } finally { $key.Dispose() } };`;
+  }).join(' ');
+}
+function removePolicies() {
+  return `$base = [Microsoft.Win32.RegistryKey]::OpenBaseKey('LocalMachine', 'Registry64'); try { ${policyCleanup()} } finally { $base.Dispose() };`;
+}
+async function configureWebView(cdpPort) {
+  if (!policyAttempted) {
+    await powershell(`$base = [Microsoft.Win32.RegistryKey]::OpenBaseKey('LocalMachine', 'Registry64'); try { foreach ($path in @('AdditionalBrowserArguments','UserDataFolder')) { $key = $base.OpenSubKey(${ps(policyRoot)} + '\\' + $path); if ($key) { try { foreach ($name in @('urbudget.exe','com.localbudget.desktop','*')) { if ($key.GetValueNames() -contains $name) { throw ('Pre-existing WebView2 policy: ' + $path + '/' + $name) } } } finally { $key.Dispose() } } } } finally { $base.Dispose() }`);
+    policyAttempted = true;
+  }
+  const browserArgs = `--remote-debugging-address=127.0.0.1 --remote-debugging-port=${cdpPort} --no-first-run`;
+  const commands = [];
+  for (const [name, value] of [['AdditionalBrowserArguments', browserArgs], ['UserDataFolder', webview]]) {
+    const previous = [...policyValues.get(name)];
+    // Register before writing, so a timeout after a partial write is still cleaned safely.
+    policyValues.get(name).push(value);
+    commands.push(`$key = $base.CreateSubKey(${ps(policyRoot + '\\' + name)}); try { $current = $key.GetValue('urbudget.exe'); if ($null -ne $current -and @(${previous.map(ps).join(',')}) -notcontains $current) { throw 'WebView2 policy changed outside this smoke' }; $key.SetValue('urbudget.exe', ${ps(value)}, 'String') } finally { $key.Dispose() };`);
+  }
+  await powershell(`$base = [Microsoft.Win32.RegistryKey]::OpenBaseKey('LocalMachine', 'Registry64'); try { ${commands.join(' ')} } finally { $base.Dispose() }`);
+  report.webviewOverride = 'HKLM Registry64, urbudget.exe only';
+  return browserArgs;
 }
 function killTree(child) {
   if (child.exitCode !== null || !child.pid) return;
@@ -54,9 +85,9 @@ setTimeout(() => {
   report.status = "failed"; report.error = "Hard 180-second installer smoke deadline exceeded.";
   report.finishedAt = new Date().toISOString(); report.elapsedMs = Date.now() - started;
   try { writeFileSync(join(evidence, "result.json"), JSON.stringify(report, null, 2)); } catch {}
-  if (firewallAttempted) {
+  if (firewallAttempted || policyAttempted) {
     const remove = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
-      "Get-NetFirewallRule -DisplayName " + ps(rule) + " -ErrorAction SilentlyContinue | Remove-NetFirewallRule"], {windowsHide: true, stdio: "ignore"});
+      (firewallAttempted ? "Get-NetFirewallRule -DisplayName " + ps(rule) + " -ErrorAction SilentlyContinue | Remove-NetFirewallRule; " : "") + (policyAttempted ? removePolicies() : "")], {windowsHide: true, stdio: "ignore"});
     remove.on("error", () => {}); remove.unref();
   }
   process.exit(124);
@@ -78,7 +109,7 @@ function command(program, params, timeout = 10_000, cleanup = false) {
 const powershell = (script, timeout = 10_000, cleanup = false) => command("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", "$ErrorActionPreference='Stop'; " + script], timeout, cleanup);
 async function stopApps(cleanup = false) {
   // Unique installation/browser paths prove ownership even if the NSIS process launched the app itself.
-  await powershell(`Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -eq ${ps(executable)} -or ($_.Name -eq 'msedgewebview2.exe' -and $_.CommandLine -and $_.CommandLine.Contains(${ps(webview)})) } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`, 10_000, cleanup);
+  await powershell(`$targets = @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -eq ${ps(executable)} -or ($_.Name -eq 'msedgewebview2.exe' -and $_.CommandLine -and $_.CommandLine.Contains(${ps(webview)})) }); foreach ($target in $targets) { if (Get-Process -Id $target.ProcessId -ErrorAction SilentlyContinue) { $ErrorActionPreference = 'Continue'; & taskkill.exe /PID $target.ProcessId /T /F 2>&1 | Out-Null; $ErrorActionPreference = 'Stop' } }`, 10_000, cleanup);
 }
 async function port() {
   return new Promise((done, fail) => {
@@ -125,23 +156,100 @@ async function connect(url, timeout = 10_000) {
     async screenshot(name) { const shot = await send("Page.captureScreenshot", {format: "png"}); await writeFile(join(evidence, name), Buffer.from(shot.data, "base64")); },
   };
 }
+async function diagnostics(label) {
+  if (!currentLaunch) return;
+  const state = {label, ...currentLaunch};
+  try {
+    const response = await fetch('http://127.0.0.1:' + state.cdpPort + '/json/version', {signal: AbortSignal.timeout(limit(1000))});
+    state.versionEndpoint = {status: response.status, body: (await response.text()).slice(0, 4096)};
+  } catch (error) { state.versionEndpoint = {error: String(error), cause: String(error.cause ?? '')}; }
+  try {
+    const snapshot = await powershell(String.raw`
+$all = @(Get-CimInstance Win32_Process)
+$ids = [Collections.Generic.HashSet[int]]::new()
+[void]$ids.Add(${state.pid})
+foreach ($item in $all) { if ($item.ExecutablePath -eq ${ps(executable)} -or ($item.Name -eq 'msedgewebview2.exe' -and $item.CommandLine -and $item.CommandLine.Contains(${ps(webview)}))) { [void]$ids.Add([int]$item.ProcessId) } }
+do { $changed = $false; foreach ($item in $all) { if ($ids.Contains([int]$item.ParentProcessId) -and $ids.Add([int]$item.ProcessId)) { $changed = $true } } } while ($changed)
+$processes = @($all | Where-Object { $ids.Contains([int]$_.ProcessId) } | ForEach-Object {
+  $p = Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue
+  [pscustomobject]@{ pid = $_.ProcessId; parent = $_.ParentProcessId; name = $_.Name; path = $_.ExecutablePath; commandLine = $_.CommandLine; session = $_.SessionId; responding = $p.Responding; window = if ($p) { $p.MainWindowHandle.ToInt64() } else { 0 }; title = $p.MainWindowTitle; version = if ($_.ExecutablePath -and (Test-Path -LiteralPath $_.ExecutablePath)) { (Get-Item -LiteralPath $_.ExecutablePath).VersionInfo.FileVersion } else { $null } }
+})
+$listeners = @(netstat.exe -ano -p tcp | Select-String -Pattern ${ps(':' + state.cdpPort + '\s')} | ForEach-Object { $_.Line.Trim() })
+$screenshot = $null
+try {
+  Add-Type -AssemblyName System.Drawing
+  Add-Type -AssemblyName System.Windows.Forms
+  Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public class ReleaseSmokeWindow {
+  [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left, Top, Right, Bottom; }
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr window, out Rect rect);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
+  [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr window, IntPtr dc, uint flags);
+}
+"@
+  $app = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Id -in $ids -and $_.Path -eq ${ps(executable)} -and $_.MainWindowHandle -ne 0 } | Select-Object -First 1)
+  $rect = [ReleaseSmokeWindow+Rect]::new()
+  if ($app.Count -and [ReleaseSmokeWindow]::GetWindowRect($app[0].MainWindowHandle, [ref]$rect) -and ($rect.Right - $rect.Left) -gt 0 -and ($rect.Bottom - $rect.Top) -gt 0) {
+    $width = $rect.Right - $rect.Left; $height = $rect.Bottom - $rect.Top
+    if ($width * $height -gt 16000000) { throw 'Native window too large for diagnostic screenshot' }
+    $bitmap = [Drawing.Bitmap]::new($width, $height)
+    $graphics = [Drawing.Graphics]::FromImage($bitmap)
+    try {
+      $dc = $graphics.GetHdc()
+      try { $printed = [ReleaseSmokeWindow]::PrintWindow($app[0].MainWindowHandle, $dc, 2) } finally { $graphics.ReleaseHdc($dc) }
+      $bitmap.Save(${ps(join(evidence, label + '-native-window.png'))}, [Drawing.Imaging.ImageFormat]::Png)
+      $screenshot = @{ method = 'PrintWindow'; returned = $printed; pid = $app[0].Id; visible = [ReleaseSmokeWindow]::IsWindowVisible($app[0].MainWindowHandle); rect = $rect; file = ${ps(label + '-native-window.png')} }
+    } finally { $graphics.Dispose(); $bitmap.Dispose() }
+  } else {
+    $bounds = [Windows.Forms.SystemInformation]::VirtualScreen
+    if ($bounds.Width -le 0 -or $bounds.Height -le 0 -or $bounds.Width * $bounds.Height -gt 16000000) { throw 'No bounded interactive desktop available' }
+    $bitmap = [Drawing.Bitmap]::new($bounds.Width, $bounds.Height)
+    $graphics = [Drawing.Graphics]::FromImage($bitmap)
+    try {
+      $graphics.CopyFromScreen($bounds.Location, [Drawing.Point]::Empty, $bounds.Size)
+      $bitmap.Save(${ps(join(evidence, label + '-native-desktop.png'))}, [Drawing.Imaging.ImageFormat]::Png)
+      $screenshot = @{ method = 'CopyFromScreen'; reason = 'App has no main window'; file = ${ps(label + '-native-desktop.png')} }
+    } finally { $graphics.Dispose(); $bitmap.Dispose() }
+  }
+} catch { $screenshot = @{ error = $_.Exception.Message } }
+[pscustomobject]@{ processes = $processes; listeners = $listeners; screenshot = $screenshot } | ConvertTo-Json -Depth 8 -Compress
+`, 8_000);
+    Object.assign(state, JSON.parse(snapshot));
+  } catch (error) { state.snapshotError = String(error); }
+  try { await writeFile(join(evidence, label + '-diagnostics.json'), JSON.stringify(state, null, 2)); }
+  catch (error) { report.diagnosticsError = String(error); }
+}
+
 async function launch(expectedText) {
   const cdpPort = await port();
-  const env = {...process.env, WEBVIEW2_USER_DATA_FOLDER: webview,
-    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-address=127.0.0.1 --remote-debugging-port=${cdpPort} --no-first-run`};
+  const browserArgs = await configureWebView(cdpPort);
+  const env = {...process.env};
+  for (const key of Object.keys(env)) if (key.startsWith('WEBVIEW2_')) delete env[key];
+  // Also supports a non-elevated runner; the authoritative elevated override is the app-scoped policy.
+  env.WEBVIEW2_USER_DATA_FOLDER = webview; env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = browserArgs;
   delete env.LOCAL_BUDGET_DATA_DIR; delete env.URBUDGET_API;
   const child = spawn(executable, [], {cwd: installed, env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"]});
   owned.add(child);
   const appLog = [];
+  currentLaunch = {pid: child.pid, cdpPort, startedAt: new Date().toISOString(), log: `app-${cdpPort}.log`};
+  const launchRecord = currentLaunch;
+  report.launches ??= []; report.launches.push(launchRecord);
   child.stdout.on("data", data => appLog.push(data.toString())); child.stderr.on("data", data => appLog.push(data.toString()));
-  child.once("close", () => { owned.delete(child); writeFileSync(join(evidence, `app-${cdpPort}.log`), appLog.join("")); });
+  child.once("close", (code, signal) => { owned.delete(child); launchRecord.exit = {code, signal}; writeFileSync(join(evidence, `app-${cdpPort}.log`), appLog.join("")); });
   child.once("error", error => appLog.push(String(error)));
   const until = Date.now() + limit(30_000);
   while (Date.now() < until) {
     assert(child.exitCode === null && !child.killed, "Installed release exited before its UI became ready: " + appLog.join(""));
     let pages;
-    try { pages = await (await fetch(`http://127.0.0.1:${cdpPort}/json/list`, {signal: AbortSignal.timeout(Math.min(1000, until - Date.now()))})).json(); } catch {}
-    const page = pages?.find(item => item.type === "page" && item.url && !item.url.startsWith("about:") && !item.url.startsWith("devtools:"));
+    try {
+      const response = await fetch(`http://127.0.0.1:${cdpPort}/json/list`, {signal: AbortSignal.timeout(Math.max(1, Math.min(1000, until - Date.now())))});
+      const body = await response.text();
+      launchRecord.lastProbe = {status: response.status, body: body.slice(0, 4096)};
+      if (response.ok) pages = JSON.parse(body);
+    } catch (error) { launchRecord.lastProbe = {error: String(error), cause: String(error.cause ?? '')}; }
+    const page = (Array.isArray(pages) ? pages : [])?.find(item => item.type === "page" && item.url && !item.url.startsWith("about:") && !item.url.startsWith("devtools:"));
     if (page) {
       assert(!/1420|localhost:\d|127\.0\.0\.1:\d/.test(page.url), "Release unexpectedly loaded development web assets.");
       report.pages ??= []; report.pages.push({url: page.url, title: page.title});
@@ -169,6 +277,11 @@ try {
     assert(!existsSync(join(base, "com.localbudget.desktop")), "Runner profile already contains UrBudget data; refusing to touch it.");
   }
   report.installerSha256 = sha(await readFile(installer));
+  if (args['--sha256']) {
+    assert(/^[a-fA-F0-9]{64}$/.test(args['--sha256']), 'Expected a SHA256 digest.');
+    assert.equal(report.installerSha256, args['--sha256'].toLowerCase(), 'Installer differs from the exact previously built release.');
+  }
+  report.runner = JSON.parse(await powershell(`$identity = [Security.Principal.WindowsIdentity]::GetCurrent(); [pscustomobject]@{ elevated = ([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator); user = $identity.Name; session = (Get-Process -Id $PID).SessionId; interactive = [Environment]::UserInteractive; os = [Environment]::OSVersion.VersionString } | ConvertTo-Json -Compress`));
   firewallAttempted = true;
   for (const program of [installer, executable]) await powershell(`New-NetFirewallRule -DisplayName ${ps(rule)} -Direction Outbound -Action Block -Program ${ps(program)} -Profile Any | Out-Null`);
   await command(installer, ["/S", `/D=${installed}`], 90_000);
@@ -186,6 +299,7 @@ try {
   assert(!firstView.scripts.some(url => /@vite|\/src\//.test(url)), "Development script observed in installed release.");
   await writeFile(join(evidence, "first-run-dom.json"), JSON.stringify(firstView, null, 2));
   await cdp.screenshot("first-run.png");
+  await diagnostics("first-run");
   const initial = await invoke(cdp, "library_snapshot");
   assert(initial.firstRun === true && initial.entries.length === 0 && !initial.activeId, "Installed release did not open a pristine library.");
   assert((await invoke(cdp, "load_budget")).budget === null, "First run manufactured a budget.");
@@ -218,6 +332,7 @@ try {
   cdp.close(); report.status = "passed";
 } catch (error) {
   failure = error; report.status = "failed"; report.error = error.stack ?? String(error);
+  await diagnostics("failure");
 } finally {
   for (const socket of sockets) socket.close();
   try { await stopApps(true); } catch (error) { report.cleanupError = String(error); failure ??= error; }
@@ -225,6 +340,10 @@ try {
     if (child.exitCode === null && child.pid) {
       try { await command("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], 5_000, true); } catch { child.kill(); }
     }
+  }
+  if (policyAttempted) {
+    try { await powershell(removePolicies(), 5_000, true); }
+    catch (error) { report.policyCleanupError = String(error); failure ??= error; }
   }
   if (firewallAttempted) {
     try { await powershell(`Get-NetFirewallRule -DisplayName ${ps(rule)} -ErrorAction SilentlyContinue | Remove-NetFirewallRule`, 10_000, true); }

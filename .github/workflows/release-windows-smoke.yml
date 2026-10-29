@@ -1,0 +1,88 @@
+# Rechecks an existing release's exact installer bytes; never builds or changes the release/tag.
+name: Installed Windows release smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Release workflow run containing the Windows installer artifact
+        required: true
+        default: "40906214271"
+        type: string
+      version:
+        description: Expected installed desktop version
+        required: true
+        default: "1.0.11"
+        type: string
+      installer_sha256:
+        description: Previously verified SHA256 of the exact NSIS release installer
+        required: true
+        default: "fea3773e31f139e1aac0922737c9c2958e2e22bd1cb9464554085a6ea72ba5ea"
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: release-windows-smoke-${{ inputs.source_run_id }}
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    env:
+      SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+      SMOKE_VERSION: ${{ inputs.version }}
+      SMOKE_SHA256: ${{ inputs.installer_sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Record source artifact provenance
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $evidence = Join-Path $env:RUNNER_TEMP 'urbudget-release-smoke-evidence'
+          New-Item -ItemType Directory -Path $evidence -Force | Out-Null
+          'Installer smoke has not run yet.' | Set-Content (Join-Path $evidence 'started.txt')
+          if ($env:SOURCE_RUN_ID -notmatch '^\d+$') { throw 'Expected a numeric source run ID.' }
+          if ($env:SMOKE_VERSION -notmatch '^\d+\.\d+\.\d+$') { throw 'Expected a desktop version.' }
+          if ($env:SMOKE_SHA256 -notmatch '^[a-fA-F0-9]{64}$') { throw 'Expected a SHA256 digest.' }
+          $runJson = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:SOURCE_RUN_ID"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not read source run.' }
+          $run = $runJson | ConvertFrom-Json
+          if ($run.path -ne '.github/workflows/release.yml' -or $run.status -ne 'completed') { throw 'Expected a completed Release workflow run.' }
+          $artifactsJson = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:SOURCE_RUN_ID/artifacts?per_page=100"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not read source artifacts.' }
+          $artifacts = $artifactsJson | ConvertFrom-Json
+          $artifact = @($artifacts.artifacts | Where-Object { $_.name -eq "windows-release-installer-$env:SOURCE_RUN_ID" -and -not $_.expired })
+          if ($artifact.Count -ne 1) { throw 'Expected one unexpired installer artifact from that run.' }
+          [ordered]@{ sourceRun = $run.id; sourceCommit = $run.head_sha; sourceRef = $run.head_branch; sourceWorkflow = $run.path; artifactId = $artifact[0].id; artifactDigest = $artifact[0].digest; expectedInstallerSha256 = $env:SMOKE_SHA256; harnessCommit = $env:GITHUB_SHA; harnessRun = $env:GITHUB_RUN_ID } | ConvertTo-Json | Set-Content (Join-Path $evidence 'provenance.json')
+      - name: Download the existing installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-release-installer-${{ inputs.source_run_id }}
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/urbudget-release-smoke-download/
+      - name: Verify installed release assets and local persistence
+        timeout-minutes: 4
+        shell: pwsh
+        run: |
+          $download = Join-Path $env:RUNNER_TEMP 'urbudget-release-smoke-download'
+          $installers = @(Get-ChildItem -LiteralPath $download -File -Filter '*-setup.exe')
+          if ($installers.Count -ne 1) { throw 'Expected exactly one release installer.' }
+          node desktop/scripts/qa/release-windows.mjs --installer "$($installers[0].FullName)" --version "$env:SMOKE_VERSION" --sha256 "$env:SMOKE_SHA256" --evidence "$env:RUNNER_TEMP/urbudget-release-smoke-evidence"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload installed release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release-smoke-${{ github.run_id }}
+          path: ${{ runner.temp }}/urbudget-release-smoke-evidence/
+          if-no-files-found: error
+          retention-days: 14
