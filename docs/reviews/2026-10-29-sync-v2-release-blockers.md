@@ -1,10 +1,20 @@
 # Release blockers: sync v2 (`codex/sync-v2-redesign`)
 
+## Release follow-up — desktop 1.0.11
+
+[Desktop 1.0.11](https://github.com/urbudget/urbudget/releases/tag/desktop-v1.0.11) is published from `a49aaf1fcf35f090adeaaaf1a6ff7ea1bbc26249`, with **v2 activation still disabled**. The [final release build](https://github.com/urbudget/urbudget/actions/runs/40914078901) and [App validation](https://github.com/urbudget/urbudget/actions/runs/40913977262) passed.
+
+- The final installed Windows build passed **5/5 smoke tests**, including first-run titlebar geometry/hit testing and native save/restart; screenshots were inspected. This supersedes the earlier unsuccessful visual inspection below. The check found a missing CSS variable that made the first-run titlebar zero-height; [PR #10](https://github.com/urbudget/urbudget/pull/10) fixed it before publication.
+- The macOS release is notarized. Updater signatures and GitHub asset digests were verified for the published release artifacts.
+- [Native iOS validation](https://github.com/urbudget/urbudget/actions/runs/40906203041) passed both Simulator tests and the unsigned device build. Hosted shared Rust, Android/lifecycle and sync-protocol checks also passed on `16ecc36`; their product code is unchanged in the final release, whose only subsequent product change is the titlebar CSS declaration.
+
+Physical-device mobile validation and v2 staging, restore/rollback and production-monitoring checks remain gates for their respective releases or activation. This desktop publication does not enable v2 or establish mobile/store availability. Publication and distribution status are tracked in [RELEASE-STATUS.md](../RELEASE-STATUS.md).
+
 ## Remediation status — 29 October 2026
 
 Codex reviewed the findings against the current worktree and reproduced the upgrade, ownership, conflict-review and queue-isolation failures. The historical review below is retained; its original “still present” statements describe the pre-remediation source.
 
-**Desktop 1.0.11 is being prepared with v2 activation disabled.** The local validation snapshot below precedes the release commit. Hosted CI and Windows/macOS installer builds gate desktop publication; physical mobile and staged-rollout checks continue to gate mobile release and v2 activation. Current publication evidence belongs in `docs/RELEASE-STATUS.md`.
+The local validation snapshot below precedes the published release. Its historical results and limitations are preserved; the release follow-up above records the subsequent hosted and installed-build verification. Physical mobile and staged-rollout checks continue to gate mobile release and v2 activation.
 
 | Finding | Current disposition |
 | --- | --- |
@@ -32,7 +42,7 @@ Additional fixes cover local open/lifecycle responsiveness during sync, managed-
 - First expanded native stress run: **27 scenarios passed**, **900 deterministic edits**, **50,000 extra transactions**, **3,207 HTTP requests**. This includes background review replacement, blocked-delivery reads across restart and cancellation of invalid candidates. Trace: `crates/target/sync-v2-instances/1793273036634/trace.json`.
 - Extended legacy run passed, including old session backfill, missing v2 routes, sync with no open budget, migration and a returning old device: **103 HTTP requests**. Trace: `crates/target/sync-v2-instances/1793273346787/trace.json`.
 
-### Final integrated checks
+### Local integrated checks (before hosted release validation)
 
 | Check | Result |
 | --- | --- |
@@ -61,8 +71,8 @@ The additional fresh-profile Windows launch built successfully, but the native U
 
 - Presentation follow-ups: recovery still shows raw JSON with manual re-entry; the recovery action remains visible on rows without a draft; legacy accounts still see the automatic-discovery notice. Some new service error text remains English. These were left explicit rather than hiding recoverable data.
 - An unknown installation sequence or a storage-provider outage cannot be safely guessed away. The app preserves the delivery and reports attention while continuing eligible reads; cleanup failures remain queued durably. Catalog loss deliberately exposes preserved files as recovery copies rather than reconstructing unprovable installation receipts/ownership.
-- Complete a manual Windows onboarding/titlebar visual check. Xcode/Simulator, unsigned iOS device, and final macOS desktop builds remain required. Windows can validate shared Rust and resource catalogs but cannot establish Swift compilation/background correctness.
-- Physical Android/iOS process termination, protected data, changing connectivity, background expiration, and maximum-payload memory/responsiveness checks remain required. Hosted CI must run on the final integrated source before release.
+- Windows onboarding/titlebar visual checks, Xcode/Simulator tests, the unsigned iOS device build and final macOS desktop build have since passed, as recorded in the release follow-up. Simulator/build success does not establish physical-device background correctness.
+- Physical Android/iOS process termination, protected data, changing connectivity, background expiration, and maximum-payload memory/responsiveness checks remain required before their rollout gates are cleared.
 - Keep activation off until staging/restore/rollback and production monitoring checks pass. At the time of the local validation snapshot, no release tag/version or production changes had been made. The branch also contains the concurrent bank-import feature described in the original review; include that scope in release review.
 
 
