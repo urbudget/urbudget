@@ -1,0 +1,50 @@
+# One read-only snapshot. This workflow never uploads, commits, deletes, or publishes a Store submission.
+name: Microsoft Store status
+
+on:
+  workflow_dispatch:
+    inputs:
+      submission_id:
+        description: Exact Microsoft Store submission ID to inspect
+        required: true
+        type: string
+      expected_version:
+        description: Expected four-part MSIX package version
+        required: true
+        default: "1.0.11.0"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      available: ${{ steps.status.outputs.available }}
+      status: ${{ steps.status.outputs.status }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate status reader
+        run: node --test .github/scripts/store-status.test.mjs
+      - name: Read application and submission status
+        id: status
+        env:
+          SUBMISSION_ID: ${{ inputs.submission_id }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+          MSSTORE_TENANT_ID: ${{ secrets.MSSTORE_TENANT_ID }}
+          MSSTORE_CLIENT_ID: ${{ secrets.MSSTORE_CLIENT_ID }}
+          MSSTORE_CLIENT_SECRET: ${{ secrets.MSSTORE_CLIENT_SECRET }}
+        run: node .github/scripts/store-status.mjs
+      - name: Save sanitized status evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: microsoft-store-status-${{ github.run_id }}
+          path: store-status/
+          if-no-files-found: warn
+          retention-days: 30

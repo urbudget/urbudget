@@ -97,4 +97,19 @@ The first iOS version that sells Sync in the app goes to App Review with the sub
 it up as [web/README.md › App Store purchases](web/README.md#app-store-purchases) describes, then
 add it on the version's page in App Store Connect before submitting.
 
+## Verifying a desktop release
+
+The desktop release workflow also installs the draft Windows installer on a fresh hosted runner.
+Its bounded smoke test checks the bundled first-run screen, a local save, and persistence after
+restart. The screenshots, hashes, and result are retained as the run's Windows smoke artifact.
+Do not run that installer test in a personal Windows profile: release builds use the OS data directory.
+
+Publishing the draft starts installer publication and Microsoft Store submission. A successful
+Store submission run only confirms that Microsoft accepted the submission for processing. To
+check certification, run **Microsoft Store status** with the exact submission ID from that run
+and the four-part MSIX version (for example, `1.0.11.0`). It makes read-only requests and records
+a sanitized status artifact. Availability is confirmed only when that exact submission is
+Published, is the application's last published submission, contains the expected uploaded
+package, and is fully rolled out. Pending certification is not release completion.
+
 Current published versions are in [release status](docs/RELEASE-STATUS.md).

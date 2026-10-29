@@ -75,7 +75,8 @@ struct AccountSyncView: View {
             }
         }
         .sheet(item: $conflict) { entry in
-            SyncConflictSheet(entry: entry.value) { keep, choices in
+            let currency = entry.value.text("currency", entry.value["metadata"].text("currency", store.currency))
+            SyncConflictSheet(entry: entry.value, currency: currency) { keep, choices in
                 _ = try await store.service("sync_resolve", ["id": .string(entry.value.text("id")), "keep": .string(keep), "choices": choices, "review": entry.value["review"]])
                 store.reload()
                 await sync.refreshStatus()
@@ -366,6 +367,7 @@ private struct PassphraseSheet: View {
 /// Choosing what to keep when both devices changed the same thing.
 private struct SyncConflictSheet: View {
     var entry: JSON
+    var currency: String
     var resolve: (String, JSON) async throws -> Void
     @State private var choices: [String: String] = [:]
     @State private var whole = ""
@@ -413,13 +415,13 @@ private struct SyncConflictSheet: View {
             func state(_ value: String) -> String {
                 switch value { case "cleared": return String(localized: "Cleared"); case "reconciled": return String(localized: "Reconciled"); case "uncleared": return String(localized: "Uncleared"); default: return value }
             }
-            var parts = [value.text("account"), Money.format(value.long("amount"))]
+            var parts = [value.text("account"), Money.format(value.long("amount"), currency: currency)]
             if !value.text("transfer").isEmpty { let account = value.text("transfer"); parts.append(String(localized: "Transfer: \(account)")) }
             for line in value.rows("lines") {
                 let destination: String
                 if !line.text("transfer").isEmpty { let account = line.text("transfer"); destination = String(localized: "Transfer: \(account)") }
                 else { destination = line.text("category", String(localized: "Ready to Assign")) }
-                parts.append(destination + ": " + Money.format(line.long("amount")))
+                parts.append(destination + ": " + Money.format(line.long("amount"), currency: currency))
             }
             if !value.text("status").isEmpty { parts.append(state(value.text("status"))) }
             if !value.text("transferStatus").isEmpty { let status = state(value.text("transferStatus")); parts.append(String(localized: "Transfer status: \(status)")) }
