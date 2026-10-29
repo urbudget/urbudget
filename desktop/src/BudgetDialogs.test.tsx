@@ -5,7 +5,7 @@ import { api } from "./bridge";
 import { demoBudget } from "./demo";
 import type { Summary } from "./types";
 
-vi.mock("./bridge", () => ({ api: { createBudget: vi.fn(), listBudgets: vi.fn() } }));
+vi.mock("./bridge", () => ({ api: { createBudget: vi.fn(), listBudgets: vi.fn(), libraryAction: vi.fn() } }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 it("can open another budget without offering a summary-dependent new budget action", async () => {
@@ -45,6 +45,20 @@ it("binds a fresh start to the source budget and revision used for its balances"
   fireEvent.click(screen.getByRole("button", { name: "Create budget" }));
   await waitFor(() => expect(api.createBudget).toHaveBeenCalledWith(
     expect.objectContaining({ name: "Fresh plan", currency: budget.currency }),
-    { budget, token: "source:4:1" },
+    { budget, token: "source:4:1" }, false,
   ));
+});
+
+it("opens explicit deletion review instead of restoring over unseen remote edits", async () => {
+  const entry = {id: "changed", name: "Changed budget", currency: "USD", path: "/changed.sqlite3", current: false, missing: false, lastOpened: null, lifecycle: "trashed", status: "deletion_conflict", scope: "account"} as const;
+  vi.mocked(api.listBudgets).mockResolvedValue([entry]);
+  vi.mocked(api.libraryAction).mockResolvedValue({library: {entries: [{...entry, lifecycle: "active"}], activeId: "changed"}} as never);
+  const changed = vi.fn(async () => {});
+  const close = vi.fn();
+  render(<ManageBudgetsDialog open={vi.fn()} close={close} changed={changed} />);
+  fireEvent.click(await screen.findByRole("button", {name: "Review newer version"}));
+  await waitFor(() => expect(api.libraryAction).toHaveBeenCalledWith("review_deletion", "changed"));
+  expect(screen.queryByRole("button", {name: "Restore"})).toBeNull();
+  await waitFor(() => expect(changed).toHaveBeenCalledOnce());
+  expect(close).toHaveBeenCalledOnce();
 });

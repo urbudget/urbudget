@@ -15,6 +15,15 @@ class EditorPreparationTest {
     @org.junit.Before fun english() = EnglishWords.install()
     @org.junit.Before fun resetFormat() { Money.configure(JSONObject().put("currency", "SAR")) }
 
+    @Test fun anExplicitTransferShowsItsAccountAndKeepsItsDestination() = runTest {
+        val budget = JSONObject("""{"currency":"SAR","accounts":[{"id":"savings","name":"Savings"}],"transactions":[]}""")
+        val source = JSONObject("""{"id":"bank-1","date":"2026-10-24","payee":"BANK TRANSFER","memo":"","amount":-10000,"transferAccountId":"savings","candidates":[]}""")
+        val row = prepareBankReview(listOf(source), budget, true).single()
+        assertEquals("Transfer: Savings", row.payee)
+        assertEquals("savings", row.source.optString("transferAccountId"))
+        assertEquals("new", row.initial)
+    }
+
     @Test fun bankReviewKeepsTransferLegIdsAndConservativeMatchDefaults() = runTest {
         val budget = JSONObject("""{"transactions":[{"id":"transfer","date":"2026-10-01","payee":"Savings"},{"id":"empty","date":"2026-10-02","payee":null}]}""")
         val rows = listOf(

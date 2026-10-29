@@ -1,8 +1,10 @@
-use crate::t;
 use crate::domain::*;
 use crate::patch::{Collection, Keyed, Patch};
+use crate::t;
 use chrono::Utc;
-use rusqlite::{params, params_from_iter, types::Value as SqlValue, Connection, TransactionBehavior};
+use rusqlite::{
+    params, params_from_iter, types::Value as SqlValue, Connection, TransactionBehavior,
+};
 use serde::{Serialize, Serializer};
 use serde_json::{Map, Value};
 use std::{
@@ -34,12 +36,16 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 fn is_backup_name(name: &str) -> bool {
-    let Some(stamp) = name.strip_prefix("budget-").and_then(|s| s.strip_suffix(".sqlite3").or_else(|| s.strip_suffix(".json"))) else {
+    let Some(stamp) = name.strip_prefix("budget-").and_then(|s| {
+        s.strip_suffix(".sqlite3")
+            .or_else(|| s.strip_suffix(".json"))
+    }) else {
         return false;
     };
     let parts: Vec<_> = stamp.split('-').collect();
     (parts.len() == 2 || parts.len() == 3)
-        && parts[0].len() == 8 && parts[1].len() == 6
+        && parts[0].len() == 8
+        && parts[1].len() == 6
         && (parts.len() == 2 || parts[2].len() == 9)
         && parts.iter().all(|s| s.bytes().all(|b| b.is_ascii_digit()))
 }
@@ -74,7 +80,10 @@ fn hide(t: &mut Transaction) {
     }
 }
 /// Remembers the extras of the transactions that have hidden fields, by id.
-fn keep_hidden<'a>(kept: &mut HashMap<String, Extra>, transactions: impl IntoIterator<Item = &'a Transaction>) {
+fn keep_hidden<'a>(
+    kept: &mut HashMap<String, Extra>,
+    transactions: impl IntoIterator<Item = &'a Transaction>,
+) {
     for t in transactions {
         if has_hidden(t) {
             kept.insert(t.id.clone(), t.extra.clone());
@@ -171,7 +180,7 @@ impl Cache {
 }
 
 pub struct Store {
-    connection: Connection,
+    pub(crate) connection: Connection,
     path: PathBuf,
     /// Budget id, part of every save token so a window can never commit into another budget.
     id: String,
@@ -289,8 +298,17 @@ fn delete_rows<T: Row>(tx: &Connection, change: &Collection<T>) -> Result<()> {
     Ok(())
 }
 /// Writes changed rows. Untouched rows keep their stored position unless records moved.
-fn write_rows<T: Row>(tx: &Connection, before: &[T], after: &[T], change: &Collection<T>) -> Result<()> {
-    let previous: HashMap<&str, usize> = before.iter().enumerate().map(|(i, x)| (x.key(), i)).collect();
+fn write_rows<T: Row>(
+    tx: &Connection,
+    before: &[T],
+    after: &[T],
+    change: &Collection<T>,
+) -> Result<()> {
+    let previous: HashMap<&str, usize> = before
+        .iter()
+        .enumerate()
+        .map(|(i, x)| (x.key(), i))
+        .collect();
     let mut last = None;
     let mut appended = false;
     let in_place = after.iter().all(|x| match previous.get(x.key()) {
@@ -335,15 +353,25 @@ fn write_rows<T: Row>(tx: &Connection, before: &[T], after: &[T], change: &Colle
                     .execute(params_from_iter(x.values(i as i64)?))
                     .map_err(error)?;
             } else {
-                reposition.execute(params![x.key(), i as i64]).map_err(error)?;
+                reposition
+                    .execute(params![x.key(), i as i64])
+                    .map_err(error)?;
             }
         }
     }
     Ok(())
 }
 /// Writes the rows `patch` changes from `before` to `after`, then bumps the revision.
-fn write_changes(tx: &Connection, before: &Budget, after: &Budget, patch: &Patch, heavy_json: &str, heavy_dirty: bool) -> Result<()> {
-    tx.execute_batch("PRAGMA defer_foreign_keys=ON;").map_err(error)?;
+fn write_changes(
+    tx: &Connection,
+    before: &Budget,
+    after: &Budget,
+    patch: &Patch,
+    heavy_json: &str,
+    heavy_dirty: bool,
+) -> Result<()> {
+    tx.execute_batch("PRAGMA defer_foreign_keys=ON;")
+        .map_err(error)?;
     // Dependents first: transactions reference accounts, assignments reference categories.
     if let Some(c) = &patch.transactions {
         delete_rows(tx, c)?;
@@ -420,6 +448,7 @@ impl Store {
             std::fs::create_dir_all(parent).map_err(error)?;
         }
         let connection = Connection::open(path).map_err(error)?;
+        crate::sync_storage::register_writer(&connection)?;
         connection
             .busy_timeout(Duration::from_secs(3))
             .map_err(error)?;
@@ -431,21 +460,35 @@ impl Store {
         let version: u32 = connection
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .map_err(error)?;
-        if version > SCHEMA_VERSION {
+        if version > crate::sync_storage::STORAGE_SCHEMA_VERSION {
             return Err(t!("This database was created by a newer UrBudget version."));
         }
         connection.execute_batch("BEGIN IMMEDIATE;
             CREATE TABLE IF NOT EXISTS metadata (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, saved_at TEXT NOT NULL, name TEXT NOT NULL, currency TEXT NOT NULL);
-            INSERT OR IGNORE INTO metadata VALUES (1,0,'','My budget','SAR');
+            INSERT INTO metadata SELECT 1,0,'','My budget','SAR' WHERE NOT EXISTS(SELECT 1 FROM metadata WHERE id=1);
             CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, position INTEGER NOT NULL, data TEXT NOT NULL CHECK(json_valid(data)));
             CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, position INTEGER NOT NULL, data TEXT NOT NULL CHECK(json_valid(data)));
             CREATE TABLE IF NOT EXISTS transactions (id TEXT PRIMARY KEY, position INTEGER NOT NULL, account_id TEXT NOT NULL REFERENCES accounts(id), transfer_account_id TEXT REFERENCES accounts(id), date TEXT NOT NULL, data TEXT NOT NULL CHECK(json_valid(data)));
             CREATE INDEX IF NOT EXISTS transaction_account_date ON transactions(account_id, date);
             CREATE TABLE IF NOT EXISTS assignments (month TEXT NOT NULL, category_id TEXT NOT NULL REFERENCES categories(id), amount INTEGER NOT NULL, PRIMARY KEY(month, category_id));
             CREATE TABLE IF NOT EXISTS assignment_extras (month TEXT NOT NULL, category_id TEXT NOT NULL, data TEXT NOT NULL CHECK(json_valid(data)), PRIMARY KEY(month,category_id), FOREIGN KEY(month,category_id) REFERENCES assignments(month,category_id) ON DELETE CASCADE);
-            CREATE TABLE IF NOT EXISTS budget_extras (id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL CHECK(json_valid(data))); INSERT OR IGNORE INTO budget_extras VALUES (1,'{}');
+            CREATE TABLE IF NOT EXISTS budget_extras (id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL CHECK(json_valid(data))); INSERT INTO budget_extras SELECT 1,'{}' WHERE NOT EXISTS(SELECT 1 FROM budget_extras WHERE id=1);
             CREATE TABLE IF NOT EXISTS sync_base (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, data BLOB NOT NULL);
-            PRAGMA user_version=2; COMMIT;").map_err(error)?;
+            ").map_err(error)?;
+        crate::sync_storage::install_schema(&connection)?;
+        // Even assigning the same user_version writes SQLite's header and invalidates
+        // another connection's data_version/save token. Reopening current storage is a
+        // read unless a missing table/trigger actually needed installation.
+        if version != crate::sync_storage::STORAGE_SCHEMA_VERSION {
+            connection
+                .pragma_update(
+                    None,
+                    "user_version",
+                    crate::sync_storage::STORAGE_SCHEMA_VERSION,
+                )
+                .map_err(error)?;
+        }
+        connection.execute_batch("COMMIT;").map_err(error)?;
         Ok(Self {
             connection,
             path: path.to_path_buf(),
@@ -466,7 +509,11 @@ impl Store {
         if self.backup_preferences.exists() {
             return self.backup_retention();
         }
-        let keep = if [0, 5, 10, 30].contains(&legacy_keep) { legacy_keep } else { 0 };
+        let keep = if [0, 5, 10, 30].contains(&legacy_keep) {
+            legacy_keep
+        } else {
+            0
+        };
         self.set_backup_retention(keep)?;
         Ok(keep)
     }
@@ -488,12 +535,17 @@ impl Store {
         if ![0, 5, 10, 30].contains(&keep) {
             return Err(t!("Choose all backups, or the newest 5, 10 or 30."));
         }
-        write_atomic(&self.backup_preferences, &serde_json::to_vec(&BackupPreferences { keep }).map_err(error)?)
+        write_atomic(
+            &self.backup_preferences,
+            &serde_json::to_vec(&BackupPreferences { keep }).map_err(error)?,
+        )
     }
 
     fn retain_backups(&self) -> Result<()> {
         let keep = self.backup_retention()?;
-        if keep > 0 { self.prune_backups(keep)?; }
+        if keep > 0 {
+            self.prune_backups(keep)?;
+        }
         Ok(())
     }
 
@@ -519,6 +571,18 @@ impl Store {
     pub fn status(&self) -> Result<Status> {
         Self::status_from(&self.connection, &self.path, &self.id)
     }
+    /// Inspect an existing file without creating it, changing its schema or registering a
+    /// writer. Notifications for a closed budget must not invalidate another window's token.
+    pub fn existing_status(path: &Path, id: &str) -> Result<Status> {
+        let mut connection =
+            Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .map_err(error)?;
+        connection
+            .busy_timeout(Duration::from_secs(3))
+            .map_err(error)?;
+        let tx = connection.transaction().map_err(error)?;
+        Self::status_from(&tx, path, id)
+    }
     pub fn id(&self) -> &str {
         &self.id
     }
@@ -538,7 +602,9 @@ impl Store {
     }
     /// The window has changes in the draft that aren't saved yet.
     pub fn has_unsaved_draft(&self) -> bool {
-        self.cache.as_ref().is_some_and(|c| c.draft != c.persisted || c.heavy_dirty)
+        self.cache
+            .as_ref()
+            .is_some_and(|c| c.draft != c.persisted || c.heavy_dirty)
     }
 
     fn read(&mut self) -> Result<(Budget, Status)> {
@@ -568,7 +634,13 @@ impl Store {
             let values = stmt
                 .query_map([], |r| {
                     Ok(Assignment {
-                        extra: serde_json::from_str(&r.get::<_, String>(3)?).map_err(|e| rusqlite::Error::FromSqlConversionFailure(3, rusqlite::types::Type::Text, Box::new(e)))?,
+                        extra: serde_json::from_str(&r.get::<_, String>(3)?).map_err(|e| {
+                            rusqlite::Error::FromSqlConversionFailure(
+                                3,
+                                rusqlite::types::Type::Text,
+                                Box::new(e),
+                            )
+                        })?,
                         month: r.get(0)?,
                         category_id: r.get(1)?,
                         amount: r.get(2)?,
@@ -650,7 +722,11 @@ impl Store {
         Ok(self.cache.as_mut().expect("cache loaded"))
     }
     /// Runs `f` on the draft, or on a copy of it with `patch` applied.
-    pub fn read_draft<T>(&mut self, patch: Option<Patch>, f: impl FnOnce(&Budget) -> Result<T>) -> Result<T> {
+    pub fn read_draft<T>(
+        &mut self,
+        patch: Option<Patch>,
+        f: impl FnOnce(&Budget) -> Result<T>,
+    ) -> Result<T> {
         let cache = self.cache()?;
         match patch.filter(|p| !p.is_empty()) {
             Some(mut p) => {
@@ -675,7 +751,11 @@ impl Store {
     }
     /// Runs `f` on a copy of the draft (plus `patch`) and returns what it changed, as the
     /// window receives it. The draft itself is unchanged.
-    pub fn change_draft(&mut self, patch: Option<Patch>, f: impl FnOnce(Budget) -> Result<Budget>) -> Result<Patch> {
+    pub fn change_draft(
+        &mut self,
+        patch: Option<Patch>,
+        f: impl FnOnce(Budget) -> Result<Budget>,
+    ) -> Result<Patch> {
         let mut changes = self.read_draft(patch, |before| {
             let mut after = f(before.clone())?;
             stamp_added(before, &mut after);
@@ -706,19 +786,27 @@ impl Store {
         Ok(budget)
     }
     /// A fresh start must use the same source snapshot the window used for its balances.
-    pub fn fresh_start_source(&mut self, patch: Option<Patch>, expected_token: &str) -> Result<Budget> {
+    pub fn fresh_start_source(
+        &mut self,
+        patch: Option<Patch>,
+        expected_token: &str,
+    ) -> Result<Budget> {
         if self.status()?.token != expected_token || self.cache()?.token != expected_token {
-            return Err(t!("CONFLICT: The source budget changed. Fetch it and try the fresh start again."));
+            return Err(t!(
+                "CONFLICT: The source budget changed. Fetch it and try the fresh start again."
+            ));
         }
         self.full_draft(patch)
     }
     pub fn apply_patch(&mut self, mut patch: Patch) -> Result<Applied> {
+        self.check_sync_writable()?;
         let cache = self.cache()?;
         cache.restore_patch(&mut patch);
         patch.apply(&mut cache.draft);
         Ok(self.after_draft_change())
     }
     pub fn replace_draft(&mut self, mut budget: Budget) -> Result<Applied> {
+        self.check_sync_writable()?;
         let cache = self.cache()?;
         for t in &mut budget.transactions {
             cache.restore(t);
@@ -736,6 +824,7 @@ impl Store {
     /// Saves the draft: only rows that differ from the database are written,
     /// atomically, after the same validation and conflict checks as a full save.
     pub fn commit(&mut self, expected_token: &str) -> Result<Status> {
+        self.check_sync_writable()?;
         self.cache()?;
         let Store {
             connection,
@@ -765,7 +854,14 @@ impl Store {
         if patch.is_empty() && !cache.heavy_dirty {
             return Ok(current);
         }
-        write_changes(&tx, &cache.persisted, &cache.draft, &patch, &cache.heavy_json, cache.heavy_dirty)?;
+        write_changes(
+            &tx,
+            &cache.persisted,
+            &cache.draft,
+            &patch,
+            &cache.heavy_json,
+            cache.heavy_dirty,
+        )?;
         // Capture our acknowledgement while the write lock is held. Reading it
         // after commit could accidentally acknowledge a competing writer's version.
         let status = Self::status_from(&tx, path, id)?;
@@ -780,6 +876,7 @@ impl Store {
 
     /// Replaces the complete budget (imports). Heavy extras in `budget` are stored too.
     pub fn save(&mut self, budget: &Budget, expected_token: &str) -> Result<Status> {
+        self.check_sync_writable()?;
         validate(budget)?;
         let tx = self
             .connection
@@ -822,8 +919,15 @@ impl Store {
                 assignments
                     .execute(params![a.month, a.category_id, a.amount])
                     .map_err(error)?;
-                tx.execute("INSERT INTO assignment_extras(month,category_id,data) VALUES (?1,?2,?3)",
-                    params![a.month,a.category_id,serde_json::to_string(&a.extra).map_err(error)?]).map_err(error)?;
+                tx.execute(
+                    "INSERT INTO assignment_extras(month,category_id,data) VALUES (?1,?2,?3)",
+                    params![
+                        a.month,
+                        a.category_id,
+                        serde_json::to_string(&a.extra).map_err(error)?
+                    ],
+                )
+                .map_err(error)?;
             }
         }
         tx.execute(
@@ -847,7 +951,9 @@ impl Store {
         use rusqlite::OptionalExtension;
         let revision: Option<i64> = self
             .connection
-            .query_row("SELECT revision FROM sync_base WHERE id=1", [], |r| r.get(0))
+            .query_row("SELECT revision FROM sync_base WHERE id=1", [], |r| {
+                r.get(0)
+            })
             .optional()
             .map_err(error)?;
         Ok(revision.map(|r| r as u64))
@@ -860,12 +966,16 @@ impl Store {
         use std::io::Read;
         let row: Option<(i64, Vec<u8>)> = self
             .connection
-            .query_row("SELECT revision,data FROM sync_base WHERE id=1", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .query_row("SELECT revision,data FROM sync_base WHERE id=1", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
             .optional()
             .map_err(error)?;
         Ok(row.and_then(|(revision, data)| {
             let mut json = Vec::new();
-            flate2::read::GzDecoder::new(&data[..]).read_to_end(&mut json).ok()?;
+            flate2::read::GzDecoder::new(&data[..])
+                .read_to_end(&mut json)
+                .ok()?;
             Some((revision as u64, serde_json::from_slice(&json).ok()?))
         }))
     }
@@ -875,13 +985,22 @@ impl Store {
     /// As if this budget last synced before sync bases were kept.
     #[cfg(any(test, feature = "test-support"))]
     pub fn forget_sync_base(&self) -> Result<()> {
-        self.connection.execute("DELETE FROM sync_base", []).map_err(error)?;
+        self.connection
+            .execute("DELETE FROM sync_base", [])
+            .map_err(error)?;
         Ok(())
     }
     /// Saves a budget sync merged or downloaded together with its new sync base, in one
     /// transaction, so a merge can never be applied twice. Only rows that differ are written,
     /// and heavy extras stay as they are. Refused while the window has unsaved edits.
-    pub fn save_synced(&mut self, budget: &Budget, expected_token: &str, revision: u64, base: &Budget) -> Result<Status> {
+    pub fn save_synced(
+        &mut self,
+        budget: &Budget,
+        expected_token: &str,
+        revision: u64,
+        base: &Budget,
+    ) -> Result<Status> {
+        self.check_sync_writable()?;
         if self.has_unsaved_draft() {
             return Err(t!("Save your changes first."));
         }
@@ -900,14 +1019,182 @@ impl Store {
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(error)?;
-        if Self::status_from(&tx, path, id)?.token != expected_token || cache.token != expected_token {
-            return Err(t!("CONFLICT: The database changed while syncing. Sync tries again shortly."));
+        if Self::status_from(&tx, path, id)?.token != expected_token
+            || cache.token != expected_token
+        {
+            return Err(t!(
+                "CONFLICT: The database changed while syncing. Sync tries again shortly."
+            ));
         }
         if !patch.is_empty() {
-            write_changes(&tx, &cache.persisted, &budget, &patch, &cache.heavy_json, false)?;
+            write_changes(
+                &tx,
+                &cache.persisted,
+                &budget,
+                &patch,
+                &cache.heavy_json,
+                false,
+            )?;
         }
         write_sync_base(&tx, revision, base)?;
         let status = Self::status_from(&tx, path, id)?;
+        tx.commit().map_err(error)?;
+        cache.persisted = budget.clone();
+        cache.draft = budget;
+        cache.token = status.token.clone();
+        Ok(status)
+    }
+
+    /// Commits received content, account-scoped ancestry and any frozen outgoing request
+    /// together. The library delivery slot is deliberately a later, replayable transaction.
+    pub fn save_sync_v2(
+        &mut self,
+        budget: &Budget,
+        expected_token: &str,
+        binding: &crate::sync_storage::Binding,
+        intent: Option<&crate::sync_storage::UploadIntent>,
+    ) -> Result<Status> {
+        self.save_sync_v2_inner(budget, expected_token, binding, intent, false)
+    }
+
+    /// A clean old incarnation may follow an explicit remote restore automatically. Unknown
+    /// outcomes, saved edits and checkpoints must be preserved/reconciled before rebinding.
+    pub fn adopt_sync_v2(
+        &mut self,
+        budget: &Budget,
+        expected_token: &str,
+        binding: &crate::sync_storage::Binding,
+    ) -> Result<Status> {
+        self.save_sync_v2_inner(budget, expected_token, binding, None, true)
+    }
+
+    fn save_sync_v2_inner(
+        &mut self,
+        budget: &Budget,
+        expected_token: &str,
+        binding: &crate::sync_storage::Binding,
+        intent: Option<&crate::sync_storage::UploadIntent>,
+        adopting: bool,
+    ) -> Result<Status> {
+        if !adopting {
+            self.check_sync_writable()?;
+        }
+        if self.has_unsaved_draft() || !self.editor_checkpoints()?.is_empty() {
+            return Err(t!("Save your changes first."));
+        }
+        if adopting && self.folder().join("recovery.json").exists() {
+            return Err(
+                "Resolve this budget's recovery before adopting another incarnation.".into(),
+            );
+        }
+        validate(budget)?;
+        crate::sync_storage::valid_identity(&binding.identity)?;
+        let (budget, _) = split(budget.clone());
+        if let Some(intent) = intent {
+            if intent.identity != binding.identity
+                || intent.expected_version != binding.remote_version
+                || intent.candidate != budget
+            {
+                return Err(
+                    "The prepared upload does not match the merged budget and cloud base.".into(),
+                );
+            }
+        } else if budget != binding.base {
+            return Err(
+                "A merged budget needs a durable upload intent before it can be saved.".into(),
+            );
+        }
+        self.cache()?;
+        let Store {
+            connection,
+            path,
+            id,
+            cache,
+            ..
+        } = self;
+        let cache = cache.as_mut().expect("cache loaded");
+        let patch = Patch::diff(&cache.persisted, &budget);
+        let tx = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(error)?;
+        if Self::status_from(&tx, path, id)?.token != expected_token
+            || cache.token != expected_token
+        {
+            return Err(t!(
+                "CONFLICT: The database changed while syncing. Sync tries again shortly."
+            ));
+        }
+        if tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sync_upload_v2 WHERE state='prepared')",
+                [],
+                |r| r.get::<_, bool>(0),
+            )
+            .map_err(error)?
+        {
+            return Err(
+                "Resolve the pending sync operation before receiving another version.".into(),
+            );
+        }
+        if let Some(previous) = crate::sync_storage::read_binding(&tx)? {
+            if previous.identity != binding.identity {
+                if !adopting
+                    || previous.identity.account_id != binding.identity.account_id
+                    || previous.identity.budget_id != binding.identity.budget_id
+                {
+                    return Err(
+                        "A different sync incarnation requires explicit safe adoption.".into(),
+                    );
+                }
+                let dirty: bool = tx
+                    .query_row("SELECT dirty FROM sync_local_state WHERE id=1", [], |r| {
+                        r.get(0)
+                    })
+                    .map_err(error)?;
+                if dirty
+                    || Self::status_from(&tx, path, id)?.revision
+                        != previous.acknowledged_local_revision
+                {
+                    return Err(
+                        "Preserve local edits before adopting the restored cloud budget.".into(),
+                    );
+                }
+            } else if crate::sync_storage::decimal(&binding.remote_version)?
+                < crate::sync_storage::decimal(&previous.remote_version)?
+            {
+                return Err("An older remote version cannot replace verified ancestry.".into());
+            }
+        } else if adopting && Self::status_from(&tx, path, id)?.revision != 0 {
+            return Err("An existing unassociated budget requires reviewed reconciliation.".into());
+        }
+        if !patch.is_empty() {
+            write_changes(
+                &tx,
+                &cache.persisted,
+                &budget,
+                &patch,
+                &cache.heavy_json,
+                false,
+            )?;
+        }
+        let status = Self::status_from(&tx, path, id)?;
+        let mut acknowledged = binding.clone();
+        acknowledged.acknowledged_local_revision = if intent.is_none() {
+            status.revision
+        } else {
+            -1
+        };
+        crate::sync_storage::write_binding(&tx, &acknowledged)?;
+        if let Some(intent) = intent {
+            let mut captured = intent.clone();
+            captured.local_revision = status.revision;
+            crate::sync_storage::write_intent(&tx, &captured)?;
+        }
+        tx.execute(
+            "UPDATE sync_local_state SET dirty=?1,blocked=0 WHERE id=1",
+            [intent.is_some()],
+        )
+        .map_err(error)?;
         tx.commit().map_err(error)?;
         cache.persisted = budget.clone();
         cache.draft = budget;
@@ -922,7 +1209,9 @@ impl Store {
             return Err(t!("CONFLICT: Database changed before scheduled posting."));
         }
         if self.has_unsaved_draft() {
-            return Err(t!("Save your changes before posting scheduled transactions."));
+            return Err(t!(
+                "Save your changes before posting scheduled transactions."
+            ));
         }
         let cache = self.cache()?;
         let mut next = cache.persisted.clone();
@@ -969,6 +1258,9 @@ impl Store {
                 .map_err(error)?;
         }
         self.retain_backups()?;
+        if !path.is_file() {
+            return Err(t!("The sync backup was removed by retention. Keep all backups or check the device date before continuing."));
+        }
         Ok(path.to_string_lossy().into_owned())
     }
 
@@ -976,12 +1268,88 @@ impl Store {
     /// Android shares this file; internal pre-import/sync backups remain SQLite snapshots.
     pub fn backup_portable(&mut self) -> Result<String> {
         let (budget, _) = self.saved()?;
+        self.backup_sync_version(&budget)
+    }
+
+    /// Retains the complete offered version before an explicit whole-budget sync choice.
+    /// This writes only a normal portable backup; the saved budget, editor draft and sync
+    /// ancestry remain untouched. The user's usual backup retention policy still applies.
+    pub fn backup_sync_version(&self, budget: &Budget) -> Result<String> {
+        use std::io::Write;
+        validate(budget)?;
+        let bytes = serde_json::to_vec_pretty(budget).map_err(error)?;
         let directory = self.folder().join("backups");
         std::fs::create_dir_all(&directory).map_err(error)?;
-        let path = directory.join(format!("budget-{}.json", Utc::now().format("%Y%m%d-%H%M%S-%f")));
-        write_atomic(&path, &serde_json::to_vec_pretty(&budget).map_err(error)?)?;
-        self.retain_backups()?;
-        Ok(path.to_string_lossy().into_owned())
+        for attempt in 0..100 {
+            let stamp = Utc::now() + chrono::Duration::nanoseconds(attempt);
+            let path = directory.join(format!("budget-{}.json", stamp.format("%Y%m%d-%H%M%S-%f")));
+            let temporary = path.with_extension("json.tmp");
+            let mut options = std::fs::OpenOptions::new();
+            options.create_new(true).write(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            // The temporary name reserves this timestamp across simultaneous writers.
+            let mut file = match options.open(&temporary) {
+                Ok(file) => file,
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(error(e)),
+            };
+            if path.exists() {
+                drop(file);
+                std::fs::remove_file(&temporary).map_err(error)?;
+                continue;
+            }
+            let result = (|| -> Result<()> {
+                file.write_all(&bytes).map_err(error)?;
+                file.sync_all().map_err(error)?;
+                drop(file);
+                #[cfg(windows)]
+                {
+                    use std::os::windows::ffi::OsStrExt;
+                    #[link(name = "kernel32")]
+                    extern "system" {
+                        fn MoveFileExW(from: *const u16, to: *const u16, flags: u32) -> i32;
+                    }
+                    let from: Vec<u16> =
+                        temporary.as_os_str().encode_wide().chain(Some(0)).collect();
+                    let to: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+                    // SAFETY: both UTF-16 paths are NUL terminated and live through the call.
+                    // WRITE_THROUGH publishes durably without replacing an existing backup.
+                    if unsafe { MoveFileExW(from.as_ptr(), to.as_ptr(), 0x8) } == 0 {
+                        return Err(error(std::io::Error::last_os_error()));
+                    }
+                }
+                #[cfg(not(windows))]
+                {
+                    std::fs::rename(&temporary, &path).map_err(error)?;
+                    std::fs::File::open(&directory)
+                        .map_err(error)?
+                        .sync_all()
+                        .map_err(error)?;
+                    // Also persist creation of the backup directory itself on its first use.
+                    std::fs::File::open(self.folder())
+                        .map_err(error)?
+                        .sync_all()
+                        .map_err(error)?;
+                }
+                Ok(())
+            })();
+            if let Err(e) = result {
+                let _ = std::fs::remove_file(&temporary);
+                return Err(e);
+            }
+            self.retain_backups()?;
+            // A clock rollback can make this copy sort before existing backups. Never
+            // authorize replacing a version if retention already removed its recovery copy.
+            if !path.is_file() {
+                return Err(t!("The sync backup was removed by retention. Keep all backups or check the device date before continuing."));
+            }
+            return Ok(path.to_string_lossy().into_owned());
+        }
+        Err(t!("Could not reserve a unique backup filename. Try again."))
     }
 
     /// Restoring is a complete replacement, not an edit patch: omitted optional/hidden
@@ -989,7 +1357,9 @@ impl Store {
     pub fn restore_backup(&mut self, budget: &Budget, expected_token: &str) -> Result<Snapshot> {
         validate(budget)?;
         if self.status()?.token != expected_token {
-            return Err(t!("CONFLICT: The database changed. Fetch the saved budget before restoring."));
+            return Err(t!(
+                "CONFLICT: The database changed. Fetch the saved budget before restoring."
+            ));
         }
         self.backup()?;
         self.save(budget, expected_token)?;
@@ -1000,7 +1370,9 @@ impl Store {
     /// Deletes all but the newest `keep` backups this app made (timestamped SQLite/JSON files in
     /// the budget's backups folder). Other files there are never touched. Returns how many went.
     pub fn prune_backups(&self, keep: usize) -> Result<usize> {
-        if keep == 0 { return Ok(0); }
+        if keep == 0 {
+            return Ok(0);
+        }
         let directory = self
             .path
             .parent()
@@ -1024,8 +1396,8 @@ impl Store {
         let excess = backups.len().saturating_sub(keep);
         for path in &backups[..excess] {
             match std::fs::remove_file(path) {
-                Ok(()) => {},
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
                 Err(e) => return Err(error(e)),
             }
         }
@@ -1092,7 +1464,9 @@ impl Store {
             patch.apply(&mut budget);
             let matches = base == saved && revision(&cache.token) == saved;
             keep_hidden(&mut cache.hidden, &budget.transactions);
-            return Ok(Some(serde_json::json!({ "budget": for_window(&budget), "matches": matches })));
+            return Ok(Some(
+                serde_json::json!({ "budget": for_window(&budget), "matches": matches }),
+            ));
         }
         // Earlier versions stored the whole draft; its base cannot be verified.
         Ok(Some(serde_json::json!({
@@ -1113,7 +1487,10 @@ impl Store {
 /// folder, by name.
 pub fn export_ynab(budget: &Budget) -> Result<[(&'static str, Vec<u8>); 3]> {
     Ok([
-        ("Register.csv", crate::ynab::export_register(budget)?.into_bytes()),
+        (
+            "Register.csv",
+            crate::ynab::export_register(budget)?.into_bytes(),
+        ),
         ("Plan.csv", crate::ynab::export_plan(budget)?.into_bytes()),
         ("UrBudget.json", export_recovery_draft(budget)?),
     ])
@@ -1137,6 +1514,34 @@ mod tests {
     use crate::domain::tests::{purchase, sample};
 
     #[test]
+    fn reopening_and_readonly_status_preserve_other_window_token_but_a_save_changes_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("budget.sqlite3");
+        let mut first = Store::open_budget(&path, "budget").unwrap();
+        let initial = first.status().unwrap().token;
+        first.save(&sample(), &initial).unwrap();
+        let before = first.status().unwrap().token;
+        for _ in 0..3 {
+            let second = Store::open_budget(&path, "budget").unwrap();
+            assert_eq!(second.revision().unwrap(), first.revision().unwrap());
+            drop(second);
+            let read = Store::existing_status(&path, "budget").unwrap();
+            assert_eq!(read.revision, first.revision().unwrap());
+            assert_eq!(first.status().unwrap().token, before);
+        }
+        let mut second = Store::open_budget(&path, "budget").unwrap();
+        let mut changed = sample();
+        changed.name = "Saved by second window".into();
+        let token = second.status().unwrap().token;
+        second.save(&changed, &token).unwrap();
+        assert_ne!(first.status().unwrap().token, before);
+        assert!(first.save(&sample(), &before).is_err());
+        let absent = dir.path().join("absent/new.sqlite3");
+        assert!(Store::existing_status(&absent, "absent").is_err());
+        assert!(!absent.parent().unwrap().exists());
+    }
+
+    #[test]
     fn assignment_extension_metadata_migrates_and_patch_only_edits_survive_reopen() {
         let folder = tempfile::tempdir().unwrap();
         let path = folder.path().join("budget.sqlite3");
@@ -1145,19 +1550,36 @@ mod tests {
         let token = store.status().unwrap().token;
         store.save(&original, &token).unwrap();
         // Simulate a database created before assignment metadata had its own optional table.
-        store.connection.execute_batch("DROP TABLE assignment_extras").unwrap();
+        store
+            .connection
+            .execute_batch("DROP TABLE assignment_extras")
+            .unwrap();
         drop(store);
         let mut store = Store::open(&path).unwrap();
         let before = store.load().unwrap();
         assert_eq!(before.budget, original);
         let mut after = before.budget.clone();
-        after.assignments[0].extra.insert("sourceId".into(), serde_json::json!("legacy-row"));
+        after.assignments[0]
+            .extra
+            .insert("sourceId".into(), serde_json::json!("legacy-row"));
         let patch = Patch::diff(&before.budget, &after);
-        assert!(patch.assignments.is_some(), "metadata-only changes are real assignment changes");
+        assert!(
+            patch.assignments.is_some(),
+            "metadata-only changes are real assignment changes"
+        );
         store.apply_patch(patch).unwrap();
         store.commit(&before.token).unwrap();
         drop(store);
-        assert_eq!(Store::open(&path).unwrap().load().unwrap().budget.assignments[0].extra["sourceId"], "legacy-row");
+        assert_eq!(
+            Store::open(&path)
+                .unwrap()
+                .load()
+                .unwrap()
+                .budget
+                .assignments[0]
+                .extra["sourceId"],
+            "legacy-row"
+        );
     }
     fn transaction(id: &str) -> Transaction {
         let mut t = purchase();
@@ -1171,14 +1593,24 @@ mod tests {
         let original = store.load().unwrap();
         let mut invalid = original.budget.clone();
         invalid.name = "Unsaved recovery".into();
-        invalid.extra.insert("calculationAsOfMonth".into(), serde_json::json!("not-a-month"));
-        invalid.extra.insert("sourceExport".into(), serde_json::json!({"preserve": "full source"}));
+        invalid.extra.insert(
+            "calculationAsOfMonth".into(),
+            serde_json::json!("not-a-month"),
+        );
+        invalid.extra.insert(
+            "sourceExport".into(),
+            serde_json::json!({"preserve": "full source"}),
+        );
         store.replace_draft(invalid.clone()).unwrap();
         assert!(export(&invalid).is_err());
         let full = store.full_draft(None).unwrap();
-        let exported: Budget = serde_json::from_slice(&export_recovery_draft(&full).unwrap()).unwrap();
+        let exported: Budget =
+            serde_json::from_slice(&export_recovery_draft(&full).unwrap()).unwrap();
         assert_eq!(exported, invalid);
-        assert!(validate(&exported).is_err(), "exporting does not silently repair or certify the draft");
+        assert!(
+            validate(&exported).is_err(),
+            "exporting does not silently repair or certify the draft"
+        );
         assert_eq!(store.full_draft(None).unwrap(), invalid);
         let (saved, status) = store.saved().unwrap();
         assert_eq!(saved, original.budget);
@@ -1208,20 +1640,37 @@ mod tests {
             t
         };
         let mut imported = ahead("imported");
-        imported.extra.insert("source".into(), serde_json::json!({ "id": "ynab-imported" }));
-        budget.transactions.extend([ahead("typed"), imported, transaction("today")]);
+        imported.extra.insert(
+            "source".into(),
+            serde_json::json!({ "id": "ynab-imported" }),
+        );
+        budget
+            .transactions
+            .extend([ahead("typed"), imported, transaction("today")]);
         let saved = store.save(&budget, &token).unwrap();
 
         let posted = store.run_schedules(&saved.token, "2026-10-19").unwrap();
-        let ids = |b: &Budget| b.transactions.iter().map(|t| t.id.clone()).collect::<Vec<_>>();
+        let ids = |b: &Budget| {
+            b.transactions
+                .iter()
+                .map(|t| t.id.clone())
+                .collect::<Vec<_>>()
+        };
         assert_eq!(ids(&posted.budget), ["imported", "today"]);
         // Saved: a fresh load has the one-time schedule, and the import keeps its source.
         let loaded = store.load().unwrap();
         let schedules = crate::schedules::read(&loaded.budget).unwrap();
         assert_eq!(schedules.len(), 1);
-        assert_eq!((schedules[0].id.as_str(), schedules[0].frequency.as_str()), ("typed", "never"));
+        assert_eq!(
+            (schedules[0].id.as_str(), schedules[0].frequency.as_str()),
+            ("typed", "never")
+        );
         assert_eq!(schedules[0].next_date.as_deref(), Some("2999-01-01"));
-        assert!(loaded.budget.transactions.iter().any(|t| t.id == "imported" && t.extra.contains_key("source")));
+        assert!(loaded
+            .budget
+            .transactions
+            .iter()
+            .any(|t| t.id == "imported" && t.extra.contains_key("source")));
         assert_eq!(loaded.token, posted.token);
     }
     #[test]
@@ -1252,7 +1701,15 @@ mod tests {
         store.apply_patch(Patch::diff(&window, &next)).unwrap();
         store.commit(&saved.token).unwrap();
         let loaded = store.load().unwrap().budget;
-        let created = |id: &str| loaded.transactions.iter().find(|t| t.id == id).unwrap().created_at().map(str::to_owned);
+        let created = |id: &str| {
+            loaded
+                .transactions
+                .iter()
+                .find(|t| t.id == id)
+                .unwrap()
+                .created_at()
+                .map(str::to_owned)
+        };
         assert_eq!((created("old"), created("new")), (None, Some(added)));
     }
     #[test]
@@ -1263,23 +1720,42 @@ mod tests {
         let mut budget = sample();
         for id in ["a", "b"] {
             let mut t = transaction(id);
-            t.extra.insert("source".into(), serde_json::json!({ "id": format!("ynab-{id}") }));
+            t.extra.insert(
+                "source".into(),
+                serde_json::json!({ "id": format!("ynab-{id}") }),
+            );
             t.extra.insert("flag".into(), "red".into());
             budget.transactions.push(t);
         }
         store.save(&budget, &token).unwrap();
         let saved_source = |store: &mut Store, id: &str| {
             let (b, _) = store.saved().unwrap();
-            b.transactions.into_iter().find(|t| t.id == id).and_then(|t| t.extra.get("source").cloned())
+            b.transactions
+                .into_iter()
+                .find(|t| t.id == id)
+                .and_then(|t| t.extra.get("source").cloned())
         };
         let snapshot = store.load_light().unwrap();
-        let window: Budget = serde_json::from_value(serde_json::to_value(&snapshot).unwrap()["budget"].clone()).unwrap();
-        assert!(window.transactions.iter().all(|t| !t.extra.contains_key("source") && t.extra["flag"] == "red"));
-        assert!(window.transactions.iter().all(|t| t.extra["hasImportSource"] == true));
+        let window: Budget =
+            serde_json::from_value(serde_json::to_value(&snapshot).unwrap()["budget"].clone())
+                .unwrap();
+        assert!(window
+            .transactions
+            .iter()
+            .all(|t| !t.extra.contains_key("source") && t.extra["flag"] == "red"));
+        assert!(window
+            .transactions
+            .iter()
+            .all(|t| t.extra["hasImportSource"] == true));
 
         // An edit from the window keeps the source.
         let mut edited = window.clone();
-        edited.transactions.iter_mut().find(|t| t.id == "a").unwrap().memo = "Edited".into();
+        edited
+            .transactions
+            .iter_mut()
+            .find(|t| t.id == "a")
+            .unwrap()
+            .memo = "Edited".into();
         store.apply_patch(Patch::diff(&window, &edited)).unwrap();
         let token = store.commit(&snapshot.token).unwrap().token;
         assert_eq!(saved_source(&mut store, "a").unwrap()["id"], "ynab-a");
@@ -1297,7 +1773,9 @@ mod tests {
         // Changes worked out for the window leave it out; a transaction it sends gets it back.
         let changes = store
             .change_draft(None, |mut b| {
-                b.transactions.iter_mut().for_each(|t| t.memo = "Changed".into());
+                b.transactions
+                    .iter_mut()
+                    .for_each(|t| t.memo = "Changed".into());
                 Ok(b)
             })
             .unwrap();
@@ -1311,7 +1789,10 @@ mod tests {
         store.replace_draft(edited).unwrap();
         store
             .read_draft(None, |b| {
-                assert!(b.transactions.iter().all(|t| t.extra.contains_key("source")));
+                assert!(b
+                    .transactions
+                    .iter()
+                    .all(|t| t.extra.contains_key("source")));
                 Ok(())
             })
             .unwrap();
@@ -1327,41 +1808,72 @@ mod tests {
             "categories":[{"id":"rta","internal":true,"name":"Inflow: Ready to Assign"},{"id":"food","name":"Food"}],
             "payees":[{"id":"opening","name":"Starting Balance"}]
         }}}));
-        for (id, category) in [("opening", "rta"), ("rta", "rta"), ("cleared", "food"), ("unknown", "unknown"), ("named", "unknown"), ("explicit", "unknown")] {
+        for (id, category) in [
+            ("opening", "rta"),
+            ("rta", "rta"),
+            ("cleared", "food"),
+            ("unknown", "unknown"),
+            ("named", "unknown"),
+            ("explicit", "unknown"),
+        ] {
             let mut t = transaction(id);
             t.splits[0].category_id = None;
-            t.extra.insert("source".into(), serde_json::json!({"category_id":category,"payee_id":id}));
+            t.extra.insert(
+                "source".into(),
+                serde_json::json!({"category_id":category,"payee_id":id}),
+            );
             if id == "opening" {
                 t.payee = "Starting Balance".into();
                 t.splits[0].extra.insert("source".into(), Value::Null);
             }
             if matches!(id, "unknown" | "named" | "explicit") {
                 t.payee = "Starting Balance".into();
-                t.extra.get_mut("source").unwrap()["payee_name"] = serde_json::json!("Starting Balance");
+                t.extra.get_mut("source").unwrap()["payee_name"] =
+                    serde_json::json!("Starting Balance");
             }
             if id == "named" {
-                t.extra.get_mut("source").unwrap()["category_name"] = serde_json::json!("Inflow: Ready to Assign");
+                t.extra.get_mut("source").unwrap()["category_name"] =
+                    serde_json::json!("Inflow: Ready to Assign");
             }
-            if id == "explicit" { t.splits[0].extra.insert("unassigned".into(), Value::Bool(true)); }
+            if id == "explicit" {
+                t.splits[0]
+                    .extra
+                    .insert("unassigned".into(), Value::Bool(true));
+            }
             budget.transactions.push(t);
         }
         store.save(&budget, &token).unwrap();
         let snapshot = store.load_light().unwrap();
-        let window: Budget = serde_json::from_value(serde_json::to_value(&snapshot).unwrap()["budget"].clone()).unwrap();
+        let window: Budget =
+            serde_json::from_value(serde_json::to_value(&snapshot).unwrap()["budget"].clone())
+                .unwrap();
         assert!(!window.extra.contains_key("sourceExport"));
-        assert!(window.transactions.iter().all(|t| !t.extra.contains_key("source")));
+        assert!(window
+            .transactions
+            .iter()
+            .all(|t| !t.extra.contains_key("source")));
         let find = |id: &str| window.transactions.iter().find(|t| t.id == id).unwrap();
         assert_eq!(find("opening").extra["startingBalance"], true);
         assert_eq!(find("opening").splits[0].extra["unassigned"], true);
         assert_eq!(find("rta").splits[0].extra["unassigned"], true);
         assert_eq!(find("cleared").splits[0].extra["unassigned"], false);
         assert!(!find("unknown").splits[0].extra.contains_key("unassigned"));
-        assert!(!find("unknown").extra.contains_key("startingBalance"), "a payee alone cannot prove an opening entry");
+        assert!(
+            !find("unknown").extra.contains_key("startingBalance"),
+            "a payee alone cannot prove an opening entry"
+        );
         assert_eq!(find("named").extra["startingBalance"], true);
         assert_eq!(find("named").splits[0].extra["unassigned"], true);
         assert_eq!(find("explicit").extra["startingBalance"], true);
         let mut edited = window.clone();
-        edited.transactions.iter_mut().find(|t| t.id == "rta").unwrap().splits[0].extra.insert("unassigned".into(), Value::Bool(false));
+        edited
+            .transactions
+            .iter_mut()
+            .find(|t| t.id == "rta")
+            .unwrap()
+            .splits[0]
+            .extra
+            .insert("unassigned".into(), Value::Bool(false));
         store.apply_patch(Patch::diff(&window, &edited)).unwrap();
         store.commit(&snapshot.token).unwrap();
         drop(store);
@@ -1370,7 +1882,10 @@ mod tests {
         let cleared = saved.transactions.iter().find(|t| t.id == "rta").unwrap();
         assert_eq!(cleared.extra["source"]["category_id"], "rta");
         assert_eq!(cleared.splits[0].extra["unassigned"], false);
-        assert!(!crate::ledger::explicitly_unassigned(cleared, &cleared.splits[0]));
+        assert!(!crate::ledger::explicitly_unassigned(
+            cleared,
+            &cleared.splits[0]
+        ));
         assert_eq!(saved.transactions.len(), budget.transactions.len());
     }
     #[test]
@@ -1420,7 +1935,12 @@ mod tests {
         let store = Store::open(&path).unwrap();
         let backups = dir.path().join("backups");
         std::fs::create_dir_all(&backups).unwrap();
-        for stamp in ["20260101-000000", "20260102-000000", "20260103-000000", "20260104-000000"] {
+        for stamp in [
+            "20260101-000000",
+            "20260102-000000",
+            "20260103-000000",
+            "20260104-000000",
+        ] {
             std::fs::write(backups.join(format!("budget-{stamp}.sqlite3")), b"x").unwrap();
         }
         std::fs::write(backups.join("notes.txt"), b"mine").unwrap();
@@ -1430,7 +1950,14 @@ mod tests {
             .map(|e| e.unwrap().file_name().into_string().unwrap())
             .collect();
         left.sort();
-        assert_eq!(left, ["budget-20260103-000000.sqlite3", "budget-20260104-000000.sqlite3", "notes.txt"]);
+        assert_eq!(
+            left,
+            [
+                "budget-20260103-000000.sqlite3",
+                "budget-20260104-000000.sqlite3",
+                "notes.txt"
+            ]
+        );
     }
     #[test]
     fn portable_backup_restores_everything_without_old_hidden_or_optional_fields() {
@@ -1438,9 +1965,17 @@ mod tests {
         let mut store = Store::open(&dir.path().join("budget.db")).unwrap();
         let mut original = sample();
         original.transactions.push(purchase());
-        original.extra.insert("sourceExport".into(), serde_json::json!({"original": "import bytes"}));
-        original.extra.insert("schedules".into(), serde_json::json!([]));
-        original.transactions[0].extra.insert("source".into(), serde_json::json!({"originalId": "source-1"}));
+        original.extra.insert(
+            "sourceExport".into(),
+            serde_json::json!({"original": "import bytes"}),
+        );
+        original
+            .extra
+            .insert("schedules".into(), serde_json::json!([]));
+        original.transactions[0].extra.insert(
+            "source".into(),
+            serde_json::json!({"originalId": "source-1"}),
+        );
         let token = store.status().unwrap().token;
         store.save(&original, &token).unwrap();
         let path = store.backup_portable().unwrap();
@@ -1454,14 +1989,110 @@ mod tests {
         let token = store.status().unwrap().token;
         store.restore_backup(&replacement, &token).unwrap();
         assert_eq!(store.saved().unwrap().0, replacement);
-        assert!(!store.full_draft(None).unwrap().extra.contains_key("sourceExport"));
-        let before = std::fs::read_dir(dir.path().join("backups")).unwrap()
-            .map(|e| e.unwrap().path()).find(|p| p.extension().is_some_and(|s| s == "sqlite3")).unwrap();
+        assert!(!store
+            .full_draft(None)
+            .unwrap()
+            .extra
+            .contains_key("sourceExport"));
+        let before = std::fs::read_dir(dir.path().join("backups"))
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .find(|p| p.extension().is_some_and(|s| s == "sqlite3"))
+            .unwrap();
         assert_eq!(Store::open(&before).unwrap().saved().unwrap().0, original);
         let token = store.status().unwrap().token;
         store.restore_backup(&portable, &token).unwrap();
         assert_eq!(store.saved().unwrap().0, original);
     }
+    #[test]
+    fn offered_sync_version_is_a_readable_backup_without_changing_draft_or_ancestry() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("budget.db");
+        let mut store = Store::open(&path).unwrap();
+        let mut saved = sample();
+        saved.transactions.push(purchase());
+        saved
+            .extra
+            .insert("sourceExport".into(), serde_json::json!({"local":"audit"}));
+        store.save(&saved, &store.status().unwrap().token).unwrap();
+        store.set_sync_base(7, &saved).unwrap();
+        let snapshot = store.load().unwrap();
+        let mut draft = saved.clone();
+        draft.name = "Unsaved local draft".into();
+        store.replace_draft(draft.clone()).unwrap();
+        let recovery = std::fs::read(store.recovery_path()).unwrap();
+        let token = store.status().unwrap().token;
+        let mut remote = saved.clone();
+        remote.name = "Offered cloud version".into();
+        remote.extra.insert(
+            "sourceExport".into(),
+            serde_json::json!({"remote":"all audit data"}),
+        );
+        remote.transactions[0]
+            .extra
+            .insert("source".into(), serde_json::json!({"id":"remote-hidden"}));
+        remote.transactions[0].memo = "Remote-only edit".into();
+        store.set_backup_retention(5).unwrap();
+        for _ in 0..6 {
+            store.backup().unwrap();
+        }
+        let backup_path = store.backup_sync_version(&remote).unwrap();
+        let entries: Vec<_> = std::fs::read_dir(dir.path().join("backups"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect();
+        assert_eq!(entries.len(), 5);
+        assert!(entries
+            .iter()
+            .all(|path| is_backup_name(path.file_name().unwrap().to_str().unwrap())));
+        assert!(entries.contains(&PathBuf::from(&backup_path)));
+        let recovered: Budget =
+            serde_json::from_slice(&std::fs::read(&backup_path).unwrap()).unwrap();
+        assert_eq!(recovered, remote);
+        assert_eq!(store.status().unwrap().token, token);
+        assert_eq!(store.saved().unwrap().0, saved);
+        assert_eq!(store.full_draft(None).unwrap(), draft);
+        assert!(store.has_unsaved_draft());
+        assert_eq!(std::fs::read(store.recovery_path()).unwrap(), recovery);
+        assert_eq!(store.sync_base().unwrap(), Some((7, saved.clone())));
+        assert_eq!(snapshot.token, token);
+        // A failed validation creates no partial or listed backup and changes no state.
+        remote.transactions[0].amount -= 1;
+        assert!(store.backup_sync_version(&remote).is_err());
+        assert_eq!(
+            std::fs::read_dir(dir.path().join("backups"))
+                .unwrap()
+                .count(),
+            5
+        );
+        assert_eq!(store.full_draft(None).unwrap(), draft);
+        assert_eq!(store.sync_base().unwrap(), Some((7, saved)));
+    }
+
+    #[test]
+    fn sync_backup_does_not_authorize_replacement_if_clock_rollback_prunes_the_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(&dir.path().join("budget.db")).unwrap();
+        store.set_backup_retention(5).unwrap();
+        let backups = dir.path().join("backups");
+        std::fs::create_dir_all(&backups).unwrap();
+        for day in 1..=5 {
+            std::fs::write(
+                backups.join(format!("budget-999901{day:02}-000000.json")),
+                b"preserved future-dated copy",
+            )
+            .unwrap();
+        }
+        assert!(store.backup_sync_version(&sample()).is_err());
+        assert!(store.backup().is_err());
+        assert_eq!(std::fs::read_dir(&backups).unwrap().count(), 5);
+        store.set_backup_retention(0).unwrap();
+        let path = store.backup_sync_version(&sample()).unwrap();
+        let restored: Budget = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        assert_eq!(restored, sample());
+        assert_eq!(std::fs::read_dir(backups).unwrap().count(), 6);
+    }
+
     #[test]
     fn every_new_backup_enforces_the_native_retention_setting_across_reopens() {
         let dir = tempfile::tempdir().unwrap();
@@ -1469,19 +2100,30 @@ mod tests {
         let mut store = Store::open(&path).unwrap();
         assert_eq!(store.initialize_backup_retention(5).unwrap(), 5);
         let folder = dir.path().join("backups");
-        let count = || std::fs::read_dir(&folder).unwrap().filter_map(|e| e.ok())
-            .filter(|e| is_backup_name(&e.file_name().to_string_lossy())).count();
-        for _ in 0..7 { store.backup().unwrap(); }
+        let count = || {
+            std::fs::read_dir(&folder)
+                .unwrap()
+                .filter_map(|e| e.ok())
+                .filter(|e| is_backup_name(&e.file_name().to_string_lossy()))
+                .count()
+        };
+        for _ in 0..7 {
+            store.backup().unwrap();
+        }
         assert_eq!(count(), 5);
         drop(store);
         store = Store::open(&path).unwrap();
         assert_eq!(store.initialize_backup_retention(0).unwrap(), 5);
-        for _ in 0..7 { store.backup_portable().unwrap(); }
+        for _ in 0..7 {
+            store.backup_portable().unwrap();
+        }
         assert_eq!(count(), 5);
         std::fs::write(folder.join("budget-my-notes.sqlite3"), "personal file").unwrap();
         for keep in [10, 30] {
             store.set_backup_retention(keep).unwrap();
-            for _ in 0..keep + 2 { store.backup().unwrap(); }
+            for _ in 0..keep + 2 {
+                store.backup().unwrap();
+            }
             assert_eq!(count(), keep);
         }
         store.set_backup_retention(0).unwrap();
@@ -1530,6 +2172,7 @@ mod tests {
         let mut a = Store::open(&path).unwrap();
         let first = a.load().unwrap();
         let other = Connection::open(&path).unwrap();
+        crate::sync_storage::register_writer(&other).unwrap();
         other
             .execute("UPDATE metadata SET name='Raw writer'", [])
             .unwrap();
@@ -1579,7 +2222,10 @@ mod tests {
             d.transactions.push(transaction("new"));
             d.assignments[0].amount = 123;
             d.name = "Renamed".into();
-            d.extra.insert("ynabMonths".into(), serde_json::json!([{"month":"2026-10-01","note":"Hi"}]));
+            d.extra.insert(
+                "ynabMonths".into(),
+                serde_json::json!([{"month":"2026-10-01","note":"Hi"}]),
+            );
         });
         // Reorder, then delete an account's transactions and the account itself.
         edit(&mut store, |d| {
@@ -1594,7 +2240,15 @@ mod tests {
         assert_eq!(loaded.name, "Renamed");
         assert_eq!(loaded.transactions.first().unwrap().id, "new");
         assert!(!loaded.transactions.iter().any(|t| t.id == "t07"));
-        assert_eq!(loaded.transactions.iter().find(|t| t.id == "t03").unwrap().memo, "Edited");
+        assert_eq!(
+            loaded
+                .transactions
+                .iter()
+                .find(|t| t.id == "t03")
+                .unwrap()
+                .memo,
+            "Edited"
+        );
         assert_eq!(loaded.categories[0].id, "payment");
         assert_eq!(loaded.assignments[0].amount, 123);
         edit(&mut reopened, |d| {
@@ -1613,16 +2267,24 @@ mod tests {
         let mut store = Store::open(&dir.path().join("budget.db")).unwrap();
         let token = store.status().unwrap().token;
         let mut b = sample();
-        b.extra.insert("sourceExport".into(), serde_json::json!({"data":{"server_knowledge":7}}));
+        b.extra.insert(
+            "sourceExport".into(),
+            serde_json::json!({"data":{"server_knowledge":7}}),
+        );
         store.save(&b, &token).unwrap();
         let light = store.load_light().unwrap();
         assert!(!light.budget.extra.contains_key("sourceExport"));
-        assert!(!serde_json::to_string(&store.load().unwrap()).unwrap().contains("server_knowledge"));
+        assert!(!serde_json::to_string(&store.load().unwrap())
+            .unwrap()
+            .contains("server_knowledge"));
         edit(&mut store, |d| {
             d.extra.insert("ynabMonths".into(), serde_json::json!([]));
         });
         let full = store.load().unwrap().budget;
-        assert_eq!(full.extra["sourceExport"], serde_json::json!({"data":{"server_knowledge":7}}));
+        assert_eq!(
+            full.extra["sourceExport"],
+            serde_json::json!({"data":{"server_knowledge":7}})
+        );
         assert_eq!(store.full_draft(None).unwrap(), full);
     }
 
@@ -1637,12 +2299,21 @@ mod tests {
         store
             .apply_patch(Patch::diff(&snapshot.budget, &draft))
             .unwrap();
-        Connection::open(&path)
-            .unwrap()
-            .execute("UPDATE metadata SET revision=revision+1", [])
-            .unwrap();
-        assert!(store.commit(&snapshot.token).unwrap_err().starts_with("CONFLICT:"));
-        assert_eq!(store.read_draft(None, |b| Ok(b.name.clone())).unwrap(), "Mine");
+        {
+            let writer = Connection::open(&path).unwrap();
+            crate::sync_storage::register_writer(&writer).unwrap();
+            writer
+                .execute("UPDATE metadata SET revision=revision+1", [])
+                .unwrap();
+        }
+        assert!(store
+            .commit(&snapshot.token)
+            .unwrap_err()
+            .starts_with("CONFLICT:"));
+        assert_eq!(
+            store.read_draft(None, |b| Ok(b.name.clone())).unwrap(),
+            "Mine"
+        );
         assert_eq!(store.load().unwrap().budget.name, "My budget");
     }
 
@@ -1651,10 +2322,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(&dir.path().join("budget.db")).unwrap();
         let mut budget = sample();
-        budget.extra.insert("schedules".into(), serde_json::json!([{
-            "id": "rent", "nextDate": "2026-10-01", "anchorDate": "2026-10-01",
-            "frequency": "monthly", "transaction": purchase()
-        }]));
+        budget.extra.insert(
+            "schedules".into(),
+            serde_json::json!([{
+                "id": "rent", "nextDate": "2026-10-01", "anchorDate": "2026-10-01",
+                "frequency": "monthly", "transaction": purchase()
+            }]),
+        );
         let token = store.status().unwrap().token;
         let token = store.save(&budget, &token).unwrap().token;
         let mut draft = budget.clone();
@@ -1664,7 +2338,10 @@ mod tests {
         assert!(store.run_schedules(&token, "2026-10-01").is_err());
         assert_eq!(store.full_draft(None).unwrap(), draft);
         assert_eq!(store.saved().unwrap().0, budget);
-        assert_eq!(store.read_recovery().unwrap().unwrap()["budget"]["name"], "Unsaved changes");
+        assert_eq!(
+            store.read_recovery().unwrap().unwrap()["budget"]["name"],
+            "Unsaved changes"
+        );
 
         let token = store.commit(&token).unwrap().token;
         let posted = store.run_schedules(&token, "2026-10-01").unwrap();
@@ -1705,19 +2382,35 @@ mod tests {
         let mut store = Store::open_budget(&path, "original").unwrap();
         let mut budget = sample();
         let mut t = purchase();
-        t.extra.insert("source".into(), serde_json::json!({"debt_transaction_type": "interest"}));
+        t.extra.insert(
+            "source".into(),
+            serde_json::json!({"debt_transaction_type": "interest"}),
+        );
         budget.transactions.push(t);
         let token = store.status().unwrap().token;
         let token = store.save(&budget, &token).unwrap().token;
         let window = for_window(&budget);
         let mut edited = window.clone();
         edited.name = "Current window draft".into();
-        let source = store.fresh_start_source(Some(Patch::diff(&window, &edited)), &token).unwrap();
+        let source = store
+            .fresh_start_source(Some(Patch::diff(&window, &edited)), &token)
+            .unwrap();
         assert_eq!(source.name, edited.name);
-        assert_eq!(source.transactions[0].extra["source"]["debt_transaction_type"], "interest");
+        assert_eq!(
+            source.transactions[0].extra["source"]["debt_transaction_type"],
+            "interest"
+        );
         assert_eq!(store.full_draft(None).unwrap(), budget);
-        assert!(store.fresh_start_source(None, &token.replacen("original", "other", 1)).is_err());
-        Connection::open(&path).unwrap().execute("UPDATE metadata SET revision=revision+1", []).unwrap();
+        assert!(store
+            .fresh_start_source(None, &token.replacen("original", "other", 1))
+            .is_err());
+        {
+            let writer = Connection::open(&path).unwrap();
+            crate::sync_storage::register_writer(&writer).unwrap();
+            writer
+                .execute("UPDATE metadata SET revision=revision+1", [])
+                .unwrap();
+        }
         assert!(store.fresh_start_source(None, &token).is_err());
     }
 
@@ -1729,7 +2422,9 @@ mod tests {
         let snapshot = store.load_light().unwrap();
         let mut draft = snapshot.budget.clone();
         draft.name = "Unsaved".into();
-        draft.extra.insert("note".into(), serde_json::json!("x".repeat(100_000)));
+        draft
+            .extra
+            .insert("note".into(), serde_json::json!("x".repeat(100_000)));
         store
             .apply_patch(Patch::diff(&snapshot.budget, &draft))
             .unwrap();
@@ -1766,10 +2461,14 @@ mod tests {
         let mut b = Store::open_budget(&dir.path().join("b.db"), "budget-b").unwrap();
         let token_a = a.load_light().unwrap().token;
         let snapshot_b = b.load_light().unwrap();
-        assert_ne!(token_a, snapshot_b.token, "same revision, different budgets");
+        assert_ne!(
+            token_a, snapshot_b.token,
+            "same revision, different budgets"
+        );
         let mut draft = snapshot_b.budget.clone();
         draft.name = "Wrong budget".into();
-        b.apply_patch(Patch::diff(&snapshot_b.budget, &draft)).unwrap();
+        b.apply_patch(Patch::diff(&snapshot_b.budget, &draft))
+            .unwrap();
         assert!(b.commit(&token_a).unwrap_err().starts_with("CONFLICT:"));
         assert!(b.commit(&snapshot_b.token).is_ok());
     }
@@ -1781,7 +2480,8 @@ mod tests {
         let mut store = Store::open(&path).unwrap();
         std::fs::write(
             path.with_file_name("recovery.json"),
-            serde_json::to_vec(&serde_json::json!({"budget": {"name": "Old draft"}, "base": "x"})).unwrap(),
+            serde_json::to_vec(&serde_json::json!({"budget": {"name": "Old draft"}, "base": "x"}))
+                .unwrap(),
         )
         .unwrap();
         let recovered = store.read_recovery().unwrap().unwrap();
@@ -1795,7 +2495,10 @@ mod tests {
         let path = dir.path().join("budget.db");
         let mut store = Store::open(&path).unwrap();
         let mut b = sample();
-        b.extra.insert("sourceExport".into(), serde_json::json!({"data":{"server_knowledge":7}}));
+        b.extra.insert(
+            "sourceExport".into(),
+            serde_json::json!({"data":{"server_knowledge":7}}),
+        );
         store.save(&b, &store.status().unwrap().token).unwrap();
         assert!(store.sync_base().unwrap().is_none());
         let (light, _) = split(b.clone());
@@ -1823,8 +2526,12 @@ mod tests {
         let snapshot = reopened.load_light().unwrap();
         let mut draft = snapshot.budget.clone();
         draft.name = "Unsaved".into();
-        reopened.apply_patch(Patch::diff(&snapshot.budget, &draft)).unwrap();
-        assert!(reopened.save_synced(&merged, &snapshot.token, 4, &merged).is_err());
+        reopened
+            .apply_patch(Patch::diff(&snapshot.budget, &draft))
+            .unwrap();
+        assert!(reopened
+            .save_synced(&merged, &snapshot.token, 4, &merged)
+            .is_err());
     }
 
     #[test]
@@ -1833,7 +2540,8 @@ mod tests {
         let fragment = fragment(heavy.as_object().unwrap()).unwrap();
         for light in [serde_json::json!({}), serde_json::json!({"x": [1]})] {
             let joined: Value =
-                serde_json::from_str(&extras_json(light.as_object().unwrap(), &fragment).unwrap()).unwrap();
+                serde_json::from_str(&extras_json(light.as_object().unwrap(), &fragment).unwrap())
+                    .unwrap();
             assert_eq!(joined["sourceExport"]["a"], 1);
         }
         assert_eq!(extras_json(&Map::new(), "").unwrap(), "{}");

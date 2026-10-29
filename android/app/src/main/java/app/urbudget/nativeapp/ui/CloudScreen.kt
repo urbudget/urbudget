@@ -70,16 +70,21 @@ internal fun CloudScreen(vm: BudgetViewModel) {
     }
     fun call(method: String, params: JSONObject = JSONObject(), done: (Any?) -> Unit = {}) = work {
         var invoked = false
+        var syncReport: JSONObject? = null
         try {
             val result = withContext(Dispatchers.IO) {
                 invoked = true
                 NativeServices.call(method, params)
             }
+            if (method in setOf("sync_now", "sync_resolve")) syncReport = result as? JSONObject
             done(result)
         } finally {
             // JNI can complete a sync commit after this screen is disposed. Queue the
             // revision probe even when cancellation prevents delivering the result.
-            if (invoked && NativeServicePolicy.budgetResult(method)) vm.refresh()
+            if (invoked && NativeServicePolicy.budgetResult(method)) {
+                val report = syncReport
+                if (report != null) withContext(Dispatchers.IO) { vm.refreshAfterSync(report) } else vm.refresh()
+            }
         }
     }
     LaunchedEffect(lifecycle) {
@@ -116,6 +121,7 @@ internal fun CloudScreen(vm: BudgetViewModel) {
     }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 4.dp, bottom = DockRoom), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text(stringResource(R.string.cloud_intro), Modifier.padding(horizontal = 4.dp), color = ur.muted, style = MaterialTheme.typography.bodyMedium) }
+        if (signedIn.isNotBlank() && sync?.optInt("protocol", 1) != 2) item { Text(stringResource(R.string.cloud_legacy_library), color = ur.muted) }
         if (busy) item { LinearProgressIndicator(Modifier.fillMaxWidth(), color = ur.accent) }
         error?.let { item { FormError(it) } }
         notice?.let { item { Notice(it, tone = "info") } }
@@ -181,11 +187,11 @@ internal fun CloudScreen(vm: BudgetViewModel) {
                             entry.optJSONArray("notes")?.let { notes -> for (i in 0 until notes.length()) Text(notes.optString(i), style = MaterialTheme.typography.bodySmall, color = ur.muted) }
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 when (state) {
-                                    "cloud_only" -> SecondaryButton(stringResource(R.string.cloud_download_open), { call("sync_download", JSONObject().put("id", entry.text("id"))) { id -> vm.service("open_budget", JSONObject().put("id", id)) } }, enabled = !busy)
-                                    "local_only" -> SecondaryButton(stringResource(R.string.cloud_start_syncing), { call("sync_track", JSONObject().put("ids", JSONArray().put(entry.text("id")))) { vm.service("sync_now") } }, enabled = !busy)
+                                    "cloud_only" -> if (sync?.optInt("protocol", 1) != 2) SecondaryButton(stringResource(R.string.cloud_download_open), { call("sync_download", JSONObject().put("id", entry.text("id"))) { id -> vm.service("open_budget", JSONObject().put("id", id)) } }, enabled = !busy)
+                                    "local_only" -> if (sync?.optInt("protocol", 1) != 2) SecondaryButton(stringResource(R.string.cloud_start_syncing), { call("sync_track", JSONObject().put("ids", JSONArray().put(entry.text("id")))) { vm.service("sync_now") } }, enabled = !busy)
                                     "conflict" -> PrimaryButton(stringResource(R.string.cloud_review_differences), { pendingBudget = entry; dialog = "conflict" }, enabled = !busy, color = ur.warning)
                                 }
-                                if (state != "local_only") TextButton({ pendingBudget = entry; dialog = "removeCloud" }, enabled = !busy) { Text(stringResource(R.string.cloud_remove_copy), color = ur.negative) }
+                                if (sync?.optInt("protocol", 1) != 2 && state != "local_only") TextButton({ pendingBudget = entry; dialog = "removeCloud" }, enabled = !busy) { Text(stringResource(R.string.cloud_remove_copy), color = ur.negative) }
                             }
                         }
                         if (index < reportedBudgets.lastIndex) Hairline(start = 16.dp)
@@ -218,7 +224,7 @@ internal fun CloudScreen(vm: BudgetViewModel) {
         call("sync_remove", JSONObject().put("id", pendingBudget!!.text("id"))) { dialog = ""; vm.service("sync_now") }
     }, enabled = !busy) { Text(stringResource(R.string.common_remove)) } }, dismissButton = { TextButton({ dialog = "" }) { Text(stringResource(R.string.common_cancel)) } })
     if (dialog == "conflict" && pendingBudget != null) SyncConflictDialog(pendingBudget!!, busy, { dialog = "" }) { keep, choices ->
-        call("sync_resolve", JSONObject().put("id", pendingBudget!!.text("id")).put("keep", keep).put("choices", choices)) { dialog = "" }
+        call("sync_resolve", JSONObject().put("id", pendingBudget!!.text("id")).put("keep", keep).put("choices", choices).put("review", pendingBudget!!.opt("review") ?: JSONObject.NULL)) { dialog = "" }
     }
 }
 
@@ -236,6 +242,7 @@ private fun syncStateLabel(state: String): String = when (state) {
     "uploaded" -> stringResource(R.string.sync_state_uploaded); "downloaded" -> stringResource(R.string.sync_state_downloaded)
     "merged" -> stringResource(R.string.sync_state_merged); "waiting" -> stringResource(R.string.sync_state_waiting)
     "update_app" -> stringResource(R.string.sync_state_update_app); "error" -> stringResource(R.string.sync_state_error)
+    "deletion_conflict" -> stringResource(R.string.library_deletion_conflict)
     "" -> stringResource(R.string.sync_state_unknown)
     else -> state.replace('_', ' ').replaceFirstChar(Char::uppercase)
 }
@@ -253,12 +260,46 @@ private fun SyncConflictDialog(entry: JSONObject, busy: Boolean, close: () -> Un
         if (conflicts.isNotEmpty()) LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             items(conflicts, key = { it.text("key") }) { difference ->
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(Money.joined(listOf(difference.text("label"), difference.text("field"))), fontWeight = FontWeight.Bold)
-            Text(stringResource(R.string.conflict_this_device_value, (difference.opt("local") ?: stringResource(R.string.conflict_deleted)).toString()))
-            Text(stringResource(R.string.conflict_cloud_value, (difference.opt("remote") ?: stringResource(R.string.conflict_deleted)).toString()))
+            Text(Money.joined(listOf(difference.text("label"), if (difference.text("field") == "budgetVersion") stringResource(R.string.conflict_whole_budget) else difference.text("field"))), fontWeight = FontWeight.Bold)
+            if (difference.optJSONObject("about")?.optBoolean("wholeBudget") == true) Text(stringResource(R.string.conflict_whole_budget_help))
+            Text(stringResource(R.string.conflict_this_device_value, describeSyncConflict(difference.opt("local"))))
+            Text(stringResource(R.string.conflict_cloud_value, describeSyncConflict(difference.opt("remote"))))
             Choice(stringResource(R.string.conflict_keep), choices[difference.text("key")].orEmpty(), listOf("local" to stringResource(R.string.conflict_this_device), "cloud" to stringResource(R.string.conflict_cloud)), { choices = choices + (difference.text("key") to it) })
             }
             }
         }
     }
+}
+
+internal fun describeSyncConflict(value: Any?): String {
+    if (value == null || value == JSONObject.NULL) return Words[R.string.conflict_deleted]
+    val plan = value as? JSONObject ?: return value.toString()
+    if (plan.has("amount") && (plan.has("lines") || plan.has("transfer"))) {
+        fun state(value: String) = when (value) { "cleared" -> Words[R.string.status_cleared]; "reconciled" -> Words[R.string.status_reconciled]; "uncleared" -> Words[R.string.status_uncleared]; else -> value }
+        val parts = mutableListOf(plan.optString("account"), Money.format(plan.optLong("amount")))
+        if (!plan.isNull("transfer") && plan.optString("transfer").isNotBlank()) parts.add(Words[R.string.conflict_transfer_account, plan.optString("transfer")])
+        plan.optJSONArray("lines")?.let { lines -> for (i in 0 until lines.length()) {
+            val line = lines.getJSONObject(i)
+            val destination = if (!line.isNull("transfer")) Words[R.string.conflict_transfer_account,line.optString("transfer")] else if (!line.isNull("category")) line.optString("category") else Words[R.string.conflict_ready_to_assign]
+            parts.add(destination + ": " + Money.format(line.optLong("amount")))
+        } }
+        if (plan.optString("status").isNotBlank()) parts.add(state(plan.optString("status")))
+        if (plan.optString("transferStatus").isNotBlank()) parts.add(Words[R.string.conflict_transfer_status,state(plan.optString("transferStatus"))])
+        return parts.filter { it.isNotBlank() }.joinToString("\n")
+    }
+    if (plan.has("reason") && plan.has("transactions")) return listOf(plan.optString("name"),
+        Words[R.string.conflict_budget_counts, plan.optInt("accounts").toString(), plan.optInt("categories").toString(), plan.optInt("transactions").toString()],
+        plan.optString("reason")).joinToString("\n")
+    if (plan.optString("type") != "monthPlan") return value.toString()
+    val currency = plan.optString("currency", "SAR")
+    fun amount(value: Long) = Money.format(value, currency)
+    val rows = plan.optJSONArray("categories") ?: JSONArray()
+    return (listOf(
+        Words[R.string.conflict_month_total, amount(plan.optLong("baseTotal")), amount(plan.optLong("total"))],
+        Words[R.string.conflict_ready_change, amount(plan.optLong("readyToAssignChange"))],
+        Words[R.string.conflict_moves, plan.optInt("moveCount").toString()]
+    ) + (0 until rows.length()).map { i ->
+        val row = rows.getJSONObject(i)
+        row.optString("name") + ": " + amount(row.optLong("base")) + " → " + amount(row.optLong("amount")) + " (" + Words[R.string.conflict_amount_change, amount(row.optLong("delta"))] + ")"
+    }).joinToString("\n")
 }

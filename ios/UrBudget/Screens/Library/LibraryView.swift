@@ -4,8 +4,11 @@ import UniformTypeIdentifiers
 /// The budgets on this device and the open one's backups, as Android's budget library: open, add,
 /// fresh-start or delete a budget; back up, restore and prune backups; recover unsaved changes.
 struct LibraryView: View {
+    @Environment(\.dismiss) private var dismiss
     @Environment(BudgetStore.self) private var store
+    @Environment(SyncCoordinator.self) private var sync
     @State private var budgets: [JSON] = []
+    @State private var drafts: [JSON] = []
     @State private var backups: [LibraryBackup] = []
     @State private var keep = 0
     /// `read_recovery`'s reply, { budget, matches }, when a save didn't finish.
@@ -34,6 +37,20 @@ struct LibraryView: View {
         // One small function per section: Xcode 26's type checker gives up on the whole list at once.
         List {
             budgetsSection(busy: busy)
+            if !drafts.isEmpty {
+                Section("Unfinished edits") {
+                    Text("Review these saved fields and re-enter the changes you want to keep.")
+                    ForEach(Array(drafts.enumerated()), id: \.offset) { _, draft in
+                        Text(draft["draft"].serialized()).font(.caption).textSelection(.enabled)
+                        Button("Discard these edits", role: .destructive) {
+                            run {
+                                _ = try await store.service("editor_discard", ["budgetId": draft["budgetId"], "id": draft["editorId"], "epoch": draft["epoch"]])
+                                drafts.removeAll { $0 == draft }
+                            }
+                        }
+                    }
+                }
+            }
             freshStartSection(busy: busy)
             if let recovery { recoverySection(recovery, busy: busy) }
             backupSettingsSection(busy: busy)
@@ -48,6 +65,12 @@ struct LibraryView: View {
             }
         }
         .task(id: store.version) { await reload() }
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(3))
+                if !Task.isCancelled && !working { await reload() }
+            }
+        }
         .refreshable { await reload() }
         .sheet(isPresented: $creating) { NewBudgetForm() }
         .sheet(isPresented: $freshStarting) {
@@ -55,9 +78,9 @@ struct LibraryView: View {
         }
         .confirmationDialog(deleteTitle, isPresented: present($deleting), titleVisibility: .visible,
                             presenting: deleting) { entry in
-            Button("Delete local budget", role: .destructive) { delete(entry) }
+            Button("Move to Trash", role: .destructive) { delete(entry) }
         } message: { _ in
-            Text("The budget and its files are removed from this device. Export a backup first if you want to keep them. Cloud copies are managed separately under Account & sync.")
+            Text("Account budgets move to Trash on every device. Restore them from the library. Local-only budgets stay private.")
         }
         .confirmationDialog("Restore this backup?", isPresented: present($restoring), titleVisibility: .visible, presenting: restoring) { backup in
             Button("Restore", role: .destructive) { restore(backup) }
@@ -99,7 +122,7 @@ struct LibraryView: View {
         } header: {
             Text("Budgets")
         } footer: {
-            Text("Each has its own history, bank links, assistant chats and backups. Tap the open budget for its name, currency and formats. Swipe another to delete it.")
+            Text("Each has its own history, bank links, assistant chats and backups. Hold a budget for library actions. Swipe to move it to Trash.")
         }
     }
 
@@ -126,7 +149,7 @@ struct LibraryView: View {
                     Text(choice.label).tag(choice.keep)
                 }
             }
-            .disabled(busy || !loaded)
+            .disabled(busy || !loaded || store.budget == nil)
         } header: {
             Text("Backups & recovery")
         } footer: {
@@ -156,22 +179,71 @@ struct LibraryView: View {
 
     // MARK: Rows
 
-    @ViewBuilder
     private func budgetRow(_ entry: JSON) -> some View {
-        if entry.flag("current") {
-            NavigationLink { SettingsView() } label: { LibraryBudgetLabel(entry: entry) }
-                .accessibilityHint("Shows the budget's name, currency and formats")
-        } else {
-            Button { open(entry) } label: { LibraryBudgetLabel(entry: entry) }
-                .swipeActions {
-                    Button(role: .destructive) { deleting = entry } label: { Label("Delete", systemImage: "trash") }
+        let trashed = ["trashed", "purged"].contains(entry.text("lifecycle"))
+        let remote = ["remote", "evicted"].contains(entry.text("availability"))
+        let recovery = entry.text("lifecycle") == "recovery"
+        let deletionConflict = entry.text("status") == "deletion_conflict"
+        let account = entry.text("scope") == "account"
+        return Button { if deletionConflict { libraryAction("review_deletion", entry) } else if !trashed && !recovery { open(entry) } } label: {
+            VStack(alignment: .leading) {
+                LibraryBudgetLabel(entry: entry)
+                Text(deletionConflict ? String(localized: "Newer changes need review before deletion") : libraryStatus(entry.text("status")))
+                    .font(.caption).foregroundStyle(Color.secondary)
+            }
+        }
+        .contextMenu {
+            if !remote && !entry.flag("missing") {
+                Button("Recover unfinished edits") {
+                    run { drafts = try await store.service("editor_recovery", ["budgetId": entry["id"]]).array }
                 }
-                .contextMenu {
-                    Button { open(entry) } label: { Label("Open", systemImage: "folder") }
-                        .disabled(entry.flag("missing"))
-                    Button(role: .destructive) { deleting = entry } label: { Label("Delete local budget", systemImage: "trash") }
+            }
+            if !trashed && !recovery {
+                Button { open(entry) } label: { Label("Open", systemImage: "folder") }
+                if account && !remote && !entry.flag("pending") {
+                    Button { libraryAction("evict", entry) } label: { Label("Remove download", systemImage: "icloud") }
                 }
-                .accessibilityHint(entry.flag("missing") ? Text("Its file is missing. Swipe to delete it.") : Text("Opens this budget"))
+                if !account && sync.status?["sync"]["protocol"].int == 2 {
+                    Button("Add to account sync") {
+                        run {
+                            _ = try await store.service("sync_enable", ["enabled": true, "ids": [entry["id"]]])
+                        }
+                    }
+                }
+                Button(role: .destructive) { deleting = entry } label: { Label("Move to Trash", systemImage: "trash") }
+            } else if deletionConflict {
+                Button { libraryAction("review_deletion", entry) } label: { Label("Review newer version", systemImage: "doc.text.magnifyingglass") }
+            } else if entry.text("lifecycle") == "trashed" {
+                Button { libraryAction("restore", entry) } label: { Label("Restore", systemImage: "arrow.uturn.backward") }
+            }
+            if entry.text("lifecycle") == "recovery" || (trashed && !remote && !entry.flag("missing")) {
+                Button { libraryAction("recover", entry) } label: { Label("Recover as a new budget", systemImage: "doc.on.doc") }
+            }
+        }
+        .swipeActions {
+            if !trashed && !recovery { Button(role: .destructive) { deleting = entry } label: { Label("Trash", systemImage: "trash") } }
+        }
+    }
+
+    private func libraryStatus(_ value: String) -> String {
+        switch value {
+        case "Saved on this device": return String(localized: "Saved on device")
+        case "In Trash": return String(localized: "Trash")
+        case "Waiting", "queued", "waiting", "Deletion waiting": return String(localized: "Waiting to sync")
+        case "Available online", "Download removed": return String(localized: "Available to download")
+        case "Synced", "synced", "uploaded", "downloaded", "merged": return String(localized: "Synced")
+        case "Needs attention", "error", "recovery", "conflict": return String(localized: "Sync needs you")
+        case "locked", "paused", "signed_out": return String(localized: "Sync paused")
+        default: return value
+        }
+    }
+
+    private func libraryAction(_ action: String, _ entry: JSON) {
+        run {
+            _ = try await store.service("library_" + action, ["id": entry["id"]], changesBudget: action == "review_deletion")
+            store.reload()
+            sync.syncSoon()
+            if action == "review_deletion" { dismiss() }
         }
     }
 
@@ -233,7 +305,7 @@ struct LibraryView: View {
             } else {
                 backups = []
             }
-            keep = Int(try await store.service("backup_retention").int)
+            if store.budget != nil { keep = Int(try await store.service("backup_retention").int) }
             loadError = nil
         } catch {
             loadError = BudgetStore.readable(error)
@@ -264,7 +336,7 @@ struct LibraryView: View {
     }
 
     private func open(_ entry: JSON) {
-        guard !store.busy, !entry.flag("missing") else { return }
+        guard !store.busy, !entry.flag("missing") || ["remote", "evicted"].contains(entry.text("availability")) else { return }
         let id = entry.text("id"), name = entry.text("name")
         run(String(localized: "Opened \(name)")) {
             try await store.perform { repository in ((), try await repository.open(id: id)) }
@@ -435,21 +507,27 @@ private struct LibraryRowLabel: View {
 }
 
 private struct NewBudgetForm: View {
+    @Environment(\.dismiss) private var dismiss
     @Environment(BudgetStore.self) private var store
     @State private var name = String(localized: "My budget")
     @State private var currency = Locale.current.currency?.identifier ?? "SAR"
     @State private var sample = false
+    @State private var localOnly = false
     @State private var started = false
 
     var body: some View {
         FormSheet(title: String(localized: "New budget"), confirm: String(localized: "Create"),
                   enabled: LibrarySettings.validName(name) && LibraryCurrencies.valid(currency)) {
-            store.createBudget(name: name, currency: currency, sample: sample)
+            let options = (name, currency, sample, localOnly)
+            try await store.perform { repository in
+                ((), try await repository.create(name: options.0, currency: options.1, sample: options.2, localOnly: options.3))
+            }
         } content: {
             Section {
                 TextField("Budget name", text: $name).wordsCapitalized()
                 LibraryCurrencyPicker(selection: $currency)
                 Toggle("Start with sample money", isOn: $sample)
+                Toggle("Keep this budget only on this device", isOn: $localOnly)
             } footer: {
                 Text("The new budget opens with its own accounts, categories and history. This one stays in the library.")
             }

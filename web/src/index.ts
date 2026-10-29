@@ -15,7 +15,9 @@ import { downloads, files, releases, TEAM_COOKIE } from "./releases";
 import { visits } from "./visits";
 import { usage } from "./usage";
 import { fetchStore, snapshotGitHub } from "./channels";
-import { cleanupSyncObjects, sync, syncActive } from "./sync";
+import { cleanupSyncObjects, sync, syncActive, syncUsage } from "./sync";
+import { syncV2 } from "./sync-v2";
+import { maintainSyncV2, reclaimObjects } from "./sync-v2/objects";
 import { ApiError, countEvent, jsonBody, now, randomId } from "./util";
 
 const api = new Hono<AppEnv>();
@@ -44,9 +46,7 @@ api.get("/me", requireUser, async (c) => {
     )
       .bind(user.id)
       .first<{ id: string; status: string; current_period_end: string | null; cancel_at: string | null }>(),
-    c.env.DB.prepare("SELECT COUNT(*) AS budgets, COALESCE(SUM(size), 0) AS bytes FROM sync_budgets WHERE user_id = ?1")
-      .bind(user.id)
-      .first<{ budgets: number; bytes: number }>(),
+    syncUsage(c.env.DB, user.id),
   ]);
   return c.json({
     user: { id: user.id, email: user.email, createdAt: user.created_at },
@@ -84,6 +84,9 @@ api.delete("/me", requireUser, async (c) => {
     await cancelSubscriptions(c.env, user.id);
     if (!await c.env.DB.prepare("SELECT 1 FROM account_deletions WHERE user_id = ?1 AND token = ?2").bind(user.id, token).first())
       throw new ApiError(409, "account_deleting", "Another account deletion attempt is in progress. Try again shortly.");
+    // Capture legacy keys before their cascading rows disappear; v2's ownership
+    // ledger survives deletion and can be drained directly regardless of backlog.
+    const legacyObjects = await c.env.DB.prepare("SELECT object_key FROM sync_budgets WHERE user_id=?1").bind(user.id).all<{ object_key: string }>();
     // The user cascade removes sync references in this same transaction. If the
     // commit fails or this attempt loses its lease, cloud copies stay intact.
     const results = await c.env.DB.batch([
@@ -102,7 +105,7 @@ api.delete("/me", requireUser, async (c) => {
       throw new ApiError(409, "account_deleting", "Another account deletion attempt is in progress. Try again shortly.");
     // Deletion triggers queued every removed object durably; a cleanup outage
     // must not turn a committed account deletion into an apparent failure.
-    try { await cleanupSyncObjects(c.env); } catch { /* The scheduler retries the durable queue. */ }
+    try { await reclaimObjects(c.env, legacyObjects.results.map(row => row.object_key)); await cleanupSyncObjects(c.env, user.id); } catch { /* The scheduler retries the durable queue. */ }
   } finally {
     await c.env.DB.prepare("DELETE FROM account_deletions WHERE user_id = ?1 AND token = ?2").bind(user.id, token).run();
   }
@@ -147,6 +150,7 @@ app.notFound((c) =>
 );
 
 app.route("/api/v1", api);
+app.route("/api/v2/sync", syncV2);
 
 /** The admin page's files, only for an admin (Cloudflare Access also stands in front of them). */
 app.on(["GET", "HEAD"], ["/admin", "/admin/*"], async (c) => {
@@ -173,6 +177,7 @@ export default {
   async scheduled(_controller: ScheduledController, env: Env) {
     await refreshGooglePurchases(env);
     await settleAppleSubscriptions(env);
+    try { await maintainSyncV2(env); } catch (error) { console.error("[sync-v2-maintenance]", error); }
     await cleanupSyncObjects(env);
     // Numbers from elsewhere never hold up the clean-up; a failure is noted for the admin page.
     await Promise.all([snapshotGitHub(env), fetchStore(env)].map((p) => p.catch((error) => console.error("[channels]", error))));

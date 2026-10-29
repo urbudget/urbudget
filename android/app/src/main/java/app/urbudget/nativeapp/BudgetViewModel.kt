@@ -47,6 +47,7 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
     private val operations = Channel<Pair<Boolean, suspend () -> Unit>>(Channel.UNLIMITED)
     private val queryWorkers = Semaphore(2)
     private val refreshQueued = AtomicBoolean(false)
+    var operationFailureEpoch = 0L; private set
     private var retryOperation: (suspend () -> Unit)? = null
     /** Display models screens build off the main thread, kept so revisiting a tab shows them at once. */
     internal val screenCache = java.util.concurrent.ConcurrentHashMap<String, Any>()
@@ -60,6 +61,7 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
                 } catch (cancel: CancellationException) {
                     throw cancel
                 } catch (error: Throwable) {
+                    operationFailureEpoch++
                     retryOperation = operation
                     mutableState.update { it.copy(error = error.message ?: Words[R.string.model_action_not_saved], recoveryAvailable = repository.hasRecovery()) }
                 } finally {
@@ -74,6 +76,8 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
         operations.trySend(showBusy to operation)
     }
 
+    fun afterPending(action: () -> Unit) { enqueue(showBusy = false) { withContext(Dispatchers.Main) { action() } } }
+
     private suspend fun publish(snapshot: BudgetSnapshot) = withContext(Dispatchers.Main.immediate) {
         // Configure before emission so the first frame and amount editors use this
         // snapshot's preferences. Unchanged loads/month changes reuse the same object.
@@ -86,7 +90,7 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
     fun notifyError(message: String) { mutableState.update { it.copy(error = message) } }
     fun dismissError() { mutableState.update { it.copy(error = null) } }
     fun retry() { retryOperation?.let { enqueue(operation = it) } ?: refresh() }
-    fun createBudget(name: String, currency: String, sample: Boolean = false) = enqueue { publish(repository.create(name, currency, sample)) }
+    fun createBudget(name: String, currency: String, sample: Boolean = false, localOnly: Boolean = sample) = enqueue { publish(repository.create(name, currency, sample, localOnly)) }
     fun importBudget(json: String) {
         val shown = state.value
         val guard = repository.replacementGuard(shown.budget, shown.budgetIdentity)
@@ -94,6 +98,15 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
     }
     fun exportBudget(): String? = repository.exportBudget()
     fun selectMonth(month: String) = enqueue { publish(repository.selectMonth(month)) }
+    private var consumedSyncReport: String? = null
+    @Synchronized fun refreshAfterSync(report: JSONObject) {
+        val encoded = report.toString()
+        if (encoded == consumedSyncReport) return
+        val library = NativeServices.call("library_snapshot") as JSONObject
+        val current = state.value
+        consumedSyncReport = encoded
+        if (syncInvalidatesActive(report, library, current.budgetIdentity, current.budgetRevision)) refresh()
+    }
     fun refresh() {
         if (refreshQueued.compareAndSet(false, true)) enqueue(showBusy = false) {
             refreshQueued.set(false)
@@ -124,6 +137,7 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
         val independent = NativeServicePolicy.independent(method)
         suspend fun perform(active: () -> Boolean, canInvoke: () -> Boolean = active) {
             var invoked = false
+            var syncReport: JSONObject? = null
             try {
                 guard?.let { repository.verify(it) }
                 NativeServices.initialize(getApplication())
@@ -137,6 +151,7 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
                     val scope = if (NativeServicePolicy.budgetRead(method)) "${shown.budgetIdentity}:${shown.budgetRevision}" else ""
                     NativeServices.read(method, request, scope)
                 } else NativeServices.call(method, request)
+                if (method in setOf("sync_now", "sync_resolve")) syncReport = result as? JSONObject
                 if (!independent) publish(repository.load())
                 withContext(Dispatchers.Main) {
                     if (active()) {
@@ -153,7 +168,10 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
             } finally {
                 // A JNI commit can finish after its screen's coroutine was cancelled. Always
                 // refresh the published revision, while suppressing that screen's callback.
-                if (independent && invoked && NativeServicePolicy.budgetResult(method)) refresh()
+                if (independent && invoked && NativeServicePolicy.budgetResult(method)) {
+                    val report = syncReport
+                    if (report != null) refreshAfterSync(report) else refresh()
+                }
             }
         }
         if (independent) return viewModelScope.launch(Dispatchers.IO) { perform(active = { isActive }) }
@@ -224,17 +242,17 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
      * transaction's date and, when that date has come, the transaction itself entered with the
      * schedule moved on past it, as one change.
      */
-    fun saveRepeating(schedule: JSONObject, entered: JSONObject?) {
+    fun saveRepeating(schedule: JSONObject, entered: JSONObject?, editorGuard: BudgetEditGuard? = null, onSuccess: () -> Unit = {}) {
         val frozen = schedule.toString()
         val id = schedule.optString("id")
-        val guard = recordGuard("schedules", id)
+        val guard = editorGuard ?: recordGuard("schedules", id)
         val today = LocalDate.now().toString()
         val commands = entered?.let { t ->
             val date = t.optString("date")
             listOf("saveTransaction" to JSONObject().put("transaction", JSONObject(t.toString())).put("through", today),
                 "applySchedules" to JSONObject().put("through", date).put("selected", id).put("skip", true))
         }.orEmpty()
-        enqueue { publish(repository.editThenCommands(guard, { it.upsertRecord("schedules", JSONObject(frozen)) }, commands)) }
+        enqueue { publish(repository.editThenCommands(guard, { it.upsertRecord("schedules", JSONObject(frozen)) }, commands)); withContext(Dispatchers.Main) { onSuccess() } }
     }
 
     fun upsertMany(collection: String, records: List<JSONObject>) {
@@ -285,7 +303,7 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
         }) }
     }
 
-    fun saveTransaction(record: JSONObject) {
+    fun saveTransaction(record: JSONObject, editorGuard: BudgetEditGuard? = null, onSuccess: () -> Unit = {}) {
         val patch = JSONObject(record.toString())
         if (patch.optString("id").isBlank()) patch.put("id", UUID.randomUUID().toString())
         if (!patch.has("memo")) patch.put("memo", "")
@@ -293,7 +311,11 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
         if (!patch.has("transferAccountId")) patch.put("transferAccountId", JSONObject.NULL)
         if (!patch.has("transferStatus")) patch.put("transferStatus", JSONObject.NULL)
         if (!patch.has("splits")) patch.put("splits", JSONArray())
-        runCommand("saveTransaction", JSONObject().put("transaction", patch).put("through", LocalDate.now().toString()))
+        val guard = editorGuard ?: recordGuard("transactions", patch.getString("id"))
+        enqueue {
+            publish(repository.command("saveTransaction", JSONObject().put("transaction", patch).put("through", LocalDate.now().toString()), guard))
+            withContext(Dispatchers.Main) { onSuccess() }
+        }
     }
 
     fun deleteTransaction(id: String) = remove("transactions", id)

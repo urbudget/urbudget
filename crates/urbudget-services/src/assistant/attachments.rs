@@ -310,6 +310,9 @@ pub struct ImportRow {
     pub payee: String,
     pub memo: String,
     pub amount: i64,
+    /// An explicit other account in this budget, never a payee label.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transfer_account_id: Option<String>,
 }
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Expected {
@@ -320,7 +323,7 @@ pub struct Expected {
 
 /// Which columns hold what, as the model read them off the sheet.
 #[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Mapping {
     pub sheet: Option<String>,
     pub header_row: usize,
@@ -331,6 +334,7 @@ pub struct Mapping {
     pub amount: Option<String>,
     pub outflow: Option<String>,
     pub inflow: Option<String>,
+    pub transfer_account_id: Option<String>,
     pub date_order: String,
     #[serde(default)]
     pub negate: bool,
@@ -348,6 +352,7 @@ pub fn convert(files: &Files, id: &str, m: &Mapping) -> Result<(Vec<ImportRow>, 
     let amount = m.amount.as_deref().filter(|c| !c.is_empty()).map(|c| col("The amount", c)).transpose()?;
     let outflow = m.outflow.as_deref().filter(|c| !c.is_empty()).map(|c| col("The outflow", c)).transpose()?;
     let inflow = m.inflow.as_deref().filter(|c| !c.is_empty()).map(|c| col("The inflow", c)).transpose()?;
+    let transfer = m.transfer_account_id.as_deref().filter(|c| !c.is_empty()).map(|c| col("The transfer account ID", c)).transpose()?;
     if amount.is_none() && outflow.is_none() && inflow.is_none() {
         return Err("Give an amount column, or outflow and inflow columns.".into());
     }
@@ -383,6 +388,7 @@ pub fn convert(files: &Files, id: &str, m: &Mapping) -> Result<(Vec<ImportRow>, 
                     payee: truncate(get(payee), 200),
                     memo: memo.map(|i| truncate(get(i), 500)).unwrap_or_default(),
                     amount: a,
+                    transfer_account_id: transfer.map(|i| get(i).trim()).filter(|id| !id.is_empty()).map(str::to_owned),
                 });
             }
             (None, _) if get(date).is_empty() => {
@@ -532,7 +538,7 @@ mod tests {
         .unwrap();
         let (rows, skipped) = convert(&files, &meta.id, &mapping).unwrap();
         assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0], ImportRow { date: "2026-10-03".into(), payee: "Bistro, Riyadh".into(), memo: String::new(), amount: -124000 });
+        assert_eq!(rows[0], ImportRow { date: "2026-10-03".into(), payee: "Bistro, Riyadh".into(), memo: String::new(), amount: -124000, transfer_account_id: None });
         assert_eq!(rows[1].amount, 1800000);
         assert_eq!(skipped, vec!["row 6 has an amount but no date".to_string()]);
     }
@@ -541,5 +547,18 @@ mod tests {
     fn unknown_files_are_refused() {
         assert!(kind_of("virus.exe").is_none());
         assert_eq!(kind_of("Receipt.JPG").unwrap().0, Kind::Image);
+    }
+
+    #[test]
+    fn mapped_transfer_column_preserves_account_ids() {
+        let mut files = Files::empty();
+        let meta = files.insert("statement.csv", b"Date,Payee,Amount,Other account\n2026-10-24,Card payment,-100,card\n2026-10-25,Shop,-5,\n".to_vec());
+        let mapping: Mapping = serde_json::from_value(serde_json::json!({
+            "headerRow": 1, "date": "A", "payee": "B", "amount": "C", "transferAccountId": "D", "dateOrder": "ymd"
+        })).unwrap();
+        let (rows, skipped) = convert(&files, &meta.id, &mapping).unwrap();
+        assert!(skipped.is_empty());
+        assert_eq!(rows[0].transfer_account_id.as_deref(), Some("card"));
+        assert_eq!(rows[1].transfer_account_id, None);
     }
 }

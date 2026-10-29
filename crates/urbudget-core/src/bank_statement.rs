@@ -24,6 +24,7 @@ pub enum Field {
     Payee,
     Memo,
     Amount,
+    TransferAccountId,
 }
 
 /// Why a line isn't imported unless someone includes it (where that makes sense).
@@ -95,6 +96,9 @@ pub struct Fields {
     pub payee: String,
     pub memo: String,
     pub amount: String,
+    /// The other account's ID, never a payee label. Empty means an ordinary transaction.
+    #[serde(default)]
+    pub transfer_account_id: String,
 }
 impl Fields {
     pub fn get(&self, field: Field) -> &str {
@@ -103,6 +107,7 @@ impl Fields {
             Field::Payee => &self.payee,
             Field::Memo => &self.memo,
             Field::Amount => &self.amount,
+            Field::TransferAccountId => &self.transfer_account_id,
         }
     }
 }
@@ -217,7 +222,10 @@ pub fn start(b: &Budget, account: &str, content: &str, id: &str, budget: &str, s
 /// A new import of a file the assistant prepared, written the standard way (Date, Payee, Memo,
 /// Amount; ISO dates; money out negative): read so, whatever the account's last file was like.
 pub fn start_prepared(content: &str, account: &str, id: &str, budget: &str) -> Session {
-    let columns = Columns { date: Some("Date".into()), payee: Some("Payee".into()), memo: Some("Memo".into()), amount: Some("Amount".into()), ..Columns::default() };
+    let transfer = csv::Reader::from_reader(content.as_bytes()).headers().ok()
+        .is_some_and(|headers| headers.iter().any(|h| h == "TransferAccountId"));
+    let columns = Columns { date: Some("Date".into()), payee: Some("Payee".into()), memo: Some("Memo".into()), amount: Some("Amount".into()),
+        transfer_account_id: transfer.then(|| "TransferAccountId".into()), ..Columns::default() };
     let structure = Structure {
         format: "csv".into(),
         columns: Some(columns),
@@ -550,7 +558,7 @@ fn reading(b: &Budget, account: &str, content: &str, session: &Session) -> Resul
             let id = l.offset.to_string();
             let given = |field: Field| edits.fields.get(&id).and_then(|f| f.get(&field)).cloned();
             let fields = match &l.transaction {
-                Some(t) => Fields { date: t.date.clone(), payee: t.payee.clone(), memo: t.memo.clone(), amount: cents(t.amount) },
+                Some(t) => Fields { date: t.date.clone(), payee: t.payee.clone(), memo: t.memo.clone(), amount: cents(t.amount), transfer_account_id: t.transfer_account_id.clone().unwrap_or_default() },
                 None => Fields {
                     // A date that reads, as it reads, though another part of the line doesn't.
                     date: given(Field::Date).unwrap_or_else(|| {
@@ -559,8 +567,9 @@ fn reading(b: &Budget, account: &str, content: &str, session: &Session) -> Resul
                     }),
                     payee: given(Field::Payee).unwrap_or_else(|| cell(&l.cells, r.payee_column)),
                     memo: given(Field::Memo).unwrap_or_else(|| cell(&l.cells, r.memo_column)),
-                    amount: given(Field::Amount)
+                    amount: l.parsed_amount.map(cents).or_else(|| given(Field::Amount))
                         .unwrap_or_else(|| r.amount_columns.iter().map(|&i| cell(&l.cells, i)).find(|c| !c.trim().is_empty()).unwrap_or_default()),
+                    transfer_account_id: given(Field::TransferAccountId).unwrap_or_else(|| cell(&l.cells, r.transfer_column)),
                 },
             };
             extra.push(Extra { transaction: l.transaction, original: l.original, reserves: l.reserves, bank_id: l.bank_id, written: vec![], then: l.then });
@@ -638,6 +647,15 @@ fn reading(b: &Budget, account: &str, content: &str, session: &Session) -> Resul
             as_one: b.as_one,
         }).collect();
         batches = read.batches;
+    }
+    // Non-CSV readers have no budget context; validate their explicit account choices here.
+    for (line, detail) in statement.lines.iter_mut().zip(&mut extra) {
+        if line.status == Status::Ready {
+            if let Err(reason) = bank_import::validate_transfer(b, account, &line.fields.transfer_account_id) {
+                line.status = Status::Attention { field: Field::TransferAccountId, column: None, reason };
+                detail.transaction = None;
+            }
+        }
     }
     statement.counts = Counts::of(&statement.lines);
     statement.remember = remembered(&statement);
@@ -728,7 +746,7 @@ fn identities(account: &str, lines: &[Line], extra: &[Extra], batches: &[bank_st
         if !e.reserves {
             continue;
         }
-        let known = BankTransaction { fit: e.bank_id.clone(), date: String::new(), payee: String::new(), memo: String::new(), amount: 0 };
+        let known = BankTransaction { fit: e.bank_id.clone(), date: String::new(), payee: String::new(), memo: String::new(), amount: 0, transfer_account_id: None };
         let t = e.original.as_ref().or(e.transaction.as_ref()).unwrap_or(&known);
         if !t.fit.is_empty() {
             let id = counter.identity(t, true);
@@ -870,13 +888,15 @@ pub fn apply_fixes(b: &Budget, account: &str, content: &str, session: &Session, 
             Some(Field::Memo)
         } else if is(&c.amount) || is(&c.outflow) || is(&c.inflow) {
             Some(Field::Amount)
+        } else if is(&c.transfer_account_id) {
+            Some(Field::TransferAccountId)
         } else {
             None
         }
     };
     let empty = String::new();
-    for f in &fixes.cells {
-        let outcome = line(&f.line, f.line_version).and_then(|l| {
+    let check_cell = |f: &CellFix| -> Result<&Line, String> {
+        line(&f.line, f.line_version).and_then(|l| {
             // A line cut short has its missing cells, empty, up to the header's.
             let value = match l.cells.get(f.column) {
                 Some(v) => v,
@@ -889,6 +909,44 @@ pub fn apply_fixes(b: &Budget, account: &str, content: &str, session: &Session, 
             if *value != f.from {
                 return Err(t!("This cell changed since this fix was made."));
             }
+            if field_of(f.column) == Some(Field::TransferAccountId) {
+                bank_import::validate_transfer(b, account, f.to.trim())?;
+            }
+            Ok(l)
+        })
+    };
+    let check_field = |f: &FieldFix| -> Result<&Line, String> {
+        line(&f.line, f.line_version).and_then(|l| {
+            if l.fields.get(f.field) != f.from {
+                return Err(t!("This value changed since this fix was made."));
+            }
+            if f.to.trim() == f.from.trim() {
+                return Err(t!("The line already has that value."));
+            }
+            if f.field == Field::TransferAccountId {
+                bank_import::validate_transfer(b, account, f.to.trim())?;
+            }
+            Ok(l)
+        })
+    };
+    // An editor saves normalized cells together with their final semantic values. The cells
+    // and fields of such a line form one change: a stale field must not leave its raw cell
+    // applied after clearing a newer field override (which could reverse a money amount).
+    let field_lines: HashSet<&str> = fixes.fields.iter().map(|f| f.line.as_str()).collect();
+    let coupled: HashSet<&str> = fixes.cells.iter().map(|f| f.line.as_str()).filter(|id| field_lines.contains(id)).collect();
+    let mut refused: HashMap<&str, String> = HashMap::new();
+    for f in fixes.cells.iter().filter(|f| coupled.contains(f.line.as_str())) {
+        if let Err(problem) = check_cell(f) { refused.entry(f.line.as_str()).or_insert(problem); }
+    }
+    for f in fixes.fields.iter().filter(|f| coupled.contains(f.line.as_str())) {
+        if let Err(problem) = check_field(f) { refused.entry(f.line.as_str()).or_insert(problem); }
+    }
+    for f in &fixes.cells {
+        let checked = match refused.get(f.line.as_str()) {
+            Some(problem) => Err(problem.clone()),
+            None => check_cell(f),
+        };
+        let outcome = checked.map(|l| {
             if table {
                 let written = if l.original.is_empty() { &l.cells } else { &l.original };
                 let cells = next.edits.cells.entry(f.line.clone()).or_default();
@@ -911,20 +969,16 @@ pub fn apply_fixes(b: &Budget, account: &str, content: &str, session: &Session, 
                 let field = [Field::Date, Field::Payee, Field::Memo, Field::Amount][f.column];
                 next.edits.fields.entry(f.line.clone()).or_default().insert(field, f.to.trim().to_string());
             }
-            Ok(())
         });
         done(&mut results, &f.line, "cell", outcome);
     }
     for f in &fixes.fields {
-        let outcome = line(&f.line, f.line_version).and_then(|l| {
-            if l.fields.get(f.field) != f.from {
-                return Err(t!("This value changed since this fix was made."));
-            }
-            if f.to.trim() == f.from.trim() {
-                return Err(t!("The line already has that value."));
-            }
+        let checked = match refused.get(f.line.as_str()) {
+            Some(problem) => Err(problem.clone()),
+            None => check_field(f),
+        };
+        let outcome = checked.map(|_| {
             next.edits.fields.entry(f.line.clone()).or_default().insert(f.field, f.to.trim().to_string());
-            Ok(())
         });
         done(&mut results, &f.line, "field", outcome);
     }

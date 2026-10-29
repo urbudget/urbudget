@@ -315,6 +315,7 @@ private struct PayeeEditor: View {
             .navigationDestination(for: PayeeRoute.self) { destination($0) }
         }
         .interactiveDismissDisabled(saving)
+        .retainingEditorDraft("payee", values: ["name": .string(name), "category": .string(category)])
         .onAppear(perform: load)
         .task(id: store.version) {
             guard let budget = store.budget else { return }
@@ -686,6 +687,7 @@ private struct PayeeRuleEditor: View {
         }
         .presentationDetents([.medium, .large])
         .interactiveDismissDisabled(saving)
+        .retainingEditorDraft("payeeRule", values: ["match": .string(match), "payee": .string(payee), "category": .string(category)])
         .onAppear(perform: load)
         .task(id: key) { await preview() }
         .task(id: store.version) {

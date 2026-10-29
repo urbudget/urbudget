@@ -24,6 +24,7 @@ fn empty_object() -> Value {
 
 // The app owns one service runtime. Keeping its executor alive preserves OAuth callbacks,
 // assistant jobs, sync keys and SQLite revision checks between individual calls.
+static INITIALIZE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 static SERVICES: OnceLock<urbudget_services::runtime::Runtime> = OnceLock::new();
 static INITIALIZING: Mutex<()> = Mutex::new(());
 
@@ -80,6 +81,7 @@ pub unsafe extern "C" fn urbudget_initialize(directory: *const c_char) -> *mut c
     let result = std::panic::catch_unwind(|| -> Result<Value, String> {
         let path = std::path::PathBuf::from(read(directory)?);
         let _guard = INITIALIZING.lock().map_err(|_| "Initialization failed. Restart the app.")?;
+        let _initializing = INITIALIZE.lock().map_err(|_| "Initialization was interrupted.")?;
         if let Some(runtime) = SERVICES.get() {
             if runtime.data_dir != path {
                 return Err("The service directory cannot change while the app is running.".into());

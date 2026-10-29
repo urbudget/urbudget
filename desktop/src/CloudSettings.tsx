@@ -184,6 +184,16 @@ const BUDGET_STATES: Record<BudgetSync["state"], string> = {
   waiting: msg("Waiting to sync"),
   update_app: msg("Needs a newer UrBudget"),
   error: msg("Couldn't sync"),
+  recovery: msg("Recovered local changes"),
+  trashed: msg("In Trash"),
+  deletion_conflict: msg("Newer changes need review before deletion"),
+  purged: msg("Permanently deleted"),
+  queued: msg("Waiting to sync"),
+  signed_out: msg("Sign in to sync"),
+  evicted: msg("Available online"),
+  locked: msg("Unlock sync"),
+  paused: msg("Sync paused"),
+  subscription_required: msg("Subscription required"),
 };
 
 function Passphrase({ cloud: state, onDone }: { cloud: Cloud; onDone: (created: boolean) => void }) {
@@ -247,9 +257,9 @@ function Passphrase({ cloud: state, onDone }: { cloud: Cloud; onDone: (created: 
 /** Settings › Account & sync. */
 export function SyncSettings({
   cloud: state,
+  openBudget,
   budgetId,
   isClean,
-  openBudget,
 }: {
   cloud: Cloud;
   budgetId: string;
@@ -318,7 +328,7 @@ export function SyncSettings({
           {b.id === budgetId && <em className="muted"> · {t("open")}</em>}
         </strong>
         <small className={`sync-state ${b.state}`}>
-          {t(BUDGET_STATES[b.state])}
+          {t(BUDGET_STATES[b.state] ?? msg("Sync needs you"))}
           {b.message
             ? ` · ${b.message}`
             : b.conflicts?.length
@@ -339,12 +349,12 @@ export function SyncSettings({
       </span>
       <span className="sync-actions">
         {busyId === b.id && <LoaderCircle size={14} className="spin" />}
-        {b.state === "local_only" && (
+        {status.sync.protocol !== 2 && b.state === "local_only" && (
           <button className="secondary" disabled={!!busyId} onClick={() => void act(b.id, () => cloud.syncTrack([b.id]))}>
             {t("Sync this budget")}
           </button>
         )}
-        {b.state === "cloud_only" && (
+        {status.sync.protocol !== 2 && b.state === "cloud_only" && (
           <button
             className="secondary"
             disabled={!!busyId}
@@ -373,7 +383,7 @@ export function SyncSettings({
                   title: t("Keep this computer's version?"),
                   text: <p>{t("“{name}” as it is here replaces the cloud copy. Your other computers get this version on their next sync.", { name: b.name })}</p>,
                   label: t("Keep this computer's"),
-                  action: () => act(b.id, () => cloud.syncResolve(b.id, "local", isClean())),
+                  action: () => act(b.id, () => cloud.syncResolve(b.id, "local", isClean(), undefined, b.review)),
                 })
               }
             >
@@ -393,7 +403,7 @@ export function SyncSettings({
                     </p>
                   ),
                   label: t("Use the cloud copy"),
-                  action: () => act(b.id, () => cloud.syncResolve(b.id, "cloud", isClean())),
+                  action: () => act(b.id, () => cloud.syncResolve(b.id, "cloud", isClean(), undefined, b.review)),
                 })
               }
             >
@@ -401,7 +411,7 @@ export function SyncSettings({
             </button>
           </>
         )}
-        {["synced", "uploaded", "downloaded", "merged", "waiting", "conflict", "cloud_only", "error"].includes(b.state) && (
+        {status.sync.protocol !== 2 && ["synced", "uploaded", "downloaded", "merged", "waiting", "conflict", "cloud_only", "error"].includes(b.state) && (
           <button
             className="link-button"
             disabled={!!busyId}
@@ -470,6 +480,7 @@ export function SyncSettings({
       </section>
 
       <section className="panel sync-panel">
+        {status.email && status.sync.protocol !== 2 && <p className="help">{t("Automatic budget discovery is not enabled for this account yet. Existing budgets keep syncing; use the controls below to add or download budgets.")}</p>}
         <div className="panel-title">
           <h2>
             <CloudIcon size={18} /> {t("Sync")}
@@ -518,7 +529,7 @@ export function SyncSettings({
             cloud={state}
             onDone={(created) => {
               toast({
-                message: created ? t("Sync is on. Your budgets are uploading, encrypted.") : t("Sync is unlocked on this computer."),
+                message: created && status.sync.protocol === 2 ? t("Sync is on. Your budgets are uploading, encrypted.") : t("Sync is unlocked on this computer."),
                 tone: "success",
               });
               void state.syncNow();
@@ -587,7 +598,7 @@ export function SyncSettings({
           resolve={async (choices) => {
             setBusyId(reviewing.id);
             try {
-              await cloud.syncResolve(reviewing.id, "merge", isClean(), choices);
+              await cloud.syncResolve(reviewing.id, "merge", isClean(), choices, reviewing.review);
               await state.refresh();
             } finally {
               setBusyId("");

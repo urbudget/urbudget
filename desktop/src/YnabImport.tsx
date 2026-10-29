@@ -1,7 +1,8 @@
+import { useEditorCheckpoint } from "./editorCheckpoint";
 import { useEffect, useRef, useState } from "react";
 import { KeyRound, MessageSquareText, Trash2, TriangleAlert } from "lucide-react";
 import { api } from "./bridge";
-import { formatDate, money, monthName } from "./format";
+import { errorText, formatDate, money, monthName } from "./format";
 import { Modal } from "./forms";
 import type { ImportDifference, ImportResult, SavedYnabToken, YnabImportRequest, YnabPlan } from "./types";
 import { tokenStore as systemStore } from "./platform";
@@ -68,6 +69,7 @@ export function ynabHelpText(plan: string, problem: { differences: ImportDiffere
 }
 
 export function YnabImport({
+  budgetId = "",
   onImport,
   onAccept,
   onResolve,
@@ -79,6 +81,7 @@ export function YnabImport({
   listTokens = api.ynabTokens,
   forgetToken = api.forgetToken,
 }: {
+  budgetId?: string;
   onImport: (request: YnabImportRequest) => Promise<ImportResult>;
   /** Saves an import whose totals differ from YNAB's. */
   onAccept?: (reviewId: string) => Promise<ImportResult>;
@@ -117,6 +120,7 @@ export function YnabImport({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [replace, setReplace] = useState(false);
+  useEditorCheckpoint(budgetId, review || differences ? "ynabReview" : null, {reviewId: review?.reviewId ?? differences?.reviewId}, error => setFailure(errorText(error)), {choices,reviewId:review?.reviewId ?? differences?.reviewId,planId}, "[data-ynab-review] select");
   const secret = token.trim();
   const saved = tokens.find((t) => t.id === savedId) ?? null;
   const planName = plans?.find((p) => p.id === planId)?.name ?? t("my plan");

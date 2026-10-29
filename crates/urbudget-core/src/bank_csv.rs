@@ -31,10 +31,13 @@ pub struct Columns {
     /// The bank's own id for each transaction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
+    /// An explicit local destination account ID, supplied by an import proposal or mapping.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transfer_account_id: Option<String>,
 }
 impl Columns {
-    pub(crate) fn names(&self) -> [&Option<String>; 7] {
-        [&self.date, &self.payee, &self.memo, &self.amount, &self.outflow, &self.inflow, &self.id]
+    pub(crate) fn names(&self) -> [&Option<String>; 8] {
+        [&self.date, &self.payee, &self.memo, &self.amount, &self.outflow, &self.inflow, &self.id, &self.transfer_account_id]
     }
 }
 
@@ -361,7 +364,7 @@ pub(crate) struct Record {
 #[derive(Clone, Debug)]
 pub(crate) enum Fate {
     /// Read, all but its date.
-    Read { fit: String, payee: String, memo: String, amount: i64 },
+    Read { fit: String, payee: String, memo: String, amount: i64, transfer_account_id: Option<String> },
     Attention { field: Field, column: Option<usize>, reason: String },
     LeftOut { reason: Reason, detail: String },
 }
@@ -382,6 +385,7 @@ pub(crate) struct Records {
     pub memo_column: Option<usize>,
     pub amount_columns: [Option<usize>; 3],
     pub id_column: Option<usize>,
+    pub transfer_column: Option<usize>,
     /// The accounts in a file with several (labels and how many dated rows each has), and which
     /// is read.
     pub sources: Vec<(String, usize)>,
@@ -415,6 +419,7 @@ pub(crate) fn records(b: &Budget, account: &str, content: &str, o: &Options) -> 
                 outflow: if c.amount.is_some() { None } else { pick(&c.outflow, &found.outflow) },
                 inflow: if c.amount.is_some() { None } else { pick(&c.inflow, &found.inflow) },
                 id: pick(&c.id, &found.id),
+                transfer_account_id: pick(&c.transfer_account_id, &found.transfer_account_id),
             };
             Some(&merged).filter(|m| m.date.is_some())
         }
@@ -604,7 +609,12 @@ pub(crate) fn records(b: &Budget, account: &str, content: &str, o: &Options) -> 
         if let Some(given) = value(Field::Memo) {
             memo = given.to_string();
         }
-        (day, Fate::Read { fit: cell(r, p.id).into(), payee, memo, amount })
+        let target = value(Field::TransferAccountId).unwrap_or_else(|| cell(r, p.transfer_account_id)).trim();
+        if let Err(reason) = crate::bank_import::validate_transfer(b, account, target) {
+            return (day, attention(Field::TransferAccountId, p.transfer_account_id, reason));
+        }
+        let transfer_account_id = (!target.is_empty()).then(|| target.to_string());
+        (day, Fate::Read { fit: cell(r, p.id).into(), payee, memo, amount, transfer_account_id })
     };
     // First the file as written: each record's section (a header row after something other than
     // a transaction starts another account's rows, as comdirect exports: this header again, or
@@ -780,6 +790,7 @@ pub(crate) fn records(b: &Budget, account: &str, content: &str, o: &Options) -> 
         memo_column: p.memo,
         amount_columns: [p.amount, p.outflow, p.inflow],
         id_column: p.id,
+        transfer_column: p.transfer_account_id,
         sources,
         source,
         records: out,
@@ -854,8 +865,8 @@ pub(crate) fn read(
     }
     let (mut raw, mut days) = (vec![], vec![]);
     for r in shown() {
-        if let Fate::Read { fit, payee, memo, amount } = &r.fate {
-            raw.push(BankTransaction { fit: fit.clone(), date: String::new(), payee: payee.clone(), memo: memo.clone(), amount: *amount });
+        if let Fate::Read { fit, payee, memo, amount, transfer_account_id } = &r.fate {
+            raw.push(BankTransaction { fit: fit.clone(), date: String::new(), payee: payee.clone(), memo: memo.clone(), amount: *amount, transfer_account_id: transfer_account_id.clone() });
             days.push(r.day.clone().unwrap_or_default());
         }
     }
@@ -877,6 +888,8 @@ pub(crate) struct CsvLine {
     pub status: Status,
     /// The transaction it gives, when it's ready.
     pub transaction: Option<BankTransaction>,
+    /// The net amount already read, even when the date prevents a complete transaction.
+    pub parsed_amount: Option<i64>,
     /// The transaction it gives without help, when it does: its identity is made from this.
     pub original: Option<BankTransaction>,
     /// The bank's ID for it as the file writes it, or "".
@@ -908,6 +921,7 @@ pub(crate) fn read_lines(b: &Budget, account: &str, content: &str, o: &Options, 
             written: vec![],
             status: Status::LeftOut { reason: Reason::AboveHeader, detail: String::new() },
             transaction: None,
+            parsed_amount: None,
             original: None,
             bank_id: String::new(),
             reserves: false,
@@ -917,16 +931,17 @@ pub(crate) fn read_lines(b: &Budget, account: &str, content: &str, o: &Options, 
     // A record that read, all but its date, with its date read in the file's order (each date
     // once: a day has several transactions).
     let read: RefCell<HashMap<String, Result<String, String>>> = RefCell::default();
-    let dated = |day: &Option<String>, fit: &str, payee: &str, memo: &str, amount: i64| -> Result<BankTransaction, String> {
+    let dated = |day: &Option<String>, fit: &str, payee: &str, memo: &str, amount: i64, transfer_account_id: &Option<String>| -> Result<BankTransaction, String> {
         let day = day.as_deref().unwrap_or("");
         let date = read.borrow_mut().entry(day.to_string())
             .or_insert_with(|| crate::bank_import::date(day, dates.order).map_err(|_| t!("Can't read the date ‘{date}’.", date = day)))
             .clone()?;
-        Ok(BankTransaction { fit: fit.into(), date, payee: payee.into(), memo: memo.into(), amount })
+        Ok(BankTransaction { fit: fit.into(), date, payee: payee.into(), memo: memo.into(), amount, transfer_account_id: transfer_account_id.clone() })
     };
     for r in std::mem::take(&mut records.records) {
+        let parsed_amount = match &r.fate { Fate::Read { amount, .. } => Some(*amount), _ => None };
         let (status, transaction) = match &r.fate {
-            Fate::Read { fit, payee, memo, amount } => match dated(&r.day, fit, payee, memo, *amount) {
+            Fate::Read { fit, payee, memo, amount, transfer_account_id } => match dated(&r.day, fit, payee, memo, *amount, transfer_account_id) {
                 Ok(t) => (Status::Ready, Some(t)),
                 Err(reason) => (Status::Attention { field: Field::Date, column, reason }, None),
             },
@@ -934,12 +949,12 @@ pub(crate) fn read_lines(b: &Budget, account: &str, content: &str, o: &Options, 
             Fate::LeftOut { reason, detail } => (Status::LeftOut { reason: *reason, detail: detail.clone() }, None),
         };
         let original = match &r.first {
-            Some((day, Fate::Read { fit, payee, memo, amount })) => dated(day, fit, payee, memo, *amount).ok(),
+            Some((day, Fate::Read { fit, payee, memo, amount, transfer_account_id })) => dated(day, fit, payee, memo, *amount, transfer_account_id).ok(),
             Some(_) => None,
             None => transaction.clone(),
         };
-        let then = original.as_ref().zip(r.then).map(|(o, (fit, payee, memo, amount))| BankTransaction { fit, date: o.date.clone(), payee, memo, amount });
-        lines.push(CsvLine { offset: r.offset, cells: r.cells, written: r.written, status, transaction, original, bank_id: r.bank_id, reserves: r.reserves, then });
+        let then = original.as_ref().zip(r.then).map(|(o, (fit, payee, memo, amount))| BankTransaction { fit, date: o.date.clone(), payee, memo, amount, transfer_account_id: None });
+        lines.push(CsvLine { offset: r.offset, cells: r.cells, written: r.written, status, transaction, parsed_amount, original, bank_id: r.bank_id, reserves: r.reserves, then });
     }
     Ok(CsvLines { records, dates, lines })
 }
@@ -1180,6 +1195,7 @@ struct Picked {
     outflow: Option<usize>,
     inflow: Option<usize>,
     id: Option<usize>,
+    transfer_account_id: Option<usize>,
     fee: Option<usize>,
     states: Vec<usize>,
     direction: Option<usize>,
@@ -1233,6 +1249,7 @@ impl Picked {
             outflow: money(OUTFLOWS),
             inflow: money(INFLOWS),
             id: find(&[IDS]),
+            transfer_account_id: headers.iter().position(|h| h.trim() == "TransferAccountId"),
             fee: money(FEES),
             states: (0..h.len()).filter(|&i| STATES.contains(&h[i].0.as_str())).collect(),
             kind: find(&[KINDS]),
@@ -1284,6 +1301,7 @@ impl Picked {
             outflow: at(&columns.outflow)?,
             inflow: at(&columns.inflow)?,
             id: at(&columns.id)?,
+            transfer_account_id: at(&columns.transfer_account_id)?,
             ..Self::detect(headers, currency)
         })
     }
@@ -1662,6 +1680,7 @@ impl Sheet {
             outflow: name(p.outflow),
             inflow: name(p.inflow),
             id: name(p.id),
+            transfer_account_id: name(p.transfer_account_id),
         }
     }
 }

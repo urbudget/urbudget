@@ -2,6 +2,7 @@
 pub use urbudget_core::{domain, engine, ledger, targets, schedules, workflows, reports, loans, patch, store, sync_merge, bank_csv, bank_import, bank_statement, ynab, ynab_files, fresh_start, import_sync, budgets};
 pub mod assistant;
 mod cloud;
+mod library;
 mod credentials;
 mod save;
 mod simplefin;
@@ -26,10 +27,11 @@ fn set_language(language: String) {
 }
 
 #[tauri::command(async)]
-fn load_budget(db: State<'_, Database>, legacy_backup_keep: Option<usize>) -> Result<Snapshot, String> {
+fn load_budget(db: State<'_, Database>, legacy_backup_keep: Option<usize>) -> Result<serde_json::Value, String> {
+    if !db.is_open(){return Ok(urbudget_services::library_api::empty_snapshot());}
     let mut store = db.store()?;
     store.initialize_backup_retention(legacy_backup_keep.unwrap_or(0))?;
-    store.load_light()
+    serde_json::to_value(store.load_light()?).map_err(|e|e.to_string())
 }
 #[tauri::command(async)]
 fn apply_patch(db: State<'_, Database>, patch: Patch) -> Result<Applied, String> {
@@ -472,50 +474,47 @@ fn list_budgets(library: State<'_, Library>) -> Vec<budgets::Listing> {
 }
 /// Saves `budget` as a new budget file and returns its id. The open budget is unchanged.
 #[tauri::command(async)]
-fn create_budget(library: State<'_, Library>, db: State<'_, Database>, budget: Budget, fresh_start_token: Option<String>, patch: Option<Patch>) -> Result<String, String> {
+fn create_budget(library: State<'_, Library>, db: State<'_, Database>, cloud: State<'_, cloud::Cloud>, budget: Budget, fresh_start_token: Option<String>, patch: Option<Patch>, local_only: Option<bool>) -> Result<String, String> {
     domain::validate(&budget)?;
-    let mut library = library.lock();
+    let mut catalog = library.lock();
     let budget = if let Some(token) = fresh_start_token {
         let source = db.store()?.fresh_start_source(patch, &token)?;
         fresh_start::prepare(budget, &source)?
     } else {
         budget
     };
-    let id = library.create()?;
-    let saved = Store::open_budget(&library.database(&id)?, &id).and_then(|store| {
-        let mut store = store.with_backup_preferences(library.data_dir());
+    let id = urbudget_services::cloud::v2::create_with_scope(&cloud, &mut catalog, &budget, local_only.unwrap_or(false))?;
+    let saved = Store::open_budget(&catalog.database(&id)?, &id).and_then(|store| {
+        let mut store = store.with_backup_preferences(catalog.data_dir());
         let token = store.status()?.token;
         store.save(&budget, &token)
     });
     if let Err(e) = saved {
-        library.forget_new(&id)?;
+        catalog.forget_new(&id)?;
         return Err(e);
     }
+    catalog.mark_available(&id)?;drop(catalog);
     Ok(id)
 }
 /// Switches the window to another budget. The caller saves the open budget first.
 #[tauri::command(async)]
-fn open_budget(
+async fn open_budget(
+    cloud: State<'_, cloud::Cloud>,
     library: State<'_, Library>,
     db: State<'_, Database>,
     pending: State<'_, ynab_capture::PendingImport>,
     id: String,
-) -> Result<Snapshot, String> {
-    let mut library = library.lock();
-    let mut store = Store::open_budget(&library.database(&id)?, &id)?.with_backup_preferences(library.data_dir());
-    let snapshot = store.load_light()?;
-    *db.store()? = store;
-    library.set_current(&id)?;
+) -> Result<serde_json::Value, String> {
+    let snapshot=urbudget_services::cloud::v2::open(&cloud,&db,&library,&id).await?;
     if let Ok(mut review) = pending.0.lock() {
         *review = None;
     }
     Ok(snapshot)
 }
 #[tauri::command(async)]
-fn delete_budget(library: State<'_, Library>, id: String) -> Result<Vec<budgets::Listing>, String> {
-    let mut library = library.lock();
-    library.remove(&id)?;
-    Ok(library.list())
+async fn delete_budget(cloud:State<'_,cloud::Cloud>,db:State<'_,Database>,library: State<'_, Library>, id: String) -> Result<Vec<budgets::Listing>, String> {
+    urbudget_services::library_api::lifecycle(&cloud,&db,&library,"trash",&id).await?;
+    Ok(library.lock().list())
 }
 /// Shows a file in the system file manager; a phone, which has none, offers it to the share
 /// sheet instead. Only paths inside the app's data folder, and exports saved since it started.
@@ -563,11 +562,15 @@ pub fn run() {
             // Before anything writes there: an empty folder is a copy opened for the first time.
             app.manage(urbudget_services::usage::Usage::open(&directory));
             vault::init(&directory);
-            let library = budgets::Budgets::load(&directory).map_err(std::io::Error::other)?;
+            let mut library = budgets::Budgets::load(&directory).map_err(std::io::Error::other)?;
+            urbudget_services::library_api::repair_local_catalog(&mut library).map_err(std::io::Error::other)?;
             let id = library.current().to_owned();
-            let path = library.database(&id).map_err(std::io::Error::other)?;
-            let store = Store::open_budget(&path, &id).map_err(std::io::Error::other)?.with_backup_preferences(&directory);
-            app.manage(Database(Mutex::new(store)));
+            let store = if id.is_empty() { None } else {
+                let path = library.database(&id).map_err(std::io::Error::other)?;
+                if path.is_file() { Some(Store::open_budget(&path, &id).map_err(std::io::Error::other)?.with_backup_preferences(&directory)) }
+                else { library.clear_current().map_err(std::io::Error::other)?; None }
+            };
+            app.manage(Database::new(store));
             app.manage(Library(Mutex::new(library)));
             app.manage(ynab_capture::PendingImport::default());
             app.manage(save::Saved::default());
@@ -577,6 +580,17 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            library::library_snapshot,
+            library::library_open,
+            library::library_trash,
+            library::library_restore,
+            library::library_review_deletion,
+            library::library_evict,
+            library::library_recover,
+            library::sync_enable,
+            library::editor_checkpoint,
+            library::editor_discard,
+            library::editor_recovery,
             set_language,
             upsert_transaction,
             source_loan_terms,
@@ -720,7 +734,7 @@ mod tests {
     #[test]
     fn derived_reads_release_the_store_lock_and_keep_their_own_snapshot() {
         let dir = tempfile::tempdir().unwrap();
-        let db = Database(Mutex::new(Store::open(&dir.path().join("budget.db")).unwrap()));
+        let db = Database::new(Some(Store::open(&dir.path().join("budget.db")).unwrap()));
         let original = db.snapshot(None).unwrap();
         let mut window = original.clone(); window.name = "Window preview".into();
         let patch = Patch::diff(&original, &window);
@@ -735,7 +749,8 @@ mod tests {
             }));
             started_rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
             {
-                let mut store = db.0.try_lock().expect("derived calculation must not hold the persistence lock");
+                let mut guard = db.0.try_lock().expect("derived calculation must not hold the persistence lock");
+                let store = guard.as_mut().unwrap();
                 assert_eq!(store.snapshot_draft(None).unwrap(), original, "preview patch never becomes a draft edit");
                 let mut changed = original.clone(); changed.name = "New draft".into();
                 store.apply_patch(Patch::diff(&original, &changed)).unwrap();

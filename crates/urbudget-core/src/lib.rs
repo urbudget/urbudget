@@ -20,6 +20,7 @@ pub mod reports;
 pub mod schedules;
 pub mod store;
 pub mod sync_merge;
+pub mod sync_storage;
 pub mod targets;
 pub mod workflows;
 pub mod ynab;

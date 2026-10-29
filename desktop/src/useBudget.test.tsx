@@ -14,6 +14,7 @@ const mocked = vi.hoisted(() => ({
   discardRecovery: vi.fn(),
   runSchedules: vi.fn(),
   openBudget: vi.fn(),
+  libraryAction: vi.fn(),
   backup: vi.fn(),
   pruneBackups: vi.fn(),
   restoreBackup: vi.fn(),
@@ -726,4 +727,42 @@ it("switching budgets saves first, then starts the other budget with fresh histo
   expect(result.current.budgetId).toBe("other");
   expect(result.current.canUndo).toBe(false);
   expect(result.current.sync).toBe("saved");
+});
+
+
+it("background adoption leaves an open editor and pending recovery untouched", async () => {
+  const hook = renderHook(() => useBudget("2026-10", true));
+  await act(async () => {});
+  expect(hook.result.current.canAdoptIncoming()).toBe(false);
+  mocked.load.mockClear();
+  await act(async () => { await hook.result.current.refreshDatabase(); });
+  expect(mocked.load).not.toHaveBeenCalled();
+  expect(mocked.discardRecovery).not.toHaveBeenCalled();
+});
+
+it("clean exit attempts queued network work but remains bounded", async () => {
+  const {result} = await start();
+  const drain = vi.fn(() => new Promise<void>(() => {}));
+  act(() => result.current.setExitDrain(drain));
+  let closing!: Promise<boolean>;
+  await act(async () => { closing = result.current.prepareExit(); });
+  expect(drain).toHaveBeenCalledOnce();
+  await act(async () => { await vi.advanceTimersByTimeAsync(3000); expect(await closing).toBe(true); });
+});
+
+it("saves the active draft before reviewing a deletion and adopts the reviewed revision", async () => {
+  const {result} = await start();
+  const calls: string[] = [];
+  mocked.commit.mockImplementation(async () => { calls.push("save"); return {...status, token: "1:1"}; });
+  mocked.libraryAction.mockImplementation(async () => {
+    calls.push("review");
+    mocked.load.mockResolvedValue({...status, token: "reviewed:7:1", budget: {...budget, name: "Newer remote version"}});
+    return {};
+  });
+  act(() => result.current.edit(draft => { draft.name = "Unsaved current budget"; }));
+  await act(async () => { await result.current.switchBudget("reviewed", true); });
+  expect(calls).toEqual(["save", "review"]);
+  expect(mocked.libraryAction).toHaveBeenCalledWith("review_deletion", "reviewed");
+  expect(result.current.budget?.name).toBe("Newer remote version");
+  expect(result.current.metadata?.token).toBe("reviewed:7:1");
 });

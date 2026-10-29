@@ -86,3 +86,28 @@ it("reads amounts, splits and the record they belong to", () => {
   expect(shownValue(assigned, assigned.local)).toBe(money(30000));
   expect(aboutText(assigned)).toBe("October 2026");
 });
+
+
+it("shows each side's monthly money impact and named category changes", () => {
+  const plan = {type:"monthPlan",currency:"USD",month:"2026-10",baseTotal:10000,total:12500,readyToAssignChange:-2500,moveCount:2,categories:[{id:"food",name:"Food",base:10000,amount:12500,delta:2500}]};
+  const text = shownValue({...conflicts[0],kind:"assignment",field:"monthPlan"},plan);
+  expect(text).toContain("Month total: " + money(10000,{currency:"USD"}) + " → " + money(12500,{currency:"USD"}));
+  expect(text).toContain("Ready to Assign change: " + money(-2500,{currency:"USD"}));
+  expect(text).toContain("Moves: 2");
+  expect(text).toContain("Food: ");
+  expect(text).toContain("Change: " + money(2500,{currency:"USD"}));
+});
+it("warns that an invariant fallback chooses the whole budget", () => {
+  const conflict = {...conflicts[0],kind:"budget" as const,field:"budgetVersion",about:{wholeBudget:true}};
+  expect(aboutText(conflict)).toContain("replaces all budget changes");
+  expect(shownValue(conflict,{name:"Mine",accounts:2,categories:3,transactions:4,reason:"Transfer mismatch"})).toContain("Transactions: 4");
+});
+
+it("shows the source account and both reconciliation states in grouped transaction choices", () => {
+  const value = {amount:-1200,lines:[],account:"Checking",status:"reconciled",transfer:"Savings",transferStatus:"cleared"};
+  const shown = shownValue(conflicts[2],value);
+  expect(shown).toContain("Checking");
+  expect(shown).toContain("Reconciled");
+  expect(shown).toContain("Transfer: Savings");
+  expect(shown).toContain("Transfer status: Cleared");
+});

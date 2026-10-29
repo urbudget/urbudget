@@ -104,7 +104,9 @@ describe("site", () => {
   });
   it("keeps the app policy in sync without website navigation or checkout links", () => {
     const app = read("privacy/app/index.html");
-    expect(app, "run node scripts/app-privacy.mjs after editing the policy").toBe(appPrivacyHtml(read("privacy/index.html")));
+    // Git may check static assets out as CRLF on Windows; generated content is LF.
+    expect(app.replace(/\r\n/g, "\n"), "run node scripts/app-privacy.mjs after editing the policy")
+      .toBe(appPrivacyHtml(read("privacy/index.html")).replace(/\r\n/g, "\n"));
     expect(app).not.toMatch(/<(?:nav|script)\b/);
     expect(app).not.toMatch(/href="(?:https:\/\/urbudget\.app)?\/(?:account|buy|pricing|download)\//);
     expect(app).toContain('id="assistant-reports"');

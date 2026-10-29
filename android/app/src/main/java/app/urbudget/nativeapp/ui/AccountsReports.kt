@@ -227,6 +227,8 @@ internal fun AccountDialog(original: JSONObject?, budget: JSONObject, vm: Budget
     var netWorth by remember { mutableStateOf(original?.let(AccountTypes::inNetWorth) ?: true) }
     var error by remember { mutableStateOf<String?>(null) }
     val typeChoices = remember(existingKind, languageKey()) { accountTypes().filter { existingKind == null || AccountTypes.kindFor(it.first) == existingKind } }
+    retainEditorDraft(vm, "account", openedBudget, JSONObject().put("name", name).put("type", type).put("balance", balance)
+        .put("note", note).put("archived", archived).put("netWorth", netWorth))
     FormDialog(if (original == null) stringResource(R.string.account_add) else stringResource(R.string.account_edit), close,
         confirm = if (original == null) stringResource(R.string.common_add) else stringResource(R.string.common_save), onConfirm = {
         runCatching {
@@ -291,6 +293,7 @@ internal fun ReconcileDialog(account: JSONObject, budget: JSONObject, summary: J
             if (currentContext == contextKey) { preview = candidate.row("transactions", adjustmentId)?.optLong("amount") ?: 0; loading = false }
         })
     }.onFailure { error = it.message }
+    retainEditorDraft(vm, "reconcile", openedBudget, JSONObject().put("account", account).put("balance", balance).put("date", date).put("differs", differs))
     FormDialog(stringResource(R.string.reconcile_title, account.text("name")), close,
         confirm = if (preview == null) stringResource(R.string.common_review) else if (preview == 0L) stringResource(R.string.reconcile_action) else stringResource(R.string.reconcile_adjust_finish), onConfirm = {
         runCatching {

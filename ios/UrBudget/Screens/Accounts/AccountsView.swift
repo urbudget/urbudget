@@ -313,6 +313,7 @@ struct AccountForm: View {
                 }
             }
         }
+        .retainingEditorDraft("account", values: ["name": .string(name), "type": .string(type), "balance": .string(balance), "note": .string(note), "archived": .bool(archived), "netWorth": .bool(netWorth)])
         .onAppear {
             guard !loaded else { return }
             loaded = true
@@ -419,6 +420,7 @@ struct ReconcileSheet: View {
                 }
             }
         }
+        .retainingEditorDraft("reconcile", values: ["account": account, "balance": .string(balance), "date": .string(date), "differs": .bool(differs)])
         .presentationDetents([.medium, .large])
     }
 
@@ -444,8 +446,7 @@ struct ReconcileSheet: View {
 
     private func finish() {
         attempt($error) {
-            store.runCommand("reconcile", try params())
-            dismiss()
+            store.runCommand("reconcile", try params(), then: { dismiss() })
         }
     }
 }

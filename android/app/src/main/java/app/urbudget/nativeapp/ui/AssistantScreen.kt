@@ -229,7 +229,7 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
     }) }
     reportReply?.let { excerpt -> AssistantReplyReportDialog(excerpt, controller, { reportReply = null }) }
     changing?.let { (proposal, row) ->
-        ProposalRowEditor(row, budget, budgetState.summary, budgetState.month, { change ->
+        ProposalRowEditor(row, budget, vm, budgetState.summary, budgetState.month, { change ->
             controller.revise(proposal.text("id"), ProposalChoices.change(proposal.optJSONObject("choices"), row.text("key"), change)); changing = null
         }) { changing = null }
     }
@@ -399,7 +399,7 @@ private fun ProposalRow(row: JSONObject, currency: String, busy: Boolean, toggle
  * one typed without a sign keeps the row's. Saving with nothing changed just closes.
  */
 @Composable
-internal fun ProposalRowEditor(row: JSONObject, budget: JSONObject, summary: JSONObject?, month: String, save: (JSONObject) -> Unit, close: () -> Unit) {
+internal fun ProposalRowEditor(row: JSONObject, budget: JSONObject, vm: BudgetViewModel?, summary: JSONObject?, month: String, save: (JSONObject) -> Unit, close: () -> Unit) {
     val edit = row.optJSONObject("edit") ?: JSONObject()
     val label = row.text("label")
     var category by remember { mutableStateOf(edit.text("categoryId").ifEmpty { Unassigned }) }
@@ -407,6 +407,7 @@ internal fun ProposalRowEditor(row: JSONObject, budget: JSONObject, summary: JSO
     var problem by remember { mutableStateOf<String?>(null) }
     var picking by remember { mutableStateOf(false) }
     val names = remember(budget) { budget.rows("categories").associate { it.text("id") to it.text("name") } }
+    if (vm != null) retainEditorDraft(vm, "assistantRow", row, JSONObject().put("row", row).put("category", category).put("amount", amount))
     val amountRequired = stringResource(R.string.assistant_amount_required)
     FormDialog(stringResource(R.string.assistant_change_row, label), close, onConfirm = {
         runCatching { ProposalChoices.edit(row, category.takeUnless { it == Unassigned }, amount) }

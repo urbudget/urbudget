@@ -47,6 +47,7 @@ struct CardPaymentSheet: View {
         }
         .presentationDetents([.large])
         .interactiveDismissDisabled(saving)
+        .retainingEditorDraft("cardPayment", values: ["accountId": .string(accountId), "from": .string(from), "choice": .string(choice), "amountExpression": .string(pad.text), "date": .string(date), "memo": .string(memo)])
         .onAppear(perform: load)
     }
 

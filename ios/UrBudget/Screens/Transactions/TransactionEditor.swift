@@ -32,6 +32,7 @@ struct TransactionEditor: View {
     @Environment(\.dismiss) private var dismiss
     var request: TransactionEditorRequest
 
+    @State private var checkpoint: EditorDraftCheckpoint?
     @State private var loaded = false
     @State private var account = ""
     @State private var payee = ""
@@ -102,6 +103,17 @@ struct TransactionEditor: View {
     private func frequencyLabel(_ choice: (id: String, label: String)) -> String {
         guard choice.id == "never" else { return choice.label }
         return date > today ? String(localized: "Once") : String(localized: "Never")
+    }
+
+    private var rawDraft: JSON {
+        ["account": .string(account), "payee": .string(payee), "date": .string(date), "memo": .string(memo),
+         "amountExpression": .string(pad.text), "direction": .string(direction), "status": .string(status),
+         "transfer": .string(transfer), "peerStatus": .string(peerStatus), "flag": .string(flag),
+         "approved": .bool(approved), "splitMode": .bool(splitMode), "category": .string(category),
+         "repeat": .string(repeatEvery), "splits": .array(splits.map { part in
+             ["category": .string(part.category), "amount": .string(part.amount), "memo": .string(part.memo),
+              "transfer": .string(part.transfer), "payee": .string(part.payee), "transferStatus": .string(part.transferStatus)]
+         })]
     }
 
     var body: some View {
@@ -222,7 +234,7 @@ struct TransactionEditor: View {
             .navigationTitle(original == nil ? "New transaction" : "Edit transaction")
             .inlineTitle()
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { checkpoint?.discard(); dismiss() }.disabled(saving) }
                 ToolbarItem(placement: .confirmationAction) {
                     SaveButton(title: scheduled || repeatable && repeatEvery != "never" && date > today ? String(localized: "Schedule") : String(localized: "Save"),
                                saving: saving) { save() }
@@ -253,6 +265,7 @@ struct TransactionEditor: View {
                     attempt($error, saving: $saving) {
                         try await store.removing("transactions", id: id)
                         store.showToast(String(localized: "Deleted the transaction."), undo: true)
+                        checkpoint?.discard()
                         dismiss()
                     }
                 }
@@ -260,7 +273,12 @@ struct TransactionEditor: View {
                 Text("Both sides of a transfer will be removed. You can undo the change.")
             }
         }
-        .onAppear(perform: load)
+        .onAppear {
+            load()
+            if checkpoint == nil { checkpoint = EditorDraftCheckpoint(store: store, target: "transaction", baseline: original ?? [:]) }
+            checkpoint?.save(rawDraft)
+        }
+        .onChange(of: rawDraft) { _, value in checkpoint?.save(value) }
         .task(id: store.version) {
             let budget = budget
             payees = await Task.detached(priority: .userInitiated) { payeeIndex(budget) }.value
@@ -508,6 +526,7 @@ struct TransactionEditor: View {
                 }
                 if scheduled { store.showToast(String(localized: "Scheduled for \(Money.date(date)). It's entered on that day.")) }
             }
+            checkpoint?.discard()
             dismiss()
         }
     }

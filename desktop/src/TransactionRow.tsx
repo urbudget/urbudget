@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEve
 import { flushSync } from "react-dom";
 import { Lock, MoreHorizontal, Plus, Repeat, Split as SplitIcon, X } from "lucide-react";
 import { CategoryPicker, DateInput, PayeeInput, READY_TO_ASSIGN, transferPayee } from "./ui";
-import { editableAmount, errorText, evaluateAmount, money } from "./format";
+import { editableAmount, errorText, evaluateAmount, flowAmountChange, money } from "./format";
 import { id, scheduledAhead, today, type Budget, type Split, type Status, type Transaction } from "./types";
 import { getPref } from "./prefs";
 import { uncategorizedTest } from "./uncategorized";
@@ -102,12 +102,6 @@ const lineOf = (s: Split, needs: boolean): Line => ({
 const amountOf = (l: { outflow: string; inflow: string }) => evaluateAmount(l.inflow) - evaluateAmount(l.outflow);
 /** Money in (an inflow typed, no outflow): its "no category" is income for Unassigned. */
 const isIncome = (l: { outflow: string; inflow: string }) => !!l.inflow.trim() && !l.outflow.trim();
-/**
- * "+25" typed into Outflow or "-25" into Inflow, a sign before at most a plain amount: that
- * amount, which moves over to the other field. A longer expression ("-5+10") isn't moved, as it
- * adds up as typed where it is.
- */
-const movedBy = (text: string, sign: RegExp) => (sign.test(text) && /^[\d\s.,']*$/.test(text.slice(1)) ? text.slice(1) : null);
 /** The picker's Unassigned, as the register says it: income goes to it. Spending isn't offered it,
  * as YNAB steers spending to a category; one already taken from it (a YNAB import, a deleted
  * category) still shows as that until it's given a category. */
@@ -581,12 +575,9 @@ export function TransactionEditor({
           {...(line ? null : suggested("Outflow"))}
           value={value.outflow}
           onChange={(e) => {
-            const text = e.target.value;
-            const moved = movedBy(text, /^\+/);
-            if (moved !== null) {
-              set({ inflow: moved, outflow: "" });
-              fieldOf(`${label}Inflow`)?.focus();
-            } else set(text ? { outflow: text, inflow: "" } : { outflow: "" });
+            const change = flowAmountChange("outflow", e.target.value);
+            set(change.values);
+            if (change.focus) fieldOf(`${label}Inflow`)?.focus();
           }}
         />
       </span>
@@ -599,12 +590,9 @@ export function TransactionEditor({
           {...(line ? null : suggested("Inflow"))}
           value={value.inflow}
           onChange={(e) => {
-            const text = e.target.value;
-            const moved = movedBy(text, /^[-−]/);
-            if (moved !== null) {
-              set({ outflow: moved, inflow: "" });
-              fieldOf(`${label}Outflow`)?.focus();
-            } else set(text ? { inflow: text, outflow: "" } : { inflow: "" });
+            const change = flowAmountChange("inflow", e.target.value);
+            set(change.values);
+            if (change.focus) fieldOf(`${label}Outflow`)?.focus();
           }}
         />
       </span>

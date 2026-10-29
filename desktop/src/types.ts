@@ -28,6 +28,8 @@ export type BankColumns = {
   amount?: string | null;
   outflow?: string | null;
   inflow?: string | null;
+  /** An explicit destination account ID for a transfer. */
+  transferAccountId?: string | null;
   /** The bank's own id for each transaction. */
   id?: string | null;
 };

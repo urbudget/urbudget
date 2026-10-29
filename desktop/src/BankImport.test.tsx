@@ -27,6 +27,17 @@ import { demoBudget } from "./demo";
 afterEach(cleanup);
 beforeEach(() => vi.clearAllMocks());
 
+it("shows an explicit transfer destination and keeps its account ID when importing a new row", () => {
+  const onImport = vi.fn();
+  const row = { id: "bank:transfer", date: "2026-10-03", payee: "Bank wording", memo: "", amount: -2500, duplicate: false, candidates: [], transferAccountId: "savings" };
+  render(<ImportReview budget={demoBudget()} rows={[row]} busy={false} icon={null} onCancel={() => {}} onImport={onImport} />);
+  expect(screen.getByText("Transfer to Savings")).toBeTruthy();
+  expect(screen.getByText("Bank wording")).toBeTruthy();
+  expect(screen.getByRole("option", { name: "Add as a transfer" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Import 1 transaction" }));
+  expect(onImport.mock.lastCall![0]).toEqual([{ row, action: "new", matchId: null }]);
+});
+
 it("lets an identical ID-less receipt be imported separately with a stable retry identity", () => {
   const onImport = vi.fn();
   const row = { id: "bank:known", date: "2026-10-03", payee: "Shop", memo: "Second receipt", amount: -500, duplicate: true, idless: true, candidates: ["manual"] };

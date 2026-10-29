@@ -24,6 +24,11 @@ const KINDS: Record<SyncConflict["kind"], string> = {
   setting: msg("Setting"),
 };
 const FIELDS: Record<string, string> = {
+  budgetVersion: msg("Whole budget version"),
+  accounts: msg("Accounts"),
+  categories: msg("Categories"),
+  transactions: msg("Transactions"),
+  reason: msg("Reason"),
   name: msg("Name"),
   group: msg("Group"),
   target: msg("Target"),
@@ -89,6 +94,8 @@ type Money = {
   transfer?: string | null;
   payee?: string;
   account?: string;
+  status?: string;
+  transferStatus?: string;
 };
 /** A transaction's money: the amount, then where it went. */
 function moneyLine(m: Money) {
@@ -102,11 +109,24 @@ function moneyLine(m: Money) {
       : lines[0]
         ? where(lines[0])
         : "";
-  return [typeof m.amount === "number" ? money(m.amount) : "", to].filter(Boolean).join(" · ");
+  return [m.account, typeof m.amount === "number" ? money(m.amount) : "", to,
+    m.status ? t(WORDS[m.status] ?? m.status) : "",
+    m.transferStatus ? t("Transfer status: {status}", {status:t(WORDS[m.transferStatus] ?? m.transferStatus)}) : "",
+  ].filter(Boolean).join(" · ");
 }
 
 /** One side's version, as the person reads it. */
 export function shownValue(c: SyncConflict, v: unknown): string {
+  if (v && typeof v === "object" && (v as {type?: string}).type === "monthPlan") {
+    const plan = v as {currency?: string; total: number; baseTotal: number; readyToAssignChange: number; moveCount: number; categories: {name: string; base: number; amount: number; delta: number}[]};
+    const amount = (value: number) => money(value, {currency: plan.currency});
+    return [
+      t("Month total: {before} → {after}", {before: amount(plan.baseTotal), after: amount(plan.total)}),
+      t("Ready to Assign change: {amount}", {amount: amount(plan.readyToAssignChange)}),
+      t("Moves: {count}", {count: plan.moveCount}),
+      ...plan.categories.map(row => row.name + ": " + amount(row.base) + " → " + amount(row.amount) + " (" + t("Change: {amount}", {amount: amount(row.delta)}) + ")"),
+    ].join("\n");
+  }
   if (!c.field) {
     const changed = (v as { changed?: string[] } | null)?.changed ?? [];
     return v == null ? t("Deleted") : changed.length ? t("Edited: {fields}", { fields: list(changed.map(fieldLabel)) }) : t("Edited");
@@ -115,7 +135,7 @@ export function shownValue(c: SyncConflict, v: unknown): string {
   if (c.kind === "transaction" && c.field === "amount") return moneyLine(v as Money);
   if (c.kind === "schedule" && c.field === "transaction") {
     const m = v as Money;
-    return [m.payee, moneyLine(m), m.account].filter(Boolean).join(" · ");
+    return [m.payee, moneyLine(m)].filter(Boolean).join(" · ");
   }
   if (typeof v === "number") return MONEY.has(c.field) || c.kind === "assignment" ? money(v) : String(v);
   if (typeof v === "boolean") {
@@ -143,6 +163,7 @@ function recordName(c: SyncConflict) {
 
 /** What else tells the record apart. */
 export function aboutText(c: SyncConflict): string {
+  if (c.about.wholeBudget === true) return t("This choice replaces all budget changes with the selected version.");
   const a = c.about as { date?: string | null; account?: string; amount?: number | null; month?: string; group?: string; match?: string };
   switch (c.kind) {
     case "transaction":

@@ -1,3 +1,4 @@
+import { useEditorCheckpoint } from "../editorCheckpoint";
 import { useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Check, Eye, FileDown, FileSpreadsheet, LoaderCircle, Pencil, RefreshCw, TriangleAlert, Undo2 } from "lucide-react";
 import { editableAmount, errorText, evaluateAmount, money } from "../format";
@@ -22,6 +23,7 @@ function Row({
   onToggle,
   onEdit,
 }: {
+  budgetId?: string;
   row: CardRow;
   budget: boolean;
   /** Its checkbox and editing are offered: the card is waiting to be applied. */
@@ -91,23 +93,27 @@ function Row({
  * keeps them, Esc leaves them as they were. An amount typed without a sign keeps the row's.
  */
 function RowEditor({
+  budgetId = "",
   row,
   budget,
   busy,
   onSave,
   onCancel,
 }: {
+  budgetId?: string;
   row: CardRow;
   budget: Pick<Budget, "categories" | "categoryOrder" | "groupOrder">;
   /** The card is being made again or applied: what's saved now would be made on the card as it was. */
   busy?: boolean;
-  onSave: (change: Omit<RowChange, "key">) => void;
+  onSave: (change: Omit<RowChange, "key">) => Promise<void> | undefined;
   onCancel: () => void;
 }) {
   const was = row.edit?.categoryId ?? READY_TO_ASSIGN;
   const [category, setCategory] = useState(was);
   const [amount, setAmount] = useState(row.amount !== undefined ? editableAmount(row.amount) : "");
   const [problem, setProblem] = useState("");
+  const draft = useEditorCheckpoint(budgetId, "assistantRow", row, e => setProblem(errorText(e)), {category,amount}, ".proposal-editor input");
+  const cancel = () => { draft.discard(); onCancel(); };
   const save = () => {
     if (busy) return;
     const change: Omit<RowChange, "key"> = {};
@@ -122,14 +128,14 @@ function RowEditor({
         return;
       }
     }
-    if (change.category === undefined && change.amount === undefined) onCancel();
-    else onSave(change);
+    if (change.category === undefined && change.amount === undefined) cancel();
+    else void Promise.resolve(onSave(change)).then(() => draft.discard(), e => setProblem(errorText(e)));
   };
   const keys = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.defaultPrevented) return;
     if (e.key === "Escape") {
       e.preventDefault();
-      onCancel();
+      cancel();
     } else if (e.key === "Enter" && (e.target as HTMLElement).classList.contains("proposal-amount")) {
       e.preventDefault();
       save();
@@ -165,7 +171,7 @@ function RowEditor({
         <button type="button" className="primary small" disabled={busy} onClick={save}>
           {t("Save")}
         </button>
-        <button type="button" className="secondary small" onClick={onCancel}>
+        <button type="button" className="secondary small" onClick={cancel}>
           {t("Cancel")}
         </button>
       </span>
@@ -180,6 +186,7 @@ function RowEditor({
  * latest one.
  */
 export function ProposalCard({
+  budgetId,
   proposal: p,
   budget: book,
   canUndo,
@@ -193,6 +200,7 @@ export function ProposalCard({
   onSheet,
   onRevise,
 }: {
+  budgetId?: string;
   /** Reports: open the preview, or go straight to the print dialog. */
   onPreview?: () => void;
   onPrint?: () => Promise<void>;
@@ -269,6 +277,7 @@ export function ProposalCard({
     const sent = queue.current.then(() => onRevise(revision));
     queue.current = sent.catch(() => {});
     void run(() => sent)();
+    return sent;
   };
   const toggle = (row: CardRow) => {
     const key = row.key!;
@@ -284,7 +293,7 @@ export function ProposalCard({
   const change = (row: CardRow, values: Omit<RowChange, "key">) => {
     const key = row.key!;
     setEditing(null);
-    revise((choices) => {
+    return revise((choices) => {
       const was = choices.set.find((s) => s.key === key);
       return { skip: choices.skip, set: [...choices.set.filter((s) => s.key !== key), { ...was, ...values, key }] };
     });
@@ -320,6 +329,7 @@ export function ProposalCard({
           />
           {choosing && editing !== null && row.key === editing && book && (
             <RowEditor
+              budgetId={budgetId}
               row={row}
               budget={book}
               busy={busy}

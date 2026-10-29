@@ -120,6 +120,7 @@ internal fun CategorySheet(category: JSONObject, budget: JSONObject, total: JSON
     // Keyed on the category, so a sync arriving while typing doesn't wipe the keypad.
     val pad = rememberPad(assigned, id)
     var error by remember { mutableStateOf<String?>(null) }
+    if (editingAssigned) retainEditorDraft(vm, "assignment", budget, JSONObject().put("categoryId", id).put("month", month).put("expression", pad.text))
     val paymentAccount = category.text("paymentAccountId")
     val payment = paymentAccount.isNotBlank()
     val moves = remember(budget, id, month, assigned, language) { categoryMoves(budget, id, month, assigned) }
@@ -317,6 +318,9 @@ private fun CategoryEditor(section: String, category: JSONObject, budget: JSONOb
             budget.rows("transactions").any { t -> t.rows("splits").any { it.text("categoryId") == id } }
     }
     val moves = remember(budget, category, month, total, languageKey()) { categoryMoves(budget, category.text("id"), month, total?.optLong("assigned") ?: 0) }
+    if (section != "history") retainEditorDraft(vm, "category:$section", openedBudget,
+        JSONObject().put("categoryId", category.text("id")).put("name", name).put("note", note).put("group", group)
+            .put("hidden", hidden).put("before", before).put("groupBefore", groupBefore).put("renameGroup", renameGroup).put("replacement", replacement))
     val save: (() -> Unit)? = if (section == "history") null else ({
         runCatching {
             requireCurrentBudget(openedBudget, vm)
@@ -413,6 +417,9 @@ private fun TargetEditor(category: JSONObject, budget: JSONObject, month: String
         if (existingType == "MF") Triple("MF", R.string.target_kind_monthly_funding, R.string.target_behaviour_monthly_funding_hint) else null,
         if (existingType == "DEBT") Triple("DEBT", R.string.target_behaviour_debt, R.string.target_behaviour_debt_hint) else null,
     )
+    retainEditorDraft(vm, "target", openedBudget, JSONObject().put("categoryId", category.text("id")).put("behaviour", behaviour)
+        .put("amountExpression", pad.text).put("due", due).put("cadence", cadence).put("interval", interval).put("weekday", weekday)
+        .put("start", start).put("snoozed", snoozed))
     val save = {
         runCatching {
             requireCurrentBudget(openedBudget, vm)
@@ -526,6 +533,7 @@ internal fun MoveMoneySheet(request: MoveRequest, budget: JSONObject, summary: J
     var keypad by remember { mutableStateOf(false) }
     var picking by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    retainEditorDraft(vm, "moveMoney", openedBudget, JSONObject().put("from", from).put("to", to).put("month", month).put("expression", pad.text))
     val title = when {
         request.category == Unassigned && start >= 0 -> stringResource(R.string.unassigned_assign)
         start < 0 && request.category != Unassigned -> stringResource(R.string.cover_overspending)
@@ -883,6 +891,7 @@ internal fun NewCategoryDialog(budget: JSONObject, vm: BudgetViewModel, presetGr
     val starterGroup = stringResource(R.string.starter_group_everyday)
     var group by remember { mutableStateOf(presetGroup ?: existing.firstOrNull() ?: starterGroup) }
     var newGroup by remember { mutableStateOf(existing.isEmpty()) }
+    retainEditorDraft(vm, "newCategory", budget, JSONObject().put("name", name).put("group", group))
     FormDialog(stringResource(R.string.category_new), close, confirm = stringResource(R.string.common_add), onConfirm = { vm.saveCategory(name = name.trim(), group = group.trim()); close() }, enabled = name.isNotBlank() && group.isNotBlank()) {
         Field(name, { name = it }, stringResource(R.string.category_name))
         if (!newGroup) Choice(stringResource(R.string.group_label), group, existing.map { it to it } + ("__new" to stringResource(R.string.group_new_ellipsis)), { if (it == "__new") { newGroup = true; group = "" } else group = it })
@@ -896,6 +905,7 @@ internal fun NewGroupDialog(budget: JSONObject, vm: BudgetViewModel, close: () -
     val existing = remember(budget) { groupNames(budget) }
     var name by remember { mutableStateOf("") }
     val taken = name.trim() in existing
+    retainEditorDraft(vm, "newGroup", budget, JSONObject().put("name", name))
     FormDialog(stringResource(R.string.group_new), close, confirm = stringResource(R.string.common_add), onConfirm = {
         withCurrentBudget(budget, vm) {
             vm.editBudget { b -> b.put("groupOrder", (b.optJSONArray("groupOrder") ?: JSONArray(existing)).put(name.trim())) }
@@ -912,6 +922,7 @@ internal fun RenameGroupDialog(group: String, budget: JSONObject, vm: BudgetView
     val toast = LocalToast.current
     val existing = remember(budget) { groupNames(budget) }
     var name by remember { mutableStateOf(group) }
+    retainEditorDraft(vm, "renameGroup", budget, JSONObject().put("group", group).put("name", name))
     FormDialog(stringResource(R.string.group_rename), close, onConfirm = {
         withCurrentBudget(budget, vm) {
             vm.runCommand("workflow", JSONObject().put("action", JSONObject().put("type", "renameGroup").put("from", group).put("to", name.trim())))
@@ -931,6 +942,7 @@ internal fun DeleteGroupDialog(group: String, budget: JSONObject, vm: BudgetView
     val others = remember(budget) { groupNames(budget).filter { it != group } }
     val count = remember(budget) { budget.rows("categories").count { !it.optBoolean("hidden") && it.text("group") == group } }
     var target by remember { mutableStateOf(others.firstOrNull().orEmpty()) }
+    retainEditorDraft(vm, "deleteGroup", budget, JSONObject().put("group", group).put("target", target))
     FormDialog(stringResource(R.string.delete_named, group), close, confirm = stringResource(R.string.common_delete), onConfirm = {
         withCurrentBudget(budget, vm) {
             if (count == 0) vm.editBudget { b ->
@@ -955,6 +967,7 @@ internal fun BudgetPlanningDialog(budget: JSONObject, month: String, vm: BudgetV
     var note by remember { mutableStateOf(budget.rows("ynabMonths").firstOrNull { it.text("month").startsWith(month) }?.text("note").orEmpty()) }
     var income by remember { mutableStateOf(if (budget.isNull("expectedIncome") || !budget.has("expectedIncome")) "" else amountText(budget.optLong("expectedIncome"))) }
     var error by remember { mutableStateOf<String?>(null) }
+    retainEditorDraft(vm, "budgetPlanning", openedBudget, JSONObject().put("month", month).put("note", note).put("income", income))
     FormDialog(monthLabel(month), close, onConfirm = {
         runCatching { requireCurrentBudget(openedBudget, vm); val expected = if (income.isBlank()) null else amountValue(income).also { require(it >= 0) { Words[R.string.expected_income_not_negative] } }; vm.runCommand("workflow", JSONObject().put("action", JSONObject().put("type", "setBudgetPlanning").put("month", month).put("note", note).put("expectedIncome", expected ?: JSONObject.NULL))); close() }.onFailure { error = it.message }
     }) {

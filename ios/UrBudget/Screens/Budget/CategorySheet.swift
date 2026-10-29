@@ -76,6 +76,7 @@ struct CategorySheet: View {
         .sheet(item: Binding(get: { loanFor.map { IdentifiedText(value: $0) } }, set: { loanFor = $0?.value })) { LoanEditor(accountId: $0.value) }
         .sheet(item: $asking) { AssistantView(request: $0) }
         .sensoryFeedback(.selection, trigger: categoryId)
+        .retainingEditorDraft("assignment", values: ["categoryId": .string(categoryId), "month": .string(store.month), "expression": .string(pad.text)], enabled: editingAssigned)
     }
 
     /// The categories before and after this one, in Budget's order.
@@ -432,6 +433,7 @@ private struct NoteEditor: View {
     @Environment(BudgetStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     var categoryId: String
+    @State private var original: JSON?
     @State private var note = ""
     @State private var saving = false
     @State private var error: String?
@@ -450,13 +452,15 @@ private struct NoteEditor: View {
                 ToolbarItem(placement: .confirmationAction) {
                     SaveButton(saving: saving) {
                         attempt($error, saving: $saving) {
-                            try await store.upserting("categories", ["id": .string(categoryId), "note": .string(note)])
+                            guard let original else { throw AppError(String(localized: "This category was deleted.")) }
+                            try await store.upserting("categories", ["id": .string(categoryId), "note": .string(note)], original: original)
                             dismiss()
                         }
                     }
                 }
             }
-            .onAppear { note = store.budget?.row("categories", id: categoryId)?.text("note") ?? "" }
+            .retainingEditorDraft("categoryNote", values: ["categoryId": .string(categoryId), "note": .string(note)])
+            .onAppear { if original == nil { original = store.budget?.row("categories", id: categoryId); note = original?.text("note") ?? "" } }
         }
         .presentationDetents([.medium])
     }
@@ -592,6 +596,7 @@ private struct TargetEditor: View {
             if keypad { AmountKeypad(pad: pad) { keypad = false }.transition(.move(edge: .bottom)) }
         }
         .animation(.snappy(duration: 0.25), value: keypad)
+        .retainingEditorDraft("target", values: ["categoryId": .string(categoryId), "behaviour": .string(behaviour), "amountExpression": .string(pad.text), "due": .string(due), "cadence": .int(Int64(cadence)), "interval": .int(Int64(interval)), "weekday": .int(Int64(weekday)), "start": .string(start), "snoozed": .bool(snoozed)])
         .onAppear(perform: load)
     }
 
@@ -676,6 +681,7 @@ private struct CategoryDetailsEditor: View {
     @State private var group = ""
     @State private var note = ""
     @State private var hidden = false
+    @State private var original: JSON?
     @State private var loaded = false
     @State private var saving = false
     @State private var error: String?
@@ -703,7 +709,7 @@ private struct CategoryDetailsEditor: View {
             ToolbarItem(placement: .confirmationAction) {
                 SaveButton(saving: saving) {
                     attempt($error, saving: $saving) {
-                        guard let original = store.budget?.row("categories", id: categoryId) else {
+                        guard let original else {
                             throw AppError(String(localized: "This category was deleted."))
                         }
                         try await store.upserting("categories", ["id": .string(categoryId), "name": .string(name.trimmingCharacters(in: .whitespaces)),
@@ -714,9 +720,11 @@ private struct CategoryDetailsEditor: View {
                 .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || group.isEmpty)
             }
         }
+        .retainingEditorDraft("category", values: ["categoryId": .string(categoryId), "name": .string(name), "note": .string(note), "group": .string(group), "hidden": .bool(hidden)])
         .onAppear {
             guard !loaded, let category = store.budget?.row("categories", id: categoryId) else { return }
             loaded = true
+            original = category
             name = category.text("name")
             group = category.text("group")
             note = category.text("note")

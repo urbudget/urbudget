@@ -22,6 +22,9 @@ pub struct Row {
     pub payee: String,
     pub memo: String,
     pub amount: i64,
+    /// An explicitly chosen local account on the other side of this transaction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transfer_account_id: Option<String>,
     #[serde(default)]
     pub duplicate: bool,
     #[serde(default)]
@@ -503,6 +506,15 @@ pub struct BankTransaction {
     pub memo: String,
     /// Cents, positive for money in.
     pub amount: i64,
+    pub transfer_account_id: Option<String>,
+}
+/// Validate structured transfer choices at both the editor and save boundaries. Payee text is
+/// deliberately never interpreted as an account reference.
+pub(crate) fn validate_transfer(b: &Budget, account: &str, target: &str) -> Result<(), String> {
+    if target.is_empty() { return Ok(()) }
+    if target == account { return Err(t!("Choose a different account for the transfer.")); }
+    if !b.accounts.iter().any(|a| a.id == target) { return Err(t!("The transfer account no longer exists.")); }
+    Ok(())
 }
 /// The review's rows for transactions bound for `account`, however they arrived (a file, bank
 /// sync, the assistant): an id that stays the same when the same transaction comes again, whether
@@ -628,10 +640,23 @@ impl Matches {
         ids.sort();
         ids
     }
+    /// An explicit destination can only match that account's side, or a single ordinary entry
+    /// here that can be converted into this transfer without discarding split details.
+    fn target_matches(&self, b: &Budget, account: &str, id: &str, target: Option<&str>) -> bool {
+        let Some(target) = target else { return true };
+        if let Some(&(i, split)) = self.targets.get(id) {
+            let t = &b.transactions[i];
+            if t.account_id != account { return t.account_id == target }
+            return split.is_none() && (t.transfer_account_id.as_deref() == Some(target)
+                || t.transfer_account_id.is_none() && matches!(t.splits.as_slice(), [s] if ledger::transfer(s).is_none()));
+        }
+        self.transfer_targets.get(id).is_some_and(|&i| b.transactions[i].account_id == target)
+    }
     /// The row's choices: transactions here it could be, and the one elsewhere it was offered as
     /// the other side of a transfer when none here could be it but an earlier bank row.
-    fn candidate_set(&self, b: &Budget, amount: i64, day: NaiveDate, transfer: Option<(&String, bool)>) -> CandidateSet {
-        let mut candidates = self.candidates(amount, day);
+    fn candidate_set(&self, b: &Budget, account: &str, row: &Row, day: NaiveDate, transfer: Option<(&String, bool)>) -> CandidateSet {
+        let mut candidates = self.candidates(row.amount, day);
+        candidates.retain(|id| self.target_matches(b, account, id, row.transfer_account_id.as_deref()));
         let transfer = transfer.filter(|_| candidates.iter().all(|c| self.previously_matched.contains(c)));
         let transfer_candidates: Vec<String> = transfer.map(|(id, _)| id.clone()).into_iter().collect();
         candidates.extend(transfer_candidates.iter().cloned());
@@ -730,16 +755,21 @@ fn transfer_offers<'a>(b: &Budget, account: &str, matches: &'a Matches, rows: &[
     let mut wordings: HashMap<(usize, &String), (String, String, &str)> = HashMap::new();
     let mut recurring: HashMap<(String, String, &str), HashSet<usize>> = HashMap::new();
     for (i, (r, day)) in rows.iter().enumerate() {
-        if r.duplicate || r.possible_duplicate || matches.unmatched(r.amount, *day) {
+        let unmatched = if r.transfer_account_id.is_some() {
+            matches.candidates(r.amount, *day).iter().any(|id| !matches.previously_matched.contains(id)
+                && matches.target_matches(b, account, id, r.transfer_account_id.as_deref()))
+        } else { matches.unmatched(r.amount, *day) };
+        if r.duplicate || r.possible_duplicate || unmatched {
             continue;
         }
         let row = clues.read(&r.payee, &r.memo);
         for (apart, id) in matches.transfers(r.amount, *day) {
             let t = &b.transactions[matches.transfer_targets[id]];
+            if r.transfer_account_id.as_deref().is_some_and(|target| t.account_id != target) { continue }
             let theirs = said.entry(id).or_insert_with(|| {
                 clues.read(t.extra.get("importedPayee").and_then(Value::as_str).unwrap_or(&t.payee), &t.memo)
             });
-            let Some(agrees) = clues.fit(account, &row, &t.account_id, theirs) else { continue };
+            let Some(agrees) = r.transfer_account_id.as_ref().map(|_| 1).or_else(|| clues.fit(account, &row, &t.account_id, theirs)) else { continue };
             if agrees == 0 && !row.wording.is_empty() && !theirs.wording.is_empty() {
                 let trio = (row.wording.clone(), theirs.wording.clone(), t.account_id.as_str());
                 recurring.entry(trio.clone()).or_default().insert(i);
@@ -835,7 +865,7 @@ pub(crate) fn bank_id_of(account: &str, signature: &str) -> String {
 pub fn review(b: &Budget, account: &str, raw: Vec<BankTransaction>) -> Result<Vec<Row>, String> {
     let mut rows = Vec::with_capacity(raw.len());
     review_each(b, account, identified(raw), |mut row, matches, day, transfer| {
-        let choices = matches.candidate_set(b, row.amount, day, transfer);
+        let choices = matches.candidate_set(b, account, &row, day, transfer);
         row.candidates = choices.candidates;
         row.previously_matched_candidates = choices.previously_matched_candidates;
         row.candidate_details = choices.candidate_details;
@@ -855,8 +885,8 @@ pub(crate) fn review_identified(b: &Budget, account: &str, raw: Vec<(BankTransac
     let mut windows = HashMap::new();
     let mut buckets: HashMap<u64, Vec<usize>> = HashMap::new();
     review_each(b, account, raw, |row, matches, day, transfer| {
-        let candidate_set = *windows.entry((row.amount, day, transfer.map(|(id, sure)| (id.clone(), sure)))).or_insert_with(|| {
-            let choices = matches.candidate_set(b, row.amount, day, transfer);
+        let candidate_set = *windows.entry((row.amount, day, row.transfer_account_id.clone(), transfer.map(|(id, sure)| (id.clone(), sure)))).or_insert_with(|| {
+            let choices = matches.candidate_set(b, account, &row, day, transfer);
             let mut hash = DefaultHasher::new();
             choices.hash(&mut hash);
             let bucket = buckets.entry(hash.finish()).or_default();
@@ -903,7 +933,8 @@ fn review_each(
         .collect();
     let matches = Matches::new(b, account);
     let mut rows = Vec::with_capacity(raw.len());
-    for (BankTransaction { date, payee, memo, amount, .. }, who) in raw {
+    for (BankTransaction { date, payee, memo, amount, transfer_account_id, .. }, who) in raw {
+        if let Some(target) = &transfer_account_id { validate_transfer(b, account, target)?; }
         let Identity { signature, legacy, group, idless, aliases, batch } = who;
         let legacy = legacy.map(|l| bank_id(account, &l));
         let group_id = group.map(|g| bank_id(account, &g));
@@ -922,6 +953,7 @@ fn review_each(
             payee,
             memo,
             amount,
+            transfer_account_id,
             duplicate,
             candidates: vec![],
             previously_matched_candidates: vec![],
@@ -940,8 +972,8 @@ fn review_each(
             refund_of: None,
         };
         let t = new_transaction(b, account, &row);
-        row.rename = Some(t.payee).filter(|p| *p != row.payee);
-        row.category_id = t.splits[0].category_id.clone();
+        row.rename = Some(t.payee).filter(|p| row.transfer_account_id.is_none() && *p != row.payee);
+        row.category_id = t.splits.first().and_then(|s| s.category_id.clone());
         rows.push((row, d));
     }
     let offers = transfer_offers(b, account, &matches, &rows);
@@ -997,7 +1029,7 @@ fn refund_offers(b: &Budget, account: &str, matches: &Matches, rows: &[(Row, Nai
         Purchase { id: &r.id, date: *day, payee, name: bank_csv::plain(payee), wording: wording(&r.payee), amount: r.amount, category: category(b, r.category_id.as_deref()) }
     }));
     rows.iter().zip(offers).map(|((r, day), offer)| {
-        if r.amount <= 0 || r.duplicate || r.possible_duplicate || offer.is_some() || !matches.candidates(r.amount, *day).is_empty() {
+        if r.amount <= 0 || r.transfer_account_id.is_some() || r.duplicate || r.possible_duplicate || offer.is_some() || !matches.candidates(r.amount, *day).is_empty() {
             return None;
         }
         let (name, said) = (bank_csv::plain(r.rename.as_deref().unwrap_or(&r.payee)), wording(&r.payee));
@@ -1043,11 +1075,17 @@ fn new_transaction(b: &Budget, account: &str, r: &Row) -> Transaction {
             amount: r.amount,
             extra: Default::default(),
         }],
-        transfer_account_id: None,
-        transfer_status: None,
+        transfer_account_id: r.transfer_account_id.clone(),
+        transfer_status: r.transfer_account_id.as_ref().map(|_| Cleared::Uncleared),
         extra: extra.as_object().unwrap().clone().into(),
     };
-    workflows::apply_payee_rules(b, &mut t);
+    if let Some(target) = &r.transfer_account_id {
+        let on_budget = |id: &str| b.accounts.iter().any(|a| a.id == id && a.on_budget());
+        t.payee.clear();
+        if on_budget(account) == on_budget(target) { t.splits.clear(); }
+    } else {
+        workflows::apply_payee_rules(b, &mut t);
+    }
     t
 }
 pub fn apply(mut b: Budget, account: &str, choices: Vec<Choice>) -> Result<Budget, String> {
@@ -1079,6 +1117,7 @@ pub fn apply(mut b: Budget, account: &str, choices: Vec<Choice>) -> Result<Budge
             continue;
         }
         let r = c.row;
+        if let Some(target) = &r.transfer_account_id { validate_transfer(&b, account, target)?; }
         if let Some(id) = &r.import_id {
             if !r.idless || c.action != "new" || !id.starts_with("bank:manual:") || id.len() > 100 || id.len() < 24 {
                 return Err(t!("Preview this file again before importing a separate transaction."));
@@ -1107,6 +1146,9 @@ pub fn apply(mut b: Budget, account: &str, choices: Vec<Choice>) -> Result<Budge
                 (None, Some(&index)) => (index, None),
                 _ => return Err(t!("Matching transaction changed or was already matched. Preview again.")),
             };
+            if !matches.target_matches(&b, account, id, r.transfer_account_id.as_deref()) {
+                return Err(t!("The matching transaction uses a different transfer account. Preview again."));
+            }
             // A default match from an older preview must not silently consume another
             // payment that was imported meanwhile. Refreshed previews allow explicit matches.
             if matches.previously_matched.contains(id) && !r.previously_matched_candidates.contains(id) {
@@ -1114,6 +1156,7 @@ pub fn apply(mut b: Budget, account: &str, choices: Vec<Choice>) -> Result<Budge
             }
             let on_budget = |id: &str| b.accounts.iter().any(|a| a.id == id && a.on_budget());
             let same_side = on_budget(&b.transactions[index].account_id) == on_budget(account);
+            let target_same_side = r.transfer_account_id.as_deref().is_some_and(|target| on_budget(target) == on_budget(account));
             let t = &mut b.transactions[index];
             let date_a =
                 NaiveDate::parse_from_str(&t.date, "%Y-%m-%d").map_err(|_| t!("Invalid date"))?;
@@ -1136,6 +1179,14 @@ pub fn apply(mut b: Budget, account: &str, choices: Vec<Choice>) -> Result<Budge
             } else if t.account_id == account && t.amount == r.amount {
                 if t.status != Cleared::Reconciled {
                     t.status = Cleared::Cleared
+                }
+                if let Some(target) = &r.transfer_account_id {
+                    if t.transfer_account_id.is_none() {
+                        t.transfer_account_id = Some(target.clone());
+                        t.transfer_status = Some(Cleared::Uncleared);
+                        t.payee.clear();
+                        if target_same_side { t.splits.clear(); }
+                    }
                 }
             } else if t.transfer_account_id.as_deref() == Some(account) && -t.amount == r.amount {
                 if t.transfer_status != Some(Cleared::Reconciled) {
@@ -1186,9 +1237,10 @@ pub fn apply(mut b: Budget, account: &str, choices: Vec<Choice>) -> Result<Budge
             let at = r.at.as_deref().and_then(|at| DateTime::parse_from_rfc3339(at).ok());
             let at = at.map_or(now + chrono::Duration::milliseconds(offset as i64), |at| at.with_timezone(&Utc));
             t.set_created_at(&stamp(at));
-            if t.amount < 0
-                && t.splits[0].category_id.is_none()
-                && b.accounts.iter().any(|a| a.id == account && a.on_budget())
+            let on_budget = |id: &str| b.accounts.iter().any(|a| a.id == id && a.on_budget());
+            let spending = t.amount < 0 && on_budget(account)
+                || t.amount > 0 && !on_budget(account) && t.transfer_account_id.as_deref().is_some_and(on_budget);
+            if spending && t.splits.first().is_some_and(|s| s.category_id.is_none())
             {
                 let category = b
                     .categories
@@ -1251,7 +1303,7 @@ mod tests {
             let csv = format!("Date,Payee,Amount\n{date},Shop,-50.00");
             assert!(preview(&b, "cash", &csv, "csv", "ymd", false).is_err(), "{date}");
             let raw = BankTransaction { fit: "bank-id".into(), date: date.into(),
-                payee: "Shop".into(), memo: String::new(), amount: -5000 };
+                payee: "Shop".into(), memo: String::new(), amount: -5000, transfer_account_id: None };
             assert!(review(&b, "cash", vec![raw]).is_err(), "{date}");
         }
         // Bank-sync reviews also receive the current, possibly invalid, UI draft.
@@ -1264,7 +1316,7 @@ mod tests {
         invalid.transactions.push(transfer);
         assert!(review(&invalid, "cash", vec![]).is_err(), "do not negate an unchecked transfer amount");
         let raw = BankTransaction { fit: "bank-id".into(), date: "2026-10-15".into(),
-            payee: "Shop".into(), memo: String::new(), amount: i64::MIN };
+            payee: "Shop".into(), memo: String::new(), amount: i64::MIN, transfer_account_id: None };
         assert!(review(&b, "cash", vec![raw]).is_err());
         assert!(review(&b, "missing", vec![]).is_err());
         // A supported upper date remains safe when the matching window extends past year 9999.
@@ -1427,7 +1479,7 @@ mod tests {
         b
     }
     fn incoming(fit: &str, amount: i64) -> BankTransaction {
-        BankTransaction { fit: fit.into(), date: "2026-10-15".into(), payee: "Transfer".into(), memo: String::new(), amount }
+        BankTransaction { fit: fit.into(), date: "2026-10-15".into(), payee: "Transfer".into(), memo: String::new(), amount, transfer_account_id: None }
     }
     #[test]
     fn compact_reviews_expand_losslessly_including_split_and_previous_match_evidence() {
@@ -1782,7 +1834,7 @@ D10/15'26\nT12.00\nMInterest\n^\n!Account\nNSavings\nTBank\n^\n!Type:Bank\nD10/1
         t
     }
     fn money_in(date: &str, payee: &str, amount: i64) -> BankTransaction {
-        BankTransaction { fit: String::new(), date: date.into(), payee: payee.into(), memo: String::new(), amount }
+        BankTransaction { fit: String::new(), date: date.into(), payee: payee.into(), memo: String::new(), amount, transfer_account_id: None }
     }
     fn imported(b: Budget, rows: Vec<Row>) -> Budget {
         apply(b, "cash", rows.into_iter().map(|row| Choice { row, action: "new".into(), match_id: None }).collect()).unwrap()

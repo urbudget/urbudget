@@ -431,6 +431,7 @@ struct AssistantRowEditor: View {
                 }
             }
         }
+        .retainingEditorDraft("assistantRow", values: ["row": row, "category": .string(category), "amount": .string(amount)])
     }
 
     private func save() {

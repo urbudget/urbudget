@@ -64,12 +64,23 @@ kotlin { compilerOptions { jvmTarget.set(JvmTarget.JVM_17) } }
 val repositoryRoot = rootProject.projectDir.parentFile
 val rustManifest = repositoryRoot.resolve("crates/urbudget-android/Cargo.toml")
 val rustTarget = layout.buildDirectory.dir("rust-target")
+// Instrumentation-only development Rust build enables the loopback API override. Release always stays optimized.
+val rustDebug = providers.gradleProperty("rustDebug").orElse("false").map(String::toBoolean).get()
+// Inspect resolved tasks: aggregate names (assemble/build) and abbreviations can include release.
+// This runs even when buildRustEngine is up to date, before a QA library can be packaged.
+val rustAppProject = project
+gradle.taskGraph.whenReady {
+    require(!rustDebug || allTasks.none {
+        it.project == rustAppProject && (it.name.contains("release", true) || it.name.contains("preview", true))
+    }) { "rustDebug is only for isolated debug instrumentation." }
+}
 val nativeOutputs = layout.buildDirectory.dir("generated/rustJniLibs")
 val buildRust = tasks.register("buildRustEngine") {
     group = "build"
     description = "Compile the desktop-shared Rust engine for Android ARM64 and x86_64."
     inputs.files(fileTree(repositoryRoot.resolve("crates")) { include("**/*.rs", "**/Cargo.toml", "**/Cargo.lock") })
     inputs.property("androidAbis", requestedAbis)
+    inputs.property("rustDebug", rustDebug)
     outputs.dir(nativeOutputs)
     doLast {
         val ndk = System.getenv("ANDROID_NDK_HOME") ?: System.getenv("NDK_HOME")
@@ -84,7 +95,7 @@ val buildRust = tasks.register("buildRustEngine") {
         listOf("arm64-v8a" to "aarch64-linux-android", "x86_64" to "x86_64-linux-android").filter { it.first in requestedAbis }.forEach { (abi, target) ->
             val linker = bin.resolve("${target}26-clang" + if (windows) ".cmd" else "")
             check(linker.isFile) { "NDK compiler is missing: $linker" }
-            val command = listOf("cargo", "build", "--locked", "--release", "--manifest-path", rustManifest.absolutePath, "--target", target, "--target-dir", rustTarget.get().asFile.absolutePath)
+            val command = listOf("cargo", "build", "--locked") + (if (rustDebug) emptyList() else listOf("--release")) + listOf("--manifest-path", rustManifest.absolutePath, "--target", target, "--target-dir", rustTarget.get().asFile.absolutePath)
             val process = ProcessBuilder(command).directory(repositoryRoot).redirectErrorStream(true).apply {
                 environment()["CARGO_TARGET_${target.uppercase().replace('-', '_')}_LINKER"] = linker.absolutePath
                 environment()["CC_${target.replace('-', '_')}"] = linker.absolutePath
@@ -93,7 +104,7 @@ val buildRust = tasks.register("buildRustEngine") {
             process.inputStream.bufferedReader().useLines { lines -> lines.forEach { logger.lifecycle(it) } }
             check(process.waitFor() == 0) { "Rust compilation failed for $abi. Install the Rust target with rustup target add $target." }
             copy {
-                from(rustTarget.get().file("$target/release/liburbudget_android.so"))
+                from(rustTarget.get().file("$target/${if (rustDebug) "debug" else "release"}/liburbudget_android.so"))
                 into(nativeOutputs.get().dir(abi))
             }
         }
@@ -105,6 +116,7 @@ dependencies {
     implementation("com.android.billingclient:billing:9.1.0")
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("androidx.core:core-ktx:1.16.0")
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
     implementation(platform("androidx.compose:compose-bom:2025.08.00"))
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.compose.material3:material3")

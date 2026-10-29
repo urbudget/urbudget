@@ -76,7 +76,7 @@ struct AccountSyncView: View {
         }
         .sheet(item: $conflict) { entry in
             SyncConflictSheet(entry: entry.value) { keep, choices in
-                _ = try await store.service("sync_resolve", ["id": .string(entry.value.text("id")), "keep": .string(keep), "choices": choices])
+                _ = try await store.service("sync_resolve", ["id": .string(entry.value.text("id")), "keep": .string(keep), "choices": choices, "review": entry.value["review"]])
                 store.reload()
                 await sync.refreshStatus()
             }
@@ -215,6 +215,10 @@ struct AccountSyncView: View {
         let budgets = sync.lastReport?.rows("budgets") ?? []
         if !budgets.isEmpty {
             Section("Budgets") {
+                NavigationLink("Budget library") { LibraryView() }
+                if sync.status?["sync"]["protocol"].int != 2 {
+                    Text("Automatic budget discovery is not enabled for this account yet. Existing budgets keep syncing; use the controls below to add or download budgets.").font(.footnote).foregroundStyle(.secondary)
+                }
                 ForEach(budgets, id: \.idText) { entry in
                     let state = entry.text("state")
                     VStack(alignment: .leading, spacing: 8) {
@@ -231,7 +235,7 @@ struct AccountSyncView: View {
                         ForEach(entry["notes"].array.map(\.string), id: \.self) { Text($0).font(.footnote).foregroundStyle(Color.secondary) }
                         HStack(spacing: 10) {
                             switch state {
-                            case "cloud_only":
+                            case "cloud_only" where sync.status?["sync"]["protocol"].int != 2:
                                 Button("Download and open") {
                                     run {
                                         let id = try await store.service("sync_download", ["id": .string(entry.text("id"))]).string
@@ -239,7 +243,7 @@ struct AccountSyncView: View {
                                     }
                                 }
                                 .buttonStyle(.bordered)
-                            case "local_only":
+                            case "local_only" where sync.status?["sync"]["protocol"].int != 2:
                                 Button("Start syncing") {
                                     run {
                                         _ = try await store.service("sync_track", ["ids": JSON([entry.text("id")])])
@@ -254,7 +258,7 @@ struct AccountSyncView: View {
                                 EmptyView()
                             }
                             Spacer()
-                            if state != "local_only" {
+                            if sync.status?["sync"]["protocol"].int != 2 && state != "local_only" {
                                 Button("Remove cloud copy", role: .destructive) { removing = entry }.buttonStyle(.borderless).font(.subheadline)
                             }
                         }
@@ -276,6 +280,7 @@ struct AccountSyncView: View {
         case "downloaded": return String(localized: "Downloaded")
         case "merged": return String(localized: "Merged")
         case "waiting": return String(localized: "Waiting")
+        case "deletion_conflict": return String(localized: "Newer changes need review before deletion")
         case "update_app": return String(localized: "Update the app")
         case "error": return String(localized: "Error")
         case "": return String(localized: "Unknown")
@@ -385,6 +390,9 @@ private struct SyncConflictSheet: View {
             }
             ForEach(conflicts, id: \.self.conflictKey) { difference in
                 Section {
+                    if difference["about"].flag("wholeBudget") {
+                        Text("This choice replaces all budget changes with the selected version.").foregroundStyle(.secondary)
+                    }
                     LabeledContent("This device", value: describe(difference["local"]))
                     LabeledContent("Cloud", value: describe(difference["remote"]))
                     Picker("Keep", selection: Binding(get: { choices[difference.text("key")] ?? "" },
@@ -394,13 +402,48 @@ private struct SyncConflictSheet: View {
                     }
                     .pickerStyle(.segmented)
                 } header: {
-                    Text(ImportsText.line([difference.text("label"), difference.text("field")].filter { !$0.isEmpty }))
+                    Text(ImportsText.line([difference.text("label"), difference.text("field") == "budgetVersion" ? String(localized: "Whole budget version") : difference.text("field")].filter { !$0.isEmpty }))
                 }
             }
         }
     }
 
     private func describe(_ value: JSON) -> String {
+        if value.has("amount") && (value.has("lines") || value.has("transfer")) {
+            func state(_ value: String) -> String {
+                switch value { case "cleared": return String(localized: "Cleared"); case "reconciled": return String(localized: "Reconciled"); case "uncleared": return String(localized: "Uncleared"); default: return value }
+            }
+            var parts = [value.text("account"), Money.format(value.long("amount"))]
+            if !value.text("transfer").isEmpty { let account = value.text("transfer"); parts.append(String(localized: "Transfer: \(account)")) }
+            for line in value.rows("lines") {
+                let destination: String
+                if !line.text("transfer").isEmpty { let account = line.text("transfer"); destination = String(localized: "Transfer: \(account)") }
+                else { destination = line.text("category", String(localized: "Ready to Assign")) }
+                parts.append(destination + ": " + Money.format(line.long("amount")))
+            }
+            if !value.text("status").isEmpty { parts.append(state(value.text("status"))) }
+            if !value.text("transferStatus").isEmpty { let status = state(value.text("transferStatus")); parts.append(String(localized: "Transfer status: \(status)")) }
+            return parts.filter { !$0.isEmpty }.joined(separator: "\n")
+        }
+        if value.has("reason") && value.has("transactions") {
+            let accounts = String(value.long("accounts")), categories = String(value.long("categories")), transactions = String(value.long("transactions"))
+            return [value.text("name"), String(localized: "Accounts: \(accounts); Categories: \(categories); Transactions: \(transactions)"), value.text("reason")].joined(separator: "\n")
+        }
+        if value.text("type") == "monthPlan" {
+            let currency = value.text("currency", "SAR")
+            let before = Money.format(value.long("baseTotal"), currency: currency)
+            let after = Money.format(value.long("total"), currency: currency)
+            let change = Money.format(value.long("readyToAssignChange"), currency: currency)
+            let moves = String(value.long("moveCount"))
+            let summary = [String(localized: "Month total: \(before) → \(after)"),
+                           String(localized: "Ready to Assign change: \(change)"), String(localized: "Moves: \(moves)")]
+            let rows = value.rows("categories").map { row in
+                let delta = Money.format(row.long("delta"), currency: currency)
+                let detail = String(localized: "Change: \(delta)")
+                return "\(row.text("name")): \(Money.format(row.long("base"), currency: currency)) → \(Money.format(row.long("amount"), currency: currency)) (\(detail))"
+            }
+            return (summary + rows).joined(separator: "\n")
+        }
         switch value {
         case .null: return String(localized: "Deleted")
         case .string(let text): return text.isEmpty ? String(localized: "Empty") : text

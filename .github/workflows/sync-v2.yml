@@ -1,0 +1,60 @@
+name: Sync protocol validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["web/**", "crates/**", ".github/workflows/sync-v2.yml"]
+  pull_request:
+    branches: [main]
+    paths: ["web/**", "crates/**", ".github/workflows/sync-v2.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-v2-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  protocol:
+    # The retained native process harness uses the Windows sync_qa executable.
+    # No Cloudflare token, production binding or remote Wrangler command is used.
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: crates -> target
+      - run: npm ci
+        working-directory: web
+      - name: Check the Worker before merge
+        run: npm run check
+        working-directory: web
+      - name: Build independent native clients
+        run: cargo build --locked --manifest-path crates/Cargo.toml -p urbudget-services --example sync_qa
+      - name: Verify real local D1 and R2 migration and fault semantics
+        run: node scripts/sync-v2-protocol.mjs
+        working-directory: web
+      - name: Exercise independent clients and concurrent stress
+        run: node scripts/sync-v2-instances.mjs --rounds 300
+        working-directory: web
+      - name: Exercise legacy native upgrade and returning old devices
+        run: node scripts/sync-v2-instances.mjs --legacy
+        working-directory: web
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sync-v2-synthetic-traces
+          retention-days: 7
+          if-no-files-found: ignore
+          path: crates/target/sync-v2-instances/*/trace.json

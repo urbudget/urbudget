@@ -538,8 +538,8 @@ export function Register({
     setScrollTop(0);
   }, [query, filters.terms, from, to, accountId, sort]);
   useEffect(() => {
-    onEditorChange?.(adding || !!editing || !!scheduleEditor);
-  }, [adding, !!editing, !!scheduleEditor, onEditorChange]);
+    onEditorChange?.(adding || !!editing || !!scheduleEditor || namingFlags);
+  }, [adding, !!editing, !!scheduleEditor, namingFlags, onEditorChange]);
   useEffect(() => () => onEditorChange?.(false), [onEditorChange]);
   useLayoutEffect(() => {
     const at = rowsStart.current?.offsetTop;

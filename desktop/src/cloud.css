@@ -204,5 +204,6 @@
   font-size: 12px;
 }
 .sync-conflict-value {
+  white-space: pre-line;
   overflow-wrap: anywhere;
 }

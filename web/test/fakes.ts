@@ -37,6 +37,9 @@ class Statement {
     return this.runSync();
   }
   runSync() {
+    if (/^\s*(SELECT|PRAGMA)\b/i.test(this.sql)) {
+      return { success: true, results: this.statement.all(...this.values).map(row => ({ ...row })), meta: { changes: 0, last_row_id: 0 } };
+    }
     if (/\bRETURNING\b/i.test(this.sql)) {
       const results = this.statement.all(...this.values).map((row) => ({ ...row }));
       const changes = this.db.prepare("SELECT changes() AS n").get()!.n;
@@ -79,6 +82,7 @@ export function fakeD1(): D1Database & { sqlite: DatabaseSync } {
 
 export function fakeR2(): R2Bucket & { objects: Map<string, Uint8Array> } {
   const objects = new Map<string, Uint8Array>();
+  const uploaded = new Map<string, Date>();
   const toBytes = async (value: unknown): Promise<Uint8Array> => {
     if (typeof value === "string") return new TextEncoder().encode(value);
     if (value instanceof ArrayBuffer) return new Uint8Array(value.slice(0));
@@ -87,9 +91,15 @@ export function fakeR2(): R2Bucket & { objects: Map<string, Uint8Array> } {
   };
   const bucket = {
     objects,
-    async put(key: string, value: unknown) {
-      objects.set(key, await toBytes(value));
-      return { key };
+    async put(key: string, value: unknown, options?: R2PutOptions) {
+      if (options?.onlyIf instanceof Headers && options.onlyIf.get("If-None-Match") === "*" && objects.has(key)) return null;
+      const bytes = await toBytes(value);
+      const hash = await crypto.subtle.digest("SHA-256", bytes);
+      const hex = [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, "0")).join("");
+      if (typeof options?.sha256 === "string" && options.sha256 !== hex) throw new Error("R2 checksum mismatch");
+      objects.set(key, bytes);
+      uploaded.set(key, new Date());
+      return { key, size: bytes.length, uploaded: uploaded.get(key), checksums: { sha256: hash } };
     },
     async get(key: string) {
       const bytes = objects.get(key);
@@ -97,6 +107,7 @@ export function fakeR2(): R2Bucket & { objects: Map<string, Uint8Array> } {
       return {
         key,
         size: bytes.byteLength,
+        uploaded: uploaded.get(key) ?? new Date(0),
         httpEtag: `"${bytes.byteLength}"`,
         range: undefined,
         body: new Response(bytes).body,
@@ -106,8 +117,18 @@ export function fakeR2(): R2Bucket & { objects: Map<string, Uint8Array> } {
         json: async () => JSON.parse(new TextDecoder().decode(bytes)),
       };
     },
+    async head(key: string) {
+      const bytes = objects.get(key);
+      return bytes ? { key, size: bytes.length, uploaded: uploaded.get(key) ?? new Date(0), checksums: { sha256: await crypto.subtle.digest("SHA-256", bytes) } } : null;
+    },
     async delete(keys: string | string[]) {
-      for (const key of Array.isArray(keys) ? keys : [keys]) objects.delete(key);
+      for (const key of Array.isArray(keys) ? keys : [keys]) { objects.delete(key); uploaded.delete(key); }
+    },
+    async list(options?: R2ListOptions) {
+      const all = [...objects.keys()].sort().filter(key => key.startsWith(options?.prefix ?? "") && key > (options?.cursor ?? ""));
+      const keys = all.slice(0, options?.limit ?? 1000);
+      const truncated = keys.length < all.length;
+      return { objects: keys.map(key => ({ key, size: objects.get(key)!.length, uploaded: uploaded.get(key) ?? new Date(0) })), truncated, ...(truncated ? { cursor: keys.at(-1) } : {}) };
     },
   };
   return bucket as unknown as R2Bucket & { objects: Map<string, Uint8Array> };

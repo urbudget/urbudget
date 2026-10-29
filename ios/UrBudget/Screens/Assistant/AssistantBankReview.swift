@@ -80,6 +80,7 @@ enum AssistantBankReview {
     static func prepare(_ rows: [JSON], budget: JSON, candidateSets: [JSON], allowIdlessDuplicate: Bool = true) throws -> [AssistantBankRow] {
         let currency = budget.text("currency", "SAR")
         let transactions = Dictionary(budget.rows("transactions").map { ($0.text("id"), $0) }, uniquingKeysWith: { first, _ in first })
+        let accounts = Dictionary(budget.rows("accounts").map { ($0.text("id"), $0.text("name")) }, uniquingKeysWith: { first, _ in first })
         var pools: [Int: Pool] = [:]
         func pool(_ source: JSON) -> Pool {
             let details = Dictionary(source.rows("candidateDetails").map { ($0.text("id"), $0) }, uniquingKeysWith: { first, _ in first })
@@ -115,7 +116,9 @@ enum AssistantBankReview {
             let options = separate ? alreadyImported : duplicate ? [] : possible ? set.possible : set.choose
             let rename = row.text("rename")
             let renamed = !rename.trimmingCharacters(in: .whitespaces).isEmpty && rename != row.text("payee")
-            let payee = renamed ? rename : row.text("payee")
+            let target = row.text("transferAccountId")
+            let other = accounts[target] ?? target
+            let payee = target.isEmpty ? (renamed ? rename : row.text("payee")) : String(localized: "Transfer: \(other)")
             return AssistantBankRow(
                 id: "\(index):\(row.text("id"))", source: small(row), options: options,
                 initial: defaultChoice(duplicate: duplicate, possibleDuplicate: possible, candidates: set.candidates, previouslyMatched: set.previouslyMatched),

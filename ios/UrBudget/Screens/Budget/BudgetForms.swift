@@ -88,6 +88,7 @@ struct NewCategoryForm: View {
             // A budget's first group is named in the app's language, as the engine names its own.
             group = presetGroup ?? existing.first ?? String(localized: "Everyday", comment: "The group of a budget's first category.")
         }
+        .retainingEditorDraft("NewCategoryForm", values: ["name": .string(name), "group": .string(group)])
     }
 }
 
@@ -112,6 +113,7 @@ struct NewGroupForm: View {
             if taken { FormErrorView(message: String(localized: "There is already a group called \(trimmed).")) }
         }
         .presentationDetents([.medium])
+        .retainingEditorDraft("NewGroupForm", values: ["name": .string(name)])
     }
 }
 
@@ -135,6 +137,7 @@ struct RenameGroupForm: View {
         }
         .presentationDetents([.medium])
         .onAppear { if name.isEmpty { name = group } }
+        .retainingEditorDraft("RenameGroupForm", values: ["group": .string(group), "name": .string(name)])
     }
 }
 
@@ -179,6 +182,7 @@ struct DeleteGroupForm: View {
         }
         .presentationDetents([.medium])
         .onAppear { if target.isEmpty { target = others.first ?? "" } }
+        .retainingEditorDraft("DeleteGroupForm", values: ["group": .string(group), "target": .string(target)])
     }
 }
 
@@ -212,6 +216,7 @@ struct BudgetPlanningForm: View {
             note = budget.rows("ynabMonths").first { $0.text("month").hasPrefix(month) }?.text("note") ?? ""
             income = budget["expectedIncome"].isNull ? "" : Money.editable(budget.long("expectedIncome"))
         }
+        .retainingEditorDraft("BudgetPlanningForm", values: ["month": .string(month), "note": .string(note), "income": .string(income)])
     }
 }
 
@@ -247,4 +252,123 @@ struct MoveToGroupForm: View {
         .presentationDetents([.medium, .large])
         .onAppear { if group.isEmpty { group = current?.text("group") ?? groups.first ?? "" } }
     }
+}
+
+
+/// Ordered durable raw fields. A forced budget switch leaves the former editor recoverable.
+@MainActor
+final class EditorDraftCheckpoint {
+    let id = UUID().uuidString
+    private let identity: String?
+    private let target: String
+    private let baseline: JSON
+    private weak var store: BudgetStore?
+    private var budgetID: String?
+    private var epoch: Int64 = 0
+    private var previous: JSON?
+    private var checkpointFailed = false
+    private var tail: Task<Void, Never>?
+
+    init(store: BudgetStore, target: String, baseline: JSON) {
+        self.store = store; self.identity = store.identity; self.target = target; self.baseline = baseline
+    }
+    private func owner() async throws -> String {
+        if let budgetID { return budgetID }
+        let library = try await Task.detached { try NativeCore.service("library_snapshot") }.value
+        guard let row = library.rows("entries").first(where: { $0.text("path") == identity }) else {
+            throw AppError(String(localized: "The editor's budget is no longer in the library."))
+        }
+        budgetID = row.text("id")
+        return row.text("id")
+    }
+    func save(_ values: JSON) {
+        guard previous != values else { return }
+        previous = values
+        epoch += 1
+        let next = epoch, before = tail
+        tail = Task {
+            await before?.value
+            guard next == epoch else { return }
+            do {
+                let params: JSON = ["budgetId": .string(try await owner()), "id": .string(id), "epoch": .string(String(next)),
+                                    "target": .string(target), "baseline": baseline, "values": values]
+                _ = try await Task.detached { try NativeCore.service("editor_checkpoint", params) }.value
+                checkpointFailed = false
+            } catch { checkpointFailed = true; store?.error = BudgetStore.readable(error) }
+        }
+    }
+    func discard(onlyIfActive: Bool = false) {
+        let savedEpoch = epoch, before = tail
+        tail = Task {
+            await before?.value
+            do {
+                let budget = try await owner()
+                if onlyIfActive && checkpointFailed { return }
+                let params: JSON = ["budgetId": .string(budget), "id": .string(id), "epoch": .string(String(savedEpoch)), "onlyIfActive": .bool(onlyIfActive)]
+                _ = try await Task.detached { try NativeCore.service("editor_discard", params) }.value
+            } catch { store?.error = BudgetStore.readable(error) }
+        }
+    }
+}
+
+
+private struct RetainedEditorDraft: ViewModifier {
+    @Environment(BudgetStore.self) private var store
+    var target: String
+    var values: JSON
+    var enabled: Bool
+    @State private var checkpoint: EditorDraftCheckpoint?
+    @State private var identity: String?
+    func body(content: Content) -> some View {
+        content.onAppear {
+            guard enabled, store.identity != nil else { return }
+            if checkpoint == nil {
+                identity = store.identity
+                checkpoint = EditorDraftCheckpoint(store: store, target: target, baseline: editorBaseline(store.budget ?? [:], values: values, version: store.version))
+            }
+            checkpoint?.save(values)
+        }
+        .onChange(of: enabled) { _, active in
+            if active, store.identity != nil {
+                identity = store.identity
+                checkpoint = EditorDraftCheckpoint(store: store, target: target, baseline: editorBaseline(store.budget ?? [:], values: values, version: store.version))
+                checkpoint?.save(values)
+            } else {
+                let closing = checkpoint, owner = identity
+                checkpoint = nil
+                store.afterPending { if owner == store.identity && store.error == nil { closing?.discard(onlyIfActive: true) } }
+            }
+        }
+        .onChange(of: values) { _, next in if enabled { checkpoint?.save(next) } }
+        .onDisappear {
+            let closing = checkpoint, owner = identity
+            store.afterPending { if owner == store.identity && store.error == nil { closing?.discard(onlyIfActive: true) } }
+        }
+    }
+}
+extension View {
+    func retainingEditorDraft(_ target: String, values: JSON, enabled: Bool = true) -> some View {
+        modifier(RetainedEditorDraft(target: target, values: values, enabled: enabled))
+    }
+}
+
+/// Opening records needed to review a draft; large history remains in the retained budget database.
+private func editorBaseline(_ budget: JSON, values: JSON, version: Int) -> JSON {
+    var references = Set<String>()
+    func collect(_ value: JSON) {
+        switch value {
+        case .string(let text): if !text.isEmpty { references.insert(text) }
+        case .array(let rows): rows.forEach(collect)
+        case .object(let fields): fields.values.forEach(collect)
+        default: break
+        }
+    }
+    collect(values)
+    var result: JSON = ["name": budget["name"], "currency": budget["currency"], "version": .string(String(version))]
+    for table in ["accounts", "categories", "loans", "schedules", "payees", "payeeRules", "ynabMonths", "assignments"] {
+        result[table] = .array(budget.rows(table).filter { row in
+            (table == "schedules" ? ["id"] : ["id", "accountId", "categoryId", "name", "month"]).contains { references.contains(row.text($0)) }
+        })
+    }
+    return result
 }

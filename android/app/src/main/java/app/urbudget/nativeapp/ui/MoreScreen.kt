@@ -324,6 +324,7 @@ internal fun ScheduleDialog(original: JSONObject?, budget: JSONObject, vm: Budge
             vm.runCommand("applySchedules", JSONObject().put("through", LocalDate.now().toString()).put("selected", id))
         close()
     }
+    retainEditorDraft(vm, "schedule", openedBudget, JSONObject().put("id", id).put("frequency", frequency).put("paused", paused))
     TransactionDialog(transaction, budget, "", vm, close = { if (entering == null) close() }, saveOverride = { record ->
         val date = record.text("date")
         vm.upsert("schedules", (original?.copyJson() ?: JSONObject()).put("id", id).put("transaction", record).put("nextDate", date)

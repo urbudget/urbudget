@@ -528,6 +528,7 @@ export function SettingsPage({
           <BankSyncSettings budget={budget} edit={edit} onSync={onBankSync} />
           <YnabFileImport budget={budget} openBudget={openBudget} />
           <YnabImport
+            budgetId={budgetId}
             onResolve={resolveYnab}
             onAccept={acceptYnab}
             onAsk={onAsk}

@@ -55,6 +55,7 @@ internal fun BudgetSettingsDialog(budget: JSONObject, vm: BudgetViewModel, close
         val mark = symbolOf(currency)
         return when (place) { "before" -> if (mark.length == 1) "$mark$number" else "$mark $number"; "after" -> "$number $mark"; else -> number }
     }
+    retainEditorDraft(vm, "budgetSettings", opened, JSONObject().put("name", name).put("currency", currency).put("decimal", decimal).put("group", group).put("symbol", symbol).put("dateFormat", dateFormat))
     FormDialog(stringResource(R.string.budget_settings), close, enabled = !state.busy && name.isNotBlank(), onConfirm = {
         if (identity != state.budgetIdentity) vm.notifyError(Words[R.string.budget_settings_changed])
         else withCurrentBudget(opened, vm) {
@@ -89,6 +90,7 @@ internal fun FlagNamesDialog(budget: JSONObject, vm: BudgetViewModel, close: () 
     val opened = remember { budget }
     val identity = remember { vm.state.value.budgetIdentity }
     var names by remember { mutableStateOf(flagColors.associateWith { budget.optJSONObject("flagNames")?.text(it).orEmpty() }) }
+    retainEditorDraft(vm, "flagNames", opened, JSONObject(names))
     FormDialog(stringResource(R.string.settings_flag_names), close, enabled = !state.busy, onConfirm = {
         if (identity != state.budgetIdentity) vm.notifyError(Words[R.string.editor_budget_switched])
         else withCurrentBudget(opened, vm) {

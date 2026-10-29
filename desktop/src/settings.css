@@ -81,9 +81,9 @@
 }
 .budget-list li {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
   padding: 8px 0;
   border-bottom: 1px solid var(--border);
 }
@@ -95,14 +95,24 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 .budget-list small {
   color: var(--muted);
 }
 .budget-list .row-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  justify-content: flex-end;
+  gap: 6px;
+  white-space: normal;
+}
+.budget-list .row-actions button:not(.icon-button) {
+  max-width: 100%;
+  min-height: 30px;
+  height: auto;
+  white-space: normal;
 }
 
 /* A preference row that is a whole label: clicking anywhere flips the switch. */
@@ -228,3 +238,7 @@ kbd {
   gap: 8px;
   flex-shrink: 0;
 }
+
+.empty-library-page { min-height: 100vh; }
+.empty-library-titlebar { min-height: 42px; }
+.empty-library-page > .settings-page { padding: 24px; }

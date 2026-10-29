@@ -10,7 +10,7 @@ vi.mock("./bridge", () => ({
   },
 }));
 import { api } from "./bridge";
-import { GettingStarted, SampleBanner, Welcome, isBlank, isUntouched } from "./Welcome";
+import { FirstRunWelcome, GettingStarted, SampleBanner, Welcome, isBlank, isUntouched, openSample } from "./Welcome";
 import { ToastProvider } from "./ui";
 import type { Budget } from "./types";
 
@@ -159,4 +159,56 @@ it("leads the YNAB choice with the token import, with the export file a click aw
   fireEvent.click(screen.getByRole("button", { name: "No token? Use YNAB's export file" }));
   expect(screen.getByRole("button", { name: /Choose export file/ })).toBeTruthy();
   expect(screen.queryByLabelText("YNAB personal access token")).toBeNull();
+});
+
+it("creates a new sample when the previous sample is in Trash or recovery", async () => {
+  vi.mocked(api.listBudgets).mockResolvedValue([
+    { id: "trashed-sample", name: "Sample budget", missing: false, lifecycle: "trashed" },
+    { id: "recovered-sample", name: "Sample budget", missing: false, lifecycle: "recovery" },
+  ] as never);
+  const open = vi.fn(async () => {});
+  await openSample(blank(), "mine", open);
+  expect(api.createBudget).toHaveBeenCalledOnce();
+  expect(open).toHaveBeenCalledWith("sample-id");
+});
+
+it("leaves a sample for an active budget when its original budget is in Trash", async () => {
+  vi.mocked(api.listBudgets).mockResolvedValue([
+    { id: "old", name: "Old budget", missing: false, lifecycle: "trashed" },
+    { id: "mine", name: "My budget", missing: false, lifecycle: "active" },
+    { id: "sample", name: "Sample budget", missing: false, lifecycle: "active" },
+  ] as never);
+  const open = vi.fn(async () => {});
+  render(<ToastProvider><SampleBanner budget={{...blank(), sample: {from: "old"}}} budgetId="sample" openBudget={open} onNewBudget={vi.fn()} /></ToastProvider>);
+  fireEvent.click(screen.getByRole("button", {name: "Go to my budget"}));
+  await vi.waitFor(() => expect(open).toHaveBeenCalledWith("mine"));
+});
+
+it("offers first-run choices without creating a placeholder, then creates the selected fresh budget", async () => {
+  const openBudget = vi.fn(async () => {}), onAddAccount = vi.fn();
+  render(<ToastProvider><FirstRunWelcome openBudget={openBudget} onAddAccount={onAddAccount}
+    importYnab={vi.fn()} resolveYnab={vi.fn()} acceptYnab={vi.fn()} /></ToastProvider>);
+  expect(screen.getByRole("button", {name: /I'm coming from YNAB/})).toBeTruthy();
+  expect(screen.getByRole("button", {name: /Look around first/})).toBeTruthy();
+  expect(api.createBudget).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", {name: /Start fresh/}));
+  expect(api.createBudget).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", {name: /Next: add your accounts/}));
+  await vi.waitFor(() => expect(onAddAccount).toHaveBeenCalledOnce());
+  expect(api.createBudget).toHaveBeenCalledOnce();
+  expect(vi.mocked(api.createBudget).mock.calls[0][0]).toMatchObject({currency:"SAR",groupOrder:["Bills","Needs","Wants","Savings"]});
+  expect(openBudget).toHaveBeenCalledWith("sample-id");
+});
+
+it("creates an explicit YNAB destination before showing its token form so import review survives", async () => {
+  const openBudget = vi.fn(async () => {});
+  const {unmount} = render(<ToastProvider><FirstRunWelcome openBudget={openBudget} onAddAccount={vi.fn()}
+    importYnab={vi.fn()} resolveYnab={vi.fn()} acceptYnab={vi.fn()} /></ToastProvider>);
+  fireEvent.click(screen.getByRole("button", {name:/I'm coming from YNAB/}));
+  await vi.waitFor(() => expect(openBudget).toHaveBeenCalledWith("sample-id"));
+  unmount();
+  render(<ToastProvider><Welcome budget={blank()} budgetId="sample-id" openBudget={openBudget} onAddAccount={vi.fn()}
+    edit={vi.fn()} transform={vi.fn()} importYnab={vi.fn()} resolveYnab={vi.fn()} acceptYnab={vi.fn()} /></ToastProvider>);
+  expect(screen.getByLabelText("YNAB personal access token")).toBeTruthy();
+  expect(sessionStorage.getItem("lb:welcome-ynab:sample-id")).toBeNull();
 });

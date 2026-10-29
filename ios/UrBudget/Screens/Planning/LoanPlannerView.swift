@@ -219,6 +219,7 @@ struct LoanEditor: View {
         }
         .presentationDetents([.large])
         .interactiveDismissDisabled(saving || dirty)
+        .retainingEditorDraft("loan", values: ["accountId": .string(accountId), "rate": .string(draft.rate), "payment": .string(draft.payment), "fees": .string(draft.fees), "category": .string(draft.category), "rates": .array(draft.rates.map { ["month": .string($0.month), "rate": .string($0.rate)] }), "extra": .string(extraText), "oneOff": .string(oneOffText), "by": .string(by)])
         .onAppear(perform: load)
         .onChange(of: store.version) {
             // Without unsaved edits the form follows the budget (a payment just recorded, a sync).
@@ -913,6 +914,7 @@ private struct LoanPaymentSheet: View {
             let loanId = loanId
             from = await Task.detached(priority: .userInitiated) { LoanMath.defaultSource(budget, loanId: loanId, sources: sources, balances: balances) }.value
         }
+        .retainingEditorDraft("loanPayment", values: ["accountId": account["id"], "paymentId": .string(paymentId), "expression": .string(pad.text), "from": .string(from), "date": .string(date), "category": .string(category)])
     }
 
     /// How the payment is recorded, and what the month's first payment brings onto the loan.

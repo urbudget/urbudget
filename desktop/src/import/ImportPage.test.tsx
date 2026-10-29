@@ -215,6 +215,8 @@ it("edits a line as the register does: a click selects it, another edits it ther
   const input = screen.getByLabelText("Payee of line 0");
   expect(document.activeElement).toBe(input);
   fireEvent.change(input, { target: { value: "Bakery & Co" } });
+  // The first Esc closes the payee suggestions, as in the register.
+  fireEvent.keyDown(input, { key: "Escape" });
   fireEvent.keyDown(input, { key: "Escape" });
   expect(screen.queryByLabelText("Payee of line 0")).toBeNull();
   expect(screen.getByRole("cell", { name: "Payee of line 0: Bakery" })).toBeTruthy();

@@ -113,7 +113,7 @@ class ProposalCardUiTest {
                 AssistantProposalCard(proposal.value, "SAR", busy = false, canUndo = false, apply = { applied++ }, undo = {}, discard = {}, refine = {},
                     reviewImport = {}, saveImport = {}, report = {}, spreadsheet = {}, revise = revise, change = { changing.value = it })
                 changing.value?.let { row ->
-                    ProposalRowEditor(row, budget, null, "2026-10", { change ->
+                    ProposalRowEditor(row, budget, null, null, "2026-10", { change ->
                         revise(ProposalChoices.change(proposal.value.optJSONObject("choices"), row.text("key"), change)); changing.value = null
                     }) { changing.value = null }
                 }

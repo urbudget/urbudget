@@ -85,6 +85,7 @@ struct MoveMoneySheet: View {
             .animation(.snappy(duration: 0.25), value: keypad)
         }
         .presentationDetents([.large])
+        .retainingEditorDraft("moveMoney", values: ["from": .string(from), "to": .string(to), "amountExpression": .string(pad.text), "month": .string(store.month)])
         .onAppear(perform: start)
     }
 

@@ -45,7 +45,7 @@ const writeSetup = (budgetId: string, value: "on" | "off") => {
 
 /** Opens the sample budget, making it (in this budget's currency and formats) the first time. */
 export async function openSample(budget: Budget, budgetId: string, openBudget: (id: string) => Promise<void>) {
-  const existing = (await api.listBudgets()).find((b) => (b.name === SAMPLE_NAME || b.name === t(SAMPLE_NAME)) && !b.missing);
+  const existing = (await api.listBudgets()).find((b) => (b.name === SAMPLE_NAME || b.name === t(SAMPLE_NAME)) && !b.missing && (!b.lifecycle || b.lifecycle === "active"));
   const id =
     existing?.id ??
     (await api.createBudget({
@@ -73,6 +73,8 @@ export function Welcome({
   acceptYnab,
   resolveYnab,
   onAsk,
+  startFresh,
+  prepareYnab,
 }: {
   budget: Budget;
   budgetId: string;
@@ -87,9 +89,12 @@ export function Welcome({
   resolveYnab: (id: string, choices: Record<string, string>) => Promise<ImportResult>;
   /** Opens the assistant with a question. */
   onAsk?: (text: string) => void;
+  startFresh?: (format: FormatValue, starter: boolean) => Promise<void>;
+  prepareYnab?: () => Promise<void>;
 }) {
   const toast = useToast();
-  const [path, setPath] = useState<Path | null>(null);
+  const [path, setPath] = useState<Path | null>(() => budgetId && sessionStorage.getItem("lb:welcome-ynab:" + budgetId) ? "ynab" : null);
+  useEffect(() => { if (budgetId) sessionStorage.removeItem("lb:welcome-ynab:" + budgetId); }, [budgetId]);
   const [busy, setBusy] = useState(false);
   const [format, setFormat] = useState<FormatValue>(() => ({
     currency: budget.currency,
@@ -124,6 +129,11 @@ export function Welcome({
     },
   ];
   const choose = async (id: Path | "sample") => {
+    if (id === "ynab" && prepareYnab) {
+      setBusy(true);
+      try { await prepareYnab(); } catch (e) { toast({message:errorText(e),tone:"error"}); } finally { setBusy(false); }
+      return;
+    }
     if (id !== "sample") return setPath(path === id ? null : id);
     setBusy(true);
     try {
@@ -189,6 +199,11 @@ export function Welcome({
           className="welcome-step panel"
           onSubmit={(e) => {
             e.preventDefault();
+            if (startFresh) {
+              setBusy(true);
+              void startFresh(format, starter).catch(e => toast({message:errorText(e),tone:"error"})).finally(() => setBusy(false));
+              return;
+            }
             edit((d) => {
               Object.assign(d, format);
               if (starter) Object.assign(d, starterCategories());
@@ -203,7 +218,7 @@ export function Welcome({
             {t("Start with categories for bills, needs, wants and savings (rename or delete any of them later)")}
           </label>
           <div className="modal-actions">
-            <button className="primary">
+            <button className="primary" disabled={busy}>
               {t("Next: add your accounts")} <ArrowRight size={15} />
             </button>
           </div>
@@ -231,7 +246,7 @@ export function SampleBanner({
   const leave = async (remove: boolean) => {
     setBusy(true);
     try {
-      const others = (await api.listBudgets()).filter((b) => b.id !== budgetId && !b.missing);
+      const others = (await api.listBudgets()).filter((b) => b.id !== budgetId && !b.missing && (!b.lifecycle || b.lifecycle === "active"));
       const target = others.find((b) => b.id === budget.sample?.from) ?? others[0];
       if (!target) return onNewBudget();
       await openBudget(target.id);
@@ -378,4 +393,25 @@ export function GettingStarted({
       )}
     </section>
   );
+}
+
+/** A first launch offers the normal paths without creating a budget until a path is chosen. */
+export function FirstRunWelcome({openBudget, onAddAccount, importYnab, acceptYnab, resolveYnab}: {
+  openBudget: (id: string) => Promise<void>; onAddAccount: () => void;
+  importYnab: (request: YnabImportRequest) => Promise<ImportResult>;
+  acceptYnab: (reviewId: string) => Promise<ImportResult>;
+  resolveYnab: (id: string, choices: Record<string, string>) => Promise<ImportResult>;
+}) {
+  const blank: Budget = {schemaVersion: 2, name: t("My budget"), currency: BUILT_IN_CURRENCY, accounts: [], categories: [], transactions: [], assignments: []};
+  const create = async (budget: Budget, ynab = false) => {
+    const id = await api.createBudget(budget);
+    writeSetup(id, "on");
+    if (ynab) sessionStorage.setItem("lb:welcome-ynab:" + id, "on");
+    await openBudget(id);
+  };
+  return <Welcome budget={blank} budgetId="" edit={() => {}} openBudget={openBudget} onAddAccount={onAddAccount}
+    startFresh={async (format, starter) => { await create({...blank, ...format, ...(starter ? starterCategories() : {})}); onAddAccount(); }}
+    transform={async work => { await create(await work(blank)); }}
+    prepareYnab={() => create(blank, true)} importYnab={importYnab}
+    acceptYnab={acceptYnab} resolveYnab={resolveYnab} />;
 }

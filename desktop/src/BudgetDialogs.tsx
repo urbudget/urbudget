@@ -6,8 +6,10 @@ import { BudgetFormatFields, type FormatValue } from "./BudgetFormatFields";
 import { newBudget, type BudgetStart } from "./newBudget";
 import { errorText, numberFormatFor } from "./format";
 import { useToast } from "./ui";
-import { localDate, t, tc } from "./i18n";
+import { localDate, t } from "./i18n";
 import type { Budget, Summary } from "./types";
+import { cloud } from "./cloud";
+import { editorDrafts, discardEditorDraft, type EditorDraft } from "./editorCheckpoint";
 
 /** Creates a budget file and opens it. */
 export function NewBudgetDialog({
@@ -15,16 +17,17 @@ export function NewBudgetDialog({
   close,
   open,
 }: {
-  current: { budget: Budget; summary: Summary; token: string };
+  current?: { budget: Budget; summary: Summary; token: string };
   close: () => void;
   /** Switches to the new budget (saving the open one first). */
   open: (id: string) => Promise<void>;
 }) {
   const [name, setName] = useState("");
+  const [localOnly, setLocalOnly] = useState(false);
   const [format, setFormat] = useState<FormatValue>({
-    currency: current.budget.currency,
-    numberFormat: numberFormatFor(current.budget.currency, current.budget.numberFormat),
-    dateFormat: current.budget.dateFormat ?? "iso",
+    currency: current?.budget.currency ?? "SAR",
+    numberFormat: numberFormatFor(current?.budget.currency ?? "SAR", current?.budget.numberFormat),
+    dateFormat: current?.budget.dateFormat ?? "iso",
   });
   const [start, setStart] = useState<BudgetStart>("starter");
   const [error, setError] = useState("");
@@ -36,7 +39,7 @@ export function NewBudgetDialog({
     ["blank", t("Empty"), t("No accounts or categories.")],
     [
       "copy",
-      t("Start over from “{budget}”", { budget: current.budget.name }),
+      t("Start over from “{budget}”", { budget: current?.budget.name ?? "" }),
       t("Keeps the same currency, balances, pending and future transactions, categories, targets, payees, rules and schedules. Settled history is removed; bank accounts need linking again."),
     ],
   ];
@@ -53,7 +56,8 @@ export function NewBudgetDialog({
           try {
             const id = created ?? await api.createBudget(
               newBudget({ name, start, ...format }, current),
-              start === "copy" ? { budget: current.budget, token: current.token } : undefined,
+              start === "copy" && current ? { budget: current.budget, token: current.token } : undefined,
+              localOnly,
             );
             setCreated(id);
             await open(id);
@@ -78,10 +82,11 @@ export function NewBudgetDialog({
             onChange={(e) => setName(e.target.value)}
           />
         </label>
+        <label><input type="checkbox" checked={localOnly} onChange={e => setLocalOnly(e.target.checked)} />{t("Keep this budget only on this device")}</label>
         <BudgetFormatFields value={format} onChange={setFormat} />
         <fieldset className="choice-list">
           <legend>{t("Start with")}</legend>
-          {options.map(([value, title, help]) => (
+          {options.filter(([value]) => value !== "copy" || current).map(([value, title, help]) => (
             <label key={value} className={`choice${start === value ? " selected" : ""}`}>
               <input
                 type="radio"
@@ -117,124 +122,75 @@ export function NewBudgetDialog({
   );
 }
 
-/** Lists budgets to open, show in the file manager, or move to the trash folder. */
-export function ManageBudgetsDialog({
-  close,
-  open,
-  onNew,
-}: {
-  close: () => void;
-  open: (id: string) => Promise<void>;
-  onNew?: () => void;
+/** One account library, including downloads and recoverable trash. */
+export function ManageBudgetsDialog({ close, open, onNew, changed, review }: {
+  close: () => void; open: (id: string) => Promise<void>; onNew?: () => void; changed?: () => Promise<void>; review?: (id: string) => Promise<void>;
 }) {
   const toast = useToast();
   const [budgets, setBudgets] = useState<BudgetListing[] | null>(null);
   const [confirm, setConfirm] = useState<BudgetListing | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [automaticLibrary, setAutomaticLibrary] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [drafts, setDrafts] = useState<EditorDraft[] | null>(null);
+  const fail = (e: unknown) => toast({ message: errorText(e), tone: "error" });
   useEffect(() => {
-    void api
-      .listBudgets()
-      .then(setBudgets)
-      .catch((e) => toast({ message: errorText(e), tone: "error" }));
+    let active = true;
+    const refresh = () => api.listBudgets().then((rows) => { if (active) setBudgets(rows); }).catch(fail);
+    void cloud.status().then(status => { if (active) setAutomaticLibrary(status.sync.protocol === 2); }).catch(fail);
+    void refresh(); const timer = setInterval(() => void refresh(), 3000);
+    return () => { active = false; clearInterval(timer); };
   }, [toast]);
-  return (
-    <Modal title={t("Budgets")} close={close}>
-      {confirm ? (
-        <>
-          <p>
-            {/* "trash" is the folder's name on disk. */}
-            {t("Delete {budget}? Its file moves to the {folder} folder next to your budgets, so it can still be recovered by hand.", {
-              budget: <strong>{confirm.name}</strong>,
-              folder: <em>trash</em>,
-            })}
-          </p>
-          <div className="modal-actions">
-            <button className="secondary" onClick={() => setConfirm(null)}>
-              {tc("budget", "Keep it")}
-            </button>
-            <button
-              className="danger"
-              onClick={async () => {
-                try {
-                  setBudgets(await api.deleteBudget(confirm.id));
-                  toast({ message: t("Deleted {budget}.", { budget: confirm.name }) });
-                } catch (e) {
-                  toast({ message: errorText(e), tone: "error" });
-                }
-                setConfirm(null);
-              }}
-            >
-              {t("Delete budget")}
-            </button>
+  const action = async (kind: "trash" | "restore" | "evict" | "recover" | "review_deletion", entry: BudgetListing) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      if (kind === "review_deletion" && review) {
+        await review(entry.id);
+        setBudgets(await api.listBudgets());
+      } else {
+        const result = await api.libraryAction(kind, entry.id);
+        setBudgets(result.library.entries);
+      }
+      setConfirm(null);
+      await changed?.();
+      if (kind === "review_deletion") close();
+    } catch (e) { fail(e); } finally { setBusy(false); }
+  };
+  return <Modal title={t("Budgets")} close={() => { if (!busy) close(); }}>
+    {confirm ? <>
+      <p>{confirm.scope === "account" ? t("Move this budget to Trash on all devices? You can restore it from Trash.") : t("Move this local budget to Trash? You can restore it later.")}</p>
+      <strong>{confirm.name}</strong>
+      <div className="modal-actions">
+        <button className="secondary" disabled={busy} onClick={() => setConfirm(null)}>{t("Cancel")}</button>
+        <button className="danger" disabled={busy} onClick={() => void action("trash", confirm)}>{t("Move to Trash")}</button>
+      </div>
+    </> : <>
+      <ul className="budget-list">{(budgets ?? []).map((b) => {
+        const trashed = b.lifecycle === "trashed" || b.lifecycle === "purged";
+        const online = b.availability === "remote" || b.availability === "evicted";
+        const deletionConflict = b.status === "deletion_conflict";
+        return <li key={b.id} className={b.current ? "current" : ""}>
+          <div>
+            <strong>{b.name}</strong>
+            <small>{deletionConflict ? t("Newer changes need review before deletion") : trashed ? t("In Trash") : b.lifecycle === "recovery" ? t("Recovered local changes") : b.pending ? t("Waiting to sync") : online ? t("Available online") : b.missing ? t("File not found") : b.scope === "local" ? t("Saved on this device") : b.current ? t("Open now") : b.lastOpened ? t("Opened {date}", { date: localDate(new Date(b.lastOpened)) }) : b.currency}</small>
+            {automaticLibrary && b.scope === "local" && !trashed && <label><input type="checkbox" checked={selected.includes(b.id)} onChange={(e) => setSelected((ids) => e.target.checked ? [...ids, b.id] : ids.filter((id) => id !== b.id))} />{t("Add to account sync")}</label>}
           </div>
-        </>
-      ) : (
-        <>
-          <ul className="budget-list">
-            {(budgets ?? []).map((b) => (
-              <li key={b.id} className={b.current ? "current" : ""}>
-                <div>
-                  <strong>{b.name}</strong>
-                  <small>
-                    {b.missing
-                      ? t("File not found")
-                      : `${b.currency}${b.current ? ` · ${t("Open now")}` : b.lastOpened ? ` · ${t("Opened {date}", { date: localDate(new Date(b.lastOpened)) })}` : ""}`}
-                  </small>
-                </div>
-                <div className="row-actions">
-                  {!b.current && !b.missing && (
-                    <button
-                      className="secondary"
-                      onClick={async () => {
-                        try {
-                          await open(b.id);
-                          close();
-                        } catch (e) {
-                          toast({ message: errorText(e), tone: "error" });
-                        }
-                      }}
-                    >
-                      {t("Open")}
-                    </button>
-                  )}
-                  <button
-                    className="icon-button"
-                    title={t("Show in folder")}
-                    aria-label={t("Show {budget} in folder", { budget: b.name })}
-                    disabled={b.missing}
-                    onClick={() => void api.reveal(b.path).catch((e) => toast({ message: errorText(e), tone: "error" }))}
-                  >
-                    <FolderOpen size={15} />
-                  </button>
-                  <button
-                    className="icon-button"
-                    title={b.current ? t("Open another budget to delete this one") : t("Delete")}
-                    aria-label={t("Delete {budget}", { budget: b.name })}
-                    disabled={b.current || (budgets?.length ?? 0) < 2}
-                    onClick={() => setConfirm(b)}
-                  >
-                    <Trash2 size={15} />
-                  </button>
-                </div>
-              </li>
-            ))}
-            {!budgets && <li className="muted">{t("Loading…")}</li>}
-          </ul>
-          <div className="modal-actions">
-            <button className="secondary" onClick={close}>
-              {t("Close")}
-            </button>
-            {onNew && <button
-              className="primary"
-              onClick={() => {
-                close();
-                onNew();
-              }}
-            >
-              {t("New budget…")}
-            </button>}
+          <div className="row-actions">
+            {!online && !b.missing && <button disabled={busy} onClick={() => void editorDrafts(b.id).then(setDrafts).catch(fail)}>{t("Recover unfinished edits")}</button>}
+            {!trashed && b.lifecycle !== "recovery" && !b.current && (!b.missing || online) && <button className="secondary" disabled={busy} onClick={async () => { setBusy(true); try { await open(b.id); close(); } catch (e) { fail(e); } finally { setBusy(false); } }}>{t("Open")}</button>}
+            {deletionConflict && <button disabled={busy} onClick={() => void action("review_deletion", b)}>{t("Review newer version")}</button>}
+            {b.lifecycle === "trashed" && !deletionConflict && <button disabled={busy} onClick={() => void action("restore", b)}>{t("Restore")}</button>}
+            {(b.lifecycle === "recovery" || (trashed && !b.missing)) && <button disabled={busy} onClick={() => void action("recover", b)}>{t("Recover as a copy")}</button>}
+            {!trashed && b.scope === "account" && !online && <button className="secondary" disabled={busy || b.pending} onClick={() => void action("evict", b)}>{t("Remove download")}</button>}
+            {b.path && !b.missing && !online && <button className="icon-button" title={t("Show in folder")} onClick={() => void api.reveal(b.path).catch(fail)}><FolderOpen size={15} /></button>}
+            {!trashed && <button className="icon-button" disabled={busy} title={t("Move to Trash")} aria-label={t("Delete {budget}", { budget: b.name })} onClick={() => setConfirm(b)}><Trash2 size={15} /></button>}
           </div>
-        </>
-      )}
-    </Modal>
-  );
+        </li>;
+      })}{!budgets && <li>{t("Loading…")}</li>}{budgets?.length === 0 && <li>{t("Your library is empty.")}</li>}</ul>
+      {selected.length > 0 && <button disabled={busy} onClick={async () => { setBusy(true); try { await api.associateBudgets(selected); setSelected([]); setBudgets(await api.listBudgets()); } catch (e) { fail(e); } finally { setBusy(false); } }}>{t("Add selected budgets to sync")}</button>}
+      {drafts && <section><h3>{t("Unfinished edits")}</h3><p>{t("These fields were saved before the editor closed. Review them and re-enter the changes you want to keep.")}</p>{drafts.length === 0 && <p>{t("No unfinished edits.")}</p>}{drafts.map(draft => <div key={draft.editorId}><pre style={{whiteSpace:"pre-wrap"}}>{JSON.stringify(draft.draft, null, 2)}</pre><button onClick={async () => { try { await discardEditorDraft(draft); setDrafts(rows => rows?.filter(row => row.editorId !== draft.editorId) ?? null); } catch(e) { fail(e); } }}>{t("Discard these edits")}</button></div>)}</section>}
+      <div className="modal-actions"><button className="secondary" disabled={busy} onClick={close}>{t("Close")}</button>{onNew && <button className="primary" disabled={busy} onClick={onNew}>{t("New budget…")}</button>}</div>
+    </>}
+  </Modal>;
 }

@@ -154,6 +154,9 @@ internal fun BankImportDialog(budget: JSONObject, vm: BudgetViewModel, draft: Ba
     val accountName = accountChoices.firstOrNull { it.first == draft.account }?.second.orEmpty()
     val session = draft.session
     val content = draft.content
+    retainEditorDraft(vm, "bankImport", budget, JSONObject().put("account", draft.account).put("fileName", draft.fileName)
+        .put("sheet", draft.sheet).put("session", draft.session)
+        .put("decisions", JSONObject(decisions.mapKeys { it.key.toString() })))
     val counts by remember { derivedStateOf { bankReviewCounts(rows.orEmpty(), decisions) } }
     val (importing, undecided) = counts
     val st = statement?.takeIf { it.session == draft.sessionId }
@@ -329,7 +332,7 @@ internal fun BankImportDialog(budget: JSONObject, vm: BudgetViewModel, draft: Ba
     }
 
     fixing?.let { line ->
-        LineFixSheet(line, { fixing = null }) { values ->
+        LineFixSheet(line, budget, vm, { fixing = null }) { values ->
             fixing = null
             session?.let { s -> fieldFixes(s, line, values)?.let(::fix) }
         }
@@ -511,8 +514,9 @@ private fun StatementLineItem(line: StatementLine, state: String, tone: androidx
 
 /** A line's date, payee, memo and amount, to give what doesn't read; the file's own cells shown for reference. */
 @Composable
-private fun LineFixSheet(line: StatementLine, close: () -> Unit, save: (Map<String, String>) -> Unit) {
+private fun LineFixSheet(line: StatementLine, budget: JSONObject, vm: BudgetViewModel, close: () -> Unit, save: (Map<String, String>) -> Unit) {
     val values = remember(line.id, line.version) { mutableStateMapOf<String, String>().apply { lineFields.forEach { (field, _) -> put(field, line.fields[field].orEmpty()) } } }
+    retainEditorDraft(vm, "importLine", budget, JSONObject(values.toMap()).put("lineId", line.id))
     FormDialog(stringResource(R.string.bank_fix_line), close, confirm = stringResource(R.string.common_done), onConfirm = { save(values.toMap()) }) {
         Text(stringResource(R.string.bank_in_the_file, Money.joined(line.cells.filter { it.isNotBlank() }).ifBlank { stringResource(R.string.bank_nothing) }), style = MaterialTheme.typography.bodySmall, color = ur.muted)
         if (line.problem.isNotEmpty()) Notice(line.problem, icon = Icons.Outlined.WarningAmber)
