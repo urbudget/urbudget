@@ -29,13 +29,15 @@ import { BudgetPage } from "./BudgetPage";
 import { SettingsPage, type Tab as SettingsTab } from "./SettingsPage";
 import { useCloud } from "./cloud";
 import { SyncChip } from "./CloudBadges";
+import { SyncSettings } from "./CloudSettings";
+import { useEditorCheckpoint, flushAllEditorDrafts } from "./editorCheckpoint";
 import { useAutomaticUpdate, useUpdatedNotice, useUpdates } from "./updates";
 import { useUsageCounts } from "./usage";
 import { UpdateChip } from "./UpdateNotice";
 import { TransactionsPage, saveTransaction, scheduledMessage } from "./Register";
 import { Sidebar, useSidebarLayout, type Page } from "./Sidebar";
 import { ManageBudgetsDialog, NewBudgetDialog } from "./BudgetDialogs";
-import { SampleBanner, Welcome, isBlank, isUntouched, openSample } from "./Welcome";
+import { SampleBanner, Welcome, FirstRunWelcome, isBlank, isUntouched, openSample } from "./Welcome";
 import { localeDefaults } from "./locale";
 import { AccountForm, CategoryForm, Modal, ReconcileForm, TransactionForm } from "./forms";
 import { configureFormat, errorText, formatDate, money, monthName, shiftMonth } from "./format";
@@ -195,10 +197,11 @@ export default function App() {
   const [month, setMonth] = useState(today().slice(0, 7));
   const [dialog, setDialog] = useState<Dialog>(null);
   const [planningEditor, setPlanningEditor] = useState(false);
+  const [importing, setImporting] = useState<ImportState | null>(null);
   const toast = useToast();
   const model = useBudget(
     month,
-    planningEditor ||
+    !!importing?.session || planningEditor ||
       (!!dialog && !["confirm", "newBudget", "manageBudgets", "planner"].includes(dialog.type)),
   );
   const { budget, summary: currentSummary, edit, sync, metadata, budgetId } = model;
@@ -219,14 +222,23 @@ export default function App() {
     sync,
     operation: model.operation,
     token: metadata?.token ?? "",
-    fetchDatabase: model.fetchDatabase,
+    fetchDatabase: model.refreshDatabase,
+    canAdoptIncoming: model.canAdoptIncoming,
+    budgetId,
   });
+  const flushEditor = useEditorCheckpoint(budgetId,
+    dialog && ["account", "category", "transaction", "reconcile", "payment", "loanPayment", "planner"].includes(dialog.type) ? dialog.type : planningEditor ? "inline" : null,
+    {revision: metadata?.token, record: dialog, month, assignments: budget?.assignments}, error => toast({ message: errorText(error), tone: "error" }), undefined,
+    planningEditor ? "main input, main textarea, main select, [aria-modal=true] input, [aria-modal=true] textarea, [aria-modal=true] select" : undefined);
+  const flushImport = useEditorCheckpoint(budgetId, importing ? "bankImport" : null, {revision: metadata?.token, account: importing?.account},
+    error => toast({ message: errorText(error), tone: "error" }), importing ? {...importing, content: undefined, file: importing.file ? {name: importing.file.name, size: importing.file.size} : undefined} : undefined,
+    ".import-page input, .import-page textarea, .import-page select");
+  model.setExitDrain(async () => { await flushEditor(); await flushImport(); await flushAllEditorDrafts(); await cloud.syncNow(); });
   const updates = useUpdates();
   useUsageCounts();
   const startPage = (): Page => (getPref("startPage") === "transactions" ? "transactions" : "budget");
   const [page, setPage] = useState<Page>(startPage);
-  // A bank file being imported, kept while someone looks elsewhere.
-  const [importing, setImporting] = useState<ImportState | null>(null);
+  // A bank file being imported is kept while someone looks elsewhere.
   /** The assistant has a message being written or sent (AssistantPanel's onWorking). */
   const assistantWorking = useRef(false);
   // The import as it is now, for the assistant's fixes that land after a change of the user's.
@@ -442,6 +454,20 @@ export default function App() {
     }
   };
 
+  if (model.ready && !budget) return (
+    <div className="empty-library-page">
+      {customTitleBar && <div className="empty-library-titlebar"><TitleBar /></div>}
+      {cloud.status?.library?.firstRun ? <FirstRunWelcome openBudget={switchBudget} onAddAccount={() => setDialog({type:"account"})} importYnab={model.importYnab} acceptYnab={model.acceptYnab} resolveYnab={model.resolveYnab} /> : <div className="settings-page">
+      <h1>{t("Budget library")}</h1>
+      <p>{t("Create a budget or open one from your account library.")}</p>
+      <button className="primary" onClick={() => setDialog({ type: "newBudget" })}>{t("New budget")}</button>{" "}
+      <button className="secondary" onClick={() => setDialog({ type: "manageBudgets" })}>{t("Budgets")}</button>
+      </div>}
+      <div className="settings-page"><SyncSettings cloud={cloud} budgetId="" isClean={() => true} openBudget={switchBudget} /></div>
+      {dialog?.type === "newBudget" && <NewBudgetDialog close={close} open={switchBudget} />}
+      {dialog?.type === "manageBudgets" && <ManageBudgetsDialog close={close} open={switchBudget} changed={model.refreshDatabase} review={async (id) => { await flushAllEditorDrafts(); await model.switchBudget(id, true); }} onNew={() => setDialog({ type: "newBudget" })} />}
+    </div>
+  );
   if (!budget || !summary)
     return (
       <div className="loading-screen">
@@ -834,7 +860,7 @@ export default function App() {
               }}
             />
           )}
-          {page === "payees" && <Payees budget={budget} edit={edit} transform={model.transform} undo={model.undo} />}
+          {page === "payees" && <Payees budgetId={budgetId} budget={budget} edit={edit} transform={model.transform} undo={model.undo} />}
           {page === "import" && importing && (
             <ImportPage
               budget={budget}
@@ -976,6 +1002,7 @@ export default function App() {
         <ManageBudgetsDialog
           close={close}
           open={switchBudget}
+          changed={model.refreshDatabase} review={async (id) => { await flushAllEditorDrafts(); await model.switchBudget(id, true); }}
           onNew={() => setTimeout(() => setDialog({ type: "newBudget" }))}
         />
       )}

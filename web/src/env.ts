@@ -26,6 +26,10 @@ export interface Env {
   PLAY_REVIEW_CODE_HASH?: string;
   /** "1" in local development: sign-in responses include the code, and emails are only logged. */
   DEV_LOGIN_CODES?: string;
+  /** Enables first-time sync v2 setup/migration only. Absent in production until approved. */
+  SYNC_V2_ENABLED?: string;
+  /** Emergency compatible rollback: retain v2 reads/receipts/deletion while pausing publication. */
+  SYNC_V2_PUBLICATION_PAUSED?: string;
 
   /** The admin page sits behind Cloudflare Access: the team's domain (`<team>.cloudflareaccess.com`). */
   ACCESS_TEAM_DOMAIN?: string;

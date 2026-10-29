@@ -117,6 +117,13 @@ final class RepositoryTests: XCTestCase {
             XCTFail("A stale editor must not save")
         } catch {}
 
+        // A record deleted after the form opened must not be resurrected by its stale Save.
+        _ = try await repository.edit { $0["transactions"] = .array($0.rows("transactions").filter { $0.text("id") != "tx" }) }
+        do {
+            _ = try await repository.command("saveTransaction", ["transaction": transaction, "through": .string(Dates.today)], original: ("transactions", opened))
+            XCTFail("A deleted transaction must stay deleted")
+        } catch {}
+
         snapshot = try await repository.create(name: "Second", currency: "EUR", sample: false)
         let budgets = try await repository.listBudgets()
         XCTAssertEqual(budgets.count, 2)
@@ -168,5 +175,48 @@ final class RepositoryTests: XCTestCase {
         XCTAssertTrue(status.text("email").isEmpty)
         XCTAssertFalse(status["sync"]["unlocked"].bool)
         XCTAssertFalse(status.has("license"))
+    }
+}
+
+final class SyncInvalidationTests: XCTestCase {
+    func testLockedV2StillReconcilesButLegacyRequiresKey() {
+        var status: JSON = ["email": "qa@example.test", "sync": ["protocol": 2, "unlocked": false]]
+        XCTAssertTrue(syncCanReconcile(status))
+        status["sync"]["protocol"] = 1
+        XCTAssertFalse(syncCanReconcile(status))
+        status["sync"]["unlocked"] = true
+        XCTAssertTrue(syncCanReconcile(status))
+        status["email"] = .null
+        XCTAssertFalse(syncCanReconcile(status))
+    }
+    private let library: JSON = ["activeId": "current", "entries": [["id": "former", "path": "/former"], ["id": "current", "path": "/current"]]]
+    func testTargetedChangesRespectTheIdentityAtCompletion() {
+        let report: JSON = ["openChanged": true, "changedBudgets": [["id": "former", "revision": "next"]]]
+        XCTAssertFalse(syncInvalidatesActive(report, library: library, identity: "/current", revision: "old"))
+    }
+    func testRevisionAndDeletionInvalidations() {
+        let report: JSON = ["openChanged": false, "changedBudgets": [["id": "current", "revision": "next"]]]
+        XCTAssertTrue(syncInvalidatesActive(report, library: library, identity: "/current", revision: "old"))
+        XCTAssertFalse(syncInvalidatesActive(report, library: library, identity: "/current", revision: "next"))
+        var empty = library
+        empty["activeId"] = .null
+        XCTAssertTrue(syncInvalidatesActive(["openChanged": false, "changedBudgets": []], library: empty, identity: "/current", revision: "next"))
+    }
+    func testLegacyFlagRequiresAbsentTargetedChanges() {
+        XCTAssertTrue(syncInvalidatesActive(["openChanged": true], library: library, identity: "/current", revision: "old"))
+        XCTAssertFalse(syncInvalidatesActive(["openChanged": true, "changedBudgets": []], library: library, identity: "/current", revision: "old"))
+    }
+    func testPersistentSyncRequiresAnEnabledV2Account() {
+        var status: JSON = ["email": "qa@example.test", "sync": ["protocol": 2, "enabled": true, "unlocked": false]]
+        XCTAssertTrue(syncBackgroundEligible(status))
+        status["sync"]["enabled"] = false
+        XCTAssertFalse(syncBackgroundEligible(status))
+        status["sync"]["enabled"] = true
+        status["sync"]["protocol"] = 1
+        status["sync"]["unlocked"] = true
+        XCTAssertFalse(syncBackgroundEligible(status))
+        status["sync"]["protocol"] = 2
+        status["email"] = .null
+        XCTAssertFalse(syncBackgroundEligible(status))
     }
 }

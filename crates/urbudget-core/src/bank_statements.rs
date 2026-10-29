@@ -401,6 +401,7 @@ fn finish(p: Parts, o: &LineOptions, currency: &str, order: &str) -> RecordLine 
         payee: payee.to_string(),
         memo: memo.to_string(),
         amount,
+        transfer_account_id: None,
     };
     let original = match (&left_out, &date, &amount) {
         (None, Ok(d), Ok(a)) => Some(make(d, *a, &payee, &memo)),
@@ -418,6 +419,7 @@ fn finish(p: Parts, o: &LineOptions, currency: &str, order: &str) -> RecordLine 
             }
             Field::Payee => payee = value.trim().to_string(),
             Field::Memo => memo = value.trim().to_string(),
+            Field::TransferAccountId => {},
         }
     }
     let typed = |field: Field| o.fields.get(&key).and_then(|f| f.iter().rev().find(|(g, _)| *g == field)).map(|(_, v)| v.trim().to_string());
@@ -426,6 +428,7 @@ fn finish(p: Parts, o: &LineOptions, currency: &str, order: &str) -> RecordLine 
         payee: payee.clone(),
         memo: memo.clone(),
         amount: amount.as_ref().map_or_else(|_| typed(Field::Amount).unwrap_or_else(|| written.amount.clone()), |a| cents(*a)),
+        transfer_account_id: typed(Field::TransferAccountId).unwrap_or_default(),
     };
     let bank_id = match &fit {
         Fit::Plain(f) => f.clone(),
@@ -446,7 +449,11 @@ fn finish(p: Parts, o: &LineOptions, currency: &str, order: &str) -> RecordLine 
         },
     };
     let transaction = match (&status, &date, &amount) {
-        (Status::Ready, Ok(d), Ok(a)) => Some(make(d, *a, &payee, &memo)),
+        (Status::Ready, Ok(d), Ok(a)) => {
+            let mut transaction = make(d, *a, &payee, &memo);
+            transaction.transfer_account_id = (!fields.transfer_account_id.is_empty()).then(|| fields.transfer_account_id.clone());
+            Some(transaction)
+        },
         _ => None,
     };
     RecordLine { key, written, fields, bank_id, status, transaction, original, reserves: left_out.is_none(), batch }
@@ -910,7 +917,7 @@ fn camt_lines(content: &str, currency: &str, o: &LineOptions) -> Result<Parsed, 
             let mut batch = Batch {
                 entry: key.clone(),
                 whole: match (&date, &total) {
-                    (Ok(d), Ok(t)) => Some(BankTransaction { fit: dated_fit(&reference, d, *t), date: d.clone(), payee: payee.clone(), memo: memo.clone(), amount: *t }),
+                    (Ok(d), Ok(t)) => Some(BankTransaction { fit: dated_fit(&reference, d, *t), date: d.clone(), payee: payee.clone(), memo: memo.clone(), amount: *t, transfer_account_id: None }),
                     _ => None,
                 },
                 total: total.as_ref().ok().copied(),

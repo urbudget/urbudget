@@ -39,6 +39,7 @@ struct RootView: View {
     @Environment(\.undoManager) private var undoManager
 
     private struct History: Equatable { var revision: String; var undo: Bool }
+    @State private var showingLibrary = false
     @State private var opened: OpenedFile?
     @State private var backup: OpenedFile?
     /// Debug builds show the welcome screen over a budget with `-open welcome`, for screenshots.
@@ -50,7 +51,10 @@ struct RootView: View {
             if store.loading {
                 ProgressView().controlSize(.large)
             } else if store.budget == nil {
-                WelcomeView()
+                VStack {
+                    Button("Budget library") { showingLibrary = true }.padding()
+                    WelcomeView()
+                }
             } else {
                 // Every form, picker and report belongs to one library entry.
                 MainTabs().id(store.identity ?? "")
@@ -70,7 +74,7 @@ struct RootView: View {
                 startForegroundWork()
             case .background:
                 HostEvents.shared.stop()
-                sync.stop()
+                sync.enterBackground()
             default:
                 break
             }
@@ -102,6 +106,7 @@ struct RootView: View {
             LaunchRoute.file = nil
             open(documents.appendingPathComponent(name))
         }
+        .sheet(isPresented: $showingLibrary) { NavigationStack { LibraryView() } }
         .sheet(isPresented: $welcomePreview) { WelcomeView() }
         // The quick action and the Add a transaction shortcut, once a budget is open.
         .onChange(of: AppActions.shared.pending, initial: true) { _, _ in takeAction() }
@@ -433,10 +438,11 @@ struct BudgetActionsMenu: View {
                 Button { Task { try? await sync.syncNow() } } label: { Label("Sync now", systemImage: "arrow.triangle.2.circlepath") }
                     .disabled(sync.syncing)
             }
-            Button { page = .sync } label: { Label("Account & sync", systemImage: "icloud") }
+            Button { page = .sync } label: { Label(sync.signedIn ? sync.statusLabel : String(localized: "Account & sync"), systemImage: "icloud") }
             Button { page = .settings } label: { Label("Settings & data", systemImage: "gearshape") }
         } label: {
-            Image(systemName: "ellipsis.circle")
+            Label(sync.signedIn ? sync.statusLabel : String(localized: "More actions"), systemImage: "ellipsis.circle")
+                .font(.caption)
                 .overlay(alignment: .topTrailing) {
                     // A budget waiting for a sync decision shows here on every tab.
                     if sync.conflicts > 0 { Circle().fill(Color.urWarning).frame(width: 8, height: 8).offset(x: 2, y: -2) }

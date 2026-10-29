@@ -69,11 +69,18 @@ class MainActivity : AppCompatActivity() {
                         if (NativePreferences(applicationContext).automaticSchedules) NativeServices.call("apply_due_schedules", JSONObject().put("through", LocalDate.now().toString()))
                     }
                     model.refresh()
-                    while (isActive) { syncIfReady(); delay(60_000) }
+                    while (isActive) { syncIfReady(); delay(if (NativeServices.syncStatus.value?.optJSONObject("sync")?.optInt("protocol") == 2) 30_000 else 300_000) }
                 }
-                launch(Dispatchers.IO) { NativeServices.saved.debounce(2_000).collect { syncIfReady() } }
+                launch(Dispatchers.IO) { NativeServices.saved.debounce { if (NativeServices.syncStatus.value?.optJSONObject("sync")?.optInt("protocol") == 2) 2_000L else 8_000L }.collect { syncIfReady() } }
+                // WorkManager can finish while the Activity is visible. Consume that exact report.
+                launch(Dispatchers.IO) { NativeServices.syncCompleted.collect { report -> runCatching { model.refreshAfterSync(report) } } }
             }
         }
+    }
+
+    override fun onStop() {
+        SyncWorker.enqueue(applicationContext)
+        super.onStop()
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -94,7 +101,7 @@ class MainActivity : AppCompatActivity() {
     private fun syncIfReady() {
         if (!NativePreferences(applicationContext).automaticSync) return
         runCatching {
-            if (NativeServices.syncAutomatically()?.optBoolean("openChanged") == true) model.refresh()
+            NativeServices.syncAutomatically()
         }
     }
 

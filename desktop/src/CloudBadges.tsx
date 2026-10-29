@@ -1,31 +1,35 @@
 import { Cloud as CloudIcon, CloudAlert, CloudOff, LoaderCircle } from "lucide-react";
-import type { Cloud } from "./cloud";
+import type { Cloud, SyncReport } from "./cloud";
 import { ago } from "./CloudSettings";
-import { t } from "./i18n";
+import { msg, t } from "./i18n";
 
-/** In the title bar once sync is set up on this computer; opens Settings › Account & sync. */
+export function syncLabel(report: SyncReport | null | undefined, activeId?: string, pending = false): string {
+  if (!report) return pending ? msg("Waiting to sync") : msg("Sync");
+  const active = activeId ? report.budgets.find((b) => b.id === activeId) : undefined;
+  if (report.state === "offline") return msg("Offline");
+  if (report.budgets.some((b) => ["conflict", "error", "update_app", "recovery", "subscription_required", "deletion_conflict"].includes(b.state))) return msg("Sync needs you");
+  if (report.state === "waiting" || report.budgets.some(b => b.state === "queued")) return msg("Waiting to sync");
+  if (report.budgets.some(b => ["paused", "locked", "signed_out"].includes(b.state))) return msg("Sync paused");
+  if (report.state !== "ok") return msg("Sync needs you");
+  if (active?.state === "local_only") return msg("Saved on this device");
+  if (pending) return msg("Waiting to sync");
+  if (active?.state === "waiting" || report.budgets.some((b) => b.state === "waiting")) return msg("Waiting to sync");
+  if (activeId && !active) return msg("Saved on this device");
+  if (!activeId && report.budgets.some((b) => b.state === "local_only")) return msg("Saved on this device");
+  return report.budgets.length ? msg("Synced") : msg("Sync");
+}
+
 export function SyncChip({ cloud, onOpen }: { cloud: Cloud; onOpen: () => void }) {
   const status = cloud.status;
-  if (!status?.email || !status.sync.unlocked) return null;
+  if (!status?.email) return null;
   const report = status.sync.last;
-  const trouble = report?.budgets.some((b) => b.state === "conflict" || b.state === "error" || b.state === "update_app");
-  const [icon, label] = cloud.syncing
-    ? [<LoaderCircle key="i" size={13} className="spin" />, t("Syncing…")]
-    : !report
-      ? [<CloudIcon key="i" size={13} />, t("Sync")]
-      : report.state === "offline"
-        ? [<CloudOff key="i" size={13} />, t("Offline")]
-        : report.state !== "ok" || trouble
-          ? [<CloudAlert key="i" size={13} />, report.state === "subscription_required" ? t("Sync paused") : t("Sync needs you")]
-          : [<CloudIcon key="i" size={13} />, t("Synced")];
+  const label = !status.sync.unlocked && (status.sync.enabled || report) ? msg("Sync paused") : cloud.syncing ? msg("Syncing…") : syncLabel(report, cloud.activeBudgetId, cloud.pending);
+  const trouble = label === msg("Sync needs you") || label === msg("Sync paused");
+  const Icon = cloud.syncing ? LoaderCircle : trouble ? CloudAlert : label === msg("Offline") ? CloudOff : CloudIcon;
   return (
-    <button
-      className={`sync-chip${trouble || (report && !["ok", "offline"].includes(report.state)) ? " trouble" : ""}`}
-      title={report?.state === "ok" ? t("Last synced {time}", { time: ago(report.at) }) : label}
-      onClick={onOpen}
-    >
-      {icon}
-      <span className="header-label">{label}</span>
+    <button className={"sync-chip" + (trouble ? " trouble" : "")} title={label === msg("Synced") && report ? t("Last synced {time}", { time: ago(report.at) }) : t(label)} onClick={onOpen}>
+      <Icon size={13} className={cloud.syncing ? "spin" : undefined} />
+      <span className="header-label">{t(label)}</span>
     </button>
   );
 }

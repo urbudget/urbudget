@@ -12,10 +12,10 @@ import {
   type ReactNode,
 } from "react";
 import { AlertTriangle, Check, CircleMinus, CirclePlus, Layers, Pencil, RotateCcw, Rows3, Sparkles, Split, X } from "lucide-react";
-import type { BatchInfo, Statement, StatementLine } from "../bridge";
-import { formatDate, money } from "../format";
-import type { BankColumns } from "../types";
-import { useVirtualRows } from "../ui";
+import type { BankField, BatchInfo, Statement, StatementLine } from "../bridge";
+import { editableAmount, errorText, evaluateAmount, flowAmountChange, formatDate, money } from "../format";
+import type { BankColumns, Budget } from "../types";
+import { PayeeInput, transferPayee, useVirtualRows } from "../ui";
 import { textWidth, useColumns } from "../ui/columns";
 import { FIELDS, INCLUDABLE, ROLES, leftOutText } from "./model";
 import { formatCount, getDirection, t, tc, tn, tnc } from "../i18n";
@@ -30,7 +30,7 @@ const ACTIONS = 64;
 /** What can be done to lines, the same functions for every render. */
 export type LineOps = {
   /** Cells given new values, each from the value it was changed from, against the line as it reads when the change is made. */
-  cells: (line: StatementLine, changes: { column: number; from: string; to: string }[]) => void;
+  cells: (line: StatementLine, changes: { column: number; from: string; to: string }[], fields?: FieldChange[]) => void;
   include: (lines: StatementLine[], on: boolean) => void;
   revert: (lines: StatementLine[]) => void;
   header: (line: StatementLine) => void;
@@ -38,9 +38,10 @@ export type LineOps = {
   role: (column: number, role: keyof BankColumns | null) => void;
 };
 /** Cells given new values, shown as them until the file reads again. */
-type Pending = { line: string; values: Record<number, string>; revision: number };
+type Pending = { line: string; values: Record<number, string>; fields: Partial<Record<BankField, string>>; revision: number };
 /** A line's cells as the editor opened on them, and what its fields hold now. */
-type Draft = { opened: string[]; values: string[] };
+type FieldChange = { field: BankField; from: string; to: string };
+type Draft = { opened: string[]; values: string[]; fields: FieldChange[] };
 
 const includable = (l: StatementLine) => l.status.kind === "leftOut" && INCLUDABLE.has(l.status.reason) && !l.included;
 
@@ -53,6 +54,7 @@ const includable = (l: StatementLine) => l.status.kind === "leftOut" && INCLUDAB
  * imports, or why it doesn't.
  */
 export function LineTable({
+  budget,
   statement,
   lines: tab,
   role,
@@ -62,11 +64,12 @@ export function LineTable({
   ops,
   empty,
 }: {
+  budget: Budget;
   statement: Statement;
   /** The lines the tab shows. */
   lines: StatementLine[];
   /** What each column holds, by its place. */
-  role: (keyof BankColumns | null)[];
+  role: readonly (keyof BankColumns | null)[];
   /** A change is being applied: the cells given meanwhile show until the file reads again. */
   busy: boolean;
   /** One that lasts: the lines say so. */
@@ -142,7 +145,7 @@ export function LineTable({
   const after = view.after + (editAt >= view.end ? extra : 0);
 
   // The handlers read the table as it is now, so the rows keep the same ones.
-  const latest = useRef({ lines, selected, cursor, table, commit: (_keep?: string) => {} });
+  const latest = useRef({ lines, selected, cursor, table, commit: (_keep?: string): boolean => true });
   const act = useMemo(() => {
     const ids = (a: string, b: string) => {
       const all = latest.current.lines;
@@ -153,7 +156,7 @@ export function LineTable({
     };
     // A line can be edited while a change applies: what it saves waits for that change.
     const edit = (line: StatementLine, column?: number) => {
-      latest.current.commit(line.id);
+      if (!latest.current.commit(line.id)) return;
       setCursor(line.id);
       setSelected(new Set([line.id]));
       anchor.current = line.id;
@@ -201,7 +204,7 @@ export function LineTable({
       const column = Number(target.closest<HTMLElement>("[data-column]")?.dataset.column ?? NaN);
       const now = latest.current;
       // A click away from the line being edited saves it, as a spreadsheet's does.
-      now.commit(line.id);
+      if (!now.commit(line.id)) return;
       // A second click on the only selected line edits it, starting in the clicked cell.
       const plain = !e.shiftKey && !e.ctrlKey && !e.metaKey;
       if (plain && now.cursor === line.id && now.selected.size === 1 && now.selected.has(line.id))
@@ -221,30 +224,27 @@ export function LineTable({
   };
   // Only the cells typed over are saved, each from what it held when the editor opened: a change
   // that landed on the line meanwhile (the assistant's, an earlier edit still being read) stays.
-  const save = (line: StatementLine, { opened, values }: Draft) => {
+  const save = (line: StatementLine, { opened, values, fields }: Draft) => {
     const changes = values
       .map((to, column) => ({ column, from: opened[column] ?? "", to: to.trim() }))
       .filter((c) => c.to !== c.from.trim());
     close();
-    if (!changes.length) return;
+    if (!changes.length && !fields.length) return;
     const given = Object.fromEntries(changes.map((c) => [c.column, c.to]));
     setPending((p) => ({
       line: line.id,
       // An earlier edit of the line still on its way keeps showing too.
       values: p?.line === line.id && p.revision === statement.revision ? { ...p.values, ...given } : given,
+      fields: { ...(p?.line === line.id && p.revision === statement.revision ? p.fields : {}), ...Object.fromEntries(fields.map((f) => [f.field, f.to])) },
       revision: statement.revision,
     }));
-    ops.cells(line, changes);
+    ops.cells(line, changes, fields);
   };
   // What the line being edited holds now, saved when the selection moves away from it.
-  const draft = useRef<Draft | null>(null);
+  const draft = useRef<(() => boolean) | null>(null);
   const commit = (keep?: string) => {
-    if (!editing || editing.line === keep) return;
-    const line = lines.find((l) => l.id === editing.line);
-    const values = draft.current;
-    // Once: what's saved is no longer a draft.
-    draft.current = null;
-    if (line && values) save(line, values);
+    if (!editing || editing.line === keep) return true;
+    return draft.current?.() ?? true;
   };
   latest.current = { lines, selected, cursor, table, commit };
   // Cells that scroll sideways pass under the pinned columns: a shadow says so, only then.
@@ -289,7 +289,7 @@ export function LineTable({
       const next = lines[Math.min(lines.length - 1, Math.max(0, to))];
       if (!next) return;
       e.preventDefault();
-      commit();
+      if (!commit()) return;
       if (e.shiftKey) {
         anchor.current ??= cursor ?? next.id;
         const i = lines.findIndex((l) => l.id === anchor.current);
@@ -397,11 +397,16 @@ export function LineTable({
               editing?.line === line.id ? (
                 <LineEditor
                   key={line.id}
+                  budget={budget}
+                  account={statement.scope.account}
                   line={line}
                   headers={headers}
+                  role={role}
+                  csv={table}
                   locked={table ? role.map((r) => r === "id") : []}
                   focus={editing.column}
                   waiting={pending?.line === line.id ? pending.values : null}
+                  waitingFields={pending?.line === line.id ? pending.fields : undefined}
                   draft={draft}
                   onSave={(d) => save(line, d)}
                   onCancel={close}
@@ -413,6 +418,8 @@ export function LineTable({
                   index={place.get(line.id) ?? -1}
                   batch={line.batch !== undefined ? statement.batches?.[line.batch] : undefined}
                   headers={headers}
+                  role={role}
+                  transferName={budget.accounts.find((a) => a.id === line.fields.transferAccountId)?.name ?? line.fields.transferAccountId}
                   table={table}
                   width={width}
                   busy={slow}
@@ -548,6 +555,8 @@ const LineRow = memo(function LineRow({
   index,
   batch,
   headers,
+  role,
+  transferName,
   table,
   width,
   busy,
@@ -565,6 +574,8 @@ const LineRow = memo(function LineRow({
   index: number;
   batch?: BatchInfo;
   headers: string[];
+  role: readonly (keyof BankColumns | null)[];
+  transferName?: string;
   table: boolean;
   width: number;
   busy: boolean;
@@ -618,7 +629,11 @@ const LineRow = memo(function LineRow({
       </span>
       {Array.from({ length: width }, (_, column) => {
         const waiting = pending?.[column] ?? null;
-        const value = waiting ?? line.cells[column] ?? "";
+        const value = role[column] === "payee" && transferName
+          ? transferPayee(transferName)
+          : role[column] === "transferAccountId" && transferName
+            ? transferName
+            : waiting ?? line.cells[column] ?? "";
         const bad = waiting === null && s.kind === "attention" && (table ? s.column === column : FIELDS[s.field] === headers[column]);
         const edited = waiting !== null || (!!line.original?.length && (line.original[column] ?? "") !== value);
         return (
@@ -771,38 +786,102 @@ function ReadsAs({ line, assisted }: { line: StatementLine; assisted: boolean })
  * through them, Enter saving and Esc leaving it as it was. A bank's ID isn't changed.
  */
 function LineEditor({
+  budget,
+  account,
   line,
   headers,
+  role,
+  csv,
   locked,
   focus,
   waiting,
+  waitingFields,
   draft,
   onSave,
   onCancel,
 }: {
+  budget: Budget;
+  account: string;
   line: StatementLine;
   headers: string[];
+  role: readonly (keyof BankColumns | null)[];
+  csv: boolean;
   /** Columns that can't be changed (the bank's ID). */
   locked: boolean[];
   /** The cell to start in. */
   focus: number;
   /** The line's cells given new values that the file doesn't read with yet. */
   waiting: Record<number, string> | null;
+  waitingFields?: Partial<Record<BankField, string>>;
   /** Where what the fields hold is kept, for the table to save the line when the selection moves away. */
-  draft: MutableRefObject<Draft | null>;
+  draft: MutableRefObject<(() => boolean) | null>;
   onSave: (draft: Draft) => void;
   onCancel: () => void;
 }) {
   // The cells as they show when it opens, kept: what's saved is what's typed over them.
   const [opened] = useState(() => headers.map((_, i) => waiting?.[i] ?? line.cells[i] ?? ""));
-  const [values, setValues] = useState(opened);
-  draft.current = { opened, values };
+  const [openedFields] = useState(() => ({ ...line.fields, ...waitingFields }));
+  // Money starts as the effective transaction amount, in the same format and direction as the
+  // register. Raw bank signs, fees and accounting parentheses were already read by the engine.
+  // Keep its source cells separately: merely opening or saving another field never changes them.
+  const [initial] = useState(() => {
+    const amount = Number(openedFields.amount);
+    const parsed = line.status.kind === "ready" || csv && line.status.kind === "attention" && line.status.field === "date";
+    if ((!waitingFields?.amount && !parsed) || !/^-?\d+(\.\d{1,2})?$/.test(openedFields.amount) || !Number.isFinite(amount)) return opened;
+    const cents = Math.round(amount * 100);
+    const at = role.indexOf("amount");
+    const hasOut = role.includes("outflow"), hasIn = role.includes("inflow");
+    const signed = at >= 0 && (!!opened[at].trim() || !hasOut && !hasIn);
+    return opened.map((v, i) => {
+      if (role[i] === "amount") return signed ? editableAmount(cents) : "";
+      if (role[i] === "outflow") return signed || hasIn && cents >= 0 ? "" : editableAmount(-cents);
+      if (role[i] === "inflow") return signed || hasOut && cents <= 0 ? "" : editableAmount(cents);
+      return v;
+    });
+  });
+  const [values, setValues] = useState(initial);
+  const [transfer, setTransfer] = useState(openedFields.transferAccountId ?? "");
+  const [error, setError] = useState("");
+  const transfers = useMemo(() => budget.accounts.filter((a) => a.id !== account && !a.archived), [budget.accounts, account]);
+  const save = () => {
+    try {
+      const next = opened.map((value, i) => values[i] === initial[i] ? value : values[i]);
+      const fields: FieldChange[] = [];
+      const moneyColumns = role.flatMap((r, i) => r === "amount" || r === "outflow" || r === "inflow" ? [i] : []);
+      if (moneyColumns.some((i) => values[i] !== initial[i])) {
+        let amount = 0;
+        for (const i of moneyColumns) {
+          const cents = evaluateAmount(values[i]);
+          amount += role[i] === "outflow" ? -cents : cents;
+          if (values[i] !== initial[i]) next[i] = values[i].trim() ? editableAmount(cents) : "";
+        }
+        if (!amount) throw new Error(t("Enter an amount other than zero."));
+        if (!Number.isSafeInteger(amount) || Math.abs(amount) > 1_000_000_000_000) throw new Error(t("Amount is too large."));
+        if (Math.round(Number(openedFields.amount) * 100) === amount) {
+          // Equivalent math changes no transaction value. Keep the bank's original cells too,
+          // rather than triggering another application of its sign or fee rules.
+          for (const i of moneyColumns) next[i] = opened[i];
+        } else fields.push({ field: "amount", from: openedFields.amount, to: (amount / 100).toFixed(2) });
+      }
+      if (transfer !== (openedFields.transferAccountId ?? "")) {
+        if (transfer && !transfers.some((a) => a.id === transfer)) throw new Error(t("Choose an account."));
+        fields.push({ field: "transferAccountId", from: openedFields.transferAccountId ?? "", to: transfer });
+      }
+      draft.current = null;
+      onSave({ opened, values: next, fields });
+      return true;
+    } catch (e) {
+      setError(errorText(e));
+      return false;
+    }
+  };
+  draft.current = save;
   const row = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = row.current;
-    const input = el?.querySelectorAll<HTMLInputElement>("input")[focus];
+    const input = el?.querySelector<HTMLInputElement>(`[data-column="${focus}"] input, [data-column="${focus}"] select`);
     input?.focus({ preventScroll: true });
-    input?.select();
+    if (input instanceof HTMLInputElement) input.select();
     const scroller = el?.closest<HTMLElement>(".line-scroll");
     const cell = input?.parentElement;
     if (!el || !scroller || !cell) return;
@@ -823,27 +902,74 @@ function LineEditor({
     if (bottom > scroller.scrollTop + scroller.clientHeight) scroller.scrollTop = bottom - scroller.clientHeight;
   }, []);
   const keys = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.defaultPrevented) return;
     // Enter on a button does what the button does (Cancel cancels).
     if (e.key === "Enter" && !(e.target as HTMLElement).closest("button")) {
       e.preventDefault();
-      onSave({ opened, values });
+      save();
     } else if (e.key === "Escape") {
       e.preventDefault();
       onCancel();
     }
   };
-  const problem = line.status.kind === "attention" ? line.status.reason : line.status.kind === "leftOut" ? leftOutText(line) : "";
+  const problem = error || (line.status.kind === "attention" ? line.status.reason : line.status.kind === "leftOut" ? leftOutText(line) : "");
+  const change = (i: number, text: string) => {
+    setError("");
+    const field = role[i];
+    if (field === "outflow" || field === "inflow") {
+      const entered = flowAmountChange(field, text);
+      const other = role.indexOf(field === "outflow" ? "inflow" : "outflow");
+      // A one-flow file has nowhere to move the sign: its explicit amount override still keeps the direction.
+      if (entered.focus && other < 0) {
+        setValues((v) => v.map((x, k) => k === i ? (field === "outflow" ? `-${text.slice(1)}` : text) : role[k] === "amount" ? "" : x));
+      } else {
+        setValues((v) => v.map((x, k) => {
+          const r = role[k];
+          return r === "outflow" || r === "inflow" ? entered.values[r] ?? x : r === "amount" && text ? "" : x;
+        }));
+        if (entered.focus) row.current?.querySelector<HTMLInputElement>(`[data-column="${other}"] input`)?.focus();
+      }
+    } else setValues((v) => v.map((x, k) => k === i ? text : field === "amount" && text && (role[k] === "outflow" || role[k] === "inflow") ? "" : x));
+  };
+  const chooseTransfer = (other: string) => {
+    setError("");
+    setTransfer(other);
+    setValues((v) => v.map((x, k) => role[k] === "transferAccountId" ? other : role[k] === "payee" ? opened[k] : x));
+  };
   return (
     <div className="line-row line-editor" role="row" ref={row} onKeyDown={keys} aria-label={t("Edit line {line}", { line: line.id })}>
       <span role="cell" className="line-state">
         <span className={problem ? "line-attention" : "line-editing"}>
           {problem ? <AlertTriangle size={14} aria-hidden /> : <Pencil size={13} aria-hidden />}
-          <span>{problem || t("Editing the line")}</span>
+          <span role={error ? "alert" : undefined} title={problem}>{problem || t("Editing the line")}</span>
         </span>
       </span>
       {headers.map((h, i) => (
-        <span role="cell" key={i} className="line-cell">
-          <input
+        <span role="cell" key={i} className="line-cell" data-column={i}>
+          {role[i] === "payee" ? (
+            <PayeeInput
+              budget={budget}
+              label={t("{column} of line {line}", { column: h || columnLabel(i), line: line.id })}
+              value={transfer ? transferPayee(budget.accounts.find((a) => a.id === transfer)?.name ?? transfer) : values[i]}
+              transfers={transfers}
+              onTransfer={chooseTransfer}
+              onChange={(text) => {
+                change(i, text);
+                setTransfer("");
+                setValues((v) => v.map((x, k) => role[k] === "transferAccountId" ? "" : x));
+              }}
+            />
+          ) : role[i] === "transferAccountId" ? (
+            <select
+              aria-label={t("{column} of line {line}", { column: h || columnLabel(i), line: line.id })}
+              value={transfer}
+              onChange={(e) => chooseTransfer(e.target.value)}
+            >
+              <option value="">{t("No transfer")}</option>
+              {transfer && !transfers.some((a) => a.id === transfer) && <option value={transfer}>{transfer}</option>}
+              {transfers.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          ) : <input
             aria-label={t("{column} of line {line}", { column: h || columnLabel(i), line: line.id })}
             value={values[i]}
             readOnly={locked[i]}
@@ -854,14 +980,15 @@ function LineEditor({
                   ? t("In the file: {value}", { value: line.original[i] ?? "" })
                   : undefined
             }
-            onChange={(e) => setValues((v) => v.map((x, k) => (k === i ? e.target.value : x)))}
-          />
+            inputMode={role[i] === "amount" || role[i] === "outflow" || role[i] === "inflow" ? "decimal" : undefined}
+            onChange={(e) => change(i, e.target.value)}
+          />}
         </span>
       ))}
       <span role="cell" className="line-actions-cell" />
       <div className="line-editor-footer">
         <span className="line-editor-buttons">
-          <button type="button" className="primary small" onClick={() => onSave({ opened, values })}>
+          <button type="button" className="primary small" onClick={save}>
             {t("Save")}
           </button>
           <button type="button" className="secondary small" onClick={onCancel}>

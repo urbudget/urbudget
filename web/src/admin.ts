@@ -8,6 +8,7 @@ import { fetchStatus, githubDaily, githubReleases, storeConfigured } from "./cha
 import type { AppEnv, Env } from "./env";
 import type { Release } from "./releases";
 import { ApiError, mondayOf, now } from "./util";
+import { syncUsage } from "./sync";
 
 const PAGE = 50;
 const DAY_MS = 86_400_000;
@@ -216,9 +217,7 @@ admin.get("/overview", async (c) => {
          FROM subscriptions GROUP BY status, provider`,
       )
       .all<{ status: string; provider: string; n: number }>(),
-    db
-      .prepare("SELECT COUNT(*) AS budgets, COUNT(DISTINCT user_id) AS users, COALESCE(SUM(size), 0) AS bytes FROM sync_budgets")
-      .first<{ budgets: number; users: number; bytes: number }>(),
+    syncUsage(db),
     // The site's clicks by kind, for the bots and the team left out of every other number.
     db
       .prepare("SELECT kind, SUM(count) AS n FROM download_counts WHERE day >= ?1 GROUP BY kind")
@@ -418,7 +417,8 @@ admin.get("/accounts", async (c) => {
           ORDER BY (s.status IN (${LIVE_SYNC})) DESC, s.updated_at DESC LIMIT 1) AS subscription,
          (SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id AND s.kind = 'desktop') AS devices,
          (SELECT MAX(last_seen_at) FROM sessions s WHERE s.user_id = u.id AND s.kind IN ('web', 'desktop')) AS last_seen_at,
-         (SELECT COUNT(*) FROM sync_budgets b WHERE b.user_id = u.id) AS budgets
+         (SELECT COUNT(*) FROM sync_budgets b WHERE b.user_id = u.id)
+         + (SELECT COUNT(*) FROM sync_heads_v2 b WHERE b.user_id = u.id AND b.state='active') AS budgets
        FROM users u WHERE ${match} ORDER BY u.created_at DESC, u.id LIMIT ?3 OFFSET ?4`,
     )
       .bind(...binds, PAGE, page * PAGE)
@@ -465,10 +465,15 @@ admin.get("/accounts/:id", async (c) => {
       .bind(user.id)
       .all<{ kind: string; device_name: string | null; created_at: string; last_seen_at: string; expires_at: string }>(),
     db
-      .prepare("SELECT budget_id, revision, size, device, updated_at FROM sync_budgets WHERE user_id = ?1 ORDER BY updated_at DESC")
+      .prepare(`SELECT budget_id,revision,size,device,updated_at,'active' AS state FROM sync_budgets WHERE user_id=?1
+        UNION ALL SELECT budget_id,version AS revision,size,device,updated_at,state FROM sync_heads_v2
+        WHERE user_id=?1 AND state<>'purged' ORDER BY updated_at DESC`)
       .bind(user.id)
-      .all<{ budget_id: string; revision: number; size: number; device: string; updated_at: string }>(),
-    db.prepare("SELECT created_at FROM sync_keys WHERE user_id = ?1").bind(user.id).first<{ created_at: string }>(),
+      .all<{ budget_id: string; revision: number | string; size: number; device: string; updated_at: string; state: string }>(),
+    db.prepare(`SELECT NULL AS created_at FROM sync_accounts_v2 WHERE user_id=?1 AND protocol=2 AND key_generation IS NOT NULL
+      UNION ALL SELECT created_at FROM sync_keys WHERE user_id=?1
+      AND NOT EXISTS(SELECT 1 FROM sync_accounts_v2 WHERE user_id=?1 AND protocol=2) LIMIT 1`)
+      .bind(user.id).first<{ created_at: string | null }>(),
   ]);
   return c.json({
     account: { id: user.id, email: user.email, customerId: user.billing_customer_id, createdAt: user.created_at },
@@ -489,7 +494,8 @@ admin.get("/accounts/:id", async (c) => {
     })),
     // The passphrase for end-to-end encryption was set then; the server never holds a key.
     syncKeySetAt: key?.created_at ?? null,
-    budgets: budgets.results.map((b) => ({ id: b.budget_id, revision: b.revision, size: b.size, device: b.device, updatedAt: b.updated_at })),
+    syncKeySet: !!key,
+    budgets: budgets.results.map((b) => ({ id: b.budget_id, revision: b.revision, size: b.size, device: b.device, updatedAt: b.updated_at, state: b.state })),
   });
 });
 

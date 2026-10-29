@@ -45,6 +45,11 @@ struct UrBudgetShortcuts: AppShortcutsProvider {
 
 /// Hands the Home Screen quick action to `AppActions`, at launch and while the app runs.
 final class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        MainActor.assumeIsolated { SyncBackground.register() }
+        return true
+    }
+
     func application(_ application: UIApplication, configurationForConnecting session: UISceneSession,
                      options: UIScene.ConnectionOptions) -> UISceneConfiguration {
         if let item = options.shortcutItem { MainActor.assumeIsolated { _ = AppActions.shared.handle(item) } }

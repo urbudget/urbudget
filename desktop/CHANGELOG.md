@@ -8,6 +8,20 @@ Notable changes to UrBudget, organized using [Keep a Changelog](https://keepacha
 
 - On the phones, the assistant's proposals can be changed before they're applied, as on the desktop: a part is left out with its checkbox, or given another category or amount with its pencil, and Apply makes what's left ("Apply 2 of 3"), still as one undo step. Use the assistant's version puts it back as proposed. An import's fixes work the same way.
 
+## [1.0.11] - 2026-10-29
+
+This update improves budget recovery, sync conflict review, and bank-file imports.
+
+- The budget library shows clearer availability, recovery, and sync states.
+- Interrupted storage upgrades can resume while preserving budgets, backups, assistant history, and recovery drafts.
+- Sync better protects unsaved edits and rejects conflict choices after the reviewed data changes. Monthly assignment conflicts show category changes, totals, and their effect on Ready to Assign.
+- Bank-import review supports explicit transfer destinations and calculations in amount fields, using your budget's decimal format. Stale edits cannot partially change an import row.
+- Fixes compatibility with existing sign-ins and syncing when no budget is open.
+
+**Upgrade compatibility:** This update changes on-device storage. UrBudget 1.0.10 and earlier cannot open upgraded files; use this version or a newer compatible build.
+
+The new cloud-library sync protocol remains disabled pending a separate rollout.
+
 ## [1.0.10] - 2026-10-27
 
 ### Added

@@ -2,6 +2,8 @@
 //! end-to-end encrypted sync for subscribers. Budgeting never needs either of them.
 pub mod crypto;
 pub mod sync;
+mod notifications;
+pub mod v2;
 
 pub(crate) use crate::vault;
 use crate::t;
@@ -71,12 +73,23 @@ async fn failure(response: reqwest::Response) -> Failure {
 #[serde(rename_all = "camelCase")]
 struct AccountFile {
     email: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    account_id: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    session_expired: bool,
     /// Binds a persisted identity to its vault credential. Earlier email-only files remain valid.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     credential_hash: Option<String>,
 }
 
 fn credential_hash(token: &str) -> String { format!("{:x}", Sha256::digest(token.as_bytes())) }
+fn persist_identity(path:&Path,account:&AccountFile)->Result<(),String>{
+    use std::io::Write;
+    let temporary=path.with_extension(format!("{}.tmp",crate::budgets::new_id()));
+    let mut file=std::fs::OpenOptions::new().create_new(true).write(true).open(&temporary).map_err(|e|e.to_string())?;
+    file.write_all(&serde_json::to_vec(account).map_err(|e|e.to_string())?).and_then(|_|file.sync_all()).map_err(|e|e.to_string())?;
+    drop(file);std::fs::rename(temporary,path).map_err(|e|e.to_string())
+}
 fn account_changed() -> Failure {
     Failure { status: 409, code: "account_changed".into(), message: t!("Your account changed in another window. Restart this window before continuing."), body: Value::Null }
 }
@@ -89,6 +102,7 @@ pub struct Cloud {
     /// Where the system has no credential store, a session lasts until the app closes.
     memory_token: Mutex<Option<String>>,
     account_epoch: AtomicU64,
+    v2_keys: Mutex<std::collections::BTreeMap<(String,String),crypto::Key>>,
 }
 
 /// An immutable authorization snapshot. A running operation must never pick up another login.
@@ -140,6 +154,7 @@ impl Cloud {
             account: Mutex::new(account),
             memory_token: Mutex::new(None),
             account_epoch: AtomicU64::new(0),
+            v2_keys: Mutex::default(),
         }
     }
     fn email(&self) -> Option<String> {
@@ -162,7 +177,7 @@ impl Cloud {
     }
     fn checked_token(&self, account: &AccountFile, read: impl FnOnce() -> Option<String>) -> Result<Option<String>, Failure> {
         self.check_identity(account)?;
-        if account.email.is_none() { return Ok(None); }
+        if account.email.is_none() || account.session_expired { return Ok(None); }
         let token = read();
         self.check_identity(account)?;
         if token.as_ref().zip(account.credential_hash.as_ref())
@@ -178,16 +193,49 @@ impl Cloud {
             self.memory_token.lock().unwrap_or_else(|e| e.into_inner()).clone()
         }
     }
+    #[cfg(test)]
     fn remember(&self, email: Option<String>, token: Option<&str>) -> Result<(), String> {
         let mut account = self.account.lock().unwrap_or_else(|e| e.into_inner());
         self.write_account(&mut account, email, token)
     }
+    fn remember_identity(&self, email: String, account_id: String, token: &str) -> Result<(), String> {
+        let mut account = self.account.lock().unwrap_or_else(|e| e.into_inner());
+        self.write_account_identity(&mut account, Some(email), Some(token),Some(account_id))
+    }
+    pub fn selected_account(&self) -> Option<String> {
+        let account = self.account.lock().unwrap_or_else(|e| e.into_inner());
+        self.check_identity(&account).ok()?;
+        account.account_id.clone()
+    }
+    /// Add the server identity to an older email-only session without replacing its credentials.
+    /// The file lease and session check fence concurrent sign-in/sign-out in other processes.
+    pub(crate) fn backfill_account_id(&self, session: &Session, id: &str) -> Result<(), String> {
+        if id.is_empty() { return Err("The server returned an empty account identity.".into()); }
+        let mut account = self.account.lock().unwrap_or_else(|e| e.into_inner());
+        let guard = std::fs::OpenOptions::new().read(true).write(true).create(true).truncate(false)
+            .open(self.data_dir.join("account.lock")).map_err(|e| e.to_string())?;
+        vault::lock_exclusive(&guard).map_err(|e| e.to_string())?;
+        self.check_session_identity(session, &account).map_err(String::from)?;
+        if let Some(current) = account.account_id.as_deref() {
+            return if current == id { Ok(()) } else { Err(account_changed().into()) };
+        }
+        let mut updated = account.clone();
+        updated.account_id = Some(id.into());
+        persist_identity(&self.data_dir.join("account.json"), &updated)?;
+        *account = updated;
+        Ok(())
+    }
     fn write_account(&self, account: &mut AccountFile, email: Option<String>, token: Option<&str>) -> Result<(), String> {
+        let account_id=if email.is_some()&&account.email==email{account.account_id.clone()}else{None};
+        self.write_account_identity(account,email,token,account_id)
+    }
+    fn write_account_identity(&self, account:&mut AccountFile,email:Option<String>,token:Option<&str>,account_id:Option<String>)->Result<(),String> {
         let forget_sync = account.email != email || token.is_none();
-        self.replace_account(account, email, token.map(credential_hash), || {
+        let previous_account=account.account_id.clone();
+        self.replace_account_identity(account, email, token.map(credential_hash),account_id,false, || {
           // The identity lock also covers sync cleanup, so an older window cannot remove
           // another process's newly installed key while signing out or changing accounts.
-          if forget_sync { self.sync.forget()?; }
+          if forget_sync { v2::forget_keys(self,previous_account.as_deref())?;self.sync.forget()?; }
           match token {
             Some(token) if vault::STORE.is_some() => vault::save(&service(ACCOUNT_SERVICE), token)?,
             Some(token) => *self.memory_token.lock().unwrap_or_else(|e| e.into_inner()) = Some(token.to_owned()),
@@ -199,7 +247,12 @@ impl Cloud {
           Ok(())
         })
     }
+    #[cfg(test)]
     fn replace_account(&self, account: &mut AccountFile, email: Option<String>, credential_hash: Option<String>, update_credential: impl FnOnce() -> Result<(), String>) -> Result<(), String> {
+        let account_id=if email.is_some()&&account.email==email{account.account_id.clone()}else{None};
+        self.replace_account_identity(account,email,credential_hash,account_id,false,update_credential)
+    }
+    fn replace_account_identity(&self,account:&mut AccountFile,email:Option<String>,credential_hash:Option<String>,account_id:Option<String>,session_expired:bool,update_credential:impl FnOnce()->Result<(),String>)->Result<(),String> {
         let guard = std::fs::OpenOptions::new().read(true).write(true).create(true).truncate(false)
             .open(self.data_dir.join("account.lock")).map_err(|e| e.to_string())?;
         vault::lock_exclusive(&guard).map_err(|e| e.to_string())?;
@@ -210,14 +263,10 @@ impl Cloud {
         *account = AccountFile::default();
         self.account_epoch.fetch_add(1, Ordering::SeqCst);
         let path = self.data_dir.join("account.json");
-        std::fs::write(&path, b"{\"email\":null}").map_err(|e| e.to_string())?;
+        persist_identity(&path,account)?;
         update_credential()?;
-        let file = AccountFile { email, credential_hash };
-        std::fs::write(
-            path,
-            serde_json::to_vec_pretty(&file).map_err(|e| e.to_string())?,
-        )
-        .map_err(|e| e.to_string())?;
+        let file = AccountFile { email, account_id, session_expired, credential_hash };
+        persist_identity(&path,&file)?;
         *account = file;
         Ok(())
     }
@@ -239,7 +288,11 @@ impl Cloud {
             // A 401 can arrive outside the shared operation lock (for example, account
             // overview). Invalidate authorization now, but leave key/tracking cleanup to
             // explicit sign-out or the next login, which already holds that lock.
-            let _ = self.replace_account(&mut account, None, None, remove_credential);
+            // Expired authorization keeps the selected account and its budget ownership.
+            // Only explicit sign-out makes future budgets local-only.
+            let email = account.email.clone();
+            let account_id=account.account_id.clone();
+            let _ = self.replace_account_identity(&mut account, email, None, account_id,true,remove_credential);
         }
     }
     pub(crate) fn session(&self) -> Result<Session, Failure> {
@@ -306,9 +359,18 @@ impl Cloud {
     }
 
     pub fn status(&self) -> Status {
+        let catalog = crate::budgets::Budgets::load(&self.data_dir).ok();
+        self.status_with_catalog(catalog.as_ref())
+    }
+    pub fn status_with_library(&self, library: &crate::Library) -> Status {
+        self.status_with_catalog(Some(&library.lock()))
+    }
+    fn status_with_catalog(&self, catalog: Option<&crate::budgets::Budgets>) -> Status {
         let email = self.email().filter(|_| self.token().is_some());
         let mut sync = self.sync.status();
+        if let Some(unlocked) = catalog.and_then(|c| v2::unlocked_catalog(self, c)) { sync.unlocked = unlocked; }
         sync.unlocked &= email.is_some();
+        if let Some(catalog) = catalog { v2::decorate_status(self, catalog, &mut sync); }
         Status {
             email,
             credential_store: vault::STORE,
@@ -360,7 +422,8 @@ pub async fn account_verify(cloud: &Cloud, email: String, code: String) -> Resul
         .await?;
     let token = answer["token"].as_str().ok_or_else(|| t!("The sign-in answer had no session."))?;
     let email = answer["user"]["email"].as_str().unwrap_or(email.trim()).to_owned();
-    cloud.remember(Some(email), Some(token))?;
+    let account_id = answer["user"]["id"].as_str().ok_or("The sign-in answer had no account identity.")?.to_owned();
+    cloud.remember_identity(email, account_id, token)?;
     Ok(cloud.status())
 }
 
@@ -405,6 +468,19 @@ pub async fn account_delete(cloud: &Cloud, confirm: String) -> Result<Status, St
 #[cfg(test)]
 mod session_tests {
     use super::*;
+    #[test]
+    fn old_sessions_backfill_identity_without_changing_credentials_and_reject_stale_answers() {
+        let dir=tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("account.json"),br#"{"email":"old@example.test"}"#).unwrap();
+        let cloud=Cloud::new(dir.path()); let session=fake_session(&cloud,"old-token").unwrap();
+        cloud.backfill_account_id(&session,"account-a").unwrap();
+        assert_eq!(cloud.selected_account().as_deref(),Some("account-a"));
+        assert!(cloud.check_session(&session).is_ok());
+        assert!(cloud.backfill_account_id(&session,"account-b").is_err());
+        replace_without_vault(&cloud,"other@example.test","new-token");
+        assert!(cloud.backfill_account_id(&session,"account-a").is_err());
+    }
+
     #[test]
     fn credential_and_identity_write_failures_leave_no_mixed_account() {
         for stage in ["signed-out-marker", "credential", "final-identity"] {
@@ -544,7 +620,7 @@ mod session_tests {
         cloud.forget_session_with(&session, || { removed.set(true); Ok(()) });
         assert!(removed.get());
         assert_eq!(std::fs::read(&sync_path).unwrap(), initial, "automatic401 must not write tracking while another operation owns the file lock");
-        assert!(cloud.email().is_none());
+        assert_eq!(cloud.email().as_deref(),Some("first@example.test"),"expired credentials preserve the selected account");
         assert_eq!(fake_session(&cloud, "first-token").err().unwrap().code, "signed_out");
         assert!(!cloud.status().sync.unlocked);
         drop(active);

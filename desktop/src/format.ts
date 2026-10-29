@@ -229,6 +229,18 @@ export const errorText = (e: unknown) =>
  */
 export const editableAmount = (cents: number) => (cents / 100).toFixed(2).replace(".", active.number.decimal);
 
+/** The register's flow entry: a plain +amount in Outflow or -amount in Inflow moves to the other field. */
+export function flowAmountChange(field: "outflow" | "inflow", text: string): {
+  values: { outflow?: string; inflow?: string };
+  focus?: "outflow" | "inflow";
+} {
+  const other = field === "outflow" ? "inflow" : "outflow";
+  const sign = field === "outflow" ? /^\+/ : /^[-−]/;
+  if (sign.test(text) && /^[\d\s.,']*$/.test(text.slice(1)))
+    return { values: { [field]: "", [other]: text.slice(1) }, focus: other };
+  return { values: text ? { [field]: text, [other]: "" } : { [field]: "" } };
+}
+
 /**
  * Evaluates an amount a person typed, in cents: "1,234.50", "12 + 3.5", "(10+5)*2", "-20".
  * Literals keep at most two decimals; only multiplication and division round.

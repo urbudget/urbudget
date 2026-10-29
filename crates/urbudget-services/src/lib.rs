@@ -7,6 +7,7 @@ pub mod cloud;
 pub mod vault;
 pub mod host;
 pub mod runtime;
+pub mod library_api;
 pub mod billing;
 pub mod assistant;
 pub mod simplefin;
@@ -22,7 +23,16 @@ use store::Store;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 /// The open budget. SQL commits, draft tokens and sync bases use the same Store on every host.
-pub struct Database(pub Mutex<Store>);
+pub struct Database(pub Mutex<Option<Store>>);
+/// A checked open-store guard. An empty library never opens a placeholder financial database.
+pub struct StoreGuard<'a>(MutexGuard<'a, Option<Store>>);
+impl std::ops::Deref for StoreGuard<'_> {
+    type Target = Store;
+    fn deref(&self) -> &Store { self.0.as_ref().expect("checked open budget") }
+}
+impl std::ops::DerefMut for StoreGuard<'_> {
+    fn deref_mut(&mut self) -> &mut Store { self.0.as_mut().expect("checked open budget") }
+}
 /// Lock the library before the database when a command needs both.
 pub struct Library(pub Mutex<budgets::Budgets>);
 impl Library {
@@ -31,8 +41,13 @@ impl Library {
     }
 }
 impl Database {
-    pub fn store(&self) -> Result<MutexGuard<'_, Store>, String> {
-        Ok(self.0.lock().unwrap_or_else(|e| e.into_inner()))
+    pub fn new(store: Option<Store>) -> Self { Self(Mutex::new(store)) }
+    pub fn is_open(&self) -> bool { self.0.lock().unwrap_or_else(|e| e.into_inner()).is_some() }
+    pub fn replace(&self, store: Option<Store>) { *self.0.lock().unwrap_or_else(|e| e.into_inner()) = store; }
+    pub fn store(&self) -> Result<StoreGuard<'_>, String> {
+        let guard = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        if guard.is_none() { return Err("Open or create a budget first.".into()); }
+        Ok(StoreGuard(guard))
     }
     pub fn read<T>(&self, patch: Option<Patch>, f: impl FnOnce(&Budget) -> Result<T, String>) -> Result<T, String> {
         f(&self.snapshot(patch)?)

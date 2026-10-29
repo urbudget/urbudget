@@ -141,7 +141,7 @@ function BudgetSwitcher({
         aria-expanded={open}
         title={collapsed ? budget.name : t("Switch budget")}
         onClick={() => {
-          void api.listBudgets().then(setBudgets).catch(() => setBudgets([]));
+          void api.listBudgets().then(rows => setBudgets(rows.filter(row => !["trashed", "purged"].includes(row.lifecycle ?? "active")))).catch(() => setBudgets([]));
           setOpen(!open);
         }}
       >

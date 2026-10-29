@@ -1,0 +1,6 @@
+
+app.urbudget.nativeapp.SyncV2RuntimeTest:.
+
+Time: 9.26
+
+OK (1 test)

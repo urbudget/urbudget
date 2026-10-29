@@ -176,7 +176,9 @@ enum BankReview {
             let bankPayee = row.text("payee")
             let renamed = row.text("rename")
             let rename: String? = !renamed.trimmingCharacters(in: .whitespaces).isEmpty && renamed != bankPayee ? renamed : nil
-            let shownPayee = rename ?? bankPayee
+            let target = row.text("transferAccountId")
+            let other = accountNames[target] ?? target
+            let shownPayee = target.isEmpty ? (rename ?? bankPayee) : String(localized: "Transfer: \(other)")
             let date = Money.date(row.text("date"))
             let memo = row.text("memo")
             let amount = row.long("amount")

@@ -2200,4 +2200,36 @@
     <string name="chart_and">\u2068%1$s\u2069 و\u2068%2$s\u2069</string>
     <!-- A chart's spoken description: the series it shows, by month. -->
     <string name="chart_by_month">\u2068%1$s\u2069 حسب الشهر</string>
+    <string name="library_trash">المهملات</string>
+    <string name="library_remote">متاحة للتنزيل</string>
+    <string name="library_remove_download">إزالة التنزيل</string>
+    <string name="library_recover_copy">استعادة كميزانية جديدة</string>
+    <string name="library_add_account">إضافة إلى مزامنة الحساب</string>
+    <string name="library_move_trash">نقل إلى المهملات</string>
+    <string name="library_trash_message">تُنقل ميزانيات الحساب إلى المهملات على جميع الأجهزة ويمكن استعادتها من المكتبة. تبقى الميزانيات المحلية خاصة.</string>
+    <string name="sync_status_paused">المزامنة متوقفة</string>
+    <string name="sync_status_attention">المزامنة تحتاج تدخلك</string>
+    <string name="sync_status_offline">غير متصل</string>
+    <string name="sync_status_waiting">بانتظار المزامنة</string>
+    <string name="sync_status_device">محفوظة على الجهاز</string>
+    <string name="sync_status_synced">تمت المزامنة</string>
+    <string name="library_unfinished_edits">استعادة التعديلات غير المكتملة</string>
+    <string name="library_discard_edits">تجاهل هذه التعديلات</string>
+    <string name="library_keep_local">الاحتفاظ بهذه الميزانية على هذا الجهاز فقط</string>
+    <string name="cloud_legacy_library">اكتشاف الميزانيات تلقائيًا غير مفعّل لهذا الحساب بعد. تستمر مزامنة الميزانيات الحالية؛ استخدم الأزرار أدناه لإضافة الميزانيات أو تنزيلها.</string>
+    <string name="library_available_online">متاحة عبر الإنترنت</string>
+    <string name="library_review_newer">مراجعة النسخة الأحدث</string>
+    <string name="library_deletion_conflict">توجد تغييرات أحدث تحتاج إلى مراجعة قبل الحذف</string>
+    <string name="conflict_month_total">إجمالي الشهر: %1$s ← %2$s</string>
+    <string name="conflict_ready_change">التغيّر في الجاهز للتوزيع: %1$s</string>
+    <string name="conflict_moves">المناقلات: %1$s</string>
+    <string name="conflict_amount_change">التغيّر: %1$s</string>
+    <string name="conflict_whole_budget">نسخة الميزانية الكاملة</string>
+    <string name="conflict_whole_budget_help">يستبدل هذا الاختيار جميع تغييرات الميزانية بالنسخة المحددة.</string>
+    <string name="conflict_budget_counts">الحسابات: %1$s؛ الفئات: %2$s؛ المعاملات: %3$s</string>
+    <string name="editor_checkpoint_failed">تعذر حفظ التعديلات غير المكتملة</string>
+    <string name="editor_budget_missing">ميزانية هذا المحرر لم تعد موجودة في المكتبة.</string>
+    <string name="conflict_transfer_account">تحويل: %1$s</string>
+    <string name="conflict_transfer_status">حالة التحويل: %1$s</string>
+    <string name="conflict_ready_to_assign">جاهز للتخصيص</string>
 </resources>

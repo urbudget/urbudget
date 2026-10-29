@@ -58,11 +58,11 @@ export const change = (budget: Budget, command: string, args: Record<string, unk
     return apply(budget, patch);
   });
 /** Runs a command that replaces the draft with the budget it returns. */
-export const reset = <T>(command: string, args: Record<string, unknown>, budget: (r: T) => Budget | null) =>
+export const reset = <T>(command: string, args: Record<string, unknown>, budget: (r: T) => Budget | null, clearOnNull = false) =>
   queue(async () => {
     try {
       const result = await invoke<T>(command, args);
-      synced = budget(result) ?? synced;
+      synced = budget(result) ?? (clearOnNull ? null : synced);
       return result;
     } catch (e) {
       synced = null;
@@ -73,7 +73,7 @@ export const reset = <T>(command: string, args: Record<string, unknown>, budget:
 export type Applied = { recoveryError?: string | null };
 export type CalculationOptions = { asOfMonth?: string; signal?: AbortSignal };
 export const api = {
-  load: () => reset<Snapshot>("load_budget", { legacyBackupKeep: getPref("keepBackups") }, (s) => s.budget),
+  load: () => reset<OpenSnapshot>("load_budget", { legacyBackupKeep: getPref("keepBackups") }, (s) => s.budget, true),
   /** Makes `budget` the draft. Rust writes the unsaved changes to its recovery file. */
   push: (budget: Budget) =>
     queue(async (): Promise<Applied> => {
@@ -136,14 +136,21 @@ export const api = {
   /** YNAB tokens kept on this device, most recently used first. */
   ynabTokens: () => invoke<SavedYnabToken[]>("ynab_tokens"),
   forgetToken: (id: string) => invoke<void>("forget_ynab_token", { id }),
-  listBudgets: () => invoke<BudgetListing[]>("list_budgets"),
+  library: () => invoke<LibrarySnapshot>("library_snapshot"),
+  listBudgets: async () => (await invoke<LibrarySnapshot>("library_snapshot")).entries,
+  libraryAction: async (action: "trash" | "restore" | "evict" | "recover" | "review_deletion", id: string) => {
+    const result = await invoke<LibraryMutation>("library_" + action, { id });
+    window.dispatchEvent(new Event("urbudget-library-changed"));
+    return result;
+  },
+  associateBudgets: (ids: string[]) => invoke("sync_enable", { enabled: true, ids }),
   /** Saves a new budget file; the open budget is unchanged. Returns its id. */
-  createBudget: (budget: Budget, source?: { budget: Budget; token: string }) => source
-    ? read<string>(source.budget, "create_budget", { budget, freshStartToken: source.token })
-    : invoke<string>("create_budget", { budget }),
+  createBudget: (budget: Budget, source?: { budget: Budget; token: string }, localOnly = false) => source
+    ? read<string>(source.budget, "create_budget", { budget, freshStartToken: source.token, localOnly })
+    : invoke<string>("create_budget", { budget, localOnly: localOnly || !!budget.sample }),
   /** Switches the window to another budget (save the open one first). */
-  openBudget: (id: string) => reset<Snapshot>("open_budget", { id }, (s) => s.budget),
-  deleteBudget: (id: string) => invoke<BudgetListing[]>("delete_budget", { id }),
+  openBudget: (id: string) => reset<OpenSnapshot>("library_open", { id }, (s) => s.budget, true),
+  deleteBudget: async (id: string) => (await invoke<LibraryMutation>("library_trash", { id })).library.entries,
   /** Shows a file from the app's data folder, or an export it just saved, in the system file manager. */
   reveal: (path: string) => invoke<void>("reveal_path", { path }),
   importYnab: (exportData: unknown) =>
@@ -313,7 +320,16 @@ export const api = {
     }),
 };
 
+export type OpenSnapshot = Omit<Snapshot, "budget"> & { budget: Budget | null };
+export type LibrarySnapshot = { firstRun?: boolean; version: string; activeId: string | null; entries: BudgetListing[] };
+export type LibraryMutation = { library: LibrarySnapshot; active: OpenSnapshot | null; recoveredId?: string };
 export type BudgetListing = {
+  scope?: "local" | "account";
+  accountId?: string;
+  lifecycle?: "active" | "trashed" | "purged" | "recovery";
+  availability?: "local" | "remote" | "evicted" | "unavailable";
+  pending?: boolean;
+  status?: string;
   id: string;
   name: string;
   currency: string;
@@ -353,6 +369,7 @@ export type BankRow = {
   id: string;
   date: string;
   payee: string;
+  transferAccountId?: string | null;
   memo: string;
   amount: number;
   duplicate: boolean;
@@ -401,7 +418,7 @@ type CompactReview = {
   candidateSets: Pick<BankRow, "candidates" | "previouslyMatchedCandidates" | "candidateDetails" | "transferCandidates" | "transferSure">[];
 };
 /** A part of a transaction a line gives. */
-export type BankField = "date" | "payee" | "memo" | "amount";
+export type BankField = "date" | "payee" | "memo" | "amount" | "transferAccountId";
 /** Why a line isn't imported unless someone includes it (bank_statement.rs). */
 export type LeftOutReason =
   | "pending"
@@ -452,7 +469,7 @@ export type StatementLine = {
   cells: string[];
   /** Its cells as the file writes them, when some were fixed. */
   original?: string[];
-  fields: Record<BankField, string>;
+  fields: Record<Exclude<BankField, "transferAccountId">, string> & { transferAccountId?: string };
   status: LineStatus;
   included?: boolean;
   fixed?: boolean;

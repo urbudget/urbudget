@@ -218,10 +218,12 @@ internal suspend fun prepareBankReview(
         }
         val manual = "bank:manual:${UUID.randomUUID()}"
         val rename = row.editorText("rename").takeIf { it.isNotBlank() && it != row.editorText("payee") }
+        val target = row.editorText("transferAccountId")
+        val payee = if (target.isNotBlank()) Words[R.string.transfer_to_account, accountNames[target] ?: target] else (rename ?: row.editorText("payee")).ifBlank { noPayee }
         val initial = defaultBankChoice(duplicate, possible, set.candidates, set.previouslyMatched, set.transfer.takeUnless { set.transferSure })
         BankReviewRow(smallBankRow(row), options, initial, manual, set.previouslyMatched,
             key = "$index:${row.editorText("id")}", locked = duplicate && !separate, date = Money.date(row.editorText("date")),
-            payee = (rename ?: row.editorText("payee")).ifBlank { noPayee }, bankText = rename?.let { row.editorText("payee") },
+            payee = payee, bankText = rename?.let { row.editorText("payee") },
             memo = row.editorText("memo"), amount = row.optLong("amount"), amountText = Money.format(row.optLong("amount"), currency),
             duplicate = duplicate, possibleDuplicate = possible, idless = idless,
             detail = Money.joined(listOf(Money.date(row.editorText("date")), row.editorText("memo")).filter { it.isNotBlank() }),

@@ -1,6 +1,6 @@
 # Tests the native iOS app when its code changes: the Rust adapter on Linux, then the app on the
-# iOS Simulator. Engine changes are tested on Linux by android-native.yml and app.yml; the Simulator
-# runs only for ios/ and crates/urbudget-ios/, since a macOS minute costs ten Linux ones.
+# iOS Simulator. Shared engine and service changes also run the Simulator: storage/sync contracts
+# can break native lifecycle behavior without changing an iOS source file.
 # ios-release.yml runs the Simulator tests again before every upload.
 name: Native iOS
 
@@ -8,10 +8,10 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ["ios/**", "!ios/**/*.md", "crates/urbudget-ios/**", ".github/workflows/ios-native.yml"]
+    paths: ["ios/**", "!ios/**/*.md", "crates/urbudget-ios/**", "crates/urbudget-core/**", "crates/urbudget-services/**", "crates/Cargo.toml", "crates/Cargo.lock", ".github/workflows/ios-native.yml"]
   pull_request:
     branches: [main]
-    paths: ["ios/**", "!ios/**/*.md", "crates/urbudget-ios/**", ".github/workflows/ios-native.yml"]
+    paths: ["ios/**", "!ios/**/*.md", "crates/urbudget-ios/**", "crates/urbudget-core/**", "crates/urbudget-services/**", "crates/Cargo.toml", "crates/Cargo.lock", ".github/workflows/ios-native.yml"]
 
 permissions:
   contents: read

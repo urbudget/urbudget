@@ -535,6 +535,7 @@ fn account_transactions<Tz: TimeZone>(
                 payee,
                 memo,
                 amount: if link.flip_signs { -amount } else { amount },
+                transfer_account_id: None,
             },
             at,
         ));

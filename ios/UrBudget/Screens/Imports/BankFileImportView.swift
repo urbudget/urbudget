@@ -134,6 +134,9 @@ struct BankFileImportView: View {
         } message: {
             Text("Nothing has been imported yet. The changes and choices you made are lost.")
         }
+        .retainingEditorDraft("bankImport", values: ["account": .string(account), "fileName": .string(fileName),
+            "sheet": sheet.map(JSON.string) ?? .null, "session": session ?? .null,
+            "decisions": .object(Dictionary(uniqueKeysWithValues: decisions.map { (String($0.key), JSON.string($0.value)) }))])
         .onAppear(perform: begin)
         .task(id: busy) {
             guard busy else { slow = false; return }
@@ -737,5 +740,6 @@ private struct LineFixSheet: View {
             }
         }
         .onAppear { for (id, _) in BankStatementText.fields { values[id] = line.fields[id] ?? "" } }
+        .retainingEditorDraft("importLine", values: .object(values.mapValues(JSON.string)))
     }
 }

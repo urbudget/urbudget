@@ -6,7 +6,7 @@ import { ToastProvider } from "./ui";
 
 const native = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke }));
-vi.mock("./bridge", () => ({ desktop: true }));
+vi.mock("./bridge", () => ({ desktop: true, api: { library: async () => ({version:"1",activeId:null,entries:[]}) } }));
 let status: CloudStatus;
 let overview: Overview;
 let start: { ok: boolean; reviewAccess?: boolean; devCode?: string };
@@ -32,10 +32,27 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+it("renders lifecycle states with no open budget, including a newer native state", async () => {
+  overview = { ...overview, sync: { ...overview.sync, active: true } };
+  const phases = ["trashed", "purged", "recovery", "queued", "signed_out", "evicted", "locked", "paused", "subscription_required", "future_native_state"];
+  status = { ...status, sync: { protocol: 2, unlocked: true, last: {
+    at: "2026-10-29T00:00:00Z", state: "ok", message: null, openChanged: false,
+    // Simulate the native JSON boundary, where older frontends may see newer values.
+    budgets: phases.map(phase => ({ id: phase, name: `Budget ${phase}`, state: phase, device: null, updatedAt: null, message: null })) as NonNullable<CloudStatus["sync"]["last"]>["budgets"],
+  } } };
+  render(<ToastProvider><SyncSettings cloud={state()} budgetId="" isClean={() => true} openBudget={vi.fn()} /></ToastProvider>);
+  expect(await screen.findByText("In Trash")).toBeTruthy();
+  expect(screen.getByText("Permanently deleted")).toBeTruthy();
+  expect(screen.getByText("Recovered local changes")).toBeTruthy();
+  expect(screen.getByText("Available online")).toBeTruthy();
+  expect(screen.getByText("Sync needs you")).toBeTruthy();
+  for (const phase of phases) expect(screen.getByText(`Budget ${phase}`)).toBeTruthy();
+});
+
 it("only loads the account's status when the window opens", async () => {
   status = { ...status, email: null };
   const hook = renderHook(() => useCloud({ dirty: () => false, sync: "saved", operation: "", token: "", fetchDatabase: vi.fn() }));
-  await waitFor(() => expect(hook.result.current.status).toEqual(status));
+  await waitFor(() => expect(hook.result.current.status).toMatchObject(status));
   expect(native.invoke.mock.calls.map(([name]) => name)).toEqual(["cloud_status"]);
 });
 

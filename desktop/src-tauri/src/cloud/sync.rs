@@ -50,8 +50,9 @@ pub async fn sync_resolve(
     keep: String,
     choices: Option<Choices>,
     open_clean: bool,
+    review: Option<serde_json::Value>,
 ) -> Result<Report, String> {
-    urbudget_services::cloud::sync::sync_resolve(&cloud, &db, &library, id, keep, choices, open_clean).await
+    urbudget_services::cloud::sync::sync_resolve(&cloud, &db, &library, id, keep, choices, open_clean, review).await
 }
 
 #[tauri::command(async)]

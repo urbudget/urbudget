@@ -139,6 +139,9 @@ internal fun LoanDialog(original: JSONObject?, budget: JSONObject, summary: JSON
     var confirmRemove by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
+    retainEditorDraft(vm, "loan", openedBudget, JSONObject().put("account", account).put("rate", draft.rate).put("payment", draft.payment)
+        .put("fees", draft.fees).put("category", draft.category).put("extra", extraText).put("oneOff", oneOffText)
+        .put("rates", org.json.JSONArray(draft.rates.map { JSONObject().put("month", it.month).put("rate", it.rate) })))
     val balance = balances[account] ?: accountRecord?.optLong("openingBalance") ?: 0L
     val owed = maxOf(0L, -balance)
     val mortgage = accountRecord != null && AccountTypes.infer(accountRecord, balance) == "mortgage"

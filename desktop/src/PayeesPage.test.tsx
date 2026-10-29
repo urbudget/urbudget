@@ -5,6 +5,7 @@ import { useState } from "react";
 import type { Budget } from "./types";
 
 vi.mock("./bridge", () => ({
+  desktop: false,
   api: {
     action: vi.fn(async (b: Budget, a: { type: string; from: string; to: string; ruleIds?: string[] }) => {
       if (a.type === "reapplyPayeeRules") {

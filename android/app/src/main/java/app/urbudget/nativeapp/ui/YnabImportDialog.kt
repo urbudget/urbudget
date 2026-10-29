@@ -92,6 +92,7 @@ internal fun YnabImportDialog(budget: JSONObject, vm: BudgetViewModel, close: ()
     val fileDifferences = remember(candidate) { candidate?.optJSONObject("importAudit")?.rows("categoryDifferences").orEmpty() }
     val allConflictsChosen by remember(conflicts) { derivedStateOf { conflicts.all { choices[it.text("path")] in listOf("local", "remote") } } }
     val reviewId = result?.text("reviewId").orEmpty()
+    if (reviewId.isNotEmpty()) retainEditorDraft(vm, "ynabReview", budget, JSONObject().put("reviewId", reviewId).put("choices", JSONObject(choices.toMap())).put("plan", plan))
     LazyFormDialog(stringResource(R.string.import_ynab), close, onConfirm = null) {
         item { Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Choice(stringResource(R.string.ynab_method), mode, listOf("api" to stringResource(R.string.ynab_method_account), "files" to stringResource(R.string.ynab_method_files)), { mode = it; error = null })

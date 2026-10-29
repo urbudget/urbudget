@@ -11,6 +11,396 @@
         }
       }
     },
+    "Month total: %@ → %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إجمالي الشهر: ⁨%1$@⁩ ← ⁨%2$@⁩"
+          }
+        }
+      }
+    },
+    "Ready to Assign change: %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التغيّر في الجاهز للتوزيع: ⁨%@⁩"
+          }
+        }
+      }
+    },
+    "Moves: %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المناقلات: ⁨%@⁩"
+          }
+        }
+      }
+    },
+    "Change: %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التغيّر: ⁨%@⁩"
+          }
+        }
+      }
+    },
+    "Review newer version" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مراجعة النسخة الأحدث"
+          }
+        }
+      }
+    },
+    "Newer changes need review before deletion" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "توجد تغييرات أحدث تحتاج إلى مراجعة قبل الحذف"
+          }
+        }
+      }
+    },
+    "Automatic budget discovery is not enabled for this account yet. Existing budgets keep syncing; use the controls below to add or download budgets." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اكتشاف الميزانيات تلقائيًا غير مفعّل لهذا الحساب بعد. تستمر مزامنة الميزانيات الحالية؛ استخدم الأزرار أدناه لإضافة الميزانيات أو تنزيلها."
+          }
+        }
+      }
+    },
+    "Keep this budget only on this device" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الاحتفاظ بهذه الميزانية على هذا الجهاز فقط"
+          }
+        }
+      }
+    },
+    "Create a budget or open one from your account library." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أنشئ ميزانية أو افتح ميزانية من مكتبة حسابك."
+          }
+        }
+      }
+    },
+    "Move this budget to Trash on all devices? You can restore it from Trash." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هل تريد نقل هذه الميزانية إلى المهملات على جميع الأجهزة؟ يمكنك استعادتها من المهملات."
+          }
+        }
+      }
+    },
+    "Move this local budget to Trash? You can restore it later." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هل تريد نقل هذه الميزانية المحلية إلى المهملات؟ يمكنك استعادتها لاحقًا."
+          }
+        }
+      }
+    },
+    "Move to Trash" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "نقل إلى المهملات"
+          }
+        }
+      }
+    },
+    "In Trash" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "في المهملات"
+          }
+        }
+      }
+    },
+    "Recovered local changes" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعديلات محلية مستعادة"
+          }
+        }
+      }
+    },
+    "Available online" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متاحة على الإنترنت"
+          }
+        }
+      }
+    },
+    "Saved on this device" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "محفوظة على هذا الجهاز"
+          }
+        }
+      }
+    },
+    "Add to account sync" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إضافة إلى مزامنة الحساب"
+          }
+        }
+      }
+    },
+    "Recover unfinished edits" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استعادة التعديلات غير المكتملة"
+          }
+        }
+      }
+    },
+    "Recover as a copy" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استعادة كنسخة"
+          }
+        }
+      }
+    },
+    "Remove download" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إزالة التنزيل"
+          }
+        }
+      }
+    },
+    "Your library is empty." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مكتبتك فارغة."
+          }
+        }
+      }
+    },
+    "Add selected budgets to sync" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إضافة الميزانيات المحددة إلى المزامنة"
+          }
+        }
+      }
+    },
+    "Unfinished edits" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعديلات غير مكتملة"
+          }
+        }
+      }
+    },
+    "These fields were saved before the editor closed. Review them and re-enter the changes you want to keep." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حُفظت هذه الحقول قبل إغلاق المحرر. راجعها وأعد إدخال التعديلات التي تريد الاحتفاظ بها."
+          }
+        }
+      }
+    },
+    "No unfinished edits." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا توجد تعديلات غير مكتملة."
+          }
+        }
+      }
+    },
+    "Discard these edits" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تجاهل هذه التعديلات"
+          }
+        }
+      }
+    },
+    "Trash" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المهملات"
+          }
+        }
+      }
+    },
+    "Available to download" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متاحة للتنزيل"
+          }
+        }
+      }
+    },
+    "Saved on device" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "محفوظة على الجهاز"
+          }
+        }
+      }
+    },
+    "Recover as a new budget" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استعادة كميزانية جديدة"
+          }
+        }
+      }
+    },
+    "Review these saved fields and re-enter the changes you want to keep." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "راجع هذه الحقول المحفوظة وأعد إدخال التعديلات التي تريد الاحتفاظ بها."
+          }
+        }
+      }
+    },
+    "Account budgets move to Trash on every device. Restore them from the library. Local-only budgets stay private." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تُنقل ميزانيات الحساب إلى المهملات على جميع الأجهزة. استعدها من المكتبة. تبقى الميزانيات المحلية خاصة."
+          }
+        }
+      }
+    },
+    "The editor's budget is no longer in the library." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم تعد ميزانية المحرر موجودة في المكتبة."
+          }
+        }
+      }
+    },
+    "Sync paused" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المزامنة متوقفة"
+          }
+        }
+      }
+    },
+    "Sync needs you" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المزامنة تحتاج تدخلك"
+          }
+        }
+      }
+    },
+    "Waiting to sync" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بانتظار المزامنة"
+          }
+        }
+      }
+    },
+    "Syncing…" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تجري المزامنة…"
+          }
+        }
+      }
+    },
+    "Sync" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مزامنة"
+          }
+        }
+      }
+    },
+    "Offline" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "غير متصل"
+          }
+        }
+      }
+    },
     "%@ (%@)" : {
       "comment" : "Why a line of a bank file is left out, then what the file says (\"Not booked yet (Pending)\").",
       "localizations" : {
@@ -26403,6 +26793,56 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "••••⁨%1$@⁩ · حُفظ في ⁨%2$@⁩ · آخر استخدام ⁨%3$@⁩"
+          }
+        }
+      }
+    },
+    "Whole budget version" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "نسخة الميزانية الكاملة"
+          }
+        }
+      }
+    },
+    "This choice replaces all budget changes with the selected version." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يستبدل هذا الاختيار جميع تغييرات الميزانية بالنسخة المحددة."
+          }
+        }
+      }
+    },
+    "Accounts: %@; Categories: %@; Transactions: %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الحسابات: ⁨%1$@⁩؛ الفئات: ⁨%2$@⁩؛ المعاملات: ⁨%3$@⁩"
+          }
+        }
+      }
+    },
+    "Transfer status: %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حالة التحويل: ⁨%@⁩"
+          }
+        }
+      }
+    },
+    "Each has its own history, bank links, assistant chats and backups. Hold a budget for library actions. Swipe to move it to Trash." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لكل ميزانية سجلها وروابطها البنكية ومحادثات المساعد والنسخ الاحتياطية الخاصة بها. اضغط مطولًا على ميزانية لإجراءات المكتبة. اسحب لنقلها إلى المهملات."
           }
         }
       }

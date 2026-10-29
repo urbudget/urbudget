@@ -169,6 +169,7 @@ struct ScheduleEditor: View {
             }
         }
         .interactiveDismissDisabled(saving)
+        .retainingEditorDraft("schedule", values: ["account": .string(account), "payee": .string(payee), "transfer": .string(transfer), "nextDate": .string(nextDate), "frequency": .string(frequency), "paused": .bool(paused), "memo": .string(memo), "flag": .string(flag), "amountExpression": .string(pad.text), "direction": .string(direction), "category": .string(category), "splitMode": .bool(splitMode), "splits": .array(splits.map { part in ["category": .string(part.category), "amount": .string(part.amount), "memo": .string(part.memo), "transfer": .string(part.transfer), "payee": .string(part.payee)] })])
         .onAppear(perform: load)
         .task(id: store.version) {
             let budget = budget

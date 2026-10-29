@@ -58,6 +58,7 @@ internal fun CardPaymentSheet(cardId: String, budget: JSONObject, summary: JSONO
     var dating by remember { mutableStateOf(false) }
     var picking by remember { mutableStateOf(false) }
     val amount = when (choice) { "aside" -> aside; "balance" -> owed; else -> pad.cents ?: 0 }
+    retainEditorDraft(vm, "cardPayment", openedBudget, JSONObject().put("cardId", cardId).put("paymentId", paymentId).put("from", from).put("choice", choice).put("expression", pad.text).put("date", date).put("memo", memo))
     if (card == null) { close(); return }
     val pay = {
         runCatching {

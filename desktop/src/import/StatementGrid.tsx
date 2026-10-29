@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, LoaderCircle, MessageSquareText } from "lucide-react";
 import type { BankFixes, BankSession, Statement, StatementLine } from "../bridge";
+import type { Budget } from "../types";
 import { Tabs } from "../ui";
 import { useSteady } from "../useSteady";
 import { LineTable, type LineOps } from "./LineTable";
@@ -16,6 +17,7 @@ type Build = (session: BankSession, statement: Statement) => BankFixes;
  * the dates don't settle. Lines that still need attention stay out of the import.
  */
 export function StatementGrid({
+  budget,
   statement,
   session,
   busy,
@@ -25,6 +27,7 @@ export function StatementGrid({
   onAssistant,
   checking = false,
 }: {
+  budget: Budget;
   statement: Statement;
   session: BankSession;
   /** A change is being applied, or the file read again: nothing else is changed meanwhile. */
@@ -54,7 +57,7 @@ export function StatementGrid({
     return { all: statement.lines.length, attention: statement.counts.attention, leftOut, edited };
   }, [statement]);
   const table = statement.format === "csv";
-  const role = useMemo(() => (table ? roles(statement.headers, statement.columns) : []), [table, statement.headers, statement.columns]);
+  const role = useMemo(() => (table ? roles(statement.headers, statement.columns) : ["date", "payee", "memo", "amount"] as const), [table, statement.headers, statement.columns]);
   const s = session.structure;
 
   // Changes read the import as it is now. Those asked for while another applies wait for it, in
@@ -82,9 +85,10 @@ export function StatementGrid({
       send,
       next,
       // Each from the value it was changed from, so the engine turns away one changed meanwhile.
-      cells: (line, changes) =>
+      cells: (line, changes, fields = []) =>
         onLines([line], ([l]) => ({
           cells: changes.map(({ column, from, to }) => ({ line: l.id, lineVersion: l.version, column, from, to })),
+          ...(fields.length ? { fields: fields.map((f) => ({ ...f, line: l.id, lineVersion: l.version })) } : {}),
         })),
       include: (lines, on) => onLines(lines, (ls) => ({ include: ls.map((l) => ({ line: l.id, lineVersion: l.version, include: on })) })),
       revert: (lines) => onLines(lines, (ls) => ({ revert: ls.map((l) => ({ line: l.id, lineVersion: l.version })) })),
@@ -261,6 +265,7 @@ export function StatementGrid({
         <LineTable
           // Another layout (another header row) is another table, with its own column widths.
           key={statement.headers.join("\u0001")}
+          budget={budget}
           statement={statement}
           lines={lines}
           role={role}

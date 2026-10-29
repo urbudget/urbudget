@@ -6,6 +6,7 @@ import type { AppEnv } from "./env";
 import { SYNC_STATUSES } from "./billing/provider";
 import { refreshGooglePurchases } from "./billing/google";
 import { ApiError, countEvent, jsonBody, now, randomId } from "./util";
+import { reclaimObjects } from "./sync-v2/objects";
 
 const MAX_BYTES = 50 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 1024 * 1024 * 1024;
@@ -31,18 +32,36 @@ const requireSync: MiddlewareHandler<AppEnv> = async (c, next) => {
   await next();
 };
 
-/** Cleanup failures remain queued by the database triggers for the next sweep. */
-async function cleanObjects(env: AppEnv["Bindings"], keys: string[]) {
-  if (!keys.length) return;
-  try {
-    await env.SYNC.delete(keys);
-    await env.DB.batch(keys.map((key) => env.DB.prepare("DELETE FROM sync_object_garbage WHERE object_key = ?1").bind(key)));
-  } catch { /* The durable queue is retried by the scheduler. */ }
+/** Active budgets count toward the library limit; retained trash still occupies storage. */
+export async function syncUsage(db: D1Database, userId: string | null = null) {
+  const query = db.prepare(`SELECT COALESCE(SUM(active),0) AS budgets,
+    COUNT(DISTINCT CASE WHEN active=1 THEN user_id END) AS users,COALESCE(SUM(size),0) AS bytes
+    FROM (SELECT user_id,size,1 AS active FROM sync_budgets
+      UNION ALL SELECT user_id,size,state='active' AS active FROM sync_heads_v2)
+    ${userId === null ? "" : "WHERE user_id=?1"}`);
+  return (userId === null ? query : query.bind(userId)).first<{ budgets: number; users: number; bytes: number }>();
 }
 
-export async function cleanupSyncObjects(env: AppEnv["Bindings"]) {
-  const rows = await env.DB.prepare("SELECT object_key FROM sync_object_garbage ORDER BY created_at LIMIT 100").all<{ object_key: string }>();
-  await cleanObjects(env, rows.results.map((row) => row.object_key));
+/** Cleanup failures remain queued by the database triggers for the next sweep. */
+async function cleanObjects(env: AppEnv["Bindings"], keys: string[]) {
+  await reclaimObjects(env, keys);
+}
+
+export async function cleanupSyncObjects(env: AppEnv["Bindings"], owner?: string) {
+  const deadline = Date.now() + 10_000;
+  let after = "";
+  // Bound each sweep's work and time between batches. Failed keys are retried next
+  // sweep rather than monopolizing its first page. Owner cleanup bypasses backlog.
+  for (let page = 0; page < 20 && Date.now() < deadline; page++) {
+    const rows = await env.DB.prepare(owner
+      ? `SELECT object_key FROM sync_objects_v2 WHERE user_id=?1 AND object_key>?2 ORDER BY object_key LIMIT 1000`
+      : `SELECT object_key FROM sync_object_garbage WHERE object_key>?1 ORDER BY object_key LIMIT 1000`)
+      .bind(...(owner ? [owner, after] : [after])).all<{ object_key: string }>();
+    if (!rows.results.length) break;
+    await cleanObjects(env, rows.results.map(row => row.object_key));
+    after = rows.results.at(-1)!.object_key;
+    if (rows.results.length < 1000) break;
+  }
 }
 
 async function discardObject(env: AppEnv["Bindings"], key: string) {
@@ -83,7 +102,11 @@ async function generationFor(c: Context<AppEnv>) {
 }
 
 export const sync = new Hono<AppEnv>();
-sync.use("*", requireUser, requireSync);
+sync.use("*", requireUser, async (c, next) => {
+  const migrated = await c.env.DB.prepare("SELECT 1 FROM sync_accounts_v2 WHERE user_id=?1 AND protocol=2").bind(c.get("user").id).first();
+  if (migrated) throw new ApiError(426, "sync_upgrade_required", "This account uses sync v2. Update UrBudget to continue syncing; local budgets remain available.");
+  await next();
+}, requireSync);
 
 sync.get("/key", async (c) => {
   const key = await c.env.DB.prepare("SELECT salt, key_check, created_at, generation FROM sync_keys WHERE user_id = ?1")

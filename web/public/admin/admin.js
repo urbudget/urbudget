@@ -671,7 +671,7 @@ async function openAccount(id) {
   }
 }
 
-function renderAccount({ account, subscriptions, sessions, budgets, syncKeySetAt }) {
+function renderAccount({ account, subscriptions, sessions, budgets, syncKeySetAt, syncKeySet }) {
   $("account-title").textContent = account.email;
   const fact = (term, ...value) => [h("dt", {}, term), h("dd", {}, ...value)];
   const seen = sessions.map((s) => s.lastSeenAt).sort().at(-1);
@@ -679,7 +679,7 @@ function renderAccount({ account, subscriptions, sessions, budgets, syncKeySetAt
     ...fact("Created", when(account.createdAt)),
     ...fact("Last seen", seen ? when(seen) : h("span", { class: "muted" }, "Signed out everywhere")),
     ...fact("Polar customer", account.customerId ? h("span", { class: "mono" }, account.customerId) : h("span", { class: "muted" }, "None yet")),
-    ...fact("Sync passphrase", syncKeySetAt ? `Set ${when(syncKeySetAt)}` : h("span", { class: "muted" }, "Not set")),
+    ...fact("Sync passphrase", syncKeySetAt ? `Set ${when(syncKeySetAt)}` : syncKeySet ? "Set" : h("span", { class: "muted" }, "Not set")),
     ...fact("Account id", h("span", { class: "mono" }, account.id)),
   );
   $("account-subscriptions").replaceChildren(
@@ -721,7 +721,7 @@ function renderAccount({ account, subscriptions, sessions, budgets, syncKeySetAt
       h(
         "tr",
         {},
-        h("td", { class: "mono" }, b.id),
+        h("td", { class: "mono" }, b.id, b.state === "trashed" ? h("span", { class: "muted" }, " · In Trash") : null),
         h("td", { class: "num" }, formatBytes(b.size)),
         h("td", { class: "num" }, num(b.revision)),
         h("td", {}, b.device || h("span", { class: "muted" }, "Not known")),

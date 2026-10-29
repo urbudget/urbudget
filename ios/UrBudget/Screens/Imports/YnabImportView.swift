@@ -194,6 +194,7 @@ struct YnabImportView: View {
             pick(.success(opened))
         }
         .interactiveDismissDisabled(busy || reviewing || reading)
+        .retainingEditorDraft("ynabReview", values: ["reviewId": conflicts?["reviewId"] ?? differences?["reviewId"] ?? .null, "choices": .object(choices.mapValues(JSON.string)), "revision": .string(reviewRevision), "plan": .string(planId)], enabled: reviewing)
         .confirmationDialog("Replace this budget?", isPresented: $confirmReplace, titleVisibility: .visible) {
             Button("Replace with “\(preview?.text("name") ?? "YNAB")”", role: .destructive) { replaceBudget() }
         } message: {

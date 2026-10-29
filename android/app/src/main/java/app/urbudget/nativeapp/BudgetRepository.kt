@@ -18,6 +18,7 @@ interface BudgetStorage {
     fun readRecovery(): String? = null
     fun hasRecovery(): Boolean = false
     fun create(json: String) { write(json) }
+    fun createLocal(json: String) { create(json) }
     val identity: String? get() = null
     val revision: String? get() = null
     val managesHistory: Boolean get() = false
@@ -119,11 +120,11 @@ class BudgetRepository(
         snapshot
     }
 
-    suspend fun create(name: String, currency: String, sample: Boolean): BudgetSnapshot = mutex.withLock {
+    suspend fun create(name: String, currency: String, sample: Boolean, localOnly: Boolean = sample): BudgetSnapshot = mutex.withLock {
         val params = JSONObject().put("name", name.trim()).put("currency", currency.uppercase()).put("month", month)
         val value = call(if (sample) "sampleBudget" else "defaultBudget", null, params) as? JSONObject
             ?: error(Words[R.string.model_invalid_budget])
-        persist(value, retainPrevious = true, createNew = true)
+        persist(value, retainPrevious = true, createNew = true, localOnly = localOnly)
     }
 
     suspend fun importBudget(json: String, guard: BudgetReplacementGuard? = null): BudgetSnapshot = mutex.withLock {
@@ -211,12 +212,12 @@ class BudgetRepository(
 
     private fun budget(): JSONObject = current?.let(::JSONObject) ?: error(Words[R.string.model_no_budget])
 
-    private fun persist(value: JSONObject, retainPrevious: Boolean = false, createNew: Boolean = false): BudgetSnapshot {
+    private fun persist(value: JSONObject, retainPrevious: Boolean = false, createNew: Boolean = false, localOnly: Boolean = false): BudgetSnapshot {
         val json = value.toString()
         val prepared = snapshot(json, month)
         if (retainPrevious) current?.let(storage::retainRecovery)
         recoveryReady = storage.hasRecovery()
-        if (createNew) storage.create(json) else storage.write(json)
+        if (createNew && localOnly) storage.createLocal(json) else if (createNew) storage.create(json) else storage.write(json)
         cachedIdentity = storage.identity
         if (!storage.managesHistory) current?.takeIf { it != json }?.let {
             history.addLast(it)

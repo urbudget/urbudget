@@ -1,0 +1,11 @@
+{
+  // Synthetic integration tests only. Never deploy this configuration.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "urbudget-sync-v2-local",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-15",
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": ["/api/*"] },
+  "d1_databases": [{ "binding": "DB", "database_name": "urbudget-sync-v2-local", "database_id": "00000000-0000-0000-0000-000000000002", "migrations_dir": "migrations" }],
+  "r2_buckets": [{ "binding": "SYNC", "bucket_name": "urbudget-sync-v2-local" }, { "binding": "RELEASES", "bucket_name": "urbudget-releases-local" }],
+  "vars": { "APP_URL": "http://127.0.0.1:8788", "EMAIL_FROM": "test@example.test", "SUPPORT_EMAIL": "test@example.test", "BILLING_ENV": "sandbox", "POLAR_PRODUCT_SYNC": "synthetic", "DEV_LOGIN_CODES": "1", "SYNC_V2_ENABLED": "1" }
+}

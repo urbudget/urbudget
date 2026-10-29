@@ -74,3 +74,15 @@ it("passes calculation context as a read argument without changing the draft", a
   await api.push(budget);
   expect(invoke.mock.calls.map(([command]) => command)).toEqual(["load_budget", "preview_auto_assign_result"]);
 });
+
+it("preserves local-only creation for private budgets, fresh starts and samples", async () => {
+  const { api } = await import("./bridge");
+  await api.createBudget(budget, undefined, true);
+  expect(invoke).toHaveBeenLastCalledWith("create_budget", {budget, localOnly: true});
+  await api.load();
+  await api.createBudget(budget, {budget, token: "source:1"}, true);
+  expect(invoke).toHaveBeenLastCalledWith("create_budget", {budget, localOnly: true, freshStartToken: "source:1", patch: null});
+  const sample = {...budget, sample: {from: "source"}};
+  await api.createBudget(sample);
+  expect(invoke).toHaveBeenLastCalledWith("create_budget", {budget: sample, localOnly: true});
+});

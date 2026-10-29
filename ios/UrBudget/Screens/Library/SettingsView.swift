@@ -11,6 +11,7 @@ struct SettingsView: View {
     /// Read by the transaction editor, as the desktop's preference of the same name.
     @AppStorage("newCleared") private var newCleared = false
     @State private var name = ""
+    @State private var namingIdentity: String?
     @FocusState private var naming: Bool
     @State private var nameError: String?
     @State private var editingFlags = false
@@ -55,7 +56,8 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings & data")
         .inlineTitle()
-        .onAppear { name = store.budget?.text("name") ?? "" }
+        .onAppear { namingIdentity = store.identity; name = store.budget?.text("name") ?? "" }
+        .retainingEditorDraft("budgetName", values: ["name": .string(name)], enabled: naming)
         .onChange(of: store.version) { if !naming { name = store.budget?.text("name") ?? "" } }
         .onChange(of: naming) { _, focused in if !focused { commitName() } }
         .onDisappear { commitName() }
@@ -293,7 +295,7 @@ struct SettingsView: View {
     // MARK: Actions
 
     private func commitName() {
-        guard let saved = store.budget?.text("name") else { return }
+        guard namingIdentity == store.identity, let saved = store.budget?.text("name") else { return }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed != saved else { nameError = nil; return }
         guard LibrarySettings.validName(trimmed) else {
@@ -368,6 +370,7 @@ private struct FlagNamesForm: View {
             }
         }
         .presentationDetents([.medium, .large])
+        .retainingEditorDraft("flagNames", values: .object(names.mapValues(JSON.string)))
         .onAppear {
             guard !started else { return }
             started = true

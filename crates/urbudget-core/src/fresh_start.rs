@@ -161,6 +161,7 @@ mod tests {
         bank_import::review(b, "cash", vec![BankTransaction {
             fit: format!("simplefin:checking:{fit}"), date: "2026-10-15".into(),
             payee: "Shop".into(), memo: "".into(), amount: -5000,
+            transfer_account_id: None,
         }]).unwrap()
     }
 

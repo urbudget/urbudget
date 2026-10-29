@@ -33,6 +33,9 @@ vi.mock("./useBudget", async (importOriginal) => ({
     fetchDatabase: state.fetch,
     dirty: () => state.dirty,
     setExitTask: () => {},
+    setExitDrain: () => {},
+    refreshDatabase: state.fetch,
+    canAdoptIncoming: () => !state.dirty,
   }),
 }));
 vi.mock("./bridge", async (importOriginal) => {

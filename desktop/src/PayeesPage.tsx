@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
 import { Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { useEditorCheckpoint } from "./editorCheckpoint";
 import { api } from "./bridge";
 import { normalizePayee, ruleChanges, ruleFor } from "./bankNames";
 import { payeeIndex } from "./payees";
@@ -12,6 +13,7 @@ import { formatCount, list as listOf, t, tn } from "./i18n";
 import "./pages.css";
 
 type Props = {
+  budgetId?: string;
   budget: Budget;
   edit: (fn: (b: Budget) => void) => void;
   transform: (fn: (b: Budget) => Promise<Budget>) => Promise<void>;
@@ -86,13 +88,14 @@ export function Payees(props: Props) {
   );
 }
 
-function PayeeManager({ budget, edit, transform, undo, payees }: Props & { payees: ReturnType<typeof payeeIndex> }) {
+function PayeeManager({ budgetId = "", budget, edit, transform, undo, payees }: Props & { payees: ReturnType<typeof payeeIndex> }) {
   const toast = useToast();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [mergeInto, setMergeInto] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  useEditorCheckpoint(budgetId, newName || mergeInto ? "payee" : null, {payees: budget.payees}, e => toast({message:errorText(e),tone:"error"}), {selected,newName,mergeInto}, ".payees-page input, .payees-page select");
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase();
     return q ? payees.filter((p) => p.name.toLowerCase().includes(q)) : payees;
@@ -259,7 +262,7 @@ function PayeeManager({ budget, edit, transform, undo, payees }: Props & { payee
             </small>
           </div>
 
-          <BankNames budget={budget} edit={edit} transform={transform} undo={undo} payee={current.name} />
+          <BankNames budgetId={budgetId} budget={budget} edit={edit} transform={transform} undo={undo} payee={current.name} />
 
           <form
             className="field"
@@ -345,10 +348,11 @@ function PayeeManager({ budget, edit, transform, undo, payees }: Props & { payee
  * The names a payee goes by in bank files: the rules that give it this name, the bank text on
  * its transactions that no rule covers yet, and a way to apply them to earlier transactions.
  */
-function BankNames({ budget, edit, transform, undo, payee }: Props & { payee: string }) {
+function BankNames({ budgetId = "", budget, edit, transform, undo, payee }: Props & { payee: string }) {
   const toast = useToast();
   const reapply = useReapply({ transform, undo });
   const [text, setText] = useState("");
+  useEditorCheckpoint(budgetId, text ? "bankNames" : null, {payee}, e => toast({message:errorText(e),tone:"error"}), {payee,text}, ".bank-names input");
   const [error, setError] = useState("");
   const rules = useMemo(() => (budget.payeeRules ?? []).filter((r) => r.payee === payee), [budget.payeeRules, payee]);
   const categoryName = (id: string) => budget.categories.find((c) => c.id === id)?.name ?? t("Deleted category");
@@ -467,24 +471,29 @@ function BankNames({ budget, edit, transform, undo, payee }: Props & { payee: st
 }
 
 function RuleEditor({
+  budgetId = "",
   budget,
   initial,
   onSave,
   onCancel,
 }: {
+  budgetId?: string;
   budget: Budget;
   initial?: Rule;
   onSave: (rule: Rule) => void;
   onCancel?: () => void;
 }) {
+  const toast = useToast();
   const [match, setMatch] = useState(initial?.match ?? "");
   const [payee, setPayee] = useState(initial?.payee ?? "");
   const [category, setCategory] = useState<string | null>(initial?.categoryId ?? null);
   const [error, setError] = useState("");
+  const draft = useEditorCheckpoint(budgetId, match !== (initial?.match ?? "") || payee !== (initial?.payee ?? "") || category !== (initial?.categoryId ?? null) ? "payeeRule" : null, initial, e => toast({message:errorText(e),tone:"error"}), {match,payee,category}, ".rule-editor input, .rule-editor select");
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (!match.trim()) return setError(t("Enter the text to look for in the bank's payee."));
     if (!payee.trim() && !category) return setError(t("Choose a new name, a category, or both."));
+    draft.discard();
     onSave({ id: initial?.id ?? id(), match: match.trim(), payee: payee.trim(), categoryId: category });
     if (!initial) {
       setMatch("");
@@ -516,7 +525,7 @@ function RuleEditor({
       </div>
       <div className="rule-editor-actions">
         {onCancel && (
-          <button type="button" className="secondary" onClick={onCancel}>
+          <button type="button" className="secondary" onClick={() => { draft.discard(); onCancel?.(); }}>
             {t("Cancel")}
           </button>
         )}
@@ -537,7 +546,7 @@ function RuleEditor({
   );
 }
 
-function RuleList({ budget, edit, transform, undo }: Props) {
+function RuleList({ budgetId = "", budget, edit, transform, undo }: Props) {
   const toast = useToast();
   const reapply = useReapply({ transform, undo });
   const [editing, setEditing] = useState<string | null>(null);
@@ -553,7 +562,7 @@ function RuleList({ budget, edit, transform, undo }: Props) {
         <p className="help">
           {t("Rules apply to new transactions, whether imported from a bank file or entered by hand. A rule matches when the bank's payee contains its text, ignoring case and punctuation; when several match, the longest wins. It renames the payee and fills in the category if there's none: the rule's, or else the payee's default.")}
         </p>
-        <RuleEditor budget={budget} onSave={(rule) => edit((d) => void (d.payeeRules ??= []).push(rule))} />
+        <RuleEditor budgetId={budgetId} budget={budget} onSave={(rule) => edit((d) => void (d.payeeRules ??= []).push(rule))} />
       </section>
       {pending > 0 && (
         <div className="rule-apply">
@@ -590,6 +599,7 @@ function RuleList({ budget, edit, transform, undo }: Props) {
                   <tr key={r.id}>
                     <td colSpan={6}>
                       <RuleEditor
+                        budgetId={budgetId}
                         budget={budget}
                         initial={r}
                         onCancel={() => setEditing(null)}

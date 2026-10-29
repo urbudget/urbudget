@@ -224,7 +224,8 @@ export function ImportReview({
     const chosen = choice(r).startsWith("match:") ? choice(r).slice(6) : null;
     return chosen && !list.includes(chosen) ? [...list, chosen] : list;
   };
-  const transfer = (r: BankRow, c: string) => c.startsWith("match:") && !!r.transferCandidates?.includes(c.slice(6));
+  const transfer = (r: BankRow, c: string) => c !== "skip" && c !== "review" &&
+    (!!r.transferAccountId || c.startsWith("match:") && !!r.transferCandidates?.includes(c.slice(6)));
   const importing = rows.filter((r) => choice(r) !== "skip").length;
   const transfers = rows.filter((r) => transfer(r, choice(r))).length;
   // Every row still to decide, the same way.
@@ -294,12 +295,16 @@ export function ImportReview({
             )}
             {rows.slice(inView.start, inView.end).map((r, i) => {
               const index = inView.start + i;
+              const destination = r.transferAccountId && (accountNames.get(r.transferAccountId) ?? r.transferAccountId);
+              const transferLabel = destination && (r.amount < 0
+                ? t("Transfer to {account}", { account: destination })
+                : t("Transfer from {account}", { account: destination }));
               return (
                 <tr key={`${r.id}:${index}`} className={r.duplicate ? "muted" : ""}>
                   <td>{formatDate(r.date)}</td>
                   <td title={r.rename ? t("{name}, from the bank's “{payee}”", { name: r.rename, payee: r.payee }) : undefined}>
-                    {r.rename ?? r.payee}
-                    {r.rename && <small className="bank-text">{r.payee}</small>}
+                    {transferLabel || r.rename || r.payee}
+                    {(r.rename || transferLabel) && r.payee && <small className="bank-text">{r.payee}</small>}
                     {r.memo && <small className="bank-text" title={r.memo}>{r.memo}</small>}
                     {r.refundOf && !r.duplicate && (
                       <small className="refund-note">
@@ -329,7 +334,7 @@ export function ImportReview({
                         )}
                         {r.duplicate
                           ? <option value="separate">{t("Add as a separate transaction")}</option>
-                          : <option value="new">{t("Add as a new transaction")}</option>}
+                          : <option value="new">{transferLabel ? t("Add as a transfer") : t("Add as a new transaction")}</option>}
                         <option value="skip">{r.duplicate ? t("Already imported — skip") : t("Skip")}</option>
                         {(r.duplicate ? [] : listed(r)).map((id) => {
                           const detail = r.candidateDetails?.find((c) => c.id === id);

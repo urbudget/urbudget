@@ -19,6 +19,7 @@ recovery.json
 
 # Stray installs at the repository root
 /node_modules/
+/target/
 
 # Local QA evidence and disposable captures; retention policy: docs/ARTIFACTS.md.
 /reports/

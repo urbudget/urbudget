@@ -87,6 +87,17 @@ jobs:
           includeUpdaterJson: false
           args: ${{ matrix.args }}
 
+      # The same NSIS bytes tauri-action attached to the draft, transferred without draft-write access.
+      - name: Preserve the Windows installer for isolated smoke
+        if: matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release-installer-${{ github.run_id }}
+          path: desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
       # Windows: the same build packed as an MSIX for the Microsoft Store (unsigned; the Store
       # signs it). Upload it in Partner Center → UrBudget → submission → Packages.
       - name: Pack the Microsoft Store package
@@ -103,3 +114,51 @@ jobs:
         run: |
           version=$(node -p "require('./src-tauri/tauri.conf.json').version")
           gh release upload "desktop-v$version" "src-tauri/target/msix/UrBudget_${version}_x64.msix" --clobber
+
+  windows-smoke:
+    name: Installed Windows release smoke
+    # Wait for both installer jobs; use the same NSIS output attached to the draft release.
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Prepare isolated runner evidence
+        shell: pwsh
+        run: |
+          $evidence = Join-Path $env:RUNNER_TEMP 'urbudget-release-smoke-evidence'
+          New-Item -ItemType Directory -Path $evidence -Force | Out-Null
+          'Installer smoke has not run yet.' | Set-Content (Join-Path $evidence 'started.txt')
+      - name: Download the exact Windows release installer
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-release-installer-${{ github.run_id }}
+          path: ${{ runner.temp }}/urbudget-release-smoke-download/
+      - name: Locate the release installer
+        shell: pwsh
+        run: |
+          $version = (Get-Content desktop/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $download = Join-Path $env:RUNNER_TEMP 'urbudget-release-smoke-download'
+          $installers = @(Get-ChildItem -LiteralPath $download -File -Filter '*-setup.exe')
+          if ($installers.Count -ne 1) { throw 'Expected exactly one Windows release installer.' }
+          "SMOKE_INSTALLER=$($installers[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "SMOKE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Verify installed release assets and local persistence
+        timeout-minutes: 4
+        shell: pwsh
+        run: |
+          node desktop/scripts/qa/release-windows.mjs --installer "$env:SMOKE_INSTALLER" --version "$env:SMOKE_VERSION" --evidence "$env:RUNNER_TEMP/urbudget-release-smoke-evidence"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload release smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release-smoke-${{ github.run_id }}
+          path: ${{ runner.temp }}/urbudget-release-smoke-evidence/
+          if-no-files-found: error
+          retention-days: 14

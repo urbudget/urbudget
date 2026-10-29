@@ -27,6 +27,12 @@ pub struct Move {
 #[serde(rename_all = "camelCase")]
 pub struct Edit {
     pub id: String,
+    /// The signed total, from the transaction's recorded account.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub amount: Option<i64>,
+    /// The total when proposed: an amount changed meanwhile must not be overwritten.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_amount: Option<i64>,
     /// Some(None) sets Ready to Assign.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub category: Option<Option<String>>,
@@ -107,10 +113,16 @@ impl ImportFile {
     /// The CSV the bank import reads: ISO dates and one signed amount column.
     pub fn csv(&self) -> Result<String, String> {
         let mut w = csv::Writer::from_writer(vec![]);
-        w.write_record(["Date", "Payee", "Memo", "Amount"]).map_err(|e| e.to_string())?;
+        // Preserve old files exactly when there are no explicit transfers.
+        let transfers = self.rows.iter().any(|r| r.transfer_account_id.is_some());
+        let mut headers = vec!["Date", "Payee", "Memo", "Amount"];
+        if transfers { headers.push("TransferAccountId"); }
+        w.write_record(headers).map_err(|e| e.to_string())?;
         for r in &self.rows {
-            w.write_record([r.date.as_str(), r.payee.as_str(), r.memo.as_str(), money(r.amount).as_str()])
-                .map_err(|e| e.to_string())?;
+            let amount = money(r.amount);
+            let mut cells = vec![r.date.as_str(), r.payee.as_str(), r.memo.as_str(), amount.as_str()];
+            if transfers { cells.push(r.transfer_account_id.as_deref().unwrap_or_default()); }
+            w.write_record(cells).map_err(|e| e.to_string())?;
         }
         String::from_utf8(w.into_inner().map_err(|e| e.to_string())?).map_err(|e| e.to_string())
     }
@@ -397,6 +409,23 @@ impl Change {
                         .iter_mut()
                         .find(|t| t.id == e.id)
                         .ok_or_else(|| t!("A transaction in this proposal was deleted."))?;
+                    if let Some(amount) = e.amount {
+                        if amount == 0 {
+                            return Err(t!("Enter an amount other than zero."));
+                        }
+                        if t.splits.len() > 1 || t.splits.iter().any(|s| ledger::transfer(s).is_some()) {
+                            return Err(t!("{payee} on {date} has split amounts. Edit its splits in the register so they add up to the new total.", payee = t.payee, date = t.date));
+                        }
+                        if e.previous_amount.is_some_and(|was| t.amount != was && t.amount != amount) {
+                            return Err(t!("{payee} on {date} has a different amount now. Ask for a new proposal using its current amount.", payee = t.payee, date = t.date));
+                        }
+                        t.amount = amount;
+                        // Whole transfers have no category within the budget, and one when
+                        // crossing its edge. A normal transaction has its one category split.
+                        if let Some(split) = t.splits.first_mut() {
+                            split.amount = amount;
+                        }
+                    }
                     if let Some(category) = &e.category {
                         if t.transfer_account_id.is_some() || t.splits.len() != 1 || ledger::transfer(&t.splits[0]).is_some() {
                             return Err(t!("{payee} on {date} is now a split or a transfer.", payee = t.payee, date = t.date));
@@ -758,21 +787,34 @@ impl Change {
                 Change::Moves { month: month.clone(), moves }
             }
             Change::AutoAssign { .. } => self.clone(),
-            Change::Edits { edits, rules } => Change::Edits {
-                edits: edits
-                    .iter()
-                    .filter(|e| !r.skips(&format!("t:{}", e.id)))
-                    .map(|e| {
-                        let mut e = e.clone();
-                        if let Some(category) = r.get(&format!("t:{}", e.id)).and_then(|s| s.category.clone()).filter(|_| e.category.is_some()) {
-                            e.category = Some(category);
-                            // The user chose it: nothing to check any more.
-                            e.unsure = false;
+            Change::Edits { edits, rules } => {
+                for given in &r.set {
+                    if let Some(edit) = given.key.strip_prefix("t:").and_then(|id| edits.iter().find(|e| e.id == id)) {
+                        if given.amount.is_some() && edit.amount.is_none() {
+                            return Err(t!("This card doesn't propose an amount change for {label}. Ask for a new proposal.", label = label(&given.key)));
                         }
-                        e
-                    })
-                    .collect(),
-                rules: rules.iter().filter(|x| !r.skips(&format!("r:{}", x.id))).cloned().collect(),
+                    }
+                }
+                Change::Edits {
+                    edits: edits
+                        .iter()
+                        .filter(|e| !r.skips(&format!("t:{}", e.id)))
+                        .map(|e| {
+                            let mut e = e.clone();
+                            if let Some(category) = r.get(&format!("t:{}", e.id)).and_then(|s| s.category.clone()).filter(|_| e.category.is_some()) {
+                                e.category = Some(category);
+                                // The user chose it: nothing to check any more.
+                                e.unsure = false;
+                            }
+                            if let Some(amount) = r.get(&format!("t:{}", e.id)).and_then(|s| s.amount).filter(|_| e.amount.is_some()) {
+                                e.amount = Some(amount);
+                                e.unsure = false;
+                            }
+                            e
+                        })
+                        .collect(),
+                    rules: rules.iter().filter(|x| !r.skips(&format!("r:{}", x.id))).cloned().collect(),
+                }
             },
             Change::Add { account, transactions, from_file } => {
                 let zero = |key: &str| t!("{label}'s amount can't be zero: leave it out instead.", label = label(key));
@@ -865,6 +907,7 @@ pub fn fix_label(line: &str, field: crate::bank_statement::Field, from: &str, to
         Field::Payee => t!("Line {line} · payee: {from} \u{2192} {to}", line, from, to),
         Field::Memo => t!("Line {line} · memo: {from} \u{2192} {to}", line, from, to),
         Field::Amount => t!("Line {line} · amount: {from} \u{2192} {to}", line, from, to),
+        Field::TransferAccountId => t!("Line {line} · transfer account: {from} \u{2192} {to}", line, from, to),
     }
 }
 pub fn field_name(field: crate::bank_statement::Field) -> &'static str {
@@ -874,6 +917,7 @@ pub fn field_name(field: crate::bank_statement::Field) -> &'static str {
         Field::Payee => "payee",
         Field::Memo => "memo",
         Field::Amount => "amount",
+        Field::TransferAccountId => "transferAccountId",
     }
 }
 
@@ -1035,6 +1079,8 @@ fn card_as(change: &Change, before: &Budget, after: &Budget, single: Option<bool
                     label: format!("{} · {}", new.payee, short_date(&new.date)),
                     detail: Some(parts.join(" · ")),
                     amount: Some(new.amount),
+                    before: e.amount.map(|_| old.amount),
+                    after: e.amount.map(|_| new.amount),
                     badge: if e.unsure {
                         Some(t!("Check this"))
                     } else {
@@ -1042,10 +1088,10 @@ fn card_as(change: &Change, before: &Budget, after: &Budget, single: Option<bool
                     },
                     tone: e.unsure.then(|| "warn".into()),
                     key: Some(format!("t:{}", e.id)),
-                    edit: e.category.is_some().then(|| RowEdit {
-                        category: true,
+                    edit: (e.category.is_some() || e.amount.is_some()).then(|| RowEdit {
+                        category: e.category.is_some(),
                         category_id: new.splits.first().and_then(|s| s.category_id.clone()),
-                        ..RowEdit::default()
+                        amount: e.amount.is_some(),
                     }),
                     ..Row::default()
                 });
@@ -1330,6 +1376,8 @@ mod tests {
         let change = Change::Edits {
             edits: vec![Edit {
                 id: "t2".into(),
+                amount: None,
+                previous_amount: None,
                 category: Some(Some("coffee".into())),
                 payee: None,
                 memo: None,
@@ -1385,8 +1433,8 @@ mod tests {
     fn imports_check_totals_against_the_statement() {
         let b = sample();
         let rows = vec![
-            ImportRow { date: "2026-10-01".into(), payee: "Salary".into(), memo: String::new(), amount: 500000 },
-            ImportRow { date: "2026-10-03".into(), payee: "Bistro".into(), memo: String::new(), amount: -124000 },
+            ImportRow { date: "2026-10-01".into(), payee: "Salary".into(), memo: String::new(), amount: 500000, transfer_account_id: None },
+            ImportRow { date: "2026-10-03".into(), payee: "Bistro".into(), memo: String::new(), amount: -124000, transfer_account_id: None },
         ];
         let p = build_import(
             "checking",
@@ -1474,8 +1522,8 @@ mod tests {
         let b = sample();
         let change = Change::Edits {
             edits: vec![
-                Edit { id: "t1".into(), category: None, payee: None, memo: Some("team lunch".into()), cleared: None, approve: false, flag: None, unsure: false },
-                Edit { id: "t2".into(), category: Some(Some("coffee".into())), payee: Some("Bakery".into()), memo: None, cleared: None, approve: true, flag: None, unsure: true },
+                Edit { id: "t1".into(), amount: None, previous_amount: None, category: None, payee: None, memo: Some("team lunch".into()), cleared: None, approve: false, flag: None, unsure: false },
+                Edit { id: "t2".into(), amount: None, previous_amount: None, category: Some(Some("coffee".into())), payee: Some("Bakery".into()), memo: None, cleared: None, approve: true, flag: None, unsure: true },
             ],
             rules: vec![Rule { id: "r1".into(), matching: "bakery".into(), payee: String::new(), category: Some("coffee".into()) }],
         };
@@ -1484,6 +1532,11 @@ mod tests {
         assert_eq!(row(&p, "t:t2").detail.as_deref(), Some("Uncategorized \u{2192} Coffee · Payee: Corner Bakery \u{2192} Bakery · Approve"));
         assert_eq!(row(&p, "t:t1").detail.as_deref(), Some("Memo: team lunch"));
         assert!(row(&p, "t:t1").edit.is_none());
+        let unsupported = Revision {
+            set: vec![RowSet { key: "t:t1".into(), amount: Some(-120000), ..RowSet::default() }],
+            ..Revision::default()
+        };
+        assert!(revise(&p, unsupported, &b).unwrap_err().contains("doesn't propose an amount change"));
         assert_eq!(row(&p, "t:t2").edit.as_ref().unwrap().category_id.as_deref(), Some("coffee"));
         assert_eq!(row(&p, "r:r1").badge.as_deref(), Some("rule"));
         let revision = Revision {
@@ -1513,6 +1566,76 @@ mod tests {
         let Some(Change::Edits { edits, .. }) = &r.change else { panic!() };
         assert_eq!(edits[1].category, Some(None));
         assert_eq!(row(&r, "t:t2").edit.as_ref().unwrap().category_id, None);
+    }
+
+    fn amount_edit(b: &Budget, amount: i64) -> Proposal {
+        build(Change::Edits {
+            edits: vec![Edit {
+                id: "t1".into(), amount: Some(amount), previous_amount: Some(b.transactions[0].amount),
+                category: None, payee: None, memo: None, cleared: None, approve: false, flag: None, unsure: true,
+            }],
+            rules: vec![],
+        }, "Correct the amount".into(), b).unwrap()
+    }
+
+    #[test]
+    fn existing_amount_edits_can_be_revised_and_left_out_without_losing_the_original() {
+        let b = sample();
+        let p = amount_edit(&b, -120000);
+        let revision = Revision { set: vec![RowSet { key: "t:t1".into(), amount: Some(-119930), ..RowSet::default() }], ..Revision::default() };
+        let q = revise(&p, revision, &b).unwrap();
+        let shown = row(&q, "t:t1");
+        assert_eq!((shown.before, shown.after, shown.amount), (Some(-124000), Some(-119930), Some(-119930)));
+        assert!(shown.edit.as_ref().unwrap().amount && shown.edited);
+        assert!(shown.badge.is_none());
+        let after = applied(&q, &b);
+        assert_eq!((after.transactions[0].amount, after.transactions[0].splits[0].amount), (-119930, -119930));
+        let restore = revise(&q, Revision::default(), &b).unwrap();
+        assert_eq!(applied(&restore, &b).transactions[0].amount, -120000);
+        let skipped = revise(&q, skip(&["t:t1"]), &b).unwrap();
+        assert!(skipped.expected.is_none() && row(&skipped, "t:t1").skipped);
+        for amount in [0, i64::MAX] {
+            let invalid = Revision { set: vec![RowSet { key: "t:t1".into(), amount: Some(amount), ..RowSet::default() }], ..Revision::default() };
+            assert!(revise(&p, invalid, &b).is_err());
+        }
+    }
+
+    #[test]
+    fn an_amount_changed_since_the_proposal_cannot_be_silently_overwritten() {
+        let b = sample();
+        let p = amount_edit(&b, -120000);
+        assert!(matches!(recheck(&p, &b), Recheck::Same(_)));
+        let mut current = b.clone();
+        current.transactions[0].amount = -125000;
+        current.transactions[0].splits[0].amount = -125000;
+        let Recheck::Changed(refreshed) = recheck(&p, &current) else { panic!("must not silently replace a later correction") };
+        assert_eq!(refreshed.status, Status::Failed);
+        assert!(refreshed.problem.unwrap().contains("different amount now"));
+        assert!(revise(&p, Revision::default(), &current).is_err());
+        // Already applied remains an ordinary handled proposal, not another change.
+        let after = applied(&p, &b);
+        let Recheck::Changed(again) = recheck(&p, &after) else { panic!("must not apply twice") };
+        assert_eq!(again.status, Status::Failed);
+        assert!(again.problem.unwrap().contains("already has these changes"));
+    }
+
+    #[test]
+    fn changing_a_whole_transfer_across_the_budget_edge_keeps_its_category() {
+        let mut b = sample();
+        b.accounts.push(Account {
+            id: "tracking".into(), name: "Tracking".into(), kind: AccountKind::Tracking,
+            opening_balance: 0, archived: false, extra: Default::default(),
+        });
+        let transaction = &mut b.transactions[0];
+        transaction.transfer_account_id = Some("tracking".into());
+        transaction.transfer_status = Some(Cleared::Cleared);
+        transaction.payee.clear();
+        let p = amount_edit(&b, -120000);
+        let after = applied(&p, &b);
+        let t = &after.transactions[0];
+        assert_eq!(t.transfer_account_id.as_deref(), Some("tracking"));
+        assert_eq!((t.amount, t.splits[0].amount), (-120000, -120000));
+        assert_eq!(t.splits[0].category_id.as_deref(), Some("dining"));
     }
 
     #[test]

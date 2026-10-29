@@ -58,6 +58,13 @@ export function useBudget(month: string, editorOpen = false) {
   const updateReadyToClose = useRef(false);
   /** Runs after everything is saved when the window closes, such as installing an update. */
   const exitTask = useRef<(() => Promise<unknown>) | null>(null);
+  const exitDrain = useRef<(() => Promise<unknown>) | null>(null);
+  const drainBeforeExit = async () => {
+    if (!exitDrain.current) return;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try { await Promise.race([exitDrain.current().catch(() => {}), new Promise<void>((resolve) => { timeout = setTimeout(resolve, 3000); })]); }
+    finally { clearTimeout(timeout); }
+  };
   const [error, setError] = useState("");
   const [metadata, setMetadata] = useState<DatabaseStatus | null>(null);
   const [recovery, setRecovery] = useState<Recovery | null>(null);
@@ -98,7 +105,7 @@ export function useBudget(month: string, editorOpen = false) {
         if (r.recoveryError) setError(t(RECOVERY_ERROR));
       })
       .catch(() => setError(t(RECOVERY_ERROR)));
-  const accept = useCallback((b: Budget, status: DatabaseStatus) => {
+  const accept = useCallback((b: Budget | null, status: DatabaseStatus) => {
     past.current = [];
     future.current = [];
     updateHistory();
@@ -253,6 +260,16 @@ export function useBudget(month: string, editorOpen = false) {
     }
   }, [accept]);
 
+  /** Background adoption never resolves a recovery choice or discards an editor. */
+  const canAdoptIncoming = () => recoveryReady && !pendingRecovery.current && !editing.current && !dirty() && !running.current && !operationRef.current;
+  const refreshDatabase = async () => {
+    if (!canAdoptIncoming()) return;
+    const expected = token.current;
+    const data = await api.load();
+    if (canAdoptIncoming() && token.current === expected) accept(data.budget, data);
+    else if (current.current && dirty()) await push(current.current);
+  };
+
   useEffect(() => {
     if (!desktop) {
       setSync("error");
@@ -385,6 +402,7 @@ export function useBudget(month: string, editorOpen = false) {
   const prepareExit = useCallback(async (): Promise<boolean> => {
     if (operationRef.current || !(await flush())) return false;
     await backupOnClose();
+    await drainBeforeExit();
     return true;
   }, [flush]);
 
@@ -413,6 +431,7 @@ export function useBudget(month: string, editorOpen = false) {
             await exclusive(msg("Installing the update…"), async () => {
               saved = true;
               await backupOnClose();
+              await drainBeforeExit();
               updateReadyToClose.current = true;
               await Promise.race([task().catch(() => {}), new Promise((done) => setTimeout(done, EXIT_UPDATE_WAIT))]);
               await getCurrentWindow().destroy();
@@ -424,7 +443,7 @@ export function useBudget(month: string, editorOpen = false) {
           }
           return;
         }
-        if (pendingRecovery.current || dirty() || running.current || getPref("backupOnClose")) {
+        if (exitDrain.current || pendingRecovery.current || dirty() || running.current || getPref("backupOnClose")) {
           event.preventDefault();
           if (await prepareExit()) await getCurrentWindow().destroy();
           else setError(t(NOT_SAVED_ON_CLOSE));
@@ -556,9 +575,10 @@ export function useBudget(month: string, editorOpen = false) {
   }, [budget, accept, recoveryReady]);
 
   /** Saves the open budget, then opens another one and offers its recovery file, if any. */
-  const switchBudget = (id: string) =>
+  const switchBudget = (id: string, reviewDeletion = false) =>
     exclusive(msg("Opening budget…"), async () => {
-      const data = await api.openBudget(id);
+      if (reviewDeletion) await api.libraryAction("review_deletion", id);
+      const data = reviewDeletion ? await api.load() : await api.openBudget(id);
       setCalculated(null);
       accept(data.budget, data);
       setRecovery(null);
@@ -610,6 +630,7 @@ export function useBudget(month: string, editorOpen = false) {
     installUpdate: (install: () => Promise<void>) =>
       exclusive(msg("Installing the update…"), async () => {
         await backupOnClose();
+        await drainBeforeExit();
         updateReadyToClose.current = true;
         try { await install(); } finally { updateReadyToClose.current = false; }
       }),
@@ -630,6 +651,9 @@ export function useBudget(month: string, editorOpen = false) {
     setExitTask: (task: (() => Promise<unknown>) | null) => {
       exitTask.current = task;
     },
+    setExitDrain: (task: (() => Promise<unknown>) | null) => { exitDrain.current = task; },
+    canAdoptIncoming,
+    refreshDatabase,
     fetchDatabase,
     restoreRecovery,
     dirty,

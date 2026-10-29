@@ -1942,4 +1942,36 @@
     <string name="chart_and">%1$s and %2$s</string>
     <!-- A chart's spoken description: the series it shows, by month. -->
     <string name="chart_by_month">%1$s by month</string>
+    <string name="library_trash">Trash</string>
+    <string name="library_remote">Available to download</string>
+    <string name="library_remove_download">Remove download</string>
+    <string name="library_recover_copy">Recover as a new budget</string>
+    <string name="library_add_account">Add to account sync</string>
+    <string name="library_move_trash">Move to Trash</string>
+    <string name="library_trash_message">Account budgets move to Trash on every device. You can restore them from the library. Local-only budgets stay private.</string>
+    <string name="sync_status_paused">Sync paused</string>
+    <string name="sync_status_attention">Sync needs you</string>
+    <string name="sync_status_offline">Offline</string>
+    <string name="sync_status_waiting">Waiting to sync</string>
+    <string name="sync_status_device">Saved on device</string>
+    <string name="sync_status_synced">Synced</string>
+    <string name="library_unfinished_edits">Recover unfinished edits</string>
+    <string name="library_discard_edits">Discard these edits</string>
+    <string name="library_keep_local">Keep this budget only on this device</string>
+    <string name="cloud_legacy_library">Automatic budget discovery is not enabled for this account yet. Existing budgets keep syncing; use the controls below to add or download budgets.</string>
+    <string name="library_available_online">Available online</string>
+    <string name="library_review_newer">Review newer version</string>
+    <string name="library_deletion_conflict">Newer changes need review before deletion</string>
+    <string name="conflict_month_total">Month total: %1$s → %2$s</string>
+    <string name="conflict_ready_change">Ready to Assign change: %1$s</string>
+    <string name="conflict_moves">Moves: %1$s</string>
+    <string name="conflict_amount_change">Change: %1$s</string>
+    <string name="conflict_whole_budget">Whole budget version</string>
+    <string name="conflict_whole_budget_help">This choice replaces all budget changes with the selected version.</string>
+    <string name="conflict_budget_counts">Accounts: %1$s; Categories: %2$s; Transactions: %3$s</string>
+    <string name="editor_checkpoint_failed">Could not preserve unfinished edits</string>
+    <string name="editor_budget_missing">The budget for this editor is no longer in the library.</string>
+    <string name="conflict_transfer_account">Transfer: %1$s</string>
+    <string name="conflict_transfer_status">Transfer status: %1$s</string>
+    <string name="conflict_ready_to_assign">Ready to Assign</string>
 </resources>

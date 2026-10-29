@@ -9,6 +9,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -25,7 +27,16 @@ object NativeServices {
     private val readEpoch = AtomicLong()
     private val automaticSyncRunning = AtomicBoolean(false)
     val saved = savedSource.asSharedFlow()
-    fun notifySaved() { savedSource.tryEmit(Unit) }
+    private val syncCompletedSource = MutableSharedFlow<JSONObject>(replay = 1, extraBufferCapacity = 16)
+    val syncCompleted = syncCompletedSource.asSharedFlow()
+    @Volatile private var application: Context? = null
+    private val syncStatusSource = MutableStateFlow<JSONObject?>(null)
+    val syncStatus = syncStatusSource.asStateFlow()
+    fun notifySaved() {
+        syncStatusSource.value?.let { syncStatusSource.value = JSONObject(it.toString()).put("libraryPending", true) }
+        savedSource.tryEmit(Unit)
+        application?.let { SyncWorker.enqueue(it) }
+    }
     /** The interface's language, "en" or "ar", for the engine's own messages (docs/LOCALIZATION.md). */
     @Volatile private var language: String? = null
     /** One at a time and in order, so the engine always ends on the latest language. */
@@ -38,6 +49,8 @@ object NativeServices {
         val directory = if (File(context.filesDir, "budgets.json").exists() || File(context.filesDir, "budget.sqlite3").exists()) context.filesDir else File(context.filesDir, "native")
         decode(NativeBridge.initialize(context.applicationContext, directory.absolutePath))
         ready = true
+        application = context.applicationContext
+        refreshSyncStatus()
         runBlocking(languageLane) { sendLanguage() }
     }
 
@@ -60,7 +73,9 @@ object NativeServices {
         if (changesReadContext) readEpoch.incrementAndGet()
         try {
             val result = decode(NativeBridge.service(JSONObject().put("version", 1).put("method", method).put("params", params).toString()))
-            if (method in setOf("save_budget", "native_apply_patch", "assistant_apply_commit", "assistant_undo_commit", "simplefin_import", "accept_ynab_import", "resolve_ynab", "undo_budget", "redo_budget", "restore_backup_file", "restore_budget", "apply_due_schedules")) notifySaved()
+            if (method in setOf("create_budget", "library_trash", "library_restore", "library_recover", "sync_enable", "sync_setup", "save_budget", "native_apply_patch", "assistant_apply_commit", "assistant_undo_commit", "simplefin_import", "accept_ynab_import", "resolve_ynab", "undo_budget", "redo_budget", "restore_backup_file", "restore_budget", "apply_due_schedules")) notifySaved()
+            if (method in setOf("sync_now", "sync_resolve") && result is JSONObject) syncCompletedSource.tryEmit(result)
+            if (method in setOf("account_verify", "account_sign_out", "account_delete", "sync_setup", "sync_enable", "sync_reset", "sync_lock")) refreshSyncStatus()
             return result
         } finally {
             // Reads started while a credential transition was in progress must not be joined
@@ -81,9 +96,22 @@ object NativeServices {
         if (!automaticSyncRunning.compareAndSet(false, true)) return null
         try {
             val status = call("cloud_status") as JSONObject
-            if (status.isNull("email") || status.optJSONObject("sync")?.optBoolean("unlocked") != true) return null
-            return call("sync_now") as JSONObject
-        } finally { automaticSyncRunning.set(false) }
+            if (!syncCanReconcile(status)) return null
+            return (call("sync_now") as JSONObject).also {
+                refreshSyncStatus()
+            }
+        } finally {
+            runCatching { refreshSyncStatus() }
+            automaticSyncRunning.set(false)
+        }
+    }
+
+    private fun refreshSyncStatus() {
+        val status = call("cloud_status") as JSONObject
+        val entries = (call("library_snapshot") as JSONObject).getJSONArray("entries")
+        status.put("libraryPending", (0 until entries.length()).any { entries.getJSONObject(it).optBoolean("pending") })
+        syncStatusSource.value = status
+        application?.let { SyncWorker.configure(it, syncBackgroundEligible(status)) }
     }
 
     suspend fun pollEvents() {

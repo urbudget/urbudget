@@ -818,6 +818,7 @@ mod tests {
         assert!(!entered.splits[0].extra.contains_key("bankImportIds"));
         let incoming = |amount| crate::bank_import::BankTransaction {
             fit: "new-payment".into(), date: "2026-10-01".into(), payee: "Transfer".into(), memo: String::new(), amount,
+            transfer_account_id: None,
         };
         assert_eq!(crate::bank_import::review(&b, "card", vec![incoming(-5000)]).unwrap()[0].candidates, [entered.id.clone()]);
         let destination = crate::bank_import::review(&b, "cash", vec![incoming(5000)]).unwrap();

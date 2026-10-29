@@ -92,6 +92,15 @@ pub struct BudgetSync {
     pub conflicts: Vec<Conflict>,
     /// What a merge decided on its own that the person may want to know.
     pub notes: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub review: Option<Value>,
+}
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangedBudget {
+    pub id: String,
+    /// Opaque saved snapshot token; empty when this identity has no readable local content.
+    pub revision: String,
 }
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -103,12 +112,19 @@ pub struct Report {
     pub budgets: Vec<BudgetSync>,
     /// The open budget was replaced by a downloaded version: the window reloads it.
     pub open_changed: bool,
+    /// V2 consumers target the current local identity; the legacy boolean remains compatible.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub changed_budgets: Option<Vec<ChangedBudget>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub library_version: Option<String>,
 }
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
     /// This computer has the sync key (the passphrase was entered here).
     pub unlocked: bool,
+    pub protocol: u8,
+    pub enabled: bool,
     pub last: Option<Report>,
 }
 
@@ -138,7 +154,7 @@ pub struct Engine {
     running: tokio::sync::Mutex<()>,
 }
 
-pub(super) struct Operation<'a> {
+pub(crate) struct Operation<'a> {
     _local: tokio::sync::MutexGuard<'a, ()>,
     _file: std::fs::File,
 }
@@ -182,7 +198,7 @@ fn without_heavy(mut budget: Budget) -> Budget {
     }
     budget
 }
-fn now() -> String {
+pub(super) fn now() -> String {
     chrono::Utc::now().to_rfc3339()
 }
 fn error(message: impl Into<String>) -> Failure {
@@ -195,15 +211,26 @@ fn with_store<T>(ctx: &Ctx, id: &str, f: impl FnOnce(&mut Store, bool) -> Result
     ctx.cloud.check_session(&ctx.session)?;
     // Match budget switching's lock order and hold both locks through the operation.
     let library = ctx.library.lock();
-    let mut open = ctx.db.store()?;
-    if open.id() != ctx.open_id {
+    ensure_legacy_budget(&library, id)?;
+    let open_id = ctx.db.store().ok().map(|s| s.id().to_owned()).unwrap_or_default();
+    if open_id != ctx.open_id {
         return Err(t!("The open budget changed during sync. Sync again to continue."));
     }
-    if id == ctx.open_id {
-        f(&mut open, true)
+    if id == ctx.open_id && !id.is_empty() {
+        f(&mut *ctx.db.store()?, true)
     } else {
-        f(&mut Store::open_budget(&library.database(id)?, id)?.with_backup_preferences(library.data_dir()), false)
+        let path = library.database(id)?;
+        if !path.is_file() { return Err(t!("Download this budget before opening it.")); }
+        f(&mut Store::open_budget(&path, id)?.with_backup_preferences(library.data_dir()), false)
     }
+}
+
+/// V2 ownership never becomes implicit permission to copy ciphertext/plaintext into a v1 account.
+fn ensure_legacy_budget(library: &crate::budgets::Budgets, id: &str) -> Result<(), String> {
+    if library.try_list_all()?.iter().any(|e| e.id == id && (e.account_id.is_some() || e.lifecycle != "active")) {
+        return Err(t!("This budget belongs to the account library and cannot use legacy sync."));
+    }
+    Ok(())
 }
 
 /// What came of bringing the cloud's version into this device's.
@@ -314,7 +341,7 @@ impl Engine {
     fn state(&self) -> Ledger {
         self.state.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
-    pub(super) async fn operation(&self) -> Result<Operation<'_>, String> {
+    pub(crate) async fn operation(&self) -> Result<Operation<'_>, String> {
         let local = self.running.lock().await;
         let path = self.file.with_file_name("cloud-operation.lock");
         // Waiting on another process must not block the async executor or UI thread.
@@ -381,6 +408,8 @@ impl Engine {
     pub fn status(&self) -> Status {
         Status {
             unlocked: self.key().is_some(),
+            protocol: 1,
+            enabled: self.key().is_some(),
             last: self.last.lock().unwrap_or_else(|e| e.into_inner()).clone(),
         }
     }
@@ -394,7 +423,7 @@ impl Engine {
         *self.last.lock().unwrap_or_else(|e| e.into_inner()) = None;
         Ok(())
     }
-    fn finish(&self, report: Report) -> Report {
+    pub(super) fn finish(&self, report: Report) -> Report {
         *self.last.lock().unwrap_or_else(|e| e.into_inner()) = Some(report.clone());
         report
     }
@@ -536,17 +565,17 @@ impl Engine {
             Absorbed::Conflicts(conflicts) => Ok(Step { conflicts, ..Step::from("conflict") }),
             Absorbed::Unmergeable(e) => Ok(Step { message: Some(t!("{problem} Choose which version to keep.", problem = e)), ..Step::from("conflict") }),
             Absorbed::Saved { merged, local_revision, local_changed, upload, notes } => {
-                self.track_at(id, revision, if upload { -1 } else { local_revision })?;
-                let state = if !upload {
-                    if local_changed { "downloaded" } else { "synced" }
-                } else if !self.send(ctx, id, revision, &merged, local_revision).await? {
-                    "waiting"
-                } else if local_changed {
-                    "merged"
-                } else {
-                    "uploaded"
-                };
-                Ok(Step { notes, open_changed: local_changed && id == ctx.open_id, ..Step::from(state) })
+                let result=async {
+                    self.track_at(id, revision, if upload { -1 } else { local_revision })?;
+                    Ok::<_,Failure>(if !upload {
+                        if local_changed { "downloaded" } else { "synced" }
+                    } else if !self.send(ctx, id, revision, &merged, local_revision).await? {
+                        "waiting"
+                    } else if local_changed { "merged" } else { "uploaded" })
+                }.await;
+                let (state,message)=match result {Ok(state)=>(state,None),Err(f)=>("error",Some(f.message))};
+                // A network or ledger error cannot erase the already committed local change.
+                Ok(Step { notes, message, open_changed: local_changed && id == ctx.open_id, ..Step::from(state) })
             }
         }
     }
@@ -559,6 +588,8 @@ impl Engine {
             message,
             budgets: vec![],
             open_changed: false,
+            changed_budgets: None,
+            library_version: None,
         };
         let _one = match self.operation().await {
             Ok(guard) => guard,
@@ -587,7 +618,7 @@ impl Engine {
         };
         let (locals, open_id): (Vec<Listing>, String) = {
             let library = library.lock();
-            (library.list().into_iter().filter(|l| !l.missing).collect(), library.current().to_owned())
+            (library.list().into_iter().filter(|l| !l.missing && l.account_id.is_none()).collect(), db.store().ok().map(|s| s.id().to_owned()).unwrap_or_default())
         };
         let ctx = Ctx { cloud, db, library, open_id, open_clean, key, session, generation };
         let tracked = self.state().budgets;
@@ -602,6 +633,7 @@ impl Engine {
         let mut open_changed = false;
         let no_choices = Choices::new();
         for id in ids {
+            if ensure_legacy_budget(&library.lock(), &id).is_err() { continue; }
             let local = locals.iter().find(|l| l.id == id);
             let remote = remotes.iter().find(|r| r.id == id);
             let tracked = tracked.get(&id).copied();
@@ -618,6 +650,7 @@ impl Engine {
                 message: None,
                 conflicts: vec![],
                 notes: vec![],
+                review: None,
             };
             let outcome: Result<Step, Failure> = match (local, remote, tracked) {
                 (None, None, Some(_)) => {
@@ -677,7 +710,7 @@ impl Engine {
         }
         let open_id = &ctx.open_id;
         budgets.sort_by(|a, b| (&a.id != open_id).cmp(&(&b.id != open_id)).then(a.name.cmp(&b.name)));
-        self.finish(Report { at: now(), state: "ok", message: None, budgets, open_changed })
+        self.finish(Report { at: now(), state: "ok", message: None, budgets, open_changed, changed_budgets: None, library_version: None })
     }
 }
 
@@ -686,11 +719,18 @@ pub fn sync_status(cloud: &Cloud) -> Status {
 }
 
 pub async fn sync_now(cloud: &Cloud, db: &Database, library: &Library, open_clean: bool) -> Result<Report, String> {
+    if super::v2::is_active(cloud,library) || super::v2::discover_active(cloud,library).await.unwrap_or(false) {
+        let before = super::notifications::capture(db, library)?;
+        let result = super::v2::run(cloud,db,library,open_clean).await;
+        return super::notifications::finish(cloud, db, library, before, result);
+    }
     Ok(cloud.sync.run(&cloud, &db, &library, open_clean).await)
 }
 
 /// Whether the account already has a sync passphrase (another computer set it up).
 pub async fn sync_has_key(cloud: &Cloud) -> Result<bool, String> {
+    let library=Library(Mutex::new(crate::budgets::Budgets::load(&cloud.data_dir)?));
+    if super::v2::is_active(cloud,&library) || super::v2::discover_active(cloud,&library).await.unwrap_or(false) { return Ok(true); }
     match cloud.call(reqwest::Method::GET, "/sync/key", None, true).await {
         Ok(_) => Ok(true),
         Err(f) if f.code == "no_key" => Ok(false),
@@ -701,6 +741,7 @@ pub async fn sync_has_key(cloud: &Cloud) -> Result<bool, String> {
 /// Unlocks sync on this computer with the passphrase, or sets the passphrase on first use.
 /// Returns whether it was new (then this computer's budgets start syncing).
 pub async fn sync_setup(cloud: &Cloud, library: &Library, passphrase: String) -> Result<Value, String> {
+    if let Some(result)=super::v2::try_setup(cloud,library,&passphrase,false).await? {return Ok(result);}
     let _one = cloud.sync.operation().await?;
     if passphrase.chars().count() < 8 {
         return Err(t!("Use a passphrase of at least 8 characters."));
@@ -723,7 +764,7 @@ pub async fn sync_setup(cloud: &Cloud, library: &Library, passphrase: String) ->
         Err(f) if f.code == "no_key" => {
             create_key(&cloud, passphrase, false).await?;
             let ids: Vec<String> = library.lock().list().into_iter().filter(|l| !l.missing).map(|l| l.id).collect();
-            track(&cloud, &ids)?;
+            track(&cloud, &library, &ids)?;
             Ok(json!({ "created": true }))
         }
         Err(f) => Err(f.message),
@@ -750,9 +791,11 @@ async fn create_key(cloud: &Cloud, passphrase: String, reset: bool) -> Result<()
     cloud.sync.install_key(key, answer["generation"].as_u64().unwrap_or(0))
 }
 
-fn track(cloud: &Cloud, ids: &[String]) -> Result<(), String> {
+fn track(cloud: &Cloud, library: &Library, ids: &[String]) -> Result<(), String> {
+    let catalog = library.lock();
+    let allowed: Vec<_> = ids.iter().filter(|id| ensure_legacy_budget(&catalog, id).is_ok()).collect();
     cloud.sync.set_state(|s| {
-        for id in ids {
+        for id in allowed {
             s.budgets.entry(id.clone()).or_insert(Tracked { revision: 0, local_revision: -1 });
         }
     })
@@ -761,6 +804,7 @@ fn track(cloud: &Cloud, ids: &[String]) -> Result<(), String> {
 /// A new passphrase: the cloud copies made with the old one are deleted, and this computer's
 /// budgets upload again.
 pub async fn sync_reset(cloud: &Cloud, library: &Library, passphrase: String) -> Result<(), String> {
+    if let Some(_)=super::v2::try_setup(cloud,library,&passphrase,true).await? {return Ok(());}
     let _one = cloud.sync.operation().await?;
     if passphrase.chars().count() < 8 {
         return Err(t!("Use a passphrase of at least 8 characters."));
@@ -768,19 +812,23 @@ pub async fn sync_reset(cloud: &Cloud, library: &Library, passphrase: String) ->
     create_key(&cloud, passphrase, true).await?;
     cloud.sync.set_state(|s| s.budgets.clear())?;
     let ids: Vec<String> = library.lock().list().into_iter().filter(|l| !l.missing).map(|l| l.id).collect();
-    track(&cloud, &ids)
+    track(&cloud, &library, &ids)
 }
 
 /// Starts syncing budgets that are only on this computer.
 pub async fn sync_track(cloud: &Cloud, ids: Vec<String>) -> Result<(), String> {
+    let library=Library(Mutex::new(crate::budgets::Budgets::load(&cloud.data_dir)?));
+    if super::v2::is_active(cloud,&library) {super::v2::enable(cloud,&library,true,&ids)?;return Ok(());}
     let _one = cloud.sync.operation().await?;
     cloud.check_account()?;
-    track(&cloud, &ids)
+    track(&cloud, &library, &ids)
 }
 
 /// Brings a budget from the cloud onto this computer, under the same id.
 pub async fn sync_download(cloud: &Cloud, library: &Library, id: String) -> Result<String, String> {
+    if super::v2::is_active(cloud,library) {super::v2::download(cloud,library,&id).await?;return Ok(id);}
     let _one = cloud.sync.operation().await?;
+    ensure_legacy_budget(&library.lock(), &id)?;
     let session = cloud.session()?;
     let generation = cloud.sync.state().generation;
     let key = cloud.sync.key().ok_or_else(|| t!("Enter your sync passphrase first."))?;
@@ -832,13 +880,20 @@ pub async fn sync_resolve(
     keep: String,
     choices: Option<Choices>,
     open_clean: bool,
+    review: Option<Value>,
 ) -> Result<Report, String> {
+    if super::v2::is_active(cloud,library){
+        let before = super::notifications::capture(db, library)?;
+        let result = super::v2::resolve(cloud,db,library,&id,&keep,choices.unwrap_or_default(),open_clean,review).await;
+        return super::notifications::finish(cloud, db, library, before, result);
+    }
     let one = cloud.sync.operation().await?;
+    ensure_legacy_budget(&library.lock(), &id)?;
     let session = cloud.session()?;
     let generation = cloud.sync.state().generation;
     let key = cloud.sync.key().ok_or_else(|| t!("Enter your sync passphrase first."))?;
     let remote = cloud.sync.remotes(&cloud, &session, generation).await?.into_iter().find(|r| r.id == id);
-    let open_id = library.lock().current().to_owned();
+    let open_id = db.store().ok().map(|s| s.id().to_owned()).unwrap_or_default();
     if !open_clean && id == open_id && keep != "local" {
         return Err(t!("Save your changes first."));
     }
@@ -862,6 +917,7 @@ pub async fn sync_resolve(
                 _ => {
                     drop(one);
                     let mut report = engine.run(&cloud, &db, &library, open_clean).await;
+                    report.open_changed |= step.open_changed;
                     if let Some(entry) = report.budgets.iter_mut().find(|b| b.id == id && b.state == "synced") {
                         entry.state = step.state;
                         entry.notes = step.notes;
@@ -894,7 +950,10 @@ pub async fn sync_resolve(
 
 /// Stops syncing a budget and deletes its cloud copy. Copies on computers stay.
 pub async fn sync_remove(cloud: &Cloud, id: String) -> Result<(), String> {
+    let library=Library(Mutex::new(crate::budgets::Budgets::load(&cloud.data_dir)?));
+    if super::v2::is_active(cloud,&library){crate::library_api::lifecycle(cloud,&Database::new(None),&library,"trash",&id).await?;return Ok(());}
     let _one = cloud.sync.operation().await?;
+    ensure_legacy_budget(&library.lock(), &id)?;
     let session = cloud.session()?;
     cloud.call_session(reqwest::Method::DELETE, &format!("/sync/budgets/{id}"), None, Some(&session), Some(cloud.sync.state().generation)).await?;
     cloud.sync.set_state(|s| {
@@ -904,6 +963,7 @@ pub async fn sync_remove(cloud: &Cloud, id: String) -> Result<(), String> {
 
 /// Forgets the sync key on this computer; the passphrase unlocks it again.
 pub async fn sync_lock(cloud: &Cloud) -> Result<(), String> {
+    super::v2::forget_keys(cloud,cloud.selected_account().as_deref())?;
     let _one = cloud.sync.operation().await?;
     cloud.check_account()?;
     cloud.sync.set_key(None)
@@ -915,6 +975,24 @@ mod tests {
     use urbudget_core::test_support::{purchase, sample};
     use crate::domain::Transaction;
     use crate::patch::Patch;
+
+    #[test]
+    fn v1_uses_closed_stores_with_no_selection_and_never_tracks_account_budgets() {
+        let dir=tempfile::tempdir().unwrap();
+        let mut catalog=crate::budgets::Budgets::load(dir.path()).unwrap();
+        let local=catalog.create().unwrap();
+        Store::open_budget(&catalog.database(&local).unwrap(),&local).unwrap();
+        let owned=catalog.create_owned(Some("account-a")).unwrap();
+        Store::open_budget(&catalog.database(&owned).unwrap(),&owned).unwrap();
+        catalog.clear_current().unwrap();
+        let library=Library(Mutex::new(catalog)); let db=Database::new(None); let cloud=Cloud::new(dir.path());
+        let ctx=Ctx{cloud:&cloud,db:&db,library:&library,open_id:String::new(),open_clean:true,key:[0;32],session:Session{token:String::new(),epoch:0},generation:0};
+        assert!(with_store(&ctx,&local,|s,open| { assert!(!open); Ok(s.id()==local) }).unwrap());
+        assert!(with_store(&ctx,&owned,|_,_| Ok(())).unwrap_err().contains("legacy sync"));
+        track(&cloud,&library,&[local.clone(),owned.clone()]).unwrap();
+        assert!(cloud.sync.state().budgets.contains_key(&local));
+        assert!(!cloud.sync.state().budgets.contains_key(&owned));
+    }
 
     #[test]
     fn separate_app_instances_serialize_operations_and_reload_shared_tracking() {
@@ -960,12 +1038,14 @@ mod tests {
     fn closed_budget_sync_backups_obey_the_persisted_device_retention() {
         let dir = tempfile::tempdir().unwrap();
         let mut budgets = crate::budgets::Budgets::load(dir.path()).unwrap();
-        let open_id = budgets.current().to_owned();
+        let open_id = budgets.create().unwrap();
+        budgets.set_current(&open_id).unwrap();
         let closed_id = budgets.create().unwrap();
+        Store::open_budget(&budgets.database(&closed_id).unwrap(), &closed_id).unwrap();
         let store = Store::open_budget(&budgets.database(&open_id).unwrap(), &open_id).unwrap()
             .with_backup_preferences(dir.path());
         store.set_backup_retention(5).unwrap();
-        let db = Database(Mutex::new(store));
+        let db = Database::new(Some(store));
         let library = Library(Mutex::new(budgets));
         let cloud = Cloud::new(dir.path());
         let ctx = Ctx { cloud: &cloud, db: &db, library: &library, open_id, open_clean: true, key: [0; 32], session: Session { token: String::new(), epoch: 0 }, generation: 0 };
@@ -984,10 +1064,11 @@ mod tests {
     fn switching_budgets_rejects_operations_from_the_old_sync_context() {
         let dir = tempfile::tempdir().unwrap();
         let mut budgets = crate::budgets::Budgets::load(dir.path()).unwrap();
-        let original_id = budgets.current().to_owned();
+        let original_id = budgets.create().unwrap();
+        budgets.set_current(&original_id).unwrap();
         let other_id = budgets.create().unwrap();
         let store = Store::open_budget(&budgets.database(&original_id).unwrap(), &original_id).unwrap();
-        let db = Database(Mutex::new(store));
+        let db = Database::new(Some(store));
         let library = Library(Mutex::new(budgets));
         let cloud = Cloud::new(dir.path());
         let ctx = Ctx {
@@ -1182,13 +1263,17 @@ mod tests {
         });
         phone.edit(|b| {
             b.transactions.push(transaction("phone-offline", -300));
-            b.assignments[0].amount += 5000;
+            let mut november = b.assignments[0].clone();
+            november.month = "2026-11".into();
+            november.amount = 5000;
+            b.assignments.push(november);
         });
         assert_eq!(sync_like_desktop_1_0_4(&mut desktop, &mut server), "uploaded");
         assert_eq!(phone.sync(&mut server, &none()).0, "merged");
         assert_eq!(sync_like_desktop_1_0_4(&mut desktop, &mut server), "downloaded");
         assert_eq!(desktop.budget(), phone.budget());
-        assert_eq!(food_october(&mut desktop), 28_000);
+        assert_eq!(food_october(&mut desktop), 23_000);
+        assert_eq!(food_november(&mut desktop), 5000);
         assert_eq!(desktop.budget().extra["freshStartHistory"], start.extra["freshStartHistory"]);
 
         // Each client edits data received from the other and sends it back.
@@ -1202,7 +1287,7 @@ mod tests {
         assert!(desktop.store.sync_base().unwrap().is_none());
         assert!(phone.store.sync_base().unwrap().is_some());
         let db = rusqlite::Connection::open(phone._dir.path().join("budget.db")).unwrap();
-        assert_eq!(db.pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0)).unwrap(), 2);
+        assert_eq!(db.pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0)).unwrap(), urbudget_core::sync_storage::STORAGE_SCHEMA_VERSION);
     }
 
     #[test]
@@ -1253,6 +1338,11 @@ mod tests {
             .find(|a| a.category_id == "food" && a.month == "2026-10")
             .unwrap()
             .amount
+    }
+    fn food_november(d: &mut Device) -> i64 {
+        d.budget().assignments.iter()
+            .find(|a| a.category_id == "food" && a.month == "2026-11")
+            .unwrap().amount
     }
 
     #[test]
@@ -1315,7 +1405,10 @@ mod tests {
         let (mut server, mut computer, mut phone) = two_devices();
         phone.edit(|b| {
             b.transactions.push(transaction("from-phone", -300));
-            b.assignments[0].amount += 5000;
+            let mut november = b.assignments[0].clone();
+            november.month = "2026-11".into();
+            november.amount = 5000;
+            b.assignments.push(november);
         });
         computer.edit(|b| {
             b.transactions.push(transaction("from-computer", -700));
@@ -1332,7 +1425,8 @@ mod tests {
         ids.sort();
         assert_eq!(ids, ["from-computer", "from-phone", "t1"]);
         assert_eq!((merged.transactions[0].memo.as_str(), merged.categories[1].name.as_str()), ("Lunch", "Visa payment"));
-        assert_eq!(food_october(&mut phone), 20_000 + 5000 + 10_000);
+        assert_eq!(food_october(&mut phone), 30_000);
+        assert_eq!(food_november(&mut phone), 5000);
         assert_eq!(computer.sync(&mut server, &none()).0, "synced");
         assert_eq!(phone.sync(&mut server, &none()).0, "synced");
     }
@@ -1378,18 +1472,24 @@ mod tests {
     #[test]
     fn a_merge_whose_upload_loses_the_race_is_not_applied_twice() {
         let (mut server, mut computer, mut phone) = two_devices();
-        phone.edit(|b| b.assignments[0].amount += 5000);
+        phone.edit(|b| {
+            let mut november = b.assignments[0].clone();
+            november.month = "2026-11".into();
+            november.amount = 5000;
+            b.assignments.push(november);
+        });
         computer.edit(|b| b.assignments[0].amount += 10_000);
         assert_eq!(phone.sync(&mut server, &none()).0, "uploaded");
         // The phone adds a transaction and uploads it while the computer is merging.
         phone.edit(|b| b.transactions.push(transaction("meanwhile", -50)));
         server.race = Some(phone.budget());
         assert_eq!(computer.sync(&mut server, &none()).0, "waiting");
-        assert_eq!(food_october(&mut computer), 35_000);
-        // The next sync merges against what the computer already took in, so the phone's
-        // +50.00 isn't added a second time.
+        assert_eq!(food_october(&mut computer), 30_000);
+        assert_eq!(food_november(&mut computer), 5000);
+        // The next sync preserves the already-merged monthly plans exactly once.
         assert_eq!(computer.sync(&mut server, &none()).0, "merged");
-        assert_eq!(food_october(&mut computer), 35_000);
+        assert_eq!(food_october(&mut computer), 30_000);
+        assert_eq!(food_november(&mut computer), 5000);
         assert!(computer.budget().transactions.iter().any(|t| t.id == "meanwhile"));
     }
 

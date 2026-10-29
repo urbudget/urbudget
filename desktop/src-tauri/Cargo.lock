@@ -4640,7 +4640,7 @@ checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
 name = "urbudget"
-version = "1.0.10"
+version = "1.0.11"
 dependencies = [
  "argon2",
  "base64 0.22.1",
@@ -4673,7 +4673,7 @@ dependencies = [
 
 [[package]]
 name = "urbudget-core"
-version = "1.0.10"
+version = "1.0.11"
 dependencies = [
  "base64 0.22.1",
  "calamine",
@@ -4682,6 +4682,7 @@ dependencies = [
  "csv",
  "encoding_rs",
  "flate2",
+ "libc",
  "rusqlite",
  "serde",
  "serde_json",
@@ -4691,7 +4692,7 @@ dependencies = [
 
 [[package]]
 name = "urbudget-services"
-version = "1.0.10"
+version = "1.0.11"
 dependencies = [
  "argon2",
  "base64 0.22.1",

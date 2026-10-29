@@ -148,6 +148,7 @@ internal fun PayeeDialog(original: JSONObject?, budget: JSONObject, vm: BudgetVi
     val placeholder = if (lastUsed != null) stringResource(R.string.payee_last_used, if (lastUsed.isBlank()) stringResource(R.string.payee_no_category) else categoryName(lastUsed).orEmpty())
         else stringResource(R.string.payee_no_default)
     val merging = name.trim().let { it.isNotEmpty() && it != originalName && sheet?.names?.contains(it) == true }
+    retainEditorDraft(vm, "payee", openedBudget, JSONObject().put("name", name).put("category", category))
     FormDialog(if (original == null) stringResource(R.string.payee_add) else stringResource(R.string.payee_label), close, onConfirm = {
         withCurrentBudget(openedBudget, vm) {
             vm.runCommand("workflow", JSONObject().put("action", JSONObject().put("type", "savePayee").put("from", originalName ?: JSONObject.NULL)
@@ -199,6 +200,7 @@ internal fun RuleDialog(original: JSONObject?, budget: JSONObject, vm: BudgetVie
             PayeeRules.changes(openedBudget, rules, setOf(id))
         }
     }
+    retainEditorDraft(vm, "payeeRule", openedBudget, JSONObject().put("match", match).put("payee", payee).put("category", category))
     FormDialog(if (original == null) stringResource(R.string.rule_add) else stringResource(R.string.rule_title), close, onConfirm = {
         withCurrentBudget(openedBudget, vm) {
             vm.upsert("payeeRules", (original?.copyJson() ?: JSONObject().put("id", id)).put("match", match.trim()).put("payee", payee.trim())

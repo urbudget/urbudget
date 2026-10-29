@@ -72,6 +72,9 @@ mod tests {
         let runtime = Runtime::new(folder.path()).unwrap();
         let initial = runtime.load().unwrap();
         let budget = urbudget_core::test_support::sample();
+        assert!(initial["budget"].is_null(),"an empty library has no placeholder budget");
+        call(&runtime,"save_budget",json!({"budget":budget,"expectedToken":""})).unwrap();
+        let initial=runtime.load().unwrap();
         let second = call(&runtime, "create_budget", json!({"budget":budget})).unwrap();
         call(&runtime, "open_budget", json!({"id":second})).unwrap();
         assert!(call(&runtime, "save_budget", json!({"budget":budget,"expectedToken":initial["token"]})).unwrap_err().contains("CONFLICT"));
@@ -140,6 +143,7 @@ mod tests {
     fn service_probes_and_local_edits_do_not_wait_behind_a_bank_download() {
         let folder = tempfile::tempdir().unwrap();
         let runtime = Runtime::new(folder.path()).unwrap();
+        call(&runtime,"save_budget",json!({"budget":urbudget_core::test_support::sample(),"expectedToken":""})).unwrap();
         let initial = runtime.load().unwrap();
         crate::block_on(async {
             let _bank_network = runtime.bank_commands.lock().await;
@@ -199,11 +203,16 @@ impl Runtime {
     pub fn new(data_dir: &Path) -> Result<Self, String> {
         std::fs::create_dir_all(data_dir).map_err(|e| e.to_string())?;
         vault::init(data_dir);
-        let library = budgets::Budgets::load(data_dir)?;
+        let mut library = budgets::Budgets::load(data_dir)?;
+        crate::library_api::repair_local_catalog(&mut library)?;
         let id = library.current().to_owned();
-        let store = Store::open_budget(&library.database(&id)?, &id)?.with_backup_preferences(data_dir);
+        let store = if id.is_empty() { None } else {
+            let path = library.database(&id)?;
+            if path.is_file() { Some(Store::open_budget(&path, &id)?.with_backup_preferences(data_dir)) }
+            else { library.clear_current()?; None }
+        };
         Ok(Self {
-            db: Database(Mutex::new(store)), library: Library(Mutex::new(library)),
+            db: Database::new(store), library: Library(Mutex::new(library)),
             cloud: cloud::Cloud::new(data_dir), assistant: assistant::Assistant::new(data_dir.to_path_buf()),
             simplefin: simplefin::SimpleFin::new(data_dir), pending_import: ynab_capture::PendingImport::default(),
             data_dir: data_dir.to_path_buf(),
@@ -216,6 +225,7 @@ impl Runtime {
     /// A complete snapshot for native clients. Unlike the desktop IPC light serializer this
     /// carries import metadata as well, for lossless existing-Android JSON migration/export.
     pub fn load(&self) -> Result<Value, String> {
+        if !self.db.is_open() { return Ok(crate::library_api::empty_snapshot()); }
         let mut store = self.db.store()?;
         let snapshot = store.load()?;
         let mut histories = self.history.lock().unwrap_or_else(|e| e.into_inner());
@@ -227,6 +237,7 @@ impl Runtime {
 
     /// Cheap native refresh probe: a stable revision needs no ledger read or JSON round trip.
     fn native_status(&self) -> Result<Value, String> {
+        if !self.db.is_open() { return Ok(crate::library_api::empty_snapshot()); }
         let store = self.db.store()?;
         let status = store.status()?;
         let mut histories = self.history.lock().unwrap_or_else(|e| e.into_inner());
@@ -237,6 +248,16 @@ impl Runtime {
     }
 
     fn save(&self, budget: &domain::Budget, expected: &str) -> Result<Value, String> {
+        if !self.db.is_open() {
+            if !expected.is_empty(){return Err(t!("CONFLICT: The budget changed. Reload it before saving your edit."));}
+            domain::validate(budget)?;
+            let mut catalog=self.library.lock();
+            let id=cloud::v2::create_owned(&self.cloud,&mut catalog)?;
+            let mut store=Store::open_budget(&catalog.database(&id)?,&id)?.with_backup_preferences(catalog.data_dir());
+            let token=store.status()?.token;store.save(budget,&token)?;
+            catalog.mark_available(&id)?;catalog.set_current(&id)?;self.db.replace(Some(store));drop(catalog);
+            return self.native_status();
+        }
         let mut store = self.db.store()?;
         let (before, status) = store.saved()?;
         if status.token != expected { return Err(t!("CONFLICT: The budget changed. Reload it before saving your edit.")); }
@@ -308,7 +329,7 @@ impl Runtime {
         // Sync owns its own operation lock and checks Store revisions after every download.
         // Do not hold the UI command queue over that network wait: an offline sync must never
         // make local budgeting wait for the HTTP timeout.
-        let independent = method.starts_with("account_") || method.starts_with("billing_") || method.starts_with("sync_") || matches!(method,
+        let independent = method.starts_with("account_") || method.starts_with("billing_") || method.starts_with("sync_") || method.starts_with("library_") || method.starts_with("editor_") || matches!(method,
             "set_language" | "host_events" | "native_budget_status" | "database_status" | "cloud_status" | "sync_status" | "assistant_stop" | "assistant_cancel_sign_in" | "assistant_status" | "assistant_thread" | "assistant_threads" |
             "assistant_sign_in" | "assistant_sign_out" | "assistant_settings" | "assistant_set_key" | "assistant_forget_key" | "assistant_models" | "assistant_report_reply" |
             "simplefin_status" | "simplefin_connect" | "simplefin_accounts" | "simplefin_disconnect" | "simplefin_open" | "simplefin_sync" |
@@ -393,16 +414,37 @@ impl Runtime {
             }
             "commit_budget" => value(self.db.store()?.commit(&text("expectedToken")?)?),
             "list_budgets" => value(self.library.lock().list()),
+            "library_snapshot" => crate::library_api::snapshot(&self.db,&self.library),
+            "library_open" => cloud::v2::open(&self.cloud,&self.db,&self.library,&text("id")?).await,
+            "library_review_deletion" => cloud::v2::review_deletion(&self.cloud,&self.db,&self.library,&text("id")?).await,
+            "library_trash"|"library_restore"|"library_evict"|"library_recover" => crate::library_api::lifecycle(&self.cloud,&self.db,&self.library,method.trim_start_matches("library_"),&text("id")?).await,
+            "editor_checkpoint" => {
+                let id=optional::<String>(&p,"budgetId")?.unwrap_or_else(||self.library.lock().current().into());
+                crate::library_api::checkpoint(&self.db,&self.library,&id,text("id")?,text("epoch")?,p["target"].clone(),p["baseline"].clone(),p["values"].clone())?;Ok(Value::Null)
+            }
+            "editor_discard" => {
+                let budget=optional::<String>(&p,"budgetId")?.unwrap_or_else(||self.library.lock().current().into());
+                if optional::<bool>(&p,"onlyIfActive")?.unwrap_or(false) {
+                    crate::library_api::discard_checkpoint_if_active(&self.db,&self.library,&budget,&text("id")?,&text("epoch")?)?;
+                } else { crate::library_api::discard_checkpoint(&self.db,&self.library,&budget,&text("id")?,&text("epoch")?)?; }
+                Ok(Value::Null)
+            }
+            "editor_recovery" => {
+                let budget=optional::<String>(&p,"budgetId")?.unwrap_or_else(||self.library.lock().current().into());
+                crate::library_api::editor_recovery(&self.db,&self.library,&budget)
+            }
+            "sync_enable" => value(cloud::v2::enable(&self.cloud,&self.library,field(&p,"enabled")?,&optional::<Vec<String>>(&p,"ids")?.unwrap_or_default())?),
             "fresh_start" => {
                 let source = self.db.store()?.full_draft(None)?;
                 let next = fresh_start::create(&source, &text("name")?, &text("asOf")?)?;
                 let mut library = self.library.lock();
-                let id = library.create()?;
+                let id = cloud::v2::create_owned(&self.cloud,&mut library)?;
                 let saved = Store::open_budget(&library.database(&id)?, &id).and_then(|store| {
                     let mut store = store.with_backup_preferences(library.data_dir());
                     let token = store.status()?.token; store.save(&next, &token)
                 });
                 if let Err(e) = saved { library.forget_new(&id)?; return Err(e); }
+                library.mark_available(&id)?;drop(library);
                 value(id)
             }
             "create_budget" => {
@@ -413,28 +455,24 @@ impl Runtime {
                     let source = self.db.store()?.fresh_start_source(optional(&p, "patch")?, &token)?;
                     fresh_start::prepare(budget, &source)?
                 } else { budget };
-                let id = library.create()?;
+                let id = cloud::v2::create_with_scope(&self.cloud, &mut library, &budget, optional::<bool>(&p, "localOnly")?.unwrap_or(false))?;
                 let saved = Store::open_budget(&library.database(&id)?, &id).and_then(|store| {
                     let mut store = store.with_backup_preferences(library.data_dir());
                     let token = store.status()?.token;
                     store.save(&budget, &token)
                 });
                 if let Err(e) = saved { library.forget_new(&id)?; return Err(e); }
+                library.mark_available(&id)?;drop(library);
                 value(id)
             }
             "open_budget" => {
                 let id = text("id")?;
-                let mut library = self.library.lock();
-                if self.db.store()?.has_unsaved_draft() { return Err(t!("Save or discard your changes before opening another budget.")); }
-                let store = Store::open_budget(&library.database(&id)?, &id)?.with_backup_preferences(library.data_dir());
-                library.set_current(&id)?;
-                *self.db.store()? = store;
+                cloud::v2::open(&self.cloud,&self.db,&self.library,&id).await?;
                 *self.pending_import.0.lock().map_err(|e| e.to_string())? = None;
-                drop(library);
                 self.load()
             }
             "delete_budget" => {
-                let mut library = self.library.lock(); library.remove(&text("id")?)?; value(library.list())
+                crate::library_api::lifecycle(&self.cloud,&self.db,&self.library,"trash",&text("id")?).await?; value(self.library.lock().list())
             }
             "backup_database" => value(self.db.store()?.backup_portable()?),
             "list_backups" => {
@@ -477,6 +515,7 @@ impl Runtime {
                 self.load()
             }
             "apply_due_schedules" => {
+                if !self.db.is_open(){return self.load();}
                 let mut store = self.db.store()?;
                 let status = store.status()?;
                 // An empty database is the welcome/migration state. Schedule normalization
@@ -485,7 +524,7 @@ impl Runtime {
                 drop(store);
                 self.load()
             }
-            "cloud_status" => value(cloud::cloud_status(&self.cloud)),
+            "cloud_status" => value(self.cloud.status_with_library(&self.library)),
             "account_start" => cloud::account_start(&self.cloud, text("email")?).await,
             "account_verify" => value(cloud::account_verify(&self.cloud, text("email")?, text("code")?).await?),
             "account_overview" => cloud::account_overview(&self.cloud).await,
@@ -494,7 +533,7 @@ impl Runtime {
             "account_delete" => value(cloud::account_delete(&self.cloud, text("confirm")?).await?),
             "sync_status" => value(cloud::sync::sync_status(&self.cloud)),
             "sync_now" => {
-                let clean = !self.db.store()?.has_unsaved_draft();
+                let clean = !self.db.store().is_ok_and(|s|s.has_unsaved_draft());
                 value(cloud::sync::sync_now(&self.cloud, &self.db, &self.library, clean).await?)
             }
             "sync_has_key" => value(cloud::sync::sync_has_key(&self.cloud).await?),
@@ -503,8 +542,8 @@ impl Runtime {
             "sync_track" => { cloud::sync::sync_track(&self.cloud, field(&p, "ids")?).await?; Ok(Value::Null) }
             "sync_download" => value(cloud::sync::sync_download(&self.cloud, &self.library, text("id")?).await?),
             "sync_resolve" => {
-                let clean = !self.db.store()?.has_unsaved_draft();
-                value(cloud::sync::sync_resolve(&self.cloud, &self.db, &self.library, text("id")?, text("keep")?, optional(&p, "choices")?, clean).await?)
+                let clean = !self.db.store().is_ok_and(|s|s.has_unsaved_draft());
+                value(cloud::sync::sync_resolve(&self.cloud, &self.db, &self.library, text("id")?, text("keep")?, optional(&p, "choices")?, clean, optional(&p, "review")?).await?)
             }
             "sync_remove" => { cloud::sync::sync_remove(&self.cloud, text("id")?).await?; Ok(Value::Null) }
             "sync_lock" => { cloud::sync::sync_lock(&self.cloud).await?; Ok(Value::Null) }

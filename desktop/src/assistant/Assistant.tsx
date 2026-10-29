@@ -680,6 +680,7 @@ export function AssistantPanel({
         const id = current.current!;
         return (
           <ProposalCard
+            budgetId={budgetId}
             proposal={p}
             budget={budget}
             canUndo={canUndo(p)}

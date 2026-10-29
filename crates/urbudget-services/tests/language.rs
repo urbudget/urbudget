@@ -16,6 +16,7 @@ fn the_service_call_switches_the_engines_messages() {
     let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
     let folder = tempfile::tempdir().unwrap();
     let runtime = Runtime::new(folder.path()).unwrap();
+    urbudget_services::block_on(runtime.dispatch("save_budget",serde_json::json!({"budget":urbudget_core::test_support::sample(),"expectedToken":""}))).unwrap();
     let budget = urbudget_core::test_support::sample();
     let stale = || call(&runtime, "save_budget", json!({ "budget": budget, "expectedToken": "an old revision" })).unwrap_err();
 

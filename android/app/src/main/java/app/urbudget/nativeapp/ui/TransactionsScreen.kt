@@ -25,6 +25,7 @@ import androidx.compose.material.icons.automirrored.outlined.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,6 +43,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.urbudget.nativeapp.EditorCheckpoint
+import app.urbudget.nativeapp.BudgetEditGuard
 import app.urbudget.nativeapp.BudgetViewModel
 import app.urbudget.nativeapp.Money
 import app.urbudget.nativeapp.PayeeInfo
@@ -618,7 +621,12 @@ private data class SplitDraft(val original: JSONObject, val category: String, va
 @Composable
 internal fun TransactionDialog(original: JSONObject?, budget: JSONObject, initialAccount: String, vm: BudgetViewModel, close: () -> Unit, saveOverride: ((JSONObject) -> Unit)? = null, dialogTitle: String? = null, extraFields: (@Composable () -> Unit)? = null,
                                summary: JSONObject? = null) {
+    val editorState by vm.state.collectAsStateWithLifecycle()
     val openedBudget = remember { budget }
+    val openedIdentity = remember { vm.state.value.budgetIdentity }
+    val checkpoint = remember { EditorCheckpoint(openedIdentity, "transaction", original ?: JSONObject(), vm::notifyError) }
+    val cancel = { checkpoint.discard(); close() }
+    val saved = { checkpoint.discard(); close() }
     // Read once: the form doesn't follow every state emission while it's open.
     val summary = summary ?: remember { vm.state.value.summary }
     val accounts = remember(budget, original) { val used = original?.rows("splits")?.map { it.text("transferAccountId") }.orEmpty().toSet(); budget.rows("accounts").filter { !it.optBoolean("archived") || it.text("id") == original?.text("accountId") || it.text("id") == original?.text("transferAccountId") || it.text("id") in used } }
@@ -665,9 +673,16 @@ internal fun TransactionDialog(original: JSONObject?, budget: JSONObject, initia
     val needsCategory = remember(budget, account, transfer) {
         transfer.isBlank() || (budget.row("accounts", account)?.text("kind") == "tracking") != (budget.row("accounts", transfer)?.text("kind") == "tracking")
     }
+    val rawDraft = JSONObject().put("account", account).put("payee", payee).put("date", date).put("memo", memo)
+        .put("amountExpression", pad.text).put("direction", direction).put("status", status).put("transfer", transfer)
+        .put("peerStatus", peerStatus).put("flag", flag).put("approved", approved).put("splitMode", splitMode)
+        .put("category", category).put("repeat", repeat).put("splits", JSONArray(splitRows.map {
+            JSONObject().put("category", it.category).put("amount", it.amount).put("memo", it.memo)
+                .put("transfer", it.transfer).put("payee", it.payee).put("transferStatus", it.transferStatus)
+        }))
+    SideEffect { checkpoint.save(rawDraft) }
     val save: () -> Unit = {
         runCatching {
-            requireCurrentBudget(openedBudget, vm)
             require(account.isNotBlank()) { Words[R.string.transaction_choose_account] }; LocalDate.parse(date)
             val parsed = pad.cents ?: error(Words[R.string.transaction_finish_sum]); require(parsed >= 0) { Words[R.string.transaction_use_direction] }
             val sign = if (direction == "out") -1L else 1L
@@ -690,27 +705,27 @@ internal fun TransactionDialog(original: JSONObject?, budget: JSONObject, initia
             record.put("splits", jsonArray(parts))
             val often = frequencies().firstOrNull { it.first == repeat }?.second?.lowercase(Locale.ROOT).orEmpty()
             when {
-                saveOverride != null -> saveOverride(record)
+                saveOverride != null -> { requireCurrentBudget(openedBudget, vm); val failureEpoch = vm.operationFailureEpoch; saveOverride(record); vm.afterPending { if (vm.operationFailureEpoch == failureEpoch) saved() } }
                 repeatable && repeat != "never" -> {
                     // One schedule from this date: entered now when it's due, and repeating from there.
                     val id = record.text("id")
                     vm.saveRepeating(JSONObject().put("id", id).put("transaction", record).put("nextDate", date).put("anchorDate", date)
-                        .put("frequency", repeat).put("paused", false), entered = record.takeIf { date <= today })
+                        .put("frequency", repeat).put("paused", false), entered = record.takeIf { date <= today }, editorGuard = BudgetEditGuard.record(openedBudget, openedIdentity, "schedules", id), onSuccess = saved)
                     toast(if (date <= today) Words[R.string.transaction_saved_repeats, often] else Words[R.string.transaction_scheduled_repeating, often, Money.date(date)], false)
                 }
                 else -> {
-                    vm.saveTransaction(record)
+                    vm.saveTransaction(record, BudgetEditGuard.record(openedBudget, openedIdentity, "transactions", record.getString("id")), saved)
                     if (schedule) toast(Words[R.string.transaction_scheduled_for, Money.date(date)], false)
                 }
             }
-        }.onSuccess { close() }.onFailure { error = it.message }
+        }.onFailure { error = it.message }
     }
-    FullScreenDialog(close) {
+    FullScreenDialog(cancel) {
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
             Box(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 6.dp)) {
-                IconButton(close, Modifier.align(Alignment.CenterStart)) { Icon(Icons.Outlined.Close, stringResource(R.string.common_cancel), tint = ur.text) }
+                IconButton(cancel, Modifier.align(Alignment.CenterStart)) { Icon(Icons.Outlined.Close, stringResource(R.string.common_cancel), tint = ur.text) }
                 Text(dialogTitle ?: if (original == null) stringResource(R.string.transaction_new) else stringResource(R.string.transaction_edit), Modifier.align(Alignment.Center), style = MaterialTheme.typography.titleMedium, color = ur.text)
-                TextButton(save, Modifier.align(Alignment.CenterEnd), enabled = accounts.isNotEmpty()) {
+                TextButton(save, Modifier.align(Alignment.CenterEnd), enabled = accounts.isNotEmpty() && !editorState.busy) {
                     Text(if (schedule || repeatable && repeat != "never" && date > today) stringResource(R.string.transaction_schedule_action) else stringResource(R.string.common_save), color = if (accounts.isNotEmpty()) ur.accent else ur.muted, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
             }

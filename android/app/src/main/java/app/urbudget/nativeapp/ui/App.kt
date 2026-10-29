@@ -39,6 +39,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import app.urbudget.nativeapp.AssistantController
 import app.urbudget.nativeapp.BudgetViewModel
 import app.urbudget.nativeapp.NativePreferences
+import app.urbudget.nativeapp.NativeServices
 import app.urbudget.nativeapp.BudgetUiState
 import app.urbudget.nativeapp.R
 import androidx.compose.ui.res.stringResource
@@ -237,7 +238,11 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
         }
     }
     // Captures only stable holders, so it stays the same lambda across state emissions.
+    val cloudStatus by NativeServices.syncStatus.collectAsStateWithLifecycle()
     val common: @Composable RowScope.() -> Unit = {
+        if (cloudStatus?.isNull("email") == false) TextButton({ openPage("Account & sync") }) {
+            Text(syncSummary(cloudStatus), maxLines = 1, style = MaterialTheme.typography.labelSmall)
+        }
         RoundIconButton(Icons.AutoMirrored.Outlined.Chat, stringResource(R.string.assistant_title), { assistant = true })
         OverflowMenu(vm) { openPage("Settings & data") }
     }
@@ -252,10 +257,17 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
                 PhoneTopBar(pageTitle("Account & sync"), onBack = { morePage = ""; tab = 0 })
                 Box(Modifier.weight(1f)) { CloudScreen(vm) }
             }
-            budget == null -> WelcomeScreen(state.busy, { name, currency, sample ->
+            morePage == "Budget library" && budget == null -> Column(Modifier.fillMaxSize()) {
+                PhoneTopBar(pageTitle("Budget library"), onBack = { morePage = ""; tab = 0 })
+                Box(Modifier.weight(1f)) { LibraryScreen(null, vm, importFile, exportFile) }
+            }
+            budget == null -> Column(Modifier.fillMaxSize()) {
+                TextButton({ morePage = "Budget library" }) { Text(stringResource(R.string.page_library)) }
+                WelcomeScreen(state.busy, { name, currency, sample ->
                 if (vm.exportBudget() != null) pendingCreate = Triple(name, currency, sample) else vm.createBudget(name, currency, sample)
             }, importFile, if (vm.exportBudget() != null) exportFile else null, if (state.recoveryAvailable) ({ confirmRestore = true }) else null,
                 { tab = 4; morePage = "Account & sync" })
+            }
             tab == 4 && morePage.isNotEmpty() -> pageStates.SaveableStateProvider("page:$morePage") { Column(Modifier.fillMaxSize()) {
                 PhoneTopBar(pageTitle(morePage), budget.text("name"), onBack = ::closePage, actions = common)
                 Box(Modifier.weight(1f)) {
@@ -486,4 +498,23 @@ private fun WelcomeScreen(busy: Boolean, create: (String, String, Boolean) -> Un
             if (restore != null) ListRow(stringResource(R.string.welcome_restore_previous), icon = Icons.Outlined.Restore, onClick = restore)
         }
     }
+}
+
+@Composable
+private fun syncSummary(status: JSONObject?): String {
+    val sync = status?.optJSONObject("sync")
+    val report = sync?.optJSONObject("last")
+    val rows = report?.optJSONArray("budgets")
+    val states = (0 until (rows?.length() ?: 0)).map { rows?.optJSONObject(it)?.optString("state") }
+    val message = when {
+        sync?.optBoolean("unlocked") != true && (sync?.optBoolean("enabled") == true || report != null) -> R.string.sync_status_paused
+        states.any { it in setOf("conflict", "error", "update_app", "recovery", "subscription_required", "deletion_conflict") } -> R.string.sync_status_attention
+        report?.optString("state") == "offline" -> R.string.sync_status_offline
+        report?.optString("state") == "waiting" || status?.optBoolean("libraryPending") == true || states.any { it in setOf("waiting", "queued") } -> R.string.sync_status_waiting
+        states.any { it in setOf("paused", "locked", "signed_out") } -> R.string.sync_status_paused
+        states.any { it == "local_only" } || states.isEmpty() -> R.string.sync_status_device
+        report?.optString("state") == "ok" -> R.string.sync_status_synced
+        else -> R.string.sync_status_attention
+    }
+    return stringResource(message)
 }

@@ -80,12 +80,11 @@ actor BudgetRepository {
         return snapshot()
     }
 
-    func create(name: String, currency: String, sample: Bool, adjust: (@Sendable (inout JSON) -> Void)? = nil) throws -> BudgetSnapshot {
+    func create(name: String, currency: String, sample: Bool, localOnly: Bool = false, adjust: (@Sendable (inout JSON) -> Void)? = nil) throws -> BudgetSnapshot {
         let params: JSON = ["name": .string(name.trimmingCharacters(in: .whitespaces)), "currency": .string(currency.uppercased()), "month": .string(month)]
         var budget = try NativeCore.engine(sample ? "sampleBudget" : "defaultBudget", params: params)
         adjust?(&budget)
-        if isNew { return try persist(budget) }
-        let id = try NativeCore.service("create_budget", ["budget": budget]).string
+        let id = try NativeCore.service("create_budget", ["budget": budget, "localOnly": .bool(sample || localOnly)]).string
         return try open(id: id)
     }
 
@@ -96,7 +95,6 @@ actor BudgetRepository {
     /// A JSON backup as a budget of its own in the library, which then opens (or fills a new, empty library).
     func importAsNew(_ data: Data) throws -> BudgetSnapshot {
         let budget = try Self.backup(data)
-        if isNew { return try persist(budget) }
         let id = try NativeCore.service("create_budget", ["budget": budget]).string
         return try open(id: id)
     }
@@ -155,7 +153,7 @@ actor BudgetRepository {
     static func verify(_ budget: JSON, _ collection: String, _ original: JSON) throws {
         let identity = collection == "loans" ? "accountId" : "id"
         let current = budget.rows(collection).first { $0.text(identity) == original.text(identity) }
-        if let current, current != original {
+        if current != original {
             throw AppError(String(localized: "Your budget changed while this editor was open. Close it and reopen to review the latest values."))
         }
     }
@@ -196,15 +194,15 @@ actor BudgetRepository {
     /// The revision of the open budget, for services that check it themselves.
     var revision: String { token }
 
-    func listBudgets() throws -> [JSON] { try NativeCore.service("list_budgets").array }
+    func listBudgets() throws -> [JSON] { try NativeCore.service("library_snapshot")["entries"].array }
 
     func open(id: String) throws -> BudgetSnapshot {
-        let reply = try NativeCore.service("open_budget", ["id": .string(id)])
+        let reply = try NativeCore.service("library_open", ["id": .string(id)])
         adopt(reply, budget: reply["budget"])
         return snapshot()
     }
 
-    func deleteBudget(id: String) throws -> [JSON] { try NativeCore.service("delete_budget", ["id": .string(id)]).array }
+    func deleteBudget(id: String) throws -> [JSON] { try NativeCore.service("library_trash", ["id": .string(id)])["library"]["entries"].array }
 
     /// The open budget as a portable JSON backup.
     func exportData() -> Data? {
@@ -382,6 +380,11 @@ final class BudgetStore {
         return try await task.value
     }
 
+    /// Sheet teardown waits for its already queued save before clearing recovery.
+    func afterPending(_ action: @escaping @MainActor () -> Void) {
+        enqueue(showBusy: false, quiet: true, { _ in nil }, then: action)
+    }
+
     /// Reloads the open budget from storage, after a change made outside the edit queue.
     func reload() { enqueue(showBusy: false, quiet: true) { try await $0.load() } }
 
@@ -439,7 +442,12 @@ final class BudgetStore {
     func redo() { enqueue { try await $0.redo() } }
     func openBudget(id: String) { enqueue { try await $0.open(id: id) } }
     func listBudgets() async throws -> [JSON] { try await repository.listBudgets() }
-    func deleteBudget(id: String) async throws -> [JSON] { try await repository.deleteBudget(id: id) }
+    func deleteBudget(id: String) async throws -> [JSON] {
+        try await perform { repository in
+            let entries = try await repository.deleteBudget(id: id)
+            return (entries, try await repository.load())
+        }
+    }
     func exportData() async -> Data? { await repository.exportData() }
 
     // MARK: Changes

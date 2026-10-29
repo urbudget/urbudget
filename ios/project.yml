@@ -34,6 +34,8 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         ITSAppUsesNonExemptEncryption: false
         LSRequiresIPhoneOS: true
+        BGTaskSchedulerPermittedIdentifiers: [app.urbudget.account-sync]
+        UIBackgroundModes: [fetch]
         UILaunchScreen: {}
         # Bank statements, YNAB exports and JSON backups open in UrBudget from Files, Mail and AirDrop
         # (as a copy). It's never the default app for these types.

@@ -10,6 +10,7 @@ class SqliteBudgetStorage(private val context: Context) : BudgetStorage {
     private var isNew = true
     private var cached: String? = null
     private var hasSnapshot = false
+    private val migration = context.getSharedPreferences("library-migration", Context.MODE_PRIVATE)
     override var identity: String? = null; private set
     override val revision: String? get() = token.takeIf(String::isNotBlank)
     override val managesHistory = true
@@ -24,7 +25,8 @@ class SqliteBudgetStorage(private val context: Context) : BudgetStorage {
         }
         var snapshot = NativeServices.call("load_budget") as JSONObject
         update(snapshot)
-        if (isNew) {
+        if (isNew && !migration.getBoolean("complete", false) &&
+            (NativeServices.call("library_snapshot") as JSONObject).optBoolean("firstRun", false)) {
             // Keep the original file for recovery. A failed migration never marks it complete.
             legacy.read()?.let { json ->
                 // Give the repository the original bytes for a recovery export if validation
@@ -32,10 +34,12 @@ class SqliteBudgetStorage(private val context: Context) : BudgetStorage {
                 val parsed = runCatching { JSONObject(json) }.getOrNull() ?: return json
                 val validation = JSONObject(NativeBridge.invoke(JSONObject().put("version", 1).put("method", "validate").put("budget", parsed).toString()))
                 if (!validation.optBoolean("ok")) return json
-                snapshot = NativeServices.call("save_budget", JSONObject().put("budget", parsed).put("expectedToken", token)) as JSONObject
+                val id = NativeServices.call("create_budget", JSONObject().put("budget", parsed).put("localOnly", true)) as String
+                snapshot = NativeServices.call("library_open", JSONObject().put("id", id)) as JSONObject
                 update(snapshot)
             }
         }
+        migration.edit().putBoolean("complete", true).commit()
         return if (isNew) null else cached
     }
 
@@ -45,10 +49,11 @@ class SqliteBudgetStorage(private val context: Context) : BudgetStorage {
         cached = json; hasSnapshot = true
     }
 
-    override fun create(json: String) {
-        if (isNew) { write(json); return }
-        val id = NativeServices.call("create_budget", JSONObject().put("budget", JSONObject(json))) as String
-        update(NativeServices.call("open_budget", JSONObject().put("id", id)) as JSONObject)
+    override fun create(json: String) { createWithScope(json, false) }
+    override fun createLocal(json: String) { createWithScope(json, true) }
+    private fun createWithScope(json: String, localOnly: Boolean) {
+        val id = NativeServices.call("create_budget", JSONObject().put("budget", JSONObject(json)).put("localOnly", localOnly)) as String
+        update(NativeServices.call("library_open", JSONObject().put("id", id)) as JSONObject)
     }
 
     override fun undo() { update(NativeServices.call("undo_budget", JSONObject().put("expectedToken", token)) as JSONObject) }
@@ -58,7 +63,10 @@ class SqliteBudgetStorage(private val context: Context) : BudgetStorage {
     override fun hasRecovery() = legacy.hasRecovery()
 
     private fun update(snapshot: JSONObject) {
-        snapshot.optJSONObject("budget")?.let { cached = it.toString(); hasSnapshot = true }
+        if (snapshot.has("budget")) {
+            cached = snapshot.optJSONObject("budget")?.toString()
+            hasSnapshot = true
+        }
         token = snapshot.getString("token")
         identity = snapshot.optString("databasePath").ifBlank { null }
         isNew = snapshot.optBoolean("isNew")

@@ -4,9 +4,9 @@ use serde_json::Value;
 pub use urbudget_services::cloud::{Cloud, Status, site};
 pub mod sync;
 
-#[tauri::command]
-pub fn cloud_status(cloud: State<'_, Cloud>) -> Status {
-    urbudget_services::cloud::cloud_status(&cloud)
+#[tauri::command(async)]
+pub fn cloud_status(cloud: State<'_, Cloud>, library: State<'_, crate::Library>) -> Status {
+    cloud.status_with_library(&library)
 }
 
 #[tauri::command(async)]
