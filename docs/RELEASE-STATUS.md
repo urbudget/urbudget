@@ -1,6 +1,6 @@
 # Release status
 
-Reviewed 27 October 2026. Update this page after a release or a verified account milestone.
+Reviewed 29 October 2026. Update this page after a release or a verified account milestone.
 
 | Platform | Status |
 | --- | --- |
@@ -10,9 +10,15 @@ Reviewed 27 October 2026. Update this page after a release or a verified account
 | Android | Native app source version `1.0.0` (version code 1000000), package `app.urbudget`. The phone apps start their own numbering at 1.0.0 for their first store release; 1.0.7 was desktop's version when the apps were split. A [signed bundle built on GitHub](https://github.com/urbudget/urbudget/actions/runs/39681884973) from the `google-play` environment's upload key on 22 October 2026 (then still numbered 1.0.7). Not on Play yet: the developer account's identity verification is in progress, and the app can't be created in Play Console until it's done. |
 | iOS | Native app source version `1.0.0`, bundle `app.urbudget`. The App Store Connect app record (6825535486) exists, and its listing, price (free), availability, age rating (4+) and privacy answers are filled in. Version 1.0.0 (build 1, from `ios-v1.0.0`) was submitted to App Review on 22 October 2026 as "UrBudget: Envelope Planner", set to **manual release**. Its privacy answers are published, and its screenshots (iPhone and iPad) and review account (`review@urbudget.app`, with complimentary Sync) are set up. It's not on the Mac App Store, by choice: Mac users get the desktop app. |
 
-## Desktop 1.0.11 preparation
+## Desktop 1.0.11
 
-`codex/sync-v2-redesign` is prepared for desktop 1.0.11 with production v2 activation disabled. Local release-blocker remediation and stress validation passed; see [the blocker review](reviews/2026-10-29-sync-v2-release-blockers.md). Hosted CI and Windows/macOS installer builds gate desktop publication. Physical-device checks and staged rollout remain required before mobile release and v2 activation. Publication and Microsoft Store certification are not yet verified.
+[PR #8](https://github.com/urbudget/urbudget/pull/8) is merged and `desktop-v1.0.11` tags `16ecc36b90f7204a863e5a328aa939ac367c58b5`. Desktop is 1.0.11; Android and iOS remain 1.0.0.
+
+All product validation passed on that exact commit: [App validation](https://github.com/urbudget/urbudget/actions/runs/40906203310), [Android builds and lifecycle checks](https://github.com/urbudget/urbudget/actions/runs/40906203343), [iOS Simulator tests and unsigned device build](https://github.com/urbudget/urbudget/actions/runs/40906203041), and [sync protocol stress](https://github.com/urbudget/urbudget/actions/runs/40906202892).
+
+The [release run](https://github.com/urbudget/urbudget/actions/runs/40906214271) built both installers. Apple accepted notarization and the app was stapled. Downloaded asset hashes match GitHub's SHA-256 digests; both updater packages verify against the existing app public key with signed version 1.0.11. The MSIX manifest version is 1.0.11.0. The original installed Windows smoke passed installation/version/hash checks but could not connect to CDP; inspection is being corrected for elevated hosted runners before publication. The GitHub release remains a draft; website publication and Store submission are not yet complete.
+
+The [server deployment](https://github.com/urbudget/urbudget/actions/runs/40906203085) applied migration `0012_sync_v2.sql` successfully. Active Worker version `a7082905-e188-4d0c-b7db-8a4831de3f9a` has no `SYNC_V2_*` bindings or secrets: production activation remains disabled. Physical-device checks and staged rollout still gate mobile release and v2 activation. See [the blocker review](reviews/2026-10-29-sync-v2-release-blockers.md) for local stress evidence and remaining presentation work.
 
 Client rollback policy: only ship a build that understands the new local library and SQLite fences. Reinstalling 1.0.10 over upgraded data cannot start the app and is not a supported rollback. Preserve the upgraded data and use a compatible repair build. The desktop 1.0.11 changelog states this limitation. Server rollback must likewise preserve v2 receipts/tombstones and use the publication pause described in [SYNC_V2.md](../web/SYNC_V2.md).
 
