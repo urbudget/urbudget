@@ -178,14 +178,14 @@ describe("downloads from every channel", () => {
     expect(d.github.fetched.error).toMatch(/403.*GITHUB_TOKEN/);
   });
 
-  it("adds up GitHub's downloads per day, leaving out what came before the first snapshot", async () => {
+  it("keeps raw GitHub activity separate from user totals and leaves pre-snapshot downloads undated", async () => {
     const snapshot = env.DB.sqlite.prepare("INSERT INTO github_downloads (day, tag, asset, count) VALUES (?, ?, ?, ?)");
     // The first snapshot: downloads from before it have no day.
     snapshot.run(daysAgo(2), "desktop-v1.0.8", "UrBudget_1.0.8_x64-setup.exe", 10);
     snapshot.run(daysAgo(2), "desktop-v1.0.8", "UrBudget_1.0.8_x64.msix", 2);
     snapshot.run(daysAgo(1), "desktop-v1.0.8", "UrBudget_1.0.8_x64-setup.exe", 14);
     snapshot.run(daysAgo(1), "desktop-v1.0.8", "UrBudget_1.0.8_x64.msix", 5);
-    // A release published since: its first count, less the publish workflow's own download.
+    // A release published since: keep the full raw count, including release/QA downloads.
     snapshot.run(daysAgo(1), "desktop-v1.0.9", "UrBudget_1.0.9_universal.dmg", 3);
     snapshot.run(daysAgo(1), "desktop-v1.0.9", "UrBudget_1.0.9_universal.dmg.sig", 6);
     snapshot.run(today(), "desktop-v1.0.8", "UrBudget_1.0.8_x64-setup.exe", 15);
@@ -193,11 +193,56 @@ describe("downloads from every channel", () => {
 
     const d = await read<{ github: { windows: number[]; macos: number[]; since: string }; total: number[] }>(call("/api/v1/admin/downloads"));
     expect(d.github.windows.slice(-3)).toEqual([0, 4, 1]);
-    expect(d.github.macos.slice(-3)).toEqual([0, 2, 0]);
+    expect(d.github.macos.slice(-3)).toEqual([0, 3, 0]);
     expect(d.github.since).toBe(daysAgo(2));
-    expect(d.total.slice(-3)).toEqual([0, 6, 1]);
+    expect(d.total.slice(-3)).toEqual([0, 0, 0]);
     const o = await read<{ downloads: { last30: number; github: number; windows: number; macos: number } }>(call("/api/v1/admin/overview"));
-    expect(o.downloads).toMatchObject({ last30: 7, github: 7, windows: 5, macos: 2 });
+    expect(o.downloads).toMatchObject({ last30: 0, github: 8, windows: 0, macos: 0 });
+  });
+
+  it.each([false, true])("excludes release/QA file activity from every user aggregate (Partner Center: %s)", async (partnerCenter) => {
+    const snapshot = env.DB.sqlite.prepare("INSERT INTO github_downloads (day, tag, asset, count) VALUES (?, ?, ?, ?)");
+    snapshot.run(daysAgo(61), "old", "old.exe", 10);
+    snapshot.run(daysAgo(35), "old", "old.exe", 60);
+    // Repeated CI and QA downloads of a new release must never become user activity.
+    snapshot.run(daysAgo(1), "new", "new.exe", 100);
+    snapshot.run(today(), "new", "new.exe", 200);
+    const click = env.DB.sqlite.prepare("INSERT INTO download_counts (day, platform, version, source, kind, count) VALUES (?, ?, ?, '', ?, ?)");
+    click.run(today(), "windows", "1.0.11", "person", 2);
+    click.run(today(), "macos", "1.0.11", "person", 3);
+    click.run(today(), "windows", "Microsoft Store", "person", 4);
+    click.run(today(), "windows", "1.0.11", "bot", 91);
+    click.run(today(), "windows", "1.0.11", "team", 37);
+    click.run(daysAgo(35), "windows", "1.0.10", "person", 2);
+    if (partnerCenter) {
+      Object.assign(env, { MSSTORE_TENANT_ID: "tenant", MSSTORE_CLIENT_ID: "client", MSSTORE_CLIENT_SECRET: "secret" });
+      env.DB.sqlite.prepare("INSERT INTO channel_fetches (source, tried_at, ok_at) VALUES ('store', ?, ?)").run(today(), today());
+      env.DB.sqlite.prepare("INSERT INTO store_counts (day, kind, count) VALUES (?, 'acquisitions', 6)").run(today());
+    }
+    const storeCount = partnerCenter ? 6 : 4;
+    const userTotal = 5 + storeCount;
+    const d = await read<{
+      total: number[];
+      github: { windows: number[]; includesAutomation: boolean; excludedFromUserTotals: boolean };
+      others: { bots: { last30: number }; team: { last30: number } };
+    }>(call("/api/v1/admin/downloads"));
+    expect(d.total.at(-1)).toBe(userTotal);
+    expect(d.total.reduce((a, b) => a + b, 0)).toBe(userTotal + 2);
+    expect(d.github.windows.reduce((a, b) => a + b, 0)).toBe(250);
+    expect(d.github).toMatchObject({ includesAutomation: true, excludedFromUserTotals: true });
+    expect(d.others).toMatchObject({ bots: { last30: 91 }, team: { last30: 37 } });
+    const o = await read<{
+      downloads: { last30: number; github: number; windows: number; macos: number };
+      previous30: { downloads: number };
+      funnel: { downloads: number };
+      daily: { downloads: number[] };
+      weeks: { downloads: number }[];
+    }>(call("/api/v1/admin/overview"));
+    expect(o.downloads).toMatchObject({ last30: userTotal, github: 200, windows: 2 + storeCount, macos: 3 });
+    expect(o.previous30.downloads).toBe(2);
+    expect(o.funnel.downloads).toBe(userTotal);
+    expect(o.daily.downloads.reduce((a, b) => a + b, 0)).toBe(userTotal + 2);
+    expect(o.weeks.reduce((sum, week) => sum + week.downloads, 0)).toBe(userTotal + 2);
   });
 
   it("takes the Store's acquisitions and installs from Partner Center once a day, in place of its button's clicks", async () => {

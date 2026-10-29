@@ -385,7 +385,7 @@ loaders.overview = async () => {
     {
       label: "First opens, 30 days",
       value: num(u.opens30),
-      sub: u.since ? `Copies installed and opened${o.downloads.last30 ? ` · ${percent(Math.min(1, u.opens30 / o.downloads.last30))} of downloads` : ""}` : "None counted yet: copies count themselves from the next desktop release",
+      sub: u.since ? "Copies installed and opened, including GitHub installs" : "None counted yet: copies count themselves from the next desktop release",
       trend: [u.opens30, p.opens],
     },
     {
@@ -449,7 +449,7 @@ loaders.overview = async () => {
   const tips = days.map(dateOnly);
   columnChart($("chart-downloads"), {
     title: "Downloads per day",
-    sub: `Last 90 days · people only · ${o.downloads.storeSource === "clicks" ? "the Store as clicks on the site's Store button, until Partner Center is connected" : "the Store's acquisitions from Partner Center"}`,
+    sub: `Last 90 days · GitHub excluded · ${o.downloads.storeSource === "clicks" ? "the Store as clicks on the site's Store button, until Partner Center is connected" : "the Store's acquisitions from Partner Center"}`,
     labels,
     tips,
     series: channelSeries(o.daily),
@@ -480,16 +480,15 @@ loaders.overview = async () => {
   });
 };
 
-/** "urbudget.app 12 · GitHub 3 · Store 20": a period's downloads by channel. */
+/** The channels included in a period's user download total. */
 function channelSplit(d) {
-  return `urbudget.app ${num(d.website)} · GitHub ${num(d.github)} · Store ${num(d.store)}${d.storeSource === "clicks" ? " (button clicks)" : ""}`;
+  return `urbudget.app ${num(d.website)} · Store ${num(d.store)}${d.storeSource === "clicks" ? " (button clicks)" : ""}`;
 }
 
-/** The three channels as a chart's series, in the same colors on every chart. */
-function channelSeries({ website, github, store }) {
+/** User download channels; unfiltered GitHub activity has its own chart. */
+function channelSeries({ website, store }) {
   return [
     { name: "urbudget.app", values: website, color: "var(--series-1)" },
-    { name: "GitHub", values: github, color: "var(--series-2)" },
     { name: "Microsoft Store", values: store, color: "var(--series-3)" },
   ];
 }
@@ -498,15 +497,15 @@ function channelSeries({ website, github, store }) {
 function funnel(f, countingSince, usageSince) {
   const steps = [
     ["Page views", f.views],
-    ["Downloads, every channel", f.downloads],
+    ["Downloads, website + Store", f.downloads],
     ["First opens of the app", f.opens],
     ["Sync checkouts opened", f.checkouts],
   ];
   $("funnel").replaceChildren(
     ...steps.map(([label, n], i) => {
       const before = i ? steps[i - 1][1] : 0;
-      // Not a share when the step before had fewer: those came in through another door, or earlier.
-      const share = before && n <= before ? `${percent(n / before)} of the step before` : "";
+      // First opens include GitHub installs, which have no comparable user download count.
+      const share = i !== 2 && before && n <= before ? `${percent(n / before)} of the step before` : "";
       return h("li", {}, h("span", { class: "funnel-value" }, num(n)), h("span", { class: "funnel-label" }, label), share ? h("span", { class: "funnel-share" }, share) : null);
     }),
   );
@@ -515,7 +514,7 @@ function funnel(f, countingSince, usageSince) {
       ? ` Checkouts are counted from ${countingSince ? dateOnly(countingSince) : "this version of the Worker"} on.`
       : "";
   const opens = !usageSince || usageSince > daysAgo(29) ? ` First opens are counted from ${usageSince ? dateOnly(usageSince) : "the next desktop release"} on.` : "";
-  $("funnel-note").textContent = `People only, last 30 days. A step can outnumber the one before it: someone who found UrBudget in the Store, or a checkout from someone who downloaded earlier.${since}${opens}`;
+  $("funnel-note").textContent = `Last 30 days. Downloads exclude GitHub file activity; first opens include GitHub installs, so no download-to-open rate is shown. A step can outnumber the one before it: someone who found UrBudget in the Store, or a checkout from someone who downloaded earlier.${since}${opens}`;
 }
 
 /** YYYY-MM-DD for `n` days before today (UTC), as the API counts days. */
@@ -826,7 +825,7 @@ loaders.downloads = async () => {
     {
       label: "Downloads, 30 days",
       value: num(total30),
-      sub: `Every channel, people only · ${num(sum(d.total))} in 90 days`,
+      sub: `Website + Store · GitHub excluded · ${num(sum(d.total))} in 90 days`,
       trend: [total30, lastDaysOf(d.total, 30, true)],
     },
     {
@@ -835,9 +834,9 @@ loaders.downloads = async () => {
       sub: `Windows ${num(lastDaysOf(d.website.windows, 30))} · macOS ${num(lastDaysOf(d.website.macos, 30))} · ${num(lastDaysOf(d.website.store, 30))} sent to the Store`,
     },
     {
-      label: "GitHub, 30 days",
+      label: "GitHub installer downloads, 30 days",
       value: num(lastDaysOf(github, 30)),
-      sub: d.github.since ? `Counted day by day since ${dateOnly(d.github.since)}` : "Not counted yet: the Worker notes GitHub's numbers every hour",
+      sub: "Includes release, QA and automation · excluded from user totals",
     },
     {
       label: "Microsoft Store, 30 days",
@@ -849,7 +848,7 @@ loaders.downloads = async () => {
     {
       label: "First opens, 30 days",
       value: num(lastDaysOf(opens, 30)),
-      sub: total30 ? `${percent(Math.min(1, lastDaysOf(opens, 30) / total30))} of downloads became a copy in use` : "Copies installed and opened",
+      sub: "Copies installed and opened, including GitHub installs",
     },
     {
       label: "Bots and team, 30 days",
@@ -870,10 +869,10 @@ loaders.downloads = async () => {
     ),
     d.github.configured
       ? fetchedItem(
-          "GitHub",
+          "GitHub installer downloads",
           d.github.fetched,
-          "the Worker notes each release file's count every hour. The first note is the starting point; downloads count from then on.",
-          "each release file's count, noted every hour; a day's downloads are the rise since the day before.",
+          "unfiltered file downloads, including release workflows, QA and automation. Excluded from user totals. Waiting for the first hourly snapshot.",
+          "unfiltered file downloads, including release workflows, QA and automation. Excluded from user totals. Daily changes are noted hourly; the first snapshot is a baseline.",
         )
       : statusItem("Not set", "warn", h("b", {}, "GitHub"), ": set GITHUB_REPO to count downloads from GitHub's releases."),
     d.store.configured
@@ -901,11 +900,20 @@ loaders.downloads = async () => {
 
   columnChart($("chart-downloads-90"), {
     title: "Downloads per day",
-    sub: `Last 90 days · people only · ${d.store.partnerCenter ? "the Store's acquisitions from Partner Center" : "the Store as clicks on the site's Store button"}`,
+    sub: `Last 90 days · GitHub excluded · ${d.store.partnerCenter ? "the Store's acquisitions from Partner Center" : "the Store as clicks on the site's Store button"}`,
     labels: d.days.map(shortDay),
     tips: d.days.map(dateOnly),
-    series: channelSeries({ website, github, store }),
+    series: channelSeries({ website, store }),
     empty: "No downloads counted yet.",
+  });
+
+  columnChart($("chart-github-downloads"), {
+    title: "GitHub installer downloads",
+    sub: "Includes release, QA and automation · excluded from user totals",
+    labels: d.days.map(shortDay),
+    tips: d.days.map(dateOnly),
+    series: [{ name: "GitHub installer downloads (unfiltered)", values: github, color: "var(--series-2)" }],
+    empty: "No file download activity recorded since the first snapshot.",
   });
 
   const opened = (label, downloads, firstOpens) =>
@@ -913,14 +921,14 @@ loaders.downloads = async () => {
       "tr",
       {},
       h("td", {}, label),
-      h("td", { class: "num" }, num(downloads)),
+      h("td", { class: "num" }, downloads === null ? "—" : num(downloads)),
       h("td", { class: "num" }, num(firstOpens)),
       h("td", { class: "num" }, downloads ? percent(firstOpens / downloads) : "—"),
     );
   fillTable(
     $("opened-table"),
     [
-      opened("urbudget.app or GitHub", lastDaysOf(website, 30) + lastDaysOf(github, 30), lastDaysOf(d.opens.direct, 30)),
+      opened("urbudget.app or GitHub (download total unavailable)", null, lastDaysOf(d.opens.direct, 30)),
       opened(d.store.partnerCenter ? "Microsoft Store" : "Microsoft Store (site's button clicks)", lastDaysOf(store, 30), lastDaysOf(d.opens.store, 30)),
     ],
     "",
@@ -940,8 +948,8 @@ loaders.downloads = async () => {
       row("urbudget.app", "Windows installer clicks", d.website.windows),
       row("urbudget.app", "macOS installer clicks", d.website.macos),
       row("urbudget.app", "Clicks through to the Microsoft Store", d.website.store),
-      row("GitHub", "Windows installers downloaded", d.github.windows),
-      row("GitHub", "macOS installers downloaded", d.github.macos),
+      row("GitHub (unfiltered)", "Windows installer files, including release/QA/automation", d.github.windows),
+      row("GitHub (unfiltered)", "macOS installer files, including release/QA/automation", d.github.macos),
       d.store.configured ? row("Microsoft Store", "Acquisitions, from Partner Center", d.store.acquisitions) : null,
       d.store.configured ? row("Microsoft Store", "Installs, from Partner Center", d.store.installs) : null,
       row("The app", "First opens of copies from urbudget.app or GitHub", d.opens.direct),
@@ -949,8 +957,8 @@ loaders.downloads = async () => {
       h(
         "tr",
         {},
-        h("th", { scope: "row" }, "Every channel"),
-        h("td", {}, "Downloads, as on the Overview"),
+        h("th", { scope: "row" }, "Website + Store"),
+        h("td", {}, "User download total; GitHub excluded"),
         [7, 30, 90].map((n) => h("td", { class: "num" }, h("b", {}, num(lastDaysOf(d.total, n))))),
       ),
     ].filter(Boolean),
