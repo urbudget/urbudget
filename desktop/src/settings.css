@@ -240,5 +240,5 @@ kbd {
 }
 
 .empty-library-page { min-height: 100vh; }
-.empty-library-titlebar { min-height: 42px; }
+.empty-library-titlebar { --titlebar: 36px; min-height: 42px; }
 .empty-library-page > .settings-page { padding: 24px; }

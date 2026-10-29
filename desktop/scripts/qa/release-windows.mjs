@@ -297,8 +297,34 @@ try {
   assert(["Start fresh", "I'm coming from YNAB", "Look around first"].every(text => firstView.text.includes(text)), "First-run onboarding choices are missing.");
   assert(firstView.scripts.some(url => /\/assets\/.*\.js(?:\?|$)/.test(url)), "No bundled release JavaScript asset observed.");
   assert(!firstView.scripts.some(url => /@vite|\/src\//.test(url)), "Development script observed in installed release.");
+  firstView.layout = await cdp.evaluate(`(() => {
+    const measure = element => {
+      if (!element) return null;
+      const rect = element.getBoundingClientRect(), style = getComputedStyle(element);
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return {label: element.getAttribute("aria-label"), left: rect.left, top: rect.top,
+        right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height,
+        visible: element.checkVisibility({checkOpacity: true, checkVisibilityCSS: true}) &&
+          style.display !== "none" && style.visibility === "visible",
+        hitAtCenter: hit === element || element.contains(hit)};
+    };
+    const titlebar = document.querySelector(".empty-library-titlebar .titlebar");
+    return {viewport: {width: innerWidth, height: innerHeight}, titlebar: measure(titlebar),
+      controls: [...(titlebar?.querySelectorAll(".window-controls button") ?? [])].map(measure)};
+  })()`);
   await writeFile(join(evidence, "first-run-dom.json"), JSON.stringify(firstView, null, 2));
   await cdp.screenshot("first-run.png");
+  // Inspect real WebView layout: DOM existence alone missed the collapsed first-run titlebar.
+  const {viewport, titlebar, controls} = firstView.layout;
+  assert(titlebar?.visible && titlebar.height >= 32, "First-run Windows titlebar is hidden or shorter than 32 CSS pixels.");
+  assert.equal(controls.length, 3, "First-run Windows minimize/maximize/close controls are missing.");
+  for (const control of controls) {
+    assert(control.visible && control.width > 0 && control.height > 0 && control.hitAtCenter,
+      `First-run window control ${control.label} is hidden, collapsed, or covered.`);
+    assert(control.left >= 0 && control.top >= 0 && control.right <= viewport.width && control.bottom <= viewport.height,
+      `First-run window control ${control.label} is clipped outside the viewport.`);
+  }
+  report.checks.push("first-run titlebar and window-control layout");
   await diagnostics("first-run");
   const initial = await invoke(cdp, "library_snapshot");
   assert(initial.firstRun === true && initial.entries.length === 0 && !initial.activeId, "Installed release did not open a pristine library.");
