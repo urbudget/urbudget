@@ -181,7 +181,7 @@ Standalone copies update themselves with Tauri's updater plugin. A few seconds a
 
 Updates install themselves at a moment that interrupts nothing (`src/updates.ts`):
 
-- **Download:** an update the check finds is downloaded in the background straight away, after which Settings shows "Version X is ready to install" and **Restart to update**.
+- **Download:** an update the check finds is downloaded in the background straight away, after which Settings shows "Version X is ready to install" and **Restart to update**. Standalone transfers have their own 30-minute timeout, separate from the metadata check; a stalled or failed transfer leaves a retry available. Readiness requires successful signature and signed-version verification, not just receipt of all bytes.
 - **Unused:** once the window has been in the background, with no keyboard, mouse or wheel input, for 15 minutes (`IDLE_BEFORE_UPDATE`), the update installs and UrBudget reopens on the new version. That waits while anything could be lost that a restart doesn't keep: unsaved or saving changes, an operation, a sync, an open dialog or editor, a focused text field, a bank import under way (on its page or not), or a message being written, attached to or sent in the assistant. A failed attempt isn't retried by itself until the next check finds the update again, and an update that installed by itself without the version changing isn't tried by itself again for three days (`lb:update-attempt`), so a failing install never loops.
 - **Turned off:** Settings › General › **Install updates by themselves** (the `autoUpdate` preference) stops installing when unused and on close; updates still download and wait for **Restart to update**.
 - **Development builds** (debug builds: `tauri dev`, the QA window) report the `development` channel and don't look for updates, so a published version never installs over the copy being worked on. With `URBUDGET_API` set they use the standalone channel against that local server, to try updating.
@@ -193,15 +193,55 @@ Every install saves first and holds the budget's edit lock, as **Restart to upda
 Microsoft Store copies use [Windows Store package-update APIs](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/package-updates-from-store) on the same schedule, with **Check now** and **Open Microsoft Store** in Settings › General. The Store decides availability for this copy; an update notice does not guess the target version.
 
 - **Silent download and install:** `TrySilentDownloadStorePackageUpdatesAsync` downloads the update in the background, and `TrySilentDownloadAndInstallStorePackageUpdatesAsync` installs it on close, when unused or on **Restart to update**. Windows allows both only when the person lets Microsoft Store update apps automatically and isn't on a metered connection (`CanSilentlyDownloadStorePackageUpdates`).
-- **With consent:** otherwise the update waits for **Install Store update**, which asks Windows for permission (`RequestDownloadAndInstallStorePackageUpdatesAsync`). A downloaded update Windows will no longer install silently (`apply_store_update` answers `consent`) goes the same way: pressing **Restart to update** then asks, and an automatic attempt leaves it for the person rather than prompting with nobody there. A silent install that fails also falls back to asking. A silent download that doesn't finish within 30 minutes is canceled, so it can't hold later checks off.
+- **With consent:** otherwise the update waits for **Install Store update**, which asks Windows for permission (`RequestDownloadAndInstallStorePackageUpdatesAsync`). A downloaded update Windows will no longer install silently (`apply_store_update` answers `consent`) goes the same way: pressing **Restart to update** then asks, and an automatic attempt leaves it for the person rather than prompting with nobody there. A silent install that fails also falls back to asking. A silent download with no new progress for two minutes, or running for 30 minutes overall, is canceled and exposes the Store fallback. Windows must acknowledge the operation ending before another native request starts.
 - **Reopening:** before an install meant to reopen the app, UrBudget registers with `RegisterApplicationRestart` (updates only: not after a crash, a hang or a reboot), so Windows starts it again after replacing the package; an install on close unregisters instead.
-- **Saving first:** before any Store install, UrBudget saves, makes the configured on-close backup, and locks budget edits, because Windows closes the app during the request. Canceled or failed requests unlock the app without restarting. Store requests start on the UI thread with the window's HWND; availability checks time out after 30 seconds. Unknown package identity fails closed rather than enabling the standalone installer. Phones leave updates to their stores.
+- **Saving first:** before any Store install, UrBudget saves, makes the configured on-close backup, and locks budget edits, because Windows closes the app during the request. Canceled or failed requests unlock the app without restarting once Windows confirms they ended. An install with no progress for five minutes, or running for 45 minutes overall, requests cancellation; while Windows is still stopping it, the saved-budget lock remains held and the dialog offers a normal close or Microsoft Store. Store requests start on the UI thread with the window's HWND; availability checks time out after 30 seconds. Unknown package identity fails closed rather than enabling the standalone installer. Phones leave updates to their stores.
 
-Before publishing an update to this integration, validate with a Store-associated packaged build containing these controls and a newer package available to its test account: check availability, cancel installation, retry with an unsaved edit, and confirm the edit survives installation and reopening. Also check the no-update response and Store link. Unit tests and an unpackaged debug build cannot validate Store eligibility, consent dialogs, or package deployment.
+Before publishing an update to this integration, complete [Verifying an updater change](#verifying-an-updater-change). Unit tests and an unpackaged debug build cannot validate Store eligibility, consent dialogs, or package deployment.
 
-UrBudget initiates installation only when that button is pressed; Windows can also update Store copies independently according to the user's Store settings. Standalone packages download while you keep working; then the app finishes the save, makes the configured on-close backup, locks edits, and installs. When the budget can't be saved (a conflict, a recovery waiting for an answer), nothing is installed and a standalone download is kept for the next try. On Windows the NSIS installer runs in passive mode (a progress bar, no questions, current user only) and opens the new version; on macOS the app bundle is replaced and the app restarts (`restart_app`).
+UrBudget installs on request or at the automatic moments described above; Windows can also update Store copies independently according to the user's Store settings. Standalone packages download while you keep working; then the app finishes the save, makes the configured on-close backup, locks edits, and installs. When the budget can't be saved (a conflict, a recovery waiting for an answer), nothing is installed and a standalone download is kept for the next try. On Windows the NSIS installer runs in passive mode (a progress bar, no questions, current user only) and opens the new version; on macOS the app bundle is replaced and the app restarts (`restart_app`).
 
 The plugin installs nothing whose signature doesn't verify against the public key in `tauri.conf.json`. With `requireSignedVersion`, each signature also names the version it was made for, so an older package can't be offered as a newer one.
+
+### Verifying an updater change
+
+The Release workflow runs the updater UI, interruption, save/close, and native Store state tests
+before building installers. `cargo test --manifest-path src-tauri/Cargo.toml --test updater_transport`
+also drives the real Tauri updater against a loopback HTTP server: no response, a stalled or
+truncated body, HTTP failure, retry, corrupted bytes, a valid signature for the wrong version,
+and same/older versions. It downloads four harmless bytes and never installs anything. These
+tests are part of `npm test` and need no signing secrets or access to a real budget.
+
+For a change to the Store integration, test two versions on a dedicated Windows VM or test user
+with a Microsoft Store test account. Production Store builds ignore `LOCAL_BUDGET_DATA_DIR`, so
+setting that variable does not isolate their budgets. Use synthetic budgets in the test profile.
+Do not downgrade, uninstall, or reset the user's working copy to arrange an upgrade test.
+
+1. Put a Store-signed package **A containing the updater changes** into a
+   [package flight](https://learn.microsoft.com/en-us/windows/apps/publish/beta-testing-and-targeted-distribution)
+   for the test account and install it through the Store. Publish a higher-version package B to
+   that flight, with the same package identity and publisher. Sideloading an arbitrary MSIX does
+   not establish Store update eligibility. A successful old-production-to-A upgrade only tests
+   the old updater; the required test is A updating itself to B.
+2. Verify Check now reports B available. Download with the app open; interrupt the test VM's
+   network, restore it, and retry. Confirm an unavailable or stalled download becomes an actionable
+   status and **Open Microsoft Store** stays usable. Reaching 100% bytes must not on its own claim
+   the package is installed or ready. Record the actual Store operation result and Windows
+   deployment events, including a staged package waiting for app closure when reproducible.
+3. With Store automatic updates enabled and then disabled, exercise both silent and consent
+   paths. Cancel a consent dialog and retry. Test an unsaved edit, a save failure/conflict,
+   manual installation, installation after inactivity, and Store installation on close. An
+   unsuccessful attempt must leave the app usable; a successful one must preserve the edit and
+   backup and register the new package version. Check that reopening happens only when requested.
+4. Verify Check now returns no update on B and after an independent Store update. Test multiple
+   windows sharing the package. Preserve the installed version, A/B MSIX hashes, test account's
+   flight assignment, Windows version, logs, and results as release evidence. Once certification
+   permits, use the same tested package for broad distribution instead of rebuilding it.
+
+Standalone installers need a separate two-version check in isolated Windows and macOS profiles:
+use signed packages and an isolated test endpoint, install with an unsaved synthetic edit, verify
+the new executable version and preserved data after reopening, and check save failure and retry.
+The local setup below exercises that path without publishing to the production update feed.
 
 ### The updater signing key
 

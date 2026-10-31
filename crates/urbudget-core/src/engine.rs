@@ -830,6 +830,44 @@ mod review_regressions {
         assert_eq!(after["payment"], 10000); assert_eq!(after["payment2"], 0);
     }
     #[test]
+    fn moving_carried_money_out_without_a_target_does_not_require_replenishing_it() {
+        for amount in [200_000, 2_000_000] {
+            for goal in [None, Some(json!(null)), Some(json!({"goal_type": null})), Some(json!({"goal_type": "MF"}))] {
+                let mut b = sample();
+                b.accounts[0].opening_balance = 3_000_000;
+                b.categories[0].target = 0;
+                if let Some(goal) = goal { b.categories[0].extra.insert("goal".into(), goal); }
+                b.assignments = vec![
+                    Assignment { extra: Default::default(), month: "2026-09".into(), category_id: "food".into(), amount },
+                    Assignment { extra: Default::default(), month: "2026-10".into(), category_id: "food".into(), amount: -amount },
+                ];
+                let row = calculate_at(&b, "2026-10", "2026-10").unwrap().categories.remove(0);
+                assert_eq!((row.assigned, row.carried, row.available, row.needed), (-amount, amount, 0, 0));
+                assert_eq!((row.target_funding_required, row.target_funding_funded, row.month_target), (0, 0, 0));
+                for limit in [false, true] {
+                    let funded = crate::workflows::apply(b.clone(), &json!({
+                        "type": "autoAssign", "month": "2026-10", "mode": "underfunded",
+                        "categories": ["food"], "limitToAvailable": limit,
+                    })).unwrap();
+                    assert_eq!(funded.assignments, b.assignments);
+                }
+                // A real upcoming bill still needs funding, even with no target.
+                let mut bill = purchase(); bill.account_id = "cash".into();
+                b.extra.insert("schedules".into(), json!([crate::schedules::Schedule {
+                    extra: Default::default(), id: "bill".into(), next_date: Some(bill.date.clone()),
+                    anchor_date: bill.date.clone(), frequency: "never".into(), paused: false, transaction: bill.clone(),
+                }]));
+                let row = calculate_at(&b, "2026-10", "2026-10").unwrap().categories.remove(0);
+                assert_eq!((row.available, row.upcoming, row.needed), (0, 5000, 5000));
+                // Once paid, the overspending still needs covering.
+                b.extra.remove("schedules");
+                b.transactions.push(bill);
+                let row = calculate_at(&b, "2026-10", "2026-10").unwrap().categories.remove(0);
+                assert_eq!((row.available, row.needed), (-5000, 5000));
+            }
+        }
+    }
+    #[test]
     fn target_progress_has_monthly_units_for_weekly_and_yearly_goals() {
         let mut b = sample(); b.categories[0].target = 10000; b.assignments[0].amount = 10000;
         b.categories[0].extra.insert("goal".into(), json!({"goal_type":"NEED", "goal_cadence":2, "goal_day":0}));

@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { BankFixes, BankSession, Statement } from "../bridge";
 import type { BankColumns } from "../types";
 import { demoBudget } from "../demo";
@@ -211,4 +211,63 @@ it("does not interpret an unmapped column as money just because its header says 
   fireEvent.keyDown(field, { key: "Enter" });
   expect(onFix.mock.lastCall![0].fields).toBeUndefined();
   expect(onFix.mock.lastCall![0].cells?.[0].to).toBe("10+2.50");
+});
+
+it("opens the mapped date in the budget format and saves a calendar pick as an ISO date", () => {
+  configureFormat({ currency: "SAR", dateFormat: "mdy" });
+  const { props, onFix } = fixture(undefined, undefined, ["01/10/2026", "Bank wording", "-10.00"]);
+  render(<StatementGrid {...props} />);
+  const date = edit("When", "01/10/2026") as HTMLInputElement;
+  expect(date.value).toBe("10/01/2026");
+  fireEvent.click(screen.getByRole("button", { name: "Choose when of line 1" }));
+  fireEvent.click(screen.getByRole("button", { name: "10/20/2026" }));
+  expect(onFix).not.toHaveBeenCalled();
+  fireEvent.keyDown(date, { key: "Enter" });
+  expect(onFix.mock.lastCall![0]).toMatchObject({
+    cells: [{ column: 0, from: "01/10/2026", to: "2026-10-20" }],
+    fields: [{ field: "date", from: "2026-10-01", to: "2026-10-20" }],
+  });
+});
+
+it("keeps the source date unchanged when another field is edited", () => {
+  const { props, onFix } = fixture(undefined, undefined, ["01/10/2026", "Bank wording", "-10.00"]);
+  render(<StatementGrid {...props} />);
+  const amount = edit("Value", "-10.00");
+  fireEvent.change(amount, { target: { value: "-10-2" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  expect(onFix.mock.lastCall![0].cells).toEqual([{ line: "1", lineVersion: 0, column: 2, from: "-10.00", to: "-12.00" }]);
+  expect(onFix.mock.lastCall![0].fields?.map((f) => f.field)).toEqual(["amount"]);
+});
+
+it.each(["Enter", "Save"])("blocks a newly invalid date on %s until corrected", (method) => {
+  const { props, onFix } = fixture();
+  render(<StatementGrid {...props} />);
+  const date = edit("When", "2026-10-01") as HTMLInputElement;
+  fireEvent.change(date, { target: { value: "2026-02-31" } });
+  if (method === "Enter") fireEvent.keyDown(date, { key: "Enter" });
+  else fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  expect(date.value).toBe("2026-02-31");
+  expect(screen.getByRole("alert").textContent).toBe("Enter a valid date.");
+  expect(onFix).not.toHaveBeenCalled();
+  fireEvent.change(date, { target: { value: "20 Oct" } });
+  fireEvent.keyDown(date, { key: "Enter" });
+  expect(onFix.mock.lastCall![0].fields?.[0]).toMatchObject({ field: "date", to: "2026-10-20" });
+});
+
+it("repairs an unreadable source date with the calendar and keeps Escape within the picker", () => {
+  const { props, onFix } = fixture(undefined, undefined, ["bad date", "Bank wording", "-10.00"]);
+  props.statement.lines[0].fields.date = "bad date";
+  props.statement.lines[0].status = { kind: "attention", field: "date", column: 0, reason: "Invalid date" };
+  render(<StatementGrid {...props} />);
+  const date = edit("When", "bad date");
+  fireEvent.keyDown(date, { key: "ArrowDown", altKey: true });
+  const calendar = within(screen.getByRole("dialog", { name: "Choose when of line 1" })).getByRole("grid");
+  fireEvent.keyDown(calendar, { key: "Escape" });
+  expect(screen.queryByRole("dialog", { name: "Choose when of line 1" })).toBeNull();
+  expect(screen.getByRole("row", { name: "Edit line 1" })).toBeTruthy();
+  fireEvent.keyDown(date, { key: "ArrowDown", altKey: true });
+  fireEvent.click(screen.getByRole("button", { name: "Today" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  expect(onFix.mock.lastCall![0].fields?.[0]).toMatchObject({ field: "date", from: "bad date" });
+  expect(onFix.mock.lastCall![0].fields?.[0].to).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 });

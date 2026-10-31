@@ -167,6 +167,9 @@ pub(crate) fn needed_with_available(
     c: &Category, month: &str, assigned: i64, available: i64, carry: i64,
     previous_available: impl Fn(&str) -> i64, assignments: &AssignmentIndex, as_of: &str,
 ) -> i64 {
+    // Moving carried money out is not a funding obligation when there is no target.
+    // The engine separately accounts for overspending, schedules, and card debt.
+    if c.target <= 0 { return 0; }
     let Some(g) = c.extra.get("goal").filter(|g| !g.is_null()) else {
         return (c.target - assigned).max(0);
     };

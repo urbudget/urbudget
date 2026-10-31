@@ -30,6 +30,20 @@ The [server deployment](https://github.com/urbudget/urbudget/actions/runs/409062
 
 Client rollback policy: only ship a build that understands the new local library and SQLite fences. Reinstalling 1.0.10 over upgraded data cannot start the app and is not a supported rollback. Preserve the upgraded data and use a compatible repair build. The desktop 1.0.11 changelog states this limitation. Server rollback must likewise preserve v2 receipts/tombstones and use the publication pause described in [SYNC_V2.md](../web/SYNC_V2.md).
 
+## Android bank SMS import (unreleased)
+
+The Android source includes an opt-in Bank messages inbox with multiple sender
+selection, recent-history capture, assistant-directed batch preparation, grouped
+questions, editable proposals and duplicate review. Selected messages are sent to
+the configured assistant only after a separate disclosure and confirmation. Model
+sessions are temporary and do not create ordinary assistant chat history. No SMS
+is imported automatically; all reviewed accounts commit in one undoable step.
+New transactions remain uncleared. This is an unreleased source change, not a Play
+submission or approval. Its `READ_SMS`/`RECEIVE_SMS` permissions require the
+SMS-based money management declaration and Google Play approval before store
+distribution; privacy/store disclosures must be updated for that release. See the
+[Android guide](../android/README.md#bank-sms-import).
+
 ## Desktop 1.0.10
 
 The [installer build](https://github.com/urbudget/urbudget/actions/runs/40521784968) and

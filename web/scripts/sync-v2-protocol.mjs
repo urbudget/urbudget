@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { startLocal } from "./sync-v2-local.mjs";
-const local = await startLocal({ port: 8790 });
+const local = await startLocal({ port: Number(process.env.SYNC_V2_QA_PORT ?? 8790) });
 const auth = { Authorization: `Bearer ${local.token}` }, installationId = "protocol_qa";
 const canonical = value => Array.isArray(value) ? `[${value.map(canonical).join(",")}]` : value && typeof value === "object" ? `{${Object.keys(value).sort().map(k => `${JSON.stringify(k)}:${canonical(value[k])}`).join(",")}}` : JSON.stringify(value);
 const hash = data => createHash("sha256").update(data).digest("hex");

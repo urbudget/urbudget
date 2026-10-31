@@ -2,6 +2,12 @@
 //! The frontend saves and locks the budget before an installer can close the app.
 use tauri::AppHandle;
 
+#[derive(Clone, serde::Serialize)]
+pub struct StoreInstallStatus {
+    stage: &'static str,
+    progress: Option<f64>,
+}
+
 /// Debug builds look for updates wherever `URBUDGET_API` points, such as `wrangler dev`.
 #[cfg(debug_assertions)]
 pub fn use_local_server<R: tauri::Runtime>(mut context: tauri::Context<R>) -> tauri::Context<R> {
@@ -66,14 +72,24 @@ fn packaged() -> Result<bool, String> {
 /// (urbudget_services::usage). The window asks only while the Privacy & data switch is on. Debug
 /// builds count only on a local server (URBUDGET_API), never on urbudget.app.
 #[tauri::command(async)]
-pub async fn report_usage(app: AppHandle, usage: tauri::State<'_, urbudget_services::usage::Usage>) -> Result<(), String> {
+pub async fn report_usage(
+    app: AppHandle,
+    usage: tauri::State<'_, urbudget_services::usage::Usage>,
+) -> Result<(), String> {
     #[cfg(debug_assertions)]
     if std::env::var_os("URBUDGET_API").is_none() {
         return Ok(());
     }
     let channel = if packaged()? { "store" } else { "direct" };
     let version = app.package_info().version.to_string();
-    usage.report(&crate::cloud::site(), std::env::consts::OS, channel, &version).await
+    usage
+        .report(
+            &crate::cloud::site(),
+            std::env::consts::OS,
+            channel,
+            &version,
+        )
+        .await
 }
 
 #[tauri::command]
@@ -85,20 +101,30 @@ pub async fn check_store_update(window: tauri::WebviewWindow) -> Result<bool, St
     #[cfg(not(windows))]
     {
         let _ = window;
-        Err(urbudget_services::i18n::tr("Microsoft Store updates are only available on Windows.").into())
+        Err(
+            urbudget_services::i18n::tr("Microsoft Store updates are only available on Windows.")
+                .into(),
+        )
     }
 }
 
 #[tauri::command]
-pub async fn install_store_update(window: tauri::WebviewWindow) -> Result<bool, String> {
+pub async fn install_store_update(
+    window: tauri::WebviewWindow,
+    on_status: Option<tauri::ipc::JavaScriptChannelId>,
+) -> Result<bool, String> {
     #[cfg(windows)]
     {
-        microsoft::install(window).await
+        let on_status = on_status.map(|id| id.channel_on(window.as_ref().clone()));
+        microsoft::install(window, on_status).await
     }
     #[cfg(not(windows))]
     {
-        let _ = window;
-        Err(urbudget_services::i18n::tr("Microsoft Store updates are only available on Windows.").into())
+        let _ = (window, on_status);
+        Err(
+            urbudget_services::i18n::tr("Microsoft Store updates are only available on Windows.")
+                .into(),
+        )
     }
 }
 
@@ -106,15 +132,21 @@ pub async fn install_store_update(window: tauri::WebviewWindow) -> Result<bool, 
 /// asking, `"consent"` when it needs the person's go-ahead (Store auto-updates off, a metered
 /// connection), `"none"` when there's nothing to download.
 #[tauri::command]
-pub async fn download_store_update(window: tauri::WebviewWindow) -> Result<&'static str, String> {
+pub async fn download_store_update(
+    window: tauri::WebviewWindow,
+    on_progress: tauri::ipc::Channel<f64>,
+) -> Result<&'static str, String> {
     #[cfg(windows)]
     {
-        microsoft::download(window).await
+        microsoft::download(window, on_progress).await
     }
     #[cfg(not(windows))]
     {
-        let _ = window;
-        Err(urbudget_services::i18n::tr("Microsoft Store updates are only available on Windows.").into())
+        let _ = (window, on_progress);
+        Err(
+            urbudget_services::i18n::tr("Microsoft Store updates are only available on Windows.")
+                .into(),
+        )
     }
 }
 
@@ -123,15 +155,23 @@ pub async fn download_store_update(window: tauri::WebviewWindow) -> Result<&'sta
 /// install, or `"consent"` when Windows won't now without the person's go-ahead (they turned the
 /// Store's automatic updates off, or the connection is metered): `install_store_update` asks.
 #[tauri::command]
-pub async fn apply_store_update(window: tauri::WebviewWindow, relaunch: bool) -> Result<&'static str, String> {
+pub async fn apply_store_update(
+    window: tauri::WebviewWindow,
+    relaunch: bool,
+    on_status: Option<tauri::ipc::JavaScriptChannelId>,
+) -> Result<&'static str, String> {
     #[cfg(windows)]
     {
-        microsoft::apply(window, relaunch).await
+        let on_status = on_status.map(|id| id.channel_on(window.as_ref().clone()));
+        microsoft::apply(window, relaunch, on_status).await
     }
     #[cfg(not(windows))]
     {
-        let _ = (window, relaunch);
-        Err(urbudget_services::i18n::tr("Microsoft Store updates are only available on Windows.").into())
+        let _ = (window, relaunch, on_status);
+        Err(
+            urbudget_services::i18n::tr("Microsoft Store updates are only available on Windows.")
+                .into(),
+        )
     }
 }
 
@@ -154,10 +194,10 @@ pub fn open_update_store() -> Result<(), String> {
             )
         };
         if result.0 as isize <= 32 {
-            return Err(
-                urbudget_services::i18n::tr("Couldn't open Microsoft Store. Open it from the Start menu and find UrBudget.")
-                    .into(),
-            );
+            return Err(urbudget_services::i18n::tr(
+                "Couldn't open Microsoft Store. Open it from the Start menu and find UrBudget.",
+            )
+            .into());
         }
         Ok(())
     }
@@ -171,30 +211,90 @@ pub fn open_update_store() -> Result<(), String> {
 mod microsoft {
     use super::*;
     use std::{
-        sync::atomic::{AtomicBool, Ordering},
-        time::Duration,
+        future::Future,
+        sync::{
+            atomic::{AtomicBool, AtomicU8, Ordering},
+            Arc, Mutex,
+        },
+        time::{Duration, Instant},
     };
     use windows::{
         core::Interface,
-        Services::Store::{StoreContext, StorePackageUpdate, StorePackageUpdateState},
+        Services::Store::{
+            StoreContext, StorePackageUpdate, StorePackageUpdateResult, StorePackageUpdateState,
+            StorePackageUpdateStatus,
+        },
         Win32::UI::Shell::IInitializeWithWindow,
     };
+    use windows_future::{AsyncOperationProgressHandler, AsyncStatus, IAsyncInfo};
+
+    const DOWNLOAD_STALL: Duration = Duration::from_secs(2 * 60);
+    const DOWNLOAD_LIMIT: Duration = Duration::from_secs(30 * 60);
+    const INSTALL_STALL: Duration = Duration::from_secs(5 * 60);
+    const INSTALL_LIMIT: Duration = Duration::from_secs(45 * 60);
+    const CANCEL_GRACE: Duration = Duration::from_secs(5);
+
+    struct DownloadActivity {
+        progress: f64,
+        changed: Instant,
+    }
+    impl DownloadActivity {
+        fn new(now: Instant) -> Self {
+            Self {
+                progress: 0.0,
+                changed: now,
+            }
+        }
+
+        fn record(&mut self, progress: f64, now: Instant) -> Option<f64> {
+            if !progress.is_finite() || progress <= self.progress {
+                return None;
+            }
+            let progress = progress.clamp(0.0, 1.0);
+            if progress <= self.progress {
+                return None;
+            }
+            self.progress = progress;
+            self.changed = now;
+            Some(progress)
+        }
+
+        #[cfg(test)]
+        fn stalled(&self, now: Instant) -> bool {
+            self.idle_for(now) >= DOWNLOAD_STALL
+        }
+
+        fn idle_for(&self, now: Instant) -> Duration {
+            now.saturating_duration_since(self.changed)
+        }
+    }
 
     static BUSY: AtomicBool = AtomicBool::new(false);
-    struct Operation;
+    struct Operation(Arc<BusyLease>);
+    struct BusyLease;
     impl Operation {
         fn start() -> Result<Self, String> {
             if !packaged()? {
-                return Err(urbudget_services::i18n::tr("This copy wasn't installed through Microsoft Store.").into());
+                return Err(urbudget_services::i18n::tr(
+                    "This copy wasn't installed through Microsoft Store.",
+                )
+                .into());
             }
+            Self::acquire()
+        }
+
+        fn acquire() -> Result<Self, String> {
             BUSY.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
                 .map_err(|_| {
-                    urbudget_services::i18n::tr("A Microsoft Store update operation is already running.").to_string()
+                    urbudget_services::i18n::tr(
+                        "A Microsoft Store update operation is already running.",
+                    )
+                    .to_string()
                 })?;
-            Ok(Self)
+            Ok(Self(Arc::new(BusyLease)))
         }
     }
-    impl Drop for Operation {
+    impl Drop for BusyLease {
         fn drop(&mut self) {
             BUSY.store(false, Ordering::Release);
         }
@@ -206,74 +306,280 @@ mod microsoft {
         )
     }
 
-    // Store APIs must be started on the UI thread, with an owner HWND. Awaiting the
-    // returned WinRT operation off-thread keeps the webview and native dialogs responsive.
-    async fn on_ui<T: Send + 'static>(
-        window: &tauri::WebviewWindow,
-        work: impl FnOnce(StoreContext) -> windows::core::Result<T> + Send + 'static,
+    type UiJob = Box<dyn FnOnce() + Send>;
+
+    // 0 = queued, 1 = executing, 2 = canceled before dispatch. A timeout and the UI thread
+    // compete for this ticket, so a delayed job can never start an install after an error.
+    async fn dispatch<T: Send + 'static>(
+        schedule: impl FnOnce(UiJob) -> Result<(), String>,
+        work: impl FnOnce() -> windows::core::Result<T> + Send + 'static,
+        deadline: Duration,
     ) -> Result<T, String> {
-        let owner = window.clone();
-        let (send, receive) = tokio::sync::oneshot::channel();
-        window
-            .run_on_main_thread(move || {
-                let result = (|| {
-                    let context = StoreContext::GetDefault().map_err(store_error)?;
-                    let hwnd = owner.hwnd().map_err(store_error)?;
-                    let initialize: IInitializeWithWindow = context.cast().map_err(store_error)?;
-                    unsafe { initialize.Initialize(windows::Win32::Foundation::HWND(hwnd.0)) }
-                        .map_err(store_error)?;
-                    work(context).map_err(store_error)
-                })();
-                let _ = send.send(result);
-            })
-            .map_err(store_error)?;
-        receive.await.map_err(|_| {
-            urbudget_services::i18n::tr("The app window closed before Microsoft Store could respond.").to_string()
+        let ticket = Arc::new(AtomicU8::new(0));
+        let executing = ticket.clone();
+        let (send, mut receive) = tokio::sync::oneshot::channel();
+        schedule(Box::new(move || {
+            if executing
+                .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+            {
+                let _ = send.send(work().map_err(store_error));
+            }
+        }))?;
+        let result = match tokio::time::timeout(deadline, &mut receive).await {
+            Ok(result) => result,
+            Err(_)
+                if ticket
+                    .compare_exchange(0, 2, Ordering::AcqRel, Ordering::Acquire)
+                    .is_ok() =>
+            {
+                return Err(urbudget_services::i18n::tr(
+                    "Microsoft Store took too long to respond. Try again, or open Microsoft Store.",
+                )
+                .into());
+            }
+            // The call already started. Its outcome is unknown: do not release the saved
+            // budget lock and allow new edits while a synchronous install request is in flight.
+            Err(_) => receive.await,
+        };
+        result.map_err(|_| {
+            urbudget_services::i18n::tr(
+                "The app window closed before Microsoft Store could respond.",
+            )
+            .to_string()
         })?
     }
 
-    pub async fn check(window: tauri::WebviewWindow) -> Result<bool, String> {
-        let _operation = Operation::start()?;
-        let request = on_ui(&window, |context| {
-            context.GetAppAndOptionalStorePackageUpdatesAsync()
-        })
-        .await?;
-        match tokio::time::timeout(Duration::from_secs(30), async { request.clone().await }).await {
-            Ok(result) => Ok(result.map_err(store_error)?.Size().map_err(store_error)? > 0),
-            Err(_) => {
-                let _ = request.Cancel();
-                Err(
-                    urbudget_services::i18n::tr("Microsoft Store took too long to check. Try again, or open Microsoft Store.")
-                        .into(),
+    // Keep every WinRT call on the UI thread that owns the StoreContext, including result
+    // collection access and cancellation. Only Rust-owned values cross back to the task.
+    async fn on_main<T: Send + 'static>(
+        window: &tauri::WebviewWindow,
+        work: impl FnOnce() -> windows::core::Result<T> + Send + 'static,
+    ) -> Result<T, String> {
+        dispatch(
+            |job| window.run_on_main_thread(job).map_err(store_error),
+            work,
+            Duration::from_secs(30),
+        )
+        .await
+    }
+
+    struct StoreRequest<T> {
+        request: T,
+        // Retain the context for the full operation, as in Microsoft's Store examples.
+        _context: StoreContext,
+        // A canceled request may continue briefly. Do not allow another operation over it.
+        _lease: Arc<BusyLease>,
+    }
+
+    async fn start<T: Interface + Send + Sync + 'static>(
+        operation: &Operation,
+        window: &tauri::WebviewWindow,
+        work: impl FnOnce(&StoreContext) -> windows::core::Result<T> + Send + 'static,
+    ) -> Result<StoreRequest<T>, String> {
+        let owner = window.clone();
+        let lease = operation.0.clone();
+        on_main(window, move || {
+            let context = StoreContext::GetDefault()?;
+            let hwnd = owner.hwnd().map_err(|error| {
+                windows::core::Error::new(
+                    windows::core::HRESULT(0x80004005u32 as i32),
+                    error.to_string(),
                 )
+            })?;
+            let initialize: IInitializeWithWindow = context.cast()?;
+            unsafe { initialize.Initialize(windows::Win32::Foundation::HWND(hwnd.0)) }?;
+            let request = work(&context)?;
+            Ok(StoreRequest {
+                request,
+                _context: context,
+                _lease: lease,
+            })
+        })
+        .await
+    }
+
+    fn status(
+        channel: &Option<tauri::ipc::Channel<StoreInstallStatus>>,
+        stage: &'static str,
+        progress: Option<f64>,
+    ) {
+        if let Some(channel) = channel {
+            let _ = channel.send(StoreInstallStatus { stage, progress });
+        }
+    }
+
+    async fn request_status<T: Interface + Send + Sync + 'static>(
+        window: &tauri::WebviewWindow,
+        request: &T,
+    ) -> Result<AsyncStatus, String> {
+        let request = request.clone();
+        on_main(window, move || request.cast::<IAsyncInfo>()?.Status()).await
+    }
+
+    async fn cancel<T: Interface + Send + Sync + 'static>(
+        window: &tauri::WebviewWindow,
+        request: &T,
+    ) {
+        let request = request.clone();
+        let _ = on_main(window, move || request.cast::<IAsyncInfo>()?.Cancel()).await;
+    }
+
+    // Download/query cancellation cannot terminate the app. After a short grace period the
+    // caller may recover, while this task keeps the request/context/lease alive until Windows
+    // acknowledges cancellation. Installation never takes this detach path.
+    fn settle_in_background<T: Interface + Send + Sync + 'static>(
+        window: tauri::WebviewWindow,
+        request: StoreRequest<T>,
+    ) {
+        tauri::async_runtime::spawn(async move {
+            loop {
+                match request_status(&window, &request.request).await {
+                    Ok(state) if state != AsyncStatus::Started => break,
+                    _ => tokio::time::sleep(Duration::from_secs(1)).await,
+                }
+            }
+            drop(request);
+        });
+    }
+
+    struct WaitPolicy {
+        idle: Duration,
+        limit: Duration,
+        installs: bool,
+        timeout_message: &'static str,
+    }
+
+    #[derive(Debug)]
+    enum WaitDecision {
+        Terminal,
+        Failed(String),
+        Detached(String),
+    }
+
+    async fn wait_state<S, SF, C, CF>(
+        read_status: S,
+        cancel_request: C,
+        activity: &Arc<Mutex<DownloadActivity>>,
+        policy: WaitPolicy,
+        stopping_notice: impl Fn(),
+        poll: Duration,
+        grace: Duration,
+    ) -> WaitDecision
+    where
+        S: Fn() -> SF,
+        SF: Future<Output = Result<AsyncStatus, String>>,
+        C: Fn() -> CF,
+        CF: Future<Output = ()>,
+    {
+        let started = Instant::now();
+        let mut stopping: Option<(Instant, String)> = None;
+        loop {
+            match read_status().await {
+                Ok(state) if state != AsyncStatus::Started => {
+                    if state == AsyncStatus::Completed {
+                        return WaitDecision::Terminal;
+                    }
+                    return match stopping {
+                        Some((_, reason)) => WaitDecision::Failed(reason),
+                        None => WaitDecision::Terminal,
+                    };
+                }
+                Err(error) if stopping.is_none() => {
+                    stopping = Some((Instant::now(), error));
+                    stopping_notice();
+                    cancel_request().await;
+                }
+                _ => {}
+            }
+            let now = Instant::now();
+            if stopping.is_none()
+                && (activity.lock().unwrap().idle_for(now) >= policy.idle
+                    || now.saturating_duration_since(started) >= policy.limit)
+            {
+                stopping = Some((now, policy.timeout_message.to_string()));
+                stopping_notice();
+                cancel_request().await;
+            }
+            if !policy.installs {
+                if let Some((since, reason)) = &stopping {
+                    if now.saturating_duration_since(*since) >= grace {
+                        return WaitDecision::Detached(reason.clone());
+                    }
+                }
+            }
+            tokio::time::sleep(poll).await;
+        }
+    }
+
+    /// Poll status without depending on WinRT completion notifications. A timed-out install remains
+    /// pending (and the frontend's saved-budget lock stays held) until cancellation is terminal.
+    /// The stopping event offers a normal, saved close if Windows will not acknowledge it.
+    async fn wait<T: Interface + Send + Sync + 'static>(
+        window: &tauri::WebviewWindow,
+        request: StoreRequest<T>,
+        activity: Arc<Mutex<DownloadActivity>>,
+        policy: WaitPolicy,
+        on_status: Option<tauri::ipc::Channel<StoreInstallStatus>>,
+    ) -> Result<StoreRequest<T>, String> {
+        match wait_state(
+            || request_status(window, &request.request),
+            || cancel(window, &request.request),
+            &activity,
+            policy,
+            || status(&on_status, "stopping", None),
+            Duration::from_millis(500),
+            CANCEL_GRACE,
+        )
+        .await
+        {
+            WaitDecision::Terminal => Ok(request),
+            WaitDecision::Failed(reason) => Err(reason),
+            WaitDecision::Detached(reason) => {
+                settle_in_background(window.clone(), request);
+                Err(reason)
             }
         }
     }
 
+    pub async fn check(window: tauri::WebviewWindow) -> Result<bool, String> {
+        let operation = Operation::start()?;
+        Ok(!pending(&operation, &window).await?.is_empty())
+    }
+
     /// The updates the Store has for this copy, ready to hand back to the UI thread.
-    async fn pending(window: &tauri::WebviewWindow) -> Result<Vec<Option<StorePackageUpdate>>, String> {
-        let request = on_ui(window, |context| {
+    async fn pending(
+        operation: &Operation,
+        window: &tauri::WebviewWindow,
+    ) -> Result<Vec<Option<StorePackageUpdate>>, String> {
+        let request = start(operation, window, |context| {
             context.GetAppAndOptionalStorePackageUpdatesAsync()
         })
         .await?;
-        match tokio::time::timeout(Duration::from_secs(30), async { request.clone().await }).await {
-            Ok(result) => {
-                let updates = result.map_err(store_error)?;
-                // StorePackageUpdate is agile, but its collection is apartment-bound.
-                // Move only the individual updates and construct the iterable on the UI thread.
-                (0..updates.Size().map_err(store_error)?)
-                    .map(|i| updates.GetAt(i).map(Some))
-                    .collect::<windows::core::Result<Vec<_>>>()
-                    .map_err(store_error)
-            }
-            Err(_) => {
-                let _ = request.Cancel();
-                Err(
-                    urbudget_services::i18n::tr("Microsoft Store took too long to check. Try again, or open Microsoft Store.")
-                        .into(),
-                )
-            }
-        }
+        let request = wait(
+            window,
+            request,
+            Arc::new(Mutex::new(DownloadActivity::new(Instant::now()))),
+            WaitPolicy {
+                idle: Duration::from_secs(30),
+                limit: Duration::from_secs(30),
+                installs: false,
+                timeout_message: urbudget_services::i18n::tr(
+                    "Microsoft Store took too long to check. Try again, or open Microsoft Store.",
+                ),
+            },
+            None,
+        )
+        .await?;
+        on_main(window, move || {
+            let updates = request.request.GetResults()?;
+            // Consume the apartment-bound collection on its owner thread. Individual package
+            // objects are agile and can be carried back for a subsequent UI-thread request.
+            (0..updates.Size()?)
+                .map(|i| updates.GetAt(i).map(Some))
+                .collect()
+        })
+        .await
     }
 
     /// Asks Windows to reopen UrBudget once an update has replaced it, or not to. Only an
@@ -296,73 +602,120 @@ mod microsoft {
         }
     }
 
-    pub async fn download(window: tauri::WebviewWindow) -> Result<&'static str, String> {
-        let _operation = Operation::start()?;
-        let updates = pending(&window).await?;
+    pub async fn download(
+        window: tauri::WebviewWindow,
+        on_progress: tauri::ipc::Channel<f64>,
+    ) -> Result<&'static str, String> {
+        let operation = Operation::start()?;
+        let updates = pending(&operation, &window).await?;
         if updates.is_empty() {
             return Ok("none");
         }
         // Windows downloads silently only when the person lets the Store update apps by
         // itself and isn't on a metered connection; otherwise the update waits for consent.
-        let request = on_ui(&window, move |context| {
-            if !context.CanSilentlyDownloadStorePackageUpdates()? {
-                return Ok(None);
-            }
-            let updates: windows_collections::IIterable<StorePackageUpdate> = updates.into();
-            context.TrySilentDownloadStorePackageUpdatesAsync(&updates).map(Some)
+        let started = Instant::now();
+        let activity = Arc::new(Mutex::new(DownloadActivity::new(started)));
+        let reported = activity.clone();
+        let allowed = on_main(&window, || {
+            StoreContext::GetDefault()?.CanSilentlyDownloadStorePackageUpdates()
         })
         .await?;
-        let Some(request) = request else { return Ok("consent") };
-        // A download Windows never finishes would hold every later check off.
-        let result = match tokio::time::timeout(Duration::from_secs(30 * 60), async { request.clone().await }).await {
-            Ok(result) => result.map_err(store_error)?,
-            Err(_) => {
-                let _ = request.Cancel();
-                return Err(urbudget_services::i18n::tr("Microsoft Store took too long to download the update. It will try again later.").into());
-            }
-        };
-        Ok(match result.OverallState().map_err(store_error)? {
+        if !allowed {
+            return Ok("consent");
+        }
+        let request = start(&operation, &window, move |context| {
+            let updates: windows_collections::IIterable<StorePackageUpdate> = updates.into();
+            let request = context.TrySilentDownloadStorePackageUpdatesAsync(&updates)?;
+            let handler = AsyncOperationProgressHandler::<
+                StorePackageUpdateResult,
+                StorePackageUpdateStatus,
+            >::new(move |_, status| {
+                let progress = reported
+                    .lock()
+                    .unwrap()
+                    .record(status.TotalDownloadProgress, Instant::now());
+                if let Some(progress) = progress {
+                    let _ = on_progress.send(progress);
+                }
+                Ok(())
+            });
+            // The operation already exists. A missing progress callback is handled by the
+            // poll/watchdog path, including acknowledged cancellation and lease retention.
+            let _ = request.SetProgress(&handler);
+            Ok(request)
+        })
+        .await?;
+        let request = wait(&window, request, activity, WaitPolicy {
+            idle: DOWNLOAD_STALL,
+            limit: DOWNLOAD_LIMIT,
+            installs: false,
+            timeout_message: urbudget_services::i18n::tr("Microsoft Store stopped reporting download progress. Try again, or open Microsoft Store."),
+        }, None).await?;
+        let state = on_main(&window, move || {
+            request.request.GetResults()?.OverallState()
+        })
+        .await?;
+        Ok(match state {
             StorePackageUpdateState::Completed => "ready",
             _ => "consent",
         })
     }
 
-    pub async fn apply(window: tauri::WebviewWindow, relaunch: bool) -> Result<&'static str, String> {
-        let _operation = Operation::start()?;
-        let updates = pending(&window).await?;
+    pub async fn apply(
+        window: tauri::WebviewWindow,
+        relaunch: bool,
+        on_status: Option<tauri::ipc::Channel<StoreInstallStatus>>,
+    ) -> Result<&'static str, String> {
+        let operation = Operation::start()?;
+        status(&on_status, "preparing", None);
+        let updates = pending(&operation, &window).await?;
         if updates.is_empty() {
             return Ok("none");
+        }
+        let allowed = on_main(&window, || {
+            StoreContext::GetDefault()?.CanSilentlyDownloadStorePackageUpdates()
+        })
+        .await?;
+        if !allowed {
+            return Ok("consent");
         }
         reopen_after_update(relaunch);
         // The frontend has saved the budget and holds its edit lock. Windows closes the app
         // to replace its package, so this may be the last thing this process does.
-        let state: Result<Option<StorePackageUpdateState>, String> = async {
-            let request = on_ui(&window, move |context| {
-                if !context.CanSilentlyDownloadStorePackageUpdates()? {
-                    return Ok(None);
-                }
+        let state: Result<StorePackageUpdateState, String> = async {
+            let activity = Arc::new(Mutex::new(DownloadActivity::new(Instant::now())));
+            let reported = activity.clone();
+            let progress = on_status.clone();
+            let request = start(&operation, &window, move |context| {
                 let updates: windows_collections::IIterable<StorePackageUpdate> = updates.into();
-                context.TrySilentDownloadAndInstallStorePackageUpdatesAsync(&updates).map(Some)
+                let request =
+                    context.TrySilentDownloadAndInstallStorePackageUpdatesAsync(&updates)?;
+                install_progress(&request, reported, progress);
+                Ok(request)
             })
             .await?;
-            let Some(request) = request else { return Ok(None) };
-            request.await.map_err(store_error)?.OverallState().map_err(store_error).map(Some)
+            let request = wait(&window, request, activity, install_policy(), on_status).await?;
+            on_main(&window, move || {
+                request.request.GetResults()?.OverallState()
+            })
+            .await
         }
         .await;
         // Only an update that went through reopens the app: not one Windows wouldn't make
         // without asking, nor one that failed.
-        if !matches!(state, Ok(Some(StorePackageUpdateState::Completed))) {
+        if !matches!(state, Ok(StorePackageUpdateState::Completed)) {
             reopen_after_update(false);
         }
-        match state? {
-            None => Ok("consent"),
-            Some(state) => completed(state).map(|()| "installed"),
-        }
+        completed(state?).map(|()| "installed")
     }
 
-    pub async fn install(window: tauri::WebviewWindow) -> Result<bool, String> {
-        let _operation = Operation::start()?;
-        let updates = pending(&window).await?;
+    pub async fn install(
+        window: tauri::WebviewWindow,
+        on_status: Option<tauri::ipc::Channel<StoreInstallStatus>>,
+    ) -> Result<bool, String> {
+        let operation = Operation::start()?;
+        status(&on_status, "preparing", None);
+        let updates = pending(&operation, &window).await?;
         if updates.is_empty() {
             return Ok(false);
         }
@@ -372,12 +725,22 @@ mod microsoft {
         // Windows asks for consent and may close the app to replace its package. Any failure,
         // even before Windows answers, takes the reopening back.
         let state: Result<StorePackageUpdateState, String> = async {
-            let request = on_ui(&window, move |context| {
+            let activity = Arc::new(Mutex::new(DownloadActivity::new(Instant::now())));
+            let reported = activity.clone();
+            let progress = on_status.clone();
+            let request = start(&operation, &window, move |context| {
                 let updates: windows_collections::IIterable<StorePackageUpdate> = updates.into();
-                context.RequestDownloadAndInstallStorePackageUpdatesAsync(&updates)
+                let request =
+                    context.RequestDownloadAndInstallStorePackageUpdatesAsync(&updates)?;
+                install_progress(&request, reported, progress);
+                Ok(request)
             })
             .await?;
-            request.await.map_err(store_error)?.OverallState().map_err(store_error)
+            let request = wait(&window, request, activity, install_policy(), on_status).await?;
+            on_main(&window, move || {
+                request.request.GetResults()?.OverallState()
+            })
+            .await
         }
         .await;
         if !matches!(state, Ok(StorePackageUpdateState::Completed)) {
@@ -387,29 +750,92 @@ mod microsoft {
         Ok(true)
     }
 
+    fn install_policy() -> WaitPolicy {
+        WaitPolicy {
+            idle: INSTALL_STALL,
+            limit: INSTALL_LIMIT,
+            installs: true,
+            timeout_message: urbudget_services::i18n::tr("Microsoft Store stopped responding while installing. The request was canceled. Try again, or open Microsoft Store."),
+        }
+    }
+
+    fn install_progress(
+        request: &windows_future::IAsyncOperationWithProgress<
+            StorePackageUpdateResult,
+            StorePackageUpdateStatus,
+        >,
+        activity: Arc<Mutex<DownloadActivity>>,
+        on_status: Option<tauri::ipc::Channel<StoreInstallStatus>>,
+    ) {
+        status(&on_status, "installing", None);
+        let handler = AsyncOperationProgressHandler::<
+            StorePackageUpdateResult,
+            StorePackageUpdateStatus,
+        >::new(move |_, update| {
+            if let Some(progress) = activity
+                .lock()
+                .unwrap()
+                .record(update.TotalDownloadProgress, Instant::now())
+            {
+                status(&on_status, "installing", Some(progress));
+            }
+            Ok(())
+        });
+        // Progress is optional. Failure to attach it must never lose an already-started install.
+        let _ = request.SetProgress(&handler);
+    }
+
     fn completed(state: StorePackageUpdateState) -> Result<(), String> {
         match state {
             StorePackageUpdateState::Completed => Ok(()),
-            StorePackageUpdateState::Canceled => {
-                Err(urbudget_services::i18n::tr("The Microsoft Store update was canceled. You can try again.").into())
-            }
-            StorePackageUpdateState::ErrorLowBattery => {
-                Err(urbudget_services::i18n::tr("Connect this computer to power, then try the update again.").into())
-            }
+            StorePackageUpdateState::Canceled => Err(urbudget_services::i18n::tr(
+                "The Microsoft Store update was canceled. You can try again.",
+            )
+            .into()),
+            StorePackageUpdateState::ErrorLowBattery => Err(urbudget_services::i18n::tr(
+                "Connect this computer to power, then try the update again.",
+            )
+            .into()),
             StorePackageUpdateState::ErrorWiFiRecommended
-            | StorePackageUpdateState::ErrorWiFiRequired => {
-                Err(urbudget_services::i18n::tr("Connect to Wi-Fi, then try the update again, or open Microsoft Store.").into())
-            }
-            _ => Err(
-                urbudget_services::i18n::tr("Microsoft Store hasn't installed the update. Try again, or open Microsoft Store.")
-                    .into(),
-            ),
+            | StorePackageUpdateState::ErrorWiFiRequired => Err(urbudget_services::i18n::tr(
+                "Connect to Wi-Fi, then try the update again, or open Microsoft Store.",
+            )
+            .into()),
+            _ => Err(urbudget_services::i18n::tr(
+                "Microsoft Store hasn't installed the update. Try again, or open Microsoft Store.",
+            )
+            .into()),
         }
     }
 
     #[cfg(test)]
     mod tests {
         use super::*;
+        include!("updates_orchestration_tests.rs");
+        #[test]
+        fn a_store_download_stalls_without_new_progress_even_after_all_bytes_arrive() {
+            let start = Instant::now();
+            let mut activity = DownloadActivity::new(start);
+            assert!(activity.stalled(start + DOWNLOAD_STALL));
+            assert_eq!(activity.record(1.0, start + DOWNLOAD_STALL), Some(1.0));
+            assert_eq!(activity.record(1.0, start + DOWNLOAD_STALL * 2), None);
+            assert!(activity.stalled(start + DOWNLOAD_STALL * 2));
+        }
+
+        #[test]
+        fn a_slow_store_download_stays_active_only_while_it_advances() {
+            let start = Instant::now();
+            let mut activity = DownloadActivity::new(start);
+            assert_eq!(
+                activity.record(0.1, start + Duration::from_secs(90)),
+                Some(0.1)
+            );
+            assert!(!activity.stalled(start + DOWNLOAD_STALL));
+            assert_eq!(activity.record(f64::NAN, start + DOWNLOAD_STALL), None);
+            assert_eq!(activity.record(0.05, start + DOWNLOAD_STALL), None);
+            assert!(activity.stalled(start + Duration::from_secs(90) + DOWNLOAD_STALL));
+        }
+
         #[test]
         fn only_a_completed_store_install_is_successful() {
             assert!(completed(StorePackageUpdateState::Completed).is_ok());

@@ -389,20 +389,21 @@ it("keeps what's chosen in the review while the file is looked at, or another pa
   const onImported = vi.fn();
   const view = render(<Page onImported={onImported} />);
   choose(csv());
-  const action = async () => ((await screen.findByLabelText("Import action 1")) as HTMLSelectElement).value;
-  fireEvent.change(await screen.findByLabelText("Import action 1"), { target: { value: "skip" } });
+  const action = async () => ((await screen.findByRole("combobox", { name: "Import action 1" })) as HTMLInputElement).value;
+  fireEvent.click(await screen.findByRole("combobox", { name: "Import action 1" }));
+  fireEvent.click(screen.getByRole("option", { name: "Skip" }));
   // To the file and back, both ways.
   fireEvent.click(screen.getByRole("button", { name: /Check the file/ }));
   fireEvent.click(await screen.findByRole("button", { name: "Continue to the review" }));
-  expect(await action()).toBe("skip");
+  expect(await action()).toBe("Skip");
   fireEvent.click(screen.getByRole("button", { name: "Back to the file" }));
   fireEvent.click(await screen.findByRole("button", { name: "Continue to the review" }));
-  expect(await action()).toBe("skip");
+  expect(await action()).toBe("Skip");
   // Another page, then back to the import from the sidebar.
   view.rerender(<Page onImported={onImported} away />);
   expect(screen.queryByLabelText("Import action 1")).toBeNull();
   view.rerender(<Page onImported={onImported} />);
-  expect(await action()).toBe("skip");
+  expect(await action()).toBe("Skip");
   fireEvent.click(screen.getByRole("button", { name: "Import 1 transaction" }));
   await waitFor(() => expect(onImported).toHaveBeenCalledWith(1, { ids: [], accounts: [] }));
   expect(vi.mocked(api.importBank).mock.lastCall![2].map((c) => c.action)).toEqual(["skip", "new"]);
@@ -411,7 +412,7 @@ it("keeps what's chosen in the review while the file is looked at, or another pa
   vi.mocked(api.bankSession).mockResolvedValue(session("s2"));
   choose(csv("november.csv"));
   expect(await screen.findByRole("button", { name: "Import 2 transactions" })).toBeTruthy();
-  expect(await action()).toBe("new");
+  expect(await action()).toBe("Add as a new transaction");
 });
 
 it("goes on to the review after a change that didn't apply", async () => {

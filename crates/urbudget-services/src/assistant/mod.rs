@@ -449,6 +449,15 @@ pub async fn assistant_sign_in(assistant: &Assistant) -> Result<StatusView, Stri
     sign_in_returning_to(assistant, None).await
 }
 
+fn remember_sign_in_client(assistant: &Assistant, cancel: &Arc<AtomicBool>, issued: &str) {
+    // Keep the attempt lock through persistence: a canceled callback must not replace
+    // the registration used by a newer attempt or by credentials it already saved.
+    let busy = lock(&assistant.signing_in);
+    if !cancel.load(Ordering::Relaxed) && busy.as_ref().is_some_and(|c| Arc::ptr_eq(c, cancel)) {
+        let _ = assistant.update(|s| s.client_id = Some(issued.to_owned()));
+    }
+}
+
 async fn sign_in_returning_to(assistant: &Assistant, return_link: Option<String>) -> Result<StatusView, String> {
     let cancel = Arc::new(AtomicBool::new(false));
     {
@@ -469,9 +478,7 @@ async fn sign_in_returning_to(assistant: &Assistant, return_link: Option<String>
         cancel.clone(),
         return_link,
         auth::open_sign_in,
-        |issued| {
-            let _ = a.update(|s| s.client_id = Some(issued.to_owned()));
-        },
+        |issued| remember_sign_in_client(a, &cancel, issued),
         |phase| {
             let busy = lock(&a.signing_in);
             if busy.as_ref().is_some_and(|c| Arc::ptr_eq(c, &cancel)) {
@@ -1123,6 +1130,23 @@ pub fn spreadsheet_saved(db: &Database, assistant: &Assistant, thread_id: &str, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stale_sign_in_callbacks_cannot_replace_the_current_registration() {
+        let directory = tempfile::tempdir().unwrap();
+        let assistant = Assistant::new(directory.path().join("settings"));
+        let old = Arc::new(AtomicBool::new(false));
+        let current = Arc::new(AtomicBool::new(false));
+        *lock(&assistant.signing_in) = Some(current.clone());
+        remember_sign_in_client(&assistant, &current, "current-client");
+        remember_sign_in_client(&assistant, &old, "stale-client");
+        assert_eq!(assistant.settings().client_id.as_deref(), Some("current-client"));
+        assistant_cancel_sign_in(&assistant);
+        remember_sign_in_client(&assistant, &current, "cancelled-client");
+        assert_eq!(assistant.settings().client_id.as_deref(), Some("current-client"));
+        let reloaded = Assistant::new(directory.path().join("settings"));
+        assert_eq!(reloaded.settings().client_id.as_deref(), Some("current-client"));
+    }
 
     #[test]
     fn money_round_trips() {

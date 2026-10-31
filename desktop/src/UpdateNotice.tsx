@@ -3,9 +3,13 @@ import { usePref } from "./prefs";
 import type { Updates } from "./updates";
 import { t } from "./i18n";
 
-/** "Downloading 42%", or just "Downloading" before the size is known. */
-const downloading = (share: number | null) =>
-  share === null ? t("Downloading") : t("Downloading {percent}%", { percent: Math.round(share * 100) });
+/** At 100%, Windows still needs to confirm that the package is ready. */
+const downloading = (share: number | null, store: boolean) =>
+  share === null
+    ? t("Downloading")
+    : store && share >= 1
+      ? t("Waiting for Microsoft Store…")
+      : t("Downloading {percent}%", { percent: Math.round(share * 100) });
 
 /** What's waiting: a version from the update server, or the Store's update (no version known). */
 function headline({ available, ready }: Updates) {
@@ -43,7 +47,7 @@ export function UpdateChip({
       )}
       <span className="header-label">
         {updates.phase === "downloading"
-          ? downloading(updates.progress)
+          ? downloading(updates.progress, updates.channel === "microsoftStore")
           : t("Update")}
       </span>
     </button>
@@ -126,7 +130,7 @@ export function UpdateSetting({
               <LoaderCircle size={14} className="spin" />
             )}
             {phase === "downloading"
-              ? downloading(updates.progress)
+              ? downloading(updates.progress, store)
               : phase === "installing"
                 ? t("Installing…")
                 : updates.ready
@@ -152,7 +156,7 @@ export function UpdateSetting({
         {updates.channel === "microsoftStore" && (
           <button
             className="secondary"
-            disabled={phase !== "idle"}
+            disabled={phase === "installing"}
             onClick={() => void updates.openStore()}
           >
             {t("Open Microsoft Store")}
@@ -160,5 +164,30 @@ export function UpdateSetting({
         )}
       </div>
     </div>
+  );
+}
+
+/** Windows can still finish an install while cancellation is pending, so keep edits locked. */
+export function UpdateInstalling({ updates, onClose }: { updates: Updates; onClose: () => void }) {
+  const status = updates.installStatus;
+  const stopping = status?.stage === "stopping";
+  return (
+    <>
+      <p role="status">{stopping
+        ? t("Microsoft Store is taking longer than expected. Your budget is saved. Windows is stopping the update; you can close UrBudget or open Microsoft Store while it finishes.")
+        : updates.channel === "microsoftStore"
+          ? t("Your budget is saved first, then Windows installs the update, which closes UrBudget and opens it again. Windows may ask for permission first.")
+          : t("Your budget is saved first, then UrBudget restarts on the new version.")}</p>
+      {status?.stage === "installing" && status.progress !== null && (
+        <p>{t("Installing {percent}%", { percent: Math.round(status.progress * 100) })}</p>
+      )}
+      <LoaderCircle className="spin" />
+      {stopping && (
+        <div className="modal-actions">
+          <button className="secondary" onClick={() => void updates.openStore()}>{t("Open Microsoft Store")}</button>
+          <button className="primary" onClick={onClose}>{t("Close UrBudget")}</button>
+        </div>
+      )}
+    </>
   );
 }

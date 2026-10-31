@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   Check,
   ChevronLeft,
@@ -33,7 +34,7 @@ import { SyncSettings } from "./CloudSettings";
 import { useEditorCheckpoint, flushAllEditorDrafts } from "./editorCheckpoint";
 import { useAutomaticUpdate, useUpdatedNotice, useUpdates } from "./updates";
 import { useUsageCounts } from "./usage";
-import { UpdateChip } from "./UpdateNotice";
+import { UpdateChip, UpdateInstalling } from "./UpdateNotice";
 import { TransactionsPage, saveTransaction, scheduledMessage } from "./Register";
 import { Sidebar, useSidebarLayout, type Page } from "./Sidebar";
 import { ManageBudgetsDialog, NewBudgetDialog } from "./BudgetDialogs";
@@ -398,10 +399,15 @@ export default function App() {
     else void model.fetchDatabase();
   };
   // Saves the budget (and makes the on-close backup) before the installer replaces the app.
-  const installUpdate = (automatic = false) =>
+  const installUpdate = (automatic = false) => {
+    if (importing?.file || importing?.session || assistantWorking.current) {
+      if (!automatic) fail(new Error(t("Finish your import or assistant work before installing an update.")));
+      return;
+    }
     void updates
       .install(model.installUpdate, automatic)
       .catch((e) => fail(e, t("Couldn't install the update: ")));
+  };
   // Unless Settings › General says not to, a downloaded update installs by itself: a Store one
   // when the window closes, after the budget is saved,
   const [autoUpdate] = usePref("autoUpdate");
@@ -972,10 +978,7 @@ export default function App() {
       )}
       {updates.phase === "installing" && (
         <Blocking title={t("Installing the update")}>
-          <p role="status">{updates.channel === "microsoftStore"
-            ? t("Your budget is saved first, then Windows installs the update, which closes UrBudget and opens it again. Windows may ask for permission first.")
-            : t("Your budget is saved first, then UrBudget restarts on the new version.")}</p>
-          <LoaderCircle className="spin" />
+          <UpdateInstalling updates={updates} onClose={() => void getCurrentWindow().close().catch(fail)} />
         </Blocking>
       )}
       {model.recovery && (
