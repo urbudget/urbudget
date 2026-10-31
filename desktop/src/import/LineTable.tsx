@@ -13,9 +13,9 @@ import {
 } from "react";
 import { AlertTriangle, Check, CircleMinus, CirclePlus, Layers, Pencil, RotateCcw, Rows3, Sparkles, Split, X } from "lucide-react";
 import type { BankField, BatchInfo, Statement, StatementLine } from "../bridge";
-import { editableAmount, errorText, evaluateAmount, flowAmountChange, formatDate, money } from "../format";
+import { editableAmount, errorText, evaluateAmount, flowAmountChange, formatDate, money, parseDate } from "../format";
 import type { BankColumns, Budget } from "../types";
-import { PayeeInput, transferPayee, useVirtualRows } from "../ui";
+import { DateInput, PayeeInput, transferPayee, useVirtualRows } from "../ui";
 import { textWidth, useColumns } from "../ui/columns";
 import { FIELDS, INCLUDABLE, ROLES, leftOutText } from "./model";
 import { formatCount, getDirection, t, tc, tn, tnc } from "../i18n";
@@ -825,14 +825,16 @@ function LineEditor({
   // register. Raw bank signs, fees and accounting parentheses were already read by the engine.
   // Keep its source cells separately: merely opening or saving another field never changes them.
   const [initial] = useState(() => {
+    const cells = opened.map((value, i) => role[i] === "date" && /^\d{4}-\d{2}-\d{2}$/.test(openedFields.date) && parseDate(openedFields.date, openedFields.date)
+      ? openedFields.date : value);
     const amount = Number(openedFields.amount);
     const parsed = line.status.kind === "ready" || csv && line.status.kind === "attention" && line.status.field === "date";
-    if ((!waitingFields?.amount && !parsed) || !/^-?\d+(\.\d{1,2})?$/.test(openedFields.amount) || !Number.isFinite(amount)) return opened;
+    if ((!waitingFields?.amount && !parsed) || !/^-?\d+(\.\d{1,2})?$/.test(openedFields.amount) || !Number.isFinite(amount)) return cells;
     const cents = Math.round(amount * 100);
     const at = role.indexOf("amount");
     const hasOut = role.includes("outflow"), hasIn = role.includes("inflow");
     const signed = at >= 0 && (!!opened[at].trim() || !hasOut && !hasIn);
-    return opened.map((v, i) => {
+    return cells.map((v, i) => {
       if (role[i] === "amount") return signed ? editableAmount(cents) : "";
       if (role[i] === "outflow") return signed || hasIn && cents >= 0 ? "" : editableAmount(-cents);
       if (role[i] === "inflow") return signed || hasOut && cents <= 0 ? "" : editableAmount(cents);
@@ -845,8 +847,22 @@ function LineEditor({
   const transfers = useMemo(() => budget.accounts.filter((a) => a.id !== account && !a.archived), [budget.accounts, account]);
   const save = () => {
     try {
+      // DateInput keeps invalid typed text visible without replacing its last valid value.
+      // This editor saves on Enter and click-away too, so check validity before either path.
+      const invalidDate = row.current?.querySelector<HTMLInputElement>(".date-input input:invalid");
+      if (invalidDate) {
+        invalidDate.focus();
+        throw new Error(t("Enter a valid date."));
+      }
       const next = opened.map((value, i) => values[i] === initial[i] ? value : values[i]);
       const fields: FieldChange[] = [];
+      const dateColumn = role.indexOf("date");
+      if (dateColumn >= 0 && values[dateColumn] !== initial[dateColumn]) {
+        const date = parseDate(values[dateColumn], openedFields.date);
+        if (!date) throw new Error(t("Enter a valid date."));
+        next[dateColumn] = date;
+        if (date !== openedFields.date) fields.push({ field: "date", from: openedFields.date, to: date });
+      }
       const moneyColumns = role.flatMap((r, i) => r === "amount" || r === "outflow" || r === "inflow" ? [i] : []);
       if (moneyColumns.some((i) => values[i] !== initial[i])) {
         let amount = 0;
@@ -883,7 +899,7 @@ function LineEditor({
     input?.focus({ preventScroll: true });
     if (input instanceof HTMLInputElement) input.select();
     const scroller = el?.closest<HTMLElement>(".line-scroll");
-    const cell = input?.parentElement;
+    const cell = input?.closest<HTMLElement>("[data-column]");
     if (!el || !scroller || !cell) return;
     // The cell may be off to the side: brought into view between the pinned columns (how the
     // line imports, what can be done to it), and the whole line above the bottom edge.
@@ -946,7 +962,13 @@ function LineEditor({
       </span>
       {headers.map((h, i) => (
         <span role="cell" key={i} className="line-cell" data-column={i}>
-          {role[i] === "payee" ? (
+          {role[i] === "date" ? (
+            <DateInput
+              label={t("{column} of line {line}", { column: h || columnLabel(i), line: line.id })}
+              value={values[i]}
+              onChange={(date) => change(i, date)}
+            />
+          ) : role[i] === "payee" ? (
             <PayeeInput
               budget={budget}
               label={t("{column} of line {line}", { column: h || columnLabel(i), line: line.id })}

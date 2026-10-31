@@ -182,6 +182,49 @@
 .import-review tr.muted td {
   color: var(--muted);
 }
+/* Column widths come from the available space, never from a long bank memo or match label. */
+.import-review table {
+  width: 100%;
+  min-width: 680px;
+  table-layout: fixed;
+}
+.import-date-col {
+  width: 120px;
+}
+.import-payee-col {
+  width: 32%;
+}
+.import-amount-col {
+  width: 130px;
+}
+.import-review td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.import-review .combobox input {
+  height: 30px;
+  text-overflow: ellipsis;
+}
+/* The register's searchable picker, with full memos wrapped below each possible match. */
+.import-match-popover {
+  width: min(520px, calc(100vw - 16px));
+  max-width: calc(100vw - 16px);
+}
+.import-match-popover .combobox-option {
+  padding-block: 7px;
+}
+.import-match-popover .combobox-option > span:first-child {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.import-match-note {
+  margin: 0;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+}
 /* The bank's own payee text, beside the name a payee rule gave it. */
 .import-review .bank-text {
   margin-inline-start: 8px;

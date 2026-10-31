@@ -46,7 +46,11 @@ data class AssistantState(
 }
 
 /** Native presentation state; providers, tools, history, validation and proposals live in Rust. */
-class AssistantController : ViewModel() {
+class AssistantController(
+    private val service: suspend (String, JSONObject) -> Any? = { method, params ->
+        withContext(Dispatchers.IO) { NativeServices.call(method, params) }
+    },
+) : ViewModel() {
     private val mutable = MutableStateFlow(AssistantState())
     val state = mutable.asStateFlow()
     private var undoToken: String? = null
@@ -79,7 +83,11 @@ class AssistantController : ViewModel() {
             }
         }
         viewModelScope.launch {
-            while (true) { delay(1200); if (state.value.running) reloadThread() }
+            while (true) {
+                delay(1200)
+                if (state.value.running) reloadThread()
+                if (state.value.status?.optBoolean("signingIn") == true) refreshSignInStatus()
+            }
         }
         viewModelScope.launch {
             for (first in reloads) {
@@ -102,11 +110,11 @@ class AssistantController : ViewModel() {
     private fun clearStream() { streamPublish?.cancel(); streamPublish = null; stream.clear() }
 
     private suspend fun call(method: String, params: JSONObject = JSONObject()): Any? =
-        withContext(Dispatchers.IO) { NativeServices.call(method, params) }
+        service(method, params)
 
-    private fun operation(label: String, work: suspend () -> Unit) {
+    private fun operation(label: String, clearError: Boolean = true, work: suspend () -> Unit) {
         if (label in state.value.busy) return
-        mutable.update { it.copy(busy = it.busy + label, error = null) }
+        mutable.update { it.copy(busy = it.busy + label, error = if (clearError) null else it.error) }
         viewModelScope.launch {
             try { work() }
             catch (cancel: CancellationException) { throw cancel }
@@ -118,6 +126,11 @@ class AssistantController : ViewModel() {
     private suspend fun loadStatus() {
         val previous = state.value.status
         val status = call("assistant_status") as JSONObject
+        val phase = status.optString("signInPhase")
+        if (phase != previous?.optString("signInPhase") && phase in setOf("waiting", "returning", "exchanging", "validating", "saving", "complete", "failed", "cancelled")) {
+            // Stage names only: never log account details, authorization URLs, codes or tokens.
+            android.util.Log.i("UrBudgetSignIn", "Phase: $phase")
+        }
         mutable.update { it.copy(status = status) }
         if (status.optBoolean("ready") && (previous?.optString("provider") != status.optString("provider") || previous?.optBoolean("ready") != true)) {
             operation("models") { loadModels(false) }
@@ -149,7 +162,7 @@ class AssistantController : ViewModel() {
             }
         }
     }
-    fun refresh() = operation("refresh") {
+    fun refresh() = operation("refresh", clearError = false) {
         loadStatus(); loadHistory()
         val id = state.value.threadId
         if (id.isNotEmpty() && state.value.threads.any { it.optString("id") == id }) loadThread(id)
@@ -182,9 +195,22 @@ class AssistantController : ViewModel() {
         call("assistant_settings", JSONObject().put("change", change)); loadStatus()
     }
     fun models() = operation("models") { loadModels(true) }
+    /** Browser return and Activity recreation may miss the original sign-in coroutine's result. */
+    fun refreshSignInStatus() {
+        if ("signInStatus" in state.value.busy) return
+        // A status read must not dismiss a sign-in failure before the user can see it.
+        mutable.update { it.copy(busy = it.busy + "signInStatus") }
+        viewModelScope.launch {
+            try { loadStatus() }
+            catch (cancel: CancellationException) { throw cancel }
+            catch (failure: Exception) { mutable.update { it.copy(error = it.error ?: failure.message) } }
+            finally { mutable.update { it.copy(busy = it.busy - "signInStatus") } }
+        }
+    }
     fun signIn() = operation("signIn") {
         mutable.update { it.copy(status = it.status?.copy()?.put("signingIn", true)) }
-        try { call("assistant_sign_in") } finally { loadStatus() }
+        try { call("assistant_sign_in", JSONObject().put("returnPackage", BuildConfig.APPLICATION_ID)) }
+        finally { loadStatus() }
     }
     fun cancelSignIn() = operation("cancel") { call("assistant_cancel_sign_in"); loadStatus() }
     fun signOut() = operation("signOut") { try { call("assistant_sign_out") } finally { loadStatus() } }

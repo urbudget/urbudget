@@ -25,8 +25,19 @@ pub async fn dispatch(
     cloud: &crate::cloud::Cloud,
 ) -> Result<Value, String> {
     match method {
+        "assistant_sms_start" => sms::start(db, assistant, argument(&params, "request")?),
+        "assistant_sms_poll" => sms::poll(db, assistant, &argument::<String>(&params, "id")?).await,
+        "assistant_sms_cancel" => { sms::cancel(assistant, &argument::<String>(&params, "id")?); Ok(Value::Null) }
         "assistant_status" => encoded(assistant_status(assistant)),
-        "assistant_sign_in" => encoded(assistant_sign_in(assistant).await?),
+        "assistant_foreground" => {
+            assistant.foreground.store(argument(&params, "active")?, Ordering::Relaxed);
+            Ok(Value::Null)
+        }
+        "assistant_sign_in" => {
+            let package: Option<String> = optional(&params, "returnPackage")?;
+            let link = package.as_deref().map(auth::android_return_link).transpose()?;
+            encoded(sign_in_returning_to(assistant, link).await?)
+        }
         "assistant_cancel_sign_in" => { assistant_cancel_sign_in(assistant); Ok(Value::Null) }
         "assistant_sign_out" => encoded(assistant_sign_out(assistant).await?),
         "assistant_settings" => encoded(assistant_settings(assistant, argument(&params, "change")?)?),

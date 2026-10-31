@@ -100,6 +100,76 @@ Desktop window controls, updater delivery and OS-specific shell integration stay
 with their platform hosts. Android uses Google Play delivery, native pickers,
 intents and Print / Save as PDF.
 
+## Bank SMS import
+
+**More → Bank messages** (also **Settings & data → Imports → Bank messages**) is an
+opt-in, on-device SMS inbox. After the disclosure and Android permission prompts,
+choose one or several sender addresses from the phone's SMS inbox (up to 50). This
+includes alphanumeric bank sender IDs and phone numbers; it does not need contacts
+access. Choose new messages only, or the past 30/90 days plus new messages. The
+history choice applies to newly added senders. Existing choices keep their start
+date. RCS and MMS are not read.
+
+The system SMS receiver captures selected senders while the app is closed. Opening
+Bank messages or using Refresh catches up from the system inbox after missed
+broadcasts/restarts. Messages remain local in a separate SQLite inbox, scoped to
+the current budget's database path. No capture changes a budget or calls the
+assistant/network. Capture does not interpret message text; users exclude verification
+codes and personal messages from the raw preview before sending. Removing a sender
+removes its pending messages; **Stop and clear messages** removes that budget's
+local inbox and disables its collection. Neither action changes Android's messages
+or imported transactions. Deleted budget paths stop collecting when next encountered.
+
+Select up to 50 messages (120 KB maximum) and choose **Analyze selected**. A separate
+notice identifies the configured assistant provider/model and asks permission to
+send those full messages, account/category names, relevant payee category history
+and explicitly remembered sender/card mappings. No message is preselected. Provider
+retention settings apply. The dedicated analysis session has only `payee_history`
+and `submit_sms_analysis` tools, no writes, browsing, attachments or ordinary chat
+history. Requests time out after five minutes, can be cancelled, and expire from
+memory after ten minutes. Budget/provider changes prevent stale requests from being
+accepted. Failed or interrupted analysis leaves messages available for retry.
+
+The model accounts for every source exactly once as a transaction, grouped question,
+pending event or excluded message. It quotes source evidence and prepares multiple
+accounts in one batch. Missing account mappings or billed amounts in the budget
+currency require answers; exchange rates are not guessed. Users can answer grouped
+questions, explicitly remember a sender plus literal card reference, give a batch
+instruction, or edit proposed fields. Updating analysis asks for sending consent
+again. Reviews survive screen/process recreation in the private inbox; discard or
+finish removes the draft. No regex bank parser is used. Deterministic core checks
+validate exact money, dates, references, evidence and complete source coverage.
+
+Review selected uses the existing bank import engine to add, match or skip rows.
+The `smsBatchApply` command commits all accounts once through the normal budget revision guard and
+undo/save path. SMS is not settlement evidence: new entries are uncleared, and
+matching preserves existing clearing/reconciliation states, including transfer
+sides. A stable sender/message-timestamp/body fingerprint is carried as the import
+ID, including after manual corrections. All grouped source fingerprints are also
+recorded in the budget to prevent reimport after reassignment to another account.
+Raw bodies are not stored in budget metadata or normal assistant conversations.
+Inbox text is erased after an acknowledged review or dismissal, with a local
+fingerprint retained to prevent re-queuing. Questions and pending events remain.
+**Stop and clear** also deletes saved drafts and remembered mappings. If
+capture or acknowledgement is interrupted, repeat import review detects existing
+import IDs. The screen pages pending messages in batches of 500.
+
+The manifest requests only `READ_SMS` and `RECEIVE_SMS`, not default-SMS status or
+permission to send/change messages. **Before distributing this build through
+Google Play**, complete its SMS permissions declaration under the
+[SMS-based money management exception](https://support.google.com/googleplay/android-developer/answer/10208820?hl=en)
+and obtain approval; align the store description, privacy policy and Data safety
+answers with this feature. Eligibility is subject to Google's review. SMS remains
+optional, and denied/revoked access leaves the other budgeting features available.
+
+Implementation: `SmsInbox.kt` owns capture, selection and private storage;
+`SmsAnalysis.kt` owns identities, draft recovery and the cancellable service client;
+`ui/SmsImportScreen.kt` and `ui/SmsAnalysisReview.kt` own selection/consent/review.
+Services `assistant/sms.rs` owns the ephemeral model session; core `sms_import.rs`
+validates output and preserves clearing state while reusing bank matching. Synthetic
+coverage includes `SmsAnalysisTest`, `SmsInboxTest`, `SmsImportUiTest`, core
+`tests/sms_analysis.rs`, `tests/sms_import.rs`, and service model-loop tests.
+
 ## Layout
 
 The screens follow the phone layout first made for the Tauri phone builds
@@ -153,6 +223,30 @@ from Tauri finds the existing library directly in `filesDir`; otherwise native
 state lives in `filesDir/native`. Credentials stay in the same sealed vault with
 its key protected by Android Keystore and excluded from backup. Only a confirmed
 missing secret is treated as absent; decryption/I/O failures do not reset it.
+
+ChatGPT sign-in keeps its PKCE callback on `127.0.0.1`. The callback page offers
+**Return to UrBudget**, which targets the initiating package and resumes its
+existing activity. This link carries no OAuth code or credentials and only
+refreshes status; receiving it cannot sign someone in. The token exchange waits
+until the activity is started again, so it runs in the foreground rather than
+behind the browser. Settings refreshes on
+resume and polls pending attempts, shows the current stage, and retains the last
+sign-in error until the next attempt even if Settings is reopened. The
+`UrBudgetSignIn` diagnostic log contains stage names only. The token
+exchange has a 30-second deadline and remains cancellable after the callback.
+The page acknowledges receipt instead of claiming success before credentials
+have been validated and saved.
+
+`AssistantSignInTest` covers completion, resumed status and failures;
+`NativeSignInTest` exercises the real JNI callback with synthetic consent denial;
+`SignInReturnActivityTest` checks activity reuse. Run the two instrumentation
+classes in separate processes because the JNI test uses an isolated data folder.
+The Rust auth tests also exchange a synthetic authorization code with a local
+token endpoint and verify PKCE and ID-token claims. Live account consent still
+needs a manual device test.
+The optional `NativeSignInTest#tokenTransportWithSyntheticGrant` instrumentation
+test requires `-e checkAuthNetwork true`; it uses a fabricated grant to verify
+foreground handoff and connectivity to the real token endpoint, expecting rejection.
 
 Automatic Android system backup/device transfer is disabled. Explicit portable
 budget exports contain budget data, not account/provider/bank credentials.

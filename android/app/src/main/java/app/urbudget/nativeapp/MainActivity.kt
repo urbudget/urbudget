@@ -31,6 +31,7 @@ import app.urbudget.nativeapp.ui.UrBudgetTheme
  */
 class MainActivity : AppCompatActivity() {
     private val model: BudgetViewModel by viewModels()
+    private val assistant: AssistantController by viewModels()
     /** The configuration the screens are drawn in; a language change replaces it. */
     private var interfaceConfiguration by mutableStateOf<Configuration?>(null)
 
@@ -78,9 +79,25 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        NativeServices.setForeground(true)
+    }
+
     override fun onStop() {
+        NativeServices.setForeground(false)
         SyncWorker.enqueue(applicationContext)
         super.onStop()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        val uri = intent.data
+        if (intent.action == Intent.ACTION_VIEW && uri?.scheme == packageName &&
+            uri.host == "assistant" && uri.path == "/sign-in") {
+            // Merely refresh; a browser intent can never authenticate an account.
+            assistant.refreshSignInStatus()
+        }
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {

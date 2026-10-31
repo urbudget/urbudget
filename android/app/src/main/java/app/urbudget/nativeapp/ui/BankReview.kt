@@ -31,9 +31,9 @@ internal fun reviewCounts(summary: BankReviewSummary) = listOfNotNull(
 ).joinToString(" · ")
 
 /** What the review says before its rows: how matching works, files without bank IDs, and rows still to decide. */
-internal fun LazyListScope.bankReviewNotes(summary: BankReviewSummary, undecided: Int) {
+internal fun LazyListScope.bankReviewNotes(summary: BankReviewSummary, undecided: Int, matchingNote: Int = R.string.bank_matching_note) {
     item(key = "review:matching") {
-        Text(stringResource(R.string.bank_matching_note),
+        Text(stringResource(matchingNote),
             style = MaterialTheme.typography.bodySmall, color = ur.muted)
     }
     if (summary.transfers) item(key = "review:transfers") {
@@ -67,7 +67,7 @@ internal fun LazyListScope.bankReviewRows(rows: List<BankReviewRow>, decisions: 
 }
 
 @Composable
-private fun BankReviewItem(row: BankReviewRow, decision: String, enabled: Boolean, modifier: Modifier, divider: Boolean, choose: (String) -> Unit) {
+internal fun BankReviewItem(row: BankReviewRow, decision: String, enabled: Boolean, modifier: Modifier, divider: Boolean, choose: (String) -> Unit) {
     // Its choice stands out from the card it sits on, as a field in a ListCard does.
     CompositionLocalProvider(LocalFieldFill provides if (LocalSheet.current) ur.surface else ur.surface2) { Column(modifier) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {

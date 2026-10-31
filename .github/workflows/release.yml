@@ -22,7 +22,38 @@ concurrency:
   group: release-${{ github.ref }}
 
 jobs:
+  updater:
+    name: Updater regressions
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+      - run: npm ci
+      - name: Type-check and build the frontend assets
+        run: npm run build
+      - name: Exercise update state, interruptions, and saving before close
+        run: npm run test:ui -- src/updates.test.tsx src/updates.stress.test.tsx src/useBudget.test.tsx src/App.test.tsx --maxWorkers 2
+      - name: Exercise native Store update states
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib "updates::"
+      - name: Exercise real updater HTTP failures and package verification
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --test updater_transport
+      # These checks cannot establish Store eligibility, consent, or deployment. Before
+      # publication, also run the two-version package-flight check in desktop/README.md.
+
   build:
+    needs: updater
     timeout-minutes: 60
     strategy:
       fail-fast: false

@@ -2,6 +2,7 @@
 //! the user applies. It signs in with ChatGPT (the user's plan pays) or uses an OpenAI or
 //! Anthropic API key. Conversations and attachments stay in the budget's folder.
 mod agent;
+mod sms;
 mod dispatch;
 pub use dispatch::dispatch;
 mod anthropic;
@@ -152,7 +153,10 @@ pub struct AssistantState {
     /// Conversations in use, with the budget folder each belongs to.
     threads: Mutex<HashMap<String, (PathBuf, Thread)>>,
     running: Mutex<HashMap<String, RunningTask>>,
+    sms_jobs: Mutex<HashMap<String, sms::Job>>,
     signing_in: Mutex<Option<Arc<AtomicBool>>>,
+    sign_in_progress: Mutex<SignInProgress>,
+    foreground: AtomicBool,
     models: Mutex<HashMap<Provider, Vec<llm::Model>>>,
     /// Budget folders whose unused attachments were cleared this session.
     pruned: Mutex<std::collections::HashSet<PathBuf>>,
@@ -161,6 +165,12 @@ pub struct AssistantState {
 struct RunningTask {
     handle: tokio::task::JoinHandle<()>,
     cancelled: Arc<AtomicBool>,
+}
+
+#[derive(Clone, Default)]
+struct SignInProgress {
+    phase: Option<&'static str>,
+    error: Option<String>,
 }
 impl RunningTask {
     fn abort(&self) {
@@ -192,7 +202,10 @@ impl Assistant {
             memory: Mutex::new(HashMap::new()),
             threads: Mutex::new(HashMap::new()),
             running: Mutex::new(HashMap::new()),
+            sms_jobs: Mutex::new(HashMap::new()),
             signing_in: Mutex::new(None),
+            sign_in_progress: Mutex::new(SignInProgress::default()),
+            foreground: AtomicBool::new(true),
             models: Mutex::new(HashMap::new()),
             pruned: Mutex::new(std::collections::HashSet::new()),
         }))
@@ -393,11 +406,14 @@ pub struct StatusView {
     /// Where secrets are kept, or None when they last only until the app closes.
     storage: Option<&'static str>,
     signing_in: bool,
+    sign_in_phase: Option<&'static str>,
+    sign_in_error: Option<String>,
     /// How to add UrBudget to an MCP client such as Claude Desktop.
     mcp: Value,
 }
 fn status(a: &Assistant) -> StatusView {
     let s = a.settings();
+    let progress = lock(&a.sign_in_progress).clone();
     let ready = match s.provider {
         Provider::Chatgpt => s.client_id.is_some() && a.secret(Provider::Chatgpt).is_some(),
         p => a.secret(p).is_some(),
@@ -415,6 +431,8 @@ fn status(a: &Assistant) -> StatusView {
         has_anthropic_key: a.secret(Provider::Anthropic).is_some(),
         storage: vault::STORE,
         signing_in: lock(&a.signing_in).is_some(),
+        sign_in_phase: progress.phase,
+        sign_in_error: progress.error,
         mcp: json!({
             "command": exe,
             "args": ["--mcp"],
@@ -428,6 +446,19 @@ pub fn assistant_status(assistant: &Assistant) -> StatusView {
 }
 
 pub async fn assistant_sign_in(assistant: &Assistant) -> Result<StatusView, String> {
+    sign_in_returning_to(assistant, None).await
+}
+
+fn remember_sign_in_client(assistant: &Assistant, cancel: &Arc<AtomicBool>, issued: &str) {
+    // Keep the attempt lock through persistence: a canceled callback must not replace
+    // the registration used by a newer attempt or by credentials it already saved.
+    let busy = lock(&assistant.signing_in);
+    if !cancel.load(Ordering::Relaxed) && busy.as_ref().is_some_and(|c| Arc::ptr_eq(c, cancel)) {
+        let _ = assistant.update(|s| s.client_id = Some(issued.to_owned()));
+    }
+}
+
+async fn sign_in_returning_to(assistant: &Assistant, return_link: Option<String>) -> Result<StatusView, String> {
     let cancel = Arc::new(AtomicBool::new(false));
     {
         let mut busy = lock(&assistant.signing_in);
@@ -435,6 +466,7 @@ pub async fn assistant_sign_in(assistant: &Assistant) -> Result<StatusView, Stri
             previous.store(true, Ordering::Relaxed);
         }
         *busy = Some(cancel.clone());
+        *lock(&assistant.sign_in_progress) = SignInProgress { phase: Some("waiting"), error: None };
     }
     let settings = assistant.settings();
     let a: &Assistant = &assistant;
@@ -444,44 +476,64 @@ pub async fn assistant_sign_in(assistant: &Assistant) -> Result<StatusView, Stri
         settings.client_id.clone(),
         settings.account.as_ref().map(|x| x.email.clone()),
         cancel.clone(),
+        return_link,
         auth::open_sign_in,
-        |issued| {
-            let _ = a.update(|s| s.client_id = Some(issued.to_owned()));
+        |issued| remember_sign_in_client(a, &cancel, issued),
+        |phase| {
+            let busy = lock(&a.signing_in);
+            if busy.as_ref().is_some_and(|c| Arc::ptr_eq(c, &cancel)) {
+                lock(&a.sign_in_progress).phase = Some(phase);
+            }
         },
+        || a.foreground.load(Ordering::Relaxed),
     )
     .await;
+    let result = async {
+        let signed = result?;
+        let mut tokens = a.tokens.lock().await;
+        // Don't publish a stale success after Cancel, or while a newer attempt is running.
+        let busy = lock(&a.signing_in);
+        if cancel.load(Ordering::Relaxed) || !busy.as_ref().is_some_and(|c| Arc::ptr_eq(c, &cancel)) {
+            return Err(t!("Sign-in was cancelled."));
+        }
+        lock(&a.sign_in_progress).phase = Some("saving");
+        a.keep_secret(Provider::Chatgpt, &signed.tokens.refresh);
+        let plan = signed.tokens.plan_usage();
+        *tokens = Some(signed.tokens);
+        lock(&a.models).remove(&Provider::Chatgpt);
+        a.update(|s| {
+            s.client_id = Some(signed.client_id.clone());
+            s.account = Some(signed.account.clone());
+            s.provider = Provider::Chatgpt;
+        })?;
+        if !plan {
+            return Err(t!("You signed in, but didn't allow UrBudget to use your ChatGPT plan. Sign in again and allow it."));
+        }
+        Ok(())
+    }.await;
     {
         let mut busy = lock(&a.signing_in);
         if busy.as_ref().is_some_and(|c| Arc::ptr_eq(c, &cancel)) {
+            *lock(&a.sign_in_progress) = SignInProgress {
+                phase: Some(if result.is_ok() { "complete" } else { "failed" }),
+                error: result.as_ref().err().cloned(),
+            };
             *busy = None;
         }
     }
-    if cancel.load(Ordering::Relaxed) {
-        return Err(t!("Sign-in was cancelled."));
-    }
-    let signed = result?;
-    a.keep_secret(Provider::Chatgpt, &signed.tokens.refresh);
-    let plan = signed.tokens.plan_usage();
-    *a.tokens.lock().await = Some(signed.tokens);
-    lock(&a.models).remove(&Provider::Chatgpt);
-    a.update(|s| {
-        s.client_id = Some(signed.client_id.clone());
-        s.account = Some(signed.account.clone());
-        s.provider = Provider::Chatgpt;
-    })?;
-    if !plan {
-        return Err(t!("You signed in, but didn't allow UrBudget to use your ChatGPT plan. Sign in again and allow it."));
-    }
+    result?;
     Ok(status(a))
 }
 
 pub fn assistant_cancel_sign_in(assistant: &Assistant) {
     if let Some(c) = lock(&assistant.signing_in).take() {
         c.store(true, Ordering::Relaxed);
+        *lock(&assistant.sign_in_progress) = SignInProgress { phase: Some("cancelled"), error: None };
     }
 }
 
 pub async fn assistant_sign_out(assistant: &Assistant) -> Result<StatusView, String> {
+    lock(&assistant.sms_jobs).clear();
     let a: &Assistant = &assistant;
     let settings = a.settings();
     let refresh = a.tokens.lock().await.take().map(|t| t.refresh).or_else(|| a.secret(Provider::Chatgpt));
@@ -506,6 +558,7 @@ pub struct SettingsChange {
     plan_notice_seen: Option<bool>,
 }
 pub fn assistant_settings(assistant: &Assistant, change: SettingsChange) -> Result<StatusView, String> {
+    if change.provider.is_some() || change.model.is_some() { lock(&assistant.sms_jobs).clear(); }
     assistant.update(|s| {
         if let Some(p) = change.provider {
             s.provider = p;
@@ -545,6 +598,7 @@ pub async fn assistant_set_key(assistant: &Assistant, provider: Provider, key: S
     Ok(status(&assistant))
 }
 pub fn assistant_forget_key(assistant: &Assistant, provider: Provider) -> Result<StatusView, String> {
+    lock(&assistant.sms_jobs).clear();
     assistant.forget_secret(provider);
     lock(&assistant.models).remove(&provider);
     if assistant.settings().provider == provider {
@@ -1076,6 +1130,23 @@ pub fn spreadsheet_saved(db: &Database, assistant: &Assistant, thread_id: &str, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stale_sign_in_callbacks_cannot_replace_the_current_registration() {
+        let directory = tempfile::tempdir().unwrap();
+        let assistant = Assistant::new(directory.path().join("settings"));
+        let old = Arc::new(AtomicBool::new(false));
+        let current = Arc::new(AtomicBool::new(false));
+        *lock(&assistant.signing_in) = Some(current.clone());
+        remember_sign_in_client(&assistant, &current, "current-client");
+        remember_sign_in_client(&assistant, &old, "stale-client");
+        assert_eq!(assistant.settings().client_id.as_deref(), Some("current-client"));
+        assistant_cancel_sign_in(&assistant);
+        remember_sign_in_client(&assistant, &current, "cancelled-client");
+        assert_eq!(assistant.settings().client_id.as_deref(), Some("current-client"));
+        let reloaded = Assistant::new(directory.path().join("settings"));
+        assert_eq!(reloaded.settings().client_id.as_deref(), Some("current-client"));
+    }
 
     #[test]
     fn money_round_trips() {

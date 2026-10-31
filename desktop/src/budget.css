@@ -657,6 +657,13 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Without a target meter, the name can use its otherwise empty space. */
+.category-name:has(> .target-bar.none) > .name {
+  grid-column: 1 / 3;
+}
+.category-name > .target-bar.none {
+  display: none;
+}
 /* What's left to do sits beside the Assigned amount it's about, right-aligned: the amount in
    colour, the word quiet. */
 .row-status {
@@ -708,6 +715,9 @@
     grid-area: 1 / 1;
     min-width: min(5em, 100%);
   }
+  .category-name:has(> .target-bar.none) > .name {
+    grid-column: 1;
+  }
   .category-name > :is(.row-status, .snoozed) {
     grid-area: 1 / 2;
   }
@@ -726,6 +736,16 @@
   .category-name > .row-status {
     display: none;
   }
+  .category-name:has(> .target-bar.none) > .name {
+    grid-column: 1 / -1;
+  }
+}
+/* Rows with neither a meter nor a status can use the entire name cell at any width. */
+.category-name:has(> .target-bar.none):has(> .row-status:empty) > .name {
+  grid-column: 1 / -1;
+}
+.category-name > .row-status:empty {
+  display: none;
 }
 
 /* Group rows: a section header with the count as a chip, and "+" after it on hover. */

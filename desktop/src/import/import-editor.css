@@ -656,9 +656,13 @@
   padding: 0 9px;
   font-size: 13px;
 }
-.line-editor .combobox {
+.line-editor .combobox,
+.line-editor .date-input {
   width: 100%;
   min-width: 0;
+}
+.line-editor .date-input input {
+  padding-inline-end: 26px;
 }
 .line-editor select {
   width: 100%;

@@ -17,7 +17,7 @@ if (process.env.URBUDGET_QA_URL) {
     "URBUDGET_QA_URL must be an HTTP loopback origin; this suite must never target production.");
   assert.match(process.env.URBUDGET_QA_EMAIL ?? "", /^[A-Za-z0-9._+-]+@example\.test$/, "Use a synthetic @example.test account.");
 }
-const local = process.env.URBUDGET_QA_URL ? { url: process.env.URBUDGET_QA_URL, email: process.env.URBUDGET_QA_EMAIL, stop() {}, logs() { return ""; } } : await startLocal({ port: 8789 });
+const local = process.env.URBUDGET_QA_URL ? { url: process.env.URBUDGET_QA_URL, email: process.env.URBUDGET_QA_EMAIL, stop() {}, logs() { return ""; } } : await startLocal({ port: Number(process.env.SYNC_V2_QA_PORT ?? 8789) });
 const binary = resolve(web, "../crates/target/debug/examples/sync_qa.exe");
 let passphrase = "correct horse battery staple";
 function positiveArgument(name, fallback) {
