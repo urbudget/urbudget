@@ -42,6 +42,16 @@ object NativeServices {
     /** One at a time and in order, so the engine always ends on the latest language. */
     private val languageLane = Dispatchers.IO.limitedParallelism(1)
     private val languageScope = CoroutineScope(SupervisorJob() + languageLane)
+    @Volatile private var foreground = false
+    private val foregroundScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
+
+    fun setForeground(active: Boolean) {
+        foreground = active
+        if (ready) foregroundScope.launch { sendForeground() }
+    }
+    private fun sendForeground() {
+        runCatching { call("assistant_foreground", JSONObject().put("active", foreground)) }
+    }
 
     @Synchronized fun initialize(context: Context) {
         if (ready) return
@@ -51,6 +61,7 @@ object NativeServices {
         ready = true
         application = context.applicationContext
         refreshSyncStatus()
+        foregroundScope.launch { sendForeground() }
         runBlocking(languageLane) { sendLanguage() }
     }
 

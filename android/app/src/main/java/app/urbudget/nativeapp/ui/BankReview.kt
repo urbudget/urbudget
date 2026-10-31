@@ -67,7 +67,7 @@ internal fun LazyListScope.bankReviewRows(rows: List<BankReviewRow>, decisions: 
 }
 
 @Composable
-private fun BankReviewItem(row: BankReviewRow, decision: String, enabled: Boolean, modifier: Modifier, divider: Boolean, choose: (String) -> Unit) {
+internal fun BankReviewItem(row: BankReviewRow, decision: String, enabled: Boolean, modifier: Modifier, divider: Boolean, choose: (String) -> Unit) {
     // Its choice stands out from the card it sits on, as a field in a ListCard does.
     CompositionLocalProvider(LocalFieldFill provides if (LocalSheet.current) ur.surface else ur.surface2) { Column(modifier) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {

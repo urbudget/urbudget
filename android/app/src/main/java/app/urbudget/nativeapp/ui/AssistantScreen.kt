@@ -106,15 +106,19 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
     }
 
     Column(Modifier.fillMaxSize().imePadding()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(stringResource(R.string.assistant_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text(state.thread?.text("title").orEmpty().ifEmpty { stringResource(R.string.assistant_tagline) }, maxLines = 1, style = MaterialTheme.typography.labelSmall)
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(stringResource(R.string.assistant_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(state.thread?.text("title").orEmpty().ifEmpty { stringResource(R.string.assistant_tagline) }, maxLines = 2, style = MaterialTheme.typography.labelSmall)
+                }
+                if (onClose != null) IconButton(onClose, Modifier.size(48.dp)) { Icon(Icons.Outlined.Close, stringResource(R.string.assistant_close)) }
             }
-            IconButton({ history = true }) { Icon(Icons.Outlined.History, stringResource(R.string.assistant_history)) }
-            IconButton({ controller.newChat(); message = ""; selected = emptyList() }) { Icon(Icons.Outlined.AddComment, stringResource(R.string.assistant_new)) }
-            IconButton({ settings = true }) { Icon(Icons.Outlined.Settings, stringResource(R.string.assistant_settings)) }
-            if (onClose != null) IconButton(onClose) { Icon(Icons.Outlined.Close, stringResource(R.string.assistant_close)) }
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                IconButton({ history = true }, Modifier.size(48.dp)) { Icon(Icons.Outlined.History, stringResource(R.string.assistant_history)) }
+                IconButton({ controller.newChat(); message = ""; selected = emptyList() }, Modifier.size(48.dp)) { Icon(Icons.Outlined.AddComment, stringResource(R.string.assistant_new)) }
+                IconButton({ settings = true }, Modifier.size(48.dp)) { Icon(Icons.Outlined.Settings, stringResource(R.string.assistant_settings)) }
+            }
         }
         if (state.busy.isNotEmpty()) LinearProgressIndicator(Modifier.fillMaxWidth())
         state.notice?.let { notice ->
@@ -129,8 +133,11 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
                 Spacer(Modifier.height(8.dp))
                 Text(stringResource(R.string.assistant_empty_detail), style = MaterialTheme.typography.bodyMedium)
                 if (state.status?.optBoolean("ready") != true) FilledTonalButton({ settings = true }, Modifier.padding(top = 12.dp)) { Text(stringResource(R.string.assistant_set_up)) }
-                else listOf(R.string.assistant_prompt_where, R.string.assistant_prompt_cover, R.string.assistant_prompt_report).map { stringResource(it) }.forEach { prompt ->
-                    OutlinedButton({ message = prompt }, Modifier.fillMaxWidth()) { Text(prompt) }
+                else Column(Modifier.fillMaxWidth().padding(top = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    listOf(R.string.assistant_prompt_where, R.string.assistant_prompt_cover, R.string.assistant_prompt_report).map { stringResource(it) }.forEach { prompt ->
+                        OutlinedButton({ message = prompt }, Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp)) { Text(prompt) }
+                    }
                 }
             }
             itemsIndexed(entries, key = { index, _ -> "${state.threadId}:$index" }, contentType = { _, entry -> entry.text("kind") }) { _, entry ->
@@ -185,8 +192,8 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
                 if (selected.isNotEmpty()) InputChip(true, { contextPicker = true }, label = { Text(countText(R.plurals.assistant_selected_transactions, selected.size)) })
             }
         }
-        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Column {
+        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 IconButton({ attach.launch(arrayOf("*/*")) }, enabled = !state.running && state.attachments.size < 5 && "attach" !in state.busy) { Icon(Icons.Outlined.AttachFile, stringResource(R.string.assistant_attach)) }
                 IconButton({ contextPicker = true }, enabled = !state.running) { Icon(Icons.Outlined.Checklist, stringResource(R.string.assistant_select_transactions)) }
             }

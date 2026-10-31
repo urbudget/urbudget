@@ -278,6 +278,7 @@ private fun SettingsPage(navigate: (String) -> Unit, budget: JSONObject, vm: Bud
         item {
             ListCard {
                 ListRow(stringResource(R.string.import_bank_file), subtitle = stringResource(R.string.import_bank_file_detail), icon = Icons.Outlined.FileOpen, onClick = { edit("bankImport", null) }, divider = true)
+                ListRow(stringResource(R.string.sms_title), subtitle = stringResource(R.string.sms_detail), icon = Icons.Outlined.Sms, onClick = { navigate("Bank messages") }, divider = true)
                 ListRow(stringResource(R.string.import_ynab), subtitle = stringResource(R.string.import_ynab_detail), icon = Icons.Outlined.FileDownload, onClick = { edit("ynabImport", null) })
             }
         }

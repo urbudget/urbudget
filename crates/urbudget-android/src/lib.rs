@@ -360,6 +360,11 @@ fn dispatch(request: Request) -> Result<Value, String> {
                     }
                     request.changed(budget)
                 }
+                "smsApply" => request.changed(urbudget_core::sms_import::apply(
+                    budget, &required::<String>(p, "accountId")?, required(p, "choices")?,
+                )?),
+                "smsBatchPreview" => encode(urbudget_core::sms_import::preview(&budget, &required::<Vec<_>>(p, "messages")?, &required(p, "analysis")?)?),
+                "smsBatchApply" => request.changed(urbudget_core::sms_import::apply_batch(budget, &required::<Vec<_>>(p, "messages")?, &required(p, "analysis")?, required(p, "decisions")?)?),
                 // With `ids` or `accountId`, only those transactions (one account's side of a transfer),
                 // newest first as the register lists them; without, the whole register.
                 "exportRegister" => {

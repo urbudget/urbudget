@@ -33,7 +33,7 @@ pub fn create(source: &Budget, name: &str, as_of: &str) -> Result<Budget, String
         else { for split in &t.splits { if let Some(peer) = split.extra.get("transferAccountId").and_then(Value::as_str) { add(peer, -(split.amount as i128))?; } } }
     }
     let mut next = Budget { name: name.trim().into(), currency: source.currency.clone(), ..Budget::default() };
-    for field in ["numberFormat", "dateFormat", "categoryOrder", "groupOrder", "payeeRules", "payees", "loans"] {
+    for field in ["numberFormat", "dateFormat", "categoryOrder", "groupOrder", "payeeRules", "payees", "loans", "smsImportedMessageIds"] {
         if let Some(v) = source.extra.get(field) { next.extra.insert(field.into(), v.clone()); }
     }
     if let Some(schedules) = source.extra.get("schedules").and_then(Value::as_array) {

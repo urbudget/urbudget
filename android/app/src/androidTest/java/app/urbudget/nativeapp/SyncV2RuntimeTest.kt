@@ -1,6 +1,7 @@
 package app.urbudget.nativeapp
 
 import android.system.Os
+import kotlinx.coroutines.runBlocking
 import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -44,6 +45,20 @@ class SyncV2RuntimeTest {
         // Locked v2 still consumes the catalog through the actual scheduled worker. It must
         // retain this local edit in the outgoing queue until the passphrase is unlocked again.
         NativeServices.call("sync_lock")
+        // Follow the same repository/SQLite commit boundary as an accepted SMS review.
+        // With sync locked, its transaction and duplicate marker must remain queued.
+        val sms = BankSms("sms:sync-v2-qa-${UUID.randomUUID()}", "SyntheticBank", 1000,
+            "Purchase USD 12.34 at Synthetic Shop on 2026-10-24")
+        val smsRequest = SmsBatch(listOf(sms), syntheticSmsAnalysis(sms)).params()
+            .put("decisions", JSONArray().put(JSONObject().put("index", 0).put("action", "new").put("matchId", JSONObject.NULL)))
+        val imported = runBlocking {
+            val repository = BudgetRepository(SqliteBudgetStorage(context))
+            val shown = repository.load()
+            repository.command("smsBatchApply", smsRequest,
+                BudgetEditGuard.command(shown.budget, shown.identity, "smsBatchApply", smsRequest))
+        }.budget!!
+        val smsTransactionId = imported.getJSONArray("transactions").let { it.getJSONObject(it.length() - 1).getString("id") }
+        assertEquals(fixture.getJSONArray("transactions").length() + 1, imported.getJSONArray("transactions").length())
         snapshot = NativeServices.call("load_budget") as JSONObject
         val lockedDraft = snapshot.getJSONObject("budget").put("name", "Locked pending edit ${UUID.randomUUID()}")
         NativeServices.call("save_budget", JSONObject().put("budget", lockedDraft).put("expectedToken", snapshot.getString("token")))
@@ -109,6 +124,13 @@ class SyncV2RuntimeTest {
         assertTrue((NativeServices.call("load_budget") as JSONObject).isNull("budget"))
         val restored = NativeServices.call("library_open", JSONObject().put("id", id)) as JSONObject
         assertTrue(restored.getJSONObject("budget").getString("name").startsWith("Android background save"))
+        val restoredBudget = restored.getJSONObject("budget")
+        val restoredTransactions = restoredBudget.getJSONArray("transactions")
+        val restoredSms = (0 until restoredTransactions.length()).map(restoredTransactions::getJSONObject).single { it.getString("id") == smsTransactionId }
+        assertEquals(-1234L, restoredSms.getLong("amount"))
+        assertEquals("uncleared", restoredSms.getString("status"))
+        val restoredSources = restoredBudget.getJSONArray("smsImportedMessageIds")
+        assertTrue("SMS duplicate protection must survive a cloud-only restore", (0 until restoredSources.length()).any { restoredSources.getString(it) == sms.id })
         NativeServices.call("account_sign_out")
         val privateId = NativeServices.call("create_budget", JSONObject().put("budget", fixture)) as String
         val rows = (NativeServices.call("library_snapshot") as JSONObject).getJSONArray("entries")
