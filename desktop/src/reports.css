@@ -163,6 +163,52 @@
 .filter-button .muted {
   font-weight: 400;
 }
+/* A filter that leaves something out reads in the accent colour, like a filtered register. */
+.filter-button.active .muted {
+  color: inherit;
+  opacity: 0.8;
+}
+.filter-summary {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.filter-popover-foot {
+  margin: 0;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+}
+/* What the report leaves out, under the filters */
+.report-left-out {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: -2px;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.report-left-out > svg {
+  flex: none;
+  color: var(--accent);
+}
+.report-left-out .chip {
+  max-width: 220px;
+}
+.report-left-out .chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.report-left-out .chip-text {
+  padding-inline-end: 8px;
+}
+.report-left-out .link-button {
+  font-size: inherit;
+}
 .filter-popover {
   width: 300px;
 }
@@ -260,6 +306,23 @@
 .chart svg {
   display: block;
   overflow: visible;
+}
+/* A chart that takes the height its panel has spare: the drawing is sized from the box, so it
+   must not hold the box open itself. */
+.panel:has(> .chart.fill) {
+  display: flex;
+  flex-direction: column;
+}
+.chart.fill {
+  flex: 1 1 0;
+}
+.chart.fill > svg {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+}
+.chart.fill + .help {
+  margin: 10px 0 0;
 }
 .chart-axes text {
   fill: var(--muted);
@@ -581,9 +644,12 @@
 .donut-center strong {
   font-size: 17px;
   font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  overflow-wrap: normal;
 }
 .donut-center span {
   max-width: 120px;
+  margin-top: 2px;
   overflow: hidden;
   color: var(--muted);
   font-size: 12px;

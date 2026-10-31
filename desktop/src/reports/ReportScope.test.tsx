@@ -34,7 +34,7 @@ it("preserves the report's account scope through dialog-to-register navigation a
   read.mockResolvedValue({ months: [], categories: { food: 2000 }, incomeSources: {}, income: 0,
     spending: 2000, ageOfMoney: null, ageOfMoneyByMonth: {} });
   const inspect = vi.fn();
-  const view = render(<ToastProvider><Reports budget={b} month="2026-10" onInspect={inspect} /></ToastProvider>);
+  const view = render(<ToastProvider><Reports budget={b} budgetId="test" month="2026-10" onInspect={inspect} /></ToastProvider>);
   await screen.findByRole("button", { name: "Inspect Food" });
   fireEvent.click(screen.getByRole("button", { name: /Accounts: All accounts/ }));
   fireEvent.click(screen.getByRole("checkbox", { name: "savings" }));
@@ -92,7 +92,7 @@ it("hides old report figures and drilldowns when filters change, including after
     spending: 2000, ageOfMoney: null, ageOfMoneyByMonth: {} };
   let reject!: (error: Error) => void;
   read.mockResolvedValueOnce(data).mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
-  render(<ToastProvider><Reports budget={budget()} month="2026-10" onInspect={vi.fn()} /></ToastProvider>);
+  render(<ToastProvider><Reports budget={budget()} budgetId="test" month="2026-10" onInspect={vi.fn()} /></ToastProvider>);
   fireEvent.click(await screen.findByRole("button", { name: "Inspect Food" }));
   expect(screen.getByRole("dialog", { name: "Food" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: /Accounts: All accounts/ }));
@@ -113,9 +113,9 @@ it("does not reuse a prior report while a changed budget snapshot is pending", a
   const b = budget();
   read.mockResolvedValueOnce({ months: [], categories: {}, incomeSources: {}, income: 0,
     spending: 0, ageOfMoney: null, ageOfMoneyByMonth: {} }).mockImplementationOnce(() => new Promise(() => {}));
-  const view = render(<Reports budget={b} month="2026-10" onInspect={vi.fn()} />);
+  const view = render(<Reports budget={b} budgetId="test" month="2026-10" onInspect={vi.fn()} />);
   await screen.findByRole("button", { name: "Inspect Food" });
-  view.rerender(<Reports budget={{ ...b, name: "New snapshot" }} month="2026-10" onInspect={vi.fn()} />);
+  view.rerender(<Reports budget={{ ...b, name: "New snapshot" }} budgetId="test" month="2026-10" onInspect={vi.fn()} />);
   expect(screen.queryByRole("button", { name: "Inspect Food" })).toBeNull();
 });
 
@@ -146,7 +146,7 @@ it("offers expense filtering for income vs expense and keeps the income visible"
     income: 100000, spending: 1000, categories: { food: 1000 }, incomeSources: { Employer: 100000 },
     ageOfMoney: null, ageOfMoneyByMonth: {}, selected: filter.categoryIds,
   }));
-  render(<ToastProvider><Reports budget={b} month="2026-10" onInspect={vi.fn()} /></ToastProvider>);
+  render(<ToastProvider><Reports budget={b} budgetId="test" month="2026-10" onInspect={vi.fn()} /></ToastProvider>);
   await screen.findByText("Employer");
   fireEvent.click(screen.getByRole("button", { name: /Categories: All categories/ }));
   fireEvent.click(screen.getByRole("checkbox", { name: "travel" }));
@@ -164,11 +164,74 @@ it("keeps uncategorized report spending visible and opens exactly its transactio
   read.mockResolvedValue({ months: [], income: 0, spending: 700, categories: { __uncategorized: 700 },
     incomeSources: {}, ageOfMoney: null, ageOfMoneyByMonth: {} });
   const inspect = vi.fn();
-  render(<ToastProvider><Reports budget={b} month="2026-10" onInspect={inspect} /></ToastProvider>);
+  render(<ToastProvider><Reports budget={b} budgetId="test" month="2026-10" onInspect={inspect} /></ToastProvider>);
   await screen.findByText(/of spending still needs a category/);
   fireEvent.click(screen.getByRole("button", { name: "Review transactions" }));
   const dialog = screen.getByRole("dialog", { name: "Needs a category" });
   expect(within(dialog).getByText("Mystery")).toBeTruthy();
   fireEvent.click(within(dialog).getByRole("button", { name: "Open in register" }));
   expect(reportTransactionIds(b, inspect.mock.calls[0][0].reportQuery)).toEqual(new Set(["missing"]));
+});
+
+it("remembers what each budget's reports leave out, shows it, and lets each item back in", async () => {
+  const data = { months: [], categories: { food: 2000 }, incomeSources: {}, income: 0,
+    spending: 2000, ageOfMoney: null, ageOfMoneyByMonth: {} };
+  read.mockResolvedValue(data);
+  const sent = () => read.mock.calls.at(-1)![2].filter;
+  const b = budget();
+  const first = render(<ToastProvider><Reports budget={b} budgetId="home" month="2026-10" onInspect={vi.fn()} /></ToastProvider>);
+  await screen.findByRole("button", { name: "Inspect Food" });
+  expect(screen.queryByText("Categories left out:")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /Categories: All categories/ }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "travel" }));
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(screen.getByRole("button", { name: /Categories: 1 hidden/ }).className).toContain("active");
+  expect(screen.getByText("Categories left out:")).toBeTruthy();
+  first.unmount();
+
+  // Leaving Reports and coming back keeps travel out, and a category added since is counted.
+  b.categories.push({ id: "rent", name: "rent", group: "Living", target: 0 });
+  const again = render(<ToastProvider><Reports budget={b} budgetId="home" month="2026-10" onInspect={vi.fn()} /></ToastProvider>);
+  await screen.findByRole("button", { name: "Inspect Food" });
+  expect(sent().categoryIds).toEqual(["food", "rent", "__uncategorized"]);
+  expect(screen.getByText("Categories left out:").parentElement!.textContent).toContain("travel");
+  again.unmount();
+
+  // Another budget leaves out nothing.
+  const other = render(<ToastProvider><Reports budget={b} budgetId="work" month="2026-10" onInspect={vi.fn()} /></ToastProvider>);
+  await screen.findByRole("button", { name: "Inspect Food" });
+  expect(sent().categoryIds).toEqual([]);
+  expect(screen.queryByText("Categories left out:")).toBeNull();
+  other.unmount();
+
+  render(<ToastProvider><Reports budget={b} budgetId="home" month="2026-10" onInspect={vi.fn()} /></ToastProvider>);
+  fireEvent.click(await screen.findByRole("button", { name: "Show travel in reports" }));
+  await waitFor(() => expect(sent().categoryIds).toEqual([]));
+  expect(screen.queryByText("Categories left out:")).toBeNull();
+  expect(JSON.parse(localStorage.getItem("lb:reports:hidden:home")!)).toEqual({ accounts: [], categories: [] });
+});
+
+it("names the few accounts still shown when most are left out, and not categories where they don't apply", async () => {
+  localStorage.setItem("lb:reports:view", "income");
+  localStorage.setItem("lb:reports:hidden:home", JSON.stringify({ accounts: ["savings", "gone"], categories: ["travel"] }));
+  read.mockResolvedValue({ months: [], categories: {}, incomeSources: {}, income: 0, spending: 0,
+    ageOfMoney: null, ageOfMoneyByMonth: {} });
+  const b = budget();
+  b.accounts.push({ id: "card", name: "card", kind: "credit", archived: false, openingBalance: 0 });
+  render(<ToastProvider><Reports budget={b} budgetId="home" month="2026-10" onInspect={vi.fn()} /></ToastProvider>);
+  await waitFor(() => expect(read).toHaveBeenCalled());
+  expect(read.mock.calls.at(-1)![2].filter).toMatchObject({ accountIds: ["checking", "card"], categoryIds: [] });
+  expect(screen.getByText("Accounts left out:").parentElement!.textContent).toContain("savings");
+  // The income breakdown has no Categories filter, so nothing says categories are left out.
+  expect(screen.queryByText("Categories left out:")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /Accounts: 1 hidden/ }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "card" }));
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(screen.getByText("Only these accounts:").parentElement!.textContent).toContain("checking");
+  expect(screen.getByRole("button", { name: /Accounts: checking/ })).toBeTruthy();
+  // A deleted account drops out once the choice changes.
+  expect(JSON.parse(localStorage.getItem("lb:reports:hidden:home")!).accounts.sort()).toEqual(["card", "savings"]);
+  fireEvent.click(screen.getByRole("button", { name: "Show all accounts" }));
+  expect(screen.queryByText("Only these accounts:")).toBeNull();
+  expect(screen.getByRole("button", { name: /Accounts: All accounts/ })).toBeTruthy();
 });

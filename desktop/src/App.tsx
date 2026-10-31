@@ -852,6 +852,7 @@ export default function App() {
           {page === "reports" && (
             <Reports
               budget={budget}
+              budgetId={budgetId}
               month={month}
               onInspect={(filter) => {
                 setAccountId("all");

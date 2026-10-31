@@ -92,7 +92,7 @@ it("breaks spending down by group, then by category, then opens the register", a
     }),
   );
   const onInspect = vi.fn();
-  render(<Reports budget={b} month="2026-10" onInspect={onInspect} />);
+  render(<Reports budget={b} budgetId="test" month="2026-10" onInspect={onInspect} />);
   const groups = await screen.findByRole("list", { name: "Spending by group" });
   expect(within(groups).getAllByRole("listitem")[0].textContent).toContain(rent.group);
   fireEvent.click(within(groups).getByRole("button", { name: new RegExp(`^${rent.group}`) }));
@@ -154,6 +154,23 @@ it("draws a donut slice per positive part, with its share, and selects one", () 
   expect(onSelect).toHaveBeenCalledWith("a");
 });
 
+it("keeps a large donut total inside the hole", () => {
+  const slices = [{ key: "a", label: "Rent", value: 3000, color: "red" }];
+  const total = (value: string) => {
+    render(<Donut slices={slices} label="Spending" format={money} center={{ value, label: "Spent" }} />);
+    const strong = document.querySelector(".donut-center strong") as HTMLElement;
+    cleanup();
+    return { size: Number.parseFloat(strong.style.fontSize), room: Number.parseFloat(strong.style.maxWidth) };
+  };
+  const small = total("40.00 SAR");
+  expect(small.size).toBe(17);
+  // It breaks before the currency and shrinks until the number fits in the hole's width.
+  const large = total("1,861,797.94 SAR");
+  expect(large.room).toBeLessThan(134);
+  expect(large.size).toBeLessThan(17);
+  expect("1,861,797.94".length * large.size * 0.6).toBeLessThanOrEqual(large.room);
+});
+
 it("puts grouped columns side by side, without a stacked total", () => {
   render(
     <ColumnChart
@@ -181,7 +198,7 @@ it("opens a payee's transactions from the payee treemap", async () => {
     reportData({ payees: { Lulu: { amount: 3000, count: 3 }, Cafe: { amount: 1000, count: 4 } }, spending: 4000 }),
   );
   const onInspect = vi.fn();
-  render(<Reports budget={demoBudget()} month="2026-10" onInspect={onInspect} />);
+  render(<Reports budget={demoBudget()} budgetId="test" month="2026-10" onInspect={onInspect} />);
   fireEvent.click(screen.getByRole("tab", { name: "By payee" }));
   const map = await screen.findByRole("list", { name: "Spending by payee" });
   const [first] = within(map).getAllByRole("listitem");
@@ -239,7 +256,7 @@ it("forecasts from today's balance, known money and everyday spending", async ()
         }
       : reportData(),
   );
-  render(<Reports budget={b} month="2026-10" onInspect={vi.fn()} />);
+  render(<Reports budget={b} budgetId="test" month="2026-10" onInspect={vi.fn()} />);
   fireEvent.click(screen.getByRole("tab", { name: "Wealth" }));
   fireEvent.click(screen.getByRole("tab", { name: "Forecast" }));
   await screen.findByText("Landlord");
@@ -284,7 +301,7 @@ it("opens every report without errors", async () => {
           openingAccounts: { checking: 650_000, savings: 300_000, credit: -40_000 },
         }),
   );
-  render(<Reports budget={b} month="2026-10" onInspect={vi.fn()} />);
+  render(<Reports budget={b} budgetId="test" month="2026-10" onInspect={vi.fn()} />);
   const groups = within(screen.getByRole("tablist", { name: "Report group" })).getAllByRole("tab");
   expect(groups.map((g) => g.textContent)).toEqual(["Spending", "Income", "Wealth"]);
   let opened = 0;
@@ -304,7 +321,7 @@ it("opens every report without errors", async () => {
 
 it("reopens the last report in each group", () => {
   mocked.read.mockResolvedValue(reportData());
-  const { unmount } = render(<Reports budget={demoBudget()} month="2026-10" onInspect={vi.fn()} />);
+  const { unmount } = render(<Reports budget={demoBudget()} budgetId="test" month="2026-10" onInspect={vi.fn()} />);
   const tab = (name: string) => screen.getByRole("tab", { name });
   fireEvent.click(tab("Over time"));
   fireEvent.click(tab("Wealth"));
@@ -316,7 +333,7 @@ it("reopens the last report in each group", () => {
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Spending over time");
   // And the next visit remembers the same.
   unmount();
-  render(<Reports budget={demoBudget()} month="2026-10" onInspect={vi.fn()} />);
+  render(<Reports budget={demoBudget()} budgetId="test" month="2026-10" onInspect={vi.fn()} />);
   expect(tab("Over time").getAttribute("aria-selected")).toBe("true");
   fireEvent.click(tab("Wealth"));
   expect(tab("Balance sheet").getAttribute("aria-selected")).toBe("true");
@@ -328,7 +345,7 @@ it("puts an overdrawn account with what you owe and a card in credit with what y
     reportData({ months: [{ ...MONTH, month: "2026-10", accounts }], openingAccounts: accounts }),
   );
   localStorage.setItem("lb:reports:view", "balance");
-  render(<Reports budget={demoBudget()} month="2026-10" onInspect={vi.fn()} />);
+  render(<Reports budget={demoBudget()} budgetId="test" month="2026-10" onInspect={vi.fn()} />);
   const owe = await screen.findByRole("list", { name: "Liabilities by type" });
   expect(owe.textContent).toContain("Overdrawn accounts");
   expect(owe.textContent).toContain("50.00");
@@ -356,7 +373,7 @@ it("maps the top payees and points to the rest in the table", async () => {
   );
   mocked.read.mockResolvedValue(reportData({ payees, spending: 102_000 }));
   localStorage.setItem("lb:reports:view", "payees");
-  render(<Reports budget={demoBudget()} month="2026-10" onInspect={vi.fn()} />);
+  render(<Reports budget={demoBudget()} budgetId="test" month="2026-10" onInspect={vi.fn()} />);
   const map = await screen.findByRole("list", { name: "Spending by payee" });
   // Only the ten payees big enough to read get tiles; no tile stands for the rest.
   expect(within(map).getAllByRole("listitem")).toHaveLength(10);

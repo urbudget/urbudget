@@ -583,7 +583,13 @@ export function SpendingCalendar({ scope }: { scope: Scope }) {
             tick={(k) => weekdayName(Number(k), "short")}
             title={(k) => weekdayName(Number(k))}
             height={200}
+            fill
           />
+          <p className="help">
+            {t("Each bar is the average spent on that day of the week, after refunds.")}
+            {byWeekday.some((v) => v < 0) &&
+              ` ${t("Below zero, more came back than was spent on that day, on average: a large refund, or money returned to a category, such as a sale.")}`}
+          </p>
         </Panel>
         <Panel title={t("Biggest days")}>
           <ReportTable>

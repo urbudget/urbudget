@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { ByPayee } from "./Spending";
+import { ByPayee, SpendingCalendar } from "./Spending";
 import type { Scope } from "./shared";
 
 afterEach(cleanup);
@@ -36,4 +36,17 @@ it("starts a new payee search at its first result after scrolling, and handles n
   expect(screen.getByText("No payees match.")).toBeTruthy();
   fireEvent.change(search, { target: { value: "" } });
   expect(within(screen.getByRole("table", { name: "Payee spending" })).getByRole("button", { name: "Payee 0" })).toBeTruthy();
+});
+
+it("says what the weekday averages count, and what below zero means only when a weekday is below it", () => {
+  const calendar = (days: Record<string, number>) =>
+    render(<SpendingCalendar scope={{ data: { days }, from: "2026-09", to: "2026-09", show: vi.fn() } as unknown as Scope} />);
+  const below = /Below zero, more came back than was spent/;
+  calendar({ "2026-09-08": 5000 });
+  expect(screen.getByText(/Each bar is the average spent on that day of the week, after refunds/)).toBeTruthy();
+  expect(screen.queryByText(below)).toBeNull();
+  cleanup();
+  // A Tuesday refund bigger than that Tuesday's spending.
+  calendar({ "2026-09-08": -50000, "2026-09-09": 3000 });
+  expect(screen.getByText(below)).toBeTruthy();
 });
