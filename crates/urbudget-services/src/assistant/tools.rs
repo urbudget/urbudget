@@ -183,7 +183,7 @@ pub fn specs() -> Vec<Spec> {
         },
         Spec {
             name: "propose_transaction_edits",
-            description: "Propose changes to existing transactions: category, payee, memo, cleared, approval or flag. Can also add payee rules so future imports are categorized automatically. Mark edits you are unsure about.",
+            description: "Propose changes to existing transactions: amount, category, payee, memo, cleared, approval or flag. Amount is signed from the transaction's recorded account: negative for spending, positive for income. Amount edits support a single category or a whole transfer; edit multi-part splits in the register. Can also add payee rules so future imports are categorized automatically. Mark edits you are unsure about.",
             parameters: object(
                 json!({
                     "title": { "type": "string" },
@@ -191,6 +191,7 @@ pub fn specs() -> Vec<Spec> {
                         "type": "array",
                         "items": object(json!({
                             "id": { "type": "string", "description": "Transaction id." },
+                            "amount": { "type": "number", "description": "New signed total in the budget's currency, not the difference. Negative for spending; for a transfer, use the sign from its recorded account. Single-category transactions and whole transfers only." },
                             "categoryId": { "type": "string", "description": "Category id, or ready_to_assign for income." },
                             "payee": { "type": "string" },
                             "memo": { "type": "string" },
@@ -270,14 +271,14 @@ pub fn specs() -> Vec<Spec> {
         },
         Spec {
             name: "fix_import",
-            description: "Propose fixes for the bank file the user is importing on the Import page: a value for a line's date (YYYY-MM-DD), payee, memo or amount (negative for money out, in the budget's currency), including or leaving out a line that's left out, or how the file reads (the date order, which column holds what, signs). Only for lines in the import's note, with `from` the value the note shows. Use values the file supports, never a guess, and give a reason for each. The user applies them from the card, and the import checks each again.",
+            description: "Propose fixes for the bank file the user is importing on the Import page: date (YYYY-MM-DD), payee, memo, amount (negative for money out), or transferAccountId (the other budget account's ID, empty to remove). A transfer must use transferAccountId, never a payee label such as Transfer: Savings. Can also include or leave out lines, or change how the file reads (date order, columns, signs). Only for lines in the import's note, with from the value shown. Use evidence from the file or the user, never guess a transfer destination, and give a reason for each. The user applies the card and the import checks each fix again.",
             parameters: object(
                 json!({
                     "fields": {
                         "type": "array",
                         "items": object(json!({
                             "line": { "type": "string", "description": "The line's id, from the import's note." },
-                            "field": { "type": "string", "enum": ["date", "payee", "memo", "amount"] },
+                            "field": { "type": "string", "enum": ["date", "payee", "memo", "amount", "transferAccountId"] },
                             "from": { "type": "string", "description": "The value the note shows for it now." },
                             "to": { "type": "string" },
                             "reason": { "type": "string", "description": "Why, in a few words the user can check." }
@@ -297,7 +298,8 @@ pub fn specs() -> Vec<Spec> {
                         "flipSigns": { "type": "boolean", "description": "A CSV's purchases are written as positive numbers." },
                         "columns": object(json!({
                             "date": { "type": "string" }, "payee": { "type": "string" }, "memo": { "type": "string" },
-                            "amount": { "type": "string" }, "outflow": { "type": "string" }, "inflow": { "type": "string" }
+                            "amount": { "type": "string" }, "outflow": { "type": "string" }, "inflow": { "type": "string" },
+                            "transferAccountId": { "type": "string", "description": "Column containing actual budget account IDs, never account names." }
                         }), &[])
                     }), &[]),
                     "note": { "type": "string", "description": "One or two sentences for the card." }
@@ -308,7 +310,7 @@ pub fn specs() -> Vec<Spec> {
         },
         Spec {
             name: "prepare_import",
-            description: "Turn an attached statement into a file for the app's import review. For a regular table, give a column mapping (exact: the app converts every row). For a messy file, a PDF or a photo, give the rows. Pass the totals the statement shows as expected so the app can check them. The user reviews duplicates and matches before anything is added.",
+            description: "Turn an attached statement into a file for the app's import review. For a regular table, give a column mapping (exact: the app converts every row). For a messy file, a PDF or a photo, give the rows. For a known transfer between budget accounts, set the row's transferAccountId to the other account's ID; never encode a transfer in payee text. Ask when the other account is unclear. Pass the statement's totals as expected. The user reviews transfers, duplicates and matches before anything is added.",
             parameters: object(
                 json!({
                     "accountId": { "type": "string" },
@@ -323,6 +325,7 @@ pub fn specs() -> Vec<Spec> {
                         "amount": { "type": "string", "description": "Column letter of a signed amount. Or use outflow and inflow." },
                         "outflow": { "type": "string", "description": "Column letter of money out (debit)." },
                         "inflow": { "type": "string", "description": "Column letter of money in (credit)." },
+                        "transferAccountId": { "type": "string", "description": "Optional column letter containing actual IDs of other accounts in this budget. Do not map account names or bank account numbers here." },
                         "dateOrder": { "type": "string", "enum": ["ymd", "dmy", "mdy"], "description": "Order of day and month in text dates." },
                         "negate": { "type": "boolean", "description": "True when the amount column shows spending as positive." },
                         "skipRows": { "type": "array", "items": { "type": "integer" }, "description": "Row numbers to leave out, like an opening balance line." }
@@ -333,7 +336,8 @@ pub fn specs() -> Vec<Spec> {
                             "date": { "type": "string", "description": DATE },
                             "payee": { "type": "string" },
                             "memo": { "type": "string" },
-                            "amount": { "type": "number", "description": "Negative for money out." }
+                            "amount": { "type": "number", "description": "Negative for money out." },
+                            "transferAccountId": { "type": "string", "description": "Other account's budget ID for a transfer. Omit for ordinary transactions; never substitute payee text." }
                         }), &["date", "payee", "amount"])
                     },
                     "expected": object(json!({
@@ -1269,8 +1273,13 @@ fn propose_transaction_edits(args: &Value, ctx: &Context) -> Result<Outcome, Str
     }
     let mut edits = vec![];
     for e in list {
+        let object = e.as_object().ok_or("Each edit must be an object.")?;
+        if let Some(field) = object.keys().find(|field| !matches!(field.as_str(), "id" | "amount" | "categoryId" | "payee" | "memo" | "cleared" | "approve" | "flag" | "unsure")) {
+            return Err(format!("Transaction edits don't support {field}. Supported fields are amount, categoryId, payee, memo, cleared, approve and flag."));
+        }
         let id = e["id"].as_str().ok_or("Each edit needs a transaction id.")?;
         let t = by_id.get(id).ok_or_else(|| format!("No transaction has the id {id}. Use find_transactions."))?;
+        let amount = e.get("amount").map(parse_money).transpose()?;
         let category = match e["categoryId"].as_str().filter(|s| !s.is_empty()) {
             None => None,
             Some(c) => {
@@ -1283,6 +1292,8 @@ fn propose_transaction_edits(args: &Value, ctx: &Context) -> Result<Outcome, Str
         let flag = e["flag"].as_str().map(|f| if f == "none" { None } else { Some(f.to_owned()) });
         edits.push(Edit {
             id: id.to_owned(),
+            amount,
+            previous_amount: amount.map(|_| t.amount),
             category,
             payee: e["payee"].as_str().map(|p| truncate(p.trim(), 200)).filter(|p| !p.is_empty()),
             memo: e["memo"].as_str().map(|m| truncate(m, 500)),
@@ -1430,6 +1441,15 @@ fn create_spreadsheet(args: &Value, ctx: &Context) -> Result<Outcome, String> {
     Ok(Outcome { output, step: t!("Made a spreadsheet: {title}", title), proposal: Some(proposal) })
 }
 
+fn import_transfer(value: &Value, names: &Names<'_>, account: &str) -> Result<Option<String>, String> {
+    if value.is_null() { return Ok(None); }
+    let id = value.as_str().ok_or("transferAccountId must be an account ID, not a payee label.")?.trim();
+    if id.is_empty() { return Ok(None); }
+    if id == account { return Err("A transfer must use a different account.".into()); }
+    if !names.accounts.contains_key(id) { return Err(format!("No account has the id {id}. Look up the other account before proposing a transfer.")); }
+    Ok(Some(id.into()))
+}
+
 fn prepare_import(args: &Value, ctx: &Context) -> Result<Outcome, String> {
     let names = Names::new(ctx.budget);
     let account = arg(args, "accountId").ok_or("Give the accountId to import into.")?;
@@ -1448,11 +1468,16 @@ fn prepare_import(args: &Value, ctx: &Context) -> Result<Outcome, String> {
     } else if let Some(list) = args["rows"].as_array().filter(|l| !l.is_empty()) {
         let mut rows = vec![];
         for r in list {
+            let object = r.as_object().ok_or("Each import row must be an object.")?;
+            if let Some(key) = object.keys().find(|key| !["date", "payee", "memo", "amount", "transferAccountId"].contains(&key.as_str())) {
+                return Err(format!("Unsupported import row field: {key}. Use transferAccountId for a transfer destination."));
+            }
             rows.push(attachments::ImportRow {
                 date: date_arg(r, "date")?.ok_or("Each row needs a date.")?,
                 payee: arg(r, "payee").map(|p| truncate(p, 200)).unwrap_or_default(),
                 memo: r["memo"].as_str().map(|m| truncate(m, 500)).unwrap_or_default(),
                 amount: parse_money(&r["amount"])?,
+                transfer_account_id: import_transfer(&r["transferAccountId"], &names, account)?,
             });
         }
         let source = arg(args, "attachmentId")
@@ -1467,6 +1492,10 @@ fn prepare_import(args: &Value, ctx: &Context) -> Result<Outcome, String> {
     }
     if rows.len() > 20_000 {
         return Err("That is more than 20,000 rows. Split the file first.".into());
+    }
+    // Mapped spreadsheet IDs get the same checks as explicitly supplied rows.
+    for row in &rows {
+        import_transfer(&json!(row.transfer_account_id), &names, account)?;
     }
     let proposal = proposals::build_import(account, &a.name, &source, rows, expected, skipped, args.get("mapping").is_some(), ctx.budget)?;
     let output = json!({
@@ -1497,7 +1526,7 @@ fn fix_import(args: &Value, ctx: &Context) -> Result<Outcome, String> {
     let (mut fields, mut include, mut rows) = (vec![], vec![], vec![]);
     for f in args["fields"].as_array().into_iter().flatten() {
         let l = line(f)?;
-        let field: Field = serde_json::from_value(f["field"].clone()).map_err(|_| "A fix's field is date, payee, memo or amount.")?;
+        let field: Field = serde_json::from_value(f["field"].clone()).map_err(|_| "A fix's field is date, payee, memo, amount or transferAccountId.")?;
         let (now, from) = (l.fields.get(field), f["from"].as_str().unwrap_or(""));
         if now != from {
             return Err(format!("Line {}'s {} is \u{201c}{now}\u{201d}, not \u{201c}{from}\u{201d}.", l.id, name(field)));
@@ -1518,13 +1547,19 @@ fn fix_import(args: &Value, ctx: &Context) -> Result<Outcome, String> {
             },
             Field::Payee => truncate(given, 200),
             Field::Memo => truncate(given, 500),
+            Field::TransferAccountId => import_transfer(&json!(given), &Names::new(ctx.budget), &brief.scope.account)?.unwrap_or_default(),
         };
         if to == from.trim() {
             return Err(format!("Line {}'s {} is \u{201c}{from}\u{201d} already: fix only what needs it.", l.id, name(field)));
         }
         // An amount given can be another on the card before it's applied.
+        let label = if field == Field::TransferAccountId {
+            let names = Names::new(ctx.budget);
+            let shown = |id: &str| if id.is_empty() { t!("No transfer") } else { names.account(id) };
+            proposals::fix_label(&l.id, field, &shown(from), &shown(&to))
+        } else { proposals::fix_label(&l.id, field, from, &to) };
         rows.push(proposals::Row {
-            label: proposals::fix_label(&l.id, field, from, &to),
+            label,
             detail: Some(reason(f)?),
             amount: cents,
             key: Some(proposals::fix_key(&l.id, field)),
@@ -1571,7 +1606,7 @@ fn fix_import(args: &Value, ctx: &Context) -> Result<Outcome, String> {
     }
     if let Some(columns) = read.get("columns").filter(|c| c.is_object()) {
         let mut chosen = structure.columns.clone().unwrap_or_default();
-        for (role, slot) in [("date", &mut chosen.date), ("payee", &mut chosen.payee), ("memo", &mut chosen.memo), ("amount", &mut chosen.amount), ("outflow", &mut chosen.outflow), ("inflow", &mut chosen.inflow)] {
+        for (role, slot) in [("date", &mut chosen.date), ("payee", &mut chosen.payee), ("memo", &mut chosen.memo), ("amount", &mut chosen.amount), ("outflow", &mut chosen.outflow), ("inflow", &mut chosen.inflow), ("transferAccountId", &mut chosen.transfer_account_id)] {
             if let Some(header) = columns[role].as_str() {
                 if !brief.headers.iter().any(|h| h.trim() == header.trim()) {
                     return Err(format!("The file has no column named \u{201c}{header}\u{201d}."));
@@ -1583,6 +1618,7 @@ fn fix_import(args: &Value, ctx: &Context) -> Result<Outcome, String> {
                     "memo" => t!("memo from \u{201c}{header}\u{201d}", header),
                     "amount" => t!("amount from \u{201c}{header}\u{201d}", header),
                     "outflow" => t!("outflow from \u{201c}{header}\u{201d}", header),
+                    "transferAccountId" => t!("transfer account IDs from \u{201c}{header}\u{201d}", header),
                     _ => t!("inflow from \u{201c}{header}\u{201d}", header),
                 };
                 rows.push(proposals::Row { label, ..Default::default() });
@@ -1936,6 +1972,90 @@ pub mod tests {
         // The dinner was already entered by hand, so the review offers to match it rather than add it twice.
         assert_eq!(out.output["summary"]["matchesExisting"], 1);
         assert_eq!(out.output["summary"]["duplicates"], 0);
+    }
+
+    #[test]
+    fn existing_transaction_amount_edits_update_the_total_and_its_single_split() {
+        let mut b = sample();
+        let transaction = &mut b.transactions[0];
+        transaction.payee = "Sheep Store".into();
+        transaction.amount = -235700;
+        transaction.splits[0].amount = -235700;
+        let files = Files::empty();
+        let out = call("propose_transaction_edits", &json!({ "edits": [{ "id": "t1", "amount": -2356.30, "memo": "Net after reimbursements" }] }), &ctx(&b, &files));
+        let p = out.proposal.expect("amount and memo proposal");
+        assert_eq!((p.card.rows[0].before, p.card.rows[0].after), (Some(-235700), Some(-235630)));
+        assert!(p.card.rows[0].edit.as_ref().unwrap().amount);
+        // Proposals survive persistence, and preparing one doesn't mutate the live budget.
+        let p: Proposal = serde_json::from_value(serde_json::to_value(p).unwrap()).unwrap();
+        let after = p.change.unwrap().run(b.clone()).unwrap();
+        assert_eq!((after.transactions[0].amount, after.transactions[0].splits[0].amount), (-235630, -235630));
+        assert_eq!(after.transactions[0].memo, "Net after reimbursements");
+        assert_eq!(after.transactions[0].splits[0].category_id.as_deref(), Some("dining"));
+        assert_eq!(b.transactions[0].amount, -235700);
+    }
+
+    #[test]
+    fn amount_edits_validate_values_and_refuse_unsupported_fields() {
+        let b = sample();
+        let files = Files::empty();
+        for amount in [json!(0), json!(10_000_000_001i64), json!(null), json!("not an amount")] {
+            let out = call("propose_transaction_edits", &json!({ "edits": [{ "id": "t1", "amount": amount }] }), &ctx(&b, &files));
+            assert!(out.proposal.is_none(), "{amount}");
+            assert!(out.output["error"].is_string());
+        }
+        for field in ["date", "accountId", "transferAccountId", "outflow"] {
+            let mut edit = json!({ "id": "t1", "memo": "otherwise valid" });
+            edit[field] = json!("unexpected");
+            let out = call("propose_transaction_edits", &json!({ "edits": [edit] }), &ctx(&b, &files));
+            assert!(out.proposal.is_none());
+            assert!(out.output["error"].as_str().unwrap().contains(field), "{}", out.output);
+        }
+    }
+
+    #[test]
+    fn amount_edits_do_not_guess_how_to_redistribute_split_amounts() {
+        let mut b = sample();
+        let mut part = b.transactions[0].splits[0].clone();
+        part.amount = -4000;
+        b.transactions[0].splits[0].amount += 4000;
+        b.transactions[0].splits.push(part);
+        let files = Files::empty();
+        let args = json!({ "edits": [{ "id": "t1", "amount": -1200 }] });
+        let out = call("propose_transaction_edits", &args, &ctx(&b, &files));
+        assert!(out.proposal.is_none());
+        assert!(out.output["error"].as_str().unwrap().contains("Edit its splits in the register"));
+        b.transactions[0].splits.pop();
+        b.transactions[0].splits[0].amount = b.transactions[0].amount;
+        b.transactions[0].splits[0].extra.insert("transferAccountId".into(), json!("card"));
+        let out = call("propose_transaction_edits", &args, &ctx(&b, &files));
+        assert!(out.proposal.is_none(), "split transfers require an explicit split edit too");
+    }
+
+    #[test]
+    fn amount_edits_preserve_whole_transfers_and_reconciled_statuses() {
+        let mut b = sample();
+        let t = &mut b.transactions[0];
+        t.transfer_account_id = Some("card".into());
+        t.transfer_status = Some(Cleared::Reconciled);
+        t.status = Cleared::Reconciled;
+        t.payee.clear();
+        t.splits.clear();
+        let files = Files::empty();
+        let out = call("propose_transaction_edits", &json!({ "edits": [{ "id": "t1", "amount": -1200, "cleared": "uncleared" }] }), &ctx(&b, &files));
+        let change = out.proposal.unwrap().change.unwrap();
+        let after = change.run(b.clone()).unwrap();
+        let transfer = &after.transactions[0];
+        assert_eq!(transfer.amount, -120000);
+        assert_eq!(transfer.transfer_account_id.as_deref(), Some("card"));
+        assert!(transfer.splits.is_empty());
+        assert_eq!((transfer.status, transfer.transfer_status), (Cleared::Reconciled, Some(Cleared::Reconciled)));
+        let before_summary = engine::calculate(&b, "2026-10").unwrap();
+        let after_summary = engine::calculate(&after, "2026-10").unwrap();
+        let balance = |summary: &crate::domain::Summary, id: &str| summary.accounts.iter().find(|a| a.id == id).unwrap().balance;
+        assert_eq!(balance(&after_summary, "checking") - balance(&before_summary, "checking"), 4000);
+        assert_eq!(balance(&after_summary, "card") - balance(&before_summary, "card"), -4000);
+        assert_eq!(change.run(after.clone()).unwrap(), after, "reapplying the same absolute amount is idempotent");
     }
 
     #[test]

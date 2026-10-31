@@ -1623,6 +1623,7 @@ mod tests {
         assert!(!copy.splits[0].extra.contains_key("bankImportIds"));
         let incoming = |amount| crate::bank_import::BankTransaction {
             fit: "new-payment".into(), date: "2026-10-15".into(), payee: "Transfer".into(), memo: String::new(), amount,
+            transfer_account_id: None,
         };
         let source = crate::bank_import::review(&b, "card", vec![incoming(-5000)]).unwrap();
         assert!(source[0].candidates.contains(&copy.id));

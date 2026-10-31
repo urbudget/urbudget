@@ -23,18 +23,35 @@ import {
   type ReviewChoices,
 } from "./BankImport";
 import { demoBudget } from "./demo";
+import { formatDate } from "./format";
 
 afterEach(cleanup);
 beforeEach(() => vi.clearAllMocks());
+const actionInput = (n = 1) => screen.getByRole("combobox", { name: `Import action ${n}` }) as HTMLInputElement;
+function chooseAction(n: number, name: string | RegExp) {
+  fireEvent.click(actionInput(n));
+  fireEvent.click(screen.getAllByRole("option", { name })[0]);
+}
+
+it("shows an explicit transfer destination and keeps its account ID when importing a new row", () => {
+  const onImport = vi.fn();
+  const row = { id: "bank:transfer", date: "2026-10-03", payee: "Bank wording", memo: "", amount: -2500, duplicate: false, candidates: [], transferAccountId: "savings" };
+  render(<ImportReview budget={demoBudget()} rows={[row]} busy={false} icon={null} onCancel={() => {}} onImport={onImport} />);
+  expect(screen.getByText("Transfer to Savings")).toBeTruthy();
+  expect(screen.getByText("Bank wording")).toBeTruthy();
+  expect(actionInput().value).toBe("Add as a transfer");
+  fireEvent.click(screen.getByRole("button", { name: "Import 1 transaction" }));
+  expect(onImport.mock.lastCall![0]).toEqual([{ row, action: "new", matchId: null }]);
+});
 
 it("lets an identical ID-less receipt be imported separately with a stable retry identity", () => {
   const onImport = vi.fn();
   const row = { id: "bank:known", date: "2026-10-03", payee: "Shop", memo: "Second receipt", amount: -500, duplicate: true, idless: true, candidates: ["manual"] };
   render(<ImportReview budget={demoBudget()} rows={[row]} busy={false} icon={null} title="File" onCancel={() => {}} onImport={onImport} />);
-  const action = screen.getByLabelText("Import action 1");
+  fireEvent.click(actionInput());
   expect(screen.queryByRole("option", { name: /^Match:/ })).toBeNull();
   expect(screen.getByRole("button", { name: "Import 0 transactions" }).hasAttribute("disabled")).toBe(true);
-  fireEvent.change(action, { target: { value: "separate" } });
+  chooseAction(1, "Add as a separate transaction");
   fireEvent.click(screen.getByRole("button", { name: "Import 1 transaction" }));
   fireEvent.click(screen.getByRole("button", { name: "Import 1 transaction" }));
   expect(onImport).toHaveBeenCalledTimes(2);
@@ -58,15 +75,15 @@ it("keeps its choices with whoever shows it, checked against the rows as they ar
     return <ImportReview {...props} rows={[known, fee]} choices={choices} onChoices={setChoices} />;
   }
   const view = render(<Kept shown />);
-  const value = (n: number) => (screen.getByLabelText(`Import action ${n}`) as HTMLSelectElement).value;
-  expect(value(2)).toBe("review");
-  fireEvent.change(screen.getByLabelText("Import action 1"), { target: { value: "separate" } });
-  fireEvent.change(screen.getByLabelText("Import action 2"), { target: { value: "skip" } });
+  const value = (n: number) => actionInput(n).value;
+  expect(value(2)).toBe("Choose a match or add it");
+  chooseAction(1, "Add as a separate transaction");
+  chooseAction(2, "Skip");
   fireEvent.click(screen.getByRole("button", { name: "Import 1 transaction" }));
   // Shown again: the same choices, and the same ID for the row added separately.
   view.rerender(<Kept shown={false} />);
   view.rerender(<Kept shown />);
-  expect([value(1), value(2)]).toEqual(["separate", "skip"]);
+  expect([value(1), value(2)]).toEqual(["Add as a separate transaction", "Skip"]);
   fireEvent.click(screen.getByRole("button", { name: "Import 1 transaction" }));
   const [first, again] = onImport.mock.calls.map(([choices]) => choices[0].row.importId);
   expect(first).toMatch(/^bank:manual:/);
@@ -77,9 +94,9 @@ it("skips a chosen row when a refreshed preview confirms it was imported", () =>
   const row = { id: "bank:pending", date: "2026-10-03", payee: "Shop", memo: "", amount: -500, duplicate: false, idless: true, candidates: [] };
   const props = { budget: demoBudget(), busy: false, icon: null, title: "File", onCancel: () => {}, onImport: vi.fn() };
   const view = render(<ImportReview {...props} rows={[row]} />);
-  fireEvent.change(screen.getByLabelText("Import action 1"), { target: { value: "new" } });
+  chooseAction(1, "Add as a new transaction");
   view.rerender(<ImportReview {...props} rows={[{ ...row, duplicate: true }]} />);
-  expect((screen.getByLabelText("Import action 1") as HTMLSelectElement).value).toBe("skip");
+  expect(actionInput().value).toBe("Already imported — skip");
   expect(screen.getByRole("button", { name: "Import 0 transactions" }).hasAttribute("disabled")).toBe(true);
 });
 
@@ -87,14 +104,14 @@ it("requires another choice when a refreshed preview removes a selected match", 
   const row = { id: "bank:pending", date: "2026-10-03", payee: "Shop", memo: "", amount: -500, duplicate: false, candidates: ["original", "other"] };
   const props = { budget: demoBudget(), busy: false, icon: null, title: "Bank", onCancel: () => {}, onImport: vi.fn() };
   const view = render(<ImportReview {...props} rows={[row]} />);
-  fireEvent.change(screen.getByLabelText("Import action 1"), { target: { value: "match:original" } });
+  chooseAction(1, /^Match:/);
   view.rerender(<ImportReview {...props} rows={[{ ...row, candidates: [] }]} />);
-  expect((screen.getByLabelText("Import action 1") as HTMLSelectElement).value).toBe("review");
+  expect(actionInput().value).toBe("Choose a match or add it");
   const importButton = screen.getByRole("button", { name: "Import 1 transaction" });
   expect(importButton.hasAttribute("disabled")).toBe(true);
   fireEvent.click(importButton);
   expect(props.onImport).not.toHaveBeenCalled();
-  fireEvent.change(screen.getByLabelText("Import action 1"), { target: { value: "new" } });
+  chooseAction(1, "Add as a new transaction");
   fireEvent.click(importButton);
   expect(props.onImport.mock.calls[0][0][0]).toMatchObject({ action: "new", matchId: null });
 });
@@ -103,10 +120,10 @@ it("keeps bank-provided IDs deduplicated and requires a choice for legacy ambigu
   const onImport = vi.fn();
   const row = { id: "bank:legacy-new-identity", date: "2026-10-03", payee: "Shop", memo: "Receipt", amount: -500, duplicate: false, idless: true, possibleDuplicate: true, candidates: ["manual"] };
   render(<ImportReview budget={demoBudget()} rows={[row, { ...row, id: "bank:fit", idless: false, duplicate: true, possibleDuplicate: false }]} busy={false} icon={null} title="File" onCancel={() => {}} onImport={onImport} />);
-  expect((screen.getByLabelText("Import action 1") as HTMLSelectElement).value).toBe("review");
+  expect(actionInput().value).toBe("May already be imported — choose");
   expect(screen.queryByLabelText("Import action 2")).toBeNull();
   expect(screen.getByRole("button", { name: "Import 1 transaction" }).hasAttribute("disabled")).toBe(true);
-  fireEvent.change(screen.getByLabelText("Import action 1"), { target: { value: "new" } });
+  chooseAction(1, "Add as a new transaction");
   fireEvent.click(screen.getByRole("button", { name: "Import 1 transaction" }));
   expect(onImport.mock.calls[0][0].map((c: { action: string }) => c.action)).toEqual(["new", "skip"]);
 });
@@ -119,11 +136,11 @@ it.each([false, true])("requires an explicit match for a previously imported acc
     candidateDetails: split ? [{ id, transactionId: t.id, splitIndex: 0 }] : [] };
   const onImport = vi.fn();
   render(<ImportReview budget={{ ...b, transactions: [t] }} rows={[row]} busy={false} icon={null} title="Bank" onCancel={() => {}} onImport={onImport} />);
-  const action = screen.getByLabelText("Import action 1") as HTMLSelectElement;
-  expect(action.value).toBe("review");
+  expect(actionInput().value).toBe("Choose a match or add it");
+  fireEvent.click(actionInput());
   expect(screen.getByRole("option", { name: /Match:.*Previously imported/ })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Import 1 transaction" }).hasAttribute("disabled")).toBe(true);
-  fireEvent.change(action, { target: { value: `match:${id}` } });
+  fireEvent.click(screen.getByRole("option", { name: /Match:.*Previously imported/ }));
   fireEvent.click(screen.getByRole("button", { name: "Import 1 transaction" }));
   expect(onImport).toHaveBeenCalledWith([{ row, action: "match", matchId: id }], 1);
 });
@@ -132,8 +149,8 @@ it("lets a distinct receipt be added instead of automatically merging into an im
   const row = { id: "bank:receipt-b", date: "2026-10-03", payee: "Shop", memo: "Receipt B", amount: -500, duplicate: false, idless: true, candidates: ["payment"], previouslyMatchedCandidates: ["payment"] };
   const onImport = vi.fn();
   render(<ImportReview budget={demoBudget()} rows={[row]} busy={false} icon={null} title="File" onCancel={() => {}} onImport={onImport} />);
-  expect((screen.getByLabelText("Import action 1") as HTMLSelectElement).value).toBe("review");
-  fireEvent.change(screen.getByLabelText("Import action 1"), { target: { value: "new" } });
+  expect(actionInput().value).toBe("Choose a match or add it");
+  chooseAction(1, "Add as a new transaction");
   fireEvent.click(screen.getByRole("button", { name: "Import 1 transaction" }));
   expect(onImport).toHaveBeenCalledWith([{ row, action: "new", matchId: null }], 1);
 });
@@ -142,7 +159,7 @@ it("still defaults to matching one account side that has not been imported", () 
   const row = { id: "bank:new", date: "2026-10-03", payee: "Shop", memo: "", amount: -500, duplicate: false, candidates: ["payment"] };
   const onImport = vi.fn();
   render(<ImportReview budget={demoBudget()} rows={[row]} busy={false} icon={null} title="File" onCancel={() => {}} onImport={onImport} />);
-  expect((screen.getByLabelText("Import action 1") as HTMLSelectElement).value).toBe("match:payment");
+  expect(actionInput().value).toContain("Match:");
   fireEvent.click(screen.getByRole("button", { name: "Import 1 transaction" }));
   expect(onImport).toHaveBeenCalledWith([{ row, action: "match", matchId: "payment" }], 1);
 });
@@ -153,12 +170,31 @@ it("labels and submits receiving split legs independently", () => {
   const row = { id: "bank:one", date: "2026-10-03", payee: "Transfer", memo: "", amount: 500, duplicate: false, candidates: ["leg-a", "leg-b"], candidateDetails: [{ id: "leg-a", transactionId: "parent", splitIndex: 0 }, { id: "leg-b", transactionId: "parent", splitIndex: 1 }] };
   const onImport = vi.fn();
   render(<ImportReview budget={{ ...b, transactions: [t] }} rows={[row, { ...row, id: "bank:two" }]} busy={false} icon={null} title="Bank" onCancel={() => {}} onImport={onImport} />);
-  expect(screen.getAllByRole("option", { name: /Split 1 · First leg/ })).toHaveLength(2);
-  expect(screen.getAllByRole("option", { name: /Split 2 · Second leg/ })).toHaveLength(2);
-  fireEvent.change(screen.getByLabelText("Import action 1"), { target: { value: "match:leg-a" } });
-  fireEvent.change(screen.getByLabelText("Import action 2"), { target: { value: "match:leg-b" } });
+  fireEvent.click(actionInput());
+  expect(screen.getByRole("option", { name: /Split 1 First leg/ })).toBeTruthy();
+  expect(screen.getByRole("option", { name: /Split 2 Second leg/ })).toBeTruthy();
+  chooseAction(1, /Split 1 First leg/);
+  chooseAction(2, /Split 2 Second leg/);
   fireEvent.click(screen.getByRole("button", { name: "Import 2 transactions" }));
   expect(onImport.mock.calls[0][0].map((c: { matchId: string }) => c.matchId)).toEqual(["leg-a", "leg-b"]);
+});
+
+it("searches full match memos and chooses with the keyboard without putting the memo in the field", () => {
+  const b = demoBudget();
+  const memo = "Statement: MAGHSALAT ALNAZAFAT; page 19 closing balance 71177.43 differs from summary 71185.43.";
+  const transaction = { ...b.transactions[0], id: "laundry", date: "2026-10-27", payee: "Maghsalat", memo };
+  const row = { id: "bank:laundry", date: "2026-10-27", payee: "Maghsalat", memo: "Receipt", amount: -800, duplicate: false, candidates: ["laundry"], previouslyMatchedCandidates: ["laundry"] };
+  const onImport = vi.fn();
+  render(<ImportReview budget={{ ...b, transactions: [transaction] }} rows={[row]} busy={false} icon={null} onCancel={() => {}} onImport={onImport} />);
+  const input = actionInput();
+  fireEvent.change(input, { target: { value: "71185.43" } });
+  expect(screen.getByRole("option", { name: /Previously imported.*71185.43/ }).textContent).toContain(memo);
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(input.value).toBe("Match: 2026-10-27 · Maghsalat");
+  expect(input.title).toContain(memo);
+  expect(screen.queryByRole("listbox")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Import 1 transaction" }));
+  expect(onImport).toHaveBeenCalledWith([{ row, action: "match", matchId: "laundry" }], 1);
 });
 
 it("makes a template in the chosen date order", () => {
@@ -179,7 +215,8 @@ it("offers the other side of money moved from another account as a transfer", ()
   const row = { id: "bank:in", date: "2026-10-03", payee: "From savings", memo: "", amount: 20000, duplicate: false, candidates: ["move"], transferCandidates: ["move"], transferSure: true };
   const onImport = vi.fn();
   render(<ImportReview budget={{ ...b, transactions: [move] }} rows={[row]} busy={false} icon={null} title="File" onCancel={() => {}} onImport={onImport} />);
-  expect((screen.getByLabelText("Import action 1") as HTMLSelectElement).value).toBe("match:move");
+  expect(actionInput().value).toMatch(/^Transfer from Savings:/);
+  fireEvent.click(actionInput());
   expect(screen.getByRole("option", { name: /^Transfer from Savings: .* · TO EVERYDAY$/ })).toBeTruthy();
   expect(screen.getByText(/1 transfer between your accounts/)).toBeTruthy();
   expect(screen.getByText(/isn't counted as spending or income/)).toBeTruthy();
@@ -194,9 +231,8 @@ it("only suggests a transfer the bank text doesn't back up, and pairs the sugges
   const rows = [row("bank:a", "m1"), row("bank:b", "m2"), { ...row("bank:c", "m3"), transferSure: true }];
   const onImport = vi.fn();
   render(<ImportReview budget={{ ...b, transactions: [move("m1"), move("m2"), move("m3")] }} rows={rows} busy={false} icon={null} title="File" onCancel={() => {}} onImport={onImport} />);
-  const first = screen.getByLabelText("Import action 1") as HTMLSelectElement;
-  expect([first.value, first.selectedOptions[0].textContent]).toEqual(["review", "Transfer suggested — check it and choose"]);
-  expect((screen.getByLabelText("Import action 3") as HTMLSelectElement).value).toBe("match:m3");
+  expect(actionInput().value).toBe("Transfer suggested — check it and choose");
+  expect(actionInput(3).value).toMatch(/^Transfer from Savings:/);
   expect(screen.getByText("2 rows need a choice")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Pair 2 suggested transfers" }));
   expect(screen.queryByRole("button", { name: /suggested transfer|as new/ })).toBeNull();
@@ -225,9 +261,11 @@ it("lists the nearest fifty of thousands of possible matches", () => {
   const ids = fees.map((t) => t.id);
   const row = { id: "bank:fee", date: "2026-10-20", payee: "Fee", memo: "", amount: -100, duplicate: false, candidates: [...ids].reverse(), previouslyMatchedCandidates: ids };
   render(<ImportReview budget={{ ...b, transactions: fees }} rows={[row]} busy={false} icon={null} title="File" onCancel={() => {}} onImport={() => {}} />);
-  const matches = screen.getAllByRole("option").filter((o) => (o as HTMLOptionElement).value.startsWith("match:"));
-  expect(matches.map((o) => (o as HTMLOptionElement).value)).toEqual(ids.slice(0, 50).map((id) => `match:${id}`));
-  expect(screen.getByRole("option", { name: "70 more of the same amount within ten days aren't listed" })).toBeTruthy();
+  fireEvent.click(actionInput());
+  const matches = screen.getAllByRole("option", { name: /^Match:/ });
+  expect(matches).toHaveLength(50);
+  matches.forEach((option, i) => expect(option.textContent).toContain(formatDate(fees[i].date)));
+  expect(screen.getByText("70 more of the same amount within ten days aren't listed")).toBeTruthy();
 });
 
 it("reads statements in the encodings banks write", async () => {

@@ -150,7 +150,6 @@ function BudgetSwitcher({
           <>
             <span className="budget-switcher-text">
               <strong>{budget.name}</strong>
-              <span>UrBudget</span>
             </span>
             <ChevronsUpDown size={14} className="muted" />
           </>

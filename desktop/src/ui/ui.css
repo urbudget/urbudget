@@ -116,6 +116,13 @@
 .combobox-option small {
   color: var(--muted);
 }
+.combobox-description {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .combobox-option.active {
   background: var(--accent-soft);
 }

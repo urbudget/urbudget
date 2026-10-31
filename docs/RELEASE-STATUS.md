@@ -10,6 +10,20 @@ Reviewed 27 October 2026. Update this page after a release or a verified account
 | Android | Native app source version `1.0.0` (version code 1000000), package `app.urbudget`. The phone apps start their own numbering at 1.0.0 for their first store release; 1.0.7 was desktop's version when the apps were split. A [signed bundle built on GitHub](https://github.com/urbudget/urbudget/actions/runs/39681884973) from the `google-play` environment's upload key on 22 October 2026 (then still numbered 1.0.7). Not on Play yet: the developer account's identity verification is in progress, and the app can't be created in Play Console until it's done. |
 | iOS | Native app source version `1.0.0`, bundle `app.urbudget`. The App Store Connect app record (6825535486) exists, and its listing, price (free), availability, age rating (4+) and privacy answers are filled in. Version 1.0.0 (build 1, from `ios-v1.0.0`) was submitted to App Review on 22 October 2026 as "UrBudget: Envelope Planner", set to **manual release**. Its privacy answers are published, and its screenshots (iPhone and iPad) and review account (`review@urbudget.app`, with complimentary Sync) are set up. It's not on the Mac App Store, by choice: Mac users get the desktop app. |
 
+## Android bank SMS import (unreleased)
+
+The Android source includes an opt-in Bank messages inbox with multiple sender
+selection, recent-history capture, assistant-directed batch preparation, grouped
+questions, editable proposals and duplicate review. Selected messages are sent to
+the configured assistant only after a separate disclosure and confirmation. Model
+sessions are temporary and do not create ordinary assistant chat history. No SMS
+is imported automatically; all reviewed accounts commit in one undoable step.
+New transactions remain uncleared. This is an unreleased source change, not a Play
+submission or approval. Its `READ_SMS`/`RECEIVE_SMS` permissions require the
+SMS-based money management declaration and Google Play approval before store
+distribution; privacy/store disclosures must be updated for that release. See the
+[Android guide](../android/README.md#bank-sms-import).
+
 ## Desktop 1.0.10
 
 The [installer build](https://github.com/urbudget/urbudget/actions/runs/40521784968) and

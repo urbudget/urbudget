@@ -7,6 +7,22 @@ import type { Category, Summary } from "./types";
 afterEach(cleanup);
 
 describe("target transitions and monthly progress", () => {
+  it.each([200_000, 2_000_000])("does not require replenishing %s moved out of a category with no target", (amount) => {
+    const c: Category = { id: "c", name: "Cash Reserve", group: "Assets & Goals", target: 0 };
+    const row = { id: "c", assigned: -amount, available: 0, carried: amount, activity: 0 };
+    // Older summaries can omit needed; both paths must treat a zero target as absent.
+    for (const needed of [undefined, 0]) {
+      expect(categoryState(c, { ...row, needed }, "2026-10"))
+        .toMatchObject({ status: "zero", needed: 0, progress: null });
+      expect(categoryState(c, { ...row, needed, available: 1000 }, "2026-10"))
+        .toMatchObject({ status: "positive", needed: 0 });
+      expect(categoryState(c, { ...row, needed, upcoming: 5000 }, "2026-10"))
+        .toMatchObject({ status: "underfunded", needed: 5000 });
+      expect(categoryState(c, { ...row, needed, available: -5000 }, "2026-10"))
+        .toMatchObject({ status: "negative", needed: 5000 });
+    }
+  });
+
   it("removes a hidden yearly anchor when selecting weekly", () => {
     const onChange = vi.fn();
     render(<TargetFields goal={{ goal_type: "NEED", goal_cadence: 13, goal_target_date: "2026-12-31", goal_day: 31 }} onChange={onChange} />);

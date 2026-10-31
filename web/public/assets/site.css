@@ -544,6 +544,10 @@ code.wrap {
   width: 30px;
   height: 30px;
 }
+/* The wordmark's "Ur" in the mark's purple, as in the app's title bar. */
+.brand-ur {
+  color: var(--brand-text);
+}
 /* The header's logo keeps its room; it never slides under the Download button. */
 .site-header .brand {
   flex-shrink: 0;
@@ -557,7 +561,7 @@ code.wrap {
   }
 }
 @media (max-width: 19.4em) {
-  .site-header .brand span {
+  .site-header .brand > span {
     position: absolute;
     width: 1px;
     height: 1px;

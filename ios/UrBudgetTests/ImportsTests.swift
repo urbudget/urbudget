@@ -18,6 +18,17 @@ final class BankReviewTests: XCTestCase {
         XCTAssertEqual(BankReview.defaultChoice(duplicate: false, possibleDuplicate: false, candidates: ["a", "b"], previouslyMatched: []), "review")
     }
 
+    func testAnExplicitTransferShowsItsAccountAndKeepsItsDestination() throws {
+        let budget = try JSON.parse(#"{"currency":"SAR","accounts":[{"id":"savings","name":"Savings"}],"transactions":[]}"#)
+        let source = try JSON.parse(#"{"id":"bank-1","date":"2026-10-24","payee":"BANK TRANSFER","memo":"","amount":-10000,"transferAccountId":"savings","candidates":[]}"#)
+        let rows = try BankReview.prepare(rows: [source], budget: budget, allowIdlessDuplicate: true)
+        XCTAssertEqual(rows[0].payee, "Transfer: Savings")
+        XCTAssertEqual(BankReview.choices(rows, [:], allowIdlessDuplicate: true)[0]["row"].text("transferAccountId"), "savings")
+        let assisted = try AssistantBankReview.prepare([source], budget: budget, candidateSets: [])
+        XCTAssertEqual(assisted[0].payee, "Transfer: Savings")
+        XCTAssertEqual(AssistantBankReview.choices(assisted, [:])[0]["row"].text("transferAccountId"), "savings")
+    }
+
     func testASingleCleanMatchIsImportedAndClearedByDefault() throws {
         let budget = try JSON.parse(#"{"currency":"SAR","transactions":[{"id":"t1","date":"2026-10-01","payee":"Shop","memo":"Weekly","amount":-500,"splits":[{"amount":-500,"memo":""}]}]}"#)
         let rows = [try JSON.parse(#"{"id":"bank-1","date":"2026-10-02","payee":"SHOP 123","rename":"Shop","memo":"Card","amount":-500,"candidates":["t1"]}"#)]

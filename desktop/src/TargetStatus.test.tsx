@@ -25,6 +25,18 @@ function renderRow(c: Category, s: CategorySummary) {
 }
 
 describe("target status", () => {
+  it.each([["Cash Reserve", 2_000_000], ["Budget Margin", 200_000]] as const)("shows no funding warning for %s after moving its balance out", (name, amount) => {
+    const c = { ...category, name, target: 0, goal: null };
+    const s = { ...row, assigned: -amount, carried: amount, available: 0, needed: 0, targetFundingRequired: 0, targetFundingFunded: 0 };
+    const view = renderRow(c, s);
+    expect(view.container.querySelector(".row-status")?.textContent).toBe("");
+    expect(screen.getByRole("button", { name: new RegExp(`available in ${name}`) }).classList.contains("zero")).toBe(true);
+    view.unmount();
+    const details = inspector([c], [s], [c]);
+    expect(screen.queryByText("Still needed")).toBeNull();
+    expect(details.container.querySelector(".target-status.short")).toBeNull();
+  });
+
   it("keeps an undated balance goal green while showing its progress and what's needed eventually", () => {
     const { container } = renderRow(category, row);
     expect(screen.getByRole("button", { name: /available in Savings/ }).classList.contains("positive")).toBe(true);

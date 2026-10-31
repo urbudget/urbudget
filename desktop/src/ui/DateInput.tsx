@@ -142,7 +142,10 @@ export function DateInput({
   useEffect(() => {
     if (!editing && !invalid) setText(value ? shown(value) : "");
   }, [value, editing, invalid]);
-  const base = value || todayIso();
+  // An import can open on a bank value that has not parsed yet. Keep that text available to
+  // correct, but anchor the calendar and arrow shortcuts to a real date.
+  const validValue = /^\d{4}-\d{2}-\d{2}$/.test(value) && parseDate(value, value) === value;
+  const base = validValue ? value : todayIso();
   const pick = (iso: string) => {
     onChange(iso);
     setText(shown(iso));
@@ -212,7 +215,7 @@ export function DateInput({
         <CalendarDays size={14} />
       </button>
       <Popover open={open} onClose={() => setOpen(false)} anchor={box} label={t("Choose {field}", { field: label.toLowerCase() })} className="calendar-popover">
-        <Calendar value={value} onPick={pick} />
+        <Calendar value={validValue ? value : ""} onPick={pick} />
       </Popover>
     </div>
   );

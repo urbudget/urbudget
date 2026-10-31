@@ -31,6 +31,16 @@ object NativeServices {
     /** One at a time and in order, so the engine always ends on the latest language. */
     private val languageLane = Dispatchers.IO.limitedParallelism(1)
     private val languageScope = CoroutineScope(SupervisorJob() + languageLane)
+    @Volatile private var foreground = false
+    private val foregroundScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
+
+    fun setForeground(active: Boolean) {
+        foreground = active
+        if (ready) foregroundScope.launch { sendForeground() }
+    }
+    private fun sendForeground() {
+        runCatching { call("assistant_foreground", JSONObject().put("active", foreground)) }
+    }
 
     @Synchronized fun initialize(context: Context) {
         if (ready) return
@@ -38,6 +48,7 @@ object NativeServices {
         val directory = if (File(context.filesDir, "budgets.json").exists() || File(context.filesDir, "budget.sqlite3").exists()) context.filesDir else File(context.filesDir, "native")
         decode(NativeBridge.initialize(context.applicationContext, directory.absolutePath))
         ready = true
+        foregroundScope.launch { sendForeground() }
         runBlocking(languageLane) { sendLanguage() }
     }
 

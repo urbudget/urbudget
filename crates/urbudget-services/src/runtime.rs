@@ -310,7 +310,7 @@ impl Runtime {
         // make local budgeting wait for the HTTP timeout.
         let independent = method.starts_with("account_") || method.starts_with("billing_") || method.starts_with("sync_") || matches!(method,
             "set_language" | "host_events" | "native_budget_status" | "database_status" | "cloud_status" | "sync_status" | "assistant_stop" | "assistant_cancel_sign_in" | "assistant_status" | "assistant_thread" | "assistant_threads" |
-            "assistant_sign_in" | "assistant_sign_out" | "assistant_settings" | "assistant_set_key" | "assistant_forget_key" | "assistant_models" | "assistant_report_reply" |
+            "assistant_sign_in" | "assistant_sign_out" | "assistant_foreground" | "assistant_settings" | "assistant_set_key" | "assistant_forget_key" | "assistant_models" | "assistant_report_reply" | "assistant_sms_poll" | "assistant_sms_cancel" |
             "simplefin_status" | "simplefin_connect" | "simplefin_accounts" | "simplefin_disconnect" | "simplefin_open" | "simplefin_sync" |
             "ynab_tokens" | "ynab_plans" | "forget_ynab_token" | "list_budgets" | "list_backups" | "backup_retention");
         let _command = if independent {

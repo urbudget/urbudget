@@ -4,7 +4,7 @@ import { api, type BankRow, type RefundOf } from "./bridge";
 import { placeholder } from "./bankNames";
 import { formatDate, money } from "./format";
 import { today, type Budget } from "./types";
-import { useVirtualRows } from "./ui";
+import { Combobox, useVirtualRows, type Option } from "./ui";
 import { list, t, tn } from "./i18n";
 import "./import.css";
 
@@ -224,7 +224,8 @@ export function ImportReview({
     const chosen = choice(r).startsWith("match:") ? choice(r).slice(6) : null;
     return chosen && !list.includes(chosen) ? [...list, chosen] : list;
   };
-  const transfer = (r: BankRow, c: string) => c.startsWith("match:") && !!r.transferCandidates?.includes(c.slice(6));
+  const transfer = (r: BankRow, c: string) => c !== "skip" && c !== "review" &&
+    (!!r.transferAccountId || c.startsWith("match:") && !!r.transferCandidates?.includes(c.slice(6)));
   const importing = rows.filter((r) => choice(r) !== "skip").length;
   const transfers = rows.filter((r) => transfer(r, choice(r))).length;
   // Every row still to decide, the same way.
@@ -278,6 +279,12 @@ export function ImportReview({
       </p>}
       <div className="table-scroll import-review" ref={review}>
         <table>
+          <colgroup>
+            <col className="import-date-col" />
+            <col className="import-payee-col" />
+            <col className="import-amount-col" />
+            <col className="import-action-col" />
+          </colgroup>
           <thead>
             <tr>
               <th>{t("Date")}</th>
@@ -294,12 +301,20 @@ export function ImportReview({
             )}
             {rows.slice(inView.start, inView.end).map((r, i) => {
               const index = inView.start + i;
+              const destination = r.transferAccountId && (accountNames.get(r.transferAccountId) ?? r.transferAccountId);
+              const transferLabel = destination && (r.amount < 0
+                ? t("Transfer to {account}", { account: destination })
+                : t("Transfer from {account}", { account: destination }));
               return (
                 <tr key={`${r.id}:${index}`} className={r.duplicate ? "muted" : ""}>
                   <td>{formatDate(r.date)}</td>
-                  <td title={r.rename ? t("{name}, from the bank's “{payee}”", { name: r.rename, payee: r.payee }) : undefined}>
-                    {r.rename ?? r.payee}
-                    {r.rename && <small className="bank-text">{r.payee}</small>}
+                  <td title={[
+                    r.rename ? t("{name}, from the bank's “{payee}”", { name: r.rename, payee: r.payee }) : transferLabel || r.payee,
+                    transferLabel && r.payee,
+                    r.memo,
+                  ].filter(Boolean).join(" · ")}>
+                    {transferLabel || r.rename || r.payee}
+                    {(r.rename || transferLabel) && r.payee && <small className="bank-text">{r.payee}</small>}
                     {r.memo && <small className="bank-text" title={r.memo}>{r.memo}</small>}
                     {r.refundOf && !r.duplicate && (
                       <small className="refund-note">
@@ -312,55 +327,51 @@ export function ImportReview({
                     {r.duplicate && !r.idless ? (
                       t("Already imported · skipped")
                     ) : (
-                      <select
-                        aria-label={t("Import action {number}", { number: index + 1 })}
+                      <Combobox
+                        label={t("Import action {number}", { number: index + 1 })}
                         disabled={busy}
                         value={choice(r)}
-                        onChange={(e) => setChoices({ ...choices, [r.id]: e.target.value })}
-                      >
-                        {!r.duplicate && (
-                          <option value="review">
-                            {r.possibleDuplicate
-                              ? t("May already be imported — choose")
-                              : r.transferCandidates?.length
-                                ? t("Transfer suggested — check it and choose")
-                                : t("Choose a match or add it")}
-                          </option>
-                        )}
-                        {r.duplicate
-                          ? <option value="separate">{t("Add as a separate transaction")}</option>
-                          : <option value="new">{t("Add as a new transaction")}</option>}
-                        <option value="skip">{r.duplicate ? t("Already imported — skip") : t("Skip")}</option>
-                        {(r.duplicate ? [] : listed(r)).map((id) => {
-                          const detail = r.candidateDetails?.find((c) => c.id === id);
-                          const tx = byId.get(detail?.transactionId ?? id);
-                          const part = detail && tx?.splits[detail.splitIndex];
-                          const other = r.transferCandidates?.includes(id) && tx && accountNames.get(tx.accountId);
-                          const memo = part?.memo || tx?.memo;
-                          const values = { date: tx ? formatDate(tx.date) : "", payee: tx?.payee || t("Transfer") };
-                          return (
-                            <option key={id} value={`match:${id}`}>
-                              {other
-                                ? r.amount > 0
-                                  ? t("Transfer from {account}: {date} · {payee}", { account: other, ...values })
-                                  : t("Transfer to {account}: {date} · {payee}", { account: other, ...values })
-                                : t("Match: {date} · {payee}", values)}
-                              {detail ? ` · ${t("Split {number}", { number: detail.splitIndex + 1 })}` : ""}
-                              {memo ? ` · ${memo}` : ""}
-                              {r.previouslyMatchedCandidates?.includes(id) ? ` · ${t("Previously imported")}` : ""}
-                            </option>
-                          );
-                        })}
-                        {!r.duplicate && r.candidates.length > LISTED && (
-                          <option disabled>
+                        onChange={(value) => setChoices({ ...choices, [r.id]: value })}
+                        popoverClassName="import-match-popover"
+                        options={[
+                          ...(!r.duplicate ? [{ id: "review", label: r.possibleDuplicate
+                            ? t("May already be imported — choose")
+                            : r.transferCandidates?.length
+                              ? t("Transfer suggested — check it and choose")
+                              : t("Choose a match or add it") }] : []),
+                          r.duplicate
+                            ? { id: "separate", label: t("Add as a separate transaction") }
+                            : { id: "new", label: transferLabel ? t("Add as a transfer") : t("Add as a new transaction") },
+                          { id: "skip", label: r.duplicate ? t("Already imported — skip") : t("Skip") },
+                          ...(r.duplicate ? [] : listed(r)).map((id): Option => {
+                            const detail = r.candidateDetails?.find((c) => c.id === id);
+                            const tx = byId.get(detail?.transactionId ?? id);
+                            const part = detail && tx?.splits[detail.splitIndex];
+                            const other = r.transferCandidates?.includes(id) && tx && accountNames.get(tx.accountId);
+                            const memo = part?.memo || tx?.memo;
+                            const values = { date: tx ? formatDate(tx.date) : "", payee: tx?.payee || t("Transfer") };
+                            const label = other
+                              ? r.amount > 0
+                                ? t("Transfer from {account}: {date} · {payee}", { account: other, ...values })
+                                : t("Transfer to {account}: {date} · {payee}", { account: other, ...values })
+                              : t("Match: {date} · {payee}", values);
+                            return {
+                              id: `match:${id}`,
+                              label: label + (detail ? ` · ${t("Split {number}", { number: detail.splitIndex + 1 })}` : ""),
+                              description: [r.previouslyMatchedCandidates?.includes(id) && t("Previously imported"), memo].filter(Boolean).join(" · "),
+                            };
+                          }),
+                        ]}
+                        footer={!r.duplicate && r.candidates.length > LISTED ? (
+                          <p className="import-match-note">
                             {tn(
-                              r.candidates.length - LISTED,
+                              r.candidates.length - listed(r).length,
                               "{count} more of the same amount within ten days aren't listed",
                               "{count} more of the same amount within ten days aren't listed",
                             )}
-                          </option>
-                        )}
-                      </select>
+                          </p>
+                        ) : undefined}
+                      />
                     )}
                   </td>
                 </tr>

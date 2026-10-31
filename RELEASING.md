@@ -34,7 +34,11 @@ Actions tab on `main` with the version already in the source.
 - **Desktop:** write the release's notes from [CHANGELOG.md](desktop/CHANGELOG.md) into the draft
   before publishing; they show on the download page and in the app's update notice. Desktop
   releases up to 1.0.7 are tagged `v1.0.7` and so on; those tags stay as they are.
-  [desktop/README.md › Releases](desktop/README.md#releases) covers signing and the updater.
+  The Release workflow gates installer builds on updater regression tests. For updater changes,
+  complete the [two-version Store flight and standalone upgrade checks](desktop/README.md#verifying-an-updater-change)
+  before publishing the draft: publication submits the Store package for certification as well as
+  offering standalone updates. Record the tested package versions, artifact hashes, and results
+  with the release evidence. [desktop/README.md › Releases](desktop/README.md#releases) covers signing.
 - **Android:** the version code comes from the version, in the scheme the Tauri Android app used
   (1.2.3 is 1002003). To upload the same version again, run **Android release** from the Actions
   tab with a higher version code. Upload `mapping.txt` with the bundle so crash reports are readable.

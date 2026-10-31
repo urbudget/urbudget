@@ -58,11 +58,14 @@ export function TitleBar({ children }: { children?: ReactNode }) {
   return (
     <div className={`titlebar${focused ? "" : " inactive"}`} data-tauri-drag-region="deep">
       {title.startsWith(NAME) ? (
-        // The mark alone stands for the name; anything the window adds after the name (a preview
-        // build's label) follows it.
+        // The mark and the wordmark, its "Ur" in the mark's purple; anything the window adds after
+        // the name (a preview build's label) follows them.
         <div className="titlebar-name wordmark" title={title}>
           <AppMark />
-          <span className="sr-only">{NAME}</span>
+          <span className="titlebar-wordmark">
+            <span className="titlebar-ur">{NAME.slice(0, 2)}</span>
+            {NAME.slice(2)}
+          </span>
           {title.length > NAME.length && <span className="titlebar-label">{title.slice(NAME.length)}</span>}
         </div>
       ) : (

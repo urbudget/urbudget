@@ -17,6 +17,8 @@ const CREATE = "\u0000create";
 export type Option = {
   id: string;
   label: string;
+  /** Supporting text beneath the label, also included when searching. */
+  description?: string;
   /** Heading the option is listed under. */
   group?: string;
   /** Right-aligned text, e.g. an available balance. */
@@ -43,6 +45,8 @@ export function Combobox({
   placeholder,
   autoFocus,
   className = "",
+  popoverClassName = "",
+  footer,
   emptyText = t("No matches"),
   onKeyDown,
   disabled,
@@ -62,6 +66,8 @@ export function Combobox({
   placeholder?: string;
   autoFocus?: boolean;
   className?: string;
+  popoverClassName?: string;
+  footer?: ReactNode;
   emptyText?: string;
   /** Called for keys the combobox does not handle (Enter when closed, Escape when closed…). */
   onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void;
@@ -86,6 +92,12 @@ export function Combobox({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState<string | null>(null);
   const [active, setActive] = useState(0);
+  useEffect(() => {
+    if (disabled) {
+      setOpen(false);
+      setQuery(null);
+    }
+  }, [disabled]);
   const selected = options.find((o) => o.id === value);
   const shown = freeText ? (text ?? "") : (query ?? selected?.label ?? "");
   const search = (freeText ? (text ?? "") : (query ?? "")).trim().toLowerCase();
@@ -109,6 +121,7 @@ export function Combobox({
         else if (name.includes(` ${search}`)) words.push(o);
         else if (
           name.includes(search) ||
+          o.description?.toLowerCase().includes(search) ||
           o.group?.toLowerCase().includes(search) ||
           o.keywords?.toLowerCase().includes(search)
         )
@@ -141,7 +154,7 @@ export function Combobox({
   }, [active, open]);
 
   const choose = (option: Option | undefined) => {
-    if (!option) return;
+    if (!option || disabled) return;
     setOpen(false);
     setQuery(null);
     if (option.id === CREATE) return create?.onCreate(option.label === create.blank ? "" : typed);
@@ -200,6 +213,7 @@ export function Combobox({
         aria-activedescendant={open && matches[active] ? `${id}-${active}` : undefined}
         placeholder={placeholder ?? (freeText ? undefined : selected ? undefined : t("Choose…"))}
         value={shown}
+        title={selected?.description ? `${selected.label} · ${selected.description}` : undefined}
         autoFocus={autoFocus}
         disabled={disabled}
         onFocus={(e) => {
@@ -228,13 +242,14 @@ export function Combobox({
           aria-hidden
           onMouseDown={(e) => {
             e.preventDefault();
+            if (disabled) return;
             box.current?.querySelector("input")?.focus();
             setOpen((o) => !o);
           }}
         />
       )}
       <Popover
-        open={open && (matches.length > 0 || !freeText)}
+        open={!disabled && open && (matches.length > 0 || !freeText)}
         onClose={(reason) => {
           // Outside mousedown closes the list before the input's blur can commit the
           // empty value. Escape and Back cancel the edit instead.
@@ -246,7 +261,7 @@ export function Combobox({
         matchWidth
         focus={false}
         role="presentation"
-        className="combobox-popover"
+        className={`combobox-popover ${popoverClassName}`}
       >
         <ul id={`${id}-list`} role="listbox" aria-label={label} ref={list} onMouseDown={(e) => e.preventDefault()}>
           {matches.map((o, i) => {
@@ -269,7 +284,10 @@ export function Combobox({
                 onClick={() => choose(o)}
               >
                 {o.id === CREATE && <Plus size={14} aria-hidden />}
-                <span>{o.label}</span>
+                <span>
+                  {o.label}
+                  {o.description && <> <small className="combobox-description">{o.description}</small></>}
+                </span>
                 {!grouped && search && groupHints && o.group && <small>{o.group}</small>}
                 {o.detail !== undefined && <span className={`combobox-detail ${o.detailTone ?? ""}`}>{o.detail}</span>}
               </li>,
@@ -277,6 +295,7 @@ export function Combobox({
           })}
           {!matches.length && <li className="combobox-empty">{emptyText}</li>}
         </ul>
+        {footer}
       </Popover>
     </div>
   );

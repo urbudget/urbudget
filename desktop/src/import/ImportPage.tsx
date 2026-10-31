@@ -387,6 +387,7 @@ export function ImportPage({
       ) : state.view === "editor" || (continuing && !reviewed) ? (
         <div className="import-stage" key="editor">
           <StatementGrid
+            budget={budget}
             statement={statement}
             session={session}
             // Until the file reads again after a change, a line's version is the one before it.

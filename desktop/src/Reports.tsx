@@ -7,6 +7,7 @@ import {
   ChartPie,
   ChevronDown,
   Download,
+  EyeOff,
   HandCoins,
   Hourglass,
   Landmark,
@@ -15,6 +16,7 @@ import {
   Store,
   Telescope,
   TrendingUp,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { api, read, type ReportFilter } from "./bridge";
@@ -39,7 +41,8 @@ import { ByCategory, ByPayee, OverTime, SpendingCalendar } from "./reports/Spend
 import { CashFlow, IncomeBreakdown, IncomeExpense } from "./reports/Income";
 import { AgeOfMoney, BalanceSheet, Balances, NetWorth } from "./reports/Wealth";
 import { Forecast } from "./reports/Forecast";
-import { msg, t, tn, useLanguage } from "./i18n";
+import { chosen, useHidden } from "./reports/filters";
+import { msg, t, tn, tnc, useLanguage } from "./i18n";
 import "./reports.css";
 
 type ReportId =
@@ -172,14 +175,20 @@ const VIEW_KEY = "lb:reports:view";
 /** The last report opened in each group, so going back to a group reopens it. */
 const GROUP_VIEWS_KEY = "lb:reports:groupViews";
 
-/** A filter button with a searchable, grouped checklist. An empty selection means "all". */
+type FilterGroup = { name: string; items: { id: string; label: string }[] };
+
+/**
+ * A filter button with a searchable, grouped checklist of what reports show. It changes what is
+ * hidden; hidden ids it doesn't list (tracking accounts in the forecast) stay hidden.
+ */
 function MultiFilter({
   label,
   allLabel,
   searchLabel,
   countLabel,
+  hiddenLabel,
   groups,
-  selected,
+  hidden,
   onChange,
 }: {
   label: string;
@@ -188,39 +197,48 @@ function MultiFilter({
   searchLabel: string;
   /** How several chosen items read, such as "3 accounts". */
   countLabel: (count: number) => string;
-  groups: { name: string; items: { id: string; label: string }[] }[];
-  selected: Set<string>;
-  onChange: (ids: Set<string>) => void;
+  /** How a few hidden items read, such as "2 hidden". */
+  hiddenLabel: (count: number) => string;
+  groups: FilterGroup[];
+  hidden: Set<string>;
+  onChange: (hidden: Set<string>) => void;
 }) {
   const button = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const all = groups.flatMap((g) => g.items);
-  // An empty set means all; a set with only unknown ids (e.g. "") means none.
-  const chosen = all.filter((i) => selected.has(i.id));
+  const on = all.filter((i) => !hidden.has(i.id));
+  const off = all.length - on.length;
   const shown = groups
     .map((g) => ({ ...g, items: g.items.filter((i) => i.label.toLowerCase().includes(query.toLowerCase())) }))
     .filter((g) => g.items.length);
-  const summary = !selected.size
+  const summary = !off
     ? allLabel
-    : !chosen.length
+    : !on.length
       ? t("None")
-      : chosen.length === 1
-        ? chosen[0].label
-        : countLabel(chosen.length);
-  const toggle = (ids: string[], on: boolean) => {
-    const next = new Set(selected.size ? chosen.map((i) => i.id) : all.map((i) => i.id));
+      : on.length === 1
+        ? on[0].label
+        : off <= on.length
+          ? hiddenLabel(off)
+          : countLabel(on.length);
+  const show = (ids: string[], visible: boolean) => {
+    const next = new Set(hidden);
     for (const id of ids) {
-      if (on) next.add(id);
-      else next.delete(id);
+      if (visible) next.delete(id);
+      else next.add(id);
     }
-    onChange(next.size === all.length ? new Set() : next.size ? next : new Set([""]));
+    onChange(next);
   };
-  const isOn = (id: string) => !selected.size || selected.has(id);
+  const isOn = (id: string) => !hidden.has(id);
   return (
     <>
-      <button ref={button} className="secondary filter-button" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span className="muted">{label}:</span> {summary} <ChevronDown size={14} />
+      <button
+        ref={button}
+        className={`secondary filter-button${off ? " active" : ""}`}
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <span className="muted">{label}:</span> <span className="filter-summary">{summary}</span> <ChevronDown size={14} />
       </button>
       <Popover open={open} onClose={() => setOpen(false)} anchor={button} label={label} className="filter-popover">
         <div className="filter-popover-head">
@@ -229,10 +247,10 @@ function MultiFilter({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          <button className="link-button" onClick={() => onChange(new Set())}>
+          <button className="link-button" onClick={() => show(all.map((i) => i.id), true)}>
             {t("All")}
           </button>
-          <button className="link-button" onClick={() => onChange(new Set([""]))}>
+          <button className="link-button" onClick={() => show(all.map((i) => i.id), false)}>
             {t("None")}
           </button>
         </div>
@@ -243,12 +261,12 @@ function MultiFilter({
             return (
               <fieldset key={g.name}>
                 <label className="checkbox-label group">
-                  <input type="checkbox" checked={every} onChange={() => toggle(ids, !every)} />
+                  <input type="checkbox" checked={every} onChange={() => show(ids, !every)} />
                   {g.name}
                 </label>
                 {g.items.map((i) => (
                   <label key={i.id} className="checkbox-label">
-                    <input type="checkbox" checked={isOn(i.id)} onChange={(e) => toggle([i.id], e.target.checked)} />
+                    <input type="checkbox" checked={isOn(i.id)} onChange={(e) => show([i.id], e.target.checked)} />
                     {i.label}
                   </label>
                 ))}
@@ -256,17 +274,86 @@ function MultiFilter({
             );
           })}
         </div>
+        <p className="filter-popover-foot">{t("What you clear here stays left out of reports for this budget, on this computer.")}</p>
       </Popover>
     </>
   );
 }
 
+/** At most this many names in a "left out" line; the rest are counted. */
+const NAMED = 6;
+
+/**
+ * Says what a report leaves out, right under the filters, so a total is never read as everything:
+ * the hidden items, each with a way back in, or the few still shown when most are hidden.
+ */
+function LeftOut({
+  kind,
+  groups,
+  hidden,
+  onChange,
+}: {
+  kind: "accounts" | "categories";
+  groups: FilterGroup[];
+  hidden: Set<string>;
+  onChange: (hidden: Set<string>) => void;
+}) {
+  const all = groups.flatMap((g) => g.items);
+  const off = all.filter((i) => hidden.has(i.id));
+  if (!off.length) return null;
+  const on = all.filter((i) => !hidden.has(i.id));
+  const showAll = () => onChange(new Set([...hidden].filter((id) => !all.some((i) => i.id === id))));
+  // Name the smaller side: what is left out, or the few still shown.
+  const only = off.length > on.length;
+  const named = (only ? on : off).slice(0, NAMED);
+  const more = (only ? on : off).length - named.length;
+  const accounts = kind === "accounts";
+  return (
+    <div className="report-left-out">
+      <EyeOff size={14} aria-hidden />
+      <span>
+        {!on.length
+          ? accounts ? t("No accounts are shown.") : t("No categories are shown.")
+          : only
+            ? accounts ? t("Only these accounts:") : t("Only these categories:")
+            : accounts ? t("Accounts left out:") : t("Categories left out:")}
+      </span>
+      {named.map((i) =>
+        only ? (
+          <span key={i.id} className="chip chip-text" title={i.label}>
+            <span className="chip-label">{i.label}</span>
+          </span>
+        ) : (
+          <span key={i.id} className="chip" title={i.label}>
+            <span className="chip-label">{i.label}</span>
+            <button
+              className="chip-remove"
+              aria-label={t("Show {name} in reports", { name: i.label })}
+              title={t("Show {name} in reports", { name: i.label })}
+              onClick={() => onChange(new Set([...hidden].filter((id) => id !== i.id)))}
+            >
+              <X size={12} aria-hidden />
+            </button>
+          </span>
+        ),
+      )}
+      {more > 0 && <span className="muted">{tn(more, "+{count} more", "+{count} more")}</span>}
+      <button className="link-button" onClick={showAll}>
+        {accounts ? t("Show all accounts") : t("Show all categories")}
+      </button>
+    </div>
+  );
+}
+
 export function Reports({
   budget,
+  budgetId,
   month,
   onInspect,
 }: {
   budget: Budget;
+  /** Keys what the reports leave out, which each budget remembers. */
+  budgetId: string;
   month: string;
   /** Opens the register on these transactions. */
   onInspect: (filter: RegisterFilter) => void;
@@ -282,8 +369,7 @@ export function Reports({
       ? rangeFor("last12", "month", new Date(), earliest)
       : { preset: "custom", from: shiftMonth(month, -11), to: month },
   );
-  const [accounts, setAccounts] = useState<Set<string>>(new Set());
-  const [categories, setCategories] = useState<Set<string>>(new Set());
+  const [hidden, setHidden] = useHidden(budgetId);
   const [view, setView] = useState<ReportId>(() => {
     try {
       const saved = localStorage.getItem(VIEW_KEY);
@@ -319,6 +405,41 @@ export function Reports({
   const info = ALL.find((r) => r.id === view)!;
   const [result, setResult] = useState<{ budget: Budget; key: string; attempt: number; report?: ReportData; error?: string } | null>(null);
   const [attempt, setAttempt] = useState(0);
+
+  // Groups that can hold spending, in budget order; colours follow the group, not its rank.
+  // Spending with no category reads as its own group, in the language in use.
+  const needsCategory = t(NEEDS_CATEGORY);
+  const reportCategories = useMemo<Budget["categories"]>(() => [...budget.categories, {
+    id: UNCATEGORIZED_CATEGORY, name: needsCategory, group: needsCategory, target: 0,
+  }], [budget.categories, needsCategory]);
+  const groupOf = useMemo(() => new Map(reportCategories.map((c) => [c.id, c.group])), [reportCategories]);
+  const nameOf = useMemo(() => new Map(reportCategories.map((c) => [c.id, c.name])), [reportCategories]);
+  const spendingGroups = useMemo(
+    () => [...new Set([...groupNames(budget).filter((g) => budget.categories.some((c) => c.group === g && !c.paymentAccountId)), needsCategory])],
+    [budget.categories, budget.groupOrder, needsCategory, language],
+  );
+  const accountGroups: FilterGroup[] = [
+    { name: msg("Budget"), items: budget.accounts.filter((a) => !a.archived && a.kind !== "tracking") },
+    { name: msg("Tracking"), items: budget.accounts.filter((a) => !a.archived && a.kind === "tracking") },
+    { name: msg("Closed"), items: budget.accounts.filter((a) => a.archived) },
+  ]
+    .filter((g) => g.items.length && (view !== "forecast" || g.name === "Budget"))
+    .map((g) => ({ name: t(g.name), items: g.items.map((a) => ({ id: a.id, label: a.name })) }));
+  const categoryGroups: FilterGroup[] = spendingGroups.map((g) => ({
+    name: g,
+    items: reportCategories
+      .filter((c) => c.group === g && !c.paymentAccountId)
+      .map((c) => ({ id: c.id, label: c.name })),
+  }));
+  // What reports leave out is remembered; the filter sends what they show. Ids of deleted
+  // accounts and categories are dropped when the choice next changes.
+  const accounts = chosen(hidden.accounts, accountGroups.flatMap((g) => g.items.map((i) => i.id)));
+  const categoryIds = categoryGroups.flatMap((g) => g.items.map((i) => i.id));
+  const categories = info.categories ? chosen(hidden.categories, categoryIds) : new Set<string>();
+  const hideAccounts = (next: Set<string>) =>
+    setHidden({ accounts: new Set([...next].filter((id) => budget.accounts.some((a) => a.id === id))) });
+  const hideCategories = (next: Set<string>) => setHidden({ categories: new Set([...next].filter((id) => categoryIds.includes(id))) });
+
   // Reports that don't split by category ignore the Categories filter.
   const filter: ReportFilter = {
     from: range.from || earliest,
@@ -348,18 +469,6 @@ export function Reports({
     };
   }, [budget, key, view === "forecast", attempt]);
 
-  // Groups that can hold spending, in budget order; colours follow the group, not its rank.
-  // Spending with no category reads as its own group, in the language in use.
-  const needsCategory = t(NEEDS_CATEGORY);
-  const reportCategories = useMemo<Budget["categories"]>(() => [...budget.categories, {
-    id: UNCATEGORIZED_CATEGORY, name: needsCategory, group: needsCategory, target: 0,
-  }], [budget.categories, needsCategory]);
-  const groupOf = useMemo(() => new Map(reportCategories.map((c) => [c.id, c.group])), [reportCategories]);
-  const nameOf = useMemo(() => new Map(reportCategories.map((c) => [c.id, c.name])), [reportCategories]);
-  const spendingGroups = useMemo(
-    () => [...new Set([...groupNames(budget).filter((g) => budget.categories.some((c) => c.group === g && !c.paymentAccountId)), needsCategory])],
-    [budget.categories, budget.groupOrder, needsCategory, language],
-  );
   const colorOf = (group: string) => {
     const i = spendingGroups.indexOf(group);
     return i >= 0 && i < 7 ? SERIES(i) : OTHER;
@@ -379,20 +488,6 @@ export function Reports({
     accountIds: accounts,
     categoryIds: figure.categoryId ? new Set([figure.categoryId]) : figure.income ? undefined : chosenCategories,
   };
-
-  const accountGroups = [
-    { name: msg("Budget"), items: budget.accounts.filter((a) => !a.archived && a.kind !== "tracking") },
-    { name: msg("Tracking"), items: budget.accounts.filter((a) => !a.archived && a.kind === "tracking") },
-    { name: msg("Closed"), items: budget.accounts.filter((a) => a.archived) },
-  ]
-    .filter((g) => g.items.length && (view !== "forecast" || g.name === "Budget"))
-    .map((g) => ({ name: t(g.name), items: g.items.map((a) => ({ id: a.id, label: a.name })) }));
-  const categoryGroups = spendingGroups.map((g) => ({
-    name: g,
-    items: reportCategories
-      .filter((c) => c.group === g && !c.paymentAccountId)
-      .map((c) => ({ id: c.id, label: c.name })),
-  }));
 
   const exportCsv = async () => {
     const fail = (e: unknown) => toast({ message: errorText(e), tone: "error" });
@@ -497,9 +592,10 @@ export function Reports({
               allLabel={view === "forecast" ? t("All budget accounts") : t("All accounts")}
               searchLabel={t("Search accounts")}
               countLabel={(n) => tn(n, "{count} accounts", "{count} accounts")}
+              hiddenLabel={(n) => tnc("accounts", n, "{count} hidden", "{count} hidden")}
               groups={accountGroups}
-              selected={accounts}
-              onChange={setAccounts}
+              hidden={hidden.accounts}
+              onChange={hideAccounts}
             />
             {info.categories && (
               <MultiFilter
@@ -507,9 +603,10 @@ export function Reports({
                 allLabel={t("All categories")}
                 searchLabel={t("Search categories")}
                 countLabel={(n) => tn(n, "{count} categories", "{count} categories")}
+                hiddenLabel={(n) => tnc("categories", n, "{count} hidden", "{count} hidden")}
                 groups={categoryGroups}
-                selected={categories}
-                onChange={setCategories}
+                hidden={hidden.categories}
+                onChange={hideCategories}
               />
             )}
             {loading && view !== "forecast" && <LoaderCircle size={16} className="spin muted" aria-label={t("Updating")} />}
@@ -520,6 +617,8 @@ export function Reports({
               </button>
             )}
           </div>
+          <LeftOut kind="accounts" groups={accountGroups} hidden={hidden.accounts} onChange={hideAccounts} />
+          {info.categories && <LeftOut kind="categories" groups={categoryGroups} hidden={hidden.categories} onChange={hideCategories} />}
           {error && view !== "forecast" && <p className="form-error" role="alert">{error} <button className="link-button" onClick={() => setAttempt((n) => n + 1)}>{t("Retry report")}</button></p>}
           {figure && lineQuery && (
           <TransactionsDialog

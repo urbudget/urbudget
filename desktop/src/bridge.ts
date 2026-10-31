@@ -353,6 +353,7 @@ export type BankRow = {
   id: string;
   date: string;
   payee: string;
+  transferAccountId?: string | null;
   memo: string;
   amount: number;
   duplicate: boolean;
@@ -401,7 +402,7 @@ type CompactReview = {
   candidateSets: Pick<BankRow, "candidates" | "previouslyMatchedCandidates" | "candidateDetails" | "transferCandidates" | "transferSure">[];
 };
 /** A part of a transaction a line gives. */
-export type BankField = "date" | "payee" | "memo" | "amount";
+export type BankField = "date" | "payee" | "memo" | "amount" | "transferAccountId";
 /** Why a line isn't imported unless someone includes it (bank_statement.rs). */
 export type LeftOutReason =
   | "pending"
@@ -452,7 +453,7 @@ export type StatementLine = {
   cells: string[];
   /** Its cells as the file writes them, when some were fixed. */
   original?: string[];
-  fields: Record<BankField, string>;
+  fields: Record<Exclude<BankField, "transferAccountId">, string> & { transferAccountId?: string };
   status: LineStatus;
   included?: boolean;
   fixed?: boolean;

@@ -30,7 +30,7 @@ export const INCLUDABLE: ReadonlySet<LeftOutReason> = new Set([
   "noAmount",
 ]);
 /** The fields' names as a statement's own headings have them (matched against them, so never translated). */
-export const FIELDS: Record<BankField, string> = { date: "Date", payee: "Payee", memo: "Memo", amount: "Amount" };
+export const FIELDS: Record<BankField, string> = { date: "Date", payee: "Payee", memo: "Memo", amount: "Amount", transferAccountId: "TransferAccountId" };
 
 /** Why a line is left out, with what the file says of it (the state, the currency, the account). */
 export function leftOutText(line: StatementLine) {
@@ -109,6 +109,7 @@ export const ROLES: [keyof BankColumns, string][] = [
   ["amount", msg("Amount")],
   ["outflow", msg("Money out")],
   ["inflow", msg("Money in")],
+  ["transferAccountId", msg("Transfer account")],
   ["id", msg("Bank ID")],
 ];
 /** What each column holds now, by its place. */

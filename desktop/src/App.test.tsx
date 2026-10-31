@@ -41,19 +41,35 @@ vi.mock("./bridge", async (importOriginal) => {
   return { ...actual, api: { ...actual.api, projectLoan: vi.fn(async () => projection), export: vi.fn(), exportRecoveryDraft: vi.fn() } };
 });
 // What App tells automatic updates is safe to interrupt.
-const automatic = vi.hoisted(() => ({ safe: null as (() => boolean) | null }));
-vi.mock("./updates", async (importOriginal) => ({
-  ...await importOriginal<typeof import("./updates")>(),
-  useAutomaticUpdate: (_ready: boolean, safe: () => boolean) => {
-    automatic.safe = safe;
-  },
-}));
+const automatic = vi.hoisted(() => ({ safe: null as (() => boolean) | null, install: vi.fn(), offer: false }));
+vi.mock("./updates", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./updates")>();
+  return {
+    ...actual,
+    useUpdates: () => {
+      const updates = actual.useUpdates();
+      return automatic.offer ? { ...updates, channel: "direct" as const, available: { version: "1.0.11", notes: "" }, ready: true, install: automatic.install } : updates;
+    },
+    useAutomaticUpdate: (_ready: boolean, safe: () => boolean) => {
+      automatic.safe = safe;
+    },
+  };
+});
+vi.mock("./SettingsPage", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./SettingsPage")>();
+  return {
+    ...actual,
+    SettingsPage: (props: Parameters<typeof actual.SettingsPage>[0]) => automatic.offer
+      ? <button onClick={props.onInstallUpdate}>Restart to update</button>
+      : <actual.SettingsPage {...props} />,
+  };
+});
 import App from "./App";
 import { api } from "./bridge";
 import { ToastProvider } from "./ui";
 import { AppliedChangeError } from "./useBudget";
 
-beforeEach(() => { state.loaded = true; state.calculated = true; state.display = false; state.calculationError = ""; state.rejectedMonth = ""; state.canUndo = false; state.dirty = false; state.edit.mockClear(); state.retry.mockClear(); state.undo.mockReset(); state.fetch.mockReset(); });
+beforeEach(() => { state.loaded = true; state.calculated = true; state.display = false; state.calculationError = ""; state.rejectedMonth = ""; state.canUndo = false; state.dirty = false; state.edit.mockClear(); state.retry.mockClear(); state.undo.mockReset(); state.fetch.mockReset(); automatic.offer = false; automatic.install.mockReset(); });
 afterEach(cleanup);
 it("doesn't update by itself over an unfinished import, on its page or after leaving it (Codex review R2)", async () => {
   render(<ToastProvider><App /></ToastProvider>);
@@ -68,6 +84,20 @@ it("doesn't update by itself over an unfinished import, on its page or after lea
   // Away on another page, the import is still waiting.
   fireEvent.click(screen.getByRole("button", { name: "Budget" }));
   expect(automatic.safe!()).toBe(false);
+});
+
+it("preserves an unfinished import when an update is requested from Settings", async () => {
+  automatic.offer = true;
+  render(<ToastProvider><App /></ToastProvider>);
+  fireEvent.click(screen.getByRole("button", { name: /^Everyday account\d/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Import" }));
+  const statement = new File(["%PDF-1.4"], "statement.pdf", { type: "application/pdf" });
+  fireEvent.change(screen.getByLabelText("Bank file"), { target: { files: [statement] } });
+  await waitFor(() => expect(screen.getAllByText("statement.pdf").length).toBeGreaterThan(0));
+  fireEvent.click(screen.getByRole("button", { name: "Settings & data" }));
+  fireEvent.click(screen.getByRole("button", { name: "Restart to update" }));
+  expect(automatic.install).not.toHaveBeenCalled();
+  expect(await screen.findByText("Finish your import or assistant work before installing an update.")).toBeTruthy();
 });
 
 it("renders newly created categories while Rust is still calculating their totals", () => {

@@ -18,6 +18,7 @@ pub mod loans;
 pub mod patch;
 pub mod reports;
 pub mod schedules;
+pub mod sms_import;
 pub mod store;
 pub mod sync_merge;
 pub mod targets;

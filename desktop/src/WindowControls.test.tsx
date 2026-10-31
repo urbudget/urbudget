@@ -42,11 +42,12 @@ it("names the window, holds the app's buttons and moves the window from its empt
   expect(win.close).toHaveBeenCalled();
 });
 
-it("shows the mark alone for the app's name, and any other name as it is", async () => {
+it("shows the mark and wordmark for the app's name, and any other name as it is", async () => {
   const { container, unmount } = render(<TitleBar />);
   await waitFor(() => expect(shownName(container)).toBe("UrBudget (assistant preview)"));
-  // The name itself is only for screen readers; the preview label stays visible.
-  expect(container.querySelector(".titlebar-name.wordmark .sr-only")?.textContent).toBe("UrBudget");
+  // The wordmark's "Ur" is set apart in the mark's colour; the preview label follows it.
+  expect(container.querySelector(".titlebar-name.wordmark .titlebar-wordmark")?.textContent).toBe("UrBudget");
+  expect(container.querySelector(".titlebar-wordmark .titlebar-ur")?.textContent).toBe("Ur");
   expect(container.querySelector(".titlebar-name.wordmark .titlebar-label")?.textContent).toBe(" (assistant preview)");
   unmount();
 

@@ -4667,6 +4667,8 @@ dependencies = [
  "urbudget-services",
  "windows",
  "windows-collections",
+ "windows-core",
+ "windows-future",
  "windows-sys 0.61.2",
  "zip 9.0.3",
 ]

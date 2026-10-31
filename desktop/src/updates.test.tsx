@@ -15,7 +15,12 @@ const mocked = vi.hoisted(() => ({
 }));
 vi.mock("./bridge", () => ({ desktop: true }));
 vi.mock("@tauri-apps/plugin-updater", () => ({ check: mocked.check }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: mocked.invoke }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: mocked.invoke,
+  Channel: class {
+    onmessage = (_message: number) => {};
+  },
+}));
 vi.mock("@tauri-apps/api/app", () => ({ getVersion: mocked.version }));
 import { IDLE_BEFORE_UPDATE, useAutomaticUpdate, useUpdatedNotice, useUpdates } from "./updates";
 import { UpdateChip, UpdateSetting } from "./UpdateNotice";
@@ -283,7 +288,7 @@ describe("updates", () => {
         }),
       ).rejects.toThrow("Unsaved budget");
     });
-    expect(mocked.invoke).not.toHaveBeenCalledWith("install_store_update");
+    expect(mocked.invoke.mock.calls.some(([command]) => command === "install_store_update")).toBe(false);
     expect(result.current.phase).toBe("idle");
   });
 
@@ -370,6 +375,61 @@ describe("updates", () => {
     expect(result.current.error).toMatch(/offline/);
   });
 
+  it("shows Store download progress and keeps the Store accessible while completion is pending", async () => {
+    let complete!: (outcome: string) => void;
+    let report!: (progress: number) => void;
+    mocked.invoke.mockImplementation((command: string, args?: { onProgress: { onmessage: typeof report } }) => {
+      if (command === "update_channel") return Promise.resolve("microsoftStore");
+      if (command === "check_store_update") return Promise.resolve(true);
+      if (command === "download_store_update") {
+        report = args!.onProgress.onmessage;
+        return new Promise<string>((resolve) => { complete = resolve; });
+      }
+      return Promise.resolve();
+    });
+    const { result } = renderHook(() => useUpdates());
+    let checking!: Promise<void>;
+    await act(async () => { checking = result.current.check(); });
+    const { rerender } = render(<UpdateSetting updates={result.current} version="1.0.10" onInstall={vi.fn()} />);
+    expect(result.current.phase).toBe("downloading");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open Microsoft Store" }));
+    });
+    expect(mocked.invoke).toHaveBeenCalledWith("open_update_store");
+    act(() => report(0.42));
+    rerender(<UpdateSetting updates={result.current} version="1.0.10" onInstall={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Downloading 42%" })).toBeTruthy();
+    act(() => report(1));
+    rerender(<UpdateSetting updates={result.current} version="1.0.10" onInstall={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Waiting for Microsoft Store…" })).toBeTruthy();
+    expect(result.current.ready).toBe(false);
+    await act(async () => { complete("ready"); await checking; });
+    expect(result.current).toMatchObject({ phase: "idle", ready: true, progress: null });
+    act(() => report(0.9));
+    expect(result.current.progress).toBeNull();
+    rerender(<UpdateSetting updates={{ ...result.current, channel: "direct", phase: "downloading", progress: 1 }} version="1.0.10" onInstall={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Downloading 100%" })).toBeTruthy();
+  });
+
+  it("explains a stalled background Store download and allows a saved-budget manual retry", async () => {
+    mocked.invoke.mockImplementation(async (command: string) => {
+      if (command === "update_channel") return "microsoftStore";
+      if (command === "check_store_update") return true;
+      if (command === "download_store_update")
+        throw new Error("Microsoft Store stopped reporting download progress. Try again, or open Microsoft Store.");
+      mocked.steps.push(command);
+      return true;
+    });
+    const { result } = renderHook(() => useUpdates());
+    await act(async () => { await result.current.check(); });
+    expect(result.current).toMatchObject({ phase: "idle", ready: false, automatic: false });
+    expect(result.current.error).toContain("stopped reporting download progress");
+    expect(result.current.available).not.toBeNull();
+    expect(await result.current.installOnExit()).toBe(false);
+    await act(async () => { await result.current.install(saveAndInstall); });
+    expect(mocked.steps).toEqual(["save", "install_store_update", "restart_app"]);
+  });
+
   it("downloads a found update in the background, so installing doesn't wait for it", async () => {
     const next = update();
     const { result } = await found(next);
@@ -406,7 +466,9 @@ describe("updates", () => {
       if (command === "update_channel") return "microsoftStore";
       if (command === "check_store_update") return true;
       if (command === "download_store_update") return download;
-      mocked.steps.push(args ? `${command} ${JSON.stringify(args)}` : command);
+      // Channels report native progress; the sequence asserts the install/relaunch commands.
+      const flags = args && typeof args === "object" && "relaunch" in args ? { relaunch: args.relaunch } : null;
+      mocked.steps.push(flags ? `${command} ${JSON.stringify(flags)}` : command);
       if (command === "apply_store_update") {
         if (apply instanceof Error) throw apply;
         return apply;

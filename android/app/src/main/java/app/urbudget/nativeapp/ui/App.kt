@@ -85,6 +85,7 @@ internal val morePages = listOf(
     MorePage("Loan planner", R.string.page_loans, R.string.page_loans_detail, Icons.Outlined.Calculate),
     MorePage("Payees & rules", R.string.page_payees, R.string.page_payees_detail, Icons.Outlined.People),
     MorePage("Bank connections", R.string.page_banks, R.string.page_banks_detail, Icons.Outlined.AccountBalance),
+    MorePage("Bank messages", R.string.sms_title, R.string.sms_detail, Icons.Outlined.Sms),
     MorePage("Account & sync", R.string.page_account_sync, R.string.page_account_sync_detail, Icons.Outlined.CloudSync),
     MorePage("Budget library", R.string.page_library, R.string.page_library_detail, Icons.Outlined.FolderOpen),
     MorePage("Settings & data", R.string.page_settings, R.string.page_settings_detail, Icons.Outlined.Settings),
@@ -262,6 +263,7 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
                     when (morePage) {
                         "Account & sync" -> CloudScreen(vm)
                         "Bank connections" -> BankConnectionsScreen(budget, vm)
+                        "Bank messages" -> SmsImportScreen(budget, vm)
                         "Budget library" -> LibraryScreen(budget, vm, importFile, exportFile)
                         else -> MoreScreen(morePage, ::openChildPage, budget, vm, importFile, exportFile,
                             if (state.recoveryAvailable) ({ confirmRestore = true }) else null) { kind, item -> openEditor(kind, item) }

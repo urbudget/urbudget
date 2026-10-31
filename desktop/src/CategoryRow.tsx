@@ -26,7 +26,7 @@ export function categoryState(c: Category, s: CategorySummary, month: string) {
   // Snoozing suppresses the target, not scheduled payments or money already overspent. An
   // undated balance asks for nothing this month either, as YNAB says: what it still lacks is
   // `eventually` ("2,000.00 more needed eventually"), and Underfunded leaves it out.
-  const needed = snoozed || balanceTarget ? commitments : Math.max(commitments, s.needed ?? c.target - s.assigned);
+  const needed = snoozed || balanceTarget ? commitments : Math.max(commitments, s.needed ?? (c.target > 0 ? c.target - s.assigned : 0));
   const credit = (s.creditOverspending ?? 0) > 0 && (s.creditOverspending ?? 0) >= -s.available;
   // Native summaries report like-for-like funding for this month (or the balance for TB).
   // Older imported snapshots can omit it; use their assignment plus shortfall, never divide
@@ -353,11 +353,10 @@ export const CategoryRow = memo(function CategoryRow({
                 onMenu(category, startEdge(r), r.bottom);
               }
             }}
-            title={category.note ?? undefined}
+            title={category.note ?? category.name}
           >
             <span className="name">{category.name}</span>
-            {/* Every meter fills the same slot, so progress compares straight down the column. An
-                empty slot keeps the status in place when there's no target. */}
+            {/* Meters line up across targets; without a meter the name can use its space. */}
             {state.progress !== null ? (
               <span
                 className={`target-bar${state.status === "negative" ? " over" : state.progress >= 100 ? " funded" : ""}`}

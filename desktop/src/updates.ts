@@ -8,14 +8,18 @@
 // update at all, so a published version never installs itself over the one being worked on.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { desktop } from "./bridge";
 import { errorText } from "./format";
 import { msg, t } from "./i18n";
+import { getPref } from "./prefs";
 
 const FIRST_CHECK = 8_000;
 const DAY = 24 * 3600_000;
+/** Bound the actual transfer, not only the preceding metadata check. */
+// The plugin's timeout covers the whole transfer, including steadily progressing downloads.
+export const UPDATE_DOWNLOAD_TIMEOUT = 30 * 60_000;
 /** How long UrBudget must sit unused in the background before it updates itself. */
 export const IDLE_BEFORE_UPDATE = 15 * 60_000;
 /** How long an update that installed itself but left the same version running isn't tried by
@@ -23,6 +27,10 @@ export const IDLE_BEFORE_UPDATE = 15 * 60_000;
 const RETRY_AFTER = 3 * DAY;
 const ATTEMPT_KEY = "lb:update-attempt";
 export type UpdateChannel = "direct" | "microsoftStore" | "development";
+export type StoreInstallStatus = {
+  stage: "preparing" | "installing" | "stopping";
+  progress: number | null;
+};
 
 export type UpdateState = {
   /** A newer version than this one, when the last check found one. */
@@ -37,6 +45,8 @@ export type UpdateState = {
   phase: "idle" | "checking" | "downloading" | "installing";
   /** While downloading: the share received, when the size is known. */
   progress: number | null;
+  /** A Store operation may be stopping while Windows still holds the saved-budget lock. */
+  installStatus: StoreInstallStatus | null;
   /** The last check found nothing newer. */
   current: boolean;
   /** `ready`, and it may install by itself: it isn't one already tried that way from this
@@ -76,6 +86,7 @@ export function useUpdates() {
     ready: false,
     phase: "idle",
     progress: null,
+    installStatus: null,
     current: false,
     automatic: false,
     channel: null,
@@ -84,6 +95,7 @@ export function useUpdates() {
   const found = useRef<Update | null>(null);
   const downloaded = useRef<Update | null>(null);
   const busy = useRef(false);
+  const disposed = useRef(false);
   const lastCheck = useRef(0);
   const channel = useRef<UpdateChannel | null>(null);
   const channelRequest = useRef<Promise<UpdateChannel> | null>(null);
@@ -92,11 +104,27 @@ export function useUpdates() {
   const silentStore = useRef(false);
   /** The version running, once known. */
   const running = useRef<string | null>(null);
+  const releaseFound = () => {
+    const previous = found.current;
+    found.current = null;
+    downloaded.current = null;
+    if (previous) void previous.close().catch(() => {});
+  };
+  useEffect(() => {
+    disposed.current = false;
+    return () => {
+      disposed.current = true;
+      // Closing a Tauri resource doesn't cancel its cloned native download or installer.
+      // A live operation owns it until its finally block runs.
+      if (!busy.current) releaseFound();
+    };
+  }, []);
   useEffect(() => {
     if (desktop)
       void getVersion()
         .then((version) => {
           running.current = version;
+          if (!disposed.current) setState((s) => ({ ...s, automatic: s.ready && allowed() }));
         })
         .catch(() => {});
   }, []);
@@ -105,6 +133,7 @@ export function useUpdates() {
   /** Whether the waiting update may install by itself: not when it already did from this version
    * lately, and this version is still running. */
   const allowed = () => {
+    if (!running.current) return false;
     const attempt = lastAttempt();
     return !(attempt && attempt.from === running.current && attempt.to === target() && Date.now() - attempt.at < RETRY_AFTER);
   };
@@ -146,17 +175,23 @@ export function useUpdates() {
     let total = 0;
     let received = 0;
     let shown = 0;
-    await update.download((event) => {
-      if (event.event === "Started") total = event.data.contentLength ?? 0;
-      if (event.event !== "Progress" || !total) return;
-      received += event.data.chunkLength;
-      const share = Math.min(1, received / total);
-      if (share - shown >= 0.01 || share === 1) {
-        shown = share;
-        setState((s) => ({ ...s, progress: share }));
-      }
-    });
-    downloaded.current = update;
+    let receiving = true;
+    try {
+      await update.download((event) => {
+        if (!receiving || disposed.current) return;
+        if (event.event === "Started") total = event.data.contentLength ?? 0;
+        if (event.event !== "Progress" || !total) return;
+        received += event.data.chunkLength;
+        const share = Math.min(1, received / total);
+        if (share - shown >= 0.01 || share === 1) {
+          shown = share;
+          setState((s) => ({ ...s, progress: share }));
+        }
+      }, { timeout: UPDATE_DOWNLOAD_TIMEOUT });
+      if (!disposed.current) downloaded.current = update;
+    } finally {
+      receiving = false;
+    }
   }, []);
 
   /**
@@ -165,18 +200,20 @@ export function useUpdates() {
    */
   const lookup = useCallback(
     async (manual = false) => {
-      if (!desktop || busy.current) return;
+      if (!desktop || disposed.current || busy.current) return;
       busy.current = true;
       lastCheck.current = Date.now();
       if (manual) setState((s) => ({ ...s, phase: "checking", error: null }));
       try {
         const source = await identify();
+        if (disposed.current) return;
         if (source === "development") {
           if (manual) setState((s) => ({ ...s, error: t("This is a development build, which doesn't update itself.") }));
           return;
         }
         if (source === "microsoftStore") {
           const available = await invoke<boolean>("check_store_update");
+          if (disposed.current) return;
           storeUpdate.current = available;
           silentStore.current = false;
           setState((s) => ({
@@ -190,11 +227,21 @@ export function useUpdates() {
           if (!available) return;
           setState((s) => ({ ...s, phase: "downloading", progress: null }));
           let outcome = "consent";
+          let receiving = true;
+          const onProgress = new Channel<number>();
+          onProgress.onmessage = (progress) => {
+            if (receiving && !disposed.current && Number.isFinite(progress))
+              setState((s) => ({ ...s, progress: Math.max(0, Math.min(1, progress)) }));
+          };
           try {
-            outcome = await invoke<string>("download_store_update");
+            outcome = await invoke<string>("download_store_update", { onProgress });
           } catch (e) {
-            if (manual) setState((s) => ({ ...s, error: errorText(e) }));
+            // Once a visible download stalls, explain it even when the check was automatic.
+            setState((s) => ({ ...s, error: errorText(e) }));
+          } finally {
+            receiving = false;
           }
+          if (disposed.current) return;
           if (outcome === "none") {
             storeUpdate.current = false;
             setState((s) => ({ ...s, available: null, current: true }));
@@ -210,6 +257,10 @@ export function useUpdates() {
           return;
         }
         const next = await check({ timeout: 30_000 });
+        if (disposed.current) {
+          if (next) void next.close().catch(() => {});
+          return;
+        }
         const previous = found.current;
         found.current = next;
         if (previous && previous !== next)
@@ -236,7 +287,8 @@ export function useUpdates() {
         if (manual) setState((s) => ({ ...s, error: errorText(e) }));
       } finally {
         busy.current = false;
-        setState((s) => ({ ...s, phase: "idle", progress: null }));
+        if (disposed.current) releaseFound();
+        else setState((s) => ({ ...s, phase: "idle", progress: null }));
       }
     },
     [identify, fetchUpdate],
@@ -276,30 +328,53 @@ export function useUpdates() {
     ) => {
       const update = found.current;
       const fromStore = channel.current === "microsoftStore";
+      const mayAutomaticallyInstall = () =>
+        getPref("autoUpdate") && allowed() &&
+        (fromStore ? silentStore.current : !!update && downloaded.current === update);
       if (
-        busy.current ||
+        disposed.current || busy.current ||
+        (automatic && !mayAutomaticallyInstall()) ||
         (fromStore
           ? !storeUpdate.current
           : !update || channel.current !== "direct")
       )
         return;
       busy.current = true;
+      let receivingStatus = true;
+      let stopping = false;
+      const onStatus = new Channel<StoreInstallStatus>();
+      onStatus.onmessage = (status) => {
+        if (!receivingStatus || disposed.current || !["preparing", "installing", "stopping"].includes(status.stage)) return;
+        if (stopping && status.stage !== "stopping") return;
+        stopping = status.stage === "stopping";
+        const progress = status.progress !== null && Number.isFinite(status.progress)
+          ? Math.max(0, Math.min(1, status.progress)) : null;
+        setState((s) => ({ ...s, installStatus: { stage: status.stage, progress } }));
+      };
       try {
         if (!fromStore && update) await fetchUpdate(update);
+        if (disposed.current) return;
         setState((s) => ({
           ...s,
           phase: "installing",
           progress: null,
+          installStatus: null,
           error: null,
         }));
         await withSavedBudget(async () => {
+          // Saving may take time: a disabled preference or a stale automatic callback must
+          // never turn into an install, especially the Store's permission-requesting path.
+          if (disposed.current || (automatic && !mayAutomaticallyInstall())) return;
           // Saved: from here it's an attempt, whatever comes of it.
-          if (automatic && running.current) remember({ from: running.current, to: target() ?? "", at: Date.now() });
+          if (automatic && running.current) {
+            remember({ from: running.current, to: target() ?? "", at: Date.now() });
+            setState((s) => ({ ...s, automatic: false }));
+          }
           if (fromStore) {
             // A downloaded update installs without a prompt; otherwise Windows asks first.
             // Either way Windows closes UrBudget to replace it and opens it again.
             let outcome = silentStore.current
-              ? await invoke<"installed" | "none" | "consent">("apply_store_update", { relaunch: true })
+              ? await invoke<"installed" | "none" | "consent">("apply_store_update", { relaunch: true, onStatus })
               : null;
             if (outcome === "consent") {
               needsConsent();
@@ -307,7 +382,7 @@ export function useUpdates() {
               if (automatic) return;
             }
             if (outcome === null || outcome === "consent")
-              outcome = (await invoke<boolean>("install_store_update")) ? "installed" : "none";
+              outcome = (await invoke<boolean>("install_store_update", { onStatus })) ? "installed" : "none";
             if (outcome === "none") {
               storeUpdate.current = false;
               silentStore.current = false;
@@ -329,8 +404,10 @@ export function useUpdates() {
         setState((s) => ({ ...s, error: errorText(e) }));
         throw e;
       } finally {
+        receivingStatus = false;
         busy.current = false;
-        setState((s) => ({ ...s, phase: "idle", progress: null }));
+        if (disposed.current) releaseFound();
+        else setState((s) => ({ ...s, phase: "idle", progress: null, installStatus: null }));
       }
     },
     [fetchUpdate],
@@ -342,7 +419,7 @@ export function useUpdates() {
    * or Windows wouldn't; the window closes either way.
    */
   const installOnExit = useCallback(async () => {
-    if (channel.current !== "microsoftStore" || !silentStore.current || !storeUpdate.current || busy.current)
+    if (disposed.current || !getPref("autoUpdate") || !allowed() || channel.current !== "microsoftStore" || !silentStore.current || !storeUpdate.current || busy.current)
       return false;
     busy.current = true;
     try {
@@ -356,7 +433,8 @@ export function useUpdates() {
   }, []);
 
   const openStore = useCallback(async () => {
-    if (busy.current) return;
+    // Opening the Store starts no installation and remains a way out of a stalled request.
+    if (disposed.current) return;
     try {
       await invoke("open_update_store");
     } catch (e) {

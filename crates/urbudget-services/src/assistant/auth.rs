@@ -28,6 +28,16 @@ const APP_NAME: &str = "UrBudget";
 /// The callback port. Only the port may change between sign-ins, so a busy port falls back to any.
 const PORT: u16 = 1455;
 const WAIT: Duration = Duration::from_secs(300);
+const EXCHANGE_WAIT: Duration = Duration::from_secs(30);
+
+/// This link only brings the initiating Android app forward. OAuth codes and tokens
+/// stay on the loopback connection; they must never be put in an Android intent.
+pub(super) fn android_return_link(package: &str) -> Result<String, String> {
+    if !matches!(package, "app.urbudget" | "app.urbudget.nativeapp") {
+        return Err("Invalid sign-in return application.".into());
+    }
+    Ok(format!("intent://assistant/sign-in#Intent;scheme={package};package={package};launchFlags=0x24000000;end"))
+}
 
 pub fn random(bytes: usize) -> String {
     let mut buf = vec![0u8; bytes];
@@ -85,6 +95,19 @@ fn now() -> i64 {
 fn seconds(v: &Value) -> Option<i64> {
     v.as_i64().or_else(|| v.as_str().and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok()).map(|d| d.timestamp()))
 }
+
+/// Reqwest's top-level Display omits the DNS/TLS/socket cause. These are transport
+/// errors from the fixed token endpoint, never response bodies or credentials.
+fn transport_error(error: &reqwest::Error) -> String {
+    let mut detail = error.to_string();
+    let mut source = std::error::Error::source(error);
+    while let Some(cause) = source {
+        let next = cause.to_string();
+        if !detail.ends_with(&next) { detail.push_str(": "); detail.push_str(&next); }
+        source = cause.source();
+    }
+    detail
+}
 fn read_tokens(v: &Value, previous_scope: &str) -> Result<Tokens, String> {
     let access = v["access_token"].as_str().ok_or_else(|| t!("The sign-in response had no access token."))?;
     let refresh = v["refresh_token"].as_str().ok_or_else(|| t!("The sign-in response had no refresh token."))?;
@@ -134,7 +157,7 @@ struct Callback {
 }
 
 /// Waits for the browser to come back to `/auth/callback`, then answers it with a short page.
-fn wait_for_callback(listener: TcpListener, state: &str, cancel: &AtomicBool, wait: Duration) -> Result<Callback, String> {
+fn wait_for_callback(listener: TcpListener, state: &str, cancel: &AtomicBool, wait: Duration, return_link: Option<&str>) -> Result<Callback, String> {
     listener.set_nonblocking(true).map_err(|e| e.to_string())?;
     let started = Instant::now();
     loop {
@@ -163,12 +186,14 @@ fn wait_for_callback(listener: TcpListener, state: &str, cancel: &AtomicBool, wa
         let respond = |stream: &mut std::net::TcpStream, status: &str, title: &str, text: &str| {
             // The browser page speaks the app's language; Arabic reads right to left.
             let html = if language() == Language::Arabic { "<html lang=ar dir=rtl>" } else { "" };
+            // Only a locally constructed, allowlisted link can reach this page.
+            let back = return_link.map(|link| format!("<p><a href=\"{link}\">{}</a></p>", tr("Return to UrBudget"))).unwrap_or_default();
             let page = format!(
-                "<!doctype html>{html}<meta charset=utf-8><title>{title}</title><body style=\"font:16px system-ui;max-width:32rem;margin:15vh auto;padding:0 1rem;color:#17191d\"><h1 style=\"font-size:22px\">{title}</h1><p>{text}</p></body>"
+                "<!doctype html>{html}<meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>{title}</title><body style=\"font:16px system-ui;max-width:32rem;margin:15vh auto;padding:0 1rem;color:#17191d\"><h1 style=\"font-size:22px\">{title}</h1><p>{text}</p>{back}</body>"
             );
             let _ = write!(
                 stream,
-                "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{page}",
+                "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{page}",
                 page.len()
             );
         };
@@ -194,7 +219,7 @@ fn wait_for_callback(listener: TcpListener, state: &str, cancel: &AtomicBool, wa
             respond(&mut stream, "400 Bad Request", tr("Sign-in failed"), tr("Go back to UrBudget and try again."));
             return Err(t!("The sign-in response had no code. Try again."));
         };
-        respond(&mut stream, "200 OK", tr("You're signed in"), tr("You can close this tab and return to UrBudget."));
+        respond(&mut stream, "200 OK", tr("Sign-in received"), tr("Return to UrBudget to finish signing in."));
         return Ok(Callback { code: code.clone(), client_id: query.get("client_id").cloned() });
     }
 }
@@ -208,8 +233,27 @@ pub async fn sign_in(
     saved_client: Option<String>,
     login_hint: Option<String>,
     cancel: Arc<AtomicBool>,
+    return_link: Option<String>,
     open: impl FnOnce(&str) -> Result<(), String>,
     remember_client: impl FnOnce(&str),
+    progress: impl Fn(&'static str),
+    foreground: impl Fn() -> bool,
+) -> Result<SignedIn, String> {
+    sign_in_at(client, host, saved_client, login_hint, cancel, return_link, open, remember_client, progress, foreground, TOKEN).await
+}
+
+async fn sign_in_at(
+    client: &reqwest::Client,
+    host: &str,
+    saved_client: Option<String>,
+    login_hint: Option<String>,
+    cancel: Arc<AtomicBool>,
+    return_link: Option<String>,
+    open: impl FnOnce(&str) -> Result<(), String>,
+    remember_client: impl FnOnce(&str),
+    progress: impl Fn(&'static str),
+    foreground: impl Fn() -> bool,
+    token_endpoint: &str,
 ) -> Result<SignedIn, String> {
     let listener = TcpListener::bind(("127.0.0.1", PORT))
         .or_else(|_| TcpListener::bind(("127.0.0.1", 0)))
@@ -241,8 +285,10 @@ pub async fn sign_in(
     }
     let url = reqwest::Url::parse_with_params(AUTHORIZE, &params).map_err(|e| e.to_string())?;
     open(url.as_str())?;
+    let mobile_return = return_link.is_some();
     let wait_state = state.clone();
-    let callback = tokio::task::spawn_blocking(move || wait_for_callback(listener, &wait_state, &cancel, WAIT))
+    let wait_cancel = cancel.clone();
+    let callback = tokio::task::spawn_blocking(move || wait_for_callback(listener, &wait_state, &wait_cancel, WAIT, return_link.as_deref()))
         .await
         .map_err(|e| e.to_string())??;
     let issued = match (&saved_client, callback.client_id) {
@@ -254,8 +300,21 @@ pub async fn sign_in(
         (Some(saved), _) => saved.clone(),
     };
     remember_client(&issued);
+    // Android can suspend or deny networking to a cached app behind the browser.
+    // Acknowledge the loopback request immediately, but exchange only after the
+    // initiating activity has returned. The return intent carries no credentials.
+    if mobile_return {
+        progress("returning");
+        finish_exchange(async {
+            while !foreground() { tokio::time::sleep(Duration::from_millis(100)).await; }
+            Ok(())
+        }, &cancel, WAIT).await?;
+    }
+    progress("exchanging");
+    let exchange = async {
     let response = client
-        .post(TOKEN)
+        .post(token_endpoint)
+        .timeout(EXCHANGE_WAIT)
         .header("accept", "application/json")
         .form(&[
             ("grant_type", "authorization_code"),
@@ -267,7 +326,7 @@ pub async fn sign_in(
         ])
         .send()
         .await
-        .map_err(|e| t!("Couldn't finish signing in: {e}", e))?;
+        .map_err(|e| t!("Couldn't finish signing in: {e}", e = transport_error(&e)))?;
     let status = response.status();
     let body: Value = response.json().await.unwrap_or(Value::Null);
     if !status.is_success() {
@@ -277,8 +336,25 @@ pub async fn sign_in(
         ));
     }
     let tokens = read_tokens(&body, "")?;
+    progress("validating");
     let account = claims(body["id_token"].as_str().ok_or_else(|| t!("The sign-in response had no ID token."))?, &issued, Some(&nonce))?;
     Ok(SignedIn { client_id: issued, account, tokens })
+    };
+    finish_exchange(exchange, &cancel, EXCHANGE_WAIT).await
+}
+
+/// Cancellation and a total deadline also cover a stalled response body. Android may
+/// suspend us behind the browser; returning to the app must resolve instead of spinning.
+async fn finish_exchange<T>(exchange: impl std::future::Future<Output = Result<T, String>>, cancel: &AtomicBool, wait: Duration) -> Result<T, String> {
+    let exchange = tokio::time::timeout(wait, exchange);
+    tokio::pin!(exchange);
+    loop {
+        if cancel.load(Ordering::Relaxed) { return Err(t!("Sign-in was cancelled.")); }
+        match tokio::time::timeout(Duration::from_millis(100), &mut exchange).await {
+            Ok(result) => return result.map_err(|_| t!("Sign-in timed out. Try again."))?,
+            Err(_) => continue,
+        }
+    }
 }
 
 pub enum RefreshError {
@@ -383,10 +459,16 @@ mod tests {
             let _ = s.read_to_string(&mut page);
             page
         });
-        let cb = wait_for_callback(listener, "s1", &cancel, WAIT).unwrap();
+        let link = android_return_link("app.urbudget.nativeapp").unwrap();
+        let cb = wait_for_callback(listener, "s1", &cancel, WAIT, Some(&link)).unwrap();
         assert_eq!(cb.code, "abc");
         assert_eq!(cb.client_id.as_deref(), Some("oaiapp_9"));
-        assert!(browser.join().unwrap().contains("You're signed in"));
+        let page = browser.join().unwrap();
+        assert!(page.contains("Sign-in received"));
+        assert!(page.contains(&format!("href=\"{link}\"")));
+        assert!(!page.contains("You're signed in"));
+        assert!(!page.contains("code=abc"));
+        assert!(page.contains("Cache-Control: no-store"));
         assert!(host_id().starts_with("urn:uuid:") && host_id().len() == 45);
     }
 
@@ -397,10 +479,103 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         let mut browser = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
         browser.write_all(b"GET /auth/callback?code=late&state=s2 HTTP/1.1\r\nHost: x\r\n\r\n").unwrap();
-        let cb = wait_for_callback(listener, "s2", &AtomicBool::new(false), Duration::ZERO).unwrap();
+        let cb = wait_for_callback(listener, "s2", &AtomicBool::new(false), Duration::ZERO, None).unwrap();
         assert_eq!(cb.code, "late");
         let empty = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let late = wait_for_callback(empty, "s3", &AtomicBool::new(false), Duration::ZERO);
+        let late = wait_for_callback(empty, "s3", &AtomicBool::new(false), Duration::ZERO, None);
         assert_eq!(late.err().as_deref(), Some("Sign-in timed out. Try again."));
+    }
+
+    #[test]
+    fn android_return_links_are_package_bound_and_cannot_inject_html() {
+        for package in ["app.urbudget", "app.urbudget.nativeapp"] {
+            assert!(android_return_link(package).unwrap().contains(&format!(";package={package};")));
+        }
+        for package in ["evil.app", "app.urbudget;end", "app.urbudget\"><script>"] {
+            assert!(android_return_link(package).is_err());
+        }
+    }
+
+    #[test]
+    fn exchange_timeout_and_cancel_both_end_a_stalled_sign_in() {
+        crate::block_on(async {
+            let cancelled = AtomicBool::new(true);
+            let pending = std::future::pending::<Result<(), String>>();
+            assert_eq!(finish_exchange(pending, &cancelled, WAIT).await.unwrap_err(), "Sign-in was cancelled.");
+            let pending = std::future::pending::<Result<(), String>>();
+            assert_eq!(finish_exchange(pending, &AtomicBool::new(false), Duration::from_millis(10)).await.unwrap_err(), "Sign-in timed out. Try again.");
+            let flag = Arc::new(AtomicBool::new(false));
+            let trigger = flag.clone();
+            let exchange = async move {
+                trigger.store(true, Ordering::Relaxed);
+                std::future::pending::<Result<(), String>>().await
+            };
+            assert_eq!(finish_exchange(exchange, &flag, WAIT).await.unwrap_err(), "Sign-in was cancelled.");
+        });
+    }
+
+    #[test]
+    fn browser_callback_exchanges_code_with_pkce_and_validates_the_account() {
+        use std::io::{BufRead, BufReader};
+        let endpoint = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let token_url = format!("http://{}/token", endpoint.local_addr().unwrap());
+        let in_foreground = Arc::new(AtomicBool::new(false));
+        let resumed = in_foreground.clone();
+        let stages = std::sync::Mutex::new(Vec::new());
+        let mut browser = None;
+        let mut remembered = String::new();
+        let signed = crate::block_on(sign_in_at(
+            &reqwest::Client::new(), "urn:uuid:test", None, None,
+            Arc::new(AtomicBool::new(false)), Some(android_return_link("app.urbudget.nativeapp").unwrap()),
+            |url| {
+                let url = reqwest::Url::parse(url).unwrap();
+                let query: std::collections::HashMap<String, String> = url.query_pairs().into_owned().collect();
+                assert_eq!(query["client_id"], REGISTER);
+                browser = Some(std::thread::spawn(move || {
+                    let redirect = reqwest::Url::parse(&query["redirect_uri"]).unwrap();
+                    let mut callback = std::net::TcpStream::connect(("127.0.0.1", redirect.port().unwrap())).unwrap();
+                    callback.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+                    write!(callback, "GET /auth/callback?code=test-code&state={}&client_id=oaiapp_test HTTP/1.1\r\nHost: localhost\r\n\r\n", query["state"]).unwrap();
+                    let mut page = String::new();
+                    callback.read_to_string(&mut page).unwrap();
+                    assert!(page.contains("Return to UrBudget"));
+                    endpoint.set_nonblocking(true).unwrap();
+                    std::thread::sleep(Duration::from_millis(200));
+                    assert!(matches!(endpoint.accept(), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock),
+                        "Token exchange must not start behind the browser");
+                    endpoint.set_nonblocking(false).unwrap();
+                    resumed.store(true, Ordering::Relaxed);
+                    let (mut stream, _) = endpoint.accept().unwrap();
+                    stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+                    let mut reader = BufReader::new(&mut stream);
+                    let mut length = 0;
+                    loop {
+                        let mut line = String::new();
+                        assert!(reader.read_line(&mut line).unwrap() > 0);
+                        if line == "\r\n" { break; }
+                        if let Some(value) = line.to_lowercase().strip_prefix("content-length:") { length = value.trim().parse().unwrap(); }
+                    }
+                    let mut body = vec![0; length];
+                    reader.read_exact(&mut body).unwrap();
+                    let form = reqwest::Url::parse(&format!("http://test/?{}", String::from_utf8(body).unwrap())).unwrap();
+                    let fields: std::collections::HashMap<String, String> = form.query_pairs().into_owned().collect();
+                    assert_eq!(fields["redirect_uri"], query["redirect_uri"]);
+                    assert_eq!(fields["code"], "test-code");
+                    assert_eq!(fields["client_id"], "oaiapp_test");
+                    assert_eq!(URL_SAFE_NO_PAD.encode(Sha256::digest(fields["code_verifier"].as_bytes())), query["code_challenge"]);
+                    let response = serde_json::json!({"access_token":"synthetic-access", "refresh_token":"synthetic-refresh", "scope":SCOPES,
+                        "id_token":token(json_claims("oaiapp_test", &query["nonce"]))}).to_string();
+                    write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", response.len(), response).unwrap();
+                }));
+                Ok(())
+            },
+            |id| remembered = id.to_owned(), |stage| stages.lock().unwrap().push(stage), || in_foreground.load(Ordering::Relaxed), &token_url,
+        )).unwrap();
+        browser.unwrap().join().unwrap();
+        assert_eq!(remembered, "oaiapp_test");
+        assert_eq!(signed.account.email, "pat@example.com");
+        assert_eq!(signed.tokens.refresh, "synthetic-refresh");
+        assert!(signed.tokens.plan_usage());
+        assert_eq!(*stages.lock().unwrap(), vec!["returning", "exchanging", "validating"]);
     }
 }

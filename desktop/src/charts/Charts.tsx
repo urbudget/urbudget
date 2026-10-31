@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode }
 import { compactMoney, heatLevels, linear, monthTick, niceTicks, squarify } from "./scale";
 import { activeFormat, monthName } from "../format";
 import { list, ltr, monthNames, rtlRun, t, weekdayNames } from "../i18n";
+import { textWidth } from "../ui/columns";
 
 // Hand-written SVG charts. Marks follow the data-viz method: bars at most 24px wide
 // with a 4px rounded data end, 2px surface gaps between stacked segments and slices, 2px lines,
@@ -21,17 +22,21 @@ const monthTitle = (m: string) => monthName(m);
 function useWidth(fallback = 720) {
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(fallback);
+  const [height, setHeight] = useState(0);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const measure = () => setWidth(el.clientWidth || fallback);
+    const measure = () => {
+      setWidth(el.clientWidth || fallback);
+      setHeight(el.clientHeight);
+    };
     measure();
     if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
   }, [fallback]);
-  return [ref, width] as const;
+  return [ref, width, height] as const;
 }
 
 /** A bar with a rounded data end and a square base. `up`: the data end is at the top. */
@@ -140,7 +145,8 @@ export function ColumnChart({
   line,
   average,
   grouped = false,
-  height = 240,
+  height: least = 240,
+  fill = false,
   label,
   format,
   tick,
@@ -153,13 +159,16 @@ export function ColumnChart({
   average?: { label: string; value: number };
   grouped?: boolean;
   height?: number;
+  /** Grow to the room its panel gives it (at least `height`), beside a taller panel. */
+  fill?: boolean;
   label: string;
   format: Format;
   tick?: Tick;
   title?: (key: string) => string;
   footer?: ReactNode;
 }) {
-  const [ref, width] = useWidth();
+  const [ref, width, room] = useWidth();
+  const height = fill ? Math.max(least, room) : least;
   const [hover, setHover] = useState<number | null>(null);
   const plot = { w: Math.max(10, width - PAD.left - PAD.right), h: height - PAD.top - PAD.bottom };
   const ups = months.map((_, i) =>
@@ -221,7 +230,7 @@ export function ColumnChart({
     ...(line && line.values[i] !== null ? [{ label: line.label, value: format(line.values[i]!), color: line.color, line: true }] : []),
   ];
   return (
-    <div className="chart" ref={ref}>
+    <div className={`chart${fill ? " fill" : ""}`} ref={ref} style={fill ? { minHeight: least } : undefined}>
       <svg width={width} height={height} role="img" aria-label={label}>
         <Axes ticks={ticks} y={y} width={width} keys={months} x={x} tick={tick} />
         {hover !== null && (
@@ -428,6 +437,8 @@ export function LineChart({
 }
 
 export type Slice = { key: string; label: string; value: number; color: string };
+/** The donut's total, in px, when it fits. */
+const CENTER = 17;
 /**
  * Parts of a whole as a ring, largest first, with a 2px surface gap between slices and the total
  * in the middle. Hover or focus a slice for its amount and share; `onSelect` makes slices buttons.
@@ -466,6 +477,11 @@ export function Donut({
     return { s, path, tip: { x: c + ((outer + inner) / 2) * Math.sin(mid), y: c - ((outer + inner) / 2) * Math.cos(mid) } };
   });
   const share = (v: number) => `${((v / total) * 100).toFixed(1)}%`;
+  // The total stays inside the hole: it breaks at its space ("1,861,797.94" over "SAR") and
+  // shrinks until its longest part fits.
+  const room = Math.floor(inner * 2 - 24);
+  const widest = Math.max(...center.value.split(" ").map((part) => textWidth(part, CENTER, 700, true)));
+  const valueSize = Math.max(11, Math.min(CENTER, Math.floor((CENTER * room) / Math.max(1, widest))));
   return (
     <div className="donut" style={{ width: size, height: size }}>
       <svg width={size} height={size} role="group" aria-label={label}>
@@ -494,8 +510,8 @@ export function Donut({
         {!arcs.length && <circle cx={c} cy={c} r={(outer + inner) / 2} fill="none" className="donut-empty" strokeWidth={outer - inner} />}
       </svg>
       <div className="donut-center" aria-hidden>
-        <strong>{center.value}</strong>
-        <span>{center.label}</span>
+        <strong style={{ fontSize: valueSize, maxWidth: room }}>{center.value}</strong>
+        <span style={{ maxWidth: room }}>{center.label}</span>
       </div>
       {hover !== null && arcs[hover] && (
         <Tooltip
