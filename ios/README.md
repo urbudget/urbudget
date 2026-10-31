@@ -133,6 +133,11 @@ it (copy one there with `xcrun devicectl device copy to … --domain-type appDat
 
 ## Verification
 
+- The [Mac App Review automation plan](../docs/plans/2026-10-31-ios-app-review-mac-automation.md)
+  covers controlling the installed TestFlight 1.0.0 (1) with a separate WebDriverAgent helper,
+  recording a sample-budget walkthrough with the iPhone's built-in recorder, and preparing the
+  review response. It includes Mac setup and control probes; the hardware walkthrough remains
+  to be tested. Build 1 predates the StoreKit subscription controls described above.
 - `cargo test -p urbudget-ios` checks the C transport against the Android one, plus storage,
   revision conflicts and undo through the shared services.
 - `UrBudgetTests` covers the JSON layer, money formats, keypad sums, category status, and a full
