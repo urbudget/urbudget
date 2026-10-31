@@ -22,6 +22,8 @@
   --accent: #0068da;
   --accent-hover: #0058bd;
   --accent-soft: #e8f1fe;
+  /* The mark's purple, for the "Ur" of the wordmark; lifted in dark mode to read on the bar. */
+  --brand: #6d4ae8;
   /* Apple's green, red and orange, deepened for text; the soft fills are pale tints of them. */
   --positive: #197a35;
   --positive-soft: #e6f6eb;
@@ -110,6 +112,7 @@
     --accent: #5b93ff;
     --accent-hover: #78a7ff;
     --accent-soft: #1b2944;
+    --brand: #a48cff;
     --positive: #56c67f;
     --positive-soft: #15301f;
     --negative: #ff8077;
@@ -163,6 +166,7 @@
   --accent: #5b93ff;
   --accent-hover: #78a7ff;
   --accent-soft: #1b2944;
+  --brand: #a48cff;
   --positive: #56c67f;
   --positive-soft: #15301f;
   --negative: #ff8077;

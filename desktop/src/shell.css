@@ -553,22 +553,14 @@ nav,
   flex: 1;
   min-width: 0;
 }
-.budget-switcher-text strong,
-.budget-switcher-text span {
+.budget-switcher-text strong {
   display: block;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.budget-switcher-text strong {
   font-size: 13px;
   font-weight: 600;
   line-height: 17px;
-}
-.budget-switcher-text span {
-  color: var(--muted);
-  font-size: 11.5px;
-  line-height: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .collapse-button {
   color: var(--muted);
@@ -813,14 +805,27 @@ nav,
   width: 16px;
   height: 16px;
 }
-/* The mark stands for the name on its own; a preview build's label follows it. */
+/* The mark and the wordmark; a preview build's label follows them. */
 .titlebar-name.wordmark {
-  gap: 6px;
+  gap: 8px;
   padding-inline-start: 18px;
 }
 .titlebar-name.wordmark .titlebar-mark {
   width: 20px;
   height: 20px;
+}
+/* "Ur" in the mark's purple, "Budget" in the text colour; Latin and left to right in Arabic too. */
+.titlebar-wordmark {
+  flex: none;
+  direction: ltr;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  unicode-bidi: isolate;
+}
+.titlebar-ur {
+  color: var(--brand);
 }
 .titlebar-actions {
   display: flex;
@@ -888,7 +893,7 @@ nav,
 .titlebar.inactive .window-controls button:not(:hover) {
   color: var(--muted);
 }
-.titlebar.inactive .titlebar-mark {
+.titlebar.inactive :is(.titlebar-mark, .titlebar-wordmark) {
   opacity: 0.6;
 }
 .loading-titlebar {
