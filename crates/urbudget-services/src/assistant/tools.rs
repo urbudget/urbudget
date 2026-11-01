@@ -794,7 +794,14 @@ fn payee_history(args: &Value, ctx: &Context) -> Result<Outcome, String> {
     let mut out = vec![];
     for name in &wanted {
         let lower = name.to_lowercase();
-        let exact: Vec<&Transaction> = b.transactions.iter().filter(|t| t.payee.to_lowercase() == lower).collect();
+        let rule = crate::workflows::payee_rule(b, name);
+        // A bank's spelling ("S136 M") has no history of its own when a rule renames it: the
+        // user's transactions are under the new name.
+        let renamed = rule.and_then(|r| r["payee"].as_str()).filter(|p| !p.is_empty()).map(str::to_lowercase);
+        let exact: Vec<&Transaction> = b.transactions.iter().filter(|t| {
+            let payee = t.payee.to_lowercase();
+            payee == lower || renamed.as_deref() == Some(payee.as_str())
+        }).collect();
         let list = if exact.is_empty() {
             b.transactions.iter().filter(|t| t.payee.to_lowercase().contains(&lower)).collect()
         } else {
@@ -816,7 +823,6 @@ fn payee_history(args: &Value, ctx: &Context) -> Result<Outcome, String> {
         }
         let mut categories: Vec<(String, usize)> = categories.into_iter().collect();
         categories.sort_by(|a, b| b.1.cmp(&a.1));
-        let rule = crate::workflows::payee_rule(b, name);
         let mut row = json!({
             "payee": name,
             "transactions": list.len(),
@@ -1874,6 +1880,17 @@ pub mod tests {
         let b = sample();
         let files = Files::empty();
         let out = call("payee_history", &json!({ "payees": ["Corner Bakery"] }), &ctx(&b, &files));
+        assert_eq!(out.output["payees"][0]["transactions"], 2);
+        assert_eq!(out.output["payees"][0]["categories"][0]["category"], "Coffee");
+    }
+
+    #[test]
+    fn a_bank_spelling_a_rule_renames_reports_the_renamed_payees_history() {
+        let mut b = sample();
+        b.extra.insert("payeeRules".into(), json!([{ "id": "rule-1", "match": "CRNR BKRY", "payee": "Corner Bakery", "categoryId": null }]));
+        let files = Files::empty();
+        let out = call("payee_history", &json!({ "payees": ["CRNR BKRY 12"] }), &ctx(&b, &files));
+        assert_eq!(out.output["payees"][0]["rule"]["renameTo"], "Corner Bakery");
         assert_eq!(out.output["payees"][0]["transactions"], 2);
         assert_eq!(out.output["payees"][0]["categories"][0]["category"], "Coffee");
     }
