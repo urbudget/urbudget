@@ -40,6 +40,7 @@ import app.urbudget.nativeapp.AssistantController
 import app.urbudget.nativeapp.BudgetViewModel
 import app.urbudget.nativeapp.NativePreferences
 import app.urbudget.nativeapp.NativeServices
+import app.urbudget.nativeapp.PageRequests
 import app.urbudget.nativeapp.BudgetUiState
 import app.urbudget.nativeapp.R
 import androidx.compose.ui.res.stringResource
@@ -200,6 +201,9 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
         if (tab != 4) lastTab = tab
         tab = 4; morePage = page; parentPage = ""; dockHidden = false
     }
+    // A notification's page, such as Bank messages when texts need the user.
+    val requested by PageRequests.page.collectAsStateWithLifecycle()
+    LaunchedEffect(requested) { requested?.let { openPage(it); PageRequests.page.value = null } }
     fun openChildPage(page: String) {
         if (page == "Assistant") { assistant = true; return }
         parentPage = morePage; morePage = page
@@ -273,7 +277,7 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
                     when (morePage) {
                         "Account & sync" -> CloudScreen(vm)
                         "Bank connections" -> BankConnectionsScreen(budget, vm)
-                        "Bank messages" -> SmsImportScreen(budget, vm)
+                        "Bank messages" -> SmsImportScreen(budget, vm, setDockHidden = { dockHidden = it })
                         "Budget library" -> LibraryScreen(budget, vm, importFile, exportFile)
                         else -> MoreScreen(morePage, ::openChildPage, budget, vm, importFile, exportFile,
                             if (state.recoveryAvailable) ({ confirmRestore = true }) else null) { kind, item -> openEditor(kind, item) }

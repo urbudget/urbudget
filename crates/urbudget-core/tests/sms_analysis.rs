@@ -13,14 +13,17 @@ fn messages() -> Vec<Message> {
         id: format!("sms:{i}"),
         sender: "Bank".into(),
         received_date: "2026-10-31".into(),
+        received_time: String::new(),
         body: body.to_string(),
     })
     .collect()
 }
 fn value() -> Value {
     json!({"items":[
-        {"sourceIds":["sms:0"],"disposition":"transaction","reason":"Purchase","evidence":[{"sourceId":"sms:0","quote":"SAR 12.34"}],"transaction":{"accountId":"main","date":"2026-10-31","amount":"-12.34","currency":"SAR","payee":"Shop","memo":"SMS","kind":"expense","categoryId":null,"transferAccountId":null},"question":null,"accountReference":"*1234"},
-        {"sourceIds":["sms:1"],"disposition":"transaction","reason":"Refund","evidence":[{"sourceId":"sms:1","quote":"Refund SAR 3.50"}],"transaction":{"accountId":"card","date":"2026-10-31","amount":"3.50","currency":"SAR","payee":"Shop","memo":"SMS","kind":"refund","categoryId":null,"transferAccountId":null},"question":null,"accountReference":"*5678"}
+        {"sourceIds":["sms:0"],"disposition":"transaction","skip":null,"note":"Purchase","evidence":[{"sourceId":"sms:0","quote":"SAR 12.34"}],"unsure":[],
+         "transaction":{"date":"2026-10-31","amount":"-12.34","currency":"SAR","writtenAmount":"12.34","payee":"Shop","memo":"","kind":"expense","accountRef":"*1234","otherRef":null,"categoryId":null,"accountId":"main","transferAccountId":null}},
+        {"sourceIds":["sms:1"],"disposition":"transaction","skip":null,"note":"Refund","evidence":[{"sourceId":"sms:1","quote":"Refund SAR 3.50"}],"unsure":[],
+         "transaction":{"date":"2026-10-31","amount":"3.50","currency":"SAR","writtenAmount":"3.50","payee":"Shop","memo":"","kind":"refund","accountRef":"*5678","otherRef":null,"categoryId":null,"accountId":"card","transferAccountId":null}}
     ]})
 }
 fn analysis(v: Value) -> Analysis {
@@ -84,8 +87,13 @@ fn fabricated_evidence_and_mappings_and_invalid_money_cannot_reach_import() {
         ("amount", "-1e3"),
         ("amount", "0"),
         ("amount", "99999999999999999999999999"),
-        ("currency", "USD"),
+        ("currency", "sar"),
+        ("writtenAmount", "12,34"),
+        ("writtenAmount", "-12.34"),
         ("date", "2026-02-30"),
+        ("accountRef", "*9999"),
+        ("otherRef", "*9999"),
+        ("transferAccountId", "card"),
         ("accountId", "invented"),
         ("categoryId", "invented"),
         ("kind", "income"),
@@ -100,36 +108,157 @@ fn fabricated_evidence_and_mappings_and_invalid_money_cannot_reach_import() {
     let mut v = value();
     v["items"][0]["evidence"][0]["quote"] = json!("SAR 999");
     assert!(validate_analysis(&b, &messages(), &analysis(v)).is_err());
-    let mut v = value();
-    v["items"][0]["accountReference"] = json!("*9999");
-    assert!(validate_analysis(&b, &messages(), &analysis(v)).is_err());
 }
 #[test]
 fn every_nontransaction_has_a_disposition_and_cannot_smuggle_a_transaction() {
     let b = common::budget("SAR");
-    for disposition in ["question", "pending", "ignore"] {
+    for (disposition, skip) in [("ignore", json!("code")), ("unclear", Value::Null)] {
         let mut v = value();
         v["items"][1]["disposition"] = json!(disposition);
-        v["items"][1]["question"] = json!("Which card account?");
+        v["items"][1]["skip"] = skip;
         assert!(validate_analysis(&b, &messages(), &analysis(v.clone())).is_err());
         v["items"][1]["transaction"] = Value::Null;
         let a = analysis(v);
         assert!(validate_analysis(&b, &messages(), &a).is_ok());
-        let saved = apply_batch(
-            b.clone(),
-            &messages(),
-            &a,
-            vec![Decision {
-                index: 0,
-                action: "new".into(),
-                match_id: None,
-            }],
-        )
-        .unwrap();
+        assert_eq!(preview(&b, &messages(), &a).unwrap().len(), 1);
+        let saved = apply_batch(b.clone(), &messages(), &a, decisions()[..1].to_vec()).unwrap();
         assert_eq!(saved.transactions.len(), 1);
         assert_eq!(saved.extra["smsImportedMessageIds"], json!(["sms:0"]));
     }
+    let mut v = value();
+    v["items"][1]["disposition"] = json!("ignore");
+    v["items"][1]["transaction"] = Value::Null;
+    for skip in [Value::Null, json!("invented")] {
+        v["items"][1]["skip"] = skip;
+        assert!(validate_analysis(&b, &messages(), &analysis(v.clone())).is_err());
+    }
+    let mut v = value();
+    v["items"][0]["unsure"] = json!(["account"]);
+    assert!(validate_analysis(&b, &messages(), &analysis(v)).is_err());
 }
+
+#[test]
+fn facts_without_an_account_wait_for_the_user_and_only_decided_items_import() {
+    let b = common::budget("SAR");
+    let mut v = value();
+    // What the model returns: the facts and the card, never the account.
+    v["items"][1]["transaction"]["accountId"] = Value::Null;
+    let a = analysis(v);
+    assert!(validate_analysis(&b, &messages(), &a).is_ok());
+    assert!(importable(&a.items[1]).is_none());
+    assert_eq!(preview(&b, &messages(), &a).unwrap().iter().map(|r| r.index).collect::<Vec<_>>(), vec![0]);
+    assert!(apply_batch(b.clone(), &messages(), &a, decisions()).is_err());
+    let saved = apply_batch(b.clone(), &messages(), &a, decisions()[..1].to_vec()).unwrap();
+    assert_eq!(saved.transactions.len(), 1);
+    assert_eq!(saved.extra["smsImportedMessageIds"], json!(["sms:0"]));
+    assert!(apply_batch(b, &messages(), &a, vec![]).is_err());
+}
+
+#[test]
+fn a_foreign_amount_waits_for_the_billed_amount_and_a_home_amount_cannot() {
+    let b = common::budget("SAR");
+    let mut v = value();
+    v["items"][0]["transaction"]["currency"] = json!("EUR");
+    v["items"][0]["transaction"]["writtenAmount"] = json!("42.000");
+    v["items"][0]["transaction"]["amount"] = Value::Null;
+    let a = analysis(v.clone());
+    assert!(validate_analysis(&b, &messages(), &a).is_ok());
+    assert!(importable(&a.items[0]).is_none());
+    v["items"][0]["transaction"]["currency"] = json!("SAR");
+    assert!(validate_analysis(&b, &messages(), &analysis(v.clone())).is_err());
+    v["items"][0]["transaction"]["currency"] = json!("EUR");
+    v["items"][0]["transaction"]["amount"] = json!("-171.50");
+    assert_eq!(apply_batch(b, &messages(), &analysis(v), decisions()).unwrap().transactions[0].amount, -17150);
+}
+
+#[test]
+fn a_pending_hold_imports_only_when_chosen() {
+    let b = common::budget("SAR");
+    let mut v = value();
+    v["items"][0]["disposition"] = json!("pending");
+    let a = analysis(v.clone());
+    assert_eq!(preview(&b, &messages(), &a).unwrap().len(), 2);
+    let saved = apply_batch(b.clone(), &messages(), &a, decisions()[1..].to_vec()).unwrap();
+    assert_eq!(saved.extra["smsImportedMessageIds"], json!(["sms:1"]));
+    v["items"][0]["transaction"] = Value::Null;
+    assert!(validate_analysis(&b, &messages(), &analysis(v)).is_err());
+}
+
+#[test]
+fn transfers_take_no_category_and_other_kinds_take_no_transfer_account() {
+    let mut b = common::budget("SAR");
+    b.categories.push(urbudget_core::domain::Category {
+        id: "shopping".into(),
+        name: "Shopping".into(),
+        group: "Spending".into(),
+        target: 0,
+        extra: Default::default(),
+    });
+    let mut v = value();
+    v["items"][0]["transaction"]["kind"] = json!("transfer");
+    v["items"][0]["transaction"]["categoryId"] = json!("shopping");
+    assert!(validate_analysis(&b, &messages(), &analysis(v.clone())).is_err());
+    v["items"][0]["transaction"]["categoryId"] = Value::Null;
+    // A transfer whose other side isn't chosen yet waits.
+    assert!(importable(&analysis(v.clone()).items[0]).is_none());
+    v["items"][0]["transaction"]["transferAccountId"] = json!("main");
+    assert!(validate_analysis(&b, &messages(), &analysis(v.clone())).is_err());
+    v["items"][0]["transaction"]["transferAccountId"] = json!("card");
+    assert!(importable(&analysis(v).items[0]).is_some());
+}
+
+#[test]
+fn a_review_holds_a_phones_history_but_the_model_reads_two_hundred_at_a_time() {
+    let b = common::budget("SAR");
+    let many = |n: usize| -> Vec<Message> {
+        (0..n).map(|i| Message { id: format!("sms:{i}"), sender: "Bank".into(), received_date: "2026-10-31".into(), received_time: "09:30".into(), body: format!("Your code is {i:04}") }).collect()
+    };
+    // A skipped message is said by its skip code: no note or quote needed.
+    let codes = |n: usize| analysis(json!({"items": (0..n).map(|i| json!({"sourceIds":[format!("sms:{i}")],"disposition":"ignore","skip":"code","note":"",
+        "evidence":[],"transaction":null,"unsure":[]})).collect::<Vec<_>>()}));
+    assert!(validate_messages(&many(200)).is_ok());
+    assert!(validate_messages(&many(201)).is_err());
+    assert!(validate_analysis(&b, &many(3000), &codes(3000)).is_ok());
+    assert!(preview(&b, &many(3000), &codes(3000)).unwrap().is_empty());
+    assert!(validate_analysis(&b, &many(10_001), &codes(10_001)).is_err());
+    let mut late = many(1);
+    late[0].received_time = "25:99".into();
+    assert!(validate_messages(&late).is_err());
+}
+
+#[test]
+fn money_needs_its_messages_words_and_an_unclear_message_needs_a_note() {
+    let b = common::budget("SAR");
+    let mut v = value();
+    v["items"][0]["evidence"] = json!([]);
+    assert!(validate_analysis(&b, &messages(), &analysis(v)).is_err());
+    let mut v = value();
+    v["items"][0] = json!({"sourceIds":["sms:0"],"disposition":"unclear","skip":null,"note":"","evidence":[],"transaction":null,"unsure":[]});
+    assert!(validate_analysis(&b, &messages(), &analysis(v.clone())).is_err());
+    v["items"][0]["note"] = json!("Two purchases in one text");
+    assert!(validate_analysis(&b, &messages(), &analysis(v)).is_ok());
+}
+
+#[test]
+fn a_category_with_no_payment_account_is_a_spending_category() {
+    // A budget brought over from YNAB writes "paymentAccountId": null on every ordinary category.
+    let mut b = common::budget("SAR");
+    for (id, payment) in [("groceries", Value::Null), ("visa-payment", json!("card"))] {
+        b.categories.push(urbudget_core::domain::Category {
+            id: id.into(),
+            name: id.into(),
+            group: "Spending".into(),
+            target: 0,
+            extra: json!({ "paymentAccountId": payment }).as_object().unwrap().clone(),
+        });
+    }
+    let mut v = value();
+    v["items"][0]["transaction"]["categoryId"] = json!("groceries");
+    assert!(validate_analysis(&b, &messages(), &analysis(v.clone())).is_ok());
+    v["items"][0]["transaction"]["categoryId"] = json!("visa-payment");
+    assert!(validate_analysis(&b, &messages(), &analysis(v)).is_err());
+}
+
 #[test]
 fn an_invalid_last_account_decision_has_no_partial_result_and_no_source_acknowledgement() {
     let b = common::budget("SAR");
@@ -149,7 +278,7 @@ fn grouping_two_transfer_alerts_uses_all_sources_and_one_ledger_transaction() {
     let mut v = value();
     v["items"].as_array_mut().unwrap().pop();
     v["items"][0]["sourceIds"] = json!(["sms:1", "sms:0"]);
-    v["items"][0]["accountReference"] = Value::Null;
+    v["items"][0]["transaction"]["accountRef"] = Value::Null;
     v["items"][0]["transaction"]["kind"] = json!("transfer");
     v["items"][0]["transaction"]["transferAccountId"] = json!("card");
     let saved = apply_batch(

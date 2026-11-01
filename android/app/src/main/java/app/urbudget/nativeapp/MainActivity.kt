@@ -43,6 +43,7 @@ class MainActivity : AppCompatActivity() {
         setContent {
             ProvideLanguage(interfaceConfiguration ?: resources.configuration) { UrBudgetTheme { UrBudgetApp(model) } }
         }
+        if (savedInstanceState == null) intent?.getStringExtra(SmsWorker.PAGE)?.let { PageRequests.page.value = it }
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch {
@@ -92,6 +93,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        intent.getStringExtra(SmsWorker.PAGE)?.let { PageRequests.page.value = it }
         val uri = intent.data
         if (intent.action == Intent.ACTION_VIEW && uri?.scheme == packageName &&
             uri.host == "assistant" && uri.path == "/sign-in") {

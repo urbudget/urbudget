@@ -102,73 +102,115 @@ intents and Print / Save as PDF.
 
 ## Bank SMS import
 
-**More → Bank messages** (also **Settings & data → Imports → Bank messages**) is an
-opt-in, on-device SMS inbox. After the disclosure and Android permission prompts,
-choose one or several sender addresses from the phone's SMS inbox (up to 50). This
-includes alphanumeric bank sender IDs and phone numbers; it does not need contacts
-access. Choose new messages only, or the past 30/90 days plus new messages. The
-history choice applies to newly added senders. Existing choices keep their start
-date. RCS and MMS are not read.
+**More → Bank messages** (also **Settings & data → Imports → Bank messages**) turns the
+texts a bank sends to this phone into transactions. It is opt-in: after the disclosure
+and Android's permission prompts, choose the senders your bank texts from (up to 50).
+The picker lists names and short codes first, by how many messages each has sent (SMS
+and MMS together), already chosen ones first; a numeric short code shows its latest
+message to recognise it, while named senders and people's phone numbers (listed apart)
+are never previewed. No contacts access is needed. The first choice of
+senders also picks how far back to collect: new messages only, the past 30 or 90 days,
+6 months, a year, or everything on the phone. **Collect messages from** changes it at
+any time for every sender: an earlier start brings older texts in on the next scan, a
+later one removes the waiting messages before it (the open review keeps its own).
 
-The system SMS receiver captures selected senders while the app is closed. Opening
-Bank messages or using Refresh catches up from the system inbox after missed
-broadcasts/restarts. Messages remain local in a separate SQLite inbox, scoped to
-the current budget's database path. No capture changes a budget or calls the
-assistant/network. Capture does not interpret message text; users exclude verification
-codes and personal messages from the raw preview before sending. Removing a sender
-removes its pending messages; **Stop and clear messages** removes that budget's
-local inbox and disables its collection. Neither action changes Android's messages
-or imported transactions. Deleted budget paths stop collecting when next encountered.
+Texts come from both of Android's stores. Most arrive as SMS, but a phone moved from an
+iPhone keeps that history as MMS (on the test Fold, 2,858 of a bank's 2,913 texts), so
+the scan also reads text-only MMS from each chosen sender's one-to-one conversation;
+MMS with pictures or files, and RCS chats (which Android keeps private to the messaging
+app), aren't read. **On this phone** shows, per sender, how many texts the phone holds
+since collecting starts (SMS and MMS), the first and latest dates, and whether all were
+collected, so coverage can be checked against an export.
 
-Select up to 50 messages (120 KB maximum) and choose **Analyze selected**. A separate
-notice identifies the configured assistant provider/model and asks permission to
-send those full messages, account/category names, relevant payee category history
-and explicitly remembered sender/card mappings. No message is preselected. Provider
-retention settings apply. The dedicated analysis session has only `payee_history`
-and `submit_sms_analysis` tools, no writes, browsing, attachments or ordinary chat
-history. Requests time out after five minutes, can be cancelled, and expire from
-memory after ten minutes. Budget/provider changes prevent stale requests from being
-accepted. Failed or interrupted analysis leaves messages available for retry.
+The system SMS receiver captures selected senders while the app is closed, and opening
+the page catches up from the system stores after missed broadcasts or restarts, saving a
+scan in one transaction. Messages stay in a separate local SQLite inbox scoped to the
+budget's database path; a review, which can hold a phone's whole history, is a private
+file beside it. Capture never interprets text, changes a budget or calls the network.
+Removing a sender removes its waiting messages; **Stop and clear messages** removes the
+budget's inbox, review, remembered cards, senders, sending permission and background
+reading. Neither changes Android's messages or transactions already added.
 
-The model accounts for every source exactly once as a transaction, grouped question,
-pending event or excluded message. It quotes source evidence and prepares multiple
-accounts in one batch. Missing account mappings or billed amounts in the budget
-currency require answers; exchange rates are not guessed. Users can answer grouped
-questions, explicitly remember a sender plus literal card reference, give a batch
-instruction, or edit proposed fields. Updating analysis asks for sending consent
-again. Reviews survive screen/process recreation in the private inbox; discard or
-finish removes the draft. No regex bank parser is used. Deterministic core checks
-validate exact money, dates, references, evidence and complete source coverage.
+The page is built around what needs the user. The first time, a notice names the
+assistant and what is sent (the texts, account and category names, payee category
+history) and asks once per provider and model; permission given before reading became
+automatic is asked again. With it, opening the page reads what's waiting, oldest first,
+into one review; each request carries 200 texts, and the review is saved after every
+request, so **Stop**, or a request that fails, keeps what's been read and the rest wait.
+Readings continue when the page closes. Texts that arrive while a review is open are read
+into it. **Read new texts as they arrive** (off by default) does the same in the
+background (`SmsWorker`) for the open budget soon after a text arrives: texts that are
+only codes and alerts leave without a word, and anything about money waits in the
+review, counted in a notification that opens the page (`POST_NOTIFICATIONS` is asked
+when it's turned on). The waiting texts themselves are folded below; **Choose** reads or
+dismisses a selection. Provider retention settings apply.
 
-Review selected uses the existing bank import engine to add, match or skip rows.
-The `smsBatchApply` command commits all accounts once through the normal budget revision guard and
-undo/save path. SMS is not settlement evidence: new entries are uncleared, and
-matching preserves existing clearing/reconciliation states, including transfer
-sides. A stable sender/message-timestamp/body fingerprint is carried as the import
-ID, including after manual corrections. All grouped source fingerprints are also
-recorded in the budget to prevent reimport after reassignment to another account.
-Raw bodies are not stored in budget metadata or normal assistant conversations.
-Inbox text is erased after an acknowledged review or dismissal, with a local
-fingerprint retained to prevent re-queuing. Questions and pending events remain.
-**Stop and clear** also deletes saved drafts and remembered mappings. If
-capture or acknowledgement is interrupted, repeat import review detects existing
-import IDs. The screen pages pending messages in batches of 500.
+The analysis session (`assistant/sms.rs`) has only `payee_history` and
+`submit_sms_analysis`: no writes, browsing, attachments or chat history. It times out
+after five minutes, can be cancelled and expires from memory after ten. The model gets
+the texts numbered, as `[number, sender, received, text]`, never the phone's ids, and
+writes out only the money: an item per transaction, hold or unclear text, with a short
+note in the app's language, a quote copied from its text, and the transaction's date,
+signed amount in the budget's currency (or none for a foreign amount the text doesn't
+convert), written currency and amount, cleaned payee, kind, the card or account
+reference copied from the text, and an optional category. Every other text is just its
+number under a reason (`code`, `security`, `balance`, `declined`, `rewards`,
+`marketing`, `other`). On real bank texts that's about a third of writing every text
+out. The service maps numbers back to ids, places each quote as evidence, and rejects a
+reply that misses or repeats a text; the core (`sms_import.rs`) validates the rest:
+exact money, dates, references found in the texts, quotes, and every text accounted for
+once. Any account the model supplies is discarded. `payee_history` follows a payee rule
+to the renamed payee's history, so "S136 M" finds the user's categories for "Tamimi".
 
-The manifest requests only `READ_SMS` and `RECEIVE_SMS`, not default-SMS status or
-permission to send/change messages. **Before distributing this build through
+The phone matches each reference to an account: a card remembered for that sender,
+otherwise the one open account whose name carries the card's digits ("4417" is "Visa
+4417"), otherwise the only open account. Then it settles what changes nothing: a text
+whose transaction is already in the budget (one candidate from the bank import engine in
+the same account on the same day, not already claimed by another text) is matched, and
+texts where no money moved are cleared. When that's everything, the page finishes by
+itself and says what it handled ("Checked 11:38 · 2 already in your budget · 3 codes").
+Otherwise it counts what needs the user, and the review is a page of transactions:
+
+- **Needs a choice**: one account choice per unmatched card answers every message
+  naming it and is remembered by default; a foreign amount is typed in its row; a
+  transfer's other account, or a message the assistant couldn't read, is entered in the
+  transaction editor or dismissed. These stay in Bank messages until answered.
+- **Ready to add**, ticked by default, and **Holds**, unticked: tap a row to change it in
+  the transaction editor, with its messages shown beneath. Possible duplicates offer add
+  or match from the bank import engine.
+- **Handled for you**, folded: texts already in the budget, matched (each can be added
+  instead), and texts that aren't transactions, counted by reason.
+
+**Prepare again with a note** re-reads the same messages with the user's note sent
+apart from them. Reviews survive screen and process recreation; drafts from an older
+format are dropped and their messages wait again.
+
+Adding uses the existing bank import engine through `smsBatchApply`, which commits all
+ticked rows, across accounts, in one undoable step through the normal budget revision
+guard. SMS is not settlement evidence: new entries are uncleared, and matching preserves
+existing clearing and reconciliation, including transfer sides. A stable
+sender/timestamp/body fingerprint is the import ID, kept after corrections, and every
+grouped fingerprint is recorded in the budget to prevent reimport. Raw bodies are never
+stored in budget metadata or assistant conversations. The review clears every message
+it settles (added, unticked, held, not a transaction, dismissed), erasing its text and
+keeping a local fingerprint; messages still waiting on a choice stay.
+
+The manifest requests `READ_SMS` and `RECEIVE_SMS`, not default-SMS status or
+permission to send/change messages, and `POST_NOTIFICATIONS` for background reading. **Before distributing this build through
 Google Play**, complete its SMS permissions declaration under the
 [SMS-based money management exception](https://support.google.com/googleplay/android-developer/answer/10208820?hl=en)
 and obtain approval; align the store description, privacy policy and Data safety
 answers with this feature. Eligibility is subject to Google's review. SMS remains
 optional, and denied/revoked access leaves the other budgeting features available.
 
-Implementation: `SmsInbox.kt` owns capture, selection and private storage;
-`SmsAnalysis.kt` owns identities, draft recovery and the cancellable service client;
-`ui/SmsImportScreen.kt` and `ui/SmsAnalysisReview.kt` own selection/consent/review.
-Services `assistant/sms.rs` owns the ephemeral model session; core `sms_import.rs`
-validates output and preserves clearing state while reusing bank matching. Synthetic
-coverage includes `SmsAnalysisTest`, `SmsInboxTest`, `SmsImportUiTest`, core
-`tests/sms_analysis.rs`, `tests/sms_import.rs`, and service model-loop tests.
+Implementation: `SmsInbox.kt` owns capture (SMS and text-only MMS), sender summaries, coverage and private storage;
+`SmsAnalysis.kt` owns identities, card matching, draft recovery, consent, readings and the
+cancellable service client; `SmsWorker.kt` reads in the background; `ui/SmsImportScreen.kt` owns the page, sender picker and
+remembered cards, and `ui/SmsAnalysisReview.kt` the review. Services `assistant/sms.rs`
+owns the model session and its prompt; core `sms_import.rs` validates output, previews
+and imports. Synthetic coverage includes `SmsAnalysisTest`, `SmsInboxTest`,
+`SmsImportUiTest`, core `tests/sms_analysis.rs` and `tests/sms_import.rs`, and the
+service's model-loop tests.
 
 ## Layout
 

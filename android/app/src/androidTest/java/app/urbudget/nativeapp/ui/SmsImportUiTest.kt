@@ -13,8 +13,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import app.urbudget.nativeapp.*
 import app.urbudget.nativeapp.R
-import org.json.JSONObject
 import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import org.junit.After
@@ -24,7 +24,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.UUID
 
-/** Synthetic emulator-only checks of the actual selection and commit boundary. */
+/** Synthetic emulator-only checks of preparing, the one-time consent, and the review's commit boundary. */
 @RunWith(AndroidJUnit4::class)
 class SmsImportUiTest {
     @get:Rule val compose = createComposeRule()
@@ -32,6 +32,7 @@ class SmsImportUiTest {
     private val context get() = instrumentation.targetContext
     private val store = ViewModelStore()
     private var identity: String? = null
+    private val connection = JSONObject().put("ready", true).put("provider", "anthropic").put("model", "synthetic-test")
 
     @Before fun setup() {
         assumeTrue("Use an isolated emulator", Build.HARDWARE.contains("ranchu") || Build.HARDWARE.contains("goldfish"))
@@ -42,76 +43,99 @@ class SmsImportUiTest {
         instrumentation.runOnMainSync { store.clear() }
     }
 
-    @Test fun multipleSendersCanBeSelectedAndSearchKeepsEarlierChoices() {
-        var saved: Set<String>? = null
-        compose.setContent {
-            MaterialTheme {
-                SmsSenderPicker(emptyList(), {}, save = { senders, _ -> saved = senders }, load = { listOf("Example Bank A", "Example Bank B", "Personal") })
-            }
-        }
-        compose.waitUntil(10_000) { compose.onAllNodesWithText("Example Bank A").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText("Example Bank A").performClick()
-        compose.onNodeWithText("Example Bank B").performClick()
-        compose.onNodeWithText(context.getString(R.string.common_search)).performTextInput("Personal")
-        compose.onNodeWithText(context.getString(R.string.common_save)).performClick()
-        compose.runOnIdle { assertEquals(setOf("Example Bank A", "Example Bank B"), saved) }
-    }
-
-    @Test fun cancellingReviewKeepsInboxAndBudgetAndOnlyConfirmImports() {
+    private fun fixture(tag: String): BudgetViewModel {
         instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.READ_SMS)
         instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.RECEIVE_SMS)
         lateinit var vm: BudgetViewModel
-        instrumentation.runOnMainSync { vm = BudgetViewModel(context.applicationContext as Application); store.put("sms", vm) }
-        val name = "SMS test ${UUID.randomUUID()}"
+        instrumentation.runOnMainSync { vm = BudgetViewModel(context.applicationContext as Application); store.put(tag, vm) }
+        val name = "SMS $tag ${UUID.randomUUID()}"
         instrumentation.runOnMainSync { vm.createBudget(name, "USD") }
-        compose.waitUntil(15_000) { vm.state.value.budget?.optString("name") == name }
+        compose.waitUntil(30_000) { vm.state.value.budget?.optString("name") == name || vm.state.value.error != null }
+        assertNull(vm.state.value.error)
         val fixture = JSONObject(instrumentation.context.assets.open("native-roundtrip.json").bufferedReader().use { it.readText() }).put("name", "$name fixture")
         instrumentation.runOnMainSync { vm.importBudget(fixture.toString()) }
         compose.waitUntil(15_000) { vm.state.value.budget?.optString("name") == "$name fixture" }
         identity = vm.state.value.budgetIdentity!!
-        val inbox = SmsInbox.get(context)
-        inbox.configure(identity!!, setOf("SyntheticBank"), 0)
-        val body = "Purchase USD 12.34 at Synthetic Shop on 2026-10-24"
-        val sms = BankSms(smsId("SyntheticBank", 1000, body), "SyntheticBank", 1000, body)
-        inbox.capture(sms)
-        val before = vm.state.value.budget!!.getJSONArray("transactions").length()
-        var analyses = 0
-        val analyzer = object : SmsAnalyzer {
-            override suspend fun status() = JSONObject().put("ready", true).put("provider", "openai").put("model", "synthetic-test")
-            override suspend fun analyze(request: JSONObject): JSONObject {
-                analyses++
-                assertEquals(1, request.getJSONArray("messages").length())
-                assertEquals(sms.id, request.getJSONArray("messages").getJSONObject(0).getString("id"))
-                return syntheticSmsAnalysis(sms)
+        SmsInbox.get(context).configure(identity!!, setOf("SyntheticBank"), 0)
+        return vm
+    }
+    private fun show(vm: BudgetViewModel, analyzer: SmsAnalyzer) = compose.setContent {
+        val state by vm.state.collectAsState()
+        MaterialTheme { state.budget?.let { SmsImportScreen(it, vm, analyzer = analyzer) } }
+    }
+    private fun waitFor(tag: String) = compose.waitUntil(10_000) { compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty() }
+
+    @Test fun banksComeFirstAndAPersonsNumberStaysHiddenUntilAskedFor() {
+        var saved: Set<String>? = null
+        compose.setContent {
+            MaterialTheme {
+                SmsSenderPicker(emptyList(), {}, save = { senders, _ -> saved = senders }, load = {
+                    listOf(SmsSender("Example Bank A", 12, "Purchase USD 4.00"), SmsSender("Example Bank B", 3, null), SmsSender("+15550001999", 40, null))
+                })
             }
         }
-        compose.setContent {
-            val state by vm.state.collectAsState()
-            MaterialTheme { state.budget?.let { SmsImportScreen(it, vm, analyzer) } }
-        }
-        compose.waitUntil(10_000) { compose.onAllNodesWithTag("sms-analyze").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag("sms-analyze").assertIsNotEnabled()
-        compose.onNodeWithTag("sms-inbox").performScrollToNode(hasTestTag("sms-message:${sms.id}"))
-        compose.onNodeWithTag("sms-select:${sms.id}").assertIsOff().performClick()
-        compose.onNodeWithTag("sms-inbox").performScrollToNode(hasTestTag("sms-analyze"))
-        compose.onNodeWithTag("sms-analyze").performClick()
-        compose.waitUntil(10_000) { compose.onAllNodesWithTag("sms-consent").fetchSemanticsNodes().isNotEmpty() }
-        assertEquals(0, analyses)
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("Example Bank A").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("+15550001999").assertDoesNotExist()
+        compose.onNodeWithText("Example Bank A").performClick()
+        compose.onNodeWithText("Example Bank B").performClick()
+        compose.onNodeWithText(context.resources.getQuantityString(R.plurals.sms_show_numbers, 1, "1")).performClick()
+        compose.onNodeWithText("+15550001999").assertExists()
+        compose.onNodeWithText(context.getString(R.string.common_save)).performClick()
+        compose.runOnIdle { assertEquals(setOf("Example Bank A", "Example Bank B"), saved) }
+    }
+
+    private fun analyzer(reply: suspend (JSONObject) -> JSONObject) = object : SmsAnalyzer {
+        override suspend fun status() = connection
+        override suspend fun analyze(request: JSONObject): JSONObject = reply(request)
+    }
+    /** What the model returns for texts that are only codes. */
+    private fun codes(sent: JSONArray) = JSONObject().put("items", JSONArray((0 until sent.length()).map { i ->
+        val id = sent.getJSONObject(i).getString("id")
+        JSONObject().put("sourceIds", JSONArray().put(id)).put("disposition", "ignore").put("skip", "code").put("note", "")
+            .put("evidence", JSONArray()).put("transaction", JSONObject.NULL).put("unsure", JSONArray())
+    }))
+    private fun draftSize(inbox: SmsInbox) = runCatching { JSONObject(inbox.state(identity!!, "draft")!!).getJSONArray("ids").length() }.getOrDefault(0)
+
+    @Test fun sendingIsAskedOnceAndOnlyTheReviewImports() {
+        val vm = fixture("consent")
+        val inbox = SmsInbox.get(context)
+        val body = "Purchase USD 12.34 at Synthetic Shop card *1234 on 2026-10-24"
+        val sms = BankSms(smsId("SyntheticBank", 1000, body), "SyntheticBank", 1000, body)
+        inbox.capture(sms)
+        inbox.saveState(identity!!, "mappings", smsRememberCard(JSONArray(), "SyntheticBank", "*1234", "checking").toString())
+        val before = vm.state.value.budget!!.getJSONArray("transactions").length()
+        var analyses = 0
+        show(vm, analyzer { request ->
+            analyses++
+            assertEquals(sms.id, request.getJSONArray("messages").getJSONObject(0).getString("id"))
+            assertFalse(request.has("mappings"))
+            syntheticSmsAnalysis(sms, accountId = null, ref = "*1234")
+        })
+        // Without permission nothing is read by itself: the page asks.
+        waitFor("sms-prepare")
+        compose.onNodeWithTag("sms-prepare").performClick()
+        waitFor("sms-consent")
         compose.onNodeWithText(context.getString(R.string.common_cancel)).performClick()
         assertEquals(0, analyses)
-        compose.onNodeWithTag("sms-analyze").performClick()
-        compose.waitUntil(10_000) { compose.onAllNodesWithTag("sms-consent").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag("sms-consent").performClick()
-        val importLabel = context.getString(R.string.sms_confirm_review)
-        compose.waitUntil(10_000) { compose.onAllNodesWithText(importLabel).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("sms-prepare").performClick()
+        waitFor("sms-consent")
+        compose.onNodeWithText(context.getString(R.string.sms_send_confirm)).performClick()
+        waitFor("sms-review")
+        assertEquals(1, analyses)
         assertEquals(before, vm.state.value.budget!!.getJSONArray("transactions").length())
-        compose.onNodeWithText(context.getString(R.string.common_cancel)).performClick()
+        assertTrue(smsConsented(inbox.state(identity!!, "consent"), connection))
+        compose.onNodeWithTag("sms-needs").assertTextEquals(context.resources.getQuantityString(R.plurals.sms_to_review, 1, "1"))
+        // Later keeps the review and the message.
+        compose.onNodeWithTag("sms-review").performClick()
+        waitFor("sms-review-page")
+        compose.onNodeWithText(context.getString(R.string.sms_later_action)).performClick()
+        waitFor("sms-review")
         compose.runOnIdle { assertEquals(1, inbox.pendingCount(identity!!)) }
         assertNotNull(inbox.state(identity!!, "draft"))
-        assertEquals(1, analyses)
         compose.onNodeWithTag("sms-review").performClick()
-        compose.waitUntil(10_000) { compose.onAllNodesWithText(importLabel).fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText(importLabel).performClick()
+        waitFor("sms-add")
+        compose.waitUntil(10_000) { runCatching { compose.onNodeWithTag("sms-add").assertIsEnabled() }.isSuccess }
+        compose.onNodeWithTag("sms-add").performClick()
         compose.waitUntil(10_000) { vm.state.value.budget!!.getJSONArray("transactions").length() == before + 1 }
         compose.waitUntil(10_000) { inbox.pendingCount(identity!!) == 0 }
         val added = vm.state.value.budget!!.getJSONArray("transactions").getJSONObject(before)
@@ -124,61 +148,89 @@ class SmsImportUiTest {
         assertFalse(vm.state.value.budget!!.has("smsImportedMessageIds"))
     }
 
-    @Test fun oneGroupedAccountAnswerIsRememberedOnlyExplicitlyAndRefinesBothMessages() {
-        instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.READ_SMS)
-        instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.RECEIVE_SMS)
-        lateinit var vm: BudgetViewModel
-        instrumentation.runOnMainSync { vm = BudgetViewModel(context.applicationContext as Application); store.put("sms-group", vm) }
-        val name = "SMS grouped ${UUID.randomUUID()}"
-        instrumentation.runOnMainSync { vm.createBudget(name, "USD") }
-        compose.waitUntil(15_000) { vm.state.value.budget?.optString("name") == name }
-        val fixture = JSONObject(instrumentation.context.assets.open("native-roundtrip.json").bufferedReader().use { it.readText() }).put("name", "$name fixture")
-        instrumentation.runOnMainSync { vm.importBudget(fixture.toString()) }
-        compose.waitUntil(15_000) { vm.state.value.budget?.optString("name") == "$name fixture" }
-        identity = vm.state.value.budgetIdentity!!
-        val inbox = SmsInbox.get(context); inbox.configure(identity!!, setOf("SyntheticBank"), 0)
+    @Test fun oneCardChoiceAnswersEveryMessageWithoutAskingTheAssistantAgain() {
+        val vm = fixture("card")
+        val inbox = SmsInbox.get(context)
+        inbox.saveState(identity!!, "consent", smsConsent(connection))
         val messages = (1L..2L).map { at -> val body = "Purchase USD 12.34 at Synthetic Shop card *1234 on 2026-10-24"; BankSms(smsId("SyntheticBank", at, body), "SyntheticBank", at, body) }
         messages.forEach(inbox::capture)
+        val before = vm.state.value.budget!!.getJSONArray("transactions").length()
         var calls = 0
-        val analyzer = object : SmsAnalyzer {
-            override suspend fun status() = JSONObject().put("ready", true).put("provider", "anthropic").put("model", "synthetic-test")
-            override suspend fun analyze(request: JSONObject): JSONObject {
-                calls++
-                assertEquals(2, request.getJSONArray("messages").length())
-                if (calls == 1) return JSONObject().put("items", JSONArray().put(JSONObject()
-                    .put("sourceIds", JSONArray(messages.map { it.id })).put("disposition", "question").put("reason", "Both messages use the same card")
-                    .put("evidence", JSONArray().put(JSONObject().put("sourceId", messages[0].id).put("quote", "*1234")))
-                    .put("transaction", JSONObject.NULL).put("question", "Which account is card *1234?").put("accountReference", "*1234")))
-                assertTrue(request.getString("instruction").contains("checking"))
-                assertEquals("checking", request.getJSONArray("mappings").getJSONObject(0).getString("accountId"))
-                assertFalse(request.isNull("previous"))
-                return JSONObject().put("items", JSONArray(messages.map { syntheticSmsAnalysis(it).getJSONArray("items").getJSONObject(0) }))
-            }
-        }
-        compose.setContent { val state by vm.state.collectAsState(); MaterialTheme { state.budget?.let { SmsImportScreen(it, vm, analyzer) } } }
-        compose.waitUntil(10_000) { compose.onAllNodesWithTag("sms-analyze").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText(context.getString(R.string.sms_select_batch)).performClick()
-        compose.onNodeWithTag("sms-analyze").performClick()
-        compose.waitUntil(10_000) { compose.onAllNodesWithTag("sms-consent").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag("sms-consent").performClick()
-        compose.waitUntil(10_000) { compose.onAllNodesWithText("Which account is card *1234?").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText(context.getString(R.string.sms_confirm_review)).assertIsNotEnabled()
-        assertNull(inbox.state(identity!!, "mappings"))
-        val scroller = compose.onNodeWithTag("lazy-form:${context.getString(R.string.sms_review_title)}")
-        scroller.performScrollToNode(hasTestTag("choice-open:${context.getString(R.string.bank_into_account)}"))
-        compose.onNodeWithTag("choice-open:${context.getString(R.string.bank_into_account)}").performClick()
+        show(vm, analyzer {
+            calls++
+            JSONObject().put("items", JSONArray(messages.map { syntheticSmsAnalysis(it, accountId = null, ref = "*1234").getJSONArray("items").getJSONObject(0) }))
+        })
+        // With permission, opening the page reads what's waiting.
+        waitFor("sms-review")
+        compose.onNodeWithTag("sms-review").performClick()
+        waitFor("sms-card:*1234")
+        compose.onNodeWithTag("sms-add").assertIsNotEnabled()
+        compose.onNodeWithTag("choice-open:${context.getString(R.string.sms_which_account)}").performClick()
         compose.onNodeWithText("Everyday").performClick()
-        assertNull(inbox.state(identity!!, "mappings"))
-        scroller.performScrollToNode(hasText(context.getString(R.string.sms_remember_mapping)))
-        compose.onNodeWithText(context.getString(R.string.sms_remember_mapping)).performClick()
         compose.waitUntil(10_000) { inbox.state(identity!!, "mappings") != null }
-        scroller.performScrollToNode(hasText(context.getString(R.string.sms_refine)))
-        compose.onNodeWithText(context.getString(R.string.sms_refine)).performClick()
-        compose.waitUntil(10_000) { compose.onAllNodesWithTag("sms-consent").fetchSemanticsNodes().isNotEmpty() }
-        assertEquals(1, calls)
-        compose.onNodeWithTag("sms-consent").performClick()
-        compose.waitUntil(10_000) { calls == 2 && compose.onAllNodesWithText(context.getString(R.string.sms_confirm_review)).fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText(context.getString(R.string.sms_confirm_review)).assertIsEnabled().performClick()
+        compose.waitUntil(10_000) { runCatching { compose.onNodeWithTag("sms-add").assertIsEnabled() }.isSuccess }
+        compose.onNodeWithTag("sms-add").performClick()
+        compose.waitUntil(10_000) { vm.state.value.budget!!.getJSONArray("transactions").length() == before + 2 }
         compose.waitUntil(10_000) { inbox.pendingCount(identity!!) == 0 }
+        assertEquals(1, calls)
+        assertEquals("checking", JSONArray(inbox.state(identity!!, "mappings")).getJSONObject(0).getString("accountId"))
+    }
+
+    @Test fun hundredsOfCodesAreReadTwoHundredAtATimeAndHandledWithoutAQuestion() {
+        val vm = fixture("codes")
+        val inbox = SmsInbox.get(context)
+        inbox.saveState(identity!!, "consent", smsConsent(connection))
+        inbox.captureAll((1L..450L).map { at -> val body = "Your code is ${1000 + at}"; BankSms(smsId("SyntheticBank", at, body), "SyntheticBank", at, body) })
+        val sizes = java.util.Collections.synchronizedList(mutableListOf<Int>())
+        show(vm, analyzer { request ->
+            val sent = request.getJSONArray("messages")
+            sizes += sent.length()
+            // The third request is still being read when the user stops.
+            if (sizes.size == 3) kotlinx.coroutines.awaitCancellation()
+            codes(sent)
+        })
+        compose.waitUntil(15_000) { sizes.size == 3 }
+        compose.onNodeWithTag("sms-progress").assertTextEquals(context.resources.getQuantityString(R.plurals.sms_reading_progress, 450, "450", "400"))
+        compose.onNodeWithTag("sms-stop").performClick()
+        // What was read is only codes: handled without a question, the rest wait.
+        compose.waitUntil(15_000) { inbox.pendingCount(identity!!) == 50 }
+        assertEquals(listOf(200, 200, 50), sizes.toList())
+        assertNull(inbox.state(identity!!, "draft"))
+        assertEquals(400, JSONObject(inbox.state(identity!!, "last")!!).getJSONObject("skipped").getInt("code"))
+        // Stopped stays stopped; reading the rest is a tap.
+        waitFor("sms-prepare")
+        assertEquals(3, sizes.size)
+        compose.onNodeWithTag("sms-prepare").performClick()
+        compose.waitUntil(15_000) { inbox.pendingCount(identity!!) == 0 }
+        waitFor("sms-up-to-date")
+        assertEquals(listOf(200, 200, 50, 50), sizes.toList())
+    }
+
+    @Test fun aTextForAPurchaseAlreadyInTheBudgetIsMatchedWithoutAQuestion() {
+        val vm = fixture("known")
+        val inbox = SmsInbox.get(context)
+        inbox.saveState(identity!!, "consent", smsConsent(connection))
+        inbox.saveState(identity!!, "mappings", smsRememberCard(JSONArray(), "SyntheticBank", "*1234", "checking").toString())
+        val body = "Card *1234: USD 40.00 at EXAMPLE MKT on 2026-10-02"
+        val purchase = BankSms(smsId("SyntheticBank", 1, body), "SyntheticBank", 1, body)
+        val code = BankSms(smsId("SyntheticBank", 2, "Your code is 4821"), "SyntheticBank", 2, "Your code is 4821")
+        listOf(purchase, code).forEach(inbox::capture)
+        val before = vm.state.value.budget!!.getJSONArray("transactions").length()
+        show(vm, analyzer { request ->
+            val read = codes(request.getJSONArray("messages"))
+            read.getJSONArray("items").put(0, JSONObject().put("sourceIds", JSONArray().put(purchase.id)).put("disposition", "transaction").put("skip", JSONObject.NULL)
+                .put("note", "Purchase at Example market").put("evidence", JSONArray().put(JSONObject().put("sourceId", purchase.id).put("quote", "USD 40.00"))).put("unsure", JSONArray())
+                .put("transaction", JSONObject().put("date", "2026-10-02").put("amount", "-40.00").put("currency", "USD").put("writtenAmount", "40.00")
+                    .put("payee", "Example market").put("memo", "").put("kind", "expense").put("accountRef", "*1234").put("otherRef", JSONObject.NULL).put("categoryId", JSONObject.NULL)))
+            read
+        })
+        compose.waitUntil(15_000) { inbox.pendingCount(identity!!) == 0 }
+        waitFor("sms-up-to-date")
+        assertEquals(before, vm.state.value.budget!!.getJSONArray("transactions").length())
+        val spend = (0 until before).map { vm.state.value.budget!!.getJSONArray("transactions").getJSONObject(it) }.first { it.getString("id") == "cash-spend" }
+        val ids = spend.getJSONArray("bankImportIds").let { a -> (0 until a.length()).map { a.getString(it) }.toSet() }
+        assertTrue(ids.containsAll(smsBankIds("checking", listOf(purchase.id))))
+        val last = JSONObject(inbox.state(identity!!, "last")!!)
+        assertEquals(1, last.getInt("known")); assertEquals(1, last.getJSONObject("skipped").getInt("code"))
     }
 }

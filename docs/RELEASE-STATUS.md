@@ -32,12 +32,20 @@ Client rollback policy: only ship a build that understands the new local library
 
 ## Android bank SMS import (unreleased)
 
-The Android source includes an opt-in Bank messages inbox with multiple sender
-selection, recent-history capture, assistant-directed batch preparation, grouped
-questions, editable proposals and duplicate review. Selected messages are sent to
-the configured assistant only after a separate disclosure and confirmation. Model
+The Android source includes an opt-in Bank messages page: choose bank senders
+(banks first, people's numbers apart) and how far back to collect (changeable later,
+up to everything on the phone, SMS and the text-only MMS a phone moved from an iPhone
+keeps, with a per-sender count to check coverage). With permission given once, opening
+the page reads what's waiting, 200 texts per request, into one review that can be
+stopped; codes, alerts and texts already in the budget are handled without a question,
+and only new transactions and choices are left to review. Reading new texts in the
+background as they arrive, with a notification, is opt-in and asks for
+`POST_NOTIFICATIONS`. The assistant reads the facts and never picks
+accounts; the phone matches cards to accounts by remembered choices or the digits
+in account names, and one choice answers every message naming a card. Sending to
+the assistant is asked once per provider and model and can be withdrawn. Model
 sessions are temporary and do not create ordinary assistant chat history. No SMS
-is imported automatically; all reviewed accounts commit in one undoable step.
+is imported automatically; ticked rows across accounts commit in one undoable step.
 New transactions remain uncleared. This is an unreleased source change, not a Play
 submission or approval. Its `READ_SMS`/`RECEIVE_SMS` permissions require the
 SMS-based money management declaration and Google Play approval before store

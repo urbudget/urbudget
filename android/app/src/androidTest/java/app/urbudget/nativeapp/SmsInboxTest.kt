@@ -93,11 +93,32 @@ class SmsInboxTest {
         assertNull(inbox.state(second, "draft")); assertEquals("private draft", inbox.state(first, "draft"))
         inbox.clear(first); assertNull(inbox.state(first, "draft")); assertNull(inbox.state(first, "mappings"))
     }
+
+    @Test fun aReviewOfAPhonesHistoryIsSavedWholeAndAScanIsCollectedInOneGo() {
+        // Larger than SQLite hands back in one value: a review of thousands of texts.
+        val large = "x".repeat(3_000_000)
+        inbox.saveState(first, "draft", large)
+        assertEquals(large, inbox.state(first, "draft"))
+        inbox.saveState(first, "draft", null); assertNull(inbox.state(first, "draft"))
+        inbox.configure(first, setOf("BankA"), 0)
+        val scan = (1L..2_000L).map { at -> message("BankA", at, "Your code is $at") }
+        val started = System.nanoTime()
+        assertEquals(listOf(first), inbox.captureAll(scan))
+        val seconds = (System.nanoTime() - started) / 1e9
+        assertTrue("Collecting 2,000 texts took $seconds s", seconds < 5)
+        assertEquals(2_000, inbox.pendingCount(first))
+        assertEquals(mapOf("banka" to 2_000), inbox.collected(first, 0))
+        // Collecting again adds nothing; a later start removes what waits from before it.
+        assertTrue(inbox.captureAll(scan).isEmpty())
+        inbox.collectFrom(first, 1_001, keep = setOf(scan.first().id))
+        assertEquals(1_001, inbox.pendingCount(first))
+    }
 }
 
-internal fun syntheticSmsAnalysis(sms: BankSms): JSONObject = JSONObject().put("items", JSONArray().put(JSONObject()
-    .put("sourceIds", JSONArray().put(sms.id)).put("disposition", "transaction").put("reason", "Synthetic purchase")
-    .put("evidence", JSONArray().put(JSONObject().put("sourceId", sms.id).put("quote", "USD 12.34")))
-    .put("question", JSONObject.NULL).put("accountReference", JSONObject.NULL)
-    .put("transaction", JSONObject().put("accountId", "checking").put("date", "2026-10-24").put("amount", "-12.34").put("currency", "USD")
-        .put("payee", "Synthetic Shop").put("memo", "SMS").put("kind", "expense").put("categoryId", JSONObject.NULL).put("transferAccountId", JSONObject.NULL))))
+/** What the model returns for a synthetic purchase; [accountId] stands in for the app's or the user's choice. */
+internal fun syntheticSmsAnalysis(sms: BankSms, accountId: String? = "checking", ref: String? = null): JSONObject = JSONObject().put("items", JSONArray().put(JSONObject()
+    .put("sourceIds", JSONArray().put(sms.id)).put("disposition", "transaction").put("skip", JSONObject.NULL).put("note", "Synthetic purchase")
+    .put("evidence", JSONArray().put(JSONObject().put("sourceId", sms.id).put("quote", "USD 12.34"))).put("unsure", JSONArray())
+    .put("transaction", JSONObject().put("date", "2026-10-24").put("amount", "-12.34").put("currency", "USD").put("writtenAmount", "12.34")
+        .put("payee", "Synthetic Shop").put("memo", "").put("kind", "expense").put("accountRef", ref ?: JSONObject.NULL).put("otherRef", JSONObject.NULL)
+        .put("categoryId", JSONObject.NULL).put("accountId", accountId ?: JSONObject.NULL).put("transferAccountId", JSONObject.NULL))))
