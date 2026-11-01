@@ -241,11 +241,9 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     // Captures only stable holders, so it stays the same lambda across state emissions.
     val cloudStatus by NativeServices.syncStatus.collectAsStateWithLifecycle()
     val common: @Composable RowScope.() -> Unit = {
-        if (cloudStatus?.isNull("email") == false) TextButton({ openPage("Account & sync") }) {
-            Text(syncSummary(cloudStatus), maxLines = 1, style = MaterialTheme.typography.labelSmall)
-        }
         RoundIconButton(Icons.AutoMirrored.Outlined.Chat, stringResource(R.string.assistant_title), { assistant = true })
-        OverflowMenu(vm) { openPage("Settings & data") }
+        // Sync's state sits in the menu, so a narrow screen keeps room for the month beside these buttons.
+        OverflowMenu(vm, if (cloudStatus?.isNull("email") == false) syncState(cloudStatus) else null, { openPage("Account & sync") }) { openPage("Settings & data") }
     }
     val budget = state.budget
     val undoLabel = stringResource(R.string.common_undo)
@@ -414,14 +412,27 @@ private fun BusyBar(vm: BudgetViewModel, modifier: Modifier) {
 
 /** The ⋯ menu: undo, redo and Settings. It follows only the undo, redo and busy flags. */
 @Composable
-private fun OverflowMenu(vm: BudgetViewModel, settings: () -> Unit) {
+private fun OverflowMenu(vm: BudgetViewModel, sync: Int?, openSync: () -> Unit, settings: () -> Unit) {
     val state by remember(vm) { vm.state.map { Triple(it.undoAvailable, it.redoAvailable, it.busy) }.distinctUntilChanged() }
         .collectAsStateWithLifecycle(Triple(false, false, false))
     val (undoAvailable, redoAvailable, busy) = state
     var open by remember { mutableStateOf(false) }
+    val alert = sync == R.string.sync_status_paused || sync == R.string.sync_status_attention
     Box {
-        RoundIconButton(Icons.Outlined.MoreHoriz, stringResource(R.string.common_more_actions), { open = true })
+        RoundIconButton(Icons.Outlined.MoreHoriz, stringResource(R.string.common_more_actions), { open = true }, dot = alert)
         DropdownMenu(open, { open = false }, shape = RoundedCornerShape(16.dp), containerColor = ur.surface) {
+            if (sync != null) {
+                val icon = when (sync) {
+                    R.string.sync_status_synced -> Icons.Outlined.CloudDone
+                    R.string.sync_status_device -> Icons.Outlined.Smartphone
+                    R.string.sync_status_waiting -> Icons.Outlined.CloudSync
+                    R.string.sync_status_offline, R.string.sync_status_paused -> Icons.Outlined.CloudOff
+                    else -> Icons.Outlined.SyncProblem
+                }
+                DropdownMenuItem(text = { Text(stringResource(sync)) }, leadingIcon = { Icon(icon, null, tint = if (alert) ur.warning else LocalContentColor.current) },
+                    onClick = { openSync(); open = false })
+                HorizontalDivider(color = ur.border)
+            }
             DropdownMenuItem(text = { Text(stringResource(R.string.common_undo)) }, leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Undo, null) }, enabled = undoAvailable && !busy,
                 onClick = { vm.undo(); open = false })
             DropdownMenuItem(text = { Text(stringResource(R.string.common_redo)) }, leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Redo, null) }, enabled = redoAvailable && !busy,
@@ -502,13 +513,13 @@ private fun WelcomeScreen(busy: Boolean, create: (String, String, Boolean) -> Un
     }
 }
 
-@Composable
-private fun syncSummary(status: JSONObject?): String {
+/** Where sync stands, as the string the menu shows. */
+private fun syncState(status: JSONObject?): Int {
     val sync = status?.optJSONObject("sync")
     val report = sync?.optJSONObject("last")
     val rows = report?.optJSONArray("budgets")
     val states = (0 until (rows?.length() ?: 0)).map { rows?.optJSONObject(it)?.optString("state") }
-    val message = when {
+    return when {
         sync?.optBoolean("unlocked") != true && (sync?.optBoolean("enabled") == true || report != null) -> R.string.sync_status_paused
         states.any { it in setOf("conflict", "error", "update_app", "recovery", "subscription_required", "deletion_conflict") } -> R.string.sync_status_attention
         report?.optString("state") == "offline" -> R.string.sync_status_offline
@@ -518,5 +529,4 @@ private fun syncSummary(status: JSONObject?): String {
         report?.optString("state") == "ok" -> R.string.sync_status_synced
         else -> R.string.sync_status_attention
     }
-    return stringResource(message)
 }
