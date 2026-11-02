@@ -15,10 +15,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import java.util.Locale
 
 internal data class SmsSource(val sender: String, val since: Long)
+/** The budget's templates in use, and their rows filled and confirmed by the assistant in review. */
+internal data class SmsTemplateSummary(val count: Int, val filled: Int, val confirmed: Int)
 internal data class SmsSender(val address: String, val count: Int, val preview: String?)
 /**
  * What the phone holds from one chosen sender since collecting starts, and what UrBudget collected:
@@ -28,7 +32,7 @@ internal data class SmsSender(val address: String, val count: Int, val preview: 
 internal data class SmsCoverage(val sender: String, val sms: Int, val mms: Int, val unreadable: Int, val first: Long?, val latest: Long?, val collected: Int)
 
 /** Separate from the budget database: capture cannot change the ledger or require the Rust engine. */
-internal class SmsInbox private constructor(private val context: Context) : SQLiteOpenHelper(context, "sms-inbox.sqlite3", null, 2) {
+internal class SmsInbox private constructor(private val context: Context) : SQLiteOpenHelper(context, "sms-inbox.sqlite3", null, 3) {
     override fun onConfigure(db: SQLiteDatabase) { db.rawQuery("PRAGMA secure_delete=ON", null).use { it.moveToFirst() } }
 
     // A review can hold a phone's whole history, more than SQLite hands back in one value, so it's
@@ -47,11 +51,20 @@ internal class SmsInbox private constructor(private val context: Context) : SQLi
         db.execSQL("CREATE TABLE messages (budget TEXT NOT NULL, id TEXT NOT NULL, sender TEXT NOT NULL, received INTEGER NOT NULL, body TEXT NOT NULL, done INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(budget,id))")
         db.execSQL("CREATE INDEX inbox_pending ON messages(budget,done,received)")
         createAnalysis(db)
+        createTemplates(db)
     }
     private fun createAnalysis(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE sms_state (budget TEXT NOT NULL, name TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(budget,name))")
     }
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) { if (oldVersion < 2) createAnalysis(db) }
+    /** Formats the assistant wrote, per budget and sender: the template, a text it was written from, and how its readings fared. */
+    private fun createTemplates(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE sms_templates (budget TEXT NOT NULL, id TEXT NOT NULL, sender_key TEXT NOT NULL, body TEXT NOT NULL, example TEXT NOT NULL, " +
+            "state TEXT NOT NULL, stats TEXT NOT NULL, first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL, PRIMARY KEY(budget,id))")
+    }
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) createAnalysis(db)
+        if (oldVersion < 3) createTemplates(db)
+    }
     /** A small saved value for a budget; "draft" is its review, kept in a file (one saved here before then is still read). */
     fun state(budget: String, name: String): String? {
         if (name == "draft") reviewFile(budget).takeIf { it.isFile }?.let { return it.readText() }
@@ -82,9 +95,12 @@ internal class SmsInbox private constructor(private val context: Context) : SQLi
                     put("since", old[smsSenderKey(sender)]?.since ?: since)
                 })
             }
+            val kept = senders.map(::smsSenderKey).toSet()
             db.query("messages", arrayOf("id", "sender"), "budget=? AND done=0", arrayOf(budget), null, null, null).use { c ->
-                val kept = senders.map(::smsSenderKey).toSet()
                 while (c.moveToNext()) if (smsSenderKey(c.getString(1)) !in kept) db.delete("messages", "budget=? AND id=?", arrayOf(budget, c.getString(0)))
+            }
+            db.query("sms_templates", arrayOf("id", "sender_key"), "budget=?", arrayOf(budget), null, null, null).use { c ->
+                while (c.moveToNext()) if (c.getString(1) !in kept) db.delete("sms_templates", "budget=? AND id=?", arrayOf(budget, c.getString(0)))
             }
             db.setTransactionSuccessful()
         } finally { db.endTransaction() }
@@ -109,6 +125,7 @@ internal class SmsInbox private constructor(private val context: Context) : SQLi
                     // A deleted local budget must not continue collecting messages.
                     if (File(budget).isAbsolute && !File(budget).isFile) {
                         db.delete("sources", "budget=?", arrayOf(budget)); db.delete("messages", "budget=?", arrayOf(budget)); db.delete("sms_state", "budget=?", arrayOf(budget))
+                        db.delete("sms_templates", "budget=?", arrayOf(budget))
                         saveReview(budget, null)
                     } else if (insert(db, budget, message)) collected += budget
                 }
@@ -195,8 +212,99 @@ internal class SmsInbox private constructor(private val context: Context) : SQLi
         db.beginTransaction()
         try {
             db.delete("sources", "budget=?", arrayOf(budget)); db.delete("messages", "budget=?", arrayOf(budget))
-            db.delete("sms_state", "budget=?", arrayOf(budget))
+            db.delete("sms_state", "budget=?", arrayOf(budget)); db.delete("sms_templates", "budget=?", arrayOf(budget))
             saveReview(budget, null)
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+
+    /** The budget's templates in use, as the assistant reads them (the core's `Template`). */
+    fun templates(budget: String): JSONArray = readableDatabase.query("sms_templates", arrayOf("body"), "budget=? AND state!='retired'", arrayOf(budget), null, null, "first_seen").use { c ->
+        JSONArray().also { list -> while (c.moveToNext()) list.put(JSONObject(c.getString(0))) }
+    }
+
+    /** How the budget's templates are doing: in use, and their rows filled and confirmed by the assistant. */
+    fun templateSummary(budget: String): SmsTemplateSummary {
+        var count = 0; var filled = 0; var confirmed = 0
+        readableDatabase.query("sms_templates", arrayOf("stats"), "budget=? AND state!='retired'", arrayOf(budget), null, null, null).use { c ->
+            while (c.moveToNext()) { count++; val s = JSONObject(c.getString(0)); filled += s.optInt("filled"); confirmed += s.optInt("confirmed") }
+        }
+        return SmsTemplateSummary(count, filled, confirmed)
+    }
+
+    /** Payees as the bank writes them, to the user's (the core's `Payee`). */
+    fun payees(budget: String): JSONArray = JSONArray(state(budget, "payees") ?: "[]")
+
+    /**
+     * What a reading taught: new templates (each with the text it was written from), templates a
+     * rewrite retired, how each template's rows fared in review, and payees learned.
+     */
+    fun learn(budget: String, learning: JSONObject, now: Long = System.currentTimeMillis()) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            learning.optJSONArray("templates")?.let { list -> for (i in 0 until list.length()) {
+                val learned = list.getJSONObject(i)
+                val template = learned.getJSONObject("template")
+                db.insertWithOnConflict("sms_templates", null, ContentValues().apply {
+                    put("budget", budget); put("id", template.getString("id")); put("sender_key", template.getString("sender"))
+                    put("body", template.toString()); put("example", learned.optString("example")); put("state", "candidate")
+                    put("stats", JSONObject().put("agreed", learned.optInt("agreed")).toString()); put("first_seen", now); put("last_seen", now)
+                }, SQLiteDatabase.CONFLICT_IGNORE)
+            } }
+            learning.optJSONArray("retired")?.let { list -> for (i in 0 until list.length())
+                db.update("sms_templates", ContentValues().apply { put("state", "retired") }, "budget=? AND id=?", arrayOf(budget, list.getString(i)))
+            }
+            learning.optJSONObject("stats")?.let { stats -> stats.keys().forEach { id ->
+                addStats(db, budget, id, now) { s ->
+                    val got = stats.getJSONObject(id)
+                    s.put("filled", s.optInt("filled") + got.optInt("filled")).put("confirmed", s.optInt("confirmed") + got.optInt("confirmed"))
+                        .put("requests", s.optInt("requests") + 1)
+                    val corrected = s.optJSONObject("corrected") ?: JSONObject()
+                    got.optJSONObject("corrected")?.let { c -> c.keys().forEach { f -> corrected.put(f, corrected.optInt(f) + c.getInt(f)) } }
+                    s.put("corrected", corrected)
+                }
+            } }
+            learning.optJSONArray("payees")?.takeIf { it.length() > 0 }?.let { mergePayees(budget, it) }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+
+    /** The user changed these [fields] of a row a template read, before adding it: counted against the template. */
+    fun edited(budget: String, template: String, fields: Collection<String>) {
+        if (fields.isEmpty()) return
+        addStats(writableDatabase, budget, template, System.currentTimeMillis()) { s ->
+            val edited = s.optJSONObject("edited") ?: JSONObject()
+            fields.forEach { edited.put(it, edited.optInt(it) + 1) }
+            s.put("edited", edited)
+        }
+    }
+
+    /** The user's payee for a name the bank writes: the next text a template reads with it gets the user's. */
+    fun learnPayee(budget: String, sender: String, raw: String, payee: String, categoryId: String?) =
+        mergePayees(budget, JSONArray().put(JSONObject().put("sender", sender).put("raw", raw).put("payee", payee).put("categoryId", categoryId ?: JSONObject.NULL)))
+
+    private fun mergePayees(budget: String, more: JSONArray) {
+        val merged = linkedMapOf<String, JSONObject>()
+        fun add(list: JSONArray) { for (i in 0 until list.length()) list.getJSONObject(i).let { merged[it.optString("sender") + "\u0000" + it.optString("raw").lowercase()] = it } }
+        add(payees(budget)); add(more)
+        // The most recent 2,000 are plenty for a bank's merchants.
+        saveState(budget, "payees", JSONArray(merged.values.toList().takeLast(2_000)).toString())
+    }
+
+    private fun addStats(db: SQLiteDatabase, budget: String, id: String, now: Long, change: (JSONObject) -> Unit) {
+        val stats = db.query("sms_templates", arrayOf("stats"), "budget=? AND id=?", arrayOf(budget, id), null, null, null).use { c -> if (c.moveToFirst()) JSONObject(c.getString(0)) else null } ?: return
+        change(stats)
+        db.update("sms_templates", ContentValues().apply { put("stats", stats.toString()); put("last_seen", now) }, "budget=? AND id=?", arrayOf(budget, id))
+    }
+
+    /** Forgets the budget's templates and learned payees: the assistant reads every format in full again. */
+    fun forgetTemplates(budget: String) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            db.delete("sms_templates", "budget=?", arrayOf(budget))
+            db.delete("sms_state", "budget=? AND name='payees'", arrayOf(budget))
             db.setTransactionSuccessful()
         } finally { db.endTransaction() }
     }

@@ -198,7 +198,7 @@ class SmsAnalysisTest {
         fun t(account: String, date: String, status: String = "uncleared", bank: Boolean = false, transfer: String? = null, transferStatus: String? = null) = JSONObject()
             .put("accountId", account).put("date", date).put("status", status).put("bankImportIds", JSONArray(if (bank) listOf("bank:x") else emptyList()))
             .put("transferAccountId", transfer ?: JSONObject.NULL).put("transferStatus", transferStatus ?: JSONObject.NULL)
-        val budget = JSONObject().put("accounts", JSONArray(listOf("anb" to "ANB 3358", "visa" to "Visa", "cash" to "Cash", "old" to "Old").map { (id, name) ->
+        val budget = JSONObject().put("accounts", JSONArray(listOf("anb" to "Everyday", "visa" to "Visa", "cash" to "Cash", "old" to "Old").map { (id, name) ->
             JSONObject().put("id", id).put("name", name).put("archived", id == "old") }))
             .put("transactions", JSONArray(listOf(
                 t("anb", "2026-10-20", bank = true), t("anb", "2026-11-01", bank = true), t("anb", "2026-10-28", status = "reconciled"),
@@ -206,7 +206,7 @@ class SmsAnalysisTest {
                 t("old", "2026-10-31", bank = true))))
         val marks = smsAccountMarks(budget, today = "2026-11-02")
         // A scheduled transaction isn't bank data yet; an account with neither, or archived, isn't listed.
-        assertEquals(listOf(SmsAccountMark("anb", "ANB 3358", "2026-11-01", "2026-10-28"), SmsAccountMark("visa", "Visa", null, "2026-10-29")), marks)
+        assertEquals(listOf(SmsAccountMark("anb", "Everyday", "2026-11-01", "2026-10-28"), SmsAccountMark("visa", "Visa", null, "2026-10-29")), marks)
         assertEquals("2026-11-01", marks[0].day); assertEquals("2026-10-29", marks[1].day)
     }
     @Test fun readingSaysItsRequestsAndTimeOnceThereIsAPace() {
@@ -225,6 +225,40 @@ class SmsAnalysisTest {
         val changes = smsBalanceChanges(items, listOf(0 to "new", 1 to "new", 2 to "new", 3 to "match:t1"))
         assertEquals(mapOf("visa" to -1_234L + 10_000L, "checking" to -10_000L), changes)
         assertTrue(smsBalanceChanges(items, listOf(3 to "match:t1")).isEmpty())
+    }
+    @Test fun anAccountMadeForTheReviewHoldsNothingBackAndIsKeptWithIt() {
+        val budget = JSONObject().put("accounts", JSONArray(listOf("checking", "cd").map { JSONObject().put("id", it) }))
+            .put("transactions", JSONArray().put(JSONObject().put("accountId", "checking").put("date", "2026-10-01")))
+        val sms = message(body = "***0091 to deposit 4321")
+        val batch = SmsBatch(listOf(sms), JSONObject().put("items", JSONArray().put(item(sms, purchase("***0091", kind = "transfer", other = "4321").put("date", "2026-10-24")))))
+        val open = listOf("checking" to "ANB 0091", "cd" to "ANB 4321")
+        // A new CD has no transactions, so it starts today and the transfer into it would be held back...
+        assertTrue(batch.items(SmsAccounts(open, JSONArray(), batch.starts(budget))).single().early)
+        // ...unless it was made for this review, its balance from before these texts.
+        val made = batch.copy(fresh = setOf("cd"))
+        assertFalse(made.items(SmsAccounts(open, JSONArray(), made.starts(budget))).single().early)
+        val restored = SmsBatch.restore(made.saved()) { ids -> listOf(sms).filter { it.id in ids } }!!
+        assertEquals(setOf("cd"), restored.fresh); assertEquals(setOf("cd"), restored.only(listOf(0))!!.fresh)
+    }
+    @Test fun rowsAreNewestFirstAndANewAccountIsNamedForItsSenderAndDigits() {
+        val messages = listOf("a", "b", "c").map { message(body = it) }
+        val batch = SmsBatch(messages, JSONObject().put("items", JSONArray(listOf("2026-10-03", "2026-10-05", "2026-10-03").mapIndexed { i, day -> item(messages[i], purchase("4417").put("date", day)) })))
+        val items = batch.items(SmsAccounts(accounts, JSONArray()))
+        assertEquals(listOf(1, 2, 0), app.urbudget.nativeapp.ui.smsNewestFirst(items).map { it.index })
+        assertEquals("ANB 4321", app.urbudget.nativeapp.ui.smsAccountName("anb", "***4321"))
+        assertEquals("ANB Savings", app.urbudget.nativeapp.ui.smsAccountName(" anb ", "Savings"))
+    }
+    @Test fun aTemplatesRowsAreCountedAndWhatTheUserChangesInThemIsNamed() {
+        val sms = message(body = "Visa 4417 SAR 12.34"); val code = message(body = "Code 1234")
+        val batch = SmsBatch(listOf(sms, code), JSONObject().put("items", JSONArray()
+            .put(item(sms, purchase("4417")).put("template", "t1").put("raw", "SHOP")).put(item(code, null, "ignore"))))
+        assertEquals(1, batch.templated)
+        val read = batch.items(SmsAccounts(accounts, JSONArray()))[0]
+        assertEquals("t1" to "SHOP", read.template to read.raw)
+        assertEquals(emptySet<String>() to null, app.urbudget.nativeapp.ui.smsChanged(read, smsEditable(read, "SAR")))
+        val record = smsEditable(read, "SAR").put("payee", "Shop & Co").put("amount", -1500L)
+        record.getJSONArray("splits").getJSONObject(0).put("categoryId", "food")
+        assertEquals(setOf("payee", "amount", "category") to "food", app.urbudget.nativeapp.ui.smsChanged(read, record))
     }
     @Test fun aReviewKeepsWhatStillWaitsAndALaterStartOrARemovedSenderTakesTheRestOut() {
         val texts = listOf(BankSms(smsId("anb", 1, "a"), "anb", 1_000, "a"), BankSms(smsId("anb", 2, "b"), "anb", 2_000, "b"),

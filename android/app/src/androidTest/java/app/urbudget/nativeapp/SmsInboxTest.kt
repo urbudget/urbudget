@@ -94,6 +94,34 @@ class SmsInboxTest {
         inbox.clear(first); assertNull(inbox.state(first, "draft")); assertNull(inbox.state(first, "mappings"))
     }
 
+    @Test fun templatesAreLearnedPerBudgetTheirReadingsCountedAndForgotten() {
+        inbox.configure(first, setOf("BankA", "BankB"), 0)
+        fun template(id: String, sender: String) = JSONObject().put("id", id).put("sender", sender).put("lines", JSONArray().put("Purchase {currency} {amount} at {payee}"))
+            .put("outcome", JSONObject().put("disposition", "transaction").put("kind", "expense").put("sign", "-").put("skip", JSONObject.NULL).put("memo", JSONObject.NULL))
+            .put("note", "Purchase at {payee}").put("payee", JSONObject.NULL)
+        fun learned(t: JSONObject) = JSONObject().put("template", t).put("example", "Purchase SAR 1.00 at SHOP").put("agreed", 1)
+        inbox.learn(first, JSONObject().put("templates", JSONArray().put(learned(template("t1", "banka"))).put(learned(template("t2", "bankb"))))
+            .put("payees", JSONArray().put(JSONObject().put("sender", "banka").put("raw", "SHOP").put("payee", "Shop").put("categoryId", JSONObject.NULL))))
+        assertEquals(listOf("t1", "t2"), (0 until 2).map { inbox.templates(first).getJSONObject(it).getString("id") })
+        assertEquals(0, inbox.templates(second).length())
+        // Readings reviewed over two requests, and a row the user changed before adding it.
+        repeat(2) { inbox.learn(first, JSONObject().put("stats", JSONObject().put("t1", JSONObject().put("filled", 3).put("confirmed", 2).put("corrected", JSONObject().put("payee", 1))))) }
+        inbox.edited(first, "t1", setOf("amount"))
+        assertEquals(SmsTemplateSummary(2, 6, 4), inbox.templateSummary(first))
+        val stats = inbox.readableDatabase.rawQuery("SELECT stats FROM sms_templates WHERE budget=? AND id='t1'", arrayOf(first)).use { it.moveToFirst(); JSONObject(it.getString(0)) }
+        assertEquals(2, stats.getJSONObject("corrected").getInt("payee")); assertEquals(1, stats.getJSONObject("edited").getInt("amount")); assertEquals(2, stats.getInt("requests"))
+        // The user's payee for the bank's name replaces the one learned before, whatever its case.
+        inbox.learnPayee(first, "banka", "shop", "Shop & Co", null)
+        assertEquals(1, inbox.payees(first).length()); assertEquals("Shop & Co", inbox.payees(first).getJSONObject(0).getString("payee"))
+        // A rewrite retires a template; removing a sender forgets its formats; Forget clears the rest.
+        inbox.learn(first, JSONObject().put("retired", JSONArray().put("t1")))
+        assertEquals(listOf("t2"), (0 until inbox.templates(first).length()).map { inbox.templates(first).getJSONObject(it).getString("id") })
+        inbox.configure(first, setOf("BankA"), 0)
+        assertEquals(0, inbox.templates(first).length())
+        inbox.forgetTemplates(first)
+        assertEquals(0, inbox.payees(first).length()); assertEquals(SmsTemplateSummary(0, 0, 0), inbox.templateSummary(first))
+    }
+
     @Test fun aReviewOfAPhonesHistoryIsSavedWholeAndAScanIsCollectedInOneGo() {
         // Larger than SQLite hands back in one value: a review of thousands of texts.
         val large = "x".repeat(3_000_000)

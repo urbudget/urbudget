@@ -2535,6 +2535,34 @@
     </plurals>
     <string name="sms_which_account">أي حساب هذا؟</string>
     <string name="sms_remember_card">التذكّر لهذه الأرقام</string>
+    <string name="sms_new_account">حساب جديد…</string>
+    <string name="sms_new_account_title">حساب جديد</string>
+    <string name="sms_new_account_balance">الرصيد قبل هذه الرسائل (%1$s)</string>
+    <string name="sms_new_account_help">تُضاف معاملات هذه المراجعة فوقه.</string>
+    <string name="sms_tick_from_day">تحديد من يوم</string>
+    <plurals name="sms_by_template">
+        <item quantity="zero">لم تُقرأ رسائل بقوالب · \u2068%2$s\u2069 قُرئت كاملة</item>
+        <item quantity="one">رسالة قرأها قالب وراجعها مساعدك · \u2068%2$s\u2069 قُرئت كاملة</item>
+        <item quantity="two">رسالتان قرأهما قالب وراجعهما مساعدك · \u2068%2$s\u2069 قُرئت كاملة</item>
+        <item quantity="few">\u2068%1$s\u2069 رسائل قرأتها قوالب وراجعها مساعدك · \u2068%2$s\u2069 قُرئت كاملة</item>
+        <item quantity="many">\u2068%1$s\u2069 رسالة قرأتها قوالب وراجعها مساعدك · \u2068%2$s\u2069 قُرئت كاملة</item>
+        <item quantity="other">\u2068%1$s\u2069 رسالة قرأتها قوالب وراجعها مساعدك · \u2068%2$s\u2069 قُرئت كاملة</item>
+    </plurals>
+    <string name="sms_from_template">قرأها قالب على هذا الهاتف وراجعها مساعدك.</string>
+    <string name="sms_templates_title">الصيغ المتعلَّمة</string>
+    <string name="sms_templates_none">لا شيء بعد: يكتبها مساعدك وهو يقرأ</string>
+    <plurals name="sms_templates_count">
+        <item quantity="zero">لا صيغ</item>
+        <item quantity="one">صيغة واحدة</item>
+        <item quantity="two">صيغتان</item>
+        <item quantity="few">\u2068%1$s\u2069 صيغ</item>
+        <item quantity="many">\u2068%1$s\u2069 صيغة</item>
+        <item quantity="other">\u2068%1$s\u2069 صيغة</item>
+    </plurals>
+    <string name="sms_templates_confirmed">مؤكَّدة في المراجعة بنسبة \u2068%1$s%%\u2069</string>
+    <string name="sms_templates_forget_title">هل تريد نسيان الصيغ المتعلَّمة؟</string>
+    <string name="sms_templates_forget_detail">سيقرأ مساعدك كل صيغة كاملة من جديد، ويتعلمها مرة أخرى وهو يقرأ.</string>
+    <string name="sms_templates_forget">نسيان</string>
     <string name="sms_needs_account">اختر حسابًا</string>
     <string name="sms_needs_transfer">اختر الحساب الآخر</string>
     <string name="sms_needs_amount">المبلغ بـ%1$s مقابل %2$s</string>

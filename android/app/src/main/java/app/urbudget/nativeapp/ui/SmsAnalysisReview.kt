@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.*
@@ -39,12 +40,13 @@ import kotlin.coroutines.resumeWithException
  */
 @Composable
 internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch, mappings: JSONArray, close: () -> Unit, change: ((SmsBatch) -> SmsBatch) -> Unit,
-                       saveCards: (JSONArray) -> Unit, finish: (List<String>, SmsBatch?) -> Unit, again: (String) -> Unit, discard: () -> Unit) {
+                       saveCards: (JSONArray) -> Unit, finish: (List<String>, SmsBatch?) -> Unit, again: (String) -> Unit, discard: () -> Unit,
+                       edited: (SmsItem, Set<String>, String, String?) -> Unit = { _, _, _, _ -> }) {
     val state by vm.state.collectAsStateWithLifecycle()
     val toast = LocalToast.current
     val currency = budget.text("currency")
     val accounts = remember(budget) { budget.rows("accounts").filterNot { it.optBoolean("archived") }.map { it.text("id") to it.text("name") } }
-    val starts = remember(budget) { smsStarts(budget) }
+    val starts = remember(budget, batch.fresh) { batch.starts(budget) }
     // Ticking and dismissing don't change what's previewed; only the analysis and the cards do.
     val items = remember(batch.analysis, batch.messages, mappings, accounts, starts) { batch.items(SmsAccounts(accounts, mappings, starts)) }
     val resolved = remember(items) { batch.resolved(items) }
@@ -57,6 +59,9 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
     var menu by remember { mutableStateOf(false) }
     var noting by remember { mutableStateOf(false) }
     var shown by remember { mutableStateOf<Set<Int>>(emptySet()) }
+    // The rows a day is picked for ("Tick from a day"), and the account being made for a text.
+    var fromDay by remember { mutableStateOf<List<SmsItem>?>(null) }
+    var creating by remember { mutableStateOf<SmsNewAccount?>(null) }
     val decisions = remember { mutableStateMapOf<Int, String>() }
     val keepCard = remember { mutableStateMapOf<String, Boolean>() }
     LaunchedEffect(budget, resolved) {
@@ -75,8 +80,13 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
     fun ticked(item: SmsItem) = item.tickedIn(latest.value)
     fun tick(item: SmsItem, on: Boolean) = change { it.copy(ticked = it.ticked + (item.index to on)) }
     fun tickAll(rows: List<SmsItem>, on: Boolean) = change { b -> b.copy(ticked = b.ticked + rows.filter { it.needs == null }.associate { it.index to on }) }
+    /** Ticks what's dated [day] or later and unticks the rest: a first import that starts where the budget does. */
+    fun tickFrom(rows: List<SmsItem>, day: String) = change { b -> b.copy(ticked = b.ticked + rows.filter { it.needs == null }.associate { it.index to (it.transaction?.text("date").orEmpty() >= day) }) }
     val sorted = smsSort(batch, items, known)
     val (waiting, ready, existing, holds, skipped) = sorted
+    // Newest first, as the bank's app lists them, under the day they're dated.
+    val readyShown = remember(ready) { smsNewestFirst(ready) }
+    val holdsShown = remember(holds) { smsNewestFirst(holds) }
     val cards = waiting.filter { it.card != null }.groupBy { it.card!! }
     val adding = prepared?.let { rows -> (ready + existing + holds).filter { it.needs == null && ticked(it) }.mapNotNull { item ->
         rows[item.index]?.takeIf { !it.locked }?.let { row -> item.index to decision(item.index, row) }?.takeIf { it.second != "skip" }
@@ -100,6 +110,21 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
         val first = group.first()
         if (keepCard[first.card] != false) runCatching { saveCards(smsRememberCard(mappings, first.sender, first.ref!!, account)) }.onFailure { error = it.message }
         else change { b -> group.fold(b) { next, item -> next.edit(item.index) { it.getJSONObject("transaction").put("accountId", account) } } }
+    }
+    /** An account made for these texts: its balance is from before them, so none is held back as already in it. */
+    fun made(account: String) = change { it.copy(fresh = it.fresh + account) }
+    fun newForCard(group: List<SmsItem>) {
+        val first = group.first()
+        creating = SmsNewAccount(smsAccountName(first.sender, first.ref!!)) { id -> made(id); chooseCard(group, id) }
+    }
+    /** The other account of a transfer, made here and remembered for its digits, so the sender's next texts naming it find it. */
+    fun newForTransfer(item: SmsItem) {
+        val other = item.transaction?.text("otherRef")?.ifBlank { null }
+        creating = SmsNewAccount(other?.let { smsAccountName(item.sender, it) }.orEmpty()) { id ->
+            made(id)
+            if (other != null) runCatching { saveCards(smsRememberCard(mappings, item.sender, other, id)) }.onFailure { error = it.message }
+            else change { it.edit(item.index) { json -> json.getJSONObject("transaction").put("transferAccountId", id) } }
+        }
     }
     fun enterAmount(item: SmsItem, cents: Long) {
         val out = item.transaction?.text("kind") in setOf("expense", "transfer")
@@ -131,20 +156,20 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
                 item(key = "choose") { SectionTitle(stringResource(R.string.sms_section_choose), stringResource(R.string.sms_section_choose_detail)) }
                 cards.forEach { (key, group) ->
                     item(key = "card:$key") {
-                        SmsCardChoice(group, accounts, keepCard[key] != false, { keepCard[key] = it }) { chooseCard(group, it) }
+                        SmsCardChoice(group, accounts, keepCard[key] != false, { keepCard[key] = it }, { newForCard(group) }) { chooseCard(group, it) }
                     }
                 }
                 val singles = waiting.filter { it.card == null }
                 itemsIndexed(singles, key = { _, it -> "single:${it.index}" }) { i, item ->
                     if (item.transaction == null) SmsUnclearRow(item, i, singles.size, { editing = item.index }) { change { it.copy(dismissed = it.dismissed + item.index) } }
                     else SmsTransactionRow(item, budget, null, null, null, i, singles.size, item.index in shown, !saving,
-                        { shown = shown.toggle(item.index) }, {}, {}, { editing = item.index }) { enterAmount(item, it) }
+                        { shown = shown.toggle(item.index) }, {}, {}, { editing = item.index }, newAccount = { newForTransfer(item) }.takeIf { item.needs == "transfer" }) { enterAmount(item, it) }
                 }
             }
-            rowSection("ready", readyTitle, null, ready, budget, prepared, ::decision, ::ticked, shown, !saving,
-                { shown = shown.toggle(it) }, ::tick, { i, d -> decisions[i] = d }, { editing = it }, ::enterAmount, tickAll = { tickAll(ready, it) })
-            rowSection("holds", holdsTitle, holdsDetail, holds, budget, prepared, ::decision, ::ticked, shown, !saving,
-                { shown = shown.toggle(it) }, ::tick, { i, d -> decisions[i] = d }, { editing = it }, ::enterAmount, tickAll = { tickAll(holds, it) })
+            rowSection("ready", readyTitle, null, readyShown, budget, prepared, ::decision, ::ticked, shown, !saving,
+                { shown = shown.toggle(it) }, ::tick, { i, d -> decisions[i] = d }, { editing = it }, ::enterAmount, tickAll = { tickAll(ready, it) }, fromDay = { fromDay = ready }, days = true)
+            rowSection("holds", holdsTitle, holdsDetail, holdsShown, budget, prepared, ::decision, ::ticked, shown, !saving,
+                { shown = shown.toggle(it) }, ::tick, { i, d -> decisions[i] = d }, { editing = it }, ::enterAmount, tickAll = { tickAll(holds, it) }, fromDay = { fromDay = holds }, days = true)
             // What changes nothing in the budget is handled without a question, and open to look at.
             if (existing.isNotEmpty() || skipped.isNotEmpty()) {
                 item(key = "handled") {
@@ -187,9 +212,16 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
             }
         }
     }
+    fromDay?.let { rows ->
+        DatePickerSheet(java.time.LocalDate.now().toString(), { day -> tickFrom(rows, day); fromDay = null }) { fromDay = null }
+    }
+    creating?.let { request -> SmsNewAccountDialog(request, budget, vm) { creating = null } }
     editing?.let { index -> items.firstOrNull { it.index == index } }?.let { item ->
         TransactionDialog(smsEditable(item, currency), budget, "", vm, close = { editing = null }, dialogTitle = stringResource(R.string.sms_check_title), saveOverride = { record ->
             change { smsEdited(it, item, record, budget) }
+            // A row a template read, changed by the user: counted against the template, and its payee learned.
+            val (fields, category) = smsChanged(item, record)
+            if (fields.isNotEmpty()) edited(item, fields, record.text("payee"), category)
         }, extraFields = { SmsSources(item) })
     }
     if (noting) {
@@ -200,6 +232,9 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
         }
     }
 }
+
+/** The choice that makes a new account, beside the budget's own. */
+private const val NEW_ACCOUNT = "\u0000new"
 
 private fun Set<Int>.toggle(value: Int) = if (value in this) this - value else this + value
 
@@ -308,20 +343,74 @@ internal fun smsBankIds(account: String, smsIds: List<String>): Set<String> {
 private fun LazyListScope.rowSection(key: String, title: String?, detail: String?, rows: List<SmsItem>, budget: JSONObject, prepared: Map<Int, BankReviewRow>?,
                                      decision: (Int, BankReviewRow) -> String, ticked: (SmsItem) -> Boolean, shown: Set<Int>, enabled: Boolean, show: (Int) -> Unit,
                                      tick: (SmsItem, Boolean) -> Unit, decide: (Int, String) -> Unit, open: (Int) -> Unit, enter: (SmsItem, Long) -> Unit,
-                                     tickAll: ((Boolean) -> Unit)? = null) {
+                                     tickAll: ((Boolean) -> Unit)? = null, fromDay: (() -> Unit)? = null, days: Boolean = false) {
     if (rows.isEmpty()) return
-    // Two or more rows to tick are ticked or unticked together.
+    // Two or more rows to tick are ticked or unticked together, or from a day on.
     val tickable = rows.filter { it.needs == null }
     title?.let { item(key = key) { SectionTitle(it, detail, if (tickAll == null || tickable.size < 2) null else { {
-        val any = tickable.any(ticked)
-        TextButton({ tickAll(!any) }, Modifier.testTag("sms-tick-all:$key"), enabled = enabled) {
-            Text(stringResource(if (any) R.string.sms_untick_all else R.string.sms_tick_all), color = ur.accent, fontWeight = FontWeight.SemiBold)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            fromDay?.let { pick ->
+                IconButton(pick, Modifier.testTag("sms-tick-from:$key"), enabled = enabled) {
+                    Icon(Icons.Outlined.CalendarToday, stringResource(R.string.sms_tick_from_day), tint = ur.accent, modifier = Modifier.size(20.dp))
+                }
+            }
+            val any = tickable.any(ticked)
+            TextButton({ tickAll(!any) }, Modifier.testTag("sms-tick-all:$key"), enabled = enabled) {
+                Text(stringResource(if (any) R.string.sms_untick_all else R.string.sms_tick_all), color = ur.accent, fontWeight = FontWeight.SemiBold)
+            }
         }
     } }) } }
-    itemsIndexed(rows, key = { _, it -> "$key:${it.index}" }) { i, item ->
-        val row = prepared?.get(item.index)
-        SmsTransactionRow(item, budget, row, row?.let { decision(item.index, it) }, if (item.needs == null) ticked(item) && row?.locked != true else null, i, rows.size,
-            item.index in shown, enabled && row != null && !row.locked, { show(item.index) }, { tick(item, it) }, { decide(item.index, it) }, { open(item.index) }) { enter(item, it) }
+    // Under the day they're dated, when [days]: the order is the caller's, newest first.
+    val groups = if (days) rows.groupBy { it.transaction?.text("date").orEmpty() } else mapOf("" to rows)
+    groups.forEach { (day, group) ->
+        if (day.isNotBlank()) item(key = "$key-day:$day") {
+            Text(Money.joined(listOf(Money.date(day), Words.count(R.plurals.sms_transaction_count, group.size.toLong()))), Modifier.padding(top = 2.dp).testTag("sms-day:$day"),
+                style = MaterialTheme.typography.labelLarge, color = ur.muted)
+        }
+        itemsIndexed(group, key = { _, it -> "$key:${it.index}" }) { i, item ->
+            val row = prepared?.get(item.index)
+            SmsTransactionRow(item, budget, row, row?.let { decision(item.index, it) }, if (item.needs == null) ticked(item) && row?.locked != true else null, i, group.size,
+                item.index in shown, enabled && row != null && !row.locked, { show(item.index) }, { tick(item, it) }, { decide(item.index, it) }, { open(item.index) }) { enter(item, it) }
+        }
+    }
+}
+
+/** Newest first, as a bank lists them; a day's texts in the order they came, latest first. */
+internal fun smsNewestFirst(items: List<SmsItem>): List<SmsItem> =
+    items.sortedWith(compareByDescending<SmsItem> { it.transaction?.text("date").orEmpty() }.thenByDescending { it.index })
+
+/** A name for an account a text names that the budget doesn't have yet: "ANB 0070". */
+internal fun smsAccountName(sender: String, ref: String): String =
+    listOf(sender.trim().uppercase(java.util.Locale.ROOT), ref.filter { it in '0'..'9' }.ifEmpty { ref.trim() }).filter { it.isNotBlank() }.joinToString(" ")
+
+/** An account to make from the review, named [name] to start with; [made] gets its id once the budget has it. */
+internal class SmsNewAccount(val name: String, val made: (String) -> Unit)
+
+/**
+ * A new account for texts the budget has nowhere to put (the CD a transfer went to): its name, type
+ * and its balance before these texts, which are added on top of it.
+ */
+@Composable
+private fun SmsNewAccountDialog(request: SmsNewAccount, budget: JSONObject, vm: BudgetViewModel, close: () -> Unit) {
+    var name by remember { mutableStateOf(request.name) }
+    var type by remember { mutableStateOf("checking") }
+    var balance by remember { mutableStateOf(amountText(0)) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val types = remember(languageKey()) { accountTypes() }
+    FormDialog(stringResource(R.string.sms_new_account_title), close, confirm = stringResource(R.string.common_add), enabled = name.isNotBlank(), onConfirm = {
+        runCatching {
+            val id = java.util.UUID.randomUUID().toString()
+            vm.saveAccount(id, name.trim(), AccountTypes.kindFor(type), amountValue(balance), type)
+            // Chosen once the budget has it, so the review checks against an account that's there.
+            vm.afterPending { if (vm.state.value.budget?.row("accounts", id) != null) request.made(id) }
+            close()
+        }.onFailure { error = it.message }
+    }) {
+        Field(name, { name = it }, stringResource(R.string.account_name))
+        Choice(stringResource(R.string.account_type), type, types, { type = it })
+        Field(balance, { balance = it }, stringResource(R.string.sms_new_account_balance, budget.text("currency")), numeric = true)
+        Text(stringResource(R.string.sms_new_account_help), style = MaterialTheme.typography.bodySmall, color = ur.muted)
+        FormError(error)
     }
 }
 
@@ -340,7 +429,7 @@ internal fun smsRefLabel(ref: String): String = ref.filter { it in '0'..'9' }.ta
 
 /** One choice of account for every message that names a card the phone can't match yet. */
 @Composable
-private fun SmsCardChoice(group: List<SmsItem>, accounts: List<Pair<String, String>>, keep: Boolean, setKeep: (Boolean) -> Unit, choose: (String) -> Unit) {
+private fun SmsCardChoice(group: List<SmsItem>, accounts: List<Pair<String, String>>, keep: Boolean, setKeep: (Boolean) -> Unit, newAccount: () -> Unit, choose: (String) -> Unit) {
     val first = group.first()
     ListCard(Modifier.testTag("sms-card:${first.ref}")) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -353,7 +442,9 @@ private fun SmsCardChoice(group: List<SmsItem>, accounts: List<Pair<String, Stri
         }
         Text(group.mapNotNull { it.transaction?.text("payee")?.ifBlank { null } }.distinct().take(4).joinToString(", ") { Money.own(it) },
             style = MaterialTheme.typography.bodyMedium, color = ur.text2, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Choice(stringResource(R.string.sms_which_account), "", accounts, choose)
+        // A card the budget has no account for yet can have one made here.
+        val new = stringResource(R.string.sms_new_account)
+        Choice(stringResource(R.string.sms_which_account), "", accounts + (NEW_ACCOUNT to new)) { if (it == NEW_ACCOUNT) newAccount() else choose(it) }
         CheckRow(stringResource(R.string.sms_remember_card), keep, setKeep)
     } }
 }
@@ -362,7 +453,7 @@ private fun SmsCardChoice(group: List<SmsItem>, accounts: List<Pair<String, Stri
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SmsTransactionRow(item: SmsItem, budget: JSONObject, row: BankReviewRow?, decision: String?, ticked: Boolean?, index: Int, count: Int, showing: Boolean, enabled: Boolean,
-                              show: () -> Unit, tick: (Boolean) -> Unit, decide: (String) -> Unit, open: () -> Unit, enterAmount: (Long) -> Unit) {
+                              show: () -> Unit, tick: (Boolean) -> Unit, decide: (String) -> Unit, open: () -> Unit, newAccount: (() -> Unit)? = null, enterAmount: (Long) -> Unit) {
     val t = item.transaction ?: return
     val currency = budget.text("currency")
     val amount = item.amount
@@ -402,6 +493,8 @@ private fun SmsTransactionRow(item: SmsItem, budget: JSONObject, row: BankReview
                     TagChip(stringResource(if (showing) R.string.sms_hide_message else R.string.sms_show_message), Modifier.clickable(role = Role.Button, onClick = show), color = ur.accent)
                 }
                 if (item.needs == "amount") SmsAmountField(currency, t.text("currency") + " " + t.text("writtenAmount"), enterAmount)
+                // The other account of a transfer the budget doesn't have yet (a new CD) is made here.
+                newAccount?.let { Box(Modifier.padding(top = 6.dp).testTag("sms-new-account:${item.index}")) { SmallAction(stringResource(R.string.sms_new_account), it, primary = true) } }
                 if (showing) item.sources.forEach { Text(it.body, Modifier.padding(top = 4.dp), style = SmsBodyStyle, color = ur.text2) }
             }
         }
@@ -460,11 +553,27 @@ private fun SmsUnclearRow(item: SmsItem, index: Int, count: Int, enter: () -> Un
 private fun SmsSources(item: SmsItem) {
     ListCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(stringResource(R.string.sms_from_messages), style = MaterialTheme.typography.titleSmall, color = ur.text)
+        if (item.template != null) Text(stringResource(R.string.sms_from_template), style = MaterialTheme.typography.bodySmall, color = ur.muted)
         item.sources.forEach { source ->
             Text(Money.own(source.sender) + " · " + Money.date(source.receivedDate), style = MaterialTheme.typography.bodySmall, color = ur.muted)
             Text(source.body, style = SmsBodyStyle, color = ur.text2)
         }
     } }
+}
+
+/**
+ * What the user changed in the editor of a row, among what a template reads (date, amount, payee,
+ * category), and the category chosen.
+ */
+internal fun smsChanged(item: SmsItem, record: JSONObject): Pair<Set<String>, String?> {
+    val t = item.transaction ?: return emptySet<String>() to null
+    val category = record.rows("splits").singleOrNull()?.takeUnless { it.optBoolean("unassigned") }?.text("categoryId")?.ifBlank { null }
+    return buildSet {
+        if (record.text("date") != t.text("date")) add("date")
+        if (record.optLong("amount") != item.amount) add("amount")
+        if (record.text("payee") != t.text("payee")) add("payee")
+        if (category != t.text("categoryId").ifBlank { null }) add("category")
+    } to category
 }
 
 /** The transaction editor's record for an item: its date, accounts, payee, amount and category. */

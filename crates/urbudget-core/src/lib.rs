@@ -19,6 +19,7 @@ pub mod patch;
 pub mod reports;
 pub mod schedules;
 pub mod sms_import;
+pub mod sms_templates;
 pub mod store;
 pub mod sync_merge;
 pub mod sync_storage;

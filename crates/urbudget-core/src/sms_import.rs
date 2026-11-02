@@ -64,6 +64,12 @@ pub struct Item {
     /// Fields the user should look at: date, amount, payee, kind, category.
     #[serde(default)]
     pub unsure: Vec<String>,
+    /// The template that read this text on the phone, when one did (the assistant reviewed it).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template: Option<String>,
+    /// The payee as the bank wrote it, when a template read it: what the user's payee is learned from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

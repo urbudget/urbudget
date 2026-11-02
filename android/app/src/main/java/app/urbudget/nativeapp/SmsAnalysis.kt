@@ -192,6 +192,8 @@ internal data class SmsItem(
     val index: Int, val disposition: String, val note: String, val skip: String, val unsure: Set<String>,
     val sources: List<BankSms>, val transaction: JSONObject?, val accountSource: SmsAccountSource?, val needs: String?,
     val early: Boolean = false,
+    /** The template that read it on the phone (the assistant reviewed the reading), and the payee as the bank wrote it. */
+    val template: String? = null, val raw: String? = null,
 ) {
     /** Ticked to add unless the user said otherwise: a transaction, but not a hold or one already in a starting balance. */
     fun tickedIn(batch: SmsBatch): Boolean = batch.ticked[index] ?: (disposition == "transaction" && !early)
@@ -202,11 +204,23 @@ internal data class SmsItem(
     val amount: Long? get() = transaction?.text("amount")?.let(::smsCents)
 }
 
-internal data class SmsBatch(val messages: List<BankSms>, val analysis: JSONObject, val ticked: Map<Int, Boolean> = emptyMap(), val dismissed: Set<Int> = emptySet()) {
+/**
+ * A review: the texts read, the assistant's analysis, and the user's choices. [fresh] are accounts
+ * made from the review for its texts (a CD a transfer went to): their balance is from before these
+ * texts, so no text in them is held back as already in a starting balance.
+ */
+internal data class SmsBatch(val messages: List<BankSms>, val analysis: JSONObject, val ticked: Map<Int, Boolean> = emptyMap(), val dismissed: Set<Int> = emptySet(),
+                             val fresh: Set<String> = emptySet()) {
     fun params(analysis: JSONObject = this.analysis): JSONObject = JSONObject().put("messages", JSONArray(messages.map { it.json() })).put("analysis", analysis)
     // Drafts reference inbox originals by ID; evidence excerpts are part of the local review.
     fun saved(): String = JSONObject().put("v", 2).put("ids", JSONArray(messages.map { it.id })).put("analysis", analysis)
-        .put("ticked", JSONObject(ticked.mapKeys { it.key.toString() })).put("dismissed", JSONArray(dismissed.toList())).toString()
+        .put("ticked", JSONObject(ticked.mapKeys { it.key.toString() })).put("dismissed", JSONArray(dismissed.toList())).put("fresh", JSONArray(fresh.toList())).toString()
+
+    /** Texts a template read on the phone, which the assistant reviewed rather than read in full. */
+    val templated: Int get() = analysis.rows("items").filter { it.text("template").isNotBlank() }.sumOf { sourceIds(it).size }
+
+    /** Where each account's records start for this review: an account made for its texts has none. */
+    fun starts(budget: JSONObject): Map<String, String> = smsStarts(budget) - fresh
 
     fun items(accounts: SmsAccounts): List<SmsItem> = analysis.rows("items").mapIndexed { index, item ->
         val ids = item.optJSONArray("sourceIds")?.let { a -> (0 until a.length()).map { a.getString(it) } }.orEmpty()
@@ -230,7 +244,8 @@ internal data class SmsBatch(val messages: List<BankSms>, val analysis: JSONObje
         }
         val unsure = item.optJSONArray("unsure")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() }.orEmpty()
         val early = t != null && accounts.early(t.text("date"), t.text("accountId"), t.text("transferAccountId"))
-        SmsItem(index, item.text("disposition"), item.text("note"), item.text("skip"), unsure, sources, t, source, needs, early)
+        SmsItem(index, item.text("disposition"), item.text("note"), item.text("skip"), unsure, sources, t, source, needs, early,
+            item.text("template").ifBlank { null }, item.text("raw").ifBlank { null })
     }
 
     /**
@@ -243,7 +258,7 @@ internal data class SmsBatch(val messages: List<BankSms>, val analysis: JSONObje
         val ids = keep.flatMap { sourceIds(all.getJSONObject(it)) }.toSet()
         val at = keep.withIndex().associate { (new, old) -> old to new }
         return SmsBatch(messages.filter { it.id in ids }, JSONObject(analysis.toString()).put("items", JSONArray(keep.map { JSONObject(all.getJSONObject(it).toString()) })),
-            ticked.mapNotNull { (i, on) -> at[i]?.let { it to on } }.toMap(), dismissed.mapNotNull { at[it] }.toSet())
+            ticked.mapNotNull { (i, on) -> at[i]?.let { it to on } }.toMap(), dismissed.mapNotNull { at[it] }.toSet(), fresh)
     }
 
     /** The items with a text from [since] on: a later start takes the rest out of the review. */
@@ -298,7 +313,8 @@ internal data class SmsBatch(val messages: List<BankSms>, val analysis: JSONObje
             val messages = ids.map { id -> found.getValue(id) }
             val ticked = json.optJSONObject("ticked")?.let { t -> t.keys().asSequence().associate { it.toInt() to t.getBoolean(it) } }.orEmpty()
             val dismissed = json.optJSONArray("dismissed")?.let { a -> (0 until a.length()).map { a.getInt(it) }.toSet() }.orEmpty()
-            SmsBatch(messages, json.getJSONObject("analysis"), ticked, dismissed)
+            val fresh = json.optJSONArray("fresh")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() }.orEmpty()
+            SmsBatch(messages, json.getJSONObject("analysis"), ticked, dismissed, fresh)
         }.getOrNull()
     }
 }
@@ -349,10 +365,14 @@ internal object SmsReadings {
             var read = base
             for (part in messages.chunked(SmsBatchSize)) {
                 check(still()) { context.getString(R.string.sms_permission_needed) }
+                // The budget's templates read the texts in formats it knows first; the assistant reviews those readings.
+                val (templates, payees) = withContext(smsStorageLane) { inbox.templates(identity) to inbox.payees(identity) }
                 val request = JSONObject().put("budgetId", identity).put("provider", connection.getString("provider")).put("model", connection.opt("model") ?: JSONObject.NULL)
-                    .put("messages", JSONArray(part.map { it.json() })).put("note", note)
+                    .put("messages", JSONArray(part.map { it.json() })).put("note", note).put("templates", templates).put("payees", payees)
                 val began = System.currentTimeMillis()
                 val result = analyzer.analyze(request)
+                // What the reading taught (templates, how theirs fared, payees) isn't part of the review.
+                val learning = result.remove("learning") as? JSONObject
                 check(still()) { context.getString(R.string.sms_permission_needed) }
                 val grown = read?.plus(part, result) ?: SmsBatch(part, result)
                 // A request of a hundred texts or more says how long reading takes ("pace", milliseconds a text).
@@ -360,6 +380,7 @@ internal object SmsReadings {
                 withContext(smsStorageLane) {
                     inbox.saveState(identity, "draft", grown.saved())
                     pace?.let { inbox.saveState(identity, "pace", it.toString()) }
+                    learning?.let { inbox.learn(identity, it) }
                 }
                 read = grown
                 current.value = Reading(identity, (current.value?.read ?: 0) + part.size, messages.size)
@@ -386,7 +407,7 @@ internal object NativeSmsAnalyzer : SmsAnalyzer {
             while (true) {
                 delay(400)
                 val reply = withContext(Dispatchers.IO) { NativeServices.call("assistant_sms_poll", JSONObject().put("id", id)) as JSONObject }
-                if (!reply.optBoolean("running")) return reply.getJSONObject("analysis")
+                if (!reply.optBoolean("running")) return reply.getJSONObject("analysis").apply { reply.optJSONObject("learning")?.let { put("learning", it) } }
             }
         } finally {
             id?.let { job -> withContext(NonCancellable + Dispatchers.IO) { runCatching { NativeServices.call("assistant_sms_cancel", JSONObject().put("id", job)) } } }

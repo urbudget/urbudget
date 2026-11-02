@@ -177,6 +177,20 @@ exact money, dates, references found in the texts, quotes, and every text accoun
 once. Any account the model supplies is discarded. `payee_history` follows a payee rule
 to the renamed payee's history, so "S136 M" finds the user's categories for "Tamimi".
 
+**Templates.** As the assistant reads, it writes a template for each format it sees: the
+text's lines with the bank's fixed words and typed slots (`{amount}`, `{currency}`, `{ref}`,
+`{payee}`, `{date:dd/mm/yy}` …), and what the format means (money in or out and its kind, or a
+reason to skip). Core `sms_templates.rs` compiles templates itself (no regular expressions), so
+one can't hang or match everything, and keeps one only when replaying it on the batch reads
+every text it matches exactly as the assistant's items do. Templates and the payees learned
+from the bank's names are kept per budget and sender in the inbox database. Next time, texts
+in a known format are read on the phone first and sent in a `review` list with that reading;
+the assistant answers only with corrections (silence confirms) and reads the rest (`read`) in
+full, writing templates for new formats and rewriting one its corrections show is wrong.
+Every template counts its rows filled, confirmed and corrected, and the user's edits to them;
+settings show **Learned formats** with how often they were confirmed, and can forget them.
+The assistant stays in the loop for every text: templates make its work a review.
+
 The phone matches each reference to an account: a card remembered for that sender,
 otherwise the one open account whose name carries the card's digits ("4417" is "Visa
 4417"), otherwise the only open account. Then it settles what changes nothing: a text
@@ -190,16 +204,20 @@ Otherwise it counts what needs the user, and the review is a page of transaction
   naming it and is remembered by default; a foreign amount is typed in its row; a
   transfer's other account, or a message the assistant couldn't read, is entered in the
   transaction editor or dismissed. These stay in the review, as they were read, until
-  answered: adding the rest doesn't send them to the assistant again.
-- **Ready to add**, ticked by default, and **Holds**, unticked, each with **Tick all** /
-  **Untick all**: tap a row to change it in the transaction editor, with its messages
+  answered: adding the rest doesn't send them to the assistant again. A card, or a
+  transfer's other side, that the budget has no account for (a new CD) gets one from
+  the review (**New account…**), with its balance from before these texts; its digits are
+  remembered, and nothing in it is held back as already in a starting balance.
+- **Ready to add**, ticked by default, and **Holds**, unticked, newest first under the day
+  they're dated, each with **Tick all** / **Untick all** and **Tick from a day** (ticks what's
+  dated that day or later, unticks the rest): tap a row to change it in the transaction editor, with its messages
   shown beneath. Possible duplicates offer add or match from the bank import engine. A
   transaction dated before its account's records start (its first transaction, or today
   for an account with none) is already in that account's starting balance: it's tagged
   and unticked. Every edit applies to the review as it is when it runs, so a row the list
   didn't redraw can't undo an earlier tick.
 - Above **Add**, each account the ticked rows change shows its balance now and after
-  ("ANB 3358 5,000.00 → −13,506.45"; a transfer moves both sides, matches nothing), in the
+  ("Checking 5,000.00 → −13,506.45"; a transfer moves both sides, matches nothing), in the
   warning colour when it would go below zero from zero or more.
 - **Handled for you**, folded: texts already in the budget, matched (each can be added
   instead), and texts that aren't transactions, counted by reason.
@@ -229,8 +247,12 @@ optional, and denied/revoked access leaves the other budgeting features availabl
 
 Implementation: `SmsInbox.kt` owns capture (SMS and text-only MMS), sender summaries, coverage and private storage;
 `SmsAnalysis.kt` owns identities, card matching, draft recovery, consent, readings and the
-cancellable service client; `SmsWorker.kt` reads in the background; `ui/SmsImportScreen.kt` owns the page, sender picker and
-remembered cards, and `ui/SmsAnalysisReview.kt` the review. Services `assistant/sms.rs`
+cancellable service client; `SmsWorker.kt` reads in the background. `ui/SmsPage.kt` holds the
+page's state: what's stored, the open review and a stage (loading, saving, settling or idle;
+reading is `SmsReadings`'). Every change to storage runs in one lane and ends by reading
+everything back and showing it at once, and the page reads what's waiting by itself only from
+such a snapshot, never from texts a change has just settled. `ui/SmsImportScreen.kt` draws
+the page, sender picker and remembered cards, and `ui/SmsAnalysisReview.kt` the review. Services `assistant/sms.rs`
 owns the model session and its prompt; core `sms_import.rs` validates output, previews
 and imports. Synthetic coverage includes `SmsAnalysisTest`, `SmsInboxTest`,
 `SmsImportUiTest`, core `tests/sms_analysis.rs` and `tests/sms_import.rs`, and the

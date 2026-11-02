@@ -45,11 +45,6 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
-private data class SmsLoaded(val sources: List<SmsSource>, val messages: List<BankSms>, val count: Int, val batch: SmsBatch?, val mappings: JSONArray,
-                             val consent: String?, val auto: Boolean, val coverage: List<SmsCoverage>, val last: JSONObject?, val handled: Long?, val pace: Long?)
-/** Texts to read, into [base] when they join the review that's open. */
-private data class SmsPrepare(val messages: List<BankSms>, val note: String, val connection: JSONObject, val base: SmsBatch?)
-
 /**
  * Where collecting starts, as the sender picker and the setting offer it: right after the last text
  * handled ([handled], once there is one), new messages, a day, or everything on the phone; and what
@@ -135,39 +130,21 @@ internal fun SmsImportScreen(budget: JSONObject, vm: BudgetViewModel, setDockHid
  * Bank messages, built around what needs the user. With permission to send, opening the page reads
  * what's waiting; codes, alerts and texts already in the budget are handled without a question, and
  * what's left is counted with one button to review it. The texts themselves, and the settings, wait
- * below.
+ * below. What's stored and what the page is doing live in [SmsPage]; this draws it and keeps what's
+ * only on screen (sheets, the list's choosing).
  */
 @Composable
 private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, analyzer: SmsAnalyzer, setDockHidden: (Boolean) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val lifecycle = LocalLifecycleOwner.current
-    val inbox = remember { SmsInbox.get(context) }
-    var allowed by remember { mutableStateOf(SmsReader.canRead(context)) }
-    var receiving by remember { mutableStateOf(SmsReader.canReceive(context)) }
-    var sources by remember { mutableStateOf<List<SmsSource>>(emptyList()) }
-    // Oldest first, the order they're read in; the list shows them newest first.
-    var messages by remember { mutableStateOf<List<BankSms>>(emptyList()) }
-    var pendingCount by remember { mutableIntStateOf(0) }
-    var batch by remember { mutableStateOf<SmsBatch?>(null) }
-    var mappings by remember { mutableStateOf(JSONArray()) }
-    var consent by remember { mutableStateOf<String?>(null) }
-    var auto by remember { mutableStateOf(false) }
-    var coverage by remember { mutableStateOf<List<SmsCoverage>>(emptyList()) }
-    var last by remember { mutableStateOf<JSONObject?>(null) }
-    var connection by remember { mutableStateOf<JSONObject?>(null) }
-    var loading by remember { mutableStateOf(true) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var reload by remember { mutableIntStateOf(0) }
+    val page = remember { SmsPage(context.applicationContext, identity, vm, analyzer, scope) }
+    LaunchedEffect(page) { page.start() }
     val readings by SmsReadings.state.collectAsState()
     val vmState by vm.state.collectAsState()
     val reading = readings?.takeIf { it.budget == identity }
-    // Opening the page reads what's waiting once a visit; a reading the user stopped stays stopped.
-    var started by remember { mutableStateOf(false) }
-    var sorted by remember { mutableStateOf<SmsSorted?>(null) }
-    var settling by remember { mutableStateOf(false) }
-    var asking by remember { mutableStateOf<SmsPrepare?>(null) }
-    var reviewing by remember { mutableStateOf(false) }
+    val stored = page.stored
+    val batch = page.batch
     var listing by remember { mutableStateOf(false) }
     var selecting by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -177,162 +154,46 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
     var revoke by remember { mutableStateOf(false) }
     var clear by remember { mutableStateOf(false) }
     var discarding by remember { mutableStateOf(false) }
-    // The newest text handled, and how long this budget's last full request took a text.
-    var handled by remember { mutableStateOf<Long?>(null) }
-    var pace by remember { mutableStateOf<Long?>(null) }
+    var forgetting by remember { mutableStateOf(false) }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-        allowed = SmsReader.canRead(context); receiving = SmsReader.canReceive(context)
-        if (allowed) pickSenders = sources.isEmpty() else error = context.getString(R.string.sms_permission_needed)
-        reload++
+        page.permissions()
+        if (page.allowed) pickSenders = page.stored.sources.isEmpty() else page.error = context.getString(R.string.sms_permission_needed)
     }
-    fun save(name: String, value: String?) {
-        scope.launch { try { withContext(smsStorageLane) { inbox.saveState(identity, name, value) } } catch (failure: Exception) { error = failure.message } }
-    }
-    fun setAuto(on: Boolean) { auto = on; save("auto", if (on) "on" else null) }
     // Reading in the background works without notifications; with them, it says when something needs the user.
-    val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { setAuto(true) }
+    val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { page.auto(true) }
     DisposableEffect(lifecycle, context) {
-        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) {
-            allowed = SmsReader.canRead(context); receiving = SmsReader.canReceive(context); reload++
-        } }
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) page.permissions() }
         lifecycle.lifecycle.addObserver(observer)
         onDispose { lifecycle.lifecycle.removeObserver(observer) }
     }
-    DisposableEffect(allowed) {
-        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) { override fun onChange(selfChange: Boolean) { reload++ } }
-        if (allowed) context.contentResolver.registerContentObserver(Telephony.Sms.CONTENT_URI, true, observer)
+    DisposableEffect(page.allowed) {
+        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) { override fun onChange(selfChange: Boolean) { page.reload() } }
+        if (page.allowed) context.contentResolver.registerContentObserver(Telephony.Sms.CONTENT_URI, true, observer)
         onDispose { context.contentResolver.unregisterContentObserver(observer) }
     }
-    val reviewBatch = batch?.takeIf { reviewing && allowed && reading == null }
+    SideEffect { page.budget(budget) }
+    LaunchedEffect(vmState.error) { vmState.error?.let(page::failed) }
+    // Reading takes what was chosen; the list stops choosing.
+    LaunchedEffect(reading != null) { if (reading != null) { selecting = false; selected = emptySet() } }
+    LaunchedEffect(stored.messages) { selected = selected.intersect(stored.messages.mapTo(HashSet()) { it.id }) }
+    LaunchedEffect(batch == null) { if (batch == null) discarding = false }
+    val reviewBatch = batch?.takeIf { page.reviewing && page.allowed && reading == null }
     DisposableEffect(selecting, reviewBatch != null) { setDockHidden(selecting || reviewBatch != null); onDispose { setDockHidden(false) } }
     androidx.activity.compose.BackHandler(selecting) { selecting = false; selected = emptySet() }
-    LaunchedEffect(reload, allowed) {
-        if (!allowed) { batch = null; messages = emptyList(); reviewing = false }
-        try {
-            val loaded = withContext(smsStorageLane) {
-                val found = if (allowed) SmsReader.refresh(context, identity) else emptyList()
-                val pending = if (allowed) inbox.pending(identity) else emptyList()
-                val draft = inbox.state(identity, "draft")
-                // A draft whose messages are gone, or from before this review, can't be shown: its messages wait again.
-                val restored = if (allowed && batch == null) SmsBatch.restore(draft) { ids -> inbox.waiting(identity, ids) }.also { if (it == null && draft != null) inbox.saveState(identity, "draft", null) } else batch
-                SmsLoaded(inbox.sources(identity), pending, inbox.pendingCount(identity), restored, JSONArray(inbox.state(identity, "mappings") ?: "[]"),
-                    inbox.state(identity, "consent"), inbox.state(identity, "auto") == "on", found, inbox.state(identity, "last")?.let { runCatching { JSONObject(it) }.getOrNull() },
-                    inbox.handledThrough(identity), inbox.state(identity, "pace")?.toLongOrNull())
-            }
-            sources = loaded.sources; messages = loaded.messages; pendingCount = loaded.count
-            batch = loaded.batch; mappings = loaded.mappings; consent = loaded.consent; auto = loaded.auto; coverage = loaded.coverage; last = loaded.last
-            handled = loaded.handled; pace = loaded.pace
-            selected = selected.intersect(messages.map { it.id }.toSet())
-            connection = runCatching { analyzer.status() }.getOrNull()
-            loading = false
-        } catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { error = failure.message; loading = false }
-    }
-    /**
-     * Reloads after a change to what's stored. Until it's back, the texts shown may include ones just
-     * settled or taken out, so nothing is read by itself from them.
-     */
-    fun reloadStored() { loading = true; reload++ }
-    // A reading that ends, here or in the background, leaves its review saved: show it from there.
-    val finished by SmsReadings.finished.collectAsState()
-    var seen by remember { mutableLongStateOf(SmsReadings.finished.value) }
-    LaunchedEffect(finished) { if (finished != seen) { seen = finished; batch = null; sorted = null; reloadStored() } }
-    fun saveBatch(value: SmsBatch?) {
-        batch = value
-        save("draft", value?.saved())
-    }
-    fun saveMappings(value: JSONArray) {
-        mappings = value
-        save("mappings", value.toString())
-    }
-    /**
-     * Ends the review, the texts it settled leaving Bank messages; [summary] is what was handled
-     * without a question, and [rest] what still waits on a choice, kept as it was read.
-     */
-    fun finish(ids: List<String>, summary: JSONObject = JSONObject(), rest: SmsBatch? = null) {
-        scope.launch {
-            try {
-                withContext(smsStorageLane) {
-                    inbox.finish(identity, ids)
-                    rest?.let { inbox.saveState(identity, "draft", it.saved()) }
-                    inbox.saveState(identity, "last", summary.put("at", System.currentTimeMillis()).toString())
-                }
-                val settled = ids.toSet()
-                messages = messages.filter { it.id !in settled }
-                batch = rest; sorted = null; reviewing = false; selected = emptySet(); reloadStored()
-            }
-            catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { error = failure.message }
-            finally { settling = false }
-        }
-    }
-    // Dismissing waiting messages leaves an open review as it is.
-    fun dismiss(ids: List<String>) {
-        scope.launch {
-            try { withContext(smsStorageLane) { inbox.finish(identity, ids, endReview = false) }; messages = messages.filter { it.id !in ids }; selecting = false; selected = emptySet(); reloadStored() }
-            catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { error = failure.message }
-        }
-    }
-    fun send(prepare: SmsPrepare) {
-        // A visit reads by itself once: what this reading leaves waiting is the user's to read.
-        started = true
-        error = null; reviewing = false; selecting = false; selected = emptySet(); sorted = null
-        SmsReadings.start(context, analyzer, identity, prepare.connection, prepare.messages, prepare.note, prepare.base,
-            still = { SmsReader.canRead(context) && vm.state.value.budgetIdentity == identity }, failed = { error = it })
-    }
-    fun prepare(chosen: List<BankSms>, note: String = "", base: SmsBatch? = null) {
-        scope.launch {
-            try {
-                // Asked fresh: the assistant's connection may have changed since the page opened.
-                val current = analyzer.status().also { connection = it }
-                check(current.optBoolean("ready")) { context.getString(R.string.sms_connect_assistant) }
-                val request = SmsPrepare(chosen, note, current, base)
-                if (smsConsented(consent, current)) send(request) else asking = request
-            } catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { error = failure.message }
-        }
-    }
-    val ready = connection?.optBoolean("ready") == true
-    val consented = connection?.let { smsConsented(consent, it) } == true
-    val names = sources.joinToString(", ") { Money.own(it.sender) }
-    // What's waiting is what the review doesn't hold yet.
-    val inReview = remember(batch) { batch?.messages?.map { it.id }?.toSet().orEmpty() }
-    val waiting = remember(messages, inReview) { messages.filter { it.id !in inReview } }
-    val waitingCount = (pendingCount - inReview.size).coerceAtLeast(0)
-    val since = sources.minOfOrNull { it.since }
-    LaunchedEffect(loading, consented, ready, reading == null, waiting.isEmpty()) {
-        if (!started && !loading && allowed && ready && consented && reading == null && waiting.isNotEmpty()) {
-            started = true
-            send(SmsPrepare(waiting, "", connection!!, batch))
-        }
-    }
-    // What the review holds, sorted; when nothing in it needs the user, matching what's already in
-    // the budget and clearing the rest happens without a question.
-    val accounts = remember(budget) { budget.rows("accounts").filterNot { it.optBoolean("archived") }.map { it.text("id") to it.text("name") } }
-    val starts = remember(budget) { smsStarts(budget) }
-    LaunchedEffect(batch, budget, mappings, reading == null, reviewing) {
-        val current = batch ?: return@LaunchedEffect
-        if (reading != null || reviewing || settling) return@LaunchedEffect
-        sorted = null
-        try {
-            val items = current.items(SmsAccounts(accounts, mappings, starts))
-            val resolved = current.resolved(items)
-            val known = smsKnown(vm.smsPreview(budget, current, resolved), items, budget)
-            val result = smsSort(current, items, known)
-            if (result.needs > 0) { sorted = result; return@LaunchedEffect }
-            settling = true
-            val matching = result.existing.filter { current.ticked[it.index] != false }.map { it.index to known.getValue(it.index) }
-            val summary = JSONObject().put("known", matching.size)
-                .put("skipped", JSONObject(result.skipped.groupingBy { it.skip.ifBlank { "unclear" } }.eachCount()))
-            val handled = items.flatMap { item -> item.sources.map { it.id } }
-            if (matching.isEmpty()) finish(handled, summary)
-            else vm.runCommand("smsBatchApply", current.params(resolved).put("decisions", smsDecisions(matching))) { finish(handled, summary) }
-        } catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { error = failure.message; settling = false }
-    }
-    LaunchedEffect(vmState.error) { if (settling && vmState.error != null) { error = vmState.error; settling = false } }
-    if (reviewBatch != null) SmsReview(budget, vm, reviewBatch, mappings, close = { reviewing = false }, change = { edit -> batch?.let { saveBatch(edit(it)) } },
-        saveCards = ::saveMappings, finish = { ids, rest -> finish(ids, rest = rest) }, again = { note -> prepare(reviewBatch.messages, note) }, discard = { discarding = true })
+    val connection = page.connection
+    val ready = page.ready
+    val consented = page.consented
+    val names = stored.sources.joinToString(", ") { Money.own(it.sender) }
+    val waiting = page.waiting
+    val waitingCount = page.waitingCount
+    val since = stored.since
+    if (reviewBatch != null) SmsReview(budget, vm, reviewBatch, stored.mappings, close = page::close, change = page::edit,
+        saveCards = page::cards, finish = { ids, rest -> page.finish(ids, rest = rest) }, again = { note -> page.prepare(reviewBatch.messages, note) }, discard = { discarding = true },
+        edited = page::edited)
     else Box(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize().testTag("sms-inbox"), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 8.dp, bottom = if (selecting) 120.dp else DockRoom),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (!allowed) item {
+            if (!page.allowed) item {
                 ListCard { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(stringResource(R.string.sms_intro_title), style = MaterialTheme.typography.titleMedium, color = ur.text)
                     Text(stringResource(R.string.sms_intro), style = MaterialTheme.typography.bodyMedium, color = ur.text2)
@@ -342,21 +203,20 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
                         Modifier.align(Alignment.CenterHorizontally)) { Text(stringResource(R.string.sms_open_settings), color = ur.accent) }
                 } }
             }
-            error?.let { item { FormError(it) } }
-            if (allowed && sources.isEmpty() && !loading) item {
+            page.error?.let { item { FormError(it) } }
+            if (page.allowed && stored.sources.isEmpty() && page.loaded) item {
                 EmptyState(stringResource(R.string.sms_choose_bank_title), stringResource(R.string.sms_choose_bank_detail), stringResource(R.string.sms_choose_senders)) { pickSenders = true }
             }
-            if (allowed && sources.isNotEmpty()) {
+            if (page.allowed && stored.sources.isNotEmpty()) {
                 item(key = "status") {
                     ListCard(Modifier.testTag("sms-status")) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        val current = batch
-                        val found = sorted
+                        val found = page.sorted
                         when {
                             reading != null -> {
                                 // More than one request: stopping keeps what's been read, so it says Stop rather than Cancel.
                                 val requests = reading.total > SmsBatchSize
                                 Text(stringResource(R.string.sms_reading_by, connection?.let { reader(it) }.orEmpty()), style = MaterialTheme.typography.titleMedium, color = ur.text)
-                                Text(countText(R.plurals.sms_reading_progress, reading.total, reading.read.toString()), style = MaterialTheme.typography.bodyMedium, color = ur.text2,
+                                Text(countText(R.plurals.sms_reading_progress, reading.total, Money.count(reading.read.toLong())), style = MaterialTheme.typography.bodyMedium, color = ur.text2,
                                     modifier = Modifier.testTag("sms-progress"))
                                 LinearProgressIndicator(Modifier.fillMaxWidth(), color = ur.accent)
                                 if (requests) Text(stringResource(R.string.sms_reading_keep), style = MaterialTheme.typography.bodySmall, color = ur.muted)
@@ -364,40 +224,47 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
                                     Text(stringResource(if (requests) R.string.sms_stop_reading else R.string.common_cancel), color = ur.accent)
                                 }
                             }
-                            current != null && found == null -> {
+                            batch != null && found == null -> {
                                 Text(stringResource(R.string.sms_checking), style = MaterialTheme.typography.titleMedium, color = ur.text)
                                 LinearProgressIndicator(Modifier.fillMaxWidth(), color = ur.accent)
                             }
-                            current != null && found != null -> {
+                            batch != null && found != null -> {
                                 Text(countText(R.plurals.sms_to_review, found.needs), style = MaterialTheme.typography.titleMedium, color = ur.text, modifier = Modifier.testTag("sms-needs"))
                                 if (found.existing.isNotEmpty() || found.skipped.isNotEmpty())
                                     Text(handledSummary(found.existing.size, found.skipped), style = MaterialTheme.typography.bodyMedium, color = ur.text2)
-                                PrimaryButton(stringResource(R.string.sms_review_open), { reviewing = true }, Modifier.fillMaxWidth().testTag("sms-review"))
+                                // Texts in a format the budget knows were read on the phone and checked by the assistant.
+                                batch.templated.takeIf { it > 0 }?.let { n ->
+                                    Text(countText(R.plurals.sms_by_template, n, Money.count((batch.messages.size - n).toLong())), style = MaterialTheme.typography.bodySmall,
+                                        color = ur.muted, modifier = Modifier.testTag("sms-by-template"))
+                                }
+                                PrimaryButton(stringResource(R.string.sms_review_open), page::open, Modifier.fillMaxWidth().testTag("sms-review"))
                                 if (waitingCount > 0) {
                                     Text(countText(R.plurals.sms_more_waiting, waitingCount), style = MaterialTheme.typography.bodyMedium, color = ur.text2)
-                                    if (ready) SecondaryButton(countText(R.plurals.sms_read_more, waitingCount), { prepare(waiting, base = current) },
-                                        Modifier.fillMaxWidth().testTag("sms-read-more"), enabled = !loading && waiting.isNotEmpty())
+                                    if (ready) SecondaryButton(countText(R.plurals.sms_read_more, waitingCount), { page.prepare(waiting, base = batch) },
+                                        Modifier.fillMaxWidth().testTag("sms-read-more"), enabled = !page.busy && waiting.isNotEmpty())
                                 }
-                                TextButton({ discarding = true }, Modifier.align(Alignment.CenterHorizontally).testTag("sms-discard")) { Text(stringResource(R.string.sms_discard_review), color = ur.accent) }
+                                TextButton({ discarding = true }, Modifier.align(Alignment.CenterHorizontally).testTag("sms-discard"), enabled = !page.busy) {
+                                    Text(stringResource(R.string.sms_discard_review), color = ur.accent)
+                                }
                             }
                             waitingCount > 0 -> {
                                 Text(countText(R.plurals.sms_new_messages, waitingCount), style = MaterialTheme.typography.titleMedium, color = ur.text)
                                 Text(stringResource(R.string.sms_from, names), style = MaterialTheme.typography.bodyMedium, color = ur.text2, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 if (ready) {
                                     PrimaryButton(if (consented) countText(R.plurals.sms_read_count, waitingCount) else stringResource(R.string.sms_read_with, connection?.let { reader(it) }.orEmpty()),
-                                        { prepare(waiting) }, Modifier.fillMaxWidth().testTag("sms-prepare"), enabled = !loading && waiting.isNotEmpty())
-                                    if (waitingCount > SmsBatchSize) Text(sizeText(smsReadingSize(waitingCount, pace), brings = false), style = MaterialTheme.typography.bodyMedium, color = ur.text2)
+                                        { page.prepare(waiting) }, Modifier.fillMaxWidth().testTag("sms-prepare"), enabled = !page.busy && waiting.isNotEmpty())
+                                    if (waitingCount > SmsBatchSize) Text(sizeText(smsReadingSize(waitingCount, stored.pace), brings = false), style = MaterialTheme.typography.bodyMedium, color = ur.text2)
                                     Text(stringResource(R.string.sms_reads_note), style = MaterialTheme.typography.bodySmall, color = ur.muted)
                                 } else if (connection != null) Notice(stringResource(R.string.sms_connect_assistant), tone = "info")
                             }
                             else -> {
                                 Text(stringResource(R.string.sms_up_to_date), style = MaterialTheme.typography.titleMedium, color = ur.text, modifier = Modifier.testTag("sms-up-to-date"))
-                                Text(last?.let { lastText(it) } ?: stringResource(R.string.sms_up_to_date_detail, names), style = MaterialTheme.typography.bodyMedium, color = ur.text2)
+                                Text(stored.last?.let { lastText(it) } ?: stringResource(R.string.sms_up_to_date_detail, names), style = MaterialTheme.typography.bodyMedium, color = ur.text2)
                             }
                         }
                     } }
                 }
-                if (!receiving) item { Notice(stringResource(R.string.sms_receive_needed), action = stringResource(R.string.sms_allow), onAction = { permission.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS)) }) }
+                if (!page.receiving) item { Notice(stringResource(R.string.sms_receive_needed), action = stringResource(R.string.sms_allow), onAction = { permission.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS)) }) }
                 if (waiting.isNotEmpty()) {
                     // The texts themselves, mostly codes and alerts, wait folded below what needs the user.
                     item(key = "messages") {
@@ -416,36 +283,42 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
                         }
                         val shown = waiting.asReversed()
                         itemsIndexed(shown, key = { _, it -> it.id }) { index, message ->
-                            SmsMessageRow(message, index, shown.size, sources.size > 1, if (selecting) message.id in selected else null,
+                            SmsMessageRow(message, index, shown.size, stored.sources.size > 1, if (selecting) message.id in selected else null,
                                 enabled = true) { on -> selected = if (on) selected + message.id else selected - message.id }
                         }
                     }
                 }
                 item(key = "settings") {
                     Column(Modifier.padding(top = 12.dp)) { ListCard {
-                        ListRow(stringResource(R.string.sms_senders), subtitle = names, onClick = { if (reading == null) pickSenders = true }, divider = true)
-                        ListRow(stringResource(R.string.sms_collect), subtitle = listOfNotNull(since?.let { smsSinceText(it) }, handled?.let { stringResource(R.string.sms_last_handled_at, smsMoment(it)) })
-                            .joinToString(" · "), onClick = { if (reading == null) collecting = true }, divider = true)
+                        ListRow(stringResource(R.string.sms_senders), subtitle = names, onClick = { if (reading == null && !page.busy) pickSenders = true }, divider = true)
+                        ListRow(stringResource(R.string.sms_collect), subtitle = listOfNotNull(since?.let { smsSinceText(it) }, stored.handled?.let { stringResource(R.string.sms_last_handled_at, smsMoment(it)) })
+                            .joinToString(" · "), onClick = { if (reading == null && !page.busy) collecting = true }, divider = true)
                         if (consented) ListRow(stringResource(R.string.sms_auto), subtitle = stringResource(R.string.sms_auto_detail), onClick = {
-                            if (auto) setAuto(false)
+                            if (stored.auto) page.auto(false)
                             else if (android.os.Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)
                                 notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
-                            else setAuto(true)
-                        }, divider = true, chevron = false, trailing = { Switch(auto, null, Modifier.testTag("sms-auto")) })
-                        ListRow(stringResource(R.string.sms_cards), subtitle = if (mappings.length() == 0) stringResource(R.string.sms_cards_none) else countText(R.plurals.sms_cards_count, mappings.length()),
+                            else page.auto(true)
+                        }, divider = true, chevron = false, trailing = { Switch(stored.auto, null, Modifier.testTag("sms-auto")) })
+                        ListRow(stringResource(R.string.sms_cards), subtitle = if (stored.mappings.length() == 0) stringResource(R.string.sms_cards_none) else countText(R.plurals.sms_cards_count, stored.mappings.length()),
                             onClick = { showCards = true }, divider = true)
+                        // Formats learned as the assistant reads: how many, and how often their readings needed no correction.
+                        val learned = stored.templates
+                        ListRow(stringResource(R.string.sms_templates_title), subtitle = if (learned.count == 0) stringResource(R.string.sms_templates_none) else listOfNotNull(
+                            countText(R.plurals.sms_templates_count, learned.count),
+                            learned.filled.takeIf { it > 0 }?.let { stringResource(R.string.sms_templates_confirmed, Money.count((learned.confirmed * 100L) / it)) },
+                        ).joinToString(" · "), onClick = { if (learned.count > 0 && reading == null && !page.busy) forgetting = true }, divider = true, chevron = false)
                         // A permission for another assistant, or from before reading on open, no longer counts: the next reading asks.
                         if (consented) ListRow(stringResource(R.string.sms_sending), subtitle = stringResource(R.string.sms_sending_allowed), onClick = { revoke = true }, divider = true)
-                        ListRow(stringResource(R.string.sms_stop), titleColor = ur.negative, onClick = { if (reading == null) clear = true }, chevron = false)
+                        ListRow(stringResource(R.string.sms_stop), titleColor = ur.negative, onClick = { if (reading == null && !page.busy) clear = true }, chevron = false)
                     } }
                 }
                 // How to know it's reading everything: what the phone holds from each sender, against what's collected.
-                if (coverage.isNotEmpty()) item(key = "coverage") {
+                if (stored.coverage.isNotEmpty()) item(key = "coverage") {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(stringResource(R.string.sms_on_phone), style = MaterialTheme.typography.titleSmall, color = ur.text, modifier = Modifier.padding(top = 4.dp))
                         ListCard(Modifier.testTag("sms-coverage")) {
-                            coverage.forEachIndexed { index, c ->
-                                ListRow(Money.own(c.sender), subtitle = coverageText(c), chevron = false, divider = index < coverage.lastIndex)
+                            stored.coverage.forEachIndexed { index, c ->
+                                ListRow(Money.own(c.sender), subtitle = coverageText(c), chevron = false, divider = index < stored.coverage.lastIndex)
                             }
                         }
                     }
@@ -454,112 +327,79 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
         }
         if (selecting) Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(ur.bg).navigationBarsPadding().padding(horizontal = Gutter, vertical = 12.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                SecondaryButton(countText(R.plurals.sms_dismiss_count, selected.size), { dismiss(selected.toList()) }, Modifier.weight(1f), enabled = selected.isNotEmpty())
-                PrimaryButton(countText(R.plurals.sms_read_count, selected.size), { prepare(waiting.filter { it.id in selected }, base = batch) }, Modifier.weight(1f).testTag("sms-prepare-selected"),
-                    enabled = selected.isNotEmpty() && ready && reading == null)
+                SecondaryButton(countText(R.plurals.sms_dismiss_count, selected.size), { page.dismiss(selected.toList()); selecting = false; selected = emptySet() }, Modifier.weight(1f),
+                    enabled = selected.isNotEmpty() && !page.busy)
+                PrimaryButton(countText(R.plurals.sms_read_count, selected.size), { page.prepare(waiting.filter { it.id in selected }, base = batch) }, Modifier.weight(1f).testTag("sms-prepare-selected"),
+                    enabled = selected.isNotEmpty() && ready && reading == null && !page.busy)
             }
         }
     }
-    if (pickSenders && allowed) SmsSenderPicker(sources, { pickSenders = false }, suggested = remember(budget) { SmsStart.suggested(budget) }, save = { chosen, since ->
-        scope.launch {
-            try {
-                withContext(smsStorageLane) {
-                    // The open review keeps what's read from the senders that stay.
-                    val kept = SmsBatch.restore(inbox.state(identity, "draft")) { ids -> inbox.waiting(identity, ids) }?.fromSenders(chosen.map(::smsSenderKey).toSet())
-                    inbox.configure(identity, chosen, since)
-                    kept?.let { inbox.saveState(identity, "draft", it.saved()) }
-                }
-                batch = null; sorted = null; pickSenders = false; reloadStored()
-            }
-            catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { error = failure.message }
-        }
+    if (pickSenders && page.allowed) SmsSenderPicker(stored.sources, { pickSenders = false }, suggested = remember(budget) { SmsStart.suggested(budget) }, save = { chosen, start ->
+        scope.launch { page.senders(chosen, start).join(); if (page.error == null) pickSenders = false }
     })
     if (collecting) {
-        val current = remember { since?.let { SmsStart.of(it, handled) } ?: SmsStart.suggested(budget) }
+        val current = remember { since?.let { SmsStart.of(it, stored.handled) } ?: SmsStart.suggested(budget) }
         var start by remember { mutableStateOf(current) }
         val marks = remember(budget) { smsAccountMarks(budget) }
         // What the choice brings in (texts on the phone not collected yet) or takes out (texts waiting before it).
         var change by remember { mutableStateOf<Pair<Int, Int>?>(null) }
         var confirming by remember { mutableStateOf(false) }
+        val inbox = remember { SmsInbox.get(context) }
         LaunchedEffect(start) {
             change = null
             val from = start.since()
             val old = since ?: from
             change = runCatching { withContext(smsStorageLane) { when {
-                from < old -> (SmsReader.count(context, sources.map { it.sender }, from, old) - inbox.collectedBetween(identity, from, old)).coerceAtLeast(0) to 0
+                from < old -> (SmsReader.count(context, stored.sources.map { it.sender }, from, old) - inbox.collectedBetween(identity, from, old)).coerceAtLeast(0) to 0
                 from > old -> 0 to inbox.waitingBefore(identity, from)
                 else -> 0 to 0
             } } }.getOrNull()
         }
-        fun apply() {
-            val from = start.since()
-            collecting = false
-            scope.launch {
-                try {
-                    withContext(smsStorageLane) {
-                        // A later start takes earlier texts out of the review too; an earlier one brings older texts in on the next scan.
-                        val kept = SmsBatch.restore(inbox.state(identity, "draft")) { ids -> inbox.waiting(identity, ids) }?.from(from)
-                        inbox.saveState(identity, "draft", kept?.saved())
-                        inbox.collectFrom(identity, from, kept?.messages?.map { it.id }?.toSet().orEmpty())
-                    }
-                    batch = null; sorted = null; started = false; reloadStored()
-                }
-                catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { error = failure.message }
-            }
-        }
+        fun apply() { collecting = false; page.collectFrom(start.since()) }
         val brings = change?.first ?: 0
         FormDialog(stringResource(R.string.sms_collect), { collecting = false }, enabled = start != current && start.valid, onConfirm = {
             // Texts brought in are read as soon as they're collected: more than one request is asked first.
             if (consented && brings > SmsBatchSize) confirming = true else apply()
         }) {
             since?.let { Text(stringResource(R.string.sms_collect_now, smsSinceText(it)), style = MaterialTheme.typography.bodyMedium, color = ur.text2) }
-            if (handled != null || marks.isNotEmpty()) SmsWhereYouAre(handled, marks) { start = it }
-            SmsStartFields(start, handled, change?.let { (inn, out) -> when {
-                inn > 0 -> sizeText(smsReadingSize(inn, pace), brings = true)
+            if (stored.handled != null || marks.isNotEmpty()) SmsWhereYouAre(stored.handled, marks) { start = it }
+            SmsStartFields(start, stored.handled, change?.let { (inn, out) -> when {
+                inn > 0 -> sizeText(smsReadingSize(inn, stored.pace), brings = true)
                 out > 0 -> countText(R.plurals.sms_size_takes_out, out)
                 start != current -> stringResource(R.string.sms_size_none)
                 else -> null
             } }) { start = it }
         }
         if (confirming) AlertDialog(onDismissRequest = { confirming = false }, title = { Text(countText(R.plurals.sms_read_many_title, brings)) },
-            text = { Text(stringResource(R.string.sms_read_many_detail, connection?.let { reader(it) }.orEmpty(), sizeText(smsReadingSize(brings, pace), brings = false))) },
+            text = { Text(stringResource(R.string.sms_read_many_detail, connection?.let { reader(it) }.orEmpty(), sizeText(smsReadingSize(brings, stored.pace), brings = false))) },
             confirmButton = { TextButton({ confirming = false; apply() }, Modifier.testTag("sms-read-many")) { Text(stringResource(R.string.sms_read_many_confirm)) } },
             dismissButton = { TextButton({ confirming = false }) { Text(stringResource(R.string.common_cancel)) } })
     }
     if (discarding) batch?.let { open ->
         AlertDialog(onDismissRequest = { discarding = false }, title = { Text(stringResource(R.string.sms_discard_title)) },
             text = { Text(countText(R.plurals.sms_discard_detail, open.messages.size)) },
-            confirmButton = { TextButton({ discarding = false; reviewing = false; finish(open.messages.map { it.id }) }, Modifier.testTag("sms-discard-confirm")) {
+            confirmButton = { TextButton({ discarding = false; page.discard() }, Modifier.testTag("sms-discard-confirm")) {
                 Text(stringResource(R.string.sms_discard), color = ur.negative)
             } },
             dismissButton = { TextButton({ discarding = false }) { Text(stringResource(R.string.common_cancel)) } })
     }
-    LaunchedEffect(batch == null) { if (batch == null) discarding = false }
-    if (showCards) SmsCardsSheet(budget, mappings, { showCards = false }, ::saveMappings)
-    asking?.let { request ->
-        FormDialog(stringResource(R.string.sms_send_title), { asking = null }, confirm = stringResource(R.string.sms_send_confirm), onConfirm = {
-            asking = null
-            val saved = smsConsent(request.connection)
-            consent = saved
-            save("consent", saved)
-            started = true
-            send(request)
-        }) {
+    if (showCards) SmsCardsSheet(budget, stored.mappings, { showCards = false }, page::cards)
+    if (forgetting) AlertDialog(onDismissRequest = { forgetting = false }, title = { Text(stringResource(R.string.sms_templates_forget_title)) },
+        text = { Text(stringResource(R.string.sms_templates_forget_detail)) },
+        confirmButton = { TextButton({ forgetting = false; page.forgetTemplates() }) { Text(stringResource(R.string.sms_templates_forget), color = ur.negative) } },
+        dismissButton = { TextButton({ forgetting = false }) { Text(stringResource(R.string.common_cancel)) } })
+    page.asking?.let { request ->
+        FormDialog(stringResource(R.string.sms_send_title), { page.asking = null }, confirm = stringResource(R.string.sms_send_confirm), onConfirm = { page.allow(request) }) {
             Text(stringResource(R.string.sms_send_notice, reader(request.connection)), style = MaterialTheme.typography.bodyMedium, color = ur.text, modifier = Modifier.testTag("sms-consent"))
-            Text(sizeText(smsReadingSize(request.messages.size, pace), brings = false), style = MaterialTheme.typography.bodyMedium, color = ur.text2)
+            Text(sizeText(smsReadingSize(request.messages.size, stored.pace), brings = false), style = MaterialTheme.typography.bodyMedium, color = ur.text2)
             Text(stringResource(R.string.sms_send_later), style = MaterialTheme.typography.bodySmall, color = ur.muted)
         }
     }
     if (revoke) AlertDialog(onDismissRequest = { revoke = false }, title = { Text(stringResource(R.string.sms_revoke_title)) }, text = { Text(stringResource(R.string.sms_revoke_detail)) },
-        confirmButton = { TextButton({
-            revoke = false; consent = null; setAuto(false)
-            save("consent", null)
-        }) { Text(stringResource(R.string.sms_revoke)) } },
+        confirmButton = { TextButton({ revoke = false; page.revoke() }) { Text(stringResource(R.string.sms_revoke)) } },
         dismissButton = { TextButton({ revoke = false }) { Text(stringResource(R.string.common_cancel)) } })
     if (clear) AlertDialog(onDismissRequest = { clear = false }, title = { Text(stringResource(R.string.sms_stop)) }, text = { Text(stringResource(R.string.sms_stop_detail)) },
-        confirmButton = { TextButton({ scope.launch { try { withContext(smsStorageLane) { inbox.clear(identity) }; clear = false; batch = null; sorted = null; consent = null; auto = false; reloadStored() } catch (failure: Exception) { error = failure.message } } }) {
-            Text(stringResource(R.string.sms_stop), color = ur.negative)
-        } },
+        confirmButton = { TextButton({ clear = false; page.clear() }) { Text(stringResource(R.string.sms_stop), color = ur.negative) } },
         dismissButton = { TextButton({ clear = false }) { Text(stringResource(R.string.common_cancel)) } })
 }
 

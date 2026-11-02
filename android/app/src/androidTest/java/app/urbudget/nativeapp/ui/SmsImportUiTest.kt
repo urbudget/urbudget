@@ -230,7 +230,7 @@ class SmsImportUiTest {
         waitFor("sms-card:*9999")
         compose.waitUntil(10_000) { runCatching { compose.onNodeWithTag("sms-tick:0").assertIsEnabled() }.isSuccess }
         // Each untick stays: a row drawn before the last tick doesn't bring it back.
-        (0..2).forEach { compose.onNodeWithTag("sms-tick:$it").performClick() }
+        (0..2).forEach { compose.onNodeWithTag("sms-tick:$it").performScrollTo().performClick() }
         (0..2).forEach { compose.onNodeWithTag("sms-tick:$it").assertIsOff() }
         compose.onNodeWithText(context.resources.getQuantityString(R.plurals.sms_clear, 3, "3")).assertExists()
         compose.onNodeWithTag("sms-tick-all:ready").performClick()
@@ -238,8 +238,8 @@ class SmsImportUiTest {
         compose.onNodeWithTag("sms-tick-all:ready").performClick()
         (0..2).forEach { compose.onNodeWithTag("sms-tick:$it").assertIsOff() }
         compose.onNodeWithTag("sms-balance:checking").assertDoesNotExist()
-        compose.onNodeWithTag("sms-tick:1").performClick()
-        compose.onNodeWithTag("sms-tick:2").performClick()
+        compose.onNodeWithTag("sms-tick:1").performScrollTo().performClick()
+        compose.onNodeWithTag("sms-tick:2").performScrollTo().performClick()
         // Two purchases of 12.34 move the account's balance by 24.68, shown before adding.
         val balance = vm.state.value.summary!!.rows("accounts").first { it.text("id") == "checking" }.optLong("balance")
         val currency = vm.state.value.budget!!.getString("currency")
@@ -289,6 +289,61 @@ class SmsImportUiTest {
         waitFor("sms-up-to-date")
         compose.waitForIdle()
         assertEquals(0, calls)
+    }
+
+    @Test fun aTransfersOtherAccountIsMadeFromTheReviewAndRowsGoUnderTheirDay() {
+        val vm = fixture("made")
+        val inbox = SmsInbox.get(context)
+        inbox.saveState(identity!!, "consent", smsConsent(connection))
+        inbox.saveState(identity!!, "mappings", smsRememberCard(JSONArray(), "SyntheticBank", "*1234", "checking").toString())
+        val body = "Transfer USD 12.34 from card *1234 to deposit 4321"
+        val sms = BankSms(smsId("SyntheticBank", 1, body), "SyntheticBank", 1, body)
+        inbox.capture(sms)
+        // A placement into a deposit the budget doesn't have yet, read on an earlier visit.
+        val analysis = JSONObject().put("items", JSONArray().put(syntheticSmsAnalysis(sms, accountId = null, ref = "*1234").getJSONArray("items").getJSONObject(0).also {
+            it.getJSONObject("transaction").put("kind", "transfer").put("otherRef", "4321").put("payee", "Deposit")
+        }))
+        inbox.saveState(identity!!, "draft", SmsBatch(listOf(sms), analysis).saved())
+        var calls = 0
+        show(vm, analyzer { calls++; analysis })
+        waitFor("sms-review")
+        compose.onNodeWithTag("sms-review").performClick()
+        // Inside the row, which opens the editor: found in the unmerged tree.
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("sms-new-account:0", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("sms-new-account:0", useUnmergedTree = true).performClick()
+        compose.onNodeWithText(context.getString(R.string.common_add)).performClick()
+        compose.waitUntil(10_000) { vm.state.value.budget!!.rows("accounts").any { it.text("name") == "SYNTHETICBANK 4321" } }
+        // Made for this review, its balance is from before the transfer: ready to add, not held back.
+        waitFor("sms-tick:0")
+        compose.onNodeWithTag("sms-tick:0").assertIsOn()
+        compose.onNodeWithTag("sms-day:2026-10-24").assertExists()
+        // Its digits are remembered for the sender's next texts.
+        val made = vm.state.value.budget!!.rows("accounts").first { it.text("name") == "SYNTHETICBANK 4321" }.text("id")
+        compose.waitUntil(10_000) { JSONArray(inbox.state(identity!!, "mappings") ?: "[]").let { m -> (0 until m.length()).any { m.getJSONObject(it).getString("accountId") == made } } }
+        assertEquals(0, calls)
+    }
+
+    @Test fun whatAReadingLearnsIsKeptApartFromTheReviewAndEveryRequestCarriesTheTemplates() {
+        val vm = fixture("learn")
+        val inbox = SmsInbox.get(context)
+        inbox.saveState(identity!!, "consent", smsConsent(connection))
+        val body = "Your code is 1234"
+        inbox.capture(BankSms(smsId("SyntheticBank", 1, body), "SyntheticBank", 1, body))
+        val template = JSONObject().put("id", "t1").put("sender", "syntheticbank").put("lines", JSONArray().put("Your code is {code}"))
+            .put("outcome", JSONObject().put("disposition", JSONObject.NULL).put("kind", JSONObject.NULL).put("sign", JSONObject.NULL).put("skip", "code").put("memo", JSONObject.NULL))
+            .put("note", "").put("payee", JSONObject.NULL)
+        val requests = java.util.Collections.synchronizedList(mutableListOf<JSONObject>())
+        show(vm, analyzer { request ->
+            requests += request
+            codes(request.getJSONArray("messages")).put("learning", JSONObject().put("reviewed", 0).put("read", 1)
+                .put("templates", JSONArray().put(JSONObject().put("template", template).put("example", body).put("agreed", 1))))
+        })
+        compose.waitUntil(15_000) { inbox.templates(identity!!).length() == 1 }
+        waitFor("sms-up-to-date")
+        assertEquals(SmsTemplateSummary(1, 0, 0), inbox.templateSummary(identity!!))
+        // The request carried the budget's templates and payees (none yet), and the review never held the learning.
+        assertEquals(0, requests.single().getJSONArray("templates").length()); assertEquals(0, requests.single().getJSONArray("payees").length())
+        assertNull(inbox.state(identity!!, "draft"))
     }
 
     @Test fun aTextForAPurchaseAlreadyInTheBudgetIsMatchedWithoutAQuestion() {

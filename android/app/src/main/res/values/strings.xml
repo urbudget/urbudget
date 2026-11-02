@@ -2194,6 +2194,27 @@
     </plurals>
     <string name="sms_which_account">Which account is this?</string>
     <string name="sms_remember_card">Remember for these digits</string>
+    <string name="sms_new_account">New account…</string>
+    <string name="sms_new_account_title">New account</string>
+    <string name="sms_new_account_balance">Balance before these texts (%1$s)</string>
+    <string name="sms_new_account_help">The transactions in this review are added on top of it.</string>
+    <string name="sms_tick_from_day">Tick from a day</string>
+    <plurals name="sms_by_template">
+        <item quantity="one">%1$s read by a template and checked by your assistant · %2$s read in full</item>
+        <item quantity="other">%1$s read by templates and checked by your assistant · %2$s read in full</item>
+    </plurals>
+    <string name="sms_from_template">Read by a template on this phone and checked by your assistant.</string>
+    <string name="sms_templates_title">Learned formats</string>
+    <string name="sms_templates_none">None yet: your assistant writes them as it reads</string>
+    <plurals name="sms_templates_count">
+        <item quantity="one">%1$s format</item>
+        <item quantity="other">%1$s formats</item>
+    </plurals>
+    <!-- How often the assistant confirmed a template's reading unchanged: "98% confirmed in review". -->
+    <string name="sms_templates_confirmed">%1$s%% confirmed in review</string>
+    <string name="sms_templates_forget_title">Forget learned formats?</string>
+    <string name="sms_templates_forget_detail">Your assistant will read every format in full again, and learn them again as it reads.</string>
+    <string name="sms_templates_forget">Forget</string>
     <string name="sms_needs_account">Choose an account</string>
     <string name="sms_needs_transfer">Choose the other account</string>
     <!-- %1$s is the budget's currency, %2$s the amount the bank wrote: "Amount in SAR for EUR 42.00". -->
