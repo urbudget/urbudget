@@ -378,6 +378,39 @@ class SmsImportUiTest {
         assertEquals(0, inbox.templates(identity!!).length())
     }
 
+    @Test fun aTapThatClearsManyTextsForGoodAsksFirst() {
+        val vm = fixture("clear")
+        val inbox = SmsInbox.get(context)
+        inbox.saveState(identity!!, "consent", smsConsent(connection))
+        inbox.saveState(identity!!, "mappings", smsRememberCard(JSONArray(), "SyntheticBank", "*1234", "checking").toString())
+        val body = "Purchase USD 12.34 at Synthetic Shop card *1234 on 2026-10-24"
+        val sms = BankSms(smsId("SyntheticBank", 1000, body), "SyntheticBank", 1000, body)
+        val codes = (1L..60L).map { at -> val text = "Your code is ${1000 + at}"; BankSms(smsId("SyntheticBank", at, text), "SyntheticBank", at, text) }
+        inbox.captureAll(codes + sms)
+        val before = vm.state.value.budget!!.getJSONArray("transactions").length()
+        show(vm, analyzer { request ->
+            val sent = request.getJSONArray("messages").let { a -> (0 until a.length()).map { a.getJSONObject(it) } }
+            codes(JSONArray(sent.filter { it.getString("id") != sms.id })).also { reply ->
+                if (sent.any { it.getString("id") == sms.id }) reply.getJSONArray("items").put(syntheticSmsAnalysis(sms, accountId = null, ref = "*1234").getJSONArray("items").get(0))
+            }
+        })
+        waitFor("sms-review")
+        compose.onNodeWithTag("sms-review").performClick()
+        waitFor("sms-add")
+        compose.waitUntil(10_000) { runCatching { compose.onNodeWithTag("sms-add").assertIsEnabled() }.isSuccess }
+        // Adding the one purchase would clear sixty codes for good: it asks, and Cancel changes nothing.
+        compose.onNodeWithTag("sms-add").performClick()
+        waitFor("sms-clear-detail")
+        compose.onNodeWithText(context.getString(R.string.common_cancel)).performClick()
+        compose.runOnIdle { assertEquals(61, inbox.pendingCount(identity!!)) }
+        assertEquals(before, vm.state.value.budget!!.getJSONArray("transactions").length())
+        compose.onNodeWithTag("sms-add").performClick()
+        waitFor("sms-clear-confirm")
+        compose.onNodeWithTag("sms-clear-confirm").performClick()
+        compose.waitUntil(10_000) { inbox.pendingCount(identity!!) == 0 }
+        compose.waitUntil(10_000) { vm.state.value.budget!!.getJSONArray("transactions").length() == before + 1 }
+    }
+
     @Test fun aTextForAPurchaseAlreadyInTheBudgetIsMatchedWithoutAQuestion() {
         val vm = fixture("known")
         val inbox = SmsInbox.get(context)

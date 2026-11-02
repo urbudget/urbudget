@@ -2730,6 +2730,22 @@
         <item quantity="other">مسح \u2068%1$s\u2069 رسالة</item>
     </plurals>
     <string name="sms_nothing">لا شيء للإضافة بعد</string>
+    <plurals name="sms_clear_title">
+        <item quantity="zero">لا رسائل للمسح</item>
+        <item quantity="one">مسح رسالة واحدة؟</item>
+        <item quantity="two">مسح رسالتين؟</item>
+        <item quantity="few">مسح \u2068%1$s\u2069 رسائل؟</item>
+        <item quantity="many">مسح \u2068%1$s\u2069 رسالة؟</item>
+        <item quantity="other">مسح \u2068%1$s\u2069 رسالة؟</item>
+    </plurals>
+    <plurals name="sms_clear_detail">
+        <item quantity="zero">لا رسائل تُمسح.</item>
+        <item quantity="one">رسالة لا تضيف شيئًا وتخرج من رسائل البنك: رسالة متجاوَزة، أو صف غير محدد، أو رسالة من قبل الرصيد الافتتاحي لحسابها. لا يمكن جمعها مرة أخرى.</item>
+        <item quantity="two">رسالتان لا تضيفان شيئًا وتخرجان من رسائل البنك: رسائل متجاوَزة وصفوف غير محددة ورسائل من قبل الرصيد الافتتاحي لحساباتها. لا يمكن جمعهما مرة أخرى.</item>
+        <item quantity="few">\u2068%1$s\u2069 رسائل لا تضيف شيئًا وتخرج من رسائل البنك: رسائل متجاوَزة وصفوف غير محددة ورسائل من قبل الرصيد الافتتاحي لحساباتها. لا يمكن جمعها مرة أخرى.</item>
+        <item quantity="many">\u2068%1$s\u2069 رسالة لا تضيف شيئًا وتخرج من رسائل البنك: رسائل متجاوَزة وصفوف غير محددة ورسائل من قبل الرصيد الافتتاحي لحساباتها. لا يمكن جمعها مرة أخرى.</item>
+        <item quantity="other">\u2068%1$s\u2069 رسالة لا تضيف شيئًا وتخرج من رسائل البنك: رسائل متجاوَزة وصفوف غير محددة ورسائل من قبل الرصيد الافتتاحي لحساباتها. لا يمكن جمعها مرة أخرى.</item>
+    </plurals>
     <plurals name="sms_added">
         <item quantity="zero">لم تُضف معاملات</item>
         <item quantity="one">أُضيفت معاملة واحدة</item>

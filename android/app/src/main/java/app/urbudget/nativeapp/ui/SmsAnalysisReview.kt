@@ -62,6 +62,7 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
     // The rows a day is picked for ("Tick from a day"), and the account being made for a text.
     var fromDay by remember { mutableStateOf<List<SmsItem>?>(null) }
     var creating by remember { mutableStateOf<SmsNewAccount?>(null) }
+    var clearing by remember { mutableStateOf(false) }
     val decisions = remember { mutableStateMapOf<Int, String>() }
     val keepCard = remember { mutableStateMapOf<String, Boolean>() }
     LaunchedEffect(budget, resolved) {
@@ -95,6 +96,8 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
     // Settled: added, unticked, held, not a transaction, or dismissed. Waiting for a choice: kept for later.
     val settled = items.filter { it !in waiting && !(it.disposition == "pending" && it.needs != null && ticked(it)) }
     val later = items.size - settled.size
+    // Texts the tap settles without adding anything: they leave Bank messages and can't be collected again.
+    val cleared = settled.size - adding.size
     fun confirm() {
         if (checked !== vm.state.value.budget || undecided > 0 || saving) return
         val handled = settled.flatMap { item -> item.sources.map { it.id } }
@@ -192,7 +195,6 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
         Column(Modifier.fillMaxWidth().background(ur.bg).navigationBarsPadding().padding(horizontal = Gutter, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             val changes = smsBalanceChanges(items, adding)
             if (changes.isNotEmpty()) SmsBalances(changes, budget, state.summary)
-            val cleared = settled.size - adding.size
             val matching = adding.count { it.second.startsWith("match:") }
             val caption = listOfNotNull(
                 if (undecided > 0) countText(R.plurals.sms_undecided, undecided) else null,
@@ -203,12 +205,19 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
             if (caption.isNotEmpty()) Text(caption, Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = if (undecided > 0) ur.warning else ur.muted, textAlign = TextAlign.Center)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 SecondaryButton(stringResource(R.string.sms_later_action), close, Modifier.weight(1f), enabled = !saving)
-                PrimaryButton(when {
+                val action = when {
                     adding.size > matching -> countText(R.plurals.sms_add, adding.size - matching)
                     settled.isNotEmpty() -> countText(R.plurals.sms_clear, settled.size)
                     else -> stringResource(R.string.sms_nothing)
-                }, ::confirm, Modifier.weight(2f).testTag("sms-add"),
+                }
+                // Clearing a lot can't be taken back, and the button sits where the dock is on other pages: it asks first.
+                PrimaryButton(action, { if (cleared >= SmsClearAsks) clearing = true else confirm() }, Modifier.weight(2f).testTag("sms-add"),
                     enabled = !saving && checked === state.budget && undecided == 0 && settled.isNotEmpty())
+                if (clearing) AlertDialog(onDismissRequest = { clearing = false }, title = { Text(countText(R.plurals.sms_clear_title, cleared)) },
+                    text = { Text(listOfNotNull(countText(R.plurals.sms_clear_detail, cleared), later.takeIf { it > 0 }?.let { countText(R.plurals.sms_later, it) + "." })
+                        .joinToString(" "), Modifier.testTag("sms-clear-detail")) },
+                    confirmButton = { TextButton({ clearing = false; confirm() }, Modifier.testTag("sms-clear-confirm")) { Text(action) } },
+                    dismissButton = { TextButton({ clearing = false }) { Text(stringResource(R.string.common_cancel)) } })
             }
         }
     }
@@ -527,6 +536,9 @@ private fun SmsAmountField(currency: String, written: String, enter: (Long) -> U
         SmallAction(stringResource(R.string.common_save), { cents?.let(enter) }, primary = cents != null)
     }
 }
+
+/** How many texts a tap may clear without adding anything before the review asks. */
+internal const val SmsClearAsks = 50
 
 /** What a skipped text is, by its reason. */
 internal fun smsSkipLabel(skip: String): Int = when (skip) {

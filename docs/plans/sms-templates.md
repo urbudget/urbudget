@@ -427,8 +427,14 @@ it reads that history, so phase 2 starts with templates for most formats.
   assistant's independent full readings) and the user's edits counting as corrections are
   the guards; tracking accuracy per template shows where they fail.
 - **Review attention.** Reviewing 115 prefilled rows, a model may confirm too readily.
-  Measure it in phase 2 by seeding known-wrong fills on the eval set and counting how many
-  are caught; if too few, review in smaller groups or ask for an explicit verdict per row.
+  `crates/urbudget-services/examples/sms_review_eval.rs` measures it: synthetic texts in seven
+  bank-like formats go through the real service and model, each format once with its right
+  template and once with one planted mistake (money in for out, day and month swapped, the
+  balance as the amount, a transfer's accounts swapped, a transfer as a purchase, a purchase
+  skipped, miles as money), and it counts the planted rows put right and the right rows
+  changed. `-- dry` checks the planted mistakes without a model; a live run needs an
+  Anthropic or OpenAI key (`URBUDGET_EVAL_PROVIDER`, `URBUDGET_EVAL_KEY`) and hasn't been run
+  yet. If too few are caught, review in smaller groups or ask for a verdict per row.
 - **Payee cleaning** is a rule per template plus the payee table; new merchants still come
   back "Check the payee" until the user settles them once.
 - **Other banks** that write prose rather than `Label : value` lines need `{any}` and

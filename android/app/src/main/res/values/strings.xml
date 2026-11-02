@@ -2319,6 +2319,14 @@
         <item quantity="other">Clear %1$s messages</item>
     </plurals>
     <string name="sms_nothing">Nothing to add yet</string>
+    <plurals name="sms_clear_title">
+        <item quantity="one">Clear %1$s message?</item>
+        <item quantity="other">Clear %1$s messages?</item>
+    </plurals>
+    <plurals name="sms_clear_detail">
+        <item quantity="one">%1$s message adds nothing and leaves Bank messages: a skipped text, an unticked row, or one from before its account\'s starting balance. It can\'t be collected again.</item>
+        <item quantity="other">%1$s messages add nothing and leave Bank messages: skipped texts, unticked rows and those from before their account\'s starting balance. They can\'t be collected again.</item>
+    </plurals>
     <plurals name="sms_added">
         <item quantity="one">Added %1$s transaction</item>
         <item quantity="other">Added %1$s transactions</item>
