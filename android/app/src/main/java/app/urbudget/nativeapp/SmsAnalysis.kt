@@ -129,11 +129,15 @@ internal fun smsAccountMarks(budget: JSONObject, today: String = LocalDate.now()
 
 /**
  * What reading [texts] takes: requests of [SmsBatchSize], and minutes going by [pace], the
- * milliseconds a text took in this budget's last full request (none until one has run).
+ * milliseconds a text took in this budget's last large request (none until one has run). With
+ * [learned] formats a request carries more, as many as its templates read, so only the minutes
+ * say how long; the requests are an upper bound, shown when there are no minutes to show.
  */
 internal data class SmsReadingSize(val texts: Int, val requests: Int, val minutes: Int?)
-internal fun smsReadingSize(texts: Int, pace: Long?): SmsReadingSize = SmsReadingSize(texts, (texts + SmsBatchSize - 1) / SmsBatchSize,
-    pace?.takeIf { it > 0 && texts > 0 }?.let { ((texts * it + 59_999) / 60_000).toInt().coerceAtLeast(1) })
+internal fun smsReadingSize(texts: Int, pace: Long?, learned: Boolean = false): SmsReadingSize {
+    val minutes = pace?.takeIf { it > 0 && texts > 0 }?.let { ((texts * it + 59_999) / 60_000).toInt().coerceAtLeast(1) }
+    return SmsReadingSize(texts, if (learned && minutes != null) 0 else (texts + SmsBatchSize - 1) / SmsBatchSize, minutes)
+}
 
 /**
  * How adding these items moves each account's balance, by account: a new transaction's amount in its
@@ -194,6 +198,8 @@ internal data class SmsItem(
     val early: Boolean = false,
     /** The template that read it on the phone (the assistant reviewed the reading), and the payee as the bank wrote it. */
     val template: String? = null, val raw: String? = null,
+    /** Skipped on the phone without going to the assistant: a code, or a format it has confirmed enough. */
+    val kept: Boolean = false,
 ) {
     /** Ticked to add unless the user said otherwise: a transaction, but not a hold or one already in a starting balance. */
     fun tickedIn(batch: SmsBatch): Boolean = batch.ticked[index] ?: (disposition == "transaction" && !early)
@@ -217,7 +223,9 @@ internal data class SmsBatch(val messages: List<BankSms>, val analysis: JSONObje
         .put("ticked", JSONObject(ticked.mapKeys { it.key.toString() })).put("dismissed", JSONArray(dismissed.toList())).put("fresh", JSONArray(fresh.toList())).toString()
 
     /** Texts a template read on the phone, which the assistant reviewed rather than read in full. */
-    val templated: Int get() = analysis.rows("items").filter { it.text("template").isNotBlank() }.sumOf { sourceIds(it).size }
+    val templated: Int get() = analysis.rows("items").filter { it.text("template").isNotBlank() && !it.optBoolean("kept") }.sumOf { sourceIds(it).size }
+    /** Texts skipped on the phone without going to the assistant. */
+    val kept: Int get() = analysis.rows("items").filter { it.optBoolean("kept") }.sumOf { sourceIds(it).size }
 
     /** Where each account's records start for this review: an account made for its texts has none. */
     fun starts(budget: JSONObject): Map<String, String> = smsStarts(budget) - fresh
@@ -245,7 +253,7 @@ internal data class SmsBatch(val messages: List<BankSms>, val analysis: JSONObje
         val unsure = item.optJSONArray("unsure")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() }.orEmpty()
         val early = t != null && accounts.early(t.text("date"), t.text("accountId"), t.text("transferAccountId"))
         SmsItem(index, item.text("disposition"), item.text("note"), item.text("skip"), unsure, sources, t, source, needs, early,
-            item.text("template").ifBlank { null }, item.text("raw").ifBlank { null })
+            item.text("template").ifBlank { null }, item.text("raw").ifBlank { null }, item.optBoolean("kept"))
     }
 
     /**
@@ -319,8 +327,26 @@ internal data class SmsBatch(val messages: List<BankSms>, val analysis: JSONObje
     }
 }
 
-/** What one request to the assistant reads: its reply lists only the money, so a few hundred fit in its time. */
+/** What one request to the assistant reads in full: its reply lists only the money, so a few hundred fit in its time. */
 internal const val SmsBatchSize = 200
+/** What one request carries at most: texts it only reviews, and junk read on the phone, cost little of its time. */
+internal const val SmsRequestTexts = 1_000
+private const val SmsReviewTexts = 400
+
+/**
+ * How many of these texts one request takes, by their lanes ("junk", "review", "read"): up to
+ * [SmsBatchSize] read in full and [SmsReviewTexts] reviewed, any number of junk, within
+ * [SmsRequestTexts]. Without lanes, [SmsBatchSize].
+ */
+internal fun smsRequestSize(lanes: List<String>?): Int {
+    if (lanes == null) return SmsBatchSize
+    var read = 0; var review = 0
+    lanes.forEachIndexed { i, lane ->
+        when (lane) { "read" -> read++; "review" -> review++ }
+        if (read > SmsBatchSize || review > SmsReviewTexts) return i
+    }
+    return lanes.size.coerceAtLeast(1)
+}
 
 /**
  * Reads waiting texts into a budget's review a request at a time, for the page and the background
@@ -363,26 +389,35 @@ internal object SmsReadings {
         try {
             current.value = Reading(identity, 0, messages.size)
             var read = base
-            for (part in messages.chunked(SmsBatchSize)) {
+            var remaining = messages
+            while (remaining.isNotEmpty()) {
                 check(still()) { context.getString(R.string.sms_permission_needed) }
-                // The budget's templates read the texts in formats it knows first; the assistant reviews those readings.
-                val (templates, payees) = withContext(smsStorageLane) { inbox.templates(identity) to inbox.payees(identity) }
-                val request = JSONObject().put("budgetId", identity).put("provider", connection.getString("provider")).put("model", connection.opt("model") ?: JSONObject.NULL)
-                    .put("messages", JSONArray(part.map { it.json() })).put("note", note).put("templates", templates).put("payees", payees)
+                // The budget's templates read the texts in formats it knows first: junk stays on the phone, the
+                // assistant reviews the rest of what they read, and reads only new formats in full. What one
+                // request teaches makes the next one smaller, so each is planned when it's sent.
+                val (templates, payees, trusted) = withContext(smsStorageLane) { Triple(inbox.templates(identity), inbox.payees(identity), inbox.trusted(identity)) }
+                fun request(texts: List<BankSms>) = JSONObject().put("budgetId", identity).put("provider", connection.getString("provider"))
+                    .put("model", connection.opt("model") ?: JSONObject.NULL).put("messages", JSONArray(texts.map { it.json() })).put("note", note)
+                    .put("templates", templates).put("payees", payees).put("trusted", trusted)
+                val probe = remaining.take(SmsRequestTexts)
+                val part = probe.take(smsRequestSize(analyzer.lanes(request(probe))))
                 val began = System.currentTimeMillis()
-                val result = analyzer.analyze(request)
+                val result = analyzer.analyze(request(part))
                 // What the reading taught (templates, how theirs fared, payees) isn't part of the review.
                 val learning = result.remove("learning") as? JSONObject
                 check(still()) { context.getString(R.string.sms_permission_needed) }
                 val grown = read?.plus(part, result) ?: SmsBatch(part, result)
-                // A request of a hundred texts or more says how long reading takes ("pace", milliseconds a text).
-                val pace = (System.currentTimeMillis() - began).takeIf { part.size >= 100 }?.div(part.size)
+                // A request whose texts the assistant saw a hundred or more of says how long reading takes ("pace",
+                // milliseconds a text sent); junk read on the phone alone would say it takes no time.
+                val seen = learning?.let { it.optInt("read") + it.optInt("reviewed") } ?: part.size
+                val pace = (System.currentTimeMillis() - began).takeIf { seen >= 100 }?.div(part.size)
                 withContext(smsStorageLane) {
                     inbox.saveState(identity, "draft", grown.saved())
                     pace?.let { inbox.saveState(identity, "pace", it.toString()) }
                     learning?.let { inbox.learn(identity, it) }
                 }
                 read = grown
+                remaining = remaining.drop(part.size)
                 current.value = Reading(identity, (current.value?.read ?: 0) + part.size, messages.size)
             }
             return read
@@ -393,9 +428,15 @@ internal object SmsReadings {
 internal interface SmsAnalyzer {
     suspend fun status(): JSONObject
     suspend fun analyze(request: JSONObject): JSONObject
+    /** Each text's lane by the budget's templates, to size requests; null reads them [SmsBatchSize] at a time. */
+    suspend fun lanes(request: JSONObject): List<String>? = null
 }
 internal object NativeSmsAnalyzer : SmsAnalyzer {
     override suspend fun status(): JSONObject = withContext(Dispatchers.IO) { NativeServices.call("assistant_status") as JSONObject }
+    override suspend fun lanes(request: JSONObject): List<String>? = try {
+        withContext(Dispatchers.IO) { (NativeServices.call("assistant_sms_lanes", JSONObject().put("request", request)) as JSONObject).getJSONArray("lanes") }
+            .let { a -> (0 until a.length()).map { a.getString(it) } }
+    } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { null }
     override suspend fun analyze(request: JSONObject): JSONObject {
         var id: String? = null
         try {

@@ -107,7 +107,7 @@ class SmsInboxTest {
         // Readings reviewed over two requests, and a row the user changed before adding it.
         repeat(2) { inbox.learn(first, JSONObject().put("stats", JSONObject().put("t1", JSONObject().put("filled", 3).put("confirmed", 2).put("corrected", JSONObject().put("payee", 1))))) }
         inbox.edited(first, "t1", setOf("amount"))
-        assertEquals(SmsTemplateSummary(2, 6, 4), inbox.templateSummary(first))
+        assertEquals(SmsTemplateSummary(2, 6, 4, mapOf("t1" to 66)), inbox.templateSummary(first))
         val stats = inbox.readableDatabase.rawQuery("SELECT stats FROM sms_templates WHERE budget=? AND id='t1'", arrayOf(first)).use { it.moveToFirst(); JSONObject(it.getString(0)) }
         assertEquals(2, stats.getJSONObject("corrected").getInt("payee")); assertEquals(1, stats.getJSONObject("edited").getInt("amount")); assertEquals(2, stats.getInt("requests"))
         // The user's payee for the bank's name replaces the one learned before, whatever its case.
@@ -120,6 +120,50 @@ class SmsInboxTest {
         assertEquals(0, inbox.templates(first).length())
         inbox.forgetTemplates(first)
         assertEquals(0, inbox.payees(first).length()); assertEquals(SmsTemplateSummary(0, 0, 0), inbox.templateSummary(first))
+    }
+
+    @Test fun skipFormatsAreTrustedOnceConfirmedAndFormatsRetireWhenUnusedOrRewrittenOften() {
+        inbox.configure(first, setOf("BankA"), 0)
+        fun template(id: String, skip: String?) = JSONObject().put("id", id).put("sender", "banka").put("lines", JSONArray().put("Line $id {n}"))
+            .put("outcome", JSONObject().put("disposition", if (skip == null) "transaction" else "ignore").put("skip", skip ?: JSONObject.NULL)).put("note", "").put("payee", JSONObject.NULL)
+        fun learned(t: JSONObject, replaces: String? = null) = JSONObject().put("template", t).put("example", "Line 1").put("agreed", 1).put("replaces", replaces ?: JSONObject.NULL)
+        fun trusted() = inbox.trusted(first).let { a -> (0 until a.length()).map { a.getString(it) } }
+        fun state(id: String) = inbox.templateList(first).firstOrNull { it.id == id }?.state
+        val day = 86_400_000L; val start = 1_000 * day
+        inbox.learn(first, JSONObject().put("templates", JSONArray().put(learned(template("s1", "rewards"))).put(learned(template("m1", null)))), start)
+        assertEquals(emptyList<String>(), trusted())
+        // Confirmed again in a later request, a skip format is trusted: its texts stay on the phone. A money format never is.
+        val confirmed = JSONObject().put("filled", 2).put("confirmed", 2)
+        inbox.learn(first, JSONObject().put("stats", JSONObject().put("s1", confirmed).put("m1", JSONObject(confirmed.toString()))), start)
+        assertEquals(listOf("s1"), trusted()); assertEquals("candidate", state("m1"))
+        inbox.learn(first, JSONObject().put("stats", JSONObject().put("s1", JSONObject().put("settled", 4))), start)
+        assertEquals(4, inbox.templateList(first).first { it.id == "s1" }.stats.getInt("settled"))
+        // One correction takes the trust away.
+        inbox.learn(first, JSONObject().put("stats", JSONObject().put("s1", JSONObject().put("filled", 1).put("corrected", JSONObject().put("skip", 1)))), start)
+        assertEquals(emptyList<String>(), trusted())
+        // A format rewritten three times in a month retires with its last rewrite: its texts are read in full.
+        var old = "m1"
+        listOf("m2", "m3", "m4").forEach { id ->
+            inbox.learn(first, JSONObject().put("templates", JSONArray().put(learned(template(id, null), old))).put("retired", JSONArray().put(old)), start + day)
+            old = id
+        }
+        fun stored(id: String) = inbox.readableDatabase.rawQuery("SELECT state FROM sms_templates WHERE budget=? AND id=?", arrayOf(first, id)).use { it.moveToFirst(); it.getString(0) }
+        assertEquals(List(4) { "retired" }, listOf("m1", "m2", "m3", "m4").map(::stored))
+        assertEquals(listOf("s1"), inbox.templateList(first).map { it.id })
+        // Formats unused for half a year retire too.
+        inbox.learn(first, JSONObject(), start + 182 * day)
+        assertEquals(0, inbox.templates(first).length())
+    }
+
+    @Test fun aSenderWhoseTextsTurnNewIsPointedOut() {
+        inbox.configure(first, setOf("BankA", "BankB"), 0)
+        fun flags(vararg known: Boolean) = JSONArray(known.toList())
+        inbox.learn(first, JSONObject().put("senders", JSONObject().put("banka", flags(*BooleanArray(20) { true })).put("bankb", flags(*BooleanArray(20) { true }))))
+        assertEquals(emptySet<String>(), inbox.templateSummary(first).drifting)
+        inbox.learn(first, JSONObject().put("senders", JSONObject().put("banka", flags(*BooleanArray(20) { it < 12 })).put("bankb", flags(*BooleanArray(20) { it != 5 }))))
+        assertEquals(setOf("banka"), inbox.templateSummary(first).drifting)
+        inbox.forgetTemplates(first)
+        assertEquals(emptySet<String>(), inbox.drifting(first))
     }
 
     @Test fun aReviewOfAPhonesHistoryIsSavedWholeAndAScanIsCollectedInOneGo() {

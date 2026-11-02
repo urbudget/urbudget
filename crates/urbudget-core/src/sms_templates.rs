@@ -342,7 +342,7 @@ pub fn fill(b: &Budget, c: &Compiled, m: &Message, reading: &Reading, payees: &H
     let o = &t.outcome;
     let item = if let Some(skip) = &o.skip {
         Item { source_ids: vec![m.id.clone()], disposition: "ignore".into(), skip: Some(skip.clone()), note: String::new(), evidence: vec![],
-            transaction: None, unsure: vec![], template: Some(t.id.clone()), raw: None }
+            transaction: None, unsure: vec![], template: Some(t.id.clone()), raw: None, kept: false }
     } else {
         let negative = o.sign.as_deref() == Some("-");
         let signed = |n: &str| format!("{}{}", if negative { "-" } else { "" }, plain(n));
@@ -365,7 +365,7 @@ pub fn fill(b: &Budget, c: &Compiled, m: &Message, reading: &Reading, payees: &H
                 memo: o.memo.clone().unwrap_or_default(), kind, account_ref: reading.reference.clone(), other_ref: reading.other.clone(),
                 category_id: category, account_id: None, transfer_account_id: None,
             }),
-            unsure: vec![], template: Some(t.id.clone()), raw,
+            unsure: vec![], template: Some(t.id.clone()), raw, kept: false,
         }
     };
     let mut item = item;
@@ -374,17 +374,75 @@ pub fn fill(b: &Budget, c: &Compiled, m: &Message, reading: &Reading, payees: &H
 }
 
 /// The texts split for the assistant: those a template read (with the item it filled, for the
-/// assistant to review), and those it reads in full.
+/// assistant to review), those it reads in full, and junk settled on the phone: texts a trusted
+/// skip template read, and codes the code filter recognised.
 #[derive(Debug, Default)]
 pub struct Lanes {
     pub review: Vec<(usize, Item)>,
     pub read: Vec<usize>,
+    pub junk: Vec<(usize, Item)>,
     /// Texts two equally specific templates both read: read in full, and the clash counted.
     pub conflicts: usize,
 }
 
-/// Sorts texts into lanes by the sender's templates, the most specific first.
-pub fn lanes(b: &Budget, messages: &[Message], templates: &[Template], payees: &[Payee]) -> Lanes {
+impl Lanes {
+    /// Each text's lane, in order: "junk", "review" or "read".
+    pub fn of(&self, count: usize) -> Vec<&'static str> {
+        let mut lanes = vec!["read"; count];
+        for (i, _) in &self.review { lanes[*i] = "review" }
+        for (i, _) in &self.junk { lanes[*i] = "junk" }
+        lanes
+    }
+}
+
+/// What a code the filter recognised says read it, in place of a template's id.
+pub const CODE_FILTER: &str = "filter:code";
+
+/// Phrases only a one-time code text uses, in the languages banks write in.
+const CODE_PHRASES: [&str; 12] = ["otp", "one-time password", "one time password", "verification code", "do not share", "don't share",
+    "لا تشارك الرمز", "رمز التحقق", "رمز المرور", "كلمة المرور لمرة واحدة", "كلمة مرور صالحة لمرة واحدة", "رمز التفعيل"];
+/// Words a code follows ("OTP: 4821", "رمز : 482193").
+const CODE_WORDS: [&str; 6] = ["otp", "code", "password", "pin", "رمز", "كلمة المرور"];
+
+/// A one-time code before any template knows the format: a code phrase, and a 4–8 digit number
+/// shortly after a code word, so a purchase that ends "never share your OTP" isn't one.
+/// Conservative on purpose: a miss only means the assistant reads the text.
+pub fn looks_like_code(body: &str) -> bool {
+    let lower: Vec<char> = body.to_lowercase().chars().collect();
+    let text: String = lower.iter().collect();
+    let words: Vec<String> = text.split(|c: char| !c.is_alphanumeric()).map(str::to_owned).collect();
+    let phrase = CODE_PHRASES.iter().any(|p| if p.is_ascii() && !p.contains(' ') { words.iter().any(|w| w == p) } else { text.contains(p) });
+    if !phrase { return false; }
+    // Where each code word ends, in characters.
+    let mut ends = vec![];
+    for word in CODE_WORDS {
+        let w: Vec<char> = word.chars().collect();
+        for i in 0..(lower.len() + 1).saturating_sub(w.len()) {
+            if lower[i..i + w.len()] == w[..] { ends.push(i + w.len()) }
+        }
+    }
+    let mut i = 0;
+    while i < lower.len() {
+        if lower[i].is_ascii_digit() {
+            let start = i;
+            while i < lower.len() && lower[i].is_ascii_digit() { i += 1 }
+            if (4..=8).contains(&(i - start)) && ends.iter().any(|&e| e <= start && start - e <= 60) { return true; }
+        } else { i += 1 }
+    }
+    false
+}
+
+/// One in fifty texts a trusted skip template reads still goes to review, so a template that
+/// started skipping money would be caught. Codes never do: there's nothing in them to check.
+fn audited(m: &Message, skip: &str) -> bool {
+    use sha2::{Digest, Sha256};
+    let d = Sha256::digest(m.id.as_bytes());
+    skip != "code" && (u16::from(d[0]) << 8 | u16::from(d[1])) % 50 == 0
+}
+
+/// Sorts texts into lanes by the sender's templates, the most specific first. A skip template in
+/// [trusted] settles its texts on the phone; every other template's texts are reviewed.
+pub fn lanes(b: &Budget, messages: &[Message], templates: &[Template], payees: &[Payee], trusted: &std::collections::HashSet<String>) -> Lanes {
     let mut by_sender: HashMap<String, Vec<Compiled>> = HashMap::new();
     for t in templates {
         if let Ok(c) = compile(t) { by_sender.entry(t.sender.clone()).or_default().push(c) }
@@ -400,9 +458,16 @@ pub fn lanes(b: &Budget, messages: &[Message], templates: &[Template], payees: &
         match first {
             Some(_) if tie => { lanes.conflicts += 1; lanes.read.push(i) }
             Some((c, reading)) => match fill(b, c, m, &reading, &payees) {
+                Some(item) if item.skip.as_deref().is_some_and(|skip| trusted.contains(&c.template.id) && !audited(m, skip)) => {
+                    lanes.junk.push((i, Item { kept: true, ..item }))
+                }
                 Some(item) => lanes.review.push((i, item)),
                 None => lanes.read.push(i),
             },
+            None if looks_like_code(&m.body) => lanes.junk.push((i, Item {
+                source_ids: vec![m.id.clone()], disposition: "ignore".into(), skip: Some("code".into()), note: String::new(), evidence: vec![],
+                transaction: None, unsure: vec![], template: Some(CODE_FILTER.into()), raw: None, kept: true,
+            })),
             None => lanes.read.push(i),
         }
     }
@@ -566,12 +631,37 @@ mod tests {
         let code = Template { id: "t2".into(), sender: "anb".into(), lines: vec!["رمز : {code}".into(), "لا تشارك الرمز".into()],
             outcome: Outcome { skip: Some("code".into()), ..Outcome::default() }, note: String::new(), payee: None };
         let messages = [text("sms:1", BODY), text("sms:2", "رمز : 4821\nلا تشارك الرمز"), text("sms:3", "Something new SAR 5")];
-        let lanes = lanes(&b, &messages, &[purchase(), code], &[]);
+        let lanes = lanes(&b, &messages, &[purchase(), code], &[], &Default::default());
         assert_eq!(lanes.review.iter().map(|(i, it)| (*i, it.disposition.as_str())).collect::<Vec<_>>(), vec![(0, "transaction"), (1, "ignore")]);
         assert_eq!(lanes.read, vec![2]);
         // Another sender's templates don't read this sender's texts.
         let other = Message { sender: "OtherBank".into(), ..messages[0].clone() };
-        assert_eq!(super::lanes(&b, &[other], &[purchase()], &[]).read, vec![0]);
+        assert_eq!(super::lanes(&b, &[other], &[purchase()], &[], &Default::default()).read, vec![0]);
+    }
+    #[test]
+    fn junk_a_trusted_skip_template_reads_and_codes_stay_on_the_phone() {
+        let b = budget();
+        let miles = Template { id: "t3".into(), sender: "anb".into(), lines: vec!["Earned miles : {n}".into()],
+            outcome: Outcome { skip: Some("rewards".into()), ..Outcome::default() }, note: String::new(), payee: None };
+        let texts: Vec<Message> = (0..200).map(|i| text(&format!("sms:{i}"), &format!("Earned miles : {i}"))).collect();
+        // Not trusted yet: every text is reviewed.
+        assert_eq!(lanes(&b, &texts, &[miles.clone()], &[], &Default::default()).review.len(), 200);
+        let trusted = std::collections::HashSet::from(["t3".to_string()]);
+        let l = lanes(&b, &texts, &[miles], &[], &trusted);
+        // Trusted: settled on the phone, but about one in fifty still goes to review as an audit.
+        assert!(l.junk.len() > 180 && !l.review.is_empty() && l.junk.len() + l.review.len() == 200, "{} {}", l.junk.len(), l.review.len());
+        // What stays on the phone says so; what's audited is reviewed like any other reading.
+        assert!(l.junk.iter().all(|(_, item)| item.kept) && l.review.iter().all(|(_, item)| !item.kept));
+        // A code no template knows yet is recognised by its words and its number; money never is.
+        let codes = [text("c1", "لـ : شراء
+لا تشارك الرمز
+رمز : 482193
+مبلغ : SAR 120"), text("c2", "Your OTP is 4821 for SAR 120 at AMAZON"),
+            text("c3", "Purchase SAR 120 at AMAZON card 4821"), text("c4", "Purchase SAR 50.00 at SHOP card 4512. Never share your OTP."),
+            text("c5", "رمز المرور صالح للاستخدام لمرة واحدة: 739201")];
+        let l = lanes(&b, &codes, &[], &[], &Default::default());
+        assert_eq!((l.junk.iter().map(|(i, _)| *i).collect::<Vec<_>>(), l.read.clone()), (vec![0, 1, 4], vec![2, 3]));
+        assert_eq!(l.of(5), vec!["junk", "junk", "read", "read", "junk"]);
     }
     #[test]
     fn a_template_is_kept_only_when_it_reads_the_batch_as_the_assistant_did() {

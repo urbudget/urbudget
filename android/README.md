@@ -188,8 +188,16 @@ in a known format are read on the phone first and sent in a `review` list with t
 the assistant answers only with corrections (silence confirms) and reads the rest (`read`) in
 full, writing templates for new formats and rewriting one its corrections show is wrong.
 Every template counts its rows filled, confirmed and corrected, and the user's edits to them;
-settings show **Learned formats** with how often they were confirmed, and can forget them.
-The assistant stays in the loop for every text: templates make its work a review.
+a row's editor says how often its format was confirmed, and settings list the **Learned
+formats** by sender with an example text and how each is doing, to forget one or all.
+Junk stays on the phone: a code the filter in `sms_templates.rs` recognises, or a text in a
+skip format (rewards, a security alert) the assistant has confirmed three times over two
+requests with no correction; one in 50 of those is still reviewed as an audit, and any
+correction takes the trust away. Requests are sized by lane (`assistant_sms_lanes`): up to
+200 read in full and 400 reviewed, with any junk, in one request of up to 1,000 texts.
+A format rewritten three times in a month, or unused for 180 days, retires; a sender whose
+recent texts are suddenly mostly new formats is pointed out in the formats list. The
+assistant stays in the loop for every text but junk: templates make its work a review.
 
 The phone matches each reference to an account: a card remembered for that sender,
 otherwise the one open account whose name carries the card's digits ("4417" is "Visa

@@ -151,6 +151,7 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
     var pickSenders by remember { mutableStateOf(false) }
     var collecting by remember { mutableStateOf(false) }
     var showCards by remember { mutableStateOf(false) }
+    var showFormats by remember { mutableStateOf(false) }
     var revoke by remember { mutableStateOf(false) }
     var clear by remember { mutableStateOf(false) }
     var discarding by remember { mutableStateOf(false) }
@@ -189,7 +190,7 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
     val since = stored.since
     if (reviewBatch != null) SmsReview(budget, vm, reviewBatch, stored.mappings, close = page::close, change = page::edit,
         saveCards = page::cards, finish = { ids, rest -> page.finish(ids, rest = rest) }, again = { note -> page.prepare(reviewBatch.messages, note) }, discard = { discarding = true },
-        edited = page::edited)
+        edited = page::edited, accuracy = stored.templates.accuracy)
     else Box(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize().testTag("sms-inbox"), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 8.dp, bottom = if (selecting) 120.dp else DockRoom),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -232,11 +233,13 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
                                 Text(countText(R.plurals.sms_to_review, found.needs), style = MaterialTheme.typography.titleMedium, color = ur.text, modifier = Modifier.testTag("sms-needs"))
                                 if (found.existing.isNotEmpty() || found.skipped.isNotEmpty())
                                     Text(handledSummary(found.existing.size, found.skipped), style = MaterialTheme.typography.bodyMedium, color = ur.text2)
-                                // Texts in a format the budget knows were read on the phone and checked by the assistant.
-                                batch.templated.takeIf { it > 0 }?.let { n ->
-                                    Text(countText(R.plurals.sms_by_template, n, Money.count((batch.messages.size - n).toLong())), style = MaterialTheme.typography.bodySmall,
-                                        color = ur.muted, modifier = Modifier.testTag("sms-by-template"))
-                                }
+                                // Texts in a format the budget knows were read on the phone and checked by the assistant;
+                                // codes and formats it has confirmed enough to skip never left the phone.
+                                val templated = batch.templated; val kept = batch.kept
+                                if (templated > 0 || kept > 0) Text(listOfNotNull(
+                                    templated.takeIf { it > 0 }?.let { countText(R.plurals.sms_by_template, it, Money.count((batch.messages.size - it - kept).toLong())) },
+                                    kept.takeIf { it > 0 }?.let { countText(R.plurals.sms_kept_on_phone, it) },
+                                ).joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = ur.muted, modifier = Modifier.testTag("sms-by-template"))
                                 PrimaryButton(stringResource(R.string.sms_review_open), page::open, Modifier.fillMaxWidth().testTag("sms-review"))
                                 if (waitingCount > 0) {
                                     Text(countText(R.plurals.sms_more_waiting, waitingCount), style = MaterialTheme.typography.bodyMedium, color = ur.text2)
@@ -253,7 +256,7 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
                                 if (ready) {
                                     PrimaryButton(if (consented) countText(R.plurals.sms_read_count, waitingCount) else stringResource(R.string.sms_read_with, connection?.let { reader(it) }.orEmpty()),
                                         { page.prepare(waiting) }, Modifier.fillMaxWidth().testTag("sms-prepare"), enabled = !page.busy && waiting.isNotEmpty())
-                                    if (waitingCount > SmsBatchSize) Text(sizeText(smsReadingSize(waitingCount, stored.pace), brings = false), style = MaterialTheme.typography.bodyMedium, color = ur.text2)
+                                    if (waitingCount > SmsBatchSize) Text(sizeText(smsReadingSize(waitingCount, stored.pace, stored.templates.count > 0), brings = false), style = MaterialTheme.typography.bodyMedium, color = ur.text2)
                                     Text(stringResource(R.string.sms_reads_note), style = MaterialTheme.typography.bodySmall, color = ur.muted)
                                 } else if (connection != null) Notice(stringResource(R.string.sms_connect_assistant), tone = "info")
                             }
@@ -306,7 +309,8 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
                         ListRow(stringResource(R.string.sms_templates_title), subtitle = if (learned.count == 0) stringResource(R.string.sms_templates_none) else listOfNotNull(
                             countText(R.plurals.sms_templates_count, learned.count),
                             learned.filled.takeIf { it > 0 }?.let { stringResource(R.string.sms_templates_confirmed, Money.count((learned.confirmed * 100L) / it)) },
-                        ).joinToString(" · "), onClick = { if (learned.count > 0 && reading == null && !page.busy) forgetting = true }, divider = true, chevron = false)
+                        ).joinToString(" · "), modifier = Modifier.testTag("sms-formats"), onClick = { if (learned.count > 0) showFormats = true }, divider = true,
+                            chevron = learned.count > 0)
                         // A permission for another assistant, or from before reading on open, no longer counts: the next reading asks.
                         if (consented) ListRow(stringResource(R.string.sms_sending), subtitle = stringResource(R.string.sms_sending_allowed), onClick = { revoke = true }, divider = true)
                         ListRow(stringResource(R.string.sms_stop), titleColor = ur.negative, onClick = { if (reading == null && !page.busy) clear = true }, chevron = false)
@@ -364,14 +368,14 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
             since?.let { Text(stringResource(R.string.sms_collect_now, smsSinceText(it)), style = MaterialTheme.typography.bodyMedium, color = ur.text2) }
             if (stored.handled != null || marks.isNotEmpty()) SmsWhereYouAre(stored.handled, marks) { start = it }
             SmsStartFields(start, stored.handled, change?.let { (inn, out) -> when {
-                inn > 0 -> sizeText(smsReadingSize(inn, stored.pace), brings = true)
+                inn > 0 -> sizeText(smsReadingSize(inn, stored.pace, stored.templates.count > 0), brings = true)
                 out > 0 -> countText(R.plurals.sms_size_takes_out, out)
                 start != current -> stringResource(R.string.sms_size_none)
                 else -> null
             } }) { start = it }
         }
         if (confirming) AlertDialog(onDismissRequest = { confirming = false }, title = { Text(countText(R.plurals.sms_read_many_title, brings)) },
-            text = { Text(stringResource(R.string.sms_read_many_detail, connection?.let { reader(it) }.orEmpty(), sizeText(smsReadingSize(brings, stored.pace), brings = false))) },
+            text = { Text(stringResource(R.string.sms_read_many_detail, connection?.let { reader(it) }.orEmpty(), sizeText(smsReadingSize(brings, stored.pace, stored.templates.count > 0), brings = false))) },
             confirmButton = { TextButton({ confirming = false; apply() }, Modifier.testTag("sms-read-many")) { Text(stringResource(R.string.sms_read_many_confirm)) } },
             dismissButton = { TextButton({ confirming = false }) { Text(stringResource(R.string.common_cancel)) } })
     }
@@ -384,6 +388,8 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
             dismissButton = { TextButton({ discarding = false }) { Text(stringResource(R.string.common_cancel)) } })
     }
     if (showCards) SmsCardsSheet(budget, stored.mappings, { showCards = false }, page::cards)
+    if (showFormats) SmsFormatsSheet(stored, { showFormats = false }, forget = { if (reading == null && !page.busy) page.forgetTemplate(it) },
+        forgetAll = { if (reading == null && !page.busy) { showFormats = false; forgetting = true } })
     if (forgetting) AlertDialog(onDismissRequest = { forgetting = false }, title = { Text(stringResource(R.string.sms_templates_forget_title)) },
         text = { Text(stringResource(R.string.sms_templates_forget_detail)) },
         confirmButton = { TextButton({ forgetting = false; page.forgetTemplates() }) { Text(stringResource(R.string.sms_templates_forget), color = ur.negative) } },
@@ -391,7 +397,7 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
     page.asking?.let { request ->
         FormDialog(stringResource(R.string.sms_send_title), { page.asking = null }, confirm = stringResource(R.string.sms_send_confirm), onConfirm = { page.allow(request) }) {
             Text(stringResource(R.string.sms_send_notice, reader(request.connection)), style = MaterialTheme.typography.bodyMedium, color = ur.text, modifier = Modifier.testTag("sms-consent"))
-            Text(sizeText(smsReadingSize(request.messages.size, stored.pace), brings = false), style = MaterialTheme.typography.bodyMedium, color = ur.text2)
+            Text(sizeText(smsReadingSize(request.messages.size, stored.pace, stored.templates.count > 0), brings = false), style = MaterialTheme.typography.bodyMedium, color = ur.text2)
             Text(stringResource(R.string.sms_send_later), style = MaterialTheme.typography.bodySmall, color = ur.muted)
         }
     }
@@ -554,6 +560,75 @@ private fun SenderRow(sender: SmsSender, checked: Boolean, enabled: Boolean, div
 }
 
 /** The cards remembered for their senders: which account each is, and a way to forget one. */
+/**
+ * The formats learned for the budget, by sender: what each reads, a text it read, and how its
+ * readings fared. Forgetting one has its texts read in full again; a sender that changed how it
+ * writes is pointed out, since its new formats are being learned.
+ */
+@Composable
+private fun SmsFormatsSheet(stored: SmsStored, close: () -> Unit, forget: (String) -> Unit, forgetAll: () -> Unit) {
+    val names = stored.sources.associate { smsSenderKey(it.sender) to it.sender }
+    val bySender = stored.formats.groupBy { it.sender }
+    LazyFormDialog(stringResource(R.string.sms_templates_title), close) {
+        item { Text(stringResource(R.string.sms_templates_help), style = MaterialTheme.typography.bodyMedium, color = ur.text2) }
+        stored.templates.drifting.forEach { sender ->
+            item(key = "drift:$sender") {
+                Text(stringResource(R.string.sms_templates_drifting, Money.own(names[sender] ?: sender)), Modifier.testTag("sms-drifting:$sender"),
+                    style = MaterialTheme.typography.bodyMedium, color = ur.text)
+            }
+        }
+        bySender.forEach { (sender, formats) ->
+            item(key = "sender:$sender") {
+                Text(Money.own(names[sender] ?: sender), style = MaterialTheme.typography.titleSmall, color = ur.text, modifier = Modifier.padding(top = 8.dp))
+            }
+            itemsIndexed(formats, key = { _, f -> f.id }) { _, format ->
+                Column(Modifier.cardSegment(0, 1, cardFill()).padding(start = 16.dp, top = 12.dp, bottom = 12.dp).testTag("sms-format:" + format.id),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(verticalAlignment = Alignment.Top) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(smsFormatTitle(format), style = MaterialTheme.typography.bodyLarge, color = ur.text)
+                            Text(smsFormatStatus(format), style = MaterialTheme.typography.bodySmall, color = ur.muted)
+                        }
+                        IconButton({ forget(format.id) }, Modifier.testTag("sms-format-forget:" + format.id)) {
+                            Icon(Icons.Outlined.Close, stringResource(R.string.sms_templates_forget_one), tint = ur.muted)
+                        }
+                    }
+                    if (format.example.isNotBlank()) Text(format.example, Modifier.padding(end = 16.dp), style = SmsBodyStyle, color = ur.text2, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+        item(key = "forget-all") {
+            Column(Modifier.padding(top = 8.dp)) { ListCard {
+                ListRow(stringResource(R.string.sms_templates_forget_all), titleColor = ur.negative, onClick = forgetAll, chevron = false)
+            } }
+        }
+    }
+}
+
+/** What a format reads: its review note (the payee left out), or what it skips. */
+@Composable
+private fun smsFormatTitle(format: SmsTemplateRow): String {
+    val note = format.body.optString("note").replace("{payee}", "…").trim()
+    val skip = format.skip
+    return when {
+        note.isNotEmpty() -> note
+        skip != null -> stringResource(smsSkipLabel(skip))
+        else -> format.kind.ifBlank { stringResource(R.string.sms_templates_title) }
+    }
+}
+
+/** How a format's readings fared: kept on the phone once trusted, or the share confirmed in review. */
+@Composable
+private fun smsFormatStatus(format: SmsTemplateRow): String {
+    val settled = format.stats.optInt("settled")
+    val trusted = format.state == "trusted"
+    return listOfNotNull(
+        stringResource(R.string.sms_templates_trusted).takeIf { trusted },
+        format.accuracy?.let { stringResource(R.string.sms_templates_confirmed, Money.count(it.toLong())) } ?: stringResource(R.string.sms_templates_unreviewed).takeIf { !trusted },
+        settled.takeIf { it > 0 }?.let { countText(R.plurals.sms_templates_settled, it) },
+    ).joinToString(" · ")
+}
+
 @Composable
 private fun SmsCardsSheet(budget: JSONObject, mappings: JSONArray, close: () -> Unit, save: (JSONArray) -> Unit) {
     val cards = (0 until mappings.length()).map { mappings.getJSONObject(it) }

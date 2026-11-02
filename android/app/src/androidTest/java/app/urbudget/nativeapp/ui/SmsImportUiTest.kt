@@ -346,6 +346,38 @@ class SmsImportUiTest {
         assertNull(inbox.state(identity!!, "draft"))
     }
 
+    @Test fun aRequestIsSizedByWhatTheAssistantReadsAndALearnedFormatIsListedAndForgotten() {
+        val vm = fixture("formats")
+        val inbox = SmsInbox.get(context)
+        inbox.saveState(identity!!, "consent", smsConsent(connection))
+        inbox.captureAll((1L..600L).map { at -> val body = "Your code is ${1000 + at}"; BankSms(smsId("SyntheticBank", at, body), "SyntheticBank", at, body) })
+        val template = JSONObject().put("id", "t1").put("sender", "syntheticbank").put("lines", JSONArray().put("Your code is {code}"))
+            .put("outcome", JSONObject().put("skip", "code")).put("note", "").put("payee", JSONObject.NULL)
+        val sizes = java.util.Collections.synchronizedList(mutableListOf<Int>())
+        show(vm, object : SmsAnalyzer {
+            override suspend fun status() = connection
+            // Most are junk the phone settles; the hundred read in full fit one request with them.
+            override suspend fun lanes(request: JSONObject) = List(request.getJSONArray("messages").length()) { if (it < 500) "junk" else "read" }
+            override suspend fun analyze(request: JSONObject): JSONObject {
+                sizes += request.getJSONArray("messages").length()
+                assertTrue(request.has("trusted"))
+                return codes(request.getJSONArray("messages")).put("learning", JSONObject().put("read", 100).put("junk", 500)
+                    .put("templates", JSONArray().put(JSONObject().put("template", template).put("example", "Your code is 1001").put("agreed", 1))))
+            }
+        })
+        compose.waitUntil(15_000) { inbox.pendingCount(identity!!) == 0 }
+        waitFor("sms-up-to-date")
+        assertEquals(listOf(600), sizes.toList())
+        // The format is listed with a text it read, and forgetting it has its texts read in full again.
+        compose.onNodeWithTag("sms-inbox").performScrollToNode(hasTestTag("sms-formats"))
+        compose.onNodeWithTag("sms-formats").performClick()
+        waitFor("sms-format:t1")
+        compose.onNodeWithText("Your code is 1001").assertExists()
+        compose.onNodeWithTag("sms-format-forget:t1").performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("sms-format:t1").fetchSemanticsNodes().isEmpty() }
+        assertEquals(0, inbox.templates(identity!!).length())
+    }
+
     @Test fun aTextForAPurchaseAlreadyInTheBudgetIsMatchedWithoutAQuestion() {
         val vm = fixture("known")
         val inbox = SmsInbox.get(context)

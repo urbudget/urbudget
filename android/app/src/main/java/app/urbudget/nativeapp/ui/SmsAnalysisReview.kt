@@ -41,7 +41,7 @@ import kotlin.coroutines.resumeWithException
 @Composable
 internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch, mappings: JSONArray, close: () -> Unit, change: ((SmsBatch) -> SmsBatch) -> Unit,
                        saveCards: (JSONArray) -> Unit, finish: (List<String>, SmsBatch?) -> Unit, again: (String) -> Unit, discard: () -> Unit,
-                       edited: (SmsItem, Set<String>, String, String?) -> Unit = { _, _, _, _ -> }) {
+                       edited: (SmsItem, Set<String>, String, String?) -> Unit = { _, _, _, _ -> }, accuracy: Map<String, Int> = emptyMap()) {
     val state by vm.state.collectAsStateWithLifecycle()
     val toast = LocalToast.current
     val currency = budget.text("currency")
@@ -222,7 +222,7 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
             // A row a template read, changed by the user: counted against the template, and its payee learned.
             val (fields, category) = smsChanged(item, record)
             if (fields.isNotEmpty()) edited(item, fields, record.text("payee"), category)
-        }, extraFields = { SmsSources(item) })
+        }, extraFields = { SmsSources(item, item.template?.let { accuracy[it] }) })
     }
     if (noting) {
         var note by remember { mutableStateOf("") }
@@ -528,17 +528,20 @@ private fun SmsAmountField(currency: String, written: String, enter: (Long) -> U
     }
 }
 
+/** What a skipped text is, by its reason. */
+internal fun smsSkipLabel(skip: String): Int = when (skip) {
+    "code" -> R.string.sms_skipped_code; "security" -> R.string.sms_skipped_security; "balance" -> R.string.sms_skipped_balance
+    "declined" -> R.string.sms_skipped_declined; "rewards" -> R.string.sms_skipped_rewards; "marketing" -> R.string.sms_skipped_marketing
+    else -> R.string.sms_skipped_other
+}
+
 /** A message the assistant couldn't turn into one transaction, or that isn't one: enter it, or let it go. */
 @Composable
 private fun SmsUnclearRow(item: SmsItem, index: Int, count: Int, enter: () -> Unit, dismiss: (() -> Unit)?) {
     Column(Modifier.cardSegment(0, 1, cardFill()).testTag("sms-other:${item.index}")) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             // A skipped text is said by its reason; the assistant writes no note for it.
-            Text(item.note.ifBlank { stringResource(when (item.skip) {
-                "code" -> R.string.sms_skipped_code; "security" -> R.string.sms_skipped_security; "balance" -> R.string.sms_skipped_balance
-                "declined" -> R.string.sms_skipped_declined; "rewards" -> R.string.sms_skipped_rewards; "marketing" -> R.string.sms_skipped_marketing
-                else -> R.string.sms_skipped_other
-            }) }, style = MaterialTheme.typography.bodyLarge.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Content), fontWeight = FontWeight.SemiBold, color = ur.text)
+            Text(item.note.ifBlank { stringResource(smsSkipLabel(item.skip)) }, style = MaterialTheme.typography.bodyLarge.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Content), fontWeight = FontWeight.SemiBold, color = ur.text)
             item.sources.forEach { Text(it.body, style = SmsBodyStyle, color = ur.text2, maxLines = 6, overflow = TextOverflow.Ellipsis) }
             Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SmallAction(stringResource(if (dismiss != null) R.string.sms_enter else R.string.sms_is_transaction), enter, primary = dismiss != null)
@@ -548,12 +551,14 @@ private fun SmsUnclearRow(item: SmsItem, index: Int, count: Int, enter: () -> Un
     }
 }
 
-/** The messages behind a transaction, under its editor, to check it against. */
+/** The messages behind a transaction, under its editor, to check it against; a format's readings, how often they were right. */
 @Composable
-private fun SmsSources(item: SmsItem) {
+private fun SmsSources(item: SmsItem, accuracy: Int?) {
     ListCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(stringResource(R.string.sms_from_messages), style = MaterialTheme.typography.titleSmall, color = ur.text)
-        if (item.template != null) Text(stringResource(R.string.sms_from_template), style = MaterialTheme.typography.bodySmall, color = ur.muted)
+        if (item.template != null) Text(listOfNotNull(stringResource(R.string.sms_from_template),
+            accuracy?.let { stringResource(R.string.sms_template_accuracy, Money.count(it.toLong())) }).joinToString(" "),
+            Modifier.testTag("sms-from-template"), style = MaterialTheme.typography.bodySmall, color = ur.muted)
         item.sources.forEach { source ->
             Text(Money.own(source.sender) + " · " + Money.date(source.receivedDate), style = MaterialTheme.typography.bodySmall, color = ur.muted)
             Text(source.body, style = SmsBodyStyle, color = ur.text2)

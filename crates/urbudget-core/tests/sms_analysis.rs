@@ -208,7 +208,7 @@ fn transfers_take_no_category_and_other_kinds_take_no_transfer_account() {
 }
 
 #[test]
-fn a_review_holds_a_phones_history_but_the_model_reads_two_hundred_at_a_time() {
+fn a_review_holds_a_phones_history_and_a_request_up_to_a_thousand_texts() {
     let b = common::budget("SAR");
     let many = |n: usize| -> Vec<Message> {
         (0..n).map(|i| Message { id: format!("sms:{i}"), sender: "Bank".into(), received_date: "2026-10-31".into(), received_time: "09:30".into(), body: format!("Your code is {i:04}") }).collect()
@@ -216,8 +216,9 @@ fn a_review_holds_a_phones_history_but_the_model_reads_two_hundred_at_a_time() {
     // A skipped message is said by its skip code: no note or quote needed.
     let codes = |n: usize| analysis(json!({"items": (0..n).map(|i| json!({"sourceIds":[format!("sms:{i}")],"disposition":"ignore","skip":"code","note":"",
         "evidence":[],"transaction":null,"unsure":[]})).collect::<Vec<_>>()}));
-    assert!(validate_messages(&many(200)).is_ok());
-    assert!(validate_messages(&many(201)).is_err());
+    // Most of a request's texts may be read on the phone or only reviewed; the service caps the full reads.
+    assert!(validate_messages(&many(1_000)).is_ok());
+    assert!(validate_messages(&many(1_001)).is_err());
     assert!(validate_analysis(&b, &many(3000), &codes(3000)).is_ok());
     assert!(preview(&b, &many(3000), &codes(3000)).unwrap().is_empty());
     assert!(validate_analysis(&b, &many(10_001), &codes(10_001)).is_err());

@@ -2563,6 +2563,29 @@
     <string name="sms_templates_forget_title">هل تريد نسيان الصيغ المتعلَّمة؟</string>
     <string name="sms_templates_forget_detail">سيقرأ مساعدك كل صيغة كاملة من جديد، ويتعلمها مرة أخرى وهو يقرأ.</string>
     <string name="sms_templates_forget">نسيان</string>
+    <string name="sms_templates_forget_one">نسيان هذه الصيغة</string>
+    <string name="sms_templates_forget_all">نسيان كل الصيغ</string>
+    <string name="sms_templates_help">صيغ كتبها مساعدك وهو يقرأ. الرسائل التي بها تُقرأ على هذا الهاتف أولًا ويراجعها مساعدك، ولا يقرأ كاملةً إلا الصيغ الجديدة. والصيغ التي يتجاوزها تبقى على هذا الهاتف متى أكّدها بما يكفي.</string>
+    <string name="sms_templates_drifting">يبدو أن \u2068%1$s\u2069 غيّر طريقة كتابته: كثير من آخر رسائله بصيغ جديدة. يقرؤها مساعدك كاملةً ويتعلّمها.</string>
+    <string name="sms_templates_trusted">تبقى على هذا الهاتف</string>
+    <string name="sms_templates_unreviewed">لم تُراجَع بعد</string>
+    <plurals name="sms_templates_settled">
+        <item quantity="zero">لم تُتجاوز رسائل على هذا الهاتف</item>
+        <item quantity="one">رسالة تُجووزت على هذا الهاتف</item>
+        <item quantity="two">رسالتان تُجووزتا على هذا الهاتف</item>
+        <item quantity="few">\u2068%1$s\u2069 رسائل تُجووزت على هذا الهاتف</item>
+        <item quantity="many">\u2068%1$s\u2069 رسالة تُجووزت على هذا الهاتف</item>
+        <item quantity="other">\u2068%1$s\u2069 رسالة تُجووزت على هذا الهاتف</item>
+    </plurals>
+    <string name="sms_template_accuracy">أُكّدت قراءات هذه الصيغة في \u2068%1$s%%\u2069 من المرات.</string>
+    <plurals name="sms_kept_on_phone">
+        <item quantity="zero">لم تُتجاوز رسائل على هذا الهاتف</item>
+        <item quantity="one">رسالة تُجووزت على هذا الهاتف دون إرسالها</item>
+        <item quantity="two">رسالتان تُجووزتا على هذا الهاتف دون إرسالهما</item>
+        <item quantity="few">\u2068%1$s\u2069 رسائل تُجووزت على هذا الهاتف دون إرسالها</item>
+        <item quantity="many">\u2068%1$s\u2069 رسالة تُجووزت على هذا الهاتف دون إرسالها</item>
+        <item quantity="other">\u2068%1$s\u2069 رسالة تُجووزت على هذا الهاتف دون إرسالها</item>
+    </plurals>
     <string name="sms_needs_account">اختر حسابًا</string>
     <string name="sms_needs_transfer">اختر الحساب الآخر</string>
     <string name="sms_needs_amount">المبلغ بـ%1$s مقابل %2$s</string>

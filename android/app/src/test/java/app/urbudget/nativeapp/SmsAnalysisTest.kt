@@ -214,6 +214,9 @@ class SmsAnalysisTest {
         // 700 ms a text, from the budget's last full request: 2,913 texts are 15 requests, about 34 minutes.
         assertEquals(SmsReadingSize(2_913, 15, 34), smsReadingSize(2_913, 700))
         assertEquals(1, smsReadingSize(3, 700).minutes); assertEquals(SmsReadingSize(0, 0, null), smsReadingSize(0, 700))
+        // With learned formats a request carries more than it reads in full: the minutes say how long, the requests only without them.
+        assertEquals(SmsReadingSize(631, 0, 4), smsReadingSize(631, 321, learned = true))
+        assertEquals(SmsReadingSize(631, 4, null), smsReadingSize(631, null, learned = true))
     }
     @Test fun addingMovesEachBalanceByItsTransactionsAndATransfersOtherSide() {
         val messages = listOf("Visa 4417 SAR 12.34", "***0091 to card 4417", "mada 3358 SAR 12.34", "Visa 4417 SAR 5.00").map { message(body = it) }
@@ -259,6 +262,40 @@ class SmsAnalysisTest {
         val record = smsEditable(read, "SAR").put("payee", "Shop & Co").put("amount", -1500L)
         record.getJSONArray("splits").getJSONObject(0).put("categoryId", "food")
         assertEquals(setOf("payee", "amount", "category") to "food", app.urbudget.nativeapp.ui.smsChanged(read, record))
+    }
+
+    @Test fun aRequestTakesWhatTheAssistantCanReadAndTextsKeptOnThePhoneAreCountedApart() {
+        assertEquals(SmsBatchSize, smsRequestSize(null))
+        // Junk costs the assistant nothing; up to 400 reviewed and 200 read in full go in one request.
+        assertEquals(1_000, smsRequestSize(List(1_000) { "junk" }))
+        assertEquals(600, smsRequestSize(List(400) { "review" } + List(205) { "read" }))
+        assertEquals(400, smsRequestSize(List(401) { "review" }))
+        assertEquals(250, smsRequestSize(List(50) { "junk" } + List(201) { "read" }))
+        val code = message(body = "Code 1234")
+        val batch = SmsBatch(listOf(code), JSONObject().put("items", JSONArray().put(item(code, null, "ignore").put("template", "filter:code").put("kept", true))))
+        assertEquals(0 to 1, batch.templated to batch.kept)
+        assertTrue(batch.items(SmsAccounts(accounts, JSONArray()))[0].kept)
+    }
+
+    @Test fun onlySkipFormatsConfirmedOverTwoRequestsAreTrustedAndASenderDriftsWhenItsTextsTurnNew() {
+        val skip = JSONObject().put("outcome", JSONObject().put("disposition", "ignore").put("skip", "rewards"))
+        val money = JSONObject().put("outcome", JSONObject().put("disposition", "transaction").put("skip", JSONObject.NULL))
+        val confirmed = JSONObject().put("agreed", 1).put("confirmed", 2).put("requests", 1)
+        assertTrue(smsTrusted(skip, confirmed))
+        assertFalse(smsTrusted(money, confirmed))
+        // Written and confirmed in one request isn't enough; nor is any correction, by the assistant or the user.
+        assertFalse(smsTrusted(skip, JSONObject().put("agreed", 3)))
+        assertFalse(smsTrusted(skip, JSONObject(confirmed.toString()).put("corrected", JSONObject().put("skip", 1))))
+        assertFalse(smsTrusted(skip, JSONObject(confirmed.toString()).put("edited", JSONObject().put("payee", 1))))
+        assertEquals(66, smsAccuracy(JSONObject().put("filled", 3).put("confirmed", 2)))
+        assertNull(smsAccuracy(JSONObject()))
+        // Six of the last twenty new, after twenty known: the bank changed its wording.
+        val changed = List(14) { true } + List(6) { false }
+        assertTrue(smsDrifting(List(20) { true } + changed))
+        assertFalse(smsDrifting(List(20) { true } + List(15) { true } + List(5) { false }))
+        // A sender that was always partly new, or too new to tell, isn't drifting.
+        assertFalse(smsDrifting(List(20) { it % 7 != 0 } + changed))
+        assertFalse(smsDrifting(List(4) { true } + changed))
     }
     @Test fun aReviewKeepsWhatStillWaitsAndALaterStartOrARemovedSenderTakesTheRestOut() {
         val texts = listOf(BankSms(smsId("anb", 1, "a"), "anb", 1_000, "a"), BankSms(smsId("anb", 2, "b"), "anb", 2_000, "b"),

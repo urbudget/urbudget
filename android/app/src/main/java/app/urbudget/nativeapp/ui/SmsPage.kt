@@ -26,8 +26,9 @@ internal data class SmsStored(
     /** The newest text handled, and how long this budget's last full request took a text. */
     val handled: Long? = null,
     val pace: Long? = null,
-    /** The formats learned for this budget, and how their readings fared in review. */
+    /** The formats learned for this budget, how their readings fared in review, and each one for the list. */
     val templates: SmsTemplateSummary = SmsTemplateSummary(0, 0, 0),
+    val formats: List<SmsTemplateRow> = emptyList(),
 ) {
     val since: Long? get() = sources.minOfOrNull { it.since }
 }
@@ -145,7 +146,7 @@ internal class SmsPage(private val context: Context, val identity: String, priva
         return SmsStored(inbox.sources(identity), if (can) inbox.pending(identity) else emptyList(), inbox.pendingCount(identity),
             JSONArray(inbox.state(identity, "mappings") ?: "[]"), inbox.state(identity, "consent"), inbox.state(identity, "auto") == "on", coverage,
             inbox.state(identity, "last")?.let { runCatching { JSONObject(it) }.getOrNull() }, inbox.handledThrough(identity),
-            inbox.state(identity, "pace")?.toLongOrNull(), inbox.templateSummary(identity)) to review
+            inbox.state(identity, "pace")?.toLongOrNull(), inbox.templateSummary(identity), inbox.templateList(identity)) to review
     }
 
     /** Reads what's waiting by itself, once a visit, from a fresh snapshot and only when nothing else is under way. */
@@ -258,6 +259,9 @@ internal class SmsPage(private val context: Context, val identity: String, priva
 
     /** Forgets the learned formats and payees: the assistant reads every format in full, and learns them again. */
     fun forgetTemplates() = commit(SmsStage.Saving) { inbox.forgetTemplates(identity) }
+
+    /** Forgets one format: its texts are read in full again, and it's learned again. */
+    fun forgetTemplate(id: String) = commit(SmsStage.Saving) { inbox.forgetTemplate(identity, id) }
 
     /**
      * The user changed [fields] of a row a template read, before adding it: counted against the

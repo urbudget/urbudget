@@ -2215,6 +2215,23 @@
     <string name="sms_templates_forget_title">Forget learned formats?</string>
     <string name="sms_templates_forget_detail">Your assistant will read every format in full again, and learn them again as it reads.</string>
     <string name="sms_templates_forget">Forget</string>
+    <string name="sms_templates_forget_one">Forget this format</string>
+    <string name="sms_templates_forget_all">Forget all formats</string>
+    <string name="sms_templates_help">Formats your assistant wrote as it read. Texts in them are read on this phone first and checked by your assistant, which reads only new formats in full. Formats it skips stay on this phone once it has confirmed them enough.</string>
+    <!-- %1$s is a sender: "YourBank seems to have changed how it writes…". -->
+    <string name="sms_templates_drifting">%1$s seems to have changed how it writes: many of its latest texts are in new formats. Your assistant reads them in full and learns them.</string>
+    <string name="sms_templates_trusted">Stays on this phone</string>
+    <string name="sms_templates_unreviewed">Not reviewed yet</string>
+    <plurals name="sms_templates_settled">
+        <item quantity="one">%1$s skipped on this phone</item>
+        <item quantity="other">%1$s skipped on this phone</item>
+    </plurals>
+    <!-- Under a transaction a template read: "This format's readings were confirmed 98% of the time." -->
+    <string name="sms_template_accuracy">This format\'s readings were confirmed %1$s%% of the time.</string>
+    <plurals name="sms_kept_on_phone">
+        <item quantity="one">%1$s skipped on this phone without sending</item>
+        <item quantity="other">%1$s skipped on this phone without sending</item>
+    </plurals>
     <string name="sms_needs_account">Choose an account</string>
     <string name="sms_needs_transfer">Choose the other account</string>
     <!-- %1$s is the budget's currency, %2$s the amount the bank wrote: "Amount in SAR for EUR 42.00". -->

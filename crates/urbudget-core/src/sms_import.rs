@@ -70,6 +70,9 @@ pub struct Item {
     /// The payee as the bank wrote it, when a template read it: what the user's payee is learned from.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw: Option<String>,
+    /// Settled on the phone without going to the model: a trusted skip template's text, or a code.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub kept: bool,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -107,10 +110,11 @@ pub fn cents(text: &str) -> Result<i64, String> {
 fn total(messages: &[Message]) -> usize {
     messages.iter().map(|m| m.body.len()).sum()
 }
-/// The messages one request to the model reads: a reply for more risks running out of time.
+/// The messages one request carries. Most may be read on the phone (junk) or only reviewed, so a
+/// request holds up to 1,000; the service caps how many the model reads in full.
 pub fn validate_messages(messages: &[Message]) -> Result<(), String> {
-    if messages.is_empty() || messages.len() > 200 || total(messages) > 200_000 {
-        return Err(crate::t!("Choose 1–200 messages, at most 200 KB in total."));
+    if messages.is_empty() || messages.len() > 1_000 || total(messages) > 1_000_000 {
+        return Err(crate::t!("Choose 1–1,000 messages, at most 1 MB in total."));
     }
     validate_sources(messages)
 }

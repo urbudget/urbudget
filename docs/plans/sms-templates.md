@@ -1,6 +1,9 @@
 # Bank texts: templates written by the assistant, reviewed by the assistant
 
-**Status:** phases 1 and 2 implemented (templates written, kept and used for the review lane); the junk lane (3) and payee table, accuracy display and drift (4) are next.
+**Status:** implemented, phases 1–4: templates are written, kept and used for the review lane;
+trusted skip templates and the code filter keep junk on the phone; requests are sized by lane;
+payees have their own table; accuracy shows on rows and in the formats list; drift and
+retirement are tracked. Measured on the Fold in section 10.
 **Goals:** speed and quality of the reading. The assistant stays in the loop for every text about money.
 **Baseline:** branch `claude/sms-redesign-on-main` at `fce72b9`, 2 November 2026.
 **Scope:** Android bank messages (`SmsInbox.kt`, `SmsAnalysis.kt`, `SmsWorker.kt`, services `assistant/sms.rs`, core `sms_import.rs`).
@@ -292,7 +295,13 @@ of 200 texts, about 60 are rejected on the phone, about 115 are reviewed, and ab
 read in full. Output falls from ~200 entries to ~25 items plus a handful of corrections:
 **roughly 5× less output and a 3–5× shorter wait.** Because review output is small, the
 review lane can take larger batches (400–500 texts per request), so a phone's history needs
-fewer requests too. These are estimates; phase 2 measures them.
+fewer requests too. These are estimates; section 10 has what was measured.
+
+**Request sizes.** Before each request the phone asks the core for each waiting text's lane
+(`assistant_sms_lanes`, with the budget's templates, payees and trusted ids) and takes texts
+until 200 would be read in full or 400 reviewed, with any number of junk, up to 1,000 texts.
+Each request is planned when it's sent, since what one teaches makes the next smaller. Without
+lanes (an older service), requests are 200 texts as before.
 
 ### Validation
 
@@ -323,27 +332,32 @@ payee cleaning is the one thing a format can't fix.
 
 | State | Review lane | Junk lane (skip templates) | Enters when |
 |---|---|---|---|
-| candidate | yes | no, its texts are read in full | written and replayed cleanly |
-| trusted | yes | yes, its texts are rejected on the phone | 3+ texts confirmed over 2+ requests, no money correction |
-| revised | yes (new version) | no until trusted again | the assistant rewrote it; counts restart |
-| retired | no | no | unused 180 days, or rewritten 3 times in a month |
+| candidate | yes | no, its texts are reviewed | written and replayed cleanly, or a trusted one was corrected |
+| trusted | yes | yes, its texts stay on the phone | 3+ texts agreed or confirmed over 2+ requests (writing it is one), no correction by the assistant or the user |
+| retired | no | no | rewritten (the rewrite is a new candidate that carries the count), unused 180 days, or rewritten 3 times in a month |
 
 Money templates don't need to be trusted to be used, because every row is reviewed. Trust
 matters for skips: they can only reject texts once the assistant has agreed with them
-several times. A trusted skip template is still audited: one text in 50 goes to the read
-lane, so a template that started rejecting money would be caught.
+several times. A trusted skip template is still audited: one text in 50 goes to the review
+lane, so a template that started rejecting money would be caught. Texts kept on the phone are
+marked `kept` and counted as `settled` on their template.
 
-**Drift.** Per sender, the share of texts that go to the read lane is tracked. A jump (more
-than 5 of the last 20, where it ran under 1 in 20) or half matches mean the bank changed its
-wording. Nothing breaks: new formats are read and written as templates, and old ones retire.
-The bank's 2025→2026 rewrite on the Fold is the case this handles.
+**Drift.** Per sender, the phone keeps whether each of its last 40 texts was known (a template
+or the code filter read it) or new. More than 5 new in the last 20, where the 20 before had at
+most 1, means the bank changed its wording; the formats list says so. Nothing breaks: new
+formats are read and written as templates, and old ones retire. The bank's 2025→2026 rewrite
+on the Fold is the case this handles.
 
 **What the user sees**
 
-- The status line: "Read 180 texts · 152 by template, reviewed by ChatGPT · 28 read in full".
-- On each row, a small "From a template" note in its details, with the template's accuracy.
-- Settings, per sender: "anb · 31 formats · 98% confirmed in review", the formats listed with
-  an example text, their counts and accuracy, and **Forget**.
+- The status line: "425 read by templates and checked by your assistant · 173 read in full ·
+  25 skipped on this phone without sending".
+- In a row's editor, under its texts: "Read by a template on this phone and checked by your
+  assistant. This format's readings were confirmed 98% of the time."
+- Settings: "Learned formats · 47 formats · 98% confirmed in review", opening the formats by
+  sender, each with what it reads, an example text, how it's doing ("Stays on this phone",
+  "96% confirmed in review", "6 skipped on this phone") and **Forget**; **Forget all formats**
+  at the end.
 
 ## 7. Storage
 
@@ -351,16 +365,22 @@ New tables in `sms-inbox.sqlite3`, per budget and sender:
 
 ```sql
 CREATE TABLE sms_templates (
-  budget TEXT NOT NULL, sender_key TEXT NOT NULL, id TEXT NOT NULL, version INTEGER NOT NULL,
+  budget TEXT NOT NULL, id TEXT NOT NULL, sender_key TEXT NOT NULL,
   body TEXT NOT NULL,        -- the template JSON as the assistant wrote it
   example TEXT NOT NULL,     -- one text it was written from, for review context and the settings list
-  state TEXT NOT NULL, stats TEXT NOT NULL, first_seen INTEGER, last_seen INTEGER,
-  PRIMARY KEY (budget, sender_key, id));
+  state TEXT NOT NULL,       -- candidate, trusted or retired
+  stats TEXT NOT NULL,       -- agreed, filled, confirmed, corrected, edited, requests, settled, rewrites
+  first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL,
+  PRIMARY KEY (budget, id));
 CREATE TABLE sms_payees (    -- the payee as the bank writes it, to the user's payee and category
-  budget TEXT NOT NULL, sender_key TEXT NOT NULL, raw TEXT NOT NULL,
+  budget TEXT NOT NULL, sender_key TEXT NOT NULL, raw_key TEXT NOT NULL, raw TEXT NOT NULL,
   payee TEXT NOT NULL, category_id TEXT, seen INTEGER NOT NULL,
-  PRIMARY KEY (budget, sender_key, raw));
+  PRIMARY KEY (budget, sender_key, raw_key));
 ```
+
+A template's id is a hash of its sender and lines, so a rewrite is a new row. Payees keep the
+2,000 most recently seen per budget. Version 4 of the database moved the payees learned before
+it (a list in `sms_state`) into their table.
 
 - `sms_payees` learns from every confirmed or corrected row and every edit the user makes in
   the review, so a merchant's name and category come out right the next time without asking.
@@ -416,3 +436,20 @@ it reads that history, so phase 2 starts with templates for most formats.
 - **Open:** should a correction rewrite the template immediately, or only after two
   corrections agree? Should trusted money templates skip review for texts the user always
   confirms unchanged? (Today's answer: no, the assistant stays in the loop.)
+
+## 10. Measured on the Fold
+
+A trial budget on the Fold with the bank's texts from May to August 2026 (623 texts), read
+after an earlier reading had written 23 formats:
+
+| | |
+|---|---|
+| Read by templates, reviewed | 425 (68%) |
+| Read in full | 173 |
+| Kept on the phone (codes) | 25 |
+| Time | about 3 min 50 s: 321 ms a text, against 600–750 ms when every text was read in full |
+| Formats after | 47; 98% of template rows confirmed unchanged in review |
+| Trusted after | 5 skip formats (rewards and codes); the first was trusted partway through and its later texts stayed on the phone |
+
+Most codes this time were still reviewed, because their formats weren't trusted until this
+reading confirmed them; the next reading keeps them on the phone.
