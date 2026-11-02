@@ -1996,16 +1996,52 @@
     <string name="sms_sender_help">Choose the names your bank texts you from. Only their messages are collected. Removing a sender deletes its waiting messages from UrBudget.</string>
     <string name="sms_history">Collect</string>
     <string name="sms_new_only">New messages only</string>
-    <string name="sms_last_30">Past 30 days and new messages</string>
-    <string name="sms_last_90">Past 90 days and new messages</string>
-    <string name="sms_last_180">Past 6 months and new messages</string>
-    <string name="sms_last_365">Past year and new messages</string>
     <string name="sms_everything">Everything on this phone</string>
+    <string name="sms_from_date">From a date</string>
+    <string name="sms_first_day">First day</string>
     <string name="sms_collect">Collect messages from</string>
     <!-- Where collecting starts: "Since 1 Oct 2026". -->
     <string name="sms_since">Since %1$s</string>
-    <string name="sms_collect_help">Older texts from your senders are collected from this phone, and new ones keep coming. Moving the start later removes waiting messages from before it; your open review keeps its own.</string>
+    <!-- New messages from a moment: "Since 2 Nov 2026, 19:45". -->
+    <string name="sms_since_time">Since %1$s, %2$s</string>
+    <string name="sms_collect_help">A day counts from its start, and new texts keep coming. Your account balances already include what happened before you entered them, so collect from then: new messages only for balances you’ve just entered. A later start takes earlier texts out of what’s waiting and out of your review.</string>
     <string name="sms_collect_now">Now: %1$s</string>
+    <string name="sms_after_handled">Right after the last text handled</string>
+    <!-- When a text came: "2 Nov 2026, 07:47". -->
+    <string name="sms_moment">%1$s, %2$s</string>
+    <!-- Beside where collecting starts: "Since 3 Oct 2026 · handled through 2 Nov 2026, 07:47". -->
+    <string name="sms_last_handled_at">handled through %1$s</string>
+    <string name="sms_where_title">Where you are</string>
+    <string name="sms_last_handled">Last text handled</string>
+    <string name="sms_start_after">Start after it</string>
+    <string name="sms_bank_through">From your bank through %1$s</string>
+    <string name="sms_reconciled_through">Reconciled through %1$s</string>
+    <!-- A button that starts collecting on a day: "Start 1 Nov 2026". -->
+    <string name="sms_start_day">Start %1$s</string>
+    <string name="sms_size_none">Collects the same texts</string>
+    <plurals name="sms_size_brings">
+        <item quantity="one">Brings in about %1$s text</item>
+        <item quantity="other">Brings in about %1$s texts</item>
+    </plurals>
+    <plurals name="sms_size_requests">
+        <item quantity="one">%1$s request</item>
+        <item quantity="other">%1$s requests</item>
+    </plurals>
+    <plurals name="sms_size_minutes">
+        <item quantity="one">about %1$s min</item>
+        <item quantity="other">about %1$s min</item>
+    </plurals>
+    <plurals name="sms_size_takes_out">
+        <item quantity="one">Takes out %1$s waiting text</item>
+        <item quantity="other">Takes out %1$s waiting texts</item>
+    </plurals>
+    <plurals name="sms_read_many_title">
+        <item quantity="one">Read about %1$s text?</item>
+        <item quantity="other">Read about %1$s texts?</item>
+    </plurals>
+    <!-- %1$s is the assistant ("ChatGPT · gpt-6-astra"), %2$s what reading takes ("15 requests · about 70 min"). -->
+    <string name="sms_read_many_detail">They go to %1$s: %2$s. Stop keeps what’s been read, and the rest wait.</string>
+    <string name="sms_read_many_confirm">Collect and read</string>
     <string name="sms_no_senders">No texts found on this phone.</string>
     <string name="sms_banks">Banks and services</string>
     <string name="sms_hide_numbers">Hide phone numbers</string>
@@ -2040,6 +2076,12 @@
     </plurals>
     <string name="sms_review_open">Review</string>
     <string name="sms_discard_review">Discard review</string>
+    <string name="sms_discard_title">Discard this review?</string>
+    <plurals name="sms_discard_detail">
+        <item quantity="one">Its message leaves Bank messages and nothing is added. Transactions you already added stay.</item>
+        <item quantity="other">Its %1$s messages leave Bank messages and nothing is added. Transactions you already added stay.</item>
+    </plurals>
+    <string name="sms_discard">Discard</string>
     <string name="sms_up_to_date">You’re up to date</string>
     <string name="sms_up_to_date_detail">New texts from %1$s will appear here.</string>
     <string name="sms_choose_messages">Choose</string>
@@ -2158,6 +2200,16 @@
     <string name="sms_needs_amount">Amount in %1$s for %2$s</string>
     <string name="sms_uncategorized">No category</string>
     <string name="sms_hold">Hold</string>
+    <string name="sms_before_start">Before this account’s starting balance</string>
+    <string name="sms_tick_all">Tick all</string>
+    <string name="sms_untick_all">Untick all</string>
+    <string name="sms_balances_title">Balances after adding</string>
+    <!-- An account's balance now and after adding: "5,000.00 SAR → −13,506.45 SAR". -->
+    <string name="sms_balance_change">%1$s → %2$s</string>
+    <plurals name="sms_balance_more">
+        <item quantity="one">and %1$s more account</item>
+        <item quantity="other">and %1$s more accounts</item>
+    </plurals>
     <string name="sms_check_date">Check the date</string>
     <string name="sms_check_amount">Check the amount</string>
     <string name="sms_check_payee">Check the payee</string>

@@ -8,6 +8,7 @@ import org.json.JSONObject
 import java.math.BigDecimal
 import java.security.MessageDigest
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Locale
 
@@ -45,8 +46,117 @@ private fun cardKey(sender: String, ref: String) = smsSenderKey(sender) + "\u000
 
 internal enum class SmsAccountSource { Chosen, Remembered, Name, Only }
 
+/**
+ * The day each open account's records start: its first transaction, or today for one with none
+ * yet, whose balance was entered as it is now. A transaction before it is already in the
+ * account's starting balance.
+ */
+internal fun smsStarts(budget: JSONObject, today: String = LocalDate.now().toString()): Map<String, String> {
+    val first = mutableMapOf<String, String>()
+    budget.rows("transactions").forEach { t ->
+        val date = t.text("date")
+        listOf(t.text("accountId"), t.text("transferAccountId")).filter { it.isNotBlank() }.forEach { first.merge(it, date, ::minOf) }
+    }
+    return budget.rows("accounts").filterNot { it.optBoolean("archived") }.associate { it.text("id") to minOf(first[it.text("id")] ?: today, today) }
+}
+
+/**
+ * Where collecting starts: from now on ("now"), from the start of [day] ("date"), right after the
+ * last text handled, received at [at] ("after"), or everything on the phone ("all"). A day counts
+ * whole, so "Since 3 Oct" holds all of 3 Oct.
+ */
+internal data class SmsStart(val mode: String, val day: String, val at: Long = 0L) {
+    val valid: Boolean get() = mode != "date" || runCatching { !LocalDate.parse(day).isAfter(LocalDate.now()) }.getOrDefault(false)
+    fun since(now: Long = System.currentTimeMillis()): Long = when (mode) {
+        "all" -> 0L
+        "date" -> LocalDate.parse(day).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        "after" -> at + 1
+        else -> now
+    }
+
+    companion object {
+        /** Right after the newest text handled, received at [handled]: carrying on with nothing missed or read twice. */
+        fun after(handled: Long) = SmsStart("after", Instant.ofEpochMilli(handled).atZone(ZoneId.systemDefault()).toLocalDate().toString(), handled)
+
+        /**
+         * A saved start as it reads back: right after the last text handled when it's that, a day when
+         * it falls at one's start, otherwise the moment it was set.
+         */
+        fun of(since: Long, handled: Long? = null): SmsStart {
+            if (since <= 0L) return SmsStart("all", LocalDate.now().toString())
+            if (handled != null && since == handled + 1) return after(handled)
+            val at = Instant.ofEpochMilli(since).atZone(ZoneId.systemDefault())
+            return SmsStart(if (at.toLocalTime() == java.time.LocalTime.MIDNIGHT) "date" else "now", at.toLocalDate().toString())
+        }
+
+        /**
+         * The first start offered: new messages for a budget with no transactions yet, whose balances
+         * are as they are now; otherwise 30 days back, but not before its records begin.
+         */
+        fun suggested(budget: JSONObject, today: LocalDate = LocalDate.now()): SmsStart {
+            val open = budget.rows("accounts").filterNot { it.optBoolean("archived") }.map { it.text("id") }.toSet()
+            val first = budget.rows("transactions").filter { it.text("accountId") in open }.minOfOrNull { it.text("date") }
+                ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }?.takeIf { !it.isAfter(today) }
+                ?: return SmsStart("now", today.toString())
+            return SmsStart("date", maxOf(today.minusDays(30), first).toString())
+        }
+    }
+}
+
+/**
+ * What the budget itself says about an open account, wherever it was synced from: the last day of
+ * transactions that came from the bank (texts or files), and the last reconciled day. Collecting
+ * from there leaves no gap, and texts for what's already in are matched, not added again.
+ */
+internal data class SmsAccountMark(val account: String, val name: String, val bank: String?, val reconciled: String?) {
+    /** The day to collect from: where the budget's own record of this account ends. */
+    val day: String get() = listOfNotNull(bank, reconciled).max()
+}
+internal fun smsAccountMarks(budget: JSONObject, today: String = LocalDate.now().toString()): List<SmsAccountMark> {
+    val bank = mutableMapOf<String, String>()
+    val reconciled = mutableMapOf<String, String>()
+    budget.rows("transactions").forEach { t ->
+        val date = t.text("date").takeIf { it <= today } ?: return@forEach
+        if ((t.optJSONArray("bankImportIds")?.length() ?: 0) > 0) bank.merge(t.text("accountId"), date, ::maxOf)
+        if (t.text("status") == "reconciled") reconciled.merge(t.text("accountId"), date, ::maxOf)
+        if (t.text("transferStatus") == "reconciled" && t.text("transferAccountId").isNotBlank()) reconciled.merge(t.text("transferAccountId"), date, ::maxOf)
+    }
+    return budget.rows("accounts").filterNot { it.optBoolean("archived") }.mapNotNull { a ->
+        val id = a.text("id")
+        if (id !in bank && id !in reconciled) null else SmsAccountMark(id, a.text("name"), bank[id], reconciled[id])
+    }
+}
+
+/**
+ * What reading [texts] takes: requests of [SmsBatchSize], and minutes going by [pace], the
+ * milliseconds a text took in this budget's last full request (none until one has run).
+ */
+internal data class SmsReadingSize(val texts: Int, val requests: Int, val minutes: Int?)
+internal fun smsReadingSize(texts: Int, pace: Long?): SmsReadingSize = SmsReadingSize(texts, (texts + SmsBatchSize - 1) / SmsBatchSize,
+    pace?.takeIf { it > 0 && texts > 0 }?.let { ((texts * it + 59_999) / 60_000).toInt().coerceAtLeast(1) })
+
+/**
+ * How adding these items moves each account's balance, by account: a new transaction's amount in its
+ * account, and the opposite in a transfer's other account. Matches change nothing.
+ */
+internal fun smsBalanceChanges(items: List<SmsItem>, adding: List<Pair<Int, String>>): Map<String, Long> {
+    val byIndex = items.associateBy { it.index }
+    val changes = linkedMapOf<String, Long>()
+    adding.filter { it.second == "new" }.forEach { (index, _) ->
+        val item = byIndex[index] ?: return@forEach
+        val t = item.transaction ?: return@forEach
+        val amount = item.amount ?: return@forEach
+        t.text("accountId").takeIf { it.isNotBlank() }?.let { changes.merge(it, amount, Long::plus) }
+        t.text("transferAccountId").takeIf { it.isNotBlank() }?.let { changes.merge(it, -amount, Long::plus) }
+    }
+    return changes.filterValues { it != 0L }
+}
+
 /** Which account a card is: remembered for its sender, or the one open account whose name carries its digits. */
-internal class SmsAccounts(private val open: List<Pair<String, String>>, mappings: JSONArray) {
+internal class SmsAccounts(private val open: List<Pair<String, String>>, mappings: JSONArray, private val starts: Map<String, String> = emptyMap()) {
+    /** Dated before one of these accounts' records start ([smsStarts]): already in its starting balance. */
+    fun early(date: String, vararg accounts: String): Boolean = accounts.any { account -> starts[account]?.let { date < it } == true }
+
     private val remembered = (0 until mappings.length()).map { mappings.getJSONObject(it) }
         .filter { m -> open.any { it.first == m.text("accountId") } }
         .associate { cardKey(it.text("sender"), it.text("reference")) to it.text("accountId") }
@@ -75,12 +185,16 @@ internal fun smsRememberCard(mappings: JSONArray, sender: String, ref: String, a
 /**
  * One message, or messages about one event, as the review shows it. [transaction] carries the
  * accounts it resolves to; [needs] is what the user still has to give: an account, the amount
- * in the budget's currency, or a transfer's other account.
+ * in the budget's currency, or a transfer's other account. [early] is a transaction from before
+ * its account's records start, already in that account's starting balance.
  */
 internal data class SmsItem(
     val index: Int, val disposition: String, val note: String, val skip: String, val unsure: Set<String>,
     val sources: List<BankSms>, val transaction: JSONObject?, val accountSource: SmsAccountSource?, val needs: String?,
+    val early: Boolean = false,
 ) {
+    /** Ticked to add unless the user said otherwise: a transaction, but not a hold or one already in a starting balance. */
+    fun tickedIn(batch: SmsBatch): Boolean = batch.ticked[index] ?: (disposition == "transaction" && !early)
     val sender: String get() = sources.first().sender
     val ref: String? get() = transaction?.text("accountRef")?.ifBlank { null }
     /** Messages of one sender naming one card share this, so one choice answers them all. */
@@ -115,8 +229,36 @@ internal data class SmsBatch(val messages: List<BankSms>, val analysis: JSONObje
             }
         }
         val unsure = item.optJSONArray("unsure")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() }.orEmpty()
-        SmsItem(index, item.text("disposition"), item.text("note"), item.text("skip"), unsure, sources, t, source, needs)
+        val early = t != null && accounts.early(t.text("date"), t.text("accountId"), t.text("transferAccountId"))
+        SmsItem(index, item.text("disposition"), item.text("note"), item.text("skip"), unsure, sources, t, source, needs, early)
     }
+
+    /**
+     * The review with only these items and the messages they read, in order; what was ticked and
+     * dismissed stays with its item. Null when none are left.
+     */
+    fun only(indices: Collection<Int>): SmsBatch? {
+        val keep = indices.toSortedSet().toList().takeIf { it.isNotEmpty() } ?: return null
+        val all = analysis.getJSONArray("items")
+        val ids = keep.flatMap { sourceIds(all.getJSONObject(it)) }.toSet()
+        val at = keep.withIndex().associate { (new, old) -> old to new }
+        return SmsBatch(messages.filter { it.id in ids }, JSONObject(analysis.toString()).put("items", JSONArray(keep.map { JSONObject(all.getJSONObject(it).toString()) })),
+            ticked.mapNotNull { (i, on) -> at[i]?.let { it to on } }.toMap(), dismissed.mapNotNull { at[it] }.toSet())
+    }
+
+    /** The items with a text from [since] on: a later start takes the rest out of the review. */
+    fun from(since: Long): SmsBatch? {
+        val received = messages.associate { it.id to it.received }
+        return only(analysis.rows("items").withIndex().filter { (_, item) -> sourceIds(item).any { (received[it] ?: 0L) >= since } }.map { it.index })
+    }
+
+    /** The items whose texts all come from these senders (by [smsSenderKey]): removing a sender takes its texts out. */
+    fun fromSenders(keys: Set<String>): SmsBatch? {
+        val sender = messages.associate { it.id to smsSenderKey(it.sender) }
+        return only(analysis.rows("items").withIndex().filter { (_, item) -> sourceIds(item).all { sender[it] in keys } }.map { it.index })
+    }
+
+    private fun sourceIds(item: JSONObject): List<String> = item.optJSONArray("sourceIds")?.let { a -> (0 until a.length()).map { a.getString(it) } }.orEmpty()
 
     /** The analysis with every account the review resolved, for the core's preview and import. */
     fun resolved(items: List<SmsItem>): JSONObject {
@@ -209,10 +351,16 @@ internal object SmsReadings {
                 check(still()) { context.getString(R.string.sms_permission_needed) }
                 val request = JSONObject().put("budgetId", identity).put("provider", connection.getString("provider")).put("model", connection.opt("model") ?: JSONObject.NULL)
                     .put("messages", JSONArray(part.map { it.json() })).put("note", note)
+                val began = System.currentTimeMillis()
                 val result = analyzer.analyze(request)
                 check(still()) { context.getString(R.string.sms_permission_needed) }
                 val grown = read?.plus(part, result) ?: SmsBatch(part, result)
-                withContext(smsStorageLane) { inbox.saveState(identity, "draft", grown.saved()) }
+                // A request of a hundred texts or more says how long reading takes ("pace", milliseconds a text).
+                val pace = (System.currentTimeMillis() - began).takeIf { part.size >= 100 }?.div(part.size)
+                withContext(smsStorageLane) {
+                    inbox.saveState(identity, "draft", grown.saved())
+                    pace?.let { inbox.saveState(identity, "pace", it.toString()) }
+                }
                 read = grown
                 current.value = Reading(identity, (current.value?.read ?: 0) + part.size, messages.size)
             }

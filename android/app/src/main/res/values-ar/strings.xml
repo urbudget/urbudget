@@ -2254,15 +2254,66 @@
     <string name="sms_sender_help">اختر الأسماء التي يراسلك بها بنكك. لا تُجمع إلا رسائلها. حذف مرسل يحذف رسائله المنتظرة من UrBudget.</string>
     <string name="sms_history">ما يُجمع</string>
     <string name="sms_new_only">الرسائل الجديدة فقط</string>
-    <string name="sms_last_30">آخر 30 يومًا والرسائل الجديدة</string>
-    <string name="sms_last_90">آخر 90 يومًا والرسائل الجديدة</string>
-    <string name="sms_last_180">آخر 6 أشهر والرسائل الجديدة</string>
-    <string name="sms_last_365">آخر سنة والرسائل الجديدة</string>
     <string name="sms_everything">كل ما على هذا الهاتف</string>
+    <string name="sms_from_date">من تاريخ</string>
+    <string name="sms_first_day">اليوم الأول</string>
     <string name="sms_collect">اجمع الرسائل منذ</string>
     <string name="sms_since">منذ %1$s</string>
-    <string name="sms_collect_help">تُجمع الرسائل الأقدم من مُرسليك من هذا الهاتف، وتستمر الرسائل الجديدة في الوصول. إذا أخّرت البداية تُزال الرسائل المنتظرة التي تسبقها، وتحتفظ مراجعتك المفتوحة برسائلها.</string>
+    <string name="sms_since_time">منذ %1$s، %2$s</string>
+    <string name="sms_collect_help">يُحسب اليوم من بدايته، وتستمر الرسائل الجديدة في الوصول. أرصدة حساباتك تشمل ما حدث قبل أن تُدخلها، فاجمع منذ ذلك الحين: الرسائل الجديدة فقط إن كنت أدخلت أرصدتك للتو. إذا أخّرت البداية تُزال الرسائل الأقدم منها من الرسائل المنتظرة ومن مراجعتك.</string>
     <string name="sms_collect_now">الآن: %1$s</string>
+    <string name="sms_after_handled">مباشرة بعد آخر رسالة عولجت</string>
+    <string name="sms_moment">\u2068%1$s\u2069، \u2068%2$s\u2069</string>
+    <string name="sms_last_handled_at">عولجت حتى %1$s</string>
+    <string name="sms_where_title">أين وصلت</string>
+    <string name="sms_last_handled">آخر رسالة عولجت</string>
+    <string name="sms_start_after">ابدأ بعدها</string>
+    <string name="sms_bank_through">من بنكك حتى %1$s</string>
+    <string name="sms_reconciled_through">مطابَقة حتى %1$s</string>
+    <string name="sms_start_day">ابدأ %1$s</string>
+    <string name="sms_size_none">يجمع الرسائل نفسها</string>
+    <plurals name="sms_size_brings">
+        <item quantity="zero">لا يجلب رسائل</item>
+        <item quantity="one">يجلب رسالة واحدة تقريبًا</item>
+        <item quantity="two">يجلب رسالتين تقريبًا</item>
+        <item quantity="few">يجلب نحو \u2068%1$s\u2069 رسائل</item>
+        <item quantity="many">يجلب نحو \u2068%1$s\u2069 رسالة</item>
+        <item quantity="other">يجلب نحو \u2068%1$s\u2069 رسالة</item>
+    </plurals>
+    <plurals name="sms_size_requests">
+        <item quantity="zero">لا طلبات</item>
+        <item quantity="one">طلب واحد</item>
+        <item quantity="two">طلبان</item>
+        <item quantity="few">\u2068%1$s\u2069 طلبات</item>
+        <item quantity="many">\u2068%1$s\u2069 طلبًا</item>
+        <item quantity="other">\u2068%1$s\u2069 طلب</item>
+    </plurals>
+    <plurals name="sms_size_minutes">
+        <item quantity="zero">أقل من دقيقة</item>
+        <item quantity="one">نحو دقيقة</item>
+        <item quantity="two">نحو دقيقتين</item>
+        <item quantity="few">نحو \u2068%1$s\u2069 دقائق</item>
+        <item quantity="many">نحو \u2068%1$s\u2069 دقيقة</item>
+        <item quantity="other">نحو \u2068%1$s\u2069 دقيقة</item>
+    </plurals>
+    <plurals name="sms_size_takes_out">
+        <item quantity="zero">لا يزيل رسائل منتظرة</item>
+        <item quantity="one">يزيل رسالة منتظرة واحدة</item>
+        <item quantity="two">يزيل رسالتين منتظرتين</item>
+        <item quantity="few">يزيل \u2068%1$s\u2069 رسائل منتظرة</item>
+        <item quantity="many">يزيل \u2068%1$s\u2069 رسالة منتظرة</item>
+        <item quantity="other">يزيل \u2068%1$s\u2069 رسالة منتظرة</item>
+    </plurals>
+    <plurals name="sms_read_many_title">
+        <item quantity="zero">هل تقرأ الرسائل؟</item>
+        <item quantity="one">هل تقرأ رسالة واحدة؟</item>
+        <item quantity="two">هل تقرأ رسالتين؟</item>
+        <item quantity="few">هل تقرأ نحو \u2068%1$s\u2069 رسائل؟</item>
+        <item quantity="many">هل تقرأ نحو \u2068%1$s\u2069 رسالة؟</item>
+        <item quantity="other">هل تقرأ نحو \u2068%1$s\u2069 رسالة؟</item>
+    </plurals>
+    <string name="sms_read_many_detail">تُرسل إلى \u2068%1$s\u2069: \u2068%2$s\u2069. الإيقاف يحتفظ بما قُرئ، والباقي ينتظر.</string>
+    <string name="sms_read_many_confirm">اجمع واقرأ</string>
     <string name="sms_no_senders">لا توجد رسائل على هذا الهاتف.</string>
     <string name="sms_banks">البنوك والخدمات</string>
     <string name="sms_hide_numbers">إخفاء أرقام الهواتف</string>
@@ -2319,6 +2370,16 @@
     </plurals>
     <string name="sms_review_open">مراجعة</string>
     <string name="sms_discard_review">تجاهل المراجعة</string>
+    <string name="sms_discard_title">هل تريد تجاهل هذه المراجعة؟</string>
+    <plurals name="sms_discard_detail">
+        <item quantity="zero">لا رسائل فيها، ولن يُضاف شيء. تبقى المعاملات التي أضفتها.</item>
+        <item quantity="one">تخرج رسالتها من رسائل البنك ولا يُضاف شيء. تبقى المعاملات التي أضفتها.</item>
+        <item quantity="two">تخرج رسالتاها من رسائل البنك ولا يُضاف شيء. تبقى المعاملات التي أضفتها.</item>
+        <item quantity="few">تخرج رسائلها الـ⁨%1$s⁩ من رسائل البنك ولا يُضاف شيء. تبقى المعاملات التي أضفتها.</item>
+        <item quantity="many">تخرج رسائلها الـ⁨%1$s⁩ من رسائل البنك ولا يُضاف شيء. تبقى المعاملات التي أضفتها.</item>
+        <item quantity="other">تخرج رسائلها الـ⁨%1$s⁩ من رسائل البنك ولا يُضاف شيء. تبقى المعاملات التي أضفتها.</item>
+    </plurals>
+    <string name="sms_discard">تجاهل</string>
     <string name="sms_up_to_date">لا جديد</string>
     <string name="sms_up_to_date_detail">ستظهر هنا الرسائل الجديدة من %1$s.</string>
     <string name="sms_choose_messages">اختيار</string>
@@ -2479,6 +2540,19 @@
     <string name="sms_needs_amount">المبلغ بـ%1$s مقابل %2$s</string>
     <string name="sms_uncategorized">بلا فئة</string>
     <string name="sms_hold">محجوز</string>
+    <string name="sms_before_start">قبل الرصيد الافتتاحي لهذا الحساب</string>
+    <string name="sms_tick_all">تحديد الكل</string>
+    <string name="sms_untick_all">إلغاء تحديد الكل</string>
+    <string name="sms_balances_title">الأرصدة بعد الإضافة</string>
+    <string name="sms_balance_change">\u2068%1$s\u2069 ← \u2068%2$s\u2069</string>
+    <plurals name="sms_balance_more">
+        <item quantity="zero">ولا حسابات أخرى</item>
+        <item quantity="one">وحساب آخر</item>
+        <item quantity="two">وحسابان آخران</item>
+        <item quantity="few">و\u2068%1$s\u2069 حسابات أخرى</item>
+        <item quantity="many">و\u2068%1$s\u2069 حسابًا آخر</item>
+        <item quantity="other">و\u2068%1$s\u2069 حساب آخر</item>
+    </plurals>
     <string name="sms_check_date">راجع التاريخ</string>
     <string name="sms_check_amount">راجع المبلغ</string>
     <string name="sms_check_payee">راجع المستفيد</string>

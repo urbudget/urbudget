@@ -10,6 +10,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.unit.LayoutDirection
+import app.urbudget.nativeapp.Money
 
 /** The configuration the app's screens are drawn in, so sheets and dialogs follow a language change too. */
 internal val LocalAppConfiguration = staticCompositionLocalOf<Configuration?> { null }
@@ -42,4 +43,4 @@ internal fun languageKey(): Any? = LocalAppConfiguration.current?.locales
 
 /** A counted phrase: the count fills `%1$s` (Western digits, as the budget writes them) and picks the plural form. */
 @Composable
-internal fun countText(@PluralsRes id: Int, count: Int, vararg more: Any): String = pluralStringResource(id, count, count.toString(), *more)
+internal fun countText(@PluralsRes id: Int, count: Int, vararg more: Any): String = pluralStringResource(id, count, Money.count(count.toLong()), *more)

@@ -109,10 +109,25 @@ The picker lists names and short codes first, by how many messages each has sent
 and MMS together), already chosen ones first; a numeric short code shows its latest
 message to recognise it, while named senders and people's phone numbers (listed apart)
 are never previewed. No contacts access is needed. The first choice of
-senders also picks how far back to collect: new messages only, the past 30 or 90 days,
-6 months, a year, or everything on the phone. **Collect messages from** changes it at
-any time for every sender: an earlier start brings older texts in on the next scan, a
-later one removes the waiting messages before it (the open review keeps its own).
+senders also picks where collecting starts: new messages only (from that moment), a day
+(from its start, so "Since 3 Oct" holds all of 3 Oct), or everything on the phone. A
+budget whose accounts have no transactions starts with new messages only, since its
+balances were entered as they are now and already include earlier texts; one with history
+starts 30 days back, but not before its first transaction. **Collect messages from**
+changes it at any time for every sender: an earlier start brings older texts in on the
+next scan, a later one takes earlier texts out of what's waiting and out of the open
+review. Changing senders keeps the review's items from the senders that stay.
+
+Its row says where collecting has caught up to ("handled through 2 Nov 2026, 07:47": the
+newest text the budget finished with, kept on this phone), and the dialog lists that and,
+from the budget itself so it holds on another phone or after a reinstall, each account's
+last day of bank data (transactions from texts or files) and of reconciling. Each has a
+one-tap start: right after the last text handled (nothing read twice, nothing missed), or
+from that day. The dialog also says what a choice does, counted without reading any text:
+"Brings in about 207 texts · 2 requests · about 5 min", or "Takes out 5 waiting texts".
+Minutes come from this budget's last request of 100 texts or more. A start that brings in
+more than one request's worth is asked first, since reading begins as soon as it's saved;
+the first choice of senders, the sending notice and a long wait to read show the same size.
 
 Texts come from both of Android's stores. Most arrive as SMS, but a phone moved from an
 iPhone keeps that history as MMS (on the test Fold, 2,858 of a bank's 2,913 texts), so
@@ -174,16 +189,25 @@ Otherwise it counts what needs the user, and the review is a page of transaction
 - **Needs a choice**: one account choice per unmatched card answers every message
   naming it and is remembered by default; a foreign amount is typed in its row; a
   transfer's other account, or a message the assistant couldn't read, is entered in the
-  transaction editor or dismissed. These stay in Bank messages until answered.
-- **Ready to add**, ticked by default, and **Holds**, unticked: tap a row to change it in
-  the transaction editor, with its messages shown beneath. Possible duplicates offer add
-  or match from the bank import engine.
+  transaction editor or dismissed. These stay in the review, as they were read, until
+  answered: adding the rest doesn't send them to the assistant again.
+- **Ready to add**, ticked by default, and **Holds**, unticked, each with **Tick all** /
+  **Untick all**: tap a row to change it in the transaction editor, with its messages
+  shown beneath. Possible duplicates offer add or match from the bank import engine. A
+  transaction dated before its account's records start (its first transaction, or today
+  for an account with none) is already in that account's starting balance: it's tagged
+  and unticked. Every edit applies to the review as it is when it runs, so a row the list
+  didn't redraw can't undo an earlier tick.
+- Above **Add**, each account the ticked rows change shows its balance now and after
+  ("ANB 3358 5,000.00 → −13,506.45"; a transfer moves both sides, matches nothing), in the
+  warning colour when it would go below zero from zero or more.
 - **Handled for you**, folded: texts already in the budget, matched (each can be added
   instead), and texts that aren't transactions, counted by reason.
 
 **Prepare again with a note** re-reads the same messages with the user's note sent
-apart from them. Reviews survive screen and process recreation; drafts from an older
-format are dropped and their messages wait again.
+apart from them. **Discard review** asks first, then clears its messages without adding
+anything (left waiting, they would only be read again). Reviews survive screen and
+process recreation; drafts from an older format are dropped and their messages wait again.
 
 Adding uses the existing bank import engine through `smsBatchApply`, which commits all
 ticked rows, across accounts, in one undoable step through the normal budget revision

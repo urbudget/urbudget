@@ -36,6 +36,16 @@ class MoneyTest {
         assertEquals("Car (2024)", Money.own("Car (2024)"))
         assertEquals("-12.00 SAR", Money.format(-1200, "SAR"))
     }
+    @Test fun countsAreGroupedLikeTheBudgetsAmounts() {
+        assertEquals("2,730", Money.count(2_730)); assertEquals("999", Money.count(999)); assertEquals("-1,234,567", Money.count(-1_234_567))
+        Money.configure(JSONObject().put("currency", "EUR").put("numberFormat", JSONObject().put("decimal", ",").put("group", ".")))
+        assertEquals("2.730", Money.count(2_730))
+        Money.configure(JSONObject().put("currency", "EUR").put("numberFormat", JSONObject().put("group", "")))
+        assertEquals("2730", Money.count(2_730))
+        // A counted phrase carries the grouped count.
+        Money.configure(JSONObject().put("currency", "SAR"))
+        assertEquals("Read 2,730 texts", Words.count(R.plurals.sms_read_count, 2_730))
+    }
     @Test fun parsesExactCentsWithoutFloatingPointRounding() {
         assertEquals(101L, Money.parse("1.01"))
         assertEquals(-123456L, Money.parse("-1,234.56"))

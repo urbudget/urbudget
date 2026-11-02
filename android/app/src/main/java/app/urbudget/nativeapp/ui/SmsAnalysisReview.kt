@@ -33,17 +33,20 @@ import kotlin.coroutines.resumeWithException
  * The prepared batch as transactions to add, not messages to read. Cards the phone can't match
  * ask once for every message that names them; amounts in another currency are typed in the row;
  * anything else is changed in the transaction editor. Ticked rows are added in one undoable step,
- * and every message the review settles leaves Bank messages; those still waiting on a choice stay.
+ * and every message the review settles leaves Bank messages; those still waiting on a choice stay
+ * in the review, as they were read. [change] applies an edit to the review as it is when it runs:
+ * a row drawn before the last tick must not bring back what that tick changed.
  */
 @Composable
-internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch, mappings: JSONArray, close: () -> Unit, change: (SmsBatch?) -> Unit,
-                       saveCards: (JSONArray) -> Unit, finish: (List<String>) -> Unit, again: (String) -> Unit, discard: () -> Unit) {
+internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch, mappings: JSONArray, close: () -> Unit, change: ((SmsBatch) -> SmsBatch) -> Unit,
+                       saveCards: (JSONArray) -> Unit, finish: (List<String>, SmsBatch?) -> Unit, again: (String) -> Unit, discard: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     val toast = LocalToast.current
     val currency = budget.text("currency")
     val accounts = remember(budget) { budget.rows("accounts").filterNot { it.optBoolean("archived") }.map { it.text("id") to it.text("name") } }
+    val starts = remember(budget) { smsStarts(budget) }
     // Ticking and dismissing don't change what's previewed; only the analysis and the cards do.
-    val items = remember(batch.analysis, batch.messages, mappings, accounts) { batch.items(SmsAccounts(accounts, mappings)) }
+    val items = remember(batch.analysis, batch.messages, mappings, accounts, starts) { batch.items(SmsAccounts(accounts, mappings, starts)) }
     val resolved = remember(items) { batch.resolved(items) }
     var prepared by remember { mutableStateOf<Map<Int, BankReviewRow>?>(null) }
     var checked by remember { mutableStateOf<JSONObject?>(null) }
@@ -67,8 +70,11 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
     val known = remember(prepared, items, budget) { smsKnown(prepared, items, budget) }
     // A choice made before an edit holds while the row still offers it.
     fun decision(index: Int, row: BankReviewRow) = row.decision(decisions[index]?.takeIf { d -> row.options.any { it.first == d } } ?: known[index])
-    fun ticked(item: SmsItem) = batch.ticked[item.index] ?: (item.disposition == "transaction")
-    fun tick(item: SmsItem, on: Boolean) = change(batch.copy(ticked = batch.ticked + (item.index to on)))
+    // Read through state, so a row the list didn't redraw still shows the review as it is now.
+    val latest = rememberUpdatedState(batch)
+    fun ticked(item: SmsItem) = item.tickedIn(latest.value)
+    fun tick(item: SmsItem, on: Boolean) = change { it.copy(ticked = it.ticked + (item.index to on)) }
+    fun tickAll(rows: List<SmsItem>, on: Boolean) = change { b -> b.copy(ticked = b.ticked + rows.filter { it.needs == null }.associate { it.index to on }) }
     val sorted = smsSort(batch, items, known)
     val (waiting, ready, existing, holds, skipped) = sorted
     val cards = waiting.filter { it.card != null }.groupBy { it.card!! }
@@ -82,20 +88,22 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
     fun confirm() {
         if (checked !== vm.state.value.budget || undecided > 0 || saving) return
         val handled = settled.flatMap { item -> item.sources.map { it.id } }
-        if (adding.isEmpty()) { finish(handled); return }
+        // What still waits on a choice stays in the review as it was read, not read again.
+        val rest = batch.only(items.filter { it !in settled }.map { it.index })
+        if (adding.isEmpty()) { finish(handled, rest); return }
         saving = true
         val choices = smsDecisions(adding)
         val count = adding.count { it.second == "new" }.toLong()
-        vm.runCommand("smsBatchApply", batch.params(resolved).put("decisions", choices)) { if (count > 0) toast(Words.count(R.plurals.sms_added, count), false); finish(handled) }
+        vm.runCommand("smsBatchApply", batch.params(resolved).put("decisions", choices)) { if (count > 0) toast(Words.count(R.plurals.sms_added, count), false); finish(handled, rest) }
     }
     fun chooseCard(group: List<SmsItem>, account: String) {
         val first = group.first()
         if (keepCard[first.card] != false) runCatching { saveCards(smsRememberCard(mappings, first.sender, first.ref!!, account)) }.onFailure { error = it.message }
-        else change(group.fold(batch) { b, item -> b.edit(item.index) { it.getJSONObject("transaction").put("accountId", account) } })
+        else change { b -> group.fold(b) { next, item -> next.edit(item.index) { it.getJSONObject("transaction").put("accountId", account) } } }
     }
     fun enterAmount(item: SmsItem, cents: Long) {
         val out = item.transaction?.text("kind") in setOf("expense", "transfer")
-        change(batch.edit(item.index) { it.getJSONObject("transaction").put("amount", smsDecimal(if (out) -cents else cents)) })
+        change { it.edit(item.index) { json -> json.getJSONObject("transaction").put("amount", smsDecimal(if (out) -cents else cents)) } }
     }
 
     val readyTitle = stringResource(R.string.sms_section_ready)
@@ -128,15 +136,15 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
                 }
                 val singles = waiting.filter { it.card == null }
                 itemsIndexed(singles, key = { _, it -> "single:${it.index}" }) { i, item ->
-                    if (item.transaction == null) SmsUnclearRow(item, i, singles.size, { editing = item.index }) { change(batch.copy(dismissed = batch.dismissed + item.index)) }
+                    if (item.transaction == null) SmsUnclearRow(item, i, singles.size, { editing = item.index }) { change { it.copy(dismissed = it.dismissed + item.index) } }
                     else SmsTransactionRow(item, budget, null, null, null, i, singles.size, item.index in shown, !saving,
                         { shown = shown.toggle(item.index) }, {}, {}, { editing = item.index }) { enterAmount(item, it) }
                 }
             }
             rowSection("ready", readyTitle, null, ready, budget, prepared, ::decision, ::ticked, shown, !saving,
-                { shown = shown.toggle(it) }, ::tick, { i, d -> decisions[i] = d }, { editing = it }, ::enterAmount)
+                { shown = shown.toggle(it) }, ::tick, { i, d -> decisions[i] = d }, { editing = it }, ::enterAmount, tickAll = { tickAll(ready, it) })
             rowSection("holds", holdsTitle, holdsDetail, holds, budget, prepared, ::decision, ::ticked, shown, !saving,
-                { shown = shown.toggle(it) }, ::tick, { i, d -> decisions[i] = d }, { editing = it }, ::enterAmount)
+                { shown = shown.toggle(it) }, ::tick, { i, d -> decisions[i] = d }, { editing = it }, ::enterAmount, tickAll = { tickAll(holds, it) })
             // What changes nothing in the budget is handled without a question, and open to look at.
             if (existing.isNotEmpty() || skipped.isNotEmpty()) {
                 item(key = "handled") {
@@ -155,8 +163,10 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
                 }
             }
         }
-        // The decision stays in reach: what this adds, and what else it settles.
+        // The decision stays in reach: what this adds, what it does to each balance, and what else it settles.
         Column(Modifier.fillMaxWidth().background(ur.bg).navigationBarsPadding().padding(horizontal = Gutter, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            val changes = smsBalanceChanges(items, adding)
+            if (changes.isNotEmpty()) SmsBalances(changes, budget, state.summary)
             val cleared = settled.size - adding.size
             val matching = adding.count { it.second.startsWith("match:") }
             val caption = listOfNotNull(
@@ -179,7 +189,7 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
     }
     editing?.let { index -> items.firstOrNull { it.index == index } }?.let { item ->
         TransactionDialog(smsEditable(item, currency), budget, "", vm, close = { editing = null }, dialogTitle = stringResource(R.string.sms_check_title), saveOverride = { record ->
-            change(smsEdited(batch, item, record, budget))
+            change { smsEdited(it, item, record, budget) }
         }, extraFields = { SmsSources(item) })
     }
     if (noting) {
@@ -192,6 +202,31 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
 }
 
 private fun Set<Int>.toggle(value: Int) = if (value in this) this - value else this + value
+
+/**
+ * Each account's balance now and after adding ("ANB 3358  5,000.00 → −13,506.45"): a month of texts
+ * added on top of a balance entered today shows here before it's added. A balance that would go
+ * below zero from zero or more is in the warning colour.
+ */
+@Composable
+private fun SmsBalances(changes: Map<String, Long>, budget: JSONObject, summary: JSONObject?) {
+    val currency = budget.text("currency")
+    val now = remember(summary) { summary?.rows("accounts")?.associate { it.text("id") to it.optLong("balance") }.orEmpty() }
+    Column(Modifier.fillMaxWidth().testTag("sms-balances"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(stringResource(R.string.sms_balances_title), style = MaterialTheme.typography.labelMedium, color = ur.muted)
+        changes.entries.take(3).forEach { (account, change) ->
+            val before = now[account] ?: budget.row("accounts", account)?.optLong("openingBalance") ?: 0L
+            val after = before + change
+            Row(Modifier.fillMaxWidth().testTag("sms-balance:$account"), verticalAlignment = Alignment.CenterVertically) {
+                Text(Money.own(budget.row("accounts", account)?.text("name").orEmpty()), Modifier.weight(1f).padding(end = 10.dp), style = MaterialTheme.typography.bodySmall,
+                    color = ur.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(stringResource(R.string.sms_balance_change, money(before, currency), money(after, currency)), style = MaterialTheme.typography.bodySmall.merge(Tabular),
+                    fontWeight = FontWeight.SemiBold, color = if (after < 0 && before >= 0) ur.warning else ur.text, maxLines = 1)
+            }
+        }
+        if (changes.size > 3) Text(countText(R.plurals.sms_balance_more, changes.size - 3), style = MaterialTheme.typography.bodySmall, color = ur.muted)
+    }
+}
 
 /**
  * A review's items by what they need. [waiting] needs a choice, [ready] are new transactions to
@@ -272,9 +307,17 @@ internal fun smsBankIds(account: String, smsIds: List<String>): Set<String> {
 
 private fun LazyListScope.rowSection(key: String, title: String?, detail: String?, rows: List<SmsItem>, budget: JSONObject, prepared: Map<Int, BankReviewRow>?,
                                      decision: (Int, BankReviewRow) -> String, ticked: (SmsItem) -> Boolean, shown: Set<Int>, enabled: Boolean, show: (Int) -> Unit,
-                                     tick: (SmsItem, Boolean) -> Unit, decide: (Int, String) -> Unit, open: (Int) -> Unit, enter: (SmsItem, Long) -> Unit) {
+                                     tick: (SmsItem, Boolean) -> Unit, decide: (Int, String) -> Unit, open: (Int) -> Unit, enter: (SmsItem, Long) -> Unit,
+                                     tickAll: ((Boolean) -> Unit)? = null) {
     if (rows.isEmpty()) return
-    title?.let { item(key = key) { SectionTitle(it, detail) } }
+    // Two or more rows to tick are ticked or unticked together.
+    val tickable = rows.filter { it.needs == null }
+    title?.let { item(key = key) { SectionTitle(it, detail, if (tickAll == null || tickable.size < 2) null else { {
+        val any = tickable.any(ticked)
+        TextButton({ tickAll(!any) }, Modifier.testTag("sms-tick-all:$key"), enabled = enabled) {
+            Text(stringResource(if (any) R.string.sms_untick_all else R.string.sms_tick_all), color = ur.accent, fontWeight = FontWeight.SemiBold)
+        }
+    } }) } }
     itemsIndexed(rows, key = { _, it -> "$key:${it.index}" }) { i, item ->
         val row = prepared?.get(item.index)
         SmsTransactionRow(item, budget, row, row?.let { decision(item.index, it) }, if (item.needs == null) ticked(item) && row?.locked != true else null, i, rows.size,
@@ -349,6 +392,7 @@ private fun SmsTransactionRow(item: SmsItem, budget: JSONObject, row: BankReview
                     if (t.text("kind") != "transfer" && !matching) TagChip(category ?: stringResource(R.string.sms_uncategorized),
                         fill = if (category == null) (if (checkCategory) ur.warningSoft else ur.zeroSoft) else ur.accentSoft, color = if (category == null) (if (checkCategory) ur.warning else ur.text2) else ur.accent)
                     if (item.disposition == "pending") TagChip(stringResource(R.string.sms_hold))
+                    if (item.early && !matching) TagChip(stringResource(R.string.sms_before_start), fill = ur.warningSoft, color = ur.warning)
                     if (!matching) item.unsure.filterNot { it == "category" && category == null }.forEach { field -> TagChip(stringResource(when (field) {
                         "date" -> R.string.sms_check_date; "amount" -> R.string.sms_check_amount; "payee" -> R.string.sms_check_payee
                         "kind" -> R.string.sms_check_kind; else -> R.string.sms_check_category

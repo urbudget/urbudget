@@ -142,4 +142,107 @@ class SmsAnalysisTest {
         assertFalse(smsSameTransaction(text, there(account = "checking"), claimed))
         assertFalse(smsSameTransaction(text, there(ids = claimed.toList()), claimed))
     }
+
+    @Test fun aStartIsAWholeDayOrTheMomentNewMessagesBegan() {
+        val day = SmsStart("date", "2026-10-03")
+        val midnight = java.time.LocalDate.parse("2026-10-03").atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+        // A text at 01:22 on the start day is collected: "Since 3 Oct" holds all of 3 Oct.
+        assertEquals(midnight, day.since()); assertEquals(day, SmsStart.of(midnight))
+        assertEquals(SmsStart("now", "2026-10-03"), SmsStart.of(midnight + 70_638_000))
+        assertEquals("all", SmsStart.of(0).mode); assertEquals(0L, SmsStart("all", "2026-10-03").since())
+        assertEquals(1234L, SmsStart("now", "2026-10-03").since(now = 1234L))
+        assertTrue(day.valid); assertFalse(SmsStart("date", java.time.LocalDate.now().plusDays(1).toString()).valid); assertFalse(SmsStart("date", "").valid)
+    }
+    @Test fun aNewBudgetCollectsNewMessagesAndOneWithHistoryAMonthButNotBeforeItBegins() {
+        val today = java.time.LocalDate.parse("2026-11-02")
+        fun budget(vararg dates: String, archived: Boolean = false) = JSONObject()
+            .put("accounts", JSONArray().put(JSONObject().put("id", "a").put("archived", archived)))
+            .put("transactions", JSONArray(dates.map { JSONObject().put("accountId", "a").put("date", it) }))
+        // Balances entered as they are now: earlier texts are already in them.
+        assertEquals(SmsStart("now", "2026-11-02"), SmsStart.suggested(budget(), today))
+        assertEquals(SmsStart("now", "2026-11-02"), SmsStart.suggested(budget("2026-12-01"), today))
+        assertEquals(SmsStart("now", "2026-11-02"), SmsStart.suggested(budget("2026-10-20", archived = true), today))
+        assertEquals(SmsStart("date", "2026-10-20"), SmsStart.suggested(budget("2026-10-20", "2026-10-25"), today))
+        assertEquals(SmsStart("date", "2026-10-03"), SmsStart.suggested(budget("2024-12-13"), today))
+    }
+    @Test fun aTransactionFromBeforeItsAccountsRecordsIsNotTickedToAdd() {
+        val budget = JSONObject().put("accounts", JSONArray(listOf("visa", "checking", "savings").map { JSONObject().put("id", it) }))
+            .put("transactions", JSONArray().put(JSONObject().put("accountId", "visa").put("date", "2026-10-20"))
+                .put(JSONObject().put("accountId", "savings").put("transferAccountId", "checking").put("date", "2026-10-25")))
+        val starts = smsStarts(budget, today = "2026-11-02")
+        assertEquals(mapOf("visa" to "2026-10-20", "checking" to "2026-10-25", "savings" to "2026-10-25"), starts)
+        // An account with nothing in it yet starts today.
+        assertEquals("2026-11-02", smsStarts(budget.put("transactions", JSONArray()), today = "2026-11-02")["visa"])
+        val messages = listOf("Visa 4417 SAR 12.34", "***0091 SAR 12.34", "Visa 4417 SAR 9.00").map { message(body = it) }
+        fun on(date: String, ref: String) = purchase(ref).put("date", date)
+        val batch = SmsBatch(messages, JSONObject().put("items", JSONArray().put(item(messages[0], on("2026-10-19", "4417")))
+            .put(item(messages[1], on("2026-10-28", "***0091"))).put(item(messages[2], on("2026-10-20", "4417")))))
+        val items = batch.items(SmsAccounts(accounts, JSONArray(), starts))
+        assertEquals(listOf(true, false, false), items.map { it.early })
+        assertEquals(listOf(false, true, true), items.map { it.tickedIn(batch) })
+        // The user can still add it, and without starts nothing is held back.
+        assertTrue(items[0].tickedIn(batch.copy(ticked = mapOf(0 to true))))
+        assertFalse(batch.items(SmsAccounts(accounts, JSONArray())).any { it.early })
+    }
+    @Test fun collectingCarriesOnRightAfterTheLastTextHandled() {
+        val handled = java.time.LocalDate.parse("2026-11-02").atTime(7, 47).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val after = SmsStart.after(handled)
+        assertEquals(SmsStart("after", "2026-11-02", handled), after)
+        // Nothing handled is read again, and nothing after it is missed.
+        assertEquals(handled + 1, after.since()); assertTrue(after.valid)
+        assertEquals(after, SmsStart.of(handled + 1, handled))
+        // Once a newer text is handled, the saved start reads back as the moment it is.
+        assertEquals("now", SmsStart.of(handled + 1, handled + 60_000).mode)
+    }
+    @Test fun eachAccountSaysWhereItsBankDataAndReconcilingEnd() {
+        fun t(account: String, date: String, status: String = "uncleared", bank: Boolean = false, transfer: String? = null, transferStatus: String? = null) = JSONObject()
+            .put("accountId", account).put("date", date).put("status", status).put("bankImportIds", JSONArray(if (bank) listOf("bank:x") else emptyList()))
+            .put("transferAccountId", transfer ?: JSONObject.NULL).put("transferStatus", transferStatus ?: JSONObject.NULL)
+        val budget = JSONObject().put("accounts", JSONArray(listOf("anb" to "ANB 3358", "visa" to "Visa", "cash" to "Cash", "old" to "Old").map { (id, name) ->
+            JSONObject().put("id", id).put("name", name).put("archived", id == "old") }))
+            .put("transactions", JSONArray(listOf(
+                t("anb", "2026-10-20", bank = true), t("anb", "2026-11-01", bank = true), t("anb", "2026-10-28", status = "reconciled"),
+                t("anb", "2026-12-01", bank = true), t("cash", "2026-10-30"), t("anb", "2026-10-29", transfer = "visa", transferStatus = "reconciled"),
+                t("old", "2026-10-31", bank = true))))
+        val marks = smsAccountMarks(budget, today = "2026-11-02")
+        // A scheduled transaction isn't bank data yet; an account with neither, or archived, isn't listed.
+        assertEquals(listOf(SmsAccountMark("anb", "ANB 3358", "2026-11-01", "2026-10-28"), SmsAccountMark("visa", "Visa", null, "2026-10-29")), marks)
+        assertEquals("2026-11-01", marks[0].day); assertEquals("2026-10-29", marks[1].day)
+    }
+    @Test fun readingSaysItsRequestsAndTimeOnceThereIsAPace() {
+        assertEquals(SmsReadingSize(205, 2, null), smsReadingSize(205, null))
+        // 700 ms a text, from the budget's last full request: 2,913 texts are 15 requests, about 34 minutes.
+        assertEquals(SmsReadingSize(2_913, 15, 34), smsReadingSize(2_913, 700))
+        assertEquals(1, smsReadingSize(3, 700).minutes); assertEquals(SmsReadingSize(0, 0, null), smsReadingSize(0, 700))
+    }
+    @Test fun addingMovesEachBalanceByItsTransactionsAndATransfersOtherSide() {
+        val messages = listOf("Visa 4417 SAR 12.34", "***0091 to card 4417", "mada 3358 SAR 12.34", "Visa 4417 SAR 5.00").map { message(body = it) }
+        val batch = SmsBatch(messages, JSONObject().put("items", JSONArray().put(item(messages[0], purchase("4417")))
+            .put(item(messages[1], purchase("***0091", kind = "transfer", other = "4417").put("amount", "-100.00")))
+            .put(item(messages[2], purchase("3358"))).put(item(messages[3], purchase("4417").put("amount", "-5.00")))))
+        val items = batch.items(SmsAccounts(accounts, JSONArray()))
+        // A match and an item still needing an account change nothing.
+        val changes = smsBalanceChanges(items, listOf(0 to "new", 1 to "new", 2 to "new", 3 to "match:t1"))
+        assertEquals(mapOf("visa" to -1_234L + 10_000L, "checking" to -10_000L), changes)
+        assertTrue(smsBalanceChanges(items, listOf(3 to "match:t1")).isEmpty())
+    }
+    @Test fun aReviewKeepsWhatStillWaitsAndALaterStartOrARemovedSenderTakesTheRestOut() {
+        val texts = listOf(BankSms(smsId("anb", 1, "a"), "anb", 1_000, "a"), BankSms(smsId("anb", 2, "b"), "anb", 2_000, "b"),
+            BankSms(smsId("Other", 3, "c"), "Other", 3_000, "c"), BankSms(smsId("ANB", 4, "d"), "ANB", 4_000, "d"))
+        fun of(vararg sms: BankSms) = JSONObject().put("sourceIds", JSONArray(sms.map { it.id })).put("disposition", "ignore")
+        val batch = SmsBatch(texts, JSONObject().put("v", 2).put("items", JSONArray().put(of(texts[0])).put(of(texts[1], texts[2])).put(of(texts[3]))),
+            ticked = mapOf(0 to true, 2 to false), dismissed = setOf(1))
+        val rest = batch.only(listOf(2, 1))!!
+        assertEquals(listOf(texts[1], texts[2], texts[3]), rest.messages)
+        assertEquals(mapOf(1 to false), rest.ticked); assertEquals(setOf(0), rest.dismissed)
+        assertEquals(2, rest.analysis.getJSONArray("items").length()); assertEquals(2, rest.analysis.getInt("v"))
+        assertNull(batch.only(emptyList()))
+        // An item stays while one of its texts is from the start on.
+        assertEquals(listOf(texts[1], texts[2], texts[3]), batch.from(2_500)!!.messages)
+        assertEquals(listOf(texts[3]), batch.from(3_500)!!.messages); assertNull(batch.from(5_000))
+        // Removing a sender takes out every item with one of its texts.
+        assertEquals(listOf(texts[0], texts[3]), batch.fromSenders(setOf("anb"))!!.messages)
+        // What's kept restores from the texts still waiting.
+        assertEquals(rest.messages, SmsBatch.restore(rest.saved()) { ids -> texts.filter { it.id in ids } }!!.messages)
+    }
 }

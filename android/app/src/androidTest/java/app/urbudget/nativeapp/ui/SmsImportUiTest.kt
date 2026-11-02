@@ -193,7 +193,8 @@ class SmsImportUiTest {
         compose.onNodeWithTag("sms-progress").assertTextEquals(context.resources.getQuantityString(R.plurals.sms_reading_progress, 450, "450", "400"))
         compose.onNodeWithTag("sms-stop").performClick()
         // What was read is only codes: handled without a question, the rest wait.
-        compose.waitUntil(15_000) { inbox.pendingCount(identity!!) == 50 }
+        // The summary is saved just after the texts are settled.
+        compose.waitUntil(15_000) { inbox.pendingCount(identity!!) == 50 && inbox.state(identity!!, "last") != null }
         assertEquals(listOf(200, 200, 50), sizes.toList())
         assertNull(inbox.state(identity!!, "draft"))
         assertEquals(400, JSONObject(inbox.state(identity!!, "last")!!).getJSONObject("skipped").getInt("code"))
@@ -204,6 +205,90 @@ class SmsImportUiTest {
         compose.waitUntil(15_000) { inbox.pendingCount(identity!!) == 0 }
         waitFor("sms-up-to-date")
         assertEquals(listOf(200, 200, 50, 50), sizes.toList())
+    }
+
+    @Test fun untickingRowsOneAfterAnotherKeepsEachAndWhatStillNeedsAChoiceStaysRead() {
+        val vm = fixture("untick")
+        val inbox = SmsInbox.get(context)
+        inbox.saveState(identity!!, "consent", smsConsent(connection))
+        inbox.saveState(identity!!, "mappings", smsRememberCard(JSONArray(), "SyntheticBank", "*1234", "checking").toString())
+        // Three purchases on a remembered card, and one on a card the phone can't match.
+        val texts = (1L..4L).map { at ->
+            val card = if (at == 4L) "*9999" else "*1234"
+            val body = "Purchase USD 12.34 at Synthetic Shop card $card #$at"
+            BankSms(smsId("SyntheticBank", at, body), "SyntheticBank", at, body) to card
+        }
+        inbox.captureAll(texts.map { it.first })
+        // Read on an earlier visit: the page opens on the review, with nothing of its own to read.
+        val analysis = JSONObject().put("items", JSONArray(texts.map { (sms, card) -> syntheticSmsAnalysis(sms, accountId = null, ref = card).getJSONArray("items").getJSONObject(0) }))
+        inbox.saveState(identity!!, "draft", SmsBatch(texts.map { it.first }, analysis).saved())
+        val before = vm.state.value.budget!!.getJSONArray("transactions").length()
+        var calls = 0
+        show(vm, analyzer { calls++; analysis })
+        waitFor("sms-review")
+        compose.onNodeWithTag("sms-review").performClick()
+        waitFor("sms-card:*9999")
+        compose.waitUntil(10_000) { runCatching { compose.onNodeWithTag("sms-tick:0").assertIsEnabled() }.isSuccess }
+        // Each untick stays: a row drawn before the last tick doesn't bring it back.
+        (0..2).forEach { compose.onNodeWithTag("sms-tick:$it").performClick() }
+        (0..2).forEach { compose.onNodeWithTag("sms-tick:$it").assertIsOff() }
+        compose.onNodeWithText(context.resources.getQuantityString(R.plurals.sms_clear, 3, "3")).assertExists()
+        compose.onNodeWithTag("sms-tick-all:ready").performClick()
+        (0..2).forEach { compose.onNodeWithTag("sms-tick:$it").assertIsOn() }
+        compose.onNodeWithTag("sms-tick-all:ready").performClick()
+        (0..2).forEach { compose.onNodeWithTag("sms-tick:$it").assertIsOff() }
+        compose.onNodeWithTag("sms-balance:checking").assertDoesNotExist()
+        compose.onNodeWithTag("sms-tick:1").performClick()
+        compose.onNodeWithTag("sms-tick:2").performClick()
+        // Two purchases of 12.34 move the account's balance by 24.68, shown before adding.
+        val balance = vm.state.value.summary!!.rows("accounts").first { it.text("id") == "checking" }.optLong("balance")
+        val currency = vm.state.value.budget!!.getString("currency")
+        compose.onNodeWithTag("sms-balance:checking").assertExists()
+        compose.onNodeWithText(context.getString(R.string.sms_balance_change, money(balance, currency), money(balance - 2_468, currency))).assertExists()
+        compose.waitUntil(10_000) { runCatching { compose.onNodeWithTag("sms-add").assertIsEnabled() }.isSuccess }
+        compose.onNodeWithTag("sms-add").performClick()
+        compose.waitUntil(10_000) { vm.state.value.budget!!.getJSONArray("transactions").length() == before + 2 }
+        // The unmatched card waits in the review as it was read; the unticked text is cleared, and
+        // nothing just settled is sent to the assistant while the page catches up.
+        compose.waitUntil(10_000) { inbox.pendingCount(identity!!) == 1 && draftSize(inbox) == 1 }
+        waitFor("sms-needs")
+        compose.onNodeWithTag("sms-needs").assertTextEquals(context.resources.getQuantityString(R.plurals.sms_to_review, 1, "1"))
+        compose.waitForIdle()
+        assertEquals(0, calls)
+    }
+
+    @Test fun aLaterStartTakesEarlierTextsOutOfTheReviewAndDiscardingAsksAndReadsNothingAgain() {
+        val vm = fixture("start")
+        val inbox = SmsInbox.get(context)
+        inbox.saveState(identity!!, "consent", smsConsent(connection))
+        inbox.saveState(identity!!, "mappings", smsRememberCard(JSONArray(), "SyntheticBank", "*1234", "checking").toString())
+        // One text from long ago, one received after the start this test moves to.
+        val texts = listOf(1_000L, System.currentTimeMillis() + 86_400_000L).mapIndexed { i, at ->
+            val body = "Purchase USD 12.34 at Synthetic Shop card *1234 #$i"
+            BankSms(smsId("SyntheticBank", at, body), "SyntheticBank", at, body)
+        }
+        inbox.captureAll(texts)
+        val analysis = JSONObject().put("items", JSONArray(texts.map { syntheticSmsAnalysis(it, accountId = null, ref = "*1234").getJSONArray("items").getJSONObject(0) }))
+        inbox.saveState(identity!!, "draft", SmsBatch(texts, analysis).saved())
+        var calls = 0
+        show(vm, analyzer { calls++; analysis })
+        waitFor("sms-needs")
+        compose.onNodeWithTag("sms-needs").assertTextEquals(context.resources.getQuantityString(R.plurals.sms_to_review, 2, "2"))
+        // New messages only, from now: the old text leaves the review and the inbox; the other stays read.
+        compose.onNodeWithText(context.getString(R.string.sms_collect)).performClick()
+        compose.onNodeWithTag("choice-open:${context.getString(R.string.sms_history)}").performClick()
+        compose.onNodeWithText(context.getString(R.string.sms_new_only)).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithText(context.resources.getQuantityString(R.plurals.sms_size_takes_out, 1, "1")).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText(context.getString(R.string.common_save)).performClick()
+        compose.waitUntil(10_000) { inbox.pendingCount(identity!!) == 1 && draftSize(inbox) == 1 }
+        compose.waitUntil(10_000) { runCatching { compose.onNodeWithTag("sms-needs").assertTextEquals(context.resources.getQuantityString(R.plurals.sms_to_review, 1, "1")) }.isSuccess }
+        // Discarding asks, then clears the review's text rather than leaving it to be read again.
+        compose.onNodeWithTag("sms-discard").performClick()
+        compose.onNodeWithTag("sms-discard-confirm").performClick()
+        compose.waitUntil(10_000) { inbox.pendingCount(identity!!) == 0 && inbox.state(identity!!, "draft") == null }
+        waitFor("sms-up-to-date")
+        compose.waitForIdle()
+        assertEquals(0, calls)
     }
 
     @Test fun aTextForAPurchaseAlreadyInTheBudgetIsMatchedWithoutAQuestion() {

@@ -114,18 +114,21 @@ object Money {
     /** An amount with its sign either way: "+12.00" for money in, "-12.00" for money out. */
     fun signed(amount: Long, currency: String = "SAR"): String = ltr(plain(amount, currency, plus = true))
 
+    /** A count grouped the way the budget writes amounts ("2,730", "2.730"), in Western digits. */
+    fun count(n: Long): String = (if (n < 0) "-" else "") + group(n.toString().removePrefix("-"), settings.group)
+
+    private fun group(whole: String, separator: String): String = buildString(whole.length + whole.length / 3) {
+        whole.forEachIndexed { index, digit ->
+            if (index > 0 && (whole.length - index) % 3 == 0) append(separator)
+            append(digit)
+        }
+    }
+
     private fun plain(amount: Long, currency: String, plus: Boolean): String {
         val format = settings
         // Slice the integer's decimal text: no floating point and no abs(Long.MIN_VALUE).
         val digits = amount.toString().removePrefix("-").padStart(3, '0')
-        val whole = digits.dropLast(2)
-        val grouped = buildString(whole.length + whole.length / 3) {
-            whole.forEachIndexed { index, digit ->
-                if (index > 0 && (whole.length - index) % 3 == 0) append(format.group)
-                append(digit)
-            }
-        }
-        val number = "$grouped${format.decimal}${digits.takeLast(2)}"
+        val number = "${group(digits.dropLast(2), format.group)}${format.decimal}${digits.takeLast(2)}"
         val sign = if (amount < 0) "-" else if (plus && amount > 0) "+" else ""
         val symbol = currencySymbol(currency)
         return when (format.symbol) {

@@ -46,14 +46,74 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
 private data class SmsLoaded(val sources: List<SmsSource>, val messages: List<BankSms>, val count: Int, val batch: SmsBatch?, val mappings: JSONArray,
-                             val consent: String?, val auto: Boolean, val coverage: List<SmsCoverage>, val last: JSONObject?)
+                             val consent: String?, val auto: Boolean, val coverage: List<SmsCoverage>, val last: JSONObject?, val handled: Long?, val pace: Long?)
 /** Texts to read, into [base] when they join the review that's open. */
 private data class SmsPrepare(val messages: List<BankSms>, val note: String, val connection: JSONObject, val base: SmsBatch?)
 
-/** How far back to collect, as the sender picker and the setting offer it: "all" is everything on the phone. */
-private val smsRanges = listOf("0" to R.string.sms_new_only, "30" to R.string.sms_last_30, "90" to R.string.sms_last_90,
-    "180" to R.string.sms_last_180, "365" to R.string.sms_last_365, "all" to R.string.sms_everything)
-private fun smsSince(range: String): Long = if (range == "all") 0L else System.currentTimeMillis() - range.toLong() * 86_400_000L
+/**
+ * Where collecting starts, as the sender picker and the setting offer it: right after the last text
+ * handled ([handled], once there is one), new messages, a day, or everything on the phone; and what
+ * the choice brings in or takes out ([size]).
+ */
+@Composable
+private fun SmsStartFields(start: SmsStart, handled: Long?, size: String?, change: (SmsStart) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Box(Modifier.testTag("sms-collect")) {
+            Choice(stringResource(R.string.sms_history), start.mode, listOfNotNull(handled?.let { "after" to stringResource(R.string.sms_after_handled) },
+                "now" to stringResource(R.string.sms_new_only), "date" to stringResource(R.string.sms_from_date), "all" to stringResource(R.string.sms_everything))) { mode ->
+                change(if (mode == "after" && handled != null) SmsStart.after(handled) else start.copy(mode = mode))
+            }
+        }
+        if (start.mode == "date") DateField(start.day, { change(start.copy(day = it)) }, stringResource(R.string.sms_first_day))
+        size?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = ur.text2, modifier = Modifier.testTag("sms-start-size")) }
+        Text(stringResource(R.string.sms_collect_help), style = MaterialTheme.typography.bodySmall, color = ur.muted)
+    }
+}
+
+/**
+ * Where collecting has caught up to, as starting points: the newest text this phone handled for the
+ * budget, and, from the budget itself (so it holds on another phone or after a reinstall), the last
+ * day of each account's bank data and reconciling. Each sets the start in one tap.
+ */
+@Composable
+private fun SmsWhereYouAre(handled: Long?, marks: List<SmsAccountMark>, choose: (SmsStart) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(stringResource(R.string.sms_where_title), style = MaterialTheme.typography.titleSmall, color = ur.text)
+        handled?.let { SmsMarkRow(stringResource(R.string.sms_last_handled), smsMoment(it), stringResource(R.string.sms_start_after), "sms-mark-handled") { choose(SmsStart.after(it)) } }
+        marks.take(5).forEach { mark ->
+            SmsMarkRow(Money.own(mark.name), listOfNotNull(mark.bank?.let { stringResource(R.string.sms_bank_through, Money.date(it)) },
+                mark.reconciled?.let { stringResource(R.string.sms_reconciled_through, Money.date(it)) }).joinToString(" · "),
+                stringResource(R.string.sms_start_day, Money.date(mark.day)), "sms-mark:${mark.account}") { choose(SmsStart("date", mark.day)) }
+        }
+    }
+}
+
+/** A starting point: what it is, when, and the tap that starts there. */
+@Composable
+private fun SmsMarkRow(title: String, detail: String, action: String, tag: String, start: () -> Unit) {
+    Row(Modifier.fillMaxWidth().testTag(tag), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyMedium, color = ur.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(detail, style = MaterialTheme.typography.bodySmall, color = ur.muted)
+        }
+        SmallAction(action, start)
+    }
+}
+
+/** "2 Nov 2026, 07:47": when a text came, to the minute. */
+@Composable
+private fun smsMoment(at: Long): String {
+    val moment = Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault())
+    return stringResource(R.string.sms_moment, Money.date(moment.toLocalDate().toString()), moment.toLocalTime().format(DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)))
+}
+
+/** "2 requests · about 5 min": what reading takes, with "Brings in about 207 texts" before it when [brings]. */
+@Composable
+private fun sizeText(size: SmsReadingSize, brings: Boolean): String = listOfNotNull(
+    if (brings) countText(R.plurals.sms_size_brings, size.texts) else null,
+    if (size.requests > 0) countText(R.plurals.sms_size_requests, size.requests) else null,
+    size.minutes?.let { countText(R.plurals.sms_size_minutes, it) },
+).joinToString(" · ")
 
 /** Who reads the messages, as the consent and the status name it: "Anthropic · claude-…". */
 @Composable
@@ -116,6 +176,10 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
     var showCards by remember { mutableStateOf(false) }
     var revoke by remember { mutableStateOf(false) }
     var clear by remember { mutableStateOf(false) }
+    var discarding by remember { mutableStateOf(false) }
+    // The newest text handled, and how long this budget's last full request took a text.
+    var handled by remember { mutableStateOf<Long?>(null) }
+    var pace by remember { mutableStateOf<Long?>(null) }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         allowed = SmsReader.canRead(context); receiving = SmsReader.canReceive(context)
         if (allowed) pickSenders = sources.isEmpty() else error = context.getString(R.string.sms_permission_needed)
@@ -152,19 +216,26 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
                 // A draft whose messages are gone, or from before this review, can't be shown: its messages wait again.
                 val restored = if (allowed && batch == null) SmsBatch.restore(draft) { ids -> inbox.waiting(identity, ids) }.also { if (it == null && draft != null) inbox.saveState(identity, "draft", null) } else batch
                 SmsLoaded(inbox.sources(identity), pending, inbox.pendingCount(identity), restored, JSONArray(inbox.state(identity, "mappings") ?: "[]"),
-                    inbox.state(identity, "consent"), inbox.state(identity, "auto") == "on", found, inbox.state(identity, "last")?.let { runCatching { JSONObject(it) }.getOrNull() })
+                    inbox.state(identity, "consent"), inbox.state(identity, "auto") == "on", found, inbox.state(identity, "last")?.let { runCatching { JSONObject(it) }.getOrNull() },
+                    inbox.handledThrough(identity), inbox.state(identity, "pace")?.toLongOrNull())
             }
             sources = loaded.sources; messages = loaded.messages; pendingCount = loaded.count
             batch = loaded.batch; mappings = loaded.mappings; consent = loaded.consent; auto = loaded.auto; coverage = loaded.coverage; last = loaded.last
+            handled = loaded.handled; pace = loaded.pace
             selected = selected.intersect(messages.map { it.id }.toSet())
             connection = runCatching { analyzer.status() }.getOrNull()
-        } catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { error = failure.message }
-        finally { loading = false }
+            loading = false
+        } catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { error = failure.message; loading = false }
     }
+    /**
+     * Reloads after a change to what's stored. Until it's back, the texts shown may include ones just
+     * settled or taken out, so nothing is read by itself from them.
+     */
+    fun reloadStored() { loading = true; reload++ }
     // A reading that ends, here or in the background, leaves its review saved: show it from there.
     val finished by SmsReadings.finished.collectAsState()
     var seen by remember { mutableLongStateOf(SmsReadings.finished.value) }
-    LaunchedEffect(finished) { if (finished != seen) { seen = finished; batch = null; sorted = null; reload++ } }
+    LaunchedEffect(finished) { if (finished != seen) { seen = finished; batch = null; sorted = null; reloadStored() } }
     fun saveBatch(value: SmsBatch?) {
         batch = value
         save("draft", value?.saved())
@@ -173,15 +244,21 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
         mappings = value
         save("mappings", value.toString())
     }
-    /** Ends the review, the texts it settled leaving Bank messages; [summary] is what was handled without a question. */
-    fun finish(ids: List<String>, summary: JSONObject = JSONObject()) {
+    /**
+     * Ends the review, the texts it settled leaving Bank messages; [summary] is what was handled
+     * without a question, and [rest] what still waits on a choice, kept as it was read.
+     */
+    fun finish(ids: List<String>, summary: JSONObject = JSONObject(), rest: SmsBatch? = null) {
         scope.launch {
             try {
                 withContext(smsStorageLane) {
                     inbox.finish(identity, ids)
+                    rest?.let { inbox.saveState(identity, "draft", it.saved()) }
                     inbox.saveState(identity, "last", summary.put("at", System.currentTimeMillis()).toString())
                 }
-                batch = null; sorted = null; reviewing = false; selected = emptySet(); reload++
+                val settled = ids.toSet()
+                messages = messages.filter { it.id !in settled }
+                batch = rest; sorted = null; reviewing = false; selected = emptySet(); reloadStored()
             }
             catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { error = failure.message }
             finally { settling = false }
@@ -190,11 +267,13 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
     // Dismissing waiting messages leaves an open review as it is.
     fun dismiss(ids: List<String>) {
         scope.launch {
-            try { withContext(smsStorageLane) { inbox.finish(identity, ids, endReview = false) }; selecting = false; selected = emptySet(); reload++ }
+            try { withContext(smsStorageLane) { inbox.finish(identity, ids, endReview = false) }; messages = messages.filter { it.id !in ids }; selecting = false; selected = emptySet(); reloadStored() }
             catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { error = failure.message }
         }
     }
     fun send(prepare: SmsPrepare) {
+        // A visit reads by itself once: what this reading leaves waiting is the user's to read.
+        started = true
         error = null; reviewing = false; selecting = false; selected = emptySet(); sorted = null
         SmsReadings.start(context, analyzer, identity, prepare.connection, prepare.messages, prepare.note, prepare.base,
             still = { SmsReader.canRead(context) && vm.state.value.budgetIdentity == identity }, failed = { error = it })
@@ -227,12 +306,13 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
     // What the review holds, sorted; when nothing in it needs the user, matching what's already in
     // the budget and clearing the rest happens without a question.
     val accounts = remember(budget) { budget.rows("accounts").filterNot { it.optBoolean("archived") }.map { it.text("id") to it.text("name") } }
+    val starts = remember(budget) { smsStarts(budget) }
     LaunchedEffect(batch, budget, mappings, reading == null, reviewing) {
         val current = batch ?: return@LaunchedEffect
         if (reading != null || reviewing || settling) return@LaunchedEffect
         sorted = null
         try {
-            val items = current.items(SmsAccounts(accounts, mappings))
+            val items = current.items(SmsAccounts(accounts, mappings, starts))
             val resolved = current.resolved(items)
             val known = smsKnown(vm.smsPreview(budget, current, resolved), items, budget)
             val result = smsSort(current, items, known)
@@ -247,8 +327,8 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
         } catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { error = failure.message; settling = false }
     }
     LaunchedEffect(vmState.error) { if (settling && vmState.error != null) { error = vmState.error; settling = false } }
-    if (reviewBatch != null) SmsReview(budget, vm, reviewBatch, mappings, close = { reviewing = false }, change = ::saveBatch, saveCards = ::saveMappings, finish = { finish(it) },
-        again = { note -> prepare(reviewBatch.messages, note) }, discard = { saveBatch(null); reviewing = false })
+    if (reviewBatch != null) SmsReview(budget, vm, reviewBatch, mappings, close = { reviewing = false }, change = { edit -> batch?.let { saveBatch(edit(it)) } },
+        saveCards = ::saveMappings, finish = { ids, rest -> finish(ids, rest = rest) }, again = { note -> prepare(reviewBatch.messages, note) }, discard = { discarding = true })
     else Box(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize().testTag("sms-inbox"), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 8.dp, bottom = if (selecting) 120.dp else DockRoom),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -298,7 +378,7 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
                                     if (ready) SecondaryButton(countText(R.plurals.sms_read_more, waitingCount), { prepare(waiting, base = current) },
                                         Modifier.fillMaxWidth().testTag("sms-read-more"), enabled = !loading && waiting.isNotEmpty())
                                 }
-                                TextButton({ saveBatch(null); sorted = null }, Modifier.align(Alignment.CenterHorizontally)) { Text(stringResource(R.string.sms_discard_review), color = ur.accent) }
+                                TextButton({ discarding = true }, Modifier.align(Alignment.CenterHorizontally).testTag("sms-discard")) { Text(stringResource(R.string.sms_discard_review), color = ur.accent) }
                             }
                             waitingCount > 0 -> {
                                 Text(countText(R.plurals.sms_new_messages, waitingCount), style = MaterialTheme.typography.titleMedium, color = ur.text)
@@ -306,6 +386,7 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
                                 if (ready) {
                                     PrimaryButton(if (consented) countText(R.plurals.sms_read_count, waitingCount) else stringResource(R.string.sms_read_with, connection?.let { reader(it) }.orEmpty()),
                                         { prepare(waiting) }, Modifier.fillMaxWidth().testTag("sms-prepare"), enabled = !loading && waiting.isNotEmpty())
+                                    if (waitingCount > SmsBatchSize) Text(sizeText(smsReadingSize(waitingCount, pace), brings = false), style = MaterialTheme.typography.bodyMedium, color = ur.text2)
                                     Text(stringResource(R.string.sms_reads_note), style = MaterialTheme.typography.bodySmall, color = ur.muted)
                                 } else if (connection != null) Notice(stringResource(R.string.sms_connect_assistant), tone = "info")
                             }
@@ -343,7 +424,8 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
                 item(key = "settings") {
                     Column(Modifier.padding(top = 12.dp)) { ListCard {
                         ListRow(stringResource(R.string.sms_senders), subtitle = names, onClick = { if (reading == null) pickSenders = true }, divider = true)
-                        ListRow(stringResource(R.string.sms_collect), subtitle = since?.let { smsSinceText(it) }, onClick = { if (reading == null) collecting = true }, divider = true)
+                        ListRow(stringResource(R.string.sms_collect), subtitle = listOfNotNull(since?.let { smsSinceText(it) }, handled?.let { stringResource(R.string.sms_last_handled_at, smsMoment(it)) })
+                            .joinToString(" · "), onClick = { if (reading == null) collecting = true }, divider = true)
                         if (consented) ListRow(stringResource(R.string.sms_auto), subtitle = stringResource(R.string.sms_auto_detail), onClick = {
                             if (auto) setAuto(false)
                             else if (android.os.Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)
@@ -378,27 +460,81 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
             }
         }
     }
-    if (pickSenders && allowed) SmsSenderPicker(sources, { pickSenders = false }, save = { chosen, since ->
+    if (pickSenders && allowed) SmsSenderPicker(sources, { pickSenders = false }, suggested = remember(budget) { SmsStart.suggested(budget) }, save = { chosen, since ->
         scope.launch {
-            try { withContext(smsStorageLane) { inbox.configure(identity, chosen, since) }; batch = null; sorted = null; pickSenders = false; reload++ }
+            try {
+                withContext(smsStorageLane) {
+                    // The open review keeps what's read from the senders that stay.
+                    val kept = SmsBatch.restore(inbox.state(identity, "draft")) { ids -> inbox.waiting(identity, ids) }?.fromSenders(chosen.map(::smsSenderKey).toSet())
+                    inbox.configure(identity, chosen, since)
+                    kept?.let { inbox.saveState(identity, "draft", it.saved()) }
+                }
+                batch = null; sorted = null; pickSenders = false; reloadStored()
+            }
             catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { error = failure.message }
         }
     })
     if (collecting) {
-        var range by remember { mutableStateOf("") }
-        FormDialog(stringResource(R.string.sms_collect), { collecting = false }, enabled = range.isNotEmpty(), onConfirm = {
-            val start = smsSince(range)
+        val current = remember { since?.let { SmsStart.of(it, handled) } ?: SmsStart.suggested(budget) }
+        var start by remember { mutableStateOf(current) }
+        val marks = remember(budget) { smsAccountMarks(budget) }
+        // What the choice brings in (texts on the phone not collected yet) or takes out (texts waiting before it).
+        var change by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+        var confirming by remember { mutableStateOf(false) }
+        LaunchedEffect(start) {
+            change = null
+            val from = start.since()
+            val old = since ?: from
+            change = runCatching { withContext(smsStorageLane) { when {
+                from < old -> (SmsReader.count(context, sources.map { it.sender }, from, old) - inbox.collectedBetween(identity, from, old)).coerceAtLeast(0) to 0
+                from > old -> 0 to inbox.waitingBefore(identity, from)
+                else -> 0 to 0
+            } } }.getOrNull()
+        }
+        fun apply() {
+            val from = start.since()
             collecting = false
             scope.launch {
-                try { withContext(smsStorageLane) { inbox.collectFrom(identity, start, inReview) }; started = false; reload++ }
+                try {
+                    withContext(smsStorageLane) {
+                        // A later start takes earlier texts out of the review too; an earlier one brings older texts in on the next scan.
+                        val kept = SmsBatch.restore(inbox.state(identity, "draft")) { ids -> inbox.waiting(identity, ids) }?.from(from)
+                        inbox.saveState(identity, "draft", kept?.saved())
+                        inbox.collectFrom(identity, from, kept?.messages?.map { it.id }?.toSet().orEmpty())
+                    }
+                    batch = null; sorted = null; started = false; reloadStored()
+                }
                 catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { error = failure.message }
             }
-        }) {
-            Text(stringResource(R.string.sms_collect_help), style = MaterialTheme.typography.bodyMedium, color = ur.text2)
-            since?.let { Text(stringResource(R.string.sms_collect_now, smsSinceText(it)), style = MaterialTheme.typography.bodySmall, color = ur.muted) }
-            Box(Modifier.testTag("sms-collect")) { Choice(stringResource(R.string.sms_history), range, smsRanges.map { it.first to stringResource(it.second) }) { range = it } }
         }
+        val brings = change?.first ?: 0
+        FormDialog(stringResource(R.string.sms_collect), { collecting = false }, enabled = start != current && start.valid, onConfirm = {
+            // Texts brought in are read as soon as they're collected: more than one request is asked first.
+            if (consented && brings > SmsBatchSize) confirming = true else apply()
+        }) {
+            since?.let { Text(stringResource(R.string.sms_collect_now, smsSinceText(it)), style = MaterialTheme.typography.bodyMedium, color = ur.text2) }
+            if (handled != null || marks.isNotEmpty()) SmsWhereYouAre(handled, marks) { start = it }
+            SmsStartFields(start, handled, change?.let { (inn, out) -> when {
+                inn > 0 -> sizeText(smsReadingSize(inn, pace), brings = true)
+                out > 0 -> countText(R.plurals.sms_size_takes_out, out)
+                start != current -> stringResource(R.string.sms_size_none)
+                else -> null
+            } }) { start = it }
+        }
+        if (confirming) AlertDialog(onDismissRequest = { confirming = false }, title = { Text(countText(R.plurals.sms_read_many_title, brings)) },
+            text = { Text(stringResource(R.string.sms_read_many_detail, connection?.let { reader(it) }.orEmpty(), sizeText(smsReadingSize(brings, pace), brings = false))) },
+            confirmButton = { TextButton({ confirming = false; apply() }, Modifier.testTag("sms-read-many")) { Text(stringResource(R.string.sms_read_many_confirm)) } },
+            dismissButton = { TextButton({ confirming = false }) { Text(stringResource(R.string.common_cancel)) } })
     }
+    if (discarding) batch?.let { open ->
+        AlertDialog(onDismissRequest = { discarding = false }, title = { Text(stringResource(R.string.sms_discard_title)) },
+            text = { Text(countText(R.plurals.sms_discard_detail, open.messages.size)) },
+            confirmButton = { TextButton({ discarding = false; reviewing = false; finish(open.messages.map { it.id }) }, Modifier.testTag("sms-discard-confirm")) {
+                Text(stringResource(R.string.sms_discard), color = ur.negative)
+            } },
+            dismissButton = { TextButton({ discarding = false }) { Text(stringResource(R.string.common_cancel)) } })
+    }
+    LaunchedEffect(batch == null) { if (batch == null) discarding = false }
     if (showCards) SmsCardsSheet(budget, mappings, { showCards = false }, ::saveMappings)
     asking?.let { request ->
         FormDialog(stringResource(R.string.sms_send_title), { asking = null }, confirm = stringResource(R.string.sms_send_confirm), onConfirm = {
@@ -410,6 +546,7 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
             send(request)
         }) {
             Text(stringResource(R.string.sms_send_notice, reader(request.connection)), style = MaterialTheme.typography.bodyMedium, color = ur.text, modifier = Modifier.testTag("sms-consent"))
+            Text(sizeText(smsReadingSize(request.messages.size, pace), brings = false), style = MaterialTheme.typography.bodyMedium, color = ur.text2)
             Text(stringResource(R.string.sms_send_later), style = MaterialTheme.typography.bodySmall, color = ur.muted)
         }
     }
@@ -420,7 +557,7 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
         }) { Text(stringResource(R.string.sms_revoke)) } },
         dismissButton = { TextButton({ revoke = false }) { Text(stringResource(R.string.common_cancel)) } })
     if (clear) AlertDialog(onDismissRequest = { clear = false }, title = { Text(stringResource(R.string.sms_stop)) }, text = { Text(stringResource(R.string.sms_stop_detail)) },
-        confirmButton = { TextButton({ scope.launch { try { withContext(smsStorageLane) { inbox.clear(identity) }; clear = false; batch = null; sorted = null; consent = null; auto = false; reload++ } catch (failure: Exception) { error = failure.message } } }) {
+        confirmButton = { TextButton({ scope.launch { try { withContext(smsStorageLane) { inbox.clear(identity) }; clear = false; batch = null; sorted = null; consent = null; auto = false; reloadStored() } catch (failure: Exception) { error = failure.message } } }) {
             Text(stringResource(R.string.sms_stop), color = ur.negative)
         } },
         dismissButton = { TextButton({ clear = false }) { Text(stringResource(R.string.common_cancel)) } })
@@ -463,10 +600,15 @@ private fun coverageText(c: SmsCoverage): String {
     ).joinToString(" · ")
 }
 
-/** Where collecting starts: "Since 1 Oct 2026", or everything on the phone. */
+/** Where collecting starts: "Since 1 Oct 2026", "Since 2 Nov 2026, 19:45" when it's new messages from then, or everything on the phone. */
 @Composable
-private fun smsSinceText(since: Long): String = if (since <= 0L) stringResource(R.string.sms_everything)
-    else stringResource(R.string.sms_since, Money.date(Instant.ofEpochMilli(since).atZone(ZoneId.systemDefault()).toLocalDate().toString()))
+private fun smsSinceText(since: Long): String {
+    if (since <= 0L) return stringResource(R.string.sms_everything)
+    val at = Instant.ofEpochMilli(since).atZone(ZoneId.systemDefault())
+    val day = Money.date(at.toLocalDate().toString())
+    return if (SmsStart.of(since).mode == "date") stringResource(R.string.sms_since, day)
+        else stringResource(R.string.sms_since_time, day, at.toLocalTime().format(DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)))
+}
 
 /** A message in the list: when it came, and its text in its own direction. [checked] is null outside choosing. */
 @Composable
@@ -489,14 +631,20 @@ private fun SmsMessageRow(message: BankSms, index: Int, count: Int, showSender: 
 
 @Composable
 internal fun SmsSenderPicker(sources: List<SmsSource>, close: () -> Unit, save: (Set<String>, Long) -> Unit,
-                             load: (android.content.Context) -> List<SmsSender> = SmsReader::senders) {
+                             load: (android.content.Context) -> List<SmsSender> = SmsReader::senders, suggested: SmsStart = SmsStart("now", java.time.LocalDate.now().toString())) {
     val context = LocalContext.current
     var found by remember { mutableStateOf<List<SmsSender>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var chosen by remember { mutableStateOf(sources.map { it.sender }.toSet()) }
     var search by remember { mutableStateOf("") }
-    var range by remember { mutableStateOf("30") }
+    var start by remember { mutableStateOf(suggested) }
     var numbers by remember { mutableStateOf(false) }
+    // What the first start brings in from the chosen senders.
+    var brings by remember { mutableStateOf<Int?>(null) }
+    if (sources.isEmpty()) LaunchedEffect(chosen, start) {
+        brings = null
+        brings = runCatching { withContext(smsStorageLane) { SmsReader.count(context, chosen, start.since()) } }.getOrNull()
+    }
     LaunchedEffect(Unit) {
         try {
             found = withContext(smsStorageLane) {
@@ -511,13 +659,14 @@ internal fun SmsSenderPicker(sources: List<SmsSource>, close: () -> Unit, save: 
     val matching = found.orEmpty().filter { it.address.contains(search, ignoreCase = true) }.sortedByDescending { smsSenderKey(it.address) in picked }
     val (people, banks) = matching.partition { smsPersonal(it.address) }
     fun toggle(sender: SmsSender, on: Boolean) { chosen = if (on) chosen + sender.address else chosen - sender.address }
-    LazyFormDialog(stringResource(R.string.sms_senders), close, confirm = stringResource(R.string.common_save), enabled = found != null && chosen.isNotEmpty() && chosen.size <= 50, onConfirm = {
+    LazyFormDialog(stringResource(R.string.sms_senders), close, confirm = stringResource(R.string.common_save),
+        enabled = found != null && chosen.isNotEmpty() && chosen.size <= 50 && (sources.isNotEmpty() || start.valid), onConfirm = {
         // A sender added later collects from where the others do; the setting changes it for all.
-        save(chosen, if (sources.isEmpty()) smsSince(range) else sources.minOf { it.since })
+        save(chosen, if (sources.isEmpty()) start.since() else sources.minOf { it.since })
     }) {
         item { Text(stringResource(R.string.sms_sender_help), style = MaterialTheme.typography.bodyMedium, color = ur.text2) }
+        if (sources.isEmpty()) item { SmsStartFields(start, null, brings?.takeIf { chosen.isNotEmpty() }?.let { sizeText(smsReadingSize(it, null), brings = true) }) { start = it } }
         item { SearchField(search, { search = it }, stringResource(R.string.common_search)) }
-        if (sources.isEmpty()) item { Choice(stringResource(R.string.sms_history), range, smsRanges.map { it.first to stringResource(it.second) }) { range = it } }
         error?.let { item { FormError(it) } }
         if (found == null && error == null) item { LinearProgressIndicator(Modifier.fillMaxWidth(), color = ur.accent) }
         if (found?.isEmpty() == true) item { Text(stringResource(R.string.sms_no_senders), color = ur.muted) }

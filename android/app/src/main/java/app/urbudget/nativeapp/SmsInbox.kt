@@ -163,6 +163,18 @@ internal class SmsInbox private constructor(private val context: Context) : SQLi
 
     fun pendingCount(budget: String): Int = readableDatabase.rawQuery("SELECT COUNT(*) FROM messages WHERE budget=? AND done=0", arrayOf(budget)).use { it.moveToFirst(); it.getInt(0) }
 
+    /** When the newest text this budget finished with (added, matched, cleared or dismissed) came: where collecting has caught up to. */
+    fun handledThrough(budget: String): Long? = readableDatabase.rawQuery("SELECT MAX(received) FROM messages WHERE budget=? AND done=1", arrayOf(budget))
+        .use { if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null }
+
+    /** Texts here received from [from] up to [until], waiting or done: what an earlier start won't bring in again. */
+    fun collectedBetween(budget: String, from: Long, until: Long): Int = readableDatabase.rawQuery(
+        "SELECT COUNT(*) FROM messages WHERE budget=? AND received>=? AND received<?", arrayOf(budget, from.toString(), until.toString())).use { it.moveToFirst(); it.getInt(0) }
+
+    /** Waiting texts received before [until]: what a later start takes out. */
+    fun waitingBefore(budget: String, until: Long): Int = readableDatabase.rawQuery(
+        "SELECT COUNT(*) FROM messages WHERE budget=? AND done=0 AND received<?", arrayOf(budget, until.toString())).use { it.moveToFirst(); it.getInt(0) }
+
     /**
      * Only called after a successful import or an explicit dismissal. Erase raw text at that point.
      * A finished review ends with it; dismissing messages that wait outside it ([endReview] false) doesn't.
@@ -304,6 +316,28 @@ internal object SmsReader {
                 chunk.forEach { (id, thread, date, sent) -> each(threads.getValue(thread), date * 1000, (sent.takeIf { it > 0 } ?: date) * 1000, smsMmsText(found[id].orEmpty())) }
             }
         }
+    }
+
+    /**
+     * About how many texts the phone holds from these senders, received from [from] up to [until]:
+     * what a start would bring in. Counts only, so no text is read; MMS with pictures count too.
+     */
+    fun count(context: Context, senders: Collection<String>, from: Long, until: Long = Long.MAX_VALUE): Int {
+        check(canRead(context)) { context.getString(R.string.sms_permission_needed) }
+        val keys = senders.map(::smsSenderKey).toSet()
+        if (keys.isEmpty() || from >= until) return 0
+        var total = 0
+        (addresses(context).filter { smsSenderKey(it) in keys } + senders).distinct().chunked(400).forEach { group ->
+            context.contentResolver.query(Telephony.Sms.Inbox.CONTENT_URI, arrayOf(Telephony.Sms._ID), "address IN (${group.joinToString(",") { "?" }}) AND date>=? AND date<?",
+                (group + from.toString() + until.toString()).toTypedArray(), null)?.use { total += it.count }
+        }
+        runCatching {
+            mmsThreads(context) { smsSenderKey(it) in keys }.keys.toList().chunked(400).forEach { group ->
+                context.contentResolver.query(Telephony.Mms.CONTENT_URI, arrayOf("_id"), "thread_id IN (${group.joinToString(",") { "?" }}) AND msg_box=? AND date>=? AND date<?",
+                    (group.map(Long::toString) + Telephony.Mms.MESSAGE_BOX_INBOX.toString() + (from / 1000).toString() + (until / 1000).toString()).toTypedArray(), null)?.use { total += it.count }
+            }
+        }
+        return total
     }
 
     /**
