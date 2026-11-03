@@ -125,24 +125,20 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
         creating = SmsNewAccount(smsAccountName(first.sender, first.ref!!)) { id -> made(id); chooseCard(group, id) }
     }
     /**
-     * The other account of these transfers: remembered for the digits that name it, or for the card
-     * whose texts name none (the account that pays it), so the sender's next texts find it; or for
-     * these alone.
+     * The other account of these transfers, for each of them; and, unless the user said not to,
+     * remembered by what names them ([smsOtherKeys]), so the sender's next texts find it.
      */
     fun chooseOther(group: List<SmsItem>, account: String) {
         val first = group.first()
-        val other = first.transaction?.text("otherRef")?.ifBlank { null }
-        val remembered = if (keepCard[first.transfer] == false) null else when {
-            other != null -> runCatching { smsRememberCard(mappings, first.sender, other, account) }
-            first.ref != null -> runCatching { smsRememberCard(mappings, first.sender, first.ref!!, account, SmsForTransfer) }
-            else -> null
-        }
-        remembered?.onSuccess(saveCards)?.onFailure { error = it.message }
-        if (remembered == null) change { b -> group.fold(b) { next, item -> next.edit(item.index) { it.getJSONObject("transaction").put("transferAccountId", account) } } }
+        val keys = smsOtherKeys(group)
+        if (keepCard[first.transfer] != false && keys.isNotEmpty()) runCatching {
+            keys.fold(mappings) { kept, (ref, kind) -> smsRememberCard(kept, first.sender, ref, account, kind) }
+        }.onSuccess(saveCards).onFailure { error = it.message }
+        change { b -> group.fold(b) { next, item -> next.edit(item.index) { it.getJSONObject("transaction").put("transferAccountId", account) } } }
     }
-    /** The other account of these transfers, made here: a CD the money went to. */
+    /** The other account of these transfers, made here: a term deposit the money went to. */
     fun newForTransfer(group: List<SmsItem>) {
-        val other = group.first().transaction?.text("otherRef")?.ifBlank { null }
+        val other = group.map { it.transaction?.text("otherRef").orEmpty() }.distinct().singleOrNull()?.ifBlank { null }
         creating = SmsNewAccount(other?.let { smsAccountName(group.first().sender, it) }.orEmpty()) { id -> made(id); chooseOther(group, id) }
     }
     fun enterAmount(item: SmsItem, cents: Long) {
@@ -180,8 +176,8 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
                 }
                 transfers.forEach { (key, group) ->
                     item(key = "transfer:$key") {
-                        // Remembered for the digits naming the other account, or for the card whose texts name none.
-                        val keep = (keepCard[key] != false).takeIf { group.first().transaction?.text("otherRef")?.isNotBlank() == true || group.first().ref != null }
+                        // Remembered for what names these transfers, when anything does.
+                        val keep = (keepCard[key] != false).takeIf { smsOtherKeys(group).isNotEmpty() }
                         SmsTransferChoice(group, budget, accounts, keep, { keepCard[key] = it }, { editing = it }, { newForTransfer(group) },
                             { change { b -> b.copy(dismissed = b.dismissed + group.map { it.index }) } }) { chooseOther(group, it) }
                     }
@@ -511,7 +507,9 @@ private fun SmsTransferChoice(group: List<SmsItem>, budget: JSONObject, accounts
             Column(Modifier.weight(1f)) {
                 Text(first.note.ifBlank { Money.own(t.text("payee")) }, style = MaterialTheme.typography.titleMedium.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Content),
                     color = ur.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(listOfNotNull(budget.row("accounts", here)?.text("name")?.let { Money.own(it) }, t.text("otherRef").ifBlank { null }?.let { smsRefLabel(it) },
+                // The other account's digits when they all give the same; a deposit numbered afresh each time shows in its rows' messages.
+                val other = group.map { it.transaction?.text("otherRef").orEmpty() }.distinct().singleOrNull()?.ifBlank { null }
+                Text(listOfNotNull(budget.row("accounts", here)?.text("name")?.let { Money.own(it) }, other?.let { smsRefLabel(it) },
                     countText(R.plurals.sms_transaction_count, group.size)).joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = ur.muted)
             }
         }

@@ -421,7 +421,7 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
             } },
             dismissButton = { TextButton({ discarding = false }) { Text(stringResource(R.string.common_cancel)) } })
     }
-    if (showCards) SmsCardsSheet(budget, stored.mappings, { showCards = false }, page::cards)
+    if (showCards) SmsCardsSheet(budget, stored.mappings, stored.formats, { showCards = false }, page::cards)
     if (showFormats) SmsFormatsSheet(stored, { showFormats = false }, forget = { if (reading == null && !page.busy) page.forgetTemplate(it) },
         forgetAll = { if (reading == null && !page.busy) { showFormats = false; forgetting = true } })
     if (forgetting) AlertDialog(onDismissRequest = { forgetting = false }, title = { Text(stringResource(R.string.sms_templates_forget_title)) },
@@ -664,7 +664,7 @@ private fun smsFormatStatus(format: SmsTemplateRow): String {
 }
 
 @Composable
-private fun SmsCardsSheet(budget: JSONObject, mappings: JSONArray, close: () -> Unit, save: (JSONArray) -> Unit) {
+private fun SmsCardsSheet(budget: JSONObject, mappings: JSONArray, formats: List<SmsTemplateRow>, close: () -> Unit, save: (JSONArray) -> Unit) {
     val cards = (0 until mappings.length()).map { mappings.getJSONObject(it) }
     LazyFormDialog(stringResource(R.string.sms_cards), close) {
         item { Text(stringResource(R.string.sms_cards_help), style = MaterialTheme.typography.bodyMedium, color = ur.text2) }
@@ -675,11 +675,14 @@ private fun SmsCardsSheet(budget: JSONObject, mappings: JSONArray, close: () -> 
                     else budget.row("accounts", card.text("accountId"))?.text("name")?.let(Money::own) ?: stringResource(R.string.sms_account_gone)
                 // Beside a card's account: the account that pays its transfers, or the user's own account a name is.
                 val account = when (card.text("for")) {
-                    SmsForTransfer -> stringResource(R.string.sms_card_transfers, name)
+                    SmsForTransfer, SmsForFormat -> stringResource(R.string.sms_card_transfers, name)
                     SmsForOwn -> stringResource(R.string.sms_own_account, name)
                     else -> name
                 }
-                ListRow(smsRefLabel(card.text("reference")), subtitle = Money.own(card.text("sender")) + " · " + account,
+                // A format is said by what it reads ("Transfer to … account"), not its id.
+                val title = if (card.text("for") == SmsForFormat) formats.firstOrNull { it.id == card.text("reference") }?.let { smsFormatTitle(it) }
+                    ?: stringResource(R.string.sms_templates_title) else smsRefLabel(card.text("reference"))
+                ListRow(title, subtitle = Money.own(card.text("sender")) + " · " + account,
                     chevron = false, trailing = {
                         IconButton({ save(JSONArray(cards.filterIndexed { i, _ -> i != index })) }) { Icon(Icons.Outlined.Close, stringResource(R.string.sms_forget), tint = ur.muted) }
                     })

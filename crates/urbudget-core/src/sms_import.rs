@@ -44,7 +44,7 @@ pub struct Transaction {
     /// A transfer's other account, copied the same way.
     pub other_ref: Option<String>,
     /// A transfer's other account by the name the user gave it, when the message says what it is
-    /// ("your Murabaha account") rather than naming it in a way the app can match: the model's
+    /// ("your term deposit") rather than naming it in a way the app can match: the model's
     /// reading, for the app to resolve.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub other_account: Option<String>,

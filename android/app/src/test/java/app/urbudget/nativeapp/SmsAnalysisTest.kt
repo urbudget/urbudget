@@ -209,6 +209,27 @@ class SmsAnalysisTest {
         assertEquals("checking", placed[0].transaction!!.getString("transferAccountId")); assertTrue(placed[0].otherGuessed)
     }
 
+    @Test fun depositsTheBankNumbersAfreshAreAnsweredOnceAndRememberedForTheirFormat() {
+        val texts = (44..46).map { message(sender = "anb", body = "SAR 500 from 0091 to your term deposit 00$it") }
+        fun placement(i: Int, template: String?) = item(texts[i], purchase("0091", "-500.00", "transfer", "00${44 + i}"))
+            .put("note", "Transfer to term deposit").apply { template?.let { put("template", it) } }
+        val batch = SmsBatch(texts, JSONObject().put("items", JSONArray().put(placement(0, null)).put(placement(1, "tdeposit")).put(placement(2, "tdeposit"))))
+        val waiting = batch.items(SmsAccounts(accounts, JSONArray()))
+        // One question for all three, though each names its own deposit.
+        assertEquals(listOf("transfer", "transfer", "transfer"), waiting.map { it.needs }); assertEquals(1, waiting.map { it.transfer }.distinct().size)
+        // Nothing names them all but the format that read them: that's what the answer is kept for.
+        assertEquals(listOf("tdeposit" to SmsForFormat), smsOtherKeys(waiting))
+        val mappings = smsOtherKeys(waiting).fold(JSONArray()) { kept, (ref, kind) -> smsRememberCard(kept, "anb", ref, "savings", kind) }
+        val next = batch.items(SmsAccounts(accounts, mappings))
+        assertEquals(listOf("transfer", null, null), next.map { it.needs }); assertEquals(SmsAccountSource.Remembered, next[2].otherSource)
+        assertEquals("savings", next[2].transaction!!.getString("transferAccountId"))
+        // A card's payments that name no other account are kept for the card; transfers all naming one account, for its digits.
+        val payments = listOf("Card Payment VISA Card:4417 SAR 5", "Card Payment VISA Card:4417 SAR 6").map { message(sender = "anb", body = it) }
+        val paid = SmsBatch(payments, JSONObject().put("items", JSONArray(payments.map { item(it, purchase("4417", "5.00", "transfer")) }))).items(SmsAccounts(accounts, JSONArray()))
+        assertEquals(listOf("4417" to SmsForTransfer), smsOtherKeys(paid))
+        assertEquals(listOf("0044" to ""), smsOtherKeys(waiting.take(1)))
+    }
+
     @Test fun moneyFromANameTheUserMadeATransferIsATransferWithThatAccountNextTime() {
         val sms = message(sender = "anb", body = "حوالة واردة بـ:SAR 10129.47 من:AHMAD S HORANIEH إلى:0091")
         val income = purchase("0091", amount = "10129.47", kind = "income").put("payee", "Ahmad S Horanieh")

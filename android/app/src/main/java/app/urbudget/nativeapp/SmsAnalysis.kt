@@ -197,6 +197,7 @@ internal class SmsAccounts(private val open: List<Pair<String, String>>, mapping
     private val remembered = kept("").filterValues { isOpen(it) }
     private val skipping = kept("").filterValues { it == SmsSkipCard }.keys
     private val others = kept(SmsForTransfer).filterValues { isOpen(it) }
+    private val formats = kept(SmsForFormat).filterValues { isOpen(it) }
     private val own = kept(SmsForOwn).filterValues { isOpen(it) }
 
     /** A card the user said not to add: its texts are settled without a question. */
@@ -218,13 +219,15 @@ internal class SmsAccounts(private val open: List<Pair<String, String>>, mapping
     /**
      * A transfer's other account, and how it was found: the account [otherRef] names; the other side
      * of the transfer the budget already has for this money; for a text naming none, the account
-     * the user chose for this card's earlier ones; the account the assistant [named]; and for a text
-     * naming none, the account this one's money moves with that way nearly every time.
+     * the user chose for this card's earlier ones; the one they chose for texts in this [template]'s
+     * format (a bank that gives each deposit its own number); the account the assistant [named]; and
+     * for a text naming none, the account this one's money moves with that way nearly every time.
      */
-    fun other(sender: String, ref: String?, otherRef: String?, named: String?, account: String, amount: Long?, date: String): Pair<String, SmsAccountSource>? = sequence {
+    fun other(sender: String, ref: String?, otherRef: String?, named: String?, account: String, amount: Long?, date: String, template: String? = null): Pair<String, SmsAccountSource>? = sequence {
         otherRef?.let { find(sender, it) }?.takeIf { it.second != SmsAccountSource.Only }?.let { yield(it) }
         if (account.isNotBlank() && amount != null) existing(account, amount, date)?.let { yield(it to SmsAccountSource.Budget) }
         if (otherRef == null) ref?.let { others[smsEntryKey(SmsForTransfer, sender, it)] }?.let { yield(it to SmsAccountSource.Remembered) }
+        template?.let { formats[smsEntryKey(SmsForFormat, sender, it)] }?.let { yield(it to SmsAccountSource.Remembered) }
         named?.let { name -> open.singleOrNull { it.second.trim().equals(name.trim(), ignoreCase = true) } }?.let { yield(it.first to SmsAccountSource.Assistant) }
         if (otherRef == null && account.isNotBlank() && amount != null) usual(account, amount)?.let { yield(it to SmsAccountSource.Usual) }
     }.firstOrNull { it.first != account }
@@ -257,14 +260,35 @@ internal class SmsAccounts(private val open: List<Pair<String, String>>, mapping
 internal const val SmsSkipCard = "skip"
 /**
  * What else is remembered beside cards: the other account of a card's transfers whose texts name
- * none (the account that pays it), and a name a bank gives the user's own account at another bank.
+ * none (the account that pays it), of the transfers a format reads (by its template's id), and a
+ * name a bank gives the user's own account at another bank.
  */
 internal const val SmsForTransfer = "transfer"
+internal const val SmsForFormat = "format"
 internal const val SmsForOwn = "own"
 
-/** One remembered entry per sender, kind and card (by its digits) or name (by its words). */
-private fun smsEntryKey(kind: String, sender: String, ref: String): String = kind + "\u0000" +
-    if (kind == SmsForOwn) smsSenderKey(sender) + "\u0000" + ref.trim().lowercase(Locale.ROOT).replace(Regex("\\s+"), " ") else cardKey(sender, ref)
+/** One remembered entry per sender, kind and card (by its digits), name (by its words) or format (by its id). */
+private fun smsEntryKey(kind: String, sender: String, ref: String): String = kind + "\u0000" + when (kind) {
+    SmsForOwn -> smsSenderKey(sender) + "\u0000" + ref.trim().lowercase(Locale.ROOT).replace(Regex("\\s+"), " ")
+    SmsForFormat -> smsSenderKey(sender) + "\u0000" + ref
+    else -> cardKey(sender, ref)
+}
+
+/**
+ * What a choice of other account for these transfers is remembered by: the one account they all
+ * name, or the card whose texts name none, and the formats that read them, so a bank that numbers
+ * each deposit afresh is answered once. Each as (reference, kind) for [smsRememberCard].
+ */
+internal fun smsOtherKeys(group: List<SmsItem>): List<Pair<String, String>> {
+    val others = group.map { it.transaction?.text("otherRef").orEmpty() }
+    val first = group.firstOrNull() ?: return emptyList()
+    val named = when {
+        others.all { it.isNotBlank() } && others.map(::smsRefKey).distinct().size == 1 -> others[0] to ""
+        others.all { it.isBlank() } && group.mapNotNull { it.ref?.let(::smsRefKey) }.distinct().size == 1 && first.ref != null -> first.ref!! to SmsForTransfer
+        else -> null
+    }
+    return listOfNotNull(named) + group.mapNotNull { it.template }.distinct().map { it to SmsForFormat }
+}
 
 /** [accountId] remembered for a card, or with [kind] for its transfers or as an own account's name, in place of what was there. */
 internal fun smsRememberCard(mappings: JSONArray, sender: String, ref: String, accountId: String, kind: String = ""): JSONArray {
@@ -299,11 +323,12 @@ internal data class SmsItem(
     /** Messages of one sender naming one card share this, so one choice answers them all. */
     val card: String? get() = ref?.takeIf { needs == "account" }?.let { cardKey(sender, it) }
     /**
-     * A transfer still needing its other account: texts naming the same other account, or a card's
-     * texts naming none, share this, so one choice answers them all.
+     * A transfer still needing its other account: a sender's texts about one account that say the
+     * same of it ("Transfer to your term deposit", "Credit card payment") share this, so one choice
+     * answers them all, whatever number the bank gave each deposit.
      */
     val transfer: String? get() = transaction?.takeIf { needs == "transfer" }?.let { t ->
-        t.text("otherRef").ifBlank { null }?.let { cardKey(sender, it) } ?: listOf("", ref?.let { cardKey(sender, it) }.orEmpty(), t.text("accountId")).joinToString("\u0000")
+        listOf("", smsSenderKey(sender), t.text("accountId"), note.trim().lowercase(Locale.ROOT)).joinToString("\u0000")
     }
     /** The other account was found from the budget's habits or the assistant's reading, not the text's digits: worth a look. */
     val otherGuessed: Boolean get() = otherSource == SmsAccountSource.Usual || otherSource == SmsAccountSource.Assistant
@@ -351,7 +376,8 @@ internal data class SmsBatch(val messages: List<BankSms>, val analysis: JSONObje
             if (t.text("kind") == "transfer") {
                 if (other == null && t.text("transferAccountId").isNotBlank()) other = SmsAccountSource.Chosen
                 if (t.text("transferAccountId").isBlank()) accounts.other(sender, t.text("accountRef").ifBlank { null }, t.text("otherRef").ifBlank { null },
-                    t.text("otherAccount").ifBlank { null }, account, smsCents(t.text("amount")), t.text("date"))?.let { (id, how) -> t.put("transferAccountId", id); other = how }
+                    t.text("otherAccount").ifBlank { null }, account, smsCents(t.text("amount")), t.text("date"), item.text("template").ifBlank { null })
+                    ?.let { (id, how) -> t.put("transferAccountId", id); other = how }
             }
             needs = when {
                 account.isBlank() -> "account"

@@ -188,7 +188,7 @@ that follows it (same sender, within fifteen minutes, the same amount), its code
 bank often names the biller only there ("مفوتر: زين" before a "Bill Payment" of SAR 299).
 It also gets the user's transfer routes over the last year (from, to, how often, the last
 date and amount), so it can tell a transfer from a payment and, when a text describes the
-other account without digits the phone can match ("your Murabaha account", a card payment
+other account without digits the phone can match ("your term deposit", a card payment
 that names only the card), name it from the account list (`otherAccount`); the service
 sends back a name that isn't one of the user's open accounts.
 
@@ -223,8 +223,8 @@ otherwise the one open account whose name carries the card's digits ("4417" is "
 4417"), otherwise the only open account. A transfer's other account is, in order: the
 account its other reference names; the other side of the one transfer of that money the
 budget already has within five days (the card payment entered from the current account);
-for a text naming none, the account the user chose for that card's earlier ones; the
-account the assistant named; and for a text naming none, the account this one's money
+for a text naming none, the account the user chose for that card's earlier ones; the one
+they chose for texts in its format; the account the assistant named; and for a text naming none, the account this one's money
 moved with that way in nearly all of its last ten transfers (at least three: what pays the
 card). The last two say **Check the other account**. Money to or from a person the user
 once turned into a transfer (their own account at another bank, which the bank names by
@@ -240,9 +240,11 @@ Otherwise it counts what needs the user, and the review is a page of transaction
   naming it and is remembered by default; **Don't add these** clears them instead, and
   remembered, the card's next texts are cleared without asking (Remembered cards says
   "Not added"). Transfers whose other account the phone can't tell get one choice per
-  account they name, or per card for those naming none (a card's payments), remembered by
-  default for the sender's next texts (Remembered cards lists it as the other side of the
-  card's transfers), or **Don't add these** for this review. A foreign amount is typed in its row; a
+  account and kind of transfer (the sender's texts about one account that say the same of
+  it: a card's payments, placements into term deposits the bank numbers afresh each time),
+  remembered by default for the sender's next texts by the other account they all name, the
+  card whose texts name none, and the formats that read them (Remembered cards lists it as
+  the other side of the card's or format's transfers), or **Don't add these** for this review. A foreign amount is typed in its row; a
   message the assistant couldn't read is entered in the transaction editor; any of these
   rows can be dropped (**Don't add**, **Dismiss**). A transfer's row shows the way the money
   went ("Checking → Visa" for a card payment). These stay in the review, as they were read, until
