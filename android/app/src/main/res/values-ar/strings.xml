@@ -2264,7 +2264,7 @@
     <string name="sms_collect_now">الآن: %1$s</string>
     <string name="sms_after_handled">مباشرة بعد آخر رسالة عولجت</string>
     <string name="sms_moment">\u2068%1$s\u2069، \u2068%2$s\u2069</string>
-    <string name="sms_last_handled_at">عولجت حتى %1$s</string>
+    <string name="sms_last_handled_at">أحدث رسالة عولجت %1$s</string>
     <string name="sms_where_title">أين وصلت</string>
     <string name="sms_last_handled">آخر رسالة عولجت</string>
     <string name="sms_start_after">ابدأ بعدها</string>

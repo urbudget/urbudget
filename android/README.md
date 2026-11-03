@@ -118,8 +118,9 @@ changes it at any time for every sender: an earlier start brings older texts in 
 next scan, a later one takes earlier texts out of what's waiting and out of the open
 review. Changing senders keeps the review's items from the senders that stay.
 
-Its row says where collecting has caught up to ("handled through 2 Nov 2026, 07:47": the
-newest text the budget finished with, kept on this phone), and the dialog lists that and,
+Its row says where collecting has got to ("newest handled 2 Nov 2026, 07:47": the newest
+text the budget finished with, kept on this phone; older texts can still wait when the start
+moved earlier), and the dialog lists that and,
 from the budget itself so it holds on another phone or after a reinstall, each account's
 last day of bank data (transactions from texts or files) and of reconciling. Each has a
 one-tap start: right after the last text handled (nothing read twice, nothing missed), or

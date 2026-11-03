@@ -2009,8 +2009,9 @@
     <string name="sms_after_handled">Right after the last text handled</string>
     <!-- When a text came: "2 Nov 2026, 07:47". -->
     <string name="sms_moment">%1$s, %2$s</string>
-    <!-- Beside where collecting starts: "Since 3 Oct 2026 · handled through 2 Nov 2026, 07:47". -->
-    <string name="sms_last_handled_at">handled through %1$s</string>
+    <!-- Beside where collecting starts: "Since 3 Oct 2026 · newest handled 2 Nov 2026, 07:47". The newest
+         text the budget finished with; older ones can still be waiting when collecting moved earlier. -->
+    <string name="sms_last_handled_at">newest handled %1$s</string>
     <string name="sms_where_title">Where you are</string>
     <string name="sms_last_handled">Last text handled</string>
     <string name="sms_start_after">Start after it</string>
