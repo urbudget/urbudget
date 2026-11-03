@@ -44,7 +44,31 @@ internal fun smsDecimal(cents: Long): String = BigDecimal.valueOf(cents, 2).toPl
 internal fun smsRefKey(ref: String): String = ref.filter { it in '0'..'9' }.takeIf { it.length >= 3 } ?: ref.trim().lowercase(Locale.ROOT)
 private fun cardKey(sender: String, ref: String) = smsSenderKey(sender) + "\u0000" + smsRefKey(ref)
 
-internal enum class SmsAccountSource { Chosen, Remembered, Name, Only }
+/**
+ * How an account was found: chosen in the review, remembered, the one whose name holds the text's
+ * digits, or the only one. A transfer's other account may also be the other side of the transfer
+ * the budget already has ([Budget]), the account such money usually moves with ([Usual]), or the
+ * one the assistant named from what the text says it is ([Assistant]); those two are worth a look.
+ */
+internal enum class SmsAccountSource { Chosen, Remembered, Name, Only, Budget, Usual, Assistant }
+
+/** A transfer in the budget as one of its accounts sees it: the other account, the amount on this side, its day, and whether a bank text matched this side. */
+internal data class SmsTransferSide(val account: String, val other: String, val amount: Long, val date: String, val matched: Boolean = false)
+
+/** Every transfer in the budget from both its sides, split parts included. */
+internal fun smsTransferSides(budget: JSONObject): List<SmsTransferSide> = budget.rows("transactions").flatMap { t ->
+    val account = t.text("accountId")
+    val matched = t.optJSONObject("bankImportMatches")
+    val parts = if (t.text("transferAccountId").isNotBlank()) listOf(t.text("transferAccountId") to t.optLong("amount"))
+        else t.rows("splits").filter { it.text("transferAccountId").isNotBlank() }.map { it.text("transferAccountId") to it.optLong("amount") }
+    parts.filter { (other, amount) -> other != account && amount != 0L && account.isNotBlank() }.flatMap { (other, amount) ->
+        listOf(SmsTransferSide(account, other, amount, t.text("date"), matched?.has(account) == true),
+            SmsTransferSide(other, account, -amount, t.text("date"), matched?.has(other) == true))
+    }
+}
+
+/** How many days apart a text and the transfer the budget already has for it can be, as banks book the two sides. */
+private const val SmsTransferDays = 5L
 
 /**
  * The day each open account's records start: its first transaction, or today for one with none
@@ -156,23 +180,31 @@ internal fun smsBalanceChanges(items: List<SmsItem>, adding: List<Pair<Int, Stri
     return changes.filterValues { it != 0L }
 }
 
-/** Which account a card is: remembered for its sender, or the one open account whose name carries its digits. */
-internal class SmsAccounts(private val open: List<Pair<String, String>>, mappings: JSONArray, private val starts: Map<String, String> = emptyMap()) {
+/**
+ * Which account a card is: remembered for its sender, or the one open account whose name carries its
+ * digits; and a transfer's other account ([other]), from what the user chose before and the
+ * budget's own [transfers].
+ */
+internal class SmsAccounts(private val open: List<Pair<String, String>>, mappings: JSONArray, private val starts: Map<String, String> = emptyMap(),
+                           private val transfers: List<SmsTransferSide> = emptyList()) {
     /** Dated before one of these accounts' records start ([smsStarts]): already in its starting balance. */
     fun early(date: String, vararg accounts: String): Boolean = accounts.any { account -> starts[account]?.let { date < it } == true }
 
-    private val remembered = (0 until mappings.length()).map { mappings.getJSONObject(it) }
-        .filter { m -> open.any { it.first == m.text("accountId") } }
-        .associate { cardKey(it.text("sender"), it.text("reference")) to it.text("accountId") }
-    private val skipping = (0 until mappings.length()).map { mappings.getJSONObject(it) }
-        .filter { it.text("accountId") == SmsSkipCard }.map { cardKey(it.text("sender"), it.text("reference")) }.toSet()
+    private val entries = (0 until mappings.length()).map { mappings.getJSONObject(it) }
+    private fun isOpen(account: String) = open.any { it.first == account }
+    /** What's remembered of one kind, by its key, for an open account or [SmsSkipCard]. */
+    private fun kept(kind: String) = entries.filter { it.text("for") == kind }.associate { smsEntryKey(kind, it.text("sender"), it.text("reference")) to it.text("accountId") }
+    private val remembered = kept("").filterValues { isOpen(it) }
+    private val skipping = kept("").filterValues { it == SmsSkipCard }.keys
+    private val others = kept(SmsForTransfer).filterValues { isOpen(it) }
+    private val own = kept(SmsForOwn).filterValues { isOpen(it) }
 
     /** A card the user said not to add: its texts are settled without a question. */
-    fun skips(sender: String, ref: String?): Boolean = ref != null && cardKey(sender, ref) in skipping
+    fun skips(sender: String, ref: String?): Boolean = ref != null && smsEntryKey("", sender, ref) in skipping
 
     fun find(sender: String, ref: String?): Pair<String, SmsAccountSource>? {
         if (ref != null) {
-            remembered[cardKey(sender, ref)]?.let { return it to SmsAccountSource.Remembered }
+            remembered[smsEntryKey("", sender, ref)]?.let { return it to SmsAccountSource.Remembered }
             val digits = ref.filter { it in '0'..'9' }
             // The same digits, or one ending the other when both are at least a card's last four:
             // "4417" is "Visa 4417", but "5000" isn't the limit in "Visa (50,000)".
@@ -182,16 +214,65 @@ internal class SmsAccounts(private val open: List<Pair<String, String>>, mapping
         }
         return open.singleOrNull()?.let { it.first to SmsAccountSource.Only }
     }
+
+    /**
+     * A transfer's other account, and how it was found: the account [otherRef] names; the other side
+     * of the transfer the budget already has for this money; for a text naming none, the account
+     * the user chose for this card's earlier ones; the account the assistant [named]; and for a text
+     * naming none, the account this one's money moves with that way nearly every time.
+     */
+    fun other(sender: String, ref: String?, otherRef: String?, named: String?, account: String, amount: Long?, date: String): Pair<String, SmsAccountSource>? = sequence {
+        otherRef?.let { find(sender, it) }?.takeIf { it.second != SmsAccountSource.Only }?.let { yield(it) }
+        if (account.isNotBlank() && amount != null) existing(account, amount, date)?.let { yield(it to SmsAccountSource.Budget) }
+        if (otherRef == null) ref?.let { others[smsEntryKey(SmsForTransfer, sender, it)] }?.let { yield(it to SmsAccountSource.Remembered) }
+        named?.let { name -> open.singleOrNull { it.second.trim().equals(name.trim(), ignoreCase = true) } }?.let { yield(it.first to SmsAccountSource.Assistant) }
+        if (otherRef == null && account.isNotBlank() && amount != null) usual(account, amount)?.let { yield(it to SmsAccountSource.Usual) }
+    }.firstOrNull { it.first != account }
+
+    /** The user's own account at another bank that a bank's name for a person is ([smsRememberCard] with [SmsForOwn]). */
+    fun own(sender: String, name: String?): String? = name?.takeIf { it.isNotBlank() }?.let { own[smsEntryKey(SmsForOwn, sender, it)] }
+
+    /** The other account of the one transfer of this money the budget has in [account] within days of [date], when no bank text matched that side yet. */
+    private fun existing(account: String, amount: Long, date: String): String? {
+        val day = runCatching { LocalDate.parse(date) }.getOrNull() ?: return null
+        fun near(other: String) = runCatching { kotlin.math.abs(java.time.temporal.ChronoUnit.DAYS.between(day, LocalDate.parse(other))) <= SmsTransferDays }.getOrDefault(false)
+        return transfers.filter { it.account == account && it.amount == amount && !it.matched && near(it.date) }.map { it.other }.distinct().singleOrNull()?.takeIf { isOpen(it) }
+    }
+
+    /** The account [account]'s money moves with this way in nearly all of its last transfers: the account that pays a credit card. */
+    private fun usual(account: String, amount: Long): String? {
+        val recent = transfers.filter { it.account == account && (it.amount > 0) == (amount > 0) }.sortedByDescending { it.date }.take(10)
+        val (other, times) = recent.groupingBy { it.other }.eachCount().maxByOrNull { it.value } ?: return null
+        return other.takeIf { times >= 3 && times * 5 >= recent.size * 4 && isOpen(it) }
+    }
+
+    companion object {
+        /** The budget's open accounts and its transfers, with what the user remembered. */
+        fun of(budget: JSONObject, mappings: JSONArray, starts: Map<String, String>): SmsAccounts =
+            SmsAccounts(budget.rows("accounts").filterNot { it.optBoolean("archived") }.map { it.text("id") to it.text("name") }, mappings, starts, smsTransferSides(budget))
+    }
 }
 
 /** What a remembered card maps to in place of an account when the user doesn't add its texts. */
 internal const val SmsSkipCard = "skip"
+/**
+ * What else is remembered beside cards: the other account of a card's transfers whose texts name
+ * none (the account that pays it), and a name a bank gives the user's own account at another bank.
+ */
+internal const val SmsForTransfer = "transfer"
+internal const val SmsForOwn = "own"
 
-internal fun smsRememberCard(mappings: JSONArray, sender: String, ref: String, accountId: String): JSONArray {
+/** One remembered entry per sender, kind and card (by its digits) or name (by its words). */
+private fun smsEntryKey(kind: String, sender: String, ref: String): String = kind + "\u0000" +
+    if (kind == SmsForOwn) smsSenderKey(sender) + "\u0000" + ref.trim().lowercase(Locale.ROOT).replace(Regex("\\s+"), " ") else cardKey(sender, ref)
+
+/** [accountId] remembered for a card, or with [kind] for its transfers or as an own account's name, in place of what was there. */
+internal fun smsRememberCard(mappings: JSONArray, sender: String, ref: String, accountId: String, kind: String = ""): JSONArray {
     require(sender.isNotBlank() && sender.length <= 200 && ref.isNotBlank() && ref.length <= 80 && accountId.isNotBlank())
-    val kept = (0 until mappings.length()).map { mappings.getJSONObject(it) }.filterNot { cardKey(it.text("sender"), it.text("reference")) == cardKey(sender, ref) }
+    val key = smsEntryKey(kind, sender, ref)
+    val kept = (0 until mappings.length()).map { mappings.getJSONObject(it) }.filterNot { smsEntryKey(it.text("for"), it.text("sender"), it.text("reference")) == key }
     require(kept.size < 200)
-    return JSONArray(kept).put(JSONObject().put("sender", sender).put("reference", ref).put("accountId", accountId))
+    return JSONArray(kept).put(JSONObject().put("sender", sender).put("reference", ref).put("accountId", accountId).apply { if (kind.isNotEmpty()) put("for", kind) })
 }
 
 /**
@@ -208,6 +289,8 @@ internal data class SmsItem(
     val template: String? = null, val raw: String? = null,
     /** Skipped on the phone without going to the assistant: a code, or a format it has confirmed enough. */
     val kept: Boolean = false,
+    /** How a transfer's other account was found. */
+    val otherSource: SmsAccountSource? = null,
 ) {
     /** Ticked to add unless the user said otherwise: a transaction, but not a hold or one already in a starting balance. */
     fun tickedIn(batch: SmsBatch): Boolean = batch.ticked[index] ?: (disposition == "transaction" && !early)
@@ -215,6 +298,15 @@ internal data class SmsItem(
     val ref: String? get() = transaction?.text("accountRef")?.ifBlank { null }
     /** Messages of one sender naming one card share this, so one choice answers them all. */
     val card: String? get() = ref?.takeIf { needs == "account" }?.let { cardKey(sender, it) }
+    /**
+     * A transfer still needing its other account: texts naming the same other account, or a card's
+     * texts naming none, share this, so one choice answers them all.
+     */
+    val transfer: String? get() = transaction?.takeIf { needs == "transfer" }?.let { t ->
+        t.text("otherRef").ifBlank { null }?.let { cardKey(sender, it) } ?: listOf("", ref?.let { cardKey(sender, it) }.orEmpty(), t.text("accountId")).joinToString("\u0000")
+    }
+    /** The other account was found from the budget's habits or the assistant's reading, not the text's digits: worth a look. */
+    val otherGuessed: Boolean get() = otherSource == SmsAccountSource.Usual || otherSource == SmsAccountSource.Assistant
     val amount: Long? get() = transaction?.text("amount")?.let(::smsCents)
 }
 
@@ -244,13 +336,23 @@ internal data class SmsBatch(val messages: List<BankSms>, val analysis: JSONObje
         val sender = sources.firstOrNull()?.sender.orEmpty()
         val t = item.optJSONObject("transaction")?.let { JSONObject(it.toString()) }
         var source: SmsAccountSource? = null
+        var other: SmsAccountSource? = null
         var needs: String? = null
         if (t != null) {
             if (t.text("accountId").isNotBlank()) source = SmsAccountSource.Chosen
             else accounts.find(sender, t.text("accountRef").ifBlank { null })?.let { (id, how) -> t.put("accountId", id); source = how }
             val account = t.text("accountId")
-            if (t.text("kind") == "transfer" && t.text("transferAccountId").isBlank()) t.text("otherRef").ifBlank { null }
-                ?.let { accounts.find(sender, it) }?.takeIf { it.second != SmsAccountSource.Only && it.first != account }?.let { t.put("transferAccountId", it.first) }
+            // Money to or from a name the user said is their own account at another bank is a transfer with it.
+            if (t.text("kind") in setOf("income", "expense") && t.text("transferAccountId").isBlank())
+                accounts.own(sender, item.text("raw").ifBlank { null } ?: t.text("payee"))?.takeIf { it != account }?.let { id ->
+                    t.put("kind", "transfer").put("transferAccountId", id).put("categoryId", JSONObject.NULL)
+                    other = SmsAccountSource.Remembered
+                }
+            if (t.text("kind") == "transfer") {
+                if (other == null && t.text("transferAccountId").isNotBlank()) other = SmsAccountSource.Chosen
+                if (t.text("transferAccountId").isBlank()) accounts.other(sender, t.text("accountRef").ifBlank { null }, t.text("otherRef").ifBlank { null },
+                    t.text("otherAccount").ifBlank { null }, account, smsCents(t.text("amount")), t.text("date"))?.let { (id, how) -> t.put("transferAccountId", id); other = how }
+            }
             needs = when {
                 account.isBlank() -> "account"
                 t.isNull("amount") || t.text("amount").isBlank() -> "amount"
@@ -263,7 +365,7 @@ internal data class SmsBatch(val messages: List<BankSms>, val analysis: JSONObje
         // From a card the user doesn't add: settled like a code, and still there to add by hand.
         val skipped = needs == "account" && accounts.skips(sender, t?.text("accountRef")?.ifBlank { null })
         SmsItem(index, if (skipped) "ignore" else item.text("disposition"), item.text("note"), if (skipped) "card" else item.text("skip"), unsure, sources, t, source,
-            needs.takeUnless { skipped }, early, item.text("template").ifBlank { null }, item.text("raw").ifBlank { null }, item.optBoolean("kept"))
+            needs.takeUnless { skipped }, early, item.text("template").ifBlank { null }, item.text("raw").ifBlank { null }, item.optBoolean("kept"), other)
     }
 
     /**

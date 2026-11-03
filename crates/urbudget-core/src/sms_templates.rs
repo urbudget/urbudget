@@ -369,7 +369,7 @@ pub fn fill(b: &Budget, c: &Compiled, m: &Message, reading: &Reading, payees: &H
             transaction: Some(Transaction {
                 date: day, amount, currency: if reading.amount.is_some() { currency } else { b.currency.clone() }, written_amount: plain(written), payee,
                 memo: o.memo.clone().unwrap_or_default(), kind, account_ref: reading.reference.clone(), other_ref: reading.other.clone(),
-                category_id: category, account_id: None, transfer_account_id: None,
+                other_account: None, category_id: category, account_id: None, transfer_account_id: None,
             }),
             unsure: vec![], template: Some(t.id.clone()), raw, kept: false,
         }

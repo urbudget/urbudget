@@ -296,8 +296,7 @@ internal class SmsPage(private val context: Context, val identity: String, priva
         val mappings = stored.mappings
         sorting = scope.launch {
             try {
-                val accounts = budget.rows("accounts").filterNot { it.optBoolean("archived") }.map { it.text("id") to it.text("name") }
-                val items = withContext(Dispatchers.Default) { current.items(SmsAccounts(accounts, mappings, current.starts(budget))) }
+                val items = withContext(Dispatchers.Default) { current.items(SmsAccounts.of(budget, mappings, current.starts(budget))) }
                 val resolved = current.resolved(items)
                 val known = smsKnown(vm.smsPreview(budget, current, resolved), items, budget)
                 val result = smsSort(current, items, known)

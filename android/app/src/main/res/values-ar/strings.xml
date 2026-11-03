@@ -2569,6 +2569,11 @@
     <string name="sms_new_account">حساب جديد…</string>
     <string name="sms_card_skip">لا تُضِف هذه الرسائل</string>
     <string name="sms_card_skipped">لا تُضاف</string>
+    <string name="sms_which_other">ما الحساب في الطرف الآخر؟</string>
+    <string name="sms_remember_other">استخدمه لهذه الرسائل في المرة القادمة</string>
+    <string name="sms_check_other">راجع الحساب الآخر</string>
+    <string name="sms_card_transfers">الطرف الآخر لتحويلاتها: %1$s</string>
+    <string name="sms_own_account">حسابك أنت: %1$s</string>
     <string name="sms_dont_add">لا تُضِف</string>
     <string name="sms_wont_add">لن تُضاف</string>
     <string name="sms_new_account_title">حساب جديد</string>

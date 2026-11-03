@@ -43,6 +43,11 @@ pub struct Transaction {
     pub account_ref: Option<String>,
     /// A transfer's other account, copied the same way.
     pub other_ref: Option<String>,
+    /// A transfer's other account by the name the user gave it, when the message says what it is
+    /// ("your Murabaha account") rather than naming it in a way the app can match: the model's
+    /// reading, for the app to resolve.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub other_account: Option<String>,
     pub category_id: Option<String>,
     /// Filled by the app from a remembered card or the account's name, or chosen by the user.
     #[serde(default)]
@@ -255,6 +260,10 @@ fn transaction(
     };
     if !reference(&t.account_ref) || !reference(&t.other_ref) {
         return Err(crate::t!("Check the card and account references."));
+    }
+    // Checked against the account list when the model gives it: a later rename mustn't break the review.
+    if t.other_account.as_ref().is_some_and(|n| n.trim().is_empty() || n.len() > 200 || t.kind != "transfer") {
+        return Err(crate::t!("Name the other account only for a transfer."));
     }
     // A card reference must be in every grouped message; a transfer's other side in one of them.
     if t.account_ref.as_ref().is_some_and(|r| !ids.iter().all(|id| sources[id.as_str()].body.contains(r)))

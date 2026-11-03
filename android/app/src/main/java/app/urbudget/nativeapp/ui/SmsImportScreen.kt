@@ -669,10 +669,16 @@ private fun SmsCardsSheet(budget: JSONObject, mappings: JSONArray, close: () -> 
     LazyFormDialog(stringResource(R.string.sms_cards), close) {
         item { Text(stringResource(R.string.sms_cards_help), style = MaterialTheme.typography.bodyMedium, color = ur.text2) }
         if (cards.isEmpty()) item { Text(stringResource(R.string.sms_cards_none), color = ur.muted) }
-        itemsIndexed(cards, key = { i, card -> "$i:" + card.text("sender") + card.text("reference") }) { index, card ->
+        itemsIndexed(cards, key = { i, card -> "$i:" + card.text("sender") + card.text("reference") + card.text("for") }) { index, card ->
             Column(Modifier.cardSegment(0, 1, cardFill())) {
-                val account = if (card.text("accountId") == SmsSkipCard) stringResource(R.string.sms_card_skipped)
+                val name = if (card.text("accountId") == SmsSkipCard) stringResource(R.string.sms_card_skipped)
                     else budget.row("accounts", card.text("accountId"))?.text("name")?.let(Money::own) ?: stringResource(R.string.sms_account_gone)
+                // Beside a card's account: the account that pays its transfers, or the user's own account a name is.
+                val account = when (card.text("for")) {
+                    SmsForTransfer -> stringResource(R.string.sms_card_transfers, name)
+                    SmsForOwn -> stringResource(R.string.sms_own_account, name)
+                    else -> name
+                }
                 ListRow(smsRefLabel(card.text("reference")), subtitle = Money.own(card.text("sender")) + " · " + account,
                     chevron = false, trailing = {
                         IconButton({ save(JSONArray(cards.filterIndexed { i, _ -> i != index })) }) { Icon(Icons.Outlined.Close, stringResource(R.string.sms_forget), tint = ur.muted) }

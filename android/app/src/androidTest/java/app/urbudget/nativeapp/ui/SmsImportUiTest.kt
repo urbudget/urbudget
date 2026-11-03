@@ -394,9 +394,10 @@ class SmsImportUiTest {
         show(vm, analyzer { calls++; analysis })
         waitFor("sms-review")
         compose.onNodeWithTag("sms-review").performClick()
-        // Inside the row, which opens the editor: found in the unmerged tree.
-        compose.waitUntil(10_000) { compose.onAllNodesWithTag("sms-new-account:0", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag("sms-new-account:0", useUnmergedTree = true).performClick()
+        // The transfer waits on one choice of its other account, which can be made there.
+        waitFor("sms-transfer:0")
+        compose.onNodeWithTag("choice-open:${context.getString(R.string.sms_which_other)}").performScrollTo().performClick()
+        compose.onNodeWithText(context.getString(R.string.sms_new_account)).performClick()
         compose.onNodeWithText(context.getString(R.string.common_add)).performClick()
         compose.waitUntil(10_000) { vm.state.value.budget!!.rows("accounts").any { it.text("name") == "SYNTHETICBANK 4321" } }
         // Made for this review, its balance is from before the transfer: ready to add, not held back.
@@ -407,6 +408,35 @@ class SmsImportUiTest {
         val made = vm.state.value.budget!!.rows("accounts").first { it.text("name") == "SYNTHETICBANK 4321" }.text("id")
         compose.waitUntil(10_000) { JSONArray(inbox.state(identity!!, "mappings") ?: "[]").let { m -> (0 until m.length()).any { m.getJSONObject(it).getString("accountId") == made } } }
         assertEquals(0, calls)
+    }
+
+    @Test fun aCardPaymentsOtherAccountIsChosenOnceAndRememberedForTheCard() {
+        val vm = fixture("payment")
+        val inbox = SmsInbox.get(context)
+        inbox.saveState(identity!!, "consent", smsConsent(connection))
+        inbox.saveState(identity!!, "mappings", smsRememberCard(JSONArray(), "SyntheticBank", "*5555", "card").toString())
+        val body = "Card Payment card *5555 USD 12.34"
+        val sms = BankSms(smsId("SyntheticBank", 1, body), "SyntheticBank", 1, body)
+        inbox.capture(sms)
+        // A payment into the card naming no other account, read on an earlier visit.
+        val analysis = JSONObject().put("items", JSONArray().put(syntheticSmsAnalysis(sms, accountId = null, ref = "*5555").getJSONArray("items").getJSONObject(0).also {
+            it.put("note", "Card payment").getJSONObject("transaction").put("kind", "transfer").put("amount", "12.34").put("payee", "Card payment")
+        }))
+        inbox.saveState(identity!!, "draft", SmsBatch(listOf(sms), analysis).saved())
+        show(vm, analyzer { analysis })
+        waitFor("sms-review")
+        compose.onNodeWithTag("sms-review").performClick()
+        waitFor("sms-transfer:0")
+        compose.onNodeWithTag("choice-open:${context.getString(R.string.sms_which_other)}").performScrollTo().performClick()
+        compose.onNodeWithText("Everyday").performClick()
+        // Ready to add, from the account it came from into the card; and remembered for the card's next payments.
+        waitFor("sms-tick:0")
+        compose.onNodeWithTag("sms-tick:0").assertIsOn()
+        compose.onNodeWithTag("sms-accounts:0", useUnmergedTree = true).assertTextContains("Everyday → Credit card", substring = true)
+        compose.waitUntil(10_000) {
+            JSONArray(inbox.state(identity!!, "mappings") ?: "[]").let { m -> (0 until m.length()).map { m.getJSONObject(it) }
+                .any { it.optString("for") == SmsForTransfer && it.getString("reference") == "*5555" && it.getString("accountId") == "checking" } }
+        }
     }
 
     @Test fun whatAReadingLearnsIsKeptApartFromTheReviewAndEveryRequestCarriesTheTemplates() {

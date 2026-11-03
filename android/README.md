@@ -175,7 +175,8 @@ number under a reason (`code`, `security`, `balance`, `declined`, `rewards`,
 out. The service maps numbers back to ids, places each quote as evidence, and rejects a
 reply that misses or repeats a text; the core (`sms_import.rs`) validates the rest:
 exact money, dates, references found in the texts, quotes, and every text accounted for
-once. Any account the model supplies is discarded. `payee_history` follows a payee rule
+once. Any account id the model supplies is discarded; it may only name a transfer's other
+account from the account list (below), which the phone resolves. `payee_history` follows a payee rule
 to the renamed payee's history, so "S136 M" finds the user's categories for "Tamimi", and
 finds the user's payee a bank's name holds ("MASHAR E" is their "Mashar").
 
@@ -185,6 +186,11 @@ user's spelling and category; for a new merchant whose business is clear it pick
 category and marks it to check. A code text the phone settled is sent along with the payment
 that follows it (same sender, within fifteen minutes, the same amount), its code hidden: a
 bank often names the biller only there ("مفوتر: زين" before a "Bill Payment" of SAR 299).
+It also gets the user's transfer routes over the last year (from, to, how often, the last
+date and amount), so it can tell a transfer from a payment and, when a text describes the
+other account without digits the phone can match ("your Murabaha account", a card payment
+that names only the card), name it from the account list (`otherAccount`); the service
+sends back a name that isn't one of the user's open accounts.
 
 **Templates.** As the assistant reads, it writes a template for each format it sees: the
 text's lines with the bank's fixed words and typed slots (`{amount}`, `{currency}`, `{ref}`,
@@ -214,9 +220,18 @@ assistant stays in the loop for every text but junk: templates make its work a r
 
 The phone matches each reference to an account: a card remembered for that sender,
 otherwise the one open account whose name carries the card's digits ("4417" is "Visa
-4417"), otherwise the only open account. Then it settles what changes nothing: a text
+4417"), otherwise the only open account. A transfer's other account is, in order: the
+account its other reference names; the other side of the one transfer of that money the
+budget already has within five days (the card payment entered from the current account);
+for a text naming none, the account the user chose for that card's earlier ones; the
+account the assistant named; and for a text naming none, the account this one's money
+moved with that way in nearly all of its last ten transfers (at least three: what pays the
+card). The last two say **Check the other account**. Money to or from a person the user
+once turned into a transfer (their own account at another bank, which the bank names by
+the holder) is a transfer with that account from then on. Then it settles what changes nothing: a text
 whose transaction is already in the budget (one candidate from the bank import engine in
-the same account on the same day, not already claimed by another text) is matched, and
+the same account on the same day, or the same transfer entered from its other side, not
+already claimed by another text) is matched, and
 texts where no money moved are cleared. When that's everything, the page finishes by
 itself and says what it handled ("Checked 11:38 · 2 already in your budget · 3 codes").
 Otherwise it counts what needs the user, and the review is a page of transactions:
@@ -224,9 +239,13 @@ Otherwise it counts what needs the user, and the review is a page of transaction
 - **Needs a choice**: one account choice per unmatched card answers every message
   naming it and is remembered by default; **Don't add these** clears them instead, and
   remembered, the card's next texts are cleared without asking (Remembered cards says
-  "Not added"). A foreign amount is typed in its row; a transfer's other account, or a
-  message the assistant couldn't read, is entered in the transaction editor; any of these
-  rows can be dropped (**Don't add**, **Dismiss**). These stay in the review, as they were read, until
+  "Not added"). Transfers whose other account the phone can't tell get one choice per
+  account they name, or per card for those naming none (a card's payments), remembered by
+  default for the sender's next texts (Remembered cards lists it as the other side of the
+  card's transfers), or **Don't add these** for this review. A foreign amount is typed in its row; a
+  message the assistant couldn't read is entered in the transaction editor; any of these
+  rows can be dropped (**Don't add**, **Dismiss**). A transfer's row shows the way the money
+  went ("Checking → Visa" for a card payment). These stay in the review, as they were read, until
   answered: adding the rest doesn't send them to the assistant again. A card, or a
   transfer's other side, that the budget has no account for (a new CD) gets one from
   the review (**New account…**), with its balance from before these texts; its digits are

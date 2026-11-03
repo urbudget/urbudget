@@ -204,7 +204,12 @@ fn transfers_take_no_category_and_other_kinds_take_no_transfer_account() {
     v["items"][0]["transaction"]["transferAccountId"] = json!("main");
     assert!(validate_analysis(&b, &messages(), &analysis(v.clone())).is_err());
     v["items"][0]["transaction"]["transferAccountId"] = json!("card");
-    assert!(importable(&analysis(v).items[0]).is_some());
+    assert!(importable(&analysis(v.clone()).items[0]).is_some());
+    // The model may name a transfer's other account, and only a transfer's: the phone resolves the name.
+    v["items"][0]["transaction"]["otherAccount"] = json!("Card");
+    assert!(validate_analysis(&b, &messages(), &analysis(v.clone())).is_ok());
+    v["items"][1]["transaction"]["otherAccount"] = json!("Card");
+    assert!(validate_analysis(&b, &messages(), &analysis(v)).is_err());
 }
 
 #[test]

@@ -2221,6 +2221,15 @@
     <string name="sms_card_skip">Don’t add these</string>
     <!-- In Remembered cards, for a card whose texts aren't added. -->
     <string name="sms_card_skipped">Not added</string>
+    <!-- Above the accounts for transfers whose other account the phone can't tell (a card payment names only the card). -->
+    <string name="sms_which_other">Which account is the other side?</string>
+    <string name="sms_remember_other">Use it for these texts next time</string>
+    <!-- On a transfer whose other account came from where such money usually goes, or from what the text says it is. -->
+    <string name="sms_check_other">Check the other account</string>
+    <!-- In Remembered cards: %1$s is the account that's the other side of the card's transfers ("ANB Checking"). -->
+    <string name="sms_card_transfers">Other side of its transfers: %1$s</string>
+    <!-- In Remembered cards, for a name the bank gives the user's own account at another bank: %1$s is that account. -->
+    <string name="sms_own_account">Your own account: %1$s</string>
     <!-- On a row still needing an account or an amount: clear it instead. -->
     <string name="sms_dont_add">Don’t add</string>
     <!-- On an unticked row: it's cleared with the review. -->

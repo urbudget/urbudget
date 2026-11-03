@@ -4,6 +4,8 @@ import app.urbudget.nativeapp.ui.smsEditable
 import app.urbudget.nativeapp.ui.smsEdited
 import app.urbudget.nativeapp.ui.rows
 import app.urbudget.nativeapp.ui.smsBankIds
+import app.urbudget.nativeapp.ui.smsChanged
+import app.urbudget.nativeapp.ui.smsOwnName
 import app.urbudget.nativeapp.ui.smsSameTransaction
 import app.urbudget.nativeapp.ui.smsSort
 import org.json.JSONArray
@@ -74,6 +76,10 @@ class SmsAnalysisTest {
         assertEquals(1, mappings.length()); assertEquals("card", mappings.getJSONObject(0).getString("accountId"))
         mappings = smsRememberCard(mappings, "Other", "*1234", "other")
         assertEquals(2, mappings.length())
+        // The other side of a card's transfers is remembered beside its account, and replaced on its own.
+        mappings = smsRememberCard(mappings, "Bank", "*1234", "checking", SmsForTransfer)
+        mappings = smsRememberCard(mappings, "Bank", "1234", "savings", SmsForTransfer)
+        assertEquals(3, mappings.length()); assertEquals("card", SmsAccounts(listOf("card" to "Visa", "savings" to "Savings"), mappings).find("Bank", "1234")?.first)
         assertThrows(IllegalArgumentException::class.java) { smsRememberCard(mappings, "Bank", " ", "main") }
     }
     @Test fun itemsResolveTheirAccountsAndSayWhatTheUserStillGives() {
@@ -159,6 +165,68 @@ class SmsAnalysisTest {
         assertFalse(smsSameTransaction(text, there(date = "2026-10-31"), claimed))
         assertFalse(smsSameTransaction(text, there(account = "checking"), claimed))
         assertFalse(smsSameTransaction(text, there(ids = claimed.toList()), claimed))
+        // A card payment the user entered from the current account is the same transfer as the card's text.
+        val payment = JSONObject(text.toString()).put("transferAccountId", "checking")
+        assertTrue(smsSameTransaction(payment, there(account = "checking").put("transferAccountId", "card"), claimed))
+        assertFalse(smsSameTransaction(payment, there(account = "checking").put("transferAccountId", "savings"), claimed))
+    }
+
+    @Test fun aTransfersOtherAccountIsTheOneTheBudgetHasThenTheUsersChoiceThenTheAssistantsThenTheUsualOne() {
+        fun moved(id: String, date: String, from: String, to: String, cents: Long) =
+            JSONObject().put("id", id).put("date", date).put("accountId", from).put("transferAccountId", to).put("amount", cents)
+        // The card paid from checking three times, the second entered on the card's side; a split part into savings.
+        val sides = smsTransferSides(JSONObject().put("transactions", JSONArray().put(moved("a", "2026-08-31", "checking", "visa", -700_000))
+            .put(moved("b", "2026-09-30", "visa", "checking", 955_784)).put(moved("c", "2026-10-28", "checking", "visa", -323_233))
+            .put(JSONObject().put("id", "d").put("date", "2026-07-01").put("accountId", "checking").put("amount", -1000L)
+                .put("splits", JSONArray().put(JSONObject().put("amount", -1000L).put("transferAccountId", "savings"))))))
+        assertEquals(8, sides.size)
+        assertTrue(SmsTransferSide("visa", "checking", 323_233, "2026-10-28") in sides)
+        assertTrue(SmsTransferSide("savings", "checking", 1000, "2026-07-01") in sides)
+        val plain = SmsAccounts(accounts, JSONArray(), transfers = sides)
+        // Entered already: the other side of the transfer the budget has, a day or two apart.
+        assertEquals("checking" to SmsAccountSource.Budget, plain.other("anb", "4417", null, null, "visa", 323_233, "2026-10-30"))
+        // A new payment: the account that paid the card the last three times.
+        assertEquals("checking" to SmsAccountSource.Usual, plain.other("anb", "4417", null, null, "visa", 50_000, "2026-11-03"))
+        // Not for money the other way, nor for a text naming an account the phone can't find.
+        assertNull(plain.other("anb", "4417", null, null, "visa", -50_000, "2026-11-03"))
+        assertNull(plain.other("anb", "0091", "0044", null, "checking", -50_000, "2026-11-03"))
+        // The assistant names it from what the text says it is; the user's choice for the card comes first.
+        assertEquals("savings" to SmsAccountSource.Assistant, plain.other("anb", "0091", "0044", "SAVINGS", "checking", -50_000, "2026-11-03"))
+        val chosen = SmsAccounts(accounts, smsRememberCard(JSONArray(), "anb", "4417", "savings", SmsForTransfer), transfers = sides)
+        assertEquals("savings" to SmsAccountSource.Remembered, chosen.other("ANB", "VISA Card:4417", null, "ANB Checking - 0091 (SAR)", "visa", 50_000, "2026-11-03"))
+        // The digits a text names still win, and the card itself is still the card.
+        assertEquals("visa" to SmsAccountSource.Name, chosen.other("anb", "0091", "4417", "Savings", "checking", -50_000, "2026-11-03"))
+        assertEquals("visa", chosen.find("anb", "4417")?.first)
+        // A transfer the phone places goes to the ready list with what it was found from; one it can't waits under its card.
+        val texts = listOf("Card Payment VISA Card:4417 SAR 500", "Murabaha 0044 from 0091 SAR 500").map { message(sender = "anb", body = it) }
+        val batch = SmsBatch(texts, JSONObject().put("items", JSONArray().put(item(texts[0], purchase("4417", "500.00", "transfer"))).put(item(texts[1], purchase("0091", "-500.00", "transfer", "0044")))))
+        val items = batch.items(SmsAccounts.of(JSONObject().put("accounts", JSONArray(accounts.map { (id, name) -> JSONObject().put("id", id).put("name", name) }))
+            .put("transactions", JSONArray()), JSONArray(), emptyMap()))
+        assertEquals(listOf("transfer", "transfer"), items.map { it.needs })
+        assertNotEquals(items[0].transfer, items[1].transfer)
+        val placed = batch.items(plain)
+        assertEquals(listOf(null, "transfer"), placed.map { it.needs })
+        assertEquals("checking", placed[0].transaction!!.getString("transferAccountId")); assertTrue(placed[0].otherGuessed)
+    }
+
+    @Test fun moneyFromANameTheUserMadeATransferIsATransferWithThatAccountNextTime() {
+        val sms = message(sender = "anb", body = "حوالة واردة بـ:SAR 10129.47 من:AHMAD S HORANIEH إلى:0091")
+        val income = purchase("0091", amount = "10129.47", kind = "income").put("payee", "Ahmad S Horanieh")
+        val batch = SmsBatch(listOf(sms), JSONObject().put("items", JSONArray().put(item(sms, income))))
+        val before = batch.items(SmsAccounts(accounts, JSONArray()))[0]
+        // Made a transfer from savings in the editor: the bank's name for the account holder is what's remembered.
+        val record = smsEditable(before, "SAR").put("transferAccountId", "savings").put("payee", "")
+        assertEquals("Ahmad S Horanieh", smsOwnName(before, record))
+        // A transfer has no payee or category for a format to learn.
+        assertEquals(emptySet<String>(), smsChanged(before, record).first)
+        val mappings = smsRememberCard(JSONArray(), sms.sender, "Ahmad S Horanieh", "savings", SmsForOwn)
+        val after = batch.items(SmsAccounts(accounts, mappings))[0]
+        assertEquals("transfer", after.transaction!!.getString("kind")); assertEquals("savings", after.transaction!!.getString("transferAccountId"))
+        assertTrue(after.transaction!!.isNull("categoryId")); assertNull(after.needs); assertEquals(SmsAccountSource.Remembered, after.otherSource)
+        // The name in a template's capitals is the same person; another sender's isn't; a transfer has none to remember.
+        assertEquals("savings", SmsAccounts(accounts, mappings).own("ANB", "AHMAD  S HORANIEH"))
+        assertNull(SmsAccounts(accounts, mappings).own("Other", "Ahmad S Horanieh"))
+        assertNull(smsOwnName(after, smsEditable(after, "SAR")))
     }
 
     @Test fun aStartIsAWholeDayOrTheMomentNewMessagesBegan() {
