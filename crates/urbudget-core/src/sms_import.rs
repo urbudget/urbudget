@@ -88,6 +88,8 @@ pub struct Analysis {
 pub fn cents(text: &str) -> Result<i64, String> {
     let digits = text.strip_prefix('-').unwrap_or(text);
     let (whole, fraction) = digits.split_once('.').unwrap_or((digits, ""));
+    // A currency with three decimals writes a third that's often 0: "12.500" is exactly 12.50.
+    let fraction = if fraction.len() > 2 && fraction[2..].bytes().all(|c| c == b'0') { &fraction[..2] } else { fraction };
     if whole.is_empty()
         || !whole.bytes().all(|x| x.is_ascii_digit())
         || fraction.len() > 2

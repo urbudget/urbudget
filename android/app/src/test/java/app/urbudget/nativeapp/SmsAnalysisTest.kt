@@ -60,6 +60,8 @@ class SmsAnalysisTest {
         assertEquals("visa" to SmsAccountSource.Name, none.find("anb", "VISA Card:4417"))
         assertEquals("checking" to SmsAccountSource.Name, none.find("anb", "***0091"))
         assertNull(none.find("anb", "3358")); assertNull(none.find("anb", null)); assertNull(none.find("anb", "**12"))
+        // Digits in another script name the same card.
+        assertEquals("visa" to SmsAccountSource.Name, none.find("bank", "****٤٤١٧")); assertEquals("4417", smsRefKey("٤٤١٧"))
         val remembered = SmsAccounts(accounts, smsRememberCard(JSONArray(), "anb", "3358", "savings"))
         assertEquals("savings" to SmsAccountSource.Remembered, remembered.find("ANB", "مدى أثير:3358"))
         assertNull(remembered.find("OtherBank", "3358"))

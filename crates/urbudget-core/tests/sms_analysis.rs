@@ -312,6 +312,9 @@ fn grouping_two_transfer_alerts_uses_all_sources_and_one_ledger_transaction() {
 fn exact_amount_boundaries_never_round() {
     assert_eq!(cents("-0.01").unwrap(), -1);
     assert_eq!(cents("10000000000.00").unwrap(), 1_000_000_000_000);
+    // A third decimal that's 0, as a currency with three writes it, is exact.
+    assert_eq!(cents("-12.500").unwrap(), -1250);
+    assert_eq!(cents("1.250").unwrap(), 125);
     for invalid in [
         "1.001",
         "1.",

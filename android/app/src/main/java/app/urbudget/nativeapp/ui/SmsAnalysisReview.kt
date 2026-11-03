@@ -418,7 +418,7 @@ internal fun smsNewestFirst(items: List<SmsItem>): List<SmsItem> =
 
 /** A name for an account a text names that the budget doesn't have yet: "ANB 0070". */
 internal fun smsAccountName(sender: String, ref: String): String =
-    listOf(sender.trim().uppercase(java.util.Locale.ROOT), ref.filter { it in '0'..'9' }.ifEmpty { ref.trim() }).filter { it.isNotBlank() }.joinToString(" ")
+    listOf(sender.trim().uppercase(java.util.Locale.ROOT), smsDigits(ref).ifEmpty { ref.trim() }).filter { it.isNotBlank() }.joinToString(" ")
 
 /** An account to make from the review, named [name] to start with; [made] gets its id once the budget has it. */
 internal class SmsNewAccount(val name: String, val made: (String) -> Unit)
@@ -462,7 +462,7 @@ private fun skipSummary(items: List<SmsItem>): String = items.groupingBy { it.sk
 
 /** A card or account by the digits the bank gives ("Ending in 4417"), or its words when it has none. */
 @Composable
-internal fun smsRefLabel(ref: String): String = ref.filter { it in '0'..'9' }.takeIf { it.length >= 3 }?.let { stringResource(R.string.sms_card, it) } ?: Money.own(ref)
+internal fun smsRefLabel(ref: String): String = smsDigits(ref).takeIf { it.length >= 3 }?.let { stringResource(R.string.sms_card, it) } ?: Money.own(ref)
 
 /** One choice of account for every message that names a card the phone can't match yet. */
 @Composable

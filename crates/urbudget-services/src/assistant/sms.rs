@@ -57,9 +57,17 @@ pub struct Learning {
     pub junk: usize,
     pub dropped: usize,
     pub conflicts: usize,
+    /// The templates the replay check dropped, and why: where to look when a format keeps being read in full.
+    pub rejected: Vec<Rejected>,
     /// For each sender, in the texts' order, whether a template (or the code filter) knew each
     /// text: a run of unknown ones means the bank changed its wording.
     pub senders: BTreeMap<String, Vec<bool>>,
+}
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Rejected {
+    pub lines: Vec<String>,
+    pub reason: String,
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -257,9 +265,9 @@ skipped: texts where no money moved, by reason
 - other: anything else where no money moved.
 
 The transaction
-- date: when it happened, as YYYY-MM-DD. Banks write 05/11/26 day first or month first: look at the sender's other texts (28/10/26 can only be day first, 10/30/26 only month first) and the received date, and add "date" to unsure if you still can't tell. A month may be a name (29-Oct-26). A two-digit year is 20xx; with no year, use the year that puts the date on or before the received date. With no date in the text, use the received date: banks send most alerts as it happens.
-- amount: what it cost or paid in the budget's currency, as an exact decimal string with a point and no grouping, negative for money out ("-65.97") and positive for money in ("3450.00"). Banks write 1,234.56 or 1.234,56, and 12,50: the separator before the last one or two digits is the decimal point. Copy the figures; never round. Never use an available balance, a remaining limit, a points total, or a fee the text only mentions.
-- currency and writtenAmount: the currency of the amount the text gives, as a three-letter code, and that amount with no sign or grouping ("EUR" and "42.00"). A mark several currencies use is the budget's currency when it's one of them ($ in a CAD budget is CAD), otherwise the usual one ($ USD, £ GBP, € EUR, ₹ and Rs. INR, ¥ JPY); ريال, ر.س and SR are SAR. If the currency isn't the budget's and the text doesn't give the amount billed in the budget's currency, set amount to null and the user enters it. Never convert or estimate an exchange rate.
+- date: when it happened, as YYYY-MM-DD. Banks write 05/11/26 day first or month first: look at the sender's other texts (28/10/26 can only be day first, 10/30/26 only month first) and the received date, and add "date" to unsure if you still can't tell. A month may be a name (29-Oct-26). A two-digit year is 20xx; with no year, use the year that puts the date on or before the received date. A year far from the received date's is another calendar's: a Thai year is 543 ahead (2569, or 69, is 2026), so take off 543; for a calendar whose months differ too (Hijri, Persian), use the received date and add "date" to unsure. With no date in the text, use the received date: banks send most alerts as it happens.
+- amount: what it cost or paid in the budget's currency, as an exact decimal string with a point, no grouping and at most two decimals (a third that's 0 goes: KWD 12.500 is "12.50"), negative for money out ("-65.97") and positive for money in ("3450.00"). Banks write 1,234.56 or 1.234,56, and 12,50: the separator before the last one or two digits is the decimal point. Copy the figures; never round. Never use an available balance, a remaining limit, a points total, or a fee the text only mentions.
+- currency and writtenAmount: the currency of the amount the text gives, as a three-letter code, and that amount with no sign or grouping ("EUR" and "42.00"). A mark is the budget's currency whenever the budget's currency is written with it: $ in a CAD, AUD or MXN budget, Rs and Rs. in a PKR, LKR or NPR budget, kr in a NOK or DKK budget, ¥ in a CNY budget, ريال in a QAR or OMR budget. Otherwise it's the usual one: $ USD, £ GBP, € EUR, ₹ and Rs. INR, ¥ JPY, ريال SAR. If the currency isn't the budget's and the text doesn't give the amount billed in the budget's currency, set amount to null and the user enters it. Never convert or estimate an exchange rate.
 - payee: who was paid or who paid, as the user writes it. Banks write the user's payees in capitals, cut short, or with letters or a branch number added: when the text's name is one of payees or bankNames that way ("STARBUCKS 0412" and "PANDA E" are the user's "Starbucks" and "Panda"), use the user's spelling. Otherwise write it as a person would, without what a card processor adds: "AMAZON MKTPLACE" becomes "Amazon", "SQ *BLUE BOTTLE" becomes "Blue Bottle", and a payment handle like "swiggy@icici" becomes "Swiggy". When the text names nobody (a bill payment) and its code text in codes names a merchant or biller, that is the payee, written as the user would. A salary that doesn't name the employer is "Salary", written in {LANGUAGE}.
 - memo: a few words the payee doesn't say, such as "Apple Pay", "Online", "ATM" or "UPI", or "". Never put card or account numbers, codes, reference numbers, balances or the text itself in the payee or memo.
 - kind: expense (money out), income (money in), refund (money back from a merchant, positive), or transfer (between two of the user's own accounts: paying their credit card, moving money to or from their savings, a term deposit, or their investment account, or between their accounts at two banks). Money sent to or from someone else is an expense or income, even when the bank calls it a transfer.
@@ -445,10 +453,11 @@ fn minute(m: &Message) -> Option<i64> {
 fn hide_code(body: &str) -> String {
     let mut chars: Vec<char> = body.chars().collect();
     for (s, e) in sms_templates::numbers(&chars) {
-        // A code may be spaced in groups ("482 193").
-        let digits = chars[s..e].iter().filter(|c| c.is_ascii_digit()).count();
-        if (4..=8).contains(&digits) && chars[s..e].iter().all(|c| c.is_ascii_digit() || *c == ' ') && !sms_templates::beside_currency(&chars, s, e) {
-            chars[s..e].iter_mut().filter(|c| c.is_ascii_digit()).for_each(|c| *c = '#');
+        // A code may be spaced in groups ("482 193"), and in any script's digits ("٤٨٢١").
+        let digit = |c: &char| sms_templates::digit(*c).is_some();
+        let digits = chars[s..e].iter().filter(|c| digit(c)).count();
+        if (4..=8).contains(&digits) && chars[s..e].iter().all(|c| digit(c) || *c == ' ') && !sms_templates::beside_currency(&chars, s, e) {
+            chars[s..e].iter_mut().filter(|c| digit(c)).for_each(|c| *c = '#');
         }
     }
     chars.into_iter().collect()
@@ -932,6 +941,7 @@ async fn run_analysis(
 }
 fn checked(b: &Budget, messages: &[Message], lanes: &Lanes, value: Value) -> Result<Expanded, String> {
     let mut expanded = expand(messages, value, &lanes.review, &lanes.junk)?;
+    merge_repeats(messages, &mut expanded.analysis.items);
     // Accounts are the phone's to match and the user's to choose; the model may name a transfer's other one.
     for t in expanded.analysis.items.iter_mut().filter_map(|i| i.transaction.as_mut()) {
         t.account_id = None;
@@ -942,6 +952,33 @@ fn checked(b: &Budget, messages: &[Message], lanes: &Lanes, value: Value) -> Res
     }
     sms_import::validate_analysis(b, messages, &expanded.analysis)?;
     Ok(expanded)
+}
+
+/// The same alert sent twice: money items whose texts come from one sender in the same words within
+/// two minutes become one item, so a bank's repeat isn't added twice. The model is asked to group
+/// them; this makes sure.
+fn merge_repeats(messages: &[Message], items: &mut Vec<sms_import::Item>) {
+    let by_id: HashMap<&str, &Message> = messages.iter().map(|m| (m.id.as_str(), m)).collect();
+    let text = |item: &sms_import::Item| item.source_ids.first().and_then(|id| by_id.get(id.as_str())).copied();
+    let money = |item: &sms_import::Item| matches!(item.disposition.as_str(), "transaction" | "pending") && item.transaction.is_some();
+    let mut i = 0;
+    while i < items.len() {
+        let mut j = i + 1;
+        while j < items.len() {
+            let repeat = money(&items[i]) && money(&items[j]) && match (text(&items[i]), text(&items[j])) {
+                (Some(a), Some(b)) => sms_templates::sender_key(&a.sender) == sms_templates::sender_key(&b.sender)
+                    && a.body.trim() == b.body.trim() && minute(a).zip(minute(b)).is_some_and(|(x, y)| (x - y).abs() <= 2),
+                _ => false,
+            } && items[i].transaction.as_ref().map(|t| (&t.amount, &t.date)) == items[j].transaction.as_ref().map(|t| (&t.amount, &t.date));
+            if repeat {
+                let gone = items.remove(j);
+                items[i].source_ids.extend(gone.source_ids);
+            } else {
+                j += 1;
+            }
+        }
+        i += 1;
+    }
 }
 
 /// Counts the texts an answer covers as it streams: the numbers in its items' texts and its skipped
@@ -1092,7 +1129,10 @@ fn learn(b: &Budget, input: &Input, lanes: &Lanes, expanded: Expanded) -> Read {
                     learning.templates.push(Learned { template, example: first.body.clone(), agreed: replay.agreed, replaces });
                 }
             }
-            Err(_) => learning.dropped += 1,
+            Err(reason) => {
+                learning.dropped += 1;
+                learning.rejected.push(Rejected { lines: template.lines.clone(), reason });
+            }
         }
     }
     learning.payees = payees.into_values().collect();
@@ -1463,10 +1503,25 @@ mod tests {
         assert_eq!(result.learning.stats[&known.id], Stat { filled: 1, confirmed: 1, corrected: BTreeMap::new(), settled: 0 });
     }
     #[test]
+    fn an_alert_sent_twice_is_one_item_but_the_same_purchase_later_is_two() {
+        let b = sar_budget();
+        let body = "Purchase SAR 3.75 at DUNKIN card 4512";
+        let at = |id: &str, time: &str| Message { id: id.into(), sender: "anb".into(), received_date: "2026-11-03".into(), received_time: time.into(), body: body.into() };
+        let texts = vec![at("sms:1", "07:31"), at("sms:2", "07:32"), at("sms:3", "09:15")];
+        let item = |n: usize| json!({"texts":[n],"disposition":"transaction","note":"Dunkin","quote":"SAR 3.75","unsure":[],
+            "transaction":{"date":"2026-11-03","amount":"-3.75","currency":"SAR","writtenAmount":"3.75","payee":"Dunkin","memo":"","kind":"expense","accountRef":"4512","otherRef":null,"otherAccount":null,"categoryId":null}});
+        let lanes = sms_templates::lanes(&b, &texts, &[], &[], &Default::default());
+        let reply = json!({"items":[item(1), item(2), item(3)],"skipped":skipped(&[]),"corrections":[],"templates":[]});
+        let expanded = checked(&b, &texts, &lanes, reply).unwrap();
+        let sources: Vec<Vec<String>> = expanded.analysis.items.iter().map(|i| i.source_ids.clone()).collect();
+        assert_eq!(sources, vec![vec!["sms:1".to_string(), "sms:2".into()], vec!["sms:3".into()]]);
+    }
+    #[test]
     fn a_code_is_hidden_but_not_an_amount_in_any_currency() {
         assert_eq!(hide_code("رمز: 4821\nمبلغ: SAR 2500\nOTP 12345678 on 28/10/26"), "رمز: ####\nمبلغ: SAR 2500\nOTP ######## on 28/10/26");
         assert_eq!(hide_code("Your OTP 482193 for $1500 at BESTBUY. Rs.2500 or 2500 € too"), "Your OTP ###### for $1500 at BESTBUY. Rs.2500 or 2500 € too");
         assert_eq!(hide_code("Code 482 193 pour 1 249,00 €"), "Code ### ### pour 1 249,00 €");
+        assert_eq!(hide_code("رمز التحقق ٤٨٢١ لعملية بمبلغ ١٢٠ ريال"), "رمز التحقق #### لعملية بمبلغ ١٢٠ ريال");
     }
     #[test]
     fn a_code_text_in_another_currency_goes_with_its_payment() {

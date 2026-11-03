@@ -72,7 +72,8 @@ fn payee_key(raw: &str) -> String {
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Slot { Amount, Total, Balance, Currency, Date, Time, Ref, Other, Payee, Code, Number, Any }
 #[derive(Clone, Debug)]
-enum Token { Literal(Vec<char>), Slot(Slot, Option<String>) }
+/// A template line's parts: words, a slot, or the space between free text and the slot after it.
+enum Token { Literal(Vec<char>), Slot(Slot, Option<String>), Gap }
 #[derive(Clone, Debug)]
 struct Line { optional: bool, tokens: Vec<Token> }
 
@@ -124,14 +125,24 @@ fn parse_line(text: &str) -> Result<Line, String> {
             None => { tokens.push(Token::Literal(rest.chars().collect())); rest = ""; }
         }
     }
-    tokens.retain(|t| !matches!(t, Token::Literal(l) if l.iter().all(|c| c.is_whitespace())));
+    // A space alone between free text and a slot marks where one ends ("{payee} {amount}"); elsewhere it's nothing.
+    let mut kept: Vec<Token> = vec![];
+    let count = tokens.len();
+    for (n, token) in tokens.into_iter().enumerate() {
+        let blank = matches!(&token, Token::Literal(l) if l.iter().all(|c| c.is_whitespace()));
+        if !blank { kept.push(token); continue; }
+        let free = matches!(kept.last(), Some(Token::Slot(Slot::Payee | Slot::Any, _)));
+        if free && n + 1 < count { kept.push(Token::Gap) }
+    }
+    let mut tokens: Vec<Token> = kept;
+    if matches!(tokens.last(), Some(Token::Gap)) { tokens.pop(); }
     if tokens.is_empty() {
         return Err("A template line needs words or a slot.".into());
     }
-    // A payee or free text runs to the next literal words, so one can't sit right before another slot.
+    // Free text runs to the next words, or to a space before the next slot; it can't touch a slot.
     for pair in tokens.windows(2) {
-        if let [Token::Slot(Slot::Payee | Slot::Any, _), Token::Slot(..)] = pair {
-            return Err("Put words between {payee} or {any} and the next slot.".into());
+        if let [Token::Slot(Slot::Payee | Slot::Any, _), Token::Slot(..)] | [Token::Gap, Token::Gap | Token::Literal(_)] = pair {
+            return Err("Put words, or a space, between {payee} or {any} and the next slot.".into());
         }
     }
     Ok(Line { optional, tokens })
@@ -145,7 +156,7 @@ pub fn compile(t: &Template) -> Result<Compiled, String> {
     let lines = t.lines.iter().map(|l| parse_line(l)).collect::<Result<Vec<_>, _>>()?;
     let specific: usize = lines.iter().flat_map(|l| &l.tokens).map(|t| match t {
         Token::Literal(l) => l.iter().filter(|c| !c.is_whitespace()).count(),
-        Token::Slot(..) => 0,
+        Token::Slot(..) | Token::Gap => 0,
     }).sum();
     if specific < 4 {
         return Err("A template needs some of the format's own words, not only slots.".into());
@@ -201,19 +212,30 @@ fn literal(s: &[char], at: usize, lit: &[char]) -> Option<usize> {
     }
     Some(i)
 }
+/// A decimal digit's value in any script banks write in: 0–9, Arabic-Indic ٠–٩, Persian ۰–۹,
+/// Devanagari ०–९, Bengali ০–৯, Thai ๐–๙ and full-width ０–９.
+pub fn digit(c: char) -> Option<u32> {
+    let zero = match c { '0'..='9' => '0', '٠'..='٩' => '٠', '۰'..='۹' => '۰', '०'..='९' => '०', '০'..='৯' => '০', '๐'..='๙' => '๐', '０'..='９' => '０', _ => return None };
+    Some(c as u32 - zero as u32)
+}
+fn is_digit(c: &char) -> bool { digit(*c).is_some() }
+/// A number's digits as 0–9, whatever script it's written in.
+fn ascii_digits(chars: &[char]) -> String {
+    chars.iter().filter_map(|c| digit(*c)).map(|d| char::from_digit(d, 10).unwrap()).collect()
+}
 /// Separators a bank groups an amount's digits with, or puts before its decimals: "1,234.56",
-/// "1.234,56", "1'234.50".
-const SEPARATORS: [char; 3] = [',', '.', '\''];
+/// "1.234,56", "1'234.50", the Arabic "١٢٠٫٥٠" and "٥٬٠٠٠", full-width "１，５００".
+const SEPARATORS: [char; 6] = [',', '.', '\'', '٫', '٬', '，'];
 /// Where a number starting at `at` ends: digits, and with `grouping` the separators between them,
 /// a space among them only between groups of three ("1 249,00" as French banks write it).
 fn number(s: &[char], at: usize, grouping: bool) -> Option<usize> {
     let mut i = at;
     let mut group = 0;
     while i < s.len() {
-        let three = || (1..=3).all(|k| s.get(i + k).is_some_and(char::is_ascii_digit)) && s.get(i + 4).is_none_or(|c| !c.is_ascii_digit());
-        if s[i].is_ascii_digit() {
+        let three = || (1..=3).all(|k| s.get(i + k).is_some_and(is_digit)) && s.get(i + 4).is_none_or(|c| !is_digit(c));
+        if is_digit(&s[i]) {
             group += 1;
-        } else if grouping && i > at && SEPARATORS.contains(&s[i]) && s.get(i + 1).is_some_and(char::is_ascii_digit) {
+        } else if grouping && i > at && SEPARATORS.contains(&s[i]) && s.get(i + 1).is_some_and(is_digit) {
             group = 0;
         } else if grouping && i > at && s[i] == ' ' && (1..=3).contains(&group) && three() {
             group = 0;
@@ -225,24 +247,24 @@ fn number(s: &[char], at: usize, grouping: bool) -> Option<usize> {
     (i > at).then_some(i)
 }
 
-/// An amount as a bank writes it, as a plain decimal with a point: the separator before the last
-/// one or two digits is the decimal point and the others group ("1.234,56" and "1,234.56" are
-/// "1234.56", "12,50" is "12.50"). A comma before three digits groups; a point before three digits
-/// is a decimal point unless another point groups ("1.250" stays "1.250", for a currency with
-/// three decimals; "1.250.000" is "1250000").
-pub fn decimal(number: &str) -> String {
-    let chars: Vec<char> = number.chars().filter(|c| *c != ' ').collect();
-    let number: String = chars.iter().collect();
-    let Some(last) = chars.iter().rposition(|c| SEPARATORS.contains(c)) else { return number };
+/// Currencies with three decimals, where "1.250" is one and a quarter.
+const THREE_PLACES: [&str; 7] = ["KWD", "BHD", "OMR", "JOD", "TND", "LYD", "IQD"];
+/// An amount as a bank writes it in [currency], as a plain decimal with a point and digits 0–9: the
+/// separator before the last one or two digits is the decimal point and the others group
+/// ("1.234,56" and "1,234.56" are "1234.56", "12,50" is "12.50", "١٢٠٫٥٠" is "120.50"). Before
+/// three digits a separator groups ("Rp 150.000" is 150000, "1.250 EUR" is 1250), except a point in
+/// a currency with three decimals ("KWD 1.250" is 1.250).
+pub fn decimal(number: &str, currency: &str) -> String {
+    let chars: Vec<char> = number.chars().filter(|c| !c.is_whitespace()).collect();
+    let Some(last) = chars.iter().rposition(|c| SEPARATORS.contains(c)) else { return ascii_digits(&chars) };
     let after = chars.len() - last - 1;
     let sep = chars[last];
-    let point = sep != '\'' && match after {
+    let point = sep == '٫' || (!matches!(sep, '\'' | '٬') && match after {
         1 | 2 => true,
-        3 => sep == '.' && chars[..last].iter().all(|c| *c != '.'),
+        3 => sep == '.' && THREE_PLACES.contains(&currency) && chars[..last].iter().all(|c| *c != '.'),
         _ => false,
-    };
-    let digits = |part: &[char]| part.iter().filter(|c| c.is_ascii_digit()).collect::<String>();
-    if point { format!("{}.{}", digits(&chars[..last]), digits(&chars[last + 1..])) } else { digits(&chars) }
+    });
+    if point { format!("{}.{}", ascii_digits(&chars[..last]), ascii_digits(&chars[last + 1..])) } else { ascii_digits(&chars) }
 }
 
 /// Currency marks banks write beside an amount, and the currencies each can mean: a mark several
@@ -258,7 +280,11 @@ const MARKS: &[(&str, &[&str])] = &[
     ("kr.", &["DKK", "SEK", "NOK", "ISK"]), ("kr", &["SEK", "NOK", "DKK", "ISK"]), ("RM", &["MYR"]), ("Rp", &["IDR"]), ("KSh", &["KES"]),
     ("ر.س", &["SAR"]), ("ر.ق", &["QAR"]), ("ر.ع", &["OMR"]), ("ريال", &["SAR", "QAR", "OMR", "YER"]), ("رس", &["SAR"]), ("SR", &["SAR"]),
     ("د.إ", &["AED"]), ("درهم", &["AED", "MAD"]), ("د.ك", &["KWD"]), ("د.ب", &["BHD"]), ("دينار", &["KWD", "BHD", "JOD", "IQD", "LYD", "TND", "DZD"]),
-    ("ج.م", &["EGP"]),
+    ("ج.م", &["EGP"]), ("جنيه", &["EGP", "SDG", "SSP"]), ("د.م.", &["MAD"]), ("円", &["JPY"]), ("원", &["KRW"]), ("人民币", &["CNY"]),
+    ("บาท", &["THB"]), ("đ", &["VND"]), ("Ksh", &["KES"]), ("GH₵", &["GHS"]), ("₵", &["GHS"]), ("₡", &["CRC"]), ("₼", &["AZN"]), ("₾", &["GEL"]),
+    ("₲", &["PYG"]), ("лв", &["BGN"]), ("S/", &["PEN"]),
+    // Last: a single letter, after the marks it begins.
+    ("R", &["ZAR"]),
 ];
 /// Currency codes a text may give an amount in, so "OTP 482193" isn't one.
 const CODES: &[&str] = &[
@@ -301,7 +327,7 @@ pub fn numbers(chars: &[char]) -> Vec<(usize, usize)> {
     let mut out = vec![];
     let mut i = 0;
     while i < chars.len() {
-        if !chars[i].is_ascii_digit() || (i > 0 && chars[i - 1].is_ascii_digit()) {
+        if !is_digit(&chars[i]) || (i > 0 && is_digit(&chars[i - 1])) {
             i += 1;
             continue;
         }
@@ -316,14 +342,26 @@ pub fn numbers(chars: &[char]) -> Vec<(usize, usize)> {
 pub fn amounts(body: &str) -> std::collections::HashSet<String> {
     let chars: Vec<char> = body.chars().collect();
     numbers(&chars).into_iter().filter(|&(s, e)| beside_currency(&chars, s, e)).map(|(s, e)| {
-        let n = decimal(&chars[s..e].iter().collect::<String>());
+        let n = decimal(&chars[s..e].iter().collect::<String>(), "");
         if n.contains('.') { n.trim_end_matches('0').trim_end_matches('.').to_owned() } else { n }
     }).collect()
 }
 
-/// A date's parts in the order a template writes it ("dd/mm/yy", "mmm dd, yyyy", "dd-mmm").
+/// A date's parts in the order a template writes it ("dd/mm/yy", "mmm dd, yyyy", "dd-mmm", "ddmmm"):
+/// each run of one letter.
 fn date_parts(order: &str) -> Vec<&str> {
-    order.split(|c: char| !c.is_ascii_alphabetic()).filter(|p| !p.is_empty()).collect()
+    let mut parts = vec![];
+    let mut start = None;
+    for (i, c) in order.char_indices() {
+        if let Some(s) = start {
+            if order[s..].starts_with(c) { continue; }
+            parts.push(&order[s..i]);
+            start = None;
+        }
+        if c.is_ascii_alphabetic() { start = Some(i) }
+    }
+    if let Some(s) = start { parts.push(&order[s..]) }
+    parts
 }
 const MONTHS: [&str; 12] = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
 /// A month's name or its first three letters or more ("Nov", "Sept", "October"), from 1.
@@ -333,17 +371,20 @@ fn month(name: &str) -> Option<u32> {
     MONTHS.iter().position(|m| m.starts_with(&name)).map(|i| i as u32 + 1)
 }
 /// A date written in `order` from `at`: where it ends, and its day, month and year if it gives one.
-/// Between numbers any of / - . stands for the order's; spaces and a comma are optional.
+/// Between numbers any of / - . stands for the order's, and so do the characters some scripts write
+/// (11月02日); spaces and a comma are optional. What the order ends with ("日") is read too.
 fn read_date(s: &[char], at: usize, order: &str) -> Option<(usize, u32, u32, Option<i32>)> {
     let (mut d, mut m, mut y) = (None, None, None);
     let mut i = at;
     let mut first = true;
+    // Between parts: up to three characters that are neither digits nor Latin letters.
+    let between = |mut i: usize| {
+        let start = i;
+        while i < s.len() && i - start < 3 && !is_digit(&s[i]) && !s[i].is_ascii_alphabetic() { i += 1 }
+        i
+    };
     for part in date_parts(order) {
-        if !first {
-            while i < s.len() && (s[i].is_whitespace() || s[i] == ',') { i += 1 }
-            if i < s.len() && "/-.".contains(s[i]) { i += 1 }
-            while i < s.len() && s[i].is_whitespace() { i += 1 }
-        }
+        if !first { i = between(i) }
         first = false;
         let start = i;
         if part == "mmm" {
@@ -353,8 +394,8 @@ fn read_date(s: &[char], at: usize, order: &str) -> Option<(usize, u32, u32, Opt
             if i < s.len() && s[i] == '.' && s.get(i + 1).is_none_or(|c| !c.is_ascii_digit()) { i += 1 }
             continue;
         }
-        while i < s.len() && s[i].is_ascii_digit() && i - start < 4 { i += 1 }
-        let digits: String = s[start..i].iter().collect();
+        while i < s.len() && is_digit(&s[i]) && i - start < 4 { i += 1 }
+        let digits = ascii_digits(&s[start..i]);
         let value: i32 = digits.parse().ok()?;
         match (part, digits.len()) {
             ("dd", 1 | 2) => d = Some(value as u32),
@@ -364,18 +405,22 @@ fn read_date(s: &[char], at: usize, order: &str) -> Option<(usize, u32, u32, Opt
             _ => return None,
         }
     }
+    let tail: Vec<char> = order.chars().rev().take_while(|c| !c.is_ascii_alphabetic()).collect::<Vec<_>>().into_iter().rev().filter(|c| !c.is_whitespace()).collect();
+    if !tail.is_empty() && s.get(i..i + tail.len()).is_some_and(|t| t == &tail[..]) { i += tail.len() }
     Some((i, d?, m?, y))
 }
 fn typed(s: &[char], at: usize, kind: Slot, arg: Option<&str>) -> Option<usize> {
     let i = at;
     match kind {
         Slot::Amount | Slot::Total | Slot::Balance => number(s, i, true),
-        Slot::Code | Slot::Number => number(s, i, false),
+        // Any other number may be money too ("Transaction cost, Ksh7.00"); a code is only digits.
+        Slot::Number => number(s, i, true),
+        Slot::Code => number(s, i, false),
         Slot::Currency => currency_mark(s, i),
         Slot::Date => read_date(s, i, arg?).map(|(end, ..)| end),
         Slot::Time => {
             let mut j = i;
-            while j < s.len() && (s[j].is_ascii_digit() || s[j] == ':') { j += 1 }
+            while j < s.len() && (is_digit(&s[j]) || s[j] == ':') { j += 1 }
             let t: String = s[i..j].iter().collect();
             if !(t.contains(':') && t.split(':').all(|p| (1..=2).contains(&p.len()))) { return None; }
             // "1:05 PM", "1:05pm", "1:05 p.m."
@@ -391,40 +436,54 @@ fn typed(s: &[char], at: usize, kind: Slot, arg: Option<&str>) -> Option<usize> 
             // A mask may lead with points ("...4421"); after the digits a point ends the sentence.
             let mut j = i;
             while j < s.len() && ".*xX#•…".contains(s[j]) { j += 1 }
-            while j < s.len() && (s[j].is_ascii_digit() || "*xX#•…".contains(s[j])) { j += 1 }
-            (s[i..j].iter().filter(|c| c.is_ascii_digit()).count() >= 2).then_some(j)
+            while j < s.len() && (is_digit(&s[j]) || "*xX#•…".contains(s[j])) { j += 1 }
+            (s[i..j].iter().filter(|c| is_digit(c)).count() >= 2).then_some(j)
         }
         Slot::Payee | Slot::Any => None,
     }
 }
 
+/// How many places a line may try for free text that ends at a space before a slot: plenty for a
+/// bank's line, and a template still can't make reading hang.
+const TRIES: usize = 2_000;
+
 /// One line against a template line: the slots' text, or None.
 fn match_line(s: &[char], tokens: &[Token]) -> Option<Vec<(Slot, Option<String>, String)>> {
-    let mut at = 0;
-    let mut found = vec![];
-    for (n, token) in tokens.iter().enumerate() {
-        at = skip_space(s, at);
-        match token {
-            Token::Literal(l) => at = literal(s, at, l)?,
-            Token::Slot(kind @ (Slot::Payee | Slot::Any), arg) => {
-                // Free text runs to the next literal words, or the end of the line.
-                let end = match tokens.get(n + 1) {
-                    Some(Token::Literal(l)) => (at..=s.len()).find(|&e| e > at && literal(s, e, l).is_some())?,
-                    _ => s.len(),
-                };
-                let value: String = s[at..end].iter().collect::<String>().trim().to_string();
-                if value.is_empty() { return None; }
-                found.push((*kind, arg.clone(), value));
-                at = end;
-            }
-            Token::Slot(kind, arg) => {
-                let end = typed(s, at, *kind, arg.as_deref())?;
-                found.push((*kind, arg.clone(), s[at..end].iter().collect()));
-                at = end;
+    let mut tries = TRIES;
+    match_from(s, 0, tokens, &mut tries)
+}
+/// The rest of a line from `at` against the rest of a template line. Free text runs to the first
+/// place the next words are, or, before a space and a slot, to the last space where the rest still
+/// reads ("セブンイレブン １，５００円").
+fn match_from(s: &[char], from: usize, tokens: &[Token], tries: &mut usize) -> Option<Vec<(Slot, Option<String>, String)>> {
+    let Some((token, rest)) = tokens.split_first() else { return (skip_space(s, from) == s.len()).then(Vec::new) };
+    *tries = tries.checked_sub(1)?;
+    let at = skip_space(s, from);
+    let then = |kind: Slot, arg: &Option<String>, value: String, end: usize, tries: &mut usize| {
+        let mut found = match_from(s, end, rest, tries)?;
+        found.insert(0, (kind, arg.clone(), value));
+        Some(found)
+    };
+    match token {
+        Token::Literal(l) => match_from(s, literal(s, at, l)?, rest, tries),
+        Token::Gap => (at > from || at == s.len()).then(|| match_from(s, at, rest, tries)).flatten(),
+        Token::Slot(kind @ (Slot::Payee | Slot::Any), arg) => {
+            let value = |end: usize| Some(s[at..end].iter().collect::<String>().trim().to_string()).filter(|v| !v.is_empty());
+            match rest.first() {
+                Some(Token::Literal(l)) => {
+                    let end = (at..=s.len()).find(|&e| e > at && literal(s, e, l).is_some())?;
+                    then(*kind, arg, value(end)?, end, tries)
+                }
+                Some(Token::Gap) => (at + 1..s.len()).rev().filter(|&e| s[e].is_whitespace())
+                    .find_map(|e| then(*kind, arg, value(e)?, e, tries)),
+                _ => then(*kind, arg, value(s.len())?, s.len(), tries),
             }
         }
+        Token::Slot(kind, arg) => {
+            let end = typed(s, at, *kind, arg.as_deref())?;
+            then(*kind, arg, s[at..end].iter().collect(), end, tries)
+        }
     }
-    (skip_space(s, at) == s.len()).then_some(found)
 }
 
 /// What a template read from a text: each slot's text as written.
@@ -492,7 +551,14 @@ fn date(value: &str, order: &str, received: &str) -> Option<String> {
     if end != chars.len() { return None; }
     let came = chrono::NaiveDate::parse_from_str(received, "%Y-%m-%d").ok();
     let y = match (y, came) {
-        (Some(y), _) => y,
+        // A year far from the day the text came is another calendar's: a Thai year is 543 ahead
+        // (2569, or 69 read as 2069). Any other is left to the assistant.
+        (Some(y), Some(came)) => {
+            use chrono::Datelike;
+            let near = |y: i32| (y - came.year()).abs() <= 1;
+            [y, y - 543, 2500 + (y % 100) - 543].into_iter().find(|&y| near(y))?
+        }
+        (Some(y), None) => y,
         (None, Some(came)) => {
             use chrono::Datelike;
             let this = chrono::NaiveDate::from_ymd_opt(came.year(), m, d)?;
@@ -524,7 +590,12 @@ pub fn fill(b: &Budget, c: &Compiled, m: &Message, reading: &Reading, payees: &H
             transaction: None, unsure: vec![], template: Some(t.id.clone()), raw: None, kept: false }
     } else {
         let negative = o.sign.as_deref() == Some("-");
-        let signed = |n: &str| format!("{}{}", if negative { "-" } else { "" }, decimal(n));
+        // In the budget's currency, which keeps two decimals: a third that's a zero ("KWD 12.500") goes.
+        let signed = |n: &str| {
+            let plain = decimal(n, &b.currency);
+            let plain = match plain.split_once('.') { Some((_, f)) if f.len() > 2 && f[2..].bytes().all(|c| c == b'0') => plain[..plain.len() - (f.len() - 2)].to_string(), _ => plain };
+            format!("{}{plain}", if negative { "-" } else { "" })
+        };
         let written = reading.amount.as_ref().or(reading.total.as_ref())?;
         let currency = reading.currency.as_deref().map(|w| currency_code(w, &b.currency)).unwrap_or_else(|| b.currency.clone());
         let amount = if currency == b.currency { Some(signed(written)) } else { reading.total.as_deref().map(signed) };
@@ -542,7 +613,8 @@ pub fn fill(b: &Budget, c: &Compiled, m: &Message, reading: &Reading, payees: &H
             note: t.note.replace("{payee}", &payee).trim().to_string().chars().take(200).collect::<String>().trim().to_string(),
             evidence: vec![Evidence { source_id: m.id.clone(), quote: written.clone() }],
             transaction: Some(Transaction {
-                date: day, amount, currency: if reading.amount.is_some() { currency } else { b.currency.clone() }, written_amount: decimal(written), payee,
+                written_amount: decimal(written, if reading.amount.is_some() { &currency } else { &b.currency }),
+                date: day, amount, currency: if reading.amount.is_some() { currency } else { b.currency.clone() }, payee,
                 memo: o.memo.clone().unwrap_or_default(), kind, account_ref: reading.reference.clone(), other_ref: reading.other.clone(),
                 other_account: None, category_id: category, account_id: None, transfer_account_id: None,
             }),
@@ -607,9 +679,9 @@ pub fn looks_like_code(body: &str) -> bool {
     }
     let mut i = 0;
     while i < lower.len() {
-        if lower[i].is_ascii_digit() {
+        if is_digit(&lower[i]) {
             let start = i;
-            while i < lower.len() && lower[i].is_ascii_digit() { i += 1 }
+            while i < lower.len() && is_digit(&lower[i]) { i += 1 }
             let digits = (4..=8).contains(&(i - start));
             // After a code word ("OTP: 4821"), or first in the text with one soon after ("482193 is your OTP").
             let after = found.iter().any(|&(_, e)| e <= start && start - e <= 60);
@@ -723,7 +795,7 @@ fn same_number(a: Option<&str>, b: Option<&str>) -> bool {
 }
 /// The same card or account by its digits: "***0091", "0091" and "Card:0091" agree.
 fn same_ref(a: Option<&str>, b: Option<&str>) -> bool {
-    let digits = |r: &str| r.chars().filter(char::is_ascii_digit).collect::<String>();
+    let digits = |r: &str| ascii_digits(&r.chars().collect::<Vec<_>>());
     match (a, b) { (Some(a), Some(b)) => digits(a) == digits(b), (None, None) => true, _ => false }
 }
 
@@ -762,10 +834,13 @@ mod tests {
     #[test]
     fn an_amount_is_read_however_a_bank_groups_it_and_marks_its_decimals() {
         for (written, plain) in [("1,234.56", "1234.56"), ("1.234,56", "1234.56"), ("12,50", "12.50"), ("12,5", "12.5"), ("1,250", "1250"),
-            ("1'234.50", "1234.50"), ("1'234", "1234"), ("1,23,456.78", "123456.78"), ("1.250.000", "1250000"), ("1.250", "1.250"), ("35000", "35000"), ("0.71", "0.71"),
-            ("1 249,00", "1249.00"), ("12 345 678", "12345678")] {
-            assert_eq!(decimal(written), plain, "{written}");
+            ("1'234.50", "1234.50"), ("1'234", "1234"), ("1,23,456.78", "123456.78"), ("1.250.000", "1250000"), ("1.250", "1250"), ("35000", "35000"), ("0.71", "0.71"),
+            ("1 249,00", "1249.00"), ("12 345 678", "12345678"), ("150.000", "150000"), ("١٢٠٫٥٠", "120.50"), ("٥٬٠٠٠", "5000"), ("١٢٠٠٠", "12000"),
+            ("１，５００", "1500"), ("२,५००.००", "2500.00")] {
+            assert_eq!(decimal(written, "EUR"), plain, "{written}");
         }
+        // Three decimals only where a currency has them.
+        assert_eq!(decimal("1.250", "KWD"), "1.250"); assert_eq!(decimal("12,500.250", "BHD"), "12500.250"); assert_eq!(decimal("1,250", "KWD"), "1250");
         let set = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<std::collections::HashSet<_>>();
         assert_eq!(amounts("Amount:SAR 1,250.00 Balance:SAR 9,120.40 Card:4512 On:28/10/26"), set(&["1250", "9120.4"]));
         assert_eq!(amounts("حوالة 12000 ريال وبـ:SAR 23.50 و 7 USD"), set(&["12000", "23.5", "7"]));
@@ -796,6 +871,10 @@ mod tests {
         assert_eq!(at("12/31", "mm/dd", "2027-01-01").as_deref(), Some("2026-12-31"));
         assert_eq!(at("02 Jan", "dd mmm", "2027-01-01").as_deref(), Some("2027-01-02"));
         assert_eq!(at("31/02/26", "dd/mm/yy", "2026-03-01"), None);
+        // A Thai bank's Buddhist-era year, written whole or as two digits; any other far year is left to the assistant.
+        assert_eq!(at("02/11/69", "dd/mm/yy", "2026-11-02").as_deref(), Some("2026-11-02"));
+        assert_eq!(at("02/11/2569", "dd/mm/yyyy", "2026-11-02").as_deref(), Some("2026-11-02"));
+        assert_eq!(at("02/11/2031", "dd/mm/yyyy", "2026-11-02"), None);
         assert_eq!(at("Foo 3", "mmm dd", "2026-11-03"), None);
         for order in ["dd/mm", "mmm dd, yyyy", "dd-mmm-yy"] { assert!(slot(&format!("date:{order}")).is_ok(), "{order}"); }
         for order in ["dd/yy", "mm/yy", "dd/mm/mmm", "dd"] { assert!(slot(&format!("date:{order}")).is_err(), "{order}"); }
@@ -844,6 +923,28 @@ mod tests {
             (s("2026-10-31"), Some(s("123456.00")), s("INR"), s("123456.00"), s("ACME TECHNOLOGIES PVT LTD"), Some(s("XX1234"))));
         let balance_first = template("bank", &["Bal {currency} {balance}. Spent {currency} {amount} at {payee} card {ref}"], "-");
         assert_eq!(read(&with("INR"), &balance_first, "Bank", "2026-10-31", "Bal INR 9,000.00. Spent USD 45.00 at AMAZON card 1234").2, s("USD"));
+        // Arabic-Indic digits, the Arabic decimal mark, pounds as جنيه.
+        let eg = template("bank", &["تم خصم {amount} {currency} من حسابكم رقم {ref} لدى {payee} بتاريخ {date:dd/mm/yyyy}"], "-");
+        assert_eq!(read(&with("EGP"), &eg, "Bank", "2026-11-02", "تم خصم ١٢٠٫٥٠ جنيه من حسابكم رقم ****٤٥٦٧ لدى كارفور بتاريخ ٠٢/١١/٢٠٢٦"),
+            (s("2026-11-02"), Some(s("-120.50")), s("EGP"), s("120.50"), s("كارفور"), Some(s("****٤٥٦٧"))));
+        // Yen after the amount, in full-width digits too; a month and day in characters.
+        let jp = template("bank", &["【カード利用のお知らせ】カード下4桁{ref} {date:mm/dd} {payee} {amount}{currency}"], "-");
+        assert_eq!(read(&with("JPY"), &jp, "Bank", "2026-11-02", "【カード利用のお知らせ】カード下4桁7890 11/02 セブンイレブン １，５００円").1, Some(s("-1500")));
+        let cn = template("bank", &["您尾号{ref}的账户{date:mm月dd日}{time}消费人民币{amount}{currency}，商户：{payee}。"], "-");
+        assert_eq!(read(&with("CNY"), &cn, "Bank", "2026-11-02", "您尾号1234的账户11月02日15:30消费人民币128.50元，商户：美团。"),
+            (s("2026-11-02"), Some(s("-128.50")), s("CNY"), s("128.50"), s("美团"), Some(s("1234"))));
+        // Rupiah with points between thousands; rand as R and a date with no separator; dinars' three decimals.
+        let id = template("bank", &["Transaksi {currency} {amount} di {payee} kartu {ref} berhasil pada {date:dd/mm/yyyy}."], "-");
+        assert_eq!(read(&with("IDR"), &id, "Bank", "2026-11-02", "Transaksi Rp 150.000 di INDOMARET kartu ****8899 berhasil pada 02/11/2026.").1, Some(s("-150000")));
+        let za = template("bank", &["FNB: {currency}{amount} paid from Cheq a/c {ref} @ {payee}. Avail R{balance}. {date:ddmmm} {time}"], "-");
+        assert_eq!(read(&with("ZAR"), &za, "Bank", "2026-11-02", "FNB: R1,250.00 paid from Cheq a/c ..4455 @ CHECKERS SANDTON. Avail R8,900.12. 02Nov 15:30"),
+            (s("2026-11-02"), Some(s("-1250.00")), s("ZAR"), s("1250.00"), s("CHECKERS SANDTON"), Some(s("..4455"))));
+        let kw = template("bank", &["Purchase of {currency} {amount} at {payee} with card ending {ref} on {date:dd/mm/yyyy}"], "-");
+        assert_eq!(read(&with("KWD"), &kw, "Bank", "2026-11-02", "Purchase of KWD 12.500 at THE AVENUES with card ending 3456 on 02/11/2026").1, Some(s("-12.50")));
+        // M-Pesa: a confirmation code, a name then a phone number, a time with PM, and a fee in a plain number.
+        let mpesa = template("mpesa", &["{any} Confirmed. {currency}{amount} sent to {payee} {n} on {date:dd/mm/yy} at {time}. New M-PESA balance is {currency}{balance}. Transaction cost, {currency}{n}."], "-");
+        assert_eq!(read(&with("KES"), &mpesa, "MPESA", "2026-11-03", "QK12AB34CD Confirmed. Ksh500.00 sent to JOHN DOE 0712345678 on 3/11/26 at 2:15 PM. New M-PESA balance is Ksh1,234.00. Transaction cost, Ksh7.00."),
+            (s("2026-11-03"), Some(s("-500.00")), s("KES"), s("500.00"), s("JOHN DOE"), None));
         // A time with AM or PM.
         let pm = template("bank", &["Card {ref} spent {currency} {amount} at {payee} on {date:dd/mm/yyyy} {time}"], "-");
         assert_eq!(read(&with("AED"), &pm, "Bank", "2026-11-02", "Card 1234 spent AED 85.00 at CARREFOUR on 02/11/2026 7:45 PM").1, Some(s("-85.00")));
@@ -920,6 +1021,16 @@ mod tests {
         assert!(compile(&t).is_err());
         t = purchase(); t.outcome = Outcome { skip: Some("code".into()), ..Outcome::default() };
         assert!(compile(&t).is_ok());
+        // Free text before a space and a slot is tried at each space, but only so many times:
+        // a line of nothing but spaces and words gives up quickly.
+        t = purchase();
+        t.lines = vec!["Paid {any} {any} {any} {any} {payee} {amount} {currency}".into()];
+        let c = compile(&t).unwrap();
+        let long = format!("Paid {}", "word ".repeat(60));
+        let began = std::time::Instant::now();
+        assert!(c.read(&long).is_none());
+        assert!(began.elapsed() < std::time::Duration::from_millis(500), "{:?}", began.elapsed());
+        assert!(c.read("Paid a b c d SHOP 12.50 USD").is_some());
     }
     #[test]
     fn texts_go_to_review_when_a_template_reads_them_and_to_the_assistant_otherwise() {

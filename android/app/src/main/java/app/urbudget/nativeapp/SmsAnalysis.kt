@@ -34,14 +34,17 @@ internal fun smsPersonal(sender: String): Boolean = sender.trim().matches(Regex(
 
 /** Exact user-edited money validation, never interpretation of an SMS. */
 internal fun smsCents(text: String): Long? = runCatching {
-    require(text.matches(Regex("-?[0-9]+(?:\\.[0-9]{1,2})?")))
+    // A third decimal that's 0 ("12.500", as a currency with three writes it) is exact.
+    require(text.matches(Regex("-?[0-9]+(?:\\.[0-9]{1,2}0*)?")))
     BigDecimal(text).movePointRight(2).longValueExact().also { require(it != 0L && it in -1_000_000_000_000L..1_000_000_000_000L) }
 }.getOrNull()
 /** Cents as the exact decimal the core reads back ("-12.30"). */
 internal fun smsDecimal(cents: Long): String = BigDecimal.valueOf(cents, 2).toPlainString()
 
+/** A text's digits as 0–9, in whatever script it writes them ("٤٥٦٧" is "4567"). */
+internal fun smsDigits(text: String): String = text.mapNotNull { c -> Character.digit(c, 10).takeIf { it >= 0 } }.joinToString("")
 /** The digits that name a card or account ("***0091" is "0091"), or its words when it has too few. */
-internal fun smsRefKey(ref: String): String = ref.filter { it in '0'..'9' }.takeIf { it.length >= 3 } ?: ref.trim().lowercase(Locale.ROOT)
+internal fun smsRefKey(ref: String): String = smsDigits(ref).takeIf { it.length >= 3 } ?: ref.trim().lowercase(Locale.ROOT)
 private fun cardKey(sender: String, ref: String) = smsSenderKey(sender) + "\u0000" + smsRefKey(ref)
 
 /**
@@ -206,7 +209,7 @@ internal class SmsAccounts(private val open: List<Pair<String, String>>, mapping
     fun find(sender: String, ref: String?): Pair<String, SmsAccountSource>? {
         if (ref != null) {
             remembered[smsEntryKey("", sender, ref)]?.let { return it to SmsAccountSource.Remembered }
-            val digits = ref.filter { it in '0'..'9' }
+            val digits = smsDigits(ref)
             // The same digits, or one ending the other when both are at least a card's last four:
             // "4417" is "Visa 4417", but "5000" isn't the limit in "Visa (50,000)".
             fun same(run: String) = run == digits || (minOf(run.length, digits.length) >= 4 && (run.endsWith(digits) || digits.endsWith(run)))
