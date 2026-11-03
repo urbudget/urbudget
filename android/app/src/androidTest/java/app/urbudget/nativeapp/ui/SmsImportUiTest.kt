@@ -86,7 +86,7 @@ class SmsImportUiTest {
 
     private fun analyzer(reply: suspend (JSONObject) -> JSONObject) = object : SmsAnalyzer {
         override suspend fun status() = connection
-        override suspend fun analyze(request: JSONObject): JSONObject = reply(request)
+        override suspend fun analyze(request: JSONObject, live: (SmsLive) -> Unit): JSONObject = reply(request)
     }
     /** What the model returns for texts that are only codes. */
     private fun codes(sent: JSONArray) = JSONObject().put("items", JSONArray((0 until sent.length()).map { i ->
@@ -205,6 +205,44 @@ class SmsImportUiTest {
         compose.waitUntil(15_000) { inbox.pendingCount(identity!!) == 0 }
         waitFor("sms-up-to-date")
         assertEquals(listOf(200, 200, 50, 50), sizes.toList())
+    }
+
+    @Test fun whileTheAssistantAnswersTheCardShowsWhatItsDoingItsLatestThoughtAndTheTextsItsAnswerCovers() {
+        val vm = fixture("live")
+        val inbox = SmsInbox.get(context)
+        inbox.saveState(identity!!, "consent", smsConsent(connection))
+        inbox.captureAll((1L..40L).map { at -> val body = "Your code is ${1000 + at}"; BankSms(smsId("SyntheticBank", at, body), "SyntheticBank", at, body) })
+        val thought = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val wrote = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val formats = kotlinx.coroutines.CompletableDeferred<Unit>()
+        show(vm, object : SmsAnalyzer {
+            override suspend fun status() = connection
+            override suspend fun analyze(request: JSONObject, live: (SmsLive) -> Unit): JSONObject {
+                live(SmsLive("thinking", "Reading the codes", 0, 40, 0))
+                thought.await()
+                live(SmsLive("writing", "Reading the codes", 25, 40, 0, "skipped"))
+                wrote.await()
+                live(SmsLive("writing", "Reading the codes", 40, 40, 0, "templates"))
+                formats.await()
+                return codes(request.getJSONArray("messages"))
+            }
+        })
+        waitFor("sms-thought")
+        compose.onNodeWithTag("sms-live").assertTextEquals(context.resources.getQuantityString(R.plurals.sms_live_thinking, 40, "40"))
+        compose.onNodeWithTag("sms-thought").assertTextEquals("Reading the codes")
+        // One request: no count of requests, and stopping cancels it.
+        compose.onNodeWithTag("sms-progress").assertDoesNotExist()
+        compose.onNodeWithTag("sms-stop").assertTextEquals(context.getString(R.string.common_cancel))
+        thought.complete(Unit)
+        val writing = context.resources.getQuantityString(R.plurals.sms_live_writing, 40, "40", "25")
+        compose.waitUntil(10_000) { runCatching { compose.onNodeWithTag("sms-live").assertTextEquals(writing) }.isSuccess }
+        wrote.complete(Unit)
+        // Once the texts are written up, the formats it writes for next time say so.
+        val writingFormats = context.getString(R.string.sms_live_formats)
+        compose.waitUntil(10_000) { runCatching { compose.onNodeWithTag("sms-live").assertTextEquals(writingFormats) }.isSuccess }
+        formats.complete(Unit)
+        compose.waitUntil(15_000) { inbox.pendingCount(identity!!) == 0 }
+        waitFor("sms-up-to-date")
     }
 
     @Test fun untickingRowsOneAfterAnotherKeepsEachAndWhatStillNeedsAChoiceStaysRead() {
@@ -358,7 +396,7 @@ class SmsImportUiTest {
             override suspend fun status() = connection
             // Most are junk the phone settles; the hundred read in full fit one request with them.
             override suspend fun lanes(request: JSONObject) = List(request.getJSONArray("messages").length()) { if (it < 500) "junk" else "read" }
-            override suspend fun analyze(request: JSONObject): JSONObject {
+            override suspend fun analyze(request: JSONObject, live: (SmsLive) -> Unit): JSONObject {
                 sizes += request.getJSONArray("messages").length()
                 assertTrue(request.has("trusted"))
                 return codes(request.getJSONArray("messages")).put("learning", JSONObject().put("read", 100).put("junk", 500)

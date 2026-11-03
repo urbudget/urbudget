@@ -95,6 +95,7 @@ async fn turn(assistant: &Assistant, job: &Job, cancelled: &AtomicBool) -> Resul
                     emit(&job.thread_id, json!({ "type": "delta", "text": text }));
                 }
                 Delta::Thinking(text) => emit(&job.thread_id, json!({ "type": "thinking", "text": text })),
+                Delta::Started | Delta::Arguments(_) => {}
             };
             match llm::respond(&assistant.http, &credentials, &request, &mut on_delta).await {
                 Err(f) if f.kind == FailureKind::Busy && !streamed && attempt < 2 => {

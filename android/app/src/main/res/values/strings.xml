@@ -2130,6 +2130,26 @@
     <string name="sms_hide">Hide</string>
     <!-- The assistant reading them: "ChatGPT · gpt-… is reading your texts". -->
     <string name="sms_reading_by">%1$s is reading your texts</string>
+    <!-- Under "… is reading your texts": what the assistant is doing with the texts sent now. -->
+    <string name="sms_live_ready">Getting your texts ready</string>
+    <plurals name="sms_live_sending">
+        <item quantity="one">Sending %1$s text</item>
+        <item quantity="other">Sending %1$s texts</item>
+    </plurals>
+    <string name="sms_live_waiting">Waiting for the assistant to start</string>
+    <plurals name="sms_live_thinking">
+        <item quantity="one">Thinking about %1$s text</item>
+        <item quantity="other">Thinking about %1$s texts</item>
+    </plurals>
+    <!-- %2$s texts its answer has covered so far, of the %1$s it reads in full. -->
+    <plurals name="sms_live_writing">
+        <item quantity="one">Writing up %2$s of %1$s text</item>
+        <item quantity="other">Writing up %2$s of %1$s texts</item>
+    </plurals>
+    <string name="sms_live_writing_review">Writing up its review</string>
+    <string name="sms_live_corrections">Writing corrections to what the formats read</string>
+    <string name="sms_live_formats">Writing formats for next time</string>
+    <string name="sms_live_fixing">Correcting what the app’s check found</string>
     <string name="sms_checking">Checking your texts…</string>
     <plurals name="sms_to_review">
         <item quantity="one">%1$s to review</item>

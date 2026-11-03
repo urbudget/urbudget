@@ -4,6 +4,7 @@
 //! reviews those readings; it reads the rest in full and writes templates for their formats.
 use super::*;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use urbudget_core::{
     domain::Budget,
@@ -77,10 +78,26 @@ pub struct Stat {
     pub corrected: BTreeMap<String, usize>,
     pub settled: usize,
 }
+/// What a reading is doing, for the phone to show while it waits: its stage ("waiting" for the
+/// model, "thinking", "writing" its answer, or "fixing" what the check found), the model's latest
+/// thought, how many of the texts it reads in full its answer has covered so far, and the part of
+/// the answer it's writing (items, skipped, corrections or templates).
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Progress {
+    pub stage: &'static str,
+    pub thought: String,
+    pub written: usize,
+    pub read: usize,
+    pub reviewed: usize,
+    pub section: String,
+}
+type Shared = Arc<Mutex<Progress>>;
 pub(super) struct Job {
     budget: String,
     started: Instant,
     task: tokio::task::JoinHandle<Result<Read, String>>,
+    progress: Shared,
 }
 impl Drop for Job {
     fn drop(&mut self) {
@@ -130,8 +147,10 @@ pub fn start(db: &Database, a: &Assistant, input: Input) -> Result<Value, String
     let id = new_id("sms");
     let budget = input.budget_id.clone();
     let assistant = a.clone();
+    let progress = Shared::default();
+    let shared = progress.clone();
     let task = tokio::spawn(async move {
-        tokio::time::timeout(Duration::from_secs(300), analyze(&assistant, &b, &input))
+        tokio::time::timeout(Duration::from_secs(300), analyze(&assistant, &b, &input, &shared))
             .await
             .map_err(|_| {
                 crate::t!("Message analysis timed out. Your messages are still in the inbox.")
@@ -143,6 +162,7 @@ pub fn start(db: &Database, a: &Assistant, input: Input) -> Result<Value, String
             budget,
             started: Instant::now(),
             task,
+            progress,
         },
     );
     let expires = id.clone();
@@ -179,7 +199,7 @@ pub async fn poll(db: &Database, a: &Assistant, id: &str) -> Result<Value, Strin
             return Err(crate::t!("The open budget changed."));
         }
         if !job.task.is_finished() {
-            return Ok(json!({"running":true}));
+            return Ok(json!({"running":true,"progress":lock(&job.progress).clone()}));
         }
         jobs.remove(id).unwrap()
     };
@@ -585,7 +605,7 @@ fn correct(m: &Message, read: &sms_import::Item, c: Correction) -> Result<(sms_i
     Ok((item, changed))
 }
 
-async fn analyze(a: &Assistant, b: &Budget, input: &Input) -> Result<Read, String> {
+async fn analyze(a: &Assistant, b: &Budget, input: &Input, progress: &Shared) -> Result<Read, String> {
     let credentials = a.credentials().await.map_err(|e| e.message)?;
     let model = a.model().await.map_err(|e| e.message)?;
     if credentials.provider != input.provider
@@ -600,13 +620,15 @@ async fn analyze(a: &Assistant, b: &Budget, input: &Input) -> Result<Read, Strin
             "The assistant connection changed. Review the sending notice again."
         ));
     }
-    run_analysis(b, input, &model, &mut Connected { a, credentials }).await
+    run_analysis(b, input, &model, &mut Connected { a, credentials }, progress).await
 }
 
 trait Model {
+    /// Answers a request, passing the reply to `on_delta` as it streams.
     fn respond<'a>(
         &'a mut self,
         request: llm::Request<'a>,
+        on_delta: &'a mut (dyn FnMut(llm::Delta) + Send),
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<llm::Reply, String>> + Send + 'a>>;
 }
 struct Connected<'a> {
@@ -617,10 +639,11 @@ impl Model for Connected<'_> {
     fn respond<'a>(
         &'a mut self,
         request: llm::Request<'a>,
+        on_delta: &'a mut (dyn FnMut(llm::Delta) + Send),
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<llm::Reply, String>> + Send + 'a>>
     {
         Box::pin(async move {
-            llm::respond(&self.a.http, &self.credentials, &request, &mut |_| {}).await
+            llm::respond(&self.a.http, &self.credentials, &request, on_delta).await
                 .map_err(|_| crate::t!("The assistant could not analyze this batch. Check its connection and try again."))
         })
     }
@@ -630,6 +653,7 @@ async fn run_analysis(
     input: &Input,
     model: &str,
     connected: &mut impl Model,
+    progress: &Shared,
 ) -> Result<Read, String> {
     let files = attachments::Files::empty();
     let mut specs: Vec<_> = tools::specs()
@@ -691,7 +715,16 @@ async fn run_analysis(
         bank_sync: &Value::Null,
         import: None,
     };
-    for _ in 0..6 {
+    // The phone shows what the model is doing while it answers: its thoughts, and the texts it reads
+    // in full (numbered from 1) as they appear in its answer.
+    let wanted: HashSet<usize> = lanes.read.iter().map(|i| i + 1).collect();
+    {
+        let mut p = lock(progress);
+        p.read = lanes.read.len();
+        p.reviewed = lanes.review.len();
+    }
+    let mut fixing = false;
+    for round in 0..6 {
         let request = llm::Request {
             model,
             instructions: &instructions,
@@ -699,8 +732,48 @@ async fn run_analysis(
             files: &files,
             tools: &specs,
         };
+        {
+            // After a payee lookup the model carries on thinking; after a failed check it fixes its answer.
+            let mut p = lock(progress);
+            p.stage = if fixing { "fixing" } else if round == 0 { "waiting" } else { "thinking" };
+            p.written = 0;
+            p.section.clear();
+        }
+        let mut tally = Tally::new(&wanted);
+        let mut thinking = String::new();
+        let mut on_delta = |delta: llm::Delta| {
+            let mut p = lock(progress);
+            match delta {
+                // Taken: the model thinks before it has anything to show.
+                llm::Delta::Started => {
+                    if p.stage == "waiting" {
+                        p.stage = "thinking";
+                    }
+                }
+                llm::Delta::Thinking(text) => {
+                    thinking.push_str(text);
+                    if let Some(thought) = headline(&thinking) {
+                        p.thought = thought;
+                    }
+                    if p.stage == "waiting" {
+                        p.stage = "thinking";
+                    }
+                }
+                llm::Delta::Arguments(text) => {
+                    if let Some(written) = tally.push(text) {
+                        p.stage = "writing";
+                        p.written = written;
+                        if p.section != tally.section {
+                            p.section.clone_from(&tally.section);
+                        }
+                    }
+                }
+                llm::Delta::Text(_) => {}
+            }
+        };
         // Do not surface provider error detail (it can echo request content).
-        let reply = connected.respond(request).await?;
+        let reply = connected.respond(request, &mut on_delta).await?;
+        fixing = false;
         let mut calls = vec![];
         for part in reply.parts {
             match part {
@@ -743,7 +816,10 @@ async fn run_analysis(
             let output = match (call.name.as_str(), args) {
                 ("submit_sms_analysis", Ok(args)) => match checked(b, &input.messages, &lanes, args) {
                     Ok(expanded) => return Ok(learn(b, input, &lanes, expanded)),
-                    Err(error) => json!({"error":error}),
+                    Err(error) => {
+                        fixing = true;
+                        json!({"error":error})
+                    }
                 },
                 ("payee_history", Ok(args)) => {
                     tools::call("payee_history", &args, &tool_context).output
@@ -770,6 +846,99 @@ fn checked(b: &Budget, messages: &[Message], lanes: &Lanes, value: Value) -> Res
     }
     sms_import::validate_analysis(b, messages, &expanded.analysis)?;
     Ok(expanded)
+}
+
+/// Counts the texts an answer covers as it streams: the numbers in its items' texts and its skipped
+/// lists, among those the model reads in full. Templates and corrections name texts too; they don't count.
+struct Tally<'a> {
+    wanted: &'a HashSet<usize>,
+    seen: HashSet<usize>,
+    /// The part of the answer last begun: items, skipped, corrections or templates.
+    section: String,
+    /// Each open object or array, with the key it's under ("" for an array's element or the answer).
+    open: Vec<(char, String)>,
+    key: String,
+    last: String,
+    /// The string being read, kept only as long as a key can be.
+    string: Option<String>,
+    escaped: bool,
+    number: Option<usize>,
+    started: bool,
+}
+impl<'a> Tally<'a> {
+    fn new(wanted: &'a HashSet<usize>) -> Self {
+        Tally { wanted, seen: HashSet::new(), section: String::new(), open: vec![], key: String::new(), last: String::new(), string: None, escaped: false, number: None, started: false }
+    }
+    /// Reads the next piece of the answer; the texts covered so far once the answer began.
+    fn push(&mut self, piece: &str) -> Option<usize> {
+        for c in piece.chars() {
+            if let Some(s) = self.string.as_mut() {
+                if self.escaped {
+                    self.escaped = false;
+                } else if c == '\\' {
+                    self.escaped = true;
+                } else if c == '"' {
+                    self.last = self.string.take().unwrap_or_default();
+                } else if s.len() < 32 {
+                    s.push(c);
+                }
+                continue;
+            }
+            if let Some(d) = c.to_digit(10) {
+                self.number = Some(self.number.unwrap_or(0).saturating_mul(10).saturating_add(d as usize));
+                continue;
+            }
+            if let Some(n) = self.number.take() {
+                let keys: Vec<&str> = self.open.iter().map(|(_, k)| k.as_str()).collect();
+                let listed = matches!(keys.as_slice(), ["", "items", "", "texts"] | ["", "skipped", _]);
+                if listed && self.wanted.contains(&n) {
+                    self.seen.insert(n);
+                }
+            }
+            match c {
+                '"' => self.string = Some(String::new()),
+                ':' => {
+                    self.key = std::mem::take(&mut self.last);
+                    if self.open.len() == 1 && ["items", "skipped", "corrections", "templates"].contains(&self.key.as_str()) {
+                        self.started = true;
+                        self.section.clone_from(&self.key);
+                    }
+                }
+                '{' | '[' => {
+                    let under = if matches!(self.open.last(), Some(('{', _))) { std::mem::take(&mut self.key) } else { String::new() };
+                    self.open.push((c, under));
+                }
+                '}' | ']' => {
+                    self.open.pop();
+                }
+                _ => {}
+            }
+        }
+        self.started.then_some(self.seen.len())
+    }
+}
+
+/// The model's latest thought as one line: the last finished bold heading of its reasoning summary,
+/// or else the first sentence of its last paragraph.
+fn headline(thinking: &str) -> Option<String> {
+    let parts: Vec<&str> = thinking.split("**").collect();
+    // Bold runs are the odd parts; one is finished when another part follows it.
+    let heading = (1..parts.len().saturating_sub(1)).step_by(2).map(|i| parts[i].trim()).filter(|h| !h.is_empty()).last();
+    let line = match heading {
+        Some(heading) => heading,
+        None => {
+            let paragraph = thinking.trim().rsplit("\n\n").next()?.trim().trim_matches('*').trim();
+            paragraph.split_inclusive(". ").next().unwrap_or(paragraph).trim()
+        }
+    };
+    if line.is_empty() {
+        return None;
+    }
+    let mut short: String = line.chars().take(120).collect();
+    if line.chars().count() > 120 {
+        short.push('…');
+    }
+    Some(short)
 }
 
 /// What the phone learns from a reading: how each template's rows fared in review, the templates
@@ -841,6 +1010,7 @@ mod tests {
         fn respond<'a>(
             &'a mut self,
             request: llm::Request<'a>,
+            _on_delta: &'a mut (dyn FnMut(llm::Delta) + Send),
         ) -> std::pin::Pin<
             Box<dyn std::future::Future<Output = Result<llm::Reply, String>> + Send + 'a>,
         > {
@@ -908,7 +1078,7 @@ mod tests {
             .into(),
             requests: vec![],
         };
-        let result = crate::block_on(run_analysis(&b, &input(), "test-model", &mut fake)).unwrap();
+        let result = crate::block_on(run_analysis(&b, &input(), "test-model", &mut fake, &Shared::default())).unwrap();
         assert_eq!(result.analysis.items[0].disposition, "ignore");
         assert_eq!(b, before);
         assert!(fake.requests[1]
@@ -931,10 +1101,93 @@ mod tests {
             &Budget::default(),
             &input(),
             "test-model",
-            &mut fake
+            &mut fake,
+            &Shared::default()
         ))
         .is_err());
         assert_eq!(fake.requests.len(), 6);
+    }
+    /// A model that thinks, then writes its answer a few characters at a time, noting the stage the
+    /// reading shows as each request starts.
+    struct Streaming {
+        replies: VecDeque<llm::Reply>,
+        progress: Shared,
+        stages: Vec<&'static str>,
+    }
+    impl Model for Streaming {
+        fn respond<'a>(
+            &'a mut self,
+            _request: llm::Request<'a>,
+            on_delta: &'a mut (dyn FnMut(llm::Delta) + Send),
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<llm::Reply, String>> + Send + 'a>,
+        > {
+            self.stages.push(lock(&self.progress).stage);
+            on_delta(llm::Delta::Started);
+            self.stages.push(lock(&self.progress).stage);
+            on_delta(llm::Delta::Thinking("**Reading the texts**\n\nOne is a sign-in alert."));
+            let reply = self.replies.pop_front().unwrap_or_default();
+            for part in &reply.parts {
+                if let llm::Part::Call(call) = part {
+                    let chars: Vec<char> = call.arguments.chars().collect();
+                    for piece in chars.chunks(3) {
+                        on_delta(llm::Delta::Arguments(&piece.iter().collect::<String>()));
+                    }
+                }
+            }
+            Box::pin(std::future::ready(Ok(reply)))
+        }
+    }
+    #[test]
+    fn a_reading_shows_its_stage_its_latest_thought_and_the_texts_its_answer_covers() {
+        let progress = Shared::default();
+        let mut model = Streaming {
+            replies: vec![
+                call("payee_history", json!({"payees":["Noon"]})),
+                call("submit_sms_analysis", json!({"items":[],"skipped":skipped(&[])})),
+                call("submit_sms_analysis", submitted()),
+            ]
+            .into(),
+            progress: progress.clone(),
+            stages: vec![],
+        };
+        crate::block_on(run_analysis(&Budget::default(), &input(), "test-model", &mut model, &progress)).unwrap();
+        // Once the service takes the request the model is thinking, and still is after a payee lookup;
+        // the first answer left the text out, so the last request fixes what the check found.
+        assert_eq!(model.stages, vec!["waiting", "thinking", "thinking", "thinking", "fixing", "fixing"]);
+        let p = lock(&progress).clone();
+        assert_eq!((p.stage, p.thought.as_str(), p.written, p.read, p.reviewed), ("writing", "Reading the texts", 1, 1, 0));
+        assert_eq!(p.section, "skipped");
+    }
+    #[test]
+    fn an_answer_counts_the_texts_it_covers_as_it_streams() {
+        let wanted: HashSet<usize> = [1, 2, 3, 5, 12].into_iter().collect();
+        let mut tally = Tally::new(&wanted);
+        // Templates first name texts that don't count; a number in a string doesn't either.
+        let answer = r#"{"templates":[{"texts":[1,2,3],"lines":["Paid {amount}"]}],"items":[{"texts":[1,2],"note":"Paid 4, \"5\" [3]","transaction":{"amount":"-12.50","n":12}},{"texts":[4]}],"skipped":{"code":[3],"other":[5]},"corrections":[{"text":12}]}"#;
+        let counts: Vec<Option<usize>> = answer.as_bytes().chunks(5).map(|c| tally.push(std::str::from_utf8(c).unwrap())).collect();
+        assert_eq!(counts[0], None);
+        assert_eq!(counts[2], Some(0));
+        assert!(counts.windows(2).all(|w| w[0] <= w[1]));
+        assert_eq!(counts.last(), Some(&Some(4)));
+        assert_eq!(tally.section, "corrections");
+        // A number split between two pieces counts once it ends.
+        let mut tally = Tally::new(&wanted);
+        assert_eq!(tally.push(r#"{"items":[{"texts":[1"#), Some(0));
+        assert_eq!(tally.push(r#"2]}]}"#), Some(1));
+        assert_eq!(tally.section, "items");
+        // A payee lookup isn't an answer.
+        assert_eq!(Tally::new(&wanted).push(r#"{"payees":["Noon"]}"#), None);
+    }
+    #[test]
+    fn a_thought_is_the_latest_heading_or_the_start_of_the_last_paragraph() {
+        assert_eq!(headline(""), None);
+        assert_eq!(headline("**Reading the texts**\n\nI'm going through 160 texts."), Some("Reading the texts".into()));
+        assert_eq!(headline("**Reading the texts**\n\nThey're purchases.\n\n**Matching tra"), Some("Reading the texts".into()));
+        assert_eq!(headline("**Reading**\n\nbody\n\n**Matching transfers**\n\nMore"), Some("Matching transfers".into()));
+        assert_eq!(headline("The texts are from one bank. Most are purchases.\n\nI'll check the dates first. Then"), Some("I'll check the dates first.".into()));
+        assert_eq!(headline("**Planning the rev"), Some("Planning the rev".into()));
+        assert_eq!(headline(&"word ".repeat(40)).unwrap().chars().count(), 121);
     }
     #[test]
     fn schema_errors_and_fabricated_evidence_are_rejected_without_echoing_raw_content() {
@@ -1002,7 +1255,7 @@ mod tests {
             "transaction":{"date":"2026-10-31","amount":"-12.00","currency":"SAR","writtenAmount":"12.00","payee":"Shop","memo":"","kind":"expense","accountRef":"4512","otherRef":null,"categoryId":null,"accountId":"secret-id"}}],
             "skipped":skipped(&[])});
         let mut fake = Fake { replies: vec![call("submit_sms_analysis", purchase)].into(), requests: vec![] };
-        let result = crate::block_on(run_analysis(&b, &input, "test-model", &mut fake)).unwrap();
+        let result = crate::block_on(run_analysis(&b, &input, "test-model", &mut fake, &Shared::default())).unwrap();
         let t = result.analysis.items[0].transaction.as_ref().unwrap();
         assert_eq!((t.account_id.as_deref(), t.account_ref.as_deref()), (None, Some("4512")));
         let sent: Vec<_> = fake.requests[0].iter().filter_map(|i| match i { Item::User { text, .. } => Some(text.clone()), _ => None }).collect();
@@ -1019,7 +1272,7 @@ mod tests {
                 extra: json!({ "paymentAccountId": payment }).as_object().unwrap().clone() });
         }
         let mut fake = Fake { replies: vec![call("submit_sms_analysis", submitted())].into(), requests: vec![] };
-        crate::block_on(run_analysis(&b, &input(), "test-model", &mut fake)).unwrap();
+        crate::block_on(run_analysis(&b, &input(), "test-model", &mut fake, &Shared::default())).unwrap();
         let first = match &fake.requests[0][0] { Item::User { text, .. } => text.clone(), _ => String::new() };
         assert!(first.contains("cat-groceries") && !first.contains("cat-visa-payment"));
     }
@@ -1056,7 +1309,7 @@ mod tests {
             "templates":[{"replaces":null,"texts":[3],"lines":new_lines,"outcome":{"disposition":"transaction","kind":"expense","sign":"-","skip":null,"memo":null},"note":"Purchase at {payee}","payee":null}]
         });
         let mut fake = Fake { replies: vec![call("submit_sms_analysis", reply)].into(), requests: vec![] };
-        let result = crate::block_on(run_analysis(&b, &input, "test-model", &mut fake)).unwrap();
+        let result = crate::block_on(run_analysis(&b, &input, "test-model", &mut fake, &Shared::default())).unwrap();
         // The model saw two readings to check and one text to read, with the known format.
         let sent: Value = match &fake.requests[0][0] { Item::User { text, .. } => serde_json::from_str(text).unwrap(), _ => Value::Null };
         assert_eq!((sent["review"].as_array().unwrap().len(), sent["read"].as_array().unwrap().len()), (2, 1));
@@ -1086,7 +1339,7 @@ mod tests {
             "outcome":{"disposition":"transaction","kind":"income","sign":"+","skip":null,"memo":null},"note":"","payee":null});
         let reply = json!({"items":[item],"skipped":skipped(&[]),"corrections":[],"templates":[wrong]});
         let mut fake = Fake { replies: vec![call("submit_sms_analysis", reply)].into(), requests: vec![] };
-        let result = crate::block_on(run_analysis(&b, &input, "test-model", &mut fake)).unwrap();
+        let result = crate::block_on(run_analysis(&b, &input, "test-model", &mut fake, &Shared::default())).unwrap();
         assert_eq!((result.learning.templates.len(), result.learning.dropped), (0, 1));
         // A text the phone read can only be corrected, not read again in items or skipped.
         input.messages = vec![purchase_text("sms:1", "65.97", "NOON E")];
@@ -1133,7 +1386,7 @@ mod tests {
         assert_eq!(sms_templates::lanes(&b, &input.messages, &input.templates, &[], &trusted).junk.len(), 4, "an id fell in the audit");
         // No replies: calling the model would fail the reading.
         let mut fake = Fake { replies: VecDeque::new(), requests: vec![] };
-        let result = crate::block_on(run_analysis(&b, &input, "test-model", &mut fake)).unwrap();
+        let result = crate::block_on(run_analysis(&b, &input, "test-model", &mut fake, &Shared::default())).unwrap();
         assert!(fake.requests.is_empty());
         assert_eq!(result.analysis.items.iter().map(|i| i.skip.as_deref()).collect::<Vec<_>>(), vec![Some("rewards"), Some("rewards"), Some("rewards"), Some("code")]);
         assert_eq!((result.learning.junk, result.learning.stats["t9"].settled), (4, 3));
@@ -1153,6 +1406,7 @@ mod tests {
                     budget: "test".into(),
                     started: Instant::now(),
                     task,
+                    progress: Shared::default(),
                 },
             );
             cancel(&a, "job");

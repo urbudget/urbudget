@@ -2438,6 +2438,36 @@
     <string name="sms_show">إظهار</string>
     <string name="sms_hide">إخفاء</string>
     <string name="sms_reading_by">يقرأ %1$s رسائلك</string>
+    <string name="sms_live_ready">تجهيز رسائلك</string>
+    <plurals name="sms_live_sending">
+        <item quantity="zero">إرسال ⁨%1$s⁩ رسالة</item>
+        <item quantity="one">إرسال رسالة واحدة</item>
+        <item quantity="two">إرسال رسالتين</item>
+        <item quantity="few">إرسال ⁨%1$s⁩ رسائل</item>
+        <item quantity="many">إرسال ⁨%1$s⁩ رسالة</item>
+        <item quantity="other">إرسال ⁨%1$s⁩ رسالة</item>
+    </plurals>
+    <string name="sms_live_waiting">بانتظار أن يبدأ المساعد</string>
+    <plurals name="sms_live_thinking">
+        <item quantity="zero">يفكّر في ⁨%1$s⁩ رسالة</item>
+        <item quantity="one">يفكّر في رسالة واحدة</item>
+        <item quantity="two">يفكّر في رسالتين</item>
+        <item quantity="few">يفكّر في ⁨%1$s⁩ رسائل</item>
+        <item quantity="many">يفكّر في ⁨%1$s⁩ رسالة</item>
+        <item quantity="other">يفكّر في ⁨%1$s⁩ رسالة</item>
+    </plurals>
+    <plurals name="sms_live_writing">
+        <item quantity="zero">كُتبت ⁨%2$s⁩ من ⁨%1$s⁩ رسالة</item>
+        <item quantity="one">كُتبت ⁨%2$s⁩ من رسالة واحدة</item>
+        <item quantity="two">كُتبت ⁨%2$s⁩ من رسالتين</item>
+        <item quantity="few">كُتبت ⁨%2$s⁩ من ⁨%1$s⁩ رسائل</item>
+        <item quantity="many">كُتبت ⁨%2$s⁩ من ⁨%1$s⁩ رسالة</item>
+        <item quantity="other">كُتبت ⁨%2$s⁩ من ⁨%1$s⁩ رسالة</item>
+    </plurals>
+    <string name="sms_live_writing_review">يكتب مراجعته</string>
+    <string name="sms_live_corrections">يكتب تصحيحات لما قرأته الصيغ</string>
+    <string name="sms_live_formats">يكتب صيغًا للمرة القادمة</string>
+    <string name="sms_live_fixing">يصحّح ما وجده فحص التطبيق</string>
     <string name="sms_checking">تُراجَع رسائلك…</string>
     <plurals name="sms_to_review">
         <item quantity="zero">لا شيء للمراجعة</item>

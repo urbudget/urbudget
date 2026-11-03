@@ -117,6 +117,21 @@ private fun reader(connection: JSONObject): String {
     return provider + " · " + connection.text("model").ifBlank { stringResource(R.string.sms_default_model) }
 }
 
+/** What the assistant is doing with the texts sent now, in a few words: [part] texts, 0 while they're planned. */
+@Composable
+internal fun smsLiveText(live: SmsLive?, part: Int): String = when (live?.stage) {
+    "waiting" -> stringResource(R.string.sms_live_waiting)
+    "thinking" -> countText(R.plurals.sms_live_thinking, live.read + live.reviewed)
+    "writing" -> when {
+        live.section == "corrections" -> stringResource(R.string.sms_live_corrections)
+        live.section == "templates" -> stringResource(R.string.sms_live_formats)
+        live.read > 0 -> countText(R.plurals.sms_live_writing, live.read, Money.count(live.written.toLong()))
+        else -> stringResource(R.string.sms_live_writing_review)
+    }
+    "fixing" -> stringResource(R.string.sms_live_fixing)
+    else -> if (part > 0) countText(R.plurals.sms_live_sending, part) else stringResource(R.string.sms_live_ready)
+}
+
 /** Message text keeps its own direction: an Arabic alert reads right to left in an English app. */
 internal val SmsBodyStyle @Composable get() = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.Content)
 
@@ -215,12 +230,31 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
                         when {
                             reading != null -> {
                                 // More than one request: stopping keeps what's been read, so it says Stop rather than Cancel.
-                                val requests = reading.total > SmsBatchSize
+                                val requests = reading.total > (reading.part.takeIf { it > 0 } ?: SmsBatchSize)
+                                val live = reading.live
                                 Text(stringResource(R.string.sms_reading_by, connection?.let { reader(it) }.orEmpty()), style = MaterialTheme.typography.titleMedium, color = ur.text)
-                                Text(countText(R.plurals.sms_reading_progress, reading.total, Money.count(reading.read.toLong())), style = MaterialTheme.typography.bodyMedium, color = ur.text2,
-                                    modifier = Modifier.testTag("sms-progress"))
-                                LinearProgressIndicator(Modifier.fillMaxWidth(), color = ur.accent)
-                                if (requests) Text(stringResource(R.string.sms_reading_keep), style = MaterialTheme.typography.bodySmall, color = ur.muted)
+                                // What the assistant is doing, its latest thought and the time so far: a long answer
+                                // shouldn't look stuck. Its answer fills the bar as it covers the texts it reads in full; its
+                                // corrections and formats, of no known length, run the bar instead.
+                                val seconds by produceState(0L, reading.since) { while (true) { value = (System.currentTimeMillis() - reading.since) / 1000; delay(1000) } }
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Text(smsLiveText(live, reading.part), Modifier.weight(1f).testTag("sms-live"), style = MaterialTheme.typography.bodyMedium, color = ur.text2)
+                                    Text("${seconds / 60}:${(seconds % 60).toString().padStart(2, '0')}", style = MaterialTheme.typography.bodySmall, color = ur.muted)
+                                }
+                                val share = live?.takeIf { it.stage == "writing" && it.read > 0 && it.section !in setOf("corrections", "templates") }
+                                    ?.let { (it.written.toFloat() / it.read).coerceIn(0f, 1f) }
+                                val shown by androidx.compose.animation.core.animateFloatAsState(share ?: 0f, label = "sms-written")
+                                if (share != null) LinearProgressIndicator(progress = { shown }, modifier = Modifier.fillMaxWidth(), color = ur.accent)
+                                else LinearProgressIndicator(Modifier.fillMaxWidth(), color = ur.accent)
+                                live?.thought?.takeIf { it.isNotBlank() }?.let {
+                                    Text(it, Modifier.testTag("sms-thought"), style = MaterialTheme.typography.bodySmall.copy(textDirection = TextDirection.Content), color = ur.muted,
+                                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                }
+                                if (requests) {
+                                    Text(countText(R.plurals.sms_reading_progress, reading.total, Money.count(reading.read.toLong())), style = MaterialTheme.typography.bodySmall, color = ur.text2,
+                                        modifier = Modifier.testTag("sms-progress"))
+                                    Text(stringResource(R.string.sms_reading_keep), style = MaterialTheme.typography.bodySmall, color = ur.muted)
+                                }
                                 TextButton({ SmsReadings.stop() }, Modifier.align(Alignment.End).testTag("sms-stop")) {
                                     Text(stringResource(if (requests) R.string.sms_stop_reading else R.string.common_cancel), color = ur.accent)
                                 }

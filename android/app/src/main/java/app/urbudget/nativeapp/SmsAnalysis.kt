@@ -354,7 +354,12 @@ internal fun smsRequestSize(lanes: List<String>?): Int {
  * fails, keeps what's been read and the rest wait.
  */
 internal object SmsReadings {
-    data class Reading(val budget: String, val read: Int, val total: Int)
+    /**
+     * A reading under way: [read] of [total] texts done, [part] being sent now (0 while it's planned),
+     * what the assistant is doing with them, and when the reading began.
+     */
+    data class Reading(val budget: String, val read: Int, val total: Int, val part: Int = 0, val live: SmsLive? = null,
+                       val since: Long = System.currentTimeMillis())
     private val current = kotlinx.coroutines.flow.MutableStateFlow<Reading?>(null)
     val state: kotlinx.coroutines.flow.StateFlow<Reading?> = current
     private val lock = kotlinx.coroutines.sync.Mutex()
@@ -401,8 +406,9 @@ internal object SmsReadings {
                     .put("templates", templates).put("payees", payees).put("trusted", trusted)
                 val probe = remaining.take(SmsRequestTexts)
                 val part = probe.take(smsRequestSize(analyzer.lanes(request(probe))))
+                current.value = current.value?.copy(part = part.size, live = null)
                 val began = System.currentTimeMillis()
-                val result = analyzer.analyze(request(part))
+                val result = analyzer.analyze(request(part)) { live -> current.value = current.value?.copy(live = live) }
                 // What the reading taught (templates, how theirs fared, payees) isn't part of the review.
                 val learning = result.remove("learning") as? JSONObject
                 check(still()) { context.getString(R.string.sms_permission_needed) }
@@ -418,16 +424,29 @@ internal object SmsReadings {
                 }
                 read = grown
                 remaining = remaining.drop(part.size)
-                current.value = Reading(identity, (current.value?.read ?: 0) + part.size, messages.size)
+                current.value = current.value?.let { it.copy(read = it.read + part.size, part = 0, live = null) }
             }
             return read
         } finally { job = null; current.value = null; lock.unlock(); ended.value++ }
     }
 }
 
+/**
+ * What the assistant is doing with a request while it answers: its stage ("waiting" for it, "thinking",
+ * "writing" its answer, or "fixing" what the app's check found), its latest thought, how many of the
+ * [read] texts it reads in full its answer has covered, and the part of the answer it's writing
+ * ([section]: items, skipped, corrections or templates); [reviewed] texts it only checks.
+ */
+internal data class SmsLive(val stage: String, val thought: String, val written: Int, val read: Int, val reviewed: Int, val section: String = "") {
+    companion object {
+        fun of(json: JSONObject) = SmsLive(json.text("stage"), json.text("thought"), json.optInt("written"), json.optInt("read"), json.optInt("reviewed"), json.text("section"))
+    }
+}
+
 internal interface SmsAnalyzer {
     suspend fun status(): JSONObject
-    suspend fun analyze(request: JSONObject): JSONObject
+    /** Reads a request; [live] hears what the assistant is doing until it answers. */
+    suspend fun analyze(request: JSONObject, live: (SmsLive) -> Unit = {}): JSONObject
     /** Each text's lane by the budget's templates, to size requests; null reads them [SmsBatchSize] at a time. */
     suspend fun lanes(request: JSONObject): List<String>? = null
 }
@@ -437,7 +456,7 @@ internal object NativeSmsAnalyzer : SmsAnalyzer {
         withContext(Dispatchers.IO) { (NativeServices.call("assistant_sms_lanes", JSONObject().put("request", request)) as JSONObject).getJSONArray("lanes") }
             .let { a -> (0 until a.length()).map { a.getString(it) } }
     } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { null }
-    override suspend fun analyze(request: JSONObject): JSONObject {
+    override suspend fun analyze(request: JSONObject, live: (SmsLive) -> Unit): JSONObject {
         var id: String? = null
         try {
             // Capture the returned job even if cancellation arrives during the JNI call.
@@ -449,6 +468,7 @@ internal object NativeSmsAnalyzer : SmsAnalyzer {
                 delay(400)
                 val reply = withContext(Dispatchers.IO) { NativeServices.call("assistant_sms_poll", JSONObject().put("id", id)) as JSONObject }
                 if (!reply.optBoolean("running")) return reply.getJSONObject("analysis").apply { reply.optJSONObject("learning")?.let { put("learning", it) } }
+                reply.optJSONObject("progress")?.let { live(SmsLive.of(it)) }
             }
         } finally {
             id?.let { job -> withContext(NonCancellable + Dispatchers.IO) { runCatching { NativeServices.call("assistant_sms_cancel", JSONObject().put("id", job)) } } }
