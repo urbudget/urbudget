@@ -84,7 +84,7 @@ pub struct Compiled {
     specific: usize,
 }
 
-const DATE_PARTS: [&str; 4] = ["dd", "mm", "yy", "yyyy"];
+const DATE_PARTS: [&str; 5] = ["dd", "mm", "mmm", "yy", "yyyy"];
 
 fn slot(name: &str) -> Result<(Slot, Option<String>), String> {
     let (name, arg) = name.split_once(':').map_or((name, None), |(n, a)| (n, Some(a.to_string())));
@@ -96,11 +96,11 @@ fn slot(name: &str) -> Result<(Slot, Option<String>), String> {
     };
     if kind == Slot::Date {
         let order = arg.as_deref().ok_or("A date slot names its order, like {date:dd/mm/yy}.")?;
-        let parts: Vec<&str> = order.split(['/', '-', '.', ' ']).collect();
-        let mut sorted: Vec<&str> = parts.iter().map(|p| if *p == "yyyy" { "yy" } else { p }).collect();
+        let parts = date_parts(order);
+        let mut sorted: Vec<&str> = parts.iter().map(|p| match *p { "yyyy" => "yy", "mmm" => "mm", p => p }).collect();
         sorted.sort();
-        if parts.len() != 3 || !parts.iter().all(|p| DATE_PARTS.contains(p)) || sorted != ["dd", "mm", "yy"] {
-            return Err(format!("Write a date's order with dd, mm and yy or yyyy, not {order}."));
+        if !parts.iter().all(|p| DATE_PARTS.contains(p)) || (sorted != ["dd", "mm", "yy"] && sorted != ["dd", "mm"]) {
+            return Err(format!("Write a date's order with dd, mm or mmm, and yy or yyyy when it has a year, not {order}."));
         }
     } else if arg.is_some() {
         return Err(format!("Only a date slot takes an order, not {{{name}}}."));
@@ -170,9 +170,10 @@ pub fn compile(t: &Template) -> Result<Compiled, String> {
         }
         _ => return Err("Give a template either a skip reason or a disposition of transaction or pending.".into()),
     }
-    for s in [Slot::Amount, Slot::Total, Slot::Currency, Slot::Date, Slot::Ref, Slot::Other, Slot::Payee] {
+    // A currency may come again beside a balance; the amount's is the one read.
+    for s in [Slot::Amount, Slot::Total, Slot::Date, Slot::Ref, Slot::Other, Slot::Payee] {
         if slots.iter().filter(|x| **x == s).count() > 1 {
-            return Err("Use each of amount, total, currency, date, ref, other and payee once.".into());
+            return Err("Use each of amount, total, date, ref, other and payee once.".into());
         }
     }
     Ok(Compiled { template: t.clone(), lines, specific })
@@ -200,43 +201,197 @@ fn literal(s: &[char], at: usize, lit: &[char]) -> Option<usize> {
     }
     Some(i)
 }
+/// Separators a bank groups an amount's digits with, or puts before its decimals: "1,234.56",
+/// "1.234,56", "1'234.50".
+const SEPARATORS: [char; 3] = [',', '.', '\''];
+/// Where a number starting at `at` ends: digits, and with `grouping` the separators between them,
+/// a space among them only between groups of three ("1 249,00" as French banks write it).
 fn number(s: &[char], at: usize, grouping: bool) -> Option<usize> {
     let mut i = at;
-    while i < s.len() && (s[i].is_ascii_digit() || (grouping && s[i] == ',' && i > at && i + 1 < s.len() && s[i + 1].is_ascii_digit())) { i += 1 }
-    if i == at { return None; }
-    if grouping && i + 1 < s.len() && s[i] == '.' && s[i + 1].is_ascii_digit() {
+    let mut group = 0;
+    while i < s.len() {
+        let three = || (1..=3).all(|k| s.get(i + k).is_some_and(char::is_ascii_digit)) && s.get(i + 4).is_none_or(|c| !c.is_ascii_digit());
+        if s[i].is_ascii_digit() {
+            group += 1;
+        } else if grouping && i > at && SEPARATORS.contains(&s[i]) && s.get(i + 1).is_some_and(char::is_ascii_digit) {
+            group = 0;
+        } else if grouping && i > at && s[i] == ' ' && (1..=3).contains(&group) && three() {
+            group = 0;
+        } else {
+            break;
+        }
         i += 1;
-        while i < s.len() && s[i].is_ascii_digit() { i += 1 }
     }
-    Some(i)
+    (i > at).then_some(i)
 }
-const CURRENCY_WORDS: [&str; 4] = ["ريال", "ر.س", "رس", "SR"];
-fn typed(s: &[char], at: usize, kind: Slot) -> Option<usize> {
+
+/// An amount as a bank writes it, as a plain decimal with a point: the separator before the last
+/// one or two digits is the decimal point and the others group ("1.234,56" and "1,234.56" are
+/// "1234.56", "12,50" is "12.50"). A comma before three digits groups; a point before three digits
+/// is a decimal point unless another point groups ("1.250" stays "1.250", for a currency with
+/// three decimals; "1.250.000" is "1250000").
+pub fn decimal(number: &str) -> String {
+    let chars: Vec<char> = number.chars().filter(|c| *c != ' ').collect();
+    let number: String = chars.iter().collect();
+    let Some(last) = chars.iter().rposition(|c| SEPARATORS.contains(c)) else { return number };
+    let after = chars.len() - last - 1;
+    let sep = chars[last];
+    let point = sep != '\'' && match after {
+        1 | 2 => true,
+        3 => sep == '.' && chars[..last].iter().all(|c| *c != '.'),
+        _ => false,
+    };
+    let digits = |part: &[char]| part.iter().filter(|c| c.is_ascii_digit()).collect::<String>();
+    if point { format!("{}.{}", digits(&chars[..last]), digits(&chars[last + 1..])) } else { digits(&chars) }
+}
+
+/// Currency marks banks write beside an amount, and the currencies each can mean: a mark several
+/// share is the budget's currency when it's one of them, else the first. Where one mark begins
+/// another, the longer comes first.
+const MARKS: &[(&str, &[&str])] = &[
+    ("US$", &["USD"]), ("CA$", &["CAD"]), ("C$", &["CAD"]), ("AU$", &["AUD"]), ("A$", &["AUD"]), ("NZ$", &["NZD"]), ("S$", &["SGD"]),
+    ("HK$", &["HKD"]), ("NT$", &["TWD"]), ("R$", &["BRL"]), ("MX$", &["MXN"]),
+    ("$", &["USD", "CAD", "AUD", "NZD", "SGD", "HKD", "MXN", "TWD", "ARS", "CLP", "COP"]),
+    ("£", &["GBP", "EGP", "LBP"]), ("€", &["EUR"]), ("₹", &["INR"]), ("Rs.", &["INR", "PKR", "LKR", "NPR", "MUR"]), ("Rs", &["INR", "PKR", "LKR", "NPR", "MUR"]),
+    ("¥", &["JPY", "CNY"]), ("元", &["CNY"]), ("₩", &["KRW"]), ("₺", &["TRY"]), ("TL", &["TRY"]), ("₦", &["NGN"]), ("₱", &["PHP"]), ("₫", &["VND"]),
+    ("₪", &["ILS"]), ("฿", &["THB"]), ("₴", &["UAH"]), ("₽", &["RUB"]), ("₸", &["KZT"]), ("zł", &["PLN"]), ("Kč", &["CZK"]), ("Ft", &["HUF"]),
+    ("kr.", &["DKK", "SEK", "NOK", "ISK"]), ("kr", &["SEK", "NOK", "DKK", "ISK"]), ("RM", &["MYR"]), ("Rp", &["IDR"]), ("KSh", &["KES"]),
+    ("ر.س", &["SAR"]), ("ر.ق", &["QAR"]), ("ر.ع", &["OMR"]), ("ريال", &["SAR", "QAR", "OMR", "YER"]), ("رس", &["SAR"]), ("SR", &["SAR"]),
+    ("د.إ", &["AED"]), ("درهم", &["AED", "MAD"]), ("د.ك", &["KWD"]), ("د.ب", &["BHD"]), ("دينار", &["KWD", "BHD", "JOD", "IQD", "LYD", "TND", "DZD"]),
+    ("ج.م", &["EGP"]),
+];
+/// Currency codes a text may give an amount in, so "OTP 482193" isn't one.
+const CODES: &[&str] = &[
+    "AED", "AFN", "ALL", "AMD", "ARS", "AUD", "AZN", "BAM", "BDT", "BGN", "BHD", "BRL", "BYN", "CAD", "CHF", "CLP", "CNY", "COP", "CRC", "CZK",
+    "DKK", "DOP", "DZD", "EGP", "ETB", "EUR", "GBP", "GEL", "GHS", "GTQ", "HKD", "HUF", "IDR", "ILS", "INR", "IQD", "IRR", "ISK", "JMD", "JOD",
+    "JPY", "KES", "KRW", "KWD", "KZT", "LBP", "LKR", "LYD", "MAD", "MXN", "MYR", "NGN", "NOK", "NPR", "NZD", "OMR", "PEN", "PHP", "PKR", "PLN",
+    "QAR", "RON", "RSD", "RUB", "SAR", "SEK", "SGD", "SYP", "THB", "TND", "TRY", "TWD", "TZS", "UAH", "UGX", "USD", "UYU", "UZS", "VND", "XAF",
+    "XOF", "YER", "ZAR", "RMB",
+];
+/// The mark or code a text writes starting at `at`, and where it ends.
+fn currency_mark(s: &[char], at: usize) -> Option<usize> {
+    for (mark, _) in MARKS {
+        let m: Vec<char> = mark.chars().collect();
+        // A mark of Latin letters stands alone ("RM 12", not "RMB"); a symbol, or an Arabic word, can touch what follows.
+        let alone = !m[m.len() - 1].is_ascii_alphabetic() || s.get(at + m.len()).is_none_or(|c| !c.is_ascii_alphabetic());
+        if s.len() >= at + m.len() && s[at..at + m.len()] == m[..] && alone { return Some(at + m.len()); }
+    }
+    (s.len() >= at + 3 && s[at..at + 3].iter().all(|c| c.is_ascii_alphabetic()) && s.get(at + 3).is_none_or(|c| !c.is_ascii_alphabetic())).then_some(at + 3)
+}
+/// Whether a currency stands right before or after the number at `start..end`: "SAR 1,250",
+/// "بـ:SAR 23.50", "$45.00", "1.234,56 €", "120 ريال", "Rs.2,500".
+pub fn beside_currency(chars: &[char], start: usize, end: usize) -> bool {
+    let known = |at: usize| currency_mark(chars, at).filter(|&e| {
+        let word: String = chars[at..e].iter().collect();
+        MARKS.iter().any(|(m, _)| *m == word) || CODES.contains(&word.to_uppercase().as_str())
+    });
+    let mut after = end;
+    while after < chars.len() && chars[after].is_whitespace() { after += 1 }
+    if known(after).is_some() { return true; }
+    let mut before = start;
+    while before > 0 && (chars[before - 1].is_whitespace() || chars[before - 1] == ':') { before -= 1 }
+    // A mark ending where the number's spaces begin, its first letter not inside a word.
+    (1..=5.min(before)).any(|len| {
+        let at = before - len;
+        known(at) == Some(before) && (at == 0 || !chars[at - 1].is_alphabetic() || !chars[at].is_alphabetic())
+    })
+}
+/// Where each number in a text starts and ends, with its separators: "1,250.00" is one.
+pub fn numbers(chars: &[char]) -> Vec<(usize, usize)> {
+    let mut out = vec![];
+    let mut i = 0;
+    while i < chars.len() {
+        if !chars[i].is_ascii_digit() || (i > 0 && chars[i - 1].is_ascii_digit()) {
+            i += 1;
+            continue;
+        }
+        let end = number(chars, i, true).unwrap_or(i + 1);
+        out.push((i, end));
+        i = end;
+    }
+    out
+}
+/// The amounts a text gives beside a currency, as plain decimals without trailing zeros:
+/// "SAR 1,250.00", "1.250,00 €" and "$1,250" are each "1250".
+pub fn amounts(body: &str) -> std::collections::HashSet<String> {
+    let chars: Vec<char> = body.chars().collect();
+    numbers(&chars).into_iter().filter(|&(s, e)| beside_currency(&chars, s, e)).map(|(s, e)| {
+        let n = decimal(&chars[s..e].iter().collect::<String>());
+        if n.contains('.') { n.trim_end_matches('0').trim_end_matches('.').to_owned() } else { n }
+    }).collect()
+}
+
+/// A date's parts in the order a template writes it ("dd/mm/yy", "mmm dd, yyyy", "dd-mmm").
+fn date_parts(order: &str) -> Vec<&str> {
+    order.split(|c: char| !c.is_ascii_alphabetic()).filter(|p| !p.is_empty()).collect()
+}
+const MONTHS: [&str; 12] = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+/// A month's name or its first three letters or more ("Nov", "Sept", "October"), from 1.
+fn month(name: &str) -> Option<u32> {
+    let name = name.to_lowercase();
+    (name.chars().count() >= 3).then_some(())?;
+    MONTHS.iter().position(|m| m.starts_with(&name)).map(|i| i as u32 + 1)
+}
+/// A date written in `order` from `at`: where it ends, and its day, month and year if it gives one.
+/// Between numbers any of / - . stands for the order's; spaces and a comma are optional.
+fn read_date(s: &[char], at: usize, order: &str) -> Option<(usize, u32, u32, Option<i32>)> {
+    let (mut d, mut m, mut y) = (None, None, None);
+    let mut i = at;
+    let mut first = true;
+    for part in date_parts(order) {
+        if !first {
+            while i < s.len() && (s[i].is_whitespace() || s[i] == ',') { i += 1 }
+            if i < s.len() && "/-.".contains(s[i]) { i += 1 }
+            while i < s.len() && s[i].is_whitespace() { i += 1 }
+        }
+        first = false;
+        let start = i;
+        if part == "mmm" {
+            while i < s.len() && s[i].is_alphabetic() { i += 1 }
+            m = Some(month(&s[start..i].iter().collect::<String>())?);
+            // "Nov." as some write it.
+            if i < s.len() && s[i] == '.' && s.get(i + 1).is_none_or(|c| !c.is_ascii_digit()) { i += 1 }
+            continue;
+        }
+        while i < s.len() && s[i].is_ascii_digit() && i - start < 4 { i += 1 }
+        let digits: String = s[start..i].iter().collect();
+        let value: i32 = digits.parse().ok()?;
+        match (part, digits.len()) {
+            ("dd", 1 | 2) => d = Some(value as u32),
+            ("mm", 1 | 2) => m = Some(value as u32),
+            ("yy", 2) => y = Some(2000 + value),
+            ("yyyy", 4) => y = Some(value),
+            _ => return None,
+        }
+    }
+    Some((i, d?, m?, y))
+}
+fn typed(s: &[char], at: usize, kind: Slot, arg: Option<&str>) -> Option<usize> {
     let i = at;
     match kind {
         Slot::Amount | Slot::Total | Slot::Balance => number(s, i, true),
         Slot::Code | Slot::Number => number(s, i, false),
-        Slot::Currency => {
-            for word in CURRENCY_WORDS {
-                let w: Vec<char> = word.chars().collect();
-                if s.len() >= i + w.len() && s[i..i + w.len()] == w[..] { return Some(i + w.len()); }
-            }
-            (s.len() >= i + 3 && s[i..i + 3].iter().all(|c| c.is_ascii_alphabetic()) && s.get(i + 3).is_none_or(|c| !c.is_ascii_alphabetic())).then_some(i + 3)
-        }
-        Slot::Date => {
-            let mut j = i;
-            while j < s.len() && (s[j].is_ascii_digit() || "/-.".contains(s[j])) { j += 1 }
-            (j - i >= 6).then_some(j)
-        }
+        Slot::Currency => currency_mark(s, i),
+        Slot::Date => read_date(s, i, arg?).map(|(end, ..)| end),
         Slot::Time => {
             let mut j = i;
             while j < s.len() && (s[j].is_ascii_digit() || s[j] == ':') { j += 1 }
             let t: String = s[i..j].iter().collect();
-            (t.contains(':') && t.split(':').all(|p| (1..=2).contains(&p.len()))).then_some(j)
+            if !(t.contains(':') && t.split(':').all(|p| (1..=2).contains(&p.len()))) { return None; }
+            // "1:05 PM", "1:05pm", "1:05 p.m."
+            let mut k = j;
+            while k < s.len() && s[k].is_whitespace() { k += 1 }
+            let rest: String = s[k..s.len().min(k + 4)].iter().collect::<String>().to_lowercase();
+            for suffix in ["a.m.", "p.m.", "am", "pm"] {
+                if rest.starts_with(suffix) && s.get(k + suffix.len()).is_none_or(|c| !c.is_alphanumeric()) { return Some(k + suffix.len()); }
+            }
+            Some(j)
         }
         Slot::Ref | Slot::Other => {
+            // A mask may lead with points ("...4421"); after the digits a point ends the sentence.
             let mut j = i;
-            while j < s.len() && (s[j].is_ascii_digit() || "*xX#".contains(s[j])) { j += 1 }
+            while j < s.len() && ".*xX#•…".contains(s[j]) { j += 1 }
+            while j < s.len() && (s[j].is_ascii_digit() || "*xX#•…".contains(s[j])) { j += 1 }
             (s[i..j].iter().filter(|c| c.is_ascii_digit()).count() >= 2).then_some(j)
         }
         Slot::Payee | Slot::Any => None,
@@ -263,7 +418,7 @@ fn match_line(s: &[char], tokens: &[Token]) -> Option<Vec<(Slot, Option<String>,
                 at = end;
             }
             Token::Slot(kind, arg) => {
-                let end = typed(s, at, *kind)?;
+                let end = typed(s, at, *kind, arg.as_deref())?;
                 found.push((*kind, arg.clone(), s[at..end].iter().collect()));
                 at = end;
             }
@@ -292,15 +447,25 @@ impl Compiled {
         let text = normalised(body);
         let mut reading = Reading::default();
         let mut at = 0;
+        // A currency written again beside a balance isn't the amount's: the one beside the amount wins.
+        let mut beside_amount = false;
         for line in &self.lines {
             match text.get(at).and_then(|s| match_line(s, &line.tokens)) {
                 Some(found) => {
-                    for (kind, arg, value) in found {
+                    let kinds: Vec<Slot> = found.iter().map(|(kind, ..)| *kind).collect();
+                    for (n, (kind, arg, value)) in found.into_iter().enumerate() {
                         match kind {
                             Slot::Amount => reading.amount = Some(value),
                             Slot::Total => reading.total = Some(value),
                             Slot::Balance => reading.balance = Some(value),
-                            Slot::Currency => reading.currency = Some(value),
+                            Slot::Currency => {
+                                let beside = [n.checked_sub(1), Some(n + 1)].into_iter().flatten()
+                                    .any(|k| matches!(kinds.get(k), Some(Slot::Amount | Slot::Total)));
+                                if reading.currency.is_none() || (beside && !beside_amount) {
+                                    reading.currency = Some(value);
+                                    beside_amount = beside;
+                                }
+                            }
                             Slot::Date => reading.date = Some((value, arg.unwrap_or_default())),
                             Slot::Time => reading.time = Some(value),
                             Slot::Ref => reading.reference = Some(value),
@@ -319,22 +484,32 @@ impl Compiled {
     }
 }
 
-/// A date written in `order` ("dd/mm/yy"), as YYYY-MM-DD.
-fn date(value: &str, order: &str) -> Option<String> {
-    let parts: Vec<&str> = value.split(['/', '-', '.']).collect();
-    let names: Vec<&str> = order.split(['/', '-', '.', ' ']).collect();
-    if parts.len() != 3 || names.len() != 3 { return None; }
-    let (mut d, mut m, mut y) = (0u32, 0u32, 0i32);
-    for (p, n) in parts.iter().zip(&names) {
-        let v: i32 = p.parse().ok()?;
-        match *n { "dd" => d = v as u32, "mm" => m = v as u32, "yy" if p.len() == 2 => y = 2000 + v, "yyyy" if p.len() == 4 => y = v, _ => return None }
-    }
+/// A date written in `order` ("dd/mm/yy", "mmm dd"), as YYYY-MM-DD. One with no year is in the year
+/// that puts it on or before the day the text came ([received]), give or take a day.
+fn date(value: &str, order: &str, received: &str) -> Option<String> {
+    let chars: Vec<char> = value.chars().collect();
+    let (end, d, m, y) = read_date(&chars, 0, order)?;
+    if end != chars.len() { return None; }
+    let came = chrono::NaiveDate::parse_from_str(received, "%Y-%m-%d").ok();
+    let y = match (y, came) {
+        (Some(y), _) => y,
+        (None, Some(came)) => {
+            use chrono::Datelike;
+            let this = chrono::NaiveDate::from_ymd_opt(came.year(), m, d)?;
+            if this > came + chrono::Duration::days(1) { came.year() - 1 } else { came.year() }
+        }
+        (None, None) => return None,
+    };
     chrono::NaiveDate::from_ymd_opt(y, m, d).map(|day| day.format("%Y-%m-%d").to_string())
 }
-fn currency_code(written: &str) -> String {
-    match written { "ريال" | "ر.س" | "رس" | "SR" => "SAR".into(), w => w.to_uppercase() }
+/// The three-letter code for a currency as a text writes it ([MARKS]); a mark several currencies
+/// share is the [budget]'s when it's one of them.
+fn currency_code(written: &str, budget: &str) -> String {
+    if let Some((_, codes)) = MARKS.iter().find(|(m, _)| *m == written) {
+        return if codes.contains(&budget) { budget.to_string() } else { codes[0].to_string() };
+    }
+    match written.to_uppercase().as_str() { "RMB" => "CNY".into(), w => w.into() }
 }
-fn plain(number: &str) -> String { number.replace(',', "") }
 
 /// The item a template reads from a text, as the assistant would write it; checked as the
 /// assistant's would be. None when the reading doesn't make a valid item.
@@ -349,12 +524,12 @@ pub fn fill(b: &Budget, c: &Compiled, m: &Message, reading: &Reading, payees: &H
             transaction: None, unsure: vec![], template: Some(t.id.clone()), raw: None, kept: false }
     } else {
         let negative = o.sign.as_deref() == Some("-");
-        let signed = |n: &str| format!("{}{}", if negative { "-" } else { "" }, plain(n));
+        let signed = |n: &str| format!("{}{}", if negative { "-" } else { "" }, decimal(n));
         let written = reading.amount.as_ref().or(reading.total.as_ref())?;
-        let currency = reading.currency.as_deref().map(currency_code).unwrap_or_else(|| b.currency.clone());
+        let currency = reading.currency.as_deref().map(|w| currency_code(w, &b.currency)).unwrap_or_else(|| b.currency.clone());
         let amount = if currency == b.currency { Some(signed(written)) } else { reading.total.as_deref().map(signed) };
         // The day the text was written for, or the day it came when the format gives none.
-        let day = match &reading.date { Some((value, order)) => date(value, order)?, None => m.received_date.clone() };
+        let day = match &reading.date { Some((value, order)) => date(value, order, &m.received_date)?, None => m.received_date.clone() };
         let raw = reading.payee.clone();
         let learned = raw.as_deref().and_then(|r| payees.get(&(t.sender.clone(), payee_key(r))));
         let mine = if learned.is_none() { raw.as_deref().zip(known).and_then(|(r, k)| k.same(r)) } else { None };
@@ -367,7 +542,7 @@ pub fn fill(b: &Budget, c: &Compiled, m: &Message, reading: &Reading, payees: &H
             note: t.note.replace("{payee}", &payee).trim().to_string().chars().take(200).collect::<String>().trim().to_string(),
             evidence: vec![Evidence { source_id: m.id.clone(), quote: written.clone() }],
             transaction: Some(Transaction {
-                date: day, amount, currency: if reading.amount.is_some() { currency } else { b.currency.clone() }, written_amount: plain(written), payee,
+                date: day, amount, currency: if reading.amount.is_some() { currency } else { b.currency.clone() }, written_amount: decimal(written), payee,
                 memo: o.memo.clone().unwrap_or_default(), kind, account_ref: reading.reference.clone(), other_ref: reading.other.clone(),
                 other_account: None, category_id: category, account_id: None, transfer_account_id: None,
             }),
@@ -405,10 +580,13 @@ impl Lanes {
 pub const CODE_FILTER: &str = "filter:code";
 
 /// Phrases only a one-time code text uses, in the languages banks write in.
-const CODE_PHRASES: [&str; 12] = ["otp", "one-time password", "one time password", "verification code", "do not share", "don't share",
-    "لا تشارك الرمز", "رمز التحقق", "رمز المرور", "كلمة المرور لمرة واحدة", "كلمة مرور صالحة لمرة واحدة", "رمز التفعيل"];
-/// Words a code follows ("OTP: 4821", "رمز : 482193").
-const CODE_WORDS: [&str; 6] = ["otp", "code", "password", "pin", "رمز", "كلمة المرور"];
+const CODE_PHRASES: &[&str] = &["otp", "one-time password", "one time password", "one-time pin", "one time pin", "verification code", "security code",
+    "passcode", "do not share", "don't share", "never share",
+    "لا تشارك الرمز", "رمز التحقق", "رمز المرور", "كلمة المرور لمرة واحدة", "كلمة مرور صالحة لمرة واحدة", "رمز التفعيل",
+    "código de verificación", "código de seguridad", "no compartas", "code de vérification", "ne partagez", "bestätigungscode", "nicht weitergeben",
+    "codice di verifica", "código de verificação", "doğrulama kodu", "kode verifikasi"];
+/// Words a code follows ("OTP: 4821", "رمز : 482193", "código: 4821").
+const CODE_WORDS: &[&str] = &["otp", "code", "password", "pin", "passcode", "رمز", "كلمة المرور", "código", "codice", "kode", "kodu"];
 
 /// A one-time code before any template knows the format: a code phrase, and a 4–8 digit number
 /// shortly after a code word, so a purchase that ends "never share your OTP" isn't one.
@@ -419,12 +597,12 @@ pub fn looks_like_code(body: &str) -> bool {
     let words: Vec<String> = text.split(|c: char| !c.is_alphanumeric()).map(str::to_owned).collect();
     let phrase = CODE_PHRASES.iter().any(|p| if p.is_ascii() && !p.contains(' ') { words.iter().any(|w| w == p) } else { text.contains(p) });
     if !phrase { return false; }
-    // Where each code word ends, in characters.
-    let mut ends = vec![];
+    // Where each code word starts and ends, in characters.
+    let mut found = vec![];
     for word in CODE_WORDS {
         let w: Vec<char> = word.chars().collect();
         for i in 0..(lower.len() + 1).saturating_sub(w.len()) {
-            if lower[i..i + w.len()] == w[..] { ends.push(i + w.len()) }
+            if lower[i..i + w.len()] == w[..] { found.push((i, i + w.len())) }
         }
     }
     let mut i = 0;
@@ -432,7 +610,11 @@ pub fn looks_like_code(body: &str) -> bool {
         if lower[i].is_ascii_digit() {
             let start = i;
             while i < lower.len() && lower[i].is_ascii_digit() { i += 1 }
-            if (4..=8).contains(&(i - start)) && ends.iter().any(|&e| e <= start && start - e <= 60) { return true; }
+            let digits = (4..=8).contains(&(i - start));
+            // After a code word ("OTP: 4821"), or first in the text with one soon after ("482193 is your OTP").
+            let after = found.iter().any(|&(_, e)| e <= start && start - e <= 60);
+            let first = lower[..start].iter().all(|c| !c.is_alphanumeric()) && found.iter().any(|&(s, _)| s >= i && s - i <= 40);
+            if digits && (after || first) { return true; }
         } else { i += 1 }
     }
     false
@@ -578,6 +760,96 @@ mod tests {
     const BODY: &str = "Online Purchase\r\nApple Pay\r\nVISA Card:1234\r\nAmount:SAR 1,065.97\r\nBalance:SAR 9,120.40\r\nAt:NOON E\r\nOn:01/11/26 13:05";
 
     #[test]
+    fn an_amount_is_read_however_a_bank_groups_it_and_marks_its_decimals() {
+        for (written, plain) in [("1,234.56", "1234.56"), ("1.234,56", "1234.56"), ("12,50", "12.50"), ("12,5", "12.5"), ("1,250", "1250"),
+            ("1'234.50", "1234.50"), ("1'234", "1234"), ("1,23,456.78", "123456.78"), ("1.250.000", "1250000"), ("1.250", "1.250"), ("35000", "35000"), ("0.71", "0.71"),
+            ("1 249,00", "1249.00"), ("12 345 678", "12345678")] {
+            assert_eq!(decimal(written), plain, "{written}");
+        }
+        let set = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<std::collections::HashSet<_>>();
+        assert_eq!(amounts("Amount:SAR 1,250.00 Balance:SAR 9,120.40 Card:4512 On:28/10/26"), set(&["1250", "9120.4"]));
+        assert_eq!(amounts("حوالة 12000 ريال وبـ:SAR 23.50 و 7 USD"), set(&["12000", "23.5", "7"]));
+        assert_eq!(amounts("You spent £12.50 at TESCO; $45.00, €1.234,56 and 9,99 € and Rs.2,500.00 and ₹ 300 and 1500 kr"), set(&["12.5", "45", "1234.56", "9.99", "2500", "300", "1500"]));
+        // Grouped with spaces, but only in threes: "45 1234" is two numbers.
+        assert_eq!(amounts("Paiement de 1 249,00 € et 45 1234 EUR"), set(&["1249", "1234"]));
+        // Not a currency: a code, a card, a word ending in a code's letters, a mark inside a word.
+        assert_eq!(amounts("OTP 482193 card 4512 BASAR 99 FORMS 12 on 03/11/26"), set(&[]));
+    }
+    #[test]
+    fn a_currency_mark_is_the_budgets_when_it_could_be_and_the_usual_one_otherwise() {
+        for (mark, budget, code) in [("$", "USD", "USD"), ("$", "CAD", "CAD"), ("$", "EUR", "USD"), ("C$", "USD", "CAD"), ("£", "GBP", "GBP"), ("€", "SAR", "EUR"),
+            ("Rs.", "PKR", "PKR"), ("Rs", "USD", "INR"), ("₹", "INR", "INR"), ("¥", "CNY", "CNY"), ("¥", "USD", "JPY"), ("kr", "NOK", "NOK"),
+            ("ريال", "QAR", "QAR"), ("ريال", "USD", "SAR"), ("SR", "SAR", "SAR"), ("usd", "SAR", "USD"), ("RMB", "USD", "CNY")] {
+            assert_eq!(currency_code(mark, budget), code, "{mark} in {budget}");
+        }
+    }
+    #[test]
+    fn a_date_may_name_its_month_or_leave_out_its_year() {
+        let at = |v: &str, o: &str, r: &str| date(v, o, r);
+        assert_eq!(at("28/10/26", "dd/mm/yy", "2026-10-28").as_deref(), Some("2026-10-28"));
+        assert_eq!(at("28-10-2026", "dd/mm/yyyy", "2026-10-28").as_deref(), Some("2026-10-28"));
+        assert_eq!(at("29-Oct-26", "dd-mmm-yy", "2026-10-29").as_deref(), Some("2026-10-29"));
+        assert_eq!(at("Nov 3, 2026", "mmm dd, yyyy", "2026-11-03").as_deref(), Some("2026-11-03"));
+        assert_eq!(at("03 Sept. 2026", "dd mmm yyyy", "2026-09-03").as_deref(), Some("2026-09-03"));
+        // No year: the one that puts it on or before the day the text came.
+        assert_eq!(at("11/03", "mm/dd", "2026-11-03").as_deref(), Some("2026-11-03"));
+        assert_eq!(at("12/31", "mm/dd", "2027-01-01").as_deref(), Some("2026-12-31"));
+        assert_eq!(at("02 Jan", "dd mmm", "2027-01-01").as_deref(), Some("2027-01-02"));
+        assert_eq!(at("31/02/26", "dd/mm/yy", "2026-03-01"), None);
+        assert_eq!(at("Foo 3", "mmm dd", "2026-11-03"), None);
+        for order in ["dd/mm", "mmm dd, yyyy", "dd-mmm-yy"] { assert!(slot(&format!("date:{order}")).is_ok(), "{order}"); }
+        for order in ["dd/yy", "mm/yy", "dd/mm/mmm", "dd"] { assert!(slot(&format!("date:{order}")).is_err(), "{order}"); }
+    }
+    #[test]
+    fn banks_elsewhere_are_read_in_their_own_formats() {
+        let with = |currency: &str| { let mut b = budget(); b.currency = currency.into(); b };
+        let template = |sender: &str, lines: &[&str], sign: &str| Template {
+            id: template_id(sender, &lines.iter().map(|l| l.to_string()).collect::<Vec<_>>()), sender: sender.into(), lines: lines.iter().map(|l| l.to_string()).collect(),
+            outcome: Outcome { disposition: Some("transaction".into()), kind: Some(if sign == "-" { "expense" } else { "income" }.into()), sign: Some(sign.into()), ..Outcome::default() },
+            note: "{payee}".into(), payee: None,
+        };
+        let read = |b: &Budget, t: &Template, sender: &str, received: &str, body: &str| {
+            let c = compile(t).unwrap();
+            let m = Message { id: "sms:x".into(), sender: sender.into(), received_date: received.into(), received_time: "18:22".into(), body: body.into() };
+            let item = fill(b, &c, &m, &c.read(body).unwrap_or_else(|| panic!("reads {body}")), &HashMap::new(), None).unwrap();
+            let t = item.transaction.unwrap();
+            (t.date, t.amount, t.currency, t.written_amount, t.payee, t.account_ref)
+        };
+        let s = |v: &str| v.to_string();
+        // A US card: a dollar sign, the month first and no year.
+        let us = template("chase", &["Chase: You made a {currency}{amount} transaction with {payee} on your card ending {ref} on {date:mm/dd}."], "-");
+        assert_eq!(read(&with("USD"), &us, "Chase", "2026-11-03", "Chase: You made a $1,045.00 transaction with AMAZON MKTPLACE on your card ending 9876 on 11/03."),
+            (s("2026-11-03"), Some(s("-1045.00")), s("USD"), s("1045.00"), s("AMAZON MKTPLACE"), Some(s("9876"))));
+        // A UK bank: the pound sign, no date in the text.
+        let uk = template("bank", &["You've spent {currency}{amount} at {payee} with your card ending {ref}."], "-");
+        assert_eq!(read(&with("GBP"), &uk, "Bank", "2026-10-28", "You've spent £12.50 at TESCO STORES 3041 with your card ending 4512."),
+            (s("2026-10-28"), Some(s("-12.50")), s("GBP"), s("12.50"), s("TESCO STORES 3041"), Some(s("4512"))));
+        // An Indian bank: rupees as Rs., a month's name, a masked account.
+        let india = template("hdfcbk", &["{currency}{amount} debited from A/c {ref} on {date:dd-mmm-yy} to VPA {payee} (UPI Ref No {n}). Not you? Call {n}"], "-");
+        assert_eq!(read(&with("INR"), &india, "HDFCBK", "2026-10-29", "Rs.2,500.00 debited from A/c XX1234 on 29-Oct-26 to VPA swiggy@icici (UPI Ref No 630123456789). Not you? Call 18002586161"),
+            (s("2026-10-29"), Some(s("-2500.00")), s("INR"), s("2500.00"), s("swiggy@icici"), Some(s("XX1234"))));
+        // A German bank: comma decimals, the currency after, a full date with points.
+        let de = template("bank", &["Kartenzahlung {amount} {currency} bei {payee}, Karte {ref}, {date:dd.mm.yyyy}"], "-");
+        assert_eq!(read(&with("EUR"), &de, "Bank", "2026-10-31", "Kartenzahlung 1.234,56 EUR bei MEDIAMARKT BERLIN, Karte ...4421, 31.10.2026"),
+            (s("2026-10-31"), Some(s("-1234.56")), s("EUR"), s("1234.56"), s("MEDIAMARKT BERLIN"), Some(s("...4421"))));
+        // The same German text in a dollar budget: its own currency, the amount left for the user.
+        assert_eq!(read(&with("USD"), &de, "Bank", "2026-10-31", "Kartenzahlung 12,50 € bei CAFE, Karte ...4421, 31.10.2026").1, None);
+        // A French bank: thousands grouped with a space, a date with no year.
+        let fr = template("bank", &["Paiement CB de {amount} {currency} chez {payee} le {date:dd/mm} carte {ref}"], "-");
+        assert_eq!(read(&with("EUR"), &fr, "Bank", "2026-11-06", "Paiement CB de 1 249,00 € chez FNAC le 06/11 carte ****4421"),
+            (s("2026-11-06"), Some(s("-1249.00")), s("EUR"), s("1249.00"), s("FNAC"), Some(s("****4421"))));
+        // The currency given again beside the balance: the amount's is read, whichever comes first.
+        let neft = template("bank", &["{currency} {amount} credited to A/c {ref} on {date:dd-mmm-yy} by NEFT from {payee}. Avl Bal {currency} {balance}"], "+");
+        assert_eq!(read(&with("INR"), &neft, "Bank", "2026-10-31", "INR 1,23,456.00 credited to A/c XX1234 on 31-Oct-26 by NEFT from ACME TECHNOLOGIES PVT LTD. Avl Bal INR 2,45,000.50"),
+            (s("2026-10-31"), Some(s("123456.00")), s("INR"), s("123456.00"), s("ACME TECHNOLOGIES PVT LTD"), Some(s("XX1234"))));
+        let balance_first = template("bank", &["Bal {currency} {balance}. Spent {currency} {amount} at {payee} card {ref}"], "-");
+        assert_eq!(read(&with("INR"), &balance_first, "Bank", "2026-10-31", "Bal INR 9,000.00. Spent USD 45.00 at AMAZON card 1234").2, s("USD"));
+        // A time with AM or PM.
+        let pm = template("bank", &["Card {ref} spent {currency} {amount} at {payee} on {date:dd/mm/yyyy} {time}"], "-");
+        assert_eq!(read(&with("AED"), &pm, "Bank", "2026-11-02", "Card 1234 spent AED 85.00 at CARREFOUR on 02/11/2026 7:45 PM").1, Some(s("-85.00")));
+    }
+
+    #[test]
     fn a_template_reads_its_format_whatever_the_spacing_and_skips_its_optional_lines() {
         let c = compile(&purchase()).unwrap();
         let r = c.read(BODY).unwrap();
@@ -686,6 +958,14 @@ mod tests {
         let l = lanes(&b, &codes, &[], &[], &Default::default());
         assert_eq!((l.junk.iter().map(|(i, _)| *i).collect::<Vec<_>>(), l.read.clone()), (vec![0, 1, 4], vec![2, 3]));
         assert_eq!(l.of(5), vec!["junk", "junk", "read", "read", "junk"]);
+        // In other languages too, and still never a purchase that mentions one.
+        for code in ["Tu código de verificación es 482193. No lo compartas.", "Votre code de vérification : 739201", "Ihr Bestätigungscode: 4821",
+            "482193 is your one-time PIN for a purchase of $45.00 at BESTBUY", "Doğrulama kodu: 739201"] {
+            assert!(looks_like_code(code), "{code}");
+        }
+        for money in ["Compra de 45,00 € en MERCADONA con tarjeta 4512. Nunca compartas tu código.", "You spent £12.50 at TESCO with card 4512. We'll never ask for your passcode."] {
+            assert!(!looks_like_code(money), "{money}");
+        }
     }
     #[test]
     fn a_template_is_kept_only_when_it_reads_the_batch_as_the_assistant_did() {

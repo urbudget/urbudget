@@ -232,17 +232,18 @@ What to return
 - For a payee that isn't in payees or bankNames, payee_history shows whether the user has it under another name and which category they give it.
 
 Templates
-- A template describes one format a sender writes, so the phone can read the next text in it. lines: the text's lines in order, the words that never change copied exactly as the bank writes them, and the parts that change as slots: {amount}, {currency}, {total} (the amount in the budget's currency when the text gives one beside a foreign amount), {balance}, {date:dd/mm/yy} (the date's order and separator as written, with dd, mm, yy or yyyy), {time}, {ref} (the card or account the text is about), {other} (a transfer's other account), {payee}, {code}, {n} (any other number) and {any} (other words that change). Start a line that's sometimes missing with ?.
+- A template describes one format a sender writes, so the phone can read the next text in it. lines: the text's lines in order, the words that never change copied exactly as the bank writes them, and the parts that change as slots: {amount}, {currency} (a code like USD, or the mark the bank writes: $, £, €, ₹, Rs., ريال), {total} (the amount in the budget's currency when the text gives one beside a foreign amount), {balance}, {date:dd/mm/yy} (the date's order and separators as written, with dd, mm or mmm for a month's name, and yy or yyyy; with no year when the text gives none: {date:mm/dd}, {date:dd-mmm-yy}, {date:mmm dd, yyyy}), {time}, {ref} (the card or account the text is about), {other} (a transfer's other account), {payee}, {code}, {n} (any other number) and {any} (other words that change). Start a line that's sometimes missing with ?.
 - outcome: for money, disposition (transaction or pending), kind, sign ("-" for money out, "+" for money in) and memo or null; for a format that isn't money, skip with its reason.
 - note: the review note in {LANGUAGE}, with {payee} where the payee goes ("Purchase at {payee}"). payee: the payee when the format names none (a salary), otherwise null.
 - texts: the read texts in this format. The phone keeps a template only when it reads those texts, and every other text of this batch it matches, exactly as your items do.
-- [1, "anb", "2026-10-28 15:01", "Online Purchase\nVISA Card:4512\nAmount:SAR 65.97\nAt:NOON E\nOn:28/10/26 15:00"] gives {"replaces": null, "texts": [1], "lines": ["Online Purchase", "VISA Card : {ref}", "Amount : {currency} {amount}", "At : {payee}", "On : {date:dd/mm/yy} {time}"], "outcome": {"disposition": "transaction", "kind": "expense", "sign": "-", "skip": null, "memo": "Online"}, "note": "Purchase at {payee}", "payee": null}.
+- [1, "BANK-US", "2026-11-03 18:22", "You made a $45.00 transaction with SQ *BLUE BOTTLE on your card ending 9876 on 11/03."] gives {"replaces": null, "texts": [1], "lines": ["You made a {currency}{amount} transaction with {payee} on your card ending {ref} on {date:mm/dd}."], "outcome": {"disposition": "transaction", "kind": "expense", "sign": "-", "skip": null, "memo": null}, "note": "Purchase at {payee}", "payee": null}.
+- [2, "BANK-SA", "2026-10-28 15:01", "Online Purchase\nVISA Card:4512\nAmount:SAR 65.97\nAt:NOON E\nOn:28/10/26 15:00"] gives {"replaces": null, "texts": [2], "lines": ["Online Purchase", "VISA Card : {ref}", "Amount : {currency} {amount}", "At : {payee}", "On : {date:dd/mm/yy} {time}"], "outcome": {"disposition": "transaction", "kind": "expense", "sign": "-", "skip": null, "memo": "Online"}, "note": "Purchase at {payee}", "payee": null}.
 
 items
 - texts: the item's text numbers.
 - disposition: transaction when money moved: a purchase, a refund, a cash withdrawal, a fee, a salary or other credit, a bill payment or a transfer. pending for a hold or pre-authorization that hasn't settled; fill in the transaction too, and the user decides whether to add it. unclear when money seems to have moved but the texts can't become one transaction: they list several, or the amount or direction can't be read; say what's missing in the note.
-- note: a few words for the user in {LANGUAGE} saying what it is, such as "Purchase at Noon" or "Salary". Don't repeat the amount or the card number, and don't explain these rules.
-- quote: a short piece of one of the item's texts, copied exactly, that shows the amount ("SAR 65.97"). "" only for unclear.
+- note: a few words for the user in {LANGUAGE} saying what it is, such as "Purchase at Tesco" or "Salary". Don't repeat the amount or the card number, and don't explain these rules.
+- quote: a short piece of one of the item's texts, copied exactly, that shows the amount ("$45.00", "SAR 65.97"). "" only for unclear.
 - transaction: null for unclear.
 - unsure: the fields the user should check, from date, amount, payee, kind and category. Empty when you're confident.
 
@@ -256,13 +257,13 @@ skipped: texts where no money moved, by reason
 - other: anything else where no money moved.
 
 The transaction
-- date: when it happened, as YYYY-MM-DD. Banks write 05/11/26 day first or month first: look at the sender's other texts (28/10/26 can only be day first), and add "date" to unsure if you still can't tell. A two-digit year is 20xx. With no date in the text, use the received date and add "date" to unsure.
-- amount: what it cost or paid in the budget's currency, as an exact decimal string, negative for money out ("-65.97") and positive for money in ("3450.00"). Copy the figures; never round. Never use an available balance, a remaining limit, a points total, or a fee the text only mentions.
-- currency and writtenAmount: the currency of the amount the text gives, as a three-letter code, and that amount with no sign or thousands separators ("EUR" and "42.00"). ريال, ر.س and SR are SAR. If the currency isn't the budget's and the text doesn't give the amount billed in the budget's currency, set amount to null and the user enters it. Never convert or estimate an exchange rate.
-- payee: who was paid or who paid, as the user writes it. Banks write the user's payees in capitals, cut short, or with letters or a branch number added: when the text's name is one of payees or bankNames that way ("MASHAR E" and "NOON E" are the user's "Mashar" and "Noon"), use the user's spelling. Otherwise write it as a person would: "AMAZON MKTPLACE" becomes "Amazon" and "HUNGERSTATION L" becomes "HungerStation". When the text names nobody (a bill payment) and its code text in codes names a merchant or biller, that is the payee, written as the user would. A salary that doesn't name the employer is "Salary", written in {LANGUAGE}.
-- memo: a few words the payee doesn't say, such as "Apple Pay", "Online" or "ATM", or "". Never put card or account numbers, codes, balances or the text itself in the payee or memo.
+- date: when it happened, as YYYY-MM-DD. Banks write 05/11/26 day first or month first: look at the sender's other texts (28/10/26 can only be day first, 10/30/26 only month first) and the received date, and add "date" to unsure if you still can't tell. A month may be a name (29-Oct-26). A two-digit year is 20xx; with no year, use the year that puts the date on or before the received date. With no date in the text, use the received date: banks send most alerts as it happens.
+- amount: what it cost or paid in the budget's currency, as an exact decimal string with a point and no grouping, negative for money out ("-65.97") and positive for money in ("3450.00"). Banks write 1,234.56 or 1.234,56, and 12,50: the separator before the last one or two digits is the decimal point. Copy the figures; never round. Never use an available balance, a remaining limit, a points total, or a fee the text only mentions.
+- currency and writtenAmount: the currency of the amount the text gives, as a three-letter code, and that amount with no sign or grouping ("EUR" and "42.00"). A mark several currencies use is the budget's currency when it's one of them ($ in a CAD budget is CAD), otherwise the usual one ($ USD, £ GBP, € EUR, ₹ and Rs. INR, ¥ JPY); ريال, ر.س and SR are SAR. If the currency isn't the budget's and the text doesn't give the amount billed in the budget's currency, set amount to null and the user enters it. Never convert or estimate an exchange rate.
+- payee: who was paid or who paid, as the user writes it. Banks write the user's payees in capitals, cut short, or with letters or a branch number added: when the text's name is one of payees or bankNames that way ("STARBUCKS 0412" and "PANDA E" are the user's "Starbucks" and "Panda"), use the user's spelling. Otherwise write it as a person would, without what a card processor adds: "AMAZON MKTPLACE" becomes "Amazon", "SQ *BLUE BOTTLE" becomes "Blue Bottle", and a payment handle like "swiggy@icici" becomes "Swiggy". When the text names nobody (a bill payment) and its code text in codes names a merchant or biller, that is the payee, written as the user would. A salary that doesn't name the employer is "Salary", written in {LANGUAGE}.
+- memo: a few words the payee doesn't say, such as "Apple Pay", "Online", "ATM" or "UPI", or "". Never put card or account numbers, codes, reference numbers, balances or the text itself in the payee or memo.
 - kind: expense (money out), income (money in), refund (money back from a merchant, positive), or transfer (between two of the user's own accounts: paying their credit card, moving money to or from their savings, a term deposit, or their investment account, or between their accounts at two banks). Money sent to or from someone else is an expense or income, even when the bank calls it a transfer.
-- accountRef: the words that say which of the user's cards or accounts this is, copied exactly as written, usually the last digits with any mask: "4512", "***3301", "ending 4421". For a transfer, it's the account the text is about, and amount is signed from its side: a payment to a credit card is money into the card. Take it only from this item's texts; null when they name none.
+- accountRef: the words that say which of the user's cards or accounts this is, copied exactly as written, usually the last digits with any mask: "4512", "***3301", "XX1234", "ending 4421". For a transfer, it's the account the text is about, and amount is signed from its side: a payment to a credit card is money into the card. Take it only from this item's texts; null when they name none.
 - otherRef: for a transfer, the user's other account, copied the same way, or null.
 - otherAccount: for a transfer, the user's other account by its exact name in accounts, when the texts don't name it in a way the app can match (no otherRef, or digits no account's name holds) but you can tell which it is: the text says what kind of account it is ("your savings account", "your term deposit", "your investment account", whatever the bank calls it) and one of the user's accounts is that, or transfers shows that such money always moves to or from one account (the account that pays their credit card). Null when the app can match otherRef or you can't tell; never guess between two accounts.
 - categoryId: a category id from the list. For one of the user's payees, the category they usually give it. For a new payee whose kind of business is clear (a supermarket, a pharmacy, a petrol station, a restaurant, a phone or utility bill), the closest category, with "category" in unsure. Null only when nothing points to one. A refund takes the purchase's category. Never for a transfer.
@@ -271,15 +272,18 @@ Accounts
 - Don't choose accounts other than otherAccount. The app matches accountRef and otherRef to the user's accounts and asks the user when it can't.
 - Use the account list and transfers to tell a transfer from a payment: money sent to the user's own credit card, savings, deposit or investment account is a transfer; money sent to a person or a company is an expense, even when the bank calls it a transfer.
 
-Examples, for a budget in SAR
-- [1, "anb", "2026-10-28 15:01", "Online Purchase VISA Card:4512 Amount:SAR 65.97 Balance:SAR 9,120.40 At:NOON E On:28/10/26 15:00"] is an item: transaction, quote "SAR 65.97", expense, 2026-10-28, amount "-65.97", SAR "65.97", payee "Noon", memo "Online", accountRef "4512". The balance is not the amount.
-- [2, "anb", "2026-10-31 18:05", "شراء عبر نقاط البيع بـ:SAR 23.50 من:PANDA RET مدى:7731 في:31/10/26 18:05"] is an item: transaction, quote "SAR 23.50", expense, 2026-10-31, amount "-23.50", payee "Panda", accountRef "7731".
-- [3, "anb", "2026-10-29 01:22", "حوالة واردة: راتب مبلغ: 12000 ريال إلى : ***3301"] is an item: transaction, quote "12000 ريال", income, amount "12000.00", payee "Salary", accountRef "***3301", and the received date with "date" in unsure.
-- [4, "anb", "2026-10-31 09:12", "Card ending 4512 purchase of EUR 42.00 at CAFE LUMIERE PARIS on 31/10/26"] is an item: transaction, quote "EUR 42.00", expense, amount null, currency "EUR", writtenAmount "42.00", payee "Cafe Lumiere", accountRef "4512".
-- [5, "anb", "2026-10-30 10:00", "SAR 2,000.00 transferred from account ***3301 to your credit card ending 4512 on 30/10/26"] is an item: transaction, quote "SAR 2,000.00", transfer, amount "-2000.00", accountRef "***3301", otherRef "4512", otherAccount null: the app finds both by their digits.
-- [6, "anb", "2026-11-01 14:00", "Pre-authorization of SAR 500.00 at GRAND HOTEL on card 4512"] is an item: pending, quote "SAR 500.00", expense, amount "-500.00", payee "Grand Hotel", accountRef "4512".
-- Text 7, "رمز التحقق 4821 لعملية شراء من AMAZON بمبلغ 120 ريال", is skipped as code; text 8, "Transaction of SAR 230.00 at ELECTRO WORLD declined", as declined; text 9, "تمت إضافة 350 ميل إلى رصيدك", as rewards: "skipped": {"code": [7], "security": [], "balance": [], "declined": [8], "rewards": [9], "marketing": [], "other": []}.
-- With transfers holding ["Current 3301", "Visa 4512", 8, "2026-09-30", "1850.00"], [10, "anb", "2026-10-31 08:42", "Card Payment VISA Card:4512 Amount:SAR 3,232.33 On:31/10/26 08:42"] is an item: transaction, quote "SAR 3,232.33", transfer, amount "3232.33" into the card, accountRef "4512", otherRef null, otherAccount "Current 3301"."#;
+Examples, each for a budget in the text's own currency unless it says otherwise; banks everywhere write in their own ways, and these are only a few
+- [1, "BANK-UK", "2026-10-28 15:01", "You've spent £12.50 at TESCO STORES 3041 with your card ending 4512. Balance £1,240.18"] is an item: transaction, quote "£12.50", expense, the received date 2026-10-28, amount "-12.50", GBP "12.50", payee "Tesco", accountRef "4512". The balance is not the amount.
+- [2, "BANK-US", "2026-11-03 18:22", "You made a $45.00 transaction with SQ *BLUE BOTTLE on your card ending 9876 on 11/03."] is an item: transaction, quote "$45.00", expense, 2026-11-03 (month first, no year), amount "-45.00", USD "45.00", payee "Blue Bottle", accountRef "9876".
+- [3, "BANK-IN", "2026-10-29 10:12", "Rs.2,500.00 debited from A/c XX1234 on 29-Oct-26 to VPA swiggy@icici (UPI Ref No 630123456789)"] is an item: transaction, quote "Rs.2,500.00", expense, 2026-10-29, amount "-2500.00", INR "2500.00", payee "Swiggy", memo "UPI", accountRef "XX1234". The UPI reference is neither a code nor an account.
+- [4, "BANK-DE", "2026-10-31 09:12", "Kartenzahlung 1.234,56 EUR bei MEDIAMARKT BERLIN, Karte ...4421, 31.10.2026"] is an item: transaction, quote "1.234,56 EUR", expense, 2026-10-31, amount "-1234.56", EUR "1234.56", payee "MediaMarkt", accountRef "...4421".
+- [5, "BANK-SA", "2026-10-31 18:05", "شراء عبر نقاط البيع بـ:SAR 23.50 من:PANDA RET مدى:7731 في:31/10/26 18:05"] is an item: transaction, quote "SAR 23.50", expense, 2026-10-31, amount "-23.50", payee "Panda", accountRef "7731".
+- [6, "BANK-SA", "2026-10-29 01:22", "حوالة واردة: راتب مبلغ: 12000 ريال إلى : ***3301"] is an item: transaction, quote "12000 ريال", income, the received date, amount "12000.00", payee "Salary", accountRef "***3301".
+- In a USD budget, [7, "BANK-US", "2026-10-31 09:12", "Card ending 9876: purchase of EUR 42.00 at CAFE LUMIERE PARIS on 10/31/26"] is an item: transaction, quote "EUR 42.00", expense, 2026-10-31, amount null, currency "EUR", writtenAmount "42.00", payee "Cafe Lumiere", accountRef "9876".
+- [8, "BANK-US", "2026-10-30 10:00", "Payment of $2,000.00 from checking ***3301 to your credit card ending 4512 posted 10/30/26"] is an item: transaction, quote "$2,000.00", transfer, amount "-2000.00", accountRef "***3301", otherRef "4512", otherAccount null: the app finds both by their digits.
+- With transfers holding ["Current 3301", "Visa 4512", 8, "2026-09-30", "1850.00"], [9, "BANK-SA", "2026-10-31 08:42", "Card Payment VISA Card:4512 Amount:SAR 3,232.33 On:31/10/26 08:42"] is an item: transaction, quote "SAR 3,232.33", transfer, amount "3232.33" into the card, accountRef "4512", otherRef null, otherAccount "Current 3301".
+- [10, "BANK-UK", "2026-11-01 14:00", "A pre-authorisation of £150.00 was placed by HILTON LONDON on card 4512"] is an item: pending, quote "£150.00", expense, amount "-150.00", payee "Hilton", accountRef "4512".
+- Text 11, "482193 is your one-time PIN for a purchase of $59.99 at BESTBUY. Never share it.", and text 12, "رمز التحقق 4821 لعملية شراء من AMAZON بمبلغ 120 ريال", are skipped as code; text 13, "Transaction of €230.00 at ELECTRO WORLD declined", as declined; text 14, "تمت إضافة 350 ميل إلى رصيدك", as rewards: "skipped": {"code": [11, 12], "security": [], "balance": [], "declined": [13], "rewards": [14], "marketing": [], "other": []}."#;
 
 fn language() -> &'static str {
     match crate::i18n::language() {
@@ -417,13 +421,13 @@ fn codes(messages: &[Message], lanes: &Lanes) -> Vec<(usize, String)> {
     let mut out = vec![];
     for i in sent {
         let m = &messages[i];
-        let wanted = amounts(&m.body);
+        let wanted = sms_templates::amounts(&m.body);
         let Some(at) = minute(m).filter(|_| !wanted.is_empty()) else { continue };
         let best = codes.iter().filter(|j| !used.contains(*j)).filter_map(|&j| {
             let c = &messages[j];
             let gap = at - minute(c)?;
             let same = sms_templates::sender_key(&c.sender) == sms_templates::sender_key(&m.sender);
-            (same && (0..=15).contains(&gap) && !amounts(&c.body).is_disjoint(&wanted)).then_some((j, gap))
+            (same && (0..=15).contains(&gap) && !sms_templates::amounts(&c.body).is_disjoint(&wanted)).then_some((j, gap))
         }).min_by_key(|(_, gap)| *gap);
         if let Some((j, _)) = best {
             used.insert(j);
@@ -437,46 +441,14 @@ fn minute(m: &Message) -> Option<i64> {
     let at = chrono::NaiveDateTime::parse_from_str(&format!("{} {}", m.received_date, m.received_time), "%Y-%m-%d %H:%M").ok()?;
     Some(at.and_utc().timestamp() / 60)
 }
-/// Where each number in a text starts and ends, with its separators: "1,250.00" is one.
-fn numbers(chars: &[char]) -> Vec<(usize, usize)> {
-    let mut out = vec![];
-    let mut i = 0;
-    while i < chars.len() {
-        if !chars[i].is_ascii_digit() {
-            i += 1;
-            continue;
-        }
-        let start = i;
-        while i < chars.len() && (chars[i].is_ascii_digit() || (matches!(chars[i], ',' | '.') && chars.get(i + 1).is_some_and(char::is_ascii_digit))) {
-            i += 1;
-        }
-        out.push((start, i));
-    }
-    out
-}
-/// Currencies bank texts give amounts in; "OTP 482193" isn't one.
-const CURRENCIES: [&str; 20] = ["SAR", "USD", "EUR", "GBP", "AED", "KWD", "BHD", "QAR", "OMR", "EGP", "JOD", "TRY", "INR", "PKR", "CNY", "JPY", "CAD", "AUD", "CHF", "MYR"];
-/// Whether a currency stands beside a number: its code before it ("SAR 299", "بـ:SAR 23.50") or
-/// after it, or a riyal after it ("120 ريال").
-fn currency_near(chars: &[char], start: usize, end: usize) -> bool {
-    let before: String = chars[..start].iter().rev().skip_while(|c| c.is_whitespace() || **c == ':').take(3).collect::<Vec<_>>().into_iter().rev().collect();
-    let after: String = chars[end..].iter().skip_while(|c| c.is_whitespace()).take(4).collect();
-    CURRENCIES.contains(&before.as_str()) || CURRENCIES.iter().chain(&["ريال", "ر.س"]).any(|c| after.starts_with(c))
-}
-/// The amounts a text gives with their currency, as plain numbers: "SAR 1,250.00" is "1250".
-fn amounts(body: &str) -> HashSet<String> {
-    let chars: Vec<char> = body.chars().collect();
-    numbers(&chars).into_iter().filter(|&(s, e)| currency_near(&chars, s, e)).map(|(s, e)| {
-        let n: String = chars[s..e].iter().filter(|c| **c != ',').collect();
-        if n.contains('.') { n.trim_end_matches('0').trim_end_matches('.').to_owned() } else { n }
-    }).collect()
-}
 /// A code text with its code hidden: every run of four to eight digits that isn't an amount.
 fn hide_code(body: &str) -> String {
     let mut chars: Vec<char> = body.chars().collect();
-    for (s, e) in numbers(&chars) {
-        if (4..=8).contains(&(e - s)) && chars[s..e].iter().all(char::is_ascii_digit) && !currency_near(&chars, s, e) {
-            chars[s..e].fill('#');
+    for (s, e) in sms_templates::numbers(&chars) {
+        // A code may be spaced in groups ("482 193").
+        let digits = chars[s..e].iter().filter(|c| c.is_ascii_digit()).count();
+        if (4..=8).contains(&digits) && chars[s..e].iter().all(|c| c.is_ascii_digit() || *c == ' ') && !sms_templates::beside_currency(&chars, s, e) {
+            chars[s..e].iter_mut().filter(|c| c.is_ascii_digit()).for_each(|c| *c = '#');
         }
     }
     chars.into_iter().collect()
@@ -1491,11 +1463,21 @@ mod tests {
         assert_eq!(result.learning.stats[&known.id], Stat { filled: 1, confirmed: 1, corrected: BTreeMap::new(), settled: 0 });
     }
     #[test]
-    fn amounts_are_numbers_beside_a_currency_and_a_code_is_hidden() {
-        let set = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<HashSet<_>>();
-        assert_eq!(amounts("Amount:SAR 1,250.00 Balance:SAR 9,120.40 Card:4512 On:28/10/26"), set(&["1250", "9120.4"]));
-        assert_eq!(amounts("حوالة 12000 ريال وبـ:SAR 23.50 و 7 USD"), set(&["12000", "23.5", "7"]));
+    fn a_code_is_hidden_but_not_an_amount_in_any_currency() {
         assert_eq!(hide_code("رمز: 4821\nمبلغ: SAR 2500\nOTP 12345678 on 28/10/26"), "رمز: ####\nمبلغ: SAR 2500\nOTP ######## on 28/10/26");
+        assert_eq!(hide_code("Your OTP 482193 for $1500 at BESTBUY. Rs.2500 or 2500 € too"), "Your OTP ###### for $1500 at BESTBUY. Rs.2500 or 2500 € too");
+        assert_eq!(hide_code("Code 482 193 pour 1 249,00 €"), "Code ### ### pour 1 249,00 €");
+    }
+    #[test]
+    fn a_code_text_in_another_currency_goes_with_its_payment() {
+        let at = |id: &str, time: &str, body: &str| Message { id: id.into(), sender: "HDFCBK".into(), received_date: "2026-10-29".into(), received_time: time.into(), body: body.into() };
+        let messages = vec![
+            at("sms:1", "10:10", "OTP 482193 for txn of Rs.2,500.00 at SWIGGY. Do not share it with anyone."),
+            at("sms:2", "10:12", "Rs.2,500.00 debited from A/c XX1234 on 29-Oct-26 to VPA swiggy@icici. Not you? Call 18002586161"),
+        ];
+        let lanes = sms_templates::lanes(&Budget::default(), &messages, &[], &[], &Default::default());
+        assert_eq!(lanes.junk.len(), 1);
+        assert_eq!(codes(&messages, &lanes), vec![(1, "OTP ###### for txn of Rs.2,500.00 at SWIGGY. Do not share it with anyone.".to_string())]);
     }
     fn purchase_template() -> Template {
         let lines: Vec<String> = ["Online Purchase", "VISA Card : {ref}", "Amount : {currency} {amount}", "At : {payee}", "On : {date:dd/mm/yy} {time}"].map(String::from).to_vec();

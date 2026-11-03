@@ -202,6 +202,14 @@ from the bank's names are kept per budget and sender in the inbox database. Next
 in a known format are read on the phone first and sent in a `review` list with that reading;
 the assistant answers only with corrections (silence confirms) and reads the rest (`read`) in
 full, writing templates for new formats and rewriting one its corrections show is wrong.
+Templates read banks' own ways of writing: an amount grouped and pointed either way
+("1,234.56", "1.234,56", "12,50", "1'234", "1,23,456.78"), a currency as a code or a mark
+("$", "£", "€", "Rs.", "₹", "ريال"; a mark several currencies share is the budget's when it's
+one of them), a date in any order with the month as a number or a name, with or without a
+year (one without is the year that puts it on or before the day the text came), and a time
+with AM or PM. The code filter knows one-time codes in English, Arabic, Spanish, French,
+German, Italian, Portuguese, Turkish and Indonesian, with the code before or after its word.
+The assistant's own examples come from several countries' banks, not one.
 A template's payee is the one learned for the bank's name, else the user's payee the name
 surely is (theirs followed by a letter or two or a branch number: "MASHAR E", "S136 M"), with
 its category. Every template counts its rows filled, confirmed and corrected, and the user's
@@ -300,7 +308,12 @@ the page, sender picker and remembered cards, and `ui/SmsAnalysisReview.kt` the 
 owns the model session and its prompt; core `sms_import.rs` validates output, previews
 and imports. Synthetic coverage includes `SmsAnalysisTest`, `SmsInboxTest`,
 `SmsImportUiTest`, core `tests/sms_analysis.rs` and `tests/sms_import.rs`, and the
-service's model-loop tests.
+service's model-loop tests. `SmsLiveCheck` (instrumented, skipped unless run with
+`-e live 1`) sends made-up texts in US, UK, German, French, Spanish and Indian banks'
+formats through the phone's own assistant connection, each country into a local-only budget
+in its currency, compares what comes back with what each text says, sends a second round
+through the formats the first learned, then reopens the budget that was open and moves its
+budgets to the Trash; the report is `sms-live-check.txt` in the app's external files folder.
 
 ## Layout
 
