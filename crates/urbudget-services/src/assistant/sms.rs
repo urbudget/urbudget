@@ -243,7 +243,7 @@ Templates
 - A template describes one format a sender writes, so the phone can read the next text in it. lines: the text's lines in order, the words that never change copied exactly as the bank writes them, and the parts that change as slots: {amount}, {currency} (a code like USD, or the mark the bank writes: $, £, €, ₹, Rs., ريال), {total} (the amount in the budget's currency when the text gives one beside a foreign amount), {balance}, {date:dd/mm/yy} (the date's order and separators as written, with dd, mm or mmm for a month's name, and yy or yyyy; with no year when the text gives none: {date:mm/dd}, {date:dd-mmm-yy}, {date:mmm dd, yyyy}), {time}, {ref} (the card or account the text is about), {other} (a transfer's other account), {payee}, {code}, {n} (any other number) and {any} (other words that change). Start a line that's sometimes missing with ?.
 - outcome: for money, disposition (transaction or pending), kind, sign ("-" for money out, "+" for money in) and memo or null; for a format that isn't money, skip with its reason.
 - note: the review note in {LANGUAGE}, with {payee} where the payee goes ("Purchase at {payee}"). payee: the payee when the format names none (a salary), otherwise null.
-- texts: the read texts in this format. The phone keeps a template only when it reads those texts, and every other text of this batch it matches, exactly as your items do.
+- texts: the read texts in this format. The phone keeps a template only when it reads those texts, and every other text of this batch it matches, exactly as your items do. Write none for a text you leave unclear.
 - [1, "BANK-US", "2026-11-03 18:22", "You made a $45.00 transaction with SQ *BLUE BOTTLE on your card ending 9876 on 11/03."] gives {"replaces": null, "texts": [1], "lines": ["You made a {currency}{amount} transaction with {payee} on your card ending {ref} on {date:mm/dd}."], "outcome": {"disposition": "transaction", "kind": "expense", "sign": "-", "skip": null, "memo": null}, "note": "Purchase at {payee}", "payee": null}.
 - [2, "BANK-SA", "2026-10-28 15:01", "Online Purchase\nVISA Card:4512\nAmount:SAR 65.97\nAt:NOON E\nOn:28/10/26 15:00"] gives {"replaces": null, "texts": [2], "lines": ["Online Purchase", "VISA Card : {ref}", "Amount : {currency} {amount}", "At : {payee}", "On : {date:dd/mm/yy} {time}"], "outcome": {"disposition": "transaction", "kind": "expense", "sign": "-", "skip": null, "memo": "Online"}, "note": "Purchase at {payee}", "payee": null}.
 
@@ -259,7 +259,7 @@ skipped: texts where no money moved, by reason
 - code: a one-time password or verification code, even one for a purchase.
 - security: a login, a new device, a card added to a wallet, a changed password.
 - balance: a balance or statement notice.
-- declined: a declined, failed or reversed attempt.
+- declined: a declined, failed or cancelled attempt where no money moved, or a hold released. Money put back into the account (a reversed or refunded charge, a failed payment's money returned) is a refund or income, not declined: the charge it undoes may already be in the budget. A debit the bank rejected or returned unpaid with a fee charged is the fee, an expense, or unclear.
 - rewards: points, miles or cashback that isn't money in an account.
 - marketing: offers and announcements.
 - other: anything else where no money moved.
@@ -675,6 +675,9 @@ fn correct(m: &Message, read: &sms_import::Item, c: Correction) -> Result<(sms_i
             let Some(value) = value else { continue };
             let changed_now = match key.as_str() {
                 "date" => set(&mut t.date, value),
+                // The same money written another way ("3.75" for "3.750") isn't a change.
+                "amount" if t.amount.as_deref().is_some_and(|a| same_money(a, &value)) => false,
+                "writtenAmount" if same_money(&t.written_amount, &value) => false,
                 "amount" => set(&mut t.amount, Some(value)),
                 "currency" => set(&mut t.currency, value),
                 "writtenAmount" => set(&mut t.written_amount, value),
@@ -981,6 +984,12 @@ fn merge_repeats(messages: &[Message], items: &mut Vec<sms_import::Item>) {
     }
 }
 
+/// The same amount however many trailing zeros: "3.750", "3.75" and "3.7500" agree.
+fn same_money(a: &str, b: &str) -> bool {
+    fn plain(n: &str) -> &str { if n.contains('.') { n.trim_end_matches('0').trim_end_matches('.') } else { n } }
+    plain(a) == plain(b)
+}
+
 /// Counts the texts an answer covers as it streams: the numbers in its items' texts and its skipped
 /// lists, among those the model reads in full. Templates and corrections name texts too; they don't count.
 struct Tally<'a> {
@@ -1095,9 +1104,10 @@ fn learn(b: &Budget, input: &Input, lanes: &Lanes, expanded: Expanded) -> Read {
         let Some(id) = &item.template else { continue };
         let stat = learning.stats.entry(id.clone()).or_default();
         stat.filled += 1;
-        // A payee or category the model changed is the user's name for the bank's, learned below, and
-        // a transfer's other account is the user's: the format read the text right.
-        let fields: Vec<&String> = expanded.corrected.get(i).into_iter().flatten().filter(|f| !["payee", "categoryId", "otherAccount"].contains(&f.as_str())).collect();
+        // A payee or category the model changed is the user's name for the bank's, learned below, a
+        // transfer's other account is the user's, and a memo is the model's words for one text: the
+        // format read the text right.
+        let fields: Vec<&String> = expanded.corrected.get(i).into_iter().flatten().filter(|f| !["payee", "categoryId", "otherAccount", "memo"].contains(&f.as_str())).collect();
         if fields.is_empty() {
             stat.confirmed += 1;
         }
@@ -1617,6 +1627,12 @@ mod tests {
         fields["kind"] = json!("refund"); fields["amount"] = json!("65.97");
         let refund = checked(&b, &texts, &review, correction(json!({"text":1,"fields":fields,"disposition":null,"skip":null,"note":null,"quote":null,"unsure":null}))).unwrap();
         assert_eq!(refund.corrected[&0], vec!["amount".to_string(), "kind".into()]);
+        // The same money written another way, or the model's own memo, isn't the format reading wrong.
+        let mut same = none.clone();
+        same["writtenAmount"] = json!("65.970"); same["amount"] = json!("-65.9700");
+        let unchanged = checked(&b, &texts, &review, correction(json!({"text":1,"fields":same,"disposition":null,"skip":null,"note":null,"quote":null,"unsure":null}))).unwrap();
+        assert_eq!(unchanged.corrected[&0], Vec::<String>::new());
+        assert!(same_money("3.750", "3.75") && same_money("12", "12.00") && !same_money("12.5", "1.25"));
         // A correction naming a text twice, or a field it can't change, is sent back.
         let twice = json!({"items":[],"skipped":skipped(&[]),"templates":[],
             "corrections":[{"text":1,"fields":null,"disposition":null,"skip":"other","note":null,"quote":null,"unsure":null},{"text":1,"fields":null,"disposition":null,"skip":"other","note":null,"quote":null,"unsure":null}]});

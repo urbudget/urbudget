@@ -389,5 +389,13 @@ bank("INR-MORE", "INR", [("Savings A/c 1234", "savings"), ("Credit Card 5678", "
     text("BANK-IN", "2026-11-08 20:00", "Rs.799.00 debited from A/c XX1234 on 08-Nov-26 to VPA bookmyshow@icici (UPI Ref No 630199001122). Not you? Call 18002586161", spend("799.00", "INR", "2026-11-08", "1234", "bookmyshow", "book my show")),
 ])
 
-json.dump({"banks": banks}, open(sys.argv[1], "w", encoding="utf-8", newline="\n"), ensure_ascii=False, indent=1)
-print(len(banks), "banks,", sum(len(b["first"]) + len(b["second"]) for b in banks), "texts")
+# Many texts per format, awkward cases in other languages, and months (more_sms_live_cases.py).
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import more_sms_live_cases as more
+more.vary(bank, want, spend, text)
+more.hard(bank, want, spend, text)
+months = more.months(want, spend)
+
+json.dump({"banks": banks, "months": months}, open(sys.argv[1], "w", encoding="utf-8", newline="\n"), ensure_ascii=False, indent=1)
+print(len(banks), "banks,", sum(len(b["first"]) + len(b["second"]) for b in banks), "texts;", len(months), "month profiles,", sum(len(m) for p in months for m in p["months"]), "texts in months")

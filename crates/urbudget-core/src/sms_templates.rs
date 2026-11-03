@@ -470,9 +470,12 @@ fn match_from(s: &[char], from: usize, tokens: &[Token], tries: &mut usize) -> O
         Token::Slot(kind @ (Slot::Payee | Slot::Any), arg) => {
             let value = |end: usize| Some(s[at..end].iter().collect::<String>().trim().to_string()).filter(|v| !v.is_empty());
             match rest.first() {
+                // Where the next words are: whole words when they start with a space (" on " isn't in
+                // "LONDON"), and a later place when the rest doesn't read from the first ("$100.00.").
                 Some(Token::Literal(l)) => {
-                    let end = (at..=s.len()).find(|&e| e > at && literal(s, e, l).is_some())?;
-                    then(*kind, arg, value(end)?, end, tries)
+                    let word = l.first().is_some_and(|c| c.is_whitespace());
+                    (at + 1..=s.len()).filter(|&e| (!word || e == s.len() || s[e].is_whitespace()) && literal(s, e, l).is_some())
+                        .find_map(|e| then(*kind, arg, value(e)?, e, tries))
                 }
                 Some(Token::Gap) => (at + 1..s.len()).rev().filter(|&e| s[e].is_whitespace())
                     .find_map(|e| then(*kind, arg, value(e)?, e, tries)),
@@ -941,6 +944,16 @@ mod tests {
             (s("2026-11-02"), Some(s("-1250.00")), s("ZAR"), s("1250.00"), s("CHECKERS SANDTON"), Some(s("..4455"))));
         let kw = template("bank", &["Purchase of {currency} {amount} at {payee} with card ending {ref} on {date:dd/mm/yyyy}"], "-");
         assert_eq!(read(&with("KWD"), &kw, "Bank", "2026-11-02", "Purchase of KWD 12.500 at THE AVENUES with card ending 3456 on 02/11/2026").1, Some(s("-12.50")));
+        // Short words after a payee are whole words (" on " isn't the end of "LONDON"); a point that
+        // ends a sentence isn't the first one in it ("$100.00.").
+        let fx = template("bank", &["Card ending {ref}: purchase of {currency} {amount} at {payee} on {date:mm/dd/yy}. Amount in USD: ${total} incl. foreign transaction fee ${n}."], "-");
+        assert_eq!(read(&with("USD"), &fx, "Bank", "2026-11-04", "Card ending 9876: purchase of GBP 20.00 at PRET A MANGER LONDON on 11/04/26. Amount in USD: $25.62 incl. foreign transaction fee $0.75."),
+            (s("2026-11-04"), Some(s("-25.62")), s("GBP"), s("20.00"), s("PRET A MANGER LONDON"), Some(s("9876"))));
+        let at = template("bank", &["Purchase of {currency}{amount} at {payee}."], "-");
+        assert_eq!(read(&with("USD"), &at, "Bank", "2026-11-04", "Purchase of $12.00 at AMAZON.COM.").4, s("AMAZON.COM"));
+        let mut plan = template("bank", &["Your purchase of {currency}{amount} at {payee} has been converted to {n} monthly installments of {any}."], "-");
+        plan.outcome = Outcome { skip: Some("other".into()), ..Outcome::default() };
+        assert!(compile(&plan).unwrap().read("Your purchase of $1,200.00 at APPLE STORE has been converted to 12 monthly installments of $100.00.").is_some());
         // M-Pesa: a confirmation code, a name then a phone number, a time with PM, and a fee in a plain number.
         let mpesa = template("mpesa", &["{any} Confirmed. {currency}{amount} sent to {payee} {n} on {date:dd/mm/yy} at {time}. New M-PESA balance is {currency}{balance}. Transaction cost, {currency}{n}."], "-");
         assert_eq!(read(&with("KES"), &mpesa, "MPESA", "2026-11-03", "QK12AB34CD Confirmed. Ksh500.00 sent to JOHN DOE 0712345678 on 3/11/26 at 2:15 PM. New M-PESA balance is Ksh1,234.00. Transaction cost, Ksh7.00."),
