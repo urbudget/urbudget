@@ -85,6 +85,7 @@ pub(super) const MESSAGES: &[(&str, &str)] = &[
     ("Check the card and account references.", "راجع أرقام البطاقات والحسابات."),
     ("Copy card and account references exactly from the message.", "انسخ أرقام البطاقات والحسابات من الرسالة كما هي."),
     ("Name the other account only for a transfer.", "اذكر الحساب الآخر للتحويل فقط."),
+    ("Write a balance as a plain number, or leave it out.", "اكتب الرصيد رقمًا بسيطًا، أو اتركه."),
     ("Choose an existing spending category, never for a transfer.", "اختر فئة إنفاق موجودة، ولا تختر فئة لتحويل."),
     ("Choose open accounts, and a different one for a transfer.", "اختر حسابات مفتوحة، وحسابًا مختلفًا للتحويل."),
     ("Check the transaction direction: money out is negative.", "راجع اتجاه المعاملة: المبلغ الخارج سالب."),

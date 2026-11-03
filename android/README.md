@@ -111,9 +111,10 @@ message to recognise it, while named senders and people's phone numbers (listed 
 are never previewed. No contacts access is needed. The first choice of
 senders also picks where collecting starts: new messages only (from that moment), a day
 (from its start, so "Since 3 Oct" holds all of 3 Oct), or everything on the phone. A
-budget whose accounts have no transactions starts with new messages only, since its
-balances were entered as they are now and already include earlier texts; one with history
-starts 30 days back, but not before its first transaction. **Collect messages from**
+budget with no accounts starts two months back, and the picker says the texts will set its
+accounts up (below); one whose accounts have no transactions starts with new messages only,
+since its balances were entered as they are now and already include earlier texts; one with
+history starts 30 days back, but not before its first transaction. **Collect messages from**
 changes it at any time for every sender: an earlier start brings older texts in on the
 next scan, a later one takes earlier texts out of what's waiting and out of the open
 review. Changing senders keeps the review's items from the senders that stay.
@@ -230,14 +231,19 @@ Junk stays on the phone: a code the filter in `sms_templates.rs` recognises, or 
 skip format (rewards, a security alert) the assistant has confirmed three times over two
 requests with no correction; one in 50 of those is still reviewed as an audit, and any
 correction takes the trust away. Requests are sized by lane (`assistant_sms_lanes`): up to
-200 read in full and 400 reviewed, with any junk, in one request of up to 1,000 texts.
+200 read in full and 400 reviewed, with any junk, in one request of up to 1,000 texts. A
+budget's first request, before it has learned any format, reads 60 in full: 200 of a phone's
+real texts read in full didn't come back within the session's five minutes, and what the first
+request learns makes the next ones mostly reviews.
 A format rewritten three times in a month, or unused for 180 days, retires; a sender whose
 recent texts are suddenly mostly new formats is pointed out in the formats list. The
 assistant stays in the loop for every text but junk: templates make its work a review.
 
 The phone matches each reference to an account: a card remembered for that sender,
 otherwise the one open account whose name carries the card's digits ("4417" is "Visa
-4417"), otherwise the only open account. A transfer's other account is, in order: the
+4417"), otherwise the only open account, unless the review names two or more cards the
+budget doesn't know: then each is set up instead. A text that names no card (a mobile
+wallet's) goes to the account chosen for its sender's texts that name none. A transfer's other account is, in order: the
 account its other reference names; the other side of the one transfer of that money the
 budget already has within five days (the card payment entered from the current account);
 for a text naming none, the account the user chose for that card's earlier ones; the one
@@ -248,15 +254,43 @@ once turned into a transfer (their own account at another bank, which the bank n
 the holder) is a transfer with that account from then on. Then it settles what changes nothing: a text
 whose transaction is already in the budget (one candidate from the bank import engine in
 the same account on the same day, or the same transfer entered from its other side, not
-already claimed by another text) is matched, and
-texts where no money moved are cleared. When that's everything, the page finishes by
+already claimed by another text) is matched, two texts about one transfer, one from each
+account, read as two items are one transfer (the later says "The other side of a transfer
+already here"), and texts where no money moved are cleared. When that's everything, the page finishes by
 itself and says what it handled ("Checked 11:38 · 2 already in your budget · 3 codes").
 Otherwise it counts what needs the user, and the review is a page of transactions:
 
-- **Needs a choice**: one account choice per unmatched card answers every message
-  naming it and is remembered by default; **Don't add these** clears them instead, and
-  remembered, the card's next texts are cleared without asking (Remembered cards says
-  "Not added"). Transfers whose other account the phone can't tell get one choice per
+- **Set up your accounts** (in a budget with accounts, **Cards and accounts to set up**):
+  every card and account the texts name that no account matches, once per sender and
+  digits, whether its texts are on it or a transfer names it as the other side (the savings
+  a transfer went to), and a sender whose texts name none when there's nowhere to put them.
+  Numbers only transfers name are one account when the words by them name the same account
+  but for the first ("to/from your deposit account no."), or texts of one shape do: a bank
+  that numbers each term deposit afresh is one account, not one per placement.
+  Each row says what its texts are (how many, a few payees) and suggests what to do,
+  `smsSetupSuggestions` in `SmsSetup.kt`: an account named for the sender, the card's network
+  or the type, and its last digits ("ANB Visa 4512"), of the type the words by its digits
+  say in any of the reading's languages, most of its texts deciding (credit card, savings, a
+  wallet, a debit card, an account; a card that receives payments, or says nothing more of
+  itself, is a credit card). A debit card (debit, mada, ATM) is suggested as **Part of** its
+  sender's current account (one being set up whose own texts are on it, the main one when it
+  has three times the texts of any other, or one already in the budget under the sender's
+  name), since the card and the account are the same money and two accounts would count it
+  twice; a credit card never is. A number only transfers name that the texts don't call the
+  user's ("your …") or say what kind of account it is ("To: 6902***") is suggested as not
+  tracked: it's more often someone else's. A new account's balance before the texts is worked out from them: the balance
+  the latest text about it gives after its money moved (the reading's `balance`, never a
+  limit or the credit left), less what the review adds to it up to that text, so after
+  adding it's the bank's as of that text; a credit card starts at nothing owed, since its
+  texts usually give the credit left, and with no balance in its texts an account starts at
+  zero, saying so. Each row can instead be made with another name, type or balance (tap
+  it), be part of an open account or one being made, or not be tracked: its texts are
+  cleared and remembered so (Remembered cards says "Not added"), and transfers to it become
+  spending or income. **Set up 3 accounts** makes them in one change (one Undo) with a
+  credit card's payment category, remembers every card with its account, and their rows
+  move to Ready to add; with nothing ready yet it's the page's button, in place of Add.
+  Answers are kept with the review.
+- **Needs a choice**: transfers whose other account the phone can't tell get one choice per
   account and kind of transfer (the sender's texts about one account that say the same of
   it: a card's payments, placements into term deposits the bank numbers afresh each time),
   remembered by default for the sender's next texts by the other account they all name, the
@@ -308,7 +342,8 @@ optional, and denied/revoked access leaves the other budgeting features availabl
 
 Implementation: `SmsInbox.kt` owns capture (SMS and text-only MMS), sender summaries, coverage and private storage;
 `SmsAnalysis.kt` owns identities, card matching, draft recovery, consent, readings and the
-cancellable service client; `SmsWorker.kt` reads in the background. `ui/SmsPage.kt` holds the
+cancellable service client; `SmsSetup.kt` the cards and accounts to set up, what's suggested for
+each and what applying does (`ui/SmsSetupSection.kt` draws them); `SmsWorker.kt` reads in the background. `ui/SmsPage.kt` holds the
 page's state: what's stored, the open review and a stage (loading, saving, settling or idle;
 reading is `SmsReadings`'). Every change to storage runs in one lane and ends by reading
 everything back and showing it at once, and the page reads what's waiting by itself only from
@@ -316,17 +351,33 @@ such a snapshot, never from texts a change has just settled. `ui/SmsImportScreen
 the page, sender picker and remembered cards, and `ui/SmsAnalysisReview.kt` the review. Services `assistant/sms.rs`
 owns the model session and its prompt; core `sms_import.rs` validates output, previews
 and imports. Synthetic coverage includes `SmsAnalysisTest`, `SmsInboxTest`,
-`SmsImportUiTest`, core `tests/sms_analysis.rs` and `tests/sms_import.rs`, and the
-service's model-loop tests. `SmsLiveCheck` (instrumented, skipped unless run with
+`SmsImportUiTest`, core `tests/sms_analysis.rs` and `tests/sms_import.rs`, `SmsSetupTest`,
+and the service's model-loop tests. `SmsLiveCheck` (instrumented, skipped unless run with
 `-e live 1`, `-e banks USD,EUR` for some) sends made-up texts in the ways banks in some 30
 countries write (`shared/fixtures/sms-live-cases.json`, written by
 `androidTest/cases/make_sms_live_cases.py`; a copy pushed to the app's external files folder
 is used instead) through the phone's own assistant connection, each currency into a
-local-only budget, compares what comes back with what each text says, and sends a second
-round through the formats the first learned. Its budgets ("SMS check" and the name) live in
-the Trash between runs; it reopens the budget that was open. The report is
-`sms-live-check.txt` in the app's external files folder, every reading
-`sms-live-check.json`.
+local-only budget, compares what comes back with what each text says (telling harmful misses
+from a payee written another way or a text left unclear), and sends a second round through
+the formats the first learned, counting how often the assistant corrected their readings.
+`-e part months` instead reads two months each of a US, an Indian and a Saudi profile's texts,
+mostly junk, through the app's own reading (`SmsReadings`), and reports each request's size and
+time and how much the phone handled. `-e part onboarding` reads each profile's two months into
+an empty budget, takes every setup suggestion and adds every row, as a new user tapping Set up
+and Add would, and reports the accounts made against the profile's, whether each money text
+landed in the account its digits name, and, where a text gives a balance, whether the account
+ends at it. `-e part primary` does the same with the user's own texts from the senders the open
+budget (`-e home`, Primary) collects from, since `-e from` (two months back by default), into an
+empty "Onboarding test" budget, and writes both budgets' accounts and transactions to
+`sms-live-primary-data.json`; `androidTest/cases/compare_onboarding.py` then says how the
+accounts line up, which transactions match, which each has that the other doesn't, how transfers
+pair, how often payees and categories agree, and each account's balance at the end in both.
+Primary is only read. `-e part all` runs every part. Its budgets ("SMS check" and the
+name) live in the Trash between runs; it reopens the budget that was open (`-e home <id>` when a
+stopped run left one of its own open) and puts every check budget back in the Trash. The
+reports are `sms-live-check.txt`, `sms-live-months.txt`, `sms-live-onboarding.txt` and
+`sms-live-primary.txt` in the app's external files folder, every reading in the `.json` beside
+each. Start it without `-w` so a USB drop doesn't stop it.
 
 ## Layout
 

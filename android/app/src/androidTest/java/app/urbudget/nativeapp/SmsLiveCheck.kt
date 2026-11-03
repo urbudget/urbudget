@@ -4,7 +4,10 @@ import android.app.Application
 import androidx.lifecycle.ViewModelStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import app.urbudget.nativeapp.ui.accountTypes
+import app.urbudget.nativeapp.ui.row
 import app.urbudget.nativeapp.ui.rows
+import app.urbudget.nativeapp.ui.smsDecisions
 import app.urbudget.nativeapp.ui.text
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
@@ -14,6 +17,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 import java.math.BigDecimal
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 
@@ -27,7 +31,11 @@ import java.time.ZoneId
  * a copy pushed to the app's external files folder is used instead, so they can change without a
  * rebuild. It runs only when asked, on a phone whose assistant is connected:
  *
- *   adb shell am instrument -w -e live 1 [-e part banks|months|all] [-e banks USD,EUR] -e class app.urbudget.nativeapp.SmsLiveCheck app.urbudget.nativeapp.test/androidx.test.runner.AndroidJUnitRunner
+ *   adb shell am instrument -w -e live 1 [-e part banks|months|onboarding|primary|all] [-e banks USD,EUR] -e class app.urbudget.nativeapp.SmsLiveCheck app.urbudget.nativeapp.test/androidx.test.runner.AndroidJUnitRunner
+ *
+ * "onboarding" reads each month profile into an empty budget and sets it up as suggested;
+ * "primary" does the same with the user's own bank texts since -e from (two months back by
+ * default), beside Primary, which it only reads, for androidTest/cases/compare_onboarding.py.
  *
  * Its budgets ("SMS check" and the currency) are local only, never synced, and kept in the Trash
  * between runs: a run takes them out, reopens the budget that was open, and puts them back. The
@@ -234,7 +242,10 @@ class SmsLiveCheck {
         override suspend fun lanes(request: JSONObject) = inner.lanes(request)
         override suspend fun analyze(request: JSONObject, live: (SmsLive) -> Unit): JSONObject {
             val began = System.currentTimeMillis()
-            val result = inner.analyze(request, live)
+            val result = try { inner.analyze(request, live) } catch (failure: Exception) {
+                requests += "${request.getJSONArray("messages").length()} texts failed after ${(System.currentTimeMillis() - began) / 1000}s: ${failure.message}"
+                throw failure
+            }
             val took = (System.currentTimeMillis() - began) / 1000
             val learning = result.optJSONObject("learning") ?: JSONObject()
             seconds += took; read += learning.optInt("read"); reviewed += learning.optInt("reviewed"); junk += learning.optInt("junk")
@@ -280,6 +291,199 @@ class SmsLiveCheck {
             } finally {
                 inbox.clear(identity)
             }
+        }
+    }
+
+    /** Empties a check budget kept from an earlier run: no accounts, transactions, or record of texts added. */
+    private fun empty(vm: BudgetViewModel) {
+        val budget = JSONObject(vm.exportBudget() ?: error("The budget can't be read"))
+        if (budget.rows("accounts").isEmpty() && budget.rows("transactions").isEmpty()) return
+        budget.put("accounts", JSONArray()).put("transactions", JSONArray())
+            .put("categories", JSONArray(budget.rows("categories").filter { it.text("paymentAccountId").isBlank() }))
+        budget.keys().asSequence().toList().filter { Regex("(?i)sms|bankImport|tombstone").containsMatchIn(it) }.forEach { budget.remove(it) }
+        instrumentation.runOnMainSync { vm.importBudget(budget.toString()) }
+        waitUntil(what = "an empty budget") { vm.state.value.budget!!.let { it.rows("accounts").isEmpty() && it.rows("transactions").isEmpty() } }
+    }
+
+    /** What [onboard] did: the review, the accounts made, what's remembered, and the rows added and left waiting. */
+    private class Onboarded(val batch: SmsBatch, val items: List<SmsItem>, val candidates: List<SmsSetupCandidate>, val plans: Map<String, SmsSetupPlan>,
+                            val made: List<JSONObject>, val mappings: JSONArray, val added: Int, val waiting: Int)
+
+    /**
+     * Reads [messages] into the open, empty budget the way the app does, takes every suggestion of
+     * the accounts to set up, and adds every row then ready: Set up, then Add all, with the same
+     * functions the review page uses.
+     */
+    private suspend fun onboard(s: Session, identity: String, messages: List<BankSms>, recorder: Recorder): Onboarded {
+        val read = SmsReadings.read(context, recorder, identity, s.connection, messages, "", null) { true } ?: error("Another reading is under way")
+        val empty = s.vm.state.value.budget!!
+        val candidates = smsSetupCandidates(read, read.items(SmsAccounts.of(empty, JSONArray(), read.starts(empty))))
+        val names = accountTypes().toMap()
+        val plans = smsSetupPlans(candidates, emptyMap(), smsSetupSuggestions(candidates, empty) { names[it].orEmpty() }, emptySet())
+        val changes = smsSetupChanges(candidates, plans, { it.tickedIn(read) }) { java.util.UUID.randomUUID().toString() }
+        val ids = changes.accounts.map { it.text("id") }
+        if (ids.isNotEmpty()) instrumentation.runOnMainSync { s.vm.saveAccounts(changes.accounts) }
+        waitUntil(what = "the accounts set up") { s.vm.state.value.budget!!.rows("accounts").map { it.text("id") }.containsAll(ids) }
+        val mappings = changes.remember.fold(JSONArray()) { kept, r -> smsRememberCard(kept, r.sender, r.ref, r.account, r.kind) }
+        SmsInbox.get(context).saveState(identity, "mappings", mappings.toString())
+        val batch = changes.spending.fold(read.copy(fresh = ids.toSet())) { b, index -> b.edit(index, ::smsUntracked) }
+        val budget = s.vm.state.value.budget!!
+        val items = batch.items(SmsAccounts.of(budget, mappings, batch.starts(budget)))
+        val adding = items.filter { it.needs == null && it.tickedIn(batch) && it.index !in batch.dismissed }.map { it.index to "new" }
+        val before = budget.rows("transactions").size
+        if (adding.isNotEmpty()) {
+            var done = false
+            instrumentation.runOnMainSync { s.vm.runCommand("smsBatchApply", batch.params(batch.resolved(items)).put("decisions", smsDecisions(adding))) { done = true } }
+            waitUntil(300, "adding ${adding.size} rows") { done || s.vm.state.value.error != null }
+            check(done) { "Adding failed: ${s.vm.state.value.error}" }
+        }
+        val waiting = items.count { it.needs != null && it.index !in batch.dismissed && it.disposition in setOf("transaction", "pending") }
+        return Onboarded(batch, items, candidates, plans, changes.accounts, mappings, s.vm.state.value.budget!!.rows("transactions").size - before, waiting)
+    }
+
+    /** The account the setup remembered a card's digits with. */
+    private fun accountFor(mappings: JSONArray, ref: String): String? {
+        val digits = smsDigits(ref).takeLast(4)
+        return (0 until mappings.length()).map { mappings.getJSONObject(it) }.firstOrNull { m ->
+            m.text("for").isBlank() && smsDigits(m.text("reference")).let { it.length >= 3 && (it.endsWith(digits) || digits.endsWith(it)) }
+        }?.text("accountId")?.takeIf { it != SmsSkipCard }
+    }
+
+    /** What the setup made and where the texts went: each candidate's plan, each account made and its balance. */
+    private fun setupReport(s: Session, name: String, texts: Int, done: Onboarded, recorder: Recorder) {
+        val budget = s.vm.state.value.budget!!
+        val balances = s.vm.state.value.summary?.rows("accounts")?.associate { it.text("id") to it.optLong("balance") }.orEmpty()
+        fun named(id: String?) = id?.let { budget.row("accounts", it)?.text("name") } ?: "none"
+        s.report.append("$name: $texts texts in ${recorder.requests.size} requests, ${recorder.seconds}s (${recorder.read} read in full, ${recorder.reviewed} by formats, " +
+            "${recorder.junk} kept on the phone); ${done.made.size} accounts made, ${done.added} transactions added, ${done.waiting} still waiting\n")
+        done.candidates.forEach { c ->
+            val plan = done.plans.getValue(c.key)
+            val what = when (plan.action) {
+                SmsSetupPlan.Join -> "part of " + (done.plans[plan.joins]?.name ?: named(plan.joins))
+                SmsSetupPlan.Create -> "made ${plan.name} (${plan.type})"
+                else -> "not tracked"
+            }
+            s.report.append("  ${c.sender} ${c.refs.joinToString(", ").ifEmpty { "(no card)" }}: ${c.texts} texts, $what\n")
+            // What the words by its digits say it is, from its first texts.
+            val near = c.items.take(2).map { i -> smsWordsBy(i.sources.first().body, i.ref.orEmpty()) } +
+                c.via.take(2).map { i -> smsWordsBy(i.sources.first().body, i.transaction!!.text("otherRef")) }
+            s.report.append("      ${smsSetupKind(c)}; by its digits: ${near.joinToString(" | ") { (before, after) -> "\"${before.trim()}\" … \"${after.trim()}\"" }}\n")
+        }
+        done.made.forEach { a ->
+            s.report.append("  ${a.text("name")}: balance before ${BigDecimal.valueOf(a.optLong("openingBalance"), 2).toPlainString()}, " +
+                "now ${BigDecimal.valueOf(balances[a.text("id")] ?: 0L, 2).toPlainString()}\n")
+        }
+    }
+
+    /** Each month profile's two months into an empty budget, set up as suggested and added: the accounts made, where each text went, and the balances. */
+    @Test fun anEmptyBudgetIsSetUpFromMonthsOfTexts() = session("onboarding", "sms-live-onboarding") { s ->
+        val inbox = SmsInbox.get(context)
+        for (profile in cases().rows("months")) {
+            s.used += budget(s.vm, profile.text("name") + " onboarding", profile.text("currency"), emptyList())
+            empty(s.vm)
+            val identity = s.vm.state.value.budgetIdentity!!
+            inbox.clear(identity)
+            val months = profile.getJSONArray("months")
+            val texts = (0 until months.length()).flatMap { n -> months.getJSONArray(n).let { a -> (0 until a.length()).map { a.getJSONObject(it) } } }
+            val messages = texts.map(::sms)
+            val recorder = Recorder(NativeSmsAnalyzer)
+            try {
+                val done = onboard(s, identity, messages, recorder)
+                setupReport(s, profile.text("name"), texts.size, done, recorder)
+                val budget = s.vm.state.value.budget!!
+                fun named(id: String?) = id?.let { budget.row("accounts", it)?.text("name") } ?: "none"
+                // The profile's accounts, found by their digits.
+                accounts(profile).forEach { (account, type) ->
+                    val got = done.made.firstOrNull { it.text("id") == accountFor(done.mappings, account) }
+                    val mark = when { got == null -> "x missing"; got.text("accountType") == type -> "ok"; else -> "~ type" }
+                    s.report.append("  $mark $account ($type): ${got?.let { it.text("name") + " (" + it.text("accountType") + ")" } ?: "none"}\n")
+                }
+                // Each money text in the account its digits name, and a transfer's other side too.
+                var right = 0; var money = 0
+                texts.zip(messages).forEach { (sent, m) ->
+                    val want = sent.getJSONObject("want")
+                    val ref = want.nullable("ref")?.takeIf { !want.text("what").startsWith("skip") } ?: return@forEach
+                    money++
+                    val t = done.items.firstOrNull { i -> i.sources.any { it.id == m.id } }?.transaction
+                    val account = accountFor(done.mappings, ref)
+                    val other = want.nullable("other")?.let { accountFor(done.mappings, it) }
+                    if (t != null && t.text("accountId") == account && (other == null || t.text("transferAccountId") == other)) right++
+                    else s.report.append("  x ${sent.text("body").replace('\n', ' ').take(90)}\n      in ${named(t?.text("accountId"))}" +
+                        "${t?.text("transferAccountId")?.ifBlank { null }?.let { " -> " + named(it) }.orEmpty()}, wanted ${named(account)}${other?.let { " -> " + named(it) }.orEmpty()}\n")
+                }
+                s.report.append("  $right of $money money texts in the right accounts\n")
+                // Where a text gives an account's balance, its balance now is that one plus what came after.
+                val balances = s.vm.state.value.summary?.rows("accounts")?.associate { it.text("id") to it.optLong("balance") }.orEmpty()
+                val added = done.items.filter { it.needs == null && it.tickedIn(done.batch) && it.index !in done.batch.dismissed }
+                fun at(item: SmsItem) = item.sources.minOf { it.received }
+                done.made.filterNot { AccountTypes.isLiability(it.text("accountType")) }.forEach { a ->
+                    val id = a.text("id")
+                    val (alert, given) = added.filter { it.transaction?.text("accountId") == id }
+                        .mapNotNull { i -> i.transaction?.text("balance")?.let(::smsBalanceCents)?.let { i to it } }.maxByOrNull { at(it.first) } ?: return@forEach
+                    val since = added.filter { at(it) > at(alert) }.sumOf { i ->
+                        val t = i.transaction!!
+                        (if (t.text("accountId") == id) i.amount ?: 0L else 0L) - (if (t.text("transferAccountId") == id) i.amount ?: 0L else 0L)
+                    }
+                    val now = balances[id] ?: 0L
+                    s.report.append("  ${if (now == given + since) "ok" else "x"} ${a.text("name")} is ${BigDecimal.valueOf(now, 2).toPlainString()}: the bank's " +
+                        "${BigDecimal.valueOf(given, 2).toPlainString()} on ${alert.sources.first().receivedDate}, and ${BigDecimal.valueOf(since, 2).toPlainString()} since\n")
+                }
+                s.raw.put(JSONObject().put("profile", profile.text("name")).put("analysis", done.batch.analysis).put("mappings", done.mappings))
+            } finally {
+                inbox.clear(identity)
+            }
+        }
+    }
+
+    /** The parts of a budget the comparison reads: accounts, and every transaction with its parts' categories. */
+    private fun slice(budget: JSONObject): JSONObject {
+        val categories = budget.rows("categories").associate { it.text("id") to it.text("name") }
+        return JSONObject().put("currency", budget.text("currency"))
+            .put("accounts", JSONArray(budget.rows("accounts").map { a ->
+                JSONObject().put("id", a.text("id")).put("name", a.text("name")).put("type", AccountTypes.infer(a)).put("archived", a.optBoolean("archived")).put("opening", a.optLong("openingBalance"))
+            }))
+            .put("transactions", JSONArray(budget.rows("transactions").map { t ->
+                JSONObject().put("date", t.text("date")).put("account", t.text("accountId")).put("other", t.text("transferAccountId")).put("amount", t.optLong("amount"))
+                    .put("payee", t.text("payee")).put("bank", (t.optJSONArray("bankImportIds")?.length() ?: 0) > 0)
+                    .put("parts", JSONArray(t.rows("splits").map { p -> JSONObject().put("amount", p.optLong("amount")).put("category", categories[p.text("categoryId")].orEmpty()).put("other", p.text("transferAccountId")) }))
+            }))
+    }
+
+    /**
+     * The user's own bank texts, from the senders Primary collects from and since -e from (two
+     * months back by default), into an empty budget set up as suggested and added, as a new user
+     * would; then both budgets' accounts and transactions to sms-live-primary-data.json, for
+     * compare_onboarding.py. Primary is only read.
+     */
+    @Test fun theUsersTextsSetUpFromNothingBesidePrimary() = session("primary", "sms-live-primary") { s ->
+        val args = InstrumentationRegistry.getArguments()
+        val inbox = SmsInbox.get(context)
+        check(args.getString("home") != null && open() == args.getString("home")) { "Open Primary and pass its id with -e home" }
+        val primary = JSONObject(s.vm.exportBudget() ?: error("Primary can't be read"))
+        val senders = inbox.sources(s.vm.state.value.budgetIdentity!!).map { it.sender }.toSet()
+        check(senders.isNotEmpty()) { "Primary collects no bank texts" }
+        val to = LocalDate.now()
+        val from = args.getString("from")?.let(LocalDate::parse) ?: to.minusMonths(2)
+        s.used += budget(s.vm, "Onboarding test", primary.text("currency"), emptyList())
+        empty(s.vm)
+        val identity = s.vm.state.value.budgetIdentity!!
+        inbox.clear(identity)
+        try {
+            inbox.configure(identity, senders, from.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli())
+            SmsReader.refresh(context, identity)
+            val messages = inbox.pending(identity)
+            val recorder = Recorder(NativeSmsAnalyzer)
+            s.report.append("${messages.size} texts since $from from ${senders.size} senders\n")
+            val done = try { onboard(s, identity, messages, recorder) } finally { recorder.requests.forEach { s.report.append("  request: $it\n") } }
+            setupReport(s, "Your texts since $from", messages.size, done, recorder)
+            recorder.rejected.forEach { s.report.append("  dropped: $it\n") }
+            val made = JSONObject(s.vm.exportBudget() ?: error("The test budget can't be read"))
+            File(context.getExternalFilesDir(null), "sms-live-primary-data.json").writeText(JSONObject().put("from", from.toString()).put("to", to.toString())
+                .put("primary", slice(primary)).put("onboarding", slice(made))
+                .put("setup", JSONArray(done.candidates.map { c -> JSONObject().put("sender", c.sender).put("ref", c.ref ?: JSONObject.NULL).put("texts", c.texts).put("plan", done.plans.getValue(c.key).json()) }))
+                .put("unclear", done.items.count { it.disposition == "unclear" && it.index !in done.batch.dismissed }).toString(1))
+        } finally {
+            inbox.clear(identity)
         }
     }
 }

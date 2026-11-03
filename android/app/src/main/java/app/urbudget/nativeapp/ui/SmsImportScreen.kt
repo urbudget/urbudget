@@ -372,7 +372,8 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
             }
         }
     }
-    if (pickSenders && page.allowed) SmsSenderPicker(stored.sources, { pickSenders = false }, suggested = remember(budget) { SmsStart.suggested(budget) }, save = { chosen, start ->
+    if (pickSenders && page.allowed) SmsSenderPicker(stored.sources, { pickSenders = false }, suggested = remember(budget) { SmsStart.suggested(budget) },
+        building = remember(budget) { budget.rows("accounts").none { !it.optBoolean("archived") } }, save = { chosen, start ->
         scope.launch { page.senders(chosen, start).join(); if (page.error == null) pickSenders = false }
     })
     if (collecting) {
@@ -511,7 +512,8 @@ private fun SmsMessageRow(message: BankSms, index: Int, count: Int, showSender: 
 
 @Composable
 internal fun SmsSenderPicker(sources: List<SmsSource>, close: () -> Unit, save: (Set<String>, Long) -> Unit,
-                             load: (android.content.Context) -> List<SmsSender> = SmsReader::senders, suggested: SmsStart = SmsStart("now", java.time.LocalDate.now().toString())) {
+                             load: (android.content.Context) -> List<SmsSender> = SmsReader::senders, suggested: SmsStart = SmsStart("now", java.time.LocalDate.now().toString()),
+                             building: Boolean = false) {
     val context = LocalContext.current
     var found by remember { mutableStateOf<List<SmsSender>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -546,6 +548,8 @@ internal fun SmsSenderPicker(sources: List<SmsSource>, close: () -> Unit, save: 
     }) {
         item { Text(stringResource(R.string.sms_sender_help), style = MaterialTheme.typography.bodyMedium, color = ur.text2) }
         if (sources.isEmpty()) item { SmsStartFields(start, null, brings?.takeIf { chosen.isNotEmpty() }?.let { sizeText(smsReadingSize(it, null), brings = true) }) { start = it } }
+        // A budget with no accounts is set up from these texts.
+        if (sources.isEmpty() && building) item { Text(stringResource(R.string.sms_start_builds), Modifier.testTag("sms-start-builds"), style = MaterialTheme.typography.bodySmall, color = ur.muted) }
         item { SearchField(search, { search = it }, stringResource(R.string.common_search)) }
         error?.let { item { FormError(it) } }
         if (found == null && error == null) item { LinearProgressIndicator(Modifier.fillMaxWidth(), color = ur.accent) }

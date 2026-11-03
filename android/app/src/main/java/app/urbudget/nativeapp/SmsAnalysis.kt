@@ -45,7 +45,8 @@ internal fun smsDecimal(cents: Long): String = BigDecimal.valueOf(cents, 2).toPl
 internal fun smsDigits(text: String): String = text.mapNotNull { c -> Character.digit(c, 10).takeIf { it >= 0 } }.joinToString("")
 /** The digits that name a card or account ("***0091" is "0091"), or its words when it has too few. */
 internal fun smsRefKey(ref: String): String = smsDigits(ref).takeIf { it.length >= 3 } ?: ref.trim().lowercase(Locale.ROOT)
-private fun cardKey(sender: String, ref: String) = smsSenderKey(sender) + "\u0000" + smsRefKey(ref)
+/** A sender's card or account by its digits: one choice answers all its texts. */
+internal fun smsCardKey(sender: String, ref: String) = smsSenderKey(sender) + "\u0000" + smsRefKey(ref)
 
 /**
  * How an account was found: chosen in the review, remembered, the one whose name holds the text's
@@ -117,11 +118,13 @@ internal data class SmsStart(val mode: String, val day: String, val at: Long = 0
         }
 
         /**
-         * The first start offered: new messages for a budget with no transactions yet, whose balances
-         * are as they are now; otherwise 30 days back, but not before its records begin.
+         * The first start offered: two months back for a budget with no accounts, which the texts set
+         * up and fill; new messages for one with accounts but no transactions yet, whose balances are
+         * as they are now; otherwise 30 days back, but not before its records begin.
          */
         fun suggested(budget: JSONObject, today: LocalDate = LocalDate.now()): SmsStart {
             val open = budget.rows("accounts").filterNot { it.optBoolean("archived") }.map { it.text("id") }.toSet()
+            if (open.isEmpty()) return SmsStart("date", today.minusMonths(2).toString())
             val first = budget.rows("transactions").filter { it.text("accountId") in open }.minOfOrNull { it.text("date") }
                 ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }?.takeIf { !it.isAfter(today) }
                 ?: return SmsStart("now", today.toString())
@@ -203,10 +206,14 @@ internal class SmsAccounts(private val open: List<Pair<String, String>>, mapping
     private val formats = kept(SmsForFormat).filterValues { isOpen(it) }
     private val own = kept(SmsForOwn).filterValues { isOpen(it) }
 
-    /** A card the user said not to add: its texts are settled without a question. */
-    fun skips(sender: String, ref: String?): Boolean = ref != null && smsEntryKey("", sender, ref) in skipping
+    /** A card the user said not to add, or a sender whose texts name none: its texts are settled without a question. */
+    fun skips(sender: String, ref: String?): Boolean = smsEntryKey("", sender, ref ?: SmsAnyCard) in skipping
 
-    fun find(sender: String, ref: String?): Pair<String, SmsAccountSource>? {
+    /**
+     * The account a card is, or for a text naming none the one chosen for its sender's texts that
+     * name none ([SmsAnyCard]); the budget's one account when [only] allows it.
+     */
+    fun find(sender: String, ref: String?, only: Boolean = true): Pair<String, SmsAccountSource>? {
         if (ref != null) {
             remembered[smsEntryKey("", sender, ref)]?.let { return it to SmsAccountSource.Remembered }
             val digits = smsDigits(ref)
@@ -215,8 +222,8 @@ internal class SmsAccounts(private val open: List<Pair<String, String>>, mapping
             fun same(run: String) = run == digits || (minOf(run.length, digits.length) >= 4 && (run.endsWith(digits) || digits.endsWith(run)))
             if (digits.length >= 3) open.filter { (_, name) -> Regex("[0-9]+").findAll(name).any { same(it.value) } }
                 .singleOrNull()?.let { return it.first to SmsAccountSource.Name }
-        }
-        return open.singleOrNull()?.let { it.first to SmsAccountSource.Only }
+        } else remembered[smsEntryKey("", sender, SmsAnyCard)]?.let { return it to SmsAccountSource.Remembered }
+        return open.singleOrNull()?.takeIf { only }?.let { it.first to SmsAccountSource.Only }
     }
 
     /**
@@ -274,7 +281,7 @@ internal const val SmsForOwn = "own"
 private fun smsEntryKey(kind: String, sender: String, ref: String): String = kind + "\u0000" + when (kind) {
     SmsForOwn -> smsSenderKey(sender) + "\u0000" + ref.trim().lowercase(Locale.ROOT).replace(Regex("\\s+"), " ")
     SmsForFormat -> smsSenderKey(sender) + "\u0000" + ref
-    else -> cardKey(sender, ref)
+    else -> smsCardKey(sender, ref)
 }
 
 /**
@@ -324,7 +331,7 @@ internal data class SmsItem(
     val sender: String get() = sources.first().sender
     val ref: String? get() = transaction?.text("accountRef")?.ifBlank { null }
     /** Messages of one sender naming one card share this, so one choice answers them all. */
-    val card: String? get() = ref?.takeIf { needs == "account" }?.let { cardKey(sender, it) }
+    val card: String? get() = ref?.takeIf { needs == "account" }?.let { smsCardKey(sender, it) }
     /**
      * A transfer still needing its other account: a sender's texts about one account that say the
      * same of it ("Transfer to your term deposit", "Credit card payment") share this, so one choice
@@ -339,16 +346,43 @@ internal data class SmsItem(
 }
 
 /**
+ * Two texts about one transfer, one from each account (the payment out of checking, and the card
+ * receiving it), that the assistant read as two items: the later is the other side of the first
+ * ("pair"), settled with it rather than added again. Both accounts are known, the amounts are
+ * opposite, and the days at most [SmsTransferDays] apart.
+ */
+internal fun smsOtherSides(items: List<SmsItem>, dismissed: Set<Int>): List<SmsItem> {
+    val transfers = items.filter { it.disposition == "transaction" && it.index !in dismissed && it.needs == null && it.transaction?.text("kind") == "transfer" }
+    fun day(item: SmsItem) = runCatching { LocalDate.parse(item.transaction!!.text("date")) }.getOrNull()
+    val used = mutableSetOf<Int>()
+    val sides = mutableSetOf<Int>()
+    transfers.forEach { a ->
+        if (a.index in used) return@forEach
+        val t = a.transaction!!
+        val amount = a.amount ?: return@forEach
+        val b = transfers.firstOrNull { b ->
+            val u = b.transaction!!
+            b.index != a.index && b.index !in used && b.amount == -amount && u.text("accountId") == t.text("transferAccountId") && u.text("transferAccountId") == t.text("accountId") &&
+                day(a)?.let { x -> day(b)?.let { y -> kotlin.math.abs(java.time.temporal.ChronoUnit.DAYS.between(x, y)) <= SmsTransferDays } } == true
+        } ?: return@forEach
+        used += a.index; used += b.index; sides += maxOf(a.index, b.index)
+    }
+    return items.map { if (it.index in sides) it.copy(disposition = "ignore", skip = "pair") else it }
+}
+
+/**
  * A review: the texts read, the assistant's analysis, and the user's choices. [fresh] are accounts
  * made from the review for its texts (a CD a transfer went to): their balance is from before these
- * texts, so no text in them is held back as already in a starting balance.
+ * texts, so no text in them is held back as already in a starting balance. [setup] holds what the
+ * user answered for the cards and accounts to set up, by [smsCardKey].
  */
 internal data class SmsBatch(val messages: List<BankSms>, val analysis: JSONObject, val ticked: Map<Int, Boolean> = emptyMap(), val dismissed: Set<Int> = emptySet(),
-                             val fresh: Set<String> = emptySet()) {
+                             val fresh: Set<String> = emptySet(), val setup: Map<String, SmsSetupPlan> = emptyMap()) {
     fun params(analysis: JSONObject = this.analysis): JSONObject = JSONObject().put("messages", JSONArray(messages.map { it.json() })).put("analysis", analysis)
     // Drafts reference inbox originals by ID; evidence excerpts are part of the local review.
     fun saved(): String = JSONObject().put("v", 2).put("ids", JSONArray(messages.map { it.id })).put("analysis", analysis)
-        .put("ticked", JSONObject(ticked.mapKeys { it.key.toString() })).put("dismissed", JSONArray(dismissed.toList())).put("fresh", JSONArray(fresh.toList())).toString()
+        .put("ticked", JSONObject(ticked.mapKeys { it.key.toString() })).put("dismissed", JSONArray(dismissed.toList())).put("fresh", JSONArray(fresh.toList()))
+        .put("setup", JSONObject(setup.mapValues { it.value.json() })).toString()
 
     /** Texts a template read on the phone, which the assistant reviewed rather than read in full. */
     val templated: Int get() = analysis.rows("items").filter { it.text("template").isNotBlank() && !it.optBoolean("kept") }.sumOf { sourceIds(it).size }
@@ -358,8 +392,20 @@ internal data class SmsBatch(val messages: List<BankSms>, val analysis: JSONObje
     /** Where each account's records start for this review: an account made for its texts has none. */
     fun starts(budget: JSONObject): Map<String, String> = smsStarts(budget) - fresh
 
-    fun items(accounts: SmsAccounts): List<SmsItem> = analysis.rows("items").mapIndexed { index, item ->
-        val ids = item.optJSONArray("sourceIds")?.let { a -> (0 until a.length()).map { a.getString(it) } }.orEmpty()
+    fun items(accounts: SmsAccounts): List<SmsItem> {
+        val rows = analysis.rows("items")
+        val senders = messages.associate { it.id to it.sender }
+        // With two or more cards the budget doesn't know, none goes to its one account unasked: each is set up.
+        val unknown = rows.mapNotNull { item ->
+            val t = item.optJSONObject("transaction")?.takeIf { it.text("accountId").isBlank() } ?: return@mapNotNull null
+            val sender = sourceIds(item).firstNotNullOfOrNull { senders[it] } ?: return@mapNotNull null
+            t.text("accountRef").ifBlank { null }?.takeIf { !accounts.skips(sender, it) && accounts.find(sender, it, only = false) == null }?.let { smsCardKey(sender, it) }
+        }.distinct().size
+        return smsOtherSides(rows.mapIndexed { index, item -> item(index, item, accounts, unknown < 2) }, dismissed)
+    }
+
+    private fun item(index: Int, item: JSONObject, accounts: SmsAccounts, only: Boolean): SmsItem {
+        val ids = sourceIds(item)
         val sources = messages.filter { it.id in ids }
         val sender = sources.firstOrNull()?.sender.orEmpty()
         val t = item.optJSONObject("transaction")?.let { JSONObject(it.toString()) }
@@ -368,7 +414,7 @@ internal data class SmsBatch(val messages: List<BankSms>, val analysis: JSONObje
         var needs: String? = null
         if (t != null) {
             if (t.text("accountId").isNotBlank()) source = SmsAccountSource.Chosen
-            else accounts.find(sender, t.text("accountRef").ifBlank { null })?.let { (id, how) -> t.put("accountId", id); source = how }
+            else accounts.find(sender, t.text("accountRef").ifBlank { null }, only)?.let { (id, how) -> t.put("accountId", id); source = how }
             val account = t.text("accountId")
             // Money to or from a name the user said is their own account at another bank is a transfer with it.
             if (t.text("kind") in setOf("income", "expense") && t.text("transferAccountId").isBlank())
@@ -393,7 +439,7 @@ internal data class SmsBatch(val messages: List<BankSms>, val analysis: JSONObje
         val early = t != null && accounts.early(t.text("date"), t.text("accountId"), t.text("transferAccountId"))
         // From a card the user doesn't add: settled like a code, and still there to add by hand.
         val skipped = needs == "account" && accounts.skips(sender, t?.text("accountRef")?.ifBlank { null })
-        SmsItem(index, if (skipped) "ignore" else item.text("disposition"), item.text("note"), if (skipped) "card" else item.text("skip"), unsure, sources, t, source,
+        return SmsItem(index, if (skipped) "ignore" else item.text("disposition"), item.text("note"), if (skipped) "card" else item.text("skip"), unsure, sources, t, source,
             needs.takeUnless { skipped }, early, item.text("template").ifBlank { null }, item.text("raw").ifBlank { null }, item.optBoolean("kept"), other)
     }
 
@@ -407,7 +453,7 @@ internal data class SmsBatch(val messages: List<BankSms>, val analysis: JSONObje
         val ids = keep.flatMap { sourceIds(all.getJSONObject(it)) }.toSet()
         val at = keep.withIndex().associate { (new, old) -> old to new }
         return SmsBatch(messages.filter { it.id in ids }, JSONObject(analysis.toString()).put("items", JSONArray(keep.map { JSONObject(all.getJSONObject(it).toString()) })),
-            ticked.mapNotNull { (i, on) -> at[i]?.let { it to on } }.toMap(), dismissed.mapNotNull { at[it] }.toSet(), fresh)
+            ticked.mapNotNull { (i, on) -> at[i]?.let { it to on } }.toMap(), dismissed.mapNotNull { at[it] }.toSet(), fresh, setup)
     }
 
     /** The items with a text from [since] on: a later start takes the rest out of the review. */
@@ -463,28 +509,35 @@ internal data class SmsBatch(val messages: List<BankSms>, val analysis: JSONObje
             val ticked = json.optJSONObject("ticked")?.let { t -> t.keys().asSequence().associate { it.toInt() to t.getBoolean(it) } }.orEmpty()
             val dismissed = json.optJSONArray("dismissed")?.let { a -> (0 until a.length()).map { a.getInt(it) }.toSet() }.orEmpty()
             val fresh = json.optJSONArray("fresh")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() }.orEmpty()
-            SmsBatch(messages, json.getJSONObject("analysis"), ticked, dismissed, fresh)
+            val setup = json.optJSONObject("setup")?.let { s -> s.keys().asSequence().mapNotNull { key -> s.optJSONObject(key)?.let(SmsSetupPlan::of)?.let { key to it } }.toMap() }.orEmpty()
+            SmsBatch(messages, json.getJSONObject("analysis"), ticked, dismissed, fresh, setup)
         }.getOrNull()
     }
 }
 
 /** What one request to the assistant reads in full: its reply lists only the money, so a few hundred fit in its time. */
 internal const val SmsBatchSize = 200
+/**
+ * What a budget's first request reads in full, before it knows any format: a new budget's two
+ * months of real texts, 200 at a time, didn't come back in time. What it learns makes the next
+ * requests mostly reviews.
+ */
+internal const val SmsFirstRead = 60
 /** What one request carries at most: texts it only reviews, and junk read on the phone, cost little of its time. */
 internal const val SmsRequestTexts = 1_000
 private const val SmsReviewTexts = 400
 
 /**
  * How many of these texts one request takes, by their lanes ("junk", "review", "read"): up to
- * [SmsBatchSize] read in full and [SmsReviewTexts] reviewed, any number of junk, within
- * [SmsRequestTexts]. Without lanes, [SmsBatchSize].
+ * [most] read in full and [SmsReviewTexts] reviewed, any number of junk, within
+ * [SmsRequestTexts]. Without lanes, [SmsBatchSize]: which would be read in full isn't known.
  */
-internal fun smsRequestSize(lanes: List<String>?): Int {
+internal fun smsRequestSize(lanes: List<String>?, most: Int = SmsBatchSize): Int {
     if (lanes == null) return SmsBatchSize
     var read = 0; var review = 0
     lanes.forEachIndexed { i, lane ->
         when (lane) { "read" -> read++; "review" -> review++ }
-        if (read > SmsBatchSize || review > SmsReviewTexts) return i
+        if (read > most || review > SmsReviewTexts) return i
     }
     return lanes.size.coerceAtLeast(1)
 }
@@ -546,7 +599,7 @@ internal object SmsReadings {
                     .put("model", connection.opt("model") ?: JSONObject.NULL).put("messages", JSONArray(texts.map { it.json() })).put("note", note)
                     .put("templates", templates).put("payees", payees).put("trusted", trusted)
                 val probe = remaining.take(SmsRequestTexts)
-                val part = probe.take(smsRequestSize(analyzer.lanes(request(probe))))
+                val part = probe.take(smsRequestSize(analyzer.lanes(request(probe)), if (templates.length() == 0) SmsFirstRead else SmsBatchSize))
                 current.value = current.value?.copy(part = part.size, live = null)
                 val began = System.currentTimeMillis()
                 val result = analyzer.analyze(request(part)) { live -> current.value = current.value?.copy(live = live) }

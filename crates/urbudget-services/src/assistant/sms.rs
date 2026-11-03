@@ -274,6 +274,7 @@ The transaction
 - accountRef: the words that say which of the user's cards or accounts this is, copied exactly as written, usually the last digits with any mask: "4512", "***3301", "XX1234", "ending 4421". For a transfer, it's the account the text is about, and amount is signed from its side: a payment to a credit card is money into the card. Take it only from this item's texts; null when they name none.
 - otherRef: for a transfer, the user's other account, copied the same way, or null.
 - otherAccount: for a transfer, the user's other account by its exact name in accounts, when the texts don't name it in a way the app can match (no otherRef, or digits no account's name holds) but you can tell which it is: the text says what kind of account it is ("your savings account", "your term deposit", "your investment account", whatever the bank calls it) and one of the user's accounts is that, or transfers shows that such money always moves to or from one account (the account that pays their credit card). Null when the app can match otherRef or you can't tell; never guess between two accounts.
+- balance: the balance of the account this text is about that the text gives after this money moved, as an exact decimal with a point and no grouping, negative when overdrawn ("Balance £3,402.17" is "3402.17"), or null. Never a credit limit, a card's available credit, points, or another account's balance; null when you can't tell which it is.
 - categoryId: a category id from the list. For one of the user's payees, the category they usually give it. For a new payee whose kind of business is clear (a supermarket, a pharmacy, a petrol station, a restaurant, a phone or utility bill), the closest category, with "category" in unsure. Null only when nothing points to one. A refund takes the purchase's category. Never for a transfer.
 
 Accounts
@@ -281,7 +282,7 @@ Accounts
 - Use the account list and transfers to tell a transfer from a payment: money sent to the user's own credit card, savings, deposit or investment account is a transfer; money sent to a person or a company is an expense, even when the bank calls it a transfer.
 
 Examples, each for a budget in the text's own currency unless it says otherwise; banks everywhere write in their own ways, and these are only a few
-- [1, "BANK-UK", "2026-10-28 15:01", "You've spent £12.50 at TESCO STORES 3041 with your card ending 4512. Balance £1,240.18"] is an item: transaction, quote "£12.50", expense, the received date 2026-10-28, amount "-12.50", GBP "12.50", payee "Tesco", accountRef "4512". The balance is not the amount.
+- [1, "BANK-UK", "2026-10-28 15:01", "You've spent £12.50 at TESCO STORES 3041 with your card ending 4512. Balance £1,240.18"] is an item: transaction, quote "£12.50", expense, the received date 2026-10-28, amount "-12.50", GBP "12.50", payee "Tesco", accountRef "4512", balance "1240.18". The balance is not the amount.
 - [2, "BANK-US", "2026-11-03 18:22", "You made a $45.00 transaction with SQ *BLUE BOTTLE on your card ending 9876 on 11/03."] is an item: transaction, quote "$45.00", expense, 2026-11-03 (month first, no year), amount "-45.00", USD "45.00", payee "Blue Bottle", accountRef "9876".
 - [3, "BANK-IN", "2026-10-29 10:12", "Rs.2,500.00 debited from A/c XX1234 on 29-Oct-26 to VPA swiggy@icici (UPI Ref No 630123456789)"] is an item: transaction, quote "Rs.2,500.00", expense, 2026-10-29, amount "-2500.00", INR "2500.00", payee "Swiggy", memo "UPI", accountRef "XX1234". The UPI reference is neither a code nor an account.
 - [4, "BANK-DE", "2026-10-31 09:12", "Kartenzahlung 1.234,56 EUR bei MEDIAMARKT BERLIN, Karte ...4421, 31.10.2026"] is an item: transaction, quote "1.234,56 EUR", expense, 2026-10-31, amount "-1234.56", EUR "1234.56", payee "MediaMarkt", accountRef "...4421".
@@ -312,8 +313,8 @@ fn schema() -> Value {
     let kinds = ["expense", "income", "refund", "transfer"];
     let transaction = object(
         json!({"date":string,"amount":optional,"currency":string,"writtenAmount":string,"payee":string,"memo":string,
-        "kind":{"type":"string","enum":kinds},"accountRef":optional,"otherRef":optional,"otherAccount":optional,"categoryId":optional}),
-        vec!["date", "amount", "currency", "writtenAmount", "payee", "memo", "kind", "accountRef", "otherRef", "otherAccount", "categoryId"],
+        "kind":{"type":"string","enum":kinds},"accountRef":optional,"otherRef":optional,"otherAccount":optional,"categoryId":optional,"balance":optional}),
+        vec!["date", "amount", "currency", "writtenAmount", "payee", "memo", "kind", "accountRef", "otherRef", "otherAccount", "categoryId", "balance"],
     );
     let numbers = json!({"type":"array","items":{"type":"integer"}});
     let unsure = json!({"type":"array","items":{"type":"string","enum":["date","amount","payee","kind","category"]}});
@@ -354,7 +355,7 @@ fn schema() -> Value {
 }
 
 /// What a correction can change on a text the phone read.
-const FIELDS: [&str; 11] = ["date", "amount", "currency", "writtenAmount", "payee", "memo", "kind", "accountRef", "otherRef", "otherAccount", "categoryId"];
+const FIELDS: [&str; 12] = ["date", "amount", "currency", "writtenAmount", "payee", "memo", "kind", "accountRef", "otherRef", "otherAccount", "categoryId", "balance"];
 
 /// What the model sends: money written out, every other read text a number under its reason,
 /// corrections to what the phone read, and templates for the formats it read.
@@ -499,7 +500,7 @@ fn reading(item: &sms_import::Item) -> Value {
         None => json!({"template":item.template,"skip":item.skip}),
         Some(t) => json!({"template":item.template,"disposition":item.disposition,"kind":t.kind,"date":t.date,"amount":t.amount,
             "currency":t.currency,"writtenAmount":t.written_amount,"payee":t.payee,"memo":t.memo,"accountRef":t.account_ref,
-            "otherRef":t.other_ref,"otherAccount":t.other_account,"categoryId":t.category_id}),
+            "otherRef":t.other_ref,"otherAccount":t.other_account,"categoryId":t.category_id,"balance":t.balance}),
     }
 }
 
@@ -661,7 +662,7 @@ fn correct(m: &Message, read: &sms_import::Item, c: Correction) -> Result<(sms_i
             date: get("date").unwrap_or_else(|| m.received_date.clone()), amount: get("amount"), currency: need("currency")?,
             written_amount: need("writtenAmount")?, payee: need("payee")?, memo: get("memo").unwrap_or_default(), kind: need("kind")?,
             account_ref: get("accountRef"), other_ref: get("otherRef"), other_account: get("otherAccount"), category_id: get("categoryId"),
-            account_id: None, transfer_account_id: None,
+            account_id: None, transfer_account_id: None, balance: get("balance"),
         });
         changed.push("outcome".into());
     } else if let Some(t) = item.transaction.as_mut() {
@@ -687,6 +688,7 @@ fn correct(m: &Message, read: &sms_import::Item, c: Correction) -> Result<(sms_i
                 "accountRef" => set(&mut t.account_ref, Some(value)),
                 "otherRef" => set(&mut t.other_ref, Some(value)),
                 "otherAccount" => set(&mut t.other_account, Some(value)),
+                "balance" => set(&mut t.balance, Some(value)),
                 _ => set(&mut t.category_id, Some(value)),
             };
             if changed_now { changed.push(key); }
@@ -742,8 +744,24 @@ impl Model for Connected<'_> {
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<llm::Reply, String>> + Send + 'a>>
     {
         Box::pin(async move {
-            llm::respond(&self.a.http, &self.credentials, &request, on_delta).await
-                .map_err(|_| crate::t!("The assistant could not analyze this batch. Check its connection and try again."))
+            // A dropped connection or a busy service is tried again twice, a little later each time:
+            // one in twenty requests failing this way used to leave its texts waiting.
+            let mut wait = Duration::from_secs(2);
+            for attempt in 0..3 {
+                match llm::respond(&self.a.http, &self.credentials, &request, on_delta).await {
+                    Ok(reply) => return Ok(reply),
+                    Err(failure) if failure.kind == llm::FailureKind::Busy && attempt < 2 => {
+                        tokio::time::sleep(wait).await;
+                        wait *= 3;
+                    }
+                    // A sign-in, a usage limit or a model the account can't use is said as it is; the rest
+                    // stays general, so no provider detail (which can echo the texts) is shown.
+                    Err(failure) if matches!(failure.kind, llm::FailureKind::SignIn | llm::FailureKind::Limit | llm::FailureKind::NotEligible
+                        | llm::FailureKind::Model | llm::FailureKind::Busy) => return Err(failure.message),
+                    Err(_) => break,
+                }
+            }
+            Err(crate::t!("The assistant could not analyze this batch. Check its connection and try again."))
         })
     }
 }
@@ -1107,7 +1125,7 @@ fn learn(b: &Budget, input: &Input, lanes: &Lanes, expanded: Expanded) -> Read {
         // A payee or category the model changed is the user's name for the bank's, learned below, a
         // transfer's other account is the user's, and a memo is the model's words for one text: the
         // format read the text right.
-        let fields: Vec<&String> = expanded.corrected.get(i).into_iter().flatten().filter(|f| !["payee", "categoryId", "otherAccount", "memo"].contains(&f.as_str())).collect();
+        let fields: Vec<&String> = expanded.corrected.get(i).into_iter().flatten().filter(|f| !["payee", "categoryId", "otherAccount", "memo", "balance"].contains(&f.as_str())).collect();
         if fields.is_empty() {
             stat.confirmed += 1;
         }
@@ -1519,12 +1537,13 @@ mod tests {
         let at = |id: &str, time: &str| Message { id: id.into(), sender: "anb".into(), received_date: "2026-11-03".into(), received_time: time.into(), body: body.into() };
         let texts = vec![at("sms:1", "07:31"), at("sms:2", "07:32"), at("sms:3", "09:15")];
         let item = |n: usize| json!({"texts":[n],"disposition":"transaction","note":"Dunkin","quote":"SAR 3.75","unsure":[],
-            "transaction":{"date":"2026-11-03","amount":"-3.75","currency":"SAR","writtenAmount":"3.75","payee":"Dunkin","memo":"","kind":"expense","accountRef":"4512","otherRef":null,"otherAccount":null,"categoryId":null}});
+            "transaction":{"date":"2026-11-03","amount":"-3.75","currency":"SAR","writtenAmount":"3.75","payee":"Dunkin","memo":"","kind":"expense","accountRef":"4512","otherRef":null,"otherAccount":null,"categoryId":null,"balance":"1240.18"}});
         let lanes = sms_templates::lanes(&b, &texts, &[], &[], &Default::default());
         let reply = json!({"items":[item(1), item(2), item(3)],"skipped":skipped(&[]),"corrections":[],"templates":[]});
         let expanded = checked(&b, &texts, &lanes, reply).unwrap();
         let sources: Vec<Vec<String>> = expanded.analysis.items.iter().map(|i| i.source_ids.clone()).collect();
         assert_eq!(sources, vec![vec!["sms:1".to_string(), "sms:2".into()], vec!["sms:3".into()]]);
+        assert_eq!(expanded.analysis.items[0].transaction.as_ref().unwrap().balance.as_deref(), Some("1240.18"));
     }
     #[test]
     fn a_code_is_hidden_but_not_an_amount_in_any_currency() {

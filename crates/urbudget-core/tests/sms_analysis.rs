@@ -213,6 +213,18 @@ fn transfers_take_no_category_and_other_kinds_take_no_transfer_account() {
 }
 
 #[test]
+fn a_balance_is_a_plain_number_or_nothing() {
+    let b = common::budget("SAR");
+    let mut v = value();
+    for (balance, ok) in [("9120.40", true), ("-12.50", true), ("0", true), ("9,120.40", false), ("SAR 9120", false), ("", false)] {
+        v["items"][0]["transaction"]["balance"] = json!(balance);
+        assert_eq!(validate_analysis(&b, &messages(), &analysis(v.clone())).is_ok(), ok, "{balance}");
+    }
+    v["items"][0]["transaction"]["balance"] = Value::Null;
+    assert!(validate_analysis(&b, &messages(), &analysis(v)).is_ok());
+}
+
+#[test]
 fn a_review_holds_a_phones_history_and_a_request_up_to_a_thousand_texts() {
     let b = common::budget("SAR");
     let many = |n: usize| -> Vec<Message> {
@@ -327,6 +339,21 @@ fn exact_amount_boundaries_never_round() {
     ] {
         assert!(cents(invalid).is_err(), "{invalid}");
     }
+}
+
+#[test]
+fn two_transfers_of_the_same_money_the_same_way_are_both_added() {
+    let b = common::budget("SAR");
+    let mut v = value();
+    for i in 0..2 {
+        v["items"][i]["transaction"]["kind"] = json!("transfer");
+        v["items"][i]["transaction"]["accountId"] = json!("main");
+        v["items"][i]["transaction"]["transferAccountId"] = json!("card");
+        v["items"][i]["transaction"]["amount"] = json!("-12.34");
+    }
+    // Two placements of one amount on one day are two, not one told twice.
+    let added = apply_batch(b.clone(), &messages(), &analysis(v), decisions()).unwrap();
+    assert_eq!(added.transactions.len(), b.transactions.len() + 2);
 }
 
 #[test]

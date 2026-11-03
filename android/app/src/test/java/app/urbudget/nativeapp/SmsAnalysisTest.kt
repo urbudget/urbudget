@@ -262,7 +262,7 @@ class SmsAnalysisTest {
         assertEquals(1234L, SmsStart("now", "2026-10-03").since(now = 1234L))
         assertTrue(day.valid); assertFalse(SmsStart("date", java.time.LocalDate.now().plusDays(1).toString()).valid); assertFalse(SmsStart("date", "").valid)
     }
-    @Test fun aNewBudgetCollectsNewMessagesAndOneWithHistoryAMonthButNotBeforeItBegins() {
+    @Test fun anEmptyBudgetCollectsTwoMonthsANewOneNewMessagesAndOneWithHistoryAMonthButNotBeforeItBegins() {
         val today = java.time.LocalDate.parse("2026-11-02")
         fun budget(vararg dates: String, archived: Boolean = false) = JSONObject()
             .put("accounts", JSONArray().put(JSONObject().put("id", "a").put("archived", archived)))
@@ -270,7 +270,9 @@ class SmsAnalysisTest {
         // Balances entered as they are now: earlier texts are already in them.
         assertEquals(SmsStart("now", "2026-11-02"), SmsStart.suggested(budget(), today))
         assertEquals(SmsStart("now", "2026-11-02"), SmsStart.suggested(budget("2026-12-01"), today))
-        assertEquals(SmsStart("now", "2026-11-02"), SmsStart.suggested(budget("2026-10-20", archived = true), today))
+        // No accounts to hold a balance: the texts set them up and fill them.
+        assertEquals(SmsStart("date", "2026-09-02"), SmsStart.suggested(budget("2026-10-20", archived = true), today))
+        assertEquals(SmsStart("date", "2026-09-02"), SmsStart.suggested(JSONObject(), today))
         assertEquals(SmsStart("date", "2026-10-20"), SmsStart.suggested(budget("2026-10-20", "2026-10-25"), today))
         assertEquals(SmsStart("date", "2026-10-03"), SmsStart.suggested(budget("2024-12-13"), today))
     }
@@ -380,6 +382,9 @@ class SmsAnalysisTest {
         assertEquals(600, smsRequestSize(List(400) { "review" } + List(205) { "read" }))
         assertEquals(400, smsRequestSize(List(401) { "review" }))
         assertEquals(250, smsRequestSize(List(50) { "junk" } + List(201) { "read" }))
+        // Before a budget knows any format, its first request reads fewer in full.
+        assertEquals(SmsFirstRead + 50, smsRequestSize(List(50) { "junk" } + List(201) { "read" }, SmsFirstRead))
+        assertEquals(SmsBatchSize, smsRequestSize(null, SmsFirstRead))
         val code = message(body = "Code 1234")
         val batch = SmsBatch(listOf(code), JSONObject().put("items", JSONArray().put(item(code, null, "ignore").put("template", "filter:code").put("kept", true))))
         assertEquals(0 to 1, batch.templated to batch.kept)

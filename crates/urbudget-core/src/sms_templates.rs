@@ -620,6 +620,7 @@ pub fn fill(b: &Budget, c: &Compiled, m: &Message, reading: &Reading, payees: &H
                 date: day, amount, currency: if reading.amount.is_some() { currency } else { b.currency.clone() }, payee,
                 memo: o.memo.clone().unwrap_or_default(), kind, account_ref: reading.reference.clone(), other_ref: reading.other.clone(),
                 other_account: None, category_id: category, account_id: None, transfer_account_id: None,
+                balance: reading.balance.as_deref().map(|n| decimal(n, &b.currency)),
             }),
             unsure: vec![], template: Some(t.id.clone()), raw, kept: false,
         }
@@ -988,6 +989,14 @@ mod tests {
         assert_eq!((t.account_ref.as_deref(), t.category_id.as_deref(), t.memo.as_str()), (Some("1234"), Some("food"), "Online"));
         assert_eq!(item.note, "Purchase at Noon"); assert_eq!(item.evidence[0].quote, "1,065.97");
         assert_eq!(item.template.as_deref(), Some("t1")); assert_eq!(item.raw.as_deref(), Some("NOON E"));
+        // The balance the text gives after it, for a new account's start; none when the line is left out.
+        assert_eq!(t.balance.as_deref(), Some("9120.40"));
+        let short = "Online Purchase
+VISA Card:1234
+Amount:SAR 5
+At:SHOP
+On:02/11/26 07:47";
+        assert_eq!(fill(&b, &c, &text("sms:2", short), &c.read(short).unwrap(), &HashMap::new(), None).unwrap().transaction.unwrap().balance, None);
         // Without a learned payee the bank's own words stand.
         assert_eq!(fill(&b, &c, &m, &c.read(BODY).unwrap(), &HashMap::new(), None).unwrap().transaction.unwrap().payee, "NOON E");
     }

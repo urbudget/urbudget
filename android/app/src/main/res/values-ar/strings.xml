@@ -2252,6 +2252,7 @@
     <string name="sms_choose_senders">اختيار المرسلين</string>
     <string name="sms_senders">المرسلون</string>
     <string name="sms_sender_help">اختر الأسماء التي يراسلك بها بنكك. لا تُجمع إلا رسائلها. حذف مرسل يحذف رسائله المنتظرة من UrBudget.</string>
+    <string name="sms_start_builds">لا حسابات في ميزانيتك بعد. تُعَدّ البطاقات والحسابات التي تذكرها هذه الرسائل منها، مع معاملاتها.</string>
     <string name="sms_history">ما يُجمع</string>
     <string name="sms_new_only">الرسائل الجديدة فقط</string>
     <string name="sms_everything">كل ما على هذا الهاتف</string>
@@ -2528,6 +2529,7 @@
     <string name="sms_skipped_marketing">عرض</string>
     <string name="sms_skipped_other">لم تتحرك أموال</string>
     <string name="sms_skipped_card">من بطاقة لا تضيف رسائلها</string>
+    <string name="sms_skipped_pair">الطرف الآخر لتحويل موجود هنا</string>
     <plurals name="sms_handled">
         <item quantity="zero">لم يُعالج شيء</item>
         <item quantity="one">رسالة واحدة عولجت عنك</item>
@@ -2579,6 +2581,42 @@
     <string name="sms_new_account_title">حساب جديد</string>
     <string name="sms_new_account_balance">الرصيد قبل هذه الرسائل (%1$s)</string>
     <string name="sms_new_account_help">تُضاف معاملات هذه المراجعة فوقه.</string>
+    <string name="sms_setup_title">أعدّ حساباتك</string>
+    <string name="sms_setup_detail">تذكر رسائلك هذه البطاقات والحسابات. أنشئها، أو حدّد ما ينتمي منها إلى بعض؛ يمكنك تغيير أي منها لاحقًا.</string>
+    <string name="sms_setup_title_more">بطاقات وحسابات لإعدادها</string>
+    <string name="sms_setup_more_detail">تذكر رسائلك بطاقات وحسابات ليست في هذه الميزانية بعد.</string>
+    <string name="sms_setup_action">ماذا تفعل</string>
+    <string name="sms_setup_create">أنشئ هذا الحساب</string>
+    <string name="sms_setup_part_of">جزء من \u2068%1$s\u2069</string>
+    <string name="sms_setup_new">\u2068%1$s\u2069 (جديد)</string>
+    <string name="sms_setup_skip">لا تتبّعه</string>
+    <string name="sms_setup_opening">الرصيد قبل \u2068%1$s\u2069: \u2068%2$s\u2069</string>
+    <string name="sms_setup_opening_from">محسوب من الرصيد الذي ذكرته رسالة في \u2068%1$s\u2069: \u2068%2$s\u2069</string>
+    <string name="sms_setup_opening_none">لا تذكر أي رسالة رصيده. اضغط لإدخاله.</string>
+    <string name="sms_setup_owed_help">تذكر رسائل البطاقة عادةً الحد المتبقي، لا ما عليك. اضغط لإدخال ما كان عليك.</string>
+    <string name="sms_setup_change">تغيير</string>
+    <string name="sms_setup_joins">تذهب رسائله إلى \u2068%1$s\u2069.</string>
+    <string name="sms_setup_skips">لا تُضاف رسائله.</string>
+    <string name="sms_setup_untracked">ما يُحوَّل منه أو إليه يُضاف إنفاقًا أو دخلًا.</string>
+    <string name="sms_setup_edit_title">حساب سيُنشأ</string>
+    <string name="sms_setup_no_card">رسائل لا تذكر بطاقة</string>
+    <string name="sms_setup_apply_none">طبّق هذه الاختيارات</string>
+    <plurals name="sms_setup_numbers">
+        <item quantity="zero">لا أرقام</item>
+        <item quantity="one">رقم واحد، لكل تحويل رقم</item>
+        <item quantity="two">رقمان، لكل تحويل رقم</item>
+        <item quantity="few">\u2068%1$s\u2069 أرقام، لكل تحويل رقم</item>
+        <item quantity="many">\u2068%1$s\u2069 رقمًا، لكل تحويل رقم</item>
+        <item quantity="other">\u2068%1$s\u2069 رقم، لكل تحويل رقم</item>
+    </plurals>
+    <plurals name="sms_setup_apply">
+        <item quantity="zero">لا حسابات لإعدادها</item>
+        <item quantity="one">أعدّ حسابًا واحدًا</item>
+        <item quantity="two">أعدّ حسابين</item>
+        <item quantity="few">أعدّ \u2068%1$s\u2069 حسابات</item>
+        <item quantity="many">أعدّ \u2068%1$s\u2069 حسابًا</item>
+        <item quantity="other">أعدّ \u2068%1$s\u2069 حساب</item>
+    </plurals>
     <string name="sms_tick_from_day">تحديد من يوم</string>
     <plurals name="sms_by_template">
         <item quantity="zero">لم تُقرأ رسائل بقوالب · \u2068%2$s\u2069 قُرئت كاملة</item>
@@ -2719,6 +2757,14 @@
         <item quantity="few">⁨%1$s⁩ رسائل من بطاقات لا تضيفها</item>
         <item quantity="many">⁨%1$s⁩ رسالة من بطاقات لا تضيفها</item>
         <item quantity="other">⁨%1$s⁩ رسالة من بطاقات لا تضيفها</item>
+    </plurals>
+    <plurals name="sms_skip_pair">
+        <item quantity="zero">لا أطراف أخرى لتحويلات</item>
+        <item quantity="one">الطرف الآخر لتحويل</item>
+        <item quantity="two">الطرفان الآخران لتحويلين</item>
+        <item quantity="few">⁨%1$s⁩ أطراف أخرى لتحويلات</item>
+        <item quantity="many">⁨%1$s⁩ طرفًا آخر لتحويلات</item>
+        <item quantity="other">⁨%1$s⁩ طرف آخر لتحويلات</item>
     </plurals>
     <plurals name="sms_skip_dismissed">
         <item quantity="zero">لا شيء متجاهَل</item>

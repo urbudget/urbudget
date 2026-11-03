@@ -1994,6 +1994,8 @@
     <string name="sms_choose_senders">Choose senders</string>
     <string name="sms_senders">Senders</string>
     <string name="sms_sender_help">Choose the names your bank texts you from. Only their messages are collected. Removing a sender deletes its waiting messages from UrBudget.</string>
+    <!-- Under the start in the sender picker, for a budget with no accounts yet. -->
+    <string name="sms_start_builds">Your budget has no accounts yet. The cards and accounts these texts mention are set up from them, with their transactions.</string>
     <string name="sms_history">Collect</string>
     <string name="sms_new_only">New messages only</string>
     <string name="sms_everything">Everything on this phone</string>
@@ -2193,6 +2195,8 @@
     <string name="sms_skipped_marketing">Offer</string>
     <string name="sms_skipped_other">No money moved</string>
     <string name="sms_skipped_card">From a card you don’t add</string>
+    <!-- A text about a transfer that another text in the review already has, from the other account. -->
+    <string name="sms_skipped_pair">The other side of a transfer already here</string>
     <plurals name="sms_handled">
         <item quantity="one">%1$s handled for you</item>
         <item quantity="other">%1$s handled for you</item>
@@ -2237,6 +2241,41 @@
     <string name="sms_new_account_title">New account</string>
     <string name="sms_new_account_balance">Balance before these texts (%1$s)</string>
     <string name="sms_new_account_help">The transactions in this review are added on top of it.</string>
+    <!-- The review's first section when its texts name cards and accounts the budget doesn't have: each is made, put in another, or not tracked. -->
+    <string name="sms_setup_title">Set up your accounts</string>
+    <string name="sms_setup_detail">Your texts mention these cards and accounts. Create them, or say which belong together; you can change any later.</string>
+    <string name="sms_setup_title_more">Cards and accounts to set up</string>
+    <string name="sms_setup_more_detail">Your texts mention cards and accounts this budget doesn’t have yet.</string>
+    <string name="sms_setup_action">What to do</string>
+    <string name="sms_setup_create">Create this account</string>
+    <!-- A debit card's texts go to the current account it draws on: "Part of ANB 0026". -->
+    <string name="sms_setup_part_of">Part of %1$s</string>
+    <!-- An account being created in this section, beside the budget's own. -->
+    <string name="sms_setup_new">%1$s (new)</string>
+    <string name="sms_setup_skip">Don’t track</string>
+    <!-- The balance the new account starts with: "Balance before 1 Oct: 4,312.10". -->
+    <string name="sms_setup_opening">Balance before %1$s: %2$s</string>
+    <string name="sms_setup_opening_from">Worked out from the balance a text gave on %1$s: %2$s</string>
+    <string name="sms_setup_opening_none">No text gives its balance. Tap to enter it.</string>
+    <string name="sms_setup_owed_help">A card’s texts usually give the credit left, not what you owe. Tap to enter what you owed.</string>
+    <string name="sms_setup_change">Change</string>
+    <string name="sms_setup_joins">Its texts go to %1$s.</string>
+    <string name="sms_setup_skips">Its texts aren’t added.</string>
+    <!-- An account only transfers name, which the user doesn't track: what moved to or from it is spending or income. -->
+    <string name="sms_setup_untracked">Money moved to or from it is added as spending or income.</string>
+    <string name="sms_setup_edit_title">Account to create</string>
+    <!-- A sender whose texts name no card or account, such as a mobile wallet. -->
+    <string name="sms_setup_no_card">Texts that name no card</string>
+    <string name="sms_setup_apply_none">Apply these choices</string>
+    <!-- One account the bank gives a new number for each transfer into it, such as a term deposit. -->
+    <plurals name="sms_setup_numbers">
+        <item quantity="one">%1$s number, one for each transfer</item>
+        <item quantity="other">%1$s numbers, one for each transfer</item>
+    </plurals>
+    <plurals name="sms_setup_apply">
+        <item quantity="one">Set up %1$s account</item>
+        <item quantity="other">Set up %1$s accounts</item>
+    </plurals>
     <string name="sms_tick_from_day">Tick from a day</string>
     <plurals name="sms_by_template">
         <item quantity="one">%1$s read by a template and checked by your assistant · %2$s read in full</item>
@@ -2330,6 +2369,10 @@
     <plurals name="sms_skip_card">
         <item quantity="one">%1$s from a card you don’t add</item>
         <item quantity="other">%1$s from cards you don’t add</item>
+    </plurals>
+    <plurals name="sms_skip_pair">
+        <item quantity="one">%1$s other side of a transfer</item>
+        <item quantity="other">%1$s other sides of transfers</item>
     </plurals>
     <plurals name="sms_skip_dismissed">
         <item quantity="one">%1$s dismissed</item>

@@ -49,6 +49,10 @@ pub struct Transaction {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub other_account: Option<String>,
     pub category_id: Option<String>,
+    /// The account's balance the message gives after this money moved, as a plain decimal: what a
+    /// new account's starting balance is worked out from. Never a limit or a card's available credit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub balance: Option<String>,
     /// Filled by the app from a remembered card or the account's name, or chosen by the user.
     #[serde(default)]
     pub account_id: Option<String>,
@@ -263,6 +267,9 @@ fn transaction(
     if !reference(&t.account_ref) || !reference(&t.other_ref) {
         return Err(crate::t!("Check the card and account references."));
     }
+    if t.balance.as_ref().is_some_and(|b| !written(b.strip_prefix('-').unwrap_or(b))) {
+        return Err(crate::t!("Write a balance as a plain number, or leave it out."));
+    }
     // Checked against the account list when the model gives it: a later rename mustn't break the review.
     if t.other_account.as_ref().is_some_and(|n| n.trim().is_empty() || n.len() > 200 || t.kind != "transfer") {
         return Err(crate::t!("Name the other account only for a transfer."));
@@ -420,13 +427,16 @@ pub fn apply_batch(
                 "Two messages cannot match the same transaction. Group them or skip one."
             ));
         }
-        // Sequential previews also catch a transfer imported by an earlier account in this batch.
+        // Sequential previews also catch a transfer imported by an earlier account in this batch:
+        // one of its transactions this could be, seen from the other account (a split's part has
+        // no transaction of its own here). One in this account is another transfer of the same
+        // money (two placements of one amount on one day), added as well.
         let current = review_item(&b, &analysis.items[decision.index])?;
+        let other_side = current.candidates.iter().filter(|id| !row.row.candidates.contains(id)).any(|id| {
+            b.transactions.iter().find(|t| &t.id == id).map_or(true, |t| t.account_id != row.account_id)
+        });
         if decision.action == "new"
-            && current
-                .candidates
-                .iter()
-                .any(|id| !row.row.candidates.contains(id))
+            && other_side
             && (current.transfer_account_id.is_some() || !current.transfer_candidates.is_empty())
         {
             return Err(crate::t!("These messages may describe both sides of one transfer. Group them before importing."));

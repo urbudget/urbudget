@@ -280,11 +280,26 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
                 .put("openingBalance", openingBalance).put("archived", existing?.optBoolean("archived") ?: false)
             if (accountType != null) record.put("accountType", accountType)
             budget.upsertRecord("accounts", record)
-            if (kind == "credit" && budget.records("categories").none { it.optString("paymentAccountId") == recordId }) {
-                budget.upsertRecord("categories", JSONObject().put("id", UUID.randomUUID().toString()).put("name", name.trim())
-                    .put("group", "Credit Card Payments").put("target", 0).put("paymentAccountId", recordId))
-            }
+            paymentCategory(budget, record)
         }) }
+    }
+
+    /** New accounts as one change, which one Undo takes back: those set up from bank texts. */
+    fun saveAccounts(records: List<JSONObject>) {
+        val frozen = records.map(JSONObject::toString)
+        val shown = state.value
+        val guard = BudgetEditGuard.recordSet(shown.budget, shown.budgetIdentity, "accounts", records.map { it.optString("id") })
+        enqueue { publish(repository.edit(guard) { budget ->
+            frozen.map(::JSONObject).forEach { record -> budget.upsertRecord("accounts", record.put("archived", false)); paymentCategory(budget, record) }
+        }) }
+    }
+
+    /** A credit card's payment category, made with the card unless it has one. */
+    private fun paymentCategory(budget: JSONObject, account: JSONObject) {
+        val id = account.optString("id")
+        if (account.optString("kind") != "credit" || budget.records("categories").any { it.optString("paymentAccountId") == id }) return
+        budget.upsertRecord("categories", JSONObject().put("id", UUID.randomUUID().toString()).put("name", account.optString("name").trim())
+            .put("group", "Credit Card Payments").put("target", 0).put("paymentAccountId", id))
     }
 
     fun saveCategory(id: String? = null, name: String, group: String) = upsert("categories", JSONObject()

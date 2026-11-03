@@ -10,7 +10,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.SwapHoriz
-import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,8 +31,9 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /**
- * The prepared batch as transactions to add, not messages to read. Cards the phone can't match
- * ask once for every message that names them; amounts in another currency are typed in the row;
+ * The prepared batch as transactions to add, not messages to read. Cards and accounts the phone
+ * can't match are set up first, once for every message that names them ([smsSetupSection]);
+ * amounts in another currency are typed in the row;
  * anything else is changed in the transaction editor. Ticked rows are added in one undoable step,
  * and every message the review settles leaves Bank messages; those still waiting on a choice stay
  * in the review, as they were read. [change] applies an edit to the review as it is when it runs:
@@ -63,6 +63,7 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
     // The rows a day is picked for ("Tick from a day"), and the account being made for a text.
     var fromDay by remember { mutableStateOf<List<SmsItem>?>(null) }
     var creating by remember { mutableStateOf<SmsNewAccount?>(null) }
+    var settingUp by remember { mutableStateOf<String?>(null) }
     var clearing by remember { mutableStateOf(false) }
     val decisions = remember { mutableStateMapOf<Int, String>() }
     val keepCard = remember { mutableStateMapOf<String, Boolean>() }
@@ -89,8 +90,16 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
     // Newest first, as the bank's app lists them, under the day they're dated.
     val readyShown = remember(ready) { smsNewestFirst(ready) }
     val holdsShown = remember(holds) { smsNewestFirst(holds) }
-    val cards = waiting.filter { it.card != null }.groupBy { it.card!! }
-    val transfers = waiting.filter { it.card == null && it.transfer != null }.groupBy { it.transfer!! }
+    // The cards and accounts to set up, and what's suggested for each; the rows they answer wait under them.
+    val typeNames = remember(languageKey()) { accountTypes().toMap() }
+    val candidates = remember(items, batch.dismissed) { smsSetupCandidates(batch, items) }
+    val suggested = remember(candidates, budget, typeNames) { smsSetupSuggestions(candidates, budget) { typeNames[it].orEmpty() } }
+    val plans = remember(candidates, suggested, batch.setup, accounts) { smsSetupPlans(candidates, batch.setup, suggested, accounts.map { it.first }.toSet()) }
+    val inSetup = remember(candidates) { candidates.flatMap { c -> (c.items + c.via).map { it.index } }.toSet() }
+    val choosing = waiting.filter { it.index !in inSetup }
+    // With nothing ready to add, setting up is the next step: its button takes the page's place.
+    val setupNext = candidates.isNotEmpty() && ready.isEmpty()
+    val transfers = choosing.filter { it.transfer != null }.groupBy { it.transfer!! }
     val adding = prepared?.let { rows -> (ready + existing + holds).filter { it.needs == null && ticked(it) }.mapNotNull { item ->
         rows[item.index]?.takeIf { !it.locked }?.let { row -> item.index to decision(item.index, row) }?.takeIf { it.second != "skip" }
     } }.orEmpty()
@@ -111,18 +120,24 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
         val count = adding.count { it.second == "new" }.toLong()
         vm.runCommand("smsBatchApply", batch.params(resolved).put("decisions", choices)) { if (count > 0) toast(Words.count(R.plurals.sms_added, count), false); finish(handled, rest) }
     }
-    /** An account for a card's texts, or [SmsSkipCard] for none: remembered for the card's next texts, or for these alone. */
-    fun chooseCard(group: List<SmsItem>, account: String) {
-        val first = group.first()
-        if (keepCard[first.card] != false) runCatching { saveCards(smsRememberCard(mappings, first.sender, first.ref!!, account)) }.onFailure { error = it.message }
-        else if (account == SmsSkipCard) change { b -> b.copy(dismissed = b.dismissed + group.map { it.index }) }
-        else change { b -> group.fold(b) { next, item -> next.edit(item.index) { it.getJSONObject("transaction").put("accountId", account) } } }
-    }
     /** An account made for these texts: its balance is from before them, so none is held back as already in it. */
     fun made(account: String) = change { it.copy(fresh = it.fresh + account) }
-    fun newForCard(group: List<SmsItem>) {
-        val first = group.first()
-        creating = SmsNewAccount(smsAccountName(first.sender, first.ref!!)) { id -> made(id); chooseCard(group, id) }
+    val mappingsNow = rememberUpdatedState(mappings)
+    /**
+     * The setup as it stands: the accounts made in one change, then, once the budget has them, each
+     * card remembered with its account and transfers to an untracked one made spending or income.
+     */
+    fun applySetup() {
+        val changes = runCatching { smsSetupChanges(candidates, plans, ::ticked) { java.util.UUID.randomUUID().toString() } }.getOrElse { error = it.message; return }
+        val ids = changes.accounts.map { it.text("id") }
+        val answered = candidates.map { it.key }.toSet()
+        if (ids.isNotEmpty()) vm.saveAccounts(changes.accounts)
+        vm.afterPending {
+            if (ids.any { vm.state.value.budget?.row("accounts", it) == null }) return@afterPending
+            runCatching { changes.remember.fold(mappingsNow.value) { kept, r -> smsRememberCard(kept, r.sender, r.ref, r.account, r.kind) } }
+                .onSuccess(saveCards).onFailure { error = it.message }
+            change { b -> changes.spending.fold(b.copy(fresh = b.fresh + ids, setup = b.setup - answered)) { next, index -> next.edit(index, ::smsUntracked) } }
+        }
     }
     /**
      * The other account of these transfers, for each of them; and, unless the user said not to,
@@ -153,7 +168,7 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
     val knownTitle = countText(R.plurals.sms_known, existing.size)
     val skippedTitle = countText(R.plurals.sms_not_transactions, skipped.size)
     Column(Modifier.fillMaxSize().testTag("sms-review-page")) {
-        LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 4.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        LazyColumn(Modifier.weight(1f).fillMaxWidth().testTag("sms-review-list"), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 4.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item(key = "head") {
                 SectionTitle(stringResource(R.string.sms_review_title), countText(R.plurals.sms_message_count, batch.messages.size)) {
                     Box {
@@ -167,13 +182,10 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
             }
             error?.let { item(key = "error") { FormError(it) } }
             if (prepared == null && error == null) item(key = "loading") { LinearProgressIndicator(Modifier.fillMaxWidth(), color = ur.accent) }
-            if (waiting.isNotEmpty()) {
+            if (candidates.isNotEmpty()) smsSetupSection(candidates, plans, budget, accounts, typeNames, !saving, ::ticked,
+                { key, plan -> change { it.copy(setup = it.setup + (key to plan)) } }, { settingUp = it }, if (setupNext) null else ::applySetup)
+            if (choosing.isNotEmpty()) {
                 item(key = "choose") { SectionTitle(stringResource(R.string.sms_section_choose), stringResource(R.string.sms_section_choose_detail)) }
-                cards.forEach { (key, group) ->
-                    item(key = "card:$key") {
-                        SmsCardChoice(group, accounts, keepCard[key] != false, { keepCard[key] = it }, { newForCard(group) }) { chooseCard(group, it) }
-                    }
-                }
                 transfers.forEach { (key, group) ->
                     item(key = "transfer:$key") {
                         // Remembered for what names these transfers, when anything does.
@@ -182,7 +194,7 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
                             { change { b -> b.copy(dismissed = b.dismissed + group.map { it.index }) } }) { chooseOther(group, it) }
                     }
                 }
-                val singles = waiting.filter { it.card == null && it.transfer == null }
+                val singles = choosing.filter { it.transfer == null }
                 itemsIndexed(singles, key = { _, it -> "single:${it.index}" }) { i, item ->
                     if (item.transaction == null) SmsUnclearRow(item, i, singles.size, { editing = item.index }) { change { it.copy(dismissed = it.dismissed + item.index) } }
                     else SmsTransactionRow(item, budget, null, null, null, i, singles.size, item.index in shown, !saving,
@@ -232,7 +244,8 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
                     else -> stringResource(R.string.sms_nothing)
                 }
                 // Clearing a lot can't be taken back, and the button sits where the dock is on other pages: it asks first.
-                PrimaryButton(action, { if (cleared >= SmsClearAsks) clearing = true else confirm() }, Modifier.weight(2f).testTag("sms-add"),
+                if (setupNext) PrimaryButton(smsSetupAction(plans), ::applySetup, Modifier.weight(2f).testTag("sms-setup-apply"), enabled = !saving)
+                else PrimaryButton(action, { if (cleared >= SmsClearAsks) clearing = true else confirm() }, Modifier.weight(2f).testTag("sms-add"),
                     enabled = !saving && checked === state.budget && undecided == 0 && settled.isNotEmpty())
                 if (clearing) AlertDialog(onDismissRequest = { clearing = false }, title = { Text(countText(R.plurals.sms_clear_title, cleared)) },
                     text = { Text(listOfNotNull(countText(R.plurals.sms_clear_detail, cleared), later.takeIf { it > 0 }?.let { countText(R.plurals.sms_later, it) + "." })
@@ -246,6 +259,12 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
         DatePickerSheet(java.time.LocalDate.now().toString(), { day -> tickFrom(rows, day); fromDay = null }) { fromDay = null }
     }
     creating?.let { request -> SmsNewAccountDialog(request, budget, vm) { creating = null } }
+    settingUp?.let { key -> candidates.firstOrNull { it.key == key } }?.let { c ->
+        val plan = plans.getValue(c.key)
+        SmsSetupDialog(plan, smsSetupBalance(plan, smsOpening(smsSetupMembers(c.key, candidates, plans), ::ticked)), currency, { settingUp = null }) { answer ->
+            change { it.copy(setup = it.setup + (c.key to answer)) }
+        }
+    }
     editing?.let { index -> items.firstOrNull { it.index == index } }?.let { item ->
         TransactionDialog(smsEditable(item, currency), budget, "", vm, close = { editing = null }, dialogTitle = stringResource(R.string.sms_check_title), saveOverride = { record ->
             change { smsEdited(it, item, record, budget) }
@@ -418,7 +437,7 @@ internal fun smsNewestFirst(items: List<SmsItem>): List<SmsItem> =
 
 /** A name for an account a text names that the budget doesn't have yet: "ANB 0070". */
 internal fun smsAccountName(sender: String, ref: String): String =
-    listOf(sender.trim().uppercase(java.util.Locale.ROOT), smsDigits(ref).ifEmpty { ref.trim() }).filter { it.isNotBlank() }.joinToString(" ")
+    listOf(smsSenderName(sender), smsDigits(ref).ifEmpty { ref.trim() }).filter { it.isNotBlank() }.joinToString(" ")
 
 /** An account to make from the review, named [name] to start with; [made] gets its id once the budget has it. */
 internal class SmsNewAccount(val name: String, val made: (String) -> Unit)
@@ -456,37 +475,14 @@ private fun skipSummary(items: List<SmsItem>): String = items.groupingBy { it.sk
     countText(when (skip) {
         "code" -> R.plurals.sms_skip_code; "security" -> R.plurals.sms_skip_security; "balance" -> R.plurals.sms_skip_balance
         "declined" -> R.plurals.sms_skip_declined; "rewards" -> R.plurals.sms_skip_rewards; "marketing" -> R.plurals.sms_skip_marketing
-        "card" -> R.plurals.sms_skip_card; "unclear" -> R.plurals.sms_skip_dismissed; else -> R.plurals.sms_skip_other
+        "card" -> R.plurals.sms_skip_card; "pair" -> R.plurals.sms_skip_pair; "unclear" -> R.plurals.sms_skip_dismissed; else -> R.plurals.sms_skip_other
     }, n)
 }.joinToString(" · ")
 
 /** A card or account by the digits the bank gives ("Ending in 4417"), or its words when it has none. */
 @Composable
-internal fun smsRefLabel(ref: String): String = smsDigits(ref).takeIf { it.length >= 3 }?.let { stringResource(R.string.sms_card, it) } ?: Money.own(ref)
-
-/** One choice of account for every message that names a card the phone can't match yet. */
-@Composable
-private fun SmsCardChoice(group: List<SmsItem>, accounts: List<Pair<String, String>>, keep: Boolean, setKeep: (Boolean) -> Unit, newAccount: () -> Unit, choose: (String) -> Unit) {
-    val first = group.first()
-    ListCard(Modifier.testTag("sms-card:${first.ref}")) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Outlined.WarningAmber, null, Modifier.size(20.dp), tint = ur.warning)
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text(smsRefLabel(first.ref!!), style = MaterialTheme.typography.titleMedium, color = ur.text)
-                Text(Money.own(first.sender) + " · " + countText(R.plurals.sms_transaction_count, group.size), style = MaterialTheme.typography.bodySmall, color = ur.muted)
-            }
-        }
-        Text(group.mapNotNull { it.transaction?.text("payee")?.ifBlank { null } }.distinct().take(4).joinToString(", ") { Money.own(it) },
-            style = MaterialTheme.typography.bodyMedium, color = ur.text2, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        // A card the budget has no account for yet can have one made here, or its texts left out.
-        val new = stringResource(R.string.sms_new_account)
-        Choice(stringResource(R.string.sms_which_account), "", accounts + (NEW_ACCOUNT to new) + (SmsSkipCard to stringResource(R.string.sms_card_skip))) {
-            if (it == NEW_ACCOUNT) newAccount() else choose(it)
-        }
-        CheckRow(stringResource(R.string.sms_remember_card), keep, setKeep)
-    } }
-}
+internal fun smsRefLabel(ref: String): String = if (ref == SmsAnyCard) stringResource(R.string.sms_setup_no_card)
+    else smsDigits(ref).takeIf { it.length >= 3 }?.let { stringResource(R.string.sms_card, it) } ?: Money.own(ref)
 
 /**
  * Transfers that need their other account, answered together: those naming one the phone can't
@@ -625,7 +621,7 @@ internal const val SmsClearAsks = 50
 internal fun smsSkipLabel(skip: String): Int = when (skip) {
     "code" -> R.string.sms_skipped_code; "security" -> R.string.sms_skipped_security; "balance" -> R.string.sms_skipped_balance
     "declined" -> R.string.sms_skipped_declined; "rewards" -> R.string.sms_skipped_rewards; "marketing" -> R.string.sms_skipped_marketing
-    "card" -> R.string.sms_skipped_card; else -> R.string.sms_skipped_other
+    "card" -> R.string.sms_skipped_card; "pair" -> R.string.sms_skipped_pair; else -> R.string.sms_skipped_other
 }
 
 /** A message the assistant couldn't turn into one transaction, or that isn't one: enter it, or let it go. */
