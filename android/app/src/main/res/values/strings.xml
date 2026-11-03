@@ -2192,6 +2192,7 @@
     <string name="sms_skipped_rewards">Rewards</string>
     <string name="sms_skipped_marketing">Offer</string>
     <string name="sms_skipped_other">No money moved</string>
+    <string name="sms_skipped_card">From a card you don’t add</string>
     <plurals name="sms_handled">
         <item quantity="one">%1$s handled for you</item>
         <item quantity="other">%1$s handled for you</item>
@@ -2216,6 +2217,14 @@
     <string name="sms_which_account">Which account is this?</string>
     <string name="sms_remember_card">Remember for these digits</string>
     <string name="sms_new_account">New account…</string>
+    <!-- Beside the accounts for a card the budget doesn't know: its texts are cleared, not added. -->
+    <string name="sms_card_skip">Don’t add these</string>
+    <!-- In Remembered cards, for a card whose texts aren't added. -->
+    <string name="sms_card_skipped">Not added</string>
+    <!-- On a row still needing an account or an amount: clear it instead. -->
+    <string name="sms_dont_add">Don’t add</string>
+    <!-- On an unticked row: it's cleared with the review. -->
+    <string name="sms_wont_add">Won’t be added</string>
     <string name="sms_new_account_title">New account</string>
     <string name="sms_new_account_balance">Balance before these texts (%1$s)</string>
     <string name="sms_new_account_help">The transactions in this review are added on top of it.</string>
@@ -2308,6 +2317,10 @@
     <plurals name="sms_skip_other">
         <item quantity="one">%1$s other</item>
         <item quantity="other">%1$s other</item>
+    </plurals>
+    <plurals name="sms_skip_card">
+        <item quantity="one">%1$s from a card you don’t add</item>
+        <item quantity="other">%1$s from cards you don’t add</item>
     </plurals>
     <plurals name="sms_skip_dismissed">
         <item quantity="one">%1$s dismissed</item>

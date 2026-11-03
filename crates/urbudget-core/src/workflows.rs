@@ -794,6 +794,71 @@ pub fn payee_rule<'a>(b: &'a Budget, text: &str) -> Option<&'a Value> {
     }
     best.map(|(r, _)| r)
 }
+
+/// A payee the user has: the spelling they used last, the category they give it most, how many
+/// transactions have it and the last day one did.
+#[derive(Clone, Debug, PartialEq)]
+pub struct KnownPayee {
+    pub name: String,
+    pub category_id: Option<String>,
+    pub times: usize,
+    pub last: String,
+    key: String,
+}
+/// The user's payees from the budget's transactions (transfers aside), most recently used first:
+/// what a bank's name for one is matched against.
+pub struct KnownPayees(Vec<KnownPayee>);
+impl KnownPayees {
+    pub fn new(b: &Budget) -> Self {
+        let mut by: HashMap<String, KnownPayee> = HashMap::new();
+        let mut categories: HashMap<String, HashMap<String, usize>> = HashMap::new();
+        for t in b.transactions.iter().filter(|t| t.transfer_account_id.is_none()) {
+            let key = normalize_payee(&t.payee);
+            if key.is_empty() {
+                continue;
+            }
+            let known = by.entry(key.clone()).or_insert_with(|| KnownPayee { name: t.payee.clone(), category_id: None, times: 0, last: String::new(), key: key.clone() });
+            known.times += 1;
+            if t.date >= known.last {
+                known.last.clone_from(&t.date);
+                known.name.clone_from(&t.payee);
+            }
+            for id in t.splits.iter().filter_map(|s| s.category_id.as_deref()).filter(|id| !placeholder(b, id)) {
+                *categories.entry(key.clone()).or_default().entry(id.to_owned()).or_default() += 1;
+            }
+        }
+        let mut list: Vec<KnownPayee> = by.into_values().map(|mut p| {
+            // The most used; of those used as often, the first by id, so it doesn't change between runs.
+            p.category_id = categories.remove(&p.key).and_then(|c| c.into_iter().max_by(|a, b| a.1.cmp(&b.1).then(b.0.cmp(&a.0))).map(|(id, _)| id));
+            p
+        }).collect();
+        list.sort_by(|a, b| b.last.cmp(&a.last).then(b.times.cmp(&a.times)).then(a.key.cmp(&b.key)));
+        Self(list)
+    }
+    /// The [n] most recently used.
+    pub fn recent(&self, n: usize) -> &[KnownPayee] {
+        &self.0[..n.min(self.0.len())]
+    }
+    /// The user's payees a bank's name holds from the start of a word, the longest first: "POS
+    /// MASHAR E" holds "Mashar". Names under three letters are left out.
+    pub fn within(&self, bank: &str) -> Vec<&KnownPayee> {
+        let text = normalize_payee(bank);
+        let mut found: Vec<&KnownPayee> = self.0.iter().filter(|p| p.key.chars().count() >= 3 && at_word_start(&text, &p.key)).collect();
+        found.sort_by_key(|p| std::cmp::Reverse(p.key.chars().count()));
+        found
+    }
+    /// The user's payee a bank's name surely is: the same words, or theirs followed by what a bank
+    /// adds, one word of a letter or two or a number ("MASHAR E", "S136 M", "PANDA 0412"). The
+    /// longest wins; "UBER EATS" isn't "Uber".
+    pub fn same(&self, bank: &str) -> Option<&KnownPayee> {
+        let text = normalize_payee(bank);
+        let added = |rest: &str| !rest.contains(' ') && (rest.chars().count() <= 2 || rest.chars().all(|c| c.is_ascii_digit()));
+        self.0.iter()
+            .filter(|p| p.key.chars().count() >= 3)
+            .filter(|p| text == p.key || text.strip_prefix(p.key.as_str()).and_then(|rest| rest.strip_prefix(' ')).is_some_and(added))
+            .max_by_key(|p| p.key.chars().count())
+    }
+}
 /// A category id a bank import uses for rows that still need one.
 pub(crate) fn placeholder(b: &Budget, id: &str) -> bool {
     id == "local-uncategorized"
@@ -897,6 +962,36 @@ pub fn upsert_transaction(mut budget: Budget, mut transaction: Transaction) -> R
 mod tests {
     use super::*;
     use crate::domain::tests::*;
+    #[test]
+    fn a_banks_name_finds_the_users_payee_cut_short_or_with_what_banks_add() {
+        let mut b = sample();
+        for (id, date, payee, category, transfer) in [
+            ("1", "2026-10-01", "Mashar", Some("food"), false),
+            ("2", "2026-10-20", "Mashar", Some("local-uncategorized"), false),
+            ("3", "2026-10-05", "Uber", None, false),
+            ("4", "2026-10-25", "Savings", None, true),
+        ] {
+            let mut t = purchase();
+            t.id = id.into();
+            t.date = date.into();
+            t.payee = payee.into();
+            t.splits[0].category_id = category.map(Into::into);
+            t.transfer_account_id = transfer.then(|| "cash".into());
+            b.transactions.push(t);
+        }
+        let known = KnownPayees::new(&b);
+        // Most recent first; a transfer isn't a payee, and a placeholder isn't a category.
+        let recent: Vec<_> = known.recent(10).iter().map(|p| (p.name.as_str(), p.category_id.as_deref(), p.times)).collect();
+        assert_eq!(recent, [("Mashar", Some("food"), 2), ("Uber", None, 1)]);
+        for bank in ["MASHAR E", "Mashar", "MASHAR 0412", "mashar  e."] {
+            assert_eq!(known.same(bank).map(|p| p.name.as_str()), Some("Mashar"), "{bank}");
+        }
+        for bank in ["UBER EATS", "MASHARIF", "AL MASHAR E"] {
+            assert_eq!(known.same(bank), None, "{bank}");
+        }
+        assert_eq!(known.within("POS AL MASHAR E").iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["Mashar"]);
+        assert_eq!(known.within("UBER EATS").iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["Uber"]);
+    }
     #[test]
     fn merging_payees_preserves_the_default_and_renames_splits_schedules_and_rules() {
         let mut b = sample();

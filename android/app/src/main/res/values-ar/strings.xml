@@ -2527,6 +2527,7 @@
     <string name="sms_skipped_rewards">مكافآت</string>
     <string name="sms_skipped_marketing">عرض</string>
     <string name="sms_skipped_other">لم تتحرك أموال</string>
+    <string name="sms_skipped_card">من بطاقة لا تضيف رسائلها</string>
     <plurals name="sms_handled">
         <item quantity="zero">لم يُعالج شيء</item>
         <item quantity="one">رسالة واحدة عولجت عنك</item>
@@ -2566,6 +2567,10 @@
     <string name="sms_which_account">أي حساب هذا؟</string>
     <string name="sms_remember_card">التذكّر لهذه الأرقام</string>
     <string name="sms_new_account">حساب جديد…</string>
+    <string name="sms_card_skip">لا تُضِف هذه الرسائل</string>
+    <string name="sms_card_skipped">لا تُضاف</string>
+    <string name="sms_dont_add">لا تُضِف</string>
+    <string name="sms_wont_add">لن تُضاف</string>
     <string name="sms_new_account_title">حساب جديد</string>
     <string name="sms_new_account_balance">الرصيد قبل هذه الرسائل (%1$s)</string>
     <string name="sms_new_account_help">تُضاف معاملات هذه المراجعة فوقه.</string>
@@ -2701,6 +2706,14 @@
         <item quantity="few">\u2068%1$s\u2069 رسائل أخرى</item>
         <item quantity="many">\u2068%1$s\u2069 رسالة أخرى</item>
         <item quantity="other">\u2068%1$s\u2069 رسالة أخرى</item>
+    </plurals>
+    <plurals name="sms_skip_card">
+        <item quantity="zero">لا رسائل من بطاقات لا تضيفها</item>
+        <item quantity="one">رسالة من بطاقة لا تضيفها</item>
+        <item quantity="two">رسالتان من بطاقات لا تضيفها</item>
+        <item quantity="few">⁨%1$s⁩ رسائل من بطاقات لا تضيفها</item>
+        <item quantity="many">⁨%1$s⁩ رسالة من بطاقات لا تضيفها</item>
+        <item quantity="other">⁨%1$s⁩ رسالة من بطاقات لا تضيفها</item>
     </plurals>
     <plurals name="sms_skip_dismissed">
         <item quantity="zero">لا شيء متجاهَل</item>

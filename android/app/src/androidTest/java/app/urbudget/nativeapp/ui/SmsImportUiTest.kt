@@ -207,6 +207,54 @@ class SmsImportUiTest {
         assertEquals(listOf(200, 200, 50, 50), sizes.toList())
     }
 
+    @Test fun aCardOrARowTheUserWontAddIsClearedAndTheCardIsRememberedSo() {
+        val vm = fixture("skip")
+        val inbox = SmsInbox.get(context)
+        inbox.saveState(identity!!, "consent", smsConsent(connection))
+        inbox.saveState(identity!!, "mappings", smsRememberCard(JSONArray(), "SyntheticBank", "*1234", "checking").toString())
+        // Two purchases on a card the budget has no account for, one in euros waiting for its amount, and one ready.
+        val texts = listOf("*9999", "*9999", "*1234", "*1234").mapIndexed { i, card ->
+            val body = "Purchase ${if (i == 2) "EUR" else "USD"} 12.34 at Synthetic Shop card $card #$i"
+            BankSms(smsId("SyntheticBank", i + 1L, body), "SyntheticBank", i + 1L, body) to card
+        }
+        inbox.captureAll(texts.map { it.first })
+        val analysis = JSONObject().put("items", JSONArray(texts.mapIndexed { i, (sms, card) ->
+            syntheticSmsAnalysis(sms, accountId = null, ref = card).getJSONArray("items").getJSONObject(0).apply {
+                if (i == 2) {
+                    getJSONObject("transaction").put("amount", JSONObject.NULL).put("currency", "EUR")
+                    getJSONArray("evidence").getJSONObject(0).put("quote", "EUR 12.34")
+                }
+            }
+        }))
+        inbox.saveState(identity!!, "draft", SmsBatch(texts.map { it.first }, analysis).saved())
+        val before = vm.state.value.budget!!.getJSONArray("transactions").length()
+        show(vm, analyzer { analysis })
+        waitFor("sms-review")
+        compose.onNodeWithTag("sms-review").performClick()
+        waitFor("sms-card:*9999")
+        compose.waitUntil(10_000) { runCatching { compose.onNodeWithTag("sms-tick:3").assertIsEnabled() }.isSuccess }
+        // Unticked, a row says it won't be added.
+        compose.onNodeWithTag("sms-wont-add:3", useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithTag("sms-tick:3").performScrollTo().performClick()
+        compose.onNodeWithTag("sms-wont-add:3", useUnmergedTree = true).assertExists()
+        compose.onNodeWithTag("sms-tick:3").performClick()
+        // The card's texts aren't added, and it's remembered so its next texts don't ask.
+        compose.onNodeWithTag("choice-open:${context.getString(R.string.sms_which_account)}").performScrollTo().performClick()
+        compose.onNodeWithText(context.getString(R.string.sms_card_skip)).performClick()
+        fun mapping(card: String) = JSONArray(inbox.state(identity!!, "mappings")).let { a -> (0 until a.length()).map { a.getJSONObject(it) } }
+            .firstOrNull { it.getString("reference") == card }?.getString("accountId")
+        compose.waitUntil(10_000) { mapping("*9999") == SmsSkipCard }
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("sms-card:*9999").fetchSemanticsNodes().isEmpty() }
+        // Nor the row waiting for its amount.
+        compose.onNodeWithTag("sms-dont-add:2", useUnmergedTree = true).performScrollTo().performClick()
+        compose.waitUntil(10_000) { runCatching { compose.onNodeWithTag("sms-add").assertIsEnabled() }.isSuccess }
+        compose.onNodeWithTag("sms-add").assertTextEquals(context.resources.getQuantityString(R.plurals.sms_add, 1, "1"))
+        compose.onNodeWithTag("sms-add").performClick()
+        compose.waitUntil(10_000) { vm.state.value.budget!!.getJSONArray("transactions").length() == before + 1 }
+        compose.waitUntil(10_000) { inbox.pendingCount(identity!!) == 0 }
+        assertEquals("checking", mapping("*1234"))
+    }
+
     @Test fun whileTheAssistantAnswersTheCardShowsWhatItsDoingItsLatestThoughtAndTheTextsItsAnswerCovers() {
         val vm = fixture("live")
         val inbox = SmsInbox.get(context)

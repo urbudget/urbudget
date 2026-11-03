@@ -325,8 +325,11 @@ Reliability is measured from what the assistant and the user do with each templa
 | `requests` | separate requests its rows were reviewed in |
 
 **Accuracy** for a field is `1 − (corrected + edited) / filled`. **Money accuracy** is the
-lowest of amount, date, kind, refs and outcome; **payee accuracy** is tracked apart, since
-payee cleaning is the one thing a format can't fix.
+lowest of amount, date, kind, refs and outcome. A changed payee or category isn't counted
+against the template at all: it's the user's name for the bank's, which a format can't know,
+and it's learned in `sms_payees` for the next text. A template also fills in the user's payee
+when the bank's name surely is it (`KnownPayees::same`: theirs followed by a letter or two or a
+branch number), with the category they usually give it.
 
 **States**
 

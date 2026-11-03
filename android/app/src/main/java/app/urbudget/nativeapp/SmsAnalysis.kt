@@ -164,6 +164,11 @@ internal class SmsAccounts(private val open: List<Pair<String, String>>, mapping
     private val remembered = (0 until mappings.length()).map { mappings.getJSONObject(it) }
         .filter { m -> open.any { it.first == m.text("accountId") } }
         .associate { cardKey(it.text("sender"), it.text("reference")) to it.text("accountId") }
+    private val skipping = (0 until mappings.length()).map { mappings.getJSONObject(it) }
+        .filter { it.text("accountId") == SmsSkipCard }.map { cardKey(it.text("sender"), it.text("reference")) }.toSet()
+
+    /** A card the user said not to add: its texts are settled without a question. */
+    fun skips(sender: String, ref: String?): Boolean = ref != null && cardKey(sender, ref) in skipping
 
     fun find(sender: String, ref: String?): Pair<String, SmsAccountSource>? {
         if (ref != null) {
@@ -178,6 +183,9 @@ internal class SmsAccounts(private val open: List<Pair<String, String>>, mapping
         return open.singleOrNull()?.let { it.first to SmsAccountSource.Only }
     }
 }
+
+/** What a remembered card maps to in place of an account when the user doesn't add its texts. */
+internal const val SmsSkipCard = "skip"
 
 internal fun smsRememberCard(mappings: JSONArray, sender: String, ref: String, accountId: String): JSONArray {
     require(sender.isNotBlank() && sender.length <= 200 && ref.isNotBlank() && ref.length <= 80 && accountId.isNotBlank())
@@ -252,8 +260,10 @@ internal data class SmsBatch(val messages: List<BankSms>, val analysis: JSONObje
         }
         val unsure = item.optJSONArray("unsure")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() }.orEmpty()
         val early = t != null && accounts.early(t.text("date"), t.text("accountId"), t.text("transferAccountId"))
-        SmsItem(index, item.text("disposition"), item.text("note"), item.text("skip"), unsure, sources, t, source, needs, early,
-            item.text("template").ifBlank { null }, item.text("raw").ifBlank { null }, item.optBoolean("kept"))
+        // From a card the user doesn't add: settled like a code, and still there to add by hand.
+        val skipped = needs == "account" && accounts.skips(sender, t?.text("accountRef")?.ifBlank { null })
+        SmsItem(index, if (skipped) "ignore" else item.text("disposition"), item.text("note"), if (skipped) "card" else item.text("skip"), unsure, sources, t, source,
+            needs.takeUnless { skipped }, early, item.text("template").ifBlank { null }, item.text("raw").ifBlank { null }, item.optBoolean("kept"))
     }
 
     /**

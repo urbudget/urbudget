@@ -109,9 +109,11 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
         val count = adding.count { it.second == "new" }.toLong()
         vm.runCommand("smsBatchApply", batch.params(resolved).put("decisions", choices)) { if (count > 0) toast(Words.count(R.plurals.sms_added, count), false); finish(handled, rest) }
     }
+    /** An account for a card's texts, or [SmsSkipCard] for none: remembered for the card's next texts, or for these alone. */
     fun chooseCard(group: List<SmsItem>, account: String) {
         val first = group.first()
         if (keepCard[first.card] != false) runCatching { saveCards(smsRememberCard(mappings, first.sender, first.ref!!, account)) }.onFailure { error = it.message }
+        else if (account == SmsSkipCard) change { b -> b.copy(dismissed = b.dismissed + group.map { it.index }) }
         else change { b -> group.fold(b) { next, item -> next.edit(item.index) { it.getJSONObject("transaction").put("accountId", account) } } }
     }
     /** An account made for these texts: its balance is from before them, so none is held back as already in it. */
@@ -166,7 +168,8 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
                 itemsIndexed(singles, key = { _, it -> "single:${it.index}" }) { i, item ->
                     if (item.transaction == null) SmsUnclearRow(item, i, singles.size, { editing = item.index }) { change { it.copy(dismissed = it.dismissed + item.index) } }
                     else SmsTransactionRow(item, budget, null, null, null, i, singles.size, item.index in shown, !saving,
-                        { shown = shown.toggle(item.index) }, {}, {}, { editing = item.index }, newAccount = { newForTransfer(item) }.takeIf { item.needs == "transfer" }) { enterAmount(item, it) }
+                        { shown = shown.toggle(item.index) }, {}, {}, { editing = item.index }, newAccount = { newForTransfer(item) }.takeIf { item.needs == "transfer" },
+                        dismiss = { change { it.copy(dismissed = it.dismissed + item.index) } }) { enterAmount(item, it) }
                 }
             }
             rowSection("ready", readyTitle, null, readyShown, budget, prepared, ::decision, ::ticked, shown, !saving,
@@ -281,11 +284,13 @@ internal data class SmsSorted(val waiting: List<SmsItem>, val ready: List<SmsIte
     val needs: Int get() = waiting.size + ready.size + holds.size
 }
 internal fun smsSort(batch: SmsBatch, items: List<SmsItem>, known: Map<Int, String>): SmsSorted {
-    val ready = items.filter { it.disposition == "transaction" && it.needs == null }
+    // Dismissed: a text that isn't one transaction, or one the user won't add, waits for nothing.
+    fun dismissed(item: SmsItem) = item.index in batch.dismissed && item.disposition in setOf("transaction", "unclear")
+    val ready = items.filter { it.disposition == "transaction" && it.needs == null && !dismissed(it) }
     return SmsSorted(
-        items.filter { (it.disposition == "transaction" && it.needs != null) || (it.disposition == "unclear" && it.index !in batch.dismissed) },
+        items.filter { !dismissed(it) && ((it.disposition == "transaction" && it.needs != null) || it.disposition == "unclear") },
         ready.filter { it.index !in known }, ready.filter { it.index in known }, items.filter { it.disposition == "pending" },
-        items.filter { it.disposition == "ignore" || (it.disposition == "unclear" && it.index in batch.dismissed) })
+        items.filter { it.disposition == "ignore" || dismissed(it) })
 }
 
 /**
@@ -428,7 +433,7 @@ private fun skipSummary(items: List<SmsItem>): String = items.groupingBy { it.sk
     countText(when (skip) {
         "code" -> R.plurals.sms_skip_code; "security" -> R.plurals.sms_skip_security; "balance" -> R.plurals.sms_skip_balance
         "declined" -> R.plurals.sms_skip_declined; "rewards" -> R.plurals.sms_skip_rewards; "marketing" -> R.plurals.sms_skip_marketing
-        "unclear" -> R.plurals.sms_skip_dismissed; else -> R.plurals.sms_skip_other
+        "card" -> R.plurals.sms_skip_card; "unclear" -> R.plurals.sms_skip_dismissed; else -> R.plurals.sms_skip_other
     }, n)
 }.joinToString(" · ")
 
@@ -451,18 +456,24 @@ private fun SmsCardChoice(group: List<SmsItem>, accounts: List<Pair<String, Stri
         }
         Text(group.mapNotNull { it.transaction?.text("payee")?.ifBlank { null } }.distinct().take(4).joinToString(", ") { Money.own(it) },
             style = MaterialTheme.typography.bodyMedium, color = ur.text2, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        // A card the budget has no account for yet can have one made here.
+        // A card the budget has no account for yet can have one made here, or its texts left out.
         val new = stringResource(R.string.sms_new_account)
-        Choice(stringResource(R.string.sms_which_account), "", accounts + (NEW_ACCOUNT to new)) { if (it == NEW_ACCOUNT) newAccount() else choose(it) }
+        Choice(stringResource(R.string.sms_which_account), "", accounts + (NEW_ACCOUNT to new) + (SmsSkipCard to stringResource(R.string.sms_card_skip))) {
+            if (it == NEW_ACCOUNT) newAccount() else choose(it)
+        }
         CheckRow(stringResource(R.string.sms_remember_card), keep, setKeep)
     } }
 }
 
-/** A proposed transaction: tick to add it, tap to change it, and what's still needed or worth a look. */
+/**
+ * A proposed transaction: tick to add it, tap to change it, and what's still needed or worth a look.
+ * One still needing a choice can be [dismiss]ed instead: not added.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SmsTransactionRow(item: SmsItem, budget: JSONObject, row: BankReviewRow?, decision: String?, ticked: Boolean?, index: Int, count: Int, showing: Boolean, enabled: Boolean,
-                              show: () -> Unit, tick: (Boolean) -> Unit, decide: (String) -> Unit, open: () -> Unit, newAccount: (() -> Unit)? = null, enterAmount: (Long) -> Unit) {
+                              show: () -> Unit, tick: (Boolean) -> Unit, decide: (String) -> Unit, open: () -> Unit, newAccount: (() -> Unit)? = null,
+                              dismiss: (() -> Unit)? = null, enterAmount: (Long) -> Unit) {
     val t = item.transaction ?: return
     val currency = budget.text("currency")
     val amount = item.amount
@@ -482,6 +493,8 @@ private fun SmsTransactionRow(item: SmsItem, budget: JSONObject, row: BankReview
                 Text(listOfNotNull(Money.date(t.text("date")), account?.let { Money.own(it) + (transfer?.let { other -> " → " + Money.own(other) } ?: "") }).joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall, color = ur.muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 FlowRow(Modifier.padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // Unticked, it's cleared when the review is: say so.
+                    if (ticked == false && row?.locked != true) TagChip(stringResource(R.string.sms_wont_add), Modifier.testTag("sms-wont-add:${item.index}"))
                     when (item.needs) {
                         "account" -> TagChip(stringResource(R.string.sms_needs_account), fill = ur.warningSoft, color = ur.warning)
                         "transfer" -> TagChip(stringResource(R.string.sms_needs_transfer), fill = ur.warningSoft, color = ur.warning)
@@ -503,7 +516,10 @@ private fun SmsTransactionRow(item: SmsItem, budget: JSONObject, row: BankReview
                 }
                 if (item.needs == "amount") SmsAmountField(currency, t.text("currency") + " " + t.text("writtenAmount"), enterAmount)
                 // The other account of a transfer the budget doesn't have yet (a new CD) is made here.
-                newAccount?.let { Box(Modifier.padding(top = 6.dp).testTag("sms-new-account:${item.index}")) { SmallAction(stringResource(R.string.sms_new_account), it, primary = true) } }
+                if (newAccount != null || dismiss != null) Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    newAccount?.let { Box(Modifier.testTag("sms-new-account:${item.index}")) { SmallAction(stringResource(R.string.sms_new_account), it, primary = true) } }
+                    dismiss?.let { Box(Modifier.testTag("sms-dont-add:${item.index}")) { SmallAction(stringResource(R.string.sms_dont_add), it) } }
+                }
                 if (showing) item.sources.forEach { Text(it.body, Modifier.padding(top = 4.dp), style = SmsBodyStyle, color = ur.text2) }
             }
         }
@@ -544,7 +560,7 @@ internal const val SmsClearAsks = 50
 internal fun smsSkipLabel(skip: String): Int = when (skip) {
     "code" -> R.string.sms_skipped_code; "security" -> R.string.sms_skipped_security; "balance" -> R.string.sms_skipped_balance
     "declined" -> R.string.sms_skipped_declined; "rewards" -> R.string.sms_skipped_rewards; "marketing" -> R.string.sms_skipped_marketing
-    else -> R.string.sms_skipped_other
+    "card" -> R.string.sms_skipped_card; else -> R.string.sms_skipped_other
 }
 
 /** A message the assistant couldn't turn into one transaction, or that isn't one: enter it, or let it go. */

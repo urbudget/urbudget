@@ -5,6 +5,7 @@ import app.urbudget.nativeapp.ui.smsEdited
 import app.urbudget.nativeapp.ui.rows
 import app.urbudget.nativeapp.ui.smsBankIds
 import app.urbudget.nativeapp.ui.smsSameTransaction
+import app.urbudget.nativeapp.ui.smsSort
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -93,6 +94,23 @@ class SmsAnalysisTest {
         assertTrue(resolved.getJSONObject(0).getJSONObject("transaction").isNull("transferAccountId"))
         // The draft itself keeps only what the user chose; matching is redone each time.
         assertFalse(batch.analysis.getJSONArray("items").getJSONObject(0).getJSONObject("transaction").has("accountId"))
+    }
+    @Test fun aCardTheUserDoesntAddIsSettledAndARowTheyWontAddWaitsForNothing() {
+        val messages = listOf("mada 3358 SAR 12.34", "mada 3358 SAR 5.00", "Visa 4417 EUR 12.34", "Visa 4417 SAR 1.00").map { message(body = it) }
+        val analysis = JSONObject().put("items", JSONArray().put(item(messages[0], purchase("3358"))).put(item(messages[1], purchase("3358")))
+            .put(item(messages[2], purchase("4417", amount = null))).put(item(messages[3], purchase("4417"))))
+        val skipping = SmsAccounts(accounts, smsRememberCard(JSONArray(), "Bank", "3358", SmsSkipCard))
+        val batch = SmsBatch(messages, analysis)
+        val items = batch.items(skipping)
+        // The card's texts are settled like codes, with nothing left to choose.
+        assertEquals(listOf("ignore", "ignore", "transaction", "transaction"), items.map { it.disposition })
+        assertEquals(listOf("card", "card"), items.take(2).map { it.skip })
+        assertNull(items[0].needs); assertNull(items[0].card); assertNull(skipping.find("Bank", "3358"))
+        // A row still waiting for its amount that the user won't add waits for nothing.
+        val sorted = smsSort(batch.copy(dismissed = setOf(2)), items, emptyMap())
+        assertTrue(sorted.waiting.isEmpty())
+        assertEquals(listOf(0, 1, 2), sorted.skipped.map { it.index }); assertEquals(listOf(3), sorted.ready.map { it.index })
+        assertEquals(listOf(2), smsSort(batch, items, emptyMap()).waiting.map { it.index })
     }
     @Test fun theEditorsRecordComesBackAsTheUsersTransaction() {
         val sms = message(body = "Visa 4417 SAR 12.34"); val other = message(body = "Multiple purchases")

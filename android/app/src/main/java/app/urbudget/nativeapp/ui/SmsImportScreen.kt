@@ -671,8 +671,9 @@ private fun SmsCardsSheet(budget: JSONObject, mappings: JSONArray, close: () -> 
         if (cards.isEmpty()) item { Text(stringResource(R.string.sms_cards_none), color = ur.muted) }
         itemsIndexed(cards, key = { i, card -> "$i:" + card.text("sender") + card.text("reference") }) { index, card ->
             Column(Modifier.cardSegment(0, 1, cardFill())) {
-                ListRow(smsRefLabel(card.text("reference")),
-                    subtitle = Money.own(card.text("sender")) + " · " + (budget.row("accounts", card.text("accountId"))?.text("name")?.let(Money::own) ?: stringResource(R.string.sms_account_gone)),
+                val account = if (card.text("accountId") == SmsSkipCard) stringResource(R.string.sms_card_skipped)
+                    else budget.row("accounts", card.text("accountId"))?.text("name")?.let(Money::own) ?: stringResource(R.string.sms_account_gone)
+                ListRow(smsRefLabel(card.text("reference")), subtitle = Money.own(card.text("sender")) + " · " + account,
                     chevron = false, trailing = {
                         IconButton({ save(JSONArray(cards.filterIndexed { i, _ -> i != index })) }) { Icon(Icons.Outlined.Close, stringResource(R.string.sms_forget), tint = ur.muted) }
                     })

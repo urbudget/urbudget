@@ -5,6 +5,7 @@
 use crate::{
     domain::Budget,
     sms_import::{self, Analysis, Evidence, Item, Message, Transaction},
+    workflows::KnownPayees,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -337,7 +338,10 @@ fn plain(number: &str) -> String { number.replace(',', "") }
 
 /// The item a template reads from a text, as the assistant would write it; checked as the
 /// assistant's would be. None when the reading doesn't make a valid item.
-pub fn fill(b: &Budget, c: &Compiled, m: &Message, reading: &Reading, payees: &HashMap<(String, String), Payee>) -> Option<Item> {
+/// The item a template's reading of a text makes. Its payee is the one learned for the bank's name,
+/// else the user's payee the name surely is ([known]: "MASHAR E" is their "Mashar"), else the
+/// bank's own words; the category comes with it.
+pub fn fill(b: &Budget, c: &Compiled, m: &Message, reading: &Reading, payees: &HashMap<(String, String), Payee>, known: Option<&KnownPayees>) -> Option<Item> {
     let t = &c.template;
     let o = &t.outcome;
     let item = if let Some(skip) = &o.skip {
@@ -352,10 +356,12 @@ pub fn fill(b: &Budget, c: &Compiled, m: &Message, reading: &Reading, payees: &H
         // The day the text was written for, or the day it came when the format gives none.
         let day = match &reading.date { Some((value, order)) => date(value, order)?, None => m.received_date.clone() };
         let raw = reading.payee.clone();
-        let known = raw.as_deref().and_then(|r| payees.get(&(t.sender.clone(), payee_key(r))));
-        let payee = known.map(|p| p.payee.clone()).or_else(|| raw.clone()).or_else(|| t.payee.clone())?;
+        let learned = raw.as_deref().and_then(|r| payees.get(&(t.sender.clone(), payee_key(r))));
+        let mine = if learned.is_none() { raw.as_deref().zip(known).and_then(|(r, k)| k.same(r)) } else { None };
+        let payee = learned.map(|p| p.payee.clone()).or_else(|| mine.map(|p| p.name.clone())).or_else(|| raw.clone()).or_else(|| t.payee.clone())?;
         let kind = o.kind.clone()?;
-        let category = known.and_then(|p| p.category_id.clone()).filter(|id| kind != "transfer" && b.categories.iter().any(|c| c.id == *id && c.payment_account().is_none()));
+        let category = learned.map(|p| p.category_id.clone()).unwrap_or_else(|| mine.and_then(|p| p.category_id.clone()))
+            .filter(|id| kind != "transfer" && b.categories.iter().any(|c| c.id == *id && c.payment_account().is_none()));
         Item {
             source_ids: vec![m.id.clone()], disposition: o.disposition.clone()?, skip: None,
             note: t.note.replace("{payee}", &payee).trim().to_string().chars().take(200).collect::<String>().trim().to_string(),
@@ -449,6 +455,7 @@ pub fn lanes(b: &Budget, messages: &[Message], templates: &[Template], payees: &
     }
     for list in by_sender.values_mut() { list.sort_by(|a, b| b.specific.cmp(&a.specific)) }
     let payees = payee_map(payees);
+    let known = KnownPayees::new(b);
     let mut lanes = Lanes::default();
     for (i, m) in messages.iter().enumerate() {
         let candidates = by_sender.get(&sender_key(&m.sender)).map(Vec::as_slice).unwrap_or_default();
@@ -457,7 +464,7 @@ pub fn lanes(b: &Budget, messages: &[Message], templates: &[Template], payees: &
         let tie = first.as_ref().is_some_and(|(c, _)| matched.any(|(other, _)| other.specific == c.specific));
         match first {
             Some(_) if tie => { lanes.conflicts += 1; lanes.read.push(i) }
-            Some((c, reading)) => match fill(b, c, m, &reading, &payees) {
+            Some((c, reading)) => match fill(b, c, m, &reading, &payees, Some(&known)) {
                 Some(item) if item.skip.as_deref().is_some_and(|skip| trusted.contains(&c.template.id) && !audited(m, skip)) => {
                     lanes.junk.push((i, Item { kept: true, ..item }))
                 }
@@ -503,7 +510,7 @@ pub fn replay(b: &Budget, t: &Template, messages: &[Message], items: &[Item], ex
         let Some(reading) = c.read(&m.body) else { continue };
         let Some(model) = by_source.get(m.id.as_str()) else { continue };
         if model.source_ids.len() > 1 { continue; }
-        let filled = fill(b, &c, m, &reading, &HashMap::new()).ok_or_else(|| format!("The template doesn't make a valid item from text {}.", i + 1))?;
+        let filled = fill(b, &c, m, &reading, &HashMap::new(), None).ok_or_else(|| format!("The template doesn't make a valid item from text {}.", i + 1))?;
         let same = filled.disposition == model.disposition && filled.skip == model.skip && match (&filled.transaction, &model.transaction) {
             (None, None) => true,
             (Some(a), Some(b)) => a.kind == b.kind && same_number(a.amount.as_deref(), b.amount.as_deref()) && a.currency == b.currency
@@ -589,14 +596,31 @@ mod tests {
         let c = compile(&purchase()).unwrap();
         let m = text("sms:1", BODY);
         let payees = payee_map(&[Payee { sender: "anb".into(), raw: "noon  e".into(), payee: "Noon".into(), category_id: Some("food".into()) }]);
-        let item = fill(&b, &c, &m, &c.read(BODY).unwrap(), &payees).unwrap();
+        let item = fill(&b, &c, &m, &c.read(BODY).unwrap(), &payees, None).unwrap();
         let t = item.transaction.as_ref().unwrap();
         assert_eq!((t.date.as_str(), t.amount.as_deref(), t.written_amount.as_str(), t.payee.as_str()), ("2026-11-01", Some("-1065.97"), "1065.97", "Noon"));
         assert_eq!((t.account_ref.as_deref(), t.category_id.as_deref(), t.memo.as_str()), (Some("1234"), Some("food"), "Online"));
         assert_eq!(item.note, "Purchase at Noon"); assert_eq!(item.evidence[0].quote, "1,065.97");
         assert_eq!(item.template.as_deref(), Some("t1")); assert_eq!(item.raw.as_deref(), Some("NOON E"));
         // Without a learned payee the bank's own words stand.
-        assert_eq!(fill(&b, &c, &m, &c.read(BODY).unwrap(), &HashMap::new()).unwrap().transaction.unwrap().payee, "NOON E");
+        assert_eq!(fill(&b, &c, &m, &c.read(BODY).unwrap(), &HashMap::new(), None).unwrap().transaction.unwrap().payee, "NOON E");
+    }
+    #[test]
+    fn a_banks_name_for_the_users_payee_is_read_as_theirs_with_its_category() {
+        let mut b = budget();
+        let mut bought = crate::test_support::purchase();
+        bought.payee = "Noon".into();
+        b.transactions.push(bought);
+        let read = lanes(&b, &[text("sms:1", BODY)], &[purchase()], &[], &Default::default());
+        let item = &read.review[0].1;
+        let t = item.transaction.as_ref().unwrap();
+        assert_eq!((t.payee.as_str(), t.category_id.as_deref(), item.note.as_str()), ("Noon", Some("food"), "Purchase at Noon"));
+        assert_eq!(item.raw.as_deref(), Some("NOON E"));
+        // What the user settled on for the bank's name comes first.
+        let learned = [Payee { sender: "anb".into(), raw: "NOON E".into(), payee: "Noon Minutes".into(), category_id: None }];
+        let read = lanes(&b, &[text("sms:1", BODY)], &[purchase()], &learned, &Default::default());
+        let t = read.review[0].1.transaction.as_ref().unwrap();
+        assert_eq!((t.payee.as_str(), t.category_id.as_deref()), ("Noon Minutes", None));
     }
     #[test]
     fn a_foreign_amount_waits_unless_the_format_gives_the_total_and_dates_follow_their_order() {
@@ -605,11 +629,11 @@ mod tests {
         t.lines = ["International Purchase", "Amount : {currency} {amount}", "?Total amount : SAR {total}", "At : {payee}", "On : {date:yy-mm-dd}"].map(String::from).to_vec();
         let c = compile(&t).unwrap();
         let waits = text("sms:2", "International Purchase\nAmount: USD 42.00\nAt: CAFE\nOn: 26-10-31");
-        let item = fill(&b, &c, &waits, &c.read(&waits.body).unwrap(), &HashMap::new()).unwrap();
+        let item = fill(&b, &c, &waits, &c.read(&waits.body).unwrap(), &HashMap::new(), None).unwrap();
         let tx = item.transaction.unwrap();
         assert_eq!((tx.amount, tx.currency.as_str(), tx.date.as_str()), (None, "USD", "2026-10-31"));
         let total = text("sms:3", "International Purchase\nAmount: USD 42.00\nTotal amount: SAR 160.50\nAt: CAFE\nOn: 26-10-31");
-        assert_eq!(fill(&b, &c, &total, &c.read(&total.body).unwrap(), &HashMap::new()).unwrap().transaction.unwrap().amount.as_deref(), Some("-160.50"));
+        assert_eq!(fill(&b, &c, &total, &c.read(&total.body).unwrap(), &HashMap::new(), None).unwrap().transaction.unwrap().amount.as_deref(), Some("-160.50"));
     }
     #[test]
     fn a_template_that_could_hang_match_everything_or_mean_nothing_is_refused() {
@@ -668,7 +692,7 @@ mod tests {
         let b = budget();
         let messages = [text("sms:1", BODY), text("sms:2", "Online Purchase\nVISA Card:1234\nAmount:SAR 8.00\nAt:CAFE\nOn:01/11/26 09:00")];
         let c = compile(&purchase()).unwrap();
-        let items: Vec<Item> = messages.iter().map(|m| fill(&b, &c, m, &c.read(&m.body).unwrap(), &HashMap::new()).unwrap()).collect();
+        let items: Vec<Item> = messages.iter().map(|m| fill(&b, &c, m, &c.read(&m.body).unwrap(), &HashMap::new(), None).unwrap()).collect();
         let mut model = items.clone();
         model[0].transaction.as_mut().unwrap().payee = "Noon".into();
         let kept = replay(&b, &purchase(), &messages, &model, &[0]).unwrap();

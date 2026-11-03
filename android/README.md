@@ -176,7 +176,15 @@ out. The service maps numbers back to ids, places each quote as evidence, and re
 reply that misses or repeats a text; the core (`sms_import.rs`) validates the rest:
 exact money, dates, references found in the texts, quotes, and every text accounted for
 once. Any account the model supplies is discarded. `payee_history` follows a payee rule
-to the renamed payee's history, so "S136 M" finds the user's categories for "Tamimi".
+to the renamed payee's history, so "S136 M" finds the user's categories for "Tamimi", and
+finds the user's payee a bank's name holds ("MASHAR E" is their "Mashar").
+
+The model also gets the user's payees, the 300 used most recently, each with the category
+they usually give it, and the bank's names they renamed for these senders, so it writes the
+user's spelling and category; for a new merchant whose business is clear it picks the likely
+category and marks it to check. A code text the phone settled is sent along with the payment
+that follows it (same sender, within fifteen minutes, the same amount), its code hidden: a
+bank often names the biller only there ("مفوتر: زين" before a "Bill Payment" of SAR 299).
 
 **Templates.** As the assistant reads, it writes a template for each format it sees: the
 text's lines with the bank's fixed words and typed slots (`{amount}`, `{currency}`, `{ref}`,
@@ -188,7 +196,11 @@ from the bank's names are kept per budget and sender in the inbox database. Next
 in a known format are read on the phone first and sent in a `review` list with that reading;
 the assistant answers only with corrections (silence confirms) and reads the rest (`read`) in
 full, writing templates for new formats and rewriting one its corrections show is wrong.
-Every template counts its rows filled, confirmed and corrected, and the user's edits to them;
+A template's payee is the one learned for the bank's name, else the user's payee the name
+surely is (theirs followed by a letter or two or a branch number: "MASHAR E", "S136 M"), with
+its category. Every template counts its rows filled, confirmed and corrected, and the user's
+edits to them; a changed payee or category doesn't count against it (it's the user's name for
+the bank's, learned for the next text, not the format misreading);
 a row's editor says how often its format was confirmed, and settings list the **Learned
 formats** by sender with an example text and how each is doing, to forget one or all.
 Junk stays on the phone: a code the filter in `sms_templates.rs` recognises, or a text in a
@@ -210,9 +222,11 @@ itself and says what it handled ("Checked 11:38 · 2 already in your budget · 3
 Otherwise it counts what needs the user, and the review is a page of transactions:
 
 - **Needs a choice**: one account choice per unmatched card answers every message
-  naming it and is remembered by default; a foreign amount is typed in its row; a
-  transfer's other account, or a message the assistant couldn't read, is entered in the
-  transaction editor or dismissed. These stay in the review, as they were read, until
+  naming it and is remembered by default; **Don't add these** clears them instead, and
+  remembered, the card's next texts are cleared without asking (Remembered cards says
+  "Not added"). A foreign amount is typed in its row; a transfer's other account, or a
+  message the assistant couldn't read, is entered in the transaction editor; any of these
+  rows can be dropped (**Don't add**, **Dismiss**). These stay in the review, as they were read, until
   answered: adding the rest doesn't send them to the assistant again. A card, or a
   transfer's other side, that the budget has no account for (a new CD) gets one from
   the review (**New account…**), with its balance from before these texts; its digits are
@@ -220,7 +234,7 @@ Otherwise it counts what needs the user, and the review is a page of transaction
 - **Ready to add**, ticked by default, and **Holds**, unticked, newest first under the day
   they're dated, each with **Tick all** / **Untick all** and **Tick from a day** (ticks what's
   dated that day or later, unticks the rest): tap a row to change it in the transaction editor, with its messages
-  shown beneath. Possible duplicates offer add or match from the bank import engine. A
+  shown beneath. An unticked row says **Won't be added**: it's cleared with the review. Possible duplicates offer add or match from the bank import engine. A
   transaction dated before its account's records start (its first transaction, or today
   for an account with none) is already in that account's starting balance: it's tagged
   and unticked. Every edit applies to the review as it is when it runs, so a row the list

@@ -84,7 +84,7 @@ pub fn specs() -> Vec<Spec> {
         },
         Spec {
             name: "payee_history",
-            description: "How the user has categorized each payee before, how often, and any payee rule that matches it. Use before categorizing.",
+            description: "How the user has categorized each payee before, how often, and any payee rule that matches it. A bank's spelling finds the user's payee it holds (userPayee: \"MASHAR E\" is their \"Mashar\"). Use before categorizing.",
             parameters: object(json!({ "payees": id_list("Payee names, up to 30.") }), &["payees"]),
             proposes: false,
         },
@@ -791,6 +791,7 @@ fn payee_history(args: &Value, ctx: &Context) -> Result<Outcome, String> {
     if wanted.is_empty() || wanted.len() > 30 {
         return Err("Give between 1 and 30 payee names.".into());
     }
+    let known = crate::workflows::KnownPayees::new(b);
     let mut out = vec![];
     for name in &wanted {
         let lower = name.to_lowercase();
@@ -802,10 +803,16 @@ fn payee_history(args: &Value, ctx: &Context) -> Result<Outcome, String> {
             let payee = t.payee.to_lowercase();
             payee == lower || renamed.as_deref() == Some(payee.as_str())
         }).collect();
-        let list = if exact.is_empty() {
-            b.transactions.iter().filter(|t| t.payee.to_lowercase().contains(&lower)).collect()
-        } else {
+        // Else the user's payee the bank's name holds ("MASHAR E" holds "Mashar"), else payees
+        // holding the name.
+        let theirs = if exact.is_empty() { known.within(name).first().map(|p| p.name.clone()) } else { None };
+        let list = if !exact.is_empty() {
             exact
+        } else if let Some(theirs) = &theirs {
+            let theirs = theirs.to_lowercase();
+            b.transactions.iter().filter(|t| t.payee.to_lowercase() == theirs).collect()
+        } else {
+            b.transactions.iter().filter(|t| t.payee.to_lowercase().contains(&lower)).collect()
         };
         let mut categories: BTreeMap<String, usize> = BTreeMap::new();
         let mut last = String::new();
@@ -830,6 +837,9 @@ fn payee_history(args: &Value, ctx: &Context) -> Result<Outcome, String> {
         });
         if !last.is_empty() {
             row["lastDate"] = json!(last);
+        }
+        if let Some(theirs) = theirs {
+            row["userPayee"] = json!(theirs);
         }
         if let Some(rule) = rule {
             row["rule"] = json!({
@@ -1884,6 +1894,17 @@ pub mod tests {
         assert_eq!(out.output["payees"][0]["categories"][0]["category"], "Coffee");
     }
 
+    #[test]
+    fn a_bank_spelling_finds_the_users_payee_it_holds() {
+        let b = sample();
+        let files = Files::empty();
+        let out = call("payee_history", &json!({ "payees": ["CORNER BAKERY 12"] }), &ctx(&b, &files));
+        let row = &out.output["payees"][0];
+        assert_eq!((&row["userPayee"], &row["transactions"], &row["categories"][0]["category"]), (&json!("Corner Bakery"), &json!(2), &json!("Coffee")));
+        // A name the user has as it is needs no other.
+        let out = call("payee_history", &json!({ "payees": ["Corner Bakery"] }), &ctx(&b, &files));
+        assert!(out.output["payees"][0].get("userPayee").is_none());
+    }
     #[test]
     fn a_bank_spelling_a_rule_renames_reports_the_renamed_payees_history() {
         let mut b = sample();

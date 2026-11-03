@@ -264,15 +264,16 @@ internal class SmsPage(private val context: Context, val identity: String, priva
     fun forgetTemplate(id: String) = commit(SmsStage.Saving) { inbox.forgetTemplate(identity, id) }
 
     /**
-     * The user changed [fields] of a row a template read, before adding it: counted against the
-     * template. A changed payee or category is learned for the bank's name ([raw]).
+     * The user changed [fields] of a row a template read, before adding it. A changed date or
+     * amount counts against the template; a changed payee or category is the user's name for the
+     * bank's ([raw]), learned for its next texts.
      */
     fun edited(item: SmsItem, fields: Set<String>, payee: String, category: String?) {
         val template = item.template ?: return
         scope.launch {
             try {
                 withContext(smsStorageLane) {
-                    inbox.edited(identity, template, fields)
+                    (fields - setOf("payee", "category")).takeIf { it.isNotEmpty() }?.let { inbox.edited(identity, template, it) }
                     if (item.raw != null && ("payee" in fields || "category" in fields)) inbox.learnPayee(identity, smsSenderKey(item.sender), item.raw, payee, category)
                 }
             } catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { error = failure.message }
