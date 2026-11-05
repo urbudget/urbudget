@@ -313,15 +313,17 @@ internal fun ScheduleDialog(original: JSONObject?, budget: JSONObject, vm: Budge
     val transaction = remember { (original?.optJSONObject("transaction")?.copyJson() ?: JSONObject().put("id", "schedule:$id").put("status", "uncleared").put("amount", 0)).put("date", original?.text("nextDate") ?: LocalDate.now().plusDays(1).toString()) }
     // The saved schedule's next date, while waiting to enter it once the save is published.
     var entering by remember { mutableStateOf<String?>(null) }
+    // Whether the queue has reached past that save. Not a new root: a save that changes nothing keeps it.
+    var saved by remember { mutableStateOf(false) }
     val state by vm.state.collectAsStateWithLifecycle()
-    LaunchedEffect(entering, state.budget, state.error) {
+    LaunchedEffect(entering, saved, state.budget, state.error) {
         val due = entering ?: return@LaunchedEffect
         if (state.error != null) { close(); return@LaunchedEffect }
+        if (!saved) return@LaunchedEffect
         val current = state.budget ?: return@LaunchedEffect
-        if (current === openedBudget) return@LaunchedEffect
-        val saved = current.rows("schedules").firstOrNull { it.text("id") == id }
+        val row = current.rows("schedules").firstOrNull { it.text("id") == id }
         // Enter only the schedule as it was just saved, never one changed meanwhile.
-        if (saved != null && !saved.optBoolean("paused") && saved.text("nextDate") == due)
+        if (row != null && !row.optBoolean("paused") && row.text("nextDate") == due)
             vm.runCommand("applySchedules", JSONObject().put("through", LocalDate.now().toString()).put("selected", id))
         close()
     }
@@ -330,7 +332,7 @@ internal fun ScheduleDialog(original: JSONObject?, budget: JSONObject, vm: Budge
         val date = record.text("date")
         vm.upsert("schedules", (original?.copyJson() ?: JSONObject()).put("id", id).put("transaction", record).put("nextDate", date)
             .put("anchorDate", if (date == original?.text("nextDate")) original.text("anchorDate") else date).put("frequency", frequency).put("paused", paused))
-        if (!paused && date <= LocalDate.now().toString()) entering = date
+        if (!paused && date <= LocalDate.now().toString()) { entering = date; vm.afterPending { saved = true } }
     }, dialogTitle = if (original == null) stringResource(R.string.schedule_new) else stringResource(R.string.schedule_edit), extraFields = {
         Choice(stringResource(R.string.schedule_repeat), frequency, remember(languageKey()) { frequencies() }, { frequency = it })
         ListCard { SwitchRow(stringResource(R.string.schedule_paused), paused, { paused = it }) }

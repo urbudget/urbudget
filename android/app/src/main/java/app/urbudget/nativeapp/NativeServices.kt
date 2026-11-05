@@ -33,9 +33,11 @@ object NativeServices {
     private val syncStatusSource = MutableStateFlow<JSONObject?>(null)
     val syncStatus = syncStatusSource.asStateFlow()
     fun notifySaved() {
-        syncStatusSource.value?.let { syncStatusSource.value = JSONObject(it.toString()).put("libraryPending", true) }
-        savedSource.tryEmit(Unit)
-        application?.let { SyncWorker.enqueue(it) }
+        traced("notifySaved") {
+            syncStatusSource.value?.let { syncStatusSource.value = JSONObject(it.toString()).put("libraryPending", true) }
+            savedSource.tryEmit(Unit)
+            application?.let { SyncWorker.enqueue(it) }
+        }
     }
     /** The interface's language, "en" or "ar", for the engine's own messages (docs/LOCALIZATION.md). */
     @Volatile private var language: String? = null
@@ -78,16 +80,19 @@ object NativeServices {
         runCatching { call("set_language", JSONObject().put("language", code)) }
     }
 
-    fun call(method: String, params: JSONObject = JSONObject()): Any? {
+    fun call(method: String, params: JSONObject = JSONObject()): Any? = callText(method, params.toString())
+
+    /** `call`, when the parameters are already text. */
+    fun callText(method: String, params: String): Any? = traced("service:$method") {
         check(ready) { Words[R.string.error_services_starting] }
         val changesReadContext = method in setOf("account_verify", "account_sign_out", "account_delete", "simplefin_connect", "simplefin_disconnect", "billing_verify")
         if (changesReadContext) readEpoch.incrementAndGet()
         try {
-            val result = decode(NativeBridge.service(JSONObject().put("version", 1).put("method", method).put("params", params).toString()))
-            if (method in setOf("create_budget", "library_trash", "library_restore", "library_recover", "sync_enable", "sync_setup", "save_budget", "native_apply_patch", "assistant_apply_commit", "assistant_undo_commit", "simplefin_import", "accept_ynab_import", "resolve_ynab", "undo_budget", "redo_budget", "restore_backup_file", "restore_budget", "apply_due_schedules")) notifySaved()
+            val result = decode(NativeBridge.service("{\"version\":1,\"method\":${JSONObject.quote(method)},\"params\":$params}"))
+            if (method in setOf("create_budget", "library_trash", "library_restore", "library_recover", "sync_enable", "sync_setup", "save_budget", "edit_budget", "native_apply_patch", "assistant_apply_commit", "assistant_undo_commit", "simplefin_import", "accept_ynab_import", "resolve_ynab", "undo_budget", "redo_budget", "restore_backup_file", "restore_budget", "apply_due_schedules")) runCatching { notifySaved() } // It's committed: a failure here must not read as a refusal.
             if (method in setOf("sync_now", "sync_resolve") && result is JSONObject) syncCompletedSource.tryEmit(result)
             if (method in setOf("account_verify", "account_sign_out", "account_delete", "sync_setup", "sync_enable", "sync_reset", "sync_lock")) refreshSyncStatus()
-            return result
+            result
         } finally {
             // Reads started while a credential transition was in progress must not be joined
             // by a new screen after the transition has finished (including partial failures).

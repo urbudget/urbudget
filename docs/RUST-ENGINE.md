@@ -28,8 +28,9 @@ not complete equivalence to every YNAB feature or imported budget.
 | [targets.rs](../crates/urbudget-core/src/targets.rs) | Calculate target funding from assignments, available balances, recurrence dates and the reference month. |
 | [schedules.rs](../crates/urbudget-core/src/schedules.rs) | Validate recurring transactions and calculate upcoming category requirements. |
 | [workflows.rs](../crates/urbudget-core/src/workflows.rs) | Preview and apply allocation workflows using engine results. |
+| [commands.rs](../crates/urbudget-core/src/commands.rs) | The engine's methods by name: `apply` for those that change a budget, `read` for those that don't, `apply_steps` for a list of them. The stateless engine (`invoke_json`) and the services' `edit_budget` and `query_budget` all call these, so a method can't behave differently on the two paths. |
 | [ynab.rs](../crates/urbudget-core/src/ynab.rs) | Import/export conversion and comparisons against source account and category-month totals. |
-| [store.rs](../crates/urbudget-core/src/store.rs) | SQLite persistence, revision checks and cached budget drafts. Persistence is separate from envelope arithmetic. |
+| [store.rs](../crates/urbudget-core/src/store.rs) | SQLite persistence, row-level commits, revision checks and cached budget drafts. Persistence is separate from envelope arithmetic. |
 
 `calculate` produces a selected month's summary. `calculate_history` produces the monthly
 history through that month. Both validate the budget, expand the ledger, index accounts and
@@ -273,8 +274,18 @@ From `desktop`, run the end-to-end fixture explicitly:
 cargo test --manifest-path src-tauri/Cargo.toml --test performance --offline -- --ignored --nocapture
 ```
 
-The engine still replays accounting history. Incremental month caching, incremental persistence
-dirty tracking, and controlled release-profile benchmarks remain separate future work.
+The engine still replays accounting history, so an edit's totals grow with the ledger. Incremental
+month caching and controlled release-profile benchmarks remain separate future work
+([follow-up](FOLLOW-UPS.md#what-fast-edits-on-android-left)). Persistence is already incremental:
+`Store::commit` writes the rows a `Patch` changed, and desktop's saves, Android's `edit_budget` and
+undo through `patchOnly` all take that path.
+
+An ignored benchmark prints the cost of one edit at 2,742 and 10,000 transactions. From the
+repository root:
+
+```powershell
+cargo test --manifest-path crates/Cargo.toml -p urbudget-android --release --test edit_cost -- --ignored --nocapture
+```
 
 ## Verification and remaining parity work
 

@@ -28,11 +28,18 @@ the [archive](archive/tauri-phone-apps-2026-10.md).
         desktop/src-tauri  (the desktop app calls the same crates)
 ```
 
-The screens never do the accounting themselves. A screen sends a request to the engine as JSON
-text, such as `{"version": 1, "method": "calculate", "budget": {...}, "params": {...}}`, and
-shows the reply. Both adapters accept the same requests, so iOS and Android get identical
-answers; the iOS adapter passes engine requests straight to the Android one's `invoke_json`.
-On iOS the requests go through `Core/NativeCore.swift`, on Android through `NativeBridge.kt`.
+The screens never do the accounting themselves. A screen sends a request to the Rust library as
+JSON text and shows the reply. An engine request carries the budget it's about, such as
+`{"version": 1, "method": "calculate", "budget": {...}, "params": {...}}`, and the engine forgets
+it after the call. A service request works on the budget the shared store has open.
+
+The two apps now use these differently. iOS changes its own whole copy through engine requests
+and saves it with `save_budget`. Android's edits, previews and totals send no budget: they go to
+the service methods `edit_budget` and `query_budget`, run on the store's copy, and the app keeps
+only a light copy ([the contract](plans/engine-edits.md#as-built)). An engine request gets the same
+answer on both, because the iOS adapter passes engine requests straight to the Android one's
+`invoke_json`. On iOS the requests go through `Core/NativeCore.swift`, on Android through
+`NativeBridge.kt`.
 
 **iOS.** `ios/UrBudget.xcodeproj` is an ordinary Xcode project (generated from
 `ios/project.yml` by XcodeGen). Before Xcode compiles any Swift, its **Build Rust engine** step
@@ -118,12 +125,13 @@ phone yet.
 - **Native Android** ([android-native.yml](../.github/workflows/android-native.yml)) runs on Linux
   when `android/`, the shared crates (except the iOS adapter), `shared/android` or
   `shared/fixtures` change: the whole Rust workspace's tests, then Kotlin tests, lint, and debug
-  and release builds for both architectures. **Run workflow** also builds preview and keeps the
-  APKs to install.
-- **Native iOS** ([ios-native.yml](../.github/workflows/ios-native.yml)) runs when `ios/` or
-  `crates/urbudget-ios` change: the adapter's Rust tests on Linux, then the app's tests on the iOS
-  Simulator. A macOS minute costs ten Linux minutes, so engine changes are tested on Linux only;
-  the iOS release workflow runs the Simulator tests again before every upload.
+  and release builds for both architectures, and a separate job runs `SyncV2RuntimeTest` on an
+  emulator. **Run workflow** also builds preview and keeps the APKs to install. The other
+  instrumented checks aren't in CI: [how to run them](../android/README.md#instrumented-checks).
+- **Native iOS** ([ios-native.yml](../.github/workflows/ios-native.yml)) runs when `ios/`,
+  `crates/urbudget-ios`, `crates/urbudget-core` or `crates/urbudget-services` change: the adapter's
+  Rust tests on Linux, then the app's tests on the iOS Simulator. The iOS release workflow runs
+  the Simulator tests again before every upload.
 - Releases have their own workflows and tags: [RELEASING.md](../RELEASING.md).
 
 CI uses Rust stable, Java 17, Android command-line tools 23.0 (build 15859902), SDK package

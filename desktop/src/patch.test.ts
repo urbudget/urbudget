@@ -1,6 +1,7 @@
 import { produce } from "immer";
 import { describe, expect, it } from "vitest";
-import { apply, diff } from "./patch";
+import cases from "../../shared/fixtures/patch-cases.json";
+import { apply, diff, type Patch } from "./patch";
 import type { Budget, Transaction } from "./types";
 
 const tx = (id: string, amount = -100): Transaction => ({
@@ -83,5 +84,17 @@ describe("budget patches", () => {
     const applied = apply(base, patch);
     expect(applied.transactions[1]).toBe(base.transactions[1]);
     expect(applied.accounts).toBe(base.accounts);
+  });
+  it("match the cases every client shares", () => {
+    const shared = cases as unknown as {
+      name: string;
+      before: Budget;
+      patch: Patch;
+      after: Budget;
+      nativeOnly?: boolean;
+    }[];
+    for (const { name, before, patch, after, nativeOnly } of shared) {
+      if (!nativeOnly) expect(apply(before, patch), name).toEqual(after);
+    }
   });
 });

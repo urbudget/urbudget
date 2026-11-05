@@ -356,11 +356,11 @@ internal fun smsKnown(prepared: Map<Int, BankReviewRow>?, items: List<SmsItem>, 
     return sure.filter { shared[it.second] == 1 }.toMap()
 }
 
-/** The bank review's rows for the review's items that can be added, by item. */
-internal suspend fun BudgetViewModel.smsPreview(budget: JSONObject, batch: SmsBatch, resolved: JSONObject): Map<Int, BankReviewRow> {
+/** The bank review's rows for the review's items that can be added, by item. Comes back on the main thread: callers set Compose state with them. */
+internal suspend fun BudgetViewModel.smsPreview(budget: JSONObject, batch: SmsBatch, resolved: JSONObject): Map<Int, BankReviewRow> = withContext(Dispatchers.Main.immediate) {
     val raw = smsQuery("smsBatchPreview", batch.params(resolved)).rows("items")
     val rows = withContext(Dispatchers.Default) { prepareBankReview(raw.map { it.getJSONObject("row") }, budget, false) }
-    return raw.mapIndexed { i, item -> item.getInt("index") to rows[i] }.toMap()
+    raw.mapIndexed { i, item -> item.getInt("index") to rows[i] }.toMap()
 }
 
 /** Each item's decision as the core takes it: add it new, or match an existing transaction. */

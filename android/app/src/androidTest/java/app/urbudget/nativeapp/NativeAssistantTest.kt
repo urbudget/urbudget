@@ -5,12 +5,16 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
 /** Exercises the real shared assistant through JNI with synthetic files and no provider credentials. */
 @RunWith(AndroidJUnit4::class)
 class NativeAssistantTest {
+    // Files and conversations belong to the open budget, so the assistant needs one.
+    @Before fun openBudget() { ServiceTestRuntime.openFixture() }
+
     @Test fun attachmentConversationAndImmediateAuthFailureSurviveTheNativeBoundary() {
         val budgetBefore = ServiceTestRuntime.call("snapshot_budget") as JSONObject
         ServiceTestRuntime.call("assistant_settings", JSONObject().put("change", JSONObject()

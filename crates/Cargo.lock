@@ -1763,8 +1763,10 @@ name = "urbudget-android"
 version = "1.0.11"
 dependencies = [
  "jni",
+ "rusqlite",
  "serde",
  "serde_json",
+ "tempfile",
  "urbudget-core",
  "urbudget-services",
 ]

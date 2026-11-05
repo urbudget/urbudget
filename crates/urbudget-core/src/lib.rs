@@ -8,6 +8,7 @@ pub mod bank_import;
 pub mod bank_statement;
 pub mod bank_statements;
 pub mod budgets;
+pub mod commands;
 pub mod domain;
 pub mod engine;
 pub mod fresh_start;

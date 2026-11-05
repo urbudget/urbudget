@@ -1,3 +1,4 @@
+use crate::commands::Step;
 use crate::domain::*;
 use crate::patch::{Collection, Keyed, Patch};
 use crate::t;
@@ -65,7 +66,10 @@ fn has_hidden(t: &Transaction) -> bool {
 /// Drops `t`'s hidden fields. The other extras are copied; the hidden ones never are.
 fn hide(t: &mut Transaction) {
     let imported = t.extra.contains_key("source");
-    t.extra.remove("hasImportSource");
+    // `remove` alone copies a shared map, even when the key isn't there.
+    if t.extra.contains_key("hasImportSource") {
+        t.extra.remove("hasImportSource");
+    }
     if has_hidden(t) {
         t.extra = t
             .extra
@@ -90,6 +94,21 @@ fn keep_hidden<'a>(
         }
     }
 }
+/// Puts back the hidden fields the window left out of `t`, from the extras `kept` for it.
+fn restore_hidden(t: &mut Transaction, kept: Option<&Extra>) {
+    // A window-only hint, reconstructed from the actual import metadata on every read.
+    if t.extra.contains_key("hasImportSource") {
+        t.extra.remove("hasImportSource");
+    }
+    let Some(kept) = kept else {
+        return;
+    };
+    for k in HIDDEN_FIELDS {
+        if let (false, Some(v)) = (t.extra.contains_key(*k), kept.get(*k)) {
+            t.extra.insert((*k).into(), v.clone());
+        }
+    }
+}
 /// Gives the transactions a command added (in `after`, not `before`) the time they were added,
 /// when the command didn't. The window gets them in the command's patch, so it has the same time.
 fn stamp_added(before: &Budget, after: &mut Budget) {
@@ -101,6 +120,13 @@ fn stamp_added(before: &Budget, after: &mut Budget) {
         }
     }
 }
+fn touches_heavy(p: &Patch) -> bool {
+    p.extras.as_ref().is_some_and(|e| {
+        HEAVY_EXTRAS
+            .iter()
+            .any(|k| e.set.contains_key(*k) || e.delete.iter().any(|d| d == k))
+    })
+}
 /// The budget as the window receives it: without heavy extras or hidden transaction fields.
 pub fn for_window(b: &Budget) -> Budget {
     let mut light = b.clone();
@@ -109,6 +135,22 @@ pub fn for_window(b: &Budget) -> Budget {
     }
     light.transactions.iter_mut().for_each(hide);
     light
+}
+/// What a window receives of a change: no hidden fields, no heavy extras. The history keeps the
+/// stored form: a hidden inverse on the undo stack would erase `source`.
+pub fn for_window_patch(patch: &mut Patch) {
+    if let Some(c) = &mut patch.transactions {
+        c.upsert.iter_mut().for_each(hide);
+    }
+    if let Some(e) = &mut patch.extras {
+        for k in HEAVY_EXTRAS {
+            e.set.remove(*k);
+            e.delete.retain(|d| d != k);
+        }
+        if e.set.is_empty() && e.delete.is_empty() {
+            patch.extras = None;
+        }
+    }
 }
 fn serialize_light<S: Serializer>(b: &Budget, s: S) -> std::result::Result<S::Ok, S::Error> {
     for_window(b).serialize(s)
@@ -139,6 +181,13 @@ pub struct Applied {
     /// The draft was applied, but its recovery copy could not be written.
     pub recovery_error: Option<String>,
 }
+/// One committed edit. `patch` and `inverse` hold records as stored, with `source`.
+#[derive(Debug)]
+pub struct Edit {
+    pub patch: Patch,
+    pub inverse: Patch,
+    pub status: Status,
+}
 
 /// The saved budget and the window's working draft, both without heavy extras.
 struct Cache {
@@ -157,16 +206,7 @@ struct Cache {
 impl Cache {
     /// Puts back the hidden fields the window left out of `t`.
     fn restore(&self, t: &mut Transaction) {
-        // A window-only hint, reconstructed from the actual import metadata on every read.
-        t.extra.remove("hasImportSource");
-        let Some(kept) = self.hidden.get(&t.id) else {
-            return;
-        };
-        for k in HIDDEN_FIELDS {
-            if let (false, Some(v)) = (t.extra.contains_key(*k), kept.get(*k)) {
-                t.extra.insert((*k).into(), v.clone());
-            }
-        }
+        restore_hidden(t, self.hidden.get(&t.id));
     }
     /// Restores the transactions in a patch from the window.
     fn restore_patch(&mut self, patch: &mut Patch) {
@@ -738,6 +778,20 @@ impl Store {
             None => f(&cache.draft),
         }
     }
+    /// A copy of the open budget, to read outside the store's lock. With `expected`, only if that's
+    /// still the saved revision.
+    pub fn working_copy(&mut self, expected: Option<&str>) -> Result<Budget> {
+        let token = self.status()?.token;
+        if expected.is_some_and(|e| e != token) {
+            return Err(t!(
+                "CONFLICT: The budget changed. Reload it before saving your edit."
+            ));
+        }
+        if self.cache.as_ref().is_none_or(|c| c.token != token) {
+            self.load_light()?;
+        }
+        Ok(self.cache.as_ref().expect("cache loaded").draft.clone())
+    }
     /// A stable read snapshot. Callers can release the Store lock before deriving reports.
     /// Applying the window's relative patch here never changes the persisted or recovery draft.
     pub fn snapshot_draft(&mut self, patch: Option<Patch>) -> Result<Budget> {
@@ -824,6 +878,10 @@ impl Store {
     /// Saves the draft: only rows that differ from the database are written,
     /// atomically, after the same validation and conflict checks as a full save.
     pub fn commit(&mut self, expected_token: &str) -> Result<Status> {
+        self.commit_inner(expected_token, true)
+    }
+
+    fn commit_inner(&mut self, expected_token: &str, clear_recovery: bool) -> Result<Status> {
         self.check_sync_writable()?;
         self.cache()?;
         let Store {
@@ -870,8 +928,173 @@ impl Store {
         cache.token = status.token.clone();
         cache.heavy_dirty = false;
         // The save succeeded; a stale recovery file is only offered again if this fails.
-        let _ = std::fs::remove_file(path.with_file_name("recovery.json"));
+        if clear_recovery {
+            let _ = std::fs::remove_file(path.with_file_name("recovery.json"));
+        }
         Ok(status)
+    }
+
+    /// Ready to edit at `expected_token`. Rows are read only if the cache doesn't hold them.
+    pub fn prepare_edit(&mut self, expected_token: &str) -> Result<()> {
+        if self.status()?.token != expected_token {
+            return Err(t!(
+                "CONFLICT: The budget changed. Reload it before saving your edit."
+            ));
+        }
+        self.check_sync_writable()?;
+        let current = self
+            .cache
+            .as_ref()
+            .is_some_and(|c| c.token == expected_token);
+        if !current || self.has_unsaved_draft() {
+            self.load_light()?;
+        }
+        Ok(())
+    }
+
+    /// Runs `f` on a copy of the budget and commits what it changed. `check` sees the result as it
+    /// will be stored, with new rows' times, which decide the ledger's order within a day. What it
+    /// returns comes back with the edit. If either fails, everything stays as it was.
+    pub fn edit<T>(
+        &mut self,
+        expected_token: &str,
+        f: impl FnOnce(Budget) -> Result<Budget>,
+        check: impl FnOnce(&Budget) -> Result<T>,
+    ) -> Result<(Edit, T)> {
+        self.prepare_edit(expected_token)?;
+        let cache = self.cache.as_ref().expect("cache loaded");
+        let mut after = f(cache.draft.clone())?;
+        stamp_added(&cache.draft, &mut after);
+        let checked = check(&after)?;
+        Ok((self.commit_edit(expected_token, after, true)?, checked))
+    }
+
+    /// Puts back what an app's steps may have left out, as `replace_draft` does for a whole budget.
+    /// Runs after `prepare_edit`. A step finds what an earlier one sent, but in `sent`, not in the
+    /// cache: the edit can still be refused, and `commit_edit` keeps what it actually stored.
+    pub fn restore_steps(&mut self, steps: &mut [Step]) -> Result<()> {
+        let cache = self.cache()?;
+        let mut sent = HashMap::new();
+        let mut restore = |t: &mut Transaction| {
+            let kept = sent.get(&t.id).or_else(|| cache.hidden.get(&t.id));
+            restore_hidden(t, kept);
+            keep_hidden(&mut sent, [&*t]);
+        };
+        for step in steps {
+            match step {
+                Step::Patch { patch } => {
+                    if touches_heavy(patch) {
+                        return Err("A step can't change heavy extras.".into());
+                    }
+                    if let Some(c) = &mut patch.transactions {
+                        c.upsert.iter_mut().for_each(&mut restore);
+                    }
+                }
+                Step::Command { method, .. } if method == "applyPatch" => {
+                    return Err("Send a patch as a patch step.".into());
+                }
+                Step::Command { method, params } if method == "saveTransaction" => {
+                    if let Some(record) = params.get_mut("transaction") {
+                        let mut t: Transaction = serde_json::from_value(record.take())
+                            .map_err(|e| format!("Invalid transaction: {e}"))?;
+                        restore(&mut t);
+                        *record = serde_json::to_value(&t).map_err(error)?;
+                    }
+                }
+                Step::Command { .. } => {}
+            }
+        }
+        Ok(())
+    }
+
+    /// A complete budget an app sent, as an edit.
+    pub fn edit_whole(&mut self, expected_token: &str, mut budget: Budget) -> Result<Edit> {
+        self.prepare_edit(expected_token)?;
+        let cache = self.cache.as_ref().expect("cache loaded");
+        for k in HEAVY_EXTRAS {
+            budget.extra.remove(*k);
+        }
+        for t in &mut budget.transactions {
+            cache.restore(t);
+        }
+        self.commit_edit(expected_token, budget, true)
+    }
+
+    /// Undo and redo: `patch` as it stands, with nothing stamped. A restored transaction is new
+    /// to the diff, and a legacy one with no time must not gain today's.
+    pub fn edit_patch(&mut self, expected_token: &str, patch: Patch) -> Result<Edit> {
+        self.prepare_edit(expected_token)?;
+        if touches_heavy(&patch) {
+            // The draft never holds heavy keys, so apply can't delete one. Do it as today.
+            let (before, _) = self.saved()?;
+            let mut after = before.clone();
+            patch.apply(&mut after);
+            let status = self.save(&after, expected_token)?;
+            return Ok(Edit {
+                patch: Patch::diff(&before, &after),
+                inverse: Patch::diff(&after, &before),
+                status,
+            });
+        }
+        let mut after = self.cache.as_ref().expect("cache loaded").draft.clone();
+        patch.apply(&mut after);
+        let edit = self.commit_edit(expected_token, after, false)?;
+        // Rebuilt, as `save` does when an undo ends there. An undo can take `source` off a row or
+        // remove the row, and a copy left here would put it back on the row's next edit.
+        let Cache { draft, hidden, .. } = self.cache.as_mut().expect("cache loaded");
+        hidden.clear();
+        keep_hidden(hidden, &draft.transactions);
+        Ok(edit)
+    }
+
+    /// Whether `budget` carries the saved heavy extras. False when it leaves them out.
+    pub fn heavy_unchanged(&mut self, expected_token: &str, budget: &Budget) -> Result<bool> {
+        self.prepare_edit(expected_token)?;
+        let cache = self.cache.as_ref().expect("cache loaded");
+        Ok(HEAVY_EXTRAS
+            .iter()
+            .all(|k| cache.heavy.get(*k) == budget.extra.get(*k)))
+    }
+
+    /// Commits `after` as the draft. `recover`: this is an edit, which owns the recovery file. It
+    /// writes one only if the commit fails, and a successful edit clears any left by an earlier
+    /// failure, as a save does. False, for undo and redo: the file isn't touched at all.
+    fn commit_edit(&mut self, expected_token: &str, after: Budget, recover: bool) -> Result<Edit> {
+        validate(&after)?; // Refused before the draft changes.
+        let cache = self.cache.as_mut().expect("cache loaded");
+        let patch = Patch::diff(&cache.persisted, &after);
+        // Light against light: a `before` from the cache has no heavy extras, so comparing it
+        // with a budget that has them would record undoing as deleting them.
+        let inverse = Patch::diff(&after, &cache.persisted);
+        if let Some(c) = &patch.transactions {
+            keep_hidden(&mut cache.hidden, &c.upsert);
+        }
+        // A new order of assignments is no change to a patch, and with nothing to write it would
+        // stay behind in the draft, reading as unsaved work and holding up sync.
+        if !patch.is_empty() {
+            cache.draft = after;
+        }
+        match self.commit_inner(expected_token, recover) {
+            Ok(status) => {
+                // A no-op save has always cleared a stale recovery file; commit's empty path doesn't.
+                if recover && patch.is_empty() {
+                    let _ = self.discard_recovery();
+                }
+                Ok(Edit {
+                    patch,
+                    inverse,
+                    status,
+                })
+            }
+            Err(error) => {
+                // Before invalidating: save_recovery needs the cache and its token.
+                if recover {
+                    let _ = self.save_recovery();
+                }
+                self.invalidate_draft();
+                Err(error)
+            }
+        }
     }
 
     /// Replaces the complete budget (imports). Heavy extras in `budget` are stored too.
@@ -2545,5 +2768,401 @@ mod tests {
             assert_eq!(joined["sourceExport"]["a"], 1);
         }
         assert_eq!(extras_json(&Map::new(), "").unwrap(), "{}");
+    }
+
+    /// A store holding `budget`, saved, with its token.
+    fn saved_store(path: &Path, budget: &Budget) -> (Store, String) {
+        let mut store = Store::open(path).unwrap();
+        let token = store.status().unwrap().token;
+        let token = store.save(budget, &token).unwrap().token;
+        (store, token)
+    }
+    fn imported() -> Transaction {
+        let mut t = transaction("imported");
+        t.extra
+            .insert("source".into(), serde_json::json!({"id": "ynab-row"}));
+        t
+    }
+
+    #[test]
+    fn edit_whole_commits_changed_rows_without_a_recovery_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("budget.db");
+        let (mut store, token) = saved_store(&path, &sample());
+        let mut changed = sample();
+        changed.name = "Edited".into();
+        changed.transactions.push(transaction("new"));
+        let edit = store.edit_whole(&token, changed.clone()).unwrap();
+        assert_eq!(edit.patch.name.as_deref(), Some("Edited"));
+        assert_eq!(edit.patch.transactions.unwrap().upsert[0].id, "new");
+        assert_eq!(edit.inverse.name, Some(sample().name));
+        assert_eq!(edit.inverse.transactions.unwrap().delete, ["new"]);
+        assert_ne!(edit.status.token, token);
+        assert_eq!(store.status().unwrap().token, edit.status.token);
+        assert!(!store.has_unsaved_draft());
+        assert!(!path.with_file_name("recovery.json").exists());
+        drop(store);
+        assert_eq!(Store::open(&path).unwrap().saved().unwrap().0, changed);
+    }
+
+    #[test]
+    fn edit_whole_keeps_source_and_heavy_extras() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("budget.db");
+        let mut full = sample();
+        full.extra.insert(
+            "sourceExport".into(),
+            serde_json::json!({"data":{"server_knowledge":7}}),
+        );
+        full.transactions.push(imported());
+        let (mut store, _) = saved_store(&path, &full);
+        // A window's copy of the row has a hint in place of `source`, and an app's still has it.
+        let light = for_window(&full).transactions;
+        for (name, transactions) in [
+            ("Sent with source", full.transactions.clone()),
+            ("Sent without source", light),
+        ] {
+            let mut sent = full.clone();
+            sent.name = name.into();
+            sent.transactions = transactions;
+            let token = store.status().unwrap().token;
+            assert!(store.heavy_unchanged(&token, &sent).unwrap());
+            let before = store.saved().unwrap().0;
+            let edit = store.edit_whole(&token, sent).unwrap();
+            assert!(edit.patch.transactions.is_none(), "only the name changed");
+            assert!(edit.inverse.extras.is_none(), "undo must not touch them");
+            let (saved, _) = store.saved().unwrap();
+            assert_eq!(saved.name, name);
+            assert_eq!(saved.extra, full.extra);
+            assert_eq!(saved.transactions, full.transactions);
+            let mut undone = saved.clone();
+            edit.inverse.apply(&mut undone);
+            assert_eq!(undone, before);
+        }
+    }
+
+    #[test]
+    fn edit_whole_reads_no_rows_while_the_cache_is_current() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("budget.db");
+        let mut budget = sample();
+        budget.transactions.push(transaction("untouched"));
+        let (mut store, _) = saved_store(&path, &budget);
+        let token = store.load_light().unwrap().token;
+        // On this connection, so the token stays: reading this row now fails.
+        store
+            .connection
+            .execute("UPDATE transactions SET data='{}'", [])
+            .unwrap();
+        assert_eq!(store.status().unwrap().token, token);
+        let mut changed = budget.clone();
+        changed.name = "Edited".into();
+        assert!(store.heavy_unchanged(&token, &changed).unwrap());
+        let edit = store.edit_whole(&token, changed).unwrap();
+        assert_eq!(edit.patch.name.as_deref(), Some("Edited"));
+        assert!(store.saved().is_err(), "the row was unreadable throughout");
+    }
+
+    #[test]
+    fn prepare_edit_reloads_a_stale_cache_under_a_matching_token() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("budget.db");
+        let (mut store, _) = saved_store(&path, &sample());
+        store.load_light().unwrap();
+        let mut elsewhere = sample();
+        elsewhere.transactions.push(transaction("from-elsewhere"));
+        {
+            let mut other = Store::open(&path).unwrap();
+            let token = other.status().unwrap().token;
+            other.save(&elsewhere, &token).unwrap();
+        }
+        let token = store.status().unwrap().token;
+        assert_ne!(store.cache.as_ref().unwrap().token, token);
+        store.prepare_edit(&token).unwrap();
+        assert_eq!(store.cache.as_ref().unwrap().token, token);
+        // Undo's patch must be from what's saved now, not from the stale cache.
+        let mut changed = elsewhere.clone();
+        changed.name = "Edited".into();
+        let edit = store.edit_whole(&token, changed.clone()).unwrap();
+        assert!(edit.patch.transactions.is_none());
+        assert!(edit.inverse.transactions.is_none());
+        assert_eq!(store.saved().unwrap().0, changed);
+    }
+
+    #[test]
+    fn prepare_edit_refuses_a_stale_token_and_a_blocked_budget_keeping_the_draft() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("budget.db");
+        let (mut store, token) = saved_store(&path, &sample());
+        let refused = store.prepare_edit("budget:0:0").unwrap_err();
+        assert!(refused.starts_with("CONFLICT: The budget changed."));
+        store
+            .connection
+            .execute("UPDATE sync_local_state SET blocked=1 WHERE id=1", [])
+            .unwrap();
+        let mut changed = sample();
+        changed.name = "Edited".into();
+        let blocked = store.edit_whole(&token, changed).unwrap_err();
+        assert!(blocked.starts_with("This budget was removed"));
+        assert!(!store.has_unsaved_draft());
+        assert_eq!(store.saved().unwrap().0, sample());
+    }
+
+    #[test]
+    fn failed_edit_writes_recovery_and_leaves_no_draft() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("budget.db");
+        let (mut store, token) = saved_store(&path, &sample());
+        store.connection.execute_batch("CREATE TRIGGER fail_save BEFORE UPDATE ON metadata BEGIN SELECT RAISE(ABORT, 'Simulated disk failure'); END;").unwrap();
+        let mut changed = sample();
+        changed.name = "Rejected".into();
+        let failed = store.edit_whole(&token, changed).unwrap_err();
+        assert!(failed.contains("Simulated disk failure"));
+        assert!(store.cache.is_none());
+        assert_eq!(store.status().unwrap().token, token);
+        assert_eq!(store.full_draft(None).unwrap(), sample());
+        assert_eq!(
+            store.read_recovery().unwrap().unwrap()["budget"]["name"],
+            "Rejected"
+        );
+    }
+
+    #[test]
+    fn edit_commits_what_the_function_changed_and_stamps_new_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("budget.db");
+        let (mut store, token) = saved_store(&path, &sample());
+        let (edit, _) = store
+            .edit(
+                &token,
+                |mut budget| {
+                    budget.transactions.push(transaction("added"));
+                    Ok(budget)
+                },
+                |_| Ok(()),
+            )
+            .unwrap();
+        let added = &edit.patch.transactions.as_ref().unwrap().upsert[0];
+        assert!(added.created_at().is_some());
+        assert_eq!(store.saved().unwrap().0.transactions, [added.clone()]);
+        assert_eq!(edit.inverse.transactions.unwrap().delete, ["added"]);
+        assert!(!store.has_unsaved_draft());
+    }
+
+    #[test]
+    fn edit_checks_the_budget_as_it_will_be_stored() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("budget.db");
+        let (mut store, token) = saved_store(&path, &sample());
+        let add = |mut budget: Budget| {
+            budget.transactions.push(transaction("added"));
+            Ok(budget)
+        };
+        let refused = store.edit(&token, add, |after| {
+            assert!(after.transactions[0].created_at().is_some());
+            Err::<(), _>("It doesn't add up.".to_owned())
+        });
+        assert_eq!(refused.unwrap_err(), "It doesn't add up.");
+        assert_eq!(store.status().unwrap().token, token);
+        assert!(!store.has_unsaved_draft());
+        assert!(store.read_recovery().unwrap().is_none());
+        let (_, checked) = store.edit(&token, add, |after| Ok(after.transactions.clone())).unwrap();
+        assert_eq!(store.saved().unwrap().0.transactions, checked);
+    }
+
+    #[test]
+    fn a_failed_edit_function_leaves_everything_as_it_was() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("budget.db");
+        let (mut store, token) = saved_store(&path, &sample());
+        let failed = store.edit(
+            &token,
+            |mut budget| {
+                budget.name = "Half done".into();
+                Err("It stopped.".into())
+            },
+            |_| Ok(()),
+        );
+        assert_eq!(failed.unwrap_err(), "It stopped.");
+        assert!(!store.has_unsaved_draft());
+        assert_eq!(store.status().unwrap().token, token);
+        assert_eq!(store.full_draft(None).unwrap(), sample());
+        assert!(store.read_recovery().unwrap().is_none());
+    }
+
+    #[test]
+    fn a_commit_landing_during_an_edit_stops_it_with_recovery_written() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("budget.db");
+        let (mut store, token) = saved_store(&path, &sample());
+        let failed = store.edit(
+            &token,
+            |mut budget| {
+                // Sync's connection gets in after the token check and before the write lock.
+                let mut other = Store::open(&path).unwrap();
+                let current = other.status().unwrap().token;
+                let mut elsewhere = sample();
+                elsewhere.name = "From elsewhere".into();
+                other.save(&elsewhere, &current).unwrap();
+                budget.name = "Lost the race".into();
+                Ok(budget)
+            },
+            |_| Ok(()),
+        );
+        assert!(failed.unwrap_err().starts_with("CONFLICT: The database changed."));
+        assert!(store.cache.is_none(), "the draft is invalidated");
+        assert_eq!(store.saved().unwrap().0.name, "From elsewhere");
+        assert_eq!(store.read_recovery().unwrap().unwrap()["budget"]["name"], "Lost the race");
+    }
+
+    #[test]
+    fn restore_steps_puts_back_hidden_fields_and_refuses_what_isnt_a_step() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("budget.db");
+        let mut budget = sample();
+        budget.transactions.push(imported());
+        let (mut store, token) = saved_store(&path, &budget);
+        store.prepare_edit(&token).unwrap();
+        let mut sent = transaction("imported");
+        sent.extra.insert("hasImportSource".into(), true.into());
+
+        let mut patch = Step::Patch {
+            patch: Patch {
+                transactions: Some(Collection {
+                    upsert: vec![sent.clone()],
+                    delete: vec![],
+                    order: None,
+                }),
+                ..Patch::default()
+            },
+        };
+        store.restore_steps(std::slice::from_mut(&mut patch)).unwrap();
+        let Step::Patch { patch } = patch else {
+            unreachable!()
+        };
+        let restored = &patch.transactions.unwrap().upsert[0];
+        assert_eq!(restored.extra["source"]["id"], "ynab-row");
+        assert!(!restored.extra.contains_key("hasImportSource"));
+
+        let mut command = Step::Command {
+            method: "saveTransaction".into(),
+            params: serde_json::json!({ "transaction": sent }),
+        };
+        store.restore_steps(std::slice::from_mut(&mut command)).unwrap();
+        let Step::Command { params, .. } = command else {
+            unreachable!()
+        };
+        assert_eq!(params["transaction"]["source"]["id"], "ynab-row");
+        assert!(params["transaction"].get("hasImportSource").is_none());
+
+        for mut step in [
+            Step::Command {
+                method: "applyPatch".into(),
+                params: serde_json::json!({}),
+            },
+            Step::Command {
+                method: "saveTransaction".into(),
+                params: serde_json::json!({ "transaction": { "id": 5 } }),
+            },
+            serde_json::from_value(serde_json::json!({"patch":{"extras":{"delete":["sourceExport"]}}})).unwrap(),
+            serde_json::from_value(serde_json::json!({"patch":{"extras":{"set":{"sourceExport":{}}}}})).unwrap(),
+        ] {
+            assert!(store.restore_steps(std::slice::from_mut(&mut step)).is_err(), "{step:?}");
+        }
+    }
+
+    #[test]
+    fn invalid_edit_changes_nothing_and_writes_no_recovery_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("budget.db");
+        let (mut store, token) = saved_store(&path, &sample());
+        let mut invalid = sample();
+        invalid.name = " ".into();
+        assert!(store.edit_whole(&token, invalid).is_err());
+        assert!(!store.has_unsaved_draft());
+        assert_eq!(store.status().unwrap().token, token);
+        assert_eq!(store.full_draft(None).unwrap(), sample());
+        assert!(!path.with_file_name("recovery.json").exists());
+    }
+
+    #[test]
+    fn no_op_edit_removes_a_stale_recovery_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("budget.db");
+        let (mut store, token) = saved_store(&path, &sample());
+        let recovery = path.with_file_name("recovery.json");
+        std::fs::write(&recovery, "{}").unwrap();
+        let edit = store.edit_whole(&token, sample()).unwrap();
+        assert!(edit.patch.is_empty());
+        assert!(edit.inverse.is_empty());
+        assert_eq!(edit.status.token, token);
+        assert!(!recovery.exists());
+    }
+
+    fn assignment(month: &str) -> Assignment {
+        Assignment {
+            extra: Map::new(),
+            month: month.into(),
+            category_id: "food".into(),
+            amount: 500,
+        }
+    }
+
+    #[test]
+    fn has_unsaved_draft_is_false_after_an_edit_that_adds_an_assignment() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("budget.db");
+        let (mut store, token) = saved_store(&path, &sample());
+        let mut changed = sample();
+        // Kept here in memory; a read sorts it. Nothing may take that for an unsaved change.
+        changed.assignments.push(assignment("2026-01"));
+        let saved = store.edit_whole(&token, changed).unwrap().status;
+        assert!(!store.has_unsaved_draft());
+        let (stored, _) = store.saved().unwrap();
+        assert_eq!(stored.assignments[0].month, "2026-01");
+        // Both refuse while there are unsaved changes.
+        let token = store
+            .run_schedules(&saved.token, "2026-10-21")
+            .unwrap()
+            .token;
+        store.save_synced(&stored, &token, 1, &stored).unwrap();
+    }
+
+    #[test]
+    fn has_unsaved_draft_is_false_after_an_edit_that_only_reorders_assignments() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("budget.db");
+        let mut budget = sample();
+        budget.assignments.push(assignment("2026-11"));
+        let (mut store, token) = saved_store(&path, &budget);
+        store.load_light().unwrap();
+        budget.assignments.reverse();
+        let edit = store.edit_whole(&token, budget).unwrap();
+        assert!(edit.patch.is_empty());
+        assert_eq!(edit.status.token, token);
+        assert!(!store.has_unsaved_draft());
+    }
+
+    #[test]
+    fn edits_keep_stored_order_across_commits_without_a_reload() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("budget.db");
+        let mut budget = sample();
+        budget.transactions = ["a", "b", "c"].map(transaction).to_vec();
+        let (mut store, _) = saved_store(&path, &budget);
+        store.load_light().unwrap();
+        // Delete, append, move and edit in a row, each from the cache the last one left.
+        let steps: [fn(&mut Budget); 4] = [
+            |b| b.transactions.retain(|t| t.id != "b"),
+            |b| b.transactions.push(transaction("d")),
+            |b| b.transactions.swap(0, 2),
+            |b| b.transactions[1].memo = "Edited".into(),
+        ];
+        for step in steps {
+            step(&mut budget);
+            let token = store.status().unwrap().token;
+            store.edit_whole(&token, budget.clone()).unwrap();
+            assert_eq!(store.saved().unwrap().0, budget);
+        }
     }
 }

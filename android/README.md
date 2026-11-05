@@ -18,10 +18,12 @@ This folder is an ordinary Gradle project. Before Gradle compiles any Kotlin, th
 on [`crates/urbudget-android`](../crates/urbudget-android) once for each phone architecture
 (arm64-v8a, x86_64) with the Android NDK's compiler, and packs the resulting
 `liburbudget_android.so` into the app. Kotlin calls it through JNI in
-`NativeBridge.kt`: each call sends a JSON request and gets a JSON reply, the same requests
-the iOS app sends. The accounting, storage, sync and imports all happen in that Rust library
-(the shared crates); Kotlin draws the screens. The [mobile guide](../docs/MOBILE.md) shows
-how this fits with iOS and desktop.
+`NativeBridge.kt`: each call sends a JSON request and gets a JSON reply. Edits, previews and
+totals send no budget: they run on the store's copy through `edit_budget` and `query_budget`
+([below](#storage-privacy-and-concurrency)). The iOS app doesn't use those yet, so the two apps
+no longer send the same requests. The accounting, storage, sync and imports all happen in that
+Rust library (the shared crates); Kotlin draws the screens. The
+[mobile guide](../docs/MOBILE.md) shows how this fits with iOS and desktop.
 
 ## Folders
 
@@ -32,11 +34,11 @@ Android Studio shows them as one.
 | Folder | What's in it |
 | --- | --- |
 | `app/build.gradle.kts` | The app's version, dependencies, signing and the Rust build task |
-| `app/src/main/java/app/urbudget/nativeapp` | `MainActivity.kt`, the engine bridge (`NativeBridge.kt`), `BudgetRepository` and `BudgetViewModel`, money, register and report helpers |
+| `app/src/main/java/app/urbudget/nativeapp` | `MainActivity.kt`, the engine bridge (`NativeBridge.kt`), `BudgetRepository`, `BudgetPatch` and `BudgetViewModel`, money, register and report helpers |
 | `app/src/main/java/app/urbudget/nativeapp/ui` | Every screen and shared control; `App.kt` is the root, `Theme.kt` and `Design.kt` the look |
 | `app/src/main/res`, `AndroidManifest.xml` | Icon, styles, file sharing and backup rules |
 | `app/src/test` | Unit tests that run on the computer |
-| `app/src/androidTest` | Tests that run on an emulator |
+| `app/src/androidTest` | Tests that run on an emulator ([how](#instrumented-checks)); `cases/` holds their scripts |
 | `app/src/preview` | The optimized, debug-signed `preview` build's manifest |
 | [`../shared/android`](../shared/android) | Android Keystore keeper and Play billing client, with their tests |
 | [`../crates/urbudget-android`](../crates/urbudget-android) | The Rust side of the JNI bridge |
@@ -426,6 +428,26 @@ atomic and tied to the reviewed budget and revision. Ordinary local saves use th
 shared delta path; imports preserve the full portable schema and unknown fields,
 including assignment/schedule extensions.
 
+The open budget lives in the store. `BudgetRepository` keeps a light copy for the
+screens: no transaction `source` and no `sourceExport`, with `hasImportSource` on
+rows that have a `source`. Commands and `edit { }` go to `edit_budget` as steps; an
+`edit { }` is first turned into a patch by comparing records by identity
+(`BudgetPatch.kt`). The store runs the steps on its own copy, commits the changed
+rows and replies with a patch and the totals. The app applies that patch to a new
+root that shares every untouched record. Undo and redo reply the same way. Previews
+and totals go to `query_budget`, which never commits. Exports and recovery copies
+come from `export_budget`, so they stay whole. A whole budget crosses from the app
+only on create, import and restore.
+
+An edit refused with `CONFLICT:` retries once: the repository reloads, checks the
+guard against what's stored now and sends the edit again, rebuilt on that budget. A
+second refusal shows the fresh budget and the error, and nothing is saved. Import
+and restore do the same. A preview or a month change the store has moved past
+catches up and asks once more. An edit that saved but can't be shown
+(`SavedNotShown`) isn't treated as a failed edit: nothing is offered to retry and
+the app refreshes. Its error shows until that refresh succeeds, and an editor that
+closes on success, such as a transaction's, stays open.
+
 An earlier native `filesDir/budget.json` migrates to SQLite only after validation
 and a successful commit. Its original bytes remain for recovery. A signed upgrade
 from Tauri finds the existing library directly in `filesDir`; otherwise native
@@ -486,10 +508,9 @@ cargo test --locked --manifest-path crates/Cargo.toml
 # Desktop integration adapters and existing checks:
 cd desktop
 npm test
-# android/, isolated emulator only (never choose a personal phone):
-$env:ANDROID_SERIAL = "emulator-5580"
-.\gradlew.bat :app:connectedDebugAndroidTest -PandroidAbis=x86_64
 ```
+
+Tests on an emulator have their own steps: [Instrumented checks](#instrumented-checks).
 
 Native CI runs shared tests, Kotlin tests, debug/release lint and builds for both
 ABIs; **Run workflow** also builds preview and keeps the APKs for three days. Changes to shared Rust also run the desktop checks. AGP built-in Kotlin requires custom shared sources under
@@ -499,7 +520,7 @@ Artifacts:
 - `app/build/outputs/apk/debug/app-debug.apk`
 - `app/build/outputs/apk/preview/app-preview.apk` (optimized device evaluation)
 - `app/build/outputs/apk/release/app-release-unsigned.apk` (without signing secrets)
-- `app/build/reports/tests/`, `app/build/reports/androidTests/`, lint reports
+- `app/build/reports/tests/`, lint reports
 
 For a signed release, provide all four existing environment variables:
 `URBUDGET_ANDROID_KEYSTORE`, `URBUDGET_ANDROID_KEY_ALIAS`,
@@ -541,6 +562,77 @@ Rows refer to pooled candidate sets instead of copying thousands of candidates
 into every JSON row. Kotlin reuses those lists, and commits send only selected
 matches and required acknowledgments. Rust still revalidates selections against
 the current ledger. Desktop's full review format remains compatible.
+
+## Instrumented checks
+
+Run these on an isolated emulator, one process per class: the services are set up
+once per process, and two setups clash ("The service directory cannot change").
+
+**Never use a `connected*AndroidTest` Gradle task.** It installs on every attached
+device and uninstalls the app afterwards, so a phone plugged in loses its debug or
+preview install and the budgets in it.
+
+```powershell
+# android/, with the emulator running:
+.\gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest -PandroidAbis=x86_64
+adb -s emulator-5584 install -r app/build/outputs/apk/debug/app-debug.apk
+adb -s emulator-5584 install -r -t app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+python app/src/androidTest/cases/run_edit_checks.py --out $env:TEMP\edit-checks
+```
+
+`run_edit_checks.py` runs the engine-edit classes and `ui.SmsImportUiTest` (with
+`-e large 1`, 3,000 more rows), each in its own process. Then come 10 cycles of
+`EngineEditDeathCheck`, which force-stops the app while it's editing and checks the
+store in a new process. A class passes only on its exact `OK (n tests)`, so a lost
+test fails it and the counts in the script's `CLASSES` change with the tests. Its
+output must also hold none of the script's `BAD` marks, because `am instrument` can
+exit zero after a failure. A test skipped by `assumeTrue` still counts in that `OK`,
+so the script runs everything with `-e strict 1`, which makes a phone a failure and
+not a skip. The emulator check is the only `assumeTrue` in `CLASSES`.
+
+It targets `emulator-5584`, or `EDIT_CHECK_SERIAL` if that's set, and refuses a
+serial that isn't `emulator-…`. `--only Class ...` runs some of the classes,
+`--deaths n` or `--no-deaths` changes the kills. Without `--out` the logs go to a
+dated folder beside the script, which git doesn't ignore. From
+`app/src/androidTest/cases`, `python -m unittest test_run_edit_checks` tests the
+script with adb stubbed.
+
+The other classes aren't in the script. Run each by itself, and read the output, not
+the exit code:
+
+```powershell
+adb -s emulator-5584 shell am instrument -w -e class app.urbudget.nativeapp.NativeEngineTest app.urbudget.nativeapp.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+These arguments go with `am instrument`:
+
+| Argument | What it does |
+| --- | --- |
+| `-e quick 1` | Cuts the synthetic budgets to 300 transactions, for a run during development. At full size `EngineEditEquivalenceTest` and `EngineEditUndoTest` took about 24 and 29 minutes in the last whole check. The script doesn't pass it |
+| `-e perf 1` | Runs `EngineEditPerformanceCheck` (30 clear taps at 2,700 and 10,000 transactions, emulator only, result in `edit-perf.txt`) and `EngineEditGateCheck` (30 status taps through `edit_budget` alone at 2,742, result in `edit-gate.txt`), both in the app's external files folder. The first fails its "ratio under 1.5" assertion, because an edit's cost still grows with the budget ([plan](../docs/plans/engine-edits.md#as-built)). The second doesn't insist on an emulator: its budget, "SMS check gate", is local, goes to the Trash afterwards, and the budget that was open is reopened (`-e home <library id>` after a stopped run) |
+| `-e perf 1 -e trace 1` | `EngineEditPerformanceCheck#leaveABudgetOpenForATrace` leaves a real-sized budget open. Install preview over it and take a Perfetto trace: `Tracing.kt` adds `service:<method>`, `repo.*`, `storage.*`, `vm.publish` and `ui.*` sections |
+
+`SyncV2RuntimeTest` isn't in the script either, and a plain `am instrument` of it
+proves nothing: without `-e syncQaOrigin` it's skipped, and a skip reads as a pass,
+`OK (1 test)`. A real run needs a local server, which
+`web/scripts/sync-v2-android-ci.mjs` starts, a debug Rust build, which is what allows
+that server, and cleared app data:
+
+```powershell
+# Repository root. The script installs the two APKs and passes syncQaOrigin.
+npm ci --prefix web
+.\android\gradlew.bat -p android :app:assembleDebug :app:assembleDebugAndroidTest -PandroidAbis=x86_64 -PrustDebug=true
+adb -s emulator-5584 shell pm clear app.urbudget.nativeapp
+$env:ANDROID_SERIAL = "emulator-5584"
+node web/scripts/sync-v2-android-ci.mjs
+```
+
+Each run starts a new server and the app remembers the last one, so a second run
+without `pm clear` is refused. A library left by other classes slows sync past the
+test's waits, and on one with 462 budgets a run never finished
+([follow-ups](../docs/FOLLOW-UPS.md#what-fast-edits-on-android-left)). Build again
+without `-PrustDebug=true` before timing anything. The `sync-lifecycle` job in
+[android-native.yml](../.github/workflows/android-native.yml) runs this test in CI.
 
 ## Verification and remaining external acceptance
 

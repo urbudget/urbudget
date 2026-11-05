@@ -36,6 +36,27 @@ class UncategorizedTest {
         assertFalse(test.needs(tx("checking", -500, null, date = "2026-11-01")))
     }
 
+    /** The store writes `unassigned` from `source` on every read, so a copy without `source` answers the same. */
+    @Test fun aLightCopyAnswersAsTheWholeOneDoes() {
+        fun imported(category: String) = JSONObject().put("category_name", category)
+        assertFalse(test.needs(tx("checking", -500, null).put("source", imported("Inflow: Ready to Assign"))))
+        assertFalse(test.needs(tx("checking", -500, null, unassigned = true).put("hasImportSource", true)))
+        assertTrue(test.needs(tx("checking", -500, null).put("source", imported("Groceries"))))
+        assertTrue(test.needs(tx("checking", -500, null, unassigned = false).put("hasImportSource", true)))
+    }
+
+    /**
+     * The one gap: a bulk move to Unassigned clears the category and writes no `unassigned`, so an
+     * inflow row that had been categorized reads as needing one until the next load writes it. Rust
+     * counts it as income all along. Desktop's window does the same.
+     */
+    @Test fun anInflowRowMovedToUnassignedInBulkNeedsACategoryUntilItsLoaded() {
+        val whole = tx("checking", -500, null).put("source", JSONObject().put("category_name", "Inflow: Ready to Assign"))
+        assertFalse(test.needs(whole))
+        assertTrue(test.needs(tx("checking", -500, null).put("hasImportSource", true)))
+        assertFalse(test.needs(tx("checking", -500, null, unassigned = true).put("hasImportSource", true)))
+    }
+
     @Test fun transfersToTrackingNeedACategoryOnTheBudgetSide() {
         assertTrue(test.needs(tx("checking", -500, null, transfer = "loan")))
         // Seen from the tracking side, money arriving there left the budget.

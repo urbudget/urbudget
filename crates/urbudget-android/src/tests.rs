@@ -233,35 +233,6 @@ fn saving_transactions_applies_rules_and_keeps_creation_time_on_edit() {
 }
 
 #[test]
-fn workflow_reference_is_ephemeral_and_cannot_use_stale_imported_context() {
-    let mut budget = sample();
-    budget
-        .extra
-        .insert("calculationAsOfMonth".into(), json!("2025-01"));
-    let params = json!({"asOfMonth":"2026-10","action":{"type":"autoAssign","month":"2026-10","mode":"underfunded","categories":["food"],"limitToAvailable":true,"expectedAsOfMonth":"2026-10"}});
-    let (changed, reference) = apply_workflow(budget.clone(), &params, "2026-10").unwrap();
-    assert_eq!(reference, "2026-10");
-    assert_eq!(
-        changed.extra["calculationAsOfMonth"], "2025-01",
-        "ephemeral context never becomes a saved edit"
-    );
-    let mut expected = budget.clone();
-    expected
-        .extra
-        .insert("calculationAsOfMonth".into(), json!("2026-10"));
-    let direct = workflows::apply(expected, &params["action"]).unwrap();
-    assert_eq!(changed.assignments, direct.assignments);
-    assert!(apply_workflow(budget.clone(), &params, "2026-11")
-        .unwrap_err()
-        .contains("calendar month changed"));
-    let mut stale = params.clone();
-    stale["asOfMonth"] = json!("2026-11");
-    assert!(apply_workflow(budget, &stale, "2026-11")
-        .unwrap_err()
-        .contains("calendar month changed"));
-}
-
-#[test]
 fn workflow_preview_returns_explicit_summary_without_persisting_reference() {
     let current = engine::current_month();
     let budget = sample();

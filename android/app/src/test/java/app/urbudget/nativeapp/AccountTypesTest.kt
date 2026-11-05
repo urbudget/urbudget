@@ -84,4 +84,21 @@ class AccountTypesTest {
         // 2 is categorized, 4 is income, 5 is in the future, 7 moves money within the budget, 8 and 9 are left unassigned.
         assertEquals(mapOf("cash" to 2, "card" to 1), badges.uncategorized)
     }
+
+    /** The store writes `unassigned` from `source` on every read, so a copy without `source` answers the same. */
+    @Test fun badgesOfALightCopyAreThoseOfTheWholeOne() = runTest {
+        fun budget(inflow: String, spent: String) = JSONObject("""{
+          "accounts":[{"id":"cash","kind":"cash"}],
+          "categories":[{"id":"food","name":"Food"}],
+          "transactions":[
+            {"id":"1","date":"2026-10-01","accountId":"cash","amount":-500,$inflow,
+            {"id":"2","date":"2026-10-02","accountId":"cash","amount":-300,$spent
+          ]}""")
+        val whole = budget(""""source":{"category_name":"Inflow: Ready to Assign"},"splits":[{"categoryId":null,"amount":-500}]}""",
+            """"source":{"category_name":"Food"},"splits":[{"categoryId":null,"amount":-300}]}""")
+        val light = budget(""""hasImportSource":true,"splits":[{"categoryId":null,"unassigned":true,"amount":-500}]}""",
+            """"hasImportSource":true,"splits":[{"categoryId":null,"unassigned":false,"amount":-300}]}""")
+        assertEquals(mapOf("cash" to 1), accountBadges(whole, "2026-10-21").uncategorized)
+        assertEquals(accountBadges(whole, "2026-10-21"), accountBadges(light, "2026-10-21"))
+    }
 }

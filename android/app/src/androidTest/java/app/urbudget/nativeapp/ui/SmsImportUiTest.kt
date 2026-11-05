@@ -2,8 +2,9 @@ package app.urbudget.nativeapp.ui
 
 import android.Manifest
 import android.app.Application
-import android.os.Build
+import android.os.Looper
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.test.*
@@ -16,7 +17,6 @@ import app.urbudget.nativeapp.R
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
-import org.junit.Assume.assumeTrue
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -35,7 +35,7 @@ class SmsImportUiTest {
     private val connection = JSONObject().put("ready", true).put("provider", "anthropic").put("model", "synthetic-test")
 
     @Before fun setup() {
-        assumeTrue("Use an isolated emulator", Build.HARDWARE.contains("ranchu") || Build.HARDWARE.contains("goldfish"))
+        requireEmulator()
         Words.source = ResourceWords(context.resources)
     }
     @After fun clean() {
@@ -58,12 +58,30 @@ class SmsImportUiTest {
             SmsInbox.get(context).configure(identity!!, setOf("SyntheticBank"), 0)
             return vm
         }
-        val fixture = JSONObject(instrumentation.context.assets.open("native-roundtrip.json").bufferedReader().use { it.readText() }).put("name", "$name fixture")
+        val fixture = sized(JSONObject(instrumentation.context.assets.open("native-roundtrip.json").bufferedReader().use { it.readText() })).put("name", "$name fixture")
         instrumentation.runOnMainSync { vm.importBudget(fixture.toString()) }
-        compose.waitUntil(15_000) { vm.state.value.budget?.optString("name") == "$name fixture" }
+        compose.waitUntil(30_000) { vm.state.value.budget?.optString("name") == "$name fixture" }
         identity = vm.state.value.budgetIdentity!!
         SmsInbox.get(context).configure(identity!!, setOf("SyntheticBank"), 0)
         return vm
+    }
+    /**
+     * With `-e large 1`, the same budget with a ledger of a real size behind it. The rows go after the
+     * fixture's own, in years past and for amounts no text here mentions, so no scenario can match one.
+     */
+    private fun sized(budget: JSONObject): JSONObject {
+        if (InstrumentationRegistry.getArguments().getString("large") != "1") return budget
+        val category = budget.rows("categories").first { it.text("paymentAccountId").isBlank() }.text("id")
+        val rows = budget.rows("transactions").toMutableList()
+        val start = java.time.LocalDate.now().minusYears(3)
+        repeat(3_000) { i ->
+            val amount = -(700_000L + i)
+            rows += JSONObject().put("id", "large-$i").put("date", start.minusDays(i % 700L).toString()).put("accountId", "checking").put("payee", "Payee ${i % 40}").put("memo", "")
+                .put("amount", amount).put("status", "cleared").put("transferAccountId", JSONObject.NULL).put("transferStatus", JSONObject.NULL)
+                .put("splits", JSONArray().put(JSONObject().put("categoryId", category).put("amount", amount)))
+                .put("source", JSONObject().put("id", "imported-$i").put("memo", "Representative imported metadata").put("import_id", "YNAB:$amount:$i"))
+        }
+        return budget.put("transactions", JSONArray(rows))
     }
     private fun show(vm: BudgetViewModel, analyzer: SmsAnalyzer) = compose.setContent {
         val state by vm.state.collectAsState()
@@ -613,5 +631,18 @@ class SmsImportUiTest {
         assertTrue(ids.containsAll(smsBankIds("checking", listOf(purchase.id))))
         val last = JSONObject(inbox.state(identity!!, "last")!!)
         assertEquals(1, last.getInt("known")); assertEquals(1, last.getJSONObject("skipped").getInt("code"))
+    }
+
+    // Compose's test clock runs a composition's coroutine on the thread that resumes it, and frames with it. A preview
+    // coming back on a worker drew beside the main thread: aTapThatClearsManyTextsForGoodAsksFirst failed one run in twenty.
+    @Test fun aPreviewComesBackOnTheMainThread() {
+        val vm = fixture("thread")
+        val body = "Purchase USD 12.34 at Synthetic Shop card *1234 on 2026-10-24"
+        val sms = BankSms(smsId("SyntheticBank", 1000, body), "SyntheticBank", 1000, body)
+        val batch = SmsBatch(listOf(sms), syntheticSmsAnalysis(sms))
+        var thread: Thread? = null
+        compose.setContent { LaunchedEffect(Unit) { vm.smsPreview(vm.state.value.budget!!, batch, batch.analysis); thread = Thread.currentThread() } }
+        compose.waitUntil(10_000) { thread != null }
+        assertSame(Looper.getMainLooper().thread, thread)
     }
 }

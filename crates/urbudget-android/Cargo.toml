@@ -20,3 +20,5 @@ jni = "0.21"
 
 [dev-dependencies]
 urbudget-core = { path = "../urbudget-core", features = ["test-support"] }
+rusqlite = "0.38"
+tempfile = "3"

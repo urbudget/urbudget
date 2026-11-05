@@ -327,4 +327,19 @@ mod tests {
         let patch = roundtrip(&before, &after);
         assert_eq!(patch.extras.unwrap().delete, ["obsolete"]);
     }
+
+    #[test]
+    fn the_cases_every_client_shares() {
+        let cases: Vec<Value> =
+            serde_json::from_str(include_str!("../../../shared/fixtures/patch-cases.json")).unwrap();
+        assert!(!cases.is_empty());
+        for case in cases {
+            let name = case["name"].as_str().unwrap();
+            let mut budget: Budget = serde_json::from_value(case["before"].clone()).unwrap();
+            let patch: Patch = serde_json::from_value(case["patch"].clone()).unwrap();
+            patch.apply(&mut budget);
+            let after: Budget = serde_json::from_value(case["after"].clone()).unwrap();
+            assert_eq!(budget, after, "{name}");
+        }
+    }
 }

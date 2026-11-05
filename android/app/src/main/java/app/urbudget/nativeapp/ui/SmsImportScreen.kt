@@ -151,7 +151,8 @@ internal fun SmsImportScreen(budget: JSONObject, vm: BudgetViewModel, setDockHid
 @Composable
 private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, analyzer: SmsAnalyzer, setDockHidden: (Boolean) -> Unit) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+    // Named, because Compose's test clock would otherwise carry on from a `withContext` on the worker that ended it, drawing there.
+    val scope = rememberCoroutineScope { Dispatchers.Main }
     val lifecycle = LocalLifecycleOwner.current
     val page = remember { SmsPage(context.applicationContext, identity, vm, analyzer, scope) }
     LaunchedEffect(page) { page.start() }

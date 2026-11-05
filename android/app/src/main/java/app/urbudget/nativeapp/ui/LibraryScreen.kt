@@ -65,9 +65,9 @@ internal fun LibraryScreen(budget: JSONObject?, vm: BudgetViewModel, importFile:
             withContext(Dispatchers.IO) {
                 val list = (NativeServices.call("library_snapshot") as JSONObject).getJSONArray("entries")
                 val backupList = if (budget != null) NativeServices.call("list_backups") as JSONArray else JSONArray()
-                val snapshot = NativeServices.call("load_budget") as JSONObject
+                val status = NativeServices.call("native_budget_status") as JSONObject
                 val retention = if (budget != null) NativeServices.call("backup_retention") else 0
-                listOf(list, backupList, snapshot, retention)
+                listOf(list, backupList, status, retention)
             }
         }.onSuccess { values ->
             entries = (values[0] as JSONArray).objects(); backups = (values[1] as JSONArray).objects()

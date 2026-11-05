@@ -32,6 +32,7 @@ import app.urbudget.nativeapp.Money
 import app.urbudget.nativeapp.R
 import app.urbudget.nativeapp.Words
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.testTag
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -628,7 +629,7 @@ internal fun CategoryPickerSheet(budget: JSONObject, summary: JSONObject?, month
     UrSheet(onDismiss) {
         SheetHeader(title, onDismiss, null, null)
         SearchField(search, { search = it }, stringResource(R.string.category_search), Modifier.padding(horizontal = Gutter))
-        LazyColumn(Modifier.fillMaxWidth().height(screenHeight() * .66f), contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)) {
+        LazyColumn(Modifier.fillMaxWidth().height(screenHeight() * .66f).testTag("category-picker"), contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)) {
             if (top != null && search.isBlank()) item(key = "top") { top() }
             if (includeUnassigned && search.isBlank()) item(key = "unassigned") {
                 PickerRow(stringResource(R.string.category_unassigned), stringResource(R.string.unassigned_available_to_assign), summary?.optLong("readyToAssign"), currency, selected == Unassigned) { onPick(Unassigned) }
@@ -908,7 +909,10 @@ internal fun NewGroupDialog(budget: JSONObject, vm: BudgetViewModel, close: () -
     retainEditorDraft(vm, "newGroup", budget, JSONObject().put("name", name))
     FormDialog(stringResource(R.string.group_new), close, confirm = stringResource(R.string.common_add), onConfirm = {
         withCurrentBudget(budget, vm) {
-            vm.editBudget { b -> b.put("groupOrder", (b.optJSONArray("groupOrder") ?: JSONArray(existing)).put(name.trim())) }
+            vm.editBudget { b ->
+                val order = b.optJSONArray("groupOrder") ?: JSONArray(existing)
+                b.put("groupOrder", JSONArray((0 until order.length()).map { order.optString(it) } + name.trim()))
+            }
         }
         close()
     }, enabled = name.isNotBlank() && !taken) {

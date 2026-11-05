@@ -5,12 +5,16 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import kotlinx.coroutines.runBlocking
 
 @RunWith(AndroidJUnit4::class)
 class NativeBankImportTest {
+    // prepareBankReview uses the app's words, which the activity loads in a running app.
+    @Before fun words() { Words.source = ResourceWords(InstrumentationRegistry.getInstrumentation().targetContext.resources) }
+
     private fun asset(name: String) = InstrumentationRegistry.getInstrumentation().context.assets.open(name).bufferedReader().use { it.readText() }
     private fun call(method: String, budget: JSONObject, params: JSONObject): Any {
         val response = JSONObject(NativeBridge.invoke(JSONObject().put("version", 1).put("method", method)
