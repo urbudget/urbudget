@@ -30,6 +30,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -40,6 +41,7 @@ import app.urbudget.nativeapp.AssistantController
 import app.urbudget.nativeapp.BudgetViewModel
 import app.urbudget.nativeapp.NativePreferences
 import app.urbudget.nativeapp.NativeServices
+import app.urbudget.nativeapp.PageRequests
 import app.urbudget.nativeapp.BudgetUiState
 import app.urbudget.nativeapp.R
 import androidx.compose.ui.res.stringResource
@@ -149,19 +151,15 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
                     } ?: error(context.getString(R.string.error_file_not_opened))
                 }
             }.onSuccess { json ->
-                if (vm.exportBudget() == null) vm.importBudget(json) else pendingImport = json
+                if (!vm.hasExport()) vm.importBudget(json) else pendingImport = json
             }.onFailure { fileError = it.message ?: context.getString(R.string.backup_open_failed) }
         }
     }
     val saveFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        if (uri != null) {
-            val json = vm.exportBudget()
-            if (json != null) scope.launch {
-                runCatching {
-                    withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri)?.use { it.write(json.toByteArray(Charsets.UTF_8)) } ?: error(context.getString(R.string.backup_not_saved)) }
-                }.onSuccess { snack.showSnackbar(context.getString(R.string.backup_exported)) }.onFailure { fileError = it.message ?: context.getString(R.string.backup_save_failed) }
-            }
-        }
+        // Written after this screen may have gone, so it holds nothing of the screen's.
+        val resolver = context.applicationContext.contentResolver
+        val notSaved = context.getString(R.string.backup_not_saved)
+        if (uri != null) vm.exportBudget { json -> replacing { mode -> resolver.openOutputStream(uri, mode) }?.use { it.write(json.toByteArray(Charsets.UTF_8)) } ?: error(notSaved) }
     }
     fun openEditor(kind: String, record: JSONObject? = null) {
         selected = record; editor = kind
@@ -200,6 +198,9 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
         if (tab != 4) lastTab = tab
         tab = 4; morePage = page; parentPage = ""; dockHidden = false
     }
+    // A notification's page, such as Bank messages when texts need the user.
+    val requested by PageRequests.page.collectAsStateWithLifecycle()
+    LaunchedEffect(requested) { requested?.let { openPage(it); PageRequests.page.value = null } }
     fun openChildPage(page: String) {
         if (page == "Assistant") { assistant = true; return }
         parentPage = morePage; morePage = page
@@ -241,15 +242,14 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     // Captures only stable holders, so it stays the same lambda across state emissions.
     val cloudStatus by NativeServices.syncStatus.collectAsStateWithLifecycle()
     val common: @Composable RowScope.() -> Unit = {
-        if (cloudStatus?.isNull("email") == false) TextButton({ openPage("Account & sync") }) {
-            Text(syncSummary(cloudStatus), maxLines = 1, style = MaterialTheme.typography.labelSmall)
-        }
         RoundIconButton(Icons.AutoMirrored.Outlined.Chat, stringResource(R.string.assistant_title), { assistant = true })
-        OverflowMenu(vm) { openPage("Settings & data") }
+        // Sync's state sits in the menu, so a narrow screen keeps room for the month beside these buttons.
+        OverflowMenu(vm, if (cloudStatus?.isNull("email") == false) syncState(cloudStatus) else null, { openPage("Account & sync") }) { openPage("Settings & data") }
     }
     val budget = state.budget
     val undoLabel = stringResource(R.string.common_undo)
     val toast = remember(snack, scope, vm, undoLabel) { { message: String, undo: Boolean -> snack.toast(scope, vm, message, undo, undoLabel) } }
+    LaunchedEffect(state.exported) { if (state.exported) { vm.exportSaid(); toast(context.getString(R.string.backup_exported), false) } }
     CompositionLocalProvider(LocalToast provides toast) {
     Box(Modifier.fillMaxSize().background(ur.bg).nestedScroll(scrollWatcher)) {
         when {
@@ -265,8 +265,8 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
             budget == null -> Column(Modifier.fillMaxSize()) {
                 TextButton({ morePage = "Budget library" }) { Text(stringResource(R.string.page_library)) }
                 WelcomeScreen(state.busy, { name, currency, sample ->
-                if (vm.exportBudget() != null) pendingCreate = Triple(name, currency, sample) else vm.createBudget(name, currency, sample)
-            }, importFile, if (vm.exportBudget() != null) exportFile else null, if (state.recoveryAvailable) ({ confirmRestore = true }) else null,
+                if (vm.hasExport()) pendingCreate = Triple(name, currency, sample) else vm.createBudget(name, currency, sample)
+            }, importFile, if (vm.hasExport()) exportFile else null, if (state.recoveryAvailable) ({ confirmRestore = true }) else null,
                 { tab = 4; morePage = "Account & sync" })
             }
             tab == 4 && morePage.isNotEmpty() -> pageStates.SaveableStateProvider("page:$morePage") { Column(Modifier.fillMaxSize()) {
@@ -275,7 +275,7 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
                     when (morePage) {
                         "Account & sync" -> CloudScreen(vm)
                         "Bank connections" -> BankConnectionsScreen(budget, vm)
-                        "Bank messages" -> SmsImportScreen(budget, vm)
+                        "Bank messages" -> SmsImportScreen(budget, vm, setDockHidden = { dockHidden = it })
                         "Budget library" -> LibraryScreen(budget, vm, importFile, exportFile)
                         else -> MoreScreen(morePage, ::openChildPage, budget, vm, importFile, exportFile,
                             if (state.recoveryAvailable) ({ confirmRestore = true }) else null) { kind, item -> openEditor(kind, item) }
@@ -354,7 +354,7 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
         }
         "ynabImport" -> YnabImportDialog(budget, vm) { editor = null }
     }
-    val error = state.error ?: fileError
+    val error = state.error ?: fileError ?: state.exportFailure
     if (error != null) AlertDialog(onDismissRequest = { vm.dismissError(); fileError = null }, title = { Text(stringResource(R.string.error_title)) },
         text = { Text(error) }, confirmButton = { TextButton({ vm.dismissError(); fileError = null }) { Text(stringResource(R.string.common_ok)) } }, containerColor = ur.surface)
     if (pendingImport != null) AlertDialog(onDismissRequest = { pendingImport = null }, title = { Text(stringResource(R.string.import_replace_title)) },
@@ -381,7 +381,7 @@ private fun TabDock(tab: Int, onTab: (Int) -> Unit) {
         tabs.forEachIndexed { index, (labelId, icon) ->
             val active = index == tab
             val label = stringResource(labelId)
-            Column(Modifier.weight(if (index == 1) 1.35f else 1f).fillMaxHeight().clip(RoundedCornerShape(28.dp))
+            Column(Modifier.weight(if (index == 1) 1.35f else 1f).fillMaxHeight().clip(RoundedCornerShape(28.dp)).testTag("tab:$index")
                 .background(if (active) ur.tabActive else androidx.compose.ui.graphics.Color.Transparent)
                 .clickable(role = Role.Tab, onClickLabel = label) { onTab(index) },
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
@@ -396,7 +396,7 @@ private fun TabDock(tab: Int, onTab: (Int) -> Unit) {
 @Composable
 private fun AddButton(expanded: Boolean, onClick: () -> Unit) {
     val shape = RoundedCornerShape(26.dp)
-    Row(Modifier.height(52.dp).floating(shape, ur.dark, ur.borderStrong).clip(shape).background(ur.glass).border(0.5.dp, ur.border, shape)
+    Row(Modifier.height(52.dp).floating(shape, ur.dark, ur.borderStrong).clip(shape).background(ur.glass).border(0.5.dp, ur.border, shape).testTag("tx-add")
         .clickable(role = Role.Button, onClickLabel = stringResource(R.string.transaction_add), onClick = onClick).animateContentSize()
         .padding(horizontal = if (expanded) 20.dp else 14.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Outlined.Add, stringResource(R.string.transaction_add), Modifier.size(24.dp), tint = ur.text)
@@ -414,14 +414,27 @@ private fun BusyBar(vm: BudgetViewModel, modifier: Modifier) {
 
 /** The ⋯ menu: undo, redo and Settings. It follows only the undo, redo and busy flags. */
 @Composable
-private fun OverflowMenu(vm: BudgetViewModel, settings: () -> Unit) {
+private fun OverflowMenu(vm: BudgetViewModel, sync: Int?, openSync: () -> Unit, settings: () -> Unit) {
     val state by remember(vm) { vm.state.map { Triple(it.undoAvailable, it.redoAvailable, it.busy) }.distinctUntilChanged() }
         .collectAsStateWithLifecycle(Triple(false, false, false))
     val (undoAvailable, redoAvailable, busy) = state
     var open by remember { mutableStateOf(false) }
+    val alert = sync == R.string.sync_status_paused || sync == R.string.sync_status_attention
     Box {
-        RoundIconButton(Icons.Outlined.MoreHoriz, stringResource(R.string.common_more_actions), { open = true })
+        RoundIconButton(Icons.Outlined.MoreHoriz, stringResource(R.string.common_more_actions), { open = true }, dot = alert)
         DropdownMenu(open, { open = false }, shape = RoundedCornerShape(16.dp), containerColor = ur.surface) {
+            if (sync != null) {
+                val icon = when (sync) {
+                    R.string.sync_status_synced -> Icons.Outlined.CloudDone
+                    R.string.sync_status_device -> Icons.Outlined.Smartphone
+                    R.string.sync_status_waiting -> Icons.Outlined.CloudSync
+                    R.string.sync_status_offline, R.string.sync_status_paused -> Icons.Outlined.CloudOff
+                    else -> Icons.Outlined.SyncProblem
+                }
+                DropdownMenuItem(text = { Text(stringResource(sync)) }, leadingIcon = { Icon(icon, null, tint = if (alert) ur.warning else LocalContentColor.current) },
+                    onClick = { openSync(); open = false })
+                HorizontalDivider(color = ur.border)
+            }
             DropdownMenuItem(text = { Text(stringResource(R.string.common_undo)) }, leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Undo, null) }, enabled = undoAvailable && !busy,
                 onClick = { vm.undo(); open = false })
             DropdownMenuItem(text = { Text(stringResource(R.string.common_redo)) }, leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Redo, null) }, enabled = redoAvailable && !busy,
@@ -502,13 +515,13 @@ private fun WelcomeScreen(busy: Boolean, create: (String, String, Boolean) -> Un
     }
 }
 
-@Composable
-private fun syncSummary(status: JSONObject?): String {
+/** Where sync stands, as the string the menu shows. */
+private fun syncState(status: JSONObject?): Int {
     val sync = status?.optJSONObject("sync")
     val report = sync?.optJSONObject("last")
     val rows = report?.optJSONArray("budgets")
     val states = (0 until (rows?.length() ?: 0)).map { rows?.optJSONObject(it)?.optString("state") }
-    val message = when {
+    return when {
         sync?.optBoolean("unlocked") != true && (sync?.optBoolean("enabled") == true || report != null) -> R.string.sync_status_paused
         states.any { it in setOf("conflict", "error", "update_app", "recovery", "subscription_required", "deletion_conflict") } -> R.string.sync_status_attention
         report?.optString("state") == "offline" -> R.string.sync_status_offline
@@ -518,5 +531,4 @@ private fun syncSummary(status: JSONObject?): String {
         report?.optString("state") == "ok" -> R.string.sync_status_synced
         else -> R.string.sync_status_attention
     }
-    return stringResource(message)
 }

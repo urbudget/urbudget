@@ -32,7 +32,7 @@ object Words {
     operator fun get(@StringRes id: Int, vararg args: Any): String = words().text(id, args)
 
     /** A counted phrase: the count fills `%1$s` and picks the plural form; `more` fills the arguments after it. */
-    fun count(@PluralsRes id: Int, count: Long, vararg more: Any): String = countAs(id, count, count.toString(), *more)
+    fun count(@PluralsRes id: Int, count: Long, vararg more: Any): String = countAs(id, count, Money.count(count), *more)
 
     /** As [count], with the count written as [countText] (grouped, say: "1,234"). */
     fun countAs(@PluralsRes id: Int, count: Long, countText: String, vararg more: Any): String =

@@ -17,8 +17,9 @@ Rust engine** step runs [`scripts/build-rust.sh`](scripts/build-rust.sh), which 
 `cargo build` on [`crates/urbudget-ios`](../crates/urbudget-ios) for the iPhone or the Simulator
 and leaves `liburbudget_ios.a` for the linker. Swift calls its C functions (declared in
 `UrBudget/Bridge/UrBudgetCore.h`) from `Core/NativeCore.swift`: each call sends a JSON request
-and gets a JSON reply, the same requests the Android app sends. The accounting, storage, sync
-and imports all happen in that Rust library (the shared crates); Swift draws the screens. The
+and gets a JSON reply. `BudgetRepository` keeps the whole open budget, changes it through the
+engine and saves it with `save_budget`. The accounting, storage, sync and imports all happen in
+that Rust library (the shared crates); Swift draws the screens. The
 [mobile guide](../docs/MOBILE.md) shows how this fits with Android and desktop.
 
 ## Folders
@@ -73,12 +74,19 @@ SwiftUI screens -> BudgetStore (@Observable) -> BudgetRepository (actor) --+-> u
 ```
 
 - `crates/urbudget-ios` exposes four C functions (`urbudget_invoke`, `urbudget_initialize`,
-  `urbudget_service`, `urbudget_free`). They carry the same versioned JSON requests as Android's JNI
-  adapter. Engine requests are passed straight to `urbudget_android::invoke_json`, so both apps get
-  identical replies. Panics never cross into Swift.
+  `urbudget_service`, `urbudget_free`). They carry versioned JSON, as Android's JNI adapter does.
+  Engine requests are passed straight to `urbudget_android::invoke_json`, so an engine request gets
+  the same reply on both apps. Panics never cross into Swift.
+- This app sends whole budgets: to the engine for each change and preview, then to `save_budget`.
+  Android no longer does. Its edits, previews and totals use the service methods `edit_budget` and
+  `query_budget`, which this app doesn't call. Moving it to them is phase 5 of the
+  [fast edits plan](../docs/plans/engine-edits.md#as-built), not built.
 - Budgets are stored by the shared SQLite `Store` and multi-budget registry in the app's
-  Application Support folder. Every change is a revision-checked commit with undo and redo. If sync
-  or another device committed first, the app reloads and asks you to make the change again.
+  Application Support folder. Every change is a revision-checked commit with undo and redo. A save
+  writes the changed rows, and `recovery.json` only if its commit fails. If sync or another device
+  committed first, the app reloads and makes the change again on that version, once. A second
+  refusal, or an undo that was overtaken, shows the latest version and asks you to make the change
+  again.
 - Credentials use the shared sealed vault, with its key in the iOS Keychain (`security-framework`,
   as on macOS).
 - Swift handles presentation, text formatting and the keypad's arithmetic. It doesn't calculate

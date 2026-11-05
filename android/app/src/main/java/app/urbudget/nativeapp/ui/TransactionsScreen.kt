@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -48,6 +49,7 @@ import app.urbudget.nativeapp.BudgetEditGuard
 import app.urbudget.nativeapp.BudgetViewModel
 import app.urbudget.nativeapp.Money
 import app.urbudget.nativeapp.PayeeInfo
+import app.urbudget.nativeapp.traced
 import app.urbudget.nativeapp.payeeIndex
 import app.urbudget.nativeapp.RegisterIndex
 import app.urbudget.nativeapp.R
@@ -208,10 +210,11 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
     val language = languageKey()
     val flags = remember(budget, language) { flagChoices(budget) }
     // The index for this snapshot, kept in the view model so revisiting the tab doesn't rebuild it.
+    // Its build and matching are suspend only to check for cancellation, so a trace section can hold them: they stay on one thread.
     val cachedIndex = remember { (vm.screenCache["registerIndex"] as? Pair<*, *>)?.takeIf { it.first === budget }?.second as? RegisterIndex }
     val index by produceState(cachedIndex, budget) {
         val hit = (vm.screenCache["registerIndex"] as? Pair<*, *>)?.takeIf { it.first === budget }?.second as? RegisterIndex
-        value = hit ?: withContext(Dispatchers.Default) { RegisterIndex.build(budget) }.also { vm.screenCache["registerIndex"] = budget to it }
+        value = hit ?: withContext(Dispatchers.Default) { traced("ui.registerIndex") { RegisterIndex.build(budget) } }.also { vm.screenCache["registerIndex"] = budget to it }
     }
     val minimumAmount = remember(budget, minimum) { if (minimum.isBlank()) null else runCatching { amountValue(minimum) }.getOrNull() }
     val maximumAmount = remember(budget, maximum) { if (maximum.isBlank()) null else runCatching { amountValue(maximum) }.getOrNull() }
@@ -226,7 +229,7 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
         val prepared = index ?: return@produceState
         // Only a slow recompute shows the bar, so typing doesn't make it flicker.
         val busy = launch { delay(150); computing = true }
-        value = accountFilter to withContext(Dispatchers.Default) { registerLines(prepared.matching(filter), filter.order, accountFilter, budget, today) }
+        value = accountFilter to withContext(Dispatchers.Default) { traced("ui.registerLines") { registerLines(prepared.matching(filter), filter.order, accountFilter, budget, today) } }
         busy.cancel()
         computing = false
     }
@@ -293,7 +296,7 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
                 }
             }
             Box(Modifier.fillMaxWidth().height(2.dp)) { if (computing && lines != null) LinearProgressIndicator(Modifier.matchParentSize(), color = ur.accent, trackColor = ur.bg) }
-            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = DockRoom)) {
+            LazyColumn(Modifier.fillMaxSize().testTag("register"), contentPadding = PaddingValues(bottom = DockRoom)) {
                 if (account != null && summary != null) item(key = "summary", contentType = "summary") {
                     AccountSummaryCard(account, summary.rows("accounts").firstOrNull { it.text("id") == accountFilter }, currency,
                         { reconcile(account) }, { editAccount(account) }, if (account.text("kind") == "credit") ({ payCard(account.text("id")) }) else null,
@@ -414,7 +417,7 @@ internal fun Band(text: String, trailing: String? = null, open: Boolean? = null,
 private fun TransactionLine(line: TxLine, selecting: Boolean, selected: Boolean, open: () -> Unit, select: () -> Unit, toggleCleared: () -> Unit,
                             approve: () -> Unit, jump: () -> Unit) {
     Column(Modifier.background(if (selected) ur.accentSoft else ur.surface).then(if (line.future) Modifier.alpha(.6f) else Modifier)) {
-        Row(Modifier.fillMaxWidth().combinedClickable(onClick = open, onLongClick = select, onClickLabel = if (selecting) stringResource(R.string.selection_select) else stringResource(R.string.transaction_edit))
+        Row(Modifier.fillMaxWidth().testTag("tx:${line.id}").combinedClickable(onClick = open, onLongClick = select, onClickLabel = if (selecting) stringResource(R.string.selection_select) else stringResource(R.string.transaction_edit))
             .padding(start = if (selecting) 8.dp else Gutter, end = 10.dp, top = 11.dp, bottom = 11.dp), verticalAlignment = Alignment.CenterVertically) {
             if (selecting) Box(Modifier.padding(end = 10.dp).size(24.dp).clip(CircleShape).background(if (selected) ur.accent else Color.Transparent)
                 .border(1.5.dp, if (selected) ur.accent else ur.borderStrong, CircleShape), contentAlignment = Alignment.Center) {
@@ -441,14 +444,14 @@ private fun TransactionLine(line: TxLine, selecting: Boolean, selected: Boolean,
                     }
                     if (line.accountName.isNotBlank()) Text(Money.own(line.accountName), Modifier.padding(start = 8.dp), color = ur.muted, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     // Approving sits on this line so amounts stay in one column.
-                    if (!line.approved && !selecting) Box(Modifier.padding(start = 8.dp).size(28.dp).clip(CircleShape).background(ur.accentSoft)
+                    if (!line.approved && !selecting) Box(Modifier.padding(start = 8.dp).size(28.dp).clip(CircleShape).background(ur.accentSoft).testTag("tx-approve:${line.id}")
                         .clickable(role = Role.Button, onClickLabel = stringResource(R.string.common_approve), onClick = approve), contentAlignment = Alignment.Center) {
                         Icon(Icons.Outlined.Check, stringResource(R.string.common_approve), Modifier.size(16.dp), tint = ur.accent)
                     }
                 }
                 if (line.memo.isNotBlank()) Text(Money.own(line.memo), color = ur.muted, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            ClearedMark(line.cleared, Modifier.padding(start = 6.dp), onClick = if (selecting || line.cleared == "reconciled") null else toggleCleared)
+            ClearedMark(line.cleared, Modifier.padding(start = 6.dp).testTag("tx-cleared:${line.id}"), onClick = if (selecting || line.cleared == "reconciled") null else toggleCleared)
         }
         Hairline(start = Gutter)
     }
@@ -725,7 +728,7 @@ internal fun TransactionDialog(original: JSONObject?, budget: JSONObject, initia
             Box(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 6.dp)) {
                 IconButton(cancel, Modifier.align(Alignment.CenterStart)) { Icon(Icons.Outlined.Close, stringResource(R.string.common_cancel), tint = ur.text) }
                 Text(dialogTitle ?: if (original == null) stringResource(R.string.transaction_new) else stringResource(R.string.transaction_edit), Modifier.align(Alignment.Center), style = MaterialTheme.typography.titleMedium, color = ur.text)
-                TextButton(save, Modifier.align(Alignment.CenterEnd), enabled = accounts.isNotEmpty() && !editorState.busy) {
+                TextButton(save, Modifier.align(Alignment.CenterEnd).testTag("tx-save"), enabled = accounts.isNotEmpty() && !editorState.busy) {
                     Text(if (schedule || repeatable && repeat != "never" && date > today) stringResource(R.string.transaction_schedule_action) else stringResource(R.string.common_save), color = if (accounts.isNotEmpty()) ur.accent else ur.muted, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
             }
@@ -780,7 +783,7 @@ internal fun TransactionDialog(original: JSONObject?, budget: JSONObject, initia
                         Icon(Icons.AutoMirrored.Outlined.Notes, null, Modifier.size(22.dp), tint = ur.muted)
                         Box(Modifier.weight(1f).padding(start = 14.dp)) {
                             if (memo.isEmpty()) Text(stringResource(R.string.memo_label), color = ur.muted, style = MaterialTheme.typography.bodyLarge)
-                            BasicTextField(memo, { memo = it }, Modifier.fillMaxWidth(), textStyle = MaterialTheme.typography.bodyLarge.copy(color = ur.text), cursorBrush = SolidColor(ur.accent))
+                            BasicTextField(memo, { memo = it }, Modifier.fillMaxWidth().testTag("tx-memo"), textStyle = MaterialTheme.typography.bodyLarge.copy(color = ur.text), cursorBrush = SolidColor(ur.accent))
                         }
                     }
                     Hairline(start = 52.dp)

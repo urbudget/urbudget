@@ -162,6 +162,7 @@ pub async fn respond(
             let Ok(v) = serde_json::from_str::<Value>(&data) else { continue };
             let index = v["index"].as_u64().unwrap_or(0) as usize;
             match v["type"].as_str().unwrap_or_default() {
+                "message_start" => on_delta(Delta::Started),
                 "content_block_start" => {
                     while blocks.len() <= index {
                         blocks.push(Value::Null);
@@ -179,7 +180,9 @@ pub async fn respond(
                             block["text"] = json!(text);
                         }
                         "input_json_delta" => {
-                            partial.entry(index).or_default().push_str(d["partial_json"].as_str().unwrap_or_default())
+                            let piece = d["partial_json"].as_str().unwrap_or_default();
+                            on_delta(Delta::Arguments(piece));
+                            partial.entry(index).or_default().push_str(piece)
                         }
                         "thinking_delta" => {
                             let piece = d["thinking"].as_str().unwrap_or_default();

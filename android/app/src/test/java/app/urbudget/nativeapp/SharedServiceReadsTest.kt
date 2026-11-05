@@ -41,7 +41,7 @@ class SharedServiceReadsTest {
             assertTrue(read, NativeServicePolicy.independent(read))
             assertTrue(read, NativeServicePolicy.coalesce(read))
         }
-        for (commit in listOf("simplefin_import", "accept_ynab_import", "resolve_ynab", "native_apply_patch", "open_budget", "restore_backup_file")) {
+        for (commit in listOf("simplefin_import", "accept_ynab_import", "resolve_ynab", "native_apply_patch", "edit_budget", "open_budget", "restore_backup_file")) {
             assertFalse(commit, NativeServicePolicy.independent(commit))
             assertFalse(commit, NativeServicePolicy.coalesce(commit))
         }

@@ -15,6 +15,9 @@ export function selectChecks(paths, full = false) {
     } else if (path.startsWith("crates/") && !path.startsWith("crates/urbudget-android/") && !path.startsWith("crates/urbudget-ios/")) {
       // Core, services and their workspace lockfile are built into the desktop app.
       all();
+    } else if (path.startsWith("shared/fixtures/")) {
+      // Read by desktop's shared-cases test and by core's tests alike.
+      all();
     } else if (path.startsWith("desktop/")) {
       checks.frontend = true;
       if (path.startsWith("desktop/src/") || path.startsWith("desktop/public/") ||

@@ -26,6 +26,7 @@ pub async fn dispatch(
 ) -> Result<Value, String> {
     match method {
         "assistant_sms_start" => sms::start(db, assistant, argument(&params, "request")?),
+        "assistant_sms_lanes" => sms::lanes(db, argument(&params, "request")?),
         "assistant_sms_poll" => sms::poll(db, assistant, &argument::<String>(&params, "id")?).await,
         "assistant_sms_cancel" => { sms::cancel(assistant, &argument::<String>(&params, "id")?); Ok(Value::Null) }
         "assistant_status" => encoded(assistant_status(assistant)),

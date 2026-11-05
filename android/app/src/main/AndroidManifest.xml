@@ -5,6 +5,8 @@
     <!-- Opt-in bank SMS import. Requires the SMS-based money management declaration on Play. -->
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <!-- Asked only when the user turns on reading bank texts as they arrive. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <application
         android:allowBackup="false"

@@ -13,6 +13,7 @@ class BudgetEditGuard private constructor(
 ) {
     internal fun verify(current: JSONObject, currentIdentity: String?) {
         require(identity == currentIdentity) { Words[R.string.guard_budget_switched] }
+        if (source === current) return
         require(!whole || source == null || sameJson(source, current)) { STALE }
         for ((collection, keys) in selected) {
             val before = source?.records(collection)?.firstOrNull { row -> matches(row, collection, keys) }
@@ -52,6 +53,7 @@ class BudgetEditGuard private constructor(
 
 /** JSONObject key order is not a revision; arrays and scalar values remain significant. */
 internal fun sameJson(left: Any?, right: Any?): Boolean = when {
+    left === right -> true
     left is JSONObject && right is JSONObject -> {
         val keys = left.keys().asSequence().toSet()
         keys == right.keys().asSequence().toSet() && keys.all { sameJson(left.opt(it), right.opt(it)) }
@@ -66,11 +68,12 @@ internal fun sameJson(left: Any?, right: Any?): Boolean = when {
 
 /** Whole-budget replacement also supports unreadable source bytes and an empty new file. */
 class BudgetReplacementGuard internal constructor(private val source: JSONObject?, private val expected: String?, private val identity: String?) {
-    internal fun verify(current: String?, currentIdentity: String?) {
+    internal fun verify(budget: JSONObject?, bytes: String?, currentIdentity: String?) {
         require(identity == currentIdentity) { Words[R.string.guard_replacement_switched] }
+        if (source != null && source === budget) return
         val before = source ?: expected?.let { runCatching { JSONObject(it) }.getOrNull() }
-        val now = current?.let { runCatching { JSONObject(it) }.getOrNull() }
-        require(if (before != null && now != null) sameJson(before, now) else source == null && expected == current) {
+        val now = budget ?: bytes?.let { runCatching { JSONObject(it) }.getOrNull() }
+        require(if (before != null && now != null) sameJson(before, now) else source == null && budget == null && expected == bytes) {
             Words[R.string.guard_replacement_changed]
         }
     }

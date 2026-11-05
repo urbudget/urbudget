@@ -316,6 +316,25 @@ class ReportMathTest {
         assertNull(report.openingAccounts)
     }
 
+    /** The store writes `unassigned` from `source` on every read, so a copy without `source` answers the same. */
+    @Test fun incomeLinesOfALightCopyAreThoseOfTheWholeOne() {
+        val accounts = listOf(account("chk", "Checking", "cash"))
+        val categories = listOf(Triple("c1", "Food", "Everyday"))
+        val whole = budget(categories, accounts, listOf(
+            transaction("t1", "2026-10-05", "chk", "Employer", split(500000)).put("source", JSONObject().put("category_name", "Inflow: Ready to Assign")),
+            transaction("t2", "2026-10-06", "chk", "Employer", split(-400)).put("source", JSONObject().put("category_name", "Inflow: To be Budgeted")),
+        ))
+        val light = budget(categories, accounts, listOf(
+            transaction("t1", "2026-10-05", "chk", "Employer", split(500000, unassigned = true)).put("hasImportSource", true),
+            transaction("t2", "2026-10-06", "chk", "Employer", split(-400, unassigned = true)).put("hasImportSource", true),
+        ))
+        val a = incomeDrill(whole, parseReportBudget(whole, today), "Employer", "2026-10", "2026-10", emptySet())
+        val b = incomeDrill(light, parseReportBudget(light, today), "Employer", "2026-10", "2026-10", emptySet())
+        assertEquals(setOf("t1", "t2"), a.lines.map { it.transactionId }.toSet())
+        assertEquals(a.lines, b.lines)
+        assertEquals(a.figure, b.figure)
+    }
+
     @Test fun incomeLinesFollowTheBudgetSideOfTransfers() {
         val budget = budget(listOf(Triple("c1", "Food", "Everyday")), listOf(account("chk", "Checking", "cash"), account("inv", "Investments", "tracking")), listOf(
             transaction("t1", "2026-10-05", "chk", "Employer", split(500000, unassigned = true)),

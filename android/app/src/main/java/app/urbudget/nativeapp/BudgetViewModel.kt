@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -23,6 +24,7 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.resume
 
 data class BudgetUiState(
     val loading: Boolean = true,
@@ -38,10 +40,13 @@ data class BudgetUiState(
     val redoAvailable: Boolean = false,
     val budgetIdentity: String? = null,
     val budgetRevision: String? = null,
+    /** How the last export went, until it's been said. A publish leaves these: the refresh after sync closes a budget would take an `error` away unseen. */
+    val exported: Boolean = false,
+    val exportFailure: String? = null,
 )
 
-class BudgetViewModel(application: Application) : AndroidViewModel(application) {
-    private val repository = BudgetRepository(SqliteBudgetStorage(application))
+class BudgetViewModel internal constructor(application: Application, private val repository: BudgetRepository) : AndroidViewModel(application) {
+    constructor(application: Application) : this(application, BudgetRepository(SqliteBudgetStorage(application)))
     private val mutableState = MutableStateFlow(BudgetUiState())
     val state: StateFlow<BudgetUiState> = mutableState.asStateFlow()
     private val operations = Channel<Pair<Boolean, suspend () -> Unit>>(Channel.UNLIMITED)
@@ -61,9 +66,15 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
                 } catch (cancel: CancellationException) {
                     throw cancel
                 } catch (error: Throwable) {
-                    operationFailureEpoch++
-                    retryOperation = operation
+                    // publish clears the error and the retry, so it goes first.
+                    when (error) {
+                        is BudgetConflict -> publish(error.snapshot)
+                        is SavedNotShown -> error.snapshot?.let { publish(it) }
+                    }
+                    // Saved is saved: nothing to retry, and no failure for an editor to keep its draft over.
+                    if (error is SavedNotShown) retryOperation = null else { operationFailureEpoch++; retryOperation = operation }
                     mutableState.update { it.copy(error = error.message ?: Words[R.string.model_action_not_saved], recoveryAvailable = repository.hasRecovery()) }
+                    if (error is SavedNotShown) refresh()
                 } finally {
                     mutableState.update { it.copy(busy = false, loading = false) }
                 }
@@ -79,16 +90,18 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
     fun afterPending(action: () -> Unit) { enqueue(showBusy = false) { withContext(Dispatchers.Main) { action() } } }
 
     private suspend fun publish(snapshot: BudgetSnapshot) = withContext(Dispatchers.Main.immediate) {
-        // Configure before emission so the first frame and amount editors use this
-        // snapshot's preferences. Unchanged loads/month changes reuse the same object.
-        if (snapshot.budget !== mutableState.value.budget) snapshot.budget?.let(Money::configure)
-        retryOperation = null
-        mutableState.update { it.copy(budget = snapshot.budget, summary = snapshot.summary, reports = snapshot.reports,
-            month = snapshot.month, undoAvailable = snapshot.undoAvailable, recoveryAvailable = snapshot.recoveryAvailable, redoAvailable = snapshot.redoAvailable, budgetIdentity = snapshot.identity, budgetRevision = snapshot.revision, error = null, loading = false) }
+        traced("vm.publish") {
+            // Configure before emission so the first frame and amount editors use this
+            // snapshot's preferences. Unchanged loads/month changes reuse the same object.
+            if (snapshot.budget !== mutableState.value.budget) snapshot.budget?.let(Money::configure)
+            retryOperation = null
+            mutableState.update { it.copy(budget = snapshot.budget, summary = snapshot.summary, reports = snapshot.reports,
+                month = snapshot.month, undoAvailable = snapshot.undoAvailable, recoveryAvailable = snapshot.recoveryAvailable, redoAvailable = snapshot.redoAvailable, budgetIdentity = snapshot.identity, budgetRevision = snapshot.revision, error = null, loading = false) }
+        }
     }
 
     fun notifyError(message: String) { mutableState.update { it.copy(error = message) } }
-    fun dismissError() { mutableState.update { it.copy(error = null) } }
+    fun dismissError() { mutableState.update { it.copy(error = null, exportFailure = null) } }
     fun retry() { retryOperation?.let { enqueue(operation = it) } ?: refresh() }
     fun createBudget(name: String, currency: String, sample: Boolean = false, localOnly: Boolean = sample) = enqueue { publish(repository.create(name, currency, sample, localOnly)) }
     fun importBudget(json: String) {
@@ -96,7 +109,23 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
         val guard = repository.replacementGuard(shown.budget, shown.budgetIdentity)
         enqueue { publish(repository.importBudget(json, guard)) }
     }
-    fun exportBudget(): String? = repository.exportBudget()
+    fun hasExport(): Boolean = repository.hasExport()
+    /**
+     * Writes the whole budget with `write`, after any queued edits, and leaves how it went in the state.
+     * The picker has made the file by now. So this can't run in a screen's scope, where a rotation would
+     * leave it empty with nothing said, and it runs off the queue, so a slow file provider holds up no edit.
+     */
+    fun exportBudget(write: (String) -> Unit) = enqueue {
+        // Null when sync has closed the budget and the refresh that says so hasn't come yet.
+        val read = runCatching { repository.exportBudget() ?: error(Words[R.string.backup_save_failed]) }
+        viewModelScope.launch(Dispatchers.IO) {
+            val failure = read.mapCatching(write).exceptionOrNull()
+            mutableState.update { it.copy(exported = failure == null, exportFailure = failure?.let { failed -> failed.message ?: Words[R.string.backup_save_failed] }) }
+        }
+    }
+    fun exportSaid() { mutableState.update { it.copy(exported = false) } }
+    /** Blocks on the engine: for tests and workers. */
+    internal fun exportBudget(): String? = repository.exportBudget()
     fun selectMonth(month: String) = enqueue { publish(repository.selectMonth(month)) }
     private var consumedSyncReport: String? = null
     @Synchronized fun refreshAfterSync(report: JSONObject) {
@@ -133,7 +162,7 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
 
     fun service(method: String, params: JSONObject = JSONObject(), onError: (String) -> Unit = { notifyError(it) }, callback: (Any?) -> Unit = {}): Job {
         val shown = state.value
-        val guard = if (method in setOf("simplefin_import", "sync_ynab", "accept_ynab_import", "resolve_ynab", "assistant_apply", "native_apply_patch") && shown.budget != null) BudgetEditGuard.whole(shown.budget, shown.budgetIdentity) else null
+        val guard = if (method in setOf("simplefin_import", "sync_ynab", "accept_ynab_import", "resolve_ynab", "assistant_apply") && shown.budget != null) BudgetEditGuard.whole(shown.budget, shown.budgetIdentity) else null
         val independent = NativeServicePolicy.independent(method)
         suspend fun perform(active: () -> Boolean, canInvoke: () -> Boolean = active) {
             var invoked = false
@@ -192,7 +221,6 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
         return completion
     }
 
-    fun applyServicePatch(patch: JSONObject) = service("native_apply_patch", JSONObject().put("patch", patch))
     fun runCommand(method: String, params: JSONObject = JSONObject(), onSuccess: () -> Unit = {}) {
         val shown = state.value
         // Command parameters are read-only after submission; guards are built from the captured
@@ -211,24 +239,37 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
         // Capture published data before scheduling; query work never occupies the write queue.
         // Parameters and published budgets are read-only after passing them to this method.
         return viewModelScope.launch(Dispatchers.Default) {
-            queryWorkers.withPermit {
-                try {
-                    ensureActive()
-                    val value = repository.querySnapshot(method, params, shown.budget)
-                    ensureActive()
-                    val objectValue = value as? JSONObject ?: JSONObject().put("items", value ?: JSONObject.NULL)
-                    withContext(Dispatchers.Main) {
-                        if ((anyRevision || state.value.budget === shown.budget) && state.value.budgetIdentity == shown.budgetIdentity) callback(objectValue)
-                        else onError(Words[R.string.model_changed_preview])
-                    }
-                } catch (cancel: CancellationException) {
-                    throw cancel
-                } catch (error: Exception) {
-                    val message = error.message ?: Words[R.string.model_engine_failed]
-                    withContext(Dispatchers.Main) { onError(message) }
+            suspend fun ask(at: BudgetUiState): Any? = queryWorkers.withPermit {
+                ensureActive()
+                repository.querySnapshot(method, params, at.budget, if (anyRevision) null else at.budgetRevision)
+            }
+            try {
+                var used = shown
+                val value = try { ask(shown) } catch (moved: StaleBudget) {
+                    // Sync committed and hasn't reported yet. Catch up now, as an edit does, with no permit held.
+                    refresh()
+                    queueDrained()
+                    used = state.value
+                    if (used.budgetIdentity != shown.budgetIdentity) throw moved
+                    ask(used)
                 }
+                ensureActive()
+                val objectValue = value as? JSONObject ?: JSONObject().put("items", value ?: JSONObject.NULL)
+                withContext(Dispatchers.Main) {
+                    if ((anyRevision || state.value.budget === used.budget) && state.value.budgetIdentity == shown.budgetIdentity) callback(objectValue)
+                    else onError(Words[R.string.model_changed_preview])
+                }
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (error: Exception) {
+                val message = error.message ?: Words[R.string.model_engine_failed]
+                withContext(Dispatchers.Main) { onError(message) }
             }
         }
+    }
+
+    private suspend fun queueDrained() = suspendCancellableCoroutine<Unit> { done ->
+        afterPending { if (done.isActive) done.resume(Unit) }
     }
 
     fun upsert(collection: String, record: JSONObject) {
@@ -280,11 +321,26 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
                 .put("openingBalance", openingBalance).put("archived", existing?.optBoolean("archived") ?: false)
             if (accountType != null) record.put("accountType", accountType)
             budget.upsertRecord("accounts", record)
-            if (kind == "credit" && budget.records("categories").none { it.optString("paymentAccountId") == recordId }) {
-                budget.upsertRecord("categories", JSONObject().put("id", UUID.randomUUID().toString()).put("name", name.trim())
-                    .put("group", "Credit Card Payments").put("target", 0).put("paymentAccountId", recordId))
-            }
+            paymentCategory(budget, record)
         }) }
+    }
+
+    /** New accounts as one change, which one Undo takes back: those set up from bank texts. */
+    fun saveAccounts(records: List<JSONObject>) {
+        val frozen = records.map(JSONObject::toString)
+        val shown = state.value
+        val guard = BudgetEditGuard.recordSet(shown.budget, shown.budgetIdentity, "accounts", records.map { it.optString("id") })
+        enqueue { publish(repository.edit(guard) { budget ->
+            frozen.map(::JSONObject).forEach { record -> budget.upsertRecord("accounts", record.put("archived", false)); paymentCategory(budget, record) }
+        }) }
+    }
+
+    /** A credit card's payment category, made with the card unless it has one. */
+    private fun paymentCategory(budget: JSONObject, account: JSONObject) {
+        val id = account.optString("id")
+        if (account.optString("kind") != "credit" || budget.records("categories").any { it.optString("paymentAccountId") == id }) return
+        budget.upsertRecord("categories", JSONObject().put("id", UUID.randomUUID().toString()).put("name", account.optString("name").trim())
+            .put("group", "Credit Card Payments").put("target", 0).put("paymentAccountId", id))
     }
 
     fun saveCategory(id: String? = null, name: String, group: String) = upsert("categories", JSONObject()
@@ -298,8 +354,11 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
         val frozen = target?.toString()
         enqueue { publish(repository.edit(guard) { budget ->
             val record = budget.records("categories").firstOrNull { it.optString("id") == category } ?: error(Words[R.string.model_category_not_found])
-            if (frozen == null) { record.remove("goal"); record.put("target", 0) }
-            else { val goal = JSONObject(frozen); record.put("goal", goal); goal.opt("goal_amount")?.let { record.put("target", it) } }
+            // A copy, and not `upsertRecord`: that merges, and so can't remove `goal`.
+            val next = JSONObject(record.toString())
+            if (frozen == null) { next.remove("goal"); next.put("target", 0) }
+            else { val goal = JSONObject(frozen); next.put("goal", goal); goal.opt("goal_amount")?.let { next.put("target", it) } }
+            budget.put("categories", JSONArray(budget.records("categories").map { if (it === record) next else it }))
         }) }
     }
 

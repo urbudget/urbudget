@@ -54,6 +54,7 @@ android {
     sourceSets["main"].kotlin.srcDir(rootProject.file("../shared/android/src/main/java"))
     sourceSets["test"].kotlin.srcDir(rootProject.file("../shared/android/src/test/java"))
     sourceSets["androidTest"].assets.srcDir(rootProject.file("../shared/fixtures"))
+    sourceSets["test"].resources.srcDir(rootProject.file("../shared/fixtures"))
     packaging.resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     testOptions.unitTests.isReturnDefaultValues = true
 }

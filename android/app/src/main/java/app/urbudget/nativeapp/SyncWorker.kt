@@ -45,7 +45,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             if (!NativePreferences(context).automaticSync) { configure(context, false); return }
             if (configured != true) return
             val wakes = context.getSharedPreferences("sync-wakes", Context.MODE_PRIVATE)
-            wakes.edit().putLong("generation", wakes.getLong("generation", 0) + 1).commit()
+            traced("sync.wakeCommit") { wakes.edit().putLong("generation", wakes.getLong("generation", 0) + 1).commit() }
             WorkManager.getInstance(context).enqueueUniqueWork("account-sync", ExistingWorkPolicy.KEEP,
                 OneTimeWorkRequestBuilder<SyncWorker>().setConstraints(network).setInitialDelay(2, TimeUnit.SECONDS)
                     .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build())

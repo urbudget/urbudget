@@ -160,6 +160,7 @@ async fn stream(
             let Ok(v) = serde_json::from_str::<Value>(&data) else { continue };
             let kind = v["type"].as_str().unwrap_or(event.as_str()).to_owned();
             match kind.as_str() {
+                "response.created" => on_delta(Delta::Started),
                 "response.output_text.delta" => {
                     if let Some(d) = v["delta"].as_str() {
                         on_delta(Delta::Text(d));
@@ -171,6 +172,11 @@ async fn stream(
                     }
                 }
                 "response.reasoning_summary_part.added" => on_delta(Delta::Thinking("\n\n")),
+                "response.function_call_arguments.delta" => {
+                    if let Some(d) = v["delta"].as_str() {
+                        on_delta(Delta::Arguments(d));
+                    }
+                }
                 "response.output_item.done" => {
                     let item = &v["item"];
                     match item["type"].as_str() {

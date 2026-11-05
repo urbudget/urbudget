@@ -18,10 +18,12 @@ This folder is an ordinary Gradle project. Before Gradle compiles any Kotlin, th
 on [`crates/urbudget-android`](../crates/urbudget-android) once for each phone architecture
 (arm64-v8a, x86_64) with the Android NDK's compiler, and packs the resulting
 `liburbudget_android.so` into the app. Kotlin calls it through JNI in
-`NativeBridge.kt`: each call sends a JSON request and gets a JSON reply, the same requests
-the iOS app sends. The accounting, storage, sync and imports all happen in that Rust library
-(the shared crates); Kotlin draws the screens. The [mobile guide](../docs/MOBILE.md) shows
-how this fits with iOS and desktop.
+`NativeBridge.kt`: each call sends a JSON request and gets a JSON reply. Edits, previews and
+totals send no budget: they run on the store's copy through `edit_budget` and `query_budget`
+([below](#storage-privacy-and-concurrency)). The iOS app doesn't use those yet, so the two apps
+no longer send the same requests. The accounting, storage, sync and imports all happen in that
+Rust library (the shared crates); Kotlin draws the screens. The
+[mobile guide](../docs/MOBILE.md) shows how this fits with iOS and desktop.
 
 ## Folders
 
@@ -32,11 +34,11 @@ Android Studio shows them as one.
 | Folder | What's in it |
 | --- | --- |
 | `app/build.gradle.kts` | The app's version, dependencies, signing and the Rust build task |
-| `app/src/main/java/app/urbudget/nativeapp` | `MainActivity.kt`, the engine bridge (`NativeBridge.kt`), `BudgetRepository` and `BudgetViewModel`, money, register and report helpers |
+| `app/src/main/java/app/urbudget/nativeapp` | `MainActivity.kt`, the engine bridge (`NativeBridge.kt`), `BudgetRepository`, `BudgetPatch` and `BudgetViewModel`, money, register and report helpers |
 | `app/src/main/java/app/urbudget/nativeapp/ui` | Every screen and shared control; `App.kt` is the root, `Theme.kt` and `Design.kt` the look |
 | `app/src/main/res`, `AndroidManifest.xml` | Icon, styles, file sharing and backup rules |
 | `app/src/test` | Unit tests that run on the computer |
-| `app/src/androidTest` | Tests that run on an emulator |
+| `app/src/androidTest` | Tests that run on an emulator ([how](#instrumented-checks)); `cases/` holds their scripts |
 | `app/src/preview` | The optimized, debug-signed `preview` build's manifest |
 | [`../shared/android`](../shared/android) | Android Keystore keeper and Play billing client, with their tests |
 | [`../crates/urbudget-android`](../crates/urbudget-android) | The Rust side of the JNI bridge |
@@ -102,73 +104,282 @@ intents and Print / Save as PDF.
 
 ## Bank SMS import
 
-**More → Bank messages** (also **Settings & data → Imports → Bank messages**) is an
-opt-in, on-device SMS inbox. After the disclosure and Android permission prompts,
-choose one or several sender addresses from the phone's SMS inbox (up to 50). This
-includes alphanumeric bank sender IDs and phone numbers; it does not need contacts
-access. Choose new messages only, or the past 30/90 days plus new messages. The
-history choice applies to newly added senders. Existing choices keep their start
-date. RCS and MMS are not read.
+**More → Bank messages** (also **Settings & data → Imports → Bank messages**) turns the
+texts a bank sends to this phone into transactions. It is opt-in: after the disclosure
+and Android's permission prompts, choose the senders your bank texts from (up to 50).
+The picker lists names and short codes first, by how many messages each has sent (SMS
+and MMS together), already chosen ones first; a numeric short code shows its latest
+message to recognise it, while named senders and people's phone numbers (listed apart)
+are never previewed. No contacts access is needed. The first choice of
+senders also picks where collecting starts: new messages only (from that moment), a day
+(from its start, so "Since 3 Oct" holds all of 3 Oct), or everything on the phone. A
+budget with no accounts starts two months back, and the picker says the texts will set its
+accounts up (below); one whose accounts have no transactions starts with new messages only,
+since its balances were entered as they are now and already include earlier texts; one with
+history starts 30 days back, but not before its first transaction. **Collect messages from**
+changes it at any time for every sender: an earlier start brings older texts in on the
+next scan, a later one takes earlier texts out of what's waiting and out of the open
+review. Changing senders keeps the review's items from the senders that stay.
 
-The system SMS receiver captures selected senders while the app is closed. Opening
-Bank messages or using Refresh catches up from the system inbox after missed
-broadcasts/restarts. Messages remain local in a separate SQLite inbox, scoped to
-the current budget's database path. No capture changes a budget or calls the
-assistant/network. Capture does not interpret message text; users exclude verification
-codes and personal messages from the raw preview before sending. Removing a sender
-removes its pending messages; **Stop and clear messages** removes that budget's
-local inbox and disables its collection. Neither action changes Android's messages
-or imported transactions. Deleted budget paths stop collecting when next encountered.
+Its row says where collecting has got to ("newest handled 2 Nov 2026, 07:47": the newest
+text the budget finished with, kept on this phone; older texts can still wait when the start
+moved earlier), and the dialog lists that and,
+from the budget itself so it holds on another phone or after a reinstall, each account's
+last day of bank data (transactions from texts or files) and of reconciling. Each has a
+one-tap start: right after the last text handled (nothing read twice, nothing missed), or
+from that day. The dialog also says what a choice does, counted without reading any text:
+"Brings in about 207 texts · 2 requests · about 5 min", or "Takes out 5 waiting texts".
+Minutes come from this budget's last request of 100 texts or more. A start that brings in
+more than one request's worth is asked first, since reading begins as soon as it's saved;
+the first choice of senders, the sending notice and a long wait to read show the same size.
 
-Select up to 50 messages (120 KB maximum) and choose **Analyze selected**. A separate
-notice identifies the configured assistant provider/model and asks permission to
-send those full messages, account/category names, relevant payee category history
-and explicitly remembered sender/card mappings. No message is preselected. Provider
-retention settings apply. The dedicated analysis session has only `payee_history`
-and `submit_sms_analysis` tools, no writes, browsing, attachments or ordinary chat
-history. Requests time out after five minutes, can be cancelled, and expire from
-memory after ten minutes. Budget/provider changes prevent stale requests from being
-accepted. Failed or interrupted analysis leaves messages available for retry.
+Texts come from both of Android's stores. Most arrive as SMS, but a phone moved from an
+iPhone keeps that history as MMS (on the test Fold, 2,858 of a bank's 2,913 texts), so
+the scan also reads text-only MMS from each chosen sender's one-to-one conversation;
+MMS with pictures or files, and RCS chats (which Android keeps private to the messaging
+app), aren't read. **On this phone** shows, per sender, how many texts the phone holds
+since collecting starts (SMS and MMS), the first and latest dates, and whether all were
+collected, so coverage can be checked against an export.
 
-The model accounts for every source exactly once as a transaction, grouped question,
-pending event or excluded message. It quotes source evidence and prepares multiple
-accounts in one batch. Missing account mappings or billed amounts in the budget
-currency require answers; exchange rates are not guessed. Users can answer grouped
-questions, explicitly remember a sender plus literal card reference, give a batch
-instruction, or edit proposed fields. Updating analysis asks for sending consent
-again. Reviews survive screen/process recreation in the private inbox; discard or
-finish removes the draft. No regex bank parser is used. Deterministic core checks
-validate exact money, dates, references, evidence and complete source coverage.
+The system SMS receiver captures selected senders while the app is closed, and opening
+the page catches up from the system stores after missed broadcasts or restarts, saving a
+scan in one transaction. Messages stay in a separate local SQLite inbox scoped to the
+budget's database path; a review, which can hold a phone's whole history, is a private
+file beside it. Capture never interprets text, changes a budget or calls the network.
+Removing a sender removes its waiting messages; **Stop and clear messages** removes the
+budget's inbox, review, remembered cards, senders, sending permission and background
+reading. Neither changes Android's messages or transactions already added.
 
-Review selected uses the existing bank import engine to add, match or skip rows.
-The `smsBatchApply` command commits all accounts once through the normal budget revision guard and
-undo/save path. SMS is not settlement evidence: new entries are uncleared, and
-matching preserves existing clearing/reconciliation states, including transfer
-sides. A stable sender/message-timestamp/body fingerprint is carried as the import
-ID, including after manual corrections. All grouped source fingerprints are also
-recorded in the budget to prevent reimport after reassignment to another account.
-Raw bodies are not stored in budget metadata or normal assistant conversations.
-Inbox text is erased after an acknowledged review or dismissal, with a local
-fingerprint retained to prevent re-queuing. Questions and pending events remain.
-**Stop and clear** also deletes saved drafts and remembered mappings. If
-capture or acknowledgement is interrupted, repeat import review detects existing
-import IDs. The screen pages pending messages in batches of 500.
+The page is built around what needs the user. The first time, a notice names the
+assistant and what is sent (the texts, account and category names, payee category
+history) and asks once per provider and model; permission given before reading became
+automatic is asked again. With it, opening the page reads what's waiting, oldest first,
+into one review; each request carries 200 texts, and the review is saved after every
+request, so **Stop**, or a request that fails, keeps what's been read and the rest wait.
+Readings continue when the page closes. Texts that arrive while a review is open are read
+into it. **Read new texts as they arrive** (off by default) does the same in the
+background (`SmsWorker`) for the open budget soon after a text arrives: texts that are
+only codes and alerts leave without a word, and anything about money waits in the
+review, counted in a notification that opens the page (`POST_NOTIFICATIONS` is asked
+when it's turned on). The waiting texts themselves are folded below; **Choose** reads or
+dismisses a selection. Provider retention settings apply.
 
-The manifest requests only `READ_SMS` and `RECEIVE_SMS`, not default-SMS status or
-permission to send/change messages. **Before distributing this build through
+The analysis session (`assistant/sms.rs`) has only `payee_history` and
+`submit_sms_analysis`: no writes, browsing, attachments or chat history. It times out
+after five minutes, can be cancelled and expires from memory after ten. The model gets
+the texts numbered, as `[number, sender, received, text]`, never the phone's ids, and
+writes out only the money: an item per transaction, hold or unclear text, with a short
+note in the app's language, a quote copied from its text, and the transaction's date,
+signed amount in the budget's currency (or none for a foreign amount the text doesn't
+convert), written currency and amount, cleaned payee, kind, the card or account
+reference copied from the text, and an optional category. Every other text is just its
+number under a reason (`code`, `security`, `balance`, `declined`, `rewards`,
+`marketing`, `other`). On real bank texts that's about a third of writing every text
+out. The service maps numbers back to ids, places each quote as evidence, and rejects a
+reply that misses or repeats a text; the core (`sms_import.rs`) validates the rest:
+exact money, dates, references found in the texts, quotes, and every text accounted for
+once. Any account id the model supplies is discarded; it may only name a transfer's other
+account from the account list (below), which the phone resolves. `payee_history` follows a payee rule
+to the renamed payee's history, so "S136 M" finds the user's categories for "Tamimi", and
+finds the user's payee a bank's name holds ("MASHAR E" is their "Mashar").
+
+The model also gets the user's payees, the 300 used most recently, each with the category
+they usually give it, and the bank's names they renamed for these senders, so it writes the
+user's spelling and category; for a new merchant whose business is clear it picks the likely
+category and marks it to check. A code text the phone settled is sent along with the payment
+that follows it (same sender, within fifteen minutes, the same amount), its code hidden: a
+bank often names the biller only there ("مفوتر: زين" before a "Bill Payment" of SAR 299).
+It also gets the user's transfer routes over the last year (from, to, how often, the last
+date and amount), so it can tell a transfer from a payment and, when a text describes the
+other account without digits the phone can match ("your term deposit", a card payment
+that names only the card), name it from the account list (`otherAccount`); the service
+sends back a name that isn't one of the user's open accounts.
+
+**Templates.** As the assistant reads, it writes a template for each format it sees: the
+text's lines with the bank's fixed words and typed slots (`{amount}`, `{currency}`, `{ref}`,
+`{payee}`, `{date:dd/mm/yy}` …), and what the format means (money in or out and its kind, or a
+reason to skip). Core `sms_templates.rs` compiles templates itself (no regular expressions), so
+one can't hang or match everything, and keeps one only when replaying it on the batch reads
+every text it matches exactly as the assistant's items do. Templates and the payees learned
+from the bank's names are kept per budget and sender in the inbox database. Next time, texts
+in a known format are read on the phone first and sent in a `review` list with that reading;
+the assistant answers only with corrections (silence confirms) and reads the rest (`read`) in
+full, writing templates for new formats and rewriting one its corrections show is wrong.
+Templates read banks' own ways of writing: an amount grouped and pointed either way
+("1,234.56", "1.234,56", "12,50", "1'234", "1 249,00", "1,23,456.78"; before three digits a
+separator groups, "Rp 150.000", except a point in a currency with three decimals, "KWD 1.250"),
+digits in any script (Arabic-Indic "١٢٠٫٥٠", Persian, Devanagari, Bengali, Thai, full-width
+"１，５００"), a currency as a code or a mark ("$", "£", "€", "Rs.", "₹", "円", "원", "R",
+"Ksh", "ريال", "جنيه"; a mark several currencies share is the budget's when it's one of them,
+and a currency given again beside a balance isn't the amount's), a date in any order with
+the month as a number or a name, in characters ("11月02日") or with no separator ("02Nov"),
+with or without a year (one without is the year that puts it on or before the day the text
+came; a Thai Buddhist-era year, "69" for 2569, is turned into ours, and any other year far
+from the text's is left to the assistant), and a time with AM or PM. Free text may end at a
+space before a slot ("セブンイレブン １，５００円"), tried at a bounded number of places so a
+template still can't make reading hang. A reading reports each template the replay check
+drops and why. The same alert sent twice (one sender, the same words, within two minutes)
+is one item, whatever the assistant answered. The code filter knows one-time codes in English, Arabic, Spanish, French,
+German, Italian, Portuguese, Turkish and Indonesian, with the code before or after its word.
+The assistant's own examples come from several countries' banks, not one.
+A template's payee is the one learned for the bank's name, else the user's payee the name
+surely is (theirs followed by a letter or two or a branch number: "MASHAR E", "S136 M"), with
+its category. Every template counts its rows filled, confirmed and corrected, and the user's
+edits to them; a changed payee or category doesn't count against it (it's the user's name for
+the bank's, learned for the next text, not the format misreading);
+a row's editor says how often its format was confirmed, and settings list the **Learned
+formats** by sender with an example text and how each is doing, to forget one or all.
+Junk stays on the phone: a code the filter in `sms_templates.rs` recognises, or a text in a
+skip format (rewards, a security alert) the assistant has confirmed three times over two
+requests with no correction; one in 50 of those is still reviewed as an audit, and any
+correction takes the trust away. Requests are sized by lane (`assistant_sms_lanes`): up to
+200 read in full and 400 reviewed, with any junk, in one request of up to 1,000 texts. A
+budget's first request, before it has learned any format, reads 60 in full: 200 of a phone's
+real texts read in full didn't come back within the session's five minutes, and what the first
+request learns makes the next ones mostly reviews.
+A format rewritten three times in a month, or unused for 180 days, retires; a sender whose
+recent texts are suddenly mostly new formats is pointed out in the formats list. The
+assistant stays in the loop for every text but junk: templates make its work a review.
+
+The phone matches each reference to an account: a card remembered for that sender,
+otherwise the one open account whose name carries the card's digits ("4417" is "Visa
+4417"), otherwise the only open account, unless the review names two or more cards the
+budget doesn't know: then each is set up instead. A text that names no card (a mobile
+wallet's) goes to the account chosen for its sender's texts that name none. A transfer's other account is, in order: the
+account its other reference names; the other side of the one transfer of that money the
+budget already has within five days (the card payment entered from the current account);
+for a text naming none, the account the user chose for that card's earlier ones; the one
+they chose for texts in its format; the account the assistant named; and for a text naming none, the account this one's money
+moved with that way in nearly all of its last ten transfers (at least three: what pays the
+card). The last two say **Check the other account**. Money to or from a person the user
+once turned into a transfer (their own account at another bank, which the bank names by
+the holder) is a transfer with that account from then on. Then it settles what changes nothing: a text
+whose transaction is already in the budget (one candidate from the bank import engine in
+the same account on the same day, or the same transfer entered from its other side, not
+already claimed by another text) is matched, two texts about one transfer, one from each
+account, read as two items are one transfer (the later says "The other side of a transfer
+already here"), and texts where no money moved are cleared. When that's everything, the page finishes by
+itself and says what it handled ("Checked 11:38 · 2 already in your budget · 3 codes").
+Otherwise it counts what needs the user, and the review is a page of transactions:
+
+- **Set up your accounts** (in a budget with accounts, **Cards and accounts to set up**):
+  every card and account the texts name that no account matches, once per sender and
+  digits, whether its texts are on it or a transfer names it as the other side (the savings
+  a transfer went to), and a sender whose texts name none when there's nowhere to put them.
+  Numbers only transfers name are one account when the words by them name the same account
+  but for the first ("to/from your deposit account no."), or texts of one shape do: a bank
+  that numbers each term deposit afresh is one account, not one per placement.
+  Each row says what its texts are (how many, a few payees) and suggests what to do,
+  `smsSetupSuggestions` in `SmsSetup.kt`: an account named for the sender, the card's network
+  or the type, and its last digits ("ANB Visa 4512"), of the type the words by its digits
+  say in any of the reading's languages, most of its texts deciding (credit card, savings, a
+  wallet, a debit card, an account; a card that receives payments, or says nothing more of
+  itself, is a credit card). A debit card (debit, mada, ATM) is suggested as **Part of** its
+  sender's current account (one being set up whose own texts are on it, the main one when it
+  has three times the texts of any other, or one already in the budget under the sender's
+  name), since the card and the account are the same money and two accounts would count it
+  twice; a credit card never is. A number only transfers name that the texts don't call the
+  user's ("your …") or say what kind of account it is ("To: 6902***") is suggested as not
+  tracked: it's more often someone else's. A new account's balance before the texts is worked out from them: the balance
+  the latest text about it gives after its money moved (the reading's `balance`, never a
+  limit or the credit left), less what the review adds to it up to that text, so after
+  adding it's the bank's as of that text; a credit card starts at nothing owed, since its
+  texts usually give the credit left, and with no balance in its texts an account starts at
+  zero, saying so. Each row can instead be made with another name, type or balance (tap
+  it), be part of an open account or one being made, or not be tracked: its texts are
+  cleared and remembered so (Remembered cards says "Not added"), and transfers to it become
+  spending or income. **Set up 3 accounts** makes them in one change (one Undo) with a
+  credit card's payment category, remembers every card with its account, and their rows
+  move to Ready to add; with nothing ready yet it's the page's button, in place of Add.
+  Answers are kept with the review.
+- **Needs a choice**: transfers whose other account the phone can't tell get one choice per
+  account and kind of transfer (the sender's texts about one account that say the same of
+  it: a card's payments, placements into term deposits the bank numbers afresh each time),
+  remembered by default for the sender's next texts by the other account they all name, the
+  card whose texts name none, and the formats that read them (Remembered cards lists it as
+  the other side of the card's or format's transfers), or **Don't add these** for this review. A foreign amount is typed in its row; a
+  message the assistant couldn't read is entered in the transaction editor; any of these
+  rows can be dropped (**Don't add**, **Dismiss**). A transfer's row shows the way the money
+  went ("Checking → Visa" for a card payment). These stay in the review, as they were read, until
+  answered: adding the rest doesn't send them to the assistant again. A card, or a
+  transfer's other side, that the budget has no account for (a new CD) gets one from
+  the review (**New account…**), with its balance from before these texts; its digits are
+  remembered, and nothing in it is held back as already in a starting balance.
+- **Ready to add**, ticked by default, and **Holds**, unticked, newest first under the day
+  they're dated, each with **Tick all** / **Untick all** and **Tick from a day** (ticks what's
+  dated that day or later, unticks the rest): tap a row to change it in the transaction editor, with its messages
+  shown beneath. An unticked row says **Won't be added**: it's cleared with the review. Possible duplicates offer add or match from the bank import engine. A
+  transaction dated before its account's records start (its first transaction, or today
+  for an account with none) is already in that account's starting balance: it's tagged
+  and unticked. Every edit applies to the review as it is when it runs, so a row the list
+  didn't redraw can't undo an earlier tick.
+- Above **Add**, each account the ticked rows change shows its balance now and after
+  ("Checking 5,000.00 → −13,506.45"; a transfer moves both sides, matches nothing), in the
+  warning colour when it would go below zero from zero or more.
+- **Handled for you**, folded: texts already in the budget, matched (each can be added
+  instead), and texts that aren't transactions, counted by reason.
+
+**Prepare again with a note** re-reads the same messages with the user's note sent
+apart from them. **Discard review** asks first, then clears its messages without adding
+anything (left waiting, they would only be read again). Reviews survive screen and
+process recreation; drafts from an older format are dropped and their messages wait again.
+
+Adding uses the existing bank import engine through `smsBatchApply`, which commits all
+ticked rows, across accounts, in one undoable step through the normal budget revision
+guard. SMS is not settlement evidence: new entries are uncleared, and matching preserves
+existing clearing and reconciliation, including transfer sides. A stable
+sender/timestamp/body fingerprint is the import ID, kept after corrections, and every
+grouped fingerprint is recorded in the budget to prevent reimport. Raw bodies are never
+stored in budget metadata or assistant conversations. The review clears every message
+it settles (added, unticked, held, not a transaction, dismissed), erasing its text and
+keeping a local fingerprint; messages still waiting on a choice stay.
+
+The manifest requests `READ_SMS` and `RECEIVE_SMS`, not default-SMS status or
+permission to send/change messages, and `POST_NOTIFICATIONS` for background reading. **Before distributing this build through
 Google Play**, complete its SMS permissions declaration under the
 [SMS-based money management exception](https://support.google.com/googleplay/android-developer/answer/10208820?hl=en)
 and obtain approval; align the store description, privacy policy and Data safety
 answers with this feature. Eligibility is subject to Google's review. SMS remains
 optional, and denied/revoked access leaves the other budgeting features available.
 
-Implementation: `SmsInbox.kt` owns capture, selection and private storage;
-`SmsAnalysis.kt` owns identities, draft recovery and the cancellable service client;
-`ui/SmsImportScreen.kt` and `ui/SmsAnalysisReview.kt` own selection/consent/review.
-Services `assistant/sms.rs` owns the ephemeral model session; core `sms_import.rs`
-validates output and preserves clearing state while reusing bank matching. Synthetic
-coverage includes `SmsAnalysisTest`, `SmsInboxTest`, `SmsImportUiTest`, core
-`tests/sms_analysis.rs`, `tests/sms_import.rs`, and service model-loop tests.
+Implementation: `SmsInbox.kt` owns capture (SMS and text-only MMS), sender summaries, coverage and private storage;
+`SmsAnalysis.kt` owns identities, card matching, draft recovery, consent, readings and the
+cancellable service client; `SmsSetup.kt` the cards and accounts to set up, what's suggested for
+each and what applying does (`ui/SmsSetupSection.kt` draws them); `SmsWorker.kt` reads in the background. `ui/SmsPage.kt` holds the
+page's state: what's stored, the open review and a stage (loading, saving, settling or idle;
+reading is `SmsReadings`'). Every change to storage runs in one lane and ends by reading
+everything back and showing it at once, and the page reads what's waiting by itself only from
+such a snapshot, never from texts a change has just settled. `ui/SmsImportScreen.kt` draws
+the page, sender picker and remembered cards, and `ui/SmsAnalysisReview.kt` the review. Services `assistant/sms.rs`
+owns the model session and its prompt; core `sms_import.rs` validates output, previews
+and imports. Synthetic coverage includes `SmsAnalysisTest`, `SmsInboxTest`,
+`SmsImportUiTest`, core `tests/sms_analysis.rs` and `tests/sms_import.rs`, `SmsSetupTest`,
+and the service's model-loop tests. `SmsLiveCheck` (instrumented, skipped unless run with
+`-e live 1`, `-e banks USD,EUR` for some) sends made-up texts in the ways banks in some 30
+countries write (`shared/fixtures/sms-live-cases.json`, written by
+`androidTest/cases/make_sms_live_cases.py`; a copy pushed to the app's external files folder
+is used instead) through the phone's own assistant connection, each currency into a
+local-only budget, compares what comes back with what each text says (telling harmful misses
+from a payee written another way or a text left unclear), and sends a second round through
+the formats the first learned, counting how often the assistant corrected their readings.
+`-e part months` instead reads two months each of a US, an Indian and a Saudi profile's texts,
+mostly junk, through the app's own reading (`SmsReadings`), and reports each request's size and
+time and how much the phone handled. `-e part onboarding` reads each profile's two months into
+an empty budget, takes every setup suggestion and adds every row, as a new user tapping Set up
+and Add would, and reports the accounts made against the profile's, whether each money text
+landed in the account its digits name, and, where a text gives a balance, whether the account
+ends at it. `-e part primary` does the same with the user's own texts from the senders the open
+budget (`-e home`, Primary) collects from, since `-e from` (two months back by default), into an
+empty "Onboarding test" budget, and writes both budgets' accounts and transactions to
+`sms-live-primary-data.json`; `androidTest/cases/compare_onboarding.py` then says how the
+accounts line up, which transactions match, which each has that the other doesn't, how transfers
+pair, how often payees and categories agree, and each account's balance at the end in both.
+Primary is only read. `-e part all` runs every part. Its budgets ("SMS check" and the
+name) live in the Trash between runs; it reopens the budget that was open (`-e home <id>` when a
+stopped run left one of its own open) and puts every check budget back in the Trash. The
+reports are `sms-live-check.txt`, `sms-live-months.txt`, `sms-live-onboarding.txt` and
+`sms-live-primary.txt` in the app's external files folder, every reading in the `.json` beside
+each. Start it without `-w` so a USB drop doesn't stop it.
 
 ## Layout
 
@@ -216,6 +427,26 @@ Assistant changes require explicit review; apply and proposal-specific undo are
 atomic and tied to the reviewed budget and revision. Ordinary local saves use the
 shared delta path; imports preserve the full portable schema and unknown fields,
 including assignment/schedule extensions.
+
+The open budget lives in the store. `BudgetRepository` keeps a light copy for the
+screens: no transaction `source` and no `sourceExport`, with `hasImportSource` on
+rows that have a `source`. Commands and `edit { }` go to `edit_budget` as steps; an
+`edit { }` is first turned into a patch by comparing records by identity
+(`BudgetPatch.kt`). The store runs the steps on its own copy, commits the changed
+rows and replies with a patch and the totals. The app applies that patch to a new
+root that shares every untouched record. Undo and redo reply the same way. Previews
+and totals go to `query_budget`, which never commits. Exports and recovery copies
+come from `export_budget`, so they stay whole. A whole budget crosses from the app
+only on create, import and restore.
+
+An edit refused with `CONFLICT:` retries once: the repository reloads, checks the
+guard against what's stored now and sends the edit again, rebuilt on that budget. A
+second refusal shows the fresh budget and the error, and nothing is saved. Import
+and restore do the same. A preview or a month change the store has moved past
+catches up and asks once more. An edit that saved but can't be shown
+(`SavedNotShown`) isn't treated as a failed edit: nothing is offered to retry and
+the app refreshes. Its error shows until that refresh succeeds, and an editor that
+closes on success, such as a transaction's, stays open.
 
 An earlier native `filesDir/budget.json` migrates to SQLite only after validation
 and a successful commit. Its original bytes remain for recovery. A signed upgrade
@@ -277,10 +508,9 @@ cargo test --locked --manifest-path crates/Cargo.toml
 # Desktop integration adapters and existing checks:
 cd desktop
 npm test
-# android/, isolated emulator only (never choose a personal phone):
-$env:ANDROID_SERIAL = "emulator-5580"
-.\gradlew.bat :app:connectedDebugAndroidTest -PandroidAbis=x86_64
 ```
+
+Tests on an emulator have their own steps: [Instrumented checks](#instrumented-checks).
 
 Native CI runs shared tests, Kotlin tests, debug/release lint and builds for both
 ABIs; **Run workflow** also builds preview and keeps the APKs for three days. Changes to shared Rust also run the desktop checks. AGP built-in Kotlin requires custom shared sources under
@@ -290,7 +520,7 @@ Artifacts:
 - `app/build/outputs/apk/debug/app-debug.apk`
 - `app/build/outputs/apk/preview/app-preview.apk` (optimized device evaluation)
 - `app/build/outputs/apk/release/app-release-unsigned.apk` (without signing secrets)
-- `app/build/reports/tests/`, `app/build/reports/androidTests/`, lint reports
+- `app/build/reports/tests/`, lint reports
 
 For a signed release, provide all four existing environment variables:
 `URBUDGET_ANDROID_KEYSTORE`, `URBUDGET_ANDROID_KEY_ALIAS`,
@@ -332,6 +562,77 @@ Rows refer to pooled candidate sets instead of copying thousands of candidates
 into every JSON row. Kotlin reuses those lists, and commits send only selected
 matches and required acknowledgments. Rust still revalidates selections against
 the current ledger. Desktop's full review format remains compatible.
+
+## Instrumented checks
+
+Run these on an isolated emulator, one process per class: the services are set up
+once per process, and two setups clash ("The service directory cannot change").
+
+**Never use a `connected*AndroidTest` Gradle task.** It installs on every attached
+device and uninstalls the app afterwards, so a phone plugged in loses its debug or
+preview install and the budgets in it.
+
+```powershell
+# android/, with the emulator running:
+.\gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest -PandroidAbis=x86_64
+adb -s emulator-5584 install -r app/build/outputs/apk/debug/app-debug.apk
+adb -s emulator-5584 install -r -t app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+python app/src/androidTest/cases/run_edit_checks.py --out $env:TEMP\edit-checks
+```
+
+`run_edit_checks.py` runs the engine-edit classes and `ui.SmsImportUiTest` (with
+`-e large 1`, 3,000 more rows), each in its own process. Then come 10 cycles of
+`EngineEditDeathCheck`, which force-stops the app while it's editing and checks the
+store in a new process. A class passes only on its exact `OK (n tests)`, so a lost
+test fails it and the counts in the script's `CLASSES` change with the tests. Its
+output must also hold none of the script's `BAD` marks, because `am instrument` can
+exit zero after a failure. A test skipped by `assumeTrue` still counts in that `OK`,
+so the script runs everything with `-e strict 1`, which makes a phone a failure and
+not a skip. The emulator check is the only `assumeTrue` in `CLASSES`.
+
+It targets `emulator-5584`, or `EDIT_CHECK_SERIAL` if that's set, and refuses a
+serial that isn't `emulator-…`. `--only Class ...` runs some of the classes,
+`--deaths n` or `--no-deaths` changes the kills. Without `--out` the logs go to a
+dated folder beside the script, which git doesn't ignore. From
+`app/src/androidTest/cases`, `python -m unittest test_run_edit_checks` tests the
+script with adb stubbed.
+
+The other classes aren't in the script. Run each by itself, and read the output, not
+the exit code:
+
+```powershell
+adb -s emulator-5584 shell am instrument -w -e class app.urbudget.nativeapp.NativeEngineTest app.urbudget.nativeapp.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+These arguments go with `am instrument`:
+
+| Argument | What it does |
+| --- | --- |
+| `-e quick 1` | Cuts the synthetic budgets to 300 transactions, for a run during development. At full size `EngineEditEquivalenceTest` and `EngineEditUndoTest` took about 24 and 29 minutes in the last whole check. The script doesn't pass it |
+| `-e perf 1` | Runs `EngineEditPerformanceCheck` (30 clear taps at 2,700 and 10,000 transactions, emulator only, result in `edit-perf.txt`) and `EngineEditGateCheck` (30 status taps through `edit_budget` alone at 2,742, result in `edit-gate.txt`), both in the app's external files folder. The first fails its "ratio under 1.5" assertion, because an edit's cost still grows with the budget ([plan](../docs/plans/engine-edits.md#as-built)). The second doesn't insist on an emulator: its budget, "SMS check gate", is local, goes to the Trash afterwards, and the budget that was open is reopened (`-e home <library id>` after a stopped run) |
+| `-e perf 1 -e trace 1` | `EngineEditPerformanceCheck#leaveABudgetOpenForATrace` leaves a real-sized budget open. Install preview over it and take a Perfetto trace: `Tracing.kt` adds `service:<method>`, `repo.*`, `storage.*`, `vm.publish` and `ui.*` sections |
+
+`SyncV2RuntimeTest` isn't in the script either, and a plain `am instrument` of it
+proves nothing: without `-e syncQaOrigin` it's skipped, and a skip reads as a pass,
+`OK (1 test)`. A real run needs a local server, which
+`web/scripts/sync-v2-android-ci.mjs` starts, a debug Rust build, which is what allows
+that server, and cleared app data:
+
+```powershell
+# Repository root. The script installs the two APKs and passes syncQaOrigin.
+npm ci --prefix web
+.\android\gradlew.bat -p android :app:assembleDebug :app:assembleDebugAndroidTest -PandroidAbis=x86_64 -PrustDebug=true
+adb -s emulator-5584 shell pm clear app.urbudget.nativeapp
+$env:ANDROID_SERIAL = "emulator-5584"
+node web/scripts/sync-v2-android-ci.mjs
+```
+
+Each run starts a new server and the app remembers the last one, so a second run
+without `pm clear` is refused. A library left by other classes slows sync past the
+test's waits, and on one with 462 budgets a run never finished
+([follow-ups](../docs/FOLLOW-UPS.md#what-fast-edits-on-android-left)). Build again
+without `-PrustDebug=true` before timing anything. The `sync-lifecycle` job in
+[android-native.yml](../.github/workflows/android-native.yml) runs this test in CI.
 
 ## Verification and remaining external acceptance
 

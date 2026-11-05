@@ -1,6 +1,6 @@
 //! Application behavior shared by desktop's Tauri adapter and native Android's JNI adapter.
 //! UI frameworks belong in those adapters; accounting, persistence and remote protocols live here.
-pub use urbudget_core::{domain, engine, ledger, targets, schedules, workflows, reports, loans, patch, store, sync_merge, bank_import, bank_statement, ynab, ynab_files, fresh_start, import_sync, budgets};
+pub use urbudget_core::{commands, domain, engine, ledger, targets, schedules, workflows, reports, loans, patch, store, sync_merge, bank_import, bank_statement, ynab, ynab_files, fresh_start, import_sync, budgets};
 /// The language of the messages people see (`i18n::set_language("ar" | "en")`), shared with the core.
 pub use urbudget_core::{i18n, t};
 pub mod cloud;

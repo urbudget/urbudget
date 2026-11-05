@@ -40,9 +40,14 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         applyLanguage()
         enableEdgeToEdge()
+        // Made here, before the workers below can ask for it: `by viewModels()` takes no lock. A worker and
+        // the first frame asking at once each make one, the store clears the first, and a screen left on
+        // that one shows the welcome page over a budget that's still there.
+        val model = model
         setContent {
             ProvideLanguage(interfaceConfiguration ?: resources.configuration) { UrBudgetTheme { UrBudgetApp(model) } }
         }
+        if (savedInstanceState == null) intent?.getStringExtra(SmsWorker.PAGE)?.let { PageRequests.page.value = it }
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch {
@@ -67,7 +72,7 @@ class MainActivity : AppCompatActivity() {
                 launch(Dispatchers.IO) {
                     runCatching {
                         NativeServices.initialize(applicationContext)
-                        if (NativePreferences(applicationContext).automaticSchedules) NativeServices.call("apply_due_schedules", JSONObject().put("through", LocalDate.now().toString()))
+                        if (NativePreferences(applicationContext).automaticSchedules) NativeServices.call("apply_due_schedules", JSONObject().put("through", LocalDate.now().toString()).put("ackOnly", true))
                     }
                     model.refresh()
                     while (isActive) { syncIfReady(); delay(if (NativeServices.syncStatus.value?.optJSONObject("sync")?.optInt("protocol") == 2) 30_000 else 300_000) }
@@ -92,6 +97,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        intent.getStringExtra(SmsWorker.PAGE)?.let { PageRequests.page.value = it }
         val uri = intent.data
         if (intent.action == Intent.ACTION_VIEW && uri?.scheme == packageName &&
             uri.host == "assistant" && uri.path == "/sign-in") {

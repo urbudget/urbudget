@@ -42,9 +42,13 @@ pub enum Part {
 }
 /// A piece of a reply as it streams in.
 pub enum Delta<'a> {
+    /// The service took the request and the model is working on it, before it has anything to show.
+    Started,
     Text(&'a str),
     /// A readable summary of the model's reasoning while it works.
     Thinking(&'a str),
+    /// A tool call's arguments as the model writes them.
+    Arguments(&'a str),
 }
 
 #[derive(Debug, Default)]

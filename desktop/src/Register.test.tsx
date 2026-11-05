@@ -707,6 +707,8 @@ it("keeps icon columns narrow, fits dates and amounts, and shares the rest among
 
 it("reads future-dated transactions quieter and says what Skip does", () => {
   const b = demoBudget();
+  // The demo's rows are dated this month, so early in a month some are ahead of today.
+  b.transactions = b.transactions.map((tx) => ({ ...tx, date: "2001-01-15" }));
   b.transactions[0] = { ...b.transactions[0], date: "2999-01-01", payee: "Later" };
   b.schedules = [
     {

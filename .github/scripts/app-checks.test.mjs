@@ -25,7 +25,7 @@ test("shared native code, dependencies, scripts, CI changes and unknown app path
     "desktop/scripts/tauri.mjs", "desktop/new-build-setting.json", ".github/workflows/app.yml",
     "crates/urbudget-core/src/engine.rs", "crates/urbudget-core/Cargo.toml",
     "crates/urbudget-services/src/cloud/sync.rs", "crates/urbudget-services/src/vault.rs", "crates/urbudget-services/Cargo.toml", "crates/Cargo.lock", "crates/Cargo.toml",
-    ".github/workflows/release.yml", ".github/scripts/app-checks.mjs"]) {
+    ".github/workflows/release.yml", ".github/scripts/app-checks.mjs", "shared/fixtures/patch-cases.json"]) {
     assert.deepEqual(selectChecks([path]), all, path);
   }
 });

@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -31,6 +32,7 @@ import androidx.compose.ui.unit.sp
 import app.urbudget.nativeapp.BudgetViewModel
 import app.urbudget.nativeapp.Money
 import app.urbudget.nativeapp.R
+import app.urbudget.nativeapp.traced
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.Dispatchers
@@ -97,7 +99,7 @@ internal fun BudgetScreen(budget: JSONObject, summary: JSONObject?, month: Strin
         if (summary == null) return@produceState
         val key = listOf(budget, summary, month, language)
         val hit = (vm.screenCache["budget"] as? Pair<*, *>)?.takeIf { it.first == key }?.second as? BudgetModel
-        value = hit ?: withContext(Dispatchers.Default) { buildBudgetModel(budget, summary, month) }.also { vm.screenCache["budget"] = key to it }
+        value = hit ?: withContext(Dispatchers.Default) { traced("ui.budgetModel") { buildBudgetModel(budget, summary, month) } }.also { vm.screenCache["budget"] = key to it }
     }
     val visibleGroups = remember(model, filter, showHidden) {
         model?.groups.orEmpty().filter { showHidden || it.name != HiddenGroup }.map { g -> g to g.rows.filter { it.inView(filter) } }
@@ -140,7 +142,7 @@ internal fun BudgetScreen(budget: JSONObject, summary: JSONObject?, month: Strin
             LinearProgressIndicator(Modifier.fillMaxWidth().padding(Gutter), color = ur.accent)
             return@Column
         }
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = DockRoom)) {
+        LazyColumn(Modifier.fillMaxSize().testTag("budget-list"), contentPadding = PaddingValues(bottom = DockRoom)) {
             if (month != current) item(key = "today", contentType = "today") {
                 Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.Center) {
                     FilterPill(stringResource(R.string.month_back_to, shortMonthLabel(current)), false, { onMonth(current) }, Icons.Outlined.Today)
@@ -385,7 +387,7 @@ private fun CategoryLine(row: CategoryRowModel, assignedWidth: Dp, availableWidt
     // Settings can hide what targets still need; overspending always shows.
     val detail = if (row.needs && !LocalPreferences.current.showNeeded) null else row.detail
     Column(Modifier.background(ur.surface)) {
-        Row(Modifier.fillMaxWidth().clickable(onClickLabel = stringResource(R.string.common_open_named, row.name), onClick = open).heightIn(min = 58.dp).padding(start = Gutter, end = Gutter, top = 9.dp, bottom = 9.dp),
+        Row(Modifier.fillMaxWidth().testTag("category:${row.id}").clickable(onClickLabel = stringResource(R.string.common_open_named, row.name), onClick = open).heightIn(min = 58.dp).padding(start = Gutter, end = Gutter, top = 9.dp, bottom = 9.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(end = 8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(Money.own(row.name), fontSize = 16.sp, fontWeight = FontWeight.Medium, color = ur.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -396,7 +398,7 @@ private fun CategoryLine(row: CategoryRowModel, assignedWidth: Dp, availableWidt
                 }
                 if (row.progress != null && !row.snoozed) TargetBar(row.progress, row.status, Modifier.fillMaxWidth().padding(top = 3.dp))
             }
-            Row(Modifier.width(assignedWidth).clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button, onClickLabel = stringResource(R.string.category_assign_to, row.name), onClick = assign).padding(vertical = 8.dp),
+            Row(Modifier.width(assignedWidth).clip(RoundedCornerShape(8.dp)).testTag("assign:${row.id}").clickable(role = Role.Button, onClickLabel = stringResource(R.string.category_assign_to, row.name), onClick = assign).padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                 if (row.moved) Box(Modifier.padding(end = 4.dp).size(6.dp).clip(CircleShape).background(ur.accent))
                 Text(row.assignedText, fontSize = 15.sp, color = if (row.assigned == 0L) ur.muted else ur.text2, style = Tabular, maxLines = 1)

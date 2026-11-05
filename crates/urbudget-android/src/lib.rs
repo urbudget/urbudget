@@ -1,10 +1,8 @@
 //! Native Android transport. All financial decisions live in `urbudget-core`.
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{json, Value};
-use urbudget_core::{
-    bank_csv, bank_import, bank_statement, domain, engine, ledger, loans, patch, reports, schedules, t,
-    workflows, ynab, ynab_files,
-};
+use urbudget_core::commands::{self, encode, optional, required};
+use urbudget_core::{bank_csv, domain, loans, t, ynab, ynab_files};
 
 const API_VERSION: u32 = 1;
 const MAX_REQUEST_BYTES: usize = 64 * 1024 * 1024;
@@ -21,24 +19,6 @@ struct Request {
 fn empty_object() -> Value {
     json!({})
 }
-fn encode(value: impl Serialize) -> Result<Value, String> {
-    serde_json::to_value(value).map_err(|error| error.to_string())
-}
-fn required<T: DeserializeOwned>(params: &Value, key: &str) -> Result<T, String> {
-    let value = params
-        .get(key)
-        .ok_or_else(|| format!("Missing parameter: {key}"))?;
-    serde_json::from_value(value.clone()).map_err(|error| format!("Invalid {key}: {error}"))
-}
-fn optional<T: DeserializeOwned>(params: &Value, key: &str) -> Result<Option<T>, String> {
-    params
-        .get(key)
-        .filter(|value| !value.is_null())
-        .map(|value| {
-            serde_json::from_value(value.clone()).map_err(|error| format!("Invalid {key}: {error}"))
-        })
-        .transpose()
-}
 impl Request {
     fn budget(&self) -> Result<domain::Budget, String> {
         let budget: domain::Budget =
@@ -50,9 +30,14 @@ impl Request {
 
     fn changed(&self, budget: domain::Budget) -> Result<Value, String> {
         domain::validate(&budget)?;
+        self.encoded(budget)
+    }
+
+    /// The budget as this request's reply carries it.
+    fn encoded(&self, budget: domain::Budget) -> Result<Value, String> {
         let mut value = encode(budget)?;
-        // Desktop models assignments and schedule headers with fixed fields.
-        // Keep newer clients' extension fields when round-tripping through JNI.
+        // Assignments and schedules keep unknown fields themselves now. `applyPatch` replaces
+        // rows whole, so what a client left out of one comes back from the row it replaced.
         if let Some(before) = self.budget.as_ref() {
             preserve_extensions(
                 before,
@@ -116,43 +101,6 @@ fn preserve_extensions(
     }
 }
 
-fn apply_workflow(
-    mut budget: domain::Budget,
-    params: &Value,
-    current_month: &str,
-) -> Result<(domain::Budget, String), String> {
-    let action: Value = required(params, "action")?;
-    let reference =
-        optional::<String>(params, "asOfMonth")?.unwrap_or_else(|| current_month.to_owned());
-    if !domain::valid_month(&reference) {
-        return Err(t!("Invalid calculation reference month."));
-    }
-    // Never let a saved/imported reference or an old preview bypass the calendar
-    // guard. Android supplies the instant at which it prepared this request.
-    if reference != current_month
-        || action
-            .get("expectedAsOfMonth")
-            .is_some_and(|expected| expected.as_str() != Some(current_month))
-    {
-        return Err(t!(
-            "The calendar month changed. Refresh the Quick assign preview before applying it."
-        ));
-    }
-    let previous = budget
-        .extra
-        .insert("calculationAsOfMonth".into(), json!(reference));
-    let mut changed = workflows::apply(budget, &action)?;
-    match previous {
-        Some(value) => {
-            changed.extra.insert("calculationAsOfMonth".into(), value);
-        }
-        None => {
-            changed.extra.remove("calculationAsOfMonth");
-        }
-    }
-    Ok((changed, reference))
-}
-
 fn dispatch(request: Request) -> Result<Value, String> {
     if request.version != API_VERSION {
         return Err(format!(
@@ -200,193 +148,20 @@ fn dispatch(request: Request) -> Result<Value, String> {
             optional(p, "lump")?.unwrap_or(0),
         )?),
         _ => {
-            let mut budget = request.budget()?;
-            match request.method.as_str() {
-                "validate" => Ok(Value::Null),
-                "calculate" => {
-                    let month: String = required(p, "month")?;
-                    match optional::<String>(p, "asOfMonth")? {
-                        Some(as_of) => encode(engine::calculate_at(&budget, &month, &as_of)?),
-                        None => encode(engine::calculate(&budget, &month)?),
-                    }
-                }
-                "ledger" => encode(ledger::transactions(&budget)),
-                "reportDetails" => encode(reports::details(
-                    &budget,
-                    &serde_json::from_value(p.clone()).map_err(|error| format!("Invalid report filter: {error}"))?,
-                    &required::<String>(p, "dimension")?,
-                    &required::<String>(p, "key")?,
-                )?),
-                "reportCsv" => encode(reports::csv(&budget, &reports::calculate(&budget, &serde_json::from_value(p.clone()).map_err(|error| format!("Invalid report filter: {error}"))?)?)?),
-                "reports" => encode(reports::calculate(
-                    &budget,
-                    &serde_json::from_value(p.clone())
-                        .map_err(|error| format!("Invalid report filter: {error}"))?,
-                )?),
-                "forecast" => encode(reports::forecast_for_accounts(
-                    &budget,
-                    &required::<String>(p, "today")?,
-                    &required::<String>(p, "through")?,
-                    &optional::<Vec<String>>(p, "accountIds")?.unwrap_or_default(),
-                )?),
-                "workflow" => {
-                    let (changed, reference) = apply_workflow(budget, p, &engine::current_month())?;
-                    if let Some(month) = optional::<String>(p, "previewMonth")? {
-                        let summary = engine::calculate_at(&changed, &month, &reference)?;
-                        Ok(json!({"budget":request.changed(changed)?,"summary":summary}))
-                    } else {
-                        request.changed(changed)
-                    }
-                }
-                "saveTransaction" => {
-                    budget = workflows::upsert_transaction(budget, required(p, "transaction")?)?;
-                    if let Some(through) = optional::<String>(p, "through")? {
-                        schedules::schedule_future(&mut budget, &through)?;
-                    }
-                    request.changed(budget)
-                }
-                "autoAssignPreview" => encode(workflows::auto_assign_preview(
-                    &budget,
-                    &required::<String>(p, "month")?,
-                    &required::<Vec<String>>(p, "categories")?,
-                    optional(p, "limitToAvailable")?.unwrap_or(true),
-                )?),
-                "reconcile" => request.changed(domain::reconcile(
-                    budget,
-                    &required::<String>(p, "accountId")?,
-                    required(p, "balance")?,
-                    &required::<String>(p, "date")?,
-                    &required::<String>(p, "adjustmentId")?,
-                )?),
-                "applyPatch" => {
-                    required::<patch::Patch>(p, "patch")?.apply(&mut budget);
-                    request.changed(budget)
-                }
-                "schedules" => encode(schedules::read(&budget)?),
-                "applySchedules" => {
-                    let count = schedules::apply(
-                        &mut budget,
-                        &required::<String>(p, "through")?,
-                        optional::<String>(p, "selected")?.as_deref(),
-                        optional(p, "skip")?.unwrap_or(false),
-                    )?;
-                    Ok(json!({ "budget": request.changed(budget)?, "count": count }))
-                }
-                "scheduleFuture" => {
-                    let count = schedules::schedule_future(
-                        &mut budget,
-                        &required::<String>(p, "through")?,
-                    )?;
-                    Ok(json!({ "budget": request.changed(budget)?, "count": count }))
-                }
-                "loanTerms" => encode(loans::source_terms(
-                    &budget,
-                    &required::<String>(p, "accountId")?,
-                )?),
-                "loanRecord" => {
-                    loans::record(
-                        &mut budget,
-                        &required(p, "terms")?,
-                        &required::<String>(p, "from")?,
-                        required(p, "amount")?,
-                        &required::<String>(p, "date")?,
-                        &required::<String>(p, "id")?,
-                    )?;
-                    request.changed(budget)
-                }
-                "applyLoanPayments" => {
-                    loans::apply_new_payments(
-                        &mut budget,
-                        &required::<std::collections::HashSet<String>>(p, "ids")?,
-                    )?;
-                    request.changed(budget)
-                }
-                "bankPreview" => encode(bank_import::preview_compact(
-                    &budget,
-                    &required::<String>(p, "accountId")?,
-                    &required::<String>(p, "content")?,
-                    &required::<String>(p, "format")?,
-                    &optional::<String>(p, "dateFormat")?.unwrap_or_else(|| "ymd".into()),
-                    optional(p, "flipSigns")?.unwrap_or(false),
-                    optional::<bank_csv::Columns>(p, "columns")?.as_ref(),
-                )?),
-                // An import of a file into an account, as its last file read (see
-                // `bank_statement::start`); its statement, every line or with `problemsOnly` those
-                // that don't read; its review; and changes to it.
-                // With `prepared`, a file the assistant wrote the standard way.
-                "bankSession" => {
-                    let (account, content) = (required::<String>(p, "accountId")?, required::<String>(p, "content")?);
-                    let (id, budget_id) = (required::<String>(p, "sessionId")?, optional::<String>(p, "budgetId")?.unwrap_or_default());
-                    if optional(p, "prepared")?.unwrap_or(false) {
-                        encode(bank_statement::start_prepared(&content, &account, &id, &budget_id))
-                    } else {
-                        encode(bank_statement::start(&budget, &account, &content, &id, &budget_id, optional(p, "sheet")?)?)
-                    }
-                }
-                "bankStatement" => {
-                    let read = bank_statement::statement(
-                        &budget,
-                        &required::<String>(p, "accountId")?,
-                        &required::<String>(p, "content")?,
-                        &required(p, "session")?,
-                    )?;
-                    encode(if optional(p, "problemsOnly")?.unwrap_or(false) { read.problems() } else { read })
-                }
-                "bankImportPreview" => {
-                    let mut preview = bank_statement::preview_statement(
-                        &budget,
-                        &required::<String>(p, "accountId")?,
-                        &required::<String>(p, "content")?,
-                        &required(p, "session")?,
-                    )?;
-                    if optional(p, "problemsOnly")?.unwrap_or(false) {
-                        preview.statement = preview.statement.problems();
-                    }
-                    encode(preview)
-                }
-                "bankApplyFixes" => encode(bank_statement::apply_fixes(
-                    &budget,
-                    &required::<String>(p, "accountId")?,
-                    &required::<String>(p, "content")?,
-                    &required(p, "session")?,
-                    &required(p, "fixes")?,
-                )?),
-                // With `remember`, the account keeps how this file read for its next one.
-                "bankApply" => {
-                    let account = required::<String>(p, "accountId")?;
-                    let mut budget = bank_import::apply(budget, &account, required(p, "choices")?)?;
-                    if let Some(settings) = optional(p, "remember")? {
-                        bank_csv::remember(&mut budget, &account, settings)?;
-                    }
-                    request.changed(budget)
-                }
-                "smsApply" => request.changed(urbudget_core::sms_import::apply(
-                    budget, &required::<String>(p, "accountId")?, required(p, "choices")?,
-                )?),
-                "smsBatchPreview" => encode(urbudget_core::sms_import::preview(&budget, &required::<Vec<_>>(p, "messages")?, &required(p, "analysis")?)?),
-                "smsBatchApply" => request.changed(urbudget_core::sms_import::apply_batch(budget, &required::<Vec<_>>(p, "messages")?, &required(p, "analysis")?, required(p, "decisions")?)?),
-                // With `ids` or `accountId`, only those transactions (one account's side of a transfer),
-                // newest first as the register lists them; without, the whole register.
-                "exportRegister" => {
-                    let ids = optional::<std::collections::HashSet<String>>(p, "ids")?;
-                    let account = optional::<String>(p, "accountId")?;
-                    if ids.is_none() && account.is_none() {
-                        encode(ynab::export_register(&budget)?)
-                    } else {
-                        encode(ynab::export_register_for(
-                            &budget,
-                            |record_account, id| {
-                                account.as_deref().is_none_or(|a| a == record_account)
-                                    && ids.as_ref().is_none_or(|ids| ids.contains(id))
-                            },
-                            true,
-                        )?)
-                    }
-                }
-                "exportPlan" => encode(ynab::export_plan(&budget)?),
-                "auditYnab" => ynab::audit(&budget),
-                _ => Err(format!("Unknown engine method: {}", request.method)),
+            let budget = request.budget()?;
+            let method = request.method.as_str();
+            if !commands::changes_budget(method) {
+                return commands::read(&budget, method, p);
             }
+            let outcome = commands::apply(budget, method, p)?;
+            let summary = outcome.preview(p)?;
+            let count = outcome.count;
+            let value = request.encoded(outcome.budget)?;
+            Ok(match (summary, count) {
+                (Some(summary), _) => json!({"budget":value,"summary":summary}),
+                (_, Some(count)) => json!({"budget":value,"count":count}),
+                _ => value,
+            })
         }
     }
 }
@@ -457,6 +232,9 @@ pub extern "system" fn Java_app_urbudget_nativeapp_NativeBridge_invoke(
     }
 }
 
+// The tests compare replies with what these give directly.
+#[cfg(test)]
+use {serde::Serialize, urbudget_core::{engine, ledger, reports}};
 #[cfg(test)]
 mod tests;
 
