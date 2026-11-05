@@ -2122,6 +2122,9 @@
     <string name="sms_note_help">Tell your assistant what to do differently, such as “Card 3358 is my savings card” or “Transfers to Ahmed are rent”. The same messages are read again, and changes you made in this review are replaced.</string>
     <string name="sms_section_choose">Needs a choice</string>
     <string name="sms_section_choose_detail">These wait in Bank messages until you choose.</string>
+    <!-- The review's first rows: texts that may already be in the budget, which hold back adding until they're answered. -->
+    <string name="sms_section_check">Check these first</string>
+    <string name="sms_section_check_detail">These may already be in your budget. Choose for each one before adding.</string>
     <string name="sms_section_ready">Ready to add</string>
     <string name="sms_section_holds">Holds</string>
     <string name="sms_holds_detail">Not settled yet. Tick one to add it now; the others are cleared.</string>
@@ -2332,7 +2335,9 @@
     <string name="sms_check_kind">Check money in or out</string>
     <string name="sms_check_category">Check the category</string>
     <string name="sms_already_added">Already added</string>
-    <string name="sms_add_or_match">Add or match?</string>
+    <!-- A text that may be a transaction the budget already has: on its row, and heading the choice. -->
+    <string name="sms_decide_title">Already in your budget?</string>
+    <string name="sms_decide_detail">This looks like a transaction you already have. Match it so it isn’t counted twice, or add it as new.</string>
     <string name="sms_show_message">Message</string>
     <string name="sms_hide_message">Hide message</string>
     <string name="sms_enter">Enter it</string>
@@ -2379,8 +2384,8 @@
         <item quantity="other">%1$s dismissed</item>
     </plurals>
     <plurals name="sms_undecided">
-        <item quantity="one">%1$s row needs add or match</item>
-        <item quantity="other">%1$s rows need add or match</item>
+        <item quantity="one">%1$s row needs your choice</item>
+        <item quantity="other">%1$s rows need your choice</item>
     </plurals>
     <plurals name="sms_clears">
         <item quantity="one">Clears %1$s other message</item>

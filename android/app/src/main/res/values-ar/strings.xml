@@ -2425,6 +2425,8 @@
     <string name="sms_note_help">أخبر مساعدك بما يفعله بشكل مختلف، مثل «البطاقة 3358 بطاقة الادخار» أو «التحويلات إلى أحمد هي الإيجار». تُقرأ الرسائل نفسها من جديد، وتُستبدل التغييرات التي أجريتها في هذه المراجعة.</string>
     <string name="sms_section_choose">تحتاج إلى اختيار</string>
     <string name="sms_section_choose_detail">تبقى في رسائل البنك حتى تختار.</string>
+    <string name="sms_section_check">راجع هذه أولًا</string>
+    <string name="sms_section_check_detail">قد تكون هذه في ميزانيتك مسبقًا. اختر لكل واحدة قبل الإضافة.</string>
     <string name="sms_section_ready">جاهزة للإضافة</string>
     <string name="sms_section_holds">مبالغ محجوزة</string>
     <string name="sms_holds_detail">لم تُسوَّ بعد. حدّد ما تريد إضافته الآن، ويُمسح الباقي.</string>
@@ -2688,7 +2690,8 @@
     <string name="sms_check_kind">راجع اتجاه المبلغ</string>
     <string name="sms_check_category">راجع الفئة</string>
     <string name="sms_already_added">مضافة من قبل</string>
-    <string name="sms_add_or_match">إضافة أم مطابقة؟</string>
+    <string name="sms_decide_title">هل هي في ميزانيتك مسبقًا؟</string>
+    <string name="sms_decide_detail">تبدو هذه معاملة لديك مسبقًا. طابقها حتى لا تُحسب مرتين، أو أضفها معاملةً جديدة.</string>
     <string name="sms_show_message">الرسالة</string>
     <string name="sms_hide_message">إخفاء الرسالة</string>
     <string name="sms_enter">إدخالها</string>
@@ -2776,11 +2779,11 @@
     </plurals>
     <plurals name="sms_undecided">
         <item quantity="zero">كل الصفوف محددة</item>
-        <item quantity="one">صف واحد يحتاج إلى إضافة أو مطابقة</item>
-        <item quantity="two">صفان يحتاجان إلى إضافة أو مطابقة</item>
-        <item quantity="few">\u2068%1$s\u2069 صفوف تحتاج إلى إضافة أو مطابقة</item>
-        <item quantity="many">\u2068%1$s\u2069 صفًا يحتاج إلى إضافة أو مطابقة</item>
-        <item quantity="other">\u2068%1$s\u2069 صف يحتاج إلى إضافة أو مطابقة</item>
+        <item quantity="one">صف واحد يحتاج إلى اختيارك</item>
+        <item quantity="two">صفان يحتاجان إلى اختيارك</item>
+        <item quantity="few">\u2068%1$s\u2069 صفوف تحتاج إلى اختيارك</item>
+        <item quantity="many">\u2068%1$s\u2069 صفًا يحتاج إلى اختيارك</item>
+        <item quantity="other">\u2068%1$s\u2069 صف يحتاج إلى اختيارك</item>
     </plurals>
     <plurals name="sms_clears">
         <item quantity="zero">لا يُمسح غيرها</item>

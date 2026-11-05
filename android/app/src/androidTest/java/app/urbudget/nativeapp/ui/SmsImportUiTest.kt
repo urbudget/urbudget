@@ -7,6 +7,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.lifecycle.ViewModelStore
@@ -43,8 +45,8 @@ class SmsImportUiTest {
         instrumentation.runOnMainSync { store.clear() }
     }
 
-    /** A budget with the round-trip fixture's accounts, or [empty]: a new one with none. */
-    private fun fixture(tag: String, empty: Boolean = false): BudgetViewModel {
+    /** A budget with the round-trip fixture's accounts and [rows] added to its ledger, or [empty]: a new one with none. */
+    private fun fixture(tag: String, empty: Boolean = false, rows: (JSONObject) -> List<JSONObject> = { emptyList() }): BudgetViewModel {
         instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.READ_SMS)
         instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.RECEIVE_SMS)
         lateinit var vm: BudgetViewModel
@@ -59,6 +61,7 @@ class SmsImportUiTest {
             return vm
         }
         val fixture = sized(JSONObject(instrumentation.context.assets.open("native-roundtrip.json").bufferedReader().use { it.readText() })).put("name", "$name fixture")
+        rows(fixture).forEach { fixture.getJSONArray("transactions").put(it) }
         instrumentation.runOnMainSync { vm.importBudget(fixture.toString()) }
         compose.waitUntil(30_000) { vm.state.value.budget?.optString("name") == "$name fixture" }
         identity = vm.state.value.budgetIdentity!!
@@ -631,6 +634,81 @@ class SmsImportUiTest {
         assertTrue(ids.containsAll(smsBankIds("checking", listOf(purchase.id))))
         val last = JSONObject(inbox.state(identity!!, "last")!!)
         assertEquals(1, last.getInt("known")); assertEquals(1, last.getJSONObject("skipped").getInt("code"))
+    }
+
+    @Test fun aTextThatMayBeInTheBudgetAsksOnItsRowAndAddingWaitsForTheAnswer() {
+        // Two like it on other days: either could be the one, so neither is assumed.
+        val vm = fixture("decide") { budget ->
+            listOf(JSONObject(budget.rows("transactions").first { it.text("id") == "cash-spend" }.toString()).put("id", "cash-spend-again").put("date", "2026-10-03"))
+        }
+        val inbox = SmsInbox.get(context)
+        inbox.saveState(identity!!, "consent", smsConsent(connection))
+        inbox.saveState(identity!!, "mappings", smsRememberCard(JSONArray(), "SyntheticBank", "*1234", "checking").toString())
+        val body = "Card *1234: USD 40.00 at EXAMPLE MKT on 2026-10-04"
+        val sms = BankSms(smsId("SyntheticBank", 1, body), "SyntheticBank", 1, body)
+        // A newer text with nothing like it: by date alone it would come first.
+        val newerBody = "Card *1234: USD 7.25 at EXAMPLE CAFE on 2026-10-20"
+        val newer = BankSms(smsId("SyntheticBank", 2, newerBody), "SyntheticBank", 2, newerBody)
+        listOf(sms, newer).forEach(inbox::capture)
+        val analysis = syntheticSmsAnalysis(sms, ref = "*1234")
+        val read = analysis.getJSONArray("items").getJSONObject(0)
+        read.getJSONArray("evidence").getJSONObject(0).put("quote", "USD 40.00")
+        read.getJSONObject("transaction").put("date", "2026-10-04").put("amount", "-40.00").put("writtenAmount", "40.00").put("payee", "Example market")
+        val plain = syntheticSmsAnalysis(newer, ref = "*1234").getJSONArray("items").getJSONObject(0)
+        plain.getJSONArray("evidence").getJSONObject(0).put("quote", "USD 7.25")
+        plain.getJSONObject("transaction").put("date", "2026-10-20").put("amount", "-7.25").put("writtenAmount", "7.25").put("payee", "Example cafe")
+        analysis.getJSONArray("items").put(plain)
+        inbox.saveState(identity!!, "draft", SmsBatch(listOf(sms, newer), analysis).saved())
+        val before = vm.state.value.budget!!.getJSONArray("transactions").length()
+        show(vm, analyzer { analysis })
+        waitFor("sms-review")
+        compose.onNodeWithTag("sms-review").performClick()
+        waitFor("sms-decision")
+        // It comes first, under its own heading, and doesn't move once it's answered.
+        compose.onNodeWithText(context.getString(R.string.sms_section_check)).assertExists()
+        fun assertAsksFirst() = assertTrue(compose.onNodeWithTag("sms-row:0").fetchSemanticsNode().boundsInRoot.top < compose.onNodeWithTag("sms-row:1").fetchSemanticsNode().boundsInRoot.top)
+        waitFor("sms-row:1")
+        assertAsksFirst()
+        // It asks, with a button, and says why the page's own button is waiting.
+        compose.onNodeWithTag("sms-decision").assert(hasText(context.getString(R.string.sms_decide_title))).assert(hasText(context.getString(R.string.common_choose)))
+        compose.onNodeWithText(context.resources.getQuantityString(R.plurals.sms_undecided, 1, "1")).assertExists()
+        compose.onNodeWithTag("sms-add").assertIsNotEnabled()
+        // Unticked it won't be added either way, so nothing is asked.
+        compose.onNodeWithTag("sms-tick:0").performClick()
+        compose.onNodeWithTag("sms-decision").assertDoesNotExist()
+        compose.onNodeWithTag("sms-tick:0").performClick()
+        waitFor("sms-decision")
+        val matches = SemanticsMatcher("a match to choose") { it.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("sms-decision-option:match:") == true }
+        // The sheet asks too, and nothing is picked for the user.
+        compose.onNodeWithTag("sms-decision").performClick()
+        waitFor("sms-decision-sheet")
+        compose.onNodeWithText(context.getString(R.string.sms_decide_detail)).assertExists()
+        compose.onNodeWithTag("sms-decision-option:new").assertIsNotSelected()
+        compose.onAllNodes(matches).assertCountEquals(2).assertAll(isNotSelected())
+        // Later leaves it unanswered.
+        compose.onNodeWithTag("sms-decision-later").performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("sms-decision-sheet").fetchSemanticsNodes().isEmpty() }
+        compose.onNodeWithTag("sms-add").assertIsNotEnabled()
+        compose.onNodeWithTag("sms-decision").performClick()
+        waitFor("sms-decision-sheet")
+        compose.onAllNodes(matches)[0].performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("sms-decision-sheet").fetchSemanticsNodes().isEmpty() }
+        // Answered, it says what was chosen and offers to change it, and the page can go on.
+        compose.onNodeWithTag("sms-decision").assert(hasText(context.getString(R.string.common_change)))
+        assertAsksFirst()
+        compose.onNodeWithText(context.resources.getQuantityString(R.plurals.sms_undecided, 1, "1")).assertDoesNotExist()
+        compose.onNodeWithTag("sms-decision").performClick()
+        waitFor("sms-decision-sheet")
+        compose.onAllNodes(matches)[0].assertIsSelected().performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("sms-decision-sheet").fetchSemanticsNodes().isEmpty() }
+        compose.waitUntil(10_000) { runCatching { compose.onNodeWithTag("sms-add").assertIsEnabled() }.isSuccess }
+        compose.onNodeWithTag("sms-add").performClick()
+        compose.waitUntil(10_000) { inbox.pendingCount(identity!!) == 0 }
+        // The newer text is added and this one matched: it's on one of the two.
+        val rows = vm.state.value.budget!!.rows("transactions")
+        assertEquals(before + 1, rows.size)
+        val text = smsBankIds("checking", listOf(sms.id))
+        assertEquals(1, rows.count { row -> row.optJSONArray("bankImportIds")?.let { a -> (0 until a.length()).any { a.getString(it) in text } } == true })
     }
 
     // Compose's test clock runs a composition's coroutine on the thread that resumes it, and frames with it. A preview

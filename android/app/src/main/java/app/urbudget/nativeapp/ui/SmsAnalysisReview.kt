@@ -1,11 +1,17 @@
 package app.urbudget.nativeapp.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material.icons.outlined.MoreHoriz
@@ -14,13 +20,18 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.urbudget.nativeapp.*
 import app.urbudget.nativeapp.R
@@ -52,6 +63,8 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
     val items = remember(batch.analysis, batch.messages, mappings, budget, starts) { batch.items(SmsAccounts.of(budget, mappings, starts)) }
     val resolved = remember(items) { batch.resolved(items) }
     var prepared by remember { mutableStateOf<Map<Int, BankReviewRow>?>(null) }
+    // The rows that asked add or match. They keep their place once answered, and while the review is prepared again.
+    var asks by remember { mutableStateOf(emptySet<Int>()) }
     var checked by remember { mutableStateOf<JSONObject?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
@@ -69,7 +82,11 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
     val keepCard = remember { mutableStateMapOf<String, Boolean>() }
     LaunchedEffect(budget, resolved) {
         prepared = null; checked = null; error = null
-        try { prepared = vm.smsPreview(budget, batch, resolved); checked = budget }
+        try {
+            val rows = vm.smsPreview(budget, batch, resolved)
+            asks = rows.filterValues { it.initial == "review" }.keys
+            prepared = rows; checked = budget
+        }
         catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { error = failure.message }
     }
     LaunchedEffect(state.error) { if (state.error != null) { error = state.error; saving = false } }
@@ -87,8 +104,8 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
     fun tickFrom(rows: List<SmsItem>, day: String) = change { b -> b.copy(ticked = b.ticked + rows.filter { it.needs == null }.associate { it.index to (it.transaction?.text("date").orEmpty() >= day) }) }
     val sorted = smsSort(batch, items, known)
     val (waiting, ready, existing, holds, skipped) = sorted
-    // Newest first, as the bank's app lists them, under the day they're dated.
-    val readyShown = remember(ready) { smsNewestFirst(ready) }
+    // Newest first, as the bank's app lists them, under the day they're dated; what asks comes before them all, since Add waits for it.
+    val (asking, readyShown) = remember(ready, asks) { smsNewestFirst(ready).partition { it.index in asks } }
     val holdsShown = remember(holds) { smsNewestFirst(holds) }
     // The cards and accounts to set up, and what's suggested for each; the rows they answer wait under them.
     val typeNames = remember(languageKey()) { accountTypes().toMap() }
@@ -161,6 +178,8 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
         change { it.edit(item.index) { json -> json.getJSONObject("transaction").put("amount", smsDecimal(if (out) -cents else cents)) } }
     }
 
+    val askingTitle = stringResource(R.string.sms_section_check)
+    val askingDetail = stringResource(R.string.sms_section_check_detail)
     val readyTitle = stringResource(R.string.sms_section_ready)
     val holdsTitle = stringResource(R.string.sms_section_holds)
     val holdsDetail = stringResource(R.string.sms_holds_detail)
@@ -173,7 +192,7 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
                 SectionTitle(stringResource(R.string.sms_review_title), countText(R.plurals.sms_message_count, batch.messages.size)) {
                     Box {
                         IconButton({ menu = true }, enabled = !saving) { Icon(Icons.Outlined.MoreHoriz, stringResource(R.string.common_more_actions), tint = ur.text) }
-                        DropdownMenu(menu, { menu = false }, shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp), containerColor = ur.surface) {
+                        DropdownMenu(menu, { menu = false }, shape = RoundedCornerShape(14.dp), containerColor = ur.surface) {
                             DropdownMenuItem(text = { Text(stringResource(R.string.sms_prepare_again)) }, onClick = { menu = false; noting = true })
                             DropdownMenuItem(text = { Text(stringResource(R.string.sms_discard_review), color = ur.negative) }, onClick = { menu = false; discard() })
                         }
@@ -184,6 +203,8 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
             if (prepared == null && error == null) item(key = "loading") { LinearProgressIndicator(Modifier.fillMaxWidth(), color = ur.accent) }
             if (candidates.isNotEmpty()) smsSetupSection(candidates, plans, budget, accounts, typeNames, !saving, ::ticked,
                 { key, plan -> change { it.copy(setup = it.setup + (key to plan)) } }, { settingUp = it }, if (setupNext) null else ::applySetup)
+            rowSection("asking", askingTitle, askingDetail, asking, budget, prepared, ::decision, ::ticked, shown, !saving,
+                { shown = shown.toggle(it) }, ::tick, { i, d -> decisions[i] = d }, { editing = it }, ::enterAmount, tickAll = { tickAll(asking, it) }, fromDay = { fromDay = ready })
             if (choosing.isNotEmpty()) {
                 item(key = "choose") { SectionTitle(stringResource(R.string.sms_section_choose), stringResource(R.string.sms_section_choose_detail)) }
                 transfers.forEach { (key, group) ->
@@ -576,9 +597,10 @@ private fun SmsTransactionRow(item: SmsItem, budget: JSONObject, row: BankReview
                         "kind" -> R.string.sms_check_kind; else -> R.string.sms_check_category
                     }), fill = ur.warningSoft, color = ur.warning) }
                     if (row?.locked == true) TagChip(stringResource(R.string.sms_already_added))
-                    else if (row != null && decision != null && (decision == "review" || row.options.any { it.first.startsWith("match:") })) SmsDecisionChip(row, decision, enabled, decide)
                     TagChip(stringResource(if (showing) R.string.sms_hide_message else R.string.sms_show_message), Modifier.clickable(role = Role.Button, onClick = show), color = ur.accent)
                 }
+                // Unticked, there's nothing to ask: it won't be added either way.
+                if (row != null && !row.locked && ticked != false && decision != null && (decision == "review" || row.options.any { it.first.startsWith("match:") })) SmsDecision(row, decision, enabled, decide)
                 if (item.needs == "amount") SmsAmountField(currency, t.text("currency") + " " + t.text("writtenAmount"), enterAmount)
                 dismiss?.let { Box(Modifier.padding(top = 6.dp).testTag("sms-dont-add:${item.index}")) { SmallAction(stringResource(R.string.sms_dont_add), it) } }
                 if (showing) item.sources.forEach { Text(it.body, Modifier.padding(top = 4.dp), style = SmsBodyStyle, color = ur.text2) }
@@ -587,18 +609,61 @@ private fun SmsTransactionRow(item: SmsItem, budget: JSONObject, row: BankReview
     }
 }
 
-/** Add as new, or which existing transaction it is: the bank review's own choices. */
+/**
+ * Add as new, or which existing transaction it is. Unanswered, this holds back the page's Add
+ * button, so it's a bar with a button in it rather than a tag among the row's tags. Answered, it
+ * says what was chosen and can be changed.
+ */
 @Composable
-private fun SmsDecisionChip(row: BankReviewRow, decision: String, enabled: Boolean, decide: (String) -> Unit) {
+private fun SmsDecision(row: BankReviewRow, decision: String, enabled: Boolean, decide: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
-    Box {
-        val label = if (decision == "review") stringResource(R.string.sms_add_or_match) else row.options.firstOrNull { it.first == decision }?.second.orEmpty()
-        TagChip(label, Modifier.clickable(enabled, role = Role.Button) { open = true }.testTag("sms-decision"), fill = if (decision == "review") ur.warningSoft else ur.zeroSoft,
-            color = if (decision == "review") ur.warning else ur.text)
-        DropdownMenu(open, { open = false }, shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp), containerColor = ur.surface) {
-            row.options.filter { it.first != "review" && it.first != "skip" }.forEach { (id, name) ->
-                DropdownMenuItem(text = { Text(Money.own(name), fontWeight = if (id == decision) FontWeight.SemiBold else FontWeight.Normal) }, onClick = { decide(id); open = false })
+    val asking = decision == "review"
+    val shape = RoundedCornerShape(12.dp)
+    Row(Modifier.fillMaxWidth().padding(top = 4.dp).heightIn(min = 48.dp).clip(shape).background(if (asking) ur.warningSoft else ur.surface2)
+        .then(if (asking) Modifier.border(1.dp, ur.warning.copy(alpha = .45f), shape) else Modifier)
+        .clickable(enabled, role = Role.Button) { open = true }.testTag("sms-decision").padding(start = 12.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(if (asking) stringResource(R.string.sms_decide_title) else Money.own(row.options.firstOrNull { it.first == decision }?.second.orEmpty()), Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyMedium, fontWeight = if (asking) FontWeight.SemiBold else FontWeight.Normal, color = if (asking) ur.warning else ur.text,
+            maxLines = 2, overflow = TextOverflow.Ellipsis)
+        if (asking) Box(Modifier.heightIn(min = 34.dp).clip(RoundedCornerShape(17.dp)).background(ur.accent).padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
+            Text(stringResource(R.string.common_choose), color = if (ur.dark) ur.bg else Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        } else Text(stringResource(R.string.common_change), Modifier.padding(end = 4.dp), color = ur.accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+    }
+    if (open) SmsDecisionSheet(row, decision, { open = false }) { decide(it); open = false }
+}
+
+/** The question on its own: which text it's about, and each answer as something to pick. */
+@Composable
+private fun SmsDecisionSheet(row: BankReviewRow, decision: String, close: () -> Unit, choose: (String) -> Unit) {
+    UrSheet(close) {
+        Column(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp).padding(top = 8.dp, bottom = 20.dp).testTag("sms-decision-sheet"),
+            verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(stringResource(R.string.sms_decide_title), Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge, color = ur.text)
+                Text(stringResource(R.string.sms_decide_detail), style = MaterialTheme.typography.bodyMedium, color = ur.text2)
             }
+            ListCard { Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(Money.own(row.payee), Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, color = ur.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(row.amountText, Modifier.padding(start = 10.dp), style = MaterialTheme.typography.bodyLarge.merge(Tabular), fontWeight = FontWeight.SemiBold,
+                        color = if (row.amount > 0) ur.positive else ur.text, maxLines = 1)
+                }
+                if (row.detail.isNotEmpty()) Text(row.detail, style = MaterialTheme.typography.bodySmall, color = ur.muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            } }
+            Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.options.filter { it.first != "review" && it.first != "skip" }.forEach { (id, name) ->
+                    val chosen = id == decision
+                    val shape = RoundedCornerShape(14.dp)
+                    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(shape).border(if (chosen) 2.dp else 1.dp, if (chosen) ur.accent else ur.borderStrong, shape)
+                        .selectable(chosen, role = Role.RadioButton) { choose(id) }.testTag("sms-decision-option:$id").padding(start = 8.dp, end = 14.dp, top = 6.dp, bottom = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(chosen, null, Modifier.padding(horizontal = 8.dp), colors = RadioButtonDefaults.colors(selectedColor = ur.accent, unselectedColor = ur.muted))
+                        Text(Money.own(name), Modifier.padding(start = 4.dp), style = MaterialTheme.typography.bodyLarge, color = ur.text)
+                    }
+                }
+            }
+            SecondaryButton(stringResource(R.string.sms_later_action), close, Modifier.fillMaxWidth().testTag("sms-decision-later"))
         }
     }
 }

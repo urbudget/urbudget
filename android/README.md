@@ -308,7 +308,7 @@ Otherwise it counts what needs the user, and the review is a page of transaction
 - **Ready to add**, ticked by default, and **Holds**, unticked, newest first under the day
   they're dated, each with **Tick all** / **Untick all** and **Tick from a day** (ticks what's
   dated that day or later, unticks the rest): tap a row to change it in the transaction editor, with its messages
-  shown beneath. An unticked row says **Won't be added**: it's cleared with the review. Possible duplicates offer add or match from the bank import engine. A
+  shown beneath. An unticked row says **Won't be added**: it's cleared with the review. A text that may already be in the budget asks on its row (**Already in your budget?**, **Choose…**): a sheet offers adding it as new or each match from the bank import engine, and **Add** waits for the answer. These rows come first, under **Check these first**, and stay there once answered. A
   transaction dated before its account's records start (its first transaction, or today
   for an account with none) is already in that account's starting balance: it's tagged
   and unticked. Every edit applies to the review as it is when it runs, so a row the list
