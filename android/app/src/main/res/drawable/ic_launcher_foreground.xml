@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The app icon's front layer: urbudget.app's mark (web/public/img/favicon.svg), the "Ur" pocket
+     holding a stack of coins. Its 1024 units are scaled to 8% and centred, so the mark stays inside
+     the 66dp circle every launcher shape keeps. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="0.08"
+        android:scaleY="0.08"
+        android:translateX="13.04"
+        android:translateY="11.6">
+        <group android:translateX="-33">
+            <path
+                android:pathData="M300,330V620a110,110 0,0 0,110 110h120a110,110 0,0 0,110 -110V430c0,-80 55,-130 150,-128"
+                android:strokeWidth="110"
+                android:strokeColor="#FFFFFF"
+                android:strokeLineCap="round"
+                android:strokeLineJoin="round" />
+            <path
+                android:fillColor="#FBBF24"
+                android:pathData="M412,595h112a30,30 0,0 1,0 60h-112a30,30 0,0 1,0 -60z" />
+            <path
+                android:fillColor="#FBBF24"
+                android:pathData="M426,501h112a30,30 0,0 1,0 60h-112a30,30 0,0 1,0 -60z" />
+            <path
+                android:fillColor="#FBBF24"
+                android:pathData="M404,407h112a30,30 0,0 1,0 60h-112a30,30 0,0 1,0 -60z" />
+        </group>
+    </group>
+</vector>

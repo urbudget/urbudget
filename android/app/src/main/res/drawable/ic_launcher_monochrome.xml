@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The app icon for themed icons (Android 13+): the same mark in one colour, which the launcher tints. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="0.08"
+        android:scaleY="0.08"
+        android:translateX="13.04"
+        android:translateY="11.6">
+        <group android:translateX="-33">
+            <path
+                android:pathData="M300,330V620a110,110 0,0 0,110 110h120a110,110 0,0 0,110 -110V430c0,-80 55,-130 150,-128"
+                android:strokeWidth="110"
+                android:strokeColor="#FFFFFF"
+                android:strokeLineCap="round"
+                android:strokeLineJoin="round" />
+            <path
+                android:fillColor="#FFFFFF"
+                android:pathData="M412,595h112a30,30 0,0 1,0 60h-112a30,30 0,0 1,0 -60zM426,501h112a30,30 0,0 1,0 60h-112a30,30 0,0 1,0 -60zM404,407h112a30,30 0,0 1,0 60h-112a30,30 0,0 1,0 -60z" />
+        </group>
+    </group>
+</vector>
