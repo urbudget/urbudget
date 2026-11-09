@@ -75,6 +75,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import app.urbudget.nativeapp.BalancesView
 import app.urbudget.nativeapp.R
 import app.urbudget.nativeapp.MiniBarsModel
@@ -223,21 +225,35 @@ internal fun ReportsScreen(budget: JSONObject, report: JSONObject?, summary: JSO
     val cache = remember { ReportBudgetCache() }
     // Names, groups and accounts for the filters; the last snapshot's stay until the next is read.
     val context by produceState<ReportBudget?>(null, budget, languageKey()) { value = withContext(Dispatchers.Default) { cache.get(budget, today) } }
-    BackHandler(open != null) { open = null }
     val choose: (String) -> Unit = { id ->
         ReportList.firstOrNull { it.id == id }?.let { info -> lastViews = rememberView(lastViews, info.group, id); open = id }
     }
     val info = ReportList.firstOrNull { it.id == open }
-    if (info == null) ReportsOverview(budget, month, onMonth, vm, bar, cache, today, choose)
-    else ReportPage(info, budget, vm, bar, cache, context, today, range, { range = it }, accounts, { accounts = it }, categories, { categories = it },
-        choose, { group -> choose(lastInGroup(lastViews, group)) }, { open = null }, openRegister, editTransaction)
+    @Composable
+    fun page(shown: ReportInfo, bar: @Composable RowScope.() -> Unit, back: (() -> Unit)?) =
+        ReportPage(shown, budget, vm, bar, cache, context, today, range, { range = it }, accounts, { accounts = it }, categories, { categories = it },
+            choose, { group -> choose(lastInGroup(lastViews, group)) }, back, openRegister, editTransaction)
+    ListDetail(
+        single = {
+            BackHandler(open != null) { open = null }
+            if (info == null) ReportsOverview(budget, month, onMonth, vm, bar, cache, today, choose)
+            else page(info, bar, back = { open = null })
+        },
+        // Side by side the overview stays as the list, and a report is always open beside it: the
+        // spending breakdown, its first card, until another is chosen. The page's buttons go with the report.
+        list = { ReportsOverview(budget, month, onMonth, vm, {}, cache, today, choose, selected = (info ?: DefaultReport).id) },
+        detail = { page(info ?: DefaultReport, bar, back = null) },
+    )
 }
+
+/** The report open beside the overview before one is chosen. */
+private val DefaultReport get() = ReportList.first { it.id == "categories" }
 
 // ---------- Overview ----------
 
 @Composable
 private fun ReportsOverview(budget: JSONObject, month: String, onMonth: (String) -> Unit, vm: BudgetViewModel, bar: @Composable RowScope.() -> Unit,
-                            cache: ReportBudgetCache, today: LocalDate, onOpen: (String) -> Unit) {
+                            cache: ReportBudgetCache, today: LocalDate, onOpen: (String) -> Unit, selected: String? = null) {
     var attempt by remember { mutableIntStateOf(0) }
     val key = OverviewKey(budget, month, attempt, languageKey())
     var result by remember { mutableStateOf<ScopedResult<OverviewModel?>?>(null) }
@@ -296,7 +312,7 @@ private fun ReportsOverview(budget: JSONObject, month: String, onMonth: (String)
                         }
                     }
                 }
-                item(key = "all", contentType = "all") { AllReports(onOpen) }
+                item(key = "all", contentType = "all") { AllReports(onOpen, selected) }
             }
         }
     }
@@ -393,16 +409,18 @@ private fun SpendingCard(model: OverviewModel, onOpen: () -> Unit) {
     }
 }
 
-/** Every report, by group. */
+/** Every report, by group; beside an open report, that one is marked. */
 @Composable
-private fun AllReports(onOpen: (String) -> Unit) {
+private fun AllReports(onOpen: (String) -> Unit, marked: String?) {
     CardPart(top = true, bottom = true, live = true) {
         Text(stringResource(R.string.reports_all), Modifier.padding(start = 16.dp, top = 14.dp, bottom = 2.dp), color = ur.text, fontSize = 17.sp, fontWeight = FontWeight.Bold)
         ReportGroups.forEach { (group, name) ->
             Text(stringResource(name), Modifier.padding(start = 16.dp, top = 10.dp, bottom = 2.dp), color = ur.muted, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
             val reports = ReportList.filter { it.group == group }
             reports.forEachIndexed { i, report ->
-                ListRow(stringResource(report.label), icon = report.icon, onClick = { onOpen(report.id) }, divider = i < reports.lastIndex)
+                val chosen = report.id == marked
+                ListRow(stringResource(report.label), if (chosen) Modifier.background(ur.accentSoft).semantics { selected = true } else Modifier,
+                    icon = report.icon, titleColor = if (chosen) ur.accent else ur.text, onClick = { onOpen(report.id) }, divider = i < reports.lastIndex)
             }
         }
         Spacer(Modifier.height(6.dp))
@@ -421,7 +439,7 @@ private fun ChipRow(content: @Composable RowScope.() -> Unit) {
 private fun ReportPage(
     info: ReportInfo, budget: JSONObject, vm: BudgetViewModel, bar: @Composable RowScope.() -> Unit, cache: ReportBudgetCache, context: ReportBudget?,
     today: LocalDate, range: MonthRange, setRange: (MonthRange) -> Unit, accounts: Set<String>, setAccounts: (Set<String>) -> Unit,
-    categories: Set<String>, setCategories: (Set<String>) -> Unit, choose: (String) -> Unit, chooseGroup: (String) -> Unit, back: () -> Unit,
+    categories: Set<String>, setCategories: (Set<String>) -> Unit, choose: (String) -> Unit, chooseGroup: (String) -> Unit, back: (() -> Unit)?,
     openRegister: ((RegisterTarget) -> Unit)?, editTransaction: (JSONObject) -> Unit,
 ) {
     val forecast = info.id == "forecast"

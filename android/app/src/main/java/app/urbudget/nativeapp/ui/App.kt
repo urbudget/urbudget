@@ -308,6 +308,8 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     val budget = state.budget
     // A large screen has the tabs in a rail at its start instead of the dock (Adaptive.kt).
     val rail = wideWindow() && budget != null
+    // Reports can show its list and a report side by side (ListDetail), so it has room for both.
+    val pageWidth = if (budget != null && morePage.isEmpty() && tab == 3) SplitPageWidth else ReadableWidth
     val undoLabel = stringResource(R.string.common_undo)
     val toast = remember(snack, scope, vm, undoLabel) { { message: String, undo: Boolean -> snack.toast(scope, vm, message, undo, undoLabel) } }
     LaunchedEffect(state.exported) { if (state.exported) { vm.exportSaid(); toast(context.getString(R.string.backup_exported), false) } }
@@ -317,7 +319,7 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
         // beside the rail; on a phone the width is never reached and the page fills the screen as before.
         Box(Modifier.fillMaxSize().then(if (rail) Modifier.windowInsetsPadding(RailInsets.only(WindowInsetsSides.Start)).padding(start = RailRoom) else Modifier),
             contentAlignment = Alignment.TopCenter) {
-        Box(Modifier.widthIn(max = ReadableWidth).fillMaxSize()) {
+        Box(Modifier.widthIn(max = pageWidth).fillMaxSize()) {
         when {
             state.loading -> CircularProgressIndicator(Modifier.align(Alignment.Center), color = ur.accent)
             morePage == "Account & sync" && budget == null -> Column(Modifier.fillMaxSize()) {
