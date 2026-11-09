@@ -20,7 +20,7 @@ import { uncategorizedTest } from "./uncategorized";
 import { CategoryPicker, DateInput, PayeeInput, READY_TO_ASSIGN } from "./ui";
 import { editableAmount, errorText, evaluateAmount } from "./format";
 import { getPref } from "./prefs";
-import { ACCOUNT_TYPES, accountType, isLiability, isLoanType, kindForType, typeName } from "./accounts";
+import { ACCOUNT_TYPES, accountType, creditLimitOf, isLiability, isLoanType, kindForType, typeName } from "./accounts";
 import { api } from "./bridge";
 import { loanTerms } from "./Planning";
 import { LoanDetailsFields, loanDraft, loanTermsOf } from "./LoanDetails";
@@ -207,6 +207,11 @@ export function AccountForm({
   const [balance, setBalance] = useState(
     editableAmount(initial?.openingBalance ?? 0),
   );
+  // A credit account's limit, blank for none.
+  const [limit, setLimit] = useState(() => {
+    const cents = initial && creditLimitOf(initial);
+    return cents ? editableAmount(cents) : "";
+  });
   const [accountNote, setAccountNote] = useState(initial?.note ?? "");
   const [archived, setArchived] = useState(initial?.archived ?? false);
   const [error, setError] = useState("");
@@ -247,6 +252,9 @@ export function AccountForm({
             if (initial && kind !== initial.kind)
               throw new Error(t("Create a new account to change how this account affects your budget."));
             const terms = showLoan && loanChanged ? loanTermsOf(accountId, loan) : undefined;
+            const creditLimit = kind === "credit" && limit.trim() ? evaluateAmount(limit) : 0;
+            if (creditLimit < 0) throw new Error(t("Enter the credit limit as a positive amount."));
+            // Spread first: fields this form doesn't edit, including ones other apps add, stay.
             const account: Account = {
               ...initial,
               id: accountId,
@@ -260,6 +268,11 @@ export function AccountForm({
               openingBalance: evaluateAmount(balance),
               archived,
             };
+            // A credit account's limit; blank (or zero) removes it.
+            if (kind === "credit") {
+              if (creditLimit > 0) account.creditLimit = creditLimit;
+              else delete account.creditLimit;
+            }
             if (terms === undefined) save(account);
             else save(account, terms);
           } catch (e) {
@@ -301,6 +314,17 @@ export function AccountForm({
               onChange={(e) => setBalance(e.target.value)}
             />
           </label>
+          {kind === "credit" && (
+            <label>
+              {t("Credit limit")}
+              <input
+                inputMode="decimal"
+                placeholder={t("Optional")}
+                value={limit}
+                onChange={(e) => setLimit(e.target.value)}
+              />
+            </label>
+          )}
         </div>
         {initial && (
           <p className="help">

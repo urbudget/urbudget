@@ -20,6 +20,45 @@ final class JSONTests: XCTestCase {
     }
 }
 
+final class CreditLimitTests: XCTestCase {
+    func testCreditLeftIsTheLimitPlusTheBalance() {
+        let card: JSON = ["id": "visa", "kind": "credit", "accountType": "creditCard", "creditLimit": 1_000_000]
+        XCTAssertEqual(AccountTypes.creditLimit(card), 1_000_000)
+        XCTAssertEqual(AccountTypes.creditLeft(card, balance: -154_500), 845_500)
+        XCTAssertEqual(AccountTypes.creditLeft(card, balance: -1_100_000), -100_000, "Over the limit")
+        XCTAssertNil(AccountTypes.creditLeft(["id": "visa", "kind": "credit"], balance: -154_500), "No limit, no credit left")
+        XCTAssertNil(AccountTypes.creditLeft(["id": "checking", "kind": "cash", "creditLimit": 1_000_000], balance: 0), "Only credit accounts")
+    }
+
+    func testATypedLimitIsOptionalAndAboveZero() throws {
+        Money.configure(budget: ["currency": "SAR"])
+        XCTAssertEqual(try AccountTypes.parseCreditLimit("10,000"), 1_000_000)
+        XCTAssertNil(try AccountTypes.parseCreditLimit(" "))
+        XCTAssertThrowsError(try AccountTypes.parseCreditLimit("-500"))
+        XCTAssertThrowsError(try AccountTypes.parseCreditLimit("0"))
+    }
+
+    func testTheLimitSurvivesSavingAndAnEditThatDoesNotKnowIt() throws {
+        var budget = try JSON.parse(#"{"accounts":[{"id":"visa","name":"Visa","kind":"credit","accountType":"creditCard","openingBalance":0,"creditLimit":1000000,"futureField":"kept"}]}"#)
+        budget = try JSON.parse(budget.serialized())
+        XCTAssertEqual(budget.row("accounts", id: "visa")?["creditLimit"], .int(1_000_000))
+        // The edit form's fields merge into the record, as Edit account saves them.
+        try budget.upsertRecord("accounts", ["id": "visa", "name": "Visa card", "accountType": "creditCard", "note": "",
+                                             "openingBalance": 0, "archived": false, "netWorth": true])
+        budget = try JSON.parse(budget.serialized())
+        let visa = try XCTUnwrap(budget.row("accounts", id: "visa"))
+        XCTAssertEqual(visa.text("name"), "Visa card")
+        XCTAssertEqual(AccountTypes.creditLimit(visa), 1_000_000)
+        XCTAssertEqual(visa.text("futureField"), "kept")
+        // A new limit replaces it; clearing the field removes the key and nothing else.
+        AccountTypes.setCreditLimit(500_000, account: "visa", in: &budget)
+        XCTAssertEqual(budget.row("accounts", id: "visa")?["creditLimit"], .int(500_000))
+        AccountTypes.setCreditLimit(nil, account: "visa", in: &budget)
+        XCTAssertEqual(budget.row("accounts", id: "visa")?.has("creditLimit"), false)
+        XCTAssertEqual(budget.row("accounts", id: "visa")?.text("futureField"), "kept")
+    }
+}
+
 final class MoneyTests: XCTestCase {
     func testFormatsAndParsesInTheBudgetsFormat() throws {
         Money.configure(budget: ["currency": "USD"])

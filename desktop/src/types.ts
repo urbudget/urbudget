@@ -10,6 +10,8 @@ export type Account = {
   accountType?: string;
   /** False to leave a tracking account's balance out of net worth. */
   netWorth?: boolean;
+  /** A credit account's limit in cents, positive; left out for none (see creditLeft in accounts.ts). */
+  creditLimit?: number;
   note?: string | null;
   source?: Record<string, unknown>;
   openingBalance: number;

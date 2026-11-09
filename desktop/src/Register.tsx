@@ -24,6 +24,7 @@ import { byAdded } from "./order";
 import { getPref, usePref } from "./prefs";
 import { frequencies } from "./Planning";
 import { LoanHeader } from "./LoanHeader";
+import { creditLeft } from "./accounts";
 import { reportTransactionIds, type LineQuery } from "./reports/TransactionsDialog";
 import { BulkBar, RegisterToolbar, anyFilter, emptyFilters, type Filters } from "./RegisterToolbar";
 import {
@@ -357,6 +358,8 @@ export function TransactionsPage({
   onAsk?: (ids: string[]) => void;
 }) {
   const balance = summary?.balance ?? netWorth;
+  // A card with a limit: what's left to spend, from its working balance.
+  const left = account && creditLeft(account, summary?.balance ?? account.openingBalance);
   return (
     <div className="register-page">
       <Register
@@ -384,6 +387,12 @@ export function TransactionsPage({
                     <strong>{money(summary.uncleared)}</strong>
                   </div>
                 </>
+              )}
+              {left !== undefined && (
+                <div className="stat">
+                  <span>{t("Credit left")}</span>
+                  <strong className={left < 0 ? "negative" : undefined}>{money(left)}</strong>
+                </div>
               )}
               <div className="spacer" />
               {account && (

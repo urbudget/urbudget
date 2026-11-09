@@ -50,6 +50,7 @@ const FIELDS: Record<string, string> = {
   accountType: msg("Account type"),
   onBudget: msg("On budget"),
   netWorth: msg("In net worth"),
+  creditLimit: msg("Credit limit"),
   nextDate: msg("Next date"),
   anchorDate: msg("First date"),
   frequency: msg("Repeats"),
@@ -64,7 +65,7 @@ const FIELDS: Record<string, string> = {
   categoryOrder: msg("Category order"),
   groupOrder: msg("Group order"),
 };
-const MONEY = new Set(["target", "openingBalance", "monthlyPayment", "monthlyFees"]);
+const MONEY = new Set(["target", "openingBalance", "creditLimit", "monthlyPayment", "monthlyFees"]);
 const DATES = new Set(["date", "nextDate", "anchorDate"]);
 // An account's "Open" and "Closed" are states here, which Arabic words apart from the "Open"
 // command, so their keys have a context.

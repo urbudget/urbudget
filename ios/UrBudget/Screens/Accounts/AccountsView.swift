@@ -250,7 +250,7 @@ struct AccountsView: View {
     }
 }
 
-/// Adding or editing an account: its name, type, balance, note and whether it counts in net worth.
+/// Adding or editing an account: its name, type, balance, a card's credit limit, note and whether it counts in net worth.
 struct AccountForm: View {
     @Environment(BudgetStore.self) private var store
     var request: AccountFormRequest
@@ -258,6 +258,8 @@ struct AccountForm: View {
     @State private var type = "checking"
     /// Empty for a new account (the field shows 0.00), so typing doesn't start by deleting it.
     @State private var balance = ""
+    /// A credit account's limit; empty for none.
+    @State private var creditLimit = ""
     @State private var note = ""
     @State private var archived = false
     @State private var netWorth = true
@@ -274,12 +276,23 @@ struct AccountForm: View {
             let opening = balance.trimmingCharacters(in: .whitespaces).isEmpty ? 0 : try Money.parse(balance)
             // Only tracking accounts can stay out of net worth.
             let counted = kind != "tracking" || netWorth
+            // Only credit accounts have a limit; blank means none.
+            let credit = kind == "credit"
+            let limit = try credit ? AccountTypes.parseCreditLimit(creditLimit) : nil
             if let original {
-                try await store.upserting("accounts", ["id": .string(original.text("id")), "name": .string(name.trimmingCharacters(in: .whitespaces)),
-                                                       "accountType": .string(type), "note": .string(note), "openingBalance": .int(opening),
-                                                       "archived": .bool(archived), "netWorth": .bool(counted)], original: original)
+                let id = original.text("id")
+                let record: JSON = ["id": .string(id), "name": .string(name.trimmingCharacters(in: .whitespaces)),
+                                    "accountType": .string(type), "note": .string(note), "openingBalance": .int(opening),
+                                    "archived": .bool(archived), "netWorth": .bool(counted)]
+                // Fields this form doesn't show are kept. A credit account's limit is set, or removed when
+                // the field is cleared; any other account keeps whatever it has.
+                try await store.editing { budget in
+                    try BudgetRepository.verify(budget, "accounts", original)
+                    try budget.upsertRecord("accounts", record)
+                    if credit { AccountTypes.setCreditLimit(limit, account: id, in: &budget) }
+                }
             } else {
-                try await store.saveAccount(name: name, kind: kind, openingBalance: opening, accountType: type, note: note, netWorth: counted)
+                try await store.saveAccount(name: name, kind: kind, openingBalance: opening, accountType: type, note: note, netWorth: counted, creditLimit: limit)
                 let added = name.trimmingCharacters(in: .whitespaces)
                 store.showToast(String(localized: "Added \(added)."))
             }
@@ -297,6 +310,13 @@ struct AccountForm: View {
             } footer: {
                 Text(balanceFooter(new: original == nil))
             }
+            if kind == "credit" {
+                Section {
+                    AmountField(title: String(localized: "Credit limit (\(store.currency))"), text: $creditLimit)
+                } footer: {
+                    Text("Optional. Shows how much credit you have left.")
+                }
+            }
             Section {
                 TextField("Note", text: $note, axis: .vertical).lineLimit(2...6)
             }
@@ -313,7 +333,8 @@ struct AccountForm: View {
                 }
             }
         }
-        .retainingEditorDraft("account", values: ["name": .string(name), "type": .string(type), "balance": .string(balance), "note": .string(note), "archived": .bool(archived), "netWorth": .bool(netWorth)])
+        .retainingEditorDraft("account", values: ["name": .string(name), "type": .string(type), "balance": .string(balance), "creditLimit": .string(creditLimit),
+                                                  "note": .string(note), "archived": .bool(archived), "netWorth": .bool(netWorth)])
         .onAppear {
             guard !loaded else { return }
             loaded = true
@@ -323,6 +344,7 @@ struct AccountForm: View {
             name = original.text("name")
             type = AccountTypes.forEditing(original, balance: current)
             balance = Money.editable(original.long("openingBalance"))
+            creditLimit = AccountTypes.creditLimit(original).map { Money.editable($0) } ?? ""
             note = original.text("note")
             archived = original.flag("archived")
             netWorth = AccountTypes.inNetWorth(original)

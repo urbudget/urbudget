@@ -91,3 +91,14 @@ export function accountType(a: Account, balance = a.openingBalance): string {
 }
 /** Whether the account's balance counts toward net worth (tracking accounts can opt out). */
 export const inNetWorth = (a: Account) => a.netWorth !== false;
+/** A credit account's limit in cents, or undefined when it has none (or one that doesn't read). */
+export const creditLimitOf = (a: Account) =>
+  a.kind === "credit" && Number.isSafeInteger(a.creditLimit) && a.creditLimit! > 0 ? a.creditLimit : undefined;
+/**
+ * What's left to spend on a credit account with a limit: the limit plus its balance, which is
+ * negative while money is owed. Negative once the balance is past the limit.
+ */
+export function creditLeft(a: Account, balance: number): number | undefined {
+  const limit = creditLimitOf(a);
+  return limit === undefined ? undefined : limit + balance;
+}

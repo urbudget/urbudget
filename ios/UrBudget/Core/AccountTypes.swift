@@ -58,6 +58,37 @@ enum AccountTypes {
     /// Whether the account's money is in the budget.
     static func onBudget(_ account: JSON) -> Bool { account.text("kind") != "tracking" && account["onBudget"] != .bool(false) }
 
+    /// A credit account's limit in cents, or nil when it has none. Android and the desktop keep it
+    /// in the same `creditLimit` key.
+    static func creditLimit(_ account: JSON) -> Int64? {
+        let limit = account.long("creditLimit")
+        return limit > 0 ? limit : nil
+    }
+
+    /// What's left to spend on a credit account with a limit: the limit plus the balance, which is
+    /// negative while money is owed (a 10,000.00 limit with -1,545.00 leaves 8,455.00).
+    static func creditLeft(_ account: JSON, balance: Int64) -> Int64? {
+        guard account.text("kind") == "credit", let limit = creditLimit(account) else { return nil }
+        let (left, overflow) = limit.addingReportingOverflow(balance)
+        return overflow ? nil : left
+    }
+
+    /// A typed credit limit in cents: nil when blank, refused unless it's above zero.
+    static func parseCreditLimit(_ text: String) throws -> Int64? {
+        guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+        let limit = try Money.parse(text)
+        guard limit > 0 else { throw AppError(String(localized: "Enter a credit limit above zero, or leave it blank.")) }
+        return limit
+    }
+
+    /// Sets an account's credit limit, or removes the key when there's none; its other fields stay as they are.
+    static func setCreditLimit(_ limit: Int64?, account id: String, in budget: inout JSON) {
+        var rows = budget["accounts"].array
+        guard let index = rows.firstIndex(where: { $0.text("id") == id }) else { return }
+        if let limit { rows[index]["creditLimit"] = .int(limit) } else { rows[index].remove("creditLimit") }
+        budget["accounts"] = .array(rows)
+    }
+
     /// The words under an account's name.
     static func typeLabel(_ account: JSON) -> String {
         let chosen = account.text("accountType")

@@ -534,7 +534,8 @@ final class BudgetStore {
         try await perform { ((), try await $0.edit({ try $0.upsertRecord("schedules", schedule) }, then: commands)) }
     }
 
-    func saveAccount(id: String? = nil, name: String, kind: String, openingBalance: Int64, accountType: String?, note: String = "", netWorth: Bool = true) async throws {
+    func saveAccount(id: String? = nil, name: String, kind: String, openingBalance: Int64, accountType: String?, note: String = "", netWorth: Bool = true,
+                     creditLimit: Int64? = nil) async throws {
         let recordId = id ?? UUID().uuidString.lowercased()
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         try await editing { budget in
@@ -542,6 +543,7 @@ final class BudgetStore {
             var record: JSON = ["id": .string(recordId), "name": .string(trimmed), "kind": .string(kind),
                                 "openingBalance": .int(openingBalance), "archived": .bool(existing?.flag("archived") ?? false)]
             if let accountType { record["accountType"] = .string(accountType) }
+            if let creditLimit { record["creditLimit"] = .int(creditLimit) }
             if !note.isEmpty || existing?.has("note") == true { record["note"] = .string(note) }
             if !netWorth || existing?.has("netWorth") == true { record["netWorth"] = .bool(netWorth) }
             try budget.upsertRecord("accounts", record)

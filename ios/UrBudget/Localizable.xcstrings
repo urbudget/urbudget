@@ -8960,6 +8960,27 @@
         }
       }
     },
+    "Credit left: %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الحد المتبقي: ⁨%@⁩"
+          }
+        }
+      }
+    },
+    "Credit limit (%@)" : {
+      "comment" : "The budget's currency code",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الحد الائتماني (⁨%@⁩)"
+          }
+        }
+      }
+    },
     "Cumulative budget surplus" : {
       "localizations" : {
         "ar" : {
@@ -10269,6 +10290,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "أدخل اسمًا للميزانية."
+          }
+        }
+      }
+    },
+    "Enter a credit limit above zero, or leave it blank." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أدخل حدًا ائتمانيًا أكبر من صفر، أو اتركه فارغًا."
           }
         }
       }
@@ -16506,6 +16537,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "يفتح ملفاتك"
+          }
+        }
+      }
+    },
+    "Optional. Shows how much credit you have left." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اختياري. يُظهر الحد المتبقي لك."
           }
         }
       }

@@ -127,6 +127,8 @@ Use these everywhere. If a term you need isn't here, choose one, use it consiste
 | checking | حساب جارٍ | |
 | savings | حساب توفير | |
 | credit card | بطاقة ائتمان | |
+| credit limit | الحد الائتماني | a card's limit |
+| credit left | الحد المتبقي | what a card's texts call available credit or available limit |
 | tracking account | حساب تتبُّع | |
 | loan; debts | قرض؛ الديون | |
 | paid off | مُسدَّد | |

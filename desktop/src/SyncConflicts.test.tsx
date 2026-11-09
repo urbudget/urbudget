@@ -87,6 +87,12 @@ it("reads amounts, splits and the record they belong to", () => {
   expect(aboutText(assigned)).toBe("October 2026");
 });
 
+it("reads a card's credit limit as money", () => {
+  const limit: SyncConflict = { ...conflicts[0], key: "account/visa/creditLimit", kind: "account", label: "Visa", about: {}, field: "creditLimit", local: 1000000, remote: 1200000 };
+  expect(shownValue(limit, limit.local)).toBe(money(1000000));
+  expect(shownValue({ ...limit, field: null }, { changed: ["creditLimit"] })).toBe("Edited: Credit limit");
+});
+
 
 it("shows each side's monthly money impact and named category changes", () => {
   const plan = {type:"monthPlan",currency:"USD",month:"2026-10",baseTotal:10000,total:12500,readyToAssignChange:-2500,moveCount:2,categories:[{id:"food",name:"Food",base:10000,amount:12500,delta:2500}]};

@@ -840,7 +840,7 @@ private struct ScheduleLine: View {
     }
 }
 
-/// An account's balances above its transactions: working balance, cleared and uncleared, and its actions.
+/// An account's balances above its transactions: working balance (and a card's credit left), cleared and uncleared, and its actions.
 private struct AccountSummary: View {
     @Environment(BudgetStore.self) private var store
     var account: JSON
@@ -860,6 +860,11 @@ private struct AccountSummary: View {
                 Text("Working balance").font(.footnote).foregroundStyle(Color.secondary)
                 Text(money(balance, currency)).font(.system(size: 30, weight: .heavy, design: .rounded)).monospacedDigit()
                     .foregroundStyle(balance < 0 ? Color.urNegative : .primary)
+                // A card with a limit: what can still be spent on it.
+                if total != nil, let left = AccountTypes.creditLeft(account, balance: balance) {
+                    Text("Credit left: \(money(left, currency))").font(.footnote).monospacedDigit()
+                        .foregroundStyle(left < 0 ? Color.urNegative : Color.secondary)
+                }
             }
             HStack(spacing: 24) {
                 Figure(label: String(localized: "Cleared"), value: money(total?.long("cleared") ?? 0, currency))
