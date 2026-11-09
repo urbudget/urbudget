@@ -397,8 +397,17 @@ internal fun FullScreenDialog(onDismiss: () -> Unit, content: @Composable () -> 
     val shown = remember { androidx.compose.animation.core.MutableTransitionState(false).apply { targetState = true } }
     androidx.compose.animation.AnimatedVisibility(shown, enter = androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(240)) { it / 6 } +
         androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(200))) {
-        Box(Modifier.fillMaxSize().background(ur.bg).clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, null) {}) { content() }
+        // On a large screen the form keeps the pages' readable width, centred (Adaptive.kt).
+        Box(Modifier.fillMaxSize().background(ur.bg).clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, null) {},
+            contentAlignment = Alignment.TopCenter) { Box(Modifier.widthIn(max = ReadableWidth).fillMaxSize()) { content() } }
     }
+}
+
+/** The same form in the pane beside a list on a large screen (ListDetail), rather than over the screen. */
+@Composable
+internal fun FormPane(onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    androidx.activity.compose.BackHandler(onBack = onDismiss)
+    Box(Modifier.fillMaxSize().background(ur.bg).clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, null) {}) { content() }
 }
 
 /** The shadow floating elements cast on the light theme; dark gets an edge instead. */

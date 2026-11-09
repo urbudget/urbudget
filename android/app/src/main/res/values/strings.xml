@@ -291,6 +291,12 @@
     <string name="register_no_matches_detail">Nothing matches this search and these filters.</string>
     <string name="register_empty_title">No transactions here</string>
     <string name="register_empty_detail">Add a purchase, income, or a transfer to see your money in motion.</string>
+    <string name="register_pane_title">No transaction open</string>
+    <string name="register_pane_detail">Tap one in the list to see or change it here.</string>
+    <string name="transaction_unsaved_title">Discard your changes?</string>
+    <string name="transaction_unsaved_message">This transaction has changes that aren\'t saved.</string>
+    <string name="transaction_unsaved_discard">Discard</string>
+    <string name="transaction_unsaved_keep">Keep editing</string>
     <string name="bulk_categorize">Categorize %1$s</string>
     <plurals name="delete_transactions_title">
         <item quantity="one">Delete %1$s transactions?</item>

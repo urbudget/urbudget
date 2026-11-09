@@ -297,6 +297,12 @@
     <string name="register_no_matches_detail">لا شيء يطابق هذا البحث وعوامل التصفية هذه.</string>
     <string name="register_empty_title">لا معاملات هنا</string>
     <string name="register_empty_detail">أضف مشترًى أو دخلًا أو تحويلًا لترى حركة أموالك.</string>
+    <string name="register_pane_title">لا توجد معاملة مفتوحة</string>
+    <string name="register_pane_detail">انقر على معاملة في القائمة لعرضها أو تعديلها هنا.</string>
+    <string name="transaction_unsaved_title">هل تريد تجاهل تغييراتك؟</string>
+    <string name="transaction_unsaved_message">في هذه المعاملة تغييرات لم تُحفظ.</string>
+    <string name="transaction_unsaved_discard">تجاهل</string>
+    <string name="transaction_unsaved_keep">متابعة التعديل</string>
     <string name="bulk_categorize">تصنيف \u2068%1$s\u2069</string>
     <plurals name="delete_transactions_title">
         <item quantity="zero">حذف \u2068%1$s\u2069 معاملة؟</item>
