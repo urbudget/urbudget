@@ -164,6 +164,9 @@ pub struct ProposalView<'a> {
     /// What the user left out or changed on the card, to change again.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub choices: Option<&'a super::proposals::Revision>,
+    /// For a `bankTexts` card, what the phone does when it's applied.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bank_texts: Option<&'a Value>,
 }
 pub fn proposal_view(p: &Proposal) -> Value {
     serde_json::to_value(ProposalView {
@@ -181,6 +184,7 @@ pub fn proposal_view(p: &Proposal) -> Value {
         },
         fixes: p.fixes.as_ref(),
         choices: p.review.as_ref().map(|r| &r.revision),
+        bank_texts: p.bank_texts.as_ref(),
     })
     .unwrap_or(Value::Null)
 }

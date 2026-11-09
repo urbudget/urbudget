@@ -431,3 +431,21 @@ fn reviewed_payee_and_uncategorized_choice_win_over_bank_defaults() {
     );
     assert_eq!(saved.transactions[1].splits[0].category_id, None);
 }
+
+#[test]
+fn an_added_text_keeps_the_banks_words_beside_the_users_payee() {
+    let b = common::budget("SAR");
+    let mut v = value();
+    // The user renamed the bank's "Shop" to "Corner Shop" in the review.
+    v["items"][0]["raw"] = json!("Shop");
+    v["items"][0]["transaction"]["payee"] = json!("Corner Shop");
+    v["items"][1]["transaction"]["payee"] = json!("Shop Refunds");
+    let saved = apply_batch(b, &messages(), &analysis(v), decisions()).unwrap();
+    let bank = |t: &urbudget_core::domain::Transaction| t.extra.get("importedPayee").and_then(Value::as_str).map(String::from);
+    assert_eq!((saved.transactions[0].payee.as_str(), bank(&saved.transactions[0]).as_deref()), ("Corner Shop", Some("Shop")));
+    // A reading without the bank's words keeps its payee as the bank text, as before.
+    assert_eq!(bank(&saved.transactions[1]).as_deref(), Some("Shop Refunds"));
+    // So the next text with that name is known as theirs, a branch number or not.
+    let names = urbudget_core::workflows::BankNames::new(&saved);
+    assert_eq!(names.get("SHOP 0412").map(|(p, _)| p), Some("Corner Shop"));
+}

@@ -858,6 +858,53 @@ impl KnownPayees {
             .filter(|p| text == p.key || text.strip_prefix(p.key.as_str()).and_then(|rest| rest.strip_prefix(' ')).is_some_and(added))
             .max_by_key(|p| p.key.chars().count())
     }
+    /// The user's payee by this name, however it's cased or punctuated.
+    pub fn named(&self, name: &str) -> Option<&KnownPayee> {
+        let key = normalize_payee(name);
+        self.0.iter().find(|p| !key.is_empty() && p.key == key)
+    }
+}
+
+/// A bank's name for a payee as it's compared with another: as rules read it, without the words
+/// that are only numbers (a branch, a terminal, a card), so "SALON A 0412" and "Salon-A 0533" are
+/// one name. A name that's all numbers keeps them.
+pub fn bank_key(text: &str) -> String {
+    let all = normalize_payee(text);
+    let words: Vec<&str> = all.split(' ').filter(|w| !w.chars().all(char::is_numeric)).collect();
+    if words.is_empty() { all } else { words.join(" ") }
+}
+
+/// What the user called each name their bank wrote, from the budget's transactions that keep the
+/// bank's words (`importedPayee`, from a bank file or a bank text): the payee of the latest, and
+/// its category. Whatever the user renamed it to since, in the review or the register, is what it
+/// says. Transfers aside.
+pub struct BankNames(HashMap<String, (String, Option<String>)>);
+impl BankNames {
+    pub fn new(b: &Budget) -> Self {
+        let mut by: HashMap<String, (&str, &Transaction)> = HashMap::new();
+        for t in b.transactions.iter().filter(|t| t.transfer_account_id.is_none() && !t.payee.trim().is_empty()) {
+            let Some(raw) = t.extra.get("importedPayee").and_then(Value::as_str).filter(|s| !s.trim().is_empty()) else { continue };
+            let key = bank_key(raw);
+            if key.is_empty() {
+                continue;
+            }
+            // The latest by date; of one day's, the one added last.
+            if by.get(&key).is_none_or(|(date, _)| t.date.as_str() >= *date) {
+                by.insert(key, (&t.date, t));
+            }
+        }
+        Self(by.into_iter().map(|(key, (_, t))| {
+            let category = match t.splits.as_slice() {
+                [s] => s.category_id.clone().filter(|id| !placeholder(b, id)),
+                _ => None,
+            };
+            (key, (t.payee.clone(), category))
+        }).collect())
+    }
+    /// The user's payee for a name the bank writes, and the category they gave it, if any.
+    pub fn get(&self, bank: &str) -> Option<(&str, Option<&str>)> {
+        self.0.get(&bank_key(bank)).map(|(payee, category)| (payee.as_str(), category.as_deref()))
+    }
 }
 /// A category id a bank import uses for rows that still need one.
 pub(crate) fn placeholder(b: &Budget, id: &str) -> bool {

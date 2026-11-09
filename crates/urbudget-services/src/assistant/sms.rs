@@ -240,7 +240,7 @@ What to return
 - For a payee that isn't in payees or bankNames, payee_history shows whether the user has it under another name and which category they give it.
 
 Templates
-- A template describes one format a sender writes, so the phone can read the next text in it. lines: the text's lines in order, the words that never change copied exactly as the bank writes them, and the parts that change as slots: {amount}, {currency} (a code like USD, or the mark the bank writes: $, £, €, ₹, Rs., ريال), {total} (the amount in the budget's currency when the text gives one beside a foreign amount), {balance}, {date:dd/mm/yy} (the date's order and separators as written, with dd, mm or mmm for a month's name, and yy or yyyy; with no year when the text gives none: {date:mm/dd}, {date:dd-mmm-yy}, {date:mmm dd, yyyy}), {time}, {ref} (the card or account the text is about), {other} (a transfer's other account), {payee}, {code}, {n} (any other number) and {any} (other words that change). Start a line that's sometimes missing with ?.
+- A template describes one format a sender writes, so the phone can read the next text in it. lines: the text's lines in order, the words that never change copied exactly as the bank writes them, and the parts that change as slots: {amount}, {currency} (a code like USD, or the mark the bank writes: $, £, €, ₹, Rs., ريال), {total} (the amount in the budget's currency when the text gives one beside a foreign amount), {balance}, {available} (a card's credit left), {date:dd/mm/yy} (the date's order and separators as written, with dd, mm or mmm for a month's name, and yy or yyyy; with no year when the text gives none: {date:mm/dd}, {date:dd-mmm-yy}, {date:mmm dd, yyyy}), {time}, {ref} (the card or account the text is about), {other} (a transfer's other account), {payee}, {code}, {n} (any other number) and {any} (other words that change). Start a line that's sometimes missing with ?.
 - outcome: for money, disposition (transaction or pending), kind, sign ("-" for money out, "+" for money in) and memo or null; for a format that isn't money, skip with its reason.
 - note: the review note in {LANGUAGE}, with {payee} where the payee goes ("Purchase at {payee}"). payee: the payee when the format names none (a salary), otherwise null.
 - texts: the read texts in this format. The phone keeps a template only when it reads those texts, and every other text of this batch it matches, exactly as your items do. Write none for a text you leave unclear.
@@ -253,6 +253,7 @@ items
 - note: a few words for the user in {LANGUAGE} saying what it is, such as "Purchase at Tesco" or "Salary". Don't repeat the amount or the card number, and don't explain these rules.
 - quote: a short piece of one of the item's texts, copied exactly, that shows the amount ("$45.00", "SAR 65.97"). "" only for unclear.
 - transaction: null for unclear.
+- bankName: the payee's name exactly as the text writes it, copied from one of the item's texts ("SQ *BLUE BOTTLE", "PANDA RET", "swiggy@icici"), however you write the payee. Null when the text names nobody, and for unclear. The app remembers the user's name for it.
 - unsure: the fields the user should check, from date, amount, payee, kind and category. Empty when you're confident.
 
 skipped: texts where no money moved, by reason
@@ -274,7 +275,8 @@ The transaction
 - accountRef: the words that say which of the user's cards or accounts this is, copied exactly as written, usually the last digits with any mask: "4512", "***3301", "XX1234", "ending 4421". For a transfer, it's the account the text is about, and amount is signed from its side: a payment to a credit card is money into the card. Take it only from this item's texts; null when they name none.
 - otherRef: for a transfer, the user's other account, copied the same way, or null.
 - otherAccount: for a transfer, the user's other account by its exact name in accounts, when the texts don't name it in a way the app can match (no otherRef, or digits no account's name holds) but you can tell which it is: the text says what kind of account it is ("your savings account", "your term deposit", "your investment account", whatever the bank calls it) and one of the user's accounts is that, or transfers shows that such money always moves to or from one account (the account that pays their credit card). Null when the app can match otherRef or you can't tell; never guess between two accounts.
-- balance: the balance of the account this text is about that the text gives after this money moved, as an exact decimal with a point and no grouping, negative when overdrawn ("Balance £3,402.17" is "3402.17"), or null. Never a credit limit, a card's available credit, points, or another account's balance; null when you can't tell which it is.
+- balance: the balance of the account this text is about that the text gives after this money moved, as an exact decimal with a point and no grouping, negative when overdrawn ("Balance £3,402.17" is "3402.17"), or null. Never a credit limit, a card's credit left (that's available), points, or another account's balance; null when you can't tell which it is.
+- available: a card's credit left that the text gives after this money moved ("Available limit SAR 8,455.00" is "8455.00"), as an exact decimal with a point and no grouping, or null. Never the credit limit itself, and never a bank account's own available balance (that's balance).
 - categoryId: a category id from the list. For one of the user's payees, the category they usually give it. For a new payee whose kind of business is clear (a supermarket, a pharmacy, a petrol station, a restaurant, a phone or utility bill), the closest category, with "category" in unsure. Null only when nothing points to one. A refund takes the purchase's category. Never for a transfer.
 
 Accounts
@@ -313,16 +315,16 @@ fn schema() -> Value {
     let kinds = ["expense", "income", "refund", "transfer"];
     let transaction = object(
         json!({"date":string,"amount":optional,"currency":string,"writtenAmount":string,"payee":string,"memo":string,
-        "kind":{"type":"string","enum":kinds},"accountRef":optional,"otherRef":optional,"otherAccount":optional,"categoryId":optional,"balance":optional}),
-        vec!["date", "amount", "currency", "writtenAmount", "payee", "memo", "kind", "accountRef", "otherRef", "otherAccount", "categoryId", "balance"],
+        "kind":{"type":"string","enum":kinds},"accountRef":optional,"otherRef":optional,"otherAccount":optional,"categoryId":optional,"balance":optional,"available":optional}),
+        vec!["date", "amount", "currency", "writtenAmount", "payee", "memo", "kind", "accountRef", "otherRef", "otherAccount", "categoryId", "balance", "available"],
     );
     let numbers = json!({"type":"array","items":{"type":"integer"}});
     let unsure = json!({"type":"array","items":{"type":"string","enum":["date","amount","payee","kind","category"]}});
     // Only money is written out; a text where none moved is a number under its reason.
     let item = object(
         json!({"texts":numbers,"disposition":{"type":"string","enum":["transaction","pending","unclear"]},"note":string,"quote":string,
-        "transaction":{"anyOf":[transaction,{"type":"null"}]},"unsure":unsure}),
-        vec!["texts", "disposition", "note", "quote", "transaction", "unsure"],
+        "transaction":{"anyOf":[transaction,{"type":"null"}]},"bankName":optional,"unsure":unsure}),
+        vec!["texts", "disposition", "note", "quote", "transaction", "bankName", "unsure"],
     );
     let skipped = object(
         Value::Object(sms_import::SKIPS.iter().map(|s| (s.to_string(), numbers.clone())).collect()),
@@ -355,7 +357,7 @@ fn schema() -> Value {
 }
 
 /// What a correction can change on a text the phone read.
-const FIELDS: [&str; 12] = ["date", "amount", "currency", "writtenAmount", "payee", "memo", "kind", "accountRef", "otherRef", "otherAccount", "categoryId", "balance"];
+const FIELDS: [&str; 13] = ["date", "amount", "currency", "writtenAmount", "payee", "memo", "kind", "accountRef", "otherRef", "otherAccount", "categoryId", "balance", "available"];
 
 /// What the model sends: money written out, every other read text a number under its reason,
 /// corrections to what the phone read, and templates for the formats it read.
@@ -377,6 +379,9 @@ struct Found {
     note: String,
     quote: String,
     transaction: Option<sms_import::Transaction>,
+    /// The payee as the text writes it, copied: what the user's name for it is remembered by.
+    #[serde(default, rename = "bankName")]
+    bank_name: Option<String>,
     unsure: Vec<String>,
 }
 #[derive(Deserialize)]
@@ -500,7 +505,7 @@ fn reading(item: &sms_import::Item) -> Value {
         None => json!({"template":item.template,"skip":item.skip}),
         Some(t) => json!({"template":item.template,"disposition":item.disposition,"kind":t.kind,"date":t.date,"amount":t.amount,
             "currency":t.currency,"writtenAmount":t.written_amount,"payee":t.payee,"memo":t.memo,"accountRef":t.account_ref,
-            "otherRef":t.other_ref,"otherAccount":t.other_account,"categoryId":t.category_id,"balance":t.balance}),
+            "otherRef":t.other_ref,"otherAccount":t.other_account,"categoryId":t.category_id,"balance":t.balance,"available":t.available}),
     }
 }
 
@@ -547,6 +552,11 @@ fn expand(messages: &[Message], value: Value, review: &[(usize, sms_import::Item
             })?;
             vec![sms_import::Evidence { source_id: messages[*holder].id.clone(), quote: found.quote }]
         };
+        // The bank's words for the payee, as one of the item's texts has them. Words that aren't in
+        // them are dropped rather than sent back: asking again costs the whole batch, and without
+        // them the row is still matched by its payee.
+        let raw = found.bank_name.map(|n| n.trim().to_string())
+            .filter(|n| !n.is_empty() && found.transaction.is_some() && at.iter().any(|&i| messages[i].body.contains(n.as_str())));
         items.push((*at.iter().min().unwrap(), sms_import::Item {
             source_ids: at.iter().map(|&i| messages[i].id.clone()).collect(),
             disposition: found.disposition,
@@ -556,7 +566,7 @@ fn expand(messages: &[Message], value: Value, review: &[(usize, sms_import::Item
             transaction: found.transaction,
             unsure: found.unsure,
             template: None,
-            raw: None,
+            raw,
             kept: false,
         }));
     }
@@ -662,7 +672,7 @@ fn correct(m: &Message, read: &sms_import::Item, c: Correction) -> Result<(sms_i
             date: get("date").unwrap_or_else(|| m.received_date.clone()), amount: get("amount"), currency: need("currency")?,
             written_amount: need("writtenAmount")?, payee: need("payee")?, memo: get("memo").unwrap_or_default(), kind: need("kind")?,
             account_ref: get("accountRef"), other_ref: get("otherRef"), other_account: get("otherAccount"), category_id: get("categoryId"),
-            account_id: None, transfer_account_id: None, balance: get("balance"),
+            account_id: None, transfer_account_id: None, balance: get("balance"), available: get("available"),
         });
         changed.push("outcome".into());
     } else if let Some(t) = item.transaction.as_mut() {
@@ -689,6 +699,7 @@ fn correct(m: &Message, read: &sms_import::Item, c: Correction) -> Result<(sms_i
                 "otherRef" => set(&mut t.other_ref, Some(value)),
                 "otherAccount" => set(&mut t.other_account, Some(value)),
                 "balance" => set(&mut t.balance, Some(value)),
+                "available" => set(&mut t.available, Some(value)),
                 _ => set(&mut t.category_id, Some(value)),
             };
             if changed_now { changed.push(key); }
@@ -853,7 +864,7 @@ async fn run_analysis(
             instructions: &instructions,
             items: &items,
             files: &files,
-            tools: &specs,
+            tools: &specs, answer_only: false,
         };
         {
             // After a payee lookup the model carries on thinking; after a failed check it fixes its answer.
@@ -938,7 +949,11 @@ async fn run_analysis(
             let args = serde_json::from_str::<Value>(&call.arguments);
             let output = match (call.name.as_str(), args) {
                 ("submit_sms_analysis", Ok(args)) => match checked(b, &input.messages, &lanes, args) {
-                    Ok(expanded) => return Ok(learn(b, input, &lanes, expanded)),
+                    Ok(mut expanded) => {
+                        // What the user calls a bank's name comes before any reading of it.
+                        sms_templates::own_names(&sms_templates::Names::new(b, &input.payees), &input.messages, &mut expanded.analysis.items);
+                        return Ok(learn(b, input, &lanes, expanded));
+                    }
                     Err(error) => {
                         fixing = true;
                         json!({"error":error})
@@ -1125,7 +1140,7 @@ fn learn(b: &Budget, input: &Input, lanes: &Lanes, expanded: Expanded) -> Read {
         // A payee or category the model changed is the user's name for the bank's, learned below, a
         // transfer's other account is the user's, and a memo is the model's words for one text: the
         // format read the text right.
-        let fields: Vec<&String> = expanded.corrected.get(i).into_iter().flatten().filter(|f| !["payee", "categoryId", "otherAccount", "memo", "balance"].contains(&f.as_str())).collect();
+        let fields: Vec<&String> = expanded.corrected.get(i).into_iter().flatten().filter(|f| !["payee", "categoryId", "otherAccount", "memo", "balance", "available"].contains(&f.as_str())).collect();
         if fields.is_empty() {
             stat.confirmed += 1;
         }
@@ -1136,7 +1151,7 @@ fn learn(b: &Budget, input: &Input, lanes: &Lanes, expanded: Expanded) -> Read {
         let corrected_payee = expanded.corrected.get(i).is_some_and(|f| f.iter().any(|f| f == "payee" || f == "categoryId"));
         if let (true, Some(raw), Some(t)) = (corrected_payee, &item.raw, by_source.get(messages[*i].id.as_str()).and_then(|x| x.transaction.as_ref())) {
             let sender = sms_templates::sender_key(&messages[*i].sender);
-            payees.insert((sender.clone(), raw.to_lowercase()), Payee { sender, raw: raw.clone(), payee: t.payee.clone(), category_id: t.category_id.clone() });
+            payees.insert((sender.clone(), raw.to_lowercase()), Payee { sender, raw: raw.clone(), payee: t.payee.clone(), category_id: t.category_id.clone(), mine: false });
         }
     }
     let existing: HashSet<&str> = input.templates.iter().map(|t| t.id.as_str()).collect();
@@ -1149,7 +1164,7 @@ fn learn(b: &Budget, input: &Input, lanes: &Lanes, expanded: Expanded) -> Read {
         match sms_templates::replay(b, &template, messages, items, &examples) {
             Ok(replay) => {
                 for (raw, payee, category) in replay.payees {
-                    payees.insert((template.sender.clone(), raw.to_lowercase()), Payee { sender: template.sender.clone(), raw, payee, category_id: category });
+                    payees.insert((template.sender.clone(), raw.to_lowercase()), Payee { sender: template.sender.clone(), raw, payee, category_id: category, mine: false });
                 }
                 let replaces = written.replaces.filter(|old| *old != id && existing.contains(old.as_str()));
                 if let Some(old) = &replaces { learning.retired.push(old.clone()); }
@@ -1405,9 +1420,17 @@ mod tests {
         let mut outside = reply.clone();
         outside["skipped"]["code"] = json!([2, 9]);
         assert!(expand(&texts, outside, &[], &[]).unwrap_err().contains("isn't one of the texts sent"));
-        let mut misquoted = reply;
+        let mut misquoted = reply.clone();
         misquoted["items"][1]["quote"] = json!("SAR 99.99");
         assert!(expand(&texts, misquoted, &[], &[]).unwrap_err().contains("text 1"));
+        // The bank's words for the payee come back as the item's raw name, copied from its text.
+        let mut named = reply.clone();
+        named["items"][1]["bankName"] = json!("Amazon S");
+        assert_eq!(expand(&texts, named, &[], &[]).unwrap().analysis.items[0].raw.as_deref(), Some("Amazon S"));
+        // Words the text doesn't hold are dropped, not sent back for the whole batch to be read again.
+        let mut made_up = reply;
+        made_up["items"][1]["bankName"] = json!("AMAZON SA");
+        assert_eq!(expand(&texts, made_up, &[], &[]).unwrap().analysis.items[0].raw, None);
         // What the model reads: numbers, never the phone's ids.
         let shown = numbered(&texts).to_string();
         assert!(shown.starts_with(r#"[[1,"anb","2026-10-28 15:00","Online Purchase"#) && !shown.contains("sms:"));
@@ -1471,8 +1494,8 @@ mod tests {
             at("sms:5", "15:30", &bill.replace("15:00", "15:30")),
         ];
         input.payees = vec![
-            Payee { sender: "anb".into(), raw: "STC PAY".into(), payee: "STC Pay".into(), category_id: None },
-            Payee { sender: "other".into(), raw: "SHOP".into(), payee: "Shop".into(), category_id: None },
+            Payee { sender: "anb".into(), raw: "STC PAY".into(), payee: "STC Pay".into(), category_id: None, mine: false },
+            Payee { sender: "other".into(), raw: "SHOP".into(), payee: "Shop".into(), category_id: None, mine: false },
         ];
         let reply = json!({"items":[],"skipped":skipped(&[("other", vec![2, 5])])});
         let mut fake = Fake { replies: vec![call("submit_sms_analysis", reply)].into(), requests: vec![] };
@@ -1483,6 +1506,22 @@ mod tests {
         assert_eq!(sent["payees"], json!([["Zain", "phone", 1]]));
         assert_eq!(sent["bankNames"], json!([["STC PAY", "STC Pay", null]]));
         assert!(!first.contains("4821") && !first.contains("7319"));
+    }
+    #[test]
+    fn the_users_name_for_a_banks_name_wins_over_the_models_reading() {
+        let b = sar_budget();
+        let mut input = input();
+        input.messages = vec![Message { id: "sms:1".into(), sender: "ANB".into(), received_date: "2026-11-01".into(), received_time: "13:05".into(),
+            body: "Purchase SAR 45.00 at SALON A card 4512".into() }];
+        // The user renamed it in an earlier review.
+        input.payees = vec![Payee { sender: "anb".into(), raw: "SALON A".into(), payee: "Blade and Fade".into(), category_id: None, mine: true }];
+        let found = json!({"texts":[1],"disposition":"transaction","note":"Purchase at Salon A","quote":"SAR 45.00","bankName":"SALON A","unsure":["payee"],
+            "transaction":{"date":"2026-11-01","amount":"-45.00","currency":"SAR","writtenAmount":"45.00","payee":"Salon A","memo":"","kind":"expense","accountRef":"4512","otherRef":null,"categoryId":null}});
+        let mut fake = Fake { replies: vec![call("submit_sms_analysis", json!({"items":[found],"skipped":skipped(&[])}))].into(), requests: vec![] };
+        let read = crate::block_on(run_analysis(&b, &input, "test-model", &mut fake, &Shared::default())).unwrap();
+        let item = &read.analysis.items[0];
+        assert_eq!((item.transaction.as_ref().unwrap().payee.as_str(), item.note.as_str(), item.raw.as_deref()), ("Blade and Fade", "Purchase at Blade and Fade", Some("SALON A")));
+        assert!(item.unsure.is_empty());
     }
     #[test]
     fn the_model_gets_where_the_user_moves_money_and_names_the_account_that_pays_a_card() {
@@ -1602,7 +1641,7 @@ mod tests {
         assert_eq!((l.reviewed, l.read, l.dropped), (2, 1, 0));
         // The payee is the user's name for the bank's, not the format reading wrong.
         assert_eq!(l.stats[&known.id], Stat { filled: 2, confirmed: 2, corrected: BTreeMap::new(), settled: 0 });
-        assert_eq!(l.payees, vec![Payee { sender: "anb".into(), raw: "LMSQ* C".into(), payee: "Lemon Squeezy".into(), category_id: None }]);
+        assert_eq!(l.payees, vec![Payee { sender: "anb".into(), raw: "LMSQ* C".into(), payee: "Lemon Squeezy".into(), category_id: None, mine: false }]);
         assert_eq!(l.templates.len(), 1);
         assert_eq!(l.templates[0].template.lines, new_lines); assert_eq!(l.templates[0].example, input.messages[2].body);
         // Next time the payee the user settled on comes out of the phone.

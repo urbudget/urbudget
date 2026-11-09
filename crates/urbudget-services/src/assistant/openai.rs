@@ -96,7 +96,7 @@ pub async fn respond(
             "instructions": request.instructions,
             "input": input(request, flat)?,
             "tools": tools(request, flat),
-            "tool_choice": "auto",
+            "tool_choice": if request.answer_only { "none" } else { "auto" },
             "parallel_tool_calls": true,
             "stream": true,
             "store": false,
@@ -346,7 +346,7 @@ mod tests {
         ];
         let files = Files::empty();
         let tools = specs();
-        let request = Request { model: "m", instructions: "i", items: &items, files: &files, tools: &tools };
+        let request = Request { model: "m", instructions: "i", items: &items, files: &files, tools: &tools, answer_only: false };
         let input = input(&request, false).unwrap();
         assert_eq!(input[0]["content"][0]["text"], "<context>\nToday\n</context>\n\nhi");
         assert_eq!(input[1]["type"], "reasoning");

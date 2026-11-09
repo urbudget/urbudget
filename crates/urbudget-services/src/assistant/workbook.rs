@@ -706,6 +706,7 @@ pub fn build(title: String, sheets: Vec<Sheet>, b: &Budget) -> Result<Proposal, 
         problem: None,
         fixes: None,
         review: None,
+        bank_texts: None,
     })
 }
 

@@ -110,7 +110,7 @@ pub fn specs() -> Vec<Spec> {
         },
         Spec {
             name: "get_setup",
-            description: "Accounts, category groups with targets, payee rules, scheduled transactions and loans. Use to find ids.",
+            description: "Accounts (with a card's credit limit and the credit left on it), category groups with targets, payee rules, scheduled transactions and loans. Use to find ids.",
             parameters: object(json!({}), &[]),
             proposes: false,
         },
@@ -119,6 +119,44 @@ pub fn specs() -> Vec<Spec> {
             description: "Bank sync through SimpleFIN Bridge: whether it's connected, which accounts are linked to which bank accounts, the first day and last sync of each, the bank's balance from this session beside the budget's, how many imported transactions wait for approval, today's requests, and SimpleFIN's messages.",
             parameters: object(json!({}), &[]),
             proposes: false,
+        },
+        Spec {
+            name: "get_bank_texts",
+            description: "Bank texts on this phone: the senders chosen in Bank messages and the day collecting starts, texts waiting to be read (not in the review yet), the open review as Bank messages shows it (to review, ready to add, may already be in the budget and asking add or match, needing an account or the other side, holds, already in the budget, not transactions), the last review, remembered cards, how many formats are learned, and for each account the latest balance the bank's texts gave beside the budget's at that moment (a card's from its credit left and limit). No texts.",
+            parameters: object(json!({}), &[]),
+            proposes: false,
+        },
+        Spec {
+            name: "search_bank_texts",
+            description: "Search the bank's texts in the phone's Messages app: only texts from the senders chosen in Bank messages, from any date, including texts the app never collected and ones already reviewed. Narrow by dates, amount (written any way), words and sender. Returns up to 20 texts, newest first, each with what the app did with it (added, matched, skipped, cleared, dismissed, waiting or never collected) and its transaction when there is one. Search narrowly: the texts are sent to you and kept in this conversation.",
+            parameters: object(
+                json!({
+                    "from": { "type": "string", "description": "First day, YYYY-MM-DD. Defaults to 30 days ago." },
+                    "to": { "type": "string", "description": "Last day, YYYY-MM-DD. Defaults to today. At most a year after from." },
+                    "amount": { "type": "number", "description": "An amount the text gives, positive, as written in any form (1,234.50 and 1234.5 match)." },
+                    "words": { "type": "string", "description": "Words the text contains, such as a payee or a reference." },
+                    "sender": { "type": "string", "description": "One of the chosen senders. Defaults to all of them." }
+                }),
+                &[],
+            ),
+            proposes: false,
+        },
+        Spec {
+            name: "propose_bank_texts",
+            description: "A card the user confirms, for bank texts: read the waiting texts into the review (with an optional note for the reading, like \"Card 3358 is my savings card\"), add texts found with search_bank_texts to the review (by id, even from before the day collecting starts), remember which account a card's or account's digits are, or set a card's credit limit. Nothing is added to the budget here: transactions are added only from the review in Bank messages.",
+            parameters: object(
+                json!({
+                    "action": { "type": "string", "enum": ["read", "add", "remember", "limit"] },
+                    "note": { "type": "string", "description": "read: what the reading should do differently." },
+                    "textIds": { "type": "array", "items": { "type": "string" }, "description": "add: ids from search_bank_texts." },
+                    "sender": { "type": "string", "description": "remember: the sender whose texts give the digits." },
+                    "ref": { "type": "string", "description": "remember: the card or account digits as the texts give them." },
+                    "accountId": { "type": "string", "description": "remember and limit: the budget account." },
+                    "limit": { "type": "number", "description": "limit: the card's credit limit." }
+                }),
+                &["action"],
+            ),
+            proposes: true,
         },
         Spec {
             name: "project_loan",
@@ -603,7 +641,28 @@ pub fn call(name: &str, args: &Value, ctx: &Context) -> Outcome {
         }
     })
 }
-fn failed_step(name: &str) -> &'static str {
+/// What a tool is doing while it runs, for the panel ("Searching bank texts").
+pub fn working(name: &str) -> String {
+    match name {
+        "get_month" => t!("Looking at the month"),
+        "find_transactions" => t!("Looking up transactions"),
+        "payee_history" => t!("Checking payees"),
+        "get_report" => t!("Adding up the numbers"),
+        "get_forecast" => t!("Looking ahead"),
+        "get_setup" => t!("Looking at your accounts"),
+        "get_bank_sync" => t!("Checking bank sync"),
+        "project_loan" => t!("Working out the loan"),
+        "read_attachment" => t!("Reading the file"),
+        "get_bank_texts" => t!("Looking at bank messages"),
+        "search_bank_texts" => t!("Searching bank texts"),
+        "create_report" => t!("Writing the report"),
+        "create_spreadsheet" => t!("Making the spreadsheet"),
+        n if n.starts_with("propose") || n == "prepare_import" || n == "fix_import" => t!("Preparing a change"),
+        _ => t!("Working"),
+    }
+}
+
+pub(super) fn failed_step(name: &str) -> &'static str {
     if name.starts_with("propose") || name == "prepare_import" || name == "fix_import" {
         tr("Couldn't prepare that change")
     } else if name == "create_spreadsheet" {
@@ -1049,12 +1108,19 @@ fn get_setup(ctx: &Context) -> Result<Outcome, String> {
         }
     }
     let schedules = schedules::read(b).unwrap_or_default();
+    let summary = engine::calculate(b, &ctx.today[..7])?;
     let output = json!({
         "budget": b.name,
         "currency": b.currency,
-        "accounts": b.accounts.iter().map(|a| json!({
-            "id": a.id, "name": a.name, "type": a.kind, "onBudget": a.on_budget(), "closed": a.archived,
-        })).collect::<Vec<_>>(),
+        "accounts": b.accounts.iter().map(|a| {
+            let mut row = json!({ "id": a.id, "name": a.name, "type": a.kind, "onBudget": a.on_budget(), "closed": a.archived });
+            // A card's limit, and the credit left on it today: the limit plus its balance, which is negative when owed.
+            if let Some(limit) = a.credit_limit() {
+                row["creditLimit"] = json!(money(limit));
+                row["creditLeft"] = json!(summary.accounts.iter().find(|s| s.id == a.id).map(|s| money(limit + s.balance)));
+            }
+            row
+        }).collect::<Vec<_>>(),
         "categoryGroups": groups.into_iter().map(|(group, categories)| json!({ "group": group, "categories": categories })).collect::<Vec<_>>(),
         "payeeRules": b.extra.get("payeeRules").and_then(Value::as_array).map(|rules| rules.iter().map(|r| json!({
             "match": r["match"],

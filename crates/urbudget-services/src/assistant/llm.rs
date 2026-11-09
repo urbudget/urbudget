@@ -104,6 +104,8 @@ pub struct Request<'a> {
     pub items: &'a [Item],
     pub files: &'a Files,
     pub tools: &'a [Spec],
+    /// The reply's last step: the model answers with what it has, calling no tools.
+    pub answer_only: bool,
 }
 
 /// Sends the conversation and streams the reply (and any reasoning summary) to `on_delta`.

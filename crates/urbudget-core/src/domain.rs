@@ -442,6 +442,12 @@ pub fn calculate(b: &Budget, month: &str) -> Result<Summary, String> {
     crate::engine::calculate(b, month)
 }
 impl Account {
+    /// A credit account's limit in cents (`creditLimit`), when it has one: what's owed is the limit
+    /// less the credit left the bank reports, and the credit left is the limit plus the balance.
+    pub fn credit_limit(&self) -> Option<i64> {
+        if self.kind != AccountKind::Credit { return None; }
+        self.extra.get("creditLimit").and_then(Value::as_i64).filter(|limit| *limit > 0)
+    }
     /// Whether the balance counts toward net worth. A tracking account can opt out (e.g. a
     /// receivable you don't want to count yet) with `"netWorth": false`.
     pub fn in_net_worth(&self) -> bool {

@@ -3,7 +3,7 @@
 use super::attachments::Files;
 use super::history::{self, Item};
 use super::llm::{self, Delta, FailureKind, Part, Request};
-use super::{lock, now, tools, Assistant};
+use super::{lock, now, phone, tools, Assistant};
 use crate::domain::Budget;
 use crate::t;
 use serde_json::{json, Value};
@@ -11,8 +11,10 @@ use std::path::PathBuf;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 
 
-/// At most this many model calls per message, so a confused model can't run on forever.
+/// At most this many model calls per message, so a confused model can't run on forever. The last
+/// answers with what it found ([LAST]) rather than ending the reply without a word.
 const ROUNDS: usize = 12;
+const LAST: &str = "This is the last step of this reply. Answer now from what you found, without calling tools, and say briefly what you couldn't finish so the user can ask again.";
 
 pub struct Job {
     pub thread_id: String,
@@ -24,6 +26,8 @@ pub struct Job {
     pub share_memos: bool,
     /// Bank sync as the app knew it then (SimpleFin::snapshot).
     pub bank_sync: Value,
+    /// The phone reads bank texts for this budget, so it answers the bank-text tools (`phone.rs`).
+    pub bank_texts: bool,
 }
 
 pub fn emit(thread_id: &str, mut event: Value) {
@@ -65,7 +69,7 @@ fn code(kind: FailureKind) -> &'static str {
 }
 
 async fn turn(assistant: &Assistant, job: &Job, cancelled: &AtomicBool) -> Result<(), llm::Failure> {
-    let specs = tools::specs();
+    let specs: Vec<_> = tools::specs().into_iter().filter(|s| job.bank_texts || !phone::answers(s.name)).collect();
     let files = Files::open(history::files(&job.folder));
     let other = |e: String| llm::Failure::new(FailureKind::Other, e);
     for round in 0..ROUNDS {
@@ -73,13 +77,18 @@ async fn turn(assistant: &Assistant, job: &Job, cancelled: &AtomicBool) -> Resul
         let model = assistant.model().await?;
         let thread = assistant.with_thread_guarded(&job.folder, &job.thread_id, Some(cancelled), |t| t.clone()).map_err(other)?;
         // The app's language is read for every request, so a switch applies to the next reply.
-        let instructions = super::prompt::in_language(if thread.instructions.is_empty() { super::prompt::INSTRUCTIONS } else { &thread.instructions });
+        let mut instructions = super::prompt::in_language(if thread.instructions.is_empty() { super::prompt::INSTRUCTIONS } else { &thread.instructions });
+        let last = round == ROUNDS - 1;
+        if last {
+            instructions = format!("{instructions}\n\n{LAST}");
+        }
         let request = Request {
             model: &model,
             instructions: &instructions,
             items: &thread.items,
             files: &files,
             tools: &specs,
+            answer_only: last,
         };
         let provider = match credentials.provider {
             llm::Provider::Anthropic => "anthropic",
@@ -139,7 +148,12 @@ async fn turn(assistant: &Assistant, job: &Job, cancelled: &AtomicBool) -> Resul
             import,
         };
         for call in calls {
+            // What it's doing now, for the panel while a slow lookup (the phone's search) runs.
+            emit(&job.thread_id, json!({ "type": "activity", "text": tools::working(&call.name) }));
             let outcome = match serde_json::from_str::<Value>(&call.arguments) {
+                Ok(args) if args.is_object() && job.bank_texts && phone::answers(&call.name) => {
+                    phone::outcome(&call.name, phone::ask(assistant, &job.thread_id, &call.name, &args).await)
+                }
                 Ok(args) if args.is_object() => tools::call(&call.name, &args, &context),
                 _ => tools::Outcome {
                     output: json!({ "error": "The arguments weren't a valid JSON object. Call the tool again." }),

@@ -2,6 +2,7 @@
 //! the user applies. It signs in with ChatGPT (the user's plan pays) or uses an OpenAI or
 //! Anthropic API key. Conversations and attachments stay in the budget's folder.
 mod agent;
+mod phone;
 mod sms;
 mod dispatch;
 pub use dispatch::dispatch;
@@ -154,6 +155,8 @@ pub struct AssistantState {
     threads: Mutex<HashMap<String, (PathBuf, Thread)>>,
     running: Mutex<HashMap<String, RunningTask>>,
     sms_jobs: Mutex<HashMap<String, sms::Job>>,
+    /// Bank-text questions waiting for the phone's answer, by request id (`phone.rs`).
+    phone: Mutex<HashMap<String, tokio::sync::oneshot::Sender<Value>>>,
     signing_in: Mutex<Option<Arc<AtomicBool>>>,
     sign_in_progress: Mutex<SignInProgress>,
     foreground: AtomicBool,
@@ -203,6 +206,7 @@ impl Assistant {
             threads: Mutex::new(HashMap::new()),
             running: Mutex::new(HashMap::new()),
             sms_jobs: Mutex::new(HashMap::new()),
+            phone: Mutex::new(HashMap::new()),
             signing_in: Mutex::new(None),
             sign_in_progress: Mutex::new(SignInProgress::default()),
             foreground: AtomicBool::new(true),
@@ -768,6 +772,7 @@ pub fn assistant_send(
         month: if screen.month.is_empty() { screen.today.chars().take(7).collect() } else { screen.month.clone() },
         share_memos: settings.share_memos,
         bank_sync: simplefin.snapshot(),
+        bank_texts: screen.bank_texts,
     };
     start(assistant, id.clone(), job);
     Ok(id)
@@ -796,6 +801,7 @@ pub fn assistant_retry(
         month: if screen.month.is_empty() { screen.today.chars().take(7).collect() } else { screen.month.clone() },
         share_memos: assistant.settings().share_memos,
         bank_sync: simplefin.snapshot(),
+        bank_texts: screen.bank_texts,
     };
     start(assistant, thread_id, job);
     Ok(())
@@ -1221,7 +1227,7 @@ mod tests {
         let thread = Thread { id: id.clone(), title: "Test".into(), created: now(), updated: now(), instructions: String::new(), items: vec![], proposals: vec![] };
         history::save(folder.path(), &thread).unwrap();
         let job = agent::Job { thread_id: id.clone(), folder: folder.path().to_path_buf(), budget: crate::domain::Budget::default(),
-            today: "2026-10-21".into(), month: "2026-10".into(), share_memos: false, bank_sync: Value::Null };
+            today: "2026-10-21".into(), month: "2026-10".into(), share_memos: false, bank_sync: Value::Null, bank_texts: false };
         // Starting a task does not require the calling UI thread to have a Tokio context.
         start(&assistant, id.clone(), job);
         crate::block_on(async {

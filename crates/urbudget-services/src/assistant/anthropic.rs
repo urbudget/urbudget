@@ -118,7 +118,7 @@ fn request_body(request: &Request) -> Result<Value, Failure> {
         "system": request.instructions,
         "messages": messages(request)?,
         "tools": tools,
-        "tool_choice": { "type": "auto" },
+        "tool_choice": { "type": if request.answer_only { "none" } else { "auto" } },
         "stream": true,
     });
     if has_fallback(request.model) {
@@ -321,7 +321,7 @@ mod tests {
         ];
         let files = Files::empty();
         let tools = specs();
-        let request = Request { model: DEFAULT_MODEL, instructions: "i", items: &items, files: &files, tools: &tools };
+        let request = Request { model: DEFAULT_MODEL, instructions: "i", items: &items, files: &files, tools: &tools, answer_only: false };
         let body = request_body(&request).unwrap();
         let m = body["messages"].as_array().unwrap();
         assert_eq!(m.len(), 3);
@@ -342,7 +342,7 @@ mod tests {
         ];
         let files = Files::empty();
         let tools = specs();
-        let request = Request { model: "claude-haiku-5-5", instructions: "i", items: &items, files: &files, tools: &tools };
+        let request = Request { model: "claude-haiku-5-5", instructions: "i", items: &items, files: &files, tools: &tools, answer_only: false };
         let body = request_body(&request).unwrap();
         assert_eq!(body["messages"][1]["content"][0]["input"]["month"], "2026-10");
         assert_eq!(body["messages"][2]["content"][0]["is_error"], true);

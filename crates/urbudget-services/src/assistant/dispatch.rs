@@ -29,6 +29,10 @@ pub async fn dispatch(
         "assistant_sms_lanes" => sms::lanes(db, argument(&params, "request")?),
         "assistant_sms_poll" => sms::poll(db, assistant, &argument::<String>(&params, "id")?).await,
         "assistant_sms_cancel" => { sms::cancel(assistant, &argument::<String>(&params, "id")?); Ok(Value::Null) }
+        "assistant_phone_reply" => {
+            super::phone::reply(assistant, &argument::<String>(&params, "requestId")?, optional::<Value>(&params, "answer")?);
+            Ok(Value::Null)
+        }
         "assistant_status" => encoded(assistant_status(assistant)),
         "assistant_foreground" => {
             assistant.foreground.store(argument(&params, "active")?, Ordering::Relaxed);

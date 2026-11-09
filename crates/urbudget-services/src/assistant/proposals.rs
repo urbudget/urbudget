@@ -274,7 +274,7 @@ pub struct Card {
 pub struct Proposal {
     pub id: String,
     pub title: String,
-    /// "budget", "transactions", "payees", "import", "report" or "spreadsheet".
+    /// "budget", "transactions", "payees", "import", "report", "spreadsheet", "fix" or "bankTexts".
     pub kind: String,
     pub status: Status,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -303,6 +303,9 @@ pub struct Proposal {
     /// What the user left out or changed on the card, when they did.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub review: Option<Review>,
+    /// For a `bankTexts` card, what the phone does when it's applied.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bank_texts: Option<Value>,
 }
 
 /// Rows the model is told about; the card shows them all.
@@ -366,6 +369,7 @@ pub fn build_report(title: String, period: Option<String>, body: String) -> Prop
         problem: None,
         fixes: None,
         review: None,
+        bank_texts: None,
     }
 }
 
@@ -557,6 +561,7 @@ pub fn build(change: Change, title: String, before: &Budget) -> Result<Proposal,
         problem: None,
         fixes: None,
         review: None,
+        bank_texts: None,
     })
 }
 
@@ -1304,6 +1309,7 @@ pub fn build_import(
         problem: None,
         fixes: None,
         review: None,
+        bank_texts: None,
     })
 }
 
@@ -1329,6 +1335,7 @@ pub fn build_fix(fixes: crate::bank_statement::Fixes, rows: Vec<Row>, note: Opti
         problem: None,
         fixes: Some(fixes),
         review: None,
+        bank_texts: None,
     }
 }
 

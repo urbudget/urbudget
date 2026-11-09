@@ -50,9 +50,13 @@ pub struct Transaction {
     pub other_account: Option<String>,
     pub category_id: Option<String>,
     /// The account's balance the message gives after this money moved, as a plain decimal: what a
-    /// new account's starting balance is worked out from. Never a limit or a card's available credit.
+    /// new account's starting balance is worked out from. Never a limit or a card's credit left.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub balance: Option<String>,
+    /// A card's credit left that the message gives after this money moved ("Available limit"), as a
+    /// plain decimal: with the card's limit, what's owed and held. Never the limit itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub available: Option<String>,
     /// Filled by the app from a remembered card or the account's name, or chosen by the user.
     #[serde(default)]
     pub account_id: Option<String>,
@@ -76,7 +80,8 @@ pub struct Item {
     /// The template that read this text on the phone, when one did (the assistant reviewed it).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub template: Option<String>,
-    /// The payee as the bank wrote it, when a template read it: what the user's payee is learned from.
+    /// The payee as the bank wrote it, copied from the text (by a template, or the assistant): what
+    /// the user's payee is learned from, and what the transaction keeps as its bank text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw: Option<String>,
     /// Settled on the phone without going to the model: a trusted skip template's text, or a code.
@@ -270,6 +275,9 @@ fn transaction(
     if t.balance.as_ref().is_some_and(|b| !written(b.strip_prefix('-').unwrap_or(b))) {
         return Err(crate::t!("Write a balance as a plain number, or leave it out."));
     }
+    if t.available.as_ref().is_some_and(|b| !written(b.strip_prefix('-').unwrap_or(b))) {
+        return Err(crate::t!("Write the credit left as a plain number, or leave it out."));
+    }
     // Checked against the account list when the model gives it: a later rename mustn't break the review.
     if t.other_account.as_ref().is_some_and(|n| n.trim().is_empty() || n.len() > 200 || t.kind != "transfer") {
         return Err(crate::t!("Name the other account only for a transfer."));
@@ -443,6 +451,10 @@ pub fn apply_batch(
         }
         let adding = decision.action == "new";
         let new_id = current.id.clone();
+        // The transaction this text is, kept with the bank's words for the payee unless it has some.
+        let target = if adding { Some(new_id.clone()) } else { decision.match_id.clone() };
+        let bank_words = analysis.items[decision.index].raw.clone().filter(|r| !r.trim().is_empty())
+            .filter(|_| adding || !target.as_ref().is_some_and(|id| b.transactions.iter().any(|t| &t.id == id && t.extra.contains_key("importedPayee"))));
         let defaults: Vec<_> = if adding {
             ["payeeRules", "payees"]
                 .into_iter()
@@ -462,6 +474,13 @@ pub fn apply_batch(
         )?;
         for (key, value) in defaults {
             b.extra.insert(key.into(), value);
+        }
+        // What the bank called the payee, beside what the user calls it: the next text with that name
+        // is read as theirs, and payee rules match the bank's words as they do a bank file's.
+        if let (Some(words), Some(id)) = (bank_words, &target) {
+            if let Some(t) = b.transactions.iter_mut().find(|t| &t.id == id && t.account_id == row.account_id) {
+                t.extra.insert("importedPayee".into(), json!(words));
+            }
         }
         if adding {
             let proposed = analysis.items[decision.index].transaction.as_ref().unwrap();
