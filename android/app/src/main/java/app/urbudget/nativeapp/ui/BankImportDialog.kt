@@ -91,6 +91,20 @@ internal data class BankImportDraft(
     val sessionId get() = session?.optJSONObject("scope")?.optString("session")
 }
 
+/**
+ * The import in progress, kept past a rotation or a Fold opening, which make the screens again. It
+ * belongs to one budget: another budget starts with none.
+ */
+internal class BankImportHolder : androidx.lifecycle.ViewModel() {
+    private var budget: String? = null
+    var draft by mutableStateOf<BankImportDraft?>(null)
+
+    fun forBudget(identity: String?): BankImportHolder {
+        if (budget != identity) { budget = identity; draft = null }
+        return this
+    }
+}
+
 /** A new import into `account`, else the first open account. */
 internal fun newBankImport(budget: JSONObject, account: String? = null) =
     BankImportDraft(account ?: budget.rows("accounts").firstOrNull { !it.optBoolean("archived") }?.text("id").orEmpty())
@@ -147,6 +161,8 @@ internal fun BankImportDialog(budget: JSONObject, vm: BudgetViewModel, draft: Ba
     var previewBudget by remember { mutableStateOf<JSONObject?>(null) }
     val decisions = remember { mutableStateMapOf<Int, String>() }
     var error by remember { mutableStateOf<String?>(null) }
+    // Why the file's lines or the review didn't read: gone once they read again.
+    var readError by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var fixing by remember { mutableStateOf<StatementLine?>(null) }
@@ -173,10 +189,6 @@ internal fun BankImportDialog(budget: JSONObject, vm: BudgetViewModel, draft: Ba
     }
     fun read(more: JSONObject.() -> Unit = {}) = JSONObject().put("accountId", draft.account).put("content", content).put("session", session).apply(more)
 
-    LaunchedEffect(budgetState.error) {
-        if (saving && budgetState.error != null) { error = budgetState.error; loading = false; saving = false }
-    }
-
     // A file chosen, or the assistant's: an import of it, read as the account's last file was
     // (the assistant's the standard way).
     LaunchedEffect(content, session == null) {
@@ -200,8 +212,9 @@ internal fun BankImportDialog(budget: JSONObject, vm: BudgetViewModel, draft: Ba
             val reply = vm.ask("bankStatement", read { put("problemsOnly", true) })
             val lines = withContext(Dispatchers.Default) { parseStatement(reply) }
             statement = lines
+            readError = null
             update { if (it.session === session && it.view == null) it.copy(view = if (lines.needsChecking) "lines" else "review") else it }
-        } catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { error = failure.message }
+        } catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { readError = failure.message }
     }
 
     // The review, and again whenever the budget or the import changes.
@@ -217,12 +230,14 @@ internal fun BankImportDialog(budget: JSONObject, vm: BudgetViewModel, draft: Ba
                 Triple(list, summarizeBankReview(list), parseStatement(reply.getJSONObject("statement")))
             }
             rows = prepared.first; summary = prepared.second; reviewed = prepared.third; statement = prepared.third; previewBudget = budget; decisions.clear()
-        } catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { error = failure.message }
+            readError = null
+        } catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { readError = failure.message }
     }
 
     fun open(uri: Uri, sheet: String?) {
         loading = true
         error = null
+        readError = null
         scope.launch {
             try {
                 val (name, text) = openStatement(context, uri, sheet)
@@ -273,7 +288,12 @@ internal fun BankImportDialog(budget: JSONObject, vm: BudgetViewModel, draft: Ba
             try {
                 val choices = withContext(Dispatchers.Default) { bankReviewChoices(imported, selected, true) }
                 require(source === vm.state.value.budget) { Words[R.string.bank_budget_changed_review] }
+                val failures = vm.operationFailureEpoch
                 vm.runCommand("bankApply", JSONObject().put("accountId", accountId).put("choices", choices).put("remember", remember ?: JSONObject.NULL)) { onImported(); close() }
+                // A failure counts even when it reads as the last one did, so Importing… never stays.
+                vm.afterPending {
+                    if (vm.operationFailureEpoch != failures) { error = vm.state.value.error ?: Words[R.string.model_action_not_saved]; loading = false; saving = false }
+                }
             } catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { error = failure.message; loading = false; saving = false }
         }
     }
@@ -292,6 +312,7 @@ internal fun BankImportDialog(budget: JSONObject, vm: BudgetViewModel, draft: Ba
         // Always there, shown only for a change that lasts: it never pushes the sheet's content down.
         item(key = "import:loading") { LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp).alpha(if (slow || saving) 1f else 0f), color = ur.accent) }
         error?.let { item(key = "import:error") { FormError(it) } }
+        readError?.takeIf { it != error }?.let { item(key = "import:read-error") { FormError(it) } }
         draft.notice?.let { item(key = "import:notice") { Notice(it, tone = "info", icon = Icons.Outlined.AutoAwesome) } }
         when {
             session == null -> chooser(draft, accountChoices, loading, askAssistant, { account -> update { newBankImport(budget, account) } }) { picker.launch(arrayOf("*/*")) }
@@ -332,7 +353,8 @@ internal fun BankImportDialog(budget: JSONObject, vm: BudgetViewModel, draft: Ba
     }
 
     fixing?.let { line ->
-        LineFixSheet(line, budget, vm, { fixing = null }) { values ->
+        // Done waits while an earlier change applies, rather than closing with nothing changed.
+        LineFixSheet(line, budget, vm, !busy, { fixing = null }) { values ->
             fixing = null
             session?.let { s -> fieldFixes(s, line, values)?.let(::fix) }
         }
@@ -440,7 +462,8 @@ private fun LazyListScope.statementLines(st: BankStatement, session: JSONObject,
         item(key = "lines:attention") { SectionTitle(stringResource(R.string.bank_needs_attention), stringResource(R.string.bank_needs_attention_detail)) }
         if (fixWithAssistant != null) item(key = "lines:assistant") {
             Notice(stringResource(R.string.bank_assistant_fix_note), tone = "info",
-                action = stringResource(R.string.bank_fix_with_assistant), onAction = { fixWithAssistant() }, icon = Icons.Outlined.AutoAwesome)
+                // Not while a change applies: the sheet leaves for the assistant, and the change with it.
+                action = stringResource(R.string.bank_fix_with_assistant), onAction = { if (!busy) fixWithAssistant() }, icon = Icons.Outlined.AutoAwesome)
         }
         items(attention, key = { "attention:${it.id}" }, contentType = { "statement-line" }) { line ->
             StatementLineItem(line, line.problem, ur.warning, listOfNotNull(batchAction(line), undo(line)), !slow) { edit(line) }
@@ -514,10 +537,10 @@ private fun StatementLineItem(line: StatementLine, state: String, tone: androidx
 
 /** A line's date, payee, memo and amount, to give what doesn't read; the file's own cells shown for reference. */
 @Composable
-private fun LineFixSheet(line: StatementLine, budget: JSONObject, vm: BudgetViewModel, close: () -> Unit, save: (Map<String, String>) -> Unit) {
+private fun LineFixSheet(line: StatementLine, budget: JSONObject, vm: BudgetViewModel, enabled: Boolean, close: () -> Unit, save: (Map<String, String>) -> Unit) {
     val values = remember(line.id, line.version) { mutableStateMapOf<String, String>().apply { lineFields.forEach { (field, _) -> put(field, line.fields[field].orEmpty()) } } }
     retainEditorDraft(vm, "importLine", budget, JSONObject(values.toMap()).put("lineId", line.id))
-    FormDialog(stringResource(R.string.bank_fix_line), close, confirm = stringResource(R.string.common_done), onConfirm = { save(values.toMap()) }) {
+    FormDialog(stringResource(R.string.bank_fix_line), close, confirm = stringResource(R.string.common_done), onConfirm = { if (enabled) save(values.toMap()) }, enabled = enabled) {
         Text(stringResource(R.string.bank_in_the_file, Money.joined(line.cells.filter { it.isNotBlank() }).ifBlank { stringResource(R.string.bank_nothing) }), style = MaterialTheme.typography.bodySmall, color = ur.muted)
         if (line.problem.isNotEmpty()) Notice(line.problem, icon = Icons.Outlined.WarningAmber)
         lineFields.forEach { (field, label) ->

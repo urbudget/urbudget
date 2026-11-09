@@ -534,7 +534,7 @@ private fun ReportPage(
         if (uri != null) coroutines.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    androidContext.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(content) } ?: error(androidContext.getString(R.string.export_destination_failed))
+                    replacing { mode -> androidContext.contentResolver.openOutputStream(uri, mode) }?.bufferedWriter()?.use { it.write(content) } ?: error(androidContext.getString(R.string.export_destination_failed))
                 }
             }.onFailure { exportError = it.message }
         }

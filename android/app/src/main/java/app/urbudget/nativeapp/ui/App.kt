@@ -130,10 +130,12 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
             }
         }
     }
-    var editor by remember { mutableStateOf<String?>(null) }
+    // A bank file being imported: kept while the assistant is open over it, to fix its lines, and
+    // past a rotation or the Fold opening, which bring its sheet back.
+    val imports = viewModel<BankImportHolder>().forBudget(state.budgetIdentity)
+    var bankImport by imports::draft
+    var editor by remember { mutableStateOf(if (imports.draft != null) "bankImport" else null) }
     var selected by remember { mutableStateOf<JSONObject?>(null) }
-    // A bank file being imported: kept while the assistant is open over it, to fix its lines.
-    var bankImport by remember { mutableStateOf<BankImportDraft?>(null) }
     var accountFilter by rememberSaveable { mutableStateOf("") }
     var categoryFilter by rememberSaveable { mutableStateOf("") }
     // A date range the register opens with, when a budget figure leads to one month's transactions.
@@ -227,7 +229,14 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     }
     // A notification's page, such as Bank messages when texts need the user.
     val requested by PageRequests.page.collectAsStateWithLifecycle()
-    LaunchedEffect(requested) { requested?.let { openPage(it); PageRequests.page.value = null } }
+    // Taken only once loading is over: at a cold start the budget's arrival replaces this group (the
+    // key() above), and a page opened before then would be lost. With no budget there's nothing to open.
+    LaunchedEffect(requested, state.loading) {
+        val page = requested ?: return@LaunchedEffect
+        if (state.loading) return@LaunchedEffect
+        if (state.budget != null) openPage(page)
+        PageRequests.page.value = null
+    }
     fun openChildPage(page: String) {
         if (page == "Assistant") { assistant = true; return }
         parentPage = morePage; morePage = page
@@ -321,7 +330,8 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
                 PhoneTopBar(pageTitle("Budget library"), onBack = { morePage = ""; tab = 0 })
                 Box(Modifier.weight(1f)) { LibraryScreen(null, vm, importFile, exportFile) }
             }
-            budget == null -> Column(Modifier.fillMaxSize()) {
+            // Below the status bar; the welcome page's own padding then has no inset left to add.
+            budget == null -> Column(Modifier.fillMaxSize().statusBarsPadding()) {
                 TextButton({ morePage = "Budget library" }) { Text(stringResource(R.string.page_library)) }
                 WelcomeScreen(state.busy, { name, currency, sample ->
                 if (vm.hasExport()) pendingCreate = Triple(name, currency, sample) else vm.createBudget(name, currency, sample)
@@ -334,7 +344,7 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
                     when (morePage) {
                         "Account & sync" -> CloudScreen(vm)
                         "Bank connections" -> BankConnectionsScreen(budget, vm)
-                        "Bank messages" -> SmsImportScreen(budget, vm, setDockHidden = { dockHidden = it })
+                        "Bank messages" -> SmsImportScreen(budget, vm, setDockHidden = { dockHidden = it }, decline = ::closePage)
                         "Budget library" -> LibraryScreen(budget, vm, importFile, exportFile)
                         else -> MoreScreen(morePage, ::openChildPage, budget, vm, importFile, exportFile,
                             if (state.recoveryAvailable) ({ confirmRestore = true }) else null) { kind, item -> openEditor(kind, item) }
@@ -558,8 +568,9 @@ private fun WelcomeScreen(busy: Boolean, create: (String, String, Boolean) -> Un
     Column(Modifier.fillMaxSize().background(ur.bg).verticalScroll(rememberScrollState()).statusBarsPadding().navigationBarsPadding().padding(horizontal = 24.dp, vertical = 28.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Spacer(Modifier.height(24.dp))
+        // The app icon's two layers: the mark on the brand purple, as on the home screen.
         Box(Modifier.size(64.dp).clip(RoundedCornerShape(18.dp)).background(androidx.compose.ui.graphics.Color(0xFF6D4AE8)), contentAlignment = Alignment.Center) {
-            Text("Ur", color = androidx.compose.ui.graphics.Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 26.sp)
+            androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(R.drawable.ic_launcher_foreground), contentDescription = null, modifier = Modifier.fillMaxSize())
         }
         Spacer(Modifier.height(8.dp))
         Text(stringResource(R.string.welcome_title), style = MaterialTheme.typography.displaySmall, color = ur.text)

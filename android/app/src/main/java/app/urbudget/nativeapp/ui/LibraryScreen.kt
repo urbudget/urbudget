@@ -55,7 +55,7 @@ internal fun LibraryScreen(budget: JSONObject?, vm: BudgetViewModel, importFile:
             runCatching { withContext(Dispatchers.IO) {
                 val source = File(path).canonicalFile
                 require(source.toPath().startsWith(context.filesDir.canonicalFile.toPath()) && source.isFile)
-                context.contentResolver.openOutputStream(uri)?.use { output -> source.inputStream().use { it.copyTo(output) } } ?: error(context.getString(R.string.library_save_backup_failed))
+                replacing { mode -> context.contentResolver.openOutputStream(uri, mode) }?.use { output -> source.inputStream().use { it.copyTo(output) } } ?: error(context.getString(R.string.library_save_backup_failed))
             } }.onSuccess { notice = context.getString(R.string.library_backup_exported) }.onFailure { vm.notifyError(it.message ?: context.getString(R.string.library_export_backup_failed)) }
             exportPath = null
         }

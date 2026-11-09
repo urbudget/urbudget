@@ -13,16 +13,15 @@ too and left for later. Each is a code reading, not yet reproduced unless it say
 **Phones' bank import** (`ios/UrBudget/Screens/Imports/BankFileImportView.swift`,
 `android/app/src/main/java/app/urbudget/nativeapp/ui/BankImportDialog.kt` and `App.kt`):
 
-- A fix from the assistant and a change made by hand at the same moment: the later reply wins
-  and the other is lost without a word (iOS `fix()`/`applyFix`, Android `applyFix`). Keep the
-  session each request was made on and take a reply only if it's still current.
-- Android: Fix with the assistant while a change applies cancels that change (the dialog leaves
-  composition). Disable it while busy, or run the change at App level.
-- Both: the line sheet's Done does nothing while an earlier change applies. iOS: Import isn't
+- iOS: a fix from the assistant and a change made by hand at the same moment: the later reply
+  wins and the other is lost without a word (`fix()`/`applyFix`). Keep the session each request
+  was made on and take a reply only if it's still current. On Android the two can't meet since
+  9 November 2026: Fix with the assistant waits for a change to apply, and the sheet is closed
+  while the assistant is open.
+- iOS: the line sheet's Done does nothing while an earlier change applies, and Import isn't
   disabled while busy (`importRows`).
-- Android: rotating, or the process being killed, loses the import and its fixes (plain
-  `remember`); "Importing…" can stay up if the same error comes twice; old error banners stay
-  after a later read succeeds.
+- Android: the process being killed loses the import and its fixes. A rotation or the Fold
+  opening keeps them (`BankImportHolder`), but the review's choices are made again.
 
 **Usage counts on urbudget.app** (`web/src/usage.ts`, `crates/urbudget-services/src/usage.rs`):
 
@@ -114,30 +113,6 @@ of this date.
 - Not known: how often it happens, which `rusqlite` release bundles 3.51.2 or later, and whether it
   reaches a release build, where it hasn't been seen. Done looks like a `rusqlite` with 3.51.3 or
   later and a sync run on a big library. The upgrade reaches iPhone and desktop too.
-
-**Saving over a longer file**
-(`android/app/src/main/java/app/urbudget/nativeapp/ui/`):
-
-- Saving Back up, the two CSVs or the assistant's file over a longer file leaves the old file's
-  tail: `LibraryScreen.kt:58`, `ReportsScreen.kt:509`, `TransactionsScreen.kt:198`,
-  `AssistantScreen.kt:90`. They open the file with `openOutputStream(uri)`, whose "w" mode doesn't
-  truncate. Export JSON had the same fault and is fixed through `replacing` in `ui/PickedFile.kt`,
-  which opens "wt" and falls back to "w". Done looks like all four opening through that helper, a
-  one-line change each. Back up matters most, because it holds a whole budget.
-- Seen on Export JSON before its fix, through the real picker on an API 37 emulator: a 2,881-byte
-  export over a 1,080,012-byte file stayed 1,080,012 bytes, with old bytes after the JSON. The four
-  above are from reading. By reading, desktop's and iPhone's parsers refuse such a file; neither
-  was run on one. Not known: what Drive and other cloud providers do with "wt".
-
-**The bank-messages notification** (`android/app/src/main/java/app/urbudget/nativeapp/ui/App.kt`):
-
-- Tapping it on a cold start lands on the Budget tab. `App.kt:203`'s `LaunchedEffect` uses up
-  `PageRequests.page`, then the budget's `key()` (`App.kt:66`) replaces the group and the page is
-  lost. Done looks like Bank messages opening from a stopped app. Check it from a stopped app: a
-  warm relaunch can pass while a cold open fails.
-- Seen 3 of 3 times on an emulator with `am start` on a stopped app and the notification's extra;
-  the same extra with the budget loaded opened Bank messages. That's the notification's intent, not
-  a real tap, which hasn't been tried. The code is the same before this work, but that wasn't run.
 
 **Automatic sync** (`crates/urbudget-services/src/cloud/`,
 `android/app/src/main/java/app/urbudget/nativeapp/SyncWorker.kt`):

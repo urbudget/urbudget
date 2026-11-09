@@ -100,7 +100,7 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
         val data = pendingExport
         if (uri != null && data != null) scope.launch {
             runCatching { withContext(Dispatchers.IO) {
-                context.contentResolver.openOutputStream(uri)?.use { it.write(data.second) } ?: error(context.getString(R.string.assistant_export_failed))
+                replacing { mode -> context.contentResolver.openOutputStream(uri, mode) }?.use { it.write(data.second) } ?: error(context.getString(R.string.assistant_export_failed))
             } }.onFailure { exportError = it.message }
             pendingExport = null
         }

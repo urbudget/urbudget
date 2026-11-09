@@ -197,7 +197,7 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
     val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
         val content = csv
         if (uri != null) scope.launch {
-            runCatching { withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(content) } ?: error(context.getString(R.string.export_destination_failed)) } }
+            runCatching { withContext(Dispatchers.IO) { replacing { mode -> context.contentResolver.openOutputStream(uri, mode) }?.bufferedWriter()?.use { it.write(content) } ?: error(context.getString(R.string.export_destination_failed)) } }
                 .onFailure { vm.notifyError(it.message ?: context.getString(R.string.export_register_failed)) }
         }
     }
