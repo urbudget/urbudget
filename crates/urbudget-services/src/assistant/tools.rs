@@ -25,6 +25,8 @@ pub struct Context<'a> {
     pub bank_sync: &'a Value,
     /// The bank file the latest message was sent from the Import page with, as it read then.
     pub import: Option<&'a crate::bank_statement::Brief>,
+    /// The app the user is in, whose steps the app guide gives.
+    pub platform: super::guide::Platform,
 }
 
 pub struct Outcome {
@@ -112,6 +114,19 @@ pub fn specs() -> Vec<Spec> {
             name: "get_setup",
             description: "Accounts (with a card's credit limit and the credit left on it), category groups with targets, payee rules, scheduled transactions and loans. Use to find ids.",
             parameters: object(json!({}), &[]),
+            proposes: false,
+        },
+        Spec {
+            name: "get_app_guide",
+            description: "How to do something in UrBudget itself: where a feature is and the steps, in the words of the app the user is in (desktop, Android or iPhone), or that a feature isn't on their app. Use it whenever the user asks how or where to do something in the app, before giving directions, and keep its **labels** exactly as written. Ask for another app with platform, or all three with \"all\".",
+            parameters: object(
+                json!({
+                    "question": { "type": "string", "description": "What the user wants to do, in their words." },
+                    "topic": { "type": "string", "description": "A topic id from an earlier answer's list, when you know it." },
+                    "platform": { "type": "string", "enum": ["desktop", "android", "ios", "all"], "description": "Another app's steps. Defaults to the user's app." }
+                }),
+                &[],
+            ),
             proposes: false,
         },
         Spec {
@@ -617,6 +632,7 @@ pub fn call(name: &str, args: &Value, ctx: &Context) -> Outcome {
         "get_forecast" => get_forecast(args, ctx),
         "get_setup" => get_setup(ctx),
         "get_bank_sync" => get_bank_sync(ctx),
+        "get_app_guide" => read(super::guide::lookup(args, ctx.platform), tr("Looked at the app guide").to_owned()),
         "project_loan" => project_loan(args, ctx),
         "read_attachment" => read_attachment(args, ctx),
         "propose_budget_moves" => propose_budget_moves(args, ctx),
@@ -651,6 +667,7 @@ pub fn working(name: &str) -> String {
         "get_forecast" => t!("Looking ahead"),
         "get_setup" => t!("Looking at your accounts"),
         "get_bank_sync" => t!("Checking bank sync"),
+        "get_app_guide" => t!("Looking up how UrBudget works"),
         "project_loan" => t!("Working out the loan"),
         "read_attachment" => t!("Reading the file"),
         "get_bank_texts" => t!("Looking at bank messages"),
@@ -1773,7 +1790,7 @@ pub mod tests {
         .unwrap()
     }
     fn ctx<'a>(b: &'a Budget, files: &'a Files) -> Context<'a> {
-        Context { budget: b, today: "2026-10-16", month: "2026-10", share_memos: true, files, bank_sync: &Value::Null, import: None }
+        Context { budget: b, today: "2026-10-16", month: "2026-10", share_memos: true, files, bank_sync: &Value::Null, import: None, platform: super::super::guide::Platform::Desktop }
     }
 
     /// A file with one line whose amount doesn't read and one left out (pending), its session, and
@@ -1885,6 +1902,21 @@ pub mod tests {
         let note = super::super::prompt::context(&b, &super::super::prompt::Screen { page: "import".into(), today: "2026-10-16".into(), ..Default::default() }, true, &[], Some(&brief));
         assert!(note.contains("fix_import") && note.contains(&grocer) && note.contains("Invalid amount: n/a"), "{note}");
         assert!(note.contains("on the Import page") && note.contains("into Everyday"), "{note}");
+    }
+
+    #[test]
+    fn the_app_guide_answers_in_the_users_app() {
+        let b = sample();
+        let files = Files::empty();
+        let android = Context { platform: super::super::guide::Platform::Android, ..ctx(&b, &files) };
+        assert!(specs().iter().any(|s| s.name == "get_app_guide" && !s.proposes));
+        let out = call("get_app_guide", &json!({ "question": "How do I reconcile my account?" }), &android);
+        assert_eq!(out.step, "Looked at the app guide");
+        assert_eq!((out.output["app"].as_str(), out.output["found"][0]["topic"].as_str()), (Some("android"), Some("reconcile")));
+        assert!(out.output["found"][0]["steps"].as_str().unwrap().contains("**Accounts**"));
+        // Another app's steps when the user asks about it.
+        let desktop = call("get_app_guide", &json!({ "topic": "reconcile", "platform": "desktop" }), &android);
+        assert!(desktop.output["found"][0]["steps"].as_str().unwrap().contains("**Finish reconciliation**"));
     }
 
     #[test]

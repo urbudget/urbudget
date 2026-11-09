@@ -788,6 +788,8 @@ pub(super) const MESSAGES: &[(&str, &str)] = &[
     ("Looking ahead", "أنظر في ما هو قادم"),
     ("Looking at your accounts", "أطّلع على حساباتك"),
     ("Checking bank sync", "أتحقق من مزامنة البنك"),
+    ("Looking up how UrBudget works", "أبحث في طريقة عمل UrBudget"),
+    ("Looked at the app guide", "اطّلع على دليل التطبيق"),
     ("Working out the loan", "أحسب القرض"),
     ("Reading the file", "أقرأ الملف"),
     ("Looking at bank messages", "أطّلع على رسائل البنك"),

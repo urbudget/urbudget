@@ -9,6 +9,7 @@ pub use dispatch::dispatch;
 mod anthropic;
 pub mod attachments;
 mod auth;
+pub mod guide;
 pub use auth::open_browser;
 pub mod history;
 pub mod llm;
@@ -773,6 +774,7 @@ pub fn assistant_send(
         share_memos: settings.share_memos,
         bank_sync: simplefin.snapshot(),
         bank_texts: screen.bank_texts,
+        platform: screen.platform.clone(),
     };
     start(assistant, id.clone(), job);
     Ok(id)
@@ -802,6 +804,7 @@ pub fn assistant_retry(
         share_memos: assistant.settings().share_memos,
         bank_sync: simplefin.snapshot(),
         bank_texts: screen.bank_texts,
+        platform: screen.platform.clone(),
     };
     start(assistant, thread_id, job);
     Ok(())
@@ -1227,7 +1230,7 @@ mod tests {
         let thread = Thread { id: id.clone(), title: "Test".into(), created: now(), updated: now(), instructions: String::new(), items: vec![], proposals: vec![] };
         history::save(folder.path(), &thread).unwrap();
         let job = agent::Job { thread_id: id.clone(), folder: folder.path().to_path_buf(), budget: crate::domain::Budget::default(),
-            today: "2026-10-21".into(), month: "2026-10".into(), share_memos: false, bank_sync: Value::Null, bank_texts: false };
+            today: "2026-10-21".into(), month: "2026-10".into(), share_memos: false, bank_sync: Value::Null, bank_texts: false, platform: String::new() };
         // Starting a task does not require the calling UI thread to have a Tokio context.
         start(&assistant, id.clone(), job);
         crate::block_on(async {

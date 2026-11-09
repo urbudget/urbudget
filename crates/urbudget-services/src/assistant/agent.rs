@@ -28,6 +28,8 @@ pub struct Job {
     pub bank_sync: Value,
     /// The phone reads bank texts for this budget, so it answers the bank-text tools (`phone.rs`).
     pub bank_texts: bool,
+    /// The app the message came from ("android", "ios"; the desktop sends none), for the app guide.
+    pub platform: String,
 }
 
 pub fn emit(thread_id: &str, mut event: Value) {
@@ -146,6 +148,7 @@ async fn turn(assistant: &Assistant, job: &Job, cancelled: &AtomicBool) -> Resul
             files: &files,
             bank_sync: &job.bank_sync,
             import,
+            platform: super::guide::Platform::of(&job.platform),
         };
         for call in calls {
             // What it's doing now, for the panel while a slow lookup (the phone's search) runs.

@@ -848,6 +848,8 @@ async fn run_analysis(
         files: &files,
         bank_sync: &Value::Null,
         import: None,
+        // Bank texts are read on the phone.
+        platform: super::guide::Platform::Android,
     };
     // The phone shows what the model is doing while it answers: its thoughts, and the texts it reads
     // in full (numbered from 1) as they appear in its answer.

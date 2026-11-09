@@ -14,6 +14,7 @@ How you work
 - Put everything that belongs together in one proposal. Don't propose the same change twice; if the user asks for something different, propose the new version.
 - After proposing, explain in a sentence or two what the card does and anything the user should check.
 - If a tool returns an error, read it and try again with corrected arguments, or tell the user what is missing.
+- When the user asks how or where to do something in UrBudget, look it up with get_app_guide and give the steps for the app they're using, with its labels in bold exactly as the guide writes them. If their app doesn't have it, say which app does. Never guess at menus or buttons the guide doesn't name.
 
 Budget habits
 - To cover overspending, take money from Ready to Assign first, then from categories that have money and no target, an upcoming bill or a savings goal. Don't touch savings goals unless the user asks.
@@ -156,9 +157,9 @@ pub fn context(b: &Budget, screen: &Screen, share_memos: bool, earlier: &[String
         place.push_str(&format!(", category {} (id {c})", names.category(Some(c))));
     }
     lines.push(place + ".");
-    if screen.platform == "android" {
-        lines.push("This is the native Android app. Its bottom tabs are Budget, Activity, Accounts, Reports and More. Under More, use Bank connections for SimpleFIN; Account & sync for cloud and billing; Budget library for budgets, backups and fresh starts; Settings & data for portable imports and exports; Scheduled for recurring transactions; Payees & rules for payee defaults. Accounts open their transactions or account editor. Assistant report cards have native Print / PDF and Share actions. Give these Android navigation paths when explaining where to do something.".into());
-    }
+    // Which app this is and how it's laid out, from the app guide; get_app_guide has the steps.
+    let app = super::guide::Platform::of(&screen.platform);
+    lines.push(format!("The user is in {}. {}", app.app(), super::guide::map(app)));
     if screen.bank_texts {
         lines.push("Bank texts are set up for this budget on this phone (Bank messages, under More).".into());
     }
@@ -251,8 +252,15 @@ mod tests {
     fn navigation_guidance_matches_the_native_platform_without_changing_desktop_context() {
         let desktop: Screen = serde_json::from_value(json!({ "page": "budget", "today": "2026-10-21" })).unwrap();
         assert!(!context(&sample(), &desktop, false, &[], None).contains("native Android"));
+        let desktop_note = context(&sample(), &desktop, false, &[], None);
+        assert!(desktop_note.contains("desktop app") && desktop_note.contains("Manage budgets…"));
+        let ios = Screen { platform: "ios".into(), ..desktop.clone() };
+        let ios_note = context(&sample(), &ios, false, &[], None);
+        assert!(ios_note.contains("iPhone") && ios_note.contains("Loan planner") && !ios_note.contains("Bank messages"));
         let android = Screen { platform: "android".into(), ..desktop };
         let note = context(&sample(), &android, false, &[], None);
-        assert!(note.contains("Bank connections") && note.contains("Budget library"));
+        assert!(note.contains("Bank connections") && note.contains("Budget library") && note.contains("Bank messages"));
+        // The tabs as they are, not the old "Activity" tab.
+        assert!(note.contains("**Transactions**") && !note.contains("Activity"));
     }
 }
