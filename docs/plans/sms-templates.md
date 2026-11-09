@@ -327,9 +327,27 @@ Reliability is measured from what the assistant and the user do with each templa
 **Accuracy** for a field is `1 − (corrected + edited) / filled`. **Money accuracy** is the
 lowest of amount, date, kind, refs and outcome. A changed payee or category isn't counted
 against the template at all: it's the user's name for the bank's, which a format can't know,
-and it's learned in `sms_payees` for the next text. A template also fills in the user's payee
-when the bank's name surely is it (`KnownPayees::same`: theirs followed by a letter or two or a
-branch number), with the category they usually give it.
+and it's learned in `sms_payees` for the next text.
+
+**The user's names** (`sms_templates::Names`, as of 2026-11-09). Every money reading carries the
+bank's words for its payee (`Item.raw`): a template's `{payee}`, or the assistant's `bankName`,
+which must be copied from the text. One lookup then decides the payee and category of every row,
+whoever read it, in this order:
+
+1. A payee rule whose text the bank's name holds (`payeeRules`, as bank files use them).
+2. What the user called that name before: the budget's transactions keep the bank's words as
+   `importedPayee` when a text is added, so the latest one's payee (renamed in the review or the
+   register since) is theirs (`workflows::BankNames`). It syncs, and survives forgetting formats.
+3. The name learned on the phone for this sender (`sms_payees`): a review edit the user made
+   (`mine`), or the assistant's reading.
+4. Their payee the bank's name surely is (`KnownPayees::same`: theirs followed by a letter or two
+   or a branch number).
+
+Names compare as payee rules read them, without words that are only numbers, so "SALON A 0412"
+and "Salon-A" are one name. The category comes from the same place, else the one they usually
+give the payee. The assistant's own reading never overrides 1–3 (`own_names` runs on its reply),
+and its learning never replaces a name the user chose. Renaming one row in the review renames the
+rows still showing that bank's name (`smsSameName`).
 
 **States**
 
@@ -378,6 +396,7 @@ CREATE TABLE sms_templates (
 CREATE TABLE sms_payees (    -- the payee as the bank writes it, to the user's payee and category
   budget TEXT NOT NULL, sender_key TEXT NOT NULL, raw_key TEXT NOT NULL, raw TEXT NOT NULL,
   payee TEXT NOT NULL, category_id TEXT, seen INTEGER NOT NULL,
+  mine INTEGER NOT NULL DEFAULT 0,   -- the user chose it; the assistant's learning never replaces it (version 6)
   PRIMARY KEY (budget, sender_key, raw_key));
 ```
 
@@ -385,8 +404,9 @@ A template's id is a hash of its sender and lines, so a rewrite is a new row. Pa
 2,000 most recently seen per budget. Version 4 of the database moved the payees learned before
 it (a list in `sms_state`) into their table.
 
-- `sms_payees` learns from every confirmed or corrected row and every edit the user makes in
-  the review, so a merchant's name and category come out right the next time without asking.
+- `sms_payees` learns from every corrected row and every edit the user makes in the review, read
+  by a template or by the assistant, so a merchant's name and category come out right the next
+  time without asking. An edit is the user's (`mine`) and stays theirs.
 - The templates also go to the assistant as context in every request (a format list with
   their examples), so a read-lane text in a known-but-half-matching format is read the way
   its siblings were.
