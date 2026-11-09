@@ -141,7 +141,8 @@ internal fun CategorySheet(category: JSONObject, budget: JSONObject, total: JSON
         return
     }
     UrSheet(close) {
-        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(bottom = if (editingAssigned) 0.dp else 20.dp)) {
+        // Docked beside the budget it fills its pane, so the keypad sits at the pane's foot.
+        Column(Modifier.weight(1f, fill = LocalSheetFills.current).verticalScroll(rememberScrollState()).padding(bottom = if (editingAssigned) 0.dp else 20.dp)) {
             Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(category.text("name"), style = MaterialTheme.typography.headlineSmall, color = ur.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -241,7 +242,8 @@ internal fun CategorySheet(category: JSONObject, budget: JSONObject, total: JSON
             }
         }, doneLabel = stringResource(R.string.assign_action))
     }
-    if (noting) NoteDialog(category, budget, vm) { noting = false }
+    // Its note floats over the budget, even while the category is docked beside it.
+    if (noting) CompositionLocalProvider(LocalSheetPane provides false) { NoteDialog(category, budget, vm) { noting = false } }
 }
 
 /** A row that scrolls sideways when its chips don't fit. */

@@ -66,7 +66,7 @@ fun UrBudgetApp(vm: BudgetViewModel = viewModel()) {
     val context = LocalContext.current
     val preferences = remember { UiPreferences(NativePreferences(context.applicationContext)) }
     // Every form, picker and report belongs to one library entry, even when two budgets are identical.
-    CompositionLocalProvider(LocalPreferences provides preferences) { key(state.budgetIdentity) { BudgetContent(vm, state) } }
+    CompositionLocalProvider(LocalPreferences provides preferences) { ProvideFold { key(state.budgetIdentity) { BudgetContent(vm, state) } } }
 }
 
 /** Shows `message` above the tab bar, with Undo for the last change when asked. */
@@ -130,8 +130,10 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
             }
         }
     }
-    // A bank file being imported: kept while the assistant is open over it, to fix its lines, and
-    // past a rotation or the Fold opening, which bring its sheet back.
+    // A bank file being imported: kept while the assistant is open over it, to fix its lines. A rotation
+    // or the Fold opening no longer remakes the screen, so the review keeps its choices too; this
+    // holder still brings the import back if the activity is made again (a new text size, which it
+    // doesn't follow in place).
     val imports = viewModel<BankImportHolder>().forBudget(state.budgetIdentity)
     var bankImport by imports::draft
     var editor by remember { mutableStateOf(if (imports.draft != null) "bankImport" else null) }
@@ -152,10 +154,19 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     // A large screen has the tabs in a rail at its start instead of the dock. With room for both, the
     // register and Reports show their list and detail side by side, and the register's transaction
     // form opens beside it rather than over the screen (Adaptive.kt).
-    val rail = wideWindow() && state.budget != null
+    val wide = wideWindow() && state.budget != null
+    // A hinge splitting the screen top to bottom (a Fold half open, a dual-screen phone): its start side
+    // is a phone of its own, with the dock, and a list ends where the hinge runs, with what's chosen
+    // from it (or anything opened, floating) on the other side. Without one the tabs stand in a rail.
+    val hinge = if (wide) verticalHinge() else null
+    val rail = wide && hinge == null
     val room = pageRoom(rail)
-    val split = rail && room >= SplitWidth
+    val pageStart = if (rail) railStartInset() + RailRoom else 0.dp
+    val hingeRoom = hinge?.let { it.start - pageStart }?.takeIf { it >= 280.dp }
+    val split = wide && (hingeRoom != null || (rail && room >= SplitWidth))
     val formBeside = split && tab == 1 && morePage.isEmpty()
+    // Elsewhere on a large screen the form floats at the side, over the page, rather than taking the screen.
+    val formAtSide = wideWindow() && !formBeside
     val paneForm = remember { PaneForm() }
     // A new form each time one opens, so the next row's opens fresh in the same place.
     var formKey by remember { mutableIntStateOf(0) }
@@ -342,9 +353,37 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     }
     val budget = state.budget
     // The register and Reports split into list and detail (ListDetail) with room for both, and have it.
-    val splitList = if (split && morePage.isEmpty() && (tab == 1 || tab == 3)) splitListWidth(room) else null
-    val pageWidth = if (splitList != null) SplitPageWidth else ReadableWidth
+    val fontScale = androidx.compose.ui.platform.LocalDensity.current.fontScale
+    // The budget splits only while a category is open (BudgetScreen docks it beside the budget).
+    val splitList = if (split && morePage.isEmpty() && tab in 0..3 && tab != 2) {
+        when {
+            hinge != null && hingeRoom != null -> Split(hingeRoom, hinge.width, hinge = true)
+            // Reports' list is the reports by name; the report beside it takes the room.
+            tab == 3 -> Split(reportsListWidth(room))
+            tab == 0 -> Split(budgetListWidth(room))
+            else -> Split(splitListWidth(room, fontScale))
+        }
+    } else null
+    val pageWidth = when {
+        hingeRoom != null && splitList != null -> androidx.compose.ui.unit.Dp.Infinity
+        hingeRoom != null -> minOf(hingeRoom, ReadableWidth)
+        splitList != null -> SplitPageWidth
+        else -> ReadableWidth
+    }
     val formOpenBeside = formBeside && editor == "transaction" && budget != null
+    // On a tall enough large screen "+ Transaction" heads the rail, under the thumb that holds that
+    // side; half open on a table the rail keeps to the flat half, where there's no room for it.
+    val table = tableTop()
+    val railHeight = windowHeight() - RailInsets.only(WindowInsetsSides.Vertical).asPaddingValues().let { it.calculateTopPadding() + it.calculateBottomPadding() }
+    val railAdd = rail && table == null && railHeight >= 500.dp
+    // One form, wherever it shows: beside the register, floating at the side, or over the screen. It
+    // moves between them as the phone folds and unfolds, and keeps what's been typed.
+    val transactionForm = remember(formKey) {
+        movableContentOf { budget: JSONObject, summary: JSONObject?, host: FormHost ->
+            TransactionDialog(selected, budget, accountFilter, vm, close = { editor = null }, summary = summary, host = host)
+        }
+    }
+    val besideList = remember(paneForm) { FormHost.Beside(paneForm) }
     val undoLabel = stringResource(R.string.common_undo)
     val toast = remember(snack, scope, vm, undoLabel) { { message: String, undo: Boolean -> snack.toast(scope, vm, message, undo, undoLabel) } }
     LaunchedEffect(state.exported) { if (state.exported) { vm.exportSaid(); toast(context.getString(R.string.backup_exported), false) } }
@@ -353,7 +392,11 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
         // The page, its add button and messages. On a large screen they keep a readable width, centred
         // beside the rail; on a phone the width is never reached and the page fills the screen as before.
         Box(Modifier.fillMaxSize().then(if (rail) Modifier.windowInsetsPadding(RailInsets.only(WindowInsetsSides.Start)).padding(start = RailRoom) else Modifier),
-            contentAlignment = Alignment.TopCenter) {
+            contentAlignment = if (hingeRoom != null) Alignment.TopStart else Alignment.TopCenter) {
+        // A page that doesn't split leaves the hinge's far side to what's opened from it.
+        if (hingeRoom != null && hinge != null && splitList == null && budget != null && !state.loading) Box(Modifier.fillMaxSize().padding(start = hinge.end - pageStart)) {
+            FoldSideHint()
+        }
         Box(Modifier.widthIn(max = pageWidth).fillMaxSize()) {
         when {
             state.loading -> CircularProgressIndicator(Modifier.align(Alignment.Center), color = ur.accent)
@@ -410,40 +453,62 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
         }
         // The form beside the register, over the pane the register leaves for it. It's here, not in the
         // register, so a change of the register's filter can't reset what's being typed.
-        if (formOpenBeside && budget != null && splitList != null) key(formKey) {
-            Box(Modifier.fillMaxSize().padding(start = splitList + SplitDivider)) {
-                TransactionDialog(selected, budget, accountFilter, vm, close = { editor = null }, summary = state.summary, pane = paneForm)
-            }
+        if (formOpenBeside && budget != null && splitList != null) {
+            Box(Modifier.fillMaxSize().padding(start = splitList.detailStart)) { transactionForm(budget, state.summary, besideList) }
         }
-        // Over the page: above the dock on a phone, at the foot of the page beside the rail.
+        // Over the page: above the dock on a phone, at the foot of the page beside the rail (or in the
+        // rail itself, where it's tall enough). Beside a hinge they keep to the dock's side of it, clear
+        // of whatever is open on the other.
+        val dockSide = if (hingeRoom != null) Modifier.width(hingeRoom) else Modifier.fillMaxWidth()
         if (budget != null) {
-            val showAdd = tab in 0..2 && morePage.isEmpty() && !dockHidden && !state.loading && !formOpenBeside
-            AnimatedVisibility(showAdd, Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 16.dp, bottom = if (rail) 16.dp else 92.dp),
-                enter = fadeIn() + scaleIn(initialScale = .8f), exit = fadeOut() + scaleOut(targetScale = .8f)) {
-                AddButton(addExpanded) { openEditor("transaction") }
+            val showAdd = tab in 0..2 && morePage.isEmpty() && !dockHidden && !state.loading && !formOpenBeside && !railAdd
+            Box(Modifier.align(Alignment.BottomStart).then(dockSide), contentAlignment = Alignment.BottomEnd) {
+                AnimatedVisibility(showAdd, Modifier.navigationBarsPadding().padding(end = 16.dp, bottom = if (rail) 16.dp else 92.dp),
+                    enter = fadeIn() + scaleIn(initialScale = .8f), exit = fadeOut() + scaleOut(targetScale = .8f)) {
+                    AddButton(addExpanded) { openEditor("transaction") }
+                }
             }
         }
-        SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = if (rail) 16.dp else 96.dp)) { data ->
+        Box(Modifier.align(Alignment.BottomStart).then(dockSide), contentAlignment = Alignment.BottomCenter) {
+        SnackbarHost(snack, Modifier.navigationBarsPadding().padding(bottom = if (rail) 16.dp else 96.dp)) { data ->
             Snackbar(data, Modifier.padding(horizontal = 12.dp), shape = RoundedCornerShape(16.dp),
                 containerColor = if (ur.dark) androidx.compose.ui.graphics.Color(0xFF262C3E) else androidx.compose.ui.graphics.Color(0xFF1D1D1F),
                 contentColor = if (ur.dark) ur.text else androidx.compose.ui.graphics.Color(0xFFF5F5F7), actionColor = if (ur.dark) ur.accent else androidx.compose.ui.graphics.Color(0xFF78A7FF))
+        }
         }
         } }
         BusyBar(vm, Modifier.align(Alignment.TopCenter))
         // The rail stays while a list selects or the SMS review shows its own bar: those sit at the
         // foot of the page, clear of it, where on a phone they'd take the dock's place.
-        if (rail) TabRail(if (tab == 4) 4 else tab, ::openTab, Modifier.align(Alignment.CenterStart)
-            .windowInsetsPadding(RailInsets.only(WindowInsetsSides.Start + WindowInsetsSides.Vertical)).padding(start = RailMargin))
-        else if (budget != null) AnimatedVisibility(!dockHidden, Modifier.align(Alignment.BottomCenter), enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
+        if (rail) {
+            // Half open on a table the rail sits on the flat half, below the fold, if it fits there.
+            val onTable = table != null && windowHeight() - table >= 360.dp
+            Box(Modifier.fillMaxSize().padding(top = if (onTable) table!! else 0.dp)) {
+                TabRail(if (tab == 4) 4 else tab, ::openTab, Modifier.align(Alignment.CenterStart)
+                    .windowInsetsPadding(RailInsets.only(WindowInsetsSides.Start + (if (onTable) WindowInsetsSides.Bottom else WindowInsetsSides.Vertical))).padding(start = RailMargin),
+                    add = if (railAdd && !state.loading) ({ openEditor("transaction") }) else null)
+            }
+        }
+        // Beside a hinge the dock spans only the start side, the phone it makes.
+        else if (budget != null) AnimatedVisibility(!dockHidden, Modifier.align(Alignment.BottomStart).then(if (hingeRoom != null) Modifier.width(hingeRoom) else Modifier),
+            enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
             TabDock(if (tab == 4) 4 else tab, ::openTab)
         }
         AnimatedVisibility(assistant && budget != null, enter = fadeIn(tween(180)), exit = fadeOut(tween(180))) {
             Box(Modifier.fillMaxSize().background(ur.scrim).clickable(remember { MutableInteractionSource() }, null) { assistant = false })
         }
         val assistantDrag = rememberPanelDrag(assistant) { assistant = false }
-        AnimatedVisibility(assistant && budget != null, Modifier.align(Alignment.BottomCenter),
+        // On a large screen the assistant stands at the window's end, full height, and the page it's
+        // talking about stays in view beside it (the end side, when a hinge splits the screen).
+        if (wideWindow()) AnimatedVisibility(assistant && budget != null, Modifier.align(Alignment.CenterEnd), enter = panelEnter(), exit = panelExit()) {
+            Box(Modifier.windowInsetsPadding(RailInsets).padding(PanelMargin).width(panelWidth(max = 520.dp)).fillMaxHeight()
+                .floatingPanel(ur.surface, ur.dark, ur.border).padding(top = 6.dp)) {
+                AssistantScreen(vm, onClose = { assistant = false }, importing = importScreen, applyFix = ::applyFix, place = assistantPlace, dragArea = Modifier)
+            }
+        }
+        else AnimatedVisibility(assistant && budget != null, Modifier.align(Alignment.BottomCenter),
             enter = slideInVertically(tween(260)) { it }, exit = slideOutVertically(tween(220)) { it }) {
-            Column(Modifier.panelDrag(assistantDrag).widthIn(max = PanelWidth).fillMaxWidth().fillMaxHeight(.94f).clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)).background(ur.surface)
+            Column(Modifier.panelDrag(assistantDrag).fillMaxWidth().fillMaxHeight(.94f).clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)).background(ur.surface)
                 .then(if (ur.dark) Modifier.border(1.dp, ur.border, RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)) else Modifier)
                 .clickable(remember { MutableInteractionSource() }, null) {}) {
                 Box(Modifier.fillMaxWidth().then(assistantDrag.dragArea).padding(top = 8.dp, bottom = 4.dp), contentAlignment = Alignment.Center) {
@@ -459,7 +524,7 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
         { openEditor("ynabImport"); drawer = false })
     if (budget != null) when (editor) {
         // Over the screen, unless it opened beside the register (above).
-        "transaction" -> if (!formBeside) TransactionDialog(selected, budget, accountFilter, vm, close = { editor = null }, summary = state.summary)
+        "transaction" -> if (!formBeside) transactionForm(budget, state.summary, if (formAtSide) FormHost.Side else FormHost.Screen)
         "cardPayment" -> selected?.let { CardPaymentSheet(it.text("id"), budget, state.summary, vm) { editor = null } }
         "account" -> AccountDialog(selected, budget, vm) { editor = null }
         // A loan's details are in its account form; its payment and planner need them saved.
@@ -518,27 +583,48 @@ private fun TabDock(tab: Int, onTab: (Int) -> Unit) {
     }
 }
 
-/** On a large screen the tabs stand in a rail at the window's start, in the dock's frosted glass. */
+/**
+ * On a large screen the tabs stand in a rail at the window's start, in the dock's frosted glass. With
+ * [add], "+ Transaction" heads it as a round button in the accent, as Material's rail carries its action.
+ */
 @Composable
-private fun TabRail(tab: Int, onTab: (Int) -> Unit, modifier: Modifier) {
-    val shape = RoundedCornerShape(32.dp)
-    Column(modifier.width(RailWidth).floating(shape, ur.dark, ur.border).clip(shape).background(ur.glass).border(0.5.dp, ur.border, shape).padding(5.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        tabs.indices.forEach { index -> TabButton(index, index == tab, onTab, Modifier.fillMaxWidth().height(62.dp)) }
+private fun TabRail(tab: Int, onTab: (Int) -> Unit, modifier: Modifier, add: (() -> Unit)? = null) {
+    val shape = RoundedCornerShape(28.dp)
+    Column(modifier.width(RailWidth).floating(shape, ur.dark, ur.border).clip(shape).background(ur.glass).border(0.5.dp, ur.border, shape).padding(4.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        AnimatedVisibility(add != null, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                val label = stringResource(R.string.transaction_add)
+                Box(Modifier.padding(top = 6.dp).size(50.dp).clip(RoundedCornerShape(17.dp)).background(ur.accent).testTag("rail-add")
+                    .clickable(role = Role.Button, onClickLabel = label) { add?.invoke() }, contentAlignment = Alignment.Center) {
+                    Icon(Icons.Outlined.Add, label, Modifier.size(26.dp), tint = if (ur.dark) ur.bg else androidx.compose.ui.graphics.Color.White)
+                }
+                HorizontalDivider(Modifier.padding(top = 10.dp, bottom = 4.dp).width(32.dp), thickness = 0.5.dp, color = ur.borderStrong)
+            }
+        }
+        tabs.indices.forEach { index -> TabButton(index, index == tab, onTab, Modifier.fillMaxWidth().height(58.dp), compact = true) }
     }
 }
 
-/** A tab of the dock or the rail: its icon over its name, on a tint while it's the one open. */
+/**
+ * A tab of the dock or the rail: its icon over its name, on a tint while it's the one open. In the
+ * narrow rail ([compact]) a long name (Transactions, at a large text size) steps down to fit rather
+ * than being cut.
+ */
 @Composable
-private fun TabButton(index: Int, active: Boolean, onTab: (Int) -> Unit, modifier: Modifier) {
+private fun TabButton(index: Int, active: Boolean, onTab: (Int) -> Unit, modifier: Modifier, compact: Boolean = false) {
     val (labelId, icon) = tabs[index]
     val label = stringResource(labelId)
-    Column(modifier.clip(RoundedCornerShape(28.dp)).testTag("tab:$index")
+    val tint = if (active) ur.accent else ur.text
+    Column(modifier.clip(RoundedCornerShape(if (compact) 22.dp else 28.dp)).testTag("tab:$index")
         .background(if (active) ur.tabActive else androidx.compose.ui.graphics.Color.Transparent)
         .clickable(role = Role.Tab, onClickLabel = label) { onTab(index) },
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Icon(icon, null, Modifier.size(22.dp), tint = if (active) ur.accent else ur.text)
-        Text(label, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, color = if (active) ur.accent else ur.text, maxLines = 1)
+        Icon(icon, null, Modifier.size(22.dp), tint = tint)
+        if (compact) androidx.compose.foundation.text.BasicText(label, Modifier.padding(horizontal = 2.dp),
+            style = androidx.compose.ui.text.TextStyle(color = tint, fontWeight = FontWeight.SemiBold, fontSize = 11.sp), maxLines = 1,
+            autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = 8.5.sp, maxFontSize = 11.sp, stepSize = .5.sp))
+        else Text(label, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, color = tint, maxLines = 1)
     }
 }
 

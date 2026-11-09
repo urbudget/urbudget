@@ -30,6 +30,9 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -49,9 +52,7 @@ internal val DockRoom = 168.dp
 
 /** The window's height, for sizing sheets and pickers. */
 @Composable
-internal fun screenHeight(): Dp = with(androidx.compose.ui.platform.LocalDensity.current) {
-    androidx.compose.ui.platform.LocalWindowInfo.current.containerSize.height.toDp()
-}
+internal fun screenHeight(): Dp = windowHeight()
 
 /**
  * Shows a short message above the tab bar; with `undo`, it offers Undo for the last change, as the
@@ -69,16 +70,172 @@ internal val LocalFieldFill = staticCompositionLocalOf<Color?> { null }
 @Composable
 internal fun fieldFill(): Color = LocalFieldFill.current ?: if (LocalSheet.current) ur.surface2 else ur.surface
 
-/** Sheets, menus and the drawer rise over a dimmed page; on the dark theme only an edge, no shadow. */
+/**
+ * Sheets, menus and the drawer rise over a dimmed page; on the dark theme only an edge, no shadow.
+ * On a large screen (an unfolded Fold) they float at the window's end instead, a phone wide, where
+ * the thumb holding that side reaches them and the page stays in view beside them (FloatingSheet).
+ * Half open on a table, a sheet keeps to the flat half below the fold.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun UrSheet(onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    if (LocalSheetPane.current) return PaneSheet(onDismiss, content)
+    // Which kind is decided as it opens and kept: folding or unfolding with a sheet open resizes it
+    // rather than making it again, which would lose what's open or typed inside it.
+    val wide = wideWindow()
+    val floating = remember { wide }
+    if (floating) return FloatingSheet(onDismiss, content)
+    // On a table the sheet keeps below the fold: its content stops short of the hinge by the handle
+    // and the navigation bar the sheet adds under it.
+    val table = tableTop()
+    val navigation = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val below = table?.let { windowHeight() - it - navigation - 28.dp }
     // The sheet stops below the status bar however tall its content grows.
     ModalBottomSheet(onDismiss, Modifier.windowInsetsPadding(WindowInsets.statusBars), sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), containerColor = ur.surface, contentColor = ur.text,
         scrimColor = ur.scrim, tonalElevation = 0.dp,
         dragHandle = { Box(Modifier.padding(top = 8.dp, bottom = 4.dp).size(36.dp, 5.dp).clip(CircleShape).background(ur.borderStrong)) }) {
-        FollowLanguage { CompositionLocalProvider(LocalSheet provides true) { Column(Modifier.fillMaxWidth().imePadding(), content = content) } }
+        FollowLanguage { CompositionLocalProvider(LocalSheet provides true) {
+            Column(Modifier.fillMaxWidth().imePadding().then(if (below != null) Modifier.heightIn(max = below) else Modifier), content = content)
+        } }
+    }
+}
+
+/**
+ * A sheet on a large screen: a card floating at the bottom of the window's end side, as wide as a
+ * phone (the whole end side when a hinge splits the screen; the whole width less its margins once
+ * folded), over a dimmed page. Tapping beside it, Back or its own Cancel closes it. It has a window of
+ * its own, as a bottom sheet has, so it rises over everything, the assistant and the form included.
+ */
+@Composable
+private fun FloatingSheet(onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    val width = panelWidth()
+    val table = tableTop()
+    val shown = remember { androidx.compose.animation.core.MutableTransitionState(false).apply { targetState = true } }
+    val latestDismiss by rememberUpdatedState(onDismiss)
+    val dismiss = { shown.targetState = false }
+    LaunchedEffect(shown.isIdle, shown.currentState) {
+        if (shown.isIdle && !shown.currentState && !shown.targetState) {
+            // Slid away: its owner closes it. One that's still here a couple of frames on was kept open
+            // (it asks first, or can't close yet), so it comes back rather than leave an invisible window
+            // over the app.
+            latestDismiss()
+            withFrameNanos {}; withFrameNanos {}
+            shown.targetState = true
+        }
+    }
+    val closeLabel = stringResource(R.string.common_close)
+    val paneLabel = stringResource(R.string.sheet_pane)
+    PanelWindow {
+        androidx.activity.compose.BackHandler(onBack = dismiss)
+        FollowLanguage {
+            // One transition for the dimmed page and the card, so it's gone only once both are.
+            androidx.compose.animation.AnimatedVisibility(shown, enter = androidx.compose.animation.EnterTransition.None, exit = androidx.compose.animation.ExitTransition.None) {
+                Box(Modifier.fillMaxSize()) {
+                    Box(Modifier.fillMaxSize()
+                        .animateEnterExit(androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(180)), androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(PanelOut)))
+                        .background(ur.scrim).clickable(null, null, onClickLabel = closeLabel, onClick = dismiss)
+                        .semantics { contentDescription = closeLabel })
+                    Column(Modifier.align(Alignment.BottomEnd).animateEnterExit(panelEnter(), panelExit())
+                        .windowInsetsPadding(RailInsets).imePadding()
+                        // On a table it keeps to the flat half; otherwise it may grow to the top of the window.
+                        .padding(top = if (table != null) maxOf(table - topInset(), 0.dp) + PanelMargin else PanelMargin)
+                        .padding(start = PanelMargin, end = PanelMargin, bottom = PanelMargin)
+                        .width(width).floatingPanel(ur.surface, ur.dark, ur.border).semantics { paneTitle = paneLabel }
+                        // The room a bottom sheet's handle gives its header.
+                        .padding(top = 14.dp, bottom = 8.dp)) {
+                        CompositionLocalProvider(LocalSheet provides true, LocalContentColor provides ur.text) { content() }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * A sheet docked in a page's detail pane (the budget's category beside the budget): the same card as
+ * a floating sheet, filling the pane, with no dimmed page behind it, so the list beside it stays in
+ * use. Back closes it. Sheets it opens float as usual.
+ */
+@Composable
+private fun PaneSheet(onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    androidx.activity.compose.BackHandler(onBack = onDismiss)
+    val shown = remember { androidx.compose.animation.core.MutableTransitionState(false).apply { targetState = true } }
+    androidx.compose.animation.AnimatedVisibility(shown, enter = panelEnter()) {
+        Column(Modifier.fillMaxSize().windowInsetsPadding(RailInsets.only(WindowInsetsSides.Vertical + WindowInsetsSides.End))
+            .padding(top = 8.dp, end = PanelMargin, bottom = PanelMargin)
+            .floatingPanel(ur.surface, ur.dark, ur.border).imePadding().padding(top = 14.dp, bottom = 8.dp)) {
+            CompositionLocalProvider(LocalSheet provides true, LocalSheetPane provides false, LocalSheetFills provides true, LocalContentColor provides ur.text) { content() }
+        }
+    }
+}
+
+/**
+ * A floating panel's window: the whole screen, undimmed and unanimated (the panel brings its own),
+ * making room for the keyboard. It closes only when [content] says so (its Back handler, a tap
+ * beside the panel), so a sheet can slide away before it goes.
+ */
+@Composable
+private fun PanelWindow(content: @Composable () -> Unit) {
+    androidx.compose.ui.window.Dialog({}, androidx.compose.ui.window.DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false,
+        usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        val window = (androidx.compose.ui.platform.LocalView.current.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window
+        SideEffect {
+            window?.setDimAmount(0f)
+            window?.setWindowAnimations(0)
+            @Suppress("DEPRECATION") window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        }
+        content()
+    }
+}
+
+/** The status bar's height, or a cutout's at the top: what a panel's top padding already covers. */
+@Composable
+private fun topInset(): Dp = RailInsets.only(WindowInsetsSides.Top).asPaddingValues().calculateTopPadding()
+
+/**
+ * A panel floating over the page: rounded, its own [fill], a shadow (an edge on the dark theme), and
+ * taps on it stay on it rather than reaching the dimmed page behind.
+ */
+internal fun Modifier.floatingPanel(fill: Color, dark: Boolean, edge: Color): Modifier {
+    val shape = RoundedCornerShape(28.dp)
+    return this.floating(shape, dark, edge).clip(shape).background(fill)
+        .then(if (dark) Modifier.border(1.dp, edge, shape) else Modifier)
+        .clickable(null, null) {}
+}
+
+/**
+ * The transaction form on a large screen when it isn't beside the register: a panel floating at the
+ * window's end, full height, over the dimmed page (the end side, when a hinge splits the screen).
+ * Opened by the app itself it's a layer of the main window; opened from deep inside a page (a
+ * schedule, a bank text) it has a window of its own, so it still covers the whole app. Tapping the
+ * page doesn't close it, so what's typed isn't lost to a stray touch.
+ */
+@Composable
+internal fun SidePanel(onDismiss: () -> Unit, ownWindow: Boolean, content: @Composable () -> Unit) {
+    if (ownWindow) PanelWindow {
+        androidx.activity.compose.BackHandler(onBack = onDismiss)
+        FollowLanguage { SidePanelBody(content) }
+    } else {
+        androidx.activity.compose.BackHandler(onBack = onDismiss)
+        SidePanelBody(content)
+    }
+}
+
+@Composable
+private fun SidePanelBody(content: @Composable () -> Unit) {
+    val width = panelWidth(max = 480.dp)
+    val shown = remember { androidx.compose.animation.core.MutableTransitionState(false).apply { targetState = true } }
+    androidx.compose.animation.AnimatedVisibility(shown, enter = androidx.compose.animation.EnterTransition.None, exit = androidx.compose.animation.ExitTransition.None) {
+        Box(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize().animateEnterExit(androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(180)), androidx.compose.animation.ExitTransition.None)
+                .background(ur.scrim).clickable(null, null) {})
+            // Inside the bars, so the form's own bar padding has nothing left to add; the keyboard's it still takes.
+            Box(Modifier.align(Alignment.CenterEnd).animateEnterExit(panelEnter(), androidx.compose.animation.ExitTransition.None)
+                .windowInsetsPadding(RailInsets).padding(PanelMargin).width(width).fillMaxHeight().floatingPanel(ur.bg, ur.dark, ur.border)) {
+                content()
+            }
+        }
     }
 }
 

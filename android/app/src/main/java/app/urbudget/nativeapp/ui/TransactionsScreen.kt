@@ -12,6 +12,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -303,26 +305,35 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
                 }
             }
             Box(Modifier.fillMaxWidth().height(2.dp)) { if (computing && lines != null) LinearProgressIndicator(Modifier.matchParentSize(), color = ur.accent, trackColor = ur.bg) }
-            LazyColumn(Modifier.fillMaxSize().testTag("register"), contentPadding = PaddingValues(bottom = DockRoom)) {
+            // Beside a transaction the register is a card of its own, inset from the pane's edges, so its
+            // bands don't run up against the rail or the form: its first band rounds at the top, its last
+            // row at the bottom, and the cards above it line up with its edges.
+            val beside = LocalSplitList.current != null
+            val cardInset = if (beside) 0.dp else Gutter
+            val scheduledShown = schedules.isNotEmpty() && !searching && !selecting
+            LazyColumn(Modifier.fillMaxSize().then(if (beside) Modifier.padding(horizontal = 10.dp) else Modifier).testTag("register"),
+                contentPadding = PaddingValues(bottom = DockRoom)) {
                 if (account != null && summary != null) item(key = "summary", contentType = "summary") {
                     AccountSummaryCard(account, summary.rows("accounts").firstOrNull { it.text("id") == accountFilter }, currency,
                         { reconcile(account) }, { editAccount(account) }, if (account.text("kind") == "credit") ({ payCard(account.text("id")) }) else null,
-                        Modifier.padding(horizontal = Gutter).padding(bottom = 14.dp))
+                        Modifier.padding(horizontal = cardInset).padding(bottom = 14.dp))
                 }
                 // A loan's figures and payoff planner (LoanHeader.kt), or a debt's prompt to add them.
                 if (account != null && summary != null && loanShown) item(key = "loan", contentType = "loan") {
-                    LoanHeader(account, budget, accountBalance, vm, Modifier.padding(horizontal = Gutter).padding(bottom = 14.dp))
+                    LoanHeader(account, budget, accountBalance, vm, Modifier.padding(horizontal = cardInset).padding(bottom = 14.dp))
                 }
                 if (toApprove > 0 && status != "approval" && !selecting) item(key = "approve", contentType = "notice") {
-                    Notice(countText(R.plurals.transactions_to_approve, toApprove), Modifier.padding(horizontal = Gutter).padding(bottom = 12.dp),
+                    Notice(countText(R.plurals.transactions_to_approve, toApprove), Modifier.padding(horizontal = cardInset).padding(bottom = 12.dp),
                         tone = "info", action = stringResource(R.string.common_review), onAction = { status = "approval"; searching = true }, icon = Icons.Outlined.NewReleases)
                 }
-                if (schedules.isNotEmpty() && !searching && !selecting) {
+                if (scheduledShown) {
                     item(key = "scheduled", contentType = "band") {
                         val (incoming, outgoing) = scheduledSoon
                         val soon = listOfNotNull(if (incoming != 0L) Money.signed(incoming, currency) else null, if (outgoing != 0L) money(outgoing, currency) else null)
-                        Band(stringResource(R.string.scheduled_band, "${schedules.size}"), trailing = if (soon.isEmpty()) null else stringResource(R.string.scheduled_band_30_days, soon.joinToString("  ")),
-                            open = scheduledOpen, onClick = { scheduledOpen = !scheduledOpen })
+                        Box(if (beside) Modifier.clip(PaneListShape) else Modifier) {
+                            Band(stringResource(R.string.scheduled_band, "${schedules.size}"), trailing = if (soon.isEmpty()) null else stringResource(R.string.scheduled_band_30_days, soon.joinToString("  ")),
+                                open = scheduledOpen, onClick = { scheduledOpen = !scheduledOpen })
+                        }
                     }
                     val shown = if (!scheduledOpen) emptyList() else if (showAllScheduled) schedules else schedules.take(3)
                     items(shown, key = { "s:${it.text("id")}" }, contentType = { "schedule" }) { schedule ->
@@ -347,7 +358,13 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
                 }
                 items(list.orEmpty(), key = { line -> when (line) { is DayLine -> "d:${line.date}"; is TxLine -> line.id } },
                     contentType = { if (it is DayLine) 0 else 1 }) { line ->
-                    when (line) {
+                    val edge = when {
+                        !beside -> null
+                        line === list?.firstOrNull() && !scheduledShown -> PaneListShape
+                        line === list?.lastOrNull() -> PaneListFoot
+                        else -> null
+                    }
+                    Box(if (edge != null) Modifier.clip(edge) else Modifier) { when (line) {
                         is DayLine -> Band(line.label)
                         is TxLine -> TransactionLine(line, selecting, line.id in selected || !selecting && line.id == openId,
                             open = {
@@ -365,7 +382,7 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
                             },
                             approve = { withCurrentBudget(budget, vm) { vm.runCommand("workflow", bulkAction(setOf(line.id), "approve", "", accountFilter)) } },
                             jump = { if (line.otherAccount.isNotBlank()) openAccount(line.otherAccount) })
-                    }
+                    } }
                 }
             }
         }
@@ -651,7 +668,9 @@ private data class SplitDraft(val original: JSONObject, val category: String, va
  */
 @Composable
 internal fun TransactionDialog(original: JSONObject?, budget: JSONObject, initialAccount: String, vm: BudgetViewModel, close: () -> Unit, saveOverride: ((JSONObject) -> Unit)? = null, dialogTitle: String? = null, extraFields: (@Composable () -> Unit)? = null,
-                               summary: JSONObject? = null, pane: PaneForm? = null) {
+                               summary: JSONObject? = null, host: FormHost? = null) {
+    val placed = host ?: if (wideWindow()) FormHost.SideWindow else FormHost.Screen
+    val pane = (placed as? FormHost.Beside)?.pane
     val editorState by vm.state.collectAsStateWithLifecycle()
     val openedBudget = remember { budget }
     val openedIdentity = remember { vm.state.value.budgetIdentity }
@@ -712,11 +731,15 @@ internal fun TransactionDialog(original: JSONObject?, budget: JSONObject, initia
                 .put("transfer", it.transfer).put("payee", it.payee).put("transferStatus", it.transferStatus)
         }))
     SideEffect { checkpoint.save(rawDraft) }
-    // Beside the register, the app asks before dropping changes when another row or tab is chosen.
-    if (pane != null) {
-        val opening = remember { rawDraft.toString() }
-        SideEffect { pane.dirty = rawDraft.toString() != opening; pane.discard = checkpoint::discard }
-    }
+    // Beside the register, the app asks before dropping changes when another row or tab is chosen. What
+    // it opened with is kept wherever the form is, so folding and unfolding the phone doesn't forget it.
+    val opening = remember { rawDraft.toString() }
+    if (pane != null) SideEffect { pane.dirty = rawDraft.toString() != opening; pane.discard = checkpoint::discard }
+    // Half open on a table, the keypad keeps to the flat half below the fold and the form stays above it.
+    // The form's foot is measured all along, so it's current the moment the phone is set on a table.
+    val table = tableTop()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    var formBottom by remember { mutableStateOf<Float?>(null) }
     val save: () -> Unit = {
         runCatching {
             require(account.isNotBlank()) { Words[R.string.transaction_choose_account] }; LocalDate.parse(date)
@@ -757,7 +780,8 @@ internal fun TransactionDialog(original: JSONObject?, budget: JSONObject, initia
         }.onFailure { error = it.message }
     }
     val form: @Composable () -> Unit = {
-        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
+        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()
+            .onGloballyPositioned { formBottom = it.boundsInWindow().bottom }) {
             Box(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 6.dp)) {
                 IconButton(cancel, Modifier.align(Alignment.CenterStart)) { Icon(Icons.Outlined.Close, stringResource(R.string.common_cancel), tint = ur.text) }
                 Text(dialogTitle ?: if (original == null) stringResource(R.string.transaction_new) else stringResource(R.string.transaction_edit), Modifier.align(Alignment.Center), style = MaterialTheme.typography.titleMedium, color = ur.text)
@@ -861,11 +885,20 @@ internal fun TransactionDialog(original: JSONObject?, budget: JSONObject, initia
                 Spacer(Modifier.height(24.dp))
             }
             AnimatedVisibility(keypad, enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
-                AmountKeypad(pad, { keypad = false; if (original == null && payee.isBlank() && transfer.isBlank()) picker = "payee" })
+                // On a table: the whole flat half, the keys centred in it, like a calculator lying on the desk.
+                val flatHalf = if (table != null) formBottom?.let { bottom -> with(density) { bottom.toDp() } - table } else null
+                Box(Modifier.fillMaxWidth().then(if (flatHalf != null && flatHalf > 160.dp) Modifier.height(flatHalf) else Modifier), contentAlignment = Alignment.Center) {
+                    AmountKeypad(pad, { keypad = false; if (original == null && payee.isBlank() && transfer.isBlank()) picker = "payee" })
+                }
             }
         }
     }
-    if (pane == null) FullScreenDialog(cancel, form) else FormPane(cancel, form)
+    when (placed) {
+        is FormHost.Beside -> FormPane(cancel, form)
+        FormHost.Side -> SidePanel(cancel, ownWindow = false, form)
+        FormHost.SideWindow -> SidePanel(cancel, ownWindow = true, form)
+        FormHost.Screen -> FullScreenDialog(cancel, form)
+    }
     when (picker) {
         "payee" -> PayeePickerSheet(budget, payees, account, payee, transfer, onPayee = { name ->
             payee = name; transfer = ""

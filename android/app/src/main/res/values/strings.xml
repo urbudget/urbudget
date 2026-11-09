@@ -293,6 +293,9 @@
     <string name="register_empty_detail">Add a purchase, income, or a transfer to see your money in motion.</string>
     <string name="register_pane_title">No transaction open</string>
     <string name="register_pane_detail">Tap one in the list to see or change it here.</string>
+    <string name="sheet_pane">Sheet</string>
+    <string name="fold_side_title">This side is for what you open</string>
+    <string name="fold_side_detail">A category, the assistant or a new transaction opens here, clear of the fold.</string>
     <string name="transaction_unsaved_title">Discard your changes?</string>
     <string name="transaction_unsaved_message">This transaction has changes that aren\'t saved.</string>
     <string name="transaction_unsaved_discard">Discard</string>
@@ -1024,6 +1027,7 @@
     <string name="reports_spending_breakdown">Spending breakdown</string>
     <string name="reports_nothing_spent">Nothing spent yet this month.</string>
     <string name="reports_all">All reports</string>
+    <string name="reports_overview">Overview</string>
     <string name="reports_uncategorized_notice">%1$s of spending still needs a category. It is included in these totals.</string>
     <string name="reports_all_budget_accounts">All budget accounts</string>
     <string name="reports_all_accounts">All accounts</string>

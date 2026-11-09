@@ -113,7 +113,15 @@ class MainActivity : AppCompatActivity() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        applyLanguage()
+        // The screens always take the new configuration (a fold, a turn, dark mode); the words, month
+        // names and engine are only set again when the language or its direction changed.
+        val before = interfaceConfiguration
+        if (before == null || before.locales != resources.configuration.locales || before.layoutDirection != resources.configuration.layoutDirection) applyLanguage()
+        else {
+            interfaceConfiguration = Configuration(resources.configuration)
+            AppLanguage.keepWesternDigits()
+            window.decorView.post { AppLanguage.keepWesternDigits() }
+        }
     }
 
     /** Points the words, month names and engine at the activity's language, and redraws the screens in it. */

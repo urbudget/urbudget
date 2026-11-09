@@ -34,9 +34,12 @@
         </service>
         <!-- While ChatGPT sign-in waits in the browser: a short service, so Android doesn't pause the app. -->
         <service android:name=".SignInService" android:exported="false" android:foregroundServiceType="shortService" />
-        <!-- A language change updates the open screens in place, so nothing being edited is lost. -->
+        <!-- A language change, the Fold opening or closing, turning the phone or dark mode update the open
+             screens in place, so nothing being edited is lost. Not a new text size or display size: Compose
+             makes its dialogs' windows again when the density changes and they vanish while still open, so
+             those remake the screen as they always have. -->
         <activity android:name=".MainActivity" android:exported="true" android:windowSoftInputMode="adjustResize" android:launchMode="singleTop"
-            android:configChanges="locale|layoutDirection">
+            android:configChanges="locale|layoutDirection|orientation|screenSize|smallestScreenSize|screenLayout|uiMode|keyboard|keyboardHidden|navigation">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

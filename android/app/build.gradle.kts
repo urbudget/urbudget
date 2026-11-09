@@ -127,6 +127,8 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+    // The fold: its posture and where its hinge runs, so layouts keep clear of it (ui/Adaptive.kt).
+    implementation("androidx.window:window:1.5.1")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")

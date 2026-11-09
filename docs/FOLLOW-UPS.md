@@ -20,8 +20,10 @@ too and left for later. Each is a code reading, not yet reproduced unless it say
   while the assistant is open.
 - iOS: the line sheet's Done does nothing while an earlier change applies, and Import isn't
   disabled while busy (`importRows`).
-- Android: the process being killed loses the import and its fixes. A rotation or the Fold
-  opening keeps them (`BankImportHolder`), but the review's choices are made again.
+- Android: the process being killed loses the import and its fixes. A rotation, the Fold opening
+  or dark mode no longer remake the screen (the activity handles them in place), so the import and
+  the review's choices stay; `BankImportHolder` still brings the import back after a change the
+  activity doesn't handle (a new text or display size), but then the review's choices are made again.
 
 **Usage counts on urbudget.app** (`web/src/usage.ts`, `crates/urbudget-services/src/usage.rs`):
 
@@ -60,6 +62,31 @@ too and left for later. Each is a code reading, not yet reproduced unless it say
 
 - An open save panel holds up the app's queue of saves and reads; the YNAB export names its
   folder with a file panel; outdated import previews aren't cancelled.
+
+## What the foldable layout left
+
+Added 9 November 2026. Android now follows a Fold's posture and hinge (`ui/Adaptive.kt`): sheets,
+the assistant and a new transaction float at the window's end, a hinge running top to bottom splits
+the app into a phone on one side and what's opened on the other, and half open on a table the keypad
+and sheets keep to the flat half. A sheet keeps the kind it opened as, so folding with one open
+leaves it a floating card on the outer screen until it closes (and unfolding, a bottom sheet). Checked
+on a Pixel Fold emulator (flat, book, table, folded, dark, Arabic) and flat on the Galaxy Fold; not
+yet half open on the Galaxy Fold, or on a dual-screen phone.
+
+- Confirmation dialogs (`AlertDialog`, 20 of them) still sit in the window's middle, so half open
+  like a book they straddle the fold, and on a dual-screen phone the hinge's gap. Done looks like
+  them on one side of a hinge that splits the screen.
+- Lists still keep 168dp (`DockRoom`) at their end beside the rail, where only the add button's room
+  is needed.
+- A new text or display size still remakes the screen and closes whatever editor is open (the
+  activity doesn't take `fontScale` or `density` in place). Compose 1.9 makes a dialog's window
+  again when the density changes and the new one never shows, so any open `AlertDialog` or panel
+  would vanish while still open, with Back then leaving the app. Seen on an API 37 emulator with
+  `settings put system font_scale`. Done looks like editors kept across a text-size change, perhaps
+  through saveable editor state rather than handling the change in place. A foldable whose two
+  screens differ in density remakes the screen when it folds, for the same reason.
+- Half open like a book, Reports' report, the register's form and the budget's category take the
+  far side, but Accounts and More pages show only a hint there until something is opened.
 
 ## What fast edits on Android left
 

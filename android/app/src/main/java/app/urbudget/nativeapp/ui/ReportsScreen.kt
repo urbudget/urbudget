@@ -33,6 +33,7 @@ import androidx.compose.material.icons.automirrored.outlined.ShowChart
 import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.BarChart
+import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Category
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
@@ -239,21 +240,46 @@ internal fun ReportsScreen(budget: JSONObject, report: JSONObject?, summary: JSO
             if (info == null) ReportsOverview(budget, month, onMonth, vm, bar, cache, today, choose)
             else page(info, bar, back = { open = null })
         },
-        // Side by side the overview stays as the list, and a report is always open beside it: the
-        // spending breakdown, its first card, until another is chosen. The page's buttons go with the report.
-        list = { ReportsOverview(budget, month, onMonth, vm, {}, cache, today, choose, selected = (info ?: DefaultReport).id) },
-        detail = { page(info ?: DefaultReport, bar, back = null) },
+        // Side by side the list is the reports by name, Overview first and narrow, and the wide side
+        // shows the overview's cards or the report chosen, with the page's buttons. Back from a report
+        // returns to the overview.
+        list = { ReportsIndex(open, choose) { open = null } },
+        detail = {
+            BackHandler(open != null) { open = null }
+            if (info == null) ReportsOverview(budget, month, onMonth, vm, bar, cache, today, choose, title = stringResource(R.string.reports_overview), allReports = false)
+            else page(info, bar, back = null)
+        },
     )
 }
 
-/** The report open beside the overview before one is chosen. */
-private val DefaultReport get() = ReportList.first { it.id == "categories" }
+/**
+ * Reports' list beside the open report on a large screen: the overview first, then every report by
+ * group, the one open marked.
+ */
+@Composable
+private fun ReportsIndex(open: String?, onOpen: (String) -> Unit, overview: () -> Unit) {
+    Column(Modifier.fillMaxSize()) {
+        PhoneTopBar(stringResource(R.string.tab_reports))
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 4.dp, bottom = DockRoom),
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item(key = "overview", contentType = "overview") {
+                CardPart(top = true, bottom = true, live = true) {
+                    val chosen = open == null
+                    ListRow(stringResource(R.string.reports_overview), if (chosen) Modifier.background(ur.accentSoft).semantics { selected = true } else Modifier,
+                        icon = Icons.Outlined.Dashboard, titleColor = if (chosen) ur.accent else ur.text, onClick = overview)
+                }
+            }
+            item(key = "all", contentType = "all") { AllReports(onOpen, open) }
+        }
+    }
+}
 
 // ---------- Overview ----------
 
 @Composable
 private fun ReportsOverview(budget: JSONObject, month: String, onMonth: (String) -> Unit, vm: BudgetViewModel, bar: @Composable RowScope.() -> Unit,
-                            cache: ReportBudgetCache, today: LocalDate, onOpen: (String) -> Unit, selected: String? = null) {
+                            cache: ReportBudgetCache, today: LocalDate, onOpen: (String) -> Unit,
+                            title: String = stringResource(R.string.tab_reports), allReports: Boolean = true) {
     var attempt by remember { mutableIntStateOf(0) }
     val key = OverviewKey(budget, month, attempt, languageKey())
     var result by remember { mutableStateOf<ScopedResult<OverviewModel?>?>(null) }
@@ -268,7 +294,7 @@ private fun ReportsOverview(budget: JSONObject, month: String, onMonth: (String)
     val current = result?.scope == key
     val model = result?.value
     Column(Modifier.fillMaxSize()) {
-        PhoneTopBar(stringResource(R.string.tab_reports), actions = bar)
+        PhoneTopBar(title, actions = bar)
         ProgressLine(failed == null && !current)
         CompositionLocalProvider(LocalStale provides !current) {
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Gutter, end = Gutter, bottom = DockRoom)) {
@@ -312,7 +338,8 @@ private fun ReportsOverview(budget: JSONObject, month: String, onMonth: (String)
                         }
                     }
                 }
-                item(key = "all", contentType = "all") { AllReports(onOpen, selected) }
+                // Beside the reports' own list, the overview leaves the list to it.
+                if (allReports) item(key = "all", contentType = "all") { AllReports(onOpen, null) }
             }
         }
     }

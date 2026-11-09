@@ -299,6 +299,9 @@
     <string name="register_empty_detail">أضف مشترًى أو دخلًا أو تحويلًا لترى حركة أموالك.</string>
     <string name="register_pane_title">لا توجد معاملة مفتوحة</string>
     <string name="register_pane_detail">انقر على معاملة في القائمة لعرضها أو تعديلها هنا.</string>
+    <string name="sheet_pane">لوحة</string>
+    <string name="fold_side_title">هذا الجانب لما تفتحه</string>
+    <string name="fold_side_detail">تُفتح هنا الفئة أو المساعد أو المعاملة الجديدة، بعيدًا عن الطيّة.</string>
     <string name="transaction_unsaved_title">هل تريد تجاهل تغييراتك؟</string>
     <string name="transaction_unsaved_message">في هذه المعاملة تغييرات لم تُحفظ.</string>
     <string name="transaction_unsaved_discard">تجاهل</string>
@@ -1150,6 +1153,7 @@
     <string name="reports_spending_breakdown">تفصيل الإنفاق</string>
     <string name="reports_nothing_spent">لم يُنفَق شيء بعد هذا الشهر.</string>
     <string name="reports_all">كل التقارير</string>
+    <string name="reports_overview">نظرة عامة</string>
     <string name="reports_uncategorized_notice">ما زال \u2068%1$s\u2069 من الإنفاق يحتاج إلى فئة، وهو مشمول في هذه الإجماليات.</string>
     <string name="reports_all_budget_accounts">كل حسابات الميزانية</string>
     <string name="reports_all_accounts">كل الحسابات</string>

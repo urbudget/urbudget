@@ -194,7 +194,10 @@ How they were made:
   Play doesn't allow other companies' marks without permission.
 - The bank texts in screenshot 2 are made up, and their reading was seeded for the capture. No
   assistant ran.
-- Tablet screenshots are optional, and the app has no tablet layout, so there are none.
+- Tablet screenshots are optional. Since November 2026 the app has a large-screen layout (a tab
+  rail, lists beside what's opened from them, sheets and the assistant at the side, and it keeps
+  clear of a Fold's hinge), so 7- and 10-inch captures can come from a tablet or Pixel Fold
+  emulator; none are taken yet.
 
 Recapture if the screens change.
 
