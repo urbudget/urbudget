@@ -1152,8 +1152,9 @@ impl Runtime {
             "list_budgets" => value(self.library.lock().list()),
             "library_snapshot" => crate::library_api::snapshot(&self.db,&self.library),
             "library_open" => cloud::v2::open(&self.cloud,&self.db,&self.library,&text("id")?).await,
+            "library_empty_trash" => crate::library_api::empty_trash(&self.db,&self.library),
             "library_review_deletion" => cloud::v2::review_deletion(&self.cloud,&self.db,&self.library,&text("id")?).await,
-            "library_trash"|"library_restore"|"library_evict"|"library_recover" => crate::library_api::lifecycle(&self.cloud,&self.db,&self.library,method.trim_start_matches("library_"),&text("id")?).await,
+            "library_trash"|"library_restore"|"library_evict"|"library_recover"|"library_purge" => crate::library_api::lifecycle(&self.cloud,&self.db,&self.library,method.trim_start_matches("library_"),&text("id")?).await,
             "editor_checkpoint" => {
                 let id=optional::<String>(&p,"budgetId")?.unwrap_or_else(||self.library.lock().current().into());
                 crate::library_api::checkpoint(&self.db,&self.library,&id,text("id")?,text("epoch")?,p["target"].clone(),p["baseline"].clone(),p["values"].clone())?;Ok(Value::Null)

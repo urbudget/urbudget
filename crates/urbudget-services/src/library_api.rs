@@ -289,11 +289,42 @@ pub async fn lifecycle(
             catalog.mark_available(&new_id)?;
             recovered = Some(new_id);
         }
+        "purge" => {
+            // For good: the budget's folder goes with its database, backups and chats.
+            if db.store().is_ok_and(|s| s.id() == id) {
+                db.replace(None);
+            }
+            library.lock().purge_local(id)?;
+        }
         _ => return Err("Unknown budget lifecycle action.".into()),
     }
     Ok(
         json!({"library":snapshot(db,library)?,"active":active_snapshot(db)?,"recoveredId":recovered}),
     )
+}
+
+/// Empties Trash of the budgets that live only on this device, each deleted for good
+/// ([lifecycle] "purge"). Budgets in an account stay: they are deleted from the account.
+pub fn empty_trash(db: &Database, library: &Library) -> Result<Value, String> {
+    let trashed: Vec<String> = library
+        .lock()
+        .try_list_all()?
+        .into_iter()
+        .filter(|e| e.lifecycle == "trashed" && e.account_id.is_none())
+        .map(|e| e.id)
+        .collect();
+    let mut deleted = 0;
+    let mut failed = Vec::new();
+    for id in &trashed {
+        if db.store().is_ok_and(|s| s.id() == id) {
+            db.replace(None);
+        }
+        match library.lock().purge_local(id) {
+            Ok(()) => deleted += 1,
+            Err(error) => failed.push(json!({"id":id,"error":error})),
+        }
+    }
+    Ok(json!({"library":snapshot(db,library)?,"active":active_snapshot(db)?,"deleted":deleted,"failed":failed}))
 }
 
 #[cfg(test)]

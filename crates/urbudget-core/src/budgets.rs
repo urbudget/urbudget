@@ -689,6 +689,53 @@ mod tests {
         );
     }
     #[test]
+    fn only_a_trashed_device_budget_is_deleted_for_good_and_only_its_own_folder() {
+        let d = tempfile::tempdir().unwrap();
+        let mut l = Budgets::load(d.path()).unwrap();
+        let made = |l: &mut Budgets, account: Option<&str>| {
+            let id = l.create_owned(account).unwrap();
+            let mut s = Store::open_budget(&l.database(&id).unwrap(), &id).unwrap();
+            save(&mut s, &sample());
+            s.backup().unwrap();
+            drop(s);
+            l.mark_available(&id).unwrap();
+            id
+        };
+        let trial = made(&mut l, None);
+        let kept = made(&mut l, None);
+        let account = made(&mut l, Some("account"));
+        let folder = l.database(&trial).unwrap().parent().unwrap().to_path_buf();
+        std::fs::create_dir_all(folder.join("assistant/threads")).unwrap();
+        std::fs::write(folder.join("assistant/threads/one.json"), "{}").unwrap();
+        assert!(folder.join("backups").read_dir().unwrap().next().is_some());
+        // Not in Trash, or the open one: refused, and nothing is touched.
+        assert!(l.purge_local(&trial).is_err());
+        l.set_current(&trial).unwrap();
+        l.remove(&trial).unwrap();
+        l.set_current(&kept).unwrap();
+        l.purge_local(&trial).unwrap();
+        assert!(!folder.exists());
+        assert!(l.list_all().iter().all(|b| b.id != trial));
+        assert!(l.purge_local(&trial).is_err());
+        assert!(l.database(&kept).unwrap().is_file());
+        assert_eq!(l.current(), kept);
+        // An account budget is deleted from the account.
+        l.remove(&account).unwrap();
+        assert!(l.purge_local(&account).is_err());
+        assert!(l.database(&account).unwrap().is_file());
+        // A folder that isn't the budget's own is never removed.
+
+        let legacy = made(&mut l, None);
+        l.remove(&legacy).unwrap();
+        l.connection
+            .execute("UPDATE local_budgets SET folder='' WHERE id=?1", [&legacy])
+            .unwrap();
+        assert!(l.purge_local(&legacy).is_err());
+        assert!(l.database(&kept).unwrap().is_file());
+        drop(l);
+        assert!(Budgets::load(d.path()).unwrap().list_all().iter().all(|b| b.id != trial));
+    }
+    #[test]
     fn eviction_freezes_other_writers_and_preserves_a_backup() {
         let d = tempfile::tempdir().unwrap();
         let mut l = Budgets::load(d.path()).unwrap();
@@ -2055,6 +2102,72 @@ impl Budgets {
             .map_err(error)?;
         if tx.execute("UPDATE local_budgets SET lifecycle='active' WHERE id=?1 AND account_id IS NULL AND lifecycle IN ('trashed','recovery')",[id]).map_err(error)?==0{return Err("An account budget requires a checked cloud restore.".into())}
         bump(&tx)?;
+        tx.commit().map_err(error)
+    }
+    /// Permanent deletion of a budget in Trash that lives only on this device: its catalog
+    /// entry and its folder (database, backups, assistant chats) go, and nothing can bring it
+    /// back. A budget in an account, one not in Trash, the open one and one another process is
+    /// using are refused. The folder is removed under the catalog's write lock, and the entry
+    /// goes only once it has: a failure leaves the budget in Trash to try again.
+    pub fn purge_local(&mut self, id: &str) -> Result<()> {
+        let _lease = self
+            .claim_local_lease(id)?
+            .ok_or("Another process is using this budget.")?;
+        if self.current == id {
+            return Err("Close this budget before deleting it.".into());
+        }
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(error)?;
+        let row: Option<(Option<String>, String, String, bool)> = tx
+            .query_row(
+                "SELECT b.account_id,b.lifecycle,b.folder,EXISTS(SELECT 1 FROM app_state WHERE current_id=b.id) FROM local_budgets b WHERE b.id=?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .optional()
+            .map_err(error)?;
+        let (account, lifecycle, folder, current) =
+            row.ok_or_else(|| t!("That budget no longer exists."))?;
+        if account.is_some() {
+            return Err("A budget in your account is deleted from the account.".into());
+        }
+        if lifecycle != "trashed" {
+            return Err("Move this budget to Trash before deleting it permanently.".into());
+        }
+        if current {
+            return Err("Close this budget before deleting it.".into());
+        }
+        let pending: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM lifecycle_jobs WHERE local_budget_id=?1 AND state='pending')",
+                [id],
+                |r| r.get(0),
+            )
+            .map_err(error)?;
+        if pending {
+            return Err("Another process is using this budget.".into());
+        }
+        let root = self.data_dir.join("v2/budgets");
+        let path = folder_path(&self.data_dir, &folder)?;
+        // Never a folder that holds more than this budget: legacy storage shares one.
+        if path == root || !path.starts_with(&root) {
+            return Err("Migrate legacy storage before deleting this budget.".into());
+        }
+        for table in ["lifecycle_jobs", "sync_hints"] {
+            tx.execute(
+                &format!("DELETE FROM {table} WHERE local_budget_id=?1"),
+                [id],
+            )
+            .map_err(error)?;
+        }
+        tx.execute("DELETE FROM local_budgets WHERE id=?1", [id])
+            .map_err(error)?;
+        bump(&tx)?;
+        if path.exists() {
+            std::fs::remove_dir_all(&path).map_err(error)?;
+        }
         tx.commit().map_err(error)
     }
     pub fn set_lifecycle(&mut self, id: &str, state: &str) -> Result<()> {

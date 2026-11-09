@@ -166,3 +166,33 @@ fn normal_editor_unmount_discards_only_live_active_checkpoint() {
     urbudget_services::library_api::discard_checkpoint_if_active(&runtime.db,&runtime.library,id.as_str().unwrap(),"editor","one").unwrap();
     assert_eq!(call(&runtime,"editor_recovery",json!({"budgetId":id}))[0]["draft"]["amount"],"-");
 }
+
+#[test]
+fn a_trashed_device_budget_is_deleted_for_good_and_trash_empties() {
+    let folder = tempfile::tempdir().unwrap();
+    let runtime = Runtime::new(folder.path()).unwrap();
+    let budget = urbudget_core::test_support::sample();
+    let ids: Vec<String> = (0..3)
+        .map(|_| call(&runtime, "create_budget", json!({"budget":budget})).as_str().unwrap().to_owned())
+        .collect();
+    let path = |id: &str| {
+        let catalog = call(&runtime, "library_snapshot", json!({}));
+        catalog["entries"].as_array().unwrap().iter().find(|e| e["id"] == id).map(|e| std::path::PathBuf::from(e["path"].as_str().unwrap()))
+    };
+    let first = path(&ids[0]).unwrap();
+    assert!(first.is_file());
+    // Not in Trash: refused.
+    assert!(urbudget_services::block_on(runtime.dispatch("library_purge", json!({"id":ids[0]}))).is_err());
+    call(&runtime, "library_open", json!({"id":ids[2]}));
+    call(&runtime, "library_trash", json!({"id":ids[0]}));
+    call(&runtime, "library_purge", json!({"id":ids[0]}));
+    assert!(path(&ids[0]).is_none());
+    assert!(!first.parent().unwrap().exists());
+    // Emptying Trash deletes each trashed one and leaves the open budget alone.
+    call(&runtime, "library_trash", json!({"id":ids[1]}));
+    let emptied = call(&runtime, "library_empty_trash", json!({}));
+    assert_eq!(emptied["deleted"], 1);
+    assert_eq!(emptied["library"]["entries"].as_array().unwrap().len(), 1);
+    assert_eq!(emptied["active"]["budget"]["name"], budget.name);
+    assert!(path(&ids[2]).unwrap().is_file());
+}
