@@ -167,7 +167,8 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
                                 setCategory: (String) -> Unit, edit: (JSONObject) -> Unit, add: () -> Unit, editAccount: (JSONObject) -> Unit,
                                 reconcile: (JSONObject) -> Unit, editSchedule: (JSONObject?) -> Unit, vm: BudgetViewModel,
                                 bar: @Composable RowScope.() -> Unit, setDockHidden: (Boolean) -> Unit,
-                                initialFrom: String = "", initialThrough: String = "", initialSearch: String = "", payCard: (String) -> Unit = {}, openAccount: (String) -> Unit = {}) {
+                                initialFrom: String = "", initialThrough: String = "", initialSearch: String = "", payCard: (String) -> Unit = {}, openAccount: (String) -> Unit = {},
+                                openId: String? = null) {
     val currency = budget.text("currency")
     val monthFirst = budget.text("dateFormat") == "mdy"
     var searching by rememberSaveable { mutableStateOf(initialSearch.isNotEmpty()) }
@@ -270,7 +271,8 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
         else -> stringResource(R.string.tab_transactions)
     }
     val earliest = remember(budget) { budget.rows("transactions").minOfOrNull { it.text("date") } }
-    Box(Modifier.fillMaxSize()) {
+    // On a large screen the register is the list, and a transaction opens beside it (the app puts the form there).
+    ListDetail(detail = { RegisterPaneHint() }, list = { Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             if (selecting) Row(Modifier.fillMaxWidth().background(ur.bg).statusBarsPadding().height(64.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 RoundIconButton(Icons.Outlined.Close, stringResource(R.string.selection_end), { selected = emptySet() })
@@ -347,7 +349,7 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
                     contentType = { if (it is DayLine) 0 else 1 }) { line ->
                     when (line) {
                         is DayLine -> Band(line.label)
-                        is TxLine -> TransactionLine(line, selecting, line.id in selected,
+                        is TxLine -> TransactionLine(line, selecting, line.id in selected || !selecting && line.id == openId,
                             open = {
                                 if (selecting) selected = if (line.id in selected) selected - line.id else selected + line.id
                                 else budget.row("transactions", line.id)?.let(edit)
@@ -376,7 +378,7 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
                 delete = { confirmDelete = true },
                 more = { bulk = "payee" }, flags = flags)
         }
-    }
+    } })
     if (filtersOpen) FiltersSheet(budget, status, { status = it }, flagFilter, { flagFilter = it }, minimum, { minimum = it }, maximum, { maximum = it },
         order, { order = it }, categoryFilter, setCategory, accountFilter.isBlank()) { filtersOpen = false }
     if (datesOpen) DatesSheet(from, through, { f, t -> from = f; through = t }, earliest) { datesOpen = false }
@@ -387,6 +389,14 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
         text = { Text(stringResource(R.string.delete_transactions_message)) }, containerColor = ur.surface,
         confirmButton = { TextButton({ withCurrentBudget(budget, vm) { vm.runCommand("workflow", bulkAction(selected, "delete", "", accountFilter)); selected = emptySet() }; confirmDelete = false }) { Text(stringResource(R.string.common_delete), color = ur.negative) } },
         dismissButton = { TextButton({ confirmDelete = false }) { Text(stringResource(R.string.common_cancel)) } })
+}
+
+/** Beside the register on a large screen, until a transaction is opened there. */
+@Composable
+private fun RegisterPaneHint() {
+    Box(Modifier.fillMaxSize().statusBarsPadding(), contentAlignment = Alignment.Center) {
+        EmptyState(stringResource(R.string.register_pane_title), stringResource(R.string.register_pane_detail))
+    }
 }
 
 /** A date range as the register's pill shows it: "5 Oct 2026 – 4 Nov 2026", with the interface's month names. */
@@ -641,7 +651,7 @@ private data class SplitDraft(val original: JSONObject, val category: String, va
  */
 @Composable
 internal fun TransactionDialog(original: JSONObject?, budget: JSONObject, initialAccount: String, vm: BudgetViewModel, close: () -> Unit, saveOverride: ((JSONObject) -> Unit)? = null, dialogTitle: String? = null, extraFields: (@Composable () -> Unit)? = null,
-                               summary: JSONObject? = null) {
+                               summary: JSONObject? = null, pane: PaneForm? = null) {
     val editorState by vm.state.collectAsStateWithLifecycle()
     val openedBudget = remember { budget }
     val openedIdentity = remember { vm.state.value.budgetIdentity }
@@ -702,6 +712,11 @@ internal fun TransactionDialog(original: JSONObject?, budget: JSONObject, initia
                 .put("transfer", it.transfer).put("payee", it.payee).put("transferStatus", it.transferStatus)
         }))
     SideEffect { checkpoint.save(rawDraft) }
+    // Beside the register, the app asks before dropping changes when another row or tab is chosen.
+    if (pane != null) {
+        val opening = remember { rawDraft.toString() }
+        SideEffect { pane.dirty = rawDraft.toString() != opening; pane.discard = checkpoint::discard }
+    }
     val save: () -> Unit = {
         runCatching {
             require(account.isNotBlank()) { Words[R.string.transaction_choose_account] }; LocalDate.parse(date)
@@ -741,7 +756,7 @@ internal fun TransactionDialog(original: JSONObject?, budget: JSONObject, initia
             }
         }.onFailure { error = it.message }
     }
-    FullScreenDialog(cancel) {
+    val form: @Composable () -> Unit = {
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
             Box(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 6.dp)) {
                 IconButton(cancel, Modifier.align(Alignment.CenterStart)) { Icon(Icons.Outlined.Close, stringResource(R.string.common_cancel), tint = ur.text) }
@@ -850,6 +865,7 @@ internal fun TransactionDialog(original: JSONObject?, budget: JSONObject, initia
             }
         }
     }
+    if (pane == null) FullScreenDialog(cancel, form) else FormPane(cancel, form)
     when (picker) {
         "payee" -> PayeePickerSheet(budget, payees, account, payee, transfer, onPayee = { name ->
             payee = name; transfer = ""

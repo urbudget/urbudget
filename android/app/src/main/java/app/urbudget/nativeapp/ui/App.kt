@@ -147,6 +147,24 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     var confirmRestore by remember { mutableStateOf(false) }
     var pendingCreate by remember { mutableStateOf<Triple<String, String, Boolean>?>(null) }
     val snack = remember { SnackbarHostState() }
+    // A large screen has the tabs in a rail at its start instead of the dock. With room for both, the
+    // register and Reports show their list and detail side by side, and the register's transaction
+    // form opens beside it rather than over the screen (Adaptive.kt).
+    val rail = wideWindow() && state.budget != null
+    val room = pageRoom(rail)
+    val split = rail && room >= SplitWidth
+    val formBeside = split && tab == 1 && morePage.isEmpty()
+    val paneForm = remember { PaneForm() }
+    // A new form each time one opens, so the next row's opens fresh in the same place.
+    var formKey by remember { mutableIntStateOf(0) }
+    // Where the person was going when the form beside the register still held changes.
+    var afterForm by remember { mutableStateOf<(() -> Unit)?>(null) }
+    /** Moves on from the form beside the register: at once if it holds nothing new, else once the person agrees to drop it. */
+    fun leaveForm(then: () -> Unit) {
+        if (!formBeside || editor != "transaction") return then()
+        if (paneForm.dirty) afterForm = then else { paneForm.discard(); editor = null; then() }
+    }
+    val leaveFormLater by rememberUpdatedState<(() -> Unit) -> Unit> { then -> leaveForm(then) }
     // Each tab keeps its place (scroll position, the report open) while another is shown; a filtered
     // register keeps its own, so opening a new filter starts fresh.
     val pageStates = rememberSaveableStateHolder()
@@ -178,8 +196,12 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
         if (uri != null) vm.exportBudget { json -> replacing { mode -> resolver.openOutputStream(uri, mode) }?.use { it.write(json.toByteArray(Charsets.UTF_8)) } ?: error(notSaved) }
     }
     fun openEditor(kind: String, record: JSONObject? = null) {
-        selected = record; editor = kind
-        if (kind == "bankImport" && bankImport == null) state.budget?.let { bankImport = newBankImport(it) }
+        // The row already open beside the register stays as it is.
+        if (formBeside && editor == "transaction" && kind == "transaction" && record != null && record.text("id") == selected?.text("id")) return
+        leaveForm {
+            selected = record; editor = kind; formKey++
+            if (kind == "bankImport" && bankImport == null) state.budget?.let { bankImport = newBankImport(it) }
+        }
     }
     // The import the assistant is open over: it's told the file's lines, and its fixes apply there.
     val importing = bankImport?.takeIf { editor == "bankImport" }
@@ -205,8 +227,10 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     }
     fun openTab(index: Int) {
         if (index == 4) { drawer = true; return }
-        tab = index; morePage = ""; parentPage = ""; accountFilter = ""; categoryFilter = ""; rangeFrom = ""; rangeThrough = ""; rangeSearch = ""; returnTab = -1
-        dockHidden = false; addExpanded = true
+        leaveForm {
+            tab = index; morePage = ""; parentPage = ""; accountFilter = ""; categoryFilter = ""; rangeFrom = ""; rangeThrough = ""; rangeSearch = ""; returnTab = -1
+            dockHidden = false; addExpanded = true
+        }
     }
     // Where the user is, for the assistant: the page, and the account or category a register shows.
     val assistantPlace = when {
@@ -222,8 +246,10 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     fun openPage(page: String) {
         drawer = false
         if (page == "Assistant") { assistant = true; return }
-        if (tab != 4) lastTab = tab
-        tab = 4; morePage = page; parentPage = ""; dockHidden = false
+        leaveForm {
+            if (tab != 4) lastTab = tab
+            tab = 4; morePage = page; parentPage = ""; dockHidden = false
+        }
     }
     // A notification's page, such as Bank messages when texts need the user.
     val requested by PageRequests.page.collectAsStateWithLifecycle()
@@ -247,7 +273,7 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     // LoanActions). Without details saved, each opens the account form at them.
     val loanActions = remember(vm) {
         fun terms(id: String) = vm.state.value.budget?.rows("loans")?.firstOrNull { it.text("accountId") == id }
-        fun open(kind: String, account: JSONObject) { selected = account; editor = kind }
+        fun open(kind: String, account: JSONObject) { leaveFormLater { selected = account; editor = kind } }
         LoanActions(
             record = { account -> open(if (terms(account.text("id")) != null) "loanPayment" else "loanDetails", account) },
             plan = { account ->
@@ -306,14 +332,14 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
         OverflowMenu(vm, if (cloudStatus?.isNull("email") == false) syncState(cloudStatus) else null, { openPage("Account & sync") }) { openPage("Settings & data") }
     }
     val budget = state.budget
-    // A large screen has the tabs in a rail at its start instead of the dock (Adaptive.kt).
-    val rail = wideWindow() && budget != null
-    // Reports can show its list and a report side by side (ListDetail), so it has room for both.
-    val pageWidth = if (budget != null && morePage.isEmpty() && tab == 3) SplitPageWidth else ReadableWidth
+    // The register and Reports split into list and detail (ListDetail) with room for both, and have it.
+    val splitList = if (split && morePage.isEmpty() && (tab == 1 || tab == 3)) splitListWidth(room) else null
+    val pageWidth = if (splitList != null) SplitPageWidth else ReadableWidth
+    val formOpenBeside = formBeside && editor == "transaction" && budget != null
     val undoLabel = stringResource(R.string.common_undo)
     val toast = remember(snack, scope, vm, undoLabel) { { message: String, undo: Boolean -> snack.toast(scope, vm, message, undo, undoLabel) } }
     LaunchedEffect(state.exported) { if (state.exported) { vm.exportSaid(); toast(context.getString(R.string.backup_exported), false) } }
-    CompositionLocalProvider(LocalToast provides toast, LocalLoanActions provides loanActions) {
+    CompositionLocalProvider(LocalToast provides toast, LocalLoanActions provides loanActions, LocalSplitList provides splitList) {
     Box(Modifier.fillMaxSize().background(ur.bg).nestedScroll(scrollWatcher)) {
         // The page, its add button and messages. On a large screen they keep a readable width, centred
         // beside the rail; on a phone the width is never reached and the page fills the screen as before.
@@ -356,14 +382,15 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
                     onPayCard = { card -> openEditor("cardPayment", JSONObject().put("id", card)) })
                 1 -> TransactionsScreen(budget, state.summary, accountFilter, categoryFilter,
                     onBack = when {
-                        returnTab >= 0 -> ({ closeRegister() })
-                        accountFilter.isNotEmpty() -> ({ accountFilter = ""; tab = 2 })
-                        categoryFilter.isNotEmpty() -> ({ categoryFilter = ""; tab = 0 })
+                        returnTab >= 0 -> ({ leaveForm { closeRegister() } })
+                        accountFilter.isNotEmpty() -> ({ leaveForm { accountFilter = ""; tab = 2 } })
+                        categoryFilter.isNotEmpty() -> ({ leaveForm { categoryFilter = ""; tab = 0 } })
                         else -> null
                     }, initialFrom = rangeFrom, initialThrough = rangeThrough, initialSearch = rangeSearch, payCard = { card -> openEditor("cardPayment", JSONObject().put("id", card)) }, setCategory = { categoryFilter = it }, edit = { openEditor("transaction", it) }, add = { openEditor("transaction") },
                     editAccount = { openEditor("account", it) }, reconcile = { openEditor("reconcile", it) },
                     editSchedule = { openEditor("schedule", it) }, vm = vm, bar = common, setDockHidden = { dockHidden = it },
-                    openAccount = { id -> accountFilter = id; categoryFilter = ""; rangeFrom = ""; rangeThrough = "" })
+                    openAccount = { id -> accountFilter = id; categoryFilter = ""; rangeFrom = ""; rangeThrough = "" },
+                    openId = if (formOpenBeside) selected?.text("id") else null)
                 2 -> AccountsScreen(budget, state.summary, open = { account -> accountFilter = account.text("id"); categoryFilter = ""; tab = 1 },
                     edit = { openEditor("account", it) }, reconcile = { openEditor("reconcile", it) }, add = { openEditor("account") },
                     vm = vm, bar = common)
@@ -371,9 +398,16 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
                     openRegister = { target -> openRegister(target, 3) }) { openEditor("transaction", it) }
             } }
         }
+        // The form beside the register, over the pane the register leaves for it. It's here, not in the
+        // register, so a change of the register's filter can't reset what's being typed.
+        if (formOpenBeside && budget != null && splitList != null) key(formKey) {
+            Box(Modifier.fillMaxSize().padding(start = splitList + SplitDivider)) {
+                TransactionDialog(selected, budget, accountFilter, vm, close = { editor = null }, summary = state.summary, pane = paneForm)
+            }
+        }
         // Over the page: above the dock on a phone, at the foot of the page beside the rail.
         if (budget != null) {
-            val showAdd = tab in 0..2 && morePage.isEmpty() && !dockHidden && !state.loading
+            val showAdd = tab in 0..2 && morePage.isEmpty() && !dockHidden && !state.loading && !formOpenBeside
             AnimatedVisibility(showAdd, Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 16.dp, bottom = if (rail) 16.dp else 92.dp),
                 enter = fadeIn() + scaleIn(initialScale = .8f), exit = fadeOut() + scaleOut(targetScale = .8f)) {
                 AddButton(addExpanded) { openEditor("transaction") }
@@ -414,7 +448,8 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     if (drawer && budget != null) MoreDrawer(budget, { drawer = false }, ::openPage, { openEditor("bankImport"); drawer = false },
         { openEditor("ynabImport"); drawer = false })
     if (budget != null) when (editor) {
-        "transaction" -> TransactionDialog(selected, budget, accountFilter, vm, close = { editor = null }, summary = state.summary)
+        // Over the screen, unless it opened beside the register (above).
+        "transaction" -> if (!formBeside) TransactionDialog(selected, budget, accountFilter, vm, close = { editor = null }, summary = state.summary)
         "cardPayment" -> selected?.let { CardPaymentSheet(it.text("id"), budget, state.summary, vm) { editor = null } }
         "account" -> AccountDialog(selected, budget, vm) { editor = null }
         // A loan's details are in its account form; its payment and planner need them saved.
@@ -438,6 +473,12 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
                 fixWithAssistant = { assistantController.prefill(fixImportText); assistant = true }) { editor = null; bankImport = null }
         }
         "ynabImport" -> YnabImportDialog(budget, vm) { editor = null }
+    }
+    afterForm?.let { then ->
+        AlertDialog(onDismissRequest = { afterForm = null }, title = { Text(stringResource(R.string.transaction_unsaved_title)) },
+            text = { Text(stringResource(R.string.transaction_unsaved_message)) },
+            confirmButton = { TextButton({ afterForm = null; paneForm.discard(); editor = null; then() }) { Text(stringResource(R.string.transaction_unsaved_discard), color = ur.negative) } },
+            dismissButton = { TextButton({ afterForm = null }) { Text(stringResource(R.string.transaction_unsaved_keep)) } }, containerColor = ur.surface)
     }
     val error = state.error ?: fileError ?: state.exportFailure
     if (error != null) AlertDialog(onDismissRequest = { vm.dismissError(); fileError = null }, title = { Text(stringResource(R.string.error_title)) },

@@ -403,6 +403,13 @@ internal fun FullScreenDialog(onDismiss: () -> Unit, content: @Composable () -> 
     }
 }
 
+/** The same form in the pane beside a list on a large screen (ListDetail), rather than over the screen. */
+@Composable
+internal fun FormPane(onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    androidx.activity.compose.BackHandler(onBack = onDismiss)
+    Box(Modifier.fillMaxSize().background(ur.bg).clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, null) {}) { content() }
+}
+
 /** The shadow floating elements cast on the light theme; dark gets an edge instead. */
 internal fun Modifier.floating(shape: androidx.compose.ui.graphics.Shape, dark: Boolean, edge: Color) =
     if (dark) this.border(1.dp, edge, shape) else this.shadow(14.dp, shape, ambientColor = Color(0x33000000), spotColor = Color(0x33000000))
