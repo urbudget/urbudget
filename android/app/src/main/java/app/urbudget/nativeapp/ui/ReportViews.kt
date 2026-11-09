@@ -76,6 +76,7 @@ import app.urbudget.nativeapp.OverTimeView
 import app.urbudget.nativeapp.PayeeRow
 import app.urbudget.nativeapp.PayeeView
 import app.urbudget.nativeapp.RangePreset
+import app.urbudget.nativeapp.ReportColors
 import app.urbudget.nativeapp.ReportView
 import app.urbudget.nativeapp.RowStyle
 import app.urbudget.nativeapp.Tile
@@ -99,6 +100,15 @@ internal class ReportActions(
     val toggleExpand: (String) -> Unit,
     val showAllPayees: () -> Unit,
 )
+
+/**
+ * What's picked on a report's chart (a slice, a tile), shared by the chart and the list under it, so
+ * picking either marks both. A report starts with nothing picked, and again whenever its figures change.
+ */
+@Stable
+internal class ChartPick {
+    var key by mutableStateOf<String?>(null)
+}
 
 /** A tap that only counts while the figures are current. */
 @Composable
@@ -206,14 +216,15 @@ internal fun FigureRowView(row: FigureRow, onClick: (() -> Unit)?, divider: Bool
 }
 
 /** Lays out a report's body as lazy items. */
-internal fun LazyListScope.reportBody(view: ReportView, actions: ReportActions, expanded: Set<String>, payeeQuery: String, onPayeeQuery: (String) -> Unit, payees: List<PayeeRow>) {
+internal fun LazyListScope.reportBody(view: ReportView, actions: ReportActions, expanded: Set<String>, payeeQuery: String, onPayeeQuery: (String) -> Unit, payees: List<PayeeRow>,
+                                       pick: ChartPick) {
     when (view) {
-        is CategoryView -> categoryBody(view, actions)
-        is PayeeView -> payeeBody(view, actions, payeeQuery, onPayeeQuery, payees)
+        is CategoryView -> categoryBody(view, actions, pick)
+        is PayeeView -> payeeBody(view, actions, payeeQuery, onPayeeQuery, payees, pick)
         is OverTimeView -> overTimeBody(view, actions)
         is CalendarView -> calendarBody(view, actions)
         is IncomeExpenseView -> incomeExpenseBody(view, actions, expanded)
-        is IncomeView -> incomeBody(view, actions)
+        is IncomeView -> incomeBody(view, actions, pick)
         is CashFlowView -> cashFlowBody(view)
         is NetWorthView -> netWorthBody(view)
         is BalanceSheetView -> balanceSheetBody(view)
@@ -225,13 +236,17 @@ internal fun LazyListScope.reportBody(view: ReportView, actions: ReportActions, 
 /** Where the "All payees" card starts within a payee report's body, for the jump to it. */
 internal fun payeeListOffset(view: PayeeView) = tileRowCount(view.tiles) + 1
 
-private fun LazyListScope.categoryBody(v: CategoryView, a: ReportActions) {
+private fun LazyListScope.categoryBody(v: CategoryView, a: ReportActions, pick: ChartPick) {
     tileRows("categories", v.tiles)
     val open: (String) -> Unit = { key ->
         if (key != "__other") {
+            pick.key = null
             if (v.group != null) a.drill(DrillTarget(v.rows.firstOrNull { it.key == key }?.label ?: key, "category", key)) else a.setGroup(key)
         }
     }
+    // A row in the "Other" slice is picked with it.
+    val otherKeys = v.rows.filter { it.color == ReportColors.OTHER }.map { it.key }.toSet()
+    fun pickedRow(key: String): Boolean? = pick.key?.let { it == key || (it == "__other" && key in otherKeys) }
     card("categories:list", v.rows, { it.key }, "bar", head = {
         if (v.group != null) Row(verticalAlignment = Alignment.CenterVertically) {
             Row(Modifier.clip(RoundedCornerShape(8.dp)).clickable { a.setGroup(null) }.padding(end = 6.dp, top = 2.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -240,10 +255,11 @@ private fun LazyListScope.categoryBody(v: CategoryView, a: ReportActions) {
             }
             Text("/ ${v.centerLabel}", color = ur.text, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
         } else PanelTitle(stringResource(R.string.reports_spending_by_group))
-        if (v.rows.isNotEmpty()) Donut(v.slices, v.centerValue, v.centerLabel, if (LocalStale.current) null else open, Modifier.align(Alignment.CenterHorizontally))
+        if (v.rows.isNotEmpty()) Donut(v.slices, v.centerValue, v.centerLabel, pick.key, { pick.key = it }, if (LocalStale.current) null else open, Modifier.align(Alignment.CenterHorizontally),
+            openLabel = stringResource(if (v.group != null) R.string.chart_see_transactions else R.string.chart_see_categories))
         else EmptyText(stringResource(R.string.reports_no_spending))
     }, foot = { HelpText(v.help) }) { row, divider ->
-        BarRowView(row, 0, live { open(row.key) })
+        BarRowView(row, 0, live { if (pickedRow(row.key) == true) open(row.key) else pick.key = row.key }, pickedRow(row.key))
         if (divider) Hairline(start = 16.dp)
     }
     v.changes?.let { c ->
@@ -257,13 +273,16 @@ private fun LazyListScope.categoryBody(v: CategoryView, a: ReportActions) {
     }
 }
 
-private fun LazyListScope.payeeBody(v: PayeeView, a: ReportActions, query: String, onQuery: (String) -> Unit, payees: List<PayeeRow>) {
+private fun LazyListScope.payeeBody(v: PayeeView, a: ReportActions, query: String, onQuery: (String) -> Unit, payees: List<PayeeRow>, pick: ChartPick) {
     tileRows("payees", v.tiles)
     panel("payees:map") {
         PanelTitle(v.title, v.aside)
         if (v.map.isNotEmpty()) {
             val stale = LocalStale.current
-            Treemap(v.map, { if (!stale) a.drill(DrillTarget(it.label, "payee", it.key)) })
+            val open: (app.urbudget.nativeapp.TreemapItem) -> Unit = { if (!stale) { pick.key = null; a.drill(DrillTarget(it.label, "payee", it.key)) } }
+            Treemap(v.map, pick.key, { pick.key = it?.key }, open)
+            if (v.legend.size > 1) ChartLegend(v.legend, tiles = true)
+            v.map.firstOrNull { it.key == pick.key }?.let { item -> PickedPayee(item, if (stale) null else ({ open(item) })) }
         } else EmptyText(stringResource(R.string.reports_no_payees))
         HelpText(v.help)
         v.more?.let { more ->
@@ -296,22 +315,45 @@ private fun LazyListScope.overTimeBody(v: OverTimeView, a: ReportActions) {
     card("trends:months", v.rows, { it.key }, "month", head = {
         PanelTitle(stringResource(R.string.report_chart_spending_by_month))
         Segmented(listOf("groups" to stringResource(R.string.reports_by_group), "total" to stringResource(R.string.report_total)), if (v.byGroup) "groups" else "total", { a.setByGroup(it == "groups") })
-        ColumnChart(v.chart)
-        if (v.legend.isNotEmpty()) ChartLegend(v.legend)
+        ColumnChart(v.chart, v.legend)
     }) { row, divider -> FigureRowView(row, null, divider) }
 }
 
+/** The payee picked on the map: its figures, and the way to its transactions. */
+@Composable
+private fun PickedPayee(item: app.urbudget.nativeapp.TreemapItem, open: (() -> Unit)?) {
+    val palette = reportPalette()
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(fieldFill()).then(if (open != null) Modifier.clickable(onClick = open) else Modifier)
+        .padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(10.dp).clip(RoundedCornerShape(2.dp)).background(palette.tile(palette.color(item.color))))
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(Money.own(item.label), Modifier.weight(1f), color = ur.text, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(item.valueText, Modifier.padding(start = 8.dp), color = ur.text, style = MaterialTheme.typography.bodyLarge.merge(Tabular), fontWeight = FontWeight.SemiBold, maxLines = 1)
+            }
+            Text("${item.detail} · ${item.more}", color = ur.muted, style = MaterialTheme.typography.bodySmall.merge(Tabular), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (open != null) Text(stringResource(R.string.chart_see_transactions), color = ur.accent, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+        }
+        if (open != null) Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.padding(start = 4.dp).size(20.dp), tint = ur.accent)
+    }
+}
+
+/** The month calendar: a tap picks a day and says what it spent; a second tap, or the link, opens it. */
 @Composable
 private fun HeatPanel(heat: HeatModel, drill: (DrillTarget) -> Unit) {
     var day by remember(heat) { mutableIntStateOf(-1) }
     val stale = LocalStale.current
+    val open = { i: Int -> if (!stale && heat.spent[i]) drill(DrillTarget(heat.titles[i], "day", heat.days[i], heat.days[i], heat.days[i])) }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(if (day in heat.days.indices) stringResource(if (heat.spent[day]) R.string.reports_heat_spent else R.string.reports_heat_nothing, heat.titles[day], heat.amounts[day])
-            else stringResource(R.string.reports_heat_help), color = if (day >= 0) ur.text else ur.muted, style = MaterialTheme.typography.bodySmall)
-        HeatCalendar(heat, day, { i ->
-            day = i
-            if (!stale && heat.spent[i]) drill(DrillTarget(heat.titles[i], "day", heat.days[i], heat.days[i], heat.days[i]))
-        })
+        Row(Modifier.fillMaxWidth().heightIn(min = 22.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(if (day in heat.days.indices) stringResource(if (heat.spent[day]) R.string.reports_heat_spent else R.string.reports_heat_nothing, heat.titles[day], heat.amounts[day])
+                else stringResource(R.string.reports_heat_help), Modifier.weight(1f), color = if (day >= 0) ur.text else ur.muted, style = MaterialTheme.typography.bodySmall)
+            if (day in heat.days.indices && heat.spent[day] && !stale) Text(stringResource(R.string.chart_see_transactions),
+                Modifier.padding(start = 8.dp).clip(RoundedCornerShape(8.dp)).clickable { open(day) }.padding(4.dp),
+                color = ur.accent, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+        }
+        MonthCalendar(heat, day, { i -> if (i == day) open(i) else day = i })
         HeatLegend()
     }
 }
@@ -337,8 +379,7 @@ private fun LazyListScope.incomeExpenseBody(v: IncomeExpenseView, a: ReportActio
     item(key = "incomeExpense:help", contentType = "help") { HelpText(v.help, Modifier.padding(top = 12.dp, start = 4.dp, end = 4.dp)) }
     panel("incomeExpense:chart") {
         PanelTitle(stringResource(R.string.reports_income_spending_by_month))
-        ColumnChart(v.chart)
-        ChartLegend(v.legend)
+        ColumnChart(v.chart, v.legend)
     }
     panel("incomeExpense:rate") {
         PanelTitle(stringResource(R.string.report_budget_surplus_rate), stringResource(R.string.reports_surplus_share))
@@ -355,21 +396,21 @@ private fun LazyListScope.incomeExpenseBody(v: IncomeExpenseView, a: ReportActio
     card("incomeExpense:months", v.months, { it.key }, "figure", head = { PanelTitle(stringResource(R.string.reports_by_month), stringResource(R.string.reports_surplus_each_month)) }) { row, divider -> FigureRowView(row, null, divider) }
 }
 
-private fun LazyListScope.incomeBody(v: IncomeView, a: ReportActions) {
+private fun LazyListScope.incomeBody(v: IncomeView, a: ReportActions, pick: ChartPick) {
     tileRows("income", v.tiles)
     card("income:bars", v.bars, { it.key }, "bar", head = {
         PanelTitle(stringResource(R.string.reports_income_from))
-        if (v.bars.isNotEmpty()) Donut(v.slices, v.centerValue, stringResource(R.string.reports_positive_sources), null, Modifier.align(Alignment.CenterHorizontally))
-        else EmptyText(stringResource(R.string.reports_no_income))
+        // One source is the whole of it: its row says so, without a full ring.
+        if (v.slices.size > 1) Donut(v.slices, v.centerValue, stringResource(R.string.reports_positive_sources), pick.key, { pick.key = it }, null, Modifier.align(Alignment.CenterHorizontally))
+        else if (v.bars.isEmpty()) EmptyText(stringResource(R.string.reports_no_income))
     }, foot = v.chartHelp?.let { help -> { HelpText(help) } }) { row, divider ->
-        BarRowView(row, 0, null)
+        BarRowView(row, 0, if (v.slices.size > 1) live { pick.key = if (pick.key == row.key) null else row.key } else null, pick.key?.let { it == row.key })
         if (divider) Hairline(start = 16.dp)
     }
     v.monthly?.let { chart ->
         panel("income:monthly") {
             PanelTitle(stringResource(R.string.reports_income_by_month))
-            ColumnChart(chart)
-            ChartLegend(v.legend)
+            ColumnChart(chart, v.legend)
         }
     }
     card("income:sources", v.sources, { it.key }, "figure", head = { PanelTitle(stringResource(R.string.reports_sources)) }, foot = v.sourcesHelp?.let { help -> { HelpText(help) } }) { row, divider ->
@@ -381,8 +422,7 @@ private fun LazyListScope.cashFlowBody(v: CashFlowView) {
     tileRows("cashflow", v.tiles)
     panel("cashflow:chart") {
         PanelTitle(stringResource(R.string.reports_money_in_out_by_month))
-        ColumnChart(v.chart)
-        ChartLegend(v.legend)
+        ColumnChart(v.chart, v.legend)
         HelpText(stringResource(R.string.reports_cash_flow_help))
     }
     panel("cashflow:running") {
@@ -396,13 +436,11 @@ private fun LazyListScope.netWorthBody(v: NetWorthView) {
     tileRows("networth", v.tiles)
     panel("networth:chart") {
         PanelTitle(stringResource(R.string.reports_assets_debts_net_worth))
-        ColumnChart(v.chart)
-        ChartLegend(v.legend)
+        ColumnChart(v.chart, v.legend)
     }
     panel("networth:change") {
         PanelTitle(stringResource(R.string.reports_change_each_month))
-        ColumnChart(v.change, height = 200.dp)
-        ChartLegend(v.changeLegend)
+        ColumnChart(v.change, v.changeLegend, height = 200.dp)
     }
     card("networth:accounts", v.accounts, { it.key }, "figure", head = { PanelTitle(stringResource(R.string.reports_by_account), v.dates) }) { row, divider -> FigureRowView(row, null, divider) }
 }
@@ -505,8 +543,7 @@ internal fun LazyListScope.forecastBody(
         Segmented(listOf(3, 6, 12).map { it.toString() to countText(R.plurals.report_months_option, it) }, ahead.toString(), { setAhead(it.toInt()) })
         when {
             v != null -> {
-                LinesChart(v.chart, height = 260.dp)
-                ChartLegend(v.legend)
+                LinesChart(v.chart, v.legend, height = 260.dp)
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(fieldFill()).clickable(onClickLabel = stringResource(R.string.reports_change_everyday), onClick = editEveryday)
                     .padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {

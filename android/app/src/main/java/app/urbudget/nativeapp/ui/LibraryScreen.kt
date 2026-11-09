@@ -74,6 +74,49 @@ internal fun LibraryScreen(budget: JSONObject?, vm: BudgetViewModel, importFile:
             token = (values[2] as JSONObject).getString("token"); keep = values[3].toString()
         }.onFailure { vm.notifyError(it.message ?: context.getString(R.string.library_load_failed)) }
     }
+    @Composable fun BudgetRow(entry: JSONObject, divider: Boolean = true) {
+        val current = entry.optBoolean("current")
+        val trashed = entry.text("lifecycle") in setOf("trashed", "purged")
+        val recovery = entry.text("lifecycle") == "recovery"
+        val deletionConflict = entry.text("status") == "deletion_conflict"
+        val remote = entry.text("availability") in setOf("remote", "evicted")
+        val missing = entry.optBoolean("missing") && !remote
+        val account = entry.text("scope") == "account"
+        var menu by remember { mutableStateOf(false) }
+        Box {
+            ListRow(entry.text("name"), subtitle = "${entry.text("currency")} · ${stringResource(if (deletionConflict) R.string.library_deletion_conflict else if (trashed) R.string.library_trash else if (entry.optBoolean("pending")) R.string.sync_state_waiting else if (remote) R.string.library_available_online else if (current) R.string.library_open_now else if (missing) R.string.library_file_missing else R.string.library_on_device)}",
+                icon = Icons.Outlined.AccountBalanceWallet, iconTint = if (current) ur.accent else ur.text2, iconFill = if (current) ur.accentSoft else ur.zeroSoft,
+                onClick = { if (current) dialog = "settings" else if (!state.busy && !missing && !trashed && !recovery) vm.service("library_open", JSONObject().put("id", entry.text("id"))) },
+                onLongClick = { menu = true }, chevron = !current,
+                trailing = if (current) ({ TagChip(stringResource(R.string.library_open_chip), fill = ur.accentSoft, color = ur.accent) }) else null, divider = divider)
+            DropdownMenu(menu, { menu = false }, shape = RoundedCornerShape(16.dp), containerColor = ur.surface) {
+                DropdownMenuItem(text = { Text(stringResource(R.string.common_open)) }, leadingIcon = { Icon(Icons.Outlined.FolderOpen, null) }, enabled = !state.busy && !missing && !trashed && !recovery,
+                    onClick = { menu = false; vm.service("library_open", JSONObject().put("id", entry.text("id"))) })
+                if (!missing && !remote) DropdownMenuItem(text = { Text(stringResource(R.string.library_unfinished_edits)) }, onClick = {
+                    menu = false; vm.service("editor_recovery", JSONObject().put("budgetId", entry.text("id"))) { drafts = (it as? JSONArray)?.objects().orEmpty() }
+                })
+                if (deletionConflict) DropdownMenuItem(text = { Text(stringResource(R.string.library_review_newer)) }, enabled = !state.busy, onClick = {
+                    menu = false; vm.service("library_review_deletion", JSONObject().put("id", entry.text("id"))) { revision++ }
+                })
+                if (entry.text("lifecycle") == "trashed" && !deletionConflict) DropdownMenuItem(text = { Text(stringResource(R.string.common_restore)) }, onClick = {
+                    menu = false; vm.service("library_restore", JSONObject().put("id", entry.text("id"))) { revision++ }
+                })
+                if (account && !trashed && !remote && !entry.optBoolean("pending")) DropdownMenuItem(text = { Text(stringResource(R.string.library_remove_download)) }, onClick = {
+                    menu = false; vm.service("library_evict", JSONObject().put("id", entry.text("id"))) { revision++ }
+                })
+                if (entry.text("lifecycle") == "recovery" || (trashed && !missing && !remote)) DropdownMenuItem(text = { Text(stringResource(R.string.library_recover_copy)) }, onClick = {
+                    menu = false; vm.service("library_recover", JSONObject().put("id", entry.text("id"))) { revision++ }
+                })
+                if (syncStatus?.optJSONObject("sync")?.optInt("protocol") == 2 && !account && !trashed) DropdownMenuItem(text = { Text(stringResource(R.string.library_add_account)) }, onClick = {
+                    menu = false; vm.service("sync_enable", JSONObject().put("enabled", true).put("ids", JSONArray().put(entry.text("id")))) { revision++ }
+                })
+                if (!trashed && !recovery) DropdownMenuItem(text = { Text(stringResource(R.string.library_move_trash), color = ur.negative) }, leadingIcon = { Icon(Icons.Outlined.DeleteOutline, null, tint = ur.negative) },
+                    enabled = !state.busy, onClick = { menu = false; selected = entry; dialog = "delete" })
+                if (deviceTrash(entry)) DropdownMenuItem(text = { Text(stringResource(R.string.library_delete_forever), color = ur.negative) }, leadingIcon = { Icon(Icons.Outlined.DeleteForever, null, tint = ur.negative) },
+                    enabled = !state.busy, onClick = { menu = false; selected = entry; dialog = "purge" })
+            }
+        }
+    }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 4.dp, bottom = DockRoom), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (drafts.isNotEmpty()) item {
             ListCard {
@@ -89,51 +132,23 @@ internal fun LibraryScreen(budget: JSONObject?, vm: BudgetViewModel, importFile:
         item { SectionTitle(stringResource(R.string.library_budgets), stringResource(R.string.library_budgets_detail)) }
         item {
             ListCard {
-                entries.forEach { entry -> key(entry.text("id")) {
-                    val current = entry.optBoolean("current")
-                    val trashed = entry.text("lifecycle") in setOf("trashed", "purged")
-                    val recovery = entry.text("lifecycle") == "recovery"
-                    val deletionConflict = entry.text("status") == "deletion_conflict"
-                    val remote = entry.text("availability") in setOf("remote", "evicted")
-                    val missing = entry.optBoolean("missing") && !remote
-                    val account = entry.text("scope") == "account"
-                    var menu by remember { mutableStateOf(false) }
-                    Box {
-                        ListRow(entry.text("name"), subtitle = "${entry.text("currency")} · ${stringResource(if (deletionConflict) R.string.library_deletion_conflict else if (trashed) R.string.library_trash else if (entry.optBoolean("pending")) R.string.sync_state_waiting else if (remote) R.string.library_available_online else if (current) R.string.library_open_now else if (missing) R.string.library_file_missing else R.string.library_on_device)}",
-                            icon = Icons.Outlined.AccountBalanceWallet, iconTint = if (current) ur.accent else ur.text2, iconFill = if (current) ur.accentSoft else ur.zeroSoft,
-                            onClick = { if (current) dialog = "settings" else if (!state.busy && !missing && !trashed && !recovery) vm.service("library_open", JSONObject().put("id", entry.text("id"))) },
-                            onLongClick = { menu = true }, chevron = !current,
-                            trailing = if (current) ({ TagChip(stringResource(R.string.library_open_chip), fill = ur.accentSoft, color = ur.accent) }) else null, divider = true)
-                        DropdownMenu(menu, { menu = false }, shape = RoundedCornerShape(16.dp), containerColor = ur.surface) {
-                            DropdownMenuItem(text = { Text(stringResource(R.string.common_open)) }, leadingIcon = { Icon(Icons.Outlined.FolderOpen, null) }, enabled = !state.busy && !missing && !trashed && !recovery,
-                                onClick = { menu = false; vm.service("library_open", JSONObject().put("id", entry.text("id"))) })
-                            if (!missing && !remote) DropdownMenuItem(text = { Text(stringResource(R.string.library_unfinished_edits)) }, onClick = {
-                                menu = false; vm.service("editor_recovery", JSONObject().put("budgetId", entry.text("id"))) { drafts = (it as? JSONArray)?.objects().orEmpty() }
-                            })
-                            if (deletionConflict) DropdownMenuItem(text = { Text(stringResource(R.string.library_review_newer)) }, enabled = !state.busy, onClick = {
-                                menu = false; vm.service("library_review_deletion", JSONObject().put("id", entry.text("id"))) { revision++ }
-                            })
-                            if (entry.text("lifecycle") == "trashed" && !deletionConflict) DropdownMenuItem(text = { Text(stringResource(R.string.common_restore)) }, onClick = {
-                                menu = false; vm.service("library_restore", JSONObject().put("id", entry.text("id"))) { revision++ }
-                            })
-                            if (account && !trashed && !remote && !entry.optBoolean("pending")) DropdownMenuItem(text = { Text(stringResource(R.string.library_remove_download)) }, onClick = {
-                                menu = false; vm.service("library_evict", JSONObject().put("id", entry.text("id"))) { revision++ }
-                            })
-                            if (entry.text("lifecycle") == "recovery" || (trashed && !missing && !remote)) DropdownMenuItem(text = { Text(stringResource(R.string.library_recover_copy)) }, onClick = {
-                                menu = false; vm.service("library_recover", JSONObject().put("id", entry.text("id"))) { revision++ }
-                            })
-                            if (syncStatus?.optJSONObject("sync")?.optInt("protocol") == 2 && !account && !trashed) DropdownMenuItem(text = { Text(stringResource(R.string.library_add_account)) }, onClick = {
-                                menu = false; vm.service("sync_enable", JSONObject().put("enabled", true).put("ids", JSONArray().put(entry.text("id")))) { revision++ }
-                            })
-                            if (!trashed && !recovery) DropdownMenuItem(text = { Text(stringResource(R.string.library_move_trash), color = ur.negative) }, leadingIcon = { Icon(Icons.Outlined.DeleteOutline, null, tint = ur.negative) },
-                                enabled = !state.busy, onClick = { menu = false; selected = entry; dialog = "delete" })
-                        }
-                    }
-                } }
+                entries.filterNot(::inTrash).forEach { entry -> key(entry.text("id")) { BudgetRow(entry) } }
                 ListRow(stringResource(R.string.library_new_budget), icon = Icons.Outlined.Add, titleColor = ur.accent, onClick = { if (!state.busy) { name = defaultName; currency = budget?.text("currency") ?: "SAR"; dialog = "new" } }, chevron = false)
             }
         }
         item { Text(stringResource(R.string.library_help), Modifier.padding(horizontal = 4.dp), color = ur.muted, style = MaterialTheme.typography.bodySmall) }
+        val trash = entries.filter(::inTrash)
+        if (trash.isNotEmpty()) {
+            item { SectionTitle(stringResource(R.string.library_trash), stringResource(R.string.library_trash_detail)) }
+            item {
+                ListCard {
+                    val device = trash.count(::deviceTrash)
+                    if (device > 0) ListRow(stringResource(R.string.library_empty_trash), subtitle = countText(R.plurals.library_empty_trash_detail, device), icon = Icons.Outlined.DeleteForever,
+                        iconTint = ur.negative, iconFill = ur.negativeSoft, titleColor = ur.negative, chevron = false, divider = true, onClick = { if (!state.busy) dialog = "empty" })
+                    trash.forEach { entry -> key(entry.text("id")) { BudgetRow(entry, divider = entry !== trash.last()) } }
+                }
+            }
+        }
         item { SectionTitle(stringResource(R.string.library_start_new)) }
         item {
             val freshName = stringResource(R.string.library_fresh_name, budget?.text("name").orEmpty())
@@ -174,6 +189,29 @@ internal fun LibraryScreen(budget: JSONObject?, vm: BudgetViewModel, importFile:
     if (dialog == "fresh") FormDialog(stringResource(R.string.library_fresh_start), { dialog = "" }, stringResource(R.string.library_fresh_create), enabled = !state.busy && name.isNotBlank(), onConfirm = {
         vm.service("fresh_start", JSONObject().put("name", name).put("asOf", asOf)) { id -> dialog = ""; revision++; vm.service("library_open", JSONObject().put("id", id)) }
     }) { Field(name, { name = it }, stringResource(R.string.library_fresh_field)); DateField(asOf, { asOf = it }, stringResource(R.string.library_start_date)); Text(stringResource(R.string.library_fresh_help)) }
+    if (dialog == "purge" || dialog == "empty") {
+        val trash = entries.filter(::deviceTrash)
+        val emptied = countText(R.plurals.library_trash_emptied, trash.size)
+        val gone = { deleted: List<JSONObject> ->
+            // Its bank texts go with it: the phone keeps them by the budget's file.
+            scope.launch(Dispatchers.IO) { deleted.forEach { e -> e.text("path").takeIf { it.isNotBlank() && !File(it).exists() }?.let { SmsInbox.get(context).clear(it) } } }
+            dialog = ""; revision++
+        }
+        AlertDialog(onDismissRequest = { dialog = "" },
+            title = { Text(if (dialog == "purge") stringResource(R.string.library_purge_title, selected?.text("name").orEmpty()) else stringResource(R.string.library_empty_trash_title)) },
+            text = { Text(if (dialog == "purge") stringResource(R.string.library_purge_message) else countText(R.plurals.library_empty_trash_message, trash.size)) },
+            confirmButton = { TextButton({
+                val one = selected
+                if (dialog == "purge" && one != null) vm.service("library_purge", JSONObject().put("id", one.text("id"))) { gone(listOf(one)) }
+                else vm.service("library_empty_trash") { result ->
+                    val failed = (result as? JSONObject)?.optJSONArray("failed")?.objects().orEmpty()
+                    val left = failed.map { it.text("id") }.toSet()
+                    gone(trash.filter { it.text("id") !in left })
+                    if (failed.isEmpty()) notice = emptied else vm.notifyError(failed.first().text("error"))
+                }
+            }, enabled = !state.busy) { Text(stringResource(if (dialog == "purge") R.string.library_delete_forever else R.string.library_empty_trash), color = ur.negative) } },
+            dismissButton = { TextButton({ dialog = "" }) { Text(stringResource(R.string.common_cancel)) } })
+    }
     if (dialog == "delete" || dialog == "restore") AlertDialog(onDismissRequest = { dialog = "" },
         title = { Text(if (dialog == "delete") stringResource(R.string.library_delete_title, selected?.text("name").orEmpty()) else stringResource(R.string.library_restore_title)) },
         text = { Text(if (dialog == "delete") stringResource(R.string.library_trash_message) else stringResource(R.string.library_restore_message, selected?.text("name").orEmpty())) }, confirmButton = { TextButton({
@@ -183,3 +221,9 @@ internal fun LibraryScreen(budget: JSONObject?, vm: BudgetViewModel, importFile:
 }
 
 private fun JSONArray.objects() = (0 until length()).mapNotNull(::optJSONObject)
+
+/** A budget in Trash: listed under Trash, apart from the others. */
+private fun inTrash(entry: JSONObject) = entry.text("lifecycle") in setOf("trashed", "purged")
+
+/** A budget in Trash that lives only on this phone: it can be deleted permanently. */
+private fun deviceTrash(entry: JSONObject) = entry.text("lifecycle") == "trashed" && entry.text("scope") != "account"

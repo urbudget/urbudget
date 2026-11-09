@@ -242,13 +242,53 @@ class ReportMathTest {
         assertEquals("15M", compactMoney(1500000000.0, "."))
         assertEquals("-1.5K", compactMoney(-150000.0, "."))
         assertEquals("1,5K", compactMoney(150000.0, ","))
-        assertEquals(XTick("Oct", "Oct 26", 2026), monthXTick("2026-10"))
+        assertEquals(XTick("Oct", "Oct 2026", 2026), monthXTick("2026-10"))
         assertEquals("Sep", monthAbbrev("2026-09-01"))
         assertEquals("33.3%", share(1, 3))
         assertEquals("—", share(5, 0))
         assertEquals("-25.0%", share(-1, 4))
         assertEquals("12.3", jsNumber(12.3))
         assertEquals("20", jsNumber(20.0))
+    }
+
+    @Test fun chartsOpenOnTheLastCompleteMonthAndSayWhichIsUnderWay() {
+        val keys = listOf("2026-08", "2026-09", "2026-10")
+        val series = listOf(ColumnSeries("in", "Income", 0, listOf(100.0, 200.0, 50.0)), ColumnSeries("out", "Spending", 1, listOf(-80.0, -120.0, -10.0)))
+        val chart = columnModel("Chart", keys, series, { it.toLong().toString() }, { it.toLong().toString() }, null, current = "2026-10")
+        assertEquals(2, chart.partial)
+        assertEquals(1, chart.opening)
+        assertEquals("October 2026 so far", chart.titles[2])
+        assertEquals("September 2026", chart.titles[1])
+        // A finished range opens on its last month; a plan ahead has none under way.
+        assertEquals(2, columnModel("Chart", keys, series, { "" }, { "" }, null, current = "2026-11").opening)
+        assertEquals(-1, linesModel("Plan", keys, listOf(LineSeries("a", "A", 0, listOf(1.0, 2.0, 3.0))), { "" }, { "" }, null, current = null).partial)
+    }
+
+    @Test fun hidingASeriesRescalesTheRestAndDropsTheTotal() {
+        val keys = listOf("2026-09", "2026-10")
+        val chart = columnModel("Chart", keys, listOf(ColumnSeries("a", "Assets", 0, listOf(90_000.0, 100_000.0)), ColumnSeries("d", "Debts", 1, listOf(-2_000.0, -3_000.0))),
+            { it.toLong().toString() }, { it.toLong().toString() }, null, line = LineOverlay("Net worth", ReportColors.LINE, listOf(88_000.0, 97_000.0)), current = null)
+        val debts = chart.without(setOf("Assets", "Net worth"))
+        assertEquals(listOf("d"), debts.series.map { it.key })
+        assertNull(debts.line)
+        // The scale is the debts' alone now, and says so.
+        assertTrue(debts.ticks.last() <= 0.0 && debts.ticks.first() >= -5_000.0)
+        assertEquals(debts.ticks.map { it.toLong().toString() }, debts.tickLabels)
+        assertEquals(listOf("Debts"), debts.readouts[1].map { it.label })
+        // Hiding everything hides nothing.
+        assertEquals(chart, chart.without(setOf("Assets", "Debts", "Net worth")))
+        assertEquals(chart, chart.without(emptySet()))
+    }
+
+    @Test fun payeeTilesTakeTheirGroupsColour() {
+        val ctx = parseReportBudget(budget(listOf(Triple("c1", "Groceries", "Food"), Triple("c2", "Rent", "Bills")), groupOrder = listOf("Bills", "Food")), today)
+        val payees = listOf(PayeeSpend("Landlord", 10_000, 1, "c2"), PayeeSpend("Market", 4_000, 6, "c1")) + (1..8).map { PayeeSpend("Shop $it", 500, 1, null) }
+        val view = payeeView(data(listOf(month("2026-10", spending = 16_000))).copy(payees = payees), ctx)
+        val colors = view.map.associate { it.key to it.color }
+        assertEquals(ctx.colorOf("Bills"), colors["Landlord"])
+        assertEquals(ctx.colorOf("Food"), colors["Market"])
+        assertEquals(ReportColors.OTHER, colors["Shop 1"])
+        assertEquals(listOf("Bills", "Food"), view.legend.map { it.label })
     }
 
     @Test fun ticksAreRoundAndIncludeZero() {
@@ -385,6 +425,12 @@ class ReportMathTest {
         assertEquals("-5.00", model.debtsText)
         assertTrue(model.debtsNegative)
         assertEquals("1 day", model.ageText)
+        // The small charts carry each month's figures, for a finger to read.
+        assertEquals(listOf("1.00", "1.00"), model.incomeBars.texts[0])
+        assertEquals(listOf("1.00", "90.00"), model.incomeBars.texts[1])
+        assertEquals("5.00", model.netWorthBars.texts[0][1])
+        assertEquals("5", model.netWorthBars.short[0][1])
+        assertEquals(2, model.ageBars.titles.size)
         assertEquals("Nothing earned or spent in these months.", incomeLead(listOf(month("2026-10"))))
         assertEquals("On average, you're spending about what you make.", incomeLead(listOf(month("2026-10", income = 1000, spending = 990))))
         assertEquals("On average, you're spending less than you make.", incomeLead(listOf(month("2026-10", income = 1000, spending = 500))))

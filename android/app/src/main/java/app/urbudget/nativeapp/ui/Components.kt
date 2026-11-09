@@ -183,9 +183,9 @@ internal fun LazyFormDialog(title: String, onDismiss: () -> Unit, confirm: Strin
 
 /** `ltr`: what is typed reads left to right whatever the interface's direction (a date or an amount the person writes out). */
 @Composable
-internal fun Field(value: String, onChange: (String) -> Unit, label: String, numeric: Boolean = false, lines: Int = 1, ltr: Boolean = false) {
+internal fun Field(value: String, onChange: (String) -> Unit, label: String, numeric: Boolean = false, lines: Int = 1, ltr: Boolean = false, modifier: Modifier = Modifier) {
     val style = if (numeric) LocalTextStyle.current.merge(Tabular) else LocalTextStyle.current
-    TextField(value, onChange, label = { Text(label) }, modifier = Modifier.fillMaxWidth(), singleLine = lines == 1, maxLines = lines,
+    TextField(value, onChange, label = { Text(label) }, modifier = modifier.fillMaxWidth(), singleLine = lines == 1, maxLines = lines,
         minLines = if (lines > 1) 2 else 1, shape = RoundedCornerShape(12.dp), colors = fieldColors(),
         textStyle = if (ltr) style.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Ltr) else style,
         keyboardOptions = KeyboardOptions(keyboardType = if (numeric) KeyboardType.Decimal else KeyboardType.Text))

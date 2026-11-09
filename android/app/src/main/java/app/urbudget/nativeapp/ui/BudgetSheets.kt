@@ -193,6 +193,8 @@ internal fun CategorySheet(category: JSONObject, budget: JSONObject, total: JSON
             }
             error?.let { Box(Modifier.padding(horizontal = Gutter, vertical = 8.dp)) { FormError(it) } }
             if (!editingAssigned) {
+                // A loan's payment category: the loans it pays, and paying them (LoanHeader.kt).
+                CategoryLoans(category, budget, summary, vm, close)
                 if (payment) PrimaryButton(stringResource(R.string.card_make_payment), { payCard(paymentAccount) }, Modifier.fillMaxWidth().padding(horizontal = Gutter).padding(top = 14.dp), icon = Icons.Outlined.CreditCard)
                 Row(Modifier.fillMaxWidth().padding(horizontal = Gutter, vertical = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     SecondaryButton(if (available < 0) stringResource(R.string.category_cover) else stringResource(R.string.move_money), { move(if (available < 0) "from" else "to") }, Modifier.weight(1f), icon = Icons.Outlined.SwapHoriz)

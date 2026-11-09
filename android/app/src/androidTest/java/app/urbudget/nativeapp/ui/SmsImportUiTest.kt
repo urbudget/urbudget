@@ -25,6 +25,9 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.UUID
+import java.time.LocalDate
+import kotlinx.coroutines.runBlocking
+import org.junit.Assume.assumeTrue
 
 /** Synthetic emulator-only checks of preparing, the one-time consent, and the review's commit boundary. */
 @RunWith(AndroidJUnit4::class)
@@ -419,8 +422,9 @@ class SmsImportUiTest {
         // The unmatched card waits in the review as it was read; the unticked text is cleared, and
         // nothing just settled is sent to the assistant while the page catches up.
         compose.waitUntil(10_000) { inbox.pendingCount(identity!!) == 1 && draftSize(inbox) == 1 }
-        waitFor("sms-needs")
-        compose.onNodeWithTag("sms-needs").assertTextEquals(context.resources.getQuantityString(R.plurals.sms_to_review, 1, "1"))
+        // The page catches up a moment after the texts settle: wait for its count, not its first frame.
+        val oneToReview = context.resources.getQuantityString(R.plurals.sms_to_review, 1, "1")
+        compose.waitUntil(10_000) { runCatching { compose.onNodeWithTag("sms-needs").assertTextEquals(oneToReview) }.isSuccess }
         compose.waitForIdle()
         assertEquals(0, calls)
     }
@@ -666,6 +670,11 @@ class SmsImportUiTest {
         waitFor("sms-decision")
         // It comes first, under its own heading, and doesn't move once it's answered.
         compose.onNodeWithText(context.getString(R.string.sms_section_check)).assertExists()
+        // The assistant counts the review as the page does: one asks add or match, one is ready, and nothing else waits.
+        val status = runBlocking { BankTextsAssistant.answer(context, vm, JSONObject().put("tool", "get_bank_texts").put("args", JSONObject())) }.getJSONObject("output")
+        val counted = status.getJSONObject("review")
+        assertEquals(listOf(2, 2, 1, 1), listOf(counted.getInt("texts"), counted.getInt("toReview"), counted.getInt("mayAlreadyBeInTheBudget"), counted.getInt("readyToAdd")))
+        assertEquals(0, status.getJSONObject("waitingToBeRead").getInt("count"))
         fun assertAsksFirst() = assertTrue(compose.onNodeWithTag("sms-row:0").fetchSemanticsNode().boundsInRoot.top < compose.onNodeWithTag("sms-row:1").fetchSemanticsNode().boundsInRoot.top)
         waitFor("sms-row:1")
         assertAsksFirst()
@@ -709,6 +718,112 @@ class SmsImportUiTest {
         assertEquals(before + 1, rows.size)
         val text = smsBankIds("checking", listOf(sms.id))
         assertEquals(1, rows.count { row -> row.optJSONArray("bankImportIds")?.let { a -> (0 until a.length()).any { a.getString(it) in text } } == true })
+    }
+
+    @Test fun theReviewChecksTheBanksFigureAndKeepsWhatBecameOfEachText() {
+        val vm = fixture("bank")
+        val inbox = SmsInbox.get(context)
+        inbox.saveState(identity!!, "consent", smsConsent(connection))
+        inbox.saveState(identity!!, "mappings", smsRememberCard(JSONArray(), "SyntheticBank", "*1234", "checking").toString())
+        // The bank's balance after the purchase is the budget's less it: they agree.
+        val now = vm.state.value.summary!!.rows("accounts").first { it.text("id") == "checking" }.optLong("balance")
+        val after = now - 1_234
+        val body = "Purchase USD 12.34 at Synthetic Shop card *1234 on 2026-10-24. Balance USD ${smsDecimal(after)}"
+        val sms = BankSms(smsId("SyntheticBank", 1, body), "SyntheticBank", 1, body)
+        val code = BankSms(smsId("SyntheticBank", 2, "Your code is 4821"), "SyntheticBank", 2, "Your code is 4821")
+        listOf(sms, code).forEach(inbox::capture)
+        val analysis = syntheticSmsAnalysis(sms, ref = "*1234")
+        analysis.getJSONArray("items").getJSONObject(0).getJSONObject("transaction").put("balance", smsDecimal(after))
+        analysis.getJSONArray("items").put(codes(JSONArray().put(code.json())).getJSONArray("items").getJSONObject(0))
+        inbox.saveState(identity!!, "draft", SmsBatch(listOf(sms, code), analysis).saved())
+        show(vm, analyzer { analysis })
+        waitFor("sms-review")
+        compose.onNodeWithTag("sms-review").performClick()
+        waitFor("sms-bank-check:checking")
+        val currency = vm.state.value.budget!!.getString("currency")
+        compose.onNodeWithTag("sms-bank-check:checking").assertTextEquals(context.getString(R.string.sms_bank_matches, money(after, currency), Money.date("2026-10-24")))
+        compose.waitUntil(10_000) { runCatching { compose.onNodeWithTag("sms-add").assertIsEnabled() }.isSuccess }
+        compose.onNodeWithTag("sms-add").performClick()
+        compose.waitUntil(10_000) { inbox.pendingCount(identity!!) == 0 && inbox.state(identity!!, "balances") != null }
+        // What became of each text is kept once its body is gone, and the bank's figure for the account.
+        val records = inbox.records(identity!!, listOf(sms.id, code.id))
+        assertEquals(SmsOutcome.Added, records.getValue(sms.id).outcome!!.getString("outcome"))
+        assertEquals(after, records.getValue(sms.id).outcome!!.getLong("balance"))
+        assertEquals("code", records.getValue(code.id).outcome!!.getString("reason"))
+        assertEquals(after, JSONObject(inbox.state(identity!!, "balances")!!).getJSONObject("checking").getLong("cents"))
+        // The assistant sees the bank's figure beside the budget's at the end of that day.
+        compose.waitUntil(10_000) { vm.state.value.summary!!.rows("accounts").first { it.text("id") == "checking" }.optLong("balance") == after }
+        val status = runBlocking { BankTextsAssistant.answer(context, vm, JSONObject().put("tool", "get_bank_texts").put("args", JSONObject())) }
+        val bank = status.getJSONObject("output").getJSONArray("bankBalances").getJSONObject(0)
+        assertEquals(smsDecimal(after), bank.getString("bank"))
+        assertEquals("0.00", bank.getString("difference"))
+        assertEquals(0, status.getJSONObject("output").getJSONObject("waitingToBeRead").getInt("count"))
+        // Everything settled: no review open.
+        assertTrue(status.getJSONObject("output").isNull("review"))
+    }
+
+    @Test fun theAssistantsBankTextCardsAreCheckedThenDoneOnThePhone() {
+        val vm = fixture("cards")
+        val inbox = SmsInbox.get(context)
+        fun ask(args: JSONObject) = runBlocking { BankTextsAssistant.answer(context, vm, JSONObject().put("tool", "propose_bank_texts").put("args", args)) }
+        // Without the assistant allowed to read texts, it isn't asked at all.
+        assertFalse(BankTextsAssistant.available(context, identity))
+        inbox.saveState(identity!!, "consent", smsConsent(connection))
+        assertTrue(BankTextsAssistant.available(context, identity))
+        // Nothing waits yet: there's nothing to read.
+        assertTrue(ask(JSONObject().put("action", "read")).has("error"))
+        val body = "Purchase USD 12.34 at Synthetic Shop card *1234 on 2026-10-24"
+        inbox.capture(BankSms(smsId("SyntheticBank", 1, body), "SyntheticBank", 1, body))
+        val read = ask(JSONObject().put("action", "read").put("note", "Card 1234 is checking"))
+        assertEquals("read", read.getJSONObject("apply").getString("action"))
+        assertEquals(2, read.getJSONObject("card").getJSONArray("rows").length())
+        assertEquals("Bank messages", runBlocking { BankTextsAssistant.apply(context, vm, read.getJSONObject("apply")) })
+        assertEquals("Card 1234 is checking", BankTextsAssistant.reads.value?.note)
+        BankTextsAssistant.reads.value = null
+        // A card's digits are remembered only for a chosen sender.
+        assertTrue(ask(JSONObject().put("action", "remember").put("sender", "Someone").put("ref", "1234").put("accountId", "checking")).has("error"))
+        val remember = ask(JSONObject().put("action", "remember").put("sender", "SyntheticBank").put("ref", "1234").put("accountId", "checking"))
+        runBlocking { BankTextsAssistant.apply(context, vm, remember.getJSONObject("apply")) }
+        assertEquals("checking", JSONArray(inbox.state(identity!!, "mappings")).getJSONObject(0).getString("accountId"))
+        // A limit only on a credit account, and above zero.
+        assertTrue(ask(JSONObject().put("action", "limit").put("accountId", "checking").put("limit", 1000)).has("error"))
+        assertTrue(ask(JSONObject().put("action", "limit").put("accountId", "card").put("limit", 0)).has("error"))
+        val limit = ask(JSONObject().put("action", "limit").put("accountId", "card").put("limit", 2500.5))
+        runBlocking { BankTextsAssistant.apply(context, vm, limit.getJSONObject("apply")) }
+        compose.waitUntil(10_000) { vm.state.value.budget!!.row("accounts", "card")?.optLong("creditLimit") == 250_050L }
+        // And taken away again.
+        instrumentation.runOnMainSync { vm.setCreditLimit("card", null) }
+        compose.waitUntil(10_000) { vm.state.value.budget!!.row("accounts", "card")?.has("creditLimit") == false }
+        // Texts a search didn't find can't be added.
+        assertTrue(ask(JSONObject().put("action", "add").put("textIds", JSONArray().put("sms:nope"))).has("error"))
+    }
+
+    /**
+     * With `-e deliveredSms 1`, after `adb emu sms send QABank "Purchase SAR 1,234.50 at QA SHOP card *1234"`
+     * and the same text from OtherSender: search finds the chosen sender's in Messages, never the
+     * other's, and a card brings it into the review. (An emulator takes sender names of 11 letters at most.)
+     */
+    @Test fun searchFindsTheChosenSendersTextsInMessages() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("deliveredSms") == "1")
+        val vm = fixture("search")
+        val inbox = SmsInbox.get(context)
+        inbox.configure(identity!!, setOf("QABank"), 0)
+        inbox.saveState(identity!!, "consent", smsConsent(connection))
+        fun ask(tool: String, args: JSONObject) = runBlocking { BankTextsAssistant.answer(context, vm, JSONObject().put("tool", tool).put("args", args)) }
+        val found = ask("search_bank_texts", JSONObject().put("amount", 1234.5).put("words", "qa shop").put("from", LocalDate.now().minusDays(2).toString()))
+        val texts = found.getJSONObject("output").getJSONArray("texts")
+        assertEquals(found.toString(), 1, texts.length())
+        val text = texts.getJSONObject(0)
+        assertEquals("QABank", text.getString("sender"))
+        assertTrue(text.getString("text").contains("1,234.50"))
+        // Another sender is never searched, even when asked for.
+        assertTrue(ask("search_bank_texts", JSONObject().put("sender", "OtherSender")).has("error"))
+        // Found, it can be brought into the review.
+        val add = ask("propose_bank_texts", JSONObject().put("action", "add").put("textIds", JSONArray().put(text.getString("id"))))
+        runBlocking { BankTextsAssistant.apply(context, vm, add.getJSONObject("apply")) }
+        BankTextsAssistant.reads.value = null
+        assertEquals(false, inbox.records(identity!!, listOf(text.getString("id"))).getValue(text.getString("id")).done)
+        assertTrue(ask("search_bank_texts", JSONObject().put("amount", 999999)).getJSONObject("output").getJSONArray("texts").length() == 0)
     }
 
     // Compose's test clock runs a composition's coroutine on the thread that resumes it, and frames with it. A preview

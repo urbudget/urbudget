@@ -111,8 +111,14 @@ class SmsInboxTest {
         val stats = inbox.readableDatabase.rawQuery("SELECT stats FROM sms_templates WHERE budget=? AND id='t1'", arrayOf(first)).use { it.moveToFirst(); JSONObject(it.getString(0)) }
         assertEquals(2, stats.getJSONObject("corrected").getInt("payee")); assertEquals(1, stats.getJSONObject("edited").getInt("amount")); assertEquals(2, stats.getInt("requests"))
         // The user's payee for the bank's name replaces the one learned before, whatever its case.
+        assertFalse(inbox.payees(first).getJSONObject(0).getBoolean("mine"))
         inbox.learnPayee(first, "banka", "shop", "Shop & Co", null)
         assertEquals(1, inbox.payees(first).length()); assertEquals("Shop & Co", inbox.payees(first).getJSONObject(0).getString("payee"))
+        // ...and the assistant's reading of that name later doesn't replace it; its own earlier ones it does.
+        fun read(raw: String, payee: String) = inbox.learn(first, JSONObject().put("payees", JSONArray().put(JSONObject().put("sender", "banka").put("raw", raw).put("payee", payee).put("categoryId", JSONObject.NULL))))
+        read("SHOP", "Shop"); read("CAFE 1", "Cafe"); read("cafe  1", "Cafe One")
+        val payees = (0 until inbox.payees(first).length()).map { inbox.payees(first).getJSONObject(it) }.associate { it.getString("raw").lowercase() to (it.getString("payee") to it.getBoolean("mine")) }
+        assertEquals(mapOf("shop" to ("Shop & Co" to true), "cafe  1" to ("Cafe One" to false)), payees)
         // A rewrite retires a template; removing a sender forgets its formats; Forget clears the rest.
         inbox.learn(first, JSONObject().put("retired", JSONArray().put("t1")))
         assertEquals(listOf("t2"), (0 until inbox.templates(first).length()).map { inbox.templates(first).getJSONObject(it).getString("id") })

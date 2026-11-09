@@ -34,6 +34,8 @@ object ReportColors {
     const val NEGATIVE = -4
     const val DIVERGING_POSITIVE = 0
     const val DIVERGING_NEGATIVE = 7
+    /** A line over columns (net worth, net flow, the surplus): a series colour of its own, never the grid's ink. */
+    const val LINE = 6
 }
 
 /** The report-only bucket for spending without a category, as the engine names it. */
@@ -177,7 +179,7 @@ data class ReportMonth(
 )
 
 @Immutable
-data class PayeeSpend(val name: String, val amount: Long, val count: Long)
+data class PayeeSpend(val name: String, val amount: Long, val count: Long, val category: String? = null)
 
 @Immutable
 data class ReportData(
@@ -217,7 +219,7 @@ fun parseReport(json: JSONObject): ReportData {
         val names = TreeMap<String, JSONObject>()
         val keys = o.keys()
         while (keys.hasNext()) { val key = keys.next(); o.optJSONObject(key)?.let { names[key] = it } }
-        names.map { (name, p) -> PayeeSpend(name, p.optLong("amount"), p.optLong("count")) }.sortedByDescending { it.amount }
+        names.map { (name, p) -> PayeeSpend(name, p.optLong("amount"), p.optLong("count"), p.str("category").ifEmpty { null }) }.sortedByDescending { it.amount }
     }.orEmpty()
     val ages = TreeMap<String, Long?>()
     json.optJSONObject("ageOfMoneyByMonth")?.let { o -> val keys = o.keys(); while (keys.hasNext()) { val k = keys.next(); ages[k] = if (o.isNull(k)) null else o.optLong(k) } }
@@ -438,7 +440,14 @@ data class ColumnModel(
     val label: String, val keys: List<String>, val series: List<ColumnSeries>, val grouped: Boolean, val line: LineOverlay?,
     val average: Double?, val averageText: String?, val ticks: List<Double>, val tickLabels: List<String>, val unit: String?,
     val xTicks: List<XTick?>, val titles: List<String>, val readouts: List<List<Readout>>,
-)
+    /** The month still under way (drawn lighter, never opened on), or -1. */
+    val partial: Int = -1,
+    /** How the axis writes a value, to relabel it when series are hidden. */
+    val axis: ((Double) -> String)? = null,
+) {
+    /** The column a chart opens on: the latest, unless it's the month still under way. */
+    val opening: Int get() = if (partial == keys.lastIndex && keys.size > 1) keys.lastIndex - 1 else keys.lastIndex
+}
 
 @Immutable data class LineSeries(val key: String, val label: String, val color: Int, val values: List<Double?>, val dashed: Boolean = false)
 
@@ -446,23 +455,30 @@ data class ColumnModel(
 data class LinesModel(
     val label: String, val keys: List<String>, val series: List<LineSeries>, val wash: Boolean, val ticks: List<Double>, val tickLabels: List<String>,
     val unit: String?, val xTicks: List<XTick?>, val titles: List<String>, val readouts: List<List<Readout>>, val endLabels: List<String?>,
-)
+    /** The month still under way (its stretch of line dashed), or -1. */
+    val partial: Int = -1,
+    val axis: ((Double) -> String)? = null,
+) {
+    val opening: Int get() = if (partial == keys.lastIndex && keys.size > 1) keys.lastIndex - 1 else keys.lastIndex
+}
 
-fun monthXTick(month: String): XTick? = runCatching { val m = YearMonth.parse(month); val name = m.format(Money.pattern("MMM")); XTick(name, "$name ${month.substring(2, 4)}", m.year) }.getOrNull()
+fun monthXTick(month: String): XTick? = runCatching { val m = YearMonth.parse(month); val name = m.format(Money.pattern("MMM")); XTick(name, "$name ${m.year}", m.year) }.getOrNull()
 fun monthTitle(month: String): String = reportMonthName(month)
+/** A title for the month still under way: "November 2026 so far". */
+fun soFar(title: String): String = Words[R.string.report_month_so_far, title]
+/** Which of [keys] is this month, still under way, or -1. */
+fun partialIndex(keys: List<String>, current: String?): Int = if (current == null) -1 else keys.indexOf(current)
 fun plainTick(text: String) = XTick(text, text, 0)
 
 fun columnModel(
     label: String, keys: List<String>, series: List<ColumnSeries>, format: (Double) -> String, axis: (Double) -> String, unit: String?,
     grouped: Boolean = false, line: LineOverlay? = null, average: Pair<String, Double>? = null,
     xTick: (String, Int) -> XTick? = { k, _ -> monthXTick(k) }, title: (String) -> String = ::monthTitle,
+    current: String? = YearMonth.now().toString(),
 ): ColumnModel {
     fun at(s: ColumnSeries, i: Int) = s.values.getOrElse(i) { 0.0 }
-    val ups = keys.indices.map { i -> if (grouped) max(0.0, series.maxOfOrNull { at(it, i) } ?: 0.0) else series.sumOf { max(0.0, at(it, i)) } }
-    val downs = keys.indices.map { i -> if (grouped) min(0.0, series.minOfOrNull { at(it, i) } ?: 0.0) else series.sumOf { min(0.0, at(it, i)) } }
-    val lineValues = line?.values?.filterNotNull().orEmpty()
-    val ticks = niceTicks(minOf(0.0, downs.minOrNull() ?: 0.0, lineValues.minOrNull() ?: 0.0),
-        maxOf(0.0, ups.maxOrNull() ?: 0.0, lineValues.maxOrNull() ?: 0.0, average?.second ?: 0.0))
+    val ticks = columnTicks(keys.size, series, grouped, line, average?.second)
+    val partial = partialIndex(keys, current)
     val readouts = keys.indices.map { i ->
         buildList {
             series.filter { at(it, i) != 0.0 }.forEach { add(Readout(it.label, format(at(it, i)), it.color)) }
@@ -474,34 +490,83 @@ fun columnModel(
         }
     }
     return ColumnModel(label, keys, series, grouped, line, average?.second, average?.let { Words[R.string.report_average_line, it.first, format(it.second)] }, ticks,
-        ticks.map(axis), unit, keys.mapIndexed { i, k -> xTick(k, i) }, keys.map(title), readouts)
+        ticks.map(axis), unit, keys.mapIndexed { i, k -> xTick(k, i) }, keys.mapIndexed { i, k -> if (i == partial) soFar(title(k)) else title(k) }, readouts,
+        partial, axis)
+}
+
+/** A column chart's scale: its stacks (or tallest bars, grouped) and line, with zero. */
+private fun columnTicks(count: Int, series: List<ColumnSeries>, grouped: Boolean, line: LineOverlay?, average: Double?): List<Double> {
+    fun at(s: ColumnSeries, i: Int) = s.values.getOrElse(i) { 0.0 }
+    val ups = (0 until count).map { i -> if (grouped) max(0.0, series.maxOfOrNull { at(it, i) } ?: 0.0) else series.sumOf { max(0.0, at(it, i)) } }
+    val downs = (0 until count).map { i -> if (grouped) min(0.0, series.minOfOrNull { at(it, i) } ?: 0.0) else series.sumOf { min(0.0, at(it, i)) } }
+    val lineValues = line?.values?.filterNotNull().orEmpty()
+    return niceTicks(minOf(0.0, downs.minOrNull() ?: 0.0, lineValues.minOrNull() ?: 0.0),
+        maxOf(0.0, ups.maxOrNull() ?: 0.0, lineValues.maxOrNull() ?: 0.0, average ?: 0.0))
+}
+
+/**
+ * The chart with the series named in [hidden] taken out (by their legend label), rescaled to what's
+ * left. The total and the average are about every series, so they go too. Hiding everything hides nothing.
+ */
+fun ColumnModel.without(hidden: Set<String>): ColumnModel {
+    if (hidden.isEmpty()) return this
+    val kept = series.filter { it.label !in hidden }
+    val overlay = line?.takeIf { it.label !in hidden }
+    if (kept.isEmpty() && overlay == null) return this
+    val ticks = columnTicks(keys.size, kept, grouped, overlay, null)
+    return copy(series = kept, line = overlay, average = null, averageText = null,
+        ticks = if (axis != null) ticks else this.ticks, tickLabels = axis?.let { ticks.map(it) } ?: tickLabels,
+        readouts = readouts.map { row -> row.filter { it.label !in hidden && it.color != null } })
+}
+
+fun LinesModel.without(hidden: Set<String>): LinesModel {
+    if (hidden.isEmpty()) return this
+    val kept = series.indices.filter { series[it].label !in hidden }
+    if (kept.isEmpty()) return this
+    val known = kept.flatMap { series[it].values.filterNotNull() }
+    val ticks = niceTicks(minOf(0.0, known.minOrNull() ?: 0.0), maxOf(1.0, known.maxOrNull() ?: 1.0))
+    return copy(series = kept.map { series[it] }, ticks = if (axis != null) ticks else this.ticks, tickLabels = axis?.let { ticks.map(it) } ?: tickLabels,
+        readouts = readouts.map { row -> row.filter { it.label !in hidden } }, endLabels = kept.map { endLabels.getOrNull(it) })
 }
 
 fun linesModel(
     label: String, keys: List<String>, series: List<LineSeries>, format: (Double) -> String, axis: (Double) -> String, unit: String?,
     xTick: (String, Int) -> XTick? = { k, _ -> monthXTick(k) }, title: (String) -> String = ::monthTitle, wash: Boolean = series.size == 1,
+    current: String? = YearMonth.now().toString(),
 ): LinesModel {
+    val partial = partialIndex(keys, current)
     val known = series.flatMap { s -> s.values.filterNotNull() }
     val ticks = niceTicks(minOf(0.0, known.minOrNull() ?: 0.0), maxOf(1.0, known.maxOrNull() ?: 1.0))
     val readouts = keys.indices.map { i ->
         series.mapNotNull { s -> s.values.getOrNull(i)?.let { Readout(s.label, format(it), s.color, line = true, dashed = s.dashed) } }
     }
     val ends = series.map { s -> if (series.size <= 4) s.values.lastOrNull { it != null }?.let(format) else null }
-    return LinesModel(label, keys, series, wash, ticks, ticks.map(axis), unit, keys.mapIndexed { i, k -> xTick(k, i) }, keys.map(title), readouts, ends)
+    return LinesModel(label, keys, series, wash, ticks, ticks.map(axis), unit, keys.mapIndexed { i, k -> xTick(k, i) },
+        keys.mapIndexed { i, k -> if (i == partial) soFar(title(k)) else title(k) }, readouts, ends, partial, axis)
 }
 
 @Immutable data class MiniSeries(val label: String, val color: Int, val values: List<Long>)
 
 @Immutable
-data class MiniBarsModel(val labels: List<String>, val series: List<MiniSeries>) {
+data class MiniBarsModel(
+    val labels: List<String>, val series: List<MiniSeries>,
+    /** Each month's title, and each series' figure that month written out (a card's headline follows a finger with it). */
+    val titles: List<String> = emptyList(), val texts: List<List<String>> = emptyList(),
+    /** Each series' figure in short, for the labels on the highest and latest columns. */
+    val short: List<List<String>> = emptyList(), val partial: Int = -1,
+) {
     val top: Long = max(0L, series.flatMap { it.values }.maxOrNull() ?: 0L)
     val bottom: Long = min(0L, series.flatMap { it.values }.minOrNull() ?: 0L)
 }
 
-@Immutable data class SliceModel(val key: String, val label: String, val value: Long, val color: Int)
+@Immutable data class SliceModel(val key: String, val label: String, val value: Long, val color: Int, val valueText: String = "", val share: String = "")
 @Immutable data class BarRowModel(val key: String, val label: String, val valueText: String, val detail: String?, val color: Int?, val fraction: Float, val drill: Boolean = false)
 @Immutable data class DivRowModel(val key: String, val label: String, val valueText: String, val detail: String, val fraction: Float, val color: Int)
-@Immutable data class TreemapItem(val key: String, val label: String, val value: Long, val valueText: String, val detail: String, val more: String, val level: Int)
+@Immutable data class TreemapItem(
+    val key: String, val label: String, val value: Long, val valueText: String, val detail: String, val more: String, val level: Int,
+    /** The colour of the group most of it went to, as the donut and the month chart colour it. */
+    val color: Int = ReportColors.OTHER,
+)
 
 /** What a report figure's transactions are: a category, payee, day or income source over a range. */
 @Immutable data class DrillTarget(val title: String, val dimension: String, val key: String, val from: String? = null, val to: String? = null)
@@ -534,6 +599,8 @@ data class CategoryView(
 @Immutable
 data class PayeeView(
     val tiles: List<Tile>, val title: String, val aside: String, val map: List<TreemapItem>, val help: String, val more: String?, val rows: List<PayeeRow>,
+    /** The groups the tiles are coloured by. */
+    val legend: List<LegendItem> = emptyList(),
 ) : ReportView { override val id get() = "payees" }
 
 @Immutable
@@ -627,8 +694,9 @@ fun categoryView(data: ReportData, ctx: ReportBudget, group: String?, today: Loc
         .filter { it.value != 0L }.sortedByDescending { it.value }
     val total = rows.sumOf { it.value }
     val other = rows.filter { it.color == ReportColors.OTHER && it.value > 0 }
-    val slices = rows.filter { it.color != ReportColors.OTHER && it.value > 0 }.map { SliceModel(it.key, it.label, it.value, it.color) } +
-        (if (other.isNotEmpty()) listOf(SliceModel("__other", Words[R.string.report_other], other.sumOf { it.value }, ReportColors.OTHER)) else emptyList())
+    val positiveTotal = rows.filter { it.value > 0 }.sumOf { it.value }
+    val slices = rows.filter { it.color != ReportColors.OTHER && it.value > 0 }.map { SliceModel(it.key, it.label, it.value, it.color, ctx.money(it.value), share(it.value, positiveTotal)) } +
+        (if (other.isNotEmpty()) other.sumOf { it.value }.let { v -> listOf(SliceModel("__other", Words[R.string.report_other], v, ReportColors.OTHER, ctx.money(v), share(v, positiveTotal))) } else emptyList())
     val top = rows.firstOrNull()
     val tiles = listOf(
         Tile(if (group != null) Words[R.string.report_spent_in, ctx.groupLabel(group)] else Words[R.string.report_spending], ctx.money(total),
@@ -694,6 +762,8 @@ fun payeeView(data: ReportData, ctx: ReportBudget): PayeeView {
     fun average(p: PayeeSpend) = ctx.money(Math.round(p.amount.toDouble() / max(1L, p.count)))
     val levels = heatLevels(big.map { it.amount })
     val noPayee = Words[R.string.payee_none]
+    fun groupOf(p: PayeeSpend) = p.category?.let { ctx.groupOf[it] }?.takeIf { it.isNotEmpty() }
+    val groups = big.mapNotNull(::groupOf).toSet()
     val tiles = listOf(
         Tile(Words[R.string.report_spending], ctx.money(total), Words.count(R.plurals.report_at_payees, all.size.toLong())),
         Tile(Words[R.string.report_top_payee], top?.let { it.name.ifEmpty { noPayee } } ?: "—", top?.let { Words[R.string.report_amount_share_shown, ctx.money(it.amount), share(it.amount, positiveTotal)] }),
@@ -706,13 +776,14 @@ fun payeeView(data: ReportData, ctx: ReportBudget): PayeeView {
         if (rest.isNotEmpty()) Words[R.string.report_payees_aside_share, share(positiveTotal - restTotal, positiveTotal)] else Words[R.string.report_payees_aside],
         big.map { p ->
             TreemapItem(p.name, p.name.ifEmpty { noPayee }, p.amount, ctx.money(p.amount), Words[R.string.report_share_of_spending_shown, share(p.amount, positiveTotal)],
-                Words.count(R.plurals.report_payee_tile_more, p.count, average(p)), levels.level(p.amount))
+                Words.count(R.plurals.report_payee_tile_more, p.count, average(p)), levels.level(p.amount), groupOf(p)?.let(ctx::colorOf) ?: ReportColors.OTHER)
         },
         Words[R.string.report_payees_help] + (if (refunds > 0) " " + Words[R.string.report_payees_help_refunds, ctx.money(refunds)] else ""),
         if (rest.isNotEmpty()) Words.count(R.plurals.report_more_payees, rest.size.toLong(), ctx.money(restTotal)) else null,
         all.map { p ->
             PayeeRow(p.name, p.name, p.name.ifEmpty { noPayee }, ctx.money(p.amount), Words.count(R.plurals.report_payee_row_detail, p.count, share(p.amount, total), average(p)))
         },
+        ctx.spendingGroups.filter { it in groups }.map { LegendItem(ctx.groupLabel(it), ctx.colorOf(it)) },
     )
 }
 
@@ -842,8 +913,8 @@ fun incomeExpenseView(data: ReportData, ctx: ReportBudget, someCategories: Boole
     val chart = columnModel(Words[R.string.report_chart_income_spending], keys, listOf(
         ColumnSeries("income", income, 0, data.months.map { it.income.toDouble() }),
         ColumnSeries("spending", spending, 1, data.months.map { it.spending.toDouble() }),
-    ), fmt, moneyAxis, ctx.axisUnit, grouped = true, line = LineOverlay(surplus, ReportColors.INK, net.map { it.toDouble() }))
-    val legend = listOf(LegendItem(income, 0), LegendItem(spending, 1), LegendItem(surplus, ReportColors.INK, line = true))
+    ), fmt, moneyAxis, ctx.axisUnit, grouped = true, line = LineOverlay(surplus, ReportColors.LINE, net.map { it.toDouble() }))
+    val legend = listOf(LegendItem(income, 0), LegendItem(spending, 1), LegendItem(surplus, ReportColors.LINE, line = true))
     val rate = linesModel(Words[R.string.report_chart_surplus_rate], keys, listOf(LineSeries("rate", surplusRate, 0, rates)), percent, percent, null)
     val cumulativeChart = linesModel(Words[R.string.report_chart_surplus_cumulative], keys,
         listOf(LineSeries("surplus", Words[R.string.report_cumulative_surplus], 2, cumulative.map { it.toDouble() })), fmt, moneyAxis, ctx.axisUnit)
@@ -885,10 +956,10 @@ fun incomeView(data: ReportData, ctx: ReportBudget): IncomeView {
     val all = data.incomeSources.entries.map { Triple(it.key, it.key.ifEmpty { noPayee }, it.value) }
     val positive = all.filter { it.third > 0 }.sortedByDescending { it.third }
     val negative = all.filter { it.third < 0 }.sortedBy { it.third }
-    val coloured = positive.mapIndexed { i, s -> SliceModel(s.first, s.second, s.third, if (i < 7) i else ReportColors.OTHER) }
-    val rest = coloured.drop(7)
-    val folded = if (rest.isNotEmpty()) coloured.take(7) + SliceModel("__other", Words[R.string.report_other_sources], rest.sumOf { it.value }, ReportColors.OTHER) else coloured
     val total = positive.sumOf { it.third }
+    val coloured = positive.mapIndexed { i, s -> SliceModel(s.first, s.second, s.third, if (i < 7) i else ReportColors.OTHER, ctx.money(s.third), share(s.third, total)) }
+    val rest = coloured.drop(7)
+    val folded = if (rest.isNotEmpty()) coloured.take(7) + rest.sumOf { it.value }.let { v -> SliceModel("__other", Words[R.string.report_other_sources], v, ReportColors.OTHER, ctx.money(v), share(v, total)) } else coloured
     val topKeys = coloured.take(7).map { it.key }.toSet()
     val series = folded.map { s ->
         ColumnSeries(s.key, s.label, s.color, data.months.map { m ->
@@ -936,7 +1007,7 @@ fun cashFlowView(data: ReportData, ctx: ReportBudget): CashFlowView {
     val chart = columnModel(Words[R.string.report_chart_cash_flow], keys, listOf(
         ColumnSeries("in", moneyIn, 0, inflow.map { it.toDouble() }),
         ColumnSeries("out", moneyOut, 1, outflow.map { -it.toDouble() }),
-    ), fmt, moneyAxis, ctx.axisUnit, line = LineOverlay(netFlow, ReportColors.INK, net.map { it.toDouble() }))
+    ), fmt, moneyAxis, ctx.axisUnit, line = LineOverlay(netFlow, ReportColors.LINE, net.map { it.toDouble() }))
     val months = keys.mapIndexed { i, m ->
         FigureRow(m, reportMonthName(m, short = true), ctx.money(net[i]),
             Words[R.string.report_cash_flow_month_detail, ctx.money(inflow[i]), ctx.money(outflow[i]), ctx.money(cumulative[i])], if (net[i] < 0) Tone.Negative else Tone.None)
@@ -947,7 +1018,7 @@ fun cashFlowView(data: ReportData, ctx: ReportBudget): CashFlowView {
         Tile(moneyOut, ctx.money(totalOut), Words[R.string.report_a_month, ctx.money(roundDiv(totalOut, n))]),
         Tile(netFlow, ctx.money(totalIn - totalOut), tone = if (totalIn - totalOut < 0) Tone.Negative else Tone.Positive),
         Tile(Words[R.string.report_months_in_black], Words[R.string.report_x_of_y, "${net.count { it > 0 }}", "${keys.size}"]),
-    ), chart, listOf(LegendItem(moneyIn, 0), LegendItem(moneyOut, 1), LegendItem(netFlow, ReportColors.INK, line = true)),
+    ), chart, listOf(LegendItem(moneyIn, 0), LegendItem(moneyOut, 1), LegendItem(netFlow, ReportColors.LINE, line = true)),
         linesModel(Words[R.string.report_chart_net_flow_cumulative], keys, listOf(LineSeries("running", Words[R.string.report_running_total], 2, cumulative.map { it.toDouble() })), fmt, moneyAxis, ctx.axisUnit),
         months)
 }
@@ -993,8 +1064,8 @@ fun netWorthView(data: ReportData, ctx: ReportBudget, accounts: Set<String>): Ne
     ), columnModel(Words[R.string.report_chart_net_worth], keys, listOf(
         ColumnSeries("assets", assets, 0, data.months.map { it.assets.toDouble() }),
         ColumnSeries("debts", debts, 1, data.months.map { -it.debt.toDouble() }),
-    ), fmt, moneyAxis, ctx.axisUnit, line = LineOverlay(netWorth, ReportColors.INK, data.months.map { it.netWorth.toDouble() })),
-        listOf(LegendItem(assets, 0), LegendItem(debts, 1), LegendItem(netWorth, ReportColors.INK, line = true)),
+    ), fmt, moneyAxis, ctx.axisUnit, line = LineOverlay(netWorth, ReportColors.LINE, data.months.map { it.netWorth.toDouble() })),
+        listOf(LegendItem(assets, 0), LegendItem(debts, 1), LegendItem(netWorth, ReportColors.LINE, line = true)),
         columnModel(Words[R.string.report_chart_net_worth_change], keys, listOf(
             ColumnSeries("up", grew, ReportColors.DIVERGING_POSITIVE, monthly.map { max(0L, it).toDouble() }),
             ColumnSeries("down", shrank, ReportColors.DIVERGING_NEGATIVE, monthly.map { min(0L, it).toDouble() }),
@@ -1225,15 +1296,23 @@ fun overviewModel(data: ReportData, ctx: ReportBudget): OverviewModel? {
     val rest = ranked.drop(top).sumOf { it.value }
     if (rest > 0) rows.add(SpendRow("__rest", Words[R.string.report_all_others], ctx.money(rest), ReportColors.OTHER, rest))
     val labels = data.months.map { monthAbbrev(it.month) }
+    val partial = partialIndex(data.months.map { it.month }, YearMonth.now().toString())
+    val titles = data.months.mapIndexed { i, m -> if (i == partial) soFar(reportMonthName(m.month)) else reportMonthName(m.month) }
+    fun money(values: List<Long>) = values.map { ctx.money(it) }
+    fun short(values: List<Long>) = values.map { compactMoney(it.toDouble()) }
+    val ages = data.months.map { data.ageOfMoneyByMonth[it.month] }
     return OverviewModel(
         reportMonthName(last.month), ctx.money(last.spending), rows, ranked.isEmpty() && refunds.isEmpty(),
         if (refunds.isNotEmpty()) Words[R.string.report_refund_lead, ctx.money(-refundTotal)] + (if (ranked.isNotEmpty()) " " + Words[R.string.report_refund_lead_bar] else "") else null,
         refundRows, incomeLead(data.months),
-        MiniBarsModel(labels, listOf(MiniSeries(Words[R.string.report_income], ReportColors.POSITIVE, data.months.map { it.income }), MiniSeries(Words[R.string.report_spending], 0, data.months.map { it.spending }))),
+        MiniBarsModel(labels, listOf(MiniSeries(Words[R.string.report_income], ReportColors.POSITIVE, data.months.map { it.income }), MiniSeries(Words[R.string.report_spending], 0, data.months.map { it.spending })),
+            titles, listOf(money(data.months.map { it.income }), money(data.months.map { it.spending })), emptyList(), partial),
         ctx.money(last.netWorth), last.netWorth < 0, ctx.money(last.assets), ctx.money(-last.debt), last.debt != 0L,
-        MiniBarsModel(labels, listOf(MiniSeries(Words[R.string.net_worth], 0, data.months.map { it.netWorth }))),
+        MiniBarsModel(labels, listOf(MiniSeries(Words[R.string.net_worth], 0, data.months.map { it.netWorth })), titles,
+            listOf(money(data.months.map { it.netWorth })), listOf(short(data.months.map { it.netWorth })), partial),
         daysText(data.ageOfMoney),
-        MiniBarsModel(labels, listOf(MiniSeries(Words[R.string.report_cash_age], ReportColors.POSITIVE, data.months.map { data.ageOfMoneyByMonth[it.month] ?: 0L }))),
+        MiniBarsModel(labels, listOf(MiniSeries(Words[R.string.report_cash_age], ReportColors.POSITIVE, ages.map { it ?: 0L })), titles,
+            listOf(ages.map(::daysText)), listOf(ages.map { it?.toString() ?: "" }), partial),
     )
 }
 

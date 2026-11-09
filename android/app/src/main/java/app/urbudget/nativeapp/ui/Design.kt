@@ -10,7 +10,9 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
@@ -28,6 +30,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -141,17 +144,28 @@ internal fun PhoneTopBar(title: String? = null, subtitle: String? = null, onBack
                          leading: (@Composable () -> Unit)? = null, center: (@Composable () -> Unit)? = null,
                          actions: @Composable RowScope.() -> Unit = {}) {
     Box(Modifier.fillMaxWidth().background(ur.bg).statusBarsPadding().height(64.dp).padding(horizontal = 12.dp)) {
-        Row(Modifier.align(Alignment.CenterStart), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (center != null) {
+            Row(Modifier.align(Alignment.CenterStart), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (onBack != null) RoundIconButton(Icons.AutoMirrored.Outlined.KeyboardArrowLeft, stringResource(R.string.common_back), onBack)
+                leading?.invoke()
+            }
+            Box(Modifier.align(Alignment.Center)) { center() }
+            Row(Modifier.align(Alignment.CenterEnd), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), content = actions)
+        } else Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (onBack != null) RoundIconButton(Icons.AutoMirrored.Outlined.KeyboardArrowLeft, stringResource(R.string.common_back), onBack)
             leading?.invoke()
-            if (center == null && title != null) Column(Modifier.padding(start = if (onBack == null && leading == null) 4.dp else 2.dp)) {
-                Text(Money.own(title), style = if (onBack == null) MaterialTheme.typography.headlineLarge else MaterialTheme.typography.headlineSmall,
-                    color = ur.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = ur.muted, maxLines = 1) }
+            // The title takes what the buttons leave, a long one (an account's full name) a size smaller before it's cut short.
+            Column(Modifier.weight(1f).padding(start = if (onBack == null && leading == null) 4.dp else 2.dp)) {
+                if (title != null) {
+                    val style = if (onBack == null) MaterialTheme.typography.headlineLarge else MaterialTheme.typography.headlineSmall
+                    val size = style.fontSize.takeIf { it.isSp } ?: 24.sp
+                    BasicText(Money.own(title), style = style.merge(TextStyle(color = ur.text)), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        autoSize = TextAutoSize.StepBased(minFontSize = minOf(size.value, 18f).sp, maxFontSize = size, stepSize = 1.sp))
+                }
+                subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = ur.muted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             }
+            actions()
         }
-        if (center != null) Box(Modifier.align(Alignment.Center)) { center() }
-        Row(Modifier.align(Alignment.CenterEnd), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), content = actions)
     }
 }
 
@@ -350,10 +364,10 @@ internal fun FlagDot(color: String, modifier: Modifier = Modifier, size: Dp = 12
 
 /** A label over a figure, for summary strips. */
 @Composable
-internal fun Figure(label: String, value: String, modifier: Modifier = Modifier, color: Color = ur.text, alignEnd: Boolean = false) {
+internal fun Figure(label: String, value: String, modifier: Modifier = Modifier, color: Color = ur.text, alignEnd: Boolean = false, lines: Int = 1) {
     Column(modifier, horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start) {
         Text(Money.own(label), style = MaterialTheme.typography.bodySmall, color = ur.muted, maxLines = 1)
-        Text(value, style = MaterialTheme.typography.titleMedium.merge(Tabular), color = color, maxLines = 1)
+        Text(value, style = MaterialTheme.typography.titleMedium.merge(Tabular), color = color, maxLines = lines)
     }
 }
 

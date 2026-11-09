@@ -1,5 +1,6 @@
 package app.urbudget.nativeapp.ui
 
+import app.urbudget.nativeapp.smsCreditLimit
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -103,7 +104,7 @@ internal fun AccountsScreen(budget: JSONObject, summary: JSONObject?, open: (JSO
     val undo = stringResource(R.string.common_undo)
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    var loanFor by remember { mutableStateOf<JSONObject?>(null) }
+    val loans = LocalLoanActions.current
     fun move(line: AccountLine, section: AccountSection, delta: Int) {
         val index = section.lines.indexOfFirst { it.id == line.id }
         val neighbour = section.lines.getOrNull(index + delta) ?: return
@@ -156,7 +157,7 @@ internal fun AccountsScreen(budget: JSONObject, summary: JSONObject?, open: (JSO
                     if (isOpen) itemsIndexed(section.lines, key = { _, line -> "account:${line.id}" }, contentType = { _, _ -> "account" }) { index, line ->
                         AccountRow(line, Modifier.cardSegment(index, section.lines.size, cardFill()), divider = index < section.lines.lastIndex,
                             open = { open(line.account) }, edit = { edit(line.account) }, reconcile = { reconcile(line.account) },
-                            loan = if (line.loan) ({ loanFor = budget.rows("loans").firstOrNull { it.text("accountId") == line.id } ?: JSONObject().put("accountId", line.id) }) else null,
+                            loan = if (line.loan && loans != null) ({ loans.plan(line.account) }) else null,
                             moveUp = if (index > 0) ({ move(line, section, -1) }) else null,
                             moveDown = if (index < section.lines.lastIndex) ({ move(line, section, 1) }) else null,
                             toggleClosed = { setClosed(line, !line.archived) })
@@ -166,7 +167,6 @@ internal fun AccountsScreen(budget: JSONObject, summary: JSONObject?, open: (JSO
         }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 96.dp))
     }
-    loanFor?.let { LoanDialog(it, budget, summary, vm) { loanFor = null } }
 }
 
 @Composable
@@ -212,9 +212,14 @@ private fun createAccount(budget: JSONObject, record: JSONObject) {
     }
 }
 
+/**
+ * Adding or editing an account. A debt's loan details are part of it, as on the desktop: `focusLoan`
+ * opens it at them (a loan's "Loan details", or recording a payment before there are any).
+ */
 @Composable
-internal fun AccountDialog(original: JSONObject?, budget: JSONObject, vm: BudgetViewModel, close: () -> Unit) {
+internal fun AccountDialog(original: JSONObject?, budget: JSONObject, vm: BudgetViewModel, focusLoan: Boolean = false, close: () -> Unit) {
     val openedBudget = remember { budget }
+    val accountId = remember { original?.text("id")?.ifBlank { null } ?: UUID.randomUUID().toString() }
     // An untyped account is read as the accounts list reads it: an imported debt stays a debt.
     val balanceNow = remember { original?.let { account -> vm.state.value.summary?.rows("accounts")?.firstOrNull { it.text("id") == account.text("id") }?.optLong("balance") ?: account.optLong("openingBalance") } ?: 0L }
     var name by remember { mutableStateOf(original?.text("name") ?: "") }
@@ -222,13 +227,34 @@ internal fun AccountDialog(original: JSONObject?, budget: JSONObject, vm: Budget
     var type by remember { mutableStateOf(if (original == null) "checking" else AccountTypes.forEditing(original, balanceNow)) }
     val kind = AccountTypes.kindFor(type)
     var balance by remember { mutableStateOf(amountText(original?.optLong("openingBalance") ?: 0)) }
+    // A card's limit: the credit left shows on the account, and its texts' credit left gives what's owed.
+    var limit by remember { mutableStateOf(smsCreditLimit(original)?.let(::amountText) ?: "") }
     var note by remember { mutableStateOf(original?.text("note") ?: "") }
     var archived by remember { mutableStateOf(original?.optBoolean("archived") ?: false) }
     var netWorth by remember { mutableStateOf(original?.let(AccountTypes::inNetWorth) ?: true) }
     var error by remember { mutableStateOf<String?>(null) }
     val typeChoices = remember(existingKind, languageKey()) { accountTypes().filter { existingKind == null || AccountTypes.kindFor(it.first) == existingKind } }
-    retainEditorDraft(vm, "account", openedBudget, JSONObject().put("name", name).put("type", type).put("balance", balance)
-        .put("note", note).put("archived", archived).put("netWorth", netWorth))
+    // A debt's loan details (LoanDetails.kt), saved with the account.
+    val savedLoan = remember { original?.let { budget.rows("loans").firstOrNull { it.text("accountId") == accountId } } }
+    var loan by remember { mutableStateOf(loanDraft(savedLoan)) }
+    var loanChanged by remember { mutableStateOf(false) }
+    // A loan imported from YNAB can start from its imported terms, but only when asked: filling
+    // them in unasked would save them (and start charging interest) with any edit to the account,
+    // and bring them back after they'd been cleared.
+    var importable by remember { mutableStateOf<JSONObject?>(null) }
+    var imported by remember { mutableStateOf(false) }
+    val lookups = rememberPreviewJobs(Unit)
+    LaunchedEffect(Unit) {
+        if (original == null || !original.has("source") || savedLoan != null) return@LaunchedEffect
+        lookups.track(vm.query("loanTerms", JSONObject().put("accountId", accountId), onError = {}, anyRevision = true) { terms ->
+            if (terms.optLong("monthlyPayment") > 0) importable = terms
+        })
+    }
+    // Loan details are for debts outside the budget, and stay editable on any account that has them.
+    val showLoan = (kind == "tracking" && AccountTypes.isLoanType(type)) || savedLoan != null
+    retainEditorDraft(vm, "account", openedBudget, JSONObject().put("name", name).put("type", type).put("balance", balance).put("limit", limit)
+        .put("note", note).put("archived", archived).put("netWorth", netWorth)
+        .put("loanRate", loan.rate).put("loanPayment", loan.payment).put("loanFees", loan.fees).put("loanCategory", loan.category))
     FormDialog(if (original == null) stringResource(R.string.account_add) else stringResource(R.string.account_edit), close,
         confirm = if (original == null) stringResource(R.string.common_add) else stringResource(R.string.common_save), onConfirm = {
         runCatching {
@@ -237,15 +263,26 @@ internal fun AccountDialog(original: JSONObject?, budget: JSONObject, vm: Budget
             val opening = amountValue(balance)
             // Only tracking accounts can stay out of net worth.
             val counted = kind != "tracking" || netWorth
+            // Saved only when touched; null terms remove them.
+            val changeLoan = showLoan && loanChanged
+            val terms = if (changeLoan) loanTermsOf(accountId, loan, savedLoan) else null
+            val creditLimit = if (kind == "credit" && limit.isNotBlank()) amountValue(limit).also { require(it > 0) { Words[R.string.account_credit_limit_positive] } } else null
             if (original == null) {
-                if (note.isBlank() && counted) vm.saveAccount(name = name, kind = kind, openingBalance = opening, accountType = type)
+                if (note.isBlank() && counted && terms == null && creditLimit == null) vm.saveAccount(id = accountId, name = name, kind = kind, openingBalance = opening, accountType = type)
                 else {
-                    val record = JSONObject().put("id", UUID.randomUUID().toString()).put("name", name.trim()).put("kind", kind).put("openingBalance", opening)
+                    val record = JSONObject().put("id", accountId).put("name", name.trim()).put("kind", kind).put("openingBalance", opening)
                         .put("archived", false).put("accountType", type).put("note", note).put("netWorth", counted)
-                    vm.editBudget { draft -> createAccount(draft, record) }
+                    creditLimit?.let { record.put("creditLimit", it) }
+                    vm.editBudget { draft -> createAccount(draft, record); terms?.let { draft.upsertRecord("loans", it) } }
                 }
-            } else vm.upsert("accounts", original.copyJson().put("name", name.trim()).put("accountType", type).put("note", note).put("openingBalance", opening)
-                .put("archived", archived).put("netWorth", counted))
+            } else {
+                val record = original.copyJson().put("name", name.trim()).put("accountType", type).put("note", note).put("openingBalance", opening)
+                    .put("archived", archived).put("netWorth", counted)
+                creditLimit?.let { record.put("creditLimit", it) }
+                if (changeLoan) vm.saveAccountLoan(record, terms) else vm.upsert("accounts", record)
+                // A limit cleared on a card: the record's merge keeps keys, so it's taken away on its own.
+                if (kind == "credit" && creditLimit == null && original.has("creditLimit")) vm.setCreditLimit(accountId, null)
+            }
         }.onSuccess { close() }.onFailure { error = it.message }
     }) {
         Field(name, { name = it }, stringResource(R.string.account_name))
@@ -256,8 +293,18 @@ internal fun AccountDialog(original: JSONObject?, budget: JSONObject, vm: Budget
         Text(listOfNotNull(if (AccountTypes.isLiability(type)) stringResource(R.string.account_owed_negative) else if (original == null) stringResource(R.string.account_debt_negative) else null,
             if (original == null) null else stringResource(R.string.account_opening_changes_history)).joinToString(" "),
             style = MaterialTheme.typography.bodySmall, color = ur.muted)
+        if (kind == "credit") {
+            Field(limit, { limit = it }, stringResource(R.string.account_credit_limit, budget.text("currency")), true)
+            Text(stringResource(R.string.account_credit_limit_help), style = MaterialTheme.typography.bodySmall, color = ur.muted)
+        }
         if (original != null) Text(stringResource(R.string.account_kind_switch_help),
             style = MaterialTheme.typography.bodySmall, color = ur.muted)
+        if (showLoan) {
+            LoanDetailsFields(budget, vm.state.value.summary, type, loan, { loan = it; loanChanged = true }, imported,
+                importable?.let { terms -> { loan = loanDraft(terms); loanChanged = true; imported = true } }, focusLoan)
+            if (!AccountTypes.isLoanType(type)) Text(stringResource(R.string.loan_details_not_loan_type, typeLabel(type).lowercase()),
+                style = MaterialTheme.typography.bodySmall, color = ur.muted)
+        }
         Field(note, { note = it }, stringResource(R.string.note_label), lines = 3)
         if (kind == "tracking" || original != null) ListCard {
             if (kind == "tracking") SwitchRow(stringResource(R.string.account_count_in_net_worth), netWorth, { netWorth = it }, divider = original != null,

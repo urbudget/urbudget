@@ -272,6 +272,16 @@ class BudgetViewModel internal constructor(application: Application, private val
         afterPending { if (done.isActive) done.resume(Unit) }
     }
 
+    /** A credit account's limit in cents, or none: an upsert can't take a key away, so this edits the account itself. */
+    fun setCreditLimit(id: String, limit: Long?) {
+        val guard = recordGuard("accounts", id)
+        enqueue { publish(repository.edit(guard) { budget ->
+            val rows = budget.records("accounts").map { JSONObject(it.toString()) }
+            rows.firstOrNull { it.optString("id") == id }?.let { if (limit != null && limit > 0) it.put("creditLimit", limit) else it.remove("creditLimit") }
+            budget.put("accounts", JSONArray(rows))
+        }) }
+    }
+
     fun upsert(collection: String, record: JSONObject) {
         val frozen = record.toString()
         val guard = recordGuard(collection, record.optString(if (collection == "loans") "accountId" else "id"))
@@ -323,6 +333,42 @@ class BudgetViewModel internal constructor(application: Application, private val
             budget.upsertRecord("accounts", record)
             paymentCategory(budget, record)
         }) }
+    }
+
+    /** An account and its loan details as one change, which one Undo takes back; a null `loan` removes them. */
+    fun saveAccountLoan(account: JSONObject, loan: JSONObject?) {
+        val frozen = account.toString()
+        val terms = loan?.toString()
+        val id = account.optString("id")
+        val shown = state.value
+        val guard = BudgetEditGuard.rows(shown.budget, shown.budgetIdentity, "accounts" to id, "loans" to id)
+        enqueue { publish(repository.edit(guard) { budget ->
+            budget.upsertRecord("accounts", JSONObject(frozen))
+            if (terms != null) budget.upsertRecord("loans", JSONObject(terms))
+            else if (budget.records("loans").any { it.optString("accountId") == id })
+                budget.put("loans", JSONArray(budget.records("loans").filter { it.optString("accountId") != id }))
+        }) }
+    }
+
+    /**
+     * Records a loan payment (loans.rs's record). `saveCategory`: the category chosen for it becomes
+     * the loan's payment category, in the same change, as the desktop does when the loan had none.
+     */
+    fun recordLoanPayment(params: JSONObject, saveCategory: Boolean, onSuccess: () -> Unit = {}) {
+        if (!saveCategory) return runCommand("loanRecord", params, onSuccess)
+        val shown = state.value
+        val request = JSONObject(params.toString())
+        val terms = request.getJSONObject("terms")
+        val accountId = terms.optString("accountId")
+        val category = terms.optString("categoryId")
+        val guard = BudgetEditGuard.command(shown.budget, shown.budgetIdentity, "loanRecord", request)
+        enqueue {
+            publish(repository.editThenCommands(guard, { budget ->
+                if (budget.records("loans").any { it.optString("accountId") == accountId })
+                    budget.upsertRecord("loans", JSONObject().put("accountId", accountId).put("categoryId", category))
+            }, listOf("loanRecord" to request)))
+            withContext(Dispatchers.Main) { onSuccess() }
+        }
     }
 
     /** New accounts as one change, which one Undo takes back: those set up from bank texts. */

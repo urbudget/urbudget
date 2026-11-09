@@ -77,6 +77,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
 import app.urbudget.nativeapp.BalancesView
 import app.urbudget.nativeapp.R
+import app.urbudget.nativeapp.MiniBarsModel
 import app.urbudget.nativeapp.Words
 import app.urbudget.nativeapp.BudgetViewModel
 import app.urbudget.nativeapp.DrillModel
@@ -266,23 +267,32 @@ private fun ReportsOverview(budget: JSONObject, month: String, onMonth: (String)
                 } else if (model != null) {
                     item(key = "spending", contentType = "card") { SpendingCard(model) { onOpen("categories") } }
                     item(key = "income", contentType = "card") {
+                        var picked by remember(model) { mutableIntStateOf(-1) }
                         OverviewCard(Icons.AutoMirrored.Outlined.CompareArrows, stringResource(R.string.reports_income_vs_spending), { onOpen("incomeExpense") }) {
-                            Lead(model.incomeLead)
-                            MiniBars(model.incomeBars)
+                            if (picked >= 0) PickedMonth(model.incomeBars, picked) else Lead(model.incomeLead)
+                            MiniBars(model.incomeBars, selected = picked, onSelect = { picked = it })
                         }
                     }
                     item(key = "networth", contentType = "card") {
+                        var picked by remember(model) { mutableIntStateOf(-1) }
                         OverviewCard(Icons.AutoMirrored.Outlined.ShowChart, stringResource(R.string.net_worth), { onOpen("networth") }) {
-                            BigFigure(model.netWorthText, if (model.netWorthNegative) ur.negative else ur.text)
-                            SplitRow(stringResource(R.string.report_assets), model.assetsText, ur.text)
-                            SplitRow(stringResource(R.string.report_debts), model.debtsText, if (model.debtsNegative) ur.negative else ur.text)
-                            MiniBars(model.netWorthBars)
+                            if (picked >= 0) {
+                                BigFigure(model.netWorthBars.texts[0][picked], if (model.netWorthBars.series[0].values[picked] < 0) ur.negative else ur.text)
+                                Text(model.netWorthBars.titles[picked], color = ur.muted, fontSize = 15.sp)
+                            } else {
+                                BigFigure(model.netWorthText, if (model.netWorthNegative) ur.negative else ur.text)
+                                SplitRow(stringResource(R.string.report_assets), model.assetsText, ur.text)
+                                SplitRow(stringResource(R.string.report_debts), model.debtsText, if (model.debtsNegative) ur.negative else ur.text)
+                            }
+                            MiniBars(model.netWorthBars, selected = picked, onSelect = { picked = it })
                         }
                     }
                     item(key = "age", contentType = "card") {
+                        var picked by remember(model) { mutableIntStateOf(-1) }
                         OverviewCard(Icons.Outlined.HourglassBottom, stringResource(R.string.report_cash_age), { onOpen("age") }) {
-                            BigFigure(model.ageText, ur.text)
-                            MiniBars(model.ageBars)
+                            BigFigure(if (picked >= 0) model.ageBars.texts[0][picked] else model.ageText, ur.text)
+                            if (picked >= 0) Text(model.ageBars.titles[picked], color = ur.muted, fontSize = 15.sp)
+                            MiniBars(model.ageBars, selected = picked, onSelect = { picked = it })
                         }
                     }
                 }
@@ -305,6 +315,24 @@ private fun OverviewCard(icon: ImageVector, title: String, onOpen: () -> Unit, c
                 Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(20.dp), tint = ur.muted)
             }
             content()
+        }
+    }
+}
+
+/** A month picked on the income card's small chart: its name, then each series' figure. */
+@Composable
+private fun PickedMonth(bars: MiniBarsModel, i: Int) {
+    val palette = reportPalette()
+    Column(Modifier.padding(bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(bars.titles.getOrElse(i) { "" }, color = ur.muted, fontSize = 15.sp)
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            bars.series.forEachIndexed { k, s ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    LegendKey(palette.color(s.color))
+                    Spacer(Modifier.width(6.dp))
+                    Text(bars.texts.getOrNull(k)?.getOrNull(i).orEmpty(), color = ur.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, style = Tabular, maxLines = 1)
+                }
+            }
         }
     }
 }
@@ -537,6 +565,8 @@ private fun ReportPage(
             showAllPayees = {},
         )
     }
+    // Nothing stays picked once the figures change.
+    val pick = remember(key, info.id, shown?.value) { ChartPick() }
     val chromeItems = 4 + (if (notice != null) 1 else 0) + (if (failed != null && !forecast) 1 else 0) + (if (exportError != null) 1 else 0)
     val jumpToPayees: () -> Unit = { payeeView?.let { v -> coroutines.launch { listState.animateScrollToItem(chromeItems + payeeListOffset(v)) } } }
     val bodyActions = remember(actions, payeeView, chromeItems) {
@@ -584,7 +614,7 @@ private fun ReportPage(
                 if (forecast) forecastBody(forecastShown?.value, ahead, { ahead = it }, forecastFailed, { attempt++ }, { everydayOpen = true }, { everyday = null })
                 else if (failed == null) {
                     val body = shown?.value
-                    if (body != null) reportBody(body, bodyActions, expanded, payeeQuery, { payeeQuery = it }, filteredPayees ?: payeeView?.rows.orEmpty())
+                    if (body != null) reportBody(body, bodyActions, expanded, payeeQuery, { payeeQuery = it }, filteredPayees ?: payeeView?.rows.orEmpty(), pick)
                     else if (view?.scope == viewKey) item(key = "empty", contentType = "empty") { EmptyState(stringResource(R.string.reports_empty_title), stringResource(R.string.reports_empty_detail)) }
                     else item(key = "loading", contentType = "loading") {
                         Box(Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = ur.accent) }

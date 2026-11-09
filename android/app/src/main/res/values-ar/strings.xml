@@ -57,8 +57,6 @@
     <string name="tab_more">المزيد</string>
     <string name="page_scheduled">المجدولة</string>
     <string name="page_scheduled_detail">الفواتير والدخل والمعاملات المتكررة</string>
-    <string name="page_loans">مخطط القروض</string>
-    <string name="page_loans_detail">مواعيد السداد والدفعات الإضافية</string>
     <string name="page_payees">المستفيدون والقواعد</string>
     <string name="page_payees_detail">الفئات الافتراضية وقواعد الاستيراد</string>
     <string name="page_banks">ربط البنوك</string>
@@ -114,7 +112,7 @@
     <string name="welcome_export_recovery">تصدير البيانات الموجودة لاستردادها</string>
     <string name="welcome_restore_previous">استعادة الميزانية السابقة</string>
 
-    <!-- More: scheduled, loan planner, settings -->
+    <!-- More: scheduled, settings -->
     <string name="repeat_never">مرة واحدة</string>
     <string name="repeat_daily">يوميًا</string>
     <string name="repeat_weekly">أسبوعيًا</string>
@@ -158,13 +156,6 @@
     <string name="schedule_repeat">التكرار</string>
     <string name="schedule_due_entered_on_save">إن كان تاريخها اليوم أو قبله، فستُدخَل فور حفظها.</string>
     <string name="schedule_delete">حذف المعاملة المجدولة</string>
-    <string name="loan_line_payment">الدفعة \u2068%1$s\u2069 · \u2068%2$s\u2069</string>
-    <string name="loan_line_needs_details">أضف تفاصيل القرض لمعرفة تاريخ السداد</string>
-    <string name="loans_new_plan">خطة سداد جديدة</string>
-    <string name="loans_empty_title">ضع خطة سداد</string>
-    <string name="loans_empty_detail">أضف حساب تتبُّع من نوع قرض، مثل الرهن العقاري أو قرض السيارة، برصيد سالب يساوي ما عليك، ثم أضف هنا سعر فائدته ودفعته.</string>
-    <string name="loans_create_plan">إنشاء خطة</string>
-    <string name="loans_help">«المتبقي» هو ما بقي عليك من كل قرض. يجرّب المخطط الدفعات الإضافية دون تغيير أي شيء؛ ويضيف «تسجيل الدفعة» التحويل وفائدة الشهر.</string>
     <string name="settings_budget_formats">الاسم والعملة والتنسيقات</string>
     <string name="settings_flag_names">أسماء العلامات</string>
     <string name="settings_flag_names_hint">سمِّ الألوان، مثل «استرداد» أو «ضريبة»</string>
@@ -867,6 +858,7 @@
     <string name="report_spent">المُنفَق</string>
     <string name="report_received">المستلَم</string>
     <string name="report_changes_title">\u2068%1$s\u2069 مقارنةً بمتوسطك</string>
+    <string name="report_month_so_far">⁨%1$s⁩ حتى الآن</string>
     <string name="report_changes_title_partial">\u2068%1$s\u2069 حتى الآن مقارنةً بمتوسطك</string>
     <plurals name="report_changes_aside">
         <item quantity="zero">متوسط \u2068%1$s\u2069 شهر سبقته</item>
@@ -1194,7 +1186,7 @@
     <!-- A day of the heat calendar: the day (%1$s) and its spending (%2$s). -->
     <string name="reports_heat_spent">\u2068%1$s\u2069 · أُنفق \u2068%2$s\u2069</string>
     <string name="reports_heat_nothing">\u2068%1$s\u2069 · \u2068%2$s\u2069، لا إنفاق</string>
-    <string name="reports_heat_help">انقر يومًا لعرض إنفاقه. الأغمق يعني أكثر.</string>
+    <string name="reports_heat_help">انقر يومًا لعرض إنفاقه، ومرة أخرى لعرض معاملاته.</string>
     <string name="reports_spending_by_day">الإنفاق حسب اليوم</string>
     <string name="reports_not_started">لم تبدأ هذه الأشهر بعد.</string>
     <string name="reports_by_weekday">حسب يوم الأسبوع</string>
@@ -1249,7 +1241,6 @@
     <string name="nothing_matches">لا شيء يطابق.</string>
 
     <!-- Loans: details, payoff planner and recording a payment -->
-    <string name="loan_choose_account">اختر حساب القرض.</string>
     <string name="loan_payment_positive">أدخل الدفعة الشهرية للقرض مبلغًا موجبًا.</string>
     <string name="loan_fees_positive">أدخل الرسوم الشهرية مبلغًا موجبًا.</string>
     <string name="loan_rate_format">أدخل سعر الفائدة نسبةً مئوية، مثل 5.25.</string>
@@ -1284,19 +1275,12 @@
     </plurals>
     <string name="loan_fee_escrow">حساب الضمان</string>
     <string name="loan_fee_fees">الرسوم</string>
-    <string name="loan_title_named">القرض · \u2068%1$s\u2069</string>
-    <string name="loan_title">مخطط سداد القرض</string>
-    <string name="loan_needs_account">أضف أولًا حساب تتبُّع من نوع قرض، مثل الرهن العقاري أو قرض السيارة، برصيد سالب يساوي ما عليك.</string>
-    <string name="loan_debt_account">حساب الدين</string>
     <string name="loan_status_paid_off">مُسدَّد</string>
     <string name="loan_record_payment">تسجيل الدفعة</string>
-    <string name="loan_save_first">احفظ تفاصيل القرض أولًا لتسجيل دفعة بها.</string>
-    <string name="loan_save_changes_first">احفظ تغييراتك أولًا: تستخدم الدفعة التفاصيل المحفوظة.</string>
     <string name="loan_interest_escrow_added">تُضاف الفائدة والضمان إلى القرض مع أول دفعة كل شهر.</string>
     <string name="loan_interest_fees_added">تُضاف الفائدة والرسوم إلى القرض مع أول دفعة كل شهر.</string>
     <string name="loan_interest_added">تُضاف الفائدة إلى القرض مع أول دفعة كل شهر.</string>
     <string name="loan_details">تفاصيل القرض</string>
-    <string name="loan_details_detail">ما يُحسب منه تاريخ السداد والفائدة</string>
     <string name="loan_rate_field">سعر الفائدة (%)</string>
     <string name="loan_payment_field">الدفعة الشهرية (\u2068%1$s\u2069)</string>
     <string name="loan_escrow_field">الضمان الشهري (\u2068%1$s\u2069)</string>
@@ -1308,9 +1292,7 @@
     <string name="loan_new_rate_field">السعر السنوي الجديد (%)</string>
     <string name="loan_remove_rate">إزالة سعر \u2068%1$s\u2069</string>
     <string name="loan_add_rate_change">إضافة تغيير في السعر</string>
-    <string name="loan_unsaved">تغييرات غير محفوظة. يجرّبها المخطط أدناه بالفعل، ويحتفظ بها «حفظ».</string>
     <string name="loan_planner">مخطط السداد</string>
-    <string name="loan_planner_detail">للتجربة فقط: لا شيء هنا يغيّر ميزانيتك أو تفاصيل القرض.</string>
     <string name="loan_nothing_owed">لا يتبقى شيء على هذا الحساب.</string>
     <string name="loan_extra_field">مبلغ إضافي كل شهر (\u2068%1$s\u2069)</string>
     <string name="loan_lump_field">دفعة لمرة واحدة الآن (\u2068%1$s\u2069)</string>
@@ -1331,15 +1313,34 @@
         <item quantity="many">عرض كل الدفعات (\u2068%1$s\u2069)</item>
         <item quantity="other">عرض كل الدفعات (\u2068%1$s\u2069)</item>
     </plurals>
-    <string name="loan_note">تُحسب الفائدة مركّبة شهريًا ويُقرَّب كل رسم إلى أقرب سنت، لذا قد تختلف أرقام المُقرض قليلًا. تسجيل الدفعة يضيف معاملات محلية ولا يدفع لبنكك.</string>
-    <string name="loan_remove_details">إزالة تفاصيل القرض</string>
-    <string name="loan_remove_title">إزالة تفاصيل القرض؟</string>
-    <string name="loan_remove_message">لن يُحسب بعد الآن تاريخ السداد والفائدة لـ\u2068%1$s\u2069، وتبقى معاملاته. يمكنك التراجع عن ذلك.</string>
     <string name="common_remove">إزالة</string>
     <string name="loan_owed">المتبقي</string>
     <string name="loan_rate">السعر</string>
     <string name="loan_payment">الدفعة</string>
     <string name="loan_interest_to_pay">الفائدة المتبقية</string>
+    <string name="loan_interest_rate">سعر الفائدة</string>
+    <string name="loan_prompt_title">متى سيُسدَّد؟</string>
+    <string name="loan_prompt_detail">أضف سعر الفائدة والدفعة الشهرية لترى تاريخ السداد والفائدة المتبقية.</string>
+    <string name="loan_add_details">إضافة تفاصيل القرض</string>
+    <string name="loan_not_loan_type">نوع هذا الحساب \u2068%1$s\u2069. غيّر نوعه إلى قرض، مثل «قرض شخصي»، ليظهر مع ديونك.</string>
+    <string name="loan_details_not_loan_type">تفاصيل القرض مخصّصة للديون. نوع هذا الحساب \u2068%1$s\u2069: اختر نوع قرض أعلاه، مثل «قرض شخصي»، لإدراجه ضمن ديونك.</string>
+    <string name="loan_imported">مُلئت من استيرادك من YNAB. راجعها ثم احفظ.</string>
+    <string name="loan_importable">يتضمن استيرادك من YNAB شروط هذا القرض.</string>
+    <string name="loan_use_imported">استخدامها</string>
+    <string name="loan_payment_or_clear">أدخل الدفعة الشهرية للقرض، أو امسح تفاصيله الأخرى.</string>
+    <string name="loan_details_help_escrow">تشمل الدفعة مبلغ الضمان. وتُضاف فائدة الشهر ومبلغ الضمان إلى القرض مع أول دفعة له كل شهر. اترك الدفعة فارغة إن لم تُرد تفاصيل للقرض.</string>
+    <string name="loan_details_help_fees">تشمل الدفعة الرسوم. وتُضاف فائدة الشهر ورسومه إلى القرض مع أول دفعة له كل شهر. اترك الدفعة فارغة إن لم تُرد تفاصيل للقرض.</string>
+    <string name="loan_rate_changes_count">تغييرات السعر (\u2068%1$s\u2069)</string>
+    <string name="loan_planner_title">مخطط السداد · \u2068%1$s\u2069</string>
+    <string name="loan_planner_note">مساحة تجريبية فقط: لا شيء هنا يغيّر ميزانيتك أو تفاصيل القرض. تتراكم الفائدة شهريًا ويُقرَّب كل مبلغ يُحتسب إلى أقرب سنت، لذا قد تختلف أرقام الجهة المُقرِضة قليلًا.</string>
+    <string name="loan_chart_label">الرصيد المستحق بعد كل دفعة</string>
+    <string name="loan_pays">لسداد \u2068%1$s\u2069</string>
+    <string name="loan_still_owed">المتبقي</string>
+    <string name="loan_open_planner">فتح المخطط</string>
+    <string name="loan_use_as_target">استخدام هذه الدفعة هدفًا</string>
+    <string name="loan_target_set">عُيِّن هدف \u2068%1$s\u2069 على دفعة \u2068%3$s\u2069 البالغة \u2068%2$s\u2069.</string>
+    <string name="loan_paid_toast">سُجِّلت دفعة بقيمة \u2068%1$s\u2069 إلى \u2068%2$s\u2069.</string>
+    <string name="loan_paid_toast_date">سُجِّلت دفعة بقيمة \u2068%1$s\u2069 إلى \u2068%2$s\u2069 بتاريخ \u2068%3$s\u2069.</string>
     <string name="clear_field">مسح \u2068%1$s\u2069</string>
     <!-- How a loan payment is recorded: from the account (%1$s) to the loan (%2$s). -->
     <string name="loan_payment_note_interest">تُسجَّل تحويلًا من \u2068%1$s\u2069 إلى \u2068%2$s\u2069 يُنفَق من الفئة. وتُضاف فائدة الشهر إلى القرض مع أول دفعة في ذلك الشهر.</string>
@@ -1406,7 +1407,7 @@
         <item quantity="many">ستغيّر القواعد اسم \u2068%1$s\u2069 معاملة لديك أو فئتها.</item>
         <item quantity="other">ستغيّر القواعد اسم \u2068%1$s\u2069 معاملة لديك أو فئتها.</item>
     </plurals>
-    <string name="rules_empty">تعيد القواعد تسمية المعاملات وتصنّفها عند ورودها من كشوف الحساب ومن مزامنة البنك.</string>
+    <string name="rules_empty">تعيد القواعد تسمية المعاملات وتصنّفها عند ورودها من كشوف الحساب ومزامنة البنك والرسائل البنكية.</string>
     <string name="rules_apply_existing">تطبيق القواعد على المعاملات الموجودة</string>
     <string name="payee_choose_a">اختر مستفيدًا</string>
     <string name="payee_last_used">آخر ما استُخدم: \u2068%1$s\u2069</string>
@@ -2195,6 +2196,8 @@
 
     <!-- Charts -->
     <!-- A chart's readout when the chosen column has no figures. -->
+    <string name="chart_see_transactions">عرض المعاملات</string>
+    <string name="chart_see_categories">عرض الفئات</string>
     <string name="chart_nothing">لا شيء</string>
     <string name="chart_no_spending">لا إنفاق</string>
     <string name="chart_less">أقل</string>
@@ -2211,6 +2214,36 @@
     <string name="library_add_account">إضافة إلى مزامنة الحساب</string>
     <string name="library_move_trash">نقل إلى المهملات</string>
     <string name="library_trash_message">تُنقل ميزانيات الحساب إلى المهملات على جميع الأجهزة ويمكن استعادتها من المكتبة. تبقى الميزانيات المحلية خاصة.</string>
+    <string name="library_trash_detail">استعد ميزانية أو احذفها نهائيًا.</string>
+    <string name="library_delete_forever">حذف نهائي</string>
+    <string name="library_purge_title">حذف \u2068%1$s\u2069 نهائيًا؟</string>
+    <string name="library_purge_message">تُحذف من هذا الهاتف مع نسخها الاحتياطية ومحادثات المساعد والرسائل البنكية. لا يمكن التراجع عن ذلك.</string>
+    <string name="library_empty_trash">إفراغ المهملات</string>
+    <string name="library_empty_trash_title">إفراغ المهملات؟</string>
+    <plurals name="library_empty_trash_detail">
+        <item quantity="zero">لا ميزانيات في المهملات على هذا الهاتف</item>
+        <item quantity="one">ميزانية واحدة في المهملات على هذا الهاتف</item>
+        <item quantity="two">ميزانيتان في المهملات على هذا الهاتف</item>
+        <item quantity="few">\u2068%1$s\u2069 ميزانيات في المهملات على هذا الهاتف</item>
+        <item quantity="many">\u2068%1$s\u2069 ميزانية في المهملات على هذا الهاتف</item>
+        <item quantity="other">\u2068%1$s\u2069 ميزانية في المهملات على هذا الهاتف</item>
+    </plurals>
+    <plurals name="library_empty_trash_message">
+        <item quantity="zero">لا ميزانيات لحذفها.</item>
+        <item quantity="one">تُحذف ميزانية واحدة من هذا الهاتف مع نسخها الاحتياطية ومحادثات المساعد والرسائل البنكية. لا يمكن التراجع عن ذلك.</item>
+        <item quantity="two">تُحذف ميزانيتان من هذا الهاتف مع نسخهما الاحتياطية ومحادثات المساعد والرسائل البنكية. لا يمكن التراجع عن ذلك.</item>
+        <item quantity="few">تُحذف \u2068%1$s\u2069 ميزانيات من هذا الهاتف مع نسخها الاحتياطية ومحادثات المساعد والرسائل البنكية. لا يمكن التراجع عن ذلك.</item>
+        <item quantity="many">تُحذف \u2068%1$s\u2069 ميزانية من هذا الهاتف مع نسخها الاحتياطية ومحادثات المساعد والرسائل البنكية. لا يمكن التراجع عن ذلك.</item>
+        <item quantity="other">تُحذف \u2068%1$s\u2069 ميزانية من هذا الهاتف مع نسخها الاحتياطية ومحادثات المساعد والرسائل البنكية. لا يمكن التراجع عن ذلك.</item>
+    </plurals>
+    <plurals name="library_trash_emptied">
+        <item quantity="zero">لم تُحذف أي ميزانية</item>
+        <item quantity="one">حُذفت ميزانية واحدة</item>
+        <item quantity="two">حُذفت ميزانيتان</item>
+        <item quantity="few">حُذفت \u2068%1$s\u2069 ميزانيات</item>
+        <item quantity="many">حُذفت \u2068%1$s\u2069 ميزانية</item>
+        <item quantity="other">حُذفت \u2068%1$s\u2069 ميزانية</item>
+    </plurals>
     <string name="sync_status_paused">المزامنة متوقفة</string>
     <string name="sync_status_attention">المزامنة تحتاج تدخلك</string>
     <string name="sync_status_offline">غير متصل</string>
@@ -2240,7 +2273,7 @@
     <string name="sms_detail">تحويل رسائل البنك إلى معاملات</string>
     <string name="sms_intro_title">حوّل رسائل البنك إلى معاملات</string>
     <string name="sms_intro">يجمع UrBudget الرسائل التي يرسلها بنكك إلى هذا الهاتف. يقرؤها مساعدك ويجهّز المعاملات، وتراجعها أنت قبل إضافة أي شيء. لا تُدعم رسائل RCS وMMS.</string>
-    <string name="sms_disclosure">يحتاج UrBudget إلى إذن الرسائل لعرض المرسلين وجمع رسائل من تختارهم، حتى والتطبيق مغلق. يمنح Android إذنًا بقراءة كل الرسائل، لكن UrBudget يحتفظ برسائل المرسلين الذين تختارهم فقط، وعلى هذا الهاتف. لا تُرسل الرسائل إلى مساعدك إلا حين تجهّزها، ولا يصبح جزءًا من ميزانيتك ومزامنتها الاختيارية إلا ما تضيفه من معاملات.</string>
+    <string name="sms_disclosure">يحتاج UrBudget إلى إذن الرسائل لعرض المرسلين وجمع رسائل من تختارهم، حتى والتطبيق مغلق. يمنح Android إذنًا بقراءة كل الرسائل، لكن UrBudget يحتفظ برسائل المرسلين الذين تختارهم فقط، وعلى هذا الهاتف. لا تُرسل الرسائل إلى مساعدك إلا حين تجهّزها أو تسأله عنها، ولا يصبح جزءًا من ميزانيتك ومزامنتها الاختيارية إلا ما تضيفه من معاملات.</string>
     <string name="sms_allow">السماح بالوصول إلى الرسائل</string>
     <string name="sms_open_settings">فتح إعدادات التطبيق</string>
     <string name="sms_permission_needed">الوصول إلى الرسائل متوقف. اسمح به في إعدادات التطبيق لاختيار المرسلين وقراءة رسائلهم.</string>
@@ -2414,7 +2447,7 @@
     <string name="sms_stop">إيقاف جمع الرسائل ومسحها</string>
     <string name="sms_stop_detail">أوقف الجمع لهذه الميزانية واحذف من هذا الهاتف رسائلها ومراجعتها والبطاقات المحفوظة والمرسلين وإذن الإرسال. تبقى المعاملات التي أضفتها والرسائل في تطبيق المراسلة كما هي.</string>
     <string name="sms_send_title">إرسال الرسائل إلى مساعدك؟</string>
-    <string name="sms_send_notice">يرسل UrBudget رسائل المُرسلين الذين اخترتهم إلى %1$s عند قراءتها: عند فتح رسائل البنك، وعند وصولها إن فعّلت ذلك. تُرسل معها أسماء حساباتك وفئاتك وطريقة تصنيفك للمستفيدين. لا تُحفظ في محادثات المساعد، وتسري إعدادات البيانات لدى المزوّد. لا يُضاف شيء إلى ميزانيتك قبل مراجعتك.</string>
+    <string name="sms_send_notice">يرسل UrBudget رسائل المُرسلين الذين اخترتهم إلى %1$s عند قراءتها: عند فتح رسائل البنك، وعند وصولها إن فعّلت ذلك. تُرسل معها أسماء حساباتك وفئاتك وطريقة تصنيفك للمستفيدين. لا تُحفظ في محادثات المساعد، وتسري إعدادات البيانات لدى المزوّد. وحين تسأل مساعدك عن رسائل البنك، يمكنه أيضًا البحث في رسائل المرسلين الذين اخترتهم على هذا الهاتف، ويبقى ما يجده في تلك المحادثة حتى تحذفها. لا يُضاف شيء إلى ميزانيتك قبل مراجعتك.</string>
     <string name="sms_send_later">لن يسألك UrBudget مجددًا لهذا المساعد. يمكنك إيقاف ذلك أسفل صفحة رسائل البنك.</string>
     <string name="sms_send_confirm">سماح</string>
     <string name="sms_default_model">نموذجه الافتراضي</string>
@@ -2856,4 +2889,77 @@
     <string name="sms_amount_needed">أدخل المبلغ.</string>
     <string name="sms_payee_needed">اختر مستفيدًا.</string>
     <string name="sms_no_splits">أضفها بفئة واحدة، ثم قسّمها من السجل.</string>
+    <string name="bank_texts_step_status">اطّلعت على رسائل البنك</string>
+    <plurals name="bank_texts_step_found">
+        <item quantity="zero">بحثت في رسائل البنك: لا شيء</item>
+        <item quantity="one">بحثت في رسائل البنك: رسالة واحدة</item>
+        <item quantity="two">بحثت في رسائل البنك: رسالتان</item>
+        <item quantity="few">بحثت في رسائل البنك: \u2068%1$s\u2069 رسائل</item>
+        <item quantity="many">بحثت في رسائل البنك: \u2068%1$s\u2069 رسالة</item>
+        <item quantity="other">بحثت في رسائل البنك: \u2068%1$s\u2069 رسالة</item>
+    </plurals>
+    <string name="bank_texts_step_card">جهّزت بطاقة لرسائل البنك</string>
+    <string name="bank_texts_not_set_up">رسائل البنك غير مُعدّة لهذه الميزانية على هذا الهاتف، أو إذن الرسائل مغلق.</string>
+    <string name="bank_texts_range">ابحث من يوم يسبق آخر يوم أو يساويه، وبحد أقصى سنة في كل مرة.</string>
+    <string name="bank_texts_unknown_sender">هذا ليس من المرسلين الذين اخترتهم في رسائل البنك.</string>
+    <string name="bank_texts_nothing_waiting">لا رسائل بانتظار القراءة، ولا مراجعة مفتوحة.</string>
+    <string name="bank_texts_search_first">ابحث عن هذه الرسائل أولًا، ثم اقترحها بمعرّفاتها.</string>
+    <string name="bank_texts_digits_needed">اذكر أرقام البطاقة أو الحساب كما تكتبها الرسائل.</string>
+    <string name="bank_texts_unknown_account">هذا الحساب غير مفتوح في هذه الميزانية.</string>
+    <string name="bank_texts_not_card">الحد الائتماني لبطاقة الائتمان أو خط الائتمان فقط.</string>
+    <string name="bank_texts_limit_positive">اذكر الحد الائتماني مبلغًا أكبر من صفر.</string>
+    <string name="bank_texts_title_read">قراءة رسائل البنك</string>
+    <plurals name="bank_texts_card_read">
+        <item quantity="zero">لا رسائل منتظرة</item>
+        <item quantity="one">اقرأ الرسالة المنتظرة</item>
+        <item quantity="two">اقرأ الرسالتين المنتظرتين</item>
+        <item quantity="few">اقرأ \u2068%1$s\u2069 رسائل منتظرة</item>
+        <item quantity="many">اقرأ \u2068%1$s\u2069 رسالة منتظرة</item>
+        <item quantity="other">اقرأ \u2068%1$s\u2069 رسالة منتظرة</item>
+    </plurals>
+    <string name="bank_texts_card_read_again">أعد قراءة المراجعة المفتوحة</string>
+    <string name="bank_texts_card_note">مع هذه الملاحظة</string>
+    <string name="bank_texts_card_read_note">تُفتح رسائل البنك وتقرؤها، وتحدّد في مراجعتها ما تريد إضافته.</string>
+    <plurals name="bank_texts_card_add">
+        <item quantity="zero">لا رسائل لإضافتها</item>
+        <item quantity="one">أضف رسالة واحدة إلى المراجعة</item>
+        <item quantity="two">أضف رسالتين إلى المراجعة</item>
+        <item quantity="few">أضف \u2068%1$s\u2069 رسائل إلى المراجعة</item>
+        <item quantity="many">أضف \u2068%1$s\u2069 رسالة إلى المراجعة</item>
+        <item quantity="other">أضف \u2068%1$s\u2069 رسالة إلى المراجعة</item>
+    </plurals>
+    <string name="bank_texts_card_add_note">تُقرأ مثل الرسائل المنتظرة، حتى ما سبق يوم بدء الجمع. لا يُضاف شيء حتى تحدّده في المراجعة.</string>
+    <string name="bank_texts_title_remember">تذكّر بطاقة</string>
+    <string name="bank_texts_card_remember">\u2068%1$s\u2069 هي \u2068%2$s\u2069</string>
+    <string name="bank_texts_card_remember_note">من الآن تذهب إلى هذا الحساب رسائلُ هذا المرسل التي تذكر هذه الأرقام.</string>
+    <string name="bank_texts_title_limit">تحديد الحد الائتماني</string>
+    <string name="bank_texts_card_limit">الحد الائتماني لـ\u2068%1$s\u2069</string>
+    <string name="bank_texts_card_limit_now">الآن \u2068%1$s\u2069</string>
+    <string name="bank_texts_card_limit_none">لم يُحدَّد بعد</string>
+    <string name="bank_texts_card_limit_note">مع الحد، يُظهر الحد المتبقي في رسائل البطاقة ما عليك، ويظهر الحد المتبقي على الحساب.</string>
+    <string name="bank_texts_apply_read">افتح رسائل البنك</string>
+    <string name="bank_texts_apply_add">أضف إلى المراجعة</string>
+    <string name="bank_texts_apply_remember">تذكّرها</string>
+    <string name="bank_texts_apply_limit">حدّد الحد</string>
+    <string name="sms_bank_matches">يطابق \u2068%1$s\u2069 لدى البنك في \u2068%2$s\u2069</string>
+    <string name="sms_bank_differs">ذكر البنك \u2068%1$s\u2069 في \u2068%2$s\u2069: الفرق \u2068%3$s\u2069</string>
+    <string name="sms_bank_held">يشمل \u2068%1$s\u2069 لدى البنك في \u2068%2$s\u2069 مبالغ معلّقة قدرها \u2068%3$s\u2069</string>
+    <string name="account_credit_limit">الحد الائتماني (\u2068%1$s\u2069)</string>
+    <string name="account_credit_limit_help">اختياري. يظهر الحد المتبقي على الحساب، ويمكن لرسائل البطاقة أن تُظهر ما عليك.</string>
+    <string name="account_credit_limit_positive">أدخل الحد الائتماني مبلغًا أكبر من صفر، أو اتركه فارغًا.</string>
+    <string name="account_credit_left">الحد المتبقي</string>
+    <string name="sms_setup_limit_help">مع حد البطاقة، يُعرف ما كان عليك من الحد المتبقي في رسائلها.</string>
+    <string name="assistant_prompt_bank_waiting">ما الذي ينتظر في رسائل البنك؟</string>
+    <string name="assistant_prompt_bank_balance">هل تطابق حساباتي ما تقوله رسائل البنك؟</string>
+    <plurals name="assistant_steps_more">
+        <item quantity="zero">لا خطوات أخرى</item>
+        <item quantity="one">خطوة أخرى</item>
+        <item quantity="two">خطوتان أخريان</item>
+        <item quantity="few">\u2068%1$s\u2069 خطوات أخرى</item>
+        <item quantity="many">\u2068%1$s\u2069 خطوة أخرى</item>
+        <item quantity="other">\u2068%1$s\u2069 خطوة أخرى</item>
+    </plurals>
+    <string name="assistant_steps_fewer">عرض أقل</string>
+    <string name="assistant_copy_reply">نسخ الرد</string>
+    <string name="assistant_add_to_message">أضف ملفًا أو معاملات</string>
 </resources>

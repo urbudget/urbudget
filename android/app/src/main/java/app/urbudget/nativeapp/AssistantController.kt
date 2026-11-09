@@ -41,9 +41,14 @@ data class AssistantState(
     val undoProposal: String? = null,
     /** A message put in the composer for the user to send (or not), such as one asking to fix an import. */
     val draft: String? = null,
+    /** What the reply is doing now ("Searching bank texts"), while a lookup runs. */
+    val activity: String? = null,
 ) {
     val threadId get() = thread?.optString("id").orEmpty()
 }
+
+/** Where the user is when they ask: the page, and the account or category its register shows. */
+data class AssistantPlace(val page: String = "assistant", val accountId: String? = null, val categoryId: String? = null)
 
 /** Native presentation state; providers, tools, history, validation and proposals live in Rust. */
 class AssistantController(
@@ -69,12 +74,14 @@ class AssistantController(
                 val event = envelope.optJSONObject("payload") ?: return@collect
                 if (event.optString("threadId") != state.value.threadId) return@collect
                 when (event.optString("type")) {
-                    "started" -> mutable.update { it.copy(running = true) }
+                    "started" -> mutable.update { it.copy(running = true, activity = null) }
+                    "activity" -> mutable.update { it.copy(activity = event.optString("text").ifBlank { null }) }
                     "delta", "thinking" -> {
                         stream.append(event.optString("text"), thinking = event.optString("type") == "thinking")
                         scheduleStreamPublish()
                     }
                     "message", "step", "proposal", "error", "done" -> {
+                        mutable.update { it.copy(activity = null) }
                         if (event.optString("type") == "message") { stream.clearReply(); publishStream() }
                         reloadThread()
                         if (event.optString("type") == "done") reloadHistory()
@@ -171,6 +178,21 @@ class AssistantController(
     fun reloadThread() { state.value.threadId.takeIf(String::isNotEmpty)?.let(reloads::trySend) }
     private fun reloadHistory() = operation("history") { loadHistory() }
     fun dismissError() { mutable.update { it.copy(error = null) } }
+    private var budget: String? = null
+    /**
+     * The open budget. Another one has its own conversations, so the one open here closes; and an
+     * error from before a budget was open (listing conversations) no longer applies. The same one
+     * again (the screen made anew, as unfolding the phone does) changes nothing.
+     */
+    fun budgetOpened(identity: String) {
+        if (identity == budget) return
+        val switched = budget != null
+        budget = identity
+        if (switched) newChat()
+        mutable.update { it.copy(threads = if (switched) emptyList() else it.threads, error = null) }
+        refresh()
+    }
+    fun showError(message: String?) { mutable.update { it.copy(error = message) } }
     fun dismissNotice() { mutable.update { it.copy(notice = null) } }
     fun note(text: String) { mutable.update { it.copy(notice = text) } }
     /** Puts `text` in the composer, unsent. */
@@ -232,7 +254,8 @@ class AssistantController(
     }
     fun removeAttachment(id: String) { mutable.update { it.copy(attachments = it.attachments.filterNot { file -> file.optString("id") == id }) } }
     /** `import` is the bank file being imported, when the assistant is open over its import: the assistant is told its lines. */
-    fun send(text: String, month: String, selected: List<String> = emptyList(), import: JSONObject? = null, done: () -> Unit) = operation("send") {
+    fun send(text: String, month: String, selected: List<String> = emptyList(), import: JSONObject? = null, bankTexts: Boolean = false,
+             place: AssistantPlace = AssistantPlace(), done: () -> Unit) = operation("send") {
         require(selected.size <= 200) { Words[R.string.assistant_select_limit] }
         val current = state.value
         val generation = conversationGeneration
@@ -240,13 +263,13 @@ class AssistantController(
         mutable.update { it.copy(streaming = "", thinking = "") }
         val result = call("assistant_send", JSONObject().put("threadId", current.threadId.takeIf(String::isNotEmpty) ?: JSONObject.NULL)
             .put("text", text).put("attachments", JSONArray(current.attachments.map { it.optString("id") }))
-            .put("screen", screen(month, selected, import))) as String
+            .put("screen", screen(month, selected, import, bankTexts, place))) as String
         if (generation != conversationGeneration) return@operation
         mutable.update { it.copy(thread = if (it.threadId == result) it.thread else JSONObject().put("id", result), running = true, attachments = emptyList()) }
         done(); loadThread(result); loadHistory()
     }
-    fun retry(month: String, import: JSONObject? = null) = operation("send") {
-        call("assistant_retry", JSONObject().put("threadId", state.value.threadId).put("screen", screen(month, emptyList(), import)))
+    fun retry(month: String, import: JSONObject? = null, bankTexts: Boolean = false, place: AssistantPlace = AssistantPlace()) = operation("send") {
+        call("assistant_retry", JSONObject().put("threadId", state.value.threadId).put("screen", screen(month, emptyList(), import, bankTexts, place)))
         loadThread(state.value.threadId)
     }
     fun stop() = operation("stop") { call("assistant_stop", JSONObject().put("threadId", state.value.threadId)); loadThread(state.value.threadId) }
@@ -303,9 +326,13 @@ class AssistantController(
     override fun onCleared() { reloads.close(); super.onCleared() }
 
     companion object {
-        private fun screen(month: String, selected: List<String>, import: JSONObject? = null) = JSONObject().put("platform", "android")
-            .put("page", if (import != null) "import" else "assistant").put("month", month)
+        /** [bankTexts]: this budget reads bank texts on the phone, which answers the assistant's bank-text tools. */
+        private fun screen(month: String, selected: List<String>, import: JSONObject? = null, bankTexts: Boolean = false, place: AssistantPlace = AssistantPlace()) =
+            JSONObject().put("platform", "android")
+            .put("page", if (import != null) "import" else place.page).put("month", month)
+            .put("accountId", place.accountId ?: JSONObject.NULL).put("categoryId", place.categoryId ?: JSONObject.NULL)
             .put("today", LocalDate.now().toString()).put("selected", JSONArray(selected)).put("import", import ?: JSONObject.NULL)
+            .put("bankTexts", bankTexts)
         private fun proposalParams(thread: String, proposal: String) = JSONObject().put("threadId", thread).put("proposalId", proposal)
         private fun JSONObject.copy() = JSONObject(toString())
         private fun Any?.objects(): List<JSONObject> = (this as? JSONArray)?.let { list -> (0 until list.length()).mapNotNull(list::optJSONObject) }.orEmpty()

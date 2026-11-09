@@ -156,6 +156,9 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
     val lifecycle = LocalLifecycleOwner.current
     val page = remember { SmsPage(context.applicationContext, identity, vm, analyzer, scope) }
     LaunchedEffect(page) { page.start() }
+    // What the assistant's cards asked of Bank messages: a reading to start, or stored changes to read again.
+    LaunchedEffect(page) { BankTextsAssistant.reads.collect { read -> if (read != null) { BankTextsAssistant.reads.value = null; page.assistantRead(read.note) } } }
+    LaunchedEffect(page) { var seen = BankTextsAssistant.changed.value; BankTextsAssistant.changed.collect { if (it != seen) { seen = it; page.reload() } } }
     val readings by SmsReadings.state.collectAsState()
     val vmState by vm.state.collectAsState()
     val reading = readings?.takeIf { it.budget == identity }
@@ -205,7 +208,7 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
     val waitingCount = page.waitingCount
     val since = stored.since
     if (reviewBatch != null) SmsReview(budget, vm, reviewBatch, stored.mappings, close = page::close, change = page::edit,
-        saveCards = page::cards, finish = { ids, rest -> page.finish(ids, rest = rest) }, again = { note -> page.prepare(reviewBatch.messages, note) }, discard = { discarding = true },
+        saveCards = page::cards, finish = { ids, rest, outcomes -> page.finish(ids, rest = rest, outcomes = outcomes) }, again = { note -> page.prepare(reviewBatch.messages, note) }, discard = { discarding = true },
         edited = page::edited, accuracy = stored.templates.accuracy)
     else Box(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize().testTag("sms-inbox"), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 8.dp, bottom = if (selecting) 120.dp else DockRoom),

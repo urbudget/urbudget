@@ -6,6 +6,8 @@ import app.urbudget.nativeapp.ui.rows
 import app.urbudget.nativeapp.ui.smsBankIds
 import app.urbudget.nativeapp.ui.smsChanged
 import app.urbudget.nativeapp.ui.smsOwnName
+import app.urbudget.nativeapp.ui.smsBankKey
+import app.urbudget.nativeapp.ui.smsSameName
 import app.urbudget.nativeapp.ui.smsSameTransaction
 import app.urbudget.nativeapp.ui.smsSort
 import org.json.JSONArray
@@ -373,6 +375,30 @@ class SmsAnalysisTest {
         val record = smsEditable(read, "SAR").put("payee", "Shop & Co").put("amount", -1500L)
         record.getJSONArray("splits").getJSONObject(0).put("categoryId", "food")
         assertEquals(setOf("payee", "amount", "category") to "food", app.urbudget.nativeapp.ui.smsChanged(read, record))
+    }
+
+    @Test fun renamingOneRowRenamesTheOtherRowsWithTheBanksNameButNotOnesTheUserNamed() {
+        val texts = (0..4).map { i -> BankSms(smsId(if (i == 4) "Other" else "Bank", 1000L + i, "text $i"), if (i == 4) "Other" else "Bank", 1000L + i, "text $i") }
+        fun row(i: Int, payee: String, raw: String?) = item(texts[i], purchase("4417").put("payee", payee)).put("raw", raw ?: JSONObject.NULL)
+            .put("note", "Purchase at $payee").put("unsure", JSONArray().put("payee").put("date"))
+        val batch = SmsBatch(texts, JSONObject().put("items", JSONArray()
+            .put(row(0, "SALON A", "SALON A").put("template", "t1"))
+            // The assistant's reading of the same name, with a branch number.
+            .put(row(1, "Salon A", "SALON A 0533"))
+            // One the user already gave a name of its own, another name, and another bank's.
+            .put(row(2, "Barber X", "SALON A")).put(row(3, "Noon", "NOON")).put(row(4, "SALON A", "SALON A"))))
+        val items = batch.items(SmsAccounts(accounts, JSONArray()))
+        val record = smsEditable(items[0], "SAR").put("payee", "Blade and Fade")
+        record.getJSONArray("splits").getJSONObject(0).put("categoryId", "personal")
+        val (fields, category) = smsChanged(items[0], record)
+        val budget = JSONObject().put("currency", "SAR").put("accounts", JSONArray())
+        val after = smsSameName(smsEdited(batch, items[0], record, budget), items[0], fields, "Blade and Fade", category).analysis.getJSONArray("items")
+        fun t(i: Int) = after.getJSONObject(i).getJSONObject("transaction")
+        assertEquals(listOf("Blade and Fade", "Blade and Fade", "Barber X", "Noon", "SALON A"), (0..4).map { t(it).getString("payee") })
+        assertEquals("personal", t(1).getString("categoryId")); assertTrue(t(2).isNull("categoryId"))
+        assertEquals("Purchase at Blade and Fade", after.getJSONObject(1).getString("note"))
+        assertEquals(listOf("date"), after.getJSONObject(1).getJSONArray("unsure").let { a -> (0 until a.length()).map(a::getString) })
+        assertEquals(smsBankKey("SALON A"), smsBankKey("Salon-A  0533"))
     }
 
     @Test fun aRequestTakesWhatTheAssistantCanReadAndTextsKeptOnThePhoneAreCountedApart() {

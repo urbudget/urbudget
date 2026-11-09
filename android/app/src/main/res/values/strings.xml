@@ -63,8 +63,6 @@
     <string name="tab_more">More</string>
     <string name="page_scheduled">Scheduled</string>
     <string name="page_scheduled_detail">Bills, income and repeating transactions</string>
-    <string name="page_loans">Loan planner</string>
-    <string name="page_loans_detail">Payoff dates and extra payments</string>
     <string name="page_payees">Payees &amp; rules</string>
     <string name="page_payees_detail">Default categories and import rules</string>
     <string name="page_banks">Bank connections</string>
@@ -120,7 +118,7 @@
     <string name="welcome_export_recovery">Export existing data for recovery</string>
     <string name="welcome_restore_previous">Restore previous budget</string>
 
-    <!-- More: scheduled, loan planner, settings -->
+    <!-- More: scheduled, settings -->
     <string name="repeat_never">Once</string>
     <string name="repeat_daily">Daily</string>
     <string name="repeat_weekly">Weekly</string>
@@ -164,13 +162,6 @@
     <string name="schedule_repeat">Repeat</string>
     <string name="schedule_due_entered_on_save">If it\'s dated today or earlier, it\'s entered as soon as you save it.</string>
     <string name="schedule_delete">Delete schedule</string>
-    <string name="loan_line_payment">Payment %1$s · %2$s</string>
-    <string name="loan_line_needs_details">Add loan details to see the payoff date</string>
-    <string name="loans_new_plan">New payoff plan</string>
-    <string name="loans_empty_title">Make a payoff plan</string>
-    <string name="loans_empty_detail">Add a tracking account of a loan type, such as Mortgage or Auto loan, with what you owe as a negative balance. Then add its rate and payment here.</string>
-    <string name="loans_create_plan">Create plan</string>
-    <string name="loans_help">Owed is what\'s left on each loan. The planner tries extra payments without changing anything; Record payment adds the transfer and the month\'s interest.</string>
     <string name="settings_budget_formats">Name, currency &amp; formats</string>
     <string name="settings_flag_names">Flag names</string>
     <string name="settings_flag_names_hint">Name colours such as Reimburse or Tax</string>
@@ -797,6 +788,7 @@
     <string name="report_spent">Spent</string>
     <string name="report_received">Received</string>
     <string name="report_changes_title">%1$s against your average</string>
+    <string name="report_month_so_far">%1$s so far</string>
     <string name="report_changes_title_partial">%1$s so far against your average</string>
     <plurals name="report_changes_aside">
         <item quantity="one">the %1$s-month average before it</item>
@@ -1060,7 +1052,7 @@
     <!-- A day of the heat calendar: the day (%1$s) and its spending (%2$s). -->
     <string name="reports_heat_spent">%1$s · %2$s spent</string>
     <string name="reports_heat_nothing">%1$s · %2$s nothing spent</string>
-    <string name="reports_heat_help">Tap a day for its spending. Darker means more.</string>
+    <string name="reports_heat_help">Tap a day for its spending, and again for its transactions.</string>
     <string name="reports_spending_by_day">Spending by day</string>
     <string name="reports_not_started">These months haven\'t started yet.</string>
     <string name="reports_by_weekday">By day of the week</string>
@@ -1111,7 +1103,6 @@
     <string name="nothing_matches">Nothing matches.</string>
 
     <!-- Loans: details, payoff planner and recording a payment -->
-    <string name="loan_choose_account">Choose the loan account.</string>
     <string name="loan_payment_positive">Enter the loan\'s monthly payment as a positive amount.</string>
     <string name="loan_fees_positive">Enter the monthly fees as a positive amount.</string>
     <string name="loan_rate_format">Enter the interest rate as a percentage, like 5.25.</string>
@@ -1138,19 +1129,12 @@
     </plurals>
     <string name="loan_fee_escrow">Escrow</string>
     <string name="loan_fee_fees">Fees</string>
-    <string name="loan_title_named">Loan · %1$s</string>
-    <string name="loan_title">Loan payoff planner</string>
-    <string name="loan_needs_account">Add a tracking account of a loan type, such as Mortgage or Auto loan, with what you owe as a negative balance first.</string>
-    <string name="loan_debt_account">Debt account</string>
     <string name="loan_status_paid_off">Paid off</string>
     <string name="loan_record_payment">Record payment</string>
-    <string name="loan_save_first">Save the loan details first to record a payment with them.</string>
-    <string name="loan_save_changes_first">Save your changes first: a payment uses the saved details.</string>
     <string name="loan_interest_escrow_added">Interest and escrow are added to the loan with the first payment each month.</string>
     <string name="loan_interest_fees_added">Interest and fees are added to the loan with the first payment each month.</string>
     <string name="loan_interest_added">Interest is added to the loan with the first payment each month.</string>
     <string name="loan_details">Loan details</string>
-    <string name="loan_details_detail">What the payoff date and the interest are worked out from</string>
     <string name="loan_rate_field">Interest rate (%)</string>
     <string name="loan_payment_field">Monthly payment (%1$s)</string>
     <string name="loan_escrow_field">Monthly escrow (%1$s)</string>
@@ -1162,9 +1146,7 @@
     <string name="loan_new_rate_field">New annual rate (%)</string>
     <string name="loan_remove_rate">Remove the %1$s rate</string>
     <string name="loan_add_rate_change">Add rate change</string>
-    <string name="loan_unsaved">Unsaved changes. The planner below already tries them; Save keeps them.</string>
     <string name="loan_planner">Payoff planner</string>
-    <string name="loan_planner_detail">Only a sandbox: nothing here changes your budget or the loan\'s details.</string>
     <string name="loan_nothing_owed">Nothing is owed on this account.</string>
     <string name="loan_extra_field">Extra each month (%1$s)</string>
     <string name="loan_lump_field">One-off payment now (%1$s)</string>
@@ -1181,15 +1163,34 @@
         <item quantity="one">Show all %1$s payments</item>
         <item quantity="other">Show all %1$s payments</item>
     </plurals>
-    <string name="loan_note">Interest compounds monthly and each charge is rounded to the cent, so a lender\'s own figures may differ a little. Recording a payment adds local transactions; it doesn\'t pay your bank.</string>
-    <string name="loan_remove_details">Remove loan details</string>
-    <string name="loan_remove_title">Remove loan details?</string>
-    <string name="loan_remove_message">The payoff date and interest are no longer worked out for %1$s. Its transactions stay. You can undo this.</string>
     <string name="common_remove">Remove</string>
     <string name="loan_owed">Owed</string>
     <string name="loan_rate">Rate</string>
     <string name="loan_payment">Payment</string>
     <string name="loan_interest_to_pay">Interest to pay</string>
+    <string name="loan_interest_rate">Interest rate</string>
+    <string name="loan_prompt_title">When will it be paid off?</string>
+    <string name="loan_prompt_detail">Add the interest rate and monthly payment to see the payoff date and the interest left to pay.</string>
+    <string name="loan_add_details">Add loan details</string>
+    <string name="loan_not_loan_type">This account is set as %1$s. Change its type to a loan, such as Personal loan, to list it with your debts.</string>
+    <string name="loan_details_not_loan_type">Loan details are for debts. This is set as %1$s: choose a loan type above, such as Personal loan, to list it with your debts.</string>
+    <string name="loan_imported">Filled in from your YNAB import. Check them, then save.</string>
+    <string name="loan_importable">Your YNAB import has this loan\'s terms.</string>
+    <string name="loan_use_imported">Use them</string>
+    <string name="loan_payment_or_clear">Enter the loan\'s monthly payment, or clear its other details.</string>
+    <string name="loan_details_help_escrow">The payment includes the escrow. The month\'s interest and escrow are added to the loan with its first payment each month. Leave the payment blank for no loan details.</string>
+    <string name="loan_details_help_fees">The payment includes the fees. The month\'s interest and fees are added to the loan with its first payment each month. Leave the payment blank for no loan details.</string>
+    <string name="loan_rate_changes_count">Rate changes (%1$s)</string>
+    <string name="loan_planner_title">Payoff planner · %1$s</string>
+    <string name="loan_planner_note">Only a sandbox: nothing here changes your budget or the loan\'s details. Interest compounds monthly and each charge is rounded to the cent, so a lender\'s own figures may differ a little.</string>
+    <string name="loan_chart_label">Balance owed after each payment</string>
+    <string name="loan_pays">Pays %1$s</string>
+    <string name="loan_still_owed">Still owed</string>
+    <string name="loan_open_planner">Open planner</string>
+    <string name="loan_use_as_target">Use this payment as target</string>
+    <string name="loan_target_set">Set %1$s\'s target to the %2$s %3$s payment.</string>
+    <string name="loan_paid_toast">Recorded a %1$s payment to %2$s.</string>
+    <string name="loan_paid_toast_date">Recorded a %1$s payment to %2$s for %3$s.</string>
     <string name="clear_field">Clear %1$s</string>
     <!-- How a loan payment is recorded: from the account (%1$s) to the loan (%2$s). -->
     <string name="loan_payment_note_interest">Recorded as a transfer from %1$s to %2$s, spending the category. The month\'s interest is added to the loan with its first payment that month.</string>
@@ -1240,7 +1241,7 @@
         <item quantity="one">The rules would rename or categorize %1$s transaction you already have.</item>
         <item quantity="other">The rules would rename or categorize %1$s transactions you already have.</item>
     </plurals>
-    <string name="rules_empty">Rules rename and categorize transactions as they come in from bank files and bank sync.</string>
+    <string name="rules_empty">Rules rename and categorize transactions as they come in from bank files, bank sync and bank messages.</string>
     <string name="rules_apply_existing">Apply rules to existing transactions</string>
     <string name="payee_choose_a">Choose a payee</string>
     <string name="payee_last_used">Last used: %1$s</string>
@@ -1937,6 +1938,8 @@
 
     <!-- Charts -->
     <!-- A chart's readout when the chosen column has no figures. -->
+    <string name="chart_see_transactions">See transactions</string>
+    <string name="chart_see_categories">See categories</string>
     <string name="chart_nothing">Nothing</string>
     <string name="chart_no_spending">No spending</string>
     <string name="chart_less">Less</string>
@@ -1953,6 +1956,24 @@
     <string name="library_add_account">Add to account sync</string>
     <string name="library_move_trash">Move to Trash</string>
     <string name="library_trash_message">Account budgets move to Trash on every device. You can restore them from the library. Local-only budgets stay private.</string>
+    <string name="library_trash_detail">Restore a budget, or delete it permanently.</string>
+    <string name="library_delete_forever">Delete permanently</string>
+    <string name="library_purge_title">Delete %1$s permanently?</string>
+    <string name="library_purge_message">It\'s deleted from this phone with its backups, assistant chats and bank texts. This can\'t be undone.</string>
+    <string name="library_empty_trash">Empty Trash</string>
+    <string name="library_empty_trash_title">Empty Trash?</string>
+    <plurals name="library_empty_trash_detail">
+        <item quantity="one">%1$s budget in Trash on this phone</item>
+        <item quantity="other">%1$s budgets in Trash on this phone</item>
+    </plurals>
+    <plurals name="library_empty_trash_message">
+        <item quantity="one">%1$s budget is deleted from this phone with its backups, assistant chats and bank texts. This can\'t be undone.</item>
+        <item quantity="other">%1$s budgets are deleted from this phone with their backups, assistant chats and bank texts. This can\'t be undone.</item>
+    </plurals>
+    <plurals name="library_trash_emptied">
+        <item quantity="one">%1$s budget deleted</item>
+        <item quantity="other">%1$s budgets deleted</item>
+    </plurals>
     <string name="sync_status_paused">Sync paused</string>
     <string name="sync_status_attention">Sync needs you</string>
     <string name="sync_status_offline">Offline</string>
@@ -1982,7 +2003,7 @@
     <string name="sms_detail">Turn bank texts into transactions</string>
     <string name="sms_intro_title">Turn bank texts into transactions</string>
     <string name="sms_intro">UrBudget collects the texts your bank sends to this phone. Your assistant reads them and prepares the transactions, and you check them before anything is added. RCS and MMS aren’t supported.</string>
-    <string name="sms_disclosure">UrBudget needs SMS access to list senders and to collect messages from the ones you choose, including while the app is closed. Android grants access to all texts; UrBudget keeps only messages from your chosen senders, on this phone. Messages go to your assistant only when you prepare them, and only the transactions you add become part of your budget and optional sync.</string>
+    <string name="sms_disclosure">UrBudget needs SMS access to list senders and to collect messages from the ones you choose, including while the app is closed. Android grants access to all texts; UrBudget keeps only messages from your chosen senders, on this phone. Messages go to your assistant only when you prepare them or ask your assistant about them, and only the transactions you add become part of your budget and optional sync.</string>
     <string name="sms_allow">Allow SMS access</string>
     <string name="sms_open_settings">Open app settings</string>
     <string name="sms_permission_needed">SMS access is off. Allow it in app settings to choose senders and read their messages.</string>
@@ -2111,7 +2132,7 @@
     <string name="sms_stop">Stop and clear messages</string>
     <string name="sms_stop_detail">Stop collecting for this budget and remove its messages, review, remembered cards, senders and sending permission from this phone. Transactions you added and the texts in your messaging app stay as they are.</string>
     <string name="sms_send_title">Send messages to your assistant?</string>
-    <string name="sms_send_notice">UrBudget sends texts from your chosen senders to %1$s when it reads them: when you open Bank messages, and as they arrive if you turn that on. Your account and category names and how you’ve categorized payees go with them. They aren’t saved in your assistant chats, and the provider’s own data settings apply. Nothing is added to your budget until you review it.</string>
+    <string name="sms_send_notice">UrBudget sends texts from your chosen senders to %1$s when it reads them: when you open Bank messages, and as they arrive if you turn that on. Your account and category names and how you’ve categorized payees go with them. They aren’t saved in your assistant chats, and the provider’s own data settings apply. When you ask your assistant about bank texts, it can also search texts from your chosen senders on this phone, and what it finds is kept in that chat until you delete it. Nothing is added to your budget until you review it.</string>
     <string name="sms_send_later">UrBudget won’t ask again for this assistant. You can turn this off at the bottom of Bank messages.</string>
     <string name="sms_send_confirm">Allow</string>
     <string name="sms_default_model">its default model</string>
@@ -2427,4 +2448,66 @@
     <string name="sms_amount_needed">Enter the amount.</string>
     <string name="sms_payee_needed">Choose a payee.</string>
     <string name="sms_no_splits">Add it with one category, then split it in the register.</string>
+    <!-- The assistant's bank-text tools (BankTextsAssistant): step lines, cards, and what it's told when it can't. -->
+    <string name="bank_texts_step_status">Looked at bank messages</string>
+    <plurals name="bank_texts_step_found">
+        <item quantity="one">Searched bank texts: %1$s found</item>
+        <item quantity="other">Searched bank texts: %1$s found</item>
+    </plurals>
+    <string name="bank_texts_step_card">Prepared a bank messages card</string>
+    <string name="bank_texts_not_set_up">Bank messages isn’t set up for this budget on this phone, or SMS access is off.</string>
+    <string name="bank_texts_range">Search from a day on or before the last day, at most a year at a time.</string>
+    <string name="bank_texts_unknown_sender">That isn’t one of the senders chosen in Bank messages.</string>
+    <string name="bank_texts_nothing_waiting">No texts are waiting, and no review is open.</string>
+    <string name="bank_texts_search_first">Search for those texts first, then propose them by their ids.</string>
+    <string name="bank_texts_digits_needed">Give the card or account digits as the texts write them.</string>
+    <string name="bank_texts_unknown_account">That account isn’t open in this budget.</string>
+    <string name="bank_texts_not_card">Only a credit card or a line of credit has a credit limit.</string>
+    <string name="bank_texts_limit_positive">Give the credit limit as an amount above zero.</string>
+    <string name="bank_texts_title_read">Read bank texts</string>
+    <plurals name="bank_texts_card_read">
+        <item quantity="one">Read %1$s waiting text</item>
+        <item quantity="other">Read %1$s waiting texts</item>
+    </plurals>
+    <string name="bank_texts_card_read_again">Read the open review again</string>
+    <string name="bank_texts_card_note">With this note</string>
+    <string name="bank_texts_card_read_note">Bank messages opens and reads them, and you tick what to add in its review.</string>
+    <plurals name="bank_texts_card_add">
+        <item quantity="one">Add %1$s text to the review</item>
+        <item quantity="other">Add %1$s texts to the review</item>
+    </plurals>
+    <string name="bank_texts_card_add_note">They’re read like waiting texts, even from before the day collecting starts. Nothing is added until you tick it in the review.</string>
+    <string name="bank_texts_title_remember">Remember a card</string>
+    <!-- %1$s is a card's digits as its texts write them ("3358"), %2$s an account. -->
+    <string name="bank_texts_card_remember">%1$s is %2$s</string>
+    <string name="bank_texts_card_remember_note">From now on, texts from this sender that give these digits go to this account.</string>
+    <string name="bank_texts_title_limit">Set a credit limit</string>
+    <string name="bank_texts_card_limit">Credit limit for %1$s</string>
+    <string name="bank_texts_card_limit_now">Now %1$s</string>
+    <string name="bank_texts_card_limit_none">None set yet</string>
+    <string name="bank_texts_card_limit_note">With the limit, the credit left in the card’s texts shows what you owe, and the account shows the credit left.</string>
+    <string name="bank_texts_apply_read">Open Bank messages</string>
+    <string name="bank_texts_apply_add">Add to the review</string>
+    <string name="bank_texts_apply_remember">Remember it</string>
+    <string name="bank_texts_apply_limit">Set the limit</string>
+    <!-- Under an account in Balances after adding: the bank's figure in the review's latest text that gives one. %1$s the figure, %2$s its date, %3$s an amount. -->
+    <string name="sms_bank_matches">Matches the bank’s %1$s on %2$s</string>
+    <string name="sms_bank_differs">The bank said %1$s on %2$s: %3$s different</string>
+    <string name="sms_bank_held">The bank’s %1$s on %2$s counts %3$s held</string>
+    <!-- A card's credit limit, in Edit account and when setting up a card from its texts. -->
+    <string name="account_credit_limit">Credit limit (%1$s)</string>
+    <string name="account_credit_limit_help">Optional. The account shows the credit left, and the card’s texts can show what you owe.</string>
+    <string name="account_credit_limit_positive">Enter the credit limit as an amount above zero, or leave it empty.</string>
+    <string name="account_credit_left">Credit left</string>
+    <string name="sms_setup_limit_help">With the card’s limit, the credit left in its texts gives what you owed.</string>
+    <!-- The assistant panel: prompts for bank texts, folded steps, and a reply's actions. -->
+    <string name="assistant_prompt_bank_waiting">What’s waiting in my bank messages?</string>
+    <string name="assistant_prompt_bank_balance">Do my accounts match what my bank’s texts say?</string>
+    <plurals name="assistant_steps_more">
+        <item quantity="one">%1$s more step</item>
+        <item quantity="other">%1$s more steps</item>
+    </plurals>
+    <string name="assistant_steps_fewer">Show fewer</string>
+    <string name="assistant_copy_reply">Copy reply</string>
+    <string name="assistant_add_to_message">Add a file or transactions</string>
 </resources>

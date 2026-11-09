@@ -219,20 +219,40 @@ internal class SmsPage(private val context: Context, val identity: String, priva
      * Ends the review, the texts it settled leaving Bank messages; [summary] is what was handled
      * without a question, and [rest] what still waits on a choice, kept as it was read.
      */
-    fun finish(ids: List<String>, summary: JSONObject = JSONObject(), rest: SmsBatch? = null) {
+    fun finish(ids: List<String>, summary: JSONObject = JSONObject(), rest: SmsBatch? = null, outcomes: Map<String, JSONObject> = emptyMap()) {
         reviewing = false; sorting?.cancel(); sorted = null
         commit(SmsStage.Saving, restore = true) {
-            inbox.finish(identity, ids)
+            inbox.finish(identity, ids, outcomes = outcomes)
+            // The bank's latest figure for each account, from what was added or matched.
+            val balances = inbox.state(identity, "balances")
+            smsKeepBalances(balances, outcomes.values)?.takeIf { it != balances }?.let { inbox.saveState(identity, "balances", it) }
             rest?.let { inbox.saveState(identity, "draft", it.saved()) }
             inbox.saveState(identity, "last", summary.put("at", System.currentTimeMillis()).toString())
         }
     }
 
     /** Dismisses waiting texts; an open review stays as it is. */
-    fun dismiss(ids: List<String>) = commit(SmsStage.Saving) { inbox.finish(identity, ids, endReview = false) }
+    fun dismiss(ids: List<String>) = commit(SmsStage.Saving) { inbox.finish(identity, ids, endReview = false, outcomes = smsPlainOutcomes(ids, SmsOutcome.Dismissed)) }
 
     /** Clears the open review's texts without adding anything: left waiting, they'd only be read again. */
-    fun discard() { batch?.let { finish(it.messages.map { m -> m.id }) } }
+    fun discard() { batch?.let { b -> b.messages.map { it.id }.let { ids -> finish(ids, outcomes = smsPlainOutcomes(ids, SmsOutcome.Discarded)) } } }
+
+    /**
+     * A reading the assistant's card asked for: what's waiting (texts the card brought back
+     * included), with its note. With a review open and a note, its texts are read again too.
+     */
+    fun assistantRead(note: String) {
+        started = true
+        scope.launch {
+            commit(SmsStage.Idle).join()
+            if (SmsReadings.state.value != null) return@launch
+            val open = batch
+            when {
+                note.isNotBlank() && open != null -> prepare(open.messages + waiting, note)
+                waiting.isNotEmpty() -> prepare(waiting, note, base = open)
+            }
+        }
+    }
 
     /**
      * Collects from [from] for every sender. A later start takes earlier texts out of the review and
@@ -264,16 +284,16 @@ internal class SmsPage(private val context: Context, val identity: String, priva
     fun forgetTemplate(id: String) = commit(SmsStage.Saving) { inbox.forgetTemplate(identity, id) }
 
     /**
-     * The user changed [fields] of a row a template read, before adding it. A changed date or
-     * amount counts against the template; a changed payee or category is the user's name for the
-     * bank's ([raw]), learned for its next texts.
+     * The user changed [fields] of a row before adding it. A changed date or amount counts against
+     * the template that read it, if one did; a changed payee or category is the user's name for the
+     * bank's ([SmsItem.raw]), learned for its next texts whoever reads them.
      */
     fun edited(item: SmsItem, fields: Set<String>, payee: String, category: String?) {
-        val template = item.template ?: return
+        if (item.template == null && item.raw == null) return
         scope.launch {
             try {
                 withContext(smsStorageLane) {
-                    (fields - setOf("payee", "category")).takeIf { it.isNotEmpty() }?.let { inbox.edited(identity, template, it) }
+                    item.template?.let { template -> (fields - setOf("payee", "category")).takeIf { it.isNotEmpty() }?.let { inbox.edited(identity, template, it) } }
                     if (item.raw != null && ("payee" in fields || "category" in fields)) inbox.learnPayee(identity, smsSenderKey(item.sender), item.raw, payee, category)
                 }
             } catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { error = failure.message }
@@ -311,8 +331,9 @@ internal class SmsPage(private val context: Context, val identity: String, priva
         val matching = result.existing.filter { current.ticked[it.index] != false }.map { it.index to known.getValue(it.index) }
         val summary = JSONObject().put("known", matching.size).put("skipped", JSONObject(result.skipped.groupingBy { it.skip.ifBlank { "unclear" } }.eachCount()))
         val handled = items.flatMap { item -> item.sources.map { it.id } }
-        if (matching.isEmpty()) finish(handled, summary)
-        else vm.runCommand("smsBatchApply", current.params(resolved).put("decisions", smsDecisions(matching))) { finish(handled, summary) }
+        val outcomes = smsOutcomes(items, matching, current.dismissed)
+        if (matching.isEmpty()) finish(handled, summary, outcomes = outcomes)
+        else vm.runCommand("smsBatchApply", current.params(resolved).put("decisions", smsDecisions(matching))) { finish(handled, summary, outcomes = outcomes) }
     }
 
     /** A budget command failed: settling stops, and says why. */

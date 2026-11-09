@@ -103,6 +103,27 @@ class ProposalCardUiTest {
         compose.runOnIdle { assertEquals(1, revisions.size) }
     }
 
+    @Test fun aBankTextCardSaysWhatItDoesAndIsDoneOnThePhone() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        var done = 0
+        val proposal = mutableStateOf(JSONObject().put("id", "p1").put("kind", "bankTexts").put("status", "proposed").put("title", "Set a credit limit")
+            .put("bankTexts", JSONObject().put("action", "limit").put("accountId", "card").put("limit", 250_050L))
+            .put("card", JSONObject().put("kicker", "Bank messages").put("rows", JSONArray().put(JSONObject().put("label", "Credit limit for Visa").put("detail", "None set yet").put("amount", 250_050L)))))
+        compose.setContent {
+            MaterialTheme {
+                AssistantProposalCard(proposal.value, "SAR", busy = false, canUndo = false, apply = {}, undo = {}, discard = {}, refine = {},
+                    reviewImport = {}, saveImport = {}, report = {}, spreadsheet = {}, applyBankTexts = { done++ })
+            }
+        }
+        compose.onNodeWithText("Credit limit for Visa").assertExists()
+        compose.onNodeWithText(context.getString(app.urbudget.nativeapp.R.string.bank_texts_apply_limit)).performClick()
+        compose.runOnIdle { assertEquals(1, done) }
+        // Applied, it folds to a line that says so, with nothing more to do.
+        proposal.value = JSONObject(proposal.value.toString()).put("status", "applied")
+        compose.onNodeWithText(context.getString(app.urbudget.nativeapp.R.string.assistant_applied_title, "Set a credit limit")).assertExists()
+        compose.onNodeWithText(context.getString(app.urbudget.nativeapp.R.string.bank_texts_apply_limit)).assertDoesNotExist()
+    }
+
     /** The card as the assistant screen keeps it: each revision made by `marking`, the card it gives shown, and a row's editor over it. */
     private fun show(start: List<JSONObject>) {
         val proposal = mutableStateOf(draft(start))

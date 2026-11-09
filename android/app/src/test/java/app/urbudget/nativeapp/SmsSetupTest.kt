@@ -218,4 +218,44 @@ class SmsSetupTest {
         val skipped = smsRememberCard(JSONArray(), "Chase", "2222", SmsSkipCard)
         assertEquals(SmsAccountSource.Only, both.items(SmsAccounts.of(one, skipped, emptyMap())).first().accountSource)
     }
+
+    @Test fun aCardWithItsLimitStartsAtWhatWasOwedFromTheCreditLeftItsTextsGive() {
+        // The Visa's purchase text gives the credit left after it.
+        val plain = month()
+        val batch = plain.copy(analysis = JSONObject(plain.analysis.toString()).also { it.getJSONArray("items").getJSONObject(2).getJSONObject("transaction").put("available", "4734.38") })
+        val (found, suggested) = suggest(batch)
+        val key = smsCardKey("Chase", "4512")
+        val adds = { item: SmsItem -> item.tickedIn(batch) }
+        val card = suggested.getValue(key)
+        val plans = smsSetupPlans(found, emptyMap(), suggested, emptySet())
+        // Without its limit the credit left says nothing of what's owed: the card starts at nothing owed.
+        assertNull(smsPlanLimit(card))
+        assertEquals(0L, smsSetupBalance(card, smsOpening(smsSetupMembers(key, found, plans), adds, smsPlanLimit(card))))
+        // With 5,000.00, 4,734.38 left after the 25.62 purchase means 240.00 was owed before it; the payment after doesn't count.
+        val limited = card.copy(limit = 500_000L)
+        val withLimit = plans + (key to limited)
+        val opening = smsOpening(smsSetupMembers(key, found, withLimit), adds, smsPlanLimit(limited))!!
+        assertEquals(-24_000L, smsSetupBalance(limited, opening))
+        var next = 0
+        val made = smsSetupChanges(found, withLimit, adds) { "n${++next}" }.accounts.single { it.getString("kind") == "credit" }
+        assertEquals(-24_000L, made.getLong("openingBalance"))
+        assertEquals(500_000L, made.getLong("creditLimit"))
+        // ANB texts the credit left as "Balance": with the limit it reads the same.
+        val anb = plain.copy(analysis = JSONObject(plain.analysis.toString()).also { it.getJSONArray("items").getJSONObject(2).getJSONObject("transaction").put("balance", "4734.38") })
+        val anbFound = suggest(anb).first
+        assertEquals(-24_000L, smsSetupBalance(limited, smsOpening(smsSetupMembers(key, anbFound, withLimit), { item: SmsItem -> item.tickedIn(anb) }, smsPlanLimit(limited))))
+        // A limit is kept with the plan, and is only a limit on a credit account.
+        assertEquals(limited, SmsSetupPlan.of(limited.json()))
+        assertNull(smsPlanLimit(limited.copy(type = "checking")))
+    }
+
+    @Test fun twoAccountsMadeFromTextsNeverShareAName() {
+        val plans = mapOf("a" to SmsSetupPlan(SmsSetupPlan.Create, "ANB savings", "savings"), "b" to SmsSetupPlan(SmsSetupPlan.Create, "ANB savings", "savings"),
+            "c" to SmsSetupPlan(SmsSetupPlan.Create, "ANB 0026", "checking"), "d" to SmsSetupPlan(SmsSetupPlan.Join, "ANB 0026", "checking", joins = "c"),
+            "e" to SmsSetupPlan(SmsSetupPlan.Create, "ANB savings", "savings"))
+        val candidates = candidates(review(row(sms("Transfer to deposit 0001"), "-100.00", "0001", "transfer"))).associateBy { it.key }
+        val named = smsUniqueNames(plans, mapOf("b" to candidates.values.first()), listOf("anb 0026"))
+        // The second takes its digits, the deposit's 0001; one already in the budget, a number; a third with no digits, a number too.
+        assertEquals(listOf("ANB savings", "ANB savings 0001", "ANB 0026 2", "ANB 0026", "ANB savings 2"), named.values.map { it.name })
+    }
 }

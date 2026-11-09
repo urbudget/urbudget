@@ -1,5 +1,6 @@
 package app.urbudget.nativeapp.ui
 
+import app.urbudget.nativeapp.smsCreditLimit
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -44,6 +45,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.urbudget.nativeapp.AccountTypes
 import app.urbudget.nativeapp.EditorCheckpoint
 import app.urbudget.nativeapp.BudgetEditGuard
 import app.urbudget.nativeapp.BudgetViewModel
@@ -206,6 +208,9 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
     var query by remember { mutableStateOf(search) }
     LaunchedEffect(search) { if (search.isNotEmpty()) delay(150); query = search }
     val account = remember(budget, accountFilter) { if (accountFilter.isBlank()) null else budget.row("accounts", accountFilter) }
+    val accountBalance = remember(summary, account) { account?.let { a -> summary?.rows("accounts")?.firstOrNull { it.text("id") == accountFilter }?.optLong("balance") ?: a.optLong("openingBalance") } ?: 0L }
+    // A debt, or any account with loan details, shows where the loan stands.
+    val loanShown = remember(budget, account, accountBalance) { account != null && AccountTypes.hasLoan(account, accountBalance, budget.rows("loans").map { it.text("accountId") }.toSet()) }
     val categories = remember(budget) { budget.rows("categories").associate { it.text("id") to it.text("name") } }
     val language = languageKey()
     val flags = remember(budget, language) { flagChoices(budget) }
@@ -301,6 +306,10 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
                     AccountSummaryCard(account, summary.rows("accounts").firstOrNull { it.text("id") == accountFilter }, currency,
                         { reconcile(account) }, { editAccount(account) }, if (account.text("kind") == "credit") ({ payCard(account.text("id")) }) else null,
                         Modifier.padding(horizontal = Gutter).padding(bottom = 14.dp))
+                }
+                // A loan's figures and payoff planner (LoanHeader.kt), or a debt's prompt to add them.
+                if (account != null && summary != null && loanShown) item(key = "loan", contentType = "loan") {
+                    LoanHeader(account, budget, accountBalance, vm, Modifier.padding(horizontal = Gutter).padding(bottom = 14.dp))
                 }
                 if (toApprove > 0 && status != "approval" && !selecting) item(key = "approve", contentType = "notice") {
                     Notice(countText(R.plurals.transactions_to_approve, toApprove), Modifier.padding(horizontal = Gutter).padding(bottom = 12.dp),
@@ -418,7 +427,7 @@ private fun TransactionLine(line: TxLine, selecting: Boolean, selected: Boolean,
                             approve: () -> Unit, jump: () -> Unit) {
     Column(Modifier.background(if (selected) ur.accentSoft else ur.surface).then(if (line.future) Modifier.alpha(.6f) else Modifier)) {
         Row(Modifier.fillMaxWidth().testTag("tx:${line.id}").combinedClickable(onClick = open, onLongClick = select, onClickLabel = if (selecting) stringResource(R.string.selection_select) else stringResource(R.string.transaction_edit))
-            .padding(start = if (selecting) 8.dp else Gutter, end = 10.dp, top = 11.dp, bottom = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+            .padding(start = if (selecting) 8.dp else Gutter, end = 10.dp, top = 9.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             if (selecting) Box(Modifier.padding(end = 10.dp).size(24.dp).clip(CircleShape).background(if (selected) ur.accent else Color.Transparent)
                 .border(1.5.dp, if (selected) ur.accent else ur.borderStrong, CircleShape), contentAlignment = Alignment.Center) {
                 if (selected) Icon(Icons.Outlined.Check, null, Modifier.size(15.dp), tint = ur.surface)
@@ -434,6 +443,8 @@ private fun TransactionLine(line: TxLine, selecting: Boolean, selected: Boolean,
                         color = if (!line.approved) ur.accent else ur.text)
                     Text(line.amountText, Modifier.padding(start = 8.dp), fontSize = 16.5.sp, fontWeight = FontWeight.SemiBold,
                         color = if (line.amount > 0) ur.positive else ur.text, style = Tabular, maxLines = 1)
+                    // Cleared sits beside the amount it's about, in a column of its own.
+                    ClearedMark(line.cleared, Modifier.padding(start = 6.dp).testTag("tx-cleared:${line.id}"), onClick = if (selecting || line.cleared == "reconciled") null else toggleCleared)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -443,19 +454,24 @@ private fun TransactionLine(line: TxLine, selecting: Boolean, selected: Boolean,
                         }
                     }
                     if (line.accountName.isNotBlank()) Text(Money.own(line.accountName), Modifier.padding(start = 8.dp), color = ur.muted, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    // Approving sits on this line so amounts stay in one column.
-                    if (!line.approved && !selecting) Box(Modifier.padding(start = 8.dp).size(28.dp).clip(CircleShape).background(ur.accentSoft).testTag("tx-approve:${line.id}")
-                        .clickable(role = Role.Button, onClickLabel = stringResource(R.string.common_approve), onClick = approve), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Outlined.Check, stringResource(R.string.common_approve), Modifier.size(16.dp), tint = ur.accent)
+                    // Approving is a labelled button under the amount, so it never reads as a second cleared mark.
+                    if (!line.approved && !selecting) Row(Modifier.padding(start = 8.dp).height(26.dp).clip(RoundedCornerShape(13.dp)).background(ur.accentSoft).testTag("tx-approve:${line.id}")
+                        .clickable(role = Role.Button, onClick = approve).padding(start = 8.dp, end = 10.dp), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Icon(Icons.Outlined.Check, null, Modifier.size(15.dp), tint = ur.accent)
+                        Text(stringResource(R.string.common_approve), color = ur.accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                     }
+                    Spacer(Modifier.width(ClearedColumn))
                 }
-                if (line.memo.isNotBlank()) Text(Money.own(line.memo), color = ur.muted, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (line.memo.isNotBlank()) Text(Money.own(line.memo), Modifier.padding(end = ClearedColumn), color = ur.muted, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            ClearedMark(line.cleared, Modifier.padding(start = 6.dp).testTag("tx-cleared:${line.id}"), onClick = if (selecting || line.cleared == "reconciled") null else toggleCleared)
         }
         Hairline(start = Gutter)
     }
 }
+
+/** The cleared mark's column at a row's end: its 28dp and the 6dp before it. Lines under the amount stop short of it. */
+private val ClearedColumn = 34.dp
 
 private fun splitName(part: JSONObject, categories: Map<String, String>) = when {
     part.optBoolean("unassigned") -> Words[R.string.category_unassigned]
@@ -522,6 +538,8 @@ private fun AccountSummaryCard(account: JSONObject, total: JSONObject?, currency
         Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
             Figure(stringResource(R.string.balance_cleared), money(total?.optLong("cleared") ?: 0, currency))
             Figure(stringResource(R.string.balance_uncleared), money(total?.optLong("uncleared") ?: 0, currency))
+            // A card with a limit: what's left of it, the limit plus the balance (negative when owed).
+            if (total != null) smsCreditLimit(account)?.let { limit -> Figure(stringResource(R.string.account_credit_left), money(limit + total.optLong("balance"), currency)) }
         }
         if (pay != null && !account.optBoolean("archived")) PrimaryButton(stringResource(R.string.card_make_payment), pay, Modifier.fillMaxWidth(), icon = Icons.Outlined.CreditCard)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

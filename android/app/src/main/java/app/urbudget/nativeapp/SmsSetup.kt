@@ -190,8 +190,11 @@ internal fun smsSetupName(candidate: SmsSetupCandidate, kind: SmsSetupKind, type
  * the review's texts ([opening], worked out from them when null), put its texts in another account
  * ([Join], [joins] an open account's id or another candidate's key), or not add them ([Skip]).
  */
-internal data class SmsSetupPlan(val action: String, val name: String = "", val type: String = "checking", val opening: Long? = null, val joins: String? = null) {
+internal data class SmsSetupPlan(val action: String, val name: String = "", val type: String = "checking", val opening: Long? = null, val joins: String? = null,
+                                  /** A card's credit limit: with it, the credit left its texts give says what's owed. */
+                                  val limit: Long? = null) {
     fun json(): JSONObject = JSONObject().put("action", action).put("name", name).put("type", type).put("opening", opening ?: JSONObject.NULL).put("joins", joins ?: JSONObject.NULL)
+        .put("limit", limit ?: JSONObject.NULL)
 
     companion object {
         const val Create = "create"
@@ -199,7 +202,8 @@ internal data class SmsSetupPlan(val action: String, val name: String = "", val 
         const val Skip = "skip"
         fun of(json: JSONObject): SmsSetupPlan? = runCatching {
             SmsSetupPlan(json.getString("action").also { require(it in setOf(Create, Join, Skip)) }, json.text("name"), json.text("type").ifBlank { "checking" },
-                if (json.isNull("opening")) null else json.getLong("opening"), json.text("joins").ifBlank { null })
+                if (json.isNull("opening")) null else json.getLong("opening"), json.text("joins").ifBlank { null },
+                json.optLong("limit").takeIf { it > 0 })
         }.getOrNull()
     }
 }
@@ -232,6 +236,23 @@ internal fun smsSetupSuggestions(candidates: List<SmsSetupCandidate>, budget: JS
             !smsSetupOwned(c, kind) -> plan.copy(action = SmsSetupPlan.Skip)
             else -> plan
         }
+    }.let { plans -> smsUniqueNames(plans, candidates.associateBy { it.key }, open.map { it.text("name") }) }
+}
+
+/**
+ * Accounts to make, each under its own name: two named alike ("ANB savings" for two sets of
+ * deposits) read as one. A name already in the budget or suggested before takes the candidate's
+ * digits, else a number.
+ */
+internal fun smsUniqueNames(plans: Map<String, SmsSetupPlan>, candidates: Map<String, SmsSetupCandidate>, existing: List<String>): Map<String, SmsSetupPlan> {
+    val taken = existing.mapTo(HashSet()) { it.trim().lowercase(Locale.ROOT) }
+    return plans.mapValues { (key, plan) ->
+        if (plan.action != SmsSetupPlan.Create) return@mapValues plan
+        val digits = candidates[key]?.ref?.let(::smsDigits)?.takeIf { it.length >= 2 }?.takeLast(4)
+        val name = sequenceOf(plan.name) + listOfNotNull(digits?.takeUnless { plan.name.endsWith(it) }?.let { "${plan.name} $it" }).asSequence() + generateSequence(2) { it + 1 }.map { "${plan.name} $it" }
+        val chosen = name.first { it.trim().lowercase(Locale.ROOT) !in taken }
+        taken += chosen.trim().lowercase(Locale.ROOT)
+        if (chosen == plan.name) plan else plan.copy(name = chosen)
     }
 }
 
@@ -263,19 +284,30 @@ internal data class SmsOpening(val balance: Long, val given: Long, val date: Str
  * balance after adding is then the bank's as of that text, even with earlier texts missing. Null
  * when no text gives a balance.
  */
-internal fun smsOpening(members: List<SmsSetupCandidate>, adds: (SmsItem) -> Boolean): SmsOpening? {
+internal fun smsOpening(members: List<SmsSetupCandidate>, adds: (SmsItem) -> Boolean, limit: Long? = null): SmsOpening? {
     val own = members.flatMap { it.items }.distinctBy { it.index }
     val via = members.flatMap { it.via }.distinctBy { it.index }
     fun at(item: SmsItem) = item.sources.minOf { it.received }
-    val (alert, given) = own.filter { it.disposition == "transaction" }.mapNotNull { item -> item.transaction?.text("balance")?.let(::smsBalanceCents)?.let { item to it } }
+    // A card with a limit: the credit left less the limit, the balance as the budget writes it (negative when owed).
+    // A card's "balance" is its credit left, as most banks text it ([smsBankFigure]).
+    fun given(t: JSONObject): Long? = if (limit != null) (smsBalanceCents(t.text("available")) ?: smsBalanceCents(t.text("balance")))?.let { it - limit }
+        else smsBalanceCents(t.text("balance"))
+    val (alert, given) = own.filter { it.disposition == "transaction" }.mapNotNull { item -> item.transaction?.let(::given)?.let { item to it } }
         .maxWithOrNull(compareBy<Pair<SmsItem, Long>> { at(it.first) }.thenBy { it.first.index }) ?: return null
     val time = at(alert)
     val net = own.filter { adds(it) && at(it) <= time }.sumOf { it.amount ?: 0L } - via.filter { adds(it) && at(it) <= time }.sumOf { it.amount ?: 0L }
     return SmsOpening(given - net, given, alert.sources.first().receivedDate)
 }
 
-/** The balance an account to make starts with: what the user entered, nothing owed on a card, else what its texts say. */
-internal fun smsSetupBalance(plan: SmsSetupPlan, opening: SmsOpening?): Long = plan.opening ?: if (AccountTypes.isLiability(plan.type)) 0L else opening?.balance ?: 0L
+/**
+ * The balance an account to make starts with: what the user entered, else what its texts say. A
+ * card's texts give the credit left, so without its limit a card starts with nothing owed.
+ */
+internal fun smsSetupBalance(plan: SmsSetupPlan, opening: SmsOpening?): Long =
+    plan.opening ?: if (AccountTypes.isLiability(plan.type) && smsPlanLimit(plan) == null) 0L else opening?.balance ?: 0L
+
+/** A plan's credit limit, when it makes a credit account: [smsOpening] reads the credit left against it. */
+internal fun smsPlanLimit(plan: SmsSetupPlan): Long? = plan.limit?.takeIf { it > 0 && AccountTypes.kindFor(plan.type) == "credit" }
 
 /** The candidates that are part of [key]'s account, itself first. */
 internal fun smsSetupMembers(key: String, candidates: List<SmsSetupCandidate>, plans: Map<String, SmsSetupPlan>): List<SmsSetupCandidate> =
@@ -288,17 +320,17 @@ internal data class SmsRemembered(val sender: String, val ref: String, val accou
  * The setup as changes: the accounts to make (records for the budget), what to remember for each
  * candidate's sender and digits (an account's id, or [SmsSkipCard]), and for one numbered afresh
  * the formats of its texts, and the transfers to an account the user doesn't track, which are
- * then spending or income. A credit card starts at nothing owed unless the user said otherwise: a
- * card's "balance" in its texts is usually the credit left.
+ * then spending or income. A credit card starts at nothing owed unless the user said otherwise or
+ * gave its limit: a card's texts usually give the credit left, which says what's owed only beside it.
  */
 internal data class SmsSetupChanges(val accounts: List<JSONObject>, val remember: List<SmsRemembered>, val spending: List<Int>)
 internal fun smsSetupChanges(candidates: List<SmsSetupCandidate>, plans: Map<String, SmsSetupPlan>, adds: (SmsItem) -> Boolean, newId: () -> String): SmsSetupChanges {
     val made = candidates.filter { plans[it.key]?.action == SmsSetupPlan.Create }.associate { it.key to newId() }
     val accounts = candidates.mapNotNull { c ->
         val plan = plans.getValue(c.key).takeIf { it.action == SmsSetupPlan.Create } ?: return@mapNotNull null
-        val opening = smsSetupBalance(plan, smsOpening(smsSetupMembers(c.key, candidates, plans), adds))
+        val opening = smsSetupBalance(plan, smsOpening(smsSetupMembers(c.key, candidates, plans), adds, smsPlanLimit(plan)))
         JSONObject().put("id", made.getValue(c.key)).put("name", plan.name.trim().ifBlank { smsSenderName(c.sender) }).put("kind", AccountTypes.kindFor(plan.type))
-            .put("openingBalance", opening).put("accountType", plan.type)
+            .put("openingBalance", opening).put("accountType", plan.type).apply { smsPlanLimit(plan)?.let { put("creditLimit", it) } }
     }
     val remember = candidates.flatMap { c ->
         val plan = plans.getValue(c.key)

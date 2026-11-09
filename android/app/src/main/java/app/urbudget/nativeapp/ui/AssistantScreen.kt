@@ -1,5 +1,7 @@
 package app.urbudget.nativeapp.ui
 
+import app.urbudget.nativeapp.BankTextsAssistant
+import app.urbudget.nativeapp.PageRequests
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -36,6 +38,14 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.urbudget.nativeapp.AssistantController
+import app.urbudget.nativeapp.AssistantPlace
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.style.TextOverflow
 import app.urbudget.nativeapp.AssistantState
 import app.urbudget.nativeapp.BudgetViewModel
 import app.urbudget.nativeapp.Money
@@ -57,7 +67,8 @@ import java.io.File
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantController = viewModel(), onClose: (() -> Unit)? = null,
-                             importing: JSONObject? = null, applyFix: ((thread: String, proposal: JSONObject) -> Unit)? = null) {
+                             importing: JSONObject? = null, applyFix: ((thread: String, proposal: JSONObject) -> Unit)? = null,
+                             place: AssistantPlace = AssistantPlace(), dragArea: Modifier = Modifier) {
     // Token updates only recompose the live reply, not history, proposal controls or composer.
     val panel = remember(controller) { controller.state.map { it.copy(streaming = "", thinking = "") }.distinctUntilChanged() }
     val state by panel.collectAsStateWithLifecycle(AssistantState())
@@ -74,6 +85,8 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
     var importFile by remember { mutableStateOf<JSONObject?>(null) }
     var report by remember { mutableStateOf<JSONObject?>(null) }
     var reportReply by remember { mutableStateOf<String?>(null) }
+    // Whether this budget reads bank texts here: the phone then answers the assistant's bank-text tools.
+    val bankTexts by produceState(false, budgetState.budgetIdentity) { value = withContext(Dispatchers.IO) { BankTextsAssistant.available(context, budgetState.budgetIdentity) } }
     var pendingExport by remember { mutableStateOf<Pair<String, ByteArray>?>(null) }
     var exportError by remember { mutableStateOf<String?>(null) }
     // A proposal card's row being given another category or amount: the proposal, and the row.
@@ -105,22 +118,23 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
             list.animateScrollToItem(list.layoutInfo.totalItemsCount - 1)
     }
 
+    // Steps in a row read as one line, the latest; the rest are a tap away.
+    val rows = remember(entries) { assistantRows(entries) }
+    val clipboard = LocalClipboardManager.current
+    fun ask(text: String) = controller.send(text, budgetState.month, selected, importing, bankTexts, place) { message = ""; selected = emptyList() }
     Column(Modifier.fillMaxSize().imePadding()) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(stringResource(R.string.assistant_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text(state.thread?.text("title").orEmpty().ifEmpty { stringResource(R.string.assistant_tagline) }, maxLines = 2, style = MaterialTheme.typography.labelSmall)
-                }
-                if (onClose != null) IconButton(onClose, Modifier.size(48.dp)) { Icon(Icons.Outlined.Close, stringResource(R.string.assistant_close)) }
+        Row(Modifier.fillMaxWidth().then(dragArea).padding(start = 20.dp, end = 4.dp, top = 2.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.assistant_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = ur.text)
+                Text(state.thread?.text("title").orEmpty().ifEmpty { stringResource(R.string.assistant_tagline) }, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall, color = ur.muted)
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                IconButton({ history = true }, Modifier.size(48.dp)) { Icon(Icons.Outlined.History, stringResource(R.string.assistant_history)) }
-                IconButton({ controller.newChat(); message = ""; selected = emptyList() }, Modifier.size(48.dp)) { Icon(Icons.Outlined.AddComment, stringResource(R.string.assistant_new)) }
-                IconButton({ settings = true }, Modifier.size(48.dp)) { Icon(Icons.Outlined.Settings, stringResource(R.string.assistant_settings)) }
-            }
+            IconButton({ history = true }) { Icon(Icons.Outlined.History, stringResource(R.string.assistant_history), tint = ur.text) }
+            IconButton({ controller.newChat(); message = ""; selected = emptyList() }) { Icon(Icons.Outlined.AddComment, stringResource(R.string.assistant_new), tint = ur.text) }
+            IconButton({ settings = true }) { Icon(Icons.Outlined.Settings, stringResource(R.string.assistant_settings), tint = ur.text) }
+            if (onClose != null) IconButton(onClose) { Icon(Icons.Outlined.Close, stringResource(R.string.assistant_close), tint = ur.text) }
         }
-        if (state.busy.isNotEmpty()) LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (state.busy.isNotEmpty()) LinearProgressIndicator(Modifier.fillMaxWidth(), color = ur.accent)
         state.notice?.let { notice ->
             Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(notice, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
@@ -129,18 +143,27 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
         }
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             if (entries.isEmpty()) item {
-                Text(stringResource(R.string.assistant_empty_title), style = MaterialTheme.typography.headlineSmall)
+                Text(stringResource(R.string.assistant_empty_title), style = MaterialTheme.typography.headlineSmall, color = ur.text)
                 Spacer(Modifier.height(8.dp))
-                Text(stringResource(R.string.assistant_empty_detail), style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.assistant_empty_detail), style = MaterialTheme.typography.bodyMedium, color = ur.text2)
                 if (state.status?.optBoolean("ready") != true) FilledTonalButton({ settings = true }, Modifier.padding(top = 12.dp)) { Text(stringResource(R.string.assistant_set_up)) }
-                else Column(Modifier.fillMaxWidth().padding(top = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    listOf(R.string.assistant_prompt_where, R.string.assistant_prompt_cover, R.string.assistant_prompt_report).map { stringResource(it) }.forEach { prompt ->
-                        OutlinedButton({ message = prompt }, Modifier.fillMaxWidth().heightIn(min = 56.dp),
-                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp)) { Text(prompt) }
+                else Column(Modifier.fillMaxWidth().padding(top = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    // Where this phone reads bank texts, those come first: what's waiting, and whether the accounts agree with the bank.
+                    val prompts = (if (bankTexts) listOf(R.string.assistant_prompt_bank_waiting, R.string.assistant_prompt_bank_balance) else emptyList()) +
+                        listOf(R.string.assistant_prompt_where, R.string.assistant_prompt_cover, R.string.assistant_prompt_report)
+                    prompts.take(4).map { stringResource(it) }.forEach { prompt ->
+                        // A prompt is a whole question: tapping it asks.
+                        Surface({ ask(prompt) }, Modifier.fillMaxWidth().testTag("assistant-prompt"), enabled = "send" !in state.busy, shape = RoundedCornerShape(16.dp), color = ur.surface2) {
+                            Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Text(prompt, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, color = ur.text)
+                                Icon(Icons.AutoMirrored.Outlined.Send, null, Modifier.size(18.dp), tint = ur.accent)
+                            }
+                        }
                     }
                 }
             }
-            itemsIndexed(entries, key = { index, _ -> "${state.threadId}:$index" }, contentType = { _, entry -> entry.text("kind") }) { _, entry ->
+            itemsIndexed(rows, key = { _, row -> "${state.threadId}:${row.first}" }, contentType = { _, row -> row.second.first().text("kind") }) { _, row ->
+                val entry = row.second.first()
                 when (entry.text("kind")) {
                     "proposal" -> entry.optJSONObject("proposal")?.let { proposal ->
                         val refinePrompt = stringResource(R.string.assistant_refine_prompt, proposal.text("title"))
@@ -157,33 +180,59 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
                             report = { controller.report(proposal.text("id")) { report = it } },
                             spreadsheet = { open -> controller.spreadsheet(proposal.text("id"), open) { if (!open) savePath(it) } },
                             revise = { controller.revise(proposal.text("id"), it) },
-                            change = { row -> changing = proposal to row })
-                    }
-                    "step" -> Text(if (entry.optBoolean("failed")) stringResource(R.string.assistant_step_failed, entry.text("text")) else "✓ " + entry.text("text"), style = MaterialTheme.typography.labelMedium,
-                        color = if (entry.optBoolean("failed")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
-                    "stopped" -> Text(stringResource(R.string.assistant_reply_stopped), style = MaterialTheme.typography.labelMedium)
-                    else -> {
-                        val user = entry.text("kind") == "user"
-                        Surface(color = if (user) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
-                            shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
-                            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text(stringResource(if (user) R.string.assistant_you else if (entry.text("kind") == "error") R.string.assistant_couldnt_finish else R.string.assistant_title), style = MaterialTheme.typography.labelMedium)
-                                SelectionContainer {
-                                    if (entry.text("kind") == "assistant") AssistantMarkdown(entry.text("text"))
-                                    else Text(entry.text("text"), color = if (entry.text("kind") == "error") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                            change = { row -> changing = proposal to row },
+                            // A bank-text card is done on the phone: Bank messages opens when it reads.
+                            applyBankTexts = proposal.optJSONObject("bankTexts")?.let { payload -> {
+                                val thread = state.threadId
+                                val id = proposal.text("id")
+                                scope.launch {
+                                    runCatching { BankTextsAssistant.apply(context.applicationContext, vm, payload) }
+                                        .onSuccess { page -> controller.imported(thread, id); page?.let { PageRequests.page.value = it; onClose?.invoke() } }
+                                        .onFailure { controller.showError(it.message) }
                                 }
-                                entry.rows("attachments").forEach { Text("📎 ${Money.own(it.text("name"))}", style = MaterialTheme.typography.labelMedium) }
-                                if (entry.text("kind") == "error") TextButton({ controller.retry(budgetState.month, importing) }, enabled = !state.running) { Text(stringResource(R.string.assistant_try_again)) }
-                                if (entry.text("kind") == "assistant") TextButton({ reportReply = entry.text("text").take(4000) }) { Text(stringResource(R.string.assistant_report_reply)) }
+                            } })
+                    }
+                    "step" -> AssistantSteps(row.second)
+                    "stopped" -> Text(stringResource(R.string.assistant_reply_stopped), style = MaterialTheme.typography.labelMedium, color = ur.muted)
+                    // The user's words on the right, as a phone's messages are.
+                    "user" -> Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Surface(color = ur.accentSoft, shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 6.dp), modifier = Modifier.widthIn(max = 320.dp)) {
+                            SelectionContainer { Text(entry.text("text"), Modifier.padding(horizontal = 14.dp, vertical = 10.dp), style = MaterialTheme.typography.bodyLarge, color = ur.text) }
+                        }
+                        entry.rows("attachments").forEach { Text("\uD83D\uDCCE ${Money.own(it.text("name"))}", style = MaterialTheme.typography.labelMedium, color = ur.muted) }
+                    }
+                    "error" -> Surface(color = ur.warningSoft, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(stringResource(R.string.assistant_couldnt_finish), style = MaterialTheme.typography.labelLarge, color = ur.warning)
+                            SelectionContainer { Text(entry.text("text"), color = ur.text) }
+                            TextButton({ controller.retry(budgetState.month, importing, bankTexts, place) }, enabled = !state.running) { Text(stringResource(R.string.assistant_try_again)) }
+                        }
+                    }
+                    // The assistant's reply as text, with copying and reporting it to hand.
+                    else -> Column(Modifier.fillMaxWidth()) {
+                        SelectionContainer { AssistantMarkdown(entry.text("text")) }
+                        Row(Modifier.offset(x = (-12).dp)) {
+                            IconButton({ clipboard.setText(AnnotatedString(entry.text("text"))) }) {
+                                Icon(Icons.Outlined.ContentCopy, stringResource(R.string.assistant_copy_reply), Modifier.size(18.dp), tint = ur.muted)
+                            }
+                            IconButton({ reportReply = entry.text("text").take(4000) }) {
+                                Icon(Icons.Outlined.OutlinedFlag, stringResource(R.string.assistant_report_reply), Modifier.size(18.dp), tint = ur.muted)
                             }
                         }
                     }
                 }
             }
             item(key = "live-reply") { AssistantLiveReply(controller, list) }
-            if (state.running) item { Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp); Text(stringResource(R.string.assistant_working), Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelMedium) } }
+            // What it's doing, while a lookup runs: the phone's search can take a few seconds.
+            if (state.running) item {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = ur.accent)
+                    Text(state.activity?.let { "$it\u2026" } ?: stringResource(R.string.assistant_working), Modifier.testTag("assistant-activity"),
+                        style = MaterialTheme.typography.labelLarge, color = ur.text2)
+                }
+            }
             else if (entries.lastOrNull()?.text("kind") == "user") item {
-                TextButton({ controller.retry(budgetState.month, importing) }, enabled = "send" !in state.busy) { Text(stringResource(R.string.assistant_continue_reply)) }
+                TextButton({ controller.retry(budgetState.month, importing, bankTexts, place) }, enabled = "send" !in state.busy) { Text(stringResource(R.string.assistant_continue_reply)) }
             }
         }
         if (state.attachments.isNotEmpty() || selected.isNotEmpty()) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -192,15 +241,24 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
                 if (selected.isNotEmpty()) InputChip(true, { contextPicker = true }, label = { Text(countText(R.plurals.assistant_selected_transactions, selected.size)) })
             }
         }
-        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                IconButton({ attach.launch(arrayOf("*/*")) }, enabled = !state.running && state.attachments.size < 5 && "attach" !in state.busy) { Icon(Icons.Outlined.AttachFile, stringResource(R.string.assistant_attach)) }
-                IconButton({ contextPicker = true }, enabled = !state.running) { Icon(Icons.Outlined.Checklist, stringResource(R.string.assistant_select_transactions)) }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // A file or transactions to go with the message, from one button.
+            Box {
+                var adding by remember { mutableStateOf(false) }
+                IconButton({ adding = true }, enabled = !state.running) { Icon(Icons.Outlined.AddCircleOutline, stringResource(R.string.assistant_add_to_message), tint = ur.text) }
+                DropdownMenu(adding, { adding = false }, containerColor = ur.surface) {
+                    DropdownMenuItem(text = { Text(stringResource(R.string.assistant_attach)) }, onClick = { adding = false; attach.launch(arrayOf("*/*")) },
+                        leadingIcon = { Icon(Icons.Outlined.AttachFile, null) }, enabled = state.attachments.size < 5 && "attach" !in state.busy)
+                    DropdownMenuItem(text = { Text(stringResource(R.string.assistant_select_transactions)) }, onClick = { adding = false; contextPicker = true },
+                        leadingIcon = { Icon(Icons.Outlined.Checklist, null) })
+                }
             }
             FilledField(message, { message = it.take(20_000) }, Modifier.weight(1f), label = { Text(stringResource(R.string.assistant_ask)) }, maxLines = 6)
-            if (state.running) IconButton(controller::stop) { Icon(Icons.Outlined.StopCircle, stringResource(R.string.assistant_stop)) }
-            else IconButton({ controller.send(message, budgetState.month, selected, importing) { message = ""; selected = emptyList() } },
-                enabled = state.status?.optBoolean("ready") == true && "send" !in state.busy && (message.isNotBlank() || state.attachments.isNotEmpty())) { Icon(Icons.AutoMirrored.Outlined.Send, stringResource(R.string.assistant_send)) }
+            if (state.running) IconButton(controller::stop) { Icon(Icons.Outlined.StopCircle, stringResource(R.string.assistant_stop), tint = ur.text) }
+            else FilledIconButton({ ask(message) }, enabled = state.status?.optBoolean("ready") == true && "send" !in state.busy && (message.isNotBlank() || state.attachments.isNotEmpty()),
+                colors = IconButtonDefaults.filledIconButtonColors(containerColor = ur.accent, contentColor = if (ur.dark) ur.bg else Color.White)) {
+                Icon(Icons.AutoMirrored.Outlined.Send, stringResource(R.string.assistant_send))
+            }
         }
     }
 
@@ -292,7 +350,7 @@ private fun AssistantLiveReply(controller: AssistantController, list: LazyListSt
 @Composable
 internal fun AssistantProposalCard(proposal: JSONObject, currency: String, busy: Boolean, canUndo: Boolean, apply: () -> Unit, undo: () -> Unit, discard: () -> Unit,
     refine: () -> Unit, reviewImport: () -> Unit, saveImport: () -> Unit, report: () -> Unit, spreadsheet: (Boolean) -> Unit, applyFix: (() -> Unit)? = null,
-    revise: ((JSONObject) -> Unit)? = null, change: ((JSONObject) -> Unit)? = null) {
+    revise: ((JSONObject) -> Unit)? = null, change: ((JSONObject) -> Unit)? = null, applyBankTexts: (() -> Unit)? = null) {
     val card = proposal.optJSONObject("card") ?: JSONObject()
     val rows = remember(card) { card.rows("rows") }
     var page by remember(proposal.text("id")) { mutableIntStateOf(0) }
@@ -306,7 +364,7 @@ internal fun AssistantProposalCard(proposal: JSONObject, currency: String, busy:
     val partial = ProposalChoices.partial(rows, choosing)
     val original: (() -> Unit)? = if (revise != null && choices != null) ({ revise(ProposalChoices.original()) }) else null
     if (status == "applied" || status == "discarded") {
-        Card(Modifier.fillMaxWidth()) {
+        Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = ur.surface2, contentColor = ur.text)) {
             Column(Modifier.padding(16.dp)) {
                 Text(stringResource(if (status == "applied") R.string.assistant_applied_title else R.string.assistant_discarded_title, proposal.text("title")), style = MaterialTheme.typography.titleSmall)
                 if (status == "applied" && canUndo) TextButton(undo, enabled = !busy) { Text(stringResource(R.string.assistant_undo_proposal)) }
@@ -314,7 +372,7 @@ internal fun AssistantProposalCard(proposal: JSONObject, currency: String, busy:
         }
         return
     }
-    Card(Modifier.fillMaxWidth()) {
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = ur.surface2, contentColor = ur.text)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(card.text("kicker"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             Text(proposal.text("title"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -352,6 +410,15 @@ internal fun AssistantProposalCard(proposal: JSONObject, currency: String, busy:
                     Row { TextButton(refine, enabled = !busy) { Text(stringResource(R.string.assistant_ask_changes)) }; TextButton(discard, enabled = !busy) { Text(stringResource(R.string.assistant_discard)) } }
                     if (original != null) TextButton(original, enabled = !busy) { Text(stringResource(R.string.assistant_use_original)) }
                 } else Text(stringResource(if (status == "applied") R.string.assistant_fix_applied else R.string.assistant_discarded), style = MaterialTheme.typography.labelMedium)
+                "bankTexts" -> if (status == "proposed") {
+                    Button(applyBankTexts ?: {}, enabled = !busy && applyBankTexts != null) {
+                        Text(stringResource(when (proposal.optJSONObject("bankTexts")?.optString("action")) {
+                            "read" -> R.string.bank_texts_apply_read; "add" -> R.string.bank_texts_apply_add
+                            "remember" -> R.string.bank_texts_apply_remember; else -> R.string.bank_texts_apply_limit
+                        }))
+                    }
+                    Row { TextButton(refine, enabled = !busy) { Text(stringResource(R.string.assistant_ask_changes)) }; TextButton(discard, enabled = !busy) { Text(stringResource(R.string.assistant_discard)) } }
+                } else Text(stringResource(if (status == "applied") R.string.assistant_applied else R.string.assistant_discarded), style = MaterialTheme.typography.labelMedium)
                 "report" -> Button(report, enabled = !busy) { Text(stringResource(R.string.assistant_read_report)) }
                 "import" -> { Button(reviewImport, enabled = !busy) { Text(countText(R.plurals.assistant_review_import_rows, proposal.optInt("rows"))) }; TextButton(saveImport) { Text(stringResource(R.string.assistant_export_csv)) } }
                 "spreadsheet" -> { Button({ spreadsheet(true) }, enabled = !busy) { Text(stringResource(R.string.assistant_open_spreadsheet)) }; TextButton({ spreadsheet(false) }) { Text(stringResource(R.string.assistant_export_excel)) } }
@@ -488,5 +555,36 @@ private fun AssistantReplyReportDialog(initial: String, controller: AssistantCon
         Text(stringResource(R.string.assistant_report_note))
         Field(text, { text = it.take(4000) }, stringResource(R.string.assistant_excerpt), lines = 8)
         Field(reason, { reason = it.take(1000) }, stringResource(R.string.assistant_what_went_wrong), lines = 4)
+    }
+}
+
+/** The conversation as the panel lists it: steps in a row together, everything else on its own, each with its first index. */
+internal fun assistantRows(entries: List<JSONObject>): List<Pair<Int, List<JSONObject>>> {
+    val rows = mutableListOf<Pair<Int, MutableList<JSONObject>>>()
+    entries.forEachIndexed { index, entry ->
+        val last = rows.lastOrNull()
+        if (entry.text("kind") == "step" && last != null && last.second.first().text("kind") == "step") last.second += entry
+        else rows += index to mutableListOf(entry)
+    }
+    return rows
+}
+
+/** Lookups in a row: the latest and any that failed, with the rest a tap away. */
+@Composable
+private fun AssistantSteps(steps: List<JSONObject>) {
+    var open by remember(steps.size) { mutableStateOf(false) }
+    val shown = if (open) steps else steps.filterIndexed { i, step -> i == steps.lastIndex || step.optBoolean("failed") }
+    Column(Modifier.fillMaxWidth().testTag("assistant-steps"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        shown.forEach { step ->
+            val failed = step.optBoolean("failed")
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(if (failed) Icons.Outlined.ErrorOutline else Icons.Outlined.Check, null, Modifier.size(16.dp), tint = if (failed) ur.warning else ur.muted)
+                Text(if (failed) stringResource(R.string.assistant_step_failed, step.text("text")) else step.text("text"), style = MaterialTheme.typography.labelLarge,
+                    color = if (failed) ur.warning else ur.text2)
+            }
+        }
+        if (open || steps.size > shown.size) Text(if (open) stringResource(R.string.assistant_steps_fewer) else countText(R.plurals.assistant_steps_more, steps.size - shown.size),
+            Modifier.padding(start = 22.dp, top = 2.dp).clickable(role = Role.Button) { open = !open }.testTag("assistant-steps-toggle"),
+            style = MaterialTheme.typography.labelLarge, color = ur.accent)
     }
 }

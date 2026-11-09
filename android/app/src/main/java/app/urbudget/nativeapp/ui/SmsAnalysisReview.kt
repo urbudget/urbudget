@@ -52,7 +52,7 @@ import kotlin.coroutines.resumeWithException
  */
 @Composable
 internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch, mappings: JSONArray, close: () -> Unit, change: ((SmsBatch) -> SmsBatch) -> Unit,
-                       saveCards: (JSONArray) -> Unit, finish: (List<String>, SmsBatch?) -> Unit, again: (String) -> Unit, discard: () -> Unit,
+                       saveCards: (JSONArray) -> Unit, finish: (List<String>, SmsBatch?, Map<String, JSONObject>) -> Unit, again: (String) -> Unit, discard: () -> Unit,
                        edited: (SmsItem, Set<String>, String, String?) -> Unit = { _, _, _, _ -> }, accuracy: Map<String, Int> = emptyMap()) {
     val state by vm.state.collectAsStateWithLifecycle()
     val toast = LocalToast.current
@@ -131,11 +131,13 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
         val handled = settled.flatMap { item -> item.sources.map { it.id } }
         // What still waits on a choice stays in the review as it was read, not read again.
         val rest = batch.only(items.filter { it !in settled }.map { it.index })
-        if (adding.isEmpty()) { finish(handled, rest); return }
+        // What became of each text, kept once it leaves Bank messages: for the assistant, and the bank's balances.
+        val outcomes = smsOutcomes(settled, adding, batch.dismissed)
+        if (adding.isEmpty()) { finish(handled, rest, outcomes); return }
         saving = true
         val choices = smsDecisions(adding)
         val count = adding.count { it.second == "new" }.toLong()
-        vm.runCommand("smsBatchApply", batch.params(resolved).put("decisions", choices)) { if (count > 0) toast(Words.count(R.plurals.sms_added, count), false); finish(handled, rest) }
+        vm.runCommand("smsBatchApply", batch.params(resolved).put("decisions", choices)) { if (count > 0) toast(Words.count(R.plurals.sms_added, count), false); finish(handled, rest, outcomes) }
     }
     /** An account made for these texts: its balance is from before them, so none is held back as already in it. */
     fun made(account: String) = change { it.copy(fresh = it.fresh + account) }
@@ -248,7 +250,7 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
         // The decision stays in reach: what this adds, what it does to each balance, and what else it settles.
         Column(Modifier.fillMaxWidth().background(ur.bg).navigationBarsPadding().padding(horizontal = Gutter, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             val changes = smsBalanceChanges(items, adding)
-            if (changes.isNotEmpty()) SmsBalances(changes, budget, state.summary)
+            if (changes.isNotEmpty()) SmsBalances(changes, budget, state.summary) { account, now -> smsBankCheck(account, budget, now, items, adding, ::ticked) }
             val matching = adding.count { it.second.startsWith("match:") }
             val caption = listOfNotNull(
                 if (undecided > 0) countText(R.plurals.sms_undecided, undecided) else null,
@@ -282,15 +284,16 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
     creating?.let { request -> SmsNewAccountDialog(request, budget, vm) { creating = null } }
     settingUp?.let { key -> candidates.firstOrNull { it.key == key } }?.let { c ->
         val plan = plans.getValue(c.key)
-        SmsSetupDialog(plan, smsSetupBalance(plan, smsOpening(smsSetupMembers(c.key, candidates, plans), ::ticked)), currency, { settingUp = null }) { answer ->
+        SmsSetupDialog(plan, smsSetupBalance(plan, smsOpening(smsSetupMembers(c.key, candidates, plans), ::ticked, smsPlanLimit(plan))), currency, { settingUp = null }) { answer ->
             change { it.copy(setup = it.setup + (c.key to answer)) }
         }
     }
     editing?.let { index -> items.firstOrNull { it.index == index } }?.let { item ->
         TransactionDialog(smsEditable(item, currency), budget, "", vm, close = { editing = null }, dialogTitle = stringResource(R.string.sms_check_title), saveOverride = { record ->
-            change { smsEdited(it, item, record, budget) }
-            // A row a template read, changed by the user: counted against the template, and its payee learned.
             val (fields, category) = smsChanged(item, record)
+            // The other rows with the bank's name for this payee get the user's name and category for it too.
+            change { smsSameName(smsEdited(it, item, record, budget), item, fields, record.text("payee"), category) }
+            // Counted against the template that read it, if one did, and its payee learned for the next texts.
             if (fields.isNotEmpty()) edited(item, fields, record.text("payee"), category)
             // Money to or from a person the user made a transfer: the bank's name for their own account at another bank.
             smsOwnName(item, record)?.let { name -> runCatching { saveCards(smsRememberCard(mappings, item.sender, name, record.text("transferAccountId"), SmsForOwn)) } }
@@ -316,7 +319,7 @@ private fun Set<Int>.toggle(value: Int) = if (value in this) this - value else t
  * below zero from zero or more is in the warning colour.
  */
 @Composable
-private fun SmsBalances(changes: Map<String, Long>, budget: JSONObject, summary: JSONObject?) {
+private fun SmsBalances(changes: Map<String, Long>, budget: JSONObject, summary: JSONObject?, bank: (String, Long) -> SmsBankCheck? = { _, _ -> null }) {
     val currency = budget.text("currency")
     val now = remember(summary) { summary?.rows("accounts")?.associate { it.text("id") to it.optLong("balance") }.orEmpty() }
     Column(Modifier.fillMaxWidth().testTag("sms-balances"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -329,6 +332,17 @@ private fun SmsBalances(changes: Map<String, Long>, budget: JSONObject, summary:
                     color = ur.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(stringResource(R.string.sms_balance_change, money(before, currency), money(after, currency)), style = MaterialTheme.typography.bodySmall.merge(Tabular),
                     fontWeight = FontWeight.SemiBold, color = if (after < 0 && before >= 0) ur.warning else ur.text, maxLines = 1)
+            }
+            // The bank's own figure, from the latest text in the review that gives one, against the budget at that text.
+            bank(account, before)?.let { check ->
+                val figure = money(check.bank, currency)
+                val day = Money.date(check.date)
+                val (words, tone) = when {
+                    check.difference == 0L -> stringResource(R.string.sms_bank_matches, figure, day) to ur.positive
+                    check.held != 0L && check.difference == check.held -> stringResource(R.string.sms_bank_held, figure, day, money(kotlin.math.abs(check.held), currency)) to ur.muted
+                    else -> stringResource(R.string.sms_bank_differs, figure, day, money(kotlin.math.abs(check.difference), currency)) to ur.warning
+                }
+                Text(words, Modifier.fillMaxWidth().testTag("sms-bank-check:$account"), style = MaterialTheme.typography.bodySmall, color = tone, maxLines = 2)
             }
         }
         if (changes.size > 3) Text(countText(R.plurals.sms_balance_more, changes.size - 3), style = MaterialTheme.typography.bodySmall, color = ur.muted)
@@ -735,6 +749,55 @@ internal fun smsChanged(item: SmsItem, record: JSONObject): Pair<Set<String>, St
         if (!transfer && record.text("payee") != t.text("payee")) add("payee")
         if (!transfer && category != t.text("categoryId").ifBlank { null }) add("category")
     } to category
+}
+
+/**
+ * A bank's name as it's compared with another: as payee rules read it, without the words that are
+ * only numbers (a branch, a terminal), as the core's `bank_key` does.
+ */
+internal fun smsBankKey(name: String): String {
+    val all = PayeeRules.normalize(name)
+    val words = all.split(' ').filter { w -> w.isNotEmpty() && !w.all { it.isDigit() } }
+    return if (words.isEmpty()) all else words.joinToString(" ")
+}
+
+/**
+ * The review after the user renamed [item]'s payee or changed its category ([fields]): the other
+ * rows from its sender with the same bank's name ([SmsItem.raw], or the same payee when none is
+ * known) get the same, unless the user gave one of them a name of its own. A transfer is left.
+ */
+internal fun smsSameName(batch: SmsBatch, item: SmsItem, fields: Set<String>, payee: String, category: String?): SmsBatch {
+    val before = item.transaction ?: return batch
+    if ("payee" !in fields && "category" !in fields) return batch
+    val raw = item.raw?.let(::smsBankKey)?.ifEmpty { null }
+    val name = smsBankKey(before.text("payee"))
+    val sender = smsSenderKey(item.sender)
+    val senders = batch.messages.associate { it.id to smsSenderKey(it.sender) }
+    val items = batch.analysis.rows("items")
+    var next = batch
+    items.forEachIndexed { index, other ->
+        if (index == item.index) return@forEachIndexed
+        val t = other.optJSONObject("transaction") ?: return@forEachIndexed
+        if (t.text("kind") == "transfer" || t.text("transferAccountId").isNotBlank()) return@forEachIndexed
+        val ids = other.optJSONArray("sourceIds") ?: return@forEachIndexed
+        if ((0 until ids.length()).none { senders[ids.getString(it)] == sender }) return@forEachIndexed
+        val theirs = other.text("raw").ifBlank { null }?.let(::smsBankKey)
+        val same = if (raw != null && theirs != null) theirs == raw else name.isNotEmpty() && smsBankKey(t.text("payee")) == name
+        // Still the bank's name, or what this row had before the user changed it: not a name of its own.
+        val shown = smsBankKey(t.text("payee"))
+        if (!same || (shown != name && shown != theirs)) return@forEachIndexed
+        next = next.edit(index) { json ->
+            val tx = json.getJSONObject("transaction")
+            if ("payee" in fields) {
+                val old = tx.text("payee")
+                tx.put("payee", payee)
+                if (old.length >= 3 && json.text("note").contains(old)) json.put("note", json.text("note").replace(old, payee))
+            }
+            if ("category" in fields && tx.text("categoryId") == before.text("categoryId")) tx.put("categoryId", category ?: JSONObject.NULL)
+            json.optJSONArray("unsure")?.let { list -> json.put("unsure", JSONArray((0 until list.length()).map { list.getString(it) }.filter { it !in setOf("payee", "category") || it !in fields })) }
+        }
+    }
+    return next
 }
 
 /**

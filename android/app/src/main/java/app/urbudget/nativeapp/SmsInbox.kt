@@ -56,6 +56,8 @@ internal fun smsDrifting(known: List<Boolean>): Boolean {
     return last.count { !it } > 5 && before.count { !it } <= 1
 }
 internal data class SmsSender(val address: String, val count: Int, val preview: String?)
+/** A text as a budget has it: [done] once a review settled it, and what became of it then ([SmsOutcome]). */
+internal data class SmsRecord(val done: Boolean, val outcome: JSONObject?)
 /**
  * What the phone holds from one chosen sender since collecting starts, and what UrBudget collected:
  * texts as SMS, texts as MMS (a phone moved from an iPhone keeps its history that way), MMS it can't
@@ -64,7 +66,7 @@ internal data class SmsSender(val address: String, val count: Int, val preview: 
 internal data class SmsCoverage(val sender: String, val sms: Int, val mms: Int, val unreadable: Int, val first: Long?, val latest: Long?, val collected: Int)
 
 /** Separate from the budget database: capture cannot change the ledger or require the Rust engine. */
-internal class SmsInbox private constructor(private val context: Context) : SQLiteOpenHelper(context, "sms-inbox.sqlite3", null, 4) {
+internal class SmsInbox private constructor(private val context: Context) : SQLiteOpenHelper(context, "sms-inbox.sqlite3", null, 6) {
     override fun onConfigure(db: SQLiteDatabase) { db.rawQuery("PRAGMA secure_delete=ON", null).use { it.moveToFirst() } }
 
     // A review can hold a phone's whole history, more than SQLite hands back in one value, so it's
@@ -80,7 +82,7 @@ internal class SmsInbox private constructor(private val context: Context) : SQLi
     }
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE sources (budget TEXT NOT NULL, sender TEXT NOT NULL, sender_key TEXT NOT NULL, since INTEGER NOT NULL, PRIMARY KEY(budget,sender_key))")
-        db.execSQL("CREATE TABLE messages (budget TEXT NOT NULL, id TEXT NOT NULL, sender TEXT NOT NULL, received INTEGER NOT NULL, body TEXT NOT NULL, done INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(budget,id))")
+        db.execSQL("CREATE TABLE messages (budget TEXT NOT NULL, id TEXT NOT NULL, sender TEXT NOT NULL, received INTEGER NOT NULL, body TEXT NOT NULL, done INTEGER NOT NULL DEFAULT 0, outcome TEXT, PRIMARY KEY(budget,id))")
         db.execSQL("CREATE INDEX inbox_pending ON messages(budget,done,received)")
         createAnalysis(db)
         createTemplates(db)
@@ -94,10 +96,10 @@ internal class SmsInbox private constructor(private val context: Context) : SQLi
         db.execSQL("CREATE TABLE sms_templates (budget TEXT NOT NULL, id TEXT NOT NULL, sender_key TEXT NOT NULL, body TEXT NOT NULL, example TEXT NOT NULL, " +
             "state TEXT NOT NULL, stats TEXT NOT NULL, first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL, PRIMARY KEY(budget,id))")
     }
-    /** The bank's names for payees, per budget and sender, to the user's payee and category. */
+    /** The bank's names for payees, per budget and sender, to the user's payee and category; mine when the user chose it. */
     private fun createPayees(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE sms_payees (budget TEXT NOT NULL, sender_key TEXT NOT NULL, raw_key TEXT NOT NULL, raw TEXT NOT NULL, payee TEXT NOT NULL, " +
-            "category_id TEXT, seen INTEGER NOT NULL, PRIMARY KEY(budget,sender_key,raw_key))")
+            "category_id TEXT, seen INTEGER NOT NULL, mine INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(budget,sender_key,raw_key))")
     }
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) createAnalysis(db)
@@ -106,10 +108,15 @@ internal class SmsInbox private constructor(private val context: Context) : SQLi
             createPayees(db)
             // Payees learned before the table were a list in sms_state.
             db.query("sms_state", arrayOf("budget", "value"), "name='payees'", null, null, null, null).use { c ->
-                while (c.moveToNext()) runCatching { mergePayees(db, c.getString(0), JSONArray(c.getString(1)), System.currentTimeMillis()) }
+                while (c.moveToNext()) runCatching { mergePayees(db, c.getString(0), JSONArray(c.getString(1)), System.currentTimeMillis(), mine = false) }
             }
             db.delete("sms_state", "name='payees'", null)
         }
+        // What became of each text a review settled ([SmsOutcome]), kept once its body is gone.
+        if (oldVersion < 5) db.execSQL("ALTER TABLE messages ADD COLUMN outcome TEXT")
+        // Which learned payees the user chose, which the assistant's reading never replaces. A table
+        // made before version 4 is made with it.
+        if (oldVersion in 4..5) db.execSQL("ALTER TABLE sms_payees ADD COLUMN mine INTEGER NOT NULL DEFAULT 0")
     }
     /** A small saved value for a budget; "draft" is its review, kept in a file (one saved here before then is still read). */
     fun state(budget: String, name: String): String? {
@@ -227,6 +234,38 @@ internal class SmsInbox private constructor(private val context: Context) : SQLi
         } finally { db.endTransaction() }
     }
 
+    /** These texts as this budget has them: whether each is done, and what became of it ([SmsOutcome]). Texts never collected are missing. */
+    fun records(budget: String, ids: Collection<String>): Map<String, SmsRecord> = ids.distinct().chunked(500).flatMap { group ->
+        readableDatabase.query("messages", arrayOf("id", "done", "outcome"), "budget=? AND id IN (${group.joinToString(",") { "?" }})",
+            arrayOf(budget, *group.toTypedArray()), null, null, null).use { c ->
+            buildList { while (c.moveToNext()) add(c.getString(0) to SmsRecord(c.getInt(1) == 1, c.getString(2)?.let { runCatching { JSONObject(it) }.getOrNull() })) }
+        }
+    }.toMap()
+
+    /**
+     * Texts the assistant found, back in Bank messages to be read: from this budget's chosen senders
+     * only, whatever day they came, collected afresh or waiting again when a review finished them.
+     * Returns how many now wait.
+     */
+    fun bring(budget: String, texts: List<BankSms>): Int {
+        val keys = sources(budget).map { smsSenderKey(it.sender) }.toSet()
+        val db = writableDatabase
+        var waiting = 0
+        db.beginTransaction()
+        try {
+            texts.filter { smsSenderKey(it.sender) in keys && it.body.isNotBlank() && it.body.length <= 16_384 }.forEach { text ->
+                if (insert(db, budget, text)) waiting++
+                else waiting += db.update("messages", ContentValues().apply { put("done", 0); put("body", text.body); putNull("outcome") }, "budget=? AND id=?", arrayOf(budget, text.id))
+            }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+        return waiting
+    }
+
+    /** When the first and last waiting texts came, or null when none wait. */
+    fun waitingRange(budget: String): Pair<Long, Long>? = readableDatabase.rawQuery("SELECT MIN(received), MAX(received) FROM messages WHERE budget=? AND done=0", arrayOf(budget))
+        .use { if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) to it.getLong(1) else null }
+
     fun pendingCount(budget: String): Int = readableDatabase.rawQuery("SELECT COUNT(*) FROM messages WHERE budget=? AND done=0", arrayOf(budget)).use { it.moveToFirst(); it.getInt(0) }
 
     /** When the newest text this budget finished with (added, matched, cleared or dismissed) came: where collecting has caught up to. */
@@ -245,11 +284,13 @@ internal class SmsInbox private constructor(private val context: Context) : SQLi
      * Only called after a successful import or an explicit dismissal. Erase raw text at that point.
      * A finished review ends with it; dismissing messages that wait outside it ([endReview] false) doesn't.
      */
-    fun finish(budget: String, ids: List<String>, endReview: Boolean = true) {
+    fun finish(budget: String, ids: List<String>, endReview: Boolean = true, outcomes: Map<String, JSONObject> = emptyMap()) {
         val db = writableDatabase
         db.beginTransaction()
         try {
-            ids.forEach { id -> db.update("messages", ContentValues().apply { put("done", 1); put("body", "") }, "budget=? AND id=?", arrayOf(budget, id)) }
+            ids.forEach { id ->
+                db.update("messages", ContentValues().apply { put("done", 1); put("body", ""); outcomes[id]?.let { put("outcome", it.toString()) } }, "budget=? AND id=?", arrayOf(budget, id))
+            }
             if (endReview) saveState(budget, "draft", null)
             db.setTransactionSuccessful()
         } finally { db.endTransaction() }
@@ -299,9 +340,9 @@ internal class SmsInbox private constructor(private val context: Context) : SQLi
     }
 
     /** Payees as the bank writes them, to the user's (the core's `Payee`). */
-    fun payees(budget: String): JSONArray = readableDatabase.query("sms_payees", arrayOf("sender_key", "raw", "payee", "category_id"), "budget=?", arrayOf(budget), null, null, "seen DESC").use { c ->
+    fun payees(budget: String): JSONArray = readableDatabase.query("sms_payees", arrayOf("sender_key", "raw", "payee", "category_id", "mine"), "budget=?", arrayOf(budget), null, null, "seen DESC").use { c ->
         JSONArray().also { list -> while (c.moveToNext()) list.put(JSONObject().put("sender", c.getString(0)).put("raw", c.getString(1)).put("payee", c.getString(2))
-            .put("categoryId", c.getString(3) ?: JSONObject.NULL)) }
+            .put("categoryId", c.getString(3) ?: JSONObject.NULL).put("mine", c.getInt(4) == 1)) }
     }
 
     /**
@@ -351,7 +392,7 @@ internal class SmsInbox private constructor(private val context: Context) : SQLi
             // Formats unused for half a year have been replaced by the bank.
             db.update("sms_templates", ContentValues().apply { put("state", "retired") }, "budget=? AND state!='retired' AND last_seen<?",
                 arrayOf(budget, (now - 180L * 86_400_000L).toString()))
-            learning.optJSONArray("payees")?.takeIf { it.length() > 0 }?.let { mergePayees(db, budget, it, now) }
+            learning.optJSONArray("payees")?.takeIf { it.length() > 0 }?.let { mergePayees(db, budget, it, now, mine = false) }
             learning.optJSONObject("senders")?.let { senders -> track(budget, senders) }
             db.setTransactionSuccessful()
         } finally { db.endTransaction() }
@@ -383,18 +424,28 @@ internal class SmsInbox private constructor(private val context: Context) : SQLi
         settle(writableDatabase, budget, template, now)
     }
 
-    /** The user's payee for a name the bank writes: the next text a template reads with it gets the user's. */
+    /** The user's payee for a name the bank writes: every next text with it gets the user's, whoever reads it. */
     fun learnPayee(budget: String, sender: String, raw: String, payee: String, categoryId: String?) = mergePayees(writableDatabase, budget,
-        JSONArray().put(JSONObject().put("sender", sender).put("raw", raw).put("payee", payee).put("categoryId", categoryId ?: JSONObject.NULL)), System.currentTimeMillis())
+        JSONArray().put(JSONObject().put("sender", sender).put("raw", raw).put("payee", payee).put("categoryId", categoryId ?: JSONObject.NULL)), System.currentTimeMillis(), mine = true)
 
-    private fun mergePayees(db: SQLiteDatabase, budget: String, more: JSONArray, now: Long) {
+    /**
+     * Payees for the bank's names: the user's ([mine]) replace what was there; the assistant's
+     * readings replace only its own earlier ones, so a name the user chose stays theirs.
+     */
+    private fun mergePayees(db: SQLiteDatabase, budget: String, more: JSONArray, now: Long, mine: Boolean) {
         for (i in 0 until more.length()) {
             val p = more.getJSONObject(i)
-            db.insertWithOnConflict("sms_payees", null, ContentValues().apply {
-                put("budget", budget); put("sender_key", p.getString("sender")); put("raw_key", p.getString("raw").trim().replace(Regex("\\s+"), " ").lowercase())
+            val key = arrayOf(budget, p.getString("sender"), p.getString("raw").trim().replace(Regex("\\s+"), " ").lowercase())
+            val values = ContentValues().apply {
+                put("budget", key[0]); put("sender_key", key[1]); put("raw_key", key[2])
                 put("raw", p.getString("raw")); put("payee", p.getString("payee")); put("category_id", p.optString("categoryId").takeUnless { p.isNull("categoryId") || it.isBlank() })
-                put("seen", now + i)
-            }, SQLiteDatabase.CONFLICT_REPLACE)
+                put("seen", now + i); put("mine", if (mine) 1 else 0)
+            }
+            if (mine) db.insertWithOnConflict("sms_payees", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+            // The user's name for it stands: the assistant only saw it again.
+            else if (db.update("sms_payees", values, "budget=? AND sender_key=? AND raw_key=? AND mine=0", key) == 0 &&
+                db.insertWithOnConflict("sms_payees", null, values, SQLiteDatabase.CONFLICT_IGNORE) == -1L)
+                db.update("sms_payees", ContentValues().apply { put("seen", now + i) }, "budget=? AND sender_key=? AND raw_key=?", key)
         }
         // The most recent 2,000 are plenty for a bank's merchants.
         db.execSQL("DELETE FROM sms_payees WHERE budget=? AND rowid NOT IN (SELECT rowid FROM sms_payees WHERE budget=? ORDER BY seen DESC LIMIT 2000)", arrayOf(budget, budget))
@@ -530,16 +581,18 @@ internal object SmsReader {
     }
 
     /**
-     * Received MMS in these conversations from [since], oldest first: who sent it, when it came and
-     * was sent, and its text, or null when it carries more than text. Dates here are in seconds.
+     * Received MMS in these conversations from [since] until before [until], oldest first: who sent
+     * it, when it came and was sent, and its text, or null when it carries more than text. Dates
+     * here are in seconds.
      */
-    private fun mms(context: Context, threads: Map<Long, String>, since: Long, each: (String, Long, Long, String?) -> Unit) {
+    private fun mms(context: Context, threads: Map<Long, String>, since: Long, until: Long = Long.MAX_VALUE, each: (String, Long, Long, String?) -> Unit) {
         val resolver = context.contentResolver
         threads.keys.toList().chunked(400).forEach { group ->
             val heads = buildList {
                 resolver.query(Telephony.Mms.CONTENT_URI, arrayOf("_id", "thread_id", "date", "date_sent"),
-                    "thread_id IN (${group.joinToString(",") { "?" }}) AND msg_box=? AND date>=?",
-                    (group.map(Long::toString) + Telephony.Mms.MESSAGE_BOX_INBOX.toString() + (since / 1000).toString()).toTypedArray(), "date ASC")?.use { c ->
+                    "thread_id IN (${group.joinToString(",") { "?" }}) AND msg_box=? AND date>=? AND date<?",
+                    (group.map(Long::toString) + Telephony.Mms.MESSAGE_BOX_INBOX.toString() + (since / 1000).toString() +
+                        (if (until == Long.MAX_VALUE) until else (until + 999) / 1000).toString()).toTypedArray(), "date ASC")?.use { c ->
                     while (c.moveToNext()) add(longArrayOf(c.getLong(0), c.getLong(1), c.getLong(2), c.getLong(3)))
                 }
             }
@@ -581,6 +634,40 @@ internal object SmsReader {
             }
         }
         return total
+    }
+
+    /**
+     * The chosen senders' texts on the phone received from [from] until before [until], SMS and
+     * text-only MMS, newest first, without collecting them: what the assistant searches. Only the
+     * senders chosen for [budget] (or [sender] among them), never another's.
+     */
+    fun search(context: Context, budget: String, from: Long, until: Long, sender: String? = null): List<BankSms> {
+        check(canRead(context)) { context.getString(R.string.sms_permission_needed) }
+        val sources = SmsInbox.get(context).sources(budget).filter { sender == null || smsSenderKey(it.sender) == smsSenderKey(sender) }
+        if (sources.isEmpty()) return emptyList()
+        val keys = sources.map { smsSenderKey(it.sender) }.toSet()
+        val found = mutableListOf<BankSms>()
+        val distinct = hashSetOf<String>()
+        val matching = (addresses(context).filter { smsSenderKey(it) in keys } + sources.map { it.sender }).distinct()
+        matching.chunked(400).forEach { group ->
+            context.contentResolver.query(Telephony.Sms.Inbox.CONTENT_URI, arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.DATE, Telephony.Sms.DATE_SENT, Telephony.Sms.BODY),
+                "address IN (${group.joinToString(",") { "?" }}) AND date>=? AND date<?", (group + from.toString() + until.toString()).toTypedArray(), "date DESC")
+                ?.use { c ->
+                    while (c.moveToNext()) {
+                        val address = c.getString(0) ?: continue
+                        val received = c.getLong(1)
+                        val sent = c.getLong(2).takeIf { it > 0 } ?: received
+                        val body = c.getString(3) ?: continue
+                        BankSms(smsId(address, sent, body), address, received, body).let { if (distinct.add(it.id)) found += it }
+                    }
+                } ?: error(context.getString(R.string.sms_read_failed))
+        }
+        runCatching {
+            mms(context, mmsThreads(context) { smsSenderKey(it) in keys }, from, until) { address, received, sent, text ->
+                if (text != null && received in from until until) BankSms(smsId(address, sent, text), address, received, text).let { if (distinct.add(it.id)) found += it }
+            }
+        }
+        return found.sortedByDescending { it.received }
     }
 
     /**

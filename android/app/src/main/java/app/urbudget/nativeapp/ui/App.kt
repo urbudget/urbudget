@@ -1,5 +1,6 @@
 package app.urbudget.nativeapp.ui
 
+import app.urbudget.nativeapp.BankTextsAssistant
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -37,7 +38,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import app.urbudget.nativeapp.AccountTypes
 import app.urbudget.nativeapp.AssistantController
+import app.urbudget.nativeapp.AssistantPlace
 import app.urbudget.nativeapp.BudgetViewModel
 import app.urbudget.nativeapp.NativePreferences
 import app.urbudget.nativeapp.NativeServices
@@ -85,7 +88,6 @@ private val tabs = listOf(R.string.tab_budget to Icons.Outlined.GridView, R.stri
 internal data class MorePage(val key: String, val title: Int, val detail: Int, val icon: ImageVector)
 internal val morePages = listOf(
     MorePage("Scheduled", R.string.page_scheduled, R.string.page_scheduled_detail, Icons.Outlined.EventRepeat),
-    MorePage("Loan planner", R.string.page_loans, R.string.page_loans_detail, Icons.Outlined.Calculate),
     MorePage("Payees & rules", R.string.page_payees, R.string.page_payees_detail, Icons.Outlined.People),
     MorePage("Bank connections", R.string.page_banks, R.string.page_banks_detail, Icons.Outlined.AccountBalance),
     MorePage("Bank messages", R.string.sms_title, R.string.sms_detail, Icons.Outlined.Sms),
@@ -114,6 +116,20 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     var drawer by remember { mutableStateOf(false) }
     var assistant by rememberSaveable { mutableStateOf(false) }
     val assistantController: AssistantController = viewModel()
+    // Another budget has its own conversations; one opened clears an error from before it was.
+    LaunchedEffect(state.budgetIdentity) { state.budgetIdentity?.let(assistantController::budgetOpened) }
+    // The assistant's bank-text questions (services assistant/phone.rs), answered here while the app is open.
+    val appContext = LocalContext.current.applicationContext
+    LaunchedEffect(vm) {
+        NativeServices.events.collect { envelope ->
+            if (envelope.optString("event") != "assistant://phone") return@collect
+            val request = envelope.optJSONObject("payload") ?: return@collect
+            launch {
+                val answer = BankTextsAssistant.answer(appContext, vm, request)
+                runCatching { withContext(Dispatchers.IO) { NativeServices.call("assistant_phone_reply", JSONObject().put("requestId", request.optString("requestId")).put("answer", answer)) } }
+            }
+        }
+    }
     var editor by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableStateOf<JSONObject?>(null) }
     // A bank file being imported: kept while the assistant is open over it, to fix its lines.
@@ -192,6 +208,17 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
         tab = index; morePage = ""; parentPage = ""; accountFilter = ""; categoryFilter = ""; rangeFrom = ""; rangeThrough = ""; rangeSearch = ""; returnTab = -1
         dockHidden = false; addExpanded = true
     }
+    // Where the user is, for the assistant: the page, and the account or category a register shows.
+    val assistantPlace = when {
+        tab == 4 && morePage.isNotEmpty() -> AssistantPlace(when (morePage) {
+            "Bank messages" -> "bankMessages"; "Bank connections" -> "bankConnections"; "Scheduled" -> "scheduled"
+            "Payees & rules" -> "payees"; "Settings & data" -> "settings"; else -> morePage
+        })
+        tab == 1 -> AssistantPlace("transactions", accountFilter.ifBlank { null }, categoryFilter.ifBlank { null })
+        tab == 2 -> AssistantPlace("accounts")
+        tab == 3 -> AssistantPlace("reports")
+        else -> AssistantPlace("budget")
+    }
     fun openPage(page: String) {
         drawer = false
         if (page == "Assistant") { assistant = true; return }
@@ -215,6 +242,38 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     fun closeRegister() {
         val back = returnTab
         categoryFilter = ""; accountFilter = ""; rangeFrom = ""; rangeThrough = ""; rangeSearch = ""; returnTab = -1; tab = back
+    }
+    // A loan's actions, from its register, its payment category and its account menu (Planning.tsx's
+    // LoanActions). Without details saved, each opens the account form at them.
+    val loanActions = remember(vm) {
+        fun terms(id: String) = vm.state.value.budget?.rows("loans")?.firstOrNull { it.text("accountId") == id }
+        fun open(kind: String, account: JSONObject) { selected = account; editor = kind }
+        LoanActions(
+            record = { account -> open(if (terms(account.text("id")) != null) "loanPayment" else "loanDetails", account) },
+            plan = { account ->
+                val id = account.text("id")
+                val balance = vm.state.value.summary?.rows("accounts")?.firstOrNull { it.text("id") == id }?.optLong("balance") ?: account.optLong("openingBalance")
+                // Nothing to plan without details, or once it's paid off.
+                if (terms(id) == null || balance >= 0) open("loanDetails", account)
+                else {
+                    // The planner opens over the loan's register; Back returns to where it was opened from.
+                    if (tab != 1 || accountFilter != id || categoryFilter.isNotEmpty()) openRegister(RegisterTarget(account = id), tab)
+                    open("loanPlanner", account)
+                }
+            },
+            details = { account -> open("loanDetails", account) })
+    }
+    // The old Loan planner page, which a restored session may still be on: loans are on their
+    // accounts now, so it opens the first loan's register (one with details first), as the desktop does.
+    LaunchedEffect(morePage, state.budget) {
+        val budget = state.budget ?: return@LaunchedEffect
+        if (morePage != "Loan planner") return@LaunchedEffect
+        val open = budget.rows("accounts").filter { !it.optBoolean("archived") }
+        val saved = budget.rows("loans").map { it.text("accountId") }.toSet()
+        val balances = state.summary?.rows("accounts")?.associate { it.text("id") to it.optLong("balance") }.orEmpty()
+        val loan = open.firstOrNull { it.text("id") in saved } ?: open.firstOrNull { AccountTypes.hasLoan(it, balances[it.text("id")] ?: it.optLong("openingBalance"), saved) }
+        morePage = ""; parentPage = ""
+        if (loan != null) openRegister(RegisterTarget(account = loan.text("id")), 0) else tab = 0
     }
     val importFile = { openFile.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) }
     val exportFile = { saveFile.launch("UrBudget-${LocalDate.now()}.json") }
@@ -250,7 +309,7 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     val undoLabel = stringResource(R.string.common_undo)
     val toast = remember(snack, scope, vm, undoLabel) { { message: String, undo: Boolean -> snack.toast(scope, vm, message, undo, undoLabel) } }
     LaunchedEffect(state.exported) { if (state.exported) { vm.exportSaid(); toast(context.getString(R.string.backup_exported), false) } }
-    CompositionLocalProvider(LocalToast provides toast) {
+    CompositionLocalProvider(LocalToast provides toast, LocalLoanActions provides loanActions) {
     Box(Modifier.fillMaxSize().background(ur.bg).nestedScroll(scrollWatcher)) {
         when {
             state.loading -> CircularProgressIndicator(Modifier.align(Alignment.Center), color = ur.accent)
@@ -322,15 +381,18 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
         AnimatedVisibility(assistant && budget != null, enter = fadeIn(tween(180)), exit = fadeOut(tween(180))) {
             Box(Modifier.fillMaxSize().background(ur.scrim).clickable(remember { MutableInteractionSource() }, null) { assistant = false })
         }
+        val assistantDrag = rememberPanelDrag(assistant) { assistant = false }
         AnimatedVisibility(assistant && budget != null, Modifier.align(Alignment.BottomCenter),
             enter = slideInVertically(tween(260)) { it }, exit = slideOutVertically(tween(220)) { it }) {
-            Column(Modifier.fillMaxWidth().fillMaxHeight(.94f).clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)).background(ur.surface)
+            Column(Modifier.panelDrag(assistantDrag).fillMaxWidth().fillMaxHeight(.94f).clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)).background(ur.surface)
                 .then(if (ur.dark) Modifier.border(1.dp, ur.border, RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)) else Modifier)
                 .clickable(remember { MutableInteractionSource() }, null) {}) {
-                Box(Modifier.fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.fillMaxWidth().then(assistantDrag.dragArea).padding(top = 8.dp, bottom = 4.dp), contentAlignment = Alignment.Center) {
                     Box(Modifier.size(36.dp, 5.dp).clip(CircleShape).background(ur.borderStrong))
                 }
-                Box(Modifier.weight(1f).navigationBarsPadding()) { AssistantScreen(vm, onClose = { assistant = false }, importing = importScreen, applyFix = ::applyFix) }
+                Box(Modifier.weight(1f).navigationBarsPadding()) {
+                    AssistantScreen(vm, onClose = { assistant = false }, importing = importScreen, applyFix = ::applyFix, place = assistantPlace, dragArea = assistantDrag.dragArea)
+                }
             }
         }
     }
@@ -340,9 +402,17 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
         "transaction" -> TransactionDialog(selected, budget, accountFilter, vm, close = { editor = null }, summary = state.summary)
         "cardPayment" -> selected?.let { CardPaymentSheet(it.text("id"), budget, state.summary, vm) { editor = null } }
         "account" -> AccountDialog(selected, budget, vm) { editor = null }
+        // A loan's details are in its account form; its payment and planner need them saved.
+        "loanDetails" -> selected?.let { budget.row("accounts", it.text("id")) }?.let { AccountDialog(it, budget, vm, focusLoan = true) { editor = null } }
+            ?: LaunchedEffect(Unit) { editor = null }
+        "loanPayment", "loanPlanner" -> selected?.let { budget.row("accounts", it.text("id")) }?.let { account ->
+            val terms = remember(budget, account) { budget.rows("loans").firstOrNull { it.text("accountId") == account.text("id") } }
+            if (terms == null) LaunchedEffect(Unit) { editor = null }
+            else if (editor == "loanPayment") LoanPaymentSheet(account, terms, budget, state.summary, vm) { editor = null }
+            else LoanPlannerSheet(account, terms, budget, state.summary, vm) { editor = null }
+        }
         "reconcile" -> selected?.let { ReconcileDialog(it, budget, state.summary, vm) { editor = null } }
         "schedule" -> ScheduleDialog(selected, budget, vm) { editor = null }
-        "loan" -> LoanDialog(selected, budget, state.summary, vm) { editor = null }
         "payee" -> PayeeDialog(selected, budget, vm) { editor = null }
         "rule" -> RuleDialog(selected, budget, vm) { editor = null }
         // Hidden while the assistant is open over it. A PDF statement goes to the assistant,

@@ -34,7 +34,7 @@ internal fun LazyListScope.smsSetupSection(candidates: List<SmsSetupCandidate>, 
     candidates.forEach { c ->
         item(key = "setup:${c.key}") {
             val plan = plans.getValue(c.key)
-            val opening = smsOpening(smsSetupMembers(c.key, candidates, plans), adds)
+            val opening = smsOpening(smsSetupMembers(c.key, candidates, plans), adds, smsPlanLimit(plan))
             SmsSetupRow(c, plan, opening, candidates, plans, budget, accounts, typeNames[plan.type].orEmpty(), enabled, { answer(c.key, it) }) { edit(c.key) }
         }
     }
@@ -119,12 +119,15 @@ internal fun SmsSetupDialog(plan: SmsSetupPlan, shown: Long, currency: String, c
     var type by remember { mutableStateOf(plan.type) }
     val initial = remember { amountText(shown) }
     var balance by remember { mutableStateOf(initial) }
+    var limit by remember { mutableStateOf(plan.limit?.let(::amountText) ?: "") }
     var error by remember { mutableStateOf<String?>(null) }
     val types = remember(languageKey()) { accountTypes() }
+    val credit = AccountTypes.kindFor(type) == "credit"
     FormDialog(stringResource(R.string.sms_setup_edit_title), close, enabled = name.isNotBlank(), onConfirm = {
         runCatching {
+            val creditLimit = if (credit && limit.isNotBlank()) amountValue(limit).also { require(it > 0) { Words[R.string.account_credit_limit_positive] } } else null
             // A balance left as shown keeps following the texts.
-            save(plan.copy(action = SmsSetupPlan.Create, joins = null, name = name.trim(), type = type, opening = if (balance == initial) plan.opening else amountValue(balance)))
+            save(plan.copy(action = SmsSetupPlan.Create, joins = null, name = name.trim(), type = type, opening = if (balance == initial) plan.opening else amountValue(balance), limit = creditLimit))
             close()
         }.onFailure { error = it.message }
     }) {
@@ -132,6 +135,10 @@ internal fun SmsSetupDialog(plan: SmsSetupPlan, shown: Long, currency: String, c
         Choice(stringResource(R.string.account_type), type, types) { type = it }
         Field(balance, { balance = it }, stringResource(R.string.sms_new_account_balance, currency), numeric = true)
         Text(stringResource(if (AccountTypes.isLiability(type)) R.string.account_owed_negative else R.string.sms_new_account_help), style = MaterialTheme.typography.bodySmall, color = ur.muted)
+        if (credit) {
+            Field(limit, { limit = it }, stringResource(R.string.account_credit_limit, currency), numeric = true)
+            Text(stringResource(R.string.sms_setup_limit_help), style = MaterialTheme.typography.bodySmall, color = ur.muted)
+        }
         FormError(error)
     }
 }

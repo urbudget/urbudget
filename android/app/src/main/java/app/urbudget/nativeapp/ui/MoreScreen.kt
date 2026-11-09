@@ -15,7 +15,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.res.stringResource
-import app.urbudget.nativeapp.AccountTypes
 import app.urbudget.nativeapp.AppLanguage
 import app.urbudget.nativeapp.R
 import app.urbudget.nativeapp.Words
@@ -23,8 +22,6 @@ import app.urbudget.nativeapp.BudgetViewModel
 import app.urbudget.nativeapp.Money
 import app.urbudget.nativeapp.NativePreferences
 import app.urbudget.nativeapp.ScheduleSummary
-import app.urbudget.nativeapp.rateIn
-import app.urbudget.nativeapp.rateText
 import app.urbudget.nativeapp.scheduleSummary
 import app.urbudget.nativeapp.upcomingSchedules
 import org.json.JSONObject
@@ -37,7 +34,6 @@ internal fun MoreScreen(page: String, navigate: (String) -> Unit, budget: JSONOb
                         importFile: () -> Unit, exportFile: () -> Unit, restore: (() -> Unit)?, edit: (String, JSONObject?) -> Unit) {
     when (page) {
         "Scheduled" -> SchedulesPage(budget, vm, edit)
-        "Loan planner" -> LoanPlannerPage(budget, vm, edit)
         "Payees & rules" -> PayeesPage(budget, vm, edit)
         "Settings & data" -> SettingsPage(navigate, budget, vm, exportFile, importFile, restore, edit)
         else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 4.dp, bottom = DockRoom)) {
@@ -176,50 +172,6 @@ private fun ScheduleRow(line: ScheduleItem, modifier: Modifier, divider: Boolean
                     }
                 }
             })
-    }
-}
-
-/** A loan row: a debt with its details, or one still waiting for them. */
-private data class LoanLine(val accountId: String, val record: JSONObject, val name: String, val subtitle: String, val owed: String, val type: String)
-
-private fun loanLines(budget: JSONObject, summary: JSONObject?): List<LoanLine> {
-    val currency = budget.text("currency")
-    val balances = summary?.rows("accounts")?.associate { it.text("id") to it.optLong("balance") }.orEmpty()
-    val loans = budget.rows("loans").associateBy { it.text("accountId") }
-    val month = LocalDate.now().toString().take(7)
-    return budget.rows("accounts").mapNotNull { account ->
-        val id = account.text("id")
-        val balance = balances[id] ?: account.optLong("openingBalance")
-        val saved = loans[id]
-        if (account.optBoolean("archived") && saved == null || !AccountTypes.hasLoan(account, balance, loans.keys)) return@mapNotNull null
-        LoanLine(id, saved ?: JSONObject().put("accountId", id), account.text("name"),
-            saved?.let { Words[R.string.loan_line_payment, money(it.optLong("monthlyPayment"), currency), Money.ltr("${rateText(rateIn(it, month))}%")] } ?: Words[R.string.loan_line_needs_details],
-            money(maxOf(0L, -balance), currency), AccountTypes.infer(account, balance))
-    }
-}
-
-/** Loan planner: each debt with its payment and what's owed; a tap opens its details and planner. */
-@Composable
-private fun LoanPlannerPage(budget: JSONObject, vm: BudgetViewModel, edit: (String, JSONObject?) -> Unit) {
-    val summary = vm.state.collectAsStateWithLifecycle().value.summary
-    val lines = rememberPrepared(budget, summary, languageKey()) { loanLines(budget, summary) }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 4.dp, bottom = DockRoom)) {
-        item(key = "loans:new") { PrimaryButton(stringResource(R.string.loans_new_plan), { edit("loan", null) }, Modifier.fillMaxWidth().padding(bottom = 12.dp), icon = Icons.Outlined.Add) }
-        when {
-            lines == null -> item(key = "loans:loading") { LinearProgressIndicator(Modifier.fillMaxWidth(), color = ur.accent) }
-            lines.isEmpty() -> item(key = "loans:empty") {
-                EmptyState(stringResource(R.string.loans_empty_title), stringResource(R.string.loans_empty_detail),
-                    stringResource(R.string.loans_create_plan)) { edit("loan", null) }
-            }
-            else -> itemsIndexed(lines, key = { _, line -> "loan:${line.accountId}" }, contentType = { _, _ -> "loan" }) { index, line ->
-                ListRow(line.name, Modifier.cardSegment(index, lines.size, cardFill()), subtitle = line.subtitle, value = line.owed, icon = iconForType(line.type, "tracking"),
-                    iconTint = ur.text2, iconFill = ur.zeroSoft, onClick = { edit("loan", line.record) }, divider = index < lines.lastIndex)
-            }
-        }
-        item(key = "loans:help") {
-            Text(stringResource(R.string.loans_help),
-                Modifier.padding(start = 4.dp, end = 4.dp, top = 12.dp), style = MaterialTheme.typography.bodySmall, color = ur.muted)
-        }
     }
 }
 

@@ -33,6 +33,9 @@ class BudgetEditGuard private constructor(
         fun whole(budget: JSONObject?, identity: String?) = BudgetEditGuard(identity, budget, true, emptyList(), emptyList())
         fun record(budget: JSONObject?, identity: String?, collection: String, id: String): BudgetEditGuard = records(budget, identity, listOf(collection to mapOf((if (collection == "loans") "accountId" else "id") to id)))
         fun recordSet(budget: JSONObject?, identity: String?, collection: String, ids: List<String>): BudgetEditGuard = records(budget, identity, ids.map { collection to mapOf((if (collection == "loans") "accountId" else "id") to it) })
+        /** Records of several collections, each by its id (a loan's by its account), such as an account and its loan. */
+        fun rows(budget: JSONObject?, identity: String?, vararg rows: Pair<String, String>): BudgetEditGuard =
+            records(budget, identity, rows.map { (collection, id) -> collection to mapOf((if (collection == "loans") "accountId" else "id") to id) })
         private fun records(budget: JSONObject?, identity: String?, selected: List<Pair<String, Map<String, String>>>, fields: List<String> = emptyList()): BudgetEditGuard = BudgetEditGuard(identity, budget, false, selected, fields)
         fun command(budget: JSONObject?, identity: String?, method: String, params: JSONObject): BudgetEditGuard {
             if (method == "saveTransaction") return record(budget, identity, "transactions", params.optJSONObject("transaction")?.optString("id").orEmpty())
