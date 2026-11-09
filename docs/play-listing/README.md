@@ -50,18 +50,13 @@ In the order to deal with them:
    - The home page says "There's no phone or web version". `vs/quicken`, `vs/everydollar`, `ynab`,
      `ynab/ynab4`, `tools/envelope-budget-template` and `llms.txt` say much the same.
    - The terms and refund pages don't mention Google Play.
-4. **Fix the disclosure in the app.** It appears right before the SMS permission, so Google reviews
-   it closely, and parts of it are wrong:
-   - "Messages go to your assistant only when you prepare them": the page reads by itself, and
-     background reading can send them as they arrive (`strings.xml:1985`).
-   - "they stay on this phone": they go to the assistant (`strings.xml:1993`).
-   - "RCS and MMS aren't supported": text-only MMS is read (`strings.xml:1984`).
-   - The sending dialog leaves out transfer routes with amounts, and masked code texts
-     (`strings.xml:2114`).
-   - The connect notice says "Settings → Assistant", and there's no such row. It's More → Assistant
-     (`strings.xml:1991`, `sms.rs:146`).
-   - The only choice beside Allow is opening settings. Add a plain decline.
-   - The Arabic strings need the same changes.
+4. **Check the disclosure in the app.** It appears right before the SMS permission, so Google
+   reviews it closely. The errors this list found were fixed on 9 November 2026, in English and
+   Arabic: it says texts go to the assistant's provider (when the page opens, as they arrive if
+   that's on, and when asked about), that text-only MMS is read and RCS isn't, the sending notice
+   names transfer routes with amounts and code texts with the code hidden, the connect notice
+   points to More → Assistant, and Not now sits beside Allow. Read it once more against the
+   [SMS declaration](#sms-permission-declaration) and the privacy policy before sending a release.
 5. **File the SMS declaration below.** An active bundle with `READ_SMS`, on any track including
    internal, blocks every change to the app, including the store listing, until you create a release
    that includes the declaration or removes the permission. Review can take up to several weeks, and

@@ -136,9 +136,10 @@ internal fun smsLiveText(live: SmsLive?, part: Int): String = when (live?.stage)
 internal val SmsBodyStyle @Composable get() = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.Content)
 
 @Composable
-internal fun SmsImportScreen(budget: JSONObject, vm: BudgetViewModel, setDockHidden: (Boolean) -> Unit = {}, analyzer: SmsAnalyzer = NativeSmsAnalyzer) {
+internal fun SmsImportScreen(budget: JSONObject, vm: BudgetViewModel, setDockHidden: (Boolean) -> Unit = {}, analyzer: SmsAnalyzer = NativeSmsAnalyzer,
+                             decline: () -> Unit = {}) {
     val identity = vm.state.value.budgetIdentity ?: return
-    key(identity) { SmsHome(budget, vm, identity, analyzer, setDockHidden) }
+    key(identity) { SmsHome(budget, vm, identity, analyzer, setDockHidden, decline) }
 }
 
 /**
@@ -149,7 +150,7 @@ internal fun SmsImportScreen(budget: JSONObject, vm: BudgetViewModel, setDockHid
  * only on screen (sheets, the list's choosing).
  */
 @Composable
-private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, analyzer: SmsAnalyzer, setDockHidden: (Boolean) -> Unit) {
+private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, analyzer: SmsAnalyzer, setDockHidden: (Boolean) -> Unit, decline: () -> Unit) {
     val context = LocalContext.current
     // Named, because Compose's test clock would otherwise carry on from a `withContext` on the worker that ended it, drawing there.
     val scope = rememberCoroutineScope { Dispatchers.Main }
@@ -219,6 +220,8 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
                     Text(stringResource(R.string.sms_intro), style = MaterialTheme.typography.bodyMedium, color = ur.text2)
                     Notice(stringResource(R.string.sms_disclosure), tone = "info")
                     PrimaryButton(stringResource(R.string.sms_allow), { permission.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS)) }, Modifier.fillMaxWidth())
+                    // A plain no beside Allow: the page closes and nothing is asked.
+                    TextButton(decline, Modifier.align(Alignment.CenterHorizontally)) { Text(stringResource(R.string.sms_not_now), color = ur.accent) }
                     TextButton({ context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))) },
                         Modifier.align(Alignment.CenterHorizontally)) { Text(stringResource(R.string.sms_open_settings), color = ur.accent) }
                 } }
