@@ -38,6 +38,11 @@ pub struct PayeeTotal {
     pub amount: i64,
     /// Transactions with spending at this payee.
     pub count: i64,
+    /// The category most of it went to, so a chart can colour the payee by its group.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    #[serde(skip)]
+    by_category: BTreeMap<String, i64>,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -240,7 +245,9 @@ fn calculate_with(b: &Budget, f: &Filter, mut contribution: impl FnMut(&Transact
                 *row.categories.entry(category.to_owned()).or_default() -= amount;
                 row.spending -= amount;
                 if amount != 0 {
-                    payees.entry(payee_name.to_owned()).or_default().amount -= amount;
+                    let payee = payees.entry(payee_name.to_owned()).or_default();
+                    payee.amount -= amount;
+                    *payee.by_category.entry(category.to_owned()).or_default() -= amount;
                     let parent = ledger::saved_id(t).to_owned();
                     payee_transactions.entry(payee_name.to_owned()).or_default().insert(parent.clone());
                     spending_transactions.insert(parent);
@@ -277,6 +284,11 @@ fn calculate_with(b: &Budget, f: &Filter, mut contribution: impl FnMut(&Transact
     let (age_of_money, age_of_money_by_month) = cash_age_history(b, &entries, &accounts, &range, &f.to);
     for (payee, total) in &mut payees {
         total.count = payee_transactions.get(payee).map_or(0, |ids| ids.len() as i64);
+        // The most spent, the first by id when two tie.
+        total.category = total.by_category.iter().filter(|(_, n)| **n > 0).fold(None::<(&String, i64)>, |best, (id, n)| match best {
+            Some((_, most)) if most >= *n => best,
+            _ => Some((id, *n)),
+        }).map(|(id, _)| id.clone());
     }
     Ok(Report {
         months,
@@ -779,6 +791,7 @@ mod tests {
         let r = calculate(&b, &october(&[])).unwrap();
         assert_eq!((r.spending, r.transaction_count), (10_000, 2));
         assert_eq!((r.payees["Shop"].amount, r.payees["Shop"].count), (8000, 2));
+        assert!(r.payees["Shop"].category.is_some());
         assert_eq!((r.payees["Other"].amount, r.payees["Other"].count), (2000, 1));
         assert!(!r.payees.contains_key("Combined"));
         assert_eq!(r.days["2026-10-15"], 10_000);
