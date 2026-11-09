@@ -187,7 +187,12 @@ fn wait_for_callback(listener: TcpListener, state: &str, cancel: &AtomicBool, wa
             // The browser page speaks the app's language; Arabic reads right to left.
             let html = if language() == Language::Arabic { "<html lang=ar dir=rtl>" } else { "" };
             // Only a locally constructed, allowlisted link can reach this page.
-            let back = return_link.map(|link| format!("<p><a href=\"{link}\">{}</a></p>", tr("Return to UrBudget"))).unwrap_or_default();
+            // A browser may ask before the link opens the app, or not open it at all: the last line says
+            // what always works.
+            let back = return_link
+                .map(|link| format!("<p><a href=\"{link}\">{}</a></p><p style=\"color:#5b606b\">{}</p>", tr("Return to UrBudget"),
+                    tr("If UrBudget doesn't open, close this page or switch back to UrBudget yourself.")))
+                .unwrap_or_default();
             let page = format!(
                 "<!doctype html>{html}<meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>{title}</title><body style=\"font:16px system-ui;max-width:32rem;margin:15vh auto;padding:0 1rem;color:#17191d\"><h1 style=\"font-size:22px\">{title}</h1><p>{text}</p>{back}</body>"
             );

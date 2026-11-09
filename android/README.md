@@ -455,9 +455,12 @@ state lives in `filesDir/native`. Credentials stay in the same sealed vault with
 its key protected by Android Keystore and excluded from backup. Only a confirmed
 missing secret is treated as absent; decryption/I/O failures do not reset it.
 
-ChatGPT sign-in keeps its PKCE callback on `127.0.0.1`. The callback page offers
+ChatGPT sign-in keeps its PKCE callback on `127.0.0.1`. Pages the services open
+(`host://open-url`, sign-in among them) show in a Custom Tab over the app, so its
+close button returns to UrBudget in any browser. The callback page offers
 **Return to UrBudget**, which targets the initiating package and resumes its
-existing activity. This link carries no OAuth code or credentials and only
+existing activity; Firefox asks before opening it, so the page also says to close
+it or switch back. This link carries no OAuth code or credentials and only
 refreshes status; receiving it cannot sign someone in. The token exchange waits
 until the activity is started again, so it runs in the foreground rather than
 behind the browser. Settings refreshes on

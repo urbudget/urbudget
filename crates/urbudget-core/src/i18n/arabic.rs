@@ -763,6 +763,7 @@ pub(super) const MESSAGES: &[(&str, &str)] = &[
     ("Sign-in received", "تم استلام طلب تسجيل الدخول"),
     ("Return to UrBudget to finish signing in.", "عُد إلى UrBudget لإكمال تسجيل الدخول."),
     ("Return to UrBudget", "العودة إلى UrBudget"),
+    ("If UrBudget doesn't open, close this page or switch back to UrBudget yourself.", "إذا لم يُفتح UrBudget، فأغلق هذه الصفحة أو عُد إلى UrBudget بنفسك."),
     ("Couldn't start sign-in: {e}", "تعذّر بدء تسجيل الدخول: {e}"),
     ("ChatGPT didn't finish registering UrBudget. Try signing in again.", "لم يُكمل ChatGPT تسجيل UrBudget. حاول تسجيل الدخول مرة أخرى."),
     ("ChatGPT answered for a different app registration. Try signing in again.", "ردّ ChatGPT لتسجيل تطبيق مختلف. حاول تسجيل الدخول مرة أخرى."),

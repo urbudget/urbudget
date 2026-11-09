@@ -6,6 +6,7 @@ import android.content.res.Configuration
 import android.net.Uri
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -58,7 +59,11 @@ class MainActivity : AppCompatActivity() {
                                 "host://open-url" -> {
                                     val uri = Uri.parse(payload.getString("url"))
                                     require(uri.scheme in setOf("https", "http"))
-                                    startActivity(Intent(Intent.ACTION_VIEW, uri))
+                                    // A Custom Tab over the app, as iOS shows these pages in a Safari sheet: its close
+                                    // button always comes back here, whatever the browser does with the page's own
+                                    // links (Firefox asks before "Return to UrBudget" opens the app, and a "Stay in
+                                    // Firefox" leaves no way back). A browser without Custom Tabs opens it as before.
+                                    CustomTabsIntent.Builder().setShowTitle(true).build().launchUrl(this@MainActivity, uri)
                                 }
                                 "host://open-file" -> shareFile(payload.getString("path"))
                             }
