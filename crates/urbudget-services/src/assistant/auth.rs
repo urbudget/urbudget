@@ -156,6 +156,71 @@ struct Callback {
     client_id: Option<String>,
 }
 
+/// What a callback page reports, which picks its mark and colour.
+#[derive(Clone, Copy)]
+enum Outcome {
+    /// The code arrived; the app still has to exchange and check it, so the page doesn't say "signed in".
+    Received,
+    Cancelled,
+    Problem,
+}
+
+/// UrBudget's mark: the "Ur" pocket holding a stack of coins, as on urbudget.app.
+const MARK: &str = "<svg viewBox=\"0 0 1024 1024\" aria-hidden=\"true\"><rect x=\"40\" y=\"40\" width=\"944\" height=\"944\" rx=\"212\" fill=\"#6d4ae8\"/><g transform=\"translate(-33 0)\"><path d=\"M300 330V620a110 110 0 0 0 110 110h120a110 110 0 0 0 110-110V430c0-80 55-130 150-128\" fill=\"none\" stroke=\"#fff\" stroke-width=\"110\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><g fill=\"#fbbf24\"><rect x=\"382\" y=\"595\" width=\"172\" height=\"60\" rx=\"30\"/><rect x=\"396\" y=\"501\" width=\"172\" height=\"60\" rx=\"30\"/><rect x=\"374\" y=\"407\" width=\"172\" height=\"60\" rx=\"30\"/></g></g></svg>";
+
+/// The page's look, in urbudget.app's colours: warm paper and purple, or its dark theme when the
+/// browser is dark. Each outcome tints the round mark above the title.
+const STYLE: &str = ":root{color-scheme:light dark;--bg:#fbfaf7;--surface:#fff;--text:#18161f;--text-2:#48444f;--text-3:#67626f;--border:#e6e2d9;--brand:#6d4ae8;--brand-hover:#5c39d9}\
+@media (prefers-color-scheme:dark){:root{--bg:#0f0e14;--surface:#18171f;--text:#efedf4;--text-2:#c7c3d0;--text-3:#9a95a6;--border:#2a2833;--brand-hover:#5f3ddc}}\
+.received{--tone:#5b38d6;--tone-bg:#f0ebff;--tone-line:#d9cffd}.cancelled{--tone:#67626f;--tone-bg:#f2f0ea;--tone-line:#e6e2d9}.problem{--tone:#7a4d00;--tone-bg:#fff6e0;--tone-line:#f5d68f}\
+@media (prefers-color-scheme:dark){.received{--tone:#b7a6ff;--tone-bg:#251d45;--tone-line:#3d3270}.cancelled{--tone:#9a95a6;--tone-bg:#201e28;--tone-line:#2a2833}.problem{--tone:#f7cf74;--tone-bg:#2a2110;--tone-line:#5a4517}}\
+*{box-sizing:border-box}\
+body{margin:0;min-height:100vh;min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:24px 16px;background:var(--bg);color:var(--text);font:16px/1.5 ui-sans-serif,system-ui,-apple-system,\"Segoe UI\",Roboto,\"Noto Sans\",Arial,sans-serif;-webkit-text-size-adjust:100%}\
+main{width:100%;max-width:400px;padding:32px 24px 28px;text-align:center;background:var(--surface);border:1px solid var(--border);border-radius:20px;box-shadow:0 8px 24px -10px rgb(16 24 40/.16),0 2px 6px -2px rgb(16 24 40/.06)}\
+.brand{display:inline-flex;align-items:center;gap:8px;margin-bottom:28px;font-size:15px;font-weight:600;color:var(--text-2)}\
+.brand svg{width:28px;height:28px;flex:none}\
+.status{display:flex;align-items:center;justify-content:center;width:64px;height:64px;margin:0 auto 20px;border-radius:50%;color:var(--tone);background:var(--tone-bg);border:1px solid var(--tone-line)}\
+.status svg{width:30px;height:30px}\
+h1{margin:0 0 8px;font-size:22px;line-height:1.3;font-weight:700;text-wrap:balance}\
+p{margin:0;color:var(--text-2)}\
+.back{display:block;margin-top:24px;padding:14px 20px;border-radius:12px;background:var(--brand);color:#fff;font-size:17px;font-weight:600;text-decoration:none}\
+.back:hover{background:var(--brand-hover)}\
+.back:focus-visible{outline:3px solid var(--brand);outline-offset:3px}\
+.hint{margin-top:16px;font-size:14px;color:var(--text-3)}";
+
+/// The page the browser shows when it comes back from ChatGPT: UrBudget's mark, what happened, and on
+/// Android a button back to the app. Only a locally made, allowlisted link (`android_return_link`)
+/// reaches [return_link]; titles and text come from the app's own words, escaped all the same.
+fn callback_page(outcome: Outcome, title: &str, text: &str, return_link: Option<&str>, arabic: bool) -> String {
+    let (class, icon) = match outcome {
+        Outcome::Received => ("received", "<path d=\"M5 12.5l4.5 4.5L19 7.5\"/>"),
+        Outcome::Cancelled => ("cancelled", "<path d=\"M7 7l10 10M17 7L7 17\"/>"),
+        Outcome::Problem => ("problem", "<path d=\"M12 7v6\"/><path d=\"M12 17h.01\"/>"),
+    };
+    let (lang, dir) = if arabic { ("ar", "rtl") } else { ("en", "ltr") };
+    let text = if text.is_empty() { String::new() } else { format!("<p>{}</p>", escape(text)) };
+    // A browser may ask before the link opens the app (Firefox does), or not open it at all: the hint
+    // says what always works.
+    let back = return_link
+        .map(|link| {
+            format!(
+                "<a class=\"back\" href=\"{link}\">{}</a><p class=\"hint\">{}</p>",
+                escape(tr("Return to UrBudget")),
+                escape(tr("If UrBudget doesn't open, close this page or switch back to UrBudget yourself."))
+            )
+        })
+        .unwrap_or_default();
+    let title = escape(title);
+    format!(
+        "<!doctype html><html lang=\"{lang}\" dir=\"{dir}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"color-scheme\" content=\"light dark\"><title>{title} \u{b7} UrBudget</title><style>{STYLE}</style></head><body><main class=\"{class}\"><div class=\"brand\">{MARK}UrBudget</div><div class=\"status\" aria-hidden=\"true\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\">{icon}</svg></div><h1>{title}</h1>{text}{back}</main></body></html>"
+    )
+}
+
+/// Text made safe to put in the page.
+fn escape(text: &str) -> String {
+    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+}
+
 /// Waits for the browser to come back to `/auth/callback`, then answers it with a short page.
 fn wait_for_callback(listener: TcpListener, state: &str, cancel: &AtomicBool, wait: Duration, return_link: Option<&str>) -> Result<Callback, String> {
     listener.set_nonblocking(true).map_err(|e| e.to_string())?;
@@ -183,37 +248,28 @@ fn wait_for_callback(listener: TcpListener, state: &str, cancel: &AtomicBool, wa
         let n = stream.read(&mut buf).unwrap_or(0);
         let request = String::from_utf8_lossy(&buf[..n]);
         let target = request.split_whitespace().nth(1).unwrap_or("/");
-        let respond = |stream: &mut std::net::TcpStream, status: &str, title: &str, text: &str| {
+        let respond = |stream: &mut std::net::TcpStream, status: &str, outcome: Outcome, title: &str, text: &str| {
             // The browser page speaks the app's language; Arabic reads right to left.
-            let html = if language() == Language::Arabic { "<html lang=ar dir=rtl>" } else { "" };
-            // Only a locally constructed, allowlisted link can reach this page.
-            // A browser may ask before the link opens the app, or not open it at all: the last line says
-            // what always works.
-            let back = return_link
-                .map(|link| format!("<p><a href=\"{link}\">{}</a></p><p style=\"color:#5b606b\">{}</p>", tr("Return to UrBudget"),
-                    tr("If UrBudget doesn't open, close this page or switch back to UrBudget yourself.")))
-                .unwrap_or_default();
-            let page = format!(
-                "<!doctype html>{html}<meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>{title}</title><body style=\"font:16px system-ui;max-width:32rem;margin:15vh auto;padding:0 1rem;color:#17191d\"><h1 style=\"font-size:22px\">{title}</h1><p>{text}</p>{back}</body>"
-            );
+            let page = callback_page(outcome, title, text, return_link, language() == Language::Arabic);
+            // Nothing on the page loads from elsewhere or runs: its style is inline and it has no scripts.
             let _ = write!(
                 stream,
-                "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{page}",
+                "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\nContent-Security-Policy: default-src 'none'; style-src 'unsafe-inline'\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{page}",
                 page.len()
             );
         };
         let Ok(url) = reqwest::Url::parse(&format!("http://127.0.0.1{target}")) else { continue };
         if url.path() != "/auth/callback" {
-            respond(&mut stream, "404 Not Found", tr("Not found"), "");
+            respond(&mut stream, "404 Not Found", Outcome::Problem, tr("Not found"), "");
             continue;
         }
         let query: std::collections::HashMap<String, String> = url.query_pairs().into_owned().collect();
         if query.get("state").map(String::as_str) != Some(state) {
-            respond(&mut stream, "400 Bad Request", tr("Sign-in didn't match"), tr("Go back to UrBudget and try again."));
+            respond(&mut stream, "400 Bad Request", Outcome::Problem, tr("Sign-in didn't match"), tr("Go back to UrBudget and try again."));
             return Err(t!("The sign-in response didn't match this attempt. Try again."));
         }
         if let Some(error) = query.get("error") {
-            respond(&mut stream, "200 OK", tr("Sign-in cancelled"), tr("You can close this tab and return to UrBudget."));
+            respond(&mut stream, "200 OK", Outcome::Cancelled, tr("Sign-in cancelled"), tr("You can close this tab and return to UrBudget."));
             return Err(if error == "access_denied" {
                 t!("Sign-in was cancelled.")
             } else {
@@ -221,10 +277,10 @@ fn wait_for_callback(listener: TcpListener, state: &str, cancel: &AtomicBool, wa
             });
         }
         let Some(code) = query.get("code") else {
-            respond(&mut stream, "400 Bad Request", tr("Sign-in failed"), tr("Go back to UrBudget and try again."));
+            respond(&mut stream, "400 Bad Request", Outcome::Problem, tr("Sign-in failed"), tr("Go back to UrBudget and try again."));
             return Err(t!("The sign-in response had no code. Try again."));
         };
-        respond(&mut stream, "200 OK", tr("Sign-in received"), tr("Return to UrBudget to finish signing in."));
+        respond(&mut stream, "200 OK", Outcome::Received, tr("Sign-in received"), tr("Return to UrBudget to finish signing in."));
         return Ok(Callback { code: code.clone(), client_id: query.get("client_id").cloned() });
     }
 }
@@ -450,6 +506,22 @@ mod tests {
         assert!(!t.plan_usage());
         let kept = read_tokens(&serde_json::json!({ "access_token": "a", "refresh_token": "r" }), SCOPES).unwrap();
         assert!(kept.plan_usage());
+    }
+
+    #[test]
+    fn callback_pages_read_right_and_only_android_offers_the_way_back() {
+        let link = android_return_link("app.urbudget").unwrap();
+        let received = callback_page(Outcome::Received, "Sign-in received", "Return to UrBudget to finish signing in.", Some(&link), false);
+        assert!(received.starts_with("<!doctype html><html lang=\"en\" dir=\"ltr\">"));
+        assert!(received.contains("class=\"received\"") && received.contains(&format!("class=\"back\" href=\"{link}\"")));
+        assert!(received.contains("<title>Sign-in received \u{b7} UrBudget</title>"));
+        // Nothing to load from elsewhere, and nothing to run.
+        assert!(!received.contains("<script") && !received.contains("http://") && !received.contains("https://"));
+        // The desktop has no link to follow back.
+        let desktop = callback_page(Outcome::Cancelled, "Sign-in cancelled", "", None, false);
+        assert!(desktop.contains("class=\"cancelled\"") && !desktop.contains("class=\"back\"") && !desktop.contains("<p>"));
+        let arabic = callback_page(Outcome::Problem, "<b>", "a & b", None, true);
+        assert!(arabic.contains("lang=\"ar\" dir=\"rtl\"") && arabic.contains("<h1>&lt;b&gt;</h1>") && arabic.contains("<p>a &amp; b</p>"));
     }
 
     #[test]
