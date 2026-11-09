@@ -2150,6 +2150,10 @@
     <string name="assistant_sign_in_finishing">جارٍ إكمال تسجيل الدخول عبر ChatGPT…</string>
     <string name="assistant_sign_in_saving">جارٍ حفظ تسجيل الدخول…</string>
     <string name="assistant_sign_in_returning">عُد إلى UrBudget لإكمال تسجيل الدخول.</string>
+    <string name="sign_in_notify_channel">تسجيل الدخول</string>
+    <string name="sign_in_notify_channel_detail">أثناء تسجيل دخولك إلى ChatGPT في المتصفح</string>
+    <string name="sign_in_notify_title">جارٍ تسجيل الدخول إلى ChatGPT</string>
+    <string name="sign_in_notify_text">بعد أن تسمح لـ UrBudget، اضغط هنا لإكمال تسجيل الدخول.</string>
     <string name="assistant_sign_out">تسجيل الخروج</string>
     <string name="assistant_continue_chatgpt">المتابعة باستخدام ChatGPT</string>
     <string name="assistant_plan_usage">استخدام الخطة</string>

@@ -7,6 +7,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -18,6 +19,7 @@ import app.urbudget.nativeapp.AssistantController
 import app.urbudget.nativeapp.AssistantState
 import app.urbudget.nativeapp.Money
 import app.urbudget.nativeapp.R
+import app.urbudget.nativeapp.SignInService
 import org.json.JSONObject
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -62,7 +64,11 @@ internal fun AssistantSettingsDialog(controller: AssistantController, close: () 
                             LinearProgressIndicator(Modifier.fillMaxWidth())
                             OutlinedButton(controller::cancelSignIn) { Text(stringResource(R.string.assistant_cancel_sign_in)) }
                         } else if (ready) OutlinedButton(controller::signOut, enabled = "signOut" !in state.busy) { Text(stringResource(R.string.assistant_sign_out)) }
-                        else Button(controller::signIn) { Text(stringResource(R.string.assistant_continue_chatgpt)) }
+                        else {
+                            val context = LocalContext.current
+                            // The service keeps the app answering the browser; it starts here, while the app is in front.
+                            Button({ SignInService.start(context); controller.signIn() }) { Text(stringResource(R.string.assistant_continue_chatgpt)) }
+                        }
                         Row { TextButton({ controller.openLink("usage") }) { Text(stringResource(R.string.assistant_plan_usage)) }; TextButton({ controller.openLink("disconnect") }) { Text(stringResource(R.string.assistant_connected_apps)) } }
                     } else {
                         val saved = status?.optBoolean(if (provider == "openai") "hasOpenaiKey" else "hasAnthropicKey") == true

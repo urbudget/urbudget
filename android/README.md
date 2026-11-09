@@ -460,7 +460,12 @@ ChatGPT sign-in keeps its PKCE callback on `127.0.0.1`. Pages the services open
 close button returns to UrBudget in any browser. The callback page offers
 **Return to UrBudget**, which targets the initiating package and resumes its
 existing activity; Firefox asks before opening it, so the page also says to close
-it or switch back. This link carries no OAuth code or credentials and only
+it or switch back. While sign-in waits, `SignInService` runs as a short foreground
+service with a "Signing in to ChatGPT" notification: Android (Samsung's quickly)
+pauses an app behind the browser, and a paused app can't answer the callback, so
+the consent page would spin until the user came back by hand. Tapping the
+notification returns to the app too. It stops when sign-in ends or after
+Android's few minutes for a short service. This link carries no OAuth code or credentials and only
 refreshes status; receiving it cannot sign someone in. The token exchange waits
 until the activity is started again, so it runs in the foreground rather than
 behind the browser. Settings refreshes on

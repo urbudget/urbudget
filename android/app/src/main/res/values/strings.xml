@@ -1892,6 +1892,10 @@
     <string name="assistant_sign_in_finishing">Finishing sign-in with ChatGPT…</string>
     <string name="assistant_sign_in_saving">Saving your sign-in…</string>
     <string name="assistant_sign_in_returning">Return to UrBudget to finish signing in.</string>
+    <string name="sign_in_notify_channel">Signing in</string>
+    <string name="sign_in_notify_channel_detail">While you sign in to ChatGPT in your browser</string>
+    <string name="sign_in_notify_title">Signing in to ChatGPT</string>
+    <string name="sign_in_notify_text">After you allow UrBudget, tap here to finish.</string>
     <string name="assistant_sign_out">Sign out</string>
     <string name="assistant_continue_chatgpt">Continue with ChatGPT</string>
     <string name="assistant_plan_usage">Plan usage</string>
