@@ -96,6 +96,7 @@ pub fn outcome(tool: &str, answer: Result<Value, String>) -> Outcome {
         problem: None,
         review: None,
         bank_texts: Some(apply),
+        ..Proposal::default()
     };
     Outcome { output, step, proposal: Some(proposal) }
 }

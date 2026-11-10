@@ -3,6 +3,7 @@
 use super::attachments::Files;
 use super::history::{self, Item};
 use super::llm::{self, Delta, FailureKind, Part, Request};
+use super::proposals::Status;
 use super::{lock, now, phone, tools, Assistant};
 use crate::domain::Budget;
 use crate::t;
@@ -112,6 +113,8 @@ async fn turn(assistant: &Assistant, job: &Job, cancelled: &AtomicBool, written:
             };
             let mut streamed = false;
             let mut on_delta = |delta: Delta| match delta {
+                // Stopped: what arrives after is neither kept nor shown.
+                _ if cancelled.load(Ordering::SeqCst) => {}
                 Delta::Text(text) => {
                     streamed = true;
                     lock(written).push_str(text);
@@ -205,9 +208,19 @@ async fn turn(assistant: &Assistant, job: &Job, cancelled: &AtomicBool, written:
             let failed = outcome.output.get("error").is_some();
             let proposal_id = outcome.proposal.as_ref().map(|p| p.id.clone());
             let view = outcome.proposal.as_ref().map(history::proposal_view);
-            assistant
+            let replaced = assistant
                 .with_thread_guarded(&job.folder, &job.thread_id, Some(cancelled), |t| {
+                    let mut replaced = None;
                     if let Some(p) = outcome.proposal {
+                        // The card this one corrects is folded away, with the new one named on it.
+                        let earlier = p.replaces.as_ref().and_then(|id| {
+                            t.proposals.iter_mut().find(|q| &q.id == id && !q.made() && matches!(q.status, Status::Proposed | Status::Undone | Status::Failed))
+                        });
+                        if let Some(earlier) = earlier {
+                            earlier.status = Status::Replaced;
+                            earlier.replaced_by = Some(p.id.clone());
+                            replaced = Some(history::proposal_view(earlier));
+                        }
                         t.proposals.push(p);
                     }
                     t.items.push(Item::Result {
@@ -217,10 +230,14 @@ async fn turn(assistant: &Assistant, job: &Job, cancelled: &AtomicBool, written:
                         failed,
                         proposal: proposal_id,
                     });
+                    replaced
                 })
                 .map_err(other)?;
             if !outcome.step.is_empty() {
                 emit(&job.thread_id, json!({ "type": "step", "text": outcome.step, "failed": failed }));
+            }
+            if let Some(earlier) = replaced {
+                emit(&job.thread_id, json!({ "type": "replaced", "proposal": earlier }));
             }
             if let Some(view) = view {
                 emit(&job.thread_id, json!({ "type": "proposal", "proposal": view }));
@@ -336,6 +353,31 @@ mod tests {
         say(&runtime, Some(&next), "Where were we?", screen());
         let first = script::asked("script-refused").last().unwrap().items[0].clone();
         assert!(matches!(first, Item::User { context, .. } if context.contains("carries on an earlier one") && context.contains("The user: Are you there?")));
+    }
+
+    #[test]
+    fn a_proposal_made_in_place_of_another_folds_the_earlier_one_away() {
+        let directory = tempfile::tempdir().unwrap();
+        let runtime = scripted(directory.path(), "script-replaces");
+        let moves = |amount: u32| json!({ "month": "2026-10", "moves": [{ "from": "ready_to_assign", "to": "food", "amount": amount }] });
+        script::play("script-replaces", vec![script::call("c1", "propose_budget_moves", moves(10)), script::text("Prepared.")]);
+        let id = say(&runtime, None, "Give food 10", screen());
+        let first = view(&runtime, &id)["entries"][2]["proposal"]["id"].as_str().unwrap().to_owned();
+        let mut corrected = moves(25);
+        corrected["replaces"] = json!(first);
+        script::play("script-replaces", vec![script::call("c2", "propose_budget_moves", corrected), script::text("Prepared again.")]);
+        say(&runtime, Some(&id), "Make it 25", screen());
+        let shown = view(&runtime, &id);
+        let cards: Vec<&Value> = shown["entries"].as_array().unwrap().iter().filter(|e| e["kind"] == "proposal").map(|e| &e["proposal"]).collect();
+        assert_eq!((cards[0]["status"].as_str(), cards[0]["actions"].clone()), (Some("replaced"), json!(["restore"])));
+        assert_eq!((cards[0]["replacedBy"].as_str(), cards[1]["status"].as_str()), (cards[1]["id"].as_str(), Some("proposed")));
+        // The next message tells the model what became of each.
+        script::play("script-replaces", vec![script::text("Yes.")]);
+        say(&runtime, Some(&id), "Is that right?", screen());
+        let asked = script::asked("script-replaces");
+        assert!(matches!(asked.last().unwrap().items.iter().rev().find(|i| matches!(i, Item::User { .. })), Some(Item::User { context, .. }) if context.contains("replaced by a newer proposal")));
+        // The tool says how to name the one it corrects.
+        assert!(tools::specs().iter().filter(|s| s.name.starts_with("propose_") && s.name != "propose_bank_texts").all(|s| s.parameters["properties"]["replaces"].is_object()));
     }
 
     #[test]

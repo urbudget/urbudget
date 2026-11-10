@@ -55,8 +55,8 @@ pub(crate) fn assistant_threads(db: State<'_, Database>, assistant: State<'_, As
 }
 
 #[tauri::command(async)]
-pub(crate) fn assistant_thread(db: State<'_, Database>, assistant: State<'_, Assistant>, id: String) -> Result<Value, String> {
-    shared::assistant_thread(&db, &assistant, id)
+pub(crate) fn assistant_thread(db: State<'_, Database>, assistant: State<'_, Assistant>, id: String, patch: Option<Patch>) -> Result<Value, String> {
+    shared::assistant_thread(&db, &assistant, id, patch)
 }
 
 #[tauri::command(async)]
@@ -168,8 +168,9 @@ pub(crate) fn assistant_apply(
     patch: Option<Patch>,
     thread_id: String,
     proposal_id: String,
+    settle: Option<bool>,
 ) -> Result<Applied, String> {
-    shared::assistant_apply(&db, &assistant, patch, thread_id, proposal_id)
+    shared::assistant_apply(&db, &assistant, patch, thread_id, proposal_id, settle.unwrap_or(true))
 }
 
 /// The proposal as the user chose on its card, made again on the window's budget.
@@ -192,8 +193,9 @@ pub(crate) fn assistant_mark(
     thread_id: String,
     proposal_id: String,
     status: Status,
+    note: Option<String>,
 ) -> Result<Value, String> {
-    shared::assistant_mark(&db, &assistant, thread_id, proposal_id, status)
+    shared::assistant_mark(&db, &assistant, thread_id, proposal_id, status, note)
 }
 
 #[tauri::command(async)]

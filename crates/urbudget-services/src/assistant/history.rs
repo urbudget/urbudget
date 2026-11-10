@@ -201,12 +201,16 @@ pub fn delete(folder: &Path, id: &str) -> Result<(), String> {
         _ => Ok(()),
     }
 }
-/// Removes every conversation and attached file of this budget.
+/// Removes every conversation and attached file of this budget. A file chosen for a message
+/// that isn't sent yet is no conversation's, and stays for it.
 pub fn delete_all(folder: &Path) -> Result<(), String> {
-    match std::fs::remove_dir_all(root(folder)) {
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
-        _ => Ok(()),
+    for kept in [threads(folder), files(folder)] {
+        match std::fs::remove_dir_all(kept) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.to_string()),
+            _ => {}
+        }
     }
+    Ok(())
 }
 
 /// What the panel needs to draw a proposal: no stored change or import rows.
@@ -232,8 +236,78 @@ pub struct ProposalView<'a> {
     /// For a `bankTexts` card, what the phone does when it's applied.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bank_texts: Option<&'a Value>,
+    /// A report, a spreadsheet or a converted file: something made, not a change to apply.
+    pub made: bool,
+    /// What the card offers now, in order, the first being the main one. The apps name and draw
+    /// them; one an app doesn't know it leaves out.
+    pub actions: Vec<&'static str>,
+    /// What the card has to say about itself, in one place: `tone` is "info" (it was brought up
+    /// to date), "warn" (something to check) or "error" (it can't be applied).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub applied_at: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replaced_by: Option<&'a str>,
+}
+
+/// What a card offers, by its kind and where it stands.
+///
+/// - A change waiting: "apply" (or "applyToImport" for an import's fixes, "applyBankTexts" on the
+///   phone), "askChanges", "useOriginal" once the user has chosen on it, "discard".
+/// - Applied: "undo", which the app shows while the change is still the budget's latest.
+/// - Failed: "askAgain" (ask the assistant for a new version) and "discard".
+/// - Set aside or replaced: "restore".
+/// - Something made: "preview", "print" and "excel" for a report; "open" and "save" for a
+///   spreadsheet; "reviewImport" and "saveCsv" for a converted file; "remove" for each.
+/// - "show", where the card names categories or transactions the app can go to.
+fn actions(p: &Proposal, sheets: usize) -> Vec<&'static str> {
+    use Status::*;
+    let mut actions: Vec<&'static str> = match (p.kind.as_str(), p.status) {
+        (_, Discarded | Replaced) => vec!["restore"],
+        ("report", _) if sheets > 0 => vec!["preview", "print", "excel", "remove"],
+        ("report", _) => vec!["preview", "print", "remove"],
+        ("spreadsheet", _) => vec!["open", "save", "remove"],
+        ("import", Applied) => vec!["saveCsv"],
+        ("import", _) => vec!["reviewImport", "saveCsv", "remove"],
+        (_, Failed) => vec!["askAgain", "discard"],
+        ("fix" | "bankTexts", Applied) => vec![],
+        ("fix", _) => vec!["applyToImport", "askChanges", "discard"],
+        ("bankTexts", _) => vec!["applyBankTexts", "askChanges", "discard"],
+        (_, Applied) => vec!["undo"],
+        (_, Proposed | Undone) => vec!["apply", "askChanges", "discard"],
+    };
+    if p.review.is_some() && matches!(p.status, Proposed | Undone) && !p.made() {
+        let at = actions.len() - 1;
+        actions.insert(at, "useOriginal");
+    }
+    // New transactions are there to show only once they're added.
+    let there = p.status == Applied || !matches!(p.change, Some(super::proposals::Change::Add { .. }));
+    let names = !p.card.highlight.categories.is_empty() || !p.card.highlight.transactions.is_empty();
+    if names && there && p.change.is_some() && matches!(p.status, Proposed | Undone | Applied) {
+        actions.push("show");
+    }
+    actions
+}
+
+/// What a card says about itself, apart from the warning that's part of what it proposes.
+fn message(p: &Proposal) -> Option<Value> {
+    let said = |tone: &str, text: &str| json!({ "tone": tone, "text": text });
+    match (&p.problem, p.status) {
+        // A report or a file can't fail: an older app may have marked one so.
+        (_, Status::Failed) if p.made() => None,
+        (Some(text), Status::Failed) => Some(said("error", text)),
+        (None, Status::Failed) => Some(said("error", &t!("This can't be applied any more."))),
+        (Some(text), _) => Some(said(if p.updated { "info" } else { "warn" }, text)),
+        (None, _) => None,
+    }
 }
 pub fn proposal_view(p: &Proposal) -> Value {
+    let sheets = match (&p.workbook, &p.report) {
+        (Some(w), _) => w.sheets.len(),
+        (None, Some(r)) => super::workbook::report_tables(&r.body).len(),
+        _ => 0,
+    };
     serde_json::to_value(ProposalView {
         id: &p.id,
         title: &p.title,
@@ -242,14 +316,15 @@ pub fn proposal_view(p: &Proposal) -> Value {
         card: &p.card,
         problem: p.problem.as_deref(),
         rows: p.import.as_ref().map_or(0, |i| i.rows.len()),
-        sheets: match (&p.workbook, &p.report) {
-            (Some(w), _) => w.sheets.len(),
-            (None, Some(r)) => super::workbook::report_tables(&r.body).len(),
-            _ => 0,
-        },
+        sheets,
         fixes: p.fixes.as_ref(),
         choices: p.review.as_ref().map(|r| &r.revision),
         bank_texts: p.bank_texts.as_ref(),
+        made: p.made(),
+        actions: actions(p, sheets),
+        message: message(p),
+        applied_at: p.applied_at.as_deref(),
+        replaced_by: p.replaced_by.as_deref(),
     })
     .unwrap_or(Value::Null)
 }
@@ -429,6 +504,38 @@ mod tests {
         // Once the conversation has moved on, the error offers nothing.
         t.items.push(Item::Stopped);
         assert!(entries(&t, Provider::Chatgpt).iter().all(|e| e.get("action").is_none()));
+    }
+
+    #[test]
+    fn a_card_says_what_it_offers_and_what_it_has_to_say() {
+        use crate::assistant::proposals::{build, build_report, Change, Move};
+        let b = urbudget_core::test_support::sample();
+        let offered = |p: &Proposal| proposal_view(p)["actions"].as_array().unwrap().iter().map(|a| a.as_str().unwrap().to_owned()).collect::<Vec<_>>().join(" ");
+        let mut change = build(Change::Moves { month: "2026-10".into(), moves: vec![Move { from: None, to: Some("food".into()), amount: 1000 }] }, "Give food more room".into(), &b).unwrap();
+        assert_eq!(offered(&change), "apply askChanges discard show");
+        assert!(!proposal_view(&change)["made"].as_bool().unwrap() && proposal_view(&change).get("message").is_none());
+        // Brought up to date with the budget: said gently. Something to check: a warning.
+        change.problem = Some("Your budget changed.".into());
+        change.updated = true;
+        assert_eq!(proposal_view(&change)["message"], json!({ "tone": "info", "text": "Your budget changed." }));
+        change.updated = false;
+        assert_eq!(proposal_view(&change)["message"]["tone"], "warn");
+        change.status = Status::Failed;
+        assert_eq!((offered(&change).as_str(), proposal_view(&change)["message"]["tone"].as_str()), ("askAgain discard", Some("error")));
+        change.status = Status::Applied;
+        change.applied_at = Some("2026-10-21T10:00:00Z".into());
+        assert_eq!((offered(&change).as_str(), proposal_view(&change)["appliedAt"].as_str()), ("undo show", Some("2026-10-21T10:00:00Z")));
+        for set_aside in [Status::Discarded, Status::Replaced] {
+            change.status = set_aside;
+            assert_eq!(offered(&change), "restore");
+        }
+        // A report is something made: opened and saved, never applied; removed, and put back.
+        let mut report = build_report("October in review".into(), None, "## Spending\n\n| Category | Spent |\n|---|---:|\n| Food | 10.00 |".into());
+        assert_eq!((offered(&report).as_str(), proposal_view(&report)["made"].as_bool()), ("preview print excel remove", Some(true)));
+        report.status = Status::Discarded;
+        assert_eq!(offered(&report), "restore");
+        report.status = Status::Failed;
+        assert!(proposal_view(&report).get("message").is_none() && offered(&report).starts_with("preview"));
     }
 
     #[test]

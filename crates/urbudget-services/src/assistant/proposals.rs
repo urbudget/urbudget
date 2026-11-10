@@ -127,15 +127,19 @@ pub fn notes_patch(current: &Budget, wanted: Vec<String>) -> Result<Patch, Strin
     Ok(Patch::diff(current, &after))
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub enum Status {
+    #[default]
     Proposed,
     Applied,
+    /// Set aside by the user. A report, spreadsheet or converted file is removed the same way.
     Discarded,
     Undone,
     /// The budget changed and the change can't be made any more.
     Failed,
+    /// The assistant made a newer proposal in its place (`replaced_by`).
+    Replaced,
 }
 
 /// A converted statement, ready for the import review.
@@ -306,7 +310,7 @@ pub struct Card {
     pub highlight: Highlight,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Proposal {
     pub id: String,
@@ -343,6 +347,30 @@ pub struct Proposal {
     /// For a `bankTexts` card, what the phone does when it's applied.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bank_texts: Option<Value>,
+    /// When it was applied, for the card to say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub applied_at: Option<String>,
+    /// Made again on a budget that had changed since it was proposed: the card says so.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub updated: bool,
+    /// The earlier proposal this one corrects, as the assistant named it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replaces: Option<String>,
+    /// The newer proposal made in this one's place.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replaced_by: Option<String>,
+}
+
+impl Proposal {
+    /// A report, a spreadsheet or a converted file: something the assistant made, to open and
+    /// save, not a change to apply.
+    pub fn made(&self) -> bool {
+        matches!(self.kind.as_str(), "report" | "spreadsheet" | "import")
+    }
+    /// Waiting on the user, and a change to the budget: what's kept up to date with it.
+    pub fn waiting_change(&self) -> bool {
+        matches!(self.status, Status::Proposed | Status::Undone) && self.change.is_some()
+    }
 }
 
 /// Rows the model is told about; the card shows them all.
@@ -407,6 +435,7 @@ pub fn build_report(title: String, period: Option<String>, body: String) -> Prop
         fixes: None,
         review: None,
         bank_texts: None,
+        ..Proposal::default()
     }
 }
 
@@ -610,6 +639,7 @@ pub fn build(change: Change, title: String, before: &Budget) -> Result<Proposal,
         fixes: None,
         review: None,
         bank_texts: None,
+        ..Proposal::default()
     })
 }
 
@@ -663,6 +693,7 @@ pub fn recheck(p: &Proposal, current: &Budget) -> Recheck {
             match again {
                 Ok(q) => {
                     refreshed = q;
+                    refreshed.updated = true;
                     refreshed.problem = Some(t!("Your budget changed since this was proposed, so it was updated. Check it, then apply."));
                 }
                 Err(e) => {
@@ -673,11 +704,45 @@ pub fn recheck(p: &Proposal, current: &Budget) -> Recheck {
             Recheck::Changed(refreshed)
         }
         Err(e) => {
+            // A transaction it names was deleted since: the rest of it is still offered.
+            if let Some(rest) = without_gone(p, current) {
+                return Recheck::Changed(rest);
+            }
             refreshed.status = Status::Failed;
             refreshed.problem = Some(t!("This can't be applied any more: {problem}", problem = e));
             Recheck::Changed(refreshed)
         }
     }
+}
+
+/// The proposal without the parts of it that are no longer in the budget, with the user's
+/// choices made again on what's left. None when nothing is gone, or nothing is left.
+fn without_gone(p: &Proposal, current: &Budget) -> Option<Proposal> {
+    let original = match &p.review {
+        Some(r) => r.original.change.clone()?,
+        None => p.change.clone()?,
+    };
+    let (kept, gone) = original.present(current);
+    if gone == 0 || kept.is_empty() {
+        return None;
+    }
+    let after = kept.run(current.clone()).ok()?;
+    let patch = Patch::diff(current, &after);
+    if patch.is_empty() {
+        return None;
+    }
+    let mut q = p.clone();
+    q.card = card(&kept, current, &after).ok()?;
+    q.change = Some(kept);
+    q.expected = Some(normalize(&patch));
+    q.review = None;
+    q.summary = summary(&q.title, &q.card);
+    if let Some(r) = &p.review {
+        q = revise(&q, r.revision.clone(), current).ok()?;
+    }
+    q.updated = true;
+    q.problem = Some(t!("{n|# transaction in this was|# transactions in this were} deleted since it was proposed. The rest is still here: check it, then apply.", n = gone));
+    Some(q)
 }
 
 /// The proposal as the user chose on its card (rows left out, categories and amounts given),
@@ -772,6 +837,19 @@ fn merge(full: Card, part: Option<Card>, r: &Revision) -> Card {
 }
 
 impl Change {
+    /// The change without the parts whose transactions are no longer in the budget, and how many
+    /// were left out.
+    fn present(&self, current: &Budget) -> (Change, usize) {
+        let ids: HashSet<&str> = current.transactions.iter().map(|t| t.id.as_str()).collect();
+        match self {
+            Change::Edits { edits, rules } => {
+                let kept: Vec<Edit> = edits.iter().filter(|e| ids.contains(e.id.as_str())).cloned().collect();
+                let gone = edits.len() - kept.len();
+                (Change::Edits { edits: kept, rules: rules.clone() }, gone)
+            }
+            _ => (self.clone(), 0),
+        }
+    }
     /// Nothing left to do: every part of it left out.
     pub fn is_empty(&self) -> bool {
         match self {
@@ -1206,6 +1284,7 @@ fn card_as(change: &Change, before: &Budget, after: &Budget, single: Option<bool
                 rows,
                 stats,
                 warning: from_file.then(|| t!("Read from a file. Check the amounts.")),
+                highlight: Highlight { transactions: transactions.iter().map(|n| n.id.clone()).collect(), ..Highlight::default() },
                 ..Card::default()
             })
         }
@@ -1374,6 +1453,7 @@ pub fn build_import(
         fixes: None,
         review: None,
         bank_texts: None,
+        ..Proposal::default()
     })
 }
 
@@ -1400,6 +1480,7 @@ pub fn build_fix(fixes: crate::bank_statement::Fixes, rows: Vec<Row>, note: Opti
         fixes: Some(fixes),
         review: None,
         bank_texts: None,
+        ..Proposal::default()
     }
 }
 

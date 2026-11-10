@@ -55,6 +55,17 @@ fn object(properties: Value, required: &[&str]) -> Value {
 
 /// The tools, in the order the model sees them.
 pub fn specs() -> Vec<Spec> {
+    let mut specs = listed();
+    // A change proposed in place of an earlier one says which.
+    for spec in specs.iter_mut().filter(|s| s.name.starts_with("propose_") && s.name != "propose_bank_texts") {
+        spec.parameters["properties"]["replaces"] = json!({
+            "type": "string",
+            "description": "The proposalId of an earlier proposal of yours that this one corrects or takes the place of. Its card is folded away, so the user isn't left with both.",
+        });
+    }
+    specs
+}
+fn listed() -> Vec<Spec> {
     let id_list = |what: &str| json!({ "type": "array", "items": { "type": "string" }, "description": what });
     vec![
         Spec {
@@ -667,6 +678,12 @@ pub fn call(name: &str, args: &Value, ctx: &Context) -> Outcome {
         "create_spreadsheet" => create_spreadsheet(args, ctx),
         _ => Err(format!("There is no tool named {name}.")),
     };
+    let result = result.map(|mut outcome| {
+        if let (Some(proposal), Some(earlier)) = (outcome.proposal.as_mut(), arg(args, "replaces")) {
+            proposal.replaces = Some(earlier.to_owned());
+        }
+        outcome
+    });
     result.unwrap_or_else(|error| {
         // What a tool says about its arguments is for the model to act on, and would only puzzle
         // the user. The panel says the step failed, with the reason only when it's the engine's.
@@ -1394,7 +1411,7 @@ fn propose_transaction_edits(args: &Value, ctx: &Context) -> Result<Outcome, Str
     if list.len() > 500 {
         return Err("Propose at most 500 edits at a time.".into());
     }
-    let mut edits = vec![];
+    let mut edits: Vec<Edit> = vec![];
     for e in list {
         let object = e.as_object().ok_or("Each edit must be an object.")?;
         if let Some(field) = object.keys().find(|field| !matches!(field.as_str(), "id" | "amount" | "categoryId" | "payee" | "memo" | "cleared" | "approve" | "flag" | "unsure")) {
@@ -1402,6 +1419,9 @@ fn propose_transaction_edits(args: &Value, ctx: &Context) -> Result<Outcome, Str
         }
         let id = e["id"].as_str().ok_or("Each edit needs a transaction id.")?;
         let t = by_id.get(id).ok_or_else(|| format!("No transaction has the id {id}. Use find_transactions."))?;
+        if edits.iter().any(|earlier| earlier.id == id) {
+            return Err(format!("{} on {} ({id}) is in the edits twice. Give each transaction once, with all its changes.", t.payee, t.date));
+        }
         let amount = e.get("amount").map(parse_money).transpose()?;
         let category = match e["categoryId"].as_str().filter(|s| !s.is_empty()) {
             None => None,
@@ -1671,6 +1691,13 @@ fn fix_import(args: &Value, ctx: &Context) -> Result<Outcome, String> {
     for f in args["fields"].as_array().into_iter().flatten() {
         let l = line(f)?;
         let field: Field = serde_json::from_value(f["field"].clone()).map_err(|_| "A fix's field is date, payee, memo, amount or transferAccountId.")?;
+        // With memos kept from the assistant, the note shows none: a fix would name the wrong one.
+        if field == Field::Memo && !ctx.share_memos {
+            return Err("Memos aren't shared with you, so you can't fix one. Tell the user to change it in the import, or to turn on sharing memos in the assistant's settings.".into());
+        }
+        if fields.iter().any(|earlier: &FieldFix| earlier.line == l.id && earlier.field == field) {
+            return Err(format!("Line {}'s {} is fixed twice. Give each one fix.", l.id, name(field)));
+        }
         let (now, from) = (l.fields.get(field), f["from"].as_str().unwrap_or(""));
         if now != from {
             return Err(format!("Line {}'s {} is \u{201c}{now}\u{201d}, not \u{201c}{from}\u{201d}.", l.id, name(field)));

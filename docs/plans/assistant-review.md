@@ -475,3 +475,33 @@ on a screen on any of the three.
 - 0.11: it was real. On an Android phone, Back with the assistant open over a bank import now
   closes the assistant.
 
+**Phase 2, the core** (10 November 2026; 243 unit tests passing):
+
+- 2.1, 2.7, 2.8: a card's view says whether it's something made (`made`), what it offers now
+  (`actions`, in order) and what it has to say (`message`, with a tone). The apps draw those;
+  an action or kind an app doesn't know, it leaves out. A report, spreadsheet or converted
+  file is still kept as a proposal in the conversation's file; removing one is its discarded
+  state, and it can be put back.
+- 2.2: looking at a conversation makes its waiting changes again on the budget as it is
+  (`refresh_proposals`), once per change to the budget. One that would differ is replaced by
+  the card as it would be now, saying so ("info"); one that can't be made fails. So Apply
+  applies, and there's no separate "changed" state. A propose tool takes `replaces`, and the
+  earlier card becomes `replaced`, with the new one named on it (`replacedBy`); it can be
+  restored.
+- 2.3: an applied card keeps its rows and says when (`appliedAt`); a card set aside can be put
+  back (`assistant_mark` to proposed).
+- 2.4: `assistant_apply` takes `settle`. Without it the card stays as it is until the app has
+  the change in the budget and marks it applied; the phones' `assistant_apply_commit` now saves
+  first. `assistant_mark` takes only steps that follow from where the card stands. On the
+  phones, the budget's own Undo and Redo move the card between applied and undone
+  (`History.undone`), and the conversation's view names the card Undo would take back
+  (`undoable`). The desktop's part of this is in its window.
+- 2.6: a transaction can be in a proposal's edits once, and a line's field fixed once, so every
+  row has a key of its own. A card that names a transaction deleted since keeps the rest
+  (`without_gone`). Not done: a budget-moves revision reaching a category the card doesn't
+  show (still in FOLLOW-UPS).
+- 2.9: `assistant_mark` takes a note, shown as the card's message, for an app to say which of
+  an import's fixes didn't take. A memo fix is refused up front when memos aren't shared.
+- 2.10: a card of new transactions names them, so the app can show them once they're added.
+- Deleting every conversation leaves a file chosen for a message that isn't sent yet.
+

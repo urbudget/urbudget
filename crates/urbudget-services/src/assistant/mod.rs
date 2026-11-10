@@ -168,6 +168,9 @@ pub struct AssistantState {
     models: Mutex<HashMap<Provider, Vec<llm::Model>>>,
     /// Budget folders whose unused attachments were cleared this session.
     pruned: Mutex<std::collections::HashSet<PathBuf>>,
+    /// The budget each waiting proposal was last made again on (`budget_stamp`), so a
+    /// conversation is brought up to date once per change to the budget, not at every look.
+    checked: Mutex<HashMap<String, u64>>,
 }
 
 struct RunningTask {
@@ -219,6 +222,7 @@ impl Assistant {
             foreground: AtomicBool::new(true),
             models: Mutex::new(HashMap::new()),
             pruned: Mutex::new(std::collections::HashSet::new()),
+            checked: Mutex::new(HashMap::new()),
         }))
     }
     fn settings_path(&self) -> PathBuf {
@@ -659,12 +663,65 @@ pub fn assistant_threads(db: &Database, assistant: &Assistant) -> Result<Vec<his
     Ok(history::list(&folder))
 }
 
-pub fn assistant_thread(db: &Database, assistant: &Assistant, id: String) -> Result<Value, String> {
+/// The conversation as the panel shows it, with its waiting proposals made again on the budget
+/// as the window has it: a card that would change says so before Apply is pressed, not after.
+pub fn assistant_thread(db: &Database, assistant: &Assistant, id: String, patch: Option<Patch>) -> Result<Value, String> {
     let folder = folder(&db)?;
+    // A budget that can't be read doesn't keep the conversation from being shown.
+    let _ = refresh_proposals(db, assistant, &folder, &id, patch);
     let provider = assistant.settings().provider;
     let mut view = assistant.peek(&folder, &id, |t| history::view(t, provider))?;
     view["running"] = json!(assistant.is_running(&id));
     Ok(view)
+}
+
+/// What tells one state of the budget from another, cheaply: the saved budget's token and the
+/// window's unsaved changes.
+fn budget_stamp(db: &Database, patch: &Option<Patch>) -> Result<u64, String> {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    db.store()?.status()?.token.hash(&mut hasher);
+    serde_json::to_string(patch).unwrap_or_default().hash(&mut hasher);
+    Ok(hasher.finish())
+}
+
+/// Makes the conversation's waiting proposals again when the budget has changed since each was
+/// last made: one that still makes the same change is left alone; one that would differ is
+/// replaced by the card as it would be now, saying so; one that can't be made any more fails.
+fn refresh_proposals(db: &Database, assistant: &Assistant, folder: &Path, id: &str, patch: Option<Patch>) -> Result<(), String> {
+    let waiting: Vec<proposals::Proposal> = assistant.peek(folder, id, |t| t.proposals.iter().filter(|p| p.waiting_change()).cloned().collect())?;
+    if waiting.is_empty() {
+        return Ok(());
+    }
+    let stamp = budget_stamp(db, &patch)?;
+    let due: Vec<proposals::Proposal> = {
+        let checked = lock(&assistant.checked);
+        waiting.into_iter().filter(|p| checked.get(&p.id) != Some(&stamp)).collect()
+    };
+    if due.is_empty() {
+        return Ok(());
+    }
+    let changed: Vec<proposals::Proposal> = db.read(patch, |current| {
+        Ok(due.iter().filter_map(|p| match proposals::recheck(p, current) {
+            Recheck::Same(_) => None,
+            Recheck::Changed(now) => Some(now),
+        }).collect())
+    })?;
+    if !changed.is_empty() {
+        assistant.with_thread(folder, id, |t| {
+            for now in changed {
+                // Only as it stood when it was made again: applied or set aside meanwhile, it stays.
+                if let Some(p) = t.proposals.iter_mut().find(|p| p.id == now.id && p.waiting_change()) {
+                    *p = now;
+                }
+            }
+        })?;
+    }
+    let mut checked = lock(&assistant.checked);
+    for p in due {
+        checked.insert(p.id, stamp);
+    }
+    Ok(())
 }
 
 pub fn assistant_delete_thread(db: &Database, assistant: &Assistant, id: String) -> Result<(), String> {
@@ -719,6 +776,7 @@ fn status_word(s: Status) -> &'static str {
         Status::Discarded => "discarded",
         Status::Undone => "applied, then undone",
         Status::Failed => "couldn't be applied",
+        Status::Replaced => "replaced by a newer proposal",
     }
 }
 
@@ -1086,12 +1144,18 @@ pub struct Applied {
 
 /// Runs a proposal again on the budget as the window has it. The same change comes back as a
 /// patch to apply; a changed one comes back as a refreshed card.
+///
+/// With `settle` the card is marked applied here, before the budget has the change: the way
+/// apps worked before they marked it themselves. Without it the card stays as it is, and the
+/// app marks it applied (`assistant_mark`) once the change is in the budget, so a card never
+/// says Applied for a change that was never saved.
 pub fn assistant_apply(
     db: &Database,
     assistant: &Assistant,
     patch: Option<Patch>,
     thread_id: String,
     proposal_id: String,
+    settle: bool,
 ) -> Result<Applied, String> {
     let folder = folder(&db)?;
     let proposal = assistant
@@ -1108,7 +1172,9 @@ pub fn assistant_apply(
         let p = t.proposals.iter_mut().find(|p| p.id == proposal_id).expect("proposal present");
         match outcome {
             Recheck::Same(patch) => {
-                p.status = Status::Applied;
+                if settle {
+                    applied(p);
+                }
                 Applied { patch: Some(patch), proposal: history::proposal_view(p) }
             }
             Recheck::Changed(refreshed) => {
@@ -1152,18 +1218,54 @@ pub fn assistant_revise(
     })?
 }
 
-/// Records what happened to a proposal: discarded, undone, or back to proposed when applying failed.
+/// A card whose change is in the budget.
+fn applied(p: &mut proposals::Proposal) {
+    p.status = Status::Applied;
+    p.applied_at = Some(now());
+    p.updated = false;
+    p.problem = None;
+}
+
+/// Records what an app did with a proposal: applied (its change is in the budget, or its import
+/// or fixes went through), set aside, put back, or undone. Only steps that can follow from where
+/// the card stands are taken: an app can't make a failed card applied, or an applied one new.
+/// `note` is what the app has to say about it, such as which of an import's fixes didn't take.
 pub fn assistant_mark(
     db: &Database,
     assistant: &Assistant,
     thread_id: String,
     proposal_id: String,
     status: Status,
+    note: Option<String>,
 ) -> Result<Value, String> {
+    use Status::*;
     let folder = folder(&db)?;
     assistant.with_thread(&folder, &thread_id, |t| {
         let p = t.proposals.iter_mut().find(|p| p.id == proposal_id).ok_or_else(|| t!("That proposal is gone."))?;
-        p.status = status;
+        let follows = match (p.status, status) {
+            (from, to) if from == to => true,
+            (Proposed | Undone | Failed, Discarded) => true,
+            (Discarded | Replaced, Proposed) => true,
+            (Proposed | Undone, Applied) => true,
+            (Applied, Undone) => true,
+            // An app that marks a card applied before saving puts it back when the save fails.
+            (Applied, Proposed) => true,
+            _ => false,
+        };
+        if !follows {
+            return Err(t!("This proposal was already handled."));
+        }
+        match status {
+            Applied => applied(p),
+            Proposed => {
+                p.status = Proposed;
+                p.replaced_by = None;
+            }
+            other => p.status = other,
+        }
+        if let Some(note) = note.map(|n| n.trim().chars().take(600).collect::<String>()).filter(|n| !n.is_empty()) {
+            p.problem = Some(note);
+        }
         Ok(history::proposal_view(p))
     })?
 }
@@ -1336,7 +1438,7 @@ pub(crate) mod testing {
         runtime.assistant.thread_copy(&folder, id).unwrap().items
     }
     pub fn view(runtime: &crate::runtime::Runtime, id: &str) -> Value {
-        assistant_thread(&runtime.db, &runtime.assistant, id.to_owned()).unwrap()
+        assistant_thread(&runtime.db, &runtime.assistant, id.to_owned(), None).unwrap()
     }
 }
 
@@ -1485,10 +1587,10 @@ mod tests {
         // A thumb is on a reply, by its place; it can be changed and taken off.
         assistant_rate(&runtime.db, &runtime.assistant, thread.id.clone(), 1, Some(false)).unwrap();
         assert!(assistant_rate(&runtime.db, &runtime.assistant, thread.id.clone(), 0, Some(true)).is_err());
-        let view = assistant_thread(&runtime.db, &runtime.assistant, thread.id.clone()).unwrap();
+        let view = assistant_thread(&runtime.db, &runtime.assistant, thread.id.clone(), None).unwrap();
         assert_eq!((&view["entries"][1]["rating"], &view["entries"][1]["index"]), (&json!("down"), &json!(1)));
         assistant_rate(&runtime.db, &runtime.assistant, thread.id.clone(), 1, None).unwrap();
-        assert!(assistant_thread(&runtime.db, &runtime.assistant, thread.id.clone()).unwrap()["entries"][1].get("rating").is_none());
+        assert!(assistant_thread(&runtime.db, &runtime.assistant, thread.id.clone(), None).unwrap()["entries"][1].get("rating").is_none());
 
         // Carried on: a new conversation that begins with what was said last, and none of the rest.
         let next = assistant_continue(&runtime.db, &runtime.assistant, thread.id.clone()).unwrap();
@@ -1496,7 +1598,95 @@ mod tests {
         assert_eq!(carried.title, "October so far (continued)");
         let text = carried.carried.unwrap().text;
         assert!(text.contains("The user: How is October going?") && text.contains("You: You've spent 1,240.00 so far."));
-        assert_eq!(assistant_thread(&runtime.db, &runtime.assistant, next).unwrap()["continuedFrom"], "October so far");
+        assert_eq!(assistant_thread(&runtime.db, &runtime.assistant, next, None).unwrap()["continuedFrom"], "October so far");
+    }
+
+    #[test]
+    fn a_waiting_card_is_brought_up_to_date_when_its_conversation_is_looked_at() {
+        let directory = tempfile::tempdir().unwrap();
+        let runtime = with_budget(directory.path());
+        let call = |method: &str, p: Value| crate::block_on(runtime.dispatch(method, p));
+        let folder = runtime.db.store().unwrap().folder().to_path_buf();
+        let before = urbudget_core::test_support::sample();
+        let give = proposals::build(proposals::Change::Moves {
+            month: "2026-10".into(), moves: vec![proposals::Move { from: None, to: Some("food".into()), amount: 1000 }],
+        }, "Give food more room".into(), &before).unwrap();
+        let thread = Thread { id: "t_fresh".into(), title: "Fresh".into(), created: now(), updated: now(), proposals: vec![give.clone()], items: vec![
+            Item::Result { call_id: "c1".into(), output: "{}".into(), step: String::new(), failed: false, proposal: Some(give.id.clone()) },
+        ], ..Default::default() };
+        history::save(&folder, &thread).unwrap();
+        let card = || assistant_thread(&runtime.db, &runtime.assistant, thread.id.clone(), None).unwrap()["entries"][0]["proposal"].clone();
+        // The budget as it was proposed on: the card as it was.
+        assert_eq!((card()["card"]["rows"][0]["after"].as_i64(), card().get("message")), (Some(21000), None));
+        // Food is given 100.00 more by hand: the card would now leave it somewhere else, and says so.
+        let mut edited = before.clone();
+        edited.assignments[0].amount = 30000;
+        let token = runtime.load().unwrap()["token"].clone();
+        call("save_budget", json!({ "budget": edited, "expectedToken": token })).unwrap();
+        let now_card = card();
+        assert_eq!((now_card["card"]["rows"][0]["after"].as_i64(), now_card["message"]["tone"].as_str(), now_card["status"].as_str()), (Some(31000), Some("info"), Some("proposed")));
+        // Applying it now applies it, rather than coming back changed.
+        let applied = call("assistant_apply_commit", json!({ "threadId": thread.id, "proposalId": give.id })).unwrap();
+        assert_eq!((applied["proposal"]["status"].as_str(), applied["snapshot"]["budget"]["assignments"][0]["amount"].as_i64()), (Some("applied"), Some(31000)));
+        assert!(applied["proposal"]["appliedAt"].is_string() && applied["proposal"].get("message").is_none());
+
+        // The budget's own Undo takes the card's change back, and Redo puts it in again; the
+        // conversation says which of its cards Undo would take back.
+        let looked = call("assistant_thread", json!({ "id": thread.id })).unwrap();
+        assert_eq!(looked["undoable"], json!(give.id));
+        let undone = call("undo_budget", json!({ "expectedToken": applied["snapshot"]["token"] })).unwrap();
+        assert_eq!(card()["status"], "undone");
+        assert!(call("assistant_thread", json!({ "id": thread.id })).unwrap().get("undoable").is_none());
+        call("redo_budget", json!({ "expectedToken": undone["token"] })).unwrap();
+        assert_eq!(card()["status"], "applied");
+        assert_eq!(call("assistant_thread", json!({ "id": thread.id })).unwrap()["undoable"], json!(give.id));
+    }
+
+    #[test]
+    fn what_is_left_of_a_card_is_still_offered_when_a_transaction_it_names_is_deleted() {
+        let mut b = urbudget_core::test_support::sample();
+        let bought = |id: &str, payee: &str| urbudget_core::domain::Transaction { id: id.into(), payee: payee.into(), ..urbudget_core::test_support::purchase() };
+        b.transactions = vec![bought("a", "Shop"), bought("b", "Bakery")];
+        let memo = |id: &str| proposals::Edit { id: id.into(), amount: None, previous_amount: None, category: None, payee: None, memo: Some("October".into()), cleared: None, approve: false, flag: None, unsure: false };
+        let both = proposals::build(proposals::Change::Edits { edits: vec![memo("a"), memo("b")], rules: vec![] }, "Note two purchases".into(), &b).unwrap();
+        assert_eq!(both.card.rows.len(), 2);
+        b.transactions.remove(0);
+        let Recheck::Changed(rest) = proposals::recheck(&both, &b) else { panic!("the card should have changed") };
+        assert_eq!((rest.status, rest.card.rows.len(), rest.updated), (Status::Proposed, 1, true));
+        assert!(rest.problem.as_deref().unwrap().starts_with("1 transaction in this was deleted"));
+        // What's left applies as it now reads.
+        assert!(matches!(proposals::recheck(&rest, &b), Recheck::Same(_)));
+        // With the other gone too, nothing is left to offer.
+        b.transactions.clear();
+        assert!(matches!(proposals::recheck(&rest, &b), Recheck::Changed(gone) if gone.status == Status::Failed));
+    }
+
+    #[test]
+    fn an_app_can_only_take_a_card_where_it_can_go_from_where_it_stands() {
+        let directory = tempfile::tempdir().unwrap();
+        let runtime = with_budget(directory.path());
+        let folder = runtime.db.store().unwrap().folder().to_path_buf();
+        let give = proposals::build(proposals::Change::Moves {
+            month: "2026-10".into(), moves: vec![proposals::Move { from: None, to: Some("food".into()), amount: 1000 }],
+        }, "Give food more room".into(), &urbudget_core::test_support::sample()).unwrap();
+        let thread = Thread { id: "t_mark".into(), title: "Mark".into(), created: now(), updated: now(), proposals: vec![give.clone()], ..Default::default() };
+        history::save(&folder, &thread).unwrap();
+        let mark = |status: Status, note: Option<&str>| assistant_mark(&runtime.db, &runtime.assistant, thread.id.clone(), give.id.clone(), status, note.map(str::to_owned));
+        // Set aside and put back; applied, undone, applied again.
+        assert_eq!(mark(Status::Discarded, None).unwrap()["actions"], json!(["restore"]));
+        assert!(mark(Status::Applied, None).is_err() && mark(Status::Undone, None).is_err());
+        assert_eq!(mark(Status::Proposed, None).unwrap()["status"], "proposed");
+        assert!(mark(Status::Applied, None).unwrap()["appliedAt"].is_string());
+        assert!(mark(Status::Discarded, None).is_err() && mark(Status::Failed, None).is_err());
+        assert_eq!(mark(Status::Undone, None).unwrap()["status"], "undone");
+        // What the app has to say about it is the card's message.
+        let noted = mark(Status::Applied, Some("2 of 3 fixes were applied.")).unwrap();
+        assert_eq!(noted["message"], json!({ "tone": "warn", "text": "2 of 3 fixes were applied." }));
+        // Asked to apply without settling it, the card stays as it is until the app marks it.
+        mark(Status::Undone, None).unwrap();
+        let asked = assistant_apply(&runtime.db, &runtime.assistant, None, thread.id.clone(), give.id.clone(), false).unwrap();
+        assert!(asked.patch.is_some() && asked.proposal["status"] == "undone");
+        assert_eq!(assistant_apply(&runtime.db, &runtime.assistant, None, thread.id.clone(), give.id.clone(), true).unwrap().proposal["status"], "applied");
     }
 
     #[test]
@@ -1516,7 +1706,7 @@ mod tests {
         assistant_stop(&runtime.db, &runtime.assistant, thread.id.clone()).unwrap();
         let items = runtime.assistant.thread_copy(&folder, &thread.id).unwrap().items;
         assert!(matches!(&items[1..], [Item::Assistant { text }, Item::Stopped] if text == "You've spent 1,240.00 of"), "{items:?}");
-        let view = assistant_thread(&runtime.db, &runtime.assistant, thread.id.clone()).unwrap();
+        let view = assistant_thread(&runtime.db, &runtime.assistant, thread.id.clone(), None).unwrap();
         let kinds: Vec<&str> = view["entries"].as_array().unwrap().iter().map(|e| e["kind"].as_str().unwrap()).collect();
         assert_eq!(kinds, ["user", "assistant", "stopped"]);
         // Stopped before a word was written: only the mark.
@@ -1545,7 +1735,13 @@ mod tests {
         assert!(history::files(&folder).join(format!("{}.bin", meta.id)).is_file());
         let _ = assistant_stop(&runtime.db, &runtime.assistant, id);
         // A file taken off can't be sent.
-        assert!(assistant_send(&runtime.simplefin, &runtime.db, &runtime.assistant, None, None, "And this".into(), vec![gone.id], screen).is_err());
+        assert!(assistant_send(&runtime.simplefin, &runtime.db, &runtime.assistant, None, None, "And this".into(), vec![gone.id], screen.clone()).is_err());
+        // Deleting every conversation takes their files, and leaves one chosen for a message not sent yet.
+        let waiting = assistant_attach(&runtime.db, &runtime.assistant, "later.csv".into(), base64::engine::general_purpose::STANDARD.encode(b"a,b\n1,2\n")).unwrap();
+        assistant_delete_all(&runtime.db, &runtime.assistant).unwrap();
+        assert!(!history::files(&folder).exists() && assistant_threads(&runtime.db, &runtime.assistant).unwrap().is_empty());
+        let id = assistant_send(&runtime.simplefin, &runtime.db, &runtime.assistant, None, None, "Now this".into(), vec![waiting.id], screen).unwrap();
+        let _ = assistant_stop(&runtime.db, &runtime.assistant, id);
 
         // The notice of what's sent is due until it's read, and again for another service.
         assert!(serde_json::to_value(assistant_status(&runtime.assistant)).unwrap()["noticeDue"].as_bool().unwrap());
