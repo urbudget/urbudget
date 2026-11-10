@@ -109,6 +109,9 @@ pub struct Settings {
     pub account: Option<auth::Account>,
     /// The first-use notice about using the ChatGPT plan was dismissed.
     pub plan_notice_seen: bool,
+    /// The service the user was last told their messages go to (the notice before a first
+    /// message). Another service asks again.
+    pub told_about: Option<Provider>,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -121,6 +124,7 @@ impl Default for Settings {
             client_id: None,
             account: None,
             plan_notice_seen: false,
+            told_about: None,
         }
     }
 }
@@ -169,6 +173,8 @@ pub struct AssistantState {
 struct RunningTask {
     handle: tokio::task::JoinHandle<()>,
     cancelled: Arc<AtomicBool>,
+    /// The text of the round being written, as far as it has got: what Stop keeps.
+    written: Arc<Mutex<String>>,
 }
 
 #[derive(Clone, Default)]
@@ -356,6 +362,7 @@ impl Assistant {
         if !lock(&self.pruned).insert(folder.to_owned()) {
             return;
         }
+        attachments::Files::open(history::files(folder)).discard_waiting();
         let mut keep = std::collections::HashSet::new();
         let mut note = |t: &Thread| {
             for item in &t.items {
@@ -406,6 +413,8 @@ pub struct StatusView {
     share_memos: bool,
     keep_history: bool,
     plan_notice_seen: bool,
+    /// The notice of what's sent, and to whom, hasn't been shown for the chosen service yet.
+    notice_due: bool,
     has_openai_key: bool,
     has_anthropic_key: bool,
     /// Where secrets are kept, or None when they last only until the app closes.
@@ -432,6 +441,7 @@ fn status(a: &Assistant) -> StatusView {
         share_memos: s.share_memos,
         keep_history: s.keep_history,
         plan_notice_seen: s.plan_notice_seen,
+        notice_due: s.told_about != Some(s.provider),
         has_openai_key: a.secret(Provider::Openai).is_some(),
         has_anthropic_key: a.secret(Provider::Anthropic).is_some(),
         storage: vault::STORE,
@@ -561,6 +571,8 @@ pub struct SettingsChange {
     share_memos: Option<bool>,
     keep_history: Option<bool>,
     plan_notice_seen: Option<bool>,
+    /// The user read the notice of what's sent for the chosen service.
+    told: Option<bool>,
 }
 pub fn assistant_settings(assistant: &Assistant, change: SettingsChange) -> Result<StatusView, String> {
     if change.provider.is_some() || change.model.is_some() { lock(&assistant.sms_jobs).clear(); }
@@ -584,6 +596,9 @@ pub fn assistant_settings(assistant: &Assistant, change: SettingsChange) -> Resu
         }
         if let Some(v) = change.plan_notice_seen {
             s.plan_notice_seen = v;
+        }
+        if let Some(v) = change.told {
+            s.told_about = v.then_some(s.provider);
         }
     })?;
     Ok(status(&assistant))
@@ -633,7 +648,8 @@ pub fn assistant_threads(db: &Database, assistant: &Assistant) -> Result<Vec<his
 
 pub fn assistant_thread(db: &Database, assistant: &Assistant, id: String) -> Result<Value, String> {
     let folder = folder(&db)?;
-    let mut view = assistant.with_thread(&folder, &id, |t| history::view(t))?;
+    let provider = assistant.settings().provider;
+    let mut view = assistant.with_thread(&folder, &id, |t| history::view(t, provider))?;
     view["running"] = json!(assistant.is_running(&id));
     Ok(view)
 }
@@ -660,7 +676,8 @@ pub fn assistant_delete_all(db: &Database, assistant: &Assistant) -> Result<(), 
     history::delete_all(&folder)
 }
 
-/// Saves a file the user attached. `data` is base64.
+/// Keeps a file the user chose for their next message, until it's sent or taken off again
+/// (`assistant_detach`). `data` is base64.
 pub fn assistant_attach(
     db: &Database,
     assistant: &Assistant,
@@ -673,7 +690,13 @@ pub fn assistant_attach(
         return Err(t!("{name} is too large to attach.", name));
     }
     let bytes = base64::engine::general_purpose::STANDARD.decode(data.as_bytes()).map_err(|_| t!("The file couldn't be read."))?;
-    attachments::Files::open(history::files(&folder(&db)?)).save(&name, &bytes)
+    attachments::Files::open(history::files(&folder(&db)?)).stage(&name, &bytes)
+}
+
+/// Forgets a file the user took off their message before sending it.
+pub fn assistant_detach(db: &Database, id: String) -> Result<(), String> {
+    attachments::Files::open(history::files(&folder(db)?)).discard(&id);
+    Ok(())
 }
 
 fn status_word(s: Status) -> &'static str {
@@ -751,8 +774,13 @@ pub fn assistant_send(
     let import = screen.import.as_ref().and_then(|i| {
         crate::bank_statement::statement(&budget, &i.account, &i.content, &i.session).ok().map(|s| s.brief(settings.share_memos))
     });
+    // Sent: its files are the conversation's from here on.
+    for id in &attachments {
+        files.adopt(id)?;
+    }
     assistant.with_thread(&folder, &id, |t| {
         history::settle(&mut t.items);
+        let stopped = matches!(t.items.last(), Some(Item::Stopped));
         let earlier: Vec<String> = t
             .proposals
             .iter()
@@ -761,7 +789,7 @@ pub fn assistant_send(
                 None => format!("\u{201c}{}\u{201d} {}", p.title, status_word(p.status)),
             })
             .collect();
-        let context = prompt::context(&budget, &screen, settings.share_memos, &earlier, import.as_ref());
+        let context = prompt::context(&budget, &screen, settings.share_memos, &earlier, import.as_ref(), stopped);
         t.items.push(Item::User { text: text.clone(), attachments: metas, context, at: now(), import });
         t.updated = now();
     })?;
@@ -817,10 +845,12 @@ fn start(assistant: &Assistant, id: String, job: agent::Job) {
     let owned = assistant.clone();
     let cancelled = Arc::new(AtomicBool::new(false));
     let signal = cancelled.clone();
+    let written = Arc::new(Mutex::new(String::new()));
+    let writing = written.clone();
     let handle = crate::executor().spawn(async move {
-        if waiting.await.is_ok() { agent::run(owned, job, signal).await; }
+        if waiting.await.is_ok() { agent::run(owned, job, signal, writing).await; }
     });
-    lock(&assistant.running).insert(id, RunningTask { handle, cancelled });
+    lock(&assistant.running).insert(id, RunningTask { handle, cancelled, written });
     let _ = ready.send(());
 }
 
@@ -911,9 +941,14 @@ fn report_payload(text: &str, reason: &str) -> Result<Value, String> {
 pub fn assistant_stop(db: &Database, assistant: &Assistant, thread_id: String) -> Result<(), String> {
     if let Some(h) = lock(&assistant.running).remove(&thread_id) {
         h.abort();
+        // What it had written of this round stays, on the screen and for the model next time.
+        let written = std::mem::take(&mut *lock(&h.written));
         let folder = folder(&db)?;
         assistant.with_thread(&folder, &thread_id, |t| {
             history::settle(&mut t.items);
+            if !written.trim().is_empty() {
+                t.items.push(Item::Assistant { text: written });
+            }
             t.items.push(Item::Stopped);
         })?;
         agent::emit(&thread_id, json!({ "type": "done", "stopped": true }));
@@ -1242,6 +1277,70 @@ mod tests {
         assert!(!assistant.is_running(&id));
         let result = assistant.thread_copy(folder.path(), &id).unwrap();
         assert!(matches!(result.items.last(), Some(Item::Error { code, .. }) if code == "signIn"));
+    }
+
+    /// The services with the sample budget open and saved.
+    fn with_budget(directory: &Path) -> crate::runtime::Runtime {
+        let runtime = crate::runtime::Runtime::new(directory).unwrap();
+        let initial = runtime.load().unwrap();
+        crate::block_on(runtime.dispatch("save_budget", json!({ "budget": urbudget_core::test_support::sample(), "expectedToken": initial["token"] }))).unwrap();
+        runtime
+    }
+
+    #[test]
+    fn stop_keeps_what_the_reply_had_written() {
+        let directory = tempfile::tempdir().unwrap();
+        let runtime = with_budget(directory.path());
+        let folder = runtime.db.store().unwrap().folder().to_path_buf();
+        let said = Item::User { text: "How is October going?".into(), attachments: vec![], context: String::new(), at: now(), import: None };
+        let thread = Thread { id: "t_stop".into(), title: "Stop".into(), created: now(), updated: now(), instructions: String::new(), items: vec![said], proposals: vec![] };
+        history::save(&folder, &thread).unwrap();
+        // A reply in the middle of its sentence.
+        let running = |written: &str| {
+            let handle = crate::executor().spawn(std::future::pending::<()>());
+            lock(&runtime.assistant.running).insert(thread.id.clone(), RunningTask { handle, cancelled: Arc::new(AtomicBool::new(false)), written: Arc::new(Mutex::new(written.into())) });
+        };
+        running("You've spent 1,240.00 of");
+        assistant_stop(&runtime.db, &runtime.assistant, thread.id.clone()).unwrap();
+        let items = runtime.assistant.thread_copy(&folder, &thread.id).unwrap().items;
+        assert!(matches!(&items[1..], [Item::Assistant { text }, Item::Stopped] if text == "You've spent 1,240.00 of"), "{items:?}");
+        let view = assistant_thread(&runtime.db, &runtime.assistant, thread.id.clone()).unwrap();
+        let kinds: Vec<&str> = view["entries"].as_array().unwrap().iter().map(|e| e["kind"].as_str().unwrap()).collect();
+        assert_eq!(kinds, ["user", "assistant", "stopped"]);
+        // Stopped before a word was written: only the mark.
+        running("  ");
+        assistant_stop(&runtime.db, &runtime.assistant, thread.id.clone()).unwrap();
+        let items = runtime.assistant.thread_copy(&folder, &thread.id).unwrap().items;
+        assert!(matches!(&items[3..], [Item::Stopped]), "{items:?}");
+        // The next message tells the model its reply was cut short.
+        let note = prompt::context(&urbudget_core::test_support::sample(), &prompt::Screen::default(), false, &[], None, true);
+        assert!(note.contains("stopped your last reply"));
+    }
+
+    #[test]
+    fn a_chosen_file_joins_the_conversation_only_when_sent_and_the_notice_is_per_service() {
+        use base64::Engine;
+        let directory = tempfile::tempdir().unwrap();
+        let runtime = with_budget(directory.path());
+        let folder = runtime.db.store().unwrap().folder().to_path_buf();
+        let data = base64::engine::general_purpose::STANDARD.encode(b"Date,Payee,Amount\n2026-10-03,Bistro,-12.40\n");
+        let meta = assistant_attach(&runtime.db, &runtime.assistant, "october.csv".into(), data.clone()).unwrap();
+        assert!(!history::files(&folder).exists(), "nothing is among the conversation's files before Send");
+        let gone = assistant_attach(&runtime.db, &runtime.assistant, "other.csv".into(), data).unwrap();
+        assistant_detach(&runtime.db, gone.id.clone()).unwrap();
+        let screen: prompt::Screen = serde_json::from_value(json!({ "page": "budget", "today": "2026-10-21" })).unwrap();
+        let id = assistant_send(&runtime.simplefin, &runtime.db, &runtime.assistant, None, None, "Read this".into(), vec![meta.id.clone()], screen.clone()).unwrap();
+        assert!(history::files(&folder).join(format!("{}.bin", meta.id)).is_file());
+        let _ = assistant_stop(&runtime.db, &runtime.assistant, id);
+        // A file taken off can't be sent.
+        assert!(assistant_send(&runtime.simplefin, &runtime.db, &runtime.assistant, None, None, "And this".into(), vec![gone.id], screen).is_err());
+
+        // The notice of what's sent is due until it's read, and again for another service.
+        assert!(serde_json::to_value(assistant_status(&runtime.assistant)).unwrap()["noticeDue"].as_bool().unwrap());
+        let read: SettingsChange = serde_json::from_value(json!({ "told": true })).unwrap();
+        assert_eq!(serde_json::to_value(assistant_settings(&runtime.assistant, read).unwrap()).unwrap()["noticeDue"], false);
+        let switched: SettingsChange = serde_json::from_value(json!({ "provider": "anthropic" })).unwrap();
+        assert_eq!(serde_json::to_value(assistant_settings(&runtime.assistant, switched).unwrap()).unwrap()["noticeDue"], true);
     }
 
     #[test]

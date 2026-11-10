@@ -691,6 +691,7 @@ pub fn run() {
             assistant::assistant_delete_thread,
             assistant::assistant_delete_all,
             assistant::assistant_attach,
+            assistant::assistant_detach,
             assistant::assistant_send,
             assistant::assistant_stop,
             assistant::assistant_retry,

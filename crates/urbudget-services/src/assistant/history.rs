@@ -2,6 +2,7 @@
 //! append-only: earlier turns are sent back exactly as they were, which some models require.
 use crate::t;
 use super::attachments::Meta;
+use super::llm::Provider;
 use super::proposals::{Card, Proposal, Status};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -189,8 +190,23 @@ pub fn proposal_view(p: &Proposal) -> Value {
     .unwrap_or(Value::Null)
 }
 
-/// The conversation as the panel shows it.
-pub fn view(t: &Thread) -> Value {
+/// What the panel offers under an error, by its code and the service in use: "signIn" (sign in
+/// with ChatGPT again), "settings" (the key, the model or the service needs changing), "usage"
+/// (the plan's limit: open its usage page), "retry", or "none" when asking again wouldn't help.
+pub fn error_action(code: &str, provider: Provider) -> &'static str {
+    let plan = provider == Provider::Chatgpt;
+    match code {
+        "signIn" if plan => "signIn",
+        "signIn" | "model" | "notEligible" | "unsupported" => "settings",
+        "limit" if plan => "usage",
+        "refused" => "none",
+        _ => "retry",
+    }
+}
+
+/// The conversation as the panel shows it. Only its last entry, when that's an error, carries
+/// an `action`: an earlier error's moment has passed.
+pub fn view(t: &Thread, provider: Provider) -> Value {
     let mut entries = vec![];
     for item in &t.items {
         match item {
@@ -214,6 +230,9 @@ pub fn view(t: &Thread) -> Value {
             Item::Stopped => entries.push(json!({ "kind": "stopped" })),
             _ => {}
         }
+    }
+    if let Some(last) = entries.last_mut().filter(|e| e["kind"] == "error") {
+        last["action"] = json!(error_action(last["code"].as_str().unwrap_or_default(), provider));
     }
     json!({ "id": t.id, "title": t.title, "entries": entries })
 }
@@ -267,6 +286,25 @@ mod tests {
         delete(dir.path(), "t_1").unwrap();
         assert!(list(dir.path()).is_empty());
         assert!(load(dir.path(), "../budget").is_err());
+    }
+
+    #[test]
+    fn only_the_last_error_says_what_helps() {
+        let error = |code: &str| Item::Error { text: "It failed.".into(), code: code.into() };
+        let mut t = Thread { id: "t_1".into(), title: "x".into(), created: String::new(), updated: String::new(), instructions: String::new(),
+            items: vec![error("busy"), error("signIn")], proposals: vec![] };
+        let entries = |t: &Thread, provider| view(t, provider)["entries"].as_array().unwrap().clone();
+        let plan = entries(&t, Provider::Chatgpt);
+        assert!(plan[0].get("action").is_none());
+        assert_eq!(plan[1]["action"], "signIn");
+        assert_eq!(entries(&t, Provider::Anthropic)[1]["action"], "settings");
+        // Asking again helps when the service was busy, and never after a refusal.
+        assert_eq!((error_action("busy", Provider::Openai), error_action("other", Provider::Chatgpt)), ("retry", "retry"));
+        assert_eq!((error_action("refused", Provider::Anthropic), error_action("limit", Provider::Chatgpt), error_action("limit", Provider::Openai)), ("none", "usage", "retry"));
+        assert_eq!((error_action("model", Provider::Chatgpt), error_action("unsupported", Provider::Openai)), ("settings", "settings"));
+        // Once the conversation has moved on, the error offers nothing.
+        t.items.push(Item::Stopped);
+        assert!(entries(&t, Provider::Chatgpt).iter().all(|e| e.get("action").is_none()));
     }
 
     #[test]

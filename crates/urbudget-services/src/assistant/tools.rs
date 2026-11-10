@@ -622,6 +622,14 @@ pub(super) fn strings(args: &Value, key: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Marks a reason the engine wrote for people ("That wouldn't change anything.") rather than
+/// one a tool wrote for the model ("No category has the id c_9f…. Use get_setup to find ids.").
+/// Only a marked reason is shown on the panel's step line; `call` takes the mark off.
+const FOR_USER: char = '\u{1}';
+fn for_user(reason: String) -> String {
+    format!("{FOR_USER}{reason}")
+}
+
 /// Runs one tool. Errors go back to the model as `{"error": …}` so it can correct itself.
 pub fn call(name: &str, args: &Value, ctx: &Context) -> Outcome {
     let result = match name {
@@ -647,12 +655,15 @@ pub fn call(name: &str, args: &Value, ctx: &Context) -> Outcome {
         _ => Err(format!("There is no tool named {name}.")),
     };
     result.unwrap_or_else(|error| {
-        // The reason is written for the model. The panel shows it when it's in the app's
-        // language: in Arabic, only the engine's own (translated) reasons are.
-        let shown = language() == Language::English || error.chars().any(|c| ('\u{0600}'..='\u{06FF}').contains(&c));
+        // What a tool says about its arguments is for the model to act on, and would only puzzle
+        // the user. The panel says the step failed, with the reason only when it's the engine's.
+        let (reason, shown) = match error.strip_prefix(FOR_USER) {
+            Some(reason) => (reason.to_owned(), true),
+            None => (error, false),
+        };
         Outcome {
-            step: if shown { format!("{}: {}", failed_step(name), truncate(&error, 90)) } else { failed_step(name).to_owned() },
-            output: json!({ "error": error }),
+            step: if shown { format!("{}: {}", failed_step(name), truncate(&reason, 90)) } else { failed_step(name).to_owned() },
+            output: json!({ "error": reason }),
             proposal: None,
         }
     })
@@ -1270,7 +1281,7 @@ fn category_or_rta(names: &Names, id: &str) -> Result<Option<String>, String> {
     }
 }
 fn propose(change: Change, title: String, ctx: &Context, step: String) -> Result<Outcome, String> {
-    let proposal = proposals::build(change, title, ctx.budget)?;
+    let proposal = proposals::build(change, title, ctx.budget).map_err(for_user)?;
     let output = json!({
         "proposalId": proposal.id,
         "shownToUser": true,
@@ -1530,7 +1541,7 @@ fn create_report(args: &Value) -> Result<Outcome, String> {
 fn create_spreadsheet(args: &Value, ctx: &Context) -> Result<Outcome, String> {
     let title = truncate(arg(args, "title").ok_or("Give the spreadsheet a title.")?, 100);
     let sheets = workbook::sheets_from(args, ctx.budget, ctx.month)?;
-    let proposal = workbook::build(title.clone(), sheets, ctx.budget)?;
+    let proposal = workbook::build(title.clone(), sheets, ctx.budget).map_err(for_user)?;
     let output = json!({
         "spreadsheetId": proposal.id,
         "shownToUser": true,
@@ -1789,6 +1800,20 @@ pub mod tests {
         }))
         .unwrap()
     }
+    #[test]
+    fn a_failed_step_tells_the_user_only_what_the_engine_wrote_for_them() {
+        let (b, files) = (sample(), Files::empty());
+        // A wrong id is the model's to fix: it reads why, the panel doesn't.
+        let wrong = call("propose_budget_moves", &json!({ "month": "2026-10", "moves": [{ "from": "ready_to_assign", "to": "c_nope", "amount": 5 }] }), &ctx(&b, &files));
+        assert_eq!(wrong.step, "Couldn't prepare that change");
+        assert!(wrong.output["error"].as_str().unwrap().contains("No category has the id c_nope"));
+        // The engine's own reason is for the user too, and reaches the model without the mark.
+        let nothing = call("propose_transaction_edits", &json!({ "edits": [{ "id": "t1", "categoryId": "dining" }] }), &ctx(&b, &files));
+        assert_eq!(nothing.step, "Couldn't prepare that change: That wouldn't change anything.");
+        assert_eq!(nothing.output["error"], "That wouldn't change anything.");
+        assert_eq!(call("no_such_tool", &json!({}), &ctx(&b, &files)).step, "Couldn't look that up");
+    }
+
     fn ctx<'a>(b: &'a Budget, files: &'a Files) -> Context<'a> {
         Context { budget: b, today: "2026-10-16", month: "2026-10", share_memos: true, files, bank_sync: &Value::Null, import: None, platform: super::super::guide::Platform::Desktop }
     }
@@ -1899,7 +1924,7 @@ pub mod tests {
         other.scope.session = "s2".into();
         assert!(apply_fixes(&b, "checking", &file, &other, &fixes).is_err());
         // The note says which lines need what.
-        let note = super::super::prompt::context(&b, &super::super::prompt::Screen { page: "import".into(), today: "2026-10-16".into(), ..Default::default() }, true, &[], Some(&brief));
+        let note = super::super::prompt::context(&b, &super::super::prompt::Screen { page: "import".into(), today: "2026-10-16".into(), ..Default::default() }, true, &[], Some(&brief), false);
         assert!(note.contains("fix_import") && note.contains(&grocer) && note.contains("Invalid amount: n/a"), "{note}");
         assert!(note.contains("on the Import page") && note.contains("into Everyday"), "{note}");
     }

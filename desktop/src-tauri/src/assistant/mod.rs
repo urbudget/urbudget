@@ -80,6 +80,11 @@ pub(crate) fn assistant_attach(
 }
 
 #[tauri::command(async)]
+pub(crate) fn assistant_detach(db: State<'_, Database>, id: String) -> Result<(), String> {
+    shared::assistant_detach(&db, id)
+}
+
+#[tauri::command(async)]
 pub(crate) fn assistant_send(
     app: AppHandle,
     db: State<'_, Database>,

@@ -139,8 +139,8 @@ fn page_name(page: &str) -> &str {
 }
 
 /// The note sent with a message. `earlier` lists what happened to earlier proposals; `import` is
-/// the bank file the user is importing.
-pub fn context(b: &Budget, screen: &Screen, share_memos: bool, earlier: &[String], import: Option<&crate::bank_statement::Brief>) -> String {
+/// the bank file the user is importing; `stopped` says the user stopped the reply before this one.
+pub fn context(b: &Budget, screen: &Screen, share_memos: bool, earlier: &[String], import: Option<&crate::bank_statement::Brief>, stopped: bool) -> String {
     let names = Names::new(b);
     let mut lines = vec![format!(
         "Today is {}. Budget \u{201c}{}\u{201d}, currency {}.",
@@ -177,6 +177,9 @@ pub fn context(b: &Budget, screen: &Screen, share_memos: bool, earlier: &[String
     }
     if !earlier.is_empty() {
         lines.push(format!("Earlier proposals: {}.", earlier.join("; ")));
+    }
+    if stopped {
+        lines.push("The user stopped your last reply before it finished. Any text of it above is as far as it got; lookups it was making didn't run.".into());
     }
     lines.join("\n")
 }
@@ -235,7 +238,7 @@ mod tests {
         let b = apply(b, "cash", choices).unwrap();
         let ids: Vec<String> = rows.iter().map(|r| r.id.clone()).collect();
         let screen = Screen { page: "transactions".into(), selected: ids.clone(), today: "2026-10-18".into(), ..Screen::default() };
-        let note = context(&b, &screen, true, &[], None);
+        let note = context(&b, &screen, true, &[], None, false);
         assert!(note.contains("They attached 2 selected transactions"), "{note}");
         for id in &ids {
             assert!(note.contains(id.as_str()), "{note}");
@@ -245,20 +248,20 @@ mod tests {
         assert!(!note.contains("\"id\":\"tx\""), "{note}");
         // Ids that no longer exist (deleted before sending) are left out rather than invented.
         let gone = Screen { selected: vec!["bank:gone".into()], ..screen };
-        assert!(!context(&b, &gone, true, &[], None).contains("attached"));
+        assert!(!context(&b, &gone, true, &[], None, false).contains("attached"));
     }
 
     #[test]
     fn navigation_guidance_matches_the_native_platform_without_changing_desktop_context() {
         let desktop: Screen = serde_json::from_value(json!({ "page": "budget", "today": "2026-10-21" })).unwrap();
-        assert!(!context(&sample(), &desktop, false, &[], None).contains("native Android"));
-        let desktop_note = context(&sample(), &desktop, false, &[], None);
+        assert!(!context(&sample(), &desktop, false, &[], None, false).contains("native Android"));
+        let desktop_note = context(&sample(), &desktop, false, &[], None, false);
         assert!(desktop_note.contains("desktop app") && desktop_note.contains("Manage budgets…"));
         let ios = Screen { platform: "ios".into(), ..desktop.clone() };
-        let ios_note = context(&sample(), &ios, false, &[], None);
+        let ios_note = context(&sample(), &ios, false, &[], None, false);
         assert!(ios_note.contains("iPhone") && ios_note.contains("Loan planner") && !ios_note.contains("Bank messages"));
         let android = Screen { platform: "android".into(), ..desktop };
-        let note = context(&sample(), &android, false, &[], None);
+        let note = context(&sample(), &android, false, &[], None, false);
         assert!(note.contains("Bank connections") && note.contains("Budget library") && note.contains("Bank messages"));
         // The tabs as they are, not the old "Activity" tab.
         assert!(note.contains("**Transactions**") && !note.contains("Activity"));

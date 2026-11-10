@@ -63,8 +63,11 @@ pub fn outcome(tool: &str, answer: Result<Value, String>) -> Outcome {
     if let Some(error) = answer.get("error").and_then(Value::as_str) {
         return failed(error.to_owned());
     }
-    let output = answer.get("output").cloned().unwrap_or(Value::Null);
+    let mut output = answer.get("output").cloned().unwrap_or(Value::Null);
     let step = answer.get("step").and_then(Value::as_str).unwrap_or_default().to_owned();
+    if tool == "search_bank_texts" {
+        without_codes(&mut output);
+    }
     if tool != "propose_bank_texts" {
         return Outcome { output, step, proposal: None };
     }
@@ -97,6 +100,19 @@ pub fn outcome(tool: &str, answer: Result<Value, String>) -> Outcome {
     Outcome { output, step, proposal: Some(proposal) }
 }
 
+/// Takes one-time codes out of a search's texts before the model sees them: a bank's sender
+/// texts them beside its transactions, and the model has no use for one. What's left says how
+/// many were left out, so a day with only codes doesn't read as a day with no texts.
+fn without_codes(output: &mut Value) {
+    let Some(texts) = output.get_mut("texts").and_then(Value::as_array_mut) else { return };
+    let before = texts.len();
+    texts.retain(|t| !t["text"].as_str().is_some_and(urbudget_core::sms_templates::looks_like_code));
+    let left_out = before - texts.len();
+    if left_out > 0 {
+        output["verificationCodesLeftOut"] = json!(left_out);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -127,6 +143,16 @@ mod tests {
         assert_eq!(read.output, json!({ "texts": [] }));
         assert_eq!(read.step, "Searched ANB texts: none found");
         assert!(read.proposal.is_none());
+
+        // A one-time code among a search's texts never reaches the model.
+        let searched = outcome("search_bank_texts", Ok(json!({ "output": { "texts": [
+            { "id": "a", "text": "Purchase of SAR 45.00 at Corner Bakery on card 3358" },
+            { "id": "b", "text": "Your OTP is 482193. Do not share it with anyone." },
+        ], "more": 0 }, "step": "Found 2 texts" })));
+        assert_eq!(searched.output["texts"].as_array().unwrap().len(), 1);
+        assert_eq!(searched.output["texts"][0]["id"], "a");
+        assert_eq!(searched.output["verificationCodesLeftOut"], 1);
+        assert!(!searched.output.to_string().contains("482193"));
 
         let failed = outcome("get_bank_texts", Ok(json!({ "error": "Bank messages isn't set up for this budget." })));
         assert_eq!(failed.output["error"], "Bank messages isn't set up for this budget.");

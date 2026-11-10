@@ -54,6 +54,7 @@ pub async fn dispatch(
         "assistant_delete_thread" => encoded(assistant_delete_thread(db, assistant, argument(&params, "id")?)?),
         "assistant_delete_all" => encoded(assistant_delete_all(db, assistant)?),
         "assistant_attach" => encoded(assistant_attach(db, assistant, argument(&params, "name")?, argument(&params, "data")?)?),
+        "assistant_detach" => encoded(assistant_detach(db, argument(&params, "id")?)?),
         "assistant_send" => encoded(assistant_send(simplefin, db, assistant, optional(&params, "patch")?, optional(&params, "threadId")?, argument(&params, "text")?, optional(&params, "attachments")?, argument(&params, "screen")?)?),
         "assistant_retry" => encoded(assistant_retry(simplefin, db, assistant, optional(&params, "patch")?, argument(&params, "threadId")?, argument(&params, "screen")?)?),
         "assistant_stop" => encoded(assistant_stop(db, assistant, argument(&params, "threadId")?)?),

@@ -8,7 +8,7 @@ use crate::domain::Budget;
 use crate::t;
 use serde_json::{json, Value};
 use std::path::PathBuf;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 
 
 /// At most this many model calls per message, so a confused model can't run on forever. The last
@@ -37,15 +37,17 @@ pub fn emit(thread_id: &str, mut event: Value) {
     crate::host::emit("assistant://event", event);
 }
 
-pub async fn run(assistant: Assistant, job: Job, cancelled: Arc<AtomicBool>) {
+/// `written` is the text of the round in progress as far as it has got, for Stop to keep.
+pub async fn run(assistant: Assistant, job: Job, cancelled: Arc<AtomicBool>, written: Arc<Mutex<String>>) {
     emit(&job.thread_id, json!({ "type": "started" }));
-    let outcome = turn(&assistant, &job, &cancelled).await;
+    let outcome = turn(&assistant, &job, &cancelled, &written).await;
     if cancelled.load(Ordering::SeqCst) { return; }
     if let Err(failure) = outcome {
+        let action = history::error_action(code(failure.kind), assistant.settings().provider);
         let _ = assistant.with_thread_guarded(&job.folder, &job.thread_id, Some(&cancelled), |t| {
             t.items.push(Item::Error { text: failure.message.clone(), code: code(failure.kind).into() })
         });
-        emit(&job.thread_id, json!({ "type": "error", "text": failure.message, "code": code(failure.kind) }));
+        emit(&job.thread_id, json!({ "type": "error", "text": failure.message, "code": code(failure.kind), "action": action }));
     }
     let _ = assistant.with_thread_guarded(&job.folder, &job.thread_id, Some(&cancelled), |t| t.updated = now());
     let completed = {
@@ -70,7 +72,7 @@ fn code(kind: FailureKind) -> &'static str {
     }
 }
 
-async fn turn(assistant: &Assistant, job: &Job, cancelled: &AtomicBool) -> Result<(), llm::Failure> {
+async fn turn(assistant: &Assistant, job: &Job, cancelled: &AtomicBool, written: &Mutex<String>) -> Result<(), llm::Failure> {
     let specs: Vec<_> = tools::specs().into_iter().filter(|s| job.bank_texts || !phone::answers(s.name)).collect();
     let files = Files::open(history::files(&job.folder));
     let other = |e: String| llm::Failure::new(FailureKind::Other, e);
@@ -103,6 +105,7 @@ async fn turn(assistant: &Assistant, job: &Job, cancelled: &AtomicBool) -> Resul
             let mut on_delta = |delta: Delta| match delta {
                 Delta::Text(text) => {
                     streamed = true;
+                    lock(written).push_str(text);
                     emit(&job.thread_id, json!({ "type": "delta", "text": text }));
                 }
                 Delta::Thinking(text) => emit(&job.thread_id, json!({ "type": "thinking", "text": text })),
@@ -131,7 +134,12 @@ async fn turn(assistant: &Assistant, job: &Job, cancelled: &AtomicBool) -> Resul
                 }
             }
         }
-        assistant.with_thread_guarded(&job.folder, &job.thread_id, Some(cancelled), |t| t.items.extend(items)).map_err(other)?;
+        // The round is kept whole from here, so there's nothing of it left for Stop to save. The
+        // text is cleared inside the lock on the conversation: a Stop gets one or the other.
+        assistant.with_thread_guarded(&job.folder, &job.thread_id, Some(cancelled), |t| {
+            lock(written).clear();
+            t.items.extend(items)
+        }).map_err(other)?;
         if calls.is_empty() {
             return Ok(());
         }
