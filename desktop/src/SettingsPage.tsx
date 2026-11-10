@@ -260,6 +260,7 @@ export function SettingsPage({
   syncLabel,
   metadata,
   edit,
+  transform,
   flush,
   onReload,
   onExport,
@@ -297,6 +298,8 @@ export function SettingsPage({
   syncLabel: string;
   metadata: DatabaseStatus | null;
   edit: (update: (draft: Budget) => void) => void;
+  /** Makes a change worked out elsewhere (the assistant's notes) as one undo step, and saves it. */
+  transform?: (work: (budget: Budget) => Promise<Budget>) => Promise<void>;
   flush: () => Promise<boolean>;
   onReload: () => void;
   onExport: () => void;
@@ -521,7 +524,7 @@ export function SettingsPage({
         </section>
       )}
 
-      {tab === "assistant" && <AssistantSettings />}
+      {tab === "assistant" && <AssistantSettings budget={budget} transform={transform} />}
 
       {tab === "import" && (
         <>

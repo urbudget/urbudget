@@ -26,7 +26,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "التغيّر في الجاهز للتوزيع: ⁨%@⁩"
+            "value" : "التغيّر في غير المخصَّص: ⁨%@⁩"
           }
         }
       }
@@ -36,7 +36,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "المناقلات: ⁨%@⁩"
+            "value" : "عمليات النقل: ⁨%@⁩"
           }
         }
       }
@@ -156,7 +156,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "متاحة على الإنترنت"
+            "value" : "متاحة عبر الإنترنت"
           }
         }
       }
@@ -346,7 +346,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "المزامنة متوقفة"
+            "value" : "المزامنة متوقفة مؤقتًا"
           }
         }
       }
@@ -376,7 +376,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "تجري المزامنة…"
+            "value" : "جارٍ المزامنة…"
           }
         }
       }
@@ -977,6 +977,17 @@
         }
       }
     },
+    "%@ and %@" : {
+      "comment" : "A list of names and its last one: “Checking, Savings and Cash”.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⁨%1$@⁩ و⁨%2$@⁩"
+          }
+        }
+      }
+    },
     "%@ and %@ by month" : {
       "localizations" : {
         "ar" : {
@@ -1225,7 +1236,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "⁨%@⁩ من الإنفاق ما زال يحتاج إلى فئة، وهو مشمول في هذه الإجماليات."
+            "value" : "⁨%@⁩ من الإنفاق ما زال يحتاج إلى فئة، وهو مُضمَّن في هذه الإجماليات."
           }
         }
       }
@@ -1235,7 +1246,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "لم يُخصَّص ⁨%@⁩ من الرصيد بعد."
+            "value" : "لم يُجنَّب ⁨%@⁩ من الرصيد بعد."
           }
         }
       }
@@ -1379,7 +1390,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "⁨%1$@⁩ · ⁨%2$@⁩ · محفوظة على هذا الجهاز. تستخدم حسابات المظاريف والأهداف والتقارير والاستيراد المحرك نفسه الذي يستخدمه تطبيق سطح المكتب."
+            "value" : "⁨%1$@⁩ · ⁨%2$@⁩ · محفوظة على هذا الجهاز. يستخدم احتساب المظاريف والأهداف والتقارير والاستيراد المحرك نفسه الذي يستخدمه تطبيق سطح المكتب."
           }
         }
       }
@@ -1999,7 +2010,7 @@
               "zero" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "0 شهر"
+                  "value" : "%lld شهر"
                 }
               },
               "one" : {
@@ -3383,7 +3394,7 @@
               "zero" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "0 سنة"
+                  "value" : "%lld سنة"
                 }
               },
               "one" : {
@@ -3618,7 +3629,7 @@
               "two" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "يومين"
+                  "value" : "يومان"
                 }
               },
               "few" : {
@@ -3682,7 +3693,7 @@
               "two" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "شهرين"
+                  "value" : "شهران"
                 }
               },
               "few" : {
@@ -3746,7 +3757,7 @@
               "two" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "فترتين"
+                  "value" : "فترتان"
                 }
               },
               "few" : {
@@ -3810,7 +3821,7 @@
               "two" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "أسبوعين"
+                  "value" : "أسبوعان"
                 }
               },
               "few" : {
@@ -3874,7 +3885,7 @@
               "two" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "سنتين"
+                  "value" : "سنتان"
                 }
               },
               "few" : {
@@ -4175,7 +4186,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "نسخة كاملة لحفظها أو مشاركتها"
+            "value" : "نسخة كاملة للحفظ أو المشاركة"
           }
         }
       }
@@ -4235,7 +4246,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "خطة لكل جزء من مالك. ميزانيتك محفوظة على هذا الجهاز، ونسخ سطح المكتب الاحتياطية تعمل هنا أيضًا."
+            "value" : "خطة لكل جزء من مالك. تبقى ميزانيتك على هذا الجهاز، وتعمل هنا نسخك الاحتياطية من سطح المكتب أيضًا."
           }
         }
       }
@@ -4245,7 +4256,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ملف JSON محمول يتضمن كل حقول تطبيق سطح المكتب"
+            "value" : "ملف JSON قابل للنقل يضم كل حقول سطح المكتب"
           }
         }
       }
@@ -4295,7 +4306,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "يربط التحويل الصف بالقيد المقابل له بلا فئة في حساب آخر، فلا يُحتسب المال الذي نقلته إنفاقًا ولا دخلًا. ويُختار لك حين يذكر نص البنك الحساب الآخر أو يطابق تحويلات سابقة بينهما؛ وإلا فيُقترح عليك لتتحقق منه."
+            "value" : "يربط التحويل الصف بالقيد المقابل له بلا فئة في حساب آخر، فلا يُحتسب المال الذي نقلته إنفاقًا أو دخلًا. ويُختار لك حين يذكر نص البنك الحساب الآخر أو يطابق تحويلات سابقة بينهما؛ وإلا فيُقترح عليك لتتحقق منه."
           }
         }
       }
@@ -4388,7 +4399,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "حركة الحسابات عبر حدود ميزانيتك، بما فيها المشتريات بالبطاقات الائتمانية."
+            "value" : "حركة الحسابات عبر حدود ميزانيتك، بما فيها المشتريات ببطاقات الائتمان."
           }
         }
       }
@@ -4398,7 +4409,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "حركة الحسابات عبر حدود ميزانيتك، بما فيها مشتريات بطاقات الائتمان والتحويلات إلى حسابات التتبُّع. تُستثنى دفعات البطاقات والتحويلات الأخرى بين حسابات الميزانية والأرصدة الافتتاحية. قد تُحتسب الواردات والصادرات المقسَّمة بصافيها؛ فهذه حركات حسابات وليست تقسيمات إجمالية على الفئات."
+            "value" : "حركة الحسابات عبر حدود ميزانيتك، بما فيها المشتريات ببطاقات الائتمان والتحويلات إلى حسابات التتبُّع. وتُستبعد دفعات البطاقات والتحويلات الأخرى بين حسابات الميزانية والأرصدة الافتتاحية. وقد تُحتسب الواردات والصادرات المقسَّمة بصافيها؛ فهذه حركة حسابات لا تقسيمات فئات إجمالية."
           }
         }
       }
@@ -4548,7 +4559,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "أضف حساب تتبُّع من نوع قرض، مثل «قرض عقاري» أو «قرض سيارة»، برصيد سالب يساوي ما عليك، ثم أضف هنا سعر فائدته ودفعته."
+            "value" : "أضف حساب تتبُّع من نوع قرض، مثل «رهن عقاري» أو «قرض سيارة»، برصيد سالب يساوي ما عليك، ثم أضف هنا سعر فائدته ودفعته."
           }
         }
       }
@@ -4568,7 +4579,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "أضف معاملة بتاريخ لاحق، أو اختر كم مرة تتكرر، وستنتظر هنا."
+            "value" : "أضف معاملة بتاريخ لاحق، أو اختر عدد مرات تكرارها، وستنتظر هنا."
           }
         }
       }
@@ -4648,7 +4659,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "أضف سطرَي تقسيم على الأقل."
+            "value" : "أضف بندَي تقسيم على الأقل."
           }
         }
       }
@@ -4698,7 +4709,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "إضافة سطر"
+            "value" : "إضافة بند"
           }
         }
       }
@@ -4788,7 +4799,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "أضف المعاملات عند الإنفاق، أو استورد من صفحة الحساب ملف كشف الحساب الذي يتيح لك بنكك تنزيله (CSV أو OFX أو QFX أو QIF). تُخصم كل معاملة من فئتها."
+            "value" : "أضف المعاملات كلما أنفقت، أو استورد من صفحة الحساب كشف الحساب الذي يتيح لك بنكك تنزيله (CSV أو OFX أو QFX أو QIF). تُخصم كل معاملة من فئتها."
           }
         }
       }
@@ -5082,7 +5093,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "مستورَدة سابقًا · تم تخطيها"
+            "value" : "مستورَدة من قبل · تم تخطيها"
           }
         }
       }
@@ -5092,7 +5103,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "سبق استيرادها — تخطي"
+            "value" : "مستورَدة من قبل — تخطي"
           }
         }
       }
@@ -5192,7 +5203,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "إذا أدخلت اسم مجموعة موجودة، تُدمج المجموعتان."
+            "value" : "اختيار اسم مجموعة موجودة يدمج المجموعتين."
           }
         }
       }
@@ -5314,6 +5325,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "تم التطبيق"
+          }
+        }
+      }
+    },
+    "Applied %@" : {
+      "comment" : "On a finished assistant card: when its change was applied, as a date and a time.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "طُبِّق ⁨%@⁩"
           }
         }
       }
@@ -5551,26 +5573,6 @@
         }
       }
     },
-    "Applied to the import" : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "طُبّقت على الاستيراد"
-          }
-        }
-      }
-    },
-    "Applied: %@" : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "تم التطبيق: ⁨%@⁩"
-          }
-        }
-      }
-    },
     "Applies to all %lld selected transactions. You can undo it." : {
       "localizations" : {
         "ar" : {
@@ -5692,7 +5694,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "تطبيق القواعد على المعاملات الحالية"
+            "value" : "تطبيق القواعد على المعاملات الموجودة"
           }
         }
       }
@@ -5830,7 +5832,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "تطبيق على المعاملات الحالية"
+            "value" : "تطبيق على المعاملات الموجودة"
           }
         }
       }
@@ -5927,6 +5929,16 @@
         }
       }
     },
+    "Ask for a new version" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "طلب نسخة جديدة"
+          }
+        }
+      }
+    },
     "Ask for changes" : {
       "localizations" : {
         "ar" : {
@@ -5943,6 +5955,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "سؤال المساعد"
+          }
+        }
+      }
+    },
+    "Asked: %@" : {
+      "comment" : "On an assistant card: a question the person has answered.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سؤال: ⁨%@⁩"
           }
         }
       }
@@ -5972,7 +5995,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "الأصول والالتزامات حسب النوع، مع النسب المهمة."
+            "value" : "الأصول والالتزامات حسب النوع، مع النِّسب المهمة."
           }
         }
       }
@@ -6062,7 +6085,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "خصِّص لكل فئة ما خُصِّص لها الشهر الماضي."
+            "value" : "خصِّص لكل فئة ما خُصِّص لها في الشهر الماضي."
           }
         }
       }
@@ -6072,7 +6095,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "خصِّص لكل فئة ما أنفقته الشهر الماضي."
+            "value" : "خصِّص لكل فئة ما أنفقته في الشهر الماضي."
           }
         }
       }
@@ -6082,7 +6105,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "خصِّص ما تحتاجه الأهداف بعد، وغطِّ الإنفاق الزائد."
+            "value" : "خصِّص ما تحتاجه الأهداف بعدُ، وغطِّ الإنفاق الزائد."
           }
         }
       }
@@ -6234,7 +6257,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "في البنك"
+            "value" : "لدى البنك"
           }
         }
       }
@@ -6264,7 +6287,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "أرفق خمسة ملفات كحد أقصى في كل رسالة."
+            "value" : "أرفق خمسة ملفات على الأكثر في كل رسالة."
           }
         }
       }
@@ -6525,7 +6548,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "عدد النسخ المحتفَظ بها"
+            "value" : "عدد النسخ الاحتياطية المحفوظة"
           }
         }
       }
@@ -6555,7 +6578,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "الرصيد القادم"
+            "value" : "الرصيد المتوقع"
           }
         }
       }
@@ -6605,7 +6628,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "هدف رصيد"
+            "value" : "الرصيد المستهدف"
           }
         }
       }
@@ -6615,7 +6638,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "هدف رصيد بحلول ⁨%@⁩"
+            "value" : "الرصيد المستهدف بحلول ⁨%@⁩"
           }
         }
       }
@@ -6665,7 +6688,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "الأرصدة متطابقة. ستُقفل المعاملات المُقاصّة بوصفها مُسوّاة."
+            "value" : "الرصيدان متطابقان. ستُقفل المعاملات المُقاصّة بوصفها مُسوّاة."
           }
         }
       }
@@ -6876,7 +6899,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "أكبر يوم"
+            "value" : "أكبر يوم إنفاقًا"
           }
         }
       }
@@ -6886,7 +6909,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "أكبر الأيام"
+            "value" : "أكبر أيام الإنفاق"
           }
         }
       }
@@ -6947,7 +6970,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "سيُحذف طرفا التحويل. يمكنك التراجع عن التغيير."
+            "value" : "سيُحذف طرفا التحويل. يمكنك التراجع عن هذا التغيير."
           }
         }
       }
@@ -6957,7 +6980,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "يُحذف طرفا التحويلات أيضًا. يمكنك التراجع عن ذلك."
+            "value" : "يُحذف طرفا كل تحويل أيضًا. يمكنك التراجع عن ذلك."
           }
         }
       }
@@ -6977,7 +7000,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "اجعل كل مبلغ متاح 0.00."
+            "value" : "اجعل المتاح في كل فئة 0.00."
           }
         }
       }
@@ -7017,7 +7040,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "يجلب تغييرات YNAB ويُبقي التعديلات التي أُجريت هنا، وتُعرض التغييرات المتعارضة للمراجعة."
+            "value" : "يجلب تغييرات YNAB ويحتفظ بالتعديلات التي أُجريت هنا، ويعرض التغييرات المتعارضة للمراجعة."
           }
         }
       }
@@ -7027,7 +7050,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ينقل حساباتك وفئاتك ومعاملاتك وأهدافك وملاحظاتك ومعاملاتك المجدولة، ويطابق كل مجموع مع YNAB. تُحفظ نسخة احتياطية من هذه الميزانية أولًا، ولا يغيّر UrBudget أي شيء في YNAB."
+            "value" : "ينقل حساباتك وفئاتك ومعاملاتك وأهدافك وملاحظاتك ومعاملاتك المجدولة، ويطابق كل إجمالي مع YNAB. تُحفظ نسخة احتياطية من هذه الميزانية أولًا، ولا يغيّر UrBudget أي شيء في YNAB."
           }
         }
       }
@@ -7057,7 +7080,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "تعذّر حساب الميزانية"
+            "value" : "تعذّر احتساب الميزانية"
           }
         }
       }
@@ -7087,7 +7110,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "لم تكتمل تهيئة خدمات الميزانية بعد. حاول مرة أخرى."
+            "value" : "ما زالت خدمات الميزانية قيد التشغيل. حاول مرة أخرى."
           }
         }
       }
@@ -7107,7 +7130,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "فائض الميزانية مجمَّعًا شهرًا بعد شهر"
+            "value" : "فائض الميزانية متراكمًا شهرًا بعد شهر"
           }
         }
       }
@@ -7117,7 +7140,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "يقارن فائض الميزانية الدخل بالإنفاق. وتقلِّله التحويلات المصنَّفة إلى حسابات تتبُّع الاستثمارات والقروض؛ استخدم تقرير «صافي الثروة» لرؤية تغيُّرات الثروة."
+            "value" : "يقارن فائض الميزانية الدخل بالإنفاق. وتُنقصه التحويلات المصنَّفة إلى حسابات تتبُّع الاستثمارات والقروض؛ استخدم تقرير «صافي الثروة» لرؤية التغيرات في الثروة."
           }
         }
       }
@@ -7257,7 +7280,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "CSV أو OFX أو QFX أو QIF، مع مراجعته أولًا"
+            "value" : "ملف CSV أو OFX أو QFX أو QIF، مع مراجعته أولًا"
           }
         }
       }
@@ -7267,7 +7290,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "جارٍ الحساب"
+            "value" : "جارٍ الاحتساب"
           }
         }
       }
@@ -7429,6 +7452,158 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "تصنيف %lld"
+          }
+        }
+      }
+    },
+    "Categorize the %lld new transactions in %@." : {
+      "comment" : "What the assistant is asked about the transactions an import added with no category; the last value names their accounts.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$#@count@ في ⁨%2$@⁩."
+          },
+          "substitutions" : {
+            "count" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "zero" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "لا معاملات جديدة لتصنيفها"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "صنّف المعاملة الجديدة"
+                    }
+                  },
+                  "two" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "صنّف المعاملتين الجديدتين"
+                    }
+                  },
+                  "few" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "صنّف %arg معاملات جديدة"
+                    }
+                  },
+                  "many" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "صنّف %arg معاملة جديدة"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "صنّف %arg معاملة جديدة"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$#@count@ in %2$@."
+          },
+          "substitutions" : {
+            "count" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "Categorize the new transaction"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "Categorize the %arg new transactions"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Categorize these 200 of the %lld new transactions in %@." : {
+      "comment" : "As above, when the import added more than the 200 a message takes.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "صنّف هذه المعاملات (200) من أصل %1$#@count@ في ⁨%2$@⁩."
+          },
+          "substitutions" : {
+            "count" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "zero" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg معاملة جديدة"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "معاملة جديدة واحدة"
+                    }
+                  },
+                  "two" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "معاملتين جديدتين"
+                    }
+                  },
+                  "few" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg معاملات جديدة"
+                    }
+                  },
+                  "many" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg معاملة جديدة"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg معاملة جديدة"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Categorize with the assistant" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التصنيف مع المساعد"
           }
         }
       }
@@ -8000,7 +8175,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "اختر حساب تحويل مختلفًا."
+            "value" : "اختر حساب تحويل آخر."
           }
         }
       }
@@ -8110,7 +8285,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "اختر الحساب"
+            "value" : "اختر حسابًا"
           }
         }
       }
@@ -8120,7 +8295,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "اختر حسابات في الأعلى لعرضها في الرسم."
+            "value" : "اختر الحسابات أعلاه لعرضها في الرسم البياني."
           }
         }
       }
@@ -8240,7 +8415,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "اختر الحساب الذي ستُسدَّد منه الدفعة."
+            "value" : "اختر الحساب الذي تأتي منه الدفعة."
           }
         }
       }
@@ -8290,7 +8465,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "اختر اليوم أو تاريخًا سابقًا."
+            "value" : "اختر تاريخ اليوم أو تاريخًا سابقًا."
           }
         }
       }
@@ -8310,7 +8485,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "اختر مصدر المال ووجهته."
+            "value" : "اختر من أين يأتي المال وإلى أين يذهب."
           }
         }
       }
@@ -8320,7 +8495,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "اختر التغييرات التي تُبقيها"
+            "value" : "اختر التغييرات التي تريد الإبقاء عليها"
           }
         }
       }
@@ -8340,7 +8515,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "التنظيف"
+            "value" : "تنظيف"
           }
         }
       }
@@ -8450,7 +8625,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "المغلقة"
+            "value" : "مغلقة"
           }
         }
       }
@@ -8490,7 +8665,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "الرمز الوارد في البريد"
+            "value" : "الرمز المرسل إلى بريدك"
           }
         }
       }
@@ -8701,7 +8876,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "صحّحها البنك"
+            "value" : "صحّحه البنك"
           }
         }
       }
@@ -8778,12 +8953,33 @@
         }
       }
     },
+    "Cover my overspent categories this month." : {
+      "comment" : "What the assistant is asked from the Budget tab's overspent notice.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "غطِّ الفئات التي تجاوزتُ فيها الإنفاق هذا الشهر."
+          }
+        }
+      }
+    },
     "Cover overspending" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "تغطية الإنفاق الزائد"
+          }
+        }
+      }
+    },
+    "Cover with the assistant" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التغطية مع المساعد"
           }
         }
       }
@@ -8803,7 +8999,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "أنشئ حسابًا في «الحسابات» قبل إضافة معاملتك الأولى."
+            "value" : "أنشئ حسابًا في «الحسابات» قبل إضافة أول معاملة."
           }
         }
       }
@@ -9389,6 +9585,71 @@
         }
       }
     },
+    "Delete %lld transactions" : {
+      "comment" : "The main button of an assistant card that deletes transactions.",
+      "localizations" : {
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "لا معاملات للحذف"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "حذف معاملة واحدة"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "حذف معاملتين"
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "حذف %lld معاملات"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "حذف %lld معاملة"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "حذف %lld معاملة"
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Delete %lld transaction"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Delete %lld transactions"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Delete account" : {
       "localizations" : {
         "ar" : {
@@ -9424,7 +9685,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "هل تريد حذف سجل المساعد بالكامل؟"
+            "value" : "حذف سجل المساعد بالكامل؟"
           }
         }
       }
@@ -9831,16 +10092,6 @@
         }
       }
     },
-    "Discarded: %@" : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "تم التجاهل: ⁨%@⁩"
-          }
-        }
-      }
-    },
     "Disconnect" : {
       "localizations" : {
         "ar" : {
@@ -10026,7 +10277,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "المستحقة خلال 30 يومًا"
+            "value" : "مستحقة خلال 30 يومًا"
           }
         }
       }
@@ -10106,7 +10357,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "كل سطر يمثّل حصته من الإجمالي."
+            "value" : "كل بند يمثّل حصته من الإجمالي."
           }
         }
       }
@@ -10309,7 +10560,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "أدخل سعرًا بثلاث منازل عشرية على الأكثر."
+            "value" : "أدخل سعرًا بثلاث خانات عشرية على الأكثر."
           }
         }
       }
@@ -10439,7 +10690,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "أدخل النص المطلوب البحث عنه في اسم المستفيد لدى البنك، مثل CARREFOUR."
+            "value" : "أدخل النص الذي يُبحث عنه في اسم المستفيد لدى البنك، مثل CARREFOUR."
           }
         }
       }
@@ -10449,7 +10700,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "أدخل المبلغ المستحق عليك بالسالب."
+            "value" : "أدخل ما عليك مبلغًا سالبًا."
           }
         }
       }
@@ -10893,7 +11144,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "الإنفاق المعتاد في الشهر"
+            "value" : "الإنفاق اليومي شهريًا"
           }
         }
       }
@@ -10963,7 +11214,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "يساعدك الدخل المتوقع على مقارنة أهدافك بخطتك، ولا يضيف مالًا إلى غير المخصَّص."
+            "value" : "يساعدك الدخل المتوقع على مقارنة أهدافك بخطتك، ولا يضيف مالًا إلى «غير المخصَّص»."
           }
         }
       }
@@ -11153,7 +11404,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "تُملأ تلقائيًا عند إدخال معاملة لهذا المستفيد. وإن لم تحدّدها، تُقترح الفئة التي استخدمتها آخر مرة."
+            "value" : "تُملأ تلقائيًا عند إدخال معاملة لهذا المستفيد. وإن لم تُحدَّد، تُقترح الفئة التي استخدمتها آخر مرة."
           }
         }
       }
@@ -11286,6 +11537,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "صحّحه المساعد"
+          }
+        }
+      }
+    },
+    "Fixes applied: %lld of %lld. Not applied: %@" : {
+      "comment" : "Kept on an assistant card whose import took only some of its fixes; the last value lists the ones that didn't take.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التصحيحات المطبَّقة: %1$lld من %2$lld. لم يُطبَّق: ⁨%3$@⁩"
           }
         }
       }
@@ -11521,7 +11783,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "عبر واجهة YNAB البرمجية أو ملفات التصدير منه"
+            "value" : "من واجهة YNAB البرمجية أو من ملفات التصدير"
           }
         }
       }
@@ -11835,7 +12097,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "إخفاء خطوات البدء"
+            "value" : "إخفاء «البدء»"
           }
         }
       }
@@ -11885,7 +12147,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "كم يبقى المال في حساباتك النقدية قبل أن تنفقه: متوسط عمر آخر عشرة مبالغ صادرة من النقد، بحيث يُصرف الوارد أولًا أولًا، مقرَّبًا إلى أقرب يوم. وإلى أن تكتمل العشرة، يُحتسب الناقص منها صفرًا من الأيام. ويكون الرقم تقديريًّا حين لا تُعرف تواريخ الأرصدة الافتتاحية."
+            "value" : "كم يبقى المال في حسابات النقد قبل أن تنفقه: متوسط عمر آخر عشرة مبالغ صادرة من النقد، بحسب ما يدخل أولًا يخرج أولًا، مقرَّبًا إلى أقرب يوم. وإلى أن تبلغ عشرة، تُحتسب الناقصة بصفر يوم. ويكون تقديرًا عندما لا تُعرف تواريخ الأرصدة الافتتاحية."
           }
         }
       }
@@ -11915,7 +12177,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "مقدار نمو صافي الثروة أو تقلُّصه كل شهر"
+            "value" : "مقدار نمو صافي الثروة أو تراجعه كل شهر"
           }
         }
       }
@@ -11945,7 +12207,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "إن كانت في هذه الميزانية بيانات"
+            "value" : "إن كانت في هذه الميزانية بيانات بالفعل"
           }
         }
       }
@@ -12007,7 +12269,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "استيرادها كقيد واحد"
+            "value" : "الاستيراد كقيد واحد"
           }
         }
       }
@@ -12880,7 +13142,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "يبقى الدخل مشمولًا؛ ويعكس الإنفاق الفئات المختارة."
+            "value" : "يبقى الدخل مُضمَّنًا؛ ويعكس الإنفاق الفئات المختارة."
           }
         }
       }
@@ -13133,7 +13395,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "لن يطلب شيئًا حتى الشهر القادم"
+            "value" : "لا يطلب شيئًا حتى الشهر القادم"
           }
         }
       }
@@ -13153,7 +13415,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "لا تحتوي على معاملات أو مال مخصَّص."
+            "value" : "لا معاملات لها ولا مال مخصَّص."
           }
         }
       }
@@ -13163,7 +13425,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ويُحجز هذا المبلغ من المال غير المخصَّص لهذا الشهر."
+            "value" : "وهو محجوز من المال غير المخصَّص لهذا الشهر."
           }
         }
       }
@@ -13353,7 +13615,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "أمواله في ميزانيتك، جاهزة للتخصيص."
+            "value" : "ماله في ميزانيتك، جاهز للتخصيص."
           }
         }
       }
@@ -13633,7 +13895,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "العام الماضي"
+            "value" : "السنة الماضية"
           }
         }
       }
@@ -13765,7 +14027,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "اربط الحسابات وراجع التنزيلات"
+            "value" : "ربط الحسابات ومراجعة التنزيلات"
           }
         }
       }
@@ -13855,7 +14117,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "هدف دفعة قرض"
+            "value" : "هدف دفعة القرض"
           }
         }
       }
@@ -13905,7 +14167,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ابحث في الإنفاق، أو غطِّ الإنفاق الزائد، أو صنِّف المعاملات المحددة، أو اقرأ كشوف الحساب، أو أنشئ تقريرًا. ويُعاد فحص التغييرات المقترحة قبل أن تطبّقها."
+            "value" : "اطّلع على الإنفاق، وغطِّ الإنفاق الزائد، وصنِّف المعاملات المحددة، واقرأ كشوف الحساب، أو أنشئ تقريرًا. ويُعاد التحقق من التغييرات المقترحة قبل أن تطبّقها."
           }
         }
       }
@@ -13955,7 +14217,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "الحفاظ على رصيد الفئة"
+            "value" : "الحفاظ على رصيد للفئة"
           }
         }
       }
@@ -14065,7 +14327,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "علّم المعاملات الواردة في كشف حسابك كمُقاصّة أولًا؛ وأي فرق يتبقى يصبح تعديلًا."
+            "value" : "علِّم المعاملات الواردة في كشف حسابك كمُقاصّة أولًا؛ وأي فرق يتبقى يصبح تعديلًا."
           }
         }
       }
@@ -14125,7 +14387,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ربما سبق استيرادها — اختر"
+            "value" : "ربما استُوردت من قبل — اختر"
           }
         }
       }
@@ -14135,7 +14397,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ربما سبق استيرادها: قارن البيان والمبلغ، ثم اختر"
+            "value" : "ربما استُوردت من قبل: قارن البيان والمبلغ، ثم اختر"
           }
         }
       }
@@ -14568,7 +14830,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "أشهر بصافٍ موجب"
+            "value" : "أشهر بفائض"
           }
         }
       }
@@ -14718,7 +14980,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "أعِد المال من شهر مقبل."
+            "value" : "أعِد المال من شهر قادم."
           }
         }
       }
@@ -14842,7 +15104,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "النقل إلى"
+            "value" : "نقل إلى"
           }
         }
       }
@@ -14944,7 +15206,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "مجموع الحركات يساوي المخصَّص في ⁨%@⁩."
+            "value" : "مجموع حركات المال يساوي المخصَّص في ⁨%@⁩."
           }
         }
       }
@@ -14984,7 +15246,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "سمِّ الألوان مثل «استرداد» أو «ضريبة»"
+            "value" : "سمِّ الألوان، مثل «استرداد» أو «ضريبة»"
           }
         }
       }
@@ -15036,7 +15298,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "الاحتياجات"
+            "value" : "الضروريات"
           }
         }
       }
@@ -15087,7 +15349,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "المصادر السالبة مبالغ أُخذت صراحةً من غير المخصَّص، مثل تعديل تسوية أو تحويل إلى حساب تتبُّع وُجِّه إلى غير المخصَّص."
+            "value" : "المصادر السالبة مبالغ سُحبت صراحةً من «غير المخصَّص»، مثل تعديل تسوية أو تحويل إلى حساب تتبُّع خُصِّص لـ«غير المخصَّص»."
           }
         }
       }
@@ -15117,7 +15379,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "صافي التدفق مجمَّعًا"
+            "value" : "صافي التدفق متراكمًا"
           }
         }
       }
@@ -15127,7 +15389,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "صافي التدفق مجمَّعًا شهرًا بعد شهر"
+            "value" : "صافي التدفق متراكمًا شهرًا بعد شهر"
           }
         }
       }
@@ -15438,7 +15700,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "لا توجد فئات تطابق هذا العرض هذا الشهر."
+            "value" : "لا فئات تطابق طريقة العرض هذه هذا الشهر."
           }
         }
       }
@@ -15580,6 +15842,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "لا معاملات جديدة. أكِّد لتسجيل الحساب على أنه فُحص حتى ⁨%@⁩."
+          }
+        }
+      }
+    },
+    "No notes yet." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا ملاحظات بعد."
           }
         }
       }
@@ -15729,7 +16001,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "لا، كما هي مكتوبة"
+            "value" : "لا، كما كُتبت"
           }
         }
       }
@@ -15845,6 +16117,17 @@
         }
       }
     },
+    "Not now" : {
+      "comment" : "Closes the notice of what gets sent without sending the message.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ليس الآن"
+          }
+        }
+      }
+    },
     "Not reconciled" : {
       "localizations" : {
         "ar" : {
@@ -15915,6 +16198,16 @@
         }
       }
     },
+    "Notes for the assistant" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ملاحظات للمساعد"
+          }
+        }
+      }
+    },
     "Nothing coming up" : {
       "localizations" : {
         "ar" : {
@@ -15980,7 +16273,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "لا يتبقى شيء، أو ما زالت الخطة قيد الحساب."
+            "value" : "لا يتبقى شيء، أو ما زالت الخطة قيد الاحتساب."
           }
         }
       }
@@ -16010,7 +16303,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "لا توجد نتائج تطابق هذا البحث وعوامل التصفية هذه."
+            "value" : "لا شيء يطابق هذا البحث وعوامل التصفية هذه."
           }
         }
       }
@@ -16061,7 +16354,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "لا إنفاق بعد هذا الشهر."
+            "value" : "لم يُنفَق شيء بعد هذا الشهر."
           }
         }
       }
@@ -16161,7 +16454,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "في المتوسط، تنفق قرابة ما تكسبه."
+            "value" : "في المتوسط، تنفق تقريبًا ما تكسبه."
           }
         }
       }
@@ -16171,7 +16464,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "في المتوسط، تنفق أقل مما تكسبه."
+            "value" : "في المتوسط، تنفق أقل مما تكسب."
           }
         }
       }
@@ -16181,7 +16474,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "في المتوسط، تنفق أكثر مما تكسبه."
+            "value" : "في المتوسط، تنفق أكثر مما تكسب."
           }
         }
       }
@@ -16246,16 +16539,6 @@
         }
       }
     },
-    "Only the excerpt and explanation below will be sent to UrBudget. Edit out anything private before sending." : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "لن يُرسَل إلى UrBudget إلا المقتطف والشرح أدناه. احذف أي معلومات خاصة قبل الإرسال."
-          }
-        }
-      }
-    },
     "Only the newest %lld are kept. Removed backups can't be recovered." : {
       "localizations" : {
         "ar" : {
@@ -16316,6 +16599,27 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "Only the ones to check" : {
+      "comment" : "On an assistant card with many rows: chooses only the rows marked to check.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ما يحتاج إلى مراجعة فقط"
+          }
+        }
+      }
+    },
+    "Only what you leave in these fields is sent: the reply's text, your explanation and the details." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يُرسَل إلا ما تتركه في هذه الحقول: نص الرد، وشرحك، والتفاصيل."
           }
         }
       }
@@ -16780,7 +17084,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "المستحق على البطاقة"
+            "value" : "المتبقي على البطاقة"
           }
         }
       }
@@ -16800,7 +17104,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "كشوف الحساب بصيغة PDF تحتاج إلى المساعد: فهو يقرأ ملف PDF ويجد المعاملات ويطابقها مع مجاميع الكشف، ثم يحضرها إلى مراجعة كهذه تقرّر فيها ما يحدث لكل صف."
+            "value" : "تحتاج كشوف الحساب بصيغة PDF إلى المساعد، فهو يقرأ الملف ويجد المعاملات ويتحقق منها مقابل مجاميع الكشف، ثم يعرضها في مراجعة كهذه تقرّر فيها ما يحدث لكل صف."
           }
         }
       }
@@ -16810,7 +17114,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "PDF · اضغط لاختيار ملف آخر"
+            "value" : "ملف PDF · اضغط لاختيار ملف آخر"
           }
         }
       }
@@ -17365,7 +17669,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "اختر نفقة لا تتكرر كل شهر، مثل تأمين السيارة أو الهدايا، وحدّد لها هدفًا. يحسب UrBudget ما يجب تجنيبه كل شهر ليكون المبلغ جاهزًا عند استحقاقه."
+            "value" : "اختر نفقة لا تتكرر كل شهر، مثل تأمين السيارة أو الهدايا، وحدّد لها هدفًا. يحتسب UrBudget ما يجب تجنيبه كل شهر ليكون المبلغ جاهزًا عند استحقاقه."
           }
         }
       }
@@ -17395,7 +17699,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "خطّط لفاتورة أكبر"
+            "value" : "خطِّط لفاتورة أكبر"
           }
         }
       }
@@ -17560,6 +17864,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "جارٍ تجهيز ⁨%@⁩"
+          }
+        }
+      }
+    },
+    "Prepare “%@” again. It couldn't be applied: %@" : {
+      "comment" : "The message Ask for a new version sends the assistant: a card's title, and why it couldn't be applied.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أعِدّ «⁨%1$@⁩» من جديد. تعذّر تطبيقه: ⁨%2$@⁩"
           }
         }
       }
@@ -17830,7 +18145,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "يجب أن يكون السعر بين 0 و1,000%."
+            "value" : "يجب أن يكون السعر بين 0 و⁦1,000%⁩."
           }
         }
       }
@@ -17880,7 +18195,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "جارٍ قراءة التصدير…"
+            "value" : "جارٍ قراءة ملف التصدير…"
           }
         }
       }
@@ -17900,7 +18215,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "جاهز للتخصيص، ⁨%1$@⁩: ⁨%2$@⁩"
+            "value" : "غير المخصَّص، ⁨%1$@⁩: ⁨%2$@⁩"
           }
         }
       }
@@ -17910,7 +18225,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "جاهز للتخصيص: ⁨%@⁩"
+            "value" : "غير المخصَّص: ⁨%@⁩"
           }
         }
       }
@@ -17930,7 +18245,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "المستحقات لك"
+            "value" : "المستحقات"
           }
         }
       }
@@ -17950,7 +18265,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "التغييرات الأخيرة"
+            "value" : "آخر التغييرات"
           }
         }
       }
@@ -18020,7 +18335,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "سجّل إنفاقك"
+            "value" : "سجِّل إنفاقك"
           }
         }
       }
@@ -18040,7 +18355,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "تُسجَّل الدفعة تحويلًا من ⁨%1$@⁩ إلى ⁨%2$@⁩، فلا تُحتسب إنفاقًا: تستهلك المبلغ المخصَّص وتخفّض المستحق على البطاقة."
+            "value" : "تُسجَّل الدفعة تحويلًا من ⁨%1$@⁩ إلى ⁨%2$@⁩، فلا تُحتسب إنفاقًا: تستهلك المبلغ المُجنَّب وتخفّض المتبقي على البطاقة."
           }
         }
       }
@@ -18050,7 +18365,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "تُسجَّل الدفعة تحويلًا من ⁨%1$@⁩ إلى ⁨%2$@⁩، فلا تُحتسب إنفاقًا: تستهلك المبلغ المخصَّص وتخفّض المستحق على البطاقة. ولأن تاريخها لاحق، فإنها تنتظر في «المجدولة» حتى ذلك الحين."
+            "value" : "تُسجَّل الدفعة تحويلًا من ⁨%1$@⁩ إلى ⁨%2$@⁩، فلا تُحتسب إنفاقًا: تستهلك المبلغ المُجنَّب وتخفّض المتبقي على البطاقة. ولأن تاريخها لاحق، فإنها تنتظر في «المجدولة» حتى ذلك الحين."
           }
         }
       }
@@ -18130,7 +18445,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "إعادة التعبئة حتى المبلغ في كل فترة"
+            "value" : "إعادة التعبئة حتى المبلغ كل فترة"
           }
         }
       }
@@ -18414,7 +18729,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "المبالغ المستردة تقلِّل الإنفاق، لذا قد تكون الفئة سالبة. لا تعرض الحلقة إلا المجموعات أو الفئات ذات صافي الإنفاق؛ أما الإجمالي والقائمة فيشملان المبالغ المستردة."
+            "value" : "تُنقص المبالغ المستردة الإنفاق، لذا قد تكون الفئة سالبة. لا تعرض الحلقة إلا المجموعات أو الفئات ذات صافي الإنفاق؛ أما الإجمالي والقائمة فيشملان المبالغ المستردة."
           }
         }
       }
@@ -18647,6 +18962,16 @@
         }
       }
     },
+    "Remove note" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إزالة الملاحظة"
+          }
+        }
+      }
+    },
     "Remove saved key" : {
       "localizations" : {
         "ar" : {
@@ -18662,7 +18987,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "إزالة سطر التقسيم %lld"
+            "value" : "إزالة بند التقسيم %lld"
           }
         }
       }
@@ -18693,6 +19018,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "إزالة النسخة السحابية من هذه الميزانية؟"
+          }
+        }
+      }
+    },
+    "Removed" : {
+      "comment" : "On a finished assistant card: a report, spreadsheet, converted file or figures that was removed.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُزيل"
           }
         }
       }
@@ -18856,7 +19192,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "تُحدِّث إعادة التسمية أو الدمج المعاملات المحفوظة ومستفيدي التقسيمات والمعاملات المجدولة وقواعد الاستيراد."
+            "value" : "تُحدِّث إعادة التسمية أو الدمج المعاملات المحفوظة ومستفيدي التقسيم والمعاملات المجدولة وقواعد الاستيراد."
           }
         }
       }
@@ -18957,7 +19293,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "تكرار الأشهر الماضية"
+            "value" : "تكرار الأشهر السابقة"
           }
         }
       }
@@ -19018,6 +19354,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "الاستبدال بـ «⁨%@⁩»"
+          }
+        }
+      }
+    },
+    "Replaced by a newer version" : {
+      "comment" : "On a finished assistant card: the assistant made a newer proposal in its place.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استُبدل بنسخة أحدث"
           }
         }
       }
@@ -19358,7 +19705,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "أعِد ما يزيد على كل هدف إلى غير المخصَّص."
+            "value" : "أعِد ما يتجاوز كل هدف إلى «غير المخصَّص»."
           }
         }
       }
@@ -19607,7 +19954,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "استُوردت التغييرات التي راجعتها وحُفظت، وأُنشئت نسخة احتياطية."
+            "value" : "استُوردت التغييرات بعد مراجعتها وحُفظت، وأُنشئت نسخة احتياطية."
           }
         }
       }
@@ -19946,7 +20293,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "يُحفظ في مجلد هذه الميزانية فقط. ويبقى السجل الحالي حتى تحذفه."
+            "value" : "يُحفظ في مجلد هذه الميزانية فقط، ويبقى السجل الحالي حتى تحذفه."
           }
         }
       }
@@ -20320,7 +20667,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "اختر فئة لترى معاملاتها."
+            "value" : "اختر فئة لعرض معاملاتها."
           }
         }
       }
@@ -20330,7 +20677,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "اختر مجموعة لترى فئاتها."
+            "value" : "اختر مجموعة لعرض فئاتها."
           }
         }
       }
@@ -20340,7 +20687,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "اختر مستفيدًا لترى معاملاته. تعرض المربعات المستفيدين ذوي صافي الإنفاق؛ أما الإجمالي والجدول فيشملان المبالغ المستردة."
+            "value" : "اختر مستفيدًا لعرض معاملاته. تعرض المربعات المستفيدين ذوي صافي الإنفاق؛ أما الإجمالي والجدول فيشملان المبالغ المستردة."
           }
         }
       }
@@ -20390,7 +20737,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "حدّد 200 معاملة كحد أقصى لرسالتك التالية."
+            "value" : "حدّد حتى 200 معاملة لرسالتك التالية."
           }
         }
       }
@@ -20400,7 +20747,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "حدّد 200 معاملة كحد أقصى في كل رسالة."
+            "value" : "حدّد 200 معاملة على الأكثر في كل رسالة."
           }
         }
       }
@@ -20451,17 +20798,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "إرسال رمز تسجيل الدخول"
-          }
-        }
-      }
-    },
-    "Sent with your message: %@" : {
-      "comment" : "Menu section; the value is the budget month",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "يُرسَل مع رسالتك: ⁨%@⁩"
           }
         }
       }
@@ -20543,7 +20879,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "تجنيب في كل فترة"
+            "value" : "تجنيب مبلغ كل فترة"
           }
         }
       }
@@ -20795,7 +21131,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "المخصَّص لسدادها"
+            "value" : "المُجنَّب لسدادها"
           }
         }
       }
@@ -20922,12 +21258,22 @@
         }
       }
     },
+    "Short notes the assistant keeps for this budget and gets with every message. It adds one when you ask it to remember something." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ملاحظات قصيرة يحتفظ بها المساعد لهذه الميزانية وتصله مع كل رسالة. ويضيف واحدة عندما تطلب منه أن يتذكر شيئًا."
+          }
+        }
+      }
+    },
     "Show" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "عرض"
+            "value" : "إظهار"
           }
         }
       }
@@ -21043,6 +21389,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "إظهار الفئات المخفية"
+          }
+        }
+      }
+    },
+    "Show in the budget" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عرض في الميزانية"
           }
         }
       }
@@ -21588,7 +21944,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "الإنفاق غير المجدول، موزَّعًا بالتساوي على كل يوم."
+            "value" : "الإنفاق غير المجدول موزَّعًا بالتساوي على الأيام."
           }
         }
       }
@@ -21679,7 +22035,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "جزء التقسيم %lld"
+            "value" : "بند التقسيم %lld"
           }
         }
       }
@@ -21709,7 +22065,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "فئة التقسيم"
+            "value" : "فئة البند"
           }
         }
       }
@@ -22406,7 +22762,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "يستطيع المساعد تصحيح هذه الأسطر مما يقوله الملف، ويسألك عن أي شيء غير واضح. وترى كل تصحيح قبل تطبيقه."
+            "value" : "يستطيع المساعد تصحيح هذه الأسطر مما يذكره الملف، ويسألك عن أي شيء غير واضح. وترى كل تصحيح قبل تطبيقه."
           }
         }
       }
@@ -22486,7 +22842,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "تعرض الرسوم مساهمات المصادر الموجبة. أما إجمالي الدخل وجدول المصادر فيشملان المبالغ المأخوذة من غير المخصَّص."
+            "value" : "تعرض الرسوم البيانية مساهمات المصادر الموجبة. ويشمل إجمالي الدخل وجدول المصادر المبالغ المسحوبة من «غير المخصَّص»."
           }
         }
       }
@@ -22548,7 +22904,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "الملف الذي أُنشئ غير متاح."
+            "value" : "الملف المُنشأ غير متاح."
           }
         }
       }
@@ -22569,7 +22925,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "صف العناوين مكررًا"
+            "value" : "صف العناوين مكرّرًا"
           }
         }
       }
@@ -22589,7 +22945,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "يجب أن يكون سعر الفائدة من 0 إلى 1,000%."
+            "value" : "يجب أن يكون سعر الفائدة بين 0 و⁦1,000%⁩."
           }
         }
       }
@@ -22599,7 +22955,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "يفوز النمط الأطول، ويحسم ترتيب القائمة التعادل."
+            "value" : "يفوز أطول نمط، ويحسم ترتيب القائمة التعادل."
           }
         }
       }
@@ -22699,7 +23055,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "لن يُحسب تاريخ السداد والفائدة لـ⁨%@⁩ بعد الآن، وتبقى معاملاته. يمكنك التراجع عن ذلك."
+            "value" : "لن يُحتسب تاريخ السداد والفائدة لـ⁨%@⁩ بعد الآن، وتبقى معاملاته. يمكنك التراجع عن ذلك."
           }
         }
       }
@@ -22709,7 +23065,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "لن يُحسب تاريخ السداد والفائدة لهذا الحساب بعد الآن، وتبقى معاملاته. يمكنك التراجع عن ذلك."
+            "value" : "لن يُحتسب تاريخ السداد والفائدة لهذا الحساب بعد الآن، وتبقى معاملاته. يمكنك التراجع عن ذلك."
           }
         }
       }
@@ -22840,7 +23196,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "يتجاوز مجموع ملفات التصدير هذه 16 ميغابايت. استخدم الاستيراد برمز YNAB للميزانيات الأكبر."
+            "value" : "يتجاوز مجموع ملفات التصدير هذه 16 ميغابايت. استخدم الاستيراد برمز الوصول من YNAB للميزانيات الأكبر."
           }
         }
       }
@@ -22860,7 +23216,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "هذه التصحيحات تخص استيرادًا آخر."
+            "value" : "هذه التصحيحات تخصّ استيرادًا آخر."
           }
         }
       }
@@ -22890,7 +23246,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "التفكير"
+            "value" : "جارٍ التفكير"
           }
         }
       }
@@ -23020,7 +23376,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "سيؤدي ذلك إلى حذف كل المحادثات والملفات المرفقة للميزانية المفتوحة على هذا الجهاز، وإيقاف الردود الجارية."
+            "value" : "يحذف هذا كل المحادثات والملفات المرفقة للميزانية المفتوحة على هذا الجهاز، ويوقف الردود الجارية."
           }
         }
       }
@@ -23090,7 +23446,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "هذا الملف ليس نسخة احتياطية محمولة من UrBudget بصيغة JSON."
+            "value" : "هذا الملف ليس نسخة احتياطية قابلة للنقل من UrBudget بصيغة JSON."
           }
         }
       }
@@ -23200,7 +23556,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "سيؤدي ذلك إلى إزالة سجلها المحفوظ من هذا الجهاز."
+            "value" : "يزيل هذا سجلها المحفوظ من هذا الجهاز."
           }
         }
       }
@@ -23537,7 +23893,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "أكمِل حتى تبلغ المبلغ؛ ويُحتسب المال المُرحَّل."
+            "value" : "أكمِل حتى المبلغ؛ ويُحتسب المال المُرحَّل."
           }
         }
       }
@@ -23677,7 +24033,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "تنتقل المعاملات والمعاملات المجدولة والإعدادات الافتراضية وفئات القروض إلى الوجهة. وتُضاف المبالغ المخصَّصة شهريًا إلى مخصَّصات الوجهة؛ وإن كانت الوجهة «غير المخصَّص» عادت إليه."
+            "value" : "تنتقل المعاملات والمعاملات المجدولة والفئات الافتراضية وفئات القروض إلى الوجهة. وتُضاف المبالغ المخصَّصة شهريًا إلى مخصَّصات الوجهة؛ وإن كانت الوجهة «غير المخصَّص» عادت إليه."
           }
         }
       }
@@ -23910,7 +24266,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "غير مخصَّص: جاهز لمهمة"
+            "value" : "غير المخصَّص: جاهز لمهمة"
           }
         }
       }
@@ -23991,16 +24347,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "التراجع عن تصحيح المساعد"
-          }
-        }
-      }
-    },
-    "Undo this proposal" : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "التراجع عن هذا الاقتراح"
           }
         }
       }
@@ -24161,7 +24507,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "سجل يصل إلى سنة، يُنزَّل على فترات من 45 يومًا. وتستهلك كل فترة طلبًا واحدًا."
+            "value" : "حتى سنة من السجل، تُنزَّل على فترات من 45 يومًا، وتستهلك كل فترة طلبًا واحدًا."
           }
         }
       }
@@ -24172,6 +24518,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "القادم"
+          }
+        }
+      }
+    },
+    "Update UrBudget to use this card." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حدِّث UrBudget لاستخدام هذه البطاقة."
           }
         }
       }
@@ -24356,7 +24712,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "استخدم «صادر» أو «وارد» لاختيار الاتجاه."
+            "value" : "استخدم «صادر» أو «وارد» لتحديد الاتجاه."
           }
         }
       }
@@ -24446,7 +24802,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "مفيد إن كنت تُدخل المعاملات بعد وصولها إلى البنك"
+            "value" : "مفيد إن كنت تُدخل المعاملات بعد وصولها إلى بنكك"
           }
         }
       }
@@ -24559,7 +24915,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "الرغبات"
+            "value" : "الكماليات"
           }
         }
       }
@@ -24570,7 +24926,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "الماء"
+            "value" : "المياه"
           }
         }
       }
@@ -24625,12 +24981,23 @@
         }
       }
     },
+    "What gets sent" : {
+      "comment" : "Title of the notice before a first message to the assistant's provider.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ما الذي يُرسَل"
+          }
+        }
+      }
+    },
     "What the payoff date and the interest are worked out from. Amounts in %@." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ما يُحسب منه تاريخ السداد والفائدة. المبالغ بعملة ⁨%@⁩."
+            "value" : "ما يُحتسب منه تاريخ السداد والفائدة. المبالغ بعملة ⁨%@⁩."
           }
         }
       }
@@ -24690,7 +25057,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ما تملكه ناقص ما عليك، شهرًا بشهر."
+            "value" : "ما تملكه مطروحًا منه ما عليك، شهرًا بشهر."
           }
         }
       }
@@ -24740,7 +25107,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "إلى أين تتجه أرصدة نقدك وبطاقاتك، بناءً على المجدول."
+            "value" : "إلى أين تتجه أرصدة النقد والبطاقات، بناءً على ما هو مجدول."
           }
         }
       }
@@ -24760,7 +25127,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "من أين يأتي دخلك، ومدى ثباته."
+            "value" : "من أين يأتي دخلك، ومدى استقراره."
           }
         }
       }
@@ -24780,7 +25147,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "أين ذهب مالك حسب المجموعة والفئة، مقارنةً بالشهر الماضي."
+            "value" : "أين ذهب مالك، حسب المجموعة والفئة، وكيف يُقارَن بالشهر الماضي."
           }
         }
       }
@@ -24850,7 +25217,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "رمز YNAB"
+            "value" : "رمز الوصول لـ YNAB"
           }
         }
       }
@@ -24870,7 +25237,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "لا يتضمّن تصدير YNAB الأهداف والملاحظات وبيانات التقسيم والحسابات المغلقة، ولا يحوي من كل معاملة مجدولة سوى تاريخها التالي، لذا لا تُنقل المعاملات المجدولة."
+            "value" : "لا يتضمّن تصدير YNAB الأهداف والملاحظات وبيانات بنود التقسيم والحسابات المغلقة، ولا يحوي من كل معاملة مجدولة سوى تاريخها التالي، لذا لا تُستورد المعاملات المجدولة."
           }
         }
       }
@@ -24890,7 +25257,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "منذ بداية العام"
+            "value" : "منذ بداية السنة"
           }
         }
       }
@@ -24975,16 +25342,6 @@
         }
       }
     },
-    "Your budget changed after this proposal. Use the budget's undo history to review subsequent changes." : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "تغيّرت ميزانيتك بعد هذا الاقتراح. استخدم سجل التراجع في الميزانية لمراجعة التغييرات اللاحقة."
-          }
-        }
-      }
-    },
     "Your budget changed since this preview. Choose Replace again to replace it as it is now." : {
       "localizations" : {
         "ar" : {
@@ -25045,12 +25402,12 @@
         }
       }
     },
-    "Your budget changed. Review the refreshed proposal before applying it." : {
+    "Your budget file, conversation history and sign-in are kept on this device. Nothing in the budget changes until you apply a change yourself." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "تغيّرت ميزانيتك. راجع الاقتراح المحدَّث قبل تطبيقه."
+            "value" : "يبقى ملف ميزانيتك وسجل المحادثات وتسجيل الدخول على هذا الجهاز. ولا يتغير شيء في الميزانية حتى تطبّق التغيير بنفسك."
           }
         }
       }
@@ -25060,7 +25417,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ميزانيتك بعين ثانية"
+            "value" : "ميزانيتك، بعين ثانية تراجعها"
           }
         }
       }
@@ -25091,6 +25448,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "يتضمن ما استوردته سعر فائدة هذا القرض ودفعته."
+          }
+        }
+      }
+    },
+    "Your messages, what's on screen, the files you attach, and the budget details the assistant looks up to answer you go to %@. Its terms and privacy policy govern how it processes and retains them." : {
+      "comment" : "The value is OpenAI or Anthropic",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "رسائلك، وما يظهر على الشاشة، والملفات التي ترفقها، وتفاصيل الميزانية التي يبحث عنها المساعد ليجيبك تُرسَل إلى ⁨%@⁩. وتحكم شروطه وسياسة الخصوصية لديه طريقة معالجتها والاحتفاظ بها."
           }
         }
       }
@@ -25799,7 +26167,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "يلزم شهران أو أكثر"
+            "value" : "يحتاج إلى شهرين أو أكثر"
           }
         }
       }
@@ -26106,7 +26474,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "أسطر التقسيم"
+            "value" : "بنود التقسيم"
           }
         }
       }
@@ -26165,7 +26533,7 @@
               "two" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "يومين"
+                  "value" : "يومان"
                 }
               },
               "few" : {
@@ -26229,7 +26597,7 @@
               "two" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "شهرين"
+                  "value" : "شهران"
                 }
               },
               "few" : {
@@ -26293,7 +26661,7 @@
               "two" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "فترتين"
+                  "value" : "فترتان"
                 }
               },
               "few" : {
@@ -26357,7 +26725,7 @@
               "two" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "أسبوعين"
+                  "value" : "أسبوعان"
                 }
               },
               "few" : {
@@ -26421,7 +26789,7 @@
               "two" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "سنتين"
+                  "value" : "سنتان"
                 }
               },
               "few" : {
@@ -26629,7 +26997,7 @@
               "zero" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "%lld معاملة"
+                  "value" : "لا معاملات"
                 }
               },
               "one" : {
@@ -26641,7 +27009,7 @@
               "two" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "معاملتين"
+                  "value" : "معاملتان"
                 }
               },
               "few" : {
@@ -26742,7 +27110,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "هو ما يظهره بنكك؟"
+            "value" : "هو ما يُظهره بنكك؟"
           }
         }
       }
@@ -26762,7 +27130,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ما عليك أكثر مما تملك"
+            "value" : "عليك أكثر مما تملك"
           }
         }
       }
@@ -26884,6 +27252,325 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "لكل ميزانية سجلها وروابطها البنكية ومحادثات المساعد والنسخ الاحتياطية الخاصة بها. اضغط مطولًا على ميزانية لإجراءات المكتبة. اسحب لنقلها إلى المهملات."
+          }
+        }
+      }
+    },
+    "With this message" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مع هذه الرسالة"
+          }
+        }
+      }
+    },
+    "The file being imported" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الملف الجاري استيراده"
+          }
+        }
+      }
+    },
+    "Only the first 200 of %lld selected transactions are attached." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُرفقت أول 200 معاملة فقط من أصل %lld معاملة محددة."
+          }
+        }
+      }
+    },
+    "Jump to latest" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الانتقال إلى الأحدث"
+          }
+        }
+      }
+    },
+    "Checking the assistant…" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ التحقق من المساعد…"
+          }
+        }
+      }
+    },
+    "The assistant couldn't be loaded." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر تحميل المساعد."
+          }
+        }
+      }
+    },
+    "The reply was cut short." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "انقطع الرد قبل اكتماله."
+          }
+        }
+      }
+    },
+    "This conversation is getting long, so replies are slower and use more of your plan or key." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "طالت هذه المحادثة، فأصبحت الردود أبطأ وتستهلك أكثر من خطتك أو مفتاحك."
+          }
+        }
+      }
+    },
+    "Continue in a new conversation" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المتابعة في محادثة جديدة"
+          }
+        }
+      }
+    },
+    "Continued from “%@”" : {
+      "comment" : "At the top of a conversation that carries on an earlier one: that one's title.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تتمة «⁨%@⁩»"
+          }
+        }
+      }
+    },
+    "Rename conversation" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إعادة تسمية المحادثة"
+          }
+        }
+      }
+    },
+    "Conversation name" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اسم المحادثة"
+          }
+        }
+      }
+    },
+    "Search conversations" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البحث في المحادثات"
+          }
+        }
+      }
+    },
+    "No conversation matches." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا توجد محادثة مطابقة."
+          }
+        }
+      }
+    },
+    "Tokens: %@ sent (%@ from cache), %@ received" : {
+      "comment" : "What a conversation's requests used: tokens sent, how many of those came from the service's cache, and tokens received. Each is a formatted number.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الرموز: ⁨%1$@⁩ مُرسَلة (⁨%2$@⁩ من الذاكرة المؤقتة)، ⁨%3$@⁩ مُستلَمة"
+          }
+        }
+      }
+    },
+    "Good reply" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "رد جيد"
+          }
+        }
+      }
+    },
+    "Bad reply" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "رد غير جيد"
+          }
+        }
+      }
+    },
+    "Details to include" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تفاصيل تُرفق بالبلاغ"
+          }
+        }
+      }
+    },
+    "Sent with your report. Remove anything you'd rather not send." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تُرسَل مع بلاغك. احذف ما لا تريد إرساله."
+          }
+        }
+      }
+    },
+    "The assistant replied." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ردّ المساعد."
+          }
+        }
+      }
+    },
+    "A proposal is ready to review." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اقتراح جاهز للمراجعة."
+          }
+        }
+      }
+    },
+    "Remove %@" : {
+      "comment" : "Takes a part of “With this message” off the message being written (VoiceOver): where the person is, or the file being imported.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إزالة ⁨%@⁩"
+          }
+        }
+      }
+    },
+    "Photo %lld" : {
+      "comment" : "The file name of a photo attached from the library: Photo 1, Photo 2…",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "صورة %lld"
+          }
+        }
+      }
+    },
+    "file.conversation" : {
+      "comment" : "The file name of an exported conversation that has no title.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "محادثة"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conversation"
+          }
+        }
+      }
+    },
+    "file.report" : {
+      "comment" : "The file name of a saved report that has no title.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تقرير"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Report"
+          }
+        }
+      }
+    },
+    "New reply" : {
+      "comment" : "On More's Assistant row: a reply or a proposal arrived while the assistant was closed (VoiceOver).",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "رد جديد"
+          }
+        }
+      }
+    },
+    "Sign out of ChatGPT?" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تسجيل الخروج من ChatGPT؟"
+          }
+        }
+      }
+    },
+    "The assistant stops answering until you sign in again. Your conversations stay on this device." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يتوقف المساعد عن الرد إلى أن تسجّل الدخول مجددًا. تبقى محادثاتك على هذا الجهاز."
+          }
+        }
+      }
+    },
+    "Remove the saved key?" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إزالة المفتاح المحفوظ؟"
+          }
+        }
+      }
+    },
+    "The assistant stops answering until you save a key again. Your conversations stay on this device." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يتوقف المساعد عن الرد إلى أن تحفظ مفتاحًا مجددًا. تبقى محادثاتك على هذا الجهاز."
           }
         }
       }

@@ -42,29 +42,62 @@
 .assistant-head strong {
   font-size: 13.5px;
 }
-.assistant-context {
+/* The open conversation's title: cut short where the header runs out (the whole of it is its
+   tooltip). */
+.assistant-title {
+  min-width: 0;
   overflow: hidden;
-  max-width: 180px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--zero-soft);
-  color: var(--text-2);
-  font-size: 11.5px;
-  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Text that reads in its own direction (dir="auto") but starts on the layout's side, not its
+   own: a title, a lookup's line, a card's labels. Right to left, styles.css turns them to the right. */
+.assistant-title,
+.assistant-step > span,
+.proposal-label > *,
+.assistant-history-text > span {
+  text-align: left;
+}
+.assistant-rename-open {
+  flex: none;
+  margin-inline-start: -4px;
+  color: var(--muted);
+}
+.assistant-rename {
+  display: flex;
+  flex: 1;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+}
+.assistant-rename input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  font-size: 13px;
+}
 .assistant-tools {
   display: flex;
+  flex: none;
   gap: 2px;
   margin-inline-start: auto;
 }
+/* Checking the assistant, or saying it couldn't be loaded. */
 .assistant-loading {
-  display: grid;
+  display: flex;
   flex: 1;
-  place-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-content: center;
+  align-items: center;
+  justify-content: center;
   padding: 24px;
   color: var(--muted);
+}
+.assistant-loading p {
+  flex: 1 0 100%;
+  margin: 0;
+  text-align: center;
 }
 
 /* Conversation */
@@ -117,6 +150,34 @@
   margin: 0;
   white-space: pre-wrap;
 }
+/* What went with the message: where it was sent from, the selection, the import. */
+.assistant-sent-with {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+/* Where a conversation carries on from, and a reply that ran out of room. */
+.assistant-continued {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+.assistant-cut {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+.assistant-opening {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  margin: auto 0;
+  color: var(--muted);
+}
 
 /* Replies */
 .assistant-reply {
@@ -125,12 +186,33 @@
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
+/* Under a reply: reporting it, and the user's thumb on it. They hold their place while it arrives. */
+.assistant-reply-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  align-self: flex-start;
+  margin-top: 4px;
+}
+.assistant-reply-actions.waiting {
+  visibility: hidden;
+}
+/*
+ * Under the latest reply they show. Under an earlier one they stay out of the way until it's
+ * pointed at or holds the keyboard; a thumb that was given stays, to say so. They keep their
+ * room either way, so nothing moves.
+ */
+.assistant-reply-actions {
+  transition: opacity 0.12s var(--ease);
+}
+.assistant-item:not(:hover):not(:focus-within):has(~ .assistant-item .assistant-reply) .assistant-reply-actions:not(:has([aria-pressed="true"])) {
+  opacity: 0;
+}
 .assistant-flag {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  align-self: flex-start;
-  margin-top: 4px;
+  margin-inline-end: 4px;
   padding: 0;
   border: 0;
   background: none;
@@ -143,8 +225,31 @@
   color: var(--text-2);
   text-decoration: underline;
 }
-.assistant-flag.waiting {
-  visibility: hidden;
+/* Under the conversation's last reply: what in the budget is waiting that the assistant can help with. */
+.assistant-next {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.assistant-thumb {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--muted);
+}
+.assistant-thumb:hover:not(:disabled),
+.assistant-thumb:focus-visible {
+  background: var(--hover);
+  color: var(--text);
+}
+.assistant-thumb[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 .reply-report textarea {
   width: 100%;
@@ -357,23 +462,28 @@
     transform: translateY(-2px);
   }
 }
+/* "Jump to latest", over the end of the conversation while the user reads further up. */
 .assistant-jump {
   position: sticky;
   bottom: 12px;
   z-index: 2;
-  display: grid;
+  display: inline-flex;
   flex: none;
+  gap: 5px;
+  align-items: center;
   align-self: center;
-  width: 30px;
-  height: 30px;
-  margin-top: -42px;
-  padding: 0;
-  place-items: center;
+  height: 28px;
+  /* It takes no room of its own. With any, the conversation was a little taller than its box,
+     so even an empty one could scroll, and the button, once shown, never left. */
+  margin-top: -28px;
+  padding: 0 11px;
   border: 1px solid var(--border-strong);
   border-radius: 999px;
   background: var(--surface);
   box-shadow: var(--shadow-md);
   color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
 }
 .assistant-jump:hover {
   color: var(--text);
@@ -506,6 +616,44 @@
   padding: 10px 12px 12px;
   border-top: 1px solid var(--border);
 }
+/* Over the field: what a conversation needs before it can go on (signing in, a key), or that
+   it has grown long, each with the one thing to do about it. */
+.assistant-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12px;
+}
+.assistant-banner > span {
+  flex: 1 1 180px;
+}
+/* "With this message": what goes with the next one, each part with its own ×. */
+.assistant-with {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.assistant-with-label {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.assistant-with-place {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.assistant-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11.5px;
+}
 .assistant-files {
   display: flex;
   flex-wrap: wrap;
@@ -619,9 +767,30 @@
 }
 .proposal-head {
   display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 10px 12px 8px;
+}
+.proposal-titles {
+  display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 1px;
-  padding: 10px 12px 8px;
+  min-width: 0;
+}
+/* A thing the assistant made is removed from its menu, not from a button beside the main ones. */
+.proposal-menu {
+  width: 24px;
+  height: 24px;
+  margin-block: -2px;
+  margin-inline-end: -4px;
+}
+/* A change that deletes: the app's destructive colour on its edge and its kicker. */
+.proposal.destructive {
+  border-color: color-mix(in srgb, var(--negative) 45%, var(--border));
+}
+.proposal.destructive .proposal-kicker {
+  color: var(--negative);
 }
 .proposal-kicker {
   color: var(--accent);
@@ -683,6 +852,10 @@
     background-color 0.12s var(--ease),
     color 0.12s var(--ease);
 }
+.proposal-edit-gap {
+  width: 22px;
+  margin-inline: -4px -6px;
+}
 .proposal-edit:hover:not(:disabled),
 .proposal-edit:focus-visible {
   background: var(--accent-soft);
@@ -733,6 +906,15 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+/* A row's name takes a second line before it's cut short. */
+.proposal-label > span:first-child {
+  display: -webkit-box;
+  white-space: normal;
+  overflow-wrap: break-word;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
 .proposal-label small {
   color: var(--muted);
   font-size: 11.5px;
@@ -750,8 +932,10 @@
   color: var(--positive);
   font-weight: 600;
 }
-.proposal-change {
+/* An amount as it was and as it will be, under the row's name. */
+.proposal-label > .proposal-change {
   font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
 }
 .proposal-badge {
   padding: 1px 7px;
@@ -769,6 +953,60 @@
 .proposal-total .proposal-row {
   background: var(--surface-2);
   font-weight: 600;
+}
+/* Over a long list of parts to choose among: all of them, none, or only the ones marked to check. */
+.proposal-select {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  padding: 5px 8px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+/* Figures: under each row, its amount as a share of the largest on the card. */
+.proposal-bar {
+  height: 4px;
+  margin: -2px 12px 7px;
+  border-radius: 2px;
+  background: var(--zero-soft);
+}
+.proposal-bar i {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+/* A question: each answer is a button as wide as the card. */
+.proposal-answers {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 12px 12px;
+}
+.proposal-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  padding: 7px 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: start;
+}
+.proposal-answer:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.proposal-answer small {
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 400;
 }
 .proposal-more {
   padding: 6px 12px;
@@ -812,7 +1050,8 @@ button.proposal-more:hover {
   text-overflow: ellipsis;
 }
 .proposal-check,
-.proposal-warning {
+.proposal-warning,
+.proposal-message {
   display: flex;
   gap: 6px;
   align-items: center;
@@ -821,8 +1060,31 @@ button.proposal-more:hover {
   font-weight: 600;
 }
 .proposal-check svg,
-.proposal-warning svg {
+.proposal-warning svg,
+.proposal-message svg {
   flex: none;
+}
+/* What the card says of itself, by its tone: brought up to date (quiet), something to check, or
+   it can't be applied. The warning that's part of what it proposes is a strip of its own. */
+.proposal-message {
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-weight: 400;
+}
+.proposal-message span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.proposal-message.warn {
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-weight: 600;
+}
+.proposal-message.error {
+  background: var(--negative-soft);
+  color: var(--negative);
+  font-weight: 600;
 }
 .proposal-check.ok {
   background: var(--positive-soft);
@@ -839,49 +1101,217 @@ button.proposal-more:hover {
   color: var(--muted);
   font-size: 12px;
 }
+/* In a narrow panel the buttons go onto a second line instead of being cut off. */
 .proposal-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   align-items: center;
   padding: 9px 12px;
   border-top: 1px solid var(--border);
   background: var(--surface-2);
 }
-.proposal-hint {
+/* Setting a card aside sits at the far end, away from the main button. */
+.proposal-actions .proposal-discard {
+  order: 2;
   margin-inline-start: auto;
+  color: var(--text-2);
+}
+/*
+ * Under the buttons. It's too wide to sit beside them, so it starts a line, and leaves room at
+ * that line's end for Discard: the two share it, where Discard alone used to take a line of
+ * its own once the buttons wrapped.
+ */
+.proposal-hint {
+  order: 1;
+  flex: 1 0 calc(100% - 110px);
+  align-self: center;
+  min-width: 0;
   color: var(--muted);
   font-size: 11.5px;
 }
 .proposal.failed {
-  border-color: color-mix(in srgb, var(--warning) 40%, var(--border));
+  border-color: color-mix(in srgb, var(--negative) 40%, var(--border));
 }
+/*
+ * A finished card: its title on a line that opens to its rows as they were, and under it what
+ * became of it with what can still be done. The title has the line to itself, so nothing
+ * crowds it in a narrow panel.
+ */
 .proposal.done {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  padding: 8px 12px;
   box-shadow: none;
   color: var(--text-2);
 }
-.proposal.done > span {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+.proposal-done-line {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 7px 12px;
 }
-.proposal.done svg {
+.proposal-fold {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  padding: 1px 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+}
+/* Under the title, in line with it: the state, then the buttons at the far end. They wrap under the state when they don't fit beside it. */
+.proposal-done-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  align-items: center;
+  min-width: 0;
+  padding-inline-start: 20px;
+}
+button.proposal-fold:hover {
+  color: var(--text);
+}
+.proposal-fold svg {
   flex: none;
   color: var(--positive);
 }
+.proposal-state {
+  overflow: hidden;
+  min-width: 0;
+  margin-inline-end: auto;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.proposal-done-title {
+  flex: 1 1 auto;
+  overflow: hidden;
+  min-width: 0;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* Opened, the title is read in full. */
+.proposal-fold[aria-expanded="true"] {
+  align-items: flex-start;
+}
+.proposal-fold[aria-expanded="true"] .proposal-done-title {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.proposal-fold[aria-expanded="true"] svg {
+  margin-top: 3px;
+}
+/* An answered question: "Asked:" keeps its place, and the question is cut at its own end, in whichever direction it reads. */
+.proposal-asked {
+  flex: none;
+  color: var(--muted);
+}
+.proposal-fold .proposal-chevron {
+  flex: none;
+  color: var(--muted);
+  transition: transform 0.15s var(--ease);
+}
+.proposal-fold[aria-expanded="true"] .proposal-chevron {
+  transform: rotate(180deg);
+}
 .proposal.done.discarded,
-.proposal.done.undone {
+.proposal.done.undone,
+.proposal.done.replaced {
   color: var(--muted);
 }
-.proposal.done.discarded svg,
-.proposal.done.undone svg {
+.proposal.done.discarded .proposal-fold svg,
+.proposal.done.undone .proposal-fold svg,
+.proposal.done.replaced .proposal-fold svg {
   color: var(--muted);
 }
-.proposal.done button {
-  margin-inline-start: auto;
+.proposal-details {
+  border-top: 1px solid var(--border);
+}
+.proposal-details > :first-child,
+.proposal-details > :first-child > .proposal-row {
+  border-top: 0;
+}
+
+/* Conversations: a field to find one by its title over the list of them all, which scrolls. */
+.popover.assistant-history {
+  width: 300px;
+  max-width: calc(100vw - 16px);
+  padding: 4px;
+  overflow: hidden;
+}
+.assistant-history-box {
+  display: flex;
+  flex-direction: column;
+  max-height: min(410px, calc(100vh - 26px));
+}
+.assistant-history-box > input {
+  flex: none;
+  margin: 2px 2px 6px;
+  height: 30px;
+  font-size: 13px;
+}
+.assistant-history-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.assistant-history-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  text-align: start;
+}
+.assistant-history-item:hover,
+.assistant-history-item:focus-visible {
+  background: var(--accent-soft);
+  outline: none;
+}
+.assistant-history-item .menu-icon {
+  flex: none;
+  margin-top: 2px;
+}
+.assistant-history-item[aria-current] {
+  font-weight: 600;
+}
+.assistant-history-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+/* Up to two lines, so two conversations that begin alike can be told apart. */
+.assistant-history-text > span {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+.assistant-history-text small {
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+.assistant-history-note {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 8px;
+  color: var(--muted);
+}
+.assistant-history .menu-item {
+  flex: none;
 }
 
 /* First use, and dropping files */
@@ -890,6 +1320,8 @@ button.proposal-more:hover {
   inset: 0;
   z-index: 10;
   display: grid;
+  /* One row as tall as the panel: a notice longer than that scrolls, so its buttons stay in reach. */
+  grid-template-rows: minmax(0, 1fr);
   place-items: center;
   padding: 16px;
   background: color-mix(in srgb, var(--bg) 70%, transparent);
@@ -898,6 +1330,8 @@ button.proposal-more:hover {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  max-height: 100%;
+  overflow-y: auto;
   padding: 18px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-xl);
@@ -911,6 +1345,10 @@ button.proposal-more:hover {
 .assistant-notice p {
   margin: 0;
   color: var(--text-2);
+}
+/* The memo switch from Settings (a .setting-row), under what the notice says. */
+.assistant-notice .setting-row {
+  padding: 10px 0 2px;
 }
 .assistant-notice-actions {
   display: flex;
@@ -972,6 +1410,33 @@ button.proposal-more:hover {
   display: flex;
   gap: 6px;
   align-items: center;
+}
+/* The notes the assistant keeps for the budget: each on a line with its remove button, then the field that adds one. */
+.assistant-notes {
+  margin: 0 0 10px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  list-style: none;
+}
+.assistant-notes li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding-block: 5px;
+  padding-inline: 12px 6px;
+}
+.assistant-notes li + li {
+  border-top: 1px solid var(--border);
+}
+.assistant-notes li > span {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.assistant-note-add input {
+  flex: 1 1 auto;
+  max-width: 420px;
 }
 .assistant-mcp {
   max-width: 100%;

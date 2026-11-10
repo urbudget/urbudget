@@ -141,7 +141,7 @@ function cardRow(row) {
 const ACTIONS = {
   apply: [["Apply", "apply", true], ["Discard", "discard"]],
   import: [["Review import", "In the app, this opens the import review, where you check duplicates and matches.", true], ["Save as CSV", "In the app, this saves the rows as a CSV file."], ["Discard", "discard", false, "link"]],
-  report: [["Preview", "In the app, this opens the report, ready to read or print.", true], ["Save as PDF", "In the app, this saves the report as a PDF."], ["Excel", "In the app, this saves each table on its own sheet."], ["Discard", "discard", false, "link"]],
+  report: [["Preview", "In the app, this opens the report, ready to read or print.", true], ["Print or save as PDF", "In the app, this saves the report as a PDF."], ["Excel", "In the app, this saves each table on its own sheet."], ["Discard", "discard", false, "link"]],
 };
 
 function cardHtml(card) {

@@ -14,6 +14,21 @@ final class AppActions {
     /// The action waiting for the app's screens, cleared once one takes it.
     var pending: Action?
 
+    /// Where a card of the assistant asks the app to go as its sheet closes: the Transactions
+    /// tab showing some transactions alone, or else the Budget tab on a month. Each is its own,
+    /// so asking for the same place again goes there again.
+    struct Destination: Equatable {
+        var id = UUID()
+        var month = ""
+        var transactions: [String] = []
+    }
+
+    /// The place waiting for the tabs to go to, cleared once they have.
+    var destination: Destination?
+    /// A request for the assistant from a message over the tabs (an import's "Categorize with
+    /// the assistant"): the tabs open the assistant with it, and clear it when it closes.
+    var asking: AssistantRequest?
+
     @discardableResult
     func handle(_ item: UIApplicationShortcutItem) -> Bool {
         guard item.type == Self.newTransactionType else { return false }

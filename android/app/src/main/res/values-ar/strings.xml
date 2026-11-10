@@ -36,7 +36,7 @@
     <string name="flag_green">أخضر</string>
     <string name="flag_blue">أزرق</string>
     <string name="flag_purple">بنفسجي</string>
-    <string name="error_editor_budget_changed">تغيّرت ميزانيتك أثناء فتح هذا المحرر. أغلقه ثم افتحه مجددًا لمراجعة أحدث القيم.</string>
+    <string name="error_editor_budget_changed">تغيّرت ميزانيتك أثناء فتح هذا المحرر. أغلقه وافتحه مجددًا لمراجعة أحدث القيم.</string>
     <string name="error_reopen_editor">تغيّرت الميزانية. أعد فتح هذا المحرر.</string>
     <string name="month_choose">اختيار الشهر</string>
     <string name="month_previous_year">السنة السابقة</string>
@@ -45,7 +45,7 @@
     <string name="fold_collapse">طي %1$s</string>
     <string name="fold_expand">توسيع %1$s</string>
     <string name="keypad_delete">حذف</string>
-    <string name="keypad_minus">طرح</string>
+    <string name="keypad_minus">ناقص</string>
     <string name="keypad_times">ضرب</string>
     <string name="keypad_divide">قسمة</string>
 
@@ -87,7 +87,7 @@
     <string name="backup_open_failed">تعذّر فتح هذه النسخة الاحتياطية.</string>
     <string name="backup_not_saved">تعذّر حفظ النسخة الاحتياطية.</string>
     <string name="backup_save_failed">تعذّر حفظ هذه النسخة الاحتياطية.</string>
-    <string name="backup_exported">تم تصدير النسخة الاحتياطية</string>
+    <string name="backup_exported">صُدِّرت النسخة الاحتياطية</string>
     <string name="import_replace_title">استبدال الميزانية المفتوحة؟</string>
     <string name="import_replace_message">يستبدل الاستيراد الميزانية الموجودة على هذا الجهاز. صدِّر ميزانيتك الحالية أولًا إن أردت نسخة منفصلة منها. تُحفَظ حقول سطح المكتب غير المعروفة في النسخ الاحتياطية بصيغة JSON.</string>
     <string name="import_backup_action">استيراد النسخة الاحتياطية</string>
@@ -104,7 +104,7 @@
     <string name="budget_currency">العملة</string>
     <string name="welcome_create">إنشاء ميزانيتي</string>
     <string name="welcome_sample">الاستكشاف بأموال تجريبية</string>
-    <string name="welcome_sample_detail">ميزانية جاهزة تجرّب عليها ما تشاء</string>
+    <string name="welcome_sample_detail">ميزانية جاهزة لتجربة الميزات</string>
     <string name="welcome_import">استيراد نسخة احتياطية من UrBudget</string>
     <string name="welcome_import_detail">نسخة احتياطية بصيغة JSON من سطح المكتب أو Android</string>
     <string name="welcome_sign_in">تسجيل الدخول والمزامنة</string>
@@ -135,19 +135,19 @@
     <string name="schedule_unnamed">معاملة مجدولة</string>
     <string name="schedule_due_on">مستحقة في \u2068%1$s\u2069</string>
     <string name="schedule_paused">متوقفة مؤقتًا</string>
-    <string name="schedule_add">جدولة معاملة</string>
+    <string name="schedule_add">إضافة معاملة مجدولة</string>
     <string name="schedule_enter_all_due">إدخال كل المستحق</string>
-    <string name="schedules_empty_title">لا شيء مجدول</string>
+    <string name="schedules_empty_title">لا معاملات مجدولة</string>
     <string name="schedules_empty_detail">أضف معاملة بتاريخ لاحق، أو اختر عدد مرات تكرارها، وستنتظر هنا.</string>
     <string name="schedules_active_paused">\u2068%1$s\u2069 · \u2068%2$s\u2069 متوقفة مؤقتًا</string>
     <string name="schedules_due_soon">مستحقة خلال 30 يومًا</string>
     <string name="schedules_going_out">الصادر</string>
     <string name="schedules_coming_in">الوارد</string>
-    <string name="schedules_help">تنتظر هنا المعاملة ذات التاريخ اللاحق، وتُدخَل في تاريخها غير مُقاصّة وبانتظار الاعتماد؛ ثم تستمر المعاملة المتكررة من هناك.</string>
+    <string name="schedules_help">تنتظر هنا المعاملة ذات التاريخ اللاحق، وتُدخَل في تاريخها غير مُقاصّة وبانتظار الاعتماد؛ أما المعاملة المتكررة فتستمر من هناك.</string>
     <string name="schedule_delete_title">حذف هذه المعاملة المجدولة؟</string>
     <string name="schedule_delete_message">لن تُدخَل «\u2068%1$s\u2069» مرة أخرى، وتبقى المعاملات التي أُدخلت منها من قبل. يمكنك التراجع عن ذلك.</string>
     <string name="schedule_enter_now">إدخال الآن</string>
-    <string name="schedule_skip_once">تخطي</string>
+    <string name="schedule_skip_once">تخطيها</string>
     <string name="schedule_skip_date">تخطي \u2068%1$s\u2069</string>
     <string name="schedule_resume">استئناف</string>
     <string name="schedule_pause">إيقاف مؤقت</string>
@@ -174,9 +174,9 @@
     <string name="settings_new_cleared_detail">مفيد إن كنت تُدخل المعاملات بعد وصولها إلى بنكك</string>
     <string name="settings_open_scheduled">فتح المعاملات المجدولة</string>
     <string name="settings_open_scheduled_detail">ما إذا كانت المعاملات المجدولة أعلى كل سجل معاملات تظهر مفتوحة</string>
-    <string name="settings_enter_due">إدخال المستحق من المجدولة عند الفتح</string>
+    <string name="settings_enter_due">إدخال المعاملات المجدولة المستحقة عند الفتح</string>
     <string name="settings_enter_due_detail">تُضاف المعاملات المجدولة المستحقة عند فتح التطبيق</string>
-    <string name="settings_open_on">صفحة البداية</string>
+    <string name="settings_open_on">صفحة البدء</string>
     <string name="settings_all_transactions">كل المعاملات</string>
     <string name="settings_open_on_detail">الصفحة التي تظهر عند تشغيل التطبيق أو التبديل بين الميزانيات.</string>
     <string name="settings_backups">النسخ الاحتياطية</string>
@@ -188,7 +188,7 @@
     <string name="settings_imports">الاستيراد</string>
     <string name="settings_privacy">الخصوصية وبياناتك</string>
     <string name="settings_privacy_detail">ما يبقى على هذا الهاتف، وما تشاركه المزامنة وربط البنوك والمساعد</string>
-    <string name="settings_footer">\u2068%1$s\u2069 · محفوظة على هذا الجهاز. تعتمد حسابات المظاريف والأهداف والتقارير والاستيراد على المحرّك نفسه الذي يستخدمه تطبيق سطح المكتب.</string>
+    <string name="settings_footer">\u2068%1$s\u2069 · محفوظة على هذا الجهاز. يعتمد احتساب المظاريف والأهداف والتقارير والاستيراد على المحرّك نفسه الذي يستخدمه تطبيق سطح المكتب.</string>
 
     <!-- Transactions: register, filters, transaction editor -->
     <string name="date_pattern_weekday_month_first">EEEE، MMMM d، yyyy</string>
@@ -205,10 +205,10 @@
     <string name="account_this">هذا الحساب</string>
     <string name="account_other">الحساب الآخر</string>
     <string name="account_label">الحساب</string>
-    <string name="account_choose">اختر الحساب</string>
+    <string name="account_choose">اختر حسابًا</string>
     <string name="account_kind_credit">بطاقة ائتمان</string>
     <string name="account_kind_tracking">حساب تتبُّع</string>
-    <string name="account_kind_cash">نقد</string>
+    <string name="account_kind_cash">النقد</string>
     <string name="account_working_balance">الرصيد الإجمالي</string>
     <string name="account_edit">تعديل الحساب</string>
     <string name="transfer_line_to">إلى: \u2068%1$s\u2069</string>
@@ -220,7 +220,7 @@
     <string name="payee_none">بلا مستفيد</string>
     <string name="payee_label">المستفيد</string>
     <string name="payee_choose">اختر المستفيد</string>
-    <string name="payee_search_or_add">ابحث عن مستفيد أو أضف مستفيدًا</string>
+    <string name="payee_search_or_add">ابحث عن مستفيد أو أضفه</string>
     <string name="payee_add_named">إضافة «\u2068%1$s\u2069»</string>
     <string name="payee_section_transfers">التحويل إلى أو من</string>
     <string name="payee_section_payees">المستفيدون</string>
@@ -235,7 +235,7 @@
     <string name="export_destination_failed">تعذّر فتح وجهة التصدير.</string>
     <string name="export_register_failed">تعذّر تصدير سجل المعاملات.</string>
     <string name="selection_end">إنهاء التحديد</string>
-    <string name="selection_none">إلغاء التحديد</string>
+    <string name="selection_none">إلغاء تحديد الكل</string>
     <string name="selection_all">تحديد الكل</string>
     <string name="selection_select">تحديد</string>
     <plurals name="transactions_selected">
@@ -250,7 +250,7 @@
     <string name="filters_title">عوامل التصفية</string>
     <string name="filters_count">عوامل التصفية · \u2068%1$s\u2069</string>
     <string name="filters_clear">مسح عوامل التصفية</string>
-    <string name="filters_amount_help">تطابق المبالغُ الصادرَ والواردَ على حدٍّ سواء.</string>
+    <string name="filters_amount_help">تنطبق المبالغ على الصادر والوارد على حدٍّ سواء.</string>
     <string name="dates_title">التواريخ</string>
     <string name="date_any">أي تاريخ</string>
     <string name="date_from">من</string>
@@ -267,9 +267,9 @@
     <string name="status_needs_approval">بانتظار الاعتماد</string>
     <string name="flag_label">العلامة</string>
     <string name="flag_none">بلا علامة</string>
-    <string name="flag_flagged">معلَّمة</string>
+    <string name="flag_flagged">بعلامة</string>
     <string name="flag_not_flagged">بلا علامة</string>
-    <string name="flag_any_or_none">بعلامة أو بدونها</string>
+    <string name="flag_any_or_none">بعلامة أو دونها</string>
     <string name="common_export">تصدير</string>
     <string name="common_review">مراجعة</string>
     <string name="common_approve">اعتماد</string>
@@ -296,7 +296,16 @@
     <string name="register_no_matches">لا نتائج مطابقة</string>
     <string name="register_no_matches_detail">لا شيء يطابق هذا البحث وعوامل التصفية هذه.</string>
     <string name="register_empty_title">لا معاملات هنا</string>
-    <string name="register_empty_detail">أضف مشترًى أو دخلًا أو تحويلًا لترى حركة أموالك.</string>
+    <string name="register_empty_detail">أضف مشتريات أو دخلًا أو تحويلًا لترى حركة أموالك.</string>
+    <string name="register_pane_title">لا توجد معاملة مفتوحة</string>
+    <string name="register_pane_detail">انقر على معاملة في القائمة لعرضها أو تعديلها هنا.</string>
+    <string name="sheet_pane">لوحة</string>
+    <string name="fold_side_title">هذا الجانب لما تفتحه</string>
+    <string name="fold_side_detail">تُفتح هنا الفئة أو المساعد أو المعاملة الجديدة، بعيدًا عن الطيّة.</string>
+    <string name="transaction_unsaved_title">هل تريد تجاهل تغييراتك؟</string>
+    <string name="transaction_unsaved_message">في هذه المعاملة تغييرات لم تُحفظ.</string>
+    <string name="transaction_unsaved_discard">تجاهل</string>
+    <string name="transaction_unsaved_keep">متابعة التعديل</string>
     <string name="bulk_categorize">تصنيف \u2068%1$s\u2069</string>
     <plurals name="delete_transactions_title">
         <item quantity="zero">حذف \u2068%1$s\u2069 معاملة؟</item>
@@ -323,8 +332,8 @@
     <string name="transaction_scheduled_repeating">جُدولت \u2068%1$s\u2069 بدءًا من \u2068%2$s\u2069.</string>
     <string name="transaction_scheduled_for">جُدولت ليوم \u2068%1$s\u2069، وستُدخَل في ذلك اليوم.</string>
     <string name="transaction_needs_account">أنشئ حسابًا في «الحسابات» قبل إضافة أول معاملة.</string>
-    <string name="transaction_reconciled_warning">هذه المعاملة مُسوّاة. تغيير مبلغها أو تاريخها أو حسابها يغيّر سجلًّا سبقت تسويته.</string>
-    <string name="transaction_imported_unapproved">مستوردة ولم تُعتمد بعد</string>
+    <string name="transaction_reconciled_warning">هذه المعاملة مُسوّاة. تغيير مبلغها أو تاريخها أو حسابها يغيّر سجلًا سبقت تسويته.</string>
+    <string name="transaction_imported_unapproved">مستوردة، لم تُعتمد بعد</string>
     <string name="schedule_unnamed_short">مجدولة</string>
     <string name="schedule_enter">إدخال</string>
     <string name="schedule_skip">تخطي</string>
@@ -335,11 +344,11 @@
     <string name="card_make_payment">سداد دفعة</string>
     <string name="reconcile_action">تسوية</string>
     <string name="amount_label">المبلغ</string>
-    <string name="amount_at_least">على الأقل</string>
-    <string name="amount_at_most">على الأكثر</string>
+    <string name="amount_at_least">الحد الأدنى</string>
+    <string name="amount_at_most">الحد الأقصى</string>
     <string name="amount_edit">تعديل المبلغ</string>
     <string name="amount_type">اكتب المبلغ</string>
-    <string name="amount_tap_to_change">انقر للتغيير</string>
+    <string name="amount_tap_to_change">اضغط للتغيير</string>
     <string name="sort_label">الترتيب</string>
     <string name="sort_newest">الأحدث أولًا</string>
     <string name="sort_oldest">الأقدم أولًا</string>
@@ -351,17 +360,17 @@
     <string name="reconciled_locked">مقفلة بالتسوية</string>
     <string name="choose_field">اختيار \u2068%1$s\u2069</string>
     <string name="split_label">التقسيم</string>
-    <string name="split_between_categories">تقسيم بين عدة فئات</string>
-    <string name="split_category">فئة السطر</string>
+    <string name="split_between_categories">تقسيم بين الفئات</string>
+    <string name="split_category">فئة البند</string>
     <string name="split_fully">مقسَّمة بالكامل</string>
     <string name="split_left">متبقٍّ للتقسيم: \u2068%1$s\u2069</string>
     <string name="split_over">زيادة على الإجمالي: \u2068%1$s\u2069</string>
     <string name="split_undo">إلغاء التقسيم</string>
-    <string name="split_share_help">كل سطر حصته من الإجمالي.</string>
-    <string name="split_remove_line">إزالة سطر التقسيم \u2068%1$s\u2069</string>
+    <string name="split_share_help">كل بند يمثّل حصته من الإجمالي.</string>
+    <string name="split_remove_line">إزالة بند التقسيم \u2068%1$s\u2069</string>
     <string name="split_use_left">استخدام المتبقي \u2068%1$s\u2069</string>
-    <string name="split_add_line">إضافة سطر</string>
-    <string name="split_two_lines">أضف سطرين للتقسيم على الأقل.</string>
+    <string name="split_add_line">إضافة بند</string>
+    <string name="split_two_lines">أضف بندَي تقسيم على الأقل.</string>
     <string name="split_must_equal_total">يجب أن يساوي مجموع مبالغ التقسيم إجمالي المعاملة.</string>
     <plurals name="bulk_edit_title">
         <item quantity="zero">تعديل \u2068%1$s\u2069 معاملة</item>
@@ -385,8 +394,8 @@
     <string name="target_more_needed_by_day">مطلوب إضافيًا بحلول يوم \u2068%1$s\u2069</string>
     <string name="target_needed_by_date">مطلوب بحلول \u2068%1$s\u2069</string>
     <string name="target_more_needed_by_date">مطلوب إضافيًا بحلول \u2068%1$s\u2069</string>
-    <string name="target_needed_eventually">مطلوب مستقبلًا</string>
-    <string name="target_more_needed_eventually">مطلوب إضافيًا مستقبلًا</string>
+    <string name="target_needed_eventually">مطلوب لبلوغ الهدف</string>
+    <string name="target_more_needed_eventually">مطلوب إضافيًا لبلوغ الهدف</string>
     <string name="target_funded">مموَّلة</string>
     <string name="target_fully_spent">أُنفقت بالكامل</string>
     <string name="ordinal_ends_1">\u2068%1$s\u2069</string>
@@ -395,22 +404,22 @@
     <string name="ordinal_other">\u2068%1$s\u2069</string>
     <string name="deadline_month_first">\u2068%1$s\u2069 \u2068%2$s\u2069</string>
     <string name="deadline_day_first">\u2068%1$s\u2069 \u2068%2$s\u2069</string>
-    <string name="category_overspent_card">تجاوز الإنفاق على بطاقة</string>
+    <string name="category_overspent_card">تجاوز الإنفاق ببطاقة ائتمان</string>
     <string name="category_overspent">تجاوز الإنفاق</string>
-    <string name="category_snoozed">مؤجَّل</string>
+    <string name="category_snoozed">مؤجَّلة</string>
     <string name="view_all">الكل</string>
-    <string name="view_underfunded">ناقصة التمويل</string>
+    <string name="view_underfunded">ناقص التمويل</string>
     <string name="view_overfunded">زائدة التمويل</string>
-    <string name="view_available">بها مال متاح</string>
+    <string name="view_available">مال متاح</string>
     <string name="view_overspent">تجاوزت الإنفاق</string>
     <string name="view_snoozed">مؤجَّلة</string>
     <string name="view_show_all">عرض الكل</string>
-    <string name="view_empty_title">لا شيء للعرض</string>
-    <string name="view_empty_detail">لا فئات تطابق طريقة العرض هذه في هذا الشهر.</string>
+    <string name="view_empty_title">لا شيء لعرضه</string>
+    <string name="view_empty_detail">لا فئات تطابق طريقة العرض هذه هذا الشهر.</string>
     <string name="group_hidden">الفئات المخفية</string>
     <string name="budget_views">طرق العرض</string>
     <string name="budget_view_showing">المعروض:</string>
-    <string name="budget_unavailable_title">تعذّر حساب الميزانية</string>
+    <string name="budget_unavailable_title">تعذّر احتساب الميزانية</string>
     <string name="budget_unavailable_detail">عالج الخطأ الذي ظهر أو استورد نسخة احتياطية صالحة من «الإعدادات والبيانات». تبقى بياناتك المحفوظة متاحة للتصدير.</string>
     <string name="month_back_to">العودة إلى \u2068%1$s\u2069</string>
     <string name="month_previous">الشهر السابق</string>
@@ -441,7 +450,7 @@
     <string name="group_hide_all">إخفاء كل الفئات</string>
     <string name="group_delete_menu">حذف المجموعة…</string>
     <string name="unassigned_assign">تخصيص المال</string>
-    <string name="unassigned_tap_to_assign">انقر للتخصيص</string>
+    <string name="unassigned_tap_to_assign">اضغط للتخصيص</string>
     <string name="unassigned_over_assigned">المخصَّص أكثر مما لديك</string>
     <string name="unassigned_all_assigned">خُصِّص المال كله</string>
     <plurals name="overspent_categories">
@@ -452,7 +461,7 @@
         <item quantity="many">فئة تجاوزت الإنفاق</item>
         <item quantity="other">فئة تجاوزت الإنفاق</item>
     </plurals>
-    <string name="common_show">عرض</string>
+    <string name="common_show">إظهار</string>
     <string name="common_expand_all">توسيع الكل</string>
     <string name="common_collapse_all">طي الكل</string>
     <string name="common_move_up">نقل لأعلى</string>
@@ -484,12 +493,12 @@
     <string name="move_amount_required">أدخل مبلغًا لنقله.</string>
     <string name="move_toast">نُقل \u2068%1$s\u2069 من \u2068%2$s\u2069 إلى \u2068%3$s\u2069.</string>
     <string name="move_from_title">النقل من</string>
-    <string name="move_to_title">النقل إلى</string>
+    <string name="move_to_title">نقل إلى</string>
     <string name="cover_overspending">تغطية الإنفاق الزائد</string>
     <string name="target_kind_set_aside">تجنيب</string>
     <string name="target_kind_refill">إعادة التعبئة حتى</string>
-    <string name="target_kind_balance">هدف رصيد</string>
-    <string name="target_kind_debt">هدف سداد قرض</string>
+    <string name="target_kind_balance">الرصيد المستهدف</string>
+    <string name="target_kind_debt">هدف دفعة القرض</string>
     <string name="target_kind_monthly_funding">تمويل شهري</string>
     <string name="cadence_by_date">بحلول \u2068%1$s\u2069</string>
     <string name="cadence_once_by">مرة واحدة، بحلول \u2068%1$s\u2069</string>
@@ -534,29 +543,29 @@
     <string name="category_group_hidden">\u2068%1$s\u2069 · مخفية</string>
     <string name="category_hid">أُخفيت \u2068%1$s\u2069. تجدها ضمن «الفئات المخفية».</string>
     <string name="category_shown_again">عادت \u2068%1$s\u2069 إلى الظهور.</string>
-    <string name="category_carried">مُرحَّل من الشهر الماضي</string>
+    <string name="category_carried">المُرحَّل من الشهر الماضي</string>
     <string name="category_assigned_in">المخصَّص في \u2068%1$s\u2069</string>
     <string name="category_upcoming">القادم</string>
     <string name="category_upcoming_detail">مجدول هذا الشهر</string>
     <string name="category_cover">تغطية</string>
-    <string name="category_moves_this_month">تحركات هذا الشهر</string>
+    <string name="category_moves_this_month">حركات المال هذا الشهر</string>
     <string name="category_actions">إجراءات الفئة</string>
     <string name="category_details">الاسم والمجموعة والملاحظة</string>
     <string name="category_organize">النقل أو إعادة الترتيب</string>
-    <string name="category_moves_menu">تحركات المال هذا الشهر</string>
-    <string name="category_money_moves">تحركات المال</string>
+    <string name="category_moves_menu">حركات المال هذا الشهر</string>
+    <string name="category_money_moves">حركات المال</string>
     <string name="category_show">إظهار الفئة</string>
     <string name="category_hide">إخفاء الفئة</string>
     <string name="category_delete">حذف الفئة</string>
     <string name="category_name_group_required">أدخل اسمًا ومجموعة.</string>
     <string name="category_delete_confirm_required">أكّد حذف الفئة.</string>
     <string name="category_no_moves">لم يُنقل أي مال لهذه الفئة هذا الشهر.</string>
-    <string name="category_moves_add_up">مجموع التحركات يساوي المخصَّص في \u2068%1$s\u2069.</string>
+    <string name="category_moves_add_up">مجموع حركات المال يساوي المخصَّص في \u2068%1$s\u2069.</string>
     <string name="category_hidden">مخفية</string>
     <string name="category_hidden_detail">تحتفظ الفئات المخفية بأموالها وسجلها</string>
     <string name="category_delete_unused">لا معاملات لها ولا مال مخصَّص.</string>
     <string name="category_delete_move_history">نقل سجلها إلى</string>
-    <string name="category_delete_help">تنتقل المعاملات والمعاملات المجدولة والفئات الافتراضية وفئات القروض إلى الوجهة. وتُضَمّ المبالغ المخصَّصة شهريًا إلى مخصَّصات الوجهة، فإن كانت «غير المخصَّص» عادت إليه.</string>
+    <string name="category_delete_help">تنتقل المعاملات والمعاملات المجدولة والفئات الافتراضية وفئات القروض إلى الوجهة. وتُضاف المبالغ المخصَّصة شهريًا إلى مخصَّصات الوجهة؛ وإن كانت الوجهة «غير المخصَّص» عادت إليه.</string>
     <string name="category_delete_confirm">حذف هذه الفئة ونقل سجلها</string>
     <string name="category_choose_a">اختر فئة</string>
     <string name="category_search">ابحث في الفئات</string>
@@ -571,17 +580,17 @@
     <string name="target_create">إنشاء هدف</string>
     <string name="target_remove">حذف الهدف</string>
     <string name="target_behaviour_set">تجنيب مبلغ كل فترة</string>
-    <string name="target_behaviour_set_hint">خصِّص المبلغ كاملًا كل فترة، مهما تبقّى من قبل.</string>
+    <string name="target_behaviour_set_hint">خصِّص المبلغ كاملًا في كل فترة، أيًّا كان المتبقي.</string>
     <string name="target_behaviour_refill">إعادة التعبئة حتى المبلغ كل فترة</string>
     <string name="target_behaviour_refill_hint">أكمِل حتى المبلغ؛ ويُحتسب المال المُرحَّل.</string>
     <string name="target_behaviour_balance">الحفاظ على رصيد للفئة</string>
-    <string name="target_behaviour_balance_hint">أبقِ هذا المبلغ على الأقل متاحًا.</string>
+    <string name="target_behaviour_balance_hint">أبقِ هذا المبلغ متاحًا على الأقل.</string>
     <string name="target_behaviour_by_date">بلوغ رصيد بحلول تاريخ</string>
     <string name="target_behaviour_by_date_hint">ادّخر حتى تبلغ المبلغ بحلول تاريخ تختاره.</string>
     <string name="target_behaviour_monthly_funding_hint">هدف مستورد: موِّل هذا المبلغ كل شهر.</string>
     <string name="target_behaviour_debt">دفعة دين شهرية</string>
     <string name="target_behaviour_debt_hint">هدف مستورد لدفعة قرض.</string>
-    <string name="target_amount_required">أدخل مبلغ الهدف، أو احذف الهدف.</string>
+    <string name="target_amount_required">أدخل مبلغ الهدف، أو أزِل الهدف.</string>
     <string name="target_interval_range">اختر فاصلًا من 1 إلى 100.</string>
     <string name="target_set_toast">عُيِّن هدف \u2068%1$s\u2069 على \u2068%2$s\u2069.</string>
     <string name="target_removed_toast">حُذف هدف \u2068%1$s\u2069.</string>
@@ -639,7 +648,7 @@
     <string name="organize_place_before">وضعها قبل</string>
     <string name="organize_place_group_before">وضع المجموعة قبل</string>
     <string name="unassigned_available_to_assign">متاح للتخصيص</string>
-    <string name="unassigned_ready">غير المخصَّص: جاهز للتخصيص</string>
+    <string name="unassigned_ready">غير المخصَّص: جاهز لمهمة</string>
     <string name="unassigned_still_needed">ما زال \u2068%1$s\u2069 مطلوبًا هذا الشهر</string>
     <string name="unassigned_funding_complete">اكتمل تمويل هذا الشهر</string>
     <string name="unassigned_take_back">استعادة المال</string>
@@ -659,12 +668,12 @@
     <string name="expected_income_help">يساعدك الدخل المتوقع على مقارنة أهدافك بخطتك، ولا يضيف مالًا إلى «غير المخصَّص».</string>
     <string name="month_note">ملاحظة الشهر</string>
     <string name="last_month_lower">الشهر الماضي</string>
-    <string name="quick_underfunded">ناقصة التمويل</string>
+    <string name="quick_underfunded">ناقص التمويل</string>
     <string name="quick_group_fund">تمويل الأهداف</string>
     <string name="quick_underfunded_hint">خصِّص ما تحتاجه الأهداف بعدُ، وغطِّ الإنفاق الزائد.</string>
     <string name="quick_assigned_last_month">المخصَّص في الشهر الماضي</string>
-    <string name="quick_group_repeat">تكرار الأشهر الماضية</string>
-    <string name="quick_assigned_last_month_hint">خصِّص لكل فئة ما حصلت عليه في الشهر الماضي.</string>
+    <string name="quick_group_repeat">تكرار الأشهر السابقة</string>
+    <string name="quick_assigned_last_month_hint">خصِّص لكل فئة ما خُصِّص لها في الشهر الماضي.</string>
     <string name="quick_spent_last_month">المُنفَق في الشهر الماضي</string>
     <string name="quick_spent_last_month_hint">خصِّص لكل فئة ما أنفقته في الشهر الماضي.</string>
     <string name="quick_average_assigned">متوسط المخصَّص</string>
@@ -675,7 +684,7 @@
     <string name="quick_group_clean">تنظيف</string>
     <string name="quick_reduce_overfunding_hint">أعِد ما يتجاوز كل هدف إلى «غير المخصَّص».</string>
     <string name="quick_reset_available">تصفير المبالغ المتاحة</string>
-    <string name="quick_reset_available_hint">اجعل كل «متاح» 0.00.</string>
+    <string name="quick_reset_available_hint">اجعل المتاح في كل فئة 0.00.</string>
     <string name="quick_reset_assigned">تصفير المبالغ المخصَّصة</string>
     <string name="quick_reset_assigned_hint">اجعل مخصَّصات هذا الشهر 0.00.</string>
     <!-- What a Quick assign option does: %1$s is this month's name, %2$s last month's. -->
@@ -727,7 +736,7 @@
     <!-- Accounts: list, account editor, reconciling -->
     <string name="account_type_checking">حساب جارٍ</string>
     <string name="account_type_savings">حساب توفير</string>
-    <string name="account_type_cash">نقد</string>
+    <string name="account_type_cash">النقد</string>
     <string name="account_type_line_of_credit">خط ائتمان</string>
     <string name="account_type_investment">استثمار</string>
     <string name="account_type_retirement">حساب تقاعد</string>
@@ -738,14 +747,14 @@
     <string name="account_type_medical_debt">دين طبي</string>
     <string name="account_type_property">عقار</string>
     <string name="account_type_vehicle">مركبة</string>
-    <string name="account_type_receivable">مستحقات لك</string>
+    <string name="account_type_receivable">مستحقات</string>
     <string name="account_type_other_asset">أصل آخر</string>
     <string name="account_type_other_debt">دين آخر</string>
     <string name="account_not_in_net_worth">\u2068%1$s\u2069 · خارج صافي الثروة</string>
     <string name="accounts_section_cash">النقد</string>
     <string name="accounts_section_credit">الائتمان</string>
     <string name="accounts_section_tracking">التتبُّع</string>
-    <string name="accounts_section_closed">المغلقة</string>
+    <string name="accounts_section_closed">مغلقة</string>
     <string name="accounts_empty_title">أضف حسابك الأول</string>
     <string name="accounts_empty_detail">ابدأ بحسابك الجاري أو حساب إنفاقك ورصيده الحالي.</string>
     <string name="account_add">إضافة حساب</string>
@@ -759,7 +768,7 @@
     <string name="account_name_required">أدخل اسم الحساب.</string>
     <string name="account_name">اسم الحساب</string>
     <string name="account_type">نوع الحساب</string>
-    <string name="account_kind_cash_help">ماله ضمن ميزانيتك، جاهز للتخصيص.</string>
+    <string name="account_kind_cash_help">ماله في ميزانيتك، جاهز للتخصيص.</string>
     <string name="account_kind_credit_help">تُنشأ له فئة لسداد بطاقة الائتمان.</string>
     <string name="account_kind_tracking_help">يُتتبَّع خارج الميزانية، ضمن صافي الثروة.</string>
     <string name="account_current_balance">الرصيد الحالي (\u2068%1$s\u2069)</string>
@@ -767,7 +776,7 @@
     <string name="account_owed_negative">أدخل ما عليك مبلغًا سالبًا.</string>
     <string name="account_debt_negative">للديون، أدخل رصيدًا سالبًا.</string>
     <string name="account_opening_changes_history">تغيير الرصيد الافتتاحي يغيّر سجل الحساب بأكمله.</string>
-    <string name="account_kind_switch_help">للتبديل بين النقد والائتمان والتتبُّع، أنشئ حسابًا جديدًا لتبقى المعاملات السابقة محسوبة في الميزانية كما كانت.</string>
+    <string name="account_kind_switch_help">للتبديل بين النقد والائتمان والتتبُّع، أنشئ حسابًا جديدًا لتبقى المعاملات السابقة محتسبة في الميزانية كما كانت.</string>
     <string name="account_count_in_net_worth">احتسابه في صافي الثروة</string>
     <string name="account_count_in_net_worth_off">يبقى رصيده ظاهرًا وفي التقارير، لكنه لا يُضاف إلى صافي الثروة.</string>
     <string name="account_closed">الحساب مغلق</string>
@@ -782,7 +791,7 @@
     <string name="reconcile_question_end">هو ما يُظهره بنكك؟</string>
     <string name="reconcile_bank_balance">رصيد البنك</string>
     <string name="reconcile_statement_date">تاريخ الكشف</string>
-    <string name="reconcile_help">حدِّد أولًا المعاملات الواردة في كشفك على أنها مُقاصّة؛ وأي فرق يتبقى يصبح تعديلًا.</string>
+    <string name="reconcile_help">علِّم المعاملات الواردة في كشف حسابك كمُقاصّة أولًا؛ وأي فرق يتبقى يصبح تعديلًا.</string>
     <string name="reconcile_match">الرصيدان متطابقان. ستُقفل المعاملات المُقاصّة بوصفها مُسوّاة.</string>
     <string name="reconcile_adjustment">سيُسجَّل تعديل بمقدار \u2068%1$s\u2069. ابحث أولًا عن معاملات ناقصة أو خاطئة.</string>
 
@@ -818,7 +827,7 @@
     <string name="section_investments">الاستثمارات</string>
     <string name="section_property">العقارات</string>
     <string name="section_vehicles">المركبات</string>
-    <string name="section_receivables">المستحقات لك</string>
+    <string name="section_receivables">المستحقات</string>
     <string name="section_other_assets">أصول أخرى</string>
     <string name="section_credit_cards">بطاقات الائتمان</string>
     <string name="section_lines_of_credit">خطوط الائتمان</string>
@@ -831,7 +840,7 @@
     <string name="filter_none">لا شيء</string>
     <string name="report_accounts_budget">الميزانية</string>
     <string name="report_accounts_tracking">التتبُّع</string>
-    <string name="report_accounts_closed">المغلقة</string>
+    <string name="report_accounts_closed">مغلقة</string>
     <string name="report_total">الإجمالي</string>
     <!-- A chart's average line: its name (%1$s) and the amount (%2$s). -->
     <string name="report_average_line">\u2068%1$s\u2069 \u2068%2$s\u2069</string>
@@ -854,7 +863,7 @@
     <string name="report_groups_with_spending">مجموعات فيها إنفاق</string>
     <string name="report_categories_help_group">اختر فئة لعرض معاملاتها.</string>
     <string name="report_categories_help_all">اختر مجموعة لعرض فئاتها.</string>
-    <string name="report_categories_help_refunds">تُنقص المبالغ المستردة الإنفاق، لذا قد تكون الفئة سالبة. تعرض الحلقة المجموعات أو الفئات التي فيها صافي إنفاق فقط؛ ويشمل الإجمالي والقائمة المبالغ المستردة.</string>
+    <string name="report_categories_help_refunds">تُنقص المبالغ المستردة الإنفاق، لذا قد تكون الفئة سالبة. لا تعرض الحلقة إلا المجموعات أو الفئات ذات صافي الإنفاق؛ أما الإجمالي والقائمة فيشملان المبالغ المستردة.</string>
     <string name="report_spent">المُنفَق</string>
     <string name="report_received">المستلَم</string>
     <string name="report_changes_title">\u2068%1$s\u2069 مقارنةً بمتوسطك</string>
@@ -922,7 +931,7 @@
         <item quantity="many">\u2068%1$s\u2069 معاملة · المتوسط \u2068%2$s\u2069</item>
         <item quantity="other">\u2068%1$s\u2069 معاملة · المتوسط \u2068%2$s\u2069</item>
     </plurals>
-    <string name="report_payees_help">اختر مستفيدًا لعرض معاملاته. تعرض المربعات المستفيدين الذين فيهم صافي إنفاق؛ ويشمل الإجمالي والجدول المبالغ المستردة.</string>
+    <string name="report_payees_help">اختر مستفيدًا لعرض معاملاته. تعرض المربعات المستفيدين ذوي صافي الإنفاق؛ أما الإجمالي والجدول فيشملان المبالغ المستردة.</string>
     <string name="report_payees_help_refunds">صافي المبالغ المستردة لدى مستفيدين آخرين (\u2068%1$s\u2069) يُنقص الإجمالي.</string>
     <plurals name="report_more_payees">
         <item quantity="zero">\u2068%1$s\u2069 مستفيد آخر · \u2068%2$s\u2069</item>
@@ -952,7 +961,7 @@
         <item quantity="other">آخر \u2068%1$s\u2069 شهر مقارنةً بـ\u2068%1$s\u2069 شهر سبقتها</item>
     </plurals>
     <string name="report_trend_needs_two">يحتاج إلى شهرين أو أكثر</string>
-    <string name="report_chart_spending_by_group">الإنفاق شهريًا، مكدّسًا حسب مجموعة الفئات</string>
+    <string name="report_chart_spending_by_group">الإنفاق حسب الشهر، مكدَّسًا حسب مجموعة الفئات</string>
     <string name="report_chart_spending_by_month">الإنفاق شهريًا</string>
     <string name="report_average">المتوسط</string>
     <string name="report_highest_month">أعلى شهر</string>
@@ -969,7 +978,7 @@
         <item quantity="many">من \u2068%1$s\u2069 يومًا · \u2068%2$s\u2069</item>
         <item quantity="other">من \u2068%1$s\u2069 يوم · \u2068%2$s\u2069</item>
     </plurals>
-    <string name="report_biggest_day">أكبر يوم</string>
+    <string name="report_biggest_day">أكبر يوم إنفاقًا</string>
     <string name="report_busiest_weekday">أكثر الأيام إنفاقًا</string>
     <string name="report_on_average">\u2068%1$s\u2069 في المتوسط</string>
     <string name="report_chart_weekdays">متوسط الإنفاق في كل يوم من أيام الأسبوع</string>
@@ -977,15 +986,15 @@
     <string name="report_a_month">\u2068%1$s\u2069 شهريًا</string>
     <string name="report_budget_surplus">فائض الميزانية</string>
     <string name="report_budget_surplus_rate">نسبة فائض الميزانية</string>
-    <string name="report_surplus_share_of_income">الفائض نسبةً إلى الدخل</string>
+    <string name="report_surplus_share_of_income">الفائض نسبةً من الدخل</string>
     <string name="report_positive_surplus_months">أشهر الفائض الموجب</string>
     <!-- A part of a whole: "%1$s of %2$s", as in "3 of 12". -->
     <string name="report_x_of_y">\u2068%1$s\u2069 من \u2068%2$s\u2069</string>
     <string name="report_best_month">الأفضل: \u2068%1$s\u2069</string>
-    <string name="report_surplus_help">يقارن فائض الميزانية الدخلَ بالإنفاق. وتُنقصه التحويلات المصنَّفة إلى حسابات تتبُّع الاستثمارات والقروض؛ استخدم «صافي الثروة» لرؤية التغيرات في الثروة.</string>
-    <string name="report_surplus_help_categories">يبقى الدخل مشمولًا؛ ويعكس الإنفاق الفئات المختارة.</string>
+    <string name="report_surplus_help">يقارن فائض الميزانية الدخل بالإنفاق. وتُنقصه التحويلات المصنَّفة إلى حسابات تتبُّع الاستثمارات والقروض؛ استخدم تقرير «صافي الثروة» لرؤية التغيرات في الثروة.</string>
+    <string name="report_surplus_help_categories">يبقى الدخل مُضمَّنًا؛ ويعكس الإنفاق الفئات المختارة.</string>
     <string name="report_chart_income_spending">الدخل والإنفاق جنبًا إلى جنب كل شهر، مع فائض الميزانية خطًّا</string>
-    <string name="report_chart_surplus_rate">فائض الميزانية كل شهر نسبةً مئوية من الدخل</string>
+    <string name="report_chart_surplus_rate">فائض الميزانية كل شهر، نسبةً مئوية من الدخل</string>
     <string name="report_chart_surplus_cumulative">فائض الميزانية متراكمًا شهرًا بعد شهر</string>
     <string name="report_cumulative_surplus">فائض الميزانية التراكمي</string>
     <string name="report_avg_a_month">المتوسط \u2068%1$s\u2069 شهريًا</string>
@@ -1004,7 +1013,7 @@
     </plurals>
     <string name="report_largest_source">أكبر مصدر</string>
     <string name="report_months_with_income">أشهر فيها دخل</string>
-    <string name="report_chart_income_by_source">الدخل كل شهر، مكدّسًا حسب المصدر</string>
+    <string name="report_chart_income_by_source">الدخل كل شهر، مكدَّسًا حسب المصدر</string>
     <string name="report_source_detail">المتوسط \u2068%1$s\u2069 · الحصة \u2068%2$s\u2069 · الأشهر \u2068%3$s\u2069</string>
     <string name="report_income_chart_help">تعرض الرسوم البيانية مساهمات المصادر الموجبة. ويشمل إجمالي الدخل وجدول المصادر المبالغ المسحوبة من «غير المخصَّص».</string>
     <string name="report_income_sources_help">المصادر السالبة مبالغ سُحبت صراحةً من «غير المخصَّص»، مثل تعديل تسوية أو تحويل إلى حساب تتبُّع خُصِّص لـ«غير المخصَّص».</string>
@@ -1026,7 +1035,7 @@
     <string name="report_since_began">منذ بداية \u2068%1$s\u2069</string>
     <string name="report_since_began_percent">منذ بداية \u2068%1$s\u2069 · \u2068%2$s\u2069</string>
     <string name="report_of_assets">\u2068%1$s\u2069 من الأصول</string>
-    <string name="report_chart_net_worth">الأصول والديون شهريًا مع صافي الثروة</string>
+    <string name="report_chart_net_worth">الأصول والديون حسب الشهر مع صافي الثروة</string>
     <string name="report_chart_net_worth_change">مقدار نمو صافي الثروة أو تراجعه كل شهر</string>
     <string name="report_balances_on">الأرصدة في \u2068%1$s\u2069 و\u2068%2$s\u2069</string>
     <string name="report_account_closed">\u2068%1$s\u2069 · مغلق</string>
@@ -1036,17 +1045,17 @@
     <string name="report_liabilities_owed">الالتزامات (المستحقة عليك)</string>
     <string name="report_total_assets">إجمالي الأصول</string>
     <string name="report_total_liabilities">إجمالي الالتزامات</string>
-    <string name="report_not_counted">غير محسوبة في صافي الثروة</string>
+    <string name="report_not_counted">غير محتسبة في صافي الثروة</string>
     <string name="report_in_this_period">\u2068%1$s\u2069 في هذه الفترة</string>
     <string name="report_debt_to_assets">الديون إلى الأصول</string>
-    <string name="report_owe_more_than_own">ما عليك أكثر مما تملك</string>
-    <string name="report_owned_is_owed">مما تملكه مستحق عليك</string>
+    <string name="report_owe_more_than_own">عليك أكثر مما تملك</string>
+    <string name="report_owned_is_owed">من أصولك تقابلها ديون</string>
     <string name="report_cash_on_hand">النقد المتاح</string>
     <string name="report_months_of_spending">أشهر من الإنفاق: \u2068%1$s\u2069</string>
     <string name="report_in_cash_accounts">في حسابات النقد والبنوك</string>
     <string name="report_net_worth_on">صافي الثروة في \u2068%1$s\u2069: \u2068%2$s\u2069</string>
     <string name="report_sheet_help">الأرصدة في بداية \u2068%1$s\u2069 ونهاية \u2068%2$s\u2069. عيِّن نوع الحساب، أو استبعده من صافي الثروة، من إعداداته.</string>
-    <string name="report_sheet_help_sides">تُحتسب الحسابات التي دون الصفر مستحقة عليك، والقروض أو البطاقات التي فوق الصفر مملوكة لك، أيًّا كان نوعها.</string>
+    <string name="report_sheet_help_sides">تُحتسب الحسابات التي تقل عن الصفر ديونًا، والقروض أو البطاقات التي تزيد عليه أصولًا، أيًّا كان نوعها.</string>
     <string name="report_chart_balances">رصيد كل حساب مختار في نهاية كل شهر</string>
     <string name="report_on_the_chart">على الرسم البياني</string>
     <string name="report_up_to_8">حتى 8 في المرة الواحدة</string>
@@ -1060,9 +1069,9 @@
     <string name="report_lowest">الأدنى</string>
     <string name="report_chart_cash_age">عمر المال في نهاية كل شهر، بالأيام</string>
     <string name="report_other_refund_categories">فئات استرداد أخرى</string>
-    <string name="report_all_others">كل البقية</string>
+    <string name="report_all_others">البقية</string>
     <string name="report_refund_lead">يشمل \u2068%1$s\u2069 من صافي المبالغ المستردة.</string>
-    <string name="report_refund_lead_bar">يعرض الشريط الفئات التي فيها صافي إنفاق.</string>
+    <string name="report_refund_lead_bar">يعرض الشريط الفئات ذات صافي الإنفاق.</string>
     <string name="report_lead_nothing">لا دخل ولا إنفاق في هذه الأشهر.</string>
     <string name="report_lead_about">في المتوسط، تنفق تقريبًا ما تكسبه.</string>
     <string name="report_lead_more">في المتوسط، تنفق أكثر مما تكسب.</string>
@@ -1108,33 +1117,33 @@
     <!-- Reports: the overview, report pages and their sheets -->
     <string name="reports_categories">الإنفاق حسب الفئة</string>
     <string name="reports_categories_short">حسب الفئة</string>
-    <string name="reports_categories_blurb">أين ذهب مالك، حسب المجموعة والفئة، وكيف يقارَن الشهر الماضي.</string>
+    <string name="reports_categories_blurb">أين ذهب مالك، حسب المجموعة والفئة، وكيف يُقارَن بالشهر الماضي.</string>
     <string name="reports_payees">الإنفاق حسب المستفيد</string>
     <string name="reports_payees_short">حسب المستفيد</string>
     <string name="reports_payees_blurb">لمن تدفع أكثر، وكم مرة.</string>
     <string name="reports_trends">الإنفاق عبر الزمن</string>
     <string name="reports_trends_short">عبر الزمن</string>
-    <string name="reports_trends_blurb">الإنفاق شهرًا بشهر، حسب المجموعة أو إجماليًا.</string>
+    <string name="reports_trends_blurb">الإنفاق شهرًا بشهر، حسب المجموعة أو إجمالًا.</string>
     <string name="reports_calendar">تقويم الإنفاق</string>
     <string name="reports_calendar_short">التقويم</string>
     <string name="reports_calendar_blurb">الإنفاق يومًا بيوم: الأيام المزدحمة والهادئة وأيام الأسبوع.</string>
     <string name="reports_income_expense">الدخل مقابل المصروف</string>
     <string name="reports_income_expense_blurb">الدخل والإنفاق والفائض المتبقي في ميزانيتك.</string>
     <string name="reports_income">تفصيل الدخل</string>
-    <string name="reports_income_blurb">من أين يأتي دخلك، ومدى ثباته.</string>
+    <string name="reports_income_blurb">من أين يأتي دخلك، ومدى استقراره.</string>
     <string name="reports_cash_flow">الأموال الواردة والصادرة</string>
-    <string name="reports_cash_flow_blurb">حركة الحسابات عبر حدود ميزانيتك، بما فيها المشتريات بالائتمان.</string>
-    <string name="reports_net_worth_blurb">ما تملكه ناقص ما عليك، شهرًا بشهر.</string>
+    <string name="reports_cash_flow_blurb">حركة الحسابات عبر حدود ميزانيتك، بما فيها المشتريات ببطاقات الائتمان.</string>
+    <string name="reports_net_worth_blurb">ما تملكه مطروحًا منه ما عليك، شهرًا بشهر.</string>
     <string name="reports_balance_sheet">المركز المالي</string>
-    <string name="reports_balance_sheet_blurb">الأصول والالتزامات حسب النوع، مع النسب المهمة.</string>
+    <string name="reports_balance_sheet_blurb">الأصول والالتزامات حسب النوع، مع النِّسب المهمة.</string>
     <string name="reports_balances">الرصيد عبر الزمن</string>
     <string name="reports_balances_blurb">رصيد كل حساب في نهاية كل شهر.</string>
     <string name="reports_forecast_blurb">إلى أين تتجه أرصدة النقد والبطاقات، بناءً على ما هو مجدول.</string>
     <string name="reports_age_blurb">كم يبقى المال في حساباتك قبل أن تنفقه.</string>
     <string name="reports_group_wealth">الثروة</string>
-    <string name="reports_failed">تعذّر حساب التقارير.</string>
-    <string name="reports_failed_one">تعذّر حساب التقرير.</string>
-    <string name="reports_forecast_failed">تعذّر حساب التوقعات.</string>
+    <string name="reports_failed">تعذّر احتساب التقارير.</string>
+    <string name="reports_failed_one">تعذّر احتساب التقرير.</string>
+    <string name="reports_forecast_failed">تعذّر احتساب التوقعات.</string>
     <string name="reports_drill_failed">تعذّر عرض هذه المعاملات.</string>
     <string name="reports_retry_all">إعادة محاولة التقارير</string>
     <string name="reports_retry">إعادة محاولة التقرير</string>
@@ -1144,7 +1153,8 @@
     <string name="reports_spending_breakdown">تفصيل الإنفاق</string>
     <string name="reports_nothing_spent">لم يُنفَق شيء بعد هذا الشهر.</string>
     <string name="reports_all">كل التقارير</string>
-    <string name="reports_uncategorized_notice">ما زال \u2068%1$s\u2069 من الإنفاق يحتاج إلى فئة، وهو مشمول في هذه الإجماليات.</string>
+    <string name="reports_overview">نظرة عامة</string>
+    <string name="reports_uncategorized_notice">ما زال \u2068%1$s\u2069 من الإنفاق يحتاج إلى فئة، وهو مُضمَّن في هذه الإجماليات.</string>
     <string name="reports_all_budget_accounts">كل حسابات الميزانية</string>
     <string name="reports_all_accounts">كل الحسابات</string>
     <plurals name="filter_accounts">
@@ -1177,10 +1187,10 @@
     <string name="reports_all_groups">كل المجموعات</string>
     <string name="reports_spending_by_group">الإنفاق حسب المجموعة</string>
     <string name="reports_no_spending">لا إنفاق في هذه الأشهر.</string>
-    <string name="reports_matched_average">طابق الإنفاقُ المتوسط.</string>
-    <string name="reports_no_payees">لا مستفيدين فيهم صافي إنفاق في هذه الأشهر.</string>
+    <string name="reports_matched_average">جاء الإنفاق مطابقًا للمتوسط.</string>
+    <string name="reports_no_payees">لا مستفيدين بصافي إنفاق في هذه الأشهر.</string>
     <string name="reports_all_payees">كل المستفيدين</string>
-    <string name="reports_find_payee">ابحث عن مستفيد</string>
+    <string name="reports_find_payee">البحث عن مستفيد</string>
     <string name="reports_no_payees_match">لا مستفيدين مطابقين.</string>
     <string name="reports_by_group">حسب المجموعة</string>
     <!-- A day of the heat calendar: the day (%1$s) and its spending (%2$s). -->
@@ -1191,9 +1201,9 @@
     <string name="reports_not_started">لم تبدأ هذه الأشهر بعد.</string>
     <string name="reports_by_weekday">حسب يوم الأسبوع</string>
     <string name="reports_average_spent">متوسط المُنفَق</string>
-    <string name="reports_biggest_days">أكبر الأيام</string>
-    <string name="reports_income_spending_by_month">الدخل والإنفاق شهريًا</string>
-    <string name="reports_surplus_share">الفائض نسبةً إلى الدخل</string>
+    <string name="reports_biggest_days">أكبر أيام الإنفاق</string>
+    <string name="reports_income_spending_by_month">الدخل والإنفاق حسب الشهر</string>
+    <string name="reports_surplus_share">الفائض نسبةً من الدخل</string>
     <string name="reports_surplus_added_up">الفائض متراكمًا</string>
     <string name="reports_income_and_spending">الدخل والإنفاق</string>
     <string name="reports_select_group">اختر مجموعة لعرض فئاتها</string>
@@ -1204,7 +1214,7 @@
     <string name="reports_no_income">لا دخل في هذه الأشهر.</string>
     <string name="reports_income_by_month">الدخل شهريًا</string>
     <string name="reports_sources">المصادر</string>
-    <string name="reports_money_in_out_by_month">الأموال الواردة والصادرة شهريًا</string>
+    <string name="reports_money_in_out_by_month">الأموال الواردة والصادرة حسب الشهر</string>
     <string name="reports_cash_flow_help">حركة الحسابات عبر حدود ميزانيتك، بما فيها المشتريات ببطاقات الائتمان والتحويلات إلى حسابات التتبُّع. وتُستبعد دفعات البطاقات والتحويلات الأخرى بين حسابات الميزانية والأرصدة الافتتاحية. وقد تُحتسب الواردات والصادرات المقسَّمة بصافيها؛ فهذه حركة حسابات لا تقسيمات فئات إجمالية.</string>
     <string name="reports_net_flow_added_up">صافي التدفق متراكمًا</string>
     <string name="reports_net_flow_each_month">صافي التدفق كل شهر</string>
@@ -1214,14 +1224,14 @@
     <string name="reports_what_you_own">ما تملكه</string>
     <string name="reports_no_assets">لا أصول.</string>
     <string name="reports_what_you_owe">ما عليك</string>
-    <string name="reports_nothing_owed">لا شيء مستحق عليك.</string>
+    <string name="reports_nothing_owed">لا ديون عليك.</string>
     <string name="reports_statement">القائمة المالية</string>
     <string name="reports_balances_month_end">الأرصدة في نهاية كل شهر</string>
     <string name="reports_choose_accounts">اختر الحسابات أعلاه لعرضها في الرسم البياني.</string>
     <string name="reports_balances_help">أرصدة نهاية الشهر؛ والأدنى والأعلى من بينها.</string>
     <string name="reports_cash_age_month_end">عمر المال في نهاية كل شهر</string>
     <string name="reports_cash_age_help">كم يبقى المال في حسابات النقد قبل أن تنفقه: متوسط عمر آخر عشرة مبالغ صادرة من النقد، بحسب ما يدخل أولًا يخرج أولًا، مقرَّبًا إلى أقرب يوم. وإلى أن تبلغ عشرة، تُحتسب الناقصة بصفر يوم. ويكون تقديرًا عندما لا تُعرف تواريخ الأرصدة الافتتاحية.</string>
-    <string name="reports_balance_ahead">الرصيد القادم</string>
+    <string name="reports_balance_ahead">الرصيد المتوقع</string>
     <plurals name="report_months_option">
         <item quantity="zero">\u2068%1$s\u2069 شهر</item>
         <item quantity="one">شهر واحد</item>
@@ -1232,12 +1242,12 @@
     </plurals>
     <string name="common_change">تغيير</string>
     <string name="reports_coming_up">القادم</string>
-    <string name="reports_nothing_ahead">لا شيء مجدول أو مُدخل لتواريخ لاحقة.</string>
+    <string name="reports_nothing_ahead">لا توجد معاملات مجدولة أو مُدخَلة لتواريخ لاحقة.</string>
     <string name="reports_schedule_more">جدوِل دخلك وفواتيرك لتصبح هذه التوقعات أدق.</string>
     <string name="reports_known_balances">تحتسب الأرصدة هنا المعاملات المعروفة فقط.</string>
     <string name="reports_months">الأشهر</string>
     <string name="reports_range_help">يستخدم «تطبيق» الأشهر المخصّصة، أما الفترة الجاهزة فتُطبَّق فور اختيارها.</string>
-    <string name="search_named">ابحث في \u2068%1$s\u2069</string>
+    <string name="search_named">بحث في \u2068%1$s\u2069</string>
     <string name="nothing_matches">لا شيء يطابق.</string>
 
     <!-- Loans: details, payoff planner and recording a payment -->
@@ -1246,7 +1256,7 @@
     <string name="loan_rate_format">أدخل سعر الفائدة نسبةً مئوية، مثل 5.25.</string>
     <string name="loan_rate_range">يجب أن يكون سعر الفائدة بين 0 و\u20661,000%\u2069.</string>
     <string name="loan_rate_month_required">اختر الشهر الذي يبدأ فيه كل تغيير في السعر.</string>
-    <string name="loan_one_rate_per_month">أبقِ سعر فائدة واحدًا لكل شهر.</string>
+    <string name="loan_one_rate_per_month">اكتفِ بسعر فائدة واحد لكل شهر.</string>
     <string name="loan_category_required">اختر الفئة التي تُدفع منها الدفعة.</string>
     <string name="loan_paid_off">تاريخ السداد</string>
     <string name="loan_time_left">المدة المتبقية</string>
@@ -1278,18 +1288,18 @@
     <string name="loan_status_paid_off">مُسدَّد</string>
     <string name="loan_record_payment">تسجيل الدفعة</string>
     <string name="loan_interest_escrow_added">تُضاف الفائدة والضمان إلى القرض مع أول دفعة كل شهر.</string>
-    <string name="loan_interest_fees_added">تُضاف الفائدة والرسوم إلى القرض مع أول دفعة كل شهر.</string>
-    <string name="loan_interest_added">تُضاف الفائدة إلى القرض مع أول دفعة كل شهر.</string>
+    <string name="loan_interest_fees_added">تُضاف الفائدة والرسوم إلى القرض مع أول دفعة في كل شهر.</string>
+    <string name="loan_interest_added">تُضاف الفائدة إلى القرض مع أول دفعة في كل شهر.</string>
     <string name="loan_details">تفاصيل القرض</string>
     <string name="loan_rate_field">سعر الفائدة (%)</string>
     <string name="loan_payment_field">الدفعة الشهرية (\u2068%1$s\u2069)</string>
     <string name="loan_escrow_field">الضمان الشهري (\u2068%1$s\u2069)</string>
     <string name="loan_fees_field">الرسوم الشهرية (\u2068%1$s\u2069)</string>
     <string name="loan_payment_category">فئة الدفعة</string>
-    <string name="loan_payment_category_hint">من أين تأتي الدفعة</string>
+    <string name="loan_payment_category_hint">مصدر الدفعة</string>
     <string name="loan_rate_changes">تغييرات السعر</string>
     <string name="loan_rate_changes_detail">للسعر المتغيّر: يحلّ كل تغيير محلّ السعر أعلاه بدءًا من شهره.</string>
-    <string name="loan_new_rate_field">السعر السنوي الجديد (%)</string>
+    <string name="loan_new_rate_field">سعر الفائدة السنوي الجديد (%)</string>
     <string name="loan_remove_rate">إزالة سعر \u2068%1$s\u2069</string>
     <string name="loan_add_rate_change">إضافة تغيير في السعر</string>
     <string name="loan_planner">مخطط السداد</string>
@@ -1315,7 +1325,7 @@
     </plurals>
     <string name="common_remove">إزالة</string>
     <string name="loan_owed">المتبقي</string>
-    <string name="loan_rate">السعر</string>
+    <string name="loan_rate">سعر الفائدة</string>
     <string name="loan_payment">الدفعة</string>
     <string name="loan_interest_to_pay">الفائدة المتبقية</string>
     <string name="loan_interest_rate">سعر الفائدة</string>
@@ -1333,7 +1343,7 @@
     <string name="loan_rate_changes_count">تغييرات السعر (\u2068%1$s\u2069)</string>
     <string name="loan_planner_title">مخطط السداد · \u2068%1$s\u2069</string>
     <string name="loan_planner_note">مساحة تجريبية فقط: لا شيء هنا يغيّر ميزانيتك أو تفاصيل القرض. تتراكم الفائدة شهريًا ويُقرَّب كل مبلغ يُحتسب إلى أقرب سنت، لذا قد تختلف أرقام الجهة المُقرِضة قليلًا.</string>
-    <string name="loan_chart_label">الرصيد المستحق بعد كل دفعة</string>
+    <string name="loan_chart_label">الرصيد المتبقي بعد كل دفعة</string>
     <string name="loan_pays">لسداد \u2068%1$s\u2069</string>
     <string name="loan_still_owed">المتبقي</string>
     <string name="loan_open_planner">فتح المخطط</string>
@@ -1348,12 +1358,12 @@
     <string name="loan_payment_note_fees">تُسجَّل تحويلًا من \u2068%1$s\u2069 إلى \u2068%2$s\u2069 يُنفَق من الفئة. وتُضاف فائدة الشهر ورسومه إلى القرض مع أول دفعة في ذلك الشهر.</string>
     <string name="loan_account_you_choose">الحساب الذي تختاره</string>
     <string name="loan_payment_account_required">اختر الحساب الذي تأتي منه الدفعة.</string>
-    <string name="loan_payment_amount_required">أدخل مبلغًا للدفع.</string>
+    <string name="loan_payment_amount_required">أدخل مبلغًا للسداد.</string>
     <string name="loan_pay_title">سداد \u2068%1$s\u2069</string>
     <string name="loan_pay_amount">دفع \u2068%1$s\u2069</string>
     <string name="loan_owed_on_loan">المتبقي من القرض</string>
     <string name="loan_monthly_payment">الدفعة الشهرية</string>
-    <string name="loan_needs_cash_account">أضف حساب نقد في ميزانيتك لتسدّد القرض منه.</string>
+    <string name="loan_needs_cash_account">أضف حساب نقد أو بنك إلى ميزانيتك لتسدّد القرض منه.</string>
     <!-- A span of time: the years (%1$s) and the months (%2$s). -->
     <string name="span_years_months">\u2068%1$s\u2069 و\u2068%2$s\u2069</string>
     <plurals name="span_years">
@@ -1377,20 +1387,20 @@
 
     <!-- Payees and import rules -->
     <plurals name="payee_transactions">
-        <item quantity="zero">\u2068%1$s\u2069 معاملة</item>
+        <item quantity="zero">لا معاملات</item>
         <item quantity="one">معاملة واحدة</item>
         <item quantity="two">معاملتان</item>
         <item quantity="few">\u2068%1$s\u2069 معاملات</item>
         <item quantity="many">\u2068%1$s\u2069 معاملة</item>
         <item quantity="other">\u2068%1$s\u2069 معاملة</item>
     </plurals>
-    <string name="payee_not_used">لم يُستخدم في معاملات بعد</string>
+    <string name="payee_not_used">لم يُستخدم في أي معاملة بعد</string>
     <string name="payee_default_named">الافتراضية: \u2068%1$s\u2069</string>
     <string name="category_deleted">فئة محذوفة</string>
     <string name="category_split_count">مقسَّمة (\u2068%1$s\u2069)</string>
     <string name="rule_contains">يحتوي على «\u2068%1$s\u2069»</string>
     <string name="rule_rename_to_named">إعادة التسمية إلى \u2068%1$s\u2069</string>
-    <string name="rule_keep_name">إبقاء اسم المستفيد</string>
+    <string name="rule_keep_name">الإبقاء على اسم المستفيد</string>
     <string name="payees_title">المستفيدون</string>
     <string name="payees_detail">رتّب الأسماء، واختر فئة افتراضية للمعاملات الجديدة</string>
     <string name="payee_add">إضافة مستفيد</string>
@@ -1423,13 +1433,13 @@
         <item quantity="other">\u2068%1$s\u2069 معاملة · الإجمالي \u2068%2$s\u2069</item>
     </plurals>
     <string name="payee_default_category">الفئة الافتراضية</string>
-    <string name="payee_default_category_help">تُملأ عند إدخال معاملة لهذا المستفيد. وإن لم توجد، تُقترح الفئة التي استخدمتها آخر مرة.</string>
+    <string name="payee_default_category_help">تُملأ تلقائيًا عند إدخال معاملة لهذا المستفيد. وإن لم تُحدَّد، تُقترح الفئة التي استخدمتها آخر مرة.</string>
     <string name="payee_name">اسم المستفيد</string>
     <string name="payee_merge">الدمج في مستفيد آخر</string>
     <string name="payee_merge_exists">\u2068%1$s\u2069 موجود بالفعل، لذا يدمج الحفظ الاثنين.</string>
     <string name="payee_rename_help">تُحدِّث إعادة التسمية أو الدمج المعاملات المحفوظة ومستفيدي التقسيم والمعاملات المجدولة وقواعد الاستيراد.</string>
     <string name="payee_recent">آخر المعاملات</string>
-    <string name="rule_keep_category">إبقاء الفئة</string>
+    <string name="rule_keep_category">الإبقاء على الفئة</string>
     <string name="rule_title">قاعدة استيراد</string>
     <string name="rule_match_field">اسم المستفيد لدى البنك يحتوي على</string>
     <string name="rule_rename_to">إعادة التسمية إلى</string>
@@ -1455,11 +1465,11 @@
     <string name="card_set_aside_option">المُجنَّب</string>
     <string name="card_set_aside_detail">في فئة سداد \u2068%1$s\u2069</string>
     <string name="card_whole_balance">الرصيد كاملًا</string>
-    <string name="card_whole_balance_detail">يسدد البطاقة بالكامل</string>
+    <string name="card_whole_balance_detail">يسدّد البطاقة بالكامل</string>
     <string name="card_another_amount">مبلغ آخر</string>
     <string name="card_type_on_keypad">اكتبه على لوحة الأرقام</string>
     <string name="card_payment_help">الدفعة تحويل من حساب النقد إلى البطاقة: تستخدم مالًا مُجنَّبًا من قبل، لذا لا تغيّر أي فئة.</string>
-    <string name="card_pay_from">الدفع من</string>
+    <string name="card_pay_from">السداد من</string>
     <string name="memo_optional">البيان (اختياري)</string>
     <string name="budget_settings">إعدادات الميزانية</string>
     <string name="budget_settings_changed">تغيّرت الميزانية المفتوحة. أغلق الإعدادات وافتحها مجددًا.</string>
@@ -1567,7 +1577,7 @@
     <string name="sync_state_update_app">حدّث التطبيق</string>
     <string name="sync_state_error">خطأ</string>
     <string name="sync_state_unknown">غير معروفة</string>
-    <string name="cloud_download_open">التنزيل والفتح</string>
+    <string name="cloud_download_open">تنزيل وفتح</string>
     <string name="cloud_start_syncing">بدء المزامنة</string>
     <string name="cloud_review_differences">مراجعة الاختلافات</string>
     <string name="cloud_remove_copy">إزالة النسخة السحابية</string>
@@ -1582,7 +1592,7 @@
     <string name="cloud_reset_message">يحذف هذا النسخ السحابية المشفَّرة بعبارة المرور القديمة. وتبقى الميزانيات المحلية على أجهزتك، ويرفع هذا الجهاز نسخه من جديد.</string>
     <string name="cloud_passphrase_safe">احفظ عبارة المرور هذه في مكان آمن، فلا يستطيع UrBudget استعادتها لك.</string>
     <string name="cloud_passphrase_field">عبارة مرور المزامنة · 8 أحرف على الأقل</string>
-    <string name="cloud_passphrase_repeat">أعد كتابة عبارة المرور</string>
+    <string name="cloud_passphrase_repeat">إعادة كتابة عبارة المرور</string>
     <string name="cloud_delete_title">حذف حسابك؟</string>
     <string name="cloud_delete_confirm">حذف الحساب</string>
     <string name="cloud_delete_message">يحذف هذا حسابك وميزانياتك السحابية ويوقف تجديد الاشتراك. وتبقى الميزانيات على أجهزتك، وقد يُحتفظ بسجلات الشراء كما تصف سياسة الخصوصية.</string>
@@ -1598,7 +1608,7 @@
     <string name="conflict_this_device_value">هذا الجهاز: \u2068%1$s\u2069</string>
     <string name="conflict_cloud_value">السحابة: \u2068%1$s\u2069</string>
     <string name="conflict_deleted">محذوف</string>
-    <string name="conflict_keep">الإبقاء على</string>
+    <string name="conflict_keep">إبقاء</string>
     <string name="conflict_this_device">هذا الجهاز</string>
     <string name="conflict_cloud">السحابة</string>
 
@@ -1629,20 +1639,20 @@
     <!-- Requests used today (%1$s) out of the daily limit (%2$s). -->
     <string name="bank_requests_used">الطلبات المستخدمة اليوم: \u2068%1$s\u2069 من \u2068%2$s\u2069</string>
     <string name="bank_download_activity">تنزيل النشاط</string>
-    <string name="bank_link_first">اربط حسابًا في الميزانية أولًا</string>
-    <string name="bank_download_detail">من كل الحسابات المربوطة، ثم راجعها حسابًا تلو الآخر</string>
+    <string name="bank_link_first">اربط حساب ميزانية أولًا</string>
+    <string name="bank_download_detail">من كل الحسابات المرتبطة، ثم راجع حسابًا تلو الآخر</string>
     <string name="bank_refresh_accounts">تحديث الحسابات</string>
     <string name="bank_disconnect">فصل هذا الجهاز</string>
     <string name="bank_accounts">الحسابات البنكية</string>
-    <string name="bank_accounts_detail">انقر حسابًا لربطه بحساب في الميزانية.</string>
+    <string name="bank_accounts_detail">اضغط على أحدها لربطه بحساب ميزانية.</string>
     <!-- The budget account's name, then when it last synced (a date, or the word for never). -->
     <string name="bank_linked_to">مربوط بـ\u2068%1$s\u2069 · آخر مزامنة: \u2068%2$s\u2069</string>
     <string name="bank_never_synced">لم تتم بعد</string>
-    <string name="bank_not_linked">غير مربوط</string>
-    <string name="bank_downloaded_activity">النشاط المنزَّل</string>
+    <string name="bank_not_linked">غير مرتبط</string>
+    <string name="bank_downloaded_activity">النشاط المُنزَّل</string>
     <!-- Through a date (%1$s); requests used today (%2$s) out of the daily limit (%3$s). -->
     <string name="bank_downloaded_detail">حتى \u2068%1$s\u2069 · الطلبات اليوم: \u2068%2$s\u2069 من \u2068%3$s\u2069</string>
-    <string name="bank_reviewed">تمت مراجعته</string>
+    <string name="bank_reviewed">تمت المراجعة</string>
     <string name="bank_up_to_date">محدَّث</string>
     <plurals name="bank_skipped_new">
         <item quantity="zero">تم تخطيه مؤقتًا · لا جديد</item>
@@ -1676,8 +1686,8 @@
     <string name="bank_date_not_future">اختر تاريخ اليوم أو تاريخًا سابقًا.</string>
     <string name="bank_choose_an_account">اختر حسابًا.</string>
     <string name="bank_currency_differs">يستخدم هذا الحساب البنكي عملة مختلفة.</string>
-    <string name="bank_budget_account">الحساب في الميزانية</string>
-    <string name="bank_first_import">أول استيراد ابتداءً من</string>
+    <string name="bank_budget_account">حساب الميزانية</string>
+    <string name="bank_first_import">بدء الاستيراد من</string>
     <string name="bank_reverse_signs">عكس إشارات مبالغ البنك</string>
     <string name="bank_history_note">حتى سنة من السجل، تُنزَّل على فترات من 45 يومًا، وتستهلك كل فترة طلبًا واحدًا.</string>
     <string name="bank_unlink">إلغاء ربط الحساب</string>
@@ -1722,12 +1732,12 @@
         <item quantity="other">\u2068%1$s\u2069 صف مستورَد مسبقًا</item>
     </plurals>
     <plurals name="bank_renamed_count">
-        <item quantity="zero">لم تُعِد قواعدك تسمية أي صف</item>
-        <item quantity="one">صف واحد أعادت قواعدك تسميته</item>
-        <item quantity="two">صفّان أعادت قواعدك تسميتهما</item>
-        <item quantity="few">\u2068%1$s\u2069 صفوف أعادت قواعدك تسميتها</item>
-        <item quantity="many">\u2068%1$s\u2069 صفًّا أعادت قواعدك تسميتها</item>
-        <item quantity="other">\u2068%1$s\u2069 صف أعادت قواعدك تسميتها</item>
+        <item quantity="zero">لم تُعِد قواعد المستفيدين تسمية أي صف</item>
+        <item quantity="one">صف واحد أعادت قواعد المستفيدين تسميته</item>
+        <item quantity="two">صفّان أعادت قواعد المستفيدين تسميتهما</item>
+        <item quantity="few">\u2068%1$s\u2069 صفوف أعادت قواعد المستفيدين تسميتها</item>
+        <item quantity="many">\u2068%1$s\u2069 صفًّا أعادت قواعد المستفيدين تسميتها</item>
+        <item quantity="other">\u2068%1$s\u2069 صف أعادت قواعد المستفيدين تسميتها</item>
     </plurals>
     <plurals name="bank_refunds_count">
         <item quantity="zero">لا مبالغ مستردة</item>
@@ -1737,7 +1747,7 @@
         <item quantity="many">\u2068%1$s\u2069 مبلغًا مستردًا</item>
         <item quantity="other">\u2068%1$s\u2069 مبلغ مسترد</item>
     </plurals>
-    <string name="bank_transfers_note">يربط التحويل الصف بالقيد الذي بلا فئة المقابل له في حساب آخر، حتى لا يُحتسب المال الذي نقلته إنفاقًا أو دخلًا. ويُختار لك حين يذكر نص البنك الحساب الآخر أو يطابق تحويلات سابقة بينهما، وإلا فيُقترح عليك لتراجعه.</string>
+    <string name="bank_transfers_note">يربط التحويل الصف بالقيد المقابل له بلا فئة في حساب آخر، فلا يُحتسب المال الذي نقلته إنفاقًا أو دخلًا. ويُختار لك حين يذكر نص البنك الحساب الآخر أو يطابق تحويلات سابقة بينهما؛ وإلا فيُقترح عليك لتتحقق منه.</string>
     <!-- Transfers matched only by amount and date, still to decide. -->
     <plurals name="bank_transfers_suggested">
         <item quantity="zero">لا تحويلات مقترحة.</item>
@@ -1760,8 +1770,8 @@
         <item quantity="many">مبلغ مسترد محتمل · تطابقه \u2068%1$s\u2069 عملية شراء من \u2068%2$s\u2069</item>
         <item quantity="other">مبلغ مسترد محتمل · تطابقه \u2068%1$s\u2069 عملية شراء من \u2068%2$s\u2069</item>
     </plurals>
-    <string name="bank_matching_note">تُبقي المطابقة على الفئة والبيان، وتجعل المعاملة مُقاصّة. وتنتظر المعاملات المستورَدة اعتمادك.</string>
-    <string name="bank_idless_note">لا يحتوي هذا الملف على معرّفات المعاملات البنكية، فقد يكون صف ما مستورَدًا من قبل؛ قارن بيانه ومبلغه. تخطَّه إن كان الدفعة نفسها، أو أضفه منفصلًا إن كان دفعة أخرى.</string>
+    <string name="bank_matching_note">تحتفظ المطابقة بالفئة والبيان وتجعل المعاملة مُقاصّة. وتبقى المعاملات المستورَدة بانتظار اعتمادك.</string>
+    <string name="bank_idless_note">لا يحتوي هذا الملف على معرّفات البنك للمعاملات، فقد يكون أحد الصفوف مستورَدًا من قبل؛ قارن بيانه ومبلغه. تخطَّه إن كان الدفعة نفسها، أو أضِفه منفصلًا إن كان دفعة أخرى.</string>
     <plurals name="bank_rows_need_choice">
         <item quantity="zero">لا صفوف تحتاج إلى اختيار قبل الاستيراد.</item>
         <item quantity="one">صف واحد يحتاج إلى اختيار قبل الاستيراد.</item>
@@ -1772,21 +1782,21 @@
     </plurals>
     <!-- What the bank called the payee before a rule renamed it. -->
     <string name="bank_row_bank">في البنك: \u2068%1$s\u2069</string>
-    <string name="bank_already_imported_skipped">مستورَدة مسبقًا · تم تخطيها</string>
+    <string name="bank_already_imported_skipped">مستورَدة من قبل · تم تخطيها</string>
     <string name="bank_may_be_imported">ربما استُوردت من قبل: قارن البيان والمبلغ، ثم اختر</string>
-    <string name="bank_choose_matching">اختر المعاملة المطابقة، أو أضفها معاملةً جديدة</string>
+    <string name="bank_choose_matching">اختر المعاملة المطابقة، أو أضِفها كمعاملة جديدة</string>
     <string name="bank_what_to_do">الإجراء</string>
-    <string name="bank_option_already_imported">مستورَدة مسبقًا — تخطيها</string>
-    <string name="bank_option_add_separate">إضافتها معاملةً منفصلة</string>
-    <string name="bank_option_choose">اختر مطابقة أو أضفها</string>
-    <string name="bank_option_add_new">إضافتها معاملةً جديدة</string>
+    <string name="bank_option_already_imported">مستورَدة من قبل — تخطي</string>
+    <string name="bank_option_add_separate">إضافة كمعاملة منفصلة</string>
+    <string name="bank_option_choose">اختر مطابقة أو أضِفها</string>
+    <string name="bank_option_add_new">إضافة كمعاملة جديدة</string>
     <string name="bank_option_skip">تخطي</string>
     <string name="bank_option_possible">ربما استُوردت من قبل — اختر</string>
-    <string name="bank_match_details_missing">تفاصيل المطابقة البنكية مفقودة. اعرض المعاينة مجددًا.</string>
+    <string name="bank_match_details_missing">تفاصيل المطابقة مع البنك مفقودة. اعرض المعاينة مرة أخرى.</string>
     <!-- A transaction to match: its date, payee, split part, memo and notes, joined by " · ". Each name keeps its own direction. -->
     <string name="bank_match">مطابقة: %1$s</string>
     <!-- Which part of a split transaction (1, 2, …). -->
-    <string name="bank_match_split">الجزء \u2068%1$s\u2069</string>
+    <string name="bank_match_split">بند التقسيم \u2068%1$s\u2069</string>
     <string name="bank_previously_imported">مستورَدة سابقًا</string>
     <!-- The other side of money moved from or to another account (%1$s): the transaction, as bank_match describes it. -->
     <string name="bank_transfer_from_match">تحويل من \u2068%1$s\u2069: %2$s</string>
@@ -1795,35 +1805,35 @@
     <string name="bank_statement_file">كشف حساب</string>
     <string name="bank_statement_too_large">اختر كشف حساب أصغر من 8 ميغابايت.</string>
     <string name="bank_statement_unopened">تعذّر فتح كشف الحساب المحدد.</string>
-    <string name="bank_import_lead">استورد المعاملات التي صدّرها بنكك. سترى الأسطر التي تتعذّر قراءتها فتصحّحها، ثم تراجع كل معاملة قبل أن يُحفظ أي شيء.</string>
+    <string name="bank_import_lead">استورد المعاملات التي صدّرها بنكك. سترى الأسطر التي تعذّرت قراءتها لتصحّحها، ثم تراجع كل معاملة قبل حفظ أي شيء.</string>
     <string name="bank_into_account">إلى الحساب</string>
     <string name="bank_choose_file">اختر ملفًا</string>
     <string name="bank_file_formats">ملف CSV أو Excel أو OFX أو QIF أو CAMT.053 أو MT940، وملف PDF عبر المساعد</string>
     <string name="bank_statement_label">كشف الحساب</string>
     <string name="bank_change_file">تغيير الملف</string>
-    <string name="bank_all_in_note">ظهرت كل الصفوف أموالًا واردة. إن كانت مشتريات، فالملف يكتبها أرقامًا موجبة.</string>
+    <string name="bank_all_in_note">ظهرت كل الصفوف أموالًا واردة. إن كانت هذه مشتريات، فالملف يكتبها أرقامًا موجبة.</string>
     <string name="bank_reverse_signs_action">عكس الإشارات</string>
     <string name="bank_file_unreadable">تعذّرت قراءة هذا الملف.</string>
     <string name="bank_change_no_longer_fits">لم يعد هذا التغيير ينطبق على الملف.</string>
-    <string name="bank_budget_changed_review">تغيّرت ميزانيتك. المراجعة محدَّثة من جديد: تحقّق منها ثم استورد.</string>
+    <string name="bank_budget_changed_review">تغيّرت ميزانيتك. حُدِّثت المراجعة من جديد: راجعها ثم استورد.</string>
     <string name="bank_reading_file">جارٍ قراءة الملف…</string>
     <!-- The chosen file's name. -->
     <string name="bank_reading_named">جارٍ قراءة \u2068%1$s\u2069…</string>
     <string name="bank_reading">جارٍ القراءة…</string>
-    <string name="bank_pdf_choose_another">ملف PDF · انقر لاختيار ملف آخر</string>
+    <string name="bank_pdf_choose_another">ملف PDF · اضغط لاختيار ملف آخر</string>
     <string name="bank_pdf_note">تحتاج كشوف الحساب بصيغة PDF إلى المساعد، فهو يقرأ الملف ويجد المعاملات ويتحقق منها مقابل مجاميع الكشف، ثم يعرضها في مراجعة كهذه تقرّر فيها ما يحدث لكل صف.</string>
     <string name="bank_pdf_read_with_assistant">قراءته عبر المساعد</string>
     <string name="bank_pdf_attach_note">تحتاج كشوف الحساب بصيغة PDF إلى المساعد. افتح المساعد وأرفق ملف PDF هذا واطلب منه استيراد الكشف.</string>
-    <string name="bank_import_help">تُعرض لك الأسطر التي تتعذّر قراءتها أو التي يستبعدها الاستيراد (الدفعات المعلّقة، وأسطر حساب آخر، والأرصدة) لتصحّحها أو تضمّنها. ويتذكّر الحساب كيف قُرئ ملفه، ويمكنك على سطح المكتب أيضًا اختيار ما يحويه كل عمود.</string>
+    <string name="bank_import_help">تظهر لك الأسطر التي تعذّرت قراءتها أو التي يستبعدها الاستيراد (الدفعات المعلّقة، وأسطر حساب آخر، والأرصدة) لتصحّحها أو تضمّنها. ويتذكّر الحساب كيف قُرئ ملفه؛ وعلى سطح المكتب يمكنك أيضًا اختيار ما يحويه كل عمود.</string>
     <!-- What is left out of the review: "2 need attention · 1 left out". -->
     <string name="bank_not_imported">\u2068%1$s\u2069، ولن تُستورد.</string>
     <plurals name="bank_need_attention">
-        <item quantity="zero">لا أسطر تحتاج إلى انتباه</item>
-        <item quantity="one">سطر واحد يحتاج إلى انتباه</item>
-        <item quantity="two">سطران يحتاجان إلى انتباه</item>
-        <item quantity="few">\u2068%1$s\u2069 أسطر تحتاج إلى انتباه</item>
-        <item quantity="many">\u2068%1$s\u2069 سطرًا يحتاج إلى انتباه</item>
-        <item quantity="other">\u2068%1$s\u2069 سطر يحتاج إلى انتباه</item>
+        <item quantity="zero">لا أسطر بحاجة إلى انتباه</item>
+        <item quantity="one">سطر واحد بحاجة إلى انتباه</item>
+        <item quantity="two">سطران بحاجة إلى انتباه</item>
+        <item quantity="few">\u2068%1$s\u2069 أسطر بحاجة إلى انتباه</item>
+        <item quantity="many">\u2068%1$s\u2069 سطرًا بحاجة إلى انتباه</item>
+        <item quantity="other">\u2068%1$s\u2069 سطر بحاجة إلى انتباه</item>
     </plurals>
     <string name="bank_check_file">مراجعة الملف</string>
     <string name="bank_checking_lines">جارٍ التحقق من الأسطر مقابل ميزانيتك…</string>
@@ -1837,12 +1847,12 @@
         <item quantity="other">\u2068%1$s\u2069 سطر مقروء</item>
     </plurals>
     <plurals name="bank_lines_need_attention">
-        <item quantity="zero">لا أسطر تحتاج إلى انتباه</item>
-        <item quantity="one">سطر واحد يحتاج إلى انتباه ولن يُستورد</item>
-        <item quantity="two">سطران يحتاجان إلى انتباه ولن يُستوردا</item>
-        <item quantity="few">\u2068%1$s\u2069 أسطر تحتاج إلى انتباه ولن تُستورد</item>
-        <item quantity="many">\u2068%1$s\u2069 سطرًا يحتاج إلى انتباه ولن يُستورد</item>
-        <item quantity="other">\u2068%1$s\u2069 سطر يحتاج إلى انتباه ولن يُستورد</item>
+        <item quantity="zero">لا أسطر بحاجة إلى انتباه</item>
+        <item quantity="one">سطر واحد بحاجة إلى انتباه ولن يُستورد</item>
+        <item quantity="two">سطران بحاجة إلى انتباه ولن يُستوردا</item>
+        <item quantity="few">\u2068%1$s\u2069 أسطر بحاجة إلى انتباه ولن تُستورد</item>
+        <item quantity="many">\u2068%1$s\u2069 سطرًا بحاجة إلى انتباه ولن يُستورد</item>
+        <item quantity="other">\u2068%1$s\u2069 سطر بحاجة إلى انتباه ولن يُستورد</item>
     </plurals>
     <plurals name="bank_lines_left_out">
         <item quantity="zero">لا أسطر مستبعَدة</item>
@@ -1866,7 +1876,7 @@
     </plurals>
     <string name="bank_purchases_in_file">المشتريات في الملف</string>
     <string name="bank_purchases_negative">سالبة، كما تكتبها الحسابات البنكية</string>
-    <string name="bank_purchases_positive_cards">موجبة، كما تكتبها كشوف بطاقات كثيرة</string>
+    <string name="bank_purchases_positive_cards">موجبة، كما تكتبها كشوف كثير من البطاقات</string>
     <!-- A currency code (EUR, USD…), both times. -->
     <string name="bank_amounts_elsewhere">مبالغ الملف بعملة \u2068%1$s\u2069. ضمِّن سطرًا لتُدخل مبلغه بعملة ميزانيتك، أو استورد الملف إلى ميزانية بعملة \u2068%1$s\u2069.</string>
     <!-- A currency code (EUR, USD…). -->
@@ -1877,21 +1887,21 @@
     <string name="bank_day_first_example">اليوم أولًا (\u2068%1$s\u2069 هو \u2068%2$s\u2069)</string>
     <string name="bank_month_first_example">الشهر أولًا (\u2068%1$s\u2069 هو \u2068%2$s\u2069)</string>
     <string name="bank_money_out">الأموال الصادرة</string>
-    <string name="bank_signs_by_type">حسب أنواع المعاملات</string>
+    <string name="bank_signs_by_type">تُعرف من أنواع المعاملات</string>
     <string name="bank_signs_as_written">كما كُتبت المبالغ</string>
     <!-- A date as the file writes it; the two ways it can read are the answers below. -->
     <string name="bank_date_question">لا تُبيّن التواريخ أيهما يأتي أولًا، اليوم أم الشهر. ماذا يعني \u2068%1$s\u2069؟</string>
     <!-- DEBIT and POS are transaction types as files write them: keep them as they are. -->
-    <string name="bank_signs_question">كل المبالغ المقروءة موجبة. هل تحدّد أنواع المعاملات (مثل DEBIT وPOS…) الأموال الصادرة؟</string>
-    <string name="bank_signs_yes">نعم، بحسب الأنواع</string>
+    <string name="bank_signs_question">كل المبالغ المقروءة موجبة. هل تُعرف الأموال الصادرة من أنواع المعاملات (DEBIT وPOS…)؟</string>
+    <string name="bank_signs_yes">نعم، حسب الأنواع</string>
     <string name="bank_signs_no">لا، كما كُتبت</string>
     <string name="bank_needs_attention">بحاجة إلى انتباه</string>
-    <string name="bank_needs_attention_detail">لن تُستورد حتى تُصحَّح: انقر سطرًا لتُدخل ما تعذّرت قراءته.</string>
+    <string name="bank_needs_attention_detail">لا تُستورد حتى تُصحَّح: اضغط على سطر لتُدخل ما تعذّرت قراءته.</string>
     <string name="bank_assistant_fix_note">يستطيع المساعد تصحيح هذه الأسطر مما يذكره الملف، ويسألك عن أي شيء غير واضح. وترى كل تصحيح قبل تطبيقه.</string>
     <string name="bank_fix_with_assistant">التصحيح عبر المساعد</string>
     <!-- Lines of the file the import leaves out; also a line's state when its reason is unknown. -->
     <string name="bank_left_out">مستبعَدة</string>
-    <string name="bank_left_out_section_detail">لن تُستورد. ضمِّن سطرًا إن كان يخص هذا الحساب.</string>
+    <string name="bank_left_out_section_detail">لا تُستورد. ضمِّن سطرًا إن كان يخص هذا الحساب.</string>
     <!-- Why a line is left out (bank_statement.rs Reason). -->
     <string name="bank_left_out_pending">لم يُقيَّد بعد</string>
     <string name="bank_left_out_declined">مرفوض أو ملغى</string>
@@ -1915,10 +1925,10 @@
     <string name="bank_left_out_with_detail">\u2068%1$s\u2069 (\u2068%2$s\u2069)</string>
     <string name="bank_include">تضمين</string>
     <string name="bank_included">مُضمَّن</string>
-    <string name="bank_batch_as_one">استيرادها كقيد واحد</string>
+    <string name="bank_batch_as_one">الاستيراد كقيد واحد</string>
     <string name="bank_batch_payments">استيراد دفعاتها</string>
     <string name="bank_undo_assistant_fix">التراجع عن تصحيح المساعد</string>
-    <string name="bank_changed">معدَّل</string>
+    <string name="bank_changed">مُعدَّل</string>
     <string name="bank_changed_detail">تُستورد كما عدّلتها.</string>
     <string name="bank_fixed_by_assistant">صحّحه المساعد</string>
     <string name="bank_changed_from_file">معدَّل عمّا في الملف</string>
@@ -1932,7 +1942,7 @@
     <string name="bank_fix_date">التاريخ (\u2066YYYY-MM-DD\u2069)</string>
     <string name="bank_fix_amount">المبلغ (سالب للأموال الصادرة)</string>
     <!-- Put in the assistant's message box, for the person to send or change. -->
-    <string name="bank_fix_import_prompt">صحّح أسطر هذا الاستيراد التي تحتاج إلى انتباه. استخدم فقط ما يدعمه الملف نفسه، واسألني عن أي شيء غير واضح.</string>
+    <string name="bank_fix_import_prompt">صحّح أسطر هذا الاستيراد التي بحاجة إلى انتباه. لا تعتمد إلا على ما يدعمه الملف نفسه، واسألني عن أي شيء غير واضح.</string>
     <!-- The assistant's fixes: how many applied, of how many. -->
     <string name="bank_fixes_applied_of">التصحيحات المطبَّقة: \u2068%1$s\u2069 من أصل \u2068%2$s\u2069.</string>
     <!-- Fixes that no longer fit the file, then why the first doesn't. -->
@@ -1974,7 +1984,7 @@
     <string name="ynab_import_replace">الاستيراد والاستبدال</string>
     <string name="ynab_import_changes">استيراد التغييرات</string>
     <string name="ynab_review_differences">مراجعة الاختلافات عن YNAB</string>
-    <string name="ynab_differences_note">تختلف هذه المجاميع في المصدر عن حساب المحرّك المشترك. لا تقبلها إلا بعد مراجعتها.</string>
+    <string name="ynab_differences_note">تختلف هذه المجاميع في المصدر عن احتساب المحرّك المشترك. لا تقبلها إلا بعد مراجعتها.</string>
     <string name="ynab_accept_differences">قبول الاختلافات والمتابعة</string>
     <string name="ynab_choose_each">اختر في كل تغيير متعارض</string>
     <!-- The value on this device. -->
@@ -1999,7 +2009,7 @@
     <string name="ynab_budget_changed">تغيّرت ميزانيتك. اعرض معاينة هذه الملفات مجددًا.</string>
     <string name="ynab_accept_replace">قبول المعاينة والاستبدال</string>
     <!-- YNAB's figure (%1$s), then the one the shared engine calculated (%2$s). -->
-    <string name="ynab_difference_values">في YNAB \u2068%1$s\u2069 · المحسوب \u2068%2$s\u2069</string>
+    <string name="ynab_difference_values">في YNAB \u2068%1$s\u2069 · المحتسَب \u2068%2$s\u2069</string>
 
     <!-- Saving and loading budgets -->
     <string name="guard_budget_switched">تغيّرت الميزانية المفتوحة. افتح هذا المحرّر مجددًا في الميزانية المقصودة.</string>
@@ -2007,9 +2017,9 @@
     <string name="guard_replacement_switched">تغيّرت الميزانية المفتوحة. راجع الاستبدال في الميزانية المقصودة.</string>
     <string name="guard_replacement_changed">تغيّرت الميزانية قبل استبدالها. راجع أحدث نسخة منها وحاول مرة أخرى.</string>
     <string name="model_action_not_saved">تعذّر حفظ الإجراء. يُرجى إعادة المحاولة.</string>
-    <string name="model_changed_while_downloading">تغيّرت الميزانية أثناء التنزيل. حدّث مراجعة البنك قبل الاستيراد.</string>
+    <string name="model_changed_while_downloading">تغيّرت الميزانية أثناء التنزيل. حدِّث مراجعة البنك قبل الاستيراد.</string>
     <string name="model_changed_refresh">تغيّرت الميزانية. حدّث الصفحة لاستخدام أحدث بياناتها.</string>
-    <string name="model_service_failed">تعذّر على الخدمة إكمال هذا الطلب.</string>
+    <string name="model_service_failed">تعذّر على الخدمة إتمام هذا الطلب.</string>
     <string name="model_changed_preview">تغيّرت الميزانية. حدّث هذه المعاينة لاستخدام أحدث القيم.</string>
     <string name="model_engine_failed">تعذّر على المحرّك المشترك إكمال هذا الإجراء.</string>
     <string name="model_category_not_found">لم يُعثر على الفئة.</string>
@@ -2030,24 +2040,22 @@
     <string name="assistant_close">إغلاق المساعد</string>
     <string name="assistant_dismiss_notice">إخفاء التنبيه</string>
     <string name="assistant_empty_title">اسأل عن ميزانيتك، وراجع كل تغيير.</string>
-    <string name="assistant_empty_detail">اطّلع على الإنفاق، وغطِّ الإنفاق الزائد، وصنّف المعاملات المحددة، واقرأ كشوف الحساب، أو أنشئ تقريرًا. ويُعاد التحقق من التغييرات المقترحة قبل أن تطبّقها.</string>
+    <string name="assistant_empty_detail">اطّلع على الإنفاق، وغطِّ الإنفاق الزائد، وصنِّف المعاملات المحددة، واقرأ كشوف الحساب، أو أنشئ تقريرًا. ويُعاد التحقق من التغييرات المقترحة قبل أن تطبّقها.</string>
     <string name="assistant_set_up">إعداد المساعد</string>
     <!-- Suggested questions; tapping one puts it in the message box. -->
-    <string name="assistant_prompt_where">أين تذهب أموالي هذا الشهر؟</string>
+    <string name="assistant_prompt_where">أين يذهب مالي هذا الشهر؟</string>
     <string name="assistant_prompt_cover">ساعدني في تغطية الإنفاق الزائد</string>
-    <string name="assistant_prompt_report">أعدّ تقريرًا عن ميزانية هذا الشهر</string>
+    <string name="assistant_prompt_report">أنشئ تقريرًا عن ميزانية هذا الشهر</string>
     <!-- Put in the message box to ask for changes to a proposal (its title); the person types the rest. -->
     <string name="assistant_refine_prompt">عدِّل الاقتراح «\u2068%1$s\u2069»:</string>
     <!-- A step the assistant couldn't complete, then its description. -->
     <string name="assistant_step_failed">تعذّر الإكمال: \u2068%1$s\u2069</string>
     <string name="assistant_reply_stopped">توقّف الرد</string>
-    <string name="assistant_you">أنت</string>
     <string name="assistant_couldnt_finish">تعذّر الإكمال</string>
     <string name="assistant_try_again">إعادة المحاولة</string>
     <string name="assistant_report_reply">الإبلاغ عن الرد</string>
     <string name="assistant_working">جارٍ العمل…</string>
-    <string name="assistant_continue_reply">متابعة الرد المنقطع</string>
-    <string name="assistant_remove_attachment">إزالة المرفق</string>
+    <string name="assistant_continue_reply">متابعة الرد المتوقف</string>
     <plurals name="assistant_selected_transactions">
         <item quantity="zero">لا معاملات محددة</item>
         <item quantity="one">معاملة محددة واحدة</item>
@@ -2067,13 +2075,13 @@
     <string name="assistant_delete_conversation">حذف المحادثة</string>
     <string name="assistant_delete_conversation_title">حذف هذه المحادثة؟</string>
     <string name="assistant_delete_conversation_message">يزيل هذا سجلها المحفوظ من هذا الجهاز.</string>
-    <string name="assistant_transactions_to_discuss">معاملات للنقاش</string>
+    <string name="assistant_transactions_to_discuss">معاملات للمناقشة</string>
     <string name="assistant_select_up_to">حدّد حتى 200 معاملة لرسالتك التالية.</string>
     <string name="assistant_clear">مسح</string>
     <string name="assistant_done_count">تم (\u2068%1$s\u2069)</string>
     <string name="assistant_error_title">تعذّر إكمال ذلك</string>
-    <string name="assistant_applied_title">✓ طُبِّق: \u2068%1$s\u2069</string>
-    <string name="assistant_discarded_title">تم تجاهله: \u2068%1$s\u2069</string>
+    <string name="assistant_applied_at">طُبِّق \u2068%1$s\u2069</string>
+    <string name="assistant_asked">سؤال: \u2068%1$s\u2069</string>
     <string name="assistant_undo_proposal">التراجع عن هذا الاقتراح</string>
     <string name="assistant_previous_rows">الصفوف السابقة</string>
     <string name="assistant_next_rows">الصفوف التالية</string>
@@ -2089,25 +2097,22 @@
     </plurals>
     <!-- A check the engine ran that did not pass, then what it says. -->
     <string name="assistant_check">تحقّق: \u2068%1$s\u2069</string>
-    <string name="assistant_dismiss">إخفاء</string>
-    <string name="assistant_read_report">قراءة التقرير · طباعة / PDF</string>
     <plurals name="assistant_review_import_rows">
         <item quantity="zero">لا صفوف للمراجعة</item>
         <item quantity="one">مراجعة صف استيراد واحد</item>
         <item quantity="two">مراجعة صفَّي استيراد</item>
         <item quantity="few">مراجعة \u2068%1$s\u2069 صفوف استيراد</item>
-        <item quantity="many">مراجعة \u2068%1$s\u2069 صفًّا للاستيراد</item>
+        <item quantity="many">مراجعة \u2068%1$s\u2069 صف استيراد</item>
         <item quantity="other">مراجعة \u2068%1$s\u2069 صف استيراد</item>
     </plurals>
     <string name="assistant_export_csv">تصدير ملف CSV المحوَّل</string>
     <string name="assistant_open_spreadsheet">فتح جدول البيانات</string>
     <string name="assistant_export_excel">تصدير ملف Excel</string>
-    <string name="assistant_apply_changes">تطبيق التغييرات المراجَعة</string>
+    <string name="assistant_apply_changes">تطبيق التغييرات بعد مراجعتها</string>
     <string name="assistant_ask_changes">طلب تعديلات</string>
     <string name="assistant_discard">تجاهل</string>
-    <string name="assistant_applied">✓ طُبِّق</string>
-    <string name="assistant_discarded">تم تجاهله</string>
-    <string name="assistant_could_not_apply">تعذّر التطبيق</string>
+    <string name="assistant_applied">طُبِّق</string>
+    <string name="assistant_discarded">تم التجاهل</string>
     <!-- While a proposal waits, each of its parts can be left out with its checkbox or changed with its pencil. -->
     <!-- Apply when some parts are left out: how many of them it makes. -->
     <string name="assistant_apply_some">تطبيق \u2068%1$s\u2069 من \u2068%2$s\u2069</string>
@@ -2119,12 +2124,10 @@
     <string name="assistant_amount_required">أدخل مبلغًا.</string>
     <!-- Fixes the assistant proposes for a bank file being imported. -->
     <string name="assistant_fix_apply">تطبيق على الاستيراد</string>
-    <string name="assistant_fix_apply_from_import">تطبيق من الاستيراد</string>
     <string name="assistant_fix_apply_some">تطبيق \u2068%1$s\u2069 من \u2068%2$s\u2069 على الاستيراد</string>
     <string name="assistant_fix_each_line">لا يُطبَّق كل تصحيح إلا على سطر لم يتغيّر.</string>
     <string name="assistant_fix_open_import">افتح الاستيراد الذي تخصّه هذه التصحيحات.</string>
     <string name="assistant_fix_other_import">هذه التصحيحات تخصّ استيرادًا آخر.</string>
-    <string name="assistant_fix_applied">✓ طُبِّقت على الاستيراد</string>
     <string name="assistant_export_report_tables">تصدير جداول التقرير إلى Excel</string>
     <string name="assistant_save_text">حفظ النص</string>
     <string name="assistant_share_report">مشاركة التقرير</string>
@@ -2132,15 +2135,15 @@
     <string name="assistant_print">طباعة / PDF</string>
     <string name="assistant_report_a_reply">الإبلاغ عن رد</string>
     <string name="assistant_send_report">إرسال البلاغ</string>
-    <string name="assistant_report_note">لن يُرسَل إلى UrBudget إلا المقتطف والشرح أدناه. احذف أي شيء خاص قبل الإرسال.</string>
+    <string name="assistant_report_note">لا يُرسَل إلا ما تتركه في هذه الحقول: نص الرد، وشرحك، والتفاصيل.</string>
     <string name="assistant_excerpt">المقتطف المحدد</string>
-    <string name="assistant_what_went_wrong">ما الخطأ في الرد؟</string>
+    <string name="assistant_what_went_wrong">ما الخطأ الذي حدث؟</string>
     <string name="assistant_model_default">الافتراضي لدى المزوّد</string>
-    <string name="assistant_settings_intro">تعتمد الإجابات على ميزانيتك والملفات التي ترفقها، وتُقترح التغييرات لتراجعها. ويعالج المزوّد الذي تختاره المحادثة.</string>
+    <string name="assistant_settings_intro">تستند الإجابات إلى ميزانيتك والملفات التي ترفقها، وتُقترح التغييرات لتراجعها. ويعالج المزوّد الذي اخترته المحادثة.</string>
     <string name="assistant_provider">المزوّد</string>
     <string name="assistant_provider_chatgpt">خطة ChatGPT · تسجيل الدخول عبر المتصفح</string>
     <string name="assistant_provider_openai">مفتاح OpenAI API</string>
-    <string name="assistant_provider_anthropic">مفتاح Anthropic API</string>
+    <string name="assistant_provider_anthropic">مفتاح API من Anthropic</string>
     <string name="assistant_sign_in_browser">سجِّل الدخول في متصفحك، ثم عد إلى هنا. يجب أن تسمح خطة ChatGPT لديك باستخدام هذا التطبيق.</string>
     <string name="assistant_signed_in">تم تسجيل الدخول</string>
     <!-- The email address of the ChatGPT account. -->
@@ -2167,7 +2170,7 @@
     <string name="assistant_get_key">الحصول على مفتاح API</string>
     <!-- Where the credentials are kept, as the engine describes it. -->
     <string name="assistant_credentials">بيانات الاعتماد: \u2068%1$s\u2069</string>
-    <string name="assistant_credentials_memory">تبقى بيانات الاعتماد في الذاكرة حتى يُغلق التطبيق.</string>
+    <string name="assistant_credentials_memory">تبقى بيانات الاعتماد في الذاكرة حتى يُغلَق التطبيق.</string>
     <string name="assistant_model">النموذج</string>
     <string name="assistant_refresh_models">تحديث النماذج المتاحة</string>
     <string name="assistant_share_memos">مشاركة بيان المعاملات</string>
@@ -2178,12 +2181,9 @@
     <string name="assistant_delete_history_title">حذف سجل المساعد بالكامل؟</string>
     <string name="assistant_delete_history_message">يحذف هذا كل المحادثات والملفات المرفقة للميزانية المفتوحة على هذا الجهاز، ويوقف الردود الجارية.</string>
     <string name="assistant_delete_all">حذف الكل</string>
-    <string name="assistant_action_failed">تعذّر على المساعد إكمال هذا الإجراء.</string>
+    <string name="assistant_action_failed">تعذّر على المساعد إتمام هذا الإجراء.</string>
     <string name="assistant_attach_limit">أرفق خمسة ملفات على الأكثر في كل رسالة.</string>
     <string name="assistant_select_limit">حدّد 200 معاملة على الأكثر في كل رسالة.</string>
-    <string name="assistant_proposal_applied">طُبِّق الاقتراح</string>
-    <string name="assistant_budget_changed_review">تغيّرت ميزانيتك. راجع الاقتراح المحدَّث قبل تطبيقه.</string>
-    <string name="assistant_budget_changed_undo">تغيّرت ميزانيتك بعد هذا الاقتراح. استخدم سجل التراجع في الميزانية لمراجعة التغييرات اللاحقة.</string>
     <!-- The reference number UrBudget gave the report. -->
     <string name="assistant_report_sent">أُرسل البلاغ · \u2068%1$s\u2069</string>
     <string name="assistant_file_too_large">اختر ملفًا أصغر من 25 ميغابايت.</string>
@@ -2248,7 +2248,7 @@
         <item quantity="many">حُذفت \u2068%1$s\u2069 ميزانية</item>
         <item quantity="other">حُذفت \u2068%1$s\u2069 ميزانية</item>
     </plurals>
-    <string name="sync_status_paused">المزامنة متوقفة</string>
+    <string name="sync_status_paused">المزامنة متوقفة مؤقتًا</string>
     <string name="sync_status_attention">المزامنة تحتاج تدخلك</string>
     <string name="sync_status_offline">غير متصل</string>
     <string name="sync_status_waiting">بانتظار المزامنة</string>
@@ -2262,8 +2262,8 @@
     <string name="library_review_newer">مراجعة النسخة الأحدث</string>
     <string name="library_deletion_conflict">توجد تغييرات أحدث تحتاج إلى مراجعة قبل الحذف</string>
     <string name="conflict_month_total">إجمالي الشهر: %1$s ← %2$s</string>
-    <string name="conflict_ready_change">التغيّر في الجاهز للتوزيع: %1$s</string>
-    <string name="conflict_moves">المناقلات: %1$s</string>
+    <string name="conflict_ready_change">التغيّر في غير المخصَّص: %1$s</string>
+    <string name="conflict_moves">عمليات النقل: %1$s</string>
     <string name="conflict_amount_change">التغيّر: %1$s</string>
     <string name="conflict_whole_budget">نسخة الميزانية الكاملة</string>
     <string name="conflict_whole_budget_help">يستبدل هذا الاختيار جميع تغييرات الميزانية بالنسخة المحددة.</string>
@@ -2272,10 +2272,10 @@
     <string name="editor_budget_missing">ميزانية هذا المحرر لم تعد موجودة في المكتبة.</string>
     <string name="conflict_transfer_account">تحويل: %1$s</string>
     <string name="conflict_transfer_status">حالة التحويل: %1$s</string>
-    <string name="conflict_ready_to_assign">جاهز للتخصيص</string>
+    <string name="conflict_ready_to_assign">غير المخصَّص</string>
     <string name="sms_title">رسائل البنك</string>
     <string name="sms_detail">تحويل رسائل البنك إلى معاملات</string>
-    <string name="sms_intro_title">حوّل رسائل البنك إلى معاملات</string>
+    <string name="sms_intro_title">تحويل رسائل البنك إلى معاملات</string>
     <string name="sms_intro">يجمع UrBudget الرسائل التي يرسلها بنكك إلى هذا الهاتف. يقرؤها مساعدك ويجهّز المعاملات، وتراجعها أنت قبل إضافة أي شيء. تُقرأ رسائل SMS ورسائل MMS النصية، ولا تُقرأ رسائل الدردشة RCS.</string>
     <string name="sms_disclosure">يحتاج UrBudget إلى إذن الرسائل لعرض المرسلين وجمع رسائل من تختارهم، حتى والتطبيق مغلق. يمنح Android إذنًا بقراءة كل الرسائل، لكن UrBudget لا يحتفظ إلا برسائل المرسلين الذين تختارهم. ولتحويلها إلى معاملات، تُرسل هذه الرسائل إلى مزوّد الذكاء الاصطناعي للمساعد الذي تربطه: عند فتح رسائل البنك، وعند وصولها إن فعّلت ذلك، وحين تسأل مساعدك عنها. ولا يصبح جزءًا من ميزانيتك ومزامنتها الاختيارية إلا ما تضيفه من معاملات.</string>
     <string name="sms_allow">السماح بالوصول إلى الرسائل</string>
@@ -2299,7 +2299,7 @@
     <string name="sms_collect">اجمع الرسائل منذ</string>
     <string name="sms_since">منذ %1$s</string>
     <string name="sms_since_time">منذ %1$s، %2$s</string>
-    <string name="sms_collect_help">يُحسب اليوم من بدايته، وتستمر الرسائل الجديدة في الوصول. أرصدة حساباتك تشمل ما حدث قبل أن تُدخلها، فاجمع منذ ذلك الحين: الرسائل الجديدة فقط إن كنت أدخلت أرصدتك للتو. إذا أخّرت البداية تُزال الرسائل الأقدم منها من الرسائل المنتظرة ومن مراجعتك.</string>
+    <string name="sms_collect_help">يُحتسب اليوم من بدايته، وتستمر الرسائل الجديدة في الوصول. أرصدة حساباتك تشمل ما حدث قبل أن تُدخلها، فاجمع منذ ذلك الحين: الرسائل الجديدة فقط إن كنت أدخلت أرصدتك للتو. إذا أخّرت البداية تُزال الرسائل الأقدم منها من الرسائل المنتظرة ومن مراجعتك.</string>
     <string name="sms_collect_now">الآن: %1$s</string>
     <string name="sms_after_handled">مباشرة بعد آخر رسالة عولجت</string>
     <string name="sms_moment">\u2068%1$s\u2069، \u2068%2$s\u2069</string>
@@ -2308,7 +2308,7 @@
     <string name="sms_last_handled">آخر رسالة عولجت</string>
     <string name="sms_start_after">ابدأ بعدها</string>
     <string name="sms_bank_through">من بنكك حتى %1$s</string>
-    <string name="sms_reconciled_through">مطابَقة حتى %1$s</string>
+    <string name="sms_reconciled_through">مُسوّاة حتى %1$s</string>
     <string name="sms_start_day">ابدأ %1$s</string>
     <string name="sms_size_none">يجمع الرسائل نفسها</string>
     <plurals name="sms_size_brings">
@@ -2401,11 +2401,11 @@
     </plurals>
     <plurals name="sms_read_more">
         <item quantity="zero">لا شيء آخر للقراءة</item>
-        <item quantity="one">اقرأ رسالة أخرى في هذه المراجعة</item>
-        <item quantity="two">اقرأ رسالتين أخريين في هذه المراجعة</item>
-        <item quantity="few">اقرأ ⁨%1$s⁩ رسائل أخرى في هذه المراجعة</item>
-        <item quantity="many">اقرأ ⁨%1$s⁩ رسالة أخرى في هذه المراجعة</item>
-        <item quantity="other">اقرأ ⁨%1$s⁩ رسالة أخرى في هذه المراجعة</item>
+        <item quantity="one">قراءة رسالة أخرى في هذه المراجعة</item>
+        <item quantity="two">قراءة رسالتين أخريين في هذه المراجعة</item>
+        <item quantity="few">قراءة \u2068%1$s\u2069 رسائل أخرى في هذه المراجعة</item>
+        <item quantity="many">قراءة \u2068%1$s\u2069 رسالة أخرى في هذه المراجعة</item>
+        <item quantity="other">قراءة \u2068%1$s\u2069 رسالة أخرى في هذه المراجعة</item>
     </plurals>
     <string name="sms_review_open">مراجعة</string>
     <string name="sms_discard_review">تجاهل المراجعة</string>
@@ -2521,11 +2521,11 @@
     <string name="sms_read_with">اقرأها باستخدام %1$s</string>
     <plurals name="sms_read_count">
         <item quantity="zero">لا رسائل للقراءة</item>
-        <item quantity="one">اقرأ رسالة واحدة</item>
-        <item quantity="two">اقرأ رسالتين</item>
-        <item quantity="few">اقرأ \u2068%1$s\u2069 رسائل</item>
-        <item quantity="many">اقرأ \u2068%1$s\u2069 رسالة</item>
-        <item quantity="other">اقرأ \u2068%1$s\u2069 رسالة</item>
+        <item quantity="one">قراءة رسالة واحدة</item>
+        <item quantity="two">قراءة رسالتين</item>
+        <item quantity="few">قراءة \u2068%1$s\u2069 رسائل</item>
+        <item quantity="many">قراءة \u2068%1$s\u2069 رسالة</item>
+        <item quantity="other">قراءة \u2068%1$s\u2069 رسالة</item>
     </plurals>
     <string name="sms_reads_note">تُعالَج الرموز والتنبيهات والرسائل الموجودة في ميزانيتك عنك، ولا يُضاف شيء إلا بموافقتك.</string>
     <string name="sms_waiting_title">رسائل بانتظار القراءة</string>
@@ -2621,17 +2621,17 @@
     <string name="sms_new_account_title">حساب جديد</string>
     <string name="sms_new_account_balance">الرصيد قبل هذه الرسائل (%1$s)</string>
     <string name="sms_new_account_help">تُضاف معاملات هذه المراجعة فوقه.</string>
-    <string name="sms_setup_title">أعدّ حساباتك</string>
+    <string name="sms_setup_title">إعداد حساباتك</string>
     <string name="sms_setup_detail">تذكر رسائلك هذه البطاقات والحسابات. أنشئها، أو حدّد ما ينتمي منها إلى بعض؛ يمكنك تغيير أي منها لاحقًا.</string>
     <string name="sms_setup_title_more">بطاقات وحسابات لإعدادها</string>
     <string name="sms_setup_more_detail">تذكر رسائلك بطاقات وحسابات ليست في هذه الميزانية بعد.</string>
     <string name="sms_setup_action">ماذا تفعل</string>
-    <string name="sms_setup_create">أنشئ هذا الحساب</string>
+    <string name="sms_setup_create">إنشاء هذا الحساب</string>
     <string name="sms_setup_part_of">جزء من \u2068%1$s\u2069</string>
     <string name="sms_setup_new">\u2068%1$s\u2069 (جديد)</string>
-    <string name="sms_setup_skip">لا تتبّعه</string>
+    <string name="sms_setup_skip">عدم التتبُّع</string>
     <string name="sms_setup_opening">الرصيد قبل \u2068%1$s\u2069: \u2068%2$s\u2069</string>
-    <string name="sms_setup_opening_from">محسوب من الرصيد الذي ذكرته رسالة في \u2068%1$s\u2069: \u2068%2$s\u2069</string>
+    <string name="sms_setup_opening_from">محتسَب من الرصيد الذي ذكرته رسالة في \u2068%1$s\u2069: \u2068%2$s\u2069</string>
     <string name="sms_setup_opening_none">لا تذكر أي رسالة رصيده. اضغط لإدخاله.</string>
     <string name="sms_setup_owed_help">تذكر رسائل البطاقة عادةً الحد المتبقي، لا ما عليك. اضغط لإدخال ما كان عليك.</string>
     <string name="sms_setup_change">تغيير</string>
@@ -2640,7 +2640,7 @@
     <string name="sms_setup_untracked">ما يُحوَّل منه أو إليه يُضاف إنفاقًا أو دخلًا.</string>
     <string name="sms_setup_edit_title">حساب سيُنشأ</string>
     <string name="sms_setup_no_card">رسائل لا تذكر بطاقة</string>
-    <string name="sms_setup_apply_none">طبّق هذه الاختيارات</string>
+    <string name="sms_setup_apply_none">تطبيق هذه الاختيارات</string>
     <plurals name="sms_setup_numbers">
         <item quantity="zero">لا أرقام</item>
         <item quantity="one">رقم واحد، لكل تحويل رقم</item>
@@ -2651,11 +2651,11 @@
     </plurals>
     <plurals name="sms_setup_apply">
         <item quantity="zero">لا حسابات لإعدادها</item>
-        <item quantity="one">أعدّ حسابًا واحدًا</item>
-        <item quantity="two">أعدّ حسابين</item>
-        <item quantity="few">أعدّ \u2068%1$s\u2069 حسابات</item>
-        <item quantity="many">أعدّ \u2068%1$s\u2069 حسابًا</item>
-        <item quantity="other">أعدّ \u2068%1$s\u2069 حساب</item>
+        <item quantity="one">إعداد حساب واحد</item>
+        <item quantity="two">إعداد حسابين</item>
+        <item quantity="few">إعداد \u2068%1$s\u2069 حسابات</item>
+        <item quantity="many">إعداد \u2068%1$s\u2069 حسابًا</item>
+        <item quantity="other">إعداد \u2068%1$s\u2069 حساب</item>
     </plurals>
     <string name="sms_tick_from_day">تحديد من يوم</string>
     <plurals name="sms_by_template">
@@ -2688,21 +2688,21 @@
     <string name="sms_templates_trusted">تبقى على هذا الهاتف</string>
     <string name="sms_templates_unreviewed">لم تُراجَع بعد</string>
     <plurals name="sms_templates_settled">
-        <item quantity="zero">لم تُتجاوز رسائل على هذا الهاتف</item>
-        <item quantity="one">رسالة تُجووزت على هذا الهاتف</item>
-        <item quantity="two">رسالتان تُجووزتا على هذا الهاتف</item>
-        <item quantity="few">\u2068%1$s\u2069 رسائل تُجووزت على هذا الهاتف</item>
-        <item quantity="many">\u2068%1$s\u2069 رسالة تُجووزت على هذا الهاتف</item>
-        <item quantity="other">\u2068%1$s\u2069 رسالة تُجووزت على هذا الهاتف</item>
+        <item quantity="zero">لم يتم تخطي أي رسالة على هذا الهاتف</item>
+        <item quantity="one">رسالة واحدة تم تخطيها على هذا الهاتف</item>
+        <item quantity="two">رسالتان تم تخطيهما على هذا الهاتف</item>
+        <item quantity="few">\u2068%1$s\u2069 رسائل تم تخطيها على هذا الهاتف</item>
+        <item quantity="many">\u2068%1$s\u2069 رسالة تم تخطيها على هذا الهاتف</item>
+        <item quantity="other">\u2068%1$s\u2069 رسالة تم تخطيها على هذا الهاتف</item>
     </plurals>
     <string name="sms_template_accuracy">أُكّدت قراءات هذه الصيغة في \u2068%1$s%%\u2069 من المرات.</string>
     <plurals name="sms_kept_on_phone">
-        <item quantity="zero">لم تُتجاوز رسائل على هذا الهاتف</item>
-        <item quantity="one">رسالة تُجووزت على هذا الهاتف دون إرسالها</item>
-        <item quantity="two">رسالتان تُجووزتا على هذا الهاتف دون إرسالهما</item>
-        <item quantity="few">\u2068%1$s\u2069 رسائل تُجووزت على هذا الهاتف دون إرسالها</item>
-        <item quantity="many">\u2068%1$s\u2069 رسالة تُجووزت على هذا الهاتف دون إرسالها</item>
-        <item quantity="other">\u2068%1$s\u2069 رسالة تُجووزت على هذا الهاتف دون إرسالها</item>
+        <item quantity="zero">لم يتم تخطي أي رسالة على هذا الهاتف</item>
+        <item quantity="one">رسالة واحدة تم تخطيها على هذا الهاتف دون إرسالها</item>
+        <item quantity="two">رسالتان تم تخطيهما على هذا الهاتف دون إرسالهما</item>
+        <item quantity="few">\u2068%1$s\u2069 رسائل تم تخطيها على هذا الهاتف دون إرسالها</item>
+        <item quantity="many">\u2068%1$s\u2069 رسالة تم تخطيها على هذا الهاتف دون إرسالها</item>
+        <item quantity="other">\u2068%1$s\u2069 رسالة تم تخطيها على هذا الهاتف دون إرسالها</item>
     </plurals>
     <string name="sms_needs_account">اختر حسابًا</string>
     <string name="sms_needs_transfer">اختر الحساب الآخر</string>
@@ -2729,7 +2729,7 @@
     <string name="sms_check_category">راجع الفئة</string>
     <string name="sms_already_added">مضافة من قبل</string>
     <string name="sms_decide_title">هل هي في ميزانيتك مسبقًا؟</string>
-    <string name="sms_decide_detail">تبدو هذه معاملة لديك مسبقًا. طابقها حتى لا تُحسب مرتين، أو أضفها معاملةً جديدة.</string>
+    <string name="sms_decide_detail">تبدو هذه معاملة لديك مسبقًا. طابقها حتى لا تُحتسب مرتين، أو أضفها معاملةً جديدة.</string>
     <string name="sms_show_message">الرسالة</string>
     <string name="sms_hide_message">إخفاء الرسالة</string>
     <string name="sms_enter">إدخالها</string>
@@ -2916,22 +2916,22 @@
     <string name="bank_texts_title_read">قراءة رسائل البنك</string>
     <plurals name="bank_texts_card_read">
         <item quantity="zero">لا رسائل منتظرة</item>
-        <item quantity="one">اقرأ الرسالة المنتظرة</item>
-        <item quantity="two">اقرأ الرسالتين المنتظرتين</item>
-        <item quantity="few">اقرأ \u2068%1$s\u2069 رسائل منتظرة</item>
-        <item quantity="many">اقرأ \u2068%1$s\u2069 رسالة منتظرة</item>
-        <item quantity="other">اقرأ \u2068%1$s\u2069 رسالة منتظرة</item>
+        <item quantity="one">قراءة الرسالة المنتظرة</item>
+        <item quantity="two">قراءة الرسالتين المنتظرتين</item>
+        <item quantity="few">قراءة \u2068%1$s\u2069 رسائل منتظرة</item>
+        <item quantity="many">قراءة \u2068%1$s\u2069 رسالة منتظرة</item>
+        <item quantity="other">قراءة \u2068%1$s\u2069 رسالة منتظرة</item>
     </plurals>
-    <string name="bank_texts_card_read_again">أعد قراءة المراجعة المفتوحة</string>
+    <string name="bank_texts_card_read_again">إعادة قراءة المراجعة المفتوحة</string>
     <string name="bank_texts_card_note">مع هذه الملاحظة</string>
     <string name="bank_texts_card_read_note">تُفتح رسائل البنك وتقرؤها، وتحدّد في مراجعتها ما تريد إضافته.</string>
     <plurals name="bank_texts_card_add">
         <item quantity="zero">لا رسائل لإضافتها</item>
-        <item quantity="one">أضف رسالة واحدة إلى المراجعة</item>
-        <item quantity="two">أضف رسالتين إلى المراجعة</item>
-        <item quantity="few">أضف \u2068%1$s\u2069 رسائل إلى المراجعة</item>
-        <item quantity="many">أضف \u2068%1$s\u2069 رسالة إلى المراجعة</item>
-        <item quantity="other">أضف \u2068%1$s\u2069 رسالة إلى المراجعة</item>
+        <item quantity="one">إضافة رسالة واحدة إلى المراجعة</item>
+        <item quantity="two">إضافة رسالتين إلى المراجعة</item>
+        <item quantity="few">إضافة \u2068%1$s\u2069 رسائل إلى المراجعة</item>
+        <item quantity="many">إضافة \u2068%1$s\u2069 رسالة إلى المراجعة</item>
+        <item quantity="other">إضافة \u2068%1$s\u2069 رسالة إلى المراجعة</item>
     </plurals>
     <string name="bank_texts_card_add_note">تُقرأ مثل الرسائل المنتظرة، حتى ما سبق يوم بدء الجمع. لا يُضاف شيء حتى تحدّده في المراجعة.</string>
     <string name="bank_texts_title_remember">تذكّر بطاقة</string>
@@ -2942,10 +2942,18 @@
     <string name="bank_texts_card_limit_now">الآن \u2068%1$s\u2069</string>
     <string name="bank_texts_card_limit_none">لم يُحدَّد بعد</string>
     <string name="bank_texts_card_limit_note">مع الحد، يُظهر الحد المتبقي في رسائل البطاقة ما عليك، ويظهر الحد المتبقي على الحساب.</string>
-    <string name="bank_texts_apply_read">افتح رسائل البنك</string>
-    <string name="bank_texts_apply_add">أضف إلى المراجعة</string>
+    <string name="bank_texts_apply_read">فتح رسائل البنك</string>
+    <string name="bank_texts_apply_add">إضافة إلى المراجعة</string>
     <string name="bank_texts_apply_remember">تذكّرها</string>
-    <string name="bank_texts_apply_limit">حدّد الحد</string>
+    <string name="bank_texts_apply_limit">تحديد الحد</string>
+    <plurals name="bank_texts_gone">
+        <item quantity="zero">لا رسائل مفقودة من هذا الهاتف.</item>
+        <item quantity="one">تعذّر العثور على رسالة واحدة على هذا الهاتف، فلم تُضَف.</item>
+        <item quantity="two">تعذّر العثور على رسالتين على هذا الهاتف، فلم تُضافا.</item>
+        <item quantity="few">تعذّر العثور على ⁨%1$s⁩ رسائل على هذا الهاتف، فلم تُضَف.</item>
+        <item quantity="many">تعذّر العثور على ⁨%1$s⁩ رسالة على هذا الهاتف، فلم تُضَف.</item>
+        <item quantity="other">تعذّر العثور على ⁨%1$s⁩ رسالة على هذا الهاتف، فلم تُضَف.</item>
+    </plurals>
     <string name="sms_bank_matches">يطابق \u2068%1$s\u2069 لدى البنك في \u2068%2$s\u2069</string>
     <string name="sms_bank_differs">ذكر البنك \u2068%1$s\u2069 في \u2068%2$s\u2069: الفرق \u2068%3$s\u2069</string>
     <string name="sms_bank_held">يشمل \u2068%1$s\u2069 لدى البنك في \u2068%2$s\u2069 مبالغ معلّقة قدرها \u2068%3$s\u2069</string>
@@ -2966,5 +2974,103 @@
     </plurals>
     <string name="assistant_steps_fewer">عرض أقل</string>
     <string name="assistant_copy_reply">نسخ الرد</string>
-    <string name="assistant_add_to_message">أضف ملفًا أو معاملات</string>
+    <string name="assistant_add_to_message">إضافة ملف أو معاملات</string>
+    <string name="assistant_notice_title">ما الذي يُرسَل</string>
+    <string name="assistant_notice_sent">رسائلك، وما يظهر على الشاشة، والملفات التي ترفقها، وتفاصيل الميزانية التي يبحث عنها المساعد ليجيبك تُرسَل إلى ⁨%1$s⁩. وتحكم شروطه وسياسة الخصوصية لديه طريقة معالجتها والاحتفاظ بها.</string>
+    <string name="assistant_notice_kept">يبقى ملف ميزانيتك وسجل المحادثات وتسجيل الدخول على هذا الجهاز. ولا يتغير شيء في الميزانية حتى تطبّق التغيير بنفسك.</string>
+    <string name="assistant_with_message">مع هذه الرسالة</string>
+    <string name="assistant_with_import">الملف الجاري استيراده</string>
+    <plurals name="assistant_only_first">
+        <item quantity="zero">أُرفقت أول 200 معاملة فقط من أصل ⁨%1$s⁩ معاملة محددة.</item>
+        <item quantity="one">أُرفقت أول 200 معاملة فقط من أصل ⁨%1$s⁩ معاملة محددة.</item>
+        <item quantity="two">أُرفقت أول 200 معاملة فقط من أصل ⁨%1$s⁩ معاملة محددة.</item>
+        <item quantity="few">أُرفقت أول 200 معاملة فقط من أصل ⁨%1$s⁩ معاملات محددة.</item>
+        <item quantity="many">أُرفقت أول 200 معاملة فقط من أصل ⁨%1$s⁩ معاملة محددة.</item>
+        <item quantity="other">أُرفقت أول 200 معاملة فقط من أصل ⁨%1$s⁩ معاملة محددة.</item>
+    </plurals>
+    <string name="assistant_jump_latest">الانتقال إلى الأحدث</string>
+    <string name="assistant_checking">جارٍ التحقق من المساعد…</string>
+    <string name="assistant_not_loaded">تعذّر تحميل المساعد.</string>
+    <string name="assistant_cut">انقطع الرد قبل اكتماله.</string>
+    <string name="assistant_long">طالت هذه المحادثة، فأصبحت الردود أبطأ وتستهلك أكثر من خطتك أو مفتاحك.</string>
+    <string name="assistant_continue_new">المتابعة في محادثة جديدة</string>
+    <string name="assistant_continued_from">تتمة «⁨%1$s⁩»</string>
+    <string name="assistant_rename">إعادة تسمية المحادثة</string>
+    <string name="assistant_conversation_name">اسم المحادثة</string>
+    <string name="assistant_search_conversations">البحث في المحادثات</string>
+    <string name="assistant_no_match">لا توجد محادثة مطابقة.</string>
+    <string name="assistant_tokens">الرموز: ⁨%1$s⁩ مُرسَلة (⁨%2$s⁩ من الذاكرة المؤقتة)، ⁨%3$s⁩ مُستلَمة</string>
+    <string name="assistant_good_reply">رد جيد</string>
+    <string name="assistant_bad_reply">رد غير جيد</string>
+    <string name="assistant_report_details">تفاصيل تُرفق بالبلاغ</string>
+    <string name="assistant_report_details_help">تُرسَل مع بلاغك. احذف ما لا تريد إرساله.</string>
+    <string name="assistant_replied">ردّ المساعد.</string>
+    <string name="assistant_proposal_ready">اقتراح جاهز للمراجعة.</string>
+    <string name="assistant_ask_assistant">اسأل المساعد</string>
+    <string name="assistant_help_category">ساعدني في ⁨%1$s⁩ هذا الشهر.</string>
+    <string name="assistant_thinking">يفكّر: ⁨%1$s⁩</string>
+    <string name="assistant_preview">معاينة</string>
+    <string name="assistant_ask_again">طلب نسخة جديدة</string>
+    <string name="assistant_ask_again_prompt">أعِدّ «⁨%1$s⁩» من جديد. تعذّر تطبيقه: ⁨%2$s⁩</string>
+    <string name="assistant_show_in_budget">عرض في الميزانية</string>
+    <plurals name="assistant_delete_transactions">
+        <item quantity="zero">حذف لا معاملات</item>
+        <item quantity="one">حذف معاملة واحدة</item>
+        <item quantity="two">حذف معاملتين</item>
+        <item quantity="few">حذف ⁨%1$s⁩ معاملات</item>
+        <item quantity="many">حذف ⁨%1$s⁩ معاملة</item>
+        <item quantity="other">حذف ⁨%1$s⁩ معاملة</item>
+    </plurals>
+    <string name="assistant_select_none">إلغاء تحديد الكل</string>
+    <string name="assistant_select_check">ما يحتاج إلى مراجعة فقط</string>
+    <string name="assistant_undone">تم التراجع عنه</string>
+    <string name="assistant_replaced">استُبدل بنسخة أحدث</string>
+    <string name="assistant_removed">أُزيل</string>
+    <string name="assistant_card_open">عرض محتواها</string>
+    <string name="assistant_card_close">إخفاء محتواها</string>
+    <string name="assistant_update_app">حدِّث UrBudget لاستخدام هذه البطاقة.</string>
+    <string name="assistant_fix_note">التصحيحات المطبَّقة: ⁨%1$s⁩ من ⁨%2$s⁩. لم يُطبَّق: ⁨%3$s⁩</string>
+    <string name="list_separator">"، "</string>
+    <string name="assistant_notes_title">ملاحظات للمساعد</string>
+    <string name="assistant_notes_help">ملاحظات قصيرة يحتفظ بها المساعد لهذه الميزانية وتصله مع كل رسالة. ويضيف واحدة عندما تطلب منه أن يتذكر شيئًا.</string>
+    <string name="assistant_notes_add">إضافة ملاحظة</string>
+    <string name="assistant_notes_remove">إزالة الملاحظة</string>
+    <string name="assistant_notes_none">لا ملاحظات بعد.</string>
+    <string name="assistant_categorize">التصنيف مع المساعد</string>
+    <string name="assistant_categorize_one">صنّف المعاملة الجديدة في ⁨%1$s⁩.</string>
+    <plurals name="assistant_categorize_new">
+        <item quantity="zero">لا معاملات جديدة لتصنيفها في ⁨%2$s⁩.</item>
+        <item quantity="one">صنّف المعاملة الجديدة في ⁨%2$s⁩.</item>
+        <item quantity="two">صنّف المعاملتين الجديدتين في ⁨%2$s⁩.</item>
+        <item quantity="few">صنّف ⁨%1$s⁩ معاملات جديدة في ⁨%2$s⁩.</item>
+        <item quantity="many">صنّف ⁨%1$s⁩ معاملة جديدة في ⁨%2$s⁩.</item>
+        <item quantity="other">صنّف ⁨%1$s⁩ معاملة جديدة في ⁨%2$s⁩.</item>
+    </plurals>
+    <plurals name="assistant_categorize_first">
+        <item quantity="zero">صنّف هذه المعاملات (⁨%2$s⁩) من أصل ⁨%1$s⁩ معاملة جديدة في ⁨%3$s⁩.</item>
+        <item quantity="one">صنّف هذه المعاملات (⁨%2$s⁩) من أصل معاملة جديدة واحدة في ⁨%3$s⁩.</item>
+        <item quantity="two">صنّف هذه المعاملات (⁨%2$s⁩) من أصل معاملتين جديدتين في ⁨%3$s⁩.</item>
+        <item quantity="few">صنّف هذه المعاملات (⁨%2$s⁩) من أصل ⁨%1$s⁩ معاملات جديدة في ⁨%3$s⁩.</item>
+        <item quantity="many">صنّف هذه المعاملات (⁨%2$s⁩) من أصل ⁨%1$s⁩ معاملة جديدة في ⁨%3$s⁩.</item>
+        <item quantity="other">صنّف هذه المعاملات (⁨%2$s⁩) من أصل ⁨%1$s⁩ معاملة جديدة في ⁨%3$s⁩.</item>
+    </plurals>
+    <string name="assistant_cover">التغطية مع المساعد</string>
+    <string name="assistant_cover_prompt">غطِّ الفئات التي تجاوزتُ فيها الإنفاق هذا الشهر.</string>
+    <plurals name="bank_imported_review">
+        <item quantity="zero">لم تُستورد أي معاملات للمراجعة.</item>
+        <item quantity="one">استُوردت معاملة واحدة للمراجعة.</item>
+        <item quantity="two">استُوردت معاملتان للمراجعة.</item>
+        <item quantity="few">استُوردت ⁨%1$s⁩ معاملات للمراجعة.</item>
+        <item quantity="many">استُوردت ⁨%1$s⁩ معاملة للمراجعة.</item>
+        <item quantity="other">استُوردت ⁨%1$s⁩ معاملة للمراجعة.</item>
+    </plurals>
+    <plurals name="bank_sync_imported_review">
+        <item quantity="zero">لم تُستورد أي معاملات من بنكك.</item>
+        <item quantity="one">استُوردت معاملة واحدة من بنكك للمراجعة.</item>
+        <item quantity="two">استُوردت معاملتان من بنكك للمراجعة.</item>
+        <item quantity="few">استُوردت ⁨%1$s⁩ معاملات من بنكك للمراجعة.</item>
+        <item quantity="many">استُوردت ⁨%1$s⁩ معاملة من بنكك للمراجعة.</item>
+        <item quantity="other">استُوردت ⁨%1$s⁩ معاملة من بنكك للمراجعة.</item>
+    </plurals>
+    <string name="bank_texts_nothing_new">لا رسائل جديدة بانتظار القراءة. لقراءة المراجعة المفتوحة من جديد، أرفق ملاحظة تُقرأ بها.</string>
 </resources>

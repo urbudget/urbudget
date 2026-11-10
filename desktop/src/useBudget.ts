@@ -193,6 +193,7 @@ export function useBudget(month: string, editorOpen = false) {
     [flush],
   );
 
+  /** Goes a step back in the history, or forward again. Says whether it did: it doesn't while something else is going on, or with nowhere to go. */
   const travel = useCallback(
     (redo = false) => {
       if (
@@ -201,14 +202,15 @@ export function useBudget(month: string, editorOpen = false) {
         operationRef.current ||
         blocked.current
       )
-        return;
+        return false;
       const from = redo ? future : past,
         to = redo ? past : future;
       const next = from.current.pop();
-      if (!next) return;
+      if (!next) return false;
       to.current.push(current.current);
       updateHistory();
       change(next);
+      return true;
     },
     [flush],
   );

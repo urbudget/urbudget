@@ -214,14 +214,14 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     /// Topics every app's users ask about, so none is dropped from the guide by accident.
-    const EXPECTED: [&str; 51] = [
+    const EXPECTED: [&str; 52] = [
         "map", "assign-money", "move-money", "quick-assign", "targets", "categories", "groups", "reorder-categories", "month-navigation",
         "notes", "budget-views", "expected-income", "add-transaction", "split-transaction", "transfer", "edit-delete-transaction",
         "approve-clear", "search-filter", "bulk-edit", "scheduled", "export-csv", "add-account", "credit-cards", "reconcile",
         "close-account", "loans", "credit-limit", "net-worth", "import-bank-file", "bank-connections", "ynab-import", "bank-texts",
         "payees-rules", "reports", "report-export", "account-sign-in", "sync-setup", "sync-subscription", "sync-conflicts", "budgets",
         "trash", "backups", "json-export-import", "fresh-start", "language", "theme", "formats", "flag-names", "assistant-setup",
-        "assistant-history", "undo",
+        "assistant-history", "assistant-notes", "undo",
     ];
 
     #[test]
@@ -263,6 +263,8 @@ mod tests {
             ("restore yesterday's backup", "backups"),
             ("my mortgage interest rate changed", "loans"),
             ("make this payment repeat every month", "scheduled"),
+            ("what does the assistant remember about me", "assistant-notes"),
+            ("rename a conversation", "assistant-history"),
         ] {
             assert_eq!(first(question, Platform::Desktop), topic, "{question}");
         }

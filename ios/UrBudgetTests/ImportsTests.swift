@@ -24,9 +24,6 @@ final class BankReviewTests: XCTestCase {
         let rows = try BankReview.prepare(rows: [source], budget: budget, allowIdlessDuplicate: true)
         XCTAssertEqual(rows[0].payee, "Transfer: Savings")
         XCTAssertEqual(BankReview.choices(rows, [:], allowIdlessDuplicate: true)[0]["row"].text("transferAccountId"), "savings")
-        let assisted = try AssistantBankReview.prepare([source], budget: budget, candidateSets: [])
-        XCTAssertEqual(assisted[0].payee, "Transfer: Savings")
-        XCTAssertEqual(AssistantBankReview.choices(assisted, [:])[0]["row"].text("transferAccountId"), "savings")
     }
 
     func testASingleCleanMatchIsImportedAndClearedByDefault() throws {

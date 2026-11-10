@@ -20,8 +20,10 @@ too and left for later. Each is a code reading, not yet reproduced unless it say
   while the assistant is open.
 - iOS: the line sheet's Done does nothing while an earlier change applies, and Import isn't
   disabled while busy (`importRows`).
-- Android: the process being killed loses the import and its fixes. A rotation or the Fold
-  opening keeps them (`BankImportHolder`), but the review's choices are made again.
+- Android: the process being killed loses the import and its fixes. A rotation, the Fold opening
+  or dark mode no longer remake the screen (the activity handles them in place), so the import and
+  the review's choices stay; `BankImportHolder` still brings the import back after a change the
+  activity doesn't handle (a new text or display size), but then the review's choices are made again.
 
 **Usage counts on urbudget.app** (`web/src/usage.ts`, `crates/urbudget-services/src/usage.rs`):
 
@@ -50,16 +52,118 @@ too and left for later. Each is a code reading, not yet reproduced unless it say
 
 - A budget-moves revision can change a category the card doesn't show (one money only passes
   through), and leaving one side of a move out shows the other as left out too.
-- A part of a proposal that no longer exists (a deleted transaction) fails the whole proposal,
-  even when it's left out.
-- Two edits to one transaction, or two fixes to one cell, share a row key.
-- Memo fixes always fail when memos aren't shared with the assistant; an import's lines go to
-  the provider with any message sent from the import page.
+
+## What the assistant review left
+
+Added 10 November 2026. The review's plan, and what was built from it on
+`claude/assistant-review`, is [plans/assistant-review.md](plans/assistant-review.md); its
+"As built" says what was seen working and what wasn't checked. These are left.
+
+**Not yet run** (the whole branch):
+
+- ChatGPT answered thirteen short messages on the desktop, and every new kind of card was
+  made, applied and read in the app beside ones made by hand (the plan's "As built" has them).
+  One was shaped wrongly, a transfer inside the budget, and was fixed. Left: a reply cut at its
+  length, which needs a lower limit than the app sets, and the long-conversation banner on a
+  conversation that has really reached 120,000 tokens. Only ChatGPT's default model was asked.
+- Five short messages sent 154,060 tokens and only 13,696 came from cache; a conversation of
+  one message sent 15,432 with 5,376 from cache. Nearly all of each
+  request is the instructions and the tool list, which are the same every time. Not known: why
+  so little is cached on the ChatGPT plan (the request may need a cache key), and how much of
+  the tool list could go to tools described only when they're offered. Done looks like the
+  second request of a conversation reading most of its start from cache.
+- Nothing was tried against Anthropic. The requests are built to its published rules for kept
+  thinking and caching and checked by tests of what they contain. Done looks like a
+  twelve-round reply, a change of language and bank texts being set up, with
+  `prefix_mismatch_behavior: "drop_block"` under the `thinking-binding-controls-2026-08-01`
+  header leaving `input_transformations` empty, and `cache_read_input_tokens` above zero from
+  the second round.
+- iPhone was never compiled; the plan's "As built" lists where it's least sure to. Done looks
+  like a build on a Mac or in CI, its unit tests passing, and a pass through a conversation on
+  a phone.
+- Android was built with this branch's engine and seen on an emulator, with a budget and
+  conversations copied in from the desktop's test window; `ProposalCardUiTest` passes there.
+  It has no sign-in on the emulator, so nothing was sent from it. Not seen: a running reply, an
+  error entry, the notice before a first message, attachments, the row editor, bank-text and
+  import cards, and any of it on the Fold or a wide window. Done looks like a signed-in pass on
+  the Fold: a message sent, a card applied and undone, Show in the budget both ways, and Back
+  with the assistant over an import.
+- The eval set in the plan isn't built. `llm::script` answers the loop in tests; the forty
+  tasks, and running each provider's default model on them twice, are left.
+
+**Left as it was, or not finished:**
+
+- A draft doesn't outlive the app being closed, on any of the three. On iPhone a message's
+  files are dropped when the conversation is changed.
+- Android reads a reply's events with the app in the background only while the process lives,
+  and iPhone only for the background time it's given. Neither says "Paused when you left". A
+  foreground service on Android wasn't added.
+- WebP and GIF files go to the provider as they are; only JPEG and PNG lose their location
+  and camera details (`attachments::scrub`).
+- All conversations share one lock (`mod.rs`). A look no longer writes, so it's held briefly;
+  a lock per conversation would need care that a deleted one can't come back.
+- "Continue in a new conversation" starts from the last eight things said and what became of
+  the proposals, as they were written. The plan had the model write the summary.
+- Desktop: discarding the last waiting card doesn't read the conversation again, so the
+  buttons for what's waiting don't come back until the next reply. The line under the message
+  field still names the service ("Using ChatGPT plan") after its sign-in has ended.
+- iPhone: an exported conversation writes "replaced" in English; Show in the budget doesn't
+  mark the categories on the Budget tab; the notice after an import reviewed in the assistant
+  has no "Categorize with the assistant".
+- Deleting a category or a schedule stays in the app, on purpose. Deleting transactions is
+  only for ones selected and sent with the message.
+
+**Arabic:**
+
+- The words this work added (the core's in `i18n/arabic.rs`, and the three apps' catalogs)
+  were written with the work and follow `docs/LOCALIZATION.md`, but no Arabic reader has gone
+  over them. "Ask the assistant" isn't worded the same on the three apps, and the zero form
+  of "Delete {n} transactions" differs between Android and iPhone.
 
 **Desktop** (`desktop/src/bridge.ts`, `desktop/src-tauri/src/lib.rs`):
 
 - An open save panel holds up the app's queue of saves and reads; the YNAB export names its
   folder with a file panel; outdated import previews aren't cancelled.
+
+## What the foldable layout left
+
+Added 9 November 2026. Android now follows a Fold's posture and hinge (`ui/Adaptive.kt`): sheets,
+the assistant and a new transaction float at the window's end, a hinge running top to bottom splits
+the app into a phone on one side and what's opened on the other, and half open on a table the keypad
+and sheets keep to the flat half. With the assistant open the window is two screens, the app (as a
+phone, with its own sheets) and the assistant, both in use; typing follows the side last touched
+(`ProvideAppSide`, `SharedScreenFocus`). A sheet keeps the kind it opened as, so folding with one open
+leaves it a floating card on the outer screen until it closes (and unfolding, a bottom sheet). Checked
+on a Pixel Fold emulator (flat, book, table, folded, dark, Arabic) and flat on the Galaxy Fold; not
+yet half open on the Galaxy Fold, or on a dual-screen phone.
+
+- Confirmation dialogs (`AlertDialog`, 20 of them) still sit in the window's middle, so half open
+  like a book they straddle the fold, and on a dual-screen phone the hinge's gap. Done looks like
+  them on one side of a hinge that splits the screen.
+- Lists still keep 168dp (`DockRoom`) at their end beside the rail, where only the add button's room
+  is needed.
+- A new text or display size still remakes the screen and closes whatever editor is open (the
+  activity doesn't take `fontScale` or `density` in place). Compose 1.9 makes a dialog's window
+  again when the density changes and the new one never shows, so any open `AlertDialog` or panel
+  would vanish while still open, with Back then leaving the app. Seen on an API 37 emulator with
+  `settings put system font_scale`. Done looks like editors kept across a text-size change, perhaps
+  through saveable editor state rather than handling the change in place. A foldable whose two
+  screens differ in density remakes the screen when it folds, for the same reason.
+- Half open like a book, Reports' report, the register's form and the budget's category take the
+  far side, but Accounts and More pages show only a hint there until something is opened.
+
+## iPhone Duo
+
+Added 10 November 2026. Apple's foldable (7.6" inner screen, 5.4" outer) shipped in October 2026.
+The iPhone app has no wide layout: unfolded it shows the phone layout, and only its tab bar adapts
+(`.sidebarAdaptable` in `App/UrBudgetApp.swift`). It's locked to portrait on iPhone, and CI builds
+with GitHub's current macOS image rather than a pinned Xcode, so whether a given build fills the
+inner screen (reportedly it needs the iOS 27.1 SDK) isn't known.
+
+- Waiting for a Mac with Xcode 27.1 and its iPhone Duo simulator. Done looks like Android's
+  foldable work on iPhone: Transactions and Reports with list and detail side by side, a category
+  beside the budget, sheets and the assistant at the side (the assistant usable beside the app), and
+  nothing across the fold.
 
 ## What fast edits on Android left
 

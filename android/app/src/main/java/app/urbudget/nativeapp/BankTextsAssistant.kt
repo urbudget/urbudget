@@ -42,17 +42,31 @@ internal object BankTextsAssistant {
     private fun time(at: Long) = Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()).format(stamp)
     private fun day(at: Long) = Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()).toLocalDate().toString()
 
-    /** Whether this budget reads bank texts on this phone: senders chosen, the assistant allowed to read them, and SMS access on. */
-    fun available(context: Context, identity: String?): Boolean = identity != null && SmsReader.canRead(context) &&
-        SmsInbox.get(context).let { inbox -> inbox.sources(identity).isNotEmpty() && inbox.state(identity, "consent") != null }
+    /**
+     * Whether chat may search this budget's bank texts on this phone, for the assistant as it's
+     * connected now ([connection], its status): `bankTextsAllowed`. Storage that can't be read
+     * counts as not allowed.
+     */
+    fun available(context: Context, identity: String?, connection: JSONObject?): Boolean = identity != null && runCatching {
+        val inbox = SmsInbox.get(context)
+        bankTextsAllowed(SmsReader.canRead(context), inbox.sources(identity).size, inbox.state(identity, "consent"), connection)
+    }.getOrDefault(false)
 
-    /** The answer to one request (`assistant://phone`): `output` and `step`, a card for a proposal, or `error`. */
-    suspend fun answer(context: Context, vm: BudgetViewModel, request: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+    /** What applying a card did: the page to open, if any, and something to tell the user about it. */
+    data class Applied(val page: String? = null, val notice: String? = null)
+
+    /**
+     * The answer to one request (`assistant://phone`): `output` and `step`, a card for a proposal,
+     * or `error`. [connection] gives the assistant as it's connected now, and is asked for each
+     * request: its service or model may have changed since the message was sent, and the
+     * permission to send texts is for one of each.
+     */
+    suspend fun answer(context: Context, vm: BudgetViewModel, request: JSONObject, connection: suspend () -> JSONObject = { NativeSmsAnalyzer.status() }): JSONObject = withContext(Dispatchers.IO) {
         runCatching {
             val state = vm.state.value
             val budget = checkNotNull(state.budget) { Words[R.string.bank_texts_not_set_up] }
             val identity = state.budgetIdentity
-            check(available(context, identity)) { Words[R.string.bank_texts_not_set_up] }
+            check(available(context, identity, connection())) { Words[R.string.bank_texts_not_set_up] }
             val args = request.optJSONObject("args") ?: JSONObject()
             when (request.optString("tool")) {
                 "get_bank_texts" -> status(context, vm, identity!!, budget, state.summary)
@@ -175,10 +189,14 @@ internal object BankTextsAssistant {
         fun row(label: String, detail: String? = null, amount: Long? = null) = JSONObject().put("label", label).apply { detail?.let { put("detail", it) }; amount?.let { put("amount", it) } }
         val (title, rows, note, apply) = when (val action = args.optString("action")) {
             "read" -> {
-                val waiting = inbox.pendingCount(identity)
-                val open = inbox.state(identity, "draft") != null
+                // What Bank messages will read: the texts waiting outside the open review, whose own are read already.
+                val batch = runCatching { SmsBatch.restore(inbox.state(identity, "draft")) { ids -> inbox.waiting(identity, ids) } }.getOrNull()
+                val waiting = bankTextsToRead(inbox.pending(identity).map { it.id }, batch?.messages?.map { it.id }.orEmpty())
+                val open = batch != null
                 val written = args.optString("note").trim().take(2000)
                 require(waiting > 0 || open) { Words[R.string.bank_texts_nothing_waiting] }
+                // The open review is read again only with a note to read it with: without one the card would do nothing.
+                require(waiting > 0 || written.isNotEmpty()) { Words[R.string.bank_texts_nothing_new] }
                 Proposed(Words[R.string.bank_texts_title_read],
                     listOfNotNull(row(if (waiting > 0) Words.count(R.plurals.bank_texts_card_read, waiting.toLong()) else Words[R.string.bank_texts_card_read_again]),
                         written.ifBlank { null }?.let { row(Words[R.string.bank_texts_card_note], it) }),
@@ -193,7 +211,9 @@ internal object BankTextsAssistant {
                 Proposed(Words.count(R.plurals.bank_texts_card_add, texts.size.toLong()),
                     texts.map { row(Money.joined(listOf(Money.date(it.receivedDate), Money.own(it.sender))), it.body.replace(Regex("\\s+"), " ").take(90)) },
                     Words[R.string.bank_texts_card_add_note],
-                    JSONObject().put("action", action).put("texts", JSONArray(texts.map { JSONObject().put("id", it.id).put("sender", it.sender).put("received", it.received).put("body", it.body) })))
+                    // The card is kept with the conversation, so it names each text (enough to find it
+                    // on the phone again) without its words: those are read when the card is applied.
+                    JSONObject().put("action", action).put("texts", JSONArray(texts.map { JSONObject().put("id", it.id).put("sender", it.sender).put("received", it.received) })))
             }
             "remember" -> {
                 val sender = args.optString("sender").trim()
@@ -226,29 +246,98 @@ internal object BankTextsAssistant {
     private data class Proposed(val title: String, val rows: List<JSONObject>, val note: String, val apply: JSONObject)
 
     /**
-     * Does what an applied card says. Returns the page to open: Bank messages, to read what's
-     * waiting (with the texts the card added), or null when nothing more is to be done there.
+     * Does what an applied card says. The page it gives to open is Bank messages, to read what's
+     * waiting (with the texts the card added); none when nothing more is to be done there. Texts
+     * a card named that are no longer on the phone are left out and counted in its notice; with
+     * none of them left, nothing is done and that's the error. A card is checked again as it's
+     * applied: the account it names may have gone since it was made, and then nothing is done
+     * and that's the error too, so the card never says Applied for it.
      */
-    suspend fun apply(context: Context, vm: BudgetViewModel, apply: JSONObject): String? {
+    suspend fun apply(context: Context, vm: BudgetViewModel, apply: JSONObject): Applied {
         val identity = checkNotNull(vm.state.value.budgetIdentity) { Words[R.string.bank_texts_not_set_up] }
         val inbox = SmsInbox.get(context)
+        bankTextsCardProblem(apply, vm.state.value.budget)?.let { error(Words[it]) }
         return when (apply.optString("action")) {
-            "read" -> { reads.value = Read(apply.optString("note")); "Bank messages" }
+            "read" -> { reads.value = Read(apply.optString("note")); Applied("Bank messages") }
             "add" -> {
-                val texts = apply.optJSONArray("texts").let { a -> (0 until (a?.length() ?: 0)).mapNotNull { a!!.optJSONObject(it) } }
-                    .map { BankSms(it.getString("id"), it.getString("sender"), it.getLong("received"), it.getString("body")) }
+                val (texts, missing) = withContext(Dispatchers.IO) {
+                    bankTextsOfCard(apply, { id -> synchronized(found) { found[id] } }) { sender, from, until -> SmsReader.search(context, identity, from, until, sender) }
+                }
+                val gone = if (missing > 0) Words.count(R.plurals.bank_texts_gone, missing.toLong()) else null
+                if (gone != null && texts.isEmpty()) error(gone)
                 withContext(smsStorageLane) { inbox.bring(identity, texts) }
-                reads.value = Read(""); "Bank messages"
+                reads.value = Read(""); Applied("Bank messages", gone)
             }
             "remember" -> {
                 withContext(smsStorageLane) {
                     val kept = JSONArray(inbox.state(identity, "mappings") ?: "[]")
                     inbox.saveState(identity, "mappings", smsRememberCard(kept, apply.getString("sender"), apply.getString("ref"), apply.getString("accountId")).toString())
                 }
-                changed.value = changed.value + 1; null
+                changed.value = changed.value + 1; Applied()
             }
-            "limit" -> { vm.setCreditLimit(apply.getString("accountId"), apply.getLong("limit")); null }
+            "limit" -> { vm.setCreditLimit(apply.getString("accountId"), apply.getLong("limit")); Applied() }
             else -> error("This card can't be applied here.")
         }
     }
+}
+
+/**
+ * Whether chat may search a budget's bank texts: SMS access on, senders chosen, and sending
+ * allowed for the assistant as it's connected now ([connection], its status; none when it isn't
+ * known). That's the permission Bank messages itself reads with (`smsConsented`), so texts never
+ * go to a service or model the user hasn't allowed there.
+ */
+internal fun bankTextsAllowed(canRead: Boolean, senders: Int, consent: String?, connection: JSONObject?): Boolean =
+    canRead && senders > 0 && connection != null && smsConsented(consent, connection)
+
+/**
+ * How many texts a "read" card will have Bank messages read: those [waiting] that aren't in the
+ * open review ([reviewed]), whose texts are read already and wait only for the user's ticks.
+ */
+internal fun bankTextsToRead(waiting: List<String>, reviewed: List<String>): Int {
+    val inReview = reviewed.toSet()
+    return waiting.count { it !in inReview }
+}
+
+/**
+ * Why a card can't be applied to [budget] as it is now, as the words to say it with; none when
+ * it can. A card that remembers digits needs its account still open, and one that sets a credit
+ * limit needs its account still there and still a card: either may have gone since the card
+ * was made.
+ */
+internal fun bankTextsCardProblem(apply: JSONObject, budget: JSONObject?): Int? {
+    val account = budget?.row("accounts", apply.optString("accountId"))
+    return when (apply.optString("action")) {
+        "remember" -> R.string.bank_texts_unknown_account.takeIf { account == null || account.optBoolean("archived") }
+        "limit" -> when {
+            account == null -> R.string.bank_texts_unknown_account
+            account.text("kind") != "credit" -> R.string.bank_texts_not_card
+            else -> null
+        }
+        else -> null
+    }
+}
+
+/** How far either side of a text's time its sender's texts are read to find it again; an MMS is timed to the second. */
+private const val CardTextMargin = 60_000L
+
+/**
+ * The texts an "add" card names, with their words. A card keeps only what finds a text again
+ * (its id, sender and time), so the words come from what a search found ([cached], by id), or
+ * else from the phone: [read] gives a sender's texts from a time until another, once for each
+ * sender, and the id tells which is meant. A card made before that carries the words itself.
+ * Returns the texts found, and how many are nowhere now.
+ */
+internal fun bankTextsOfCard(apply: JSONObject, cached: (String) -> BankSms?, read: (sender: String, from: Long, until: Long) -> List<BankSms>): Pair<List<BankSms>, Int> {
+    val wanted = apply.rows("texts")
+    val texts = wanted.map { named ->
+        named.text("body").ifEmpty { null }?.let { BankSms(named.getString("id"), named.getString("sender"), named.getLong("received"), it) } ?: cached(named.getString("id"))
+    }.toMutableList()
+    wanted.indices.filter { texts[it] == null }.groupBy { smsSenderKey(wanted[it].getString("sender")) }.values.forEach { group ->
+        val onPhone = read(wanted[group.first()].getString("sender"), group.minOf { wanted[it].getLong("received") } - CardTextMargin,
+            group.maxOf { wanted[it].getLong("received") } + CardTextMargin).associateBy { it.id }
+        group.forEach { texts[it] = onPhone[wanted[it].getString("id")] }
+    }
+    val found = texts.filterNotNull()
+    return found to wanted.size - found.size
 }

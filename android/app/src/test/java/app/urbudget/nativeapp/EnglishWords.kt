@@ -43,12 +43,18 @@ class StringFile(val file: File) {
         /** The app's resources, from the module directory Gradle runs unit tests in. */
         fun of(folder: String) = StringFile(File("src/main/res/$folder/strings.xml"))
 
-        /** Android's string resource escapes: \n, \t, \', \", \\, \@, \?, \uXXXX; runs of white space read as one. */
+        /**
+         * Android's string resource escapes: \n, \t, \', \", \\, \@, \?, \uXXXX; runs of white space
+         * read as one, and white space at either end goes unless it's inside quotes (a separator's ", ").
+         */
         fun unescape(raw: String): String {
             val out = StringBuilder()
             var i = 0
             var quoted = false
             var space = false
+            // Where what was quoted starts and ends in the text read so far.
+            var firstQuoted = -1
+            var lastQuoted = -1
             while (i < raw.length) {
                 val c = raw[i]
                 when {
@@ -65,11 +71,17 @@ class StringFile(val file: File) {
                     }
                     c == '"' -> quoted = !quoted
                     !quoted && c.isWhitespace() -> { if (!space) out.append(' '); space = true }
-                    else -> { out.append(c); space = false }
+                    else -> {
+                        if (quoted) { if (firstQuoted < 0) firstQuoted = out.length; lastQuoted = out.length }
+                        out.append(c); space = false
+                    }
                 }
                 i++
             }
-            return out.toString().trim()
+            val text = out.toString()
+            val from = minOf(text.indexOfFirst { !it.isWhitespace() }.takeIf { it >= 0 } ?: text.length, firstQuoted.takeIf { it >= 0 } ?: text.length)
+            val to = maxOf(text.indexOfLast { !it.isWhitespace() }, lastQuoted)
+            return if (to < from) "" else text.substring(from, to + 1)
         }
     }
 }

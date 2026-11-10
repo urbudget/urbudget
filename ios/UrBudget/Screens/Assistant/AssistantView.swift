@@ -1,3 +1,4 @@
+import Observation
 import PhotosUI
 import QuickLook
 import SwiftUI
@@ -18,9 +19,17 @@ struct AssistantImportRequest {
 }
 
 /// What another screen asks the assistant about: a question to send and transactions to discuss,
-/// put in the composer for the person to send, as the desktop's ask() does.
+/// put in the composer for the person to send, as the desktop's ask() does. It says where it was
+/// asked from, which goes with the messages sent from this sheet.
 struct AssistantRequest: Identifiable {
     let id = UUID()
+    /// The page it was asked from, by the key the service knows it by ("budget", "transactions",
+    /// "accounts", "import"…); "assistant" when it's opened from nowhere in particular.
+    var page = "assistant"
+    /// The account in view there, by id: an account's register, or the account a file is imported into.
+    var account = ""
+    /// The category in view there, by id: the category's sheet.
+    var category = ""
     var text = ""
     var selected: [String] = []
     /// Files to attach, such as a PDF statement chosen to import.
@@ -32,6 +41,46 @@ struct AssistantRequest: Identifiable {
     var applyFix: ((String, JSON) -> Void)?
 }
 
+/// A reply to report: the excerpt to edit down, and the tools its turn had called, for the
+/// details offered with the report.
+struct AssistantReplyReport {
+    var excerpt: String
+    var tools: [String]
+}
+
+/// The top and bottom of the conversation's content, in its scroll view's coordinates.
+struct AssistantScrollExtent: Equatable, Sendable {
+    var top: CGFloat
+    var bottom: CGFloat
+}
+
+/// Whether the conversation follows new text (`AssistantFollow`). A class of its own, so
+/// scrolling redraws only the Jump to latest button and never the conversation.
+@MainActor @Observable
+final class AssistantScroll {
+    /// The end of the conversation is on screen, so new text keeps it there.
+    private(set) var following = true
+    @ObservationIgnored private var viewport: CGFloat = 0
+    /// Where the content's top rests while following: a scroll up is measured from it.
+    @ObservationIgnored private var restingTop = CGFloat.greatestFiniteMagnitude
+
+    /// The content moved under the finger, or grew.
+    func moved(_ extent: AssistantScrollExtent) {
+        let next = AssistantFollow.next(following, top: extent.top, restingTop: restingTop, bottom: extent.bottom, viewport: viewport)
+        restingTop = AssistantFollow.resting(restingTop, top: extent.top, bottom: extent.bottom, viewport: viewport)
+        if next != following { following = next }
+    }
+
+    /// The scroll view's height changed: the keyboard, or a longer message in the field.
+    func resized(_ height: CGFloat) { viewport = height }
+
+    /// Another conversation, a message sent, or Jump to latest: at the end, following again.
+    func follow() {
+        restingTop = .greatestFiniteMagnitude
+        if !following { following = true }
+    }
+}
+
 /// The assistant: a conversation about the budget whose changes arrive as proposals to review,
 /// apply and undo. Presented as a large sheet with its own navigation stack.
 struct AssistantView: View {
@@ -40,23 +89,28 @@ struct AssistantView: View {
     @Environment(\.scenePhase) private var phase
     private let controller = AssistantController.shared
 
-    @State private var message = ""
-    @State private var selected: [String] = []
     @State private var settingsShown = false
     @State private var historyShown = false
     @State private var contextShown = false
+    /// What waits on the notice of what gets sent: a message, or a reply asked for again.
+    @State private var afterNotice: AssistantSheetItem<() -> Void>?
     @State private var choosingFiles = false
     @State private var choosingPhotos = false
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var report: AssistantSheetItem<JSON>?
     @State private var importReview: AssistantSheetItem<AssistantImportRequest>?
-    @State private var replyReport: AssistantSheetItem<String>?
+    @State private var replyReport: AssistantSheetItem<AssistantReplyReport>?
     @State private var share: AssistantSheetItem<URL>?
     @State private var changing: AssistantSheetItem<AssistantRowChange>?
     @State private var preview: URL?
     @State private var localError: String?
     @State private var sent = 0
-    @State private var following = true
+    /// Parts of "With this message" taken off the message being written.
+    @State private var placeOff = false
+    @State private var importOff = false
+    @State private var renaming = false
+    @State private var newTitle = ""
+    @State private var scroll = AssistantScroll()
     @FocusState private var composing: Bool
     @ScaledMetric(relativeTo: .body) private var iconSize: CGFloat = 36
 
@@ -65,7 +119,17 @@ struct AssistantView: View {
     init(request: AssistantRequest? = nil) { self.request = request }
 
     private var sheetShown: Bool {
-        historyShown || contextShown || report != nil || importReview != nil || replyReport != nil || share != nil || preview != nil || changing != nil
+        historyShown || contextShown || afterNotice != nil || report != nil || importReview != nil || replyReport != nil || share != nil || preview != nil || changing != nil
+    }
+
+    /// The open budget's currency, for the amounts on cards and in an exported conversation.
+    private var currency: String { store.budget?.text("currency") ?? "" }
+
+    /// What goes with the next message: where this sheet was opened from, the month the app is
+    /// on, the selected transactions and the file being imported, less what was taken off.
+    private var with: AssistantWith {
+        AssistantWith(page: request?.page ?? "assistant", month: store.month, account: request?.account ?? "", category: request?.category ?? "",
+                      selected: controller.selected, importing: request?.importing, placeOff: placeOff, importOff: importOff)
     }
 
     var body: some View {
@@ -78,14 +142,20 @@ struct AssistantView: View {
                 .inlineTitle()
                 .toolbar { toolbar }
                 .navigationDestination(isPresented: $settingsShown) { AssistantSettingsView() }
+                .alert("Rename conversation", isPresented: $renaming) {
+                    TextField("Conversation name", text: $newTitle)
+                    Button("Save") {
+                        let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !title.isEmpty && !controller.threadId.isEmpty { controller.renameThread(controller.threadId, to: title) }
+                    }
+                    Button("Cancel", role: .cancel) {}
+                }
         }
         .task {
             controller.connect(store)
             controller.refresh()
             if let request {
-                if !request.selected.isEmpty { selected = request.selected }
-                if !request.text.isEmpty && message.isEmpty { message = request.text }
-                if !request.files.isEmpty { controller.attach(files: request.files) }
+                controller.take(request)
                 composing = true
             }
         }
@@ -96,16 +166,18 @@ struct AssistantView: View {
                 if controller.running { controller.reloadThread() }
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .urbudgetHostEvent)) { notification in
-            if let event = notification.hostEvent { controller.receive(event.name, event.payload) }
-        }
+        // The controller follows the services' events itself; here it's only told whether the
+        // assistant is on screen, for the dot that says something arrived while it wasn't.
+        .onAppear { controller.shown(true) }
+        .onDisappear { controller.shown(false) }
         .onChange(of: phase) { _, phase in if phase == .active { controller.refresh() } }
         .onChange(of: store.identity) { _, _ in
             controller.connect(store)
-            message = ""
-            selected = []
             controller.refresh()
         }
+        // The budget changed under the open conversation (sync, another screen, its own Undo or
+        // Redo): its waiting cards are brought up to date, and an applied one is shown where it stands.
+        .onChange(of: store.revision) { _, _ in controller.budgetChanged() }
         .sensoryFeedback(.impact(weight: .light), trigger: sent)
         .sensoryFeedback(.success, trigger: controller.successes)
         .fileImporter(isPresented: $choosingFiles, allowedContentTypes: AssistantAttachments.contentTypes,
@@ -127,18 +199,27 @@ struct AssistantView: View {
             photoItems = []
         }
         .sheet(isPresented: $historyShown) { AssistantHistorySheet() }
-        .sheet(isPresented: $contextShown) { AssistantContextPicker(selected: $selected) }
+        .sheet(isPresented: $contextShown) {
+            AssistantContextPicker(selected: Binding(get: { controller.selected }, set: { controller.select($0) }))
+        }
+        .sheet(item: $afterNotice) { waiting in
+            AssistantSendNotice {
+                afterNotice = nil
+                waiting.value()
+            }
+        }
         .sheet(item: $report) { AssistantReportView(report: $0.value) }
         .sheet(item: $importReview) { item in
             AssistantImportReview(request: item.value) {
                 controller.imported(thread: item.value.threadId, proposal: item.value.proposalId)
             }
         }
-        .sheet(item: $replyReport) { AssistantReplyReportForm(excerpt: $0.value) }
+        .sheet(item: $replyReport) { AssistantReplyReportForm(excerpt: $0.value.excerpt, tools: $0.value.tools) }
         .sheet(item: $changing) { item in
             AssistantRowEditor(row: item.value.row) { change in
-                let proposal = item.value.proposal
-                controller.revise(proposal.text("id"), ProposalChoices.change(proposal["choices"], key: item.value.row.text("key"), change: change))
+                // Made on the person's choices as they stand now, not as they were when the editor opened.
+                let id = item.value.proposal.text("id")
+                controller.choose(id, ProposalChoices.change(controller.choicesNow(id), key: item.value.row.text("key"), change: change))
             }
         }
         .sheet(item: $share) { AssistantShareSheet(items: [$0.value]) { share = nil }.presentationDetents([.medium, .large]) }
@@ -156,6 +237,9 @@ struct AssistantView: View {
 
     // MARK: Conversation
 
+    /// The conversation, following new text only while its end is on screen. Where it is
+    /// scrolled to is measured from the content's own frame (`AssistantScroll`), not from a row
+    /// at the end appearing, which a lazy stack can report for a row that's off screen.
     private var conversation: some View {
         ScrollViewReader { proxy in
             ScrollView {
@@ -163,42 +247,83 @@ struct AssistantView: View {
                     if controller.entries.isEmpty && !controller.running && controller.threadId.isEmpty {
                         emptyState.padding(.vertical, 12)
                     }
-                    ForEach(controller.entries) { entry in
-                        entryView(entry).padding(.vertical, 7)
+                    if let from = controller.thread?.text("continuedFrom"), !from.isEmpty {
+                        Label("Continued from “\(from)”", systemImage: "arrow.turn.down.right")
+                            .font(.footnote)
+                            .foregroundStyle(Color.secondary)
+                            .padding(.vertical, 7)
                     }
-                    AssistantLiveReply(controller: controller, proxy: proxy, following: following)
+                    ForEach(controller.entries) { entry in
+                        // A kind this version doesn't know takes no room at all.
+                        if Self.kinds.contains(entry.kind) { entryView(entry).padding(.vertical, 7) }
+                    }
+                    AssistantLiveReply(controller: controller, scroll: scroll, proxy: proxy)
                     if controller.running || controller.busy.contains("send") {
-                        HStack(spacing: 8) {
-                            ProgressView().controlSize(.small)
-                            Text("Working…").font(.footnote).foregroundStyle(Color.secondary)
-                        }
-                        .padding(.vertical, 8)
-                        .accessibilityElement(children: .combine)
-                        .accessibilityLabel("The assistant is working")
+                        AssistantWorkingRow(controller: controller)
                     } else if controller.entries.last?.kind == "user" {
-                        Button("Continue interrupted reply", systemImage: "arrow.clockwise") { controller.retry(importing: request?.importing) }
+                        Button("Continue interrupted reply", systemImage: "arrow.clockwise") { retry() }
                             .font(.subheadline)
                             .disabled(controller.busy.contains("send"))
                             .padding(.vertical, 8)
+                    } else if !controller.next.isEmpty {
+                        nextSteps
                     }
                     Color.clear.frame(height: 1).id("bottom")
-                        .onAppear { following = true }
-                        .onDisappear { following = false }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
+                .onGeometryChange(for: AssistantScrollExtent.self) { geometry in
+                    let frame = geometry.frame(in: .named("assistantScroll"))
+                    return AssistantScrollExtent(top: frame.minY, bottom: frame.maxY)
+                } action: { extent in
+                    scroll.moved(extent)
+                }
             }
-            .id(controller.threadId)
+            // A new conversation keeps this scroll view when its first message gives it an id.
+            .id(controller.conversation)
+            .coordinateSpace(.named("assistantScroll"))
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
+            .onGeometryChange(for: CGFloat.self) { geometry in
+                geometry.size.height
+            } action: { height in
+                scroll.resized(height)
+                // The keyboard, or a longer message in the field, doesn't cover the end.
+                if scroll.following { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+            .overlay(alignment: .bottom) {
+                AssistantJumpButton(scroll: scroll) {
+                    scroll.follow()
+                    withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("bottom", anchor: .bottom) }
+                }
+            }
+            .onChange(of: controller.conversation) { _, _ in scroll.follow() }
             .onChange(of: controller.entries.count) { _, count in
-                if following || count < 4 { withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("bottom", anchor: .bottom) } }
+                if scroll.following || count < 4 { withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("bottom", anchor: .bottom) } }
             }
             .onChange(of: controller.running) { _, _ in
-                if following { withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("bottom", anchor: .bottom) } }
+                if scroll.following { withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("bottom", anchor: .bottom) } }
             }
-            .onChange(of: sent) { _, _ in withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
+            .onChange(of: sent) { _, _ in
+                scroll.follow()
+                withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
         }
+    }
+
+    /// What's waiting in the budget that the assistant can help with, under the last reply while
+    /// nothing is running: each a small button in the service's words that sends its request.
+    private var nextSteps: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(controller.next.enumerated()), id: \.offset) { _, step in
+                Button(step.text("text")) { say(step.text("prompt")) }
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
+                    .controlSize(.small)
+                    .disabled(!canSay)
+            }
+        }
+        .padding(.vertical, 7)
     }
 
     private var emptyState: some View {
@@ -208,7 +333,18 @@ struct AssistantView: View {
             Text("Look up spending, cover overspending, categorize selected transactions, read statements, or create a report. Proposed changes are checked again before you apply them.")
                 .font(.subheadline).foregroundStyle(Color.secondary)
             if controller.status == nil {
-                ProgressView().padding(.top, 8)
+                if controller.statusFailed {
+                    Text("The assistant couldn't be loaded.").font(.subheadline)
+                    Button("Try again") { controller.refresh() }
+                        .buttonStyle(.bordered)
+                } else {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Checking the assistant…").font(.footnote).foregroundStyle(Color.secondary)
+                    }
+                    .padding(.top, 4)
+                    .accessibilityElement(children: .combine)
+                }
             } else if !controller.ready {
                 Button("Set up assistant") { settingsShown = true }
                     .buttonStyle(.borderedProminent)
@@ -217,7 +353,7 @@ struct AssistantView: View {
                 VStack(spacing: 8) {
                     ForEach(Self.suggestions, id: \.self) { prompt in
                         Button {
-                            message = prompt
+                            controller.addToDraft(prompt)
                             composing = true
                         } label: {
                             HStack {
@@ -244,15 +380,22 @@ struct AssistantView: View {
     private static let suggestions = [String(localized: "Where is my money going this month?"), String(localized: "Help me cover overspending"),
                                       String(localized: "Make a report of this month's budget")]
 
+    /// The kinds of entry this version draws.
+    private static let kinds: Set<String> = ["user", "assistant", "step", "proposal", "stopped", "error", "cut"]
+
     @ViewBuilder
     private func entryView(_ entry: AssistantEntry) -> some View {
         switch entry.kind {
         case "proposal":
             let proposal = entry.json["proposal"]
             if proposal.isObject {
-                AssistantProposalCard(proposal: proposal, currency: store.currency,
-                                      busy: controller.busy.contains("proposal"),
-                                      canUndo: controller.undoProposal == proposal.text("id"),
+                let id = proposal.text("id")
+                // Only its own action makes a card wait, and the button that asked spins. Undo
+                // shows on the card the conversation's view names as the one that can be undone.
+                let working = controller.cardWork[id]
+                AssistantProposalCard(proposal: proposal, currency: currency, busy: working != nil, working: working,
+                                      choices: controller.choices[id], canUndo: controller.undoable == id, canSend: canSay,
+                                      categoryName: { planningCategoryName(store.budget, $0 ?? Unassigned) ?? "" },
                                       actions: actions(for: proposal))
             }
         case "step":
@@ -268,20 +411,67 @@ struct AssistantView: View {
             Label("Reply stopped", systemImage: "stop.circle").font(.footnote).foregroundStyle(Color.secondary)
         case "user":
             AssistantUserBubble(entry: entry.json)
+        case "cut":
+            VStack(alignment: .leading, spacing: 6) {
+                Label("The reply was cut short.", systemImage: "scissors").font(.footnote).foregroundStyle(Color.secondary)
+                // Only the conversation's last entry can be carried on from.
+                if entry.id == controller.entries.last?.id && !controller.running {
+                    Button("Continue") { retry() }
+                        .font(.subheadline.weight(.semibold))
+                        .disabled(controller.busy.contains("send"))
+                }
+            }
         case "error":
             VStack(alignment: .leading, spacing: 8) {
                 Label("Couldn’t finish", systemImage: "exclamationmark.triangle.fill").font(.subheadline.weight(.semibold)).foregroundStyle(Color.urNegative)
                 Text(entry.json.text("text")).font(.subheadline)
-                Button("Try again") { controller.retry(importing: request?.importing) }
-                    .font(.subheadline.weight(.semibold))
-                    .disabled(controller.running || controller.busy.contains("send"))
+                // Only the conversation's last error says what helps; an earlier one has no button.
+                if let action = AssistantErrorAction.of(entry.json) {
+                    errorButton(action)
+                        .font(.subheadline.weight(.semibold))
+                        .disabled(controller.running || controller.busy.contains("send") || controller.signingIn)
+                }
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.urNegative.opacity(0.1), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        case "assistant":
+            AssistantReply(text: entry.json.text("text"), blocks: entry.blocks, rating: entry.json.text("rating"), rate: rating(entry.json)) { excerpt in
+                replyReport = AssistantSheetItem(value: AssistantReplyReport(excerpt: excerpt, tools: entry.json["tools"].array.map(\.string)))
+            }
         default:
-            AssistantReply(text: entry.json.text("text"), blocks: entry.blocks) { excerpt in
-                replyReport = AssistantSheetItem(value: excerpt)
+            // A kind this version doesn't know draws nothing, rather than an empty reply.
+            EmptyView()
+        }
+    }
+
+    /// Sets or takes off the person's thumb on a reply; nil for one the service gave no place
+    /// in the conversation, which can't be rated.
+    private func rating(_ entry: JSON) -> ((Bool?) -> Void)? {
+        guard entry.has("index") else { return nil }
+        let index = entry.long("index")
+        return { up in controller.rate(index, up: up) }
+    }
+
+    /// The button under the conversation's last error, doing what the service says helps.
+    @ViewBuilder
+    private func errorButton(_ action: AssistantErrorAction) -> some View {
+        switch action {
+        case .retry:
+            Button("Try again") { retry() }
+        case .settings:
+            Button("Assistant settings") { settingsShown = true }
+        case .usage:
+            Button("Plan usage") { controller.openLink("usage") }
+        case .newConversation:
+            Button("Continue in a new conversation") { controller.continueInNew() }
+        case .signIn:
+            Button("Continue with ChatGPT") {
+                // Signed in, it asks again, unless another conversation was opened meanwhile.
+                let thread = controller.threadId
+                controller.signIn {
+                    if controller.threadId == thread { retry() }
+                }
             }
         }
     }
@@ -292,10 +482,15 @@ struct AssistantView: View {
             apply: { controller.apply(id) },
             undo: { controller.undo(id) },
             discard: { controller.discard(id) },
+            restore: { controller.restore(id) },
             refine: {
-                message = String(localized: "Revise the proposal ‘\(proposal.text("title"))’: ")
+                // Added under whatever is being written, never over it.
+                controller.addToDraft(String(localized: "Revise the proposal ‘\(proposal.text("title"))’: "))
                 composing = true
             },
+            askAgain: { say(AssistantCard.askAgain(proposal)) },
+            show: { show(proposal["card"]["highlight"]) },
+            answer: { say($0) },
             reviewImport: {
                 controller.importFile(id) { file, thread in
                     importReview = AssistantSheetItem(value: AssistantImportRequest(file: file, threadId: thread, proposalId: id))
@@ -304,7 +499,7 @@ struct AssistantView: View {
             saveImport: { controller.saveImport(id) { path in shareFile(path) } },
             report: { controller.report(id) { report = AssistantSheetItem(value: $0) } },
             spreadsheet: { open in
-                controller.spreadsheet(id) { path in
+                controller.spreadsheet(id, opening: open) { path in
                     if open {
                         do { preview = try AssistantExport.savedFile(path) } catch { localError = BudgetStore.readable(error) }
                     } else {
@@ -312,9 +507,37 @@ struct AssistantView: View {
                     }
                 }
             },
-            applyFix: request?.applyFix.map { fix -> () -> Void in { fix(controller.threadId, proposal) } },
-            revise: { controller.revise(id, $0) },
+            // The import applies the card as the service has it once its waiting choices are sent.
+            applyFix: request?.applyFix.map { fix -> () -> Void in { controller.whenSettled(id) { thread, settled in fix(thread, settled) } } },
+            // Back to the assistant's version goes at once; a tick waits a moment for the next.
+            revise: { revision in controller.choose(id, revision, now: revision == ProposalChoices.original) },
             change: { changing = AssistantSheetItem(value: AssistantRowChange(proposal: proposal, row: $0)) })
+    }
+
+    /// A message can be sent for the person now: a question's answer, a next step, or a card
+    /// asked for again.
+    private var canSay: Bool { controller.ready && !controller.running && !controller.busy.contains("send") }
+
+    /// Sends `text` as the person's message, as Send does the field's: after the notice of what
+    /// gets sent when it's due, and with what's on "With this message". The message being
+    /// written stays in the field.
+    private func say(_ text: String) {
+        guard canSay, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        whenTold {
+            sent += 1
+            controller.send(text, screen: with.screen) {
+                placeOff = false
+                importOff = false
+            }
+        }
+    }
+
+    /// Goes to what a card names, once the assistant has closed: its transactions in the
+    /// Transactions tab, or else the Budget tab on its month.
+    private func show(_ highlight: JSON) {
+        let destination = AppActions.Destination(month: highlight.text("month"), transactions: highlight["transactions"].array.map(\.string))
+        dismiss()
+        AppActions.shared.destination = destination
     }
 
     private func shareFile(_ path: String) {
@@ -323,7 +546,7 @@ struct AssistantView: View {
 
     private func exportConversation() {
         guard let thread = controller.thread else { return }
-        let currency = store.currency
+        let currency = currency
         Task {
             do {
                 let url = try await Task.detached(priority: .userInitiated) {
@@ -362,11 +585,17 @@ struct AssistantView: View {
                 .accessibilityLabel("Conversation history")
             Button {
                 controller.newChat()
-                message = ""
-                selected = []
+                controller.clearDraft()
+                placeOff = false
+                importOff = false
             } label: { Image(systemName: "square.and.pencil") }
                 .accessibilityLabel("New conversation")
             Menu {
+                Button("Rename conversation", systemImage: "pencil") {
+                    newTitle = controller.thread?.text("title") ?? ""
+                    renaming = true
+                }
+                .disabled(controller.threadId.isEmpty)
                 Button("Export conversation", systemImage: "square.and.arrow.up") { exportConversation() }
                     .disabled(controller.thread == nil || controller.entries.isEmpty)
                 Button("Assistant settings", systemImage: "gearshape") { settingsShown = true }
@@ -380,36 +609,143 @@ struct AssistantView: View {
     @ViewBuilder
     private var noticeBar: some View {
         if let notice = controller.notice {
-            Notice(text: notice, tone: "info", icon: "info.circle.fill", action: String(localized: "Dismiss")) { controller.dismissNotice() }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 6)
-                .background(Color.groupedBackground)
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .task(id: notice) {
-                    try? await Task.sleep(for: .seconds(8))
-                    if controller.notice == notice { controller.dismissNotice() }
-                }
+            // An import's notice offers Undo while the import is still the budget's last change.
+            let undo = controller.undoNotice?.text == notice && controller.undoNotice?.revision == store.revision
+            Notice(text: notice, tone: "info", icon: "info.circle.fill", action: undo ? String(localized: "Undo") : String(localized: "Dismiss")) {
+                if undo { store.undo() }
+                controller.dismissNotice()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 6)
+            .background(Color.groupedBackground)
+            .transition(.move(edge: .top).combined(with: .opacity))
+            .task(id: notice) {
+                try? await Task.sleep(for: .seconds(8))
+                if controller.notice == notice { controller.dismissNotice() }
+            }
         }
     }
 
     private var canSend: Bool {
         controller.ready && !controller.busy.contains("send") && !controller.busy.contains("attach")
-            && (!message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !controller.attachments.isEmpty)
+            && (!controller.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !controller.attachments.isEmpty)
+    }
+
+    /// Runs `action` at once, or once the person has read the notice of what gets sent when it's due
+    /// for the chosen service (the first message to it, or a reply asked for again after another
+    /// was chosen): nothing goes to a service before that. Not now there leaves `action` undone.
+    private func whenTold(_ action: @escaping () -> Void) {
+        if controller.ready && controller.noticeDue {
+            afterNotice = AssistantSheetItem(value: action)
+        } else {
+            action()
+        }
     }
 
     private func send() {
         guard canSend else { return }
-        let text = message
-        sent += 1
-        controller.send(text, selected: selected, importing: request?.importing) {
-            if message == text { message = "" }
-            selected = []
+        whenTold {
+            sent += 1
+            controller.send(screen: with.screen) {
+                // The next message starts with everything that goes with it again.
+                placeOff = false
+                importOff = false
+            }
+        }
+    }
+
+    /// Asks for the reply again, after an error or an interrupted reply, or for the rest of one
+    /// that was cut short. The selected transactions wait for the next message.
+    private func retry() {
+        whenTold {
+            var again = with
+            again.selected = []
+            controller.retry(screen: again.screen)
+        }
+    }
+
+    /// Takes a part of "With this message" off the message being written.
+    private func remove(_ part: AssistantWithPart.Kind) {
+        switch part {
+        case .place: placeOff = true
+        case .selection: controller.select([])
+        case .importing: importOff = true
+        }
+    }
+
+    /// Above the field in a conversation that can't be carried on as it is: the assistant isn't
+    /// ready any more (signed out, or the key removed), or the conversation has grown long.
+    /// Each has the one action that helps.
+    @ViewBuilder
+    private var composerBanner: some View {
+        if controller.status != nil && !controller.ready && !controller.entries.isEmpty {
+            if controller.provider == "chatgpt" {
+                AssistantBanner(text: String(localized: "Set up the assistant to send messages"), action: String(localized: "Continue with ChatGPT"),
+                                busy: controller.signingIn) { controller.signIn() }
+            } else {
+                AssistantBanner(text: String(localized: "Set up the assistant to send messages"), action: String(localized: "Assistant settings")) {
+                    settingsShown = true
+                }
+            }
+        } else if controller.thread?.flag("long") == true && !controller.running {
+            AssistantBanner(text: String(localized: "This conversation is getting long, so replies are slower and use more of your plan or key."),
+                            action: String(localized: "Continue in a new conversation"), busy: controller.busy.contains("continue")) {
+                controller.continueInNew()
+            }
+        }
+    }
+
+    /// What goes with the next message, each part with its own ×, and the sentence for a
+    /// selection that was cut to its first 200.
+    @ViewBuilder
+    private var withLine: some View {
+        let parts = with.parts(budget: store.budget)
+        if !parts.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("With this message").font(.caption).foregroundStyle(Color.secondary).padding(.horizontal, 12)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(parts) { part in
+                            withChip(part)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                }
+            }
+        }
+        if let total = controller.selectionTotal {
+            Text("Only the first 200 of \(total) selected transactions are attached.")
+                .font(.caption)
+                .foregroundStyle(Color.secondary)
+                .padding(.horizontal, 12)
+        }
+    }
+
+    /// One part of "With this message". The selected transactions open their picker when tapped.
+    private func withChip(_ part: AssistantWithPart) -> some View {
+        var tap: (() -> Void)?
+        var removeLabel = String(localized: "Remove \(part.text)")
+        if part.kind == .selection {
+            tap = { contextShown = true }
+            removeLabel = String(localized: "Clear selected transactions")
+        }
+        return AssistantChip(text: part.text, symbol: Self.symbol(part.kind), removeLabel: removeLabel, onTap: tap) {
+            remove(part.kind)
+        }
+    }
+
+    private static func symbol(_ part: AssistantWithPart.Kind) -> String {
+        switch part {
+        case .place: return "mappin.and.ellipse"
+        case .selection: return "checklist"
+        case .importing: return "doc.text"
         }
     }
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if !controller.attachments.isEmpty || !selected.isEmpty || controller.busy.contains("attach") {
+            composerBanner
+            if !controller.attachments.isEmpty || controller.busy.contains("attach") {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(Array(controller.attachments.enumerated()), id: \.offset) { _, file in
@@ -425,16 +761,11 @@ struct AssistantView: View {
                             }
                             .padding(.horizontal, 10)
                         }
-                        if !selected.isEmpty {
-                            AssistantChip(text: String(localized: "\(selected.count) selected transactions", locale: .app), symbol: "checklist",
-                                          removeLabel: String(localized: "Clear selected transactions"), onTap: { contextShown = true }) {
-                                selected = []
-                            }
-                        }
                     }
                     .padding(.horizontal, 12)
                 }
             }
+            withLine
             HStack(alignment: .bottom, spacing: 8) {
                 Menu {
                     Button("Choose file", systemImage: "doc") { choosingFiles = true }
@@ -442,29 +773,28 @@ struct AssistantView: View {
                 } label: {
                     composerIcon("paperclip")
                 }
-                .disabled(controller.running || controller.attachments.count >= AssistantAttachments.limit || controller.busy.contains("attach"))
+                // Nothing is uploaded for a message that can't be sent.
+                .disabled(!controller.ready || controller.running || controller.attachments.count >= AssistantAttachments.limit || controller.busy.contains("attach"))
                 .accessibilityLabel("Attach statement, document, or image")
                 Menu {
-                    Section("Sent with your message: \(Dates.monthLabel(store.month))") {
-                        Button("Select transactions…", systemImage: "checklist") { contextShown = true }
-                        if !selected.isEmpty {
-                            Button("Clear selected transactions", systemImage: "xmark.circle", role: .destructive) { selected = [] }
-                        }
+                    Button("Select transactions…", systemImage: "checklist") { contextShown = true }
+                    if !controller.selected.isEmpty {
+                        Button("Clear selected transactions", systemImage: "xmark.circle", role: .destructive) { controller.select([]) }
                     }
                 } label: {
-                    composerIcon(selected.isEmpty ? "text.badge.plus" : "text.badge.checkmark")
+                    composerIcon(controller.selected.isEmpty ? "text.badge.plus" : "text.badge.checkmark")
                 }
                 .disabled(controller.running)
                 .accessibilityLabel("Add budget context")
                 TextField(controller.ready || controller.status == nil ? "Ask about your budget" : "Set up the assistant to send messages",
-                          text: $message, axis: .vertical)
+                          text: Binding(get: { controller.draft }, set: { controller.draft = $0.count > 20_000 ? String($0.prefix(20_000)) : $0 }),
+                          axis: .vertical)
                     .lineLimit(1...6)
                     .focused($composing)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
                     .background(Color.cardBackground, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Color.secondary.opacity(0.25)))
-                    .onChange(of: message) { _, value in if value.count > 20_000 { message = String(value.prefix(20_000)) } }
                 if controller.running {
                     Button { controller.stop() } label: {
                         Image(systemName: "stop.circle.fill").font(.title).foregroundStyle(Color.urAccent)
@@ -494,11 +824,76 @@ struct AssistantView: View {
     }
 }
 
-/// Your message: a bubble at the trailing edge, with its attachments under it.
+/// "Working…", or what the assistant is doing now while no text is arriving. A view of its own,
+/// so a new activity redraws this row and not the conversation.
+private struct AssistantWorkingRow: View {
+    var controller: AssistantController
+
+    var body: some View {
+        let activity = controller.activity
+        // What it's doing reads as under way: "Looking at October…".
+        let doing = activity.isEmpty || activity.hasSuffix("…") ? activity : activity + "…"
+        HStack(spacing: 8) {
+            ProgressView().controlSize(.small)
+            Text(doing.isEmpty ? String(localized: "Working…") : doing).font(.footnote).foregroundStyle(Color.secondary)
+        }
+        .padding(.vertical, 8)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(doing.isEmpty ? String(localized: "The assistant is working") : doing)
+    }
+}
+
+/// Jump to latest, over the end of the conversation once the person has scrolled up from it.
+private struct AssistantJumpButton: View {
+    var scroll: AssistantScroll
+    var action: () -> Void
+
+    var body: some View {
+        if !scroll.following {
+            Button(action: action) {
+                Label("Jump to latest", systemImage: "arrow.down")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Color.urAccent)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.regularMaterial, in: Capsule())
+                    .overlay(Capsule().strokeBorder(Color.secondary.opacity(0.25)))
+            }
+            .buttonStyle(.plain)
+            .padding(.bottom, 8)
+        }
+    }
+}
+
+/// A notice above the message field, with the one action that helps.
+private struct AssistantBanner: View {
+    var text: String
+    var action: String
+    var busy = false
+    var onAction: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(text).font(.footnote).fixedSize(horizontal: false, vertical: true)
+            Button(action, action: onAction)
+                .font(.footnote.weight(.semibold))
+                .buttonStyle(.borderless)
+                .disabled(busy)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.urAccent.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(.horizontal, 12)
+    }
+}
+
+/// Your message: a bubble at the trailing edge, with its attachments and what went with it under it.
 private struct AssistantUserBubble: View {
     var entry: JSON
 
     var body: some View {
+        let sentWith = AssistantWith.sent(entry["with"])
         HStack {
             Spacer(minLength: 48)
             VStack(alignment: .trailing, spacing: 6) {
@@ -521,17 +916,25 @@ private struct AssistantUserBubble: View {
                         .background(Color.cardBackground, in: Capsule())
                         .accessibilityLabel("Attachment \(file.text("name"))")
                 }
+                if let sentWith {
+                    Text(sentWith).font(.caption).foregroundStyle(Color.secondary).multilineTextAlignment(.trailing)
+                }
             }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("You: \(entry.text("text"))")
+        .accessibilityValue(sentWith ?? "")
     }
 }
 
-/// The assistant's reply in Markdown, with copy, share and report under it.
+/// The assistant's reply in Markdown, with copy, share, report and the two thumbs under it.
 private struct AssistantReply: View {
     var text: String
     var blocks: [AssistantMarkdownBlock]
+    /// The person's thumb on this reply: "up", "down", or nothing.
+    var rating: String
+    /// Sets the thumb (true is up), or takes it off (nil). Nil for a reply that can't be rated.
+    var rate: ((Bool?) -> Void)?
     var report: (String) -> Void
     @State private var copied = 0
 
@@ -548,6 +951,10 @@ private struct AssistantReply: View {
                     .accessibilityLabel("Share reply")
                 Button { report(String(text.prefix(4000))) } label: { Image(systemName: "flag") }
                     .accessibilityLabel("Report reply")
+                if let rate {
+                    thumb(up: true, rate)
+                    thumb(up: false, rate)
+                }
             }
             .font(.footnote)
             .foregroundStyle(Color.secondary)
@@ -561,17 +968,32 @@ private struct AssistantReply: View {
             Button("Report reply", systemImage: "flag") { report(String(text.prefix(4000))) }
         }
     }
+
+    /// A thumb: pressing it sets it, and pressing the one that's set takes it off.
+    private func thumb(up: Bool, _ rate: @escaping (Bool?) -> Void) -> some View {
+        let on = rating == (up ? "up" : "down")
+        let symbol = up ? "hand.thumbsup" : "hand.thumbsdown"
+        return Button {
+            rate(on ? nil : up)
+        } label: {
+            Image(systemName: on ? symbol + ".fill" : symbol)
+        }
+        .foregroundStyle(on ? Color.urAccent : Color.secondary)
+        .accessibilityLabel(up ? Text("Good reply") : Text("Bad reply"))
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
 }
 
-/// The reply as it streams in, unformatted until it's complete, with the model's thinking folded away.
+/// The reply as it streams in, drawn as Markdown like a finished one so nothing jumps when it
+/// completes, with the model's thinking folded away.
 private struct AssistantLiveReply: View {
     var controller: AssistantController
+    var scroll: AssistantScroll
     var proxy: ScrollViewProxy
-    var following: Bool
     @State private var thinkingShown = false
 
     var body: some View {
-        let reply = controller.streaming
+        let blocks = controller.liveBlocks
         let thinking = controller.thinking
         VStack(alignment: .leading, spacing: 8) {
             if !thinking.isEmpty {
@@ -581,13 +1003,20 @@ private struct AssistantLiveReply: View {
                     Label("Thinking", systemImage: "ellipsis.bubble").font(.footnote.weight(.semibold)).foregroundStyle(Color.secondary)
                 }
             }
-            if !reply.isEmpty {
-                Text(reply).frame(maxWidth: .infinity, alignment: .leading)
+            if !blocks.isEmpty {
+                // Spaced as a finished reply's blocks are.
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(Array(blocks.indices), id: \.self) { index in
+                        AssistantMarkdownBlockView(block: blocks[index])
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(.vertical, reply.isEmpty && thinking.isEmpty ? 0 : 7)
-        .onChange(of: reply) { _, _ in
-            if following { proxy.scrollTo("bottom", anchor: .bottom) }
+        .padding(.vertical, blocks.isEmpty && thinking.isEmpty ? 0 : 7)
+        .onChange(of: blocks) { _, _ in
+            // New text is followed only while the end of the conversation is on screen.
+            if scroll.following { proxy.scrollTo("bottom", anchor: .bottom) }
         }
     }
 }
@@ -617,6 +1046,50 @@ private struct AssistantChip: View {
         .padding(.trailing, 6)
         .padding(.vertical, 6)
         .background(Color.cardBackground, in: Capsule())
+    }
+}
+
+/// What gets sent, and to whom, shown before the first message to each service. Continue has the
+/// service remember it was read, then sends what waited on it; Not now sends nothing and leaves
+/// the message as typed. The memo switch is here so it can be turned off before anything goes.
+private struct AssistantSendNotice: View {
+    /// Called once the service has it that the notice was read.
+    var proceed: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    private let controller = AssistantController.shared
+
+    var body: some View {
+        let company = AssistantNotice.recipient(controller.provider)
+        NavigationStack {
+            Form {
+                Section {
+                    Text("Your messages, what's on screen, the files you attach, and the budget details the assistant looks up to answer you go to \(company). Its terms and privacy policy govern how it processes and retains them.")
+                        .font(.subheadline)
+                    Text("Your budget file, conversation history and sign-in are kept on this device. Nothing in the budget changes until you apply a change yourself.")
+                        .font(.subheadline)
+                }
+                Section {
+                    AssistantMemosToggle()
+                }
+                if let error = controller.error { FormErrorView(message: error) }
+            }
+            .navigationTitle("What gets sent")
+            .inlineTitle()
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Not now") {
+                        controller.dismissError()
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Continue") { controller.settings(["told": true], done: { proceed() }) }
+                        .fontWeight(.semibold)
+                        .disabled(controller.busy.contains("settings"))
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 }
 

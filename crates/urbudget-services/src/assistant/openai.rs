@@ -57,6 +57,13 @@ fn input(request: &Request, flat: bool) -> Result<Vec<Value>, Failure> {
                 }
                 out.push(json!({ "type": "message", "role": "user", "content": content }));
             }
+            // The ChatGPT route takes guidance only as `instructions`, so what the app says later
+            // goes in the user's turn, marked as the app's.
+            Item::Note { text } => out.push(json!({
+                "type": "message",
+                "role": "user",
+                "content": [{ "type": "input_text", "text": super::llm::reminder(text) }],
+            })),
             Item::Assistant { text } if !text.is_empty() => out.push(json!({
                 "type": "message",
                 "role": "assistant",
@@ -207,10 +214,18 @@ async fn stream(
                         _ => {}
                     }
                 }
-                "response.completed" => completed = true,
+                "response.completed" => {
+                    completed = true;
+                    reply.usage = usage(&v["response"]["usage"]);
+                }
                 "response.incomplete" => {
                     let reason = v["response"]["incomplete_details"]["reason"].as_str().unwrap_or("unknown").to_owned();
-                    if reply.parts.iter().any(|p| matches!(p, Part::Text(_))) {
+                    reply.usage = usage(&v["response"]["usage"]);
+                    // Out of room to write: what there is of the reply is kept, marked as cut.
+                    if reason == "max_output_tokens" && !reply.parts.is_empty() {
+                        completed = true;
+                        reply.cut = true;
+                    } else if reply.parts.iter().any(|p| matches!(p, Part::Text(_))) {
                         completed = true;
                     } else {
                         return Err(Failure::new(FailureKind::Other, t!("The reply stopped early ({reason}).", reason = reason.replace('_', " "))));
@@ -234,6 +249,15 @@ async fn stream(
     Ok(reply)
 }
 
+/// What a response used. The cached part of what was sent is counted within it.
+fn usage(u: &Value) -> super::llm::Usage {
+    super::llm::Usage {
+        input: u["input_tokens"].as_u64().unwrap_or(0),
+        output: u["output_tokens"].as_u64().unwrap_or(0),
+        cached: u["input_tokens_details"]["cached_tokens"].as_u64().unwrap_or(0),
+    }
+}
+
 fn failure(provider: Provider, status: u16, body: &str) -> Failure {
     let v: Value = serde_json::from_str(body).unwrap_or(Value::Null);
     let e = &v["error"];
@@ -249,7 +273,9 @@ fn failure(provider: Provider, status: u16, body: &str) -> Failure {
 pub fn classify(provider: Provider, status: u16, code: &str, message: &str) -> Failure {
     use FailureKind::*;
     let plan = provider == Provider::Chatgpt;
-    let (kind, text) = if code.contains("usage_limit_exceeded") {
+    let (kind, text) = if code.contains("context_length_exceeded") {
+        (Full, t!("This conversation has grown too long for the model. Carry on in a new one."))
+    } else if code.contains("usage_limit_exceeded") {
         (Limit, t!("You've reached your ChatGPT plan's usage limit."))
     } else if code.contains("user_not_eligible") {
         (NotEligible, t!("This ChatGPT account can't use its plan in other apps. ChatGPT Plus and Pro can."))
@@ -339,14 +365,14 @@ mod tests {
     #[test]
     fn calls_and_results_go_back_with_the_namespace() {
         let items = vec![
-            Item::User { text: "hi".into(), attachments: vec![], context: "Today".into(), at: String::new(), import: None },
+            Item::User { text: "hi".into(), attachments: vec![], context: "Today".into(), at: String::new(), import: None, sent_with: None },
             Item::Raw { provider: "openai".into(), value: json!({ "type": "reasoning", "id": "rs_1" }) },
             Item::Call { call_id: "c1".into(), name: "get_month".into(), arguments: "{}".into() },
             Item::Result { call_id: "c1".into(), output: "{}".into(), step: String::new(), failed: false, proposal: None },
         ];
         let files = Files::empty();
         let tools = specs();
-        let request = Request { model: "m", instructions: "i", items: &items, files: &files, tools: &tools, answer_only: false };
+        let request = Request { model: "m", instructions: "i", items: &items, files: &files, tools: &tools, answer_only: false, kept: true };
         let input = input(&request, false).unwrap();
         assert_eq!(input[0]["content"][0]["text"], "<context>\nToday\n</context>\n\nhi");
         assert_eq!(input[1]["type"], "reasoning");
@@ -361,5 +387,8 @@ mod tests {
         assert_eq!(classify(Provider::Chatgpt, 401, "", "").kind, FailureKind::SignIn);
         assert_eq!(classify(Provider::Chatgpt, 503, "subscription_sharing_usage_unavailable", "").kind, FailureKind::Busy);
         assert!(chat_model("gpt-5.5") && !chat_model("gpt-4o-realtime-preview") && !chat_model("dall-e-3"));
+        assert_eq!(classify(Provider::Openai, 400, "context_length_exceeded", "").kind, FailureKind::Full);
+        let used = usage(&json!({ "input_tokens": 1200, "output_tokens": 80, "input_tokens_details": { "cached_tokens": 1000 } }));
+        assert_eq!((used.input, used.output, used.cached), (1200, 80, 1000));
     }
 }

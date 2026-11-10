@@ -10,8 +10,10 @@ struct AssistantReportView: View {
     @State private var share: AssistantSheetItem<URL>?
     @State private var error: String?
 
+    /// The budget, the period and the day it was written, in the budget's date format.
     private var meta: String {
-        [report.text("budget"), report.text("period"), String(report.text("created").prefix(10))]
+        let created = String(report.text("created").prefix(10))
+        return [report.text("budget"), report.text("period"), created.isEmpty ? "" : Money.date(created)]
             .filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
@@ -58,7 +60,8 @@ struct AssistantReportView: View {
     }
 
     private func saveText() {
-        let name = AssistantExport.fileName(report.text("title"), extension: "md", fallback: "Report")
+        let name = AssistantExport.fileName(report.text("title"), extension: "md",
+                                            fallback: String(localized: "file.report", defaultValue: "Report", comment: "The file name of a saved report that has no title."))
         let body = report.text("body")
         Task {
             do {
@@ -123,53 +126,59 @@ struct AssistantShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
 
-/// Reports a reply to UrBudget. Only the excerpt and explanation in this form are sent.
+/// Reports a reply to UrBudget. Only the excerpt, the explanation and the line of details in
+/// this form are sent. Once it's sent, the form stays with the report's reference to copy.
 struct AssistantReplyReportForm: View {
     var excerpt: String
+    /// The tools the reply's turn had called, for the details line.
+    var tools: [String] = []
     @Environment(\.dismiss) private var dismiss
     private let controller = AssistantController.shared
     @State private var text = ""
     @State private var reason = ""
+    @State private var details = ""
     @State private var started = false
+    /// The sent report's reference, kept on screen until the form is closed.
+    @State private var reference: String?
+    @State private var copied = 0
 
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    Text("Only the excerpt and explanation below will be sent to UrBudget. Edit out anything private before sending.")
-                        .font(.subheadline)
-                }
-                Section {
-                    TextField("Selected excerpt", text: $text, axis: .vertical)
-                        .lineLimit(6...14)
-                        .onChange(of: text) { _, value in text = assistantLimited(value, utf16: 4000) }
-                } header: {
-                    Text("Selected excerpt")
-                } footer: {
-                    Text("\(text.utf16.count) / 4,000")
-                }
-                Section("What went wrong?") {
-                    TextField("What went wrong?", text: $reason, axis: .vertical)
-                        .lineLimit(3...8)
-                        .onChange(of: reason) { _, value in reason = assistantLimited(value, utf16: 1000) }
+                if let reference {
+                    Section {
+                        Label("Report sent · \(reference)", systemImage: "checkmark.circle.fill")
+                            .textSelection(.enabled)
+                        Button("Copy", systemImage: "doc.on.doc") {
+                            UIPasteboard.general.string = reference
+                            copied += 1
+                        }
+                    }
+                } else {
+                    fields
                 }
                 if let error = controller.error, controller.busy.isEmpty { FormErrorView(message: error) }
             }
             .navigationTitle("Report a reply")
             .inlineTitle()
+            .sensoryFeedback(.success, trigger: copied)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        controller.dismissError()
-                        dismiss()
+                    if reference == nil {
+                        Button("Cancel") {
+                            controller.dismissError()
+                            dismiss()
+                        }
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    if controller.busy.contains("reportReply") {
+                    if reference != nil {
+                        Button("Done") { dismiss() }.fontWeight(.semibold)
+                    } else if controller.busy.contains("reportReply") {
                         ProgressView()
                     } else {
                         Button("Send report") {
-                            controller.reportReply(text: text, reason: reason) { dismiss() }
+                            controller.reportReply(text: text, reason: AssistantReportDetails.reason(reason, details: details)) { reference = $0 }
                         }
                         .fontWeight(.semibold)
                         .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -180,8 +189,42 @@ struct AssistantReplyReportForm: View {
                 guard !started else { return }
                 started = true
                 text = assistantLimited(excerpt, utf16: 4000)
+                details = AssistantReportDetails.line(version: AssistantReportDetails.appVersion, provider: controller.provider,
+                                                      model: controller.status?.text("model") ?? "", tools: tools, language: AppLanguage.code)
                 controller.dismissError()
             }
+        }
+    }
+
+    /// What will be sent: the excerpt, the explanation, and the details, each to edit or clear.
+    @ViewBuilder
+    private var fields: some View {
+        Section {
+            Text("Only what you leave in these fields is sent: the reply's text, your explanation and the details.")
+                .font(.subheadline)
+        }
+        Section {
+            TextField("Selected excerpt", text: $text, axis: .vertical)
+                .lineLimit(6...14)
+                .onChange(of: text) { _, value in text = assistantLimited(value, utf16: 4000) }
+        } header: {
+            Text("Selected excerpt")
+        } footer: {
+            Text("\(text.utf16.count) / 4,000")
+        }
+        Section("What went wrong?") {
+            TextField("What went wrong?", text: $reason, axis: .vertical)
+                .lineLimit(3...8)
+                .onChange(of: reason) { _, value in reason = assistantLimited(value, utf16: 1000) }
+        }
+        Section {
+            TextField("Details to include", text: $details, axis: .vertical)
+                .lineLimit(2...6)
+                .font(.footnote)
+        } header: {
+            Text("Details to include")
+        } footer: {
+            Text("Sent with your report. Remove anything you'd rather not send.")
         }
     }
 }

@@ -196,19 +196,41 @@ enum AssistantMarkdown {
 
     // MARK: Inline
 
-    /// Bold, italic, strikethrough, code and links, with links kept only for web addresses.
-    static func inline(_ text: String) -> AttributedString {
+    /// Bold, italic, strikethrough, code and links, with links kept only for web addresses. A
+    /// link's host follows its text ("the bank's page (example.com)") unless the text already
+    /// names it, so friendly words can't hide where a link goes. `showHosts: false` leaves that
+    /// to the caller: a printed report writes the whole address out.
+    static func inline(_ text: String, showHosts: Bool = true) -> AttributedString {
         guard text.contains(where: { "*_`[~\\<".contains($0) }) else { return AttributedString(text) }
         let options = AttributedString.MarkdownParsingOptions(allowsExtendedAttributes: false,
                                                               interpretedSyntax: .inlineOnlyPreservingWhitespace,
                                                               failurePolicy: .returnPartiallyParsedIfPossible)
-        guard var value = try? AttributedString(markdown: text, options: options) else { return AttributedString(text) }
-        let unsafe = value.runs.compactMap { run -> Range<AttributedString.Index>? in
-            guard let link = run.link else { return nil }
-            return ["http", "https"].contains(link.scheme?.lowercased() ?? "") ? nil : run.range
+        guard let value = try? AttributedString(markdown: text, options: options) else { return AttributedString(text) }
+        guard value.runs.contains(where: { $0.link != nil }) else { return value }
+        // Rebuilt run by run: a link that isn't a web address loses its link, and a web link is
+        // followed by its host once its last run is written.
+        var out = AttributedString()
+        var current: URL?
+        var shown = ""
+        func finishLink() {
+            if showHosts, let host = current?.host, !host.isEmpty, !shown.lowercased().contains(host.lowercased()) {
+                out.append(AttributedString(" (\(host))"))
+            }
+            current = nil
+            shown = ""
         }
-        for range in unsafe { value[range].link = nil }
-        return value
+        for run in value.runs {
+            var piece = AttributedString(value[run.range])
+            var web: URL?
+            if let link = run.link, ["http", "https"].contains(link.scheme?.lowercased() ?? "") { web = link }
+            if web == nil { piece.link = nil }
+            if current != web { finishLink() }
+            current = web
+            if web != nil { shown += String(piece.characters) }
+            out.append(piece)
+        }
+        finishLink()
+        return out
     }
 
     // MARK: Printing
@@ -281,7 +303,7 @@ enum AssistantMarkdown {
 
     /// Inline formatting as HTML; a link is written out as its text and address, as Android prints it.
     static func inlineHTML(_ text: String) -> String {
-        let value = inline(text)
+        let value = inline(text, showHosts: false)
         var out = ""
         for run in value.runs {
             var piece = escape(String(value[run.range].characters))

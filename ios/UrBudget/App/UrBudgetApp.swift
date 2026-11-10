@@ -72,8 +72,11 @@ struct RootView: View {
             case .active:
                 store.foreground()
                 startForegroundWork()
+                AssistantController.shared.enterForeground()
             case .background:
-                HostEvents.shared.stop()
+                // A reply still being written keeps its events coming for the time iOS grants
+                // it; the assistant stops them itself when the reply ends or that time is up.
+                if !AssistantController.shared.enterBackground() { HostEvents.shared.stop() }
                 sync.enterBackground()
             default:
                 break
@@ -221,7 +224,13 @@ enum AppTab: Hashable { case budget, transactions, accounts, reports, more }
 
 /// Budget, Transactions, Accounts and Reports are tabs; More holds everything else.
 struct MainTabs: View {
+    @Environment(BudgetStore.self) private var store
     @State private var tab = LaunchRoute.initialTab
+    /// What the Transactions tab opens on. A card of the assistant can ask to see some
+    /// transactions, and the tab then starts again on those alone; `registerShown` counts the
+    /// times, so asking for the same ones again shows them again.
+    @State private var register = RegisterTarget()
+    @State private var registerShown = 0
 
     private static let tabs: [(tab: AppTab, title: String, symbol: String)] = [
         (.budget, String(localized: "Budget"), "square.grid.2x2"),
@@ -241,6 +250,26 @@ struct MainTabs: View {
                         .hidden()
                 }
             }
+            // A card of the assistant asked to see something, as its sheet closed.
+            .onChange(of: AppActions.shared.destination) { _, destination in go(destination) }
+            // The assistant, asked for by a message over the tabs (an import's "Categorize with
+            // the assistant"), which no screen of its own could present.
+            .sheet(item: Binding(get: { AppActions.shared.asking }, set: { AppActions.shared.asking = $0 })) { AssistantView(request: $0) }
+    }
+
+    /// Goes where a card of the assistant asked: the Transactions tab showing its transactions
+    /// alone, or else the Budget tab on its month.
+    private func go(_ destination: AppActions.Destination?) {
+        guard let destination else { return }
+        AppActions.shared.destination = nil
+        if !destination.transactions.isEmpty {
+            register = RegisterTarget(only: destination.transactions)
+            registerShown += 1
+            tab = .transactions
+        } else {
+            if Dates.isMonth(destination.month) { store.selectMonth(destination.month) }
+            tab = .budget
+        }
     }
 
     /// On iPad (iOS 18 and later) the tabs can also open as a sidebar; on iPhone they're the tab bar.
@@ -264,7 +293,7 @@ struct MainTabs: View {
     @ViewBuilder private func screen(_ tab: AppTab) -> some View {
         switch tab {
         case .budget: BudgetView()
-        case .transactions: NavigationStack { TransactionsList(target: RegisterTarget()) }
+        case .transactions: NavigationStack { TransactionsList(target: register) }.id(registerShown)
         case .accounts: AccountsView()
         case .reports: ReportsView()
         case .more: MoreView()
@@ -279,19 +308,31 @@ struct ToastView: View {
     var body: some View {
         ZStack {
             if let toast = store.toast {
-                HStack(spacing: 12) {
-                    Text(toast.message).font(.subheadline).foregroundStyle(Color.primary).frame(maxWidth: .infinity, alignment: .leading)
-                    if let action = toast.action {
-                        Button(action.label) {
-                            store.toast = nil
-                            action.run()
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 12) {
+                        Text(toast.message).font(.subheadline).foregroundStyle(Color.primary).frame(maxWidth: .infinity, alignment: .leading)
+                        if let action = toast.action {
+                            Button(action.label) {
+                                store.toast = nil
+                                action.run()
+                            }
+                            .font(.subheadline.bold())
+                            .foregroundStyle(Color.urAccent)
+                        } else if toast.undo {
+                            Button("Undo") {
+                                store.toast = nil
+                                store.undo()
+                            }
+                            .font(.subheadline.bold())
+                            .foregroundStyle(Color.urAccent)
                         }
-                        .font(.subheadline.bold())
-                        .foregroundStyle(Color.urAccent)
-                    } else if toast.undo {
-                        Button("Undo") {
+                    }
+                    // Something more the message offers, on a line of its own: its words are
+                    // longer than there's room for beside Undo.
+                    if let offer = toast.offer {
+                        Button(offer.label) {
                             store.toast = nil
-                            store.undo()
+                            offer.run()
                         }
                         .font(.subheadline.bold())
                         .foregroundStyle(Color.urAccent)
@@ -309,8 +350,8 @@ struct ToastView: View {
                     // VoiceOver reads it out; one with Undo stays long enough to reach the button.
                     let offer = toast.action?.label ?? (toast.undo ? String(localized: "Undo") : nil)
                     AccessibilityNotification.Announcement(announcement(toast.message, offer: offer)).post()
-                    // An offer (Add rule, Apply) waits longest, as the desktop's does.
-                    let seconds = toast.action != nil ? 10 : toast.undo ? 8 : 4
+                    // An offer (Add rule, Apply, the assistant) waits longest, as the desktop's does.
+                    let seconds = toast.action != nil || toast.offer != nil ? 10 : toast.undo ? 8 : 4
                     try? await Task.sleep(for: .seconds(UIAccessibility.isVoiceOverRunning && offer != nil ? 14 : seconds))
                     if store.toast?.id == toast.id { store.toast = nil }
                 }

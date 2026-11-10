@@ -125,28 +125,52 @@ export async function printReport(report: ReportView, mode: "frame" | "page" = f
   }
 }
 
-/** A full-size preview of a report, with Save as PDF. */
+/** A full-size preview of a report, to print or save as a PDF. */
 export function ReportPreview({ threadId, proposalId, onClose }: { threadId: string; proposalId: string; onClose: () => void }) {
   const [report, setReport] = useState<ReportView | null>(null);
   const [error, setError] = useState("");
   const close = useRef(onClose);
   close.current = onClose;
+  const dialog = useRef<HTMLDivElement>(null);
+  // Whatever had the keyboard when the preview opened (the card's Preview button) gets it back.
+  const opener = useRef(typeof document === "undefined" ? null : (document.activeElement as HTMLElement | null));
+  const controls = () => [...(dialog.current?.querySelectorAll<HTMLElement>("button:not(:disabled)") ?? [])];
   useEffect(() => {
     void assistant.report(threadId, proposalId).then(setReport).catch((e) => setError(errorText(e)));
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") close.current();
+      // The keyboard stays in the preview: Tab goes round its controls.
+      if (e.key !== "Tab") return;
+      const stops = controls();
+      const at = stops.indexOf(document.activeElement as HTMLElement);
+      if (at >= 0 && at !== (e.shiftKey ? 0 : stops.length - 1)) return;
+      e.preventDefault();
+      stops[e.shiftKey ? stops.length - 1 : 0]?.focus();
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, [threadId, proposalId]);
+  useEffect(() => {
+    const from = opener.current;
+    return () => {
+      if (from?.isConnected) from.focus();
+    };
+  }, []);
+  // Its first control that can be used takes the keyboard: Close while the report is on its way,
+  // then Print once it's there (unless the user has already gone somewhere else in it).
+  useEffect(() => {
+    const active = document.activeElement as HTMLElement | null;
+    const stops = controls();
+    if (!dialog.current?.contains(active) || (report && active === stops[stops.length - 1])) stops[0]?.focus();
+  }, [report, error]);
   return createPortal(
     <div className="report-shade" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="report-window" role="dialog" aria-modal="true" aria-label={report?.title ?? tc("noun", "Report")}>
+      <div ref={dialog} className="report-window" role="dialog" aria-modal="true" aria-label={report?.title ?? tc("noun", "Report")}>
         <div className="report-toolbar">
           <strong>{report?.title ?? tc("noun", "Report")}</strong>
           <span className="report-toolbar-hint">{t("Preview")}</span>
-          <button className="primary small" disabled={!report} autoFocus onClick={() => report && void printReport(report)}>
-            <FileDown size={14} aria-hidden /> {t("Save as PDF")}
+          <button className="primary small" disabled={!report} onClick={() => report && void printReport(report)}>
+            <FileDown size={14} aria-hidden /> {t("Print or save as PDF")}
           </button>
           <button className="icon-button" aria-label={t("Close the preview")} title={t("Close (Esc)")} onClick={onClose}>
             <X size={16} />

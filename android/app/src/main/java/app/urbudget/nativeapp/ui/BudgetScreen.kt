@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -72,9 +73,16 @@ internal data class RegisterTarget(val category: String = "", val account: Strin
  */
 @Composable
 internal fun BudgetScreen(budget: JSONObject, summary: JSONObject?, month: String, onMonth: (String) -> Unit, vm: BudgetViewModel,
-                          bar: @Composable RowScope.() -> Unit, onTransactions: (RegisterTarget) -> Unit, onPayCard: (String) -> Unit) {
+                          bar: @Composable RowScope.() -> Unit, onTransactions: (RegisterTarget) -> Unit, onPayCard: (String) -> Unit,
+                          showing: Showing? = null) {
     val currency = budget.text("currency")
     var filter by rememberSaveable { mutableStateOf("all") }
+    // Categories an assistant's card named ("Show in the budget"): marked, the first in view, until the tab is left.
+    var marked by remember { mutableStateOf(emptySet<String>()) }
+    var shownKey by rememberSaveable { mutableIntStateOf(0) }
+    val budgetList = rememberLazyListState()
+    val askAssistant = LocalAssistantAsk.current
+    val coverPrompt = stringResource(R.string.assistant_cover_prompt)
     var showHidden by rememberSaveable { mutableStateOf(false) }
     // Hidden categories start folded, as on the desktop.
     var collapsed by rememberSaveable { mutableStateOf(listOf(HiddenGroup)) }
@@ -90,6 +98,8 @@ internal fun BudgetScreen(budget: JSONObject, summary: JSONObject?, month: Strin
     var deletingGroup by remember { mutableStateOf<String?>(null) }
     val toast = LocalToast.current
     BackHandler(filter != "all") { filter = "all" }
+    // The marks are for finding the rows: once a category is opened they've done that.
+    LaunchedEffect(openCategory) { if (openCategory != null) marked = emptySet() }
     // The model for this snapshot: from the cache when the tab is revisited, else built on a worker.
     // While a newer snapshot builds, the last model stays on screen.
     // The model has words in it (what a target needs), so a new language builds a new one.
@@ -119,7 +129,23 @@ internal fun BudgetScreen(budget: JSONObject, summary: JSONObject?, month: Strin
     }
     val (assignedWidth, availableWidth) = widths
     val current = YearMonth.now().toString()
-    Column(Modifier.fillMaxSize()) {
+    // On a large screen an open category docks beside the budget rather than floating over it, so the
+    // row tapped stays in view and another can be tapped straight away. Beside a hinge the budget keeps
+    // to its side all along. The budget stays at one place in the layout, so it keeps its scroll.
+    val split = LocalSplitList.current
+    val docked = split != null && (openCategory != null || split.hinge)
+    @Composable
+    fun categorySheet(id: String) = key(id) {
+        val category = remember(budget, id) { budget.row("categories", id) }
+        val total = remember(summary, id) { summary?.rows("categories")?.firstOrNull { it.text("id") == id } }
+        if (category != null) CategorySheet(category, budget, total, summary, month, vm, assignOnOpen, close = { openCategory = null },
+            move = { direction -> moving = MoveRequest(id, direction) },
+            transactions = { target -> openCategory = null; onTransactions(target) },
+            payCard = { account -> openCategory = null; onPayCard(account) })
+    }
+    Row(Modifier.fillMaxSize()) {
+    Box(if (docked) Modifier.width(split!!.list).fillMaxHeight() else Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.TopCenter) {
+    Column(Modifier.widthIn(max = if (docked) Dp.Infinity else ReadableWidth).fillMaxSize()) {
         PhoneTopBar(leading = {
             Box {
                 RoundIconButton(Icons.Outlined.FilterList, stringResource(R.string.budget_views), { viewsOpen = true }, tint = if (filter != "all") ur.accent else ur.text, dot = filter != "all")
@@ -142,14 +168,55 @@ internal fun BudgetScreen(budget: JSONObject, summary: JSONObject?, month: Strin
             LinearProgressIndicator(Modifier.fillMaxWidth().padding(Gutter), color = ur.accent)
             return@Column
         }
-        LazyColumn(Modifier.fillMaxSize().testTag("budget-list"), contentPadding = PaddingValues(bottom = DockRoom)) {
+        // On a large screen the budget is a card of its own, inset from its pane: the table's first band
+        // rounds at the top and its last row at the foot, and the cards above line up with its edges.
+        val wide = split != null
+        val cardInset = if (wide) 0.dp else Gutter
+        val uncategorizedShown = shown.uncategorized < 0 && (filter == "all" || filter == "overspent")
+        val tableKeys = buildList {
+            if (uncategorizedShown) add("uncategorized")
+            visibleGroups.forEach { (group, rows) ->
+                add("group:${group.name}")
+                if (group.name !in collapsed) {
+                    rows.forEach { add(it.id) }
+                    if (rows.isEmpty() && group.name != HiddenGroup) add("add:${group.name}")
+                }
+            }
+        }
+        fun edge(key: String): Modifier = if (!wide) Modifier else when {
+            tableKeys.size == 1 && key == tableKeys[0] -> Modifier.clip(RoundedCornerShape(20.dp))
+            key == tableKeys.firstOrNull() -> Modifier.clip(PaneListShape)
+            key == tableKeys.lastOrNull() -> Modifier.clip(PaneListFoot)
+            else -> Modifier
+        }
+        // "Show in the budget" on an assistant's card: its categories are marked, with whatever hid them
+        // out of the way (a view, a folded group, Hidden), and the first of them comes into view. Each
+        // request is taken once, so coming back to the tab doesn't mark them again.
+        val tableRows by rememberUpdatedState(tableKeys)
+        LaunchedEffect(showing?.key) {
+            val target = showing?.takeIf { it.key != shownKey && it.what.transactions.isEmpty() } ?: return@LaunchedEffect
+            shownKey = target.key
+            val wanted = target.what.categories.toSet()
+            val groups = shown.groups.filter { group -> group.rows.any { it.id in wanted } }.map { it.name }
+            if (groups.isEmpty()) return@LaunchedEffect
+            filter = "all"
+            if (HiddenGroup in groups) showHidden = true
+            collapsed = collapsed - groups.toSet()
+            marked = wanted
+            // A frame for the list to have the rows (the view, a fold or Hidden may just have changed), and one for it to be laid out.
+            repeat(2) { withFrameNanos { } }
+            // The table is the list's last items, so a row's place in the list is its place in the table after whatever stands above it.
+            val row = tableRows.indexOfFirst { it in wanted }
+            if (row >= 0) budgetList.animateScrollToItem((budgetList.layoutInfo.totalItemsCount - tableRows.size + row).coerceAtLeast(0))
+        }
+        LazyColumn(Modifier.fillMaxSize().then(if (wide) Modifier.padding(horizontal = 10.dp) else Modifier).testTag("budget-list"), state = budgetList, contentPadding = PaddingValues(bottom = DockRoom)) {
             if (month != current) item(key = "today", contentType = "today") {
                 Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.Center) {
                     FilterPill(stringResource(R.string.month_back_to, shortMonthLabel(current)), false, { onMonth(current) }, Icons.Outlined.Today)
                 }
             }
             item(key = "unassigned", contentType = "banner") {
-                UnassignedBanner(shown.rta, currency, Modifier.padding(horizontal = Gutter).padding(top = 4.dp, bottom = 12.dp)) { assigning = true }
+                UnassignedBanner(shown.rta, currency, Modifier.padding(horizontal = cardInset).padding(top = 4.dp, bottom = 12.dp)) { assigning = true }
             }
             if (shown.futureAssigned != 0L || shown.shortfalls.isNotEmpty()) item(key = "future", contentType = "notice") {
                 val text = buildList {
@@ -159,34 +226,38 @@ internal fun BudgetScreen(budget: JSONObject, summary: JSONObject?, month: Strin
                         add(stringResource(R.string.future_move_back))
                     } else if (shown.futureAssigned > 0 && shown.futureReadyToAssign + shown.futureAssigned >= 0) add(stringResource(R.string.future_held_back))
                 }.joinToString(" ")
-                Notice(text, Modifier.padding(horizontal = Gutter).padding(bottom = 12.dp), tone = if (shown.shortfalls.isNotEmpty()) "negative" else "info",
+                Notice(text, Modifier.padding(horizontal = cardInset).padding(bottom = 12.dp), tone = if (shown.shortfalls.isNotEmpty()) "negative" else "info",
                     icon = if (shown.shortfalls.isNotEmpty()) Icons.Outlined.WarningAmber else Icons.Outlined.Info)
             }
             if (shown.needsCategory.total > 0) item(key = "needs", contentType = "notice") {
                 val n = shown.needsCategory.total
                 Notice(countText(R.plurals.needs_category_notice, n, money(shown.needsCategory.amount, currency)),
-                    Modifier.padding(horizontal = Gutter).padding(bottom = 12.dp), tone = "attention", action = stringResource(R.string.common_review),
+                    Modifier.padding(horizontal = cardInset).padding(bottom = 12.dp), tone = "attention", action = stringResource(R.string.common_review),
                     onAction = { onTransactions(RegisterTarget(category = "__none")) })
             }
             val overspent = counts["overspent"] ?: 0
             if (overspent > 0 && filter == "all") item(key = "overspent", contentType = "notice") {
-                OverspentCard(overspent, Modifier.padding(horizontal = Gutter).padding(bottom = 12.dp)) { filter = "overspent" }
+                OverspentCard(overspent, Modifier.padding(horizontal = cardInset).padding(bottom = 12.dp),
+                    // The assistant opens with the request in its message field, for the user to send.
+                    cover = askAssistant?.let { ask -> { ask.request(coverPrompt, emptyList()) } }) { filter = "overspent" }
             }
             if (filter != "all") item(key = "view", contentType = "view") {
-                Row(Modifier.padding(horizontal = Gutter).padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.padding(horizontal = cardInset).padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.budget_view_showing) + " ", color = ur.text2, style = MaterialTheme.typography.bodyMedium)
                     Text(stringResource(BudgetViews.first { it.first == filter }.second), Modifier.weight(1f), color = ur.text, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                     FilterPill(stringResource(R.string.view_show_all), false, { filter = "all" }, Icons.Outlined.Close)
                 }
             }
             if (shown.monthNote != null && filter == "all") item(key = "note", contentType = "note") {
-                Row(Modifier.padding(horizontal = Gutter).padding(bottom = 12.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(ur.surface).clickable { planning = true }.padding(14.dp)) {
+                Row(Modifier.padding(horizontal = cardInset).padding(bottom = 12.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(ur.surface).clickable { planning = true }.padding(14.dp)) {
                     Icon(Icons.AutoMirrored.Outlined.Notes, null, Modifier.size(20.dp), tint = ur.muted)
                     Text(shown.monthNote, Modifier.padding(start = 10.dp), color = ur.text2, style = MaterialTheme.typography.bodyMedium, maxLines = 4, overflow = TextOverflow.Ellipsis)
                 }
             }
-            if (shown.uncategorized < 0 && (filter == "all" || filter == "overspent")) item(key = "uncategorized", contentType = "category") {
-                UncategorizedLine(shown.uncategorized, shown.uncategorizedCredit > 0, currency, assignedWidth, availableWidth) { onTransactions(RegisterTarget(category = "__none")) }
+            if (uncategorizedShown) item(key = "uncategorized", contentType = "category") {
+                Box(edge("uncategorized")) {
+                    UncategorizedLine(shown.uncategorized, shown.uncategorizedCredit > 0, currency, assignedWidth, availableWidth) { onTransactions(RegisterTarget(category = "__none")) }
+                }
             }
             if (visibleGroups.isEmpty()) item(key = "empty", contentType = "empty") {
                 if (filter == "all") EmptyState(stringResource(R.string.budget_empty_title), stringResource(R.string.budget_empty_detail), stringResource(R.string.category_add)) { adding = "" }
@@ -196,7 +267,7 @@ internal fun BudgetScreen(budget: JSONObject, summary: JSONObject?, month: Strin
                 val open = group.name !in collapsed
                 item(key = "group:${group.name}", contentType = "group") {
                     val hiddenToast = stringResource(R.string.group_hid_categories, group.name)
-                    GroupBand(groupTitle(group.name), open, rows, currency, assignedWidth, availableWidth,
+                    Box(edge("group:${group.name}")) { GroupBand(groupTitle(group.name), open, rows, currency, assignedWidth, availableWidth,
                         toggle = { collapsed = if (open) collapsed + group.name else collapsed - group.name },
                         menu = if (group.name == HiddenGroup) null else ({ action ->
                             when (action) {
@@ -212,18 +283,20 @@ internal fun BudgetScreen(budget: JSONObject, summary: JSONObject?, month: Strin
                                 }
                                 "up", "down" -> moveGroup(budget, vm, group.name, action == "up")
                             }
-                        }))
+                        })) }
                 }
                 if (open) {
                     items(rows, key = { it.id }, contentType = { "category" }) { row ->
-                        CategoryLine(row, assignedWidth, availableWidth,
-                            open = { assignOnOpen = false; openCategory = row.id },
-                            assign = { assignOnOpen = true; openCategory = row.id },
-                            move = { moving = MoveRequest(row.id, if (row.available < 0) "from" else "to") },
-                            last = row === rows.last())
+                        Box(edge(row.id)) {
+                            CategoryLine(row, assignedWidth, availableWidth,
+                                open = { assignOnOpen = false; openCategory = row.id },
+                                assign = { assignOnOpen = true; openCategory = row.id },
+                                move = { moving = MoveRequest(row.id, if (row.available < 0) "from" else "to") },
+                                last = row === rows.last(), chosen = docked && row.id == openCategory || row.id in marked)
+                        }
                     }
                     if (rows.isEmpty() && group.name != HiddenGroup) item(key = "add:${group.name}", contentType = "add") {
-                        Column(Modifier.background(ur.surface)) {
+                        Column(edge("add:${group.name}").background(ur.surface)) {
                             ListRow(stringResource(R.string.category_add_a), icon = Icons.Outlined.Add, titleColor = ur.accent, onClick = { adding = group.name }, chevron = false)
                         }
                     }
@@ -231,14 +304,17 @@ internal fun BudgetScreen(budget: JSONObject, summary: JSONObject?, month: Strin
             }
         }
     }
-    openCategory?.let { id ->
-        val category = remember(budget, id) { budget.row("categories", id) }
-        val total = remember(summary, id) { summary?.rows("categories")?.firstOrNull { it.text("id") == id } }
-        if (category != null) CategorySheet(category, budget, total, summary, month, vm, assignOnOpen, close = { openCategory = null },
-            move = { direction -> moving = MoveRequest(id, direction) },
-            transactions = { target -> openCategory = null; onTransactions(target) },
-            payCard = { account -> openCategory = null; onPayCard(account) })
     }
+    if (docked) {
+        Spacer(Modifier.width(split!!.gap))
+        Box(Modifier.weight(1f).fillMaxHeight()) {
+            val id = openCategory
+            if (id == null) FoldSideHint()
+            else CompositionLocalProvider(LocalSheetPane provides true) { categorySheet(id) }
+        }
+    }
+    }
+    if (!docked) openCategory?.let { id -> categorySheet(id) }
     moving?.let { request -> MoveMoneySheet(request, budget, summary, month, vm) { moving = null } }
     if (assigning && summary != null) UnassignedSheet(budget, summary, month, vm, close = { assigning = false },
         assignTo = { assigning = false; moving = MoveRequest(Unassigned, if (summary.optLong("readyToAssign") < 0) "from" else "to") },
@@ -298,16 +374,24 @@ private fun UnassignedBanner(amount: Long, currency: String, modifier: Modifier 
     }
 }
 
+/** How many categories are overspent, with Show for the view of them and, with [cover], the assistant to cover them with. */
 @Composable
-private fun OverspentCard(count: Int, modifier: Modifier = Modifier, show: () -> Unit) {
-    Row(modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(ur.surface).clickable(onClick = show).padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(28.dp).clip(CircleShape).background(ur.negative), contentAlignment = Alignment.Center) {
-            Text("$count", color = if (ur.dark) ur.bg else Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+private fun OverspentCard(count: Int, modifier: Modifier = Modifier, cover: (() -> Unit)? = null, show: () -> Unit) {
+    Column(modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(ur.surface).clickable(onClick = show).padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(28.dp).clip(CircleShape).background(ur.negative), contentAlignment = Alignment.Center) {
+                Text("$count", color = if (ur.dark) ur.bg else Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            }
+            Text(pluralStringResource(R.plurals.overspent_categories, count), Modifier.weight(1f).padding(start = 12.dp), color = ur.text,
+                style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+            TextButton(show) { Text(stringResource(R.string.common_show), color = ur.accent, fontWeight = FontWeight.Bold) }
         }
-        Text(pluralStringResource(R.plurals.overspent_categories, count), Modifier.weight(1f).padding(start = 12.dp), color = ur.text,
-            style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-        TextButton(show) { Text(stringResource(R.string.common_show), color = ur.accent, fontWeight = FontWeight.Bold) }
+        // Under the count, at the line's start: the words are too long to stand beside Show on a phone.
+        if (cover != null) TextButton(cover, Modifier.offset(x = (-8).dp).testTag("overspent-cover")) {
+            Icon(Icons.Outlined.AutoAwesome, null, Modifier.size(18.dp), tint = ur.accent)
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.assistant_cover), color = ur.accent, fontWeight = FontWeight.SemiBold)
+        }
     }
 }
 
@@ -383,10 +467,12 @@ private fun GroupBand(name: String, open: Boolean, rows: List<CategoryRowModel>,
 
 /** A category: its name over what it needs (only when there's something to do), Assigned, and the pill. */
 @Composable
-private fun CategoryLine(row: CategoryRowModel, assignedWidth: Dp, availableWidth: Dp, open: () -> Unit, assign: () -> Unit, move: () -> Unit, last: Boolean) {
+private fun CategoryLine(row: CategoryRowModel, assignedWidth: Dp, availableWidth: Dp, open: () -> Unit, assign: () -> Unit, move: () -> Unit, last: Boolean,
+                         chosen: Boolean = false) {
     // Settings can hide what targets still need; overspending always shows.
     val detail = if (row.needs && !LocalPreferences.current.showNeeded) null else row.detail
-    Column(Modifier.background(ur.surface)) {
+    // The category docked beside the budget is tinted, as the open transaction is beside the register.
+    Column(Modifier.background(if (chosen) ur.accentSoft else ur.surface)) {
         Row(Modifier.fillMaxWidth().testTag("category:${row.id}").clickable(onClickLabel = stringResource(R.string.common_open_named, row.name), onClick = open).heightIn(min = 58.dp).padding(start = Gutter, end = Gutter, top = 9.dp, bottom = 9.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(end = 8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {

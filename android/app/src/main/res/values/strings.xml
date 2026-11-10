@@ -291,6 +291,15 @@
     <string name="register_no_matches_detail">Nothing matches this search and these filters.</string>
     <string name="register_empty_title">No transactions here</string>
     <string name="register_empty_detail">Add a purchase, income, or a transfer to see your money in motion.</string>
+    <string name="register_pane_title">No transaction open</string>
+    <string name="register_pane_detail">Tap one in the list to see or change it here.</string>
+    <string name="sheet_pane">Sheet</string>
+    <string name="fold_side_title">This side is for what you open</string>
+    <string name="fold_side_detail">A category, the assistant or a new transaction opens here, clear of the fold.</string>
+    <string name="transaction_unsaved_title">Discard your changes?</string>
+    <string name="transaction_unsaved_message">This transaction has changes that aren\'t saved.</string>
+    <string name="transaction_unsaved_discard">Discard</string>
+    <string name="transaction_unsaved_keep">Keep editing</string>
     <string name="bulk_categorize">Categorize %1$s</string>
     <plurals name="delete_transactions_title">
         <item quantity="one">Delete %1$s transactions?</item>
@@ -1018,6 +1027,7 @@
     <string name="reports_spending_breakdown">Spending breakdown</string>
     <string name="reports_nothing_spent">Nothing spent yet this month.</string>
     <string name="reports_all">All reports</string>
+    <string name="reports_overview">Overview</string>
     <string name="reports_uncategorized_notice">%1$s of spending still needs a category. It is included in these totals.</string>
     <string name="reports_all_budget_accounts">All budget accounts</string>
     <string name="reports_all_accounts">All accounts</string>
@@ -1795,13 +1805,11 @@
     <!-- A step the assistant couldn't complete, then its description. -->
     <string name="assistant_step_failed">Couldn’t complete: %1$s</string>
     <string name="assistant_reply_stopped">Reply stopped</string>
-    <string name="assistant_you">You</string>
     <string name="assistant_couldnt_finish">Couldn’t finish</string>
     <string name="assistant_try_again">Try again</string>
     <string name="assistant_report_reply">Report reply</string>
     <string name="assistant_working">Working…</string>
     <string name="assistant_continue_reply">Continue interrupted reply</string>
-    <string name="assistant_remove_attachment">Remove attachment</string>
     <plurals name="assistant_selected_transactions">
         <item quantity="one">%1$s selected transactions</item>
         <item quantity="other">%1$s selected transactions</item>
@@ -1822,8 +1830,6 @@
     <string name="assistant_clear">Clear</string>
     <string name="assistant_done_count">Done (%1$s)</string>
     <string name="assistant_error_title">Couldn’t complete that</string>
-    <string name="assistant_applied_title">✓ Applied: %1$s</string>
-    <string name="assistant_discarded_title">Discarded: %1$s</string>
     <string name="assistant_undo_proposal">Undo this proposal</string>
     <string name="assistant_previous_rows">Previous rows</string>
     <string name="assistant_next_rows">Next rows</string>
@@ -1835,8 +1841,6 @@
     </plurals>
     <!-- A check the engine ran that did not pass, then what it says. -->
     <string name="assistant_check">Check: %1$s</string>
-    <string name="assistant_dismiss">Dismiss</string>
-    <string name="assistant_read_report">Read report · Print / PDF</string>
     <plurals name="assistant_review_import_rows">
         <item quantity="one">Review %1$s import rows</item>
         <item quantity="other">Review %1$s import rows</item>
@@ -1847,9 +1851,8 @@
     <string name="assistant_apply_changes">Apply reviewed changes</string>
     <string name="assistant_ask_changes">Ask for changes</string>
     <string name="assistant_discard">Discard</string>
-    <string name="assistant_applied">✓ Applied</string>
+    <string name="assistant_applied">Applied</string>
     <string name="assistant_discarded">Discarded</string>
-    <string name="assistant_could_not_apply">Could not apply</string>
     <!-- While a proposal waits, each of its parts can be left out with its checkbox or changed with its pencil. -->
     <!-- Apply when some parts are left out: how many of them it makes. -->
     <string name="assistant_apply_some">Apply %1$s of %2$s</string>
@@ -1861,12 +1864,10 @@
     <string name="assistant_amount_required">Enter an amount.</string>
     <!-- Fixes the assistant proposes for a bank file being imported. -->
     <string name="assistant_fix_apply">Apply to the import</string>
-    <string name="assistant_fix_apply_from_import">Apply from the import</string>
     <string name="assistant_fix_apply_some">Apply %1$s of %2$s to the import</string>
     <string name="assistant_fix_each_line">Each applies only to a line that hasn\'t changed.</string>
     <string name="assistant_fix_open_import">Open the import these fixes are for.</string>
     <string name="assistant_fix_other_import">These fixes are for another import.</string>
-    <string name="assistant_fix_applied">✓ Applied to the import</string>
     <string name="assistant_export_report_tables">Export report tables to Excel</string>
     <string name="assistant_save_text">Save text</string>
     <string name="assistant_share_report">Share report</string>
@@ -1874,7 +1875,7 @@
     <string name="assistant_print">Print / PDF</string>
     <string name="assistant_report_a_reply">Report a reply</string>
     <string name="assistant_send_report">Send report</string>
-    <string name="assistant_report_note">Only the excerpt and explanation below will be sent to UrBudget. Edit out anything private before sending.</string>
+    <string name="assistant_report_note">Only what you leave in these fields is sent: the reply\'s text, your explanation and the details.</string>
     <string name="assistant_excerpt">Selected excerpt</string>
     <string name="assistant_what_went_wrong">What went wrong?</string>
     <string name="assistant_model_default">Provider default</string>
@@ -1883,7 +1884,7 @@
     <string name="assistant_provider_chatgpt">ChatGPT plan · browser sign-in</string>
     <string name="assistant_provider_openai">OpenAI API key</string>
     <string name="assistant_provider_anthropic">Anthropic API key</string>
-    <string name="assistant_sign_in_browser">Sign in in your browser, then return here. Your ChatGPT plan must allow this app\'s usage.</string>
+    <string name="assistant_sign_in_browser">Sign in with your browser, then return here. Your ChatGPT plan must allow this app\'s usage.</string>
     <string name="assistant_signed_in">Signed in</string>
     <!-- The email address of the ChatGPT account. -->
     <string name="assistant_signed_in_as">Signed in %1$s</string>
@@ -1923,9 +1924,6 @@
     <string name="assistant_action_failed">The assistant could not complete that action.</string>
     <string name="assistant_attach_limit">Attach up to five files per message.</string>
     <string name="assistant_select_limit">Select up to 200 transactions per message.</string>
-    <string name="assistant_proposal_applied">Proposal applied</string>
-    <string name="assistant_budget_changed_review">Your budget changed. Review the refreshed proposal before applying it.</string>
-    <string name="assistant_budget_changed_undo">Your budget changed after this proposal. Use the budget\'s undo history to review subsequent changes.</string>
     <!-- The reference number UrBudget gave the report. -->
     <string name="assistant_report_sent">Report sent · %1$s</string>
     <string name="assistant_file_too_large">Choose a file smaller than 25 MiB.</string>
@@ -2495,6 +2493,11 @@
     <string name="bank_texts_apply_add">Add to the review</string>
     <string name="bank_texts_apply_remember">Remember it</string>
     <string name="bank_texts_apply_limit">Set the limit</string>
+    <!-- Texts an "add" card named that aren't on the phone when it's applied: the rest are added, and this says how many weren't. -->
+    <plurals name="bank_texts_gone">
+        <item quantity="one">%1$s text couldn’t be found on this phone any more, so it wasn’t added.</item>
+        <item quantity="other">%1$s texts couldn’t be found on this phone any more, so they weren’t added.</item>
+    </plurals>
     <!-- Under an account in Balances after adding: the bank's figure in the review's latest text that gives one. %1$s the figure, %2$s its date, %3$s an amount. -->
     <string name="sms_bank_matches">Matches the bank’s %1$s on %2$s</string>
     <string name="sms_bank_differs">The bank said %1$s on %2$s: %3$s different</string>
@@ -2515,4 +2518,102 @@
     <string name="assistant_steps_fewer">Show fewer</string>
     <string name="assistant_copy_reply">Copy reply</string>
     <string name="assistant_add_to_message">Add a file or transactions</string>
+    <!-- The notice before the first message to a service: what's sent, and to whom. %1$s is the company, OpenAI or Anthropic. -->
+    <string name="assistant_notice_title">What gets sent</string>
+    <string name="assistant_notice_sent">Your messages, what’s on screen, the files you attach, and the budget details the assistant looks up to answer you go to %1$s. Its terms and privacy policy govern how it processes and retains them.</string>
+    <string name="assistant_notice_kept">Your budget file, conversation history and sign-in are kept on this device. Nothing in the budget changes until you apply a change yourself.</string>
+    <!-- Above the message field: what goes with the next message, each part with its own ×. A sent message shows the same line. -->
+    <string name="assistant_with_message">With this message</string>
+    <string name="assistant_with_import">The file being imported</string>
+    <!-- By the message field when more than 200 transactions were selected where they were handed to the assistant. %1$s is how many were selected. -->
+    <plurals name="assistant_only_first">
+        <item quantity="one">Only the first 200 of %1$s selected transactions are attached.</item>
+        <item quantity="other">Only the first 200 of %1$s selected transactions are attached.</item>
+    </plurals>
+    <string name="assistant_jump_latest">Jump to latest</string>
+    <string name="assistant_checking">Checking the assistant…</string>
+    <string name="assistant_not_loaded">The assistant couldn\'t be loaded.</string>
+    <string name="assistant_cut">The reply was cut short.</string>
+    <string name="assistant_long">This conversation is getting long, so replies are slower and use more of your plan or key.</string>
+    <string name="assistant_continue_new">Continue in a new conversation</string>
+    <!-- The first line of a conversation that carries on another. %1$s is the earlier conversation's title. -->
+    <string name="assistant_continued_from">Continued from “%1$s”</string>
+    <string name="assistant_rename">Rename conversation</string>
+    <string name="assistant_conversation_name">Conversation name</string>
+    <string name="assistant_search_conversations">Search conversations</string>
+    <string name="assistant_no_match">No conversation matches.</string>
+    <!-- Under the open conversation in the history list: tokens its requests used. Each is a grouped number. -->
+    <string name="assistant_tokens">Tokens: %1$s sent (%2$s from cache), %3$s received</string>
+    <string name="assistant_good_reply">Good reply</string>
+    <string name="assistant_bad_reply">Bad reply</string>
+    <string name="assistant_report_details">Details to include</string>
+    <string name="assistant_report_details_help">Sent with your report. Remove anything you\'d rather not send.</string>
+    <!-- Read aloud by a screen reader: once when a reply has finished, once when a proposal card arrives. -->
+    <string name="assistant_replied">The assistant replied.</string>
+    <string name="assistant_proposal_ready">A proposal is ready to review.</string>
+    <!-- In the register's selection sheet and a category's menu: hands them to the assistant, unsent. -->
+    <string name="assistant_ask_assistant">Ask the assistant</string>
+    <!-- Put in the message box by a category's "Ask the assistant". %1$s is the category's name. -->
+    <string name="assistant_help_category">Help me with %1$s this month.</string>
+    <!-- The latest line of the model's thinking, while a reply runs. -->
+    <string name="assistant_thinking">Thinking: %1$s</string>
+    <!-- A proposal card's buttons, for what the core says the card offers. -->
+    <string name="assistant_preview">Preview</string>
+    <string name="assistant_ask_again">Ask for a new version</string>
+    <!-- Sent by "Ask for a new version". %1$s is the card's title, %2$s why it couldn't be applied. -->
+    <string name="assistant_ask_again_prompt">Prepare “%1$s” again. It couldn\'t be applied: %2$s</string>
+    <string name="assistant_show_in_budget">Show in the budget</string>
+    <plurals name="assistant_delete_transactions">
+        <item quantity="one">Delete %1$s transaction</item>
+        <item quantity="other">Delete %1$s transactions</item>
+    </plurals>
+    <!-- Over a card with many rows that can be left out. -->
+    <string name="assistant_select_none">Select none</string>
+    <string name="assistant_select_check">Only the ones to check</string>
+    <!-- A finished card folds to its title, and under it where it stands. %1$s is when it was applied: the time alone today, the day and the time before that. -->
+    <string name="assistant_applied_at">Applied %1$s</string>
+    <string name="assistant_undone">Undone</string>
+    <string name="assistant_replaced">Replaced by a newer version</string>
+    <string name="assistant_removed">Removed</string>
+    <!-- A question the user has answered. %1$s is the question. -->
+    <string name="assistant_asked">Asked: %1$s</string>
+    <string name="assistant_card_open">Show what it has</string>
+    <string name="assistant_card_close">Hide what it has</string>
+    <string name="assistant_update_app">Update UrBudget to use this card.</string>
+    <!-- Kept with a card of import fixes when the import didn\'t take them all. %1$s of %2$s took; %3$s lists the rest. -->
+    <string name="assistant_fix_note">Fixes applied: %1$s of %2$s. Not applied: %3$s</string>
+    <!-- Between the items of a list written out in a sentence. -->
+    <string name="list_separator">", "</string>
+    <!-- The assistant\'s settings: notes kept in the budget for the assistant. -->
+    <string name="assistant_notes_title">Notes for the assistant</string>
+    <string name="assistant_notes_help">Short notes the assistant keeps for this budget and gets with every message. It adds one when you ask it to remember something.</string>
+    <string name="assistant_notes_add">Add a note</string>
+    <string name="assistant_notes_remove">Remove note</string>
+    <string name="assistant_notes_none">No notes yet.</string>
+    <!-- Starting points on other pages: the assistant opens with these words in its message field, unsent. -->
+    <string name="assistant_categorize">Categorize with the assistant</string>
+    <!-- %1$s is the account, or the accounts, the new transactions are in. -->
+    <string name="assistant_categorize_one">Categorize the new transaction in %1$s.</string>
+    <plurals name="assistant_categorize_new">
+        <item quantity="one">Categorize the %1$s new transactions in %2$s.</item>
+        <item quantity="other">Categorize the %1$s new transactions in %2$s.</item>
+    </plurals>
+    <!-- More were imported than go with a message: %2$s of the %1$s. -->
+    <plurals name="assistant_categorize_first">
+        <item quantity="one">Categorize these %2$s of the %1$s new transactions in %3$s.</item>
+        <item quantity="other">Categorize these %2$s of the %1$s new transactions in %3$s.</item>
+    </plurals>
+    <string name="assistant_cover">Cover with the assistant</string>
+    <string name="assistant_cover_prompt">Cover my overspent categories this month.</string>
+    <!-- Said once a bank file, or a bank sync, has added transactions. -->
+    <plurals name="bank_imported_review">
+        <item quantity="one">Imported %1$s transaction for review.</item>
+        <item quantity="other">Imported %1$s transactions for review.</item>
+    </plurals>
+    <plurals name="bank_sync_imported_review">
+        <item quantity="one">Imported %1$s transaction from your bank for review.</item>
+        <item quantity="other">Imported %1$s transactions from your bank for review.</item>
+    </plurals>
+    <!-- To the assistant, when it asks to read bank texts and the open review already has every one. -->
+    <string name="bank_texts_nothing_new">No new texts are waiting. To read the open review again, give a note to read it with.</string>
 </resources>

@@ -35,6 +35,75 @@ class BankTextsTest {
         assertTrue(smsTextMatches("Anything", "  ", null))
     }
 
+    @Test fun chatSearchesTextsOnlyForTheAssistantBankMessagesWasAllowedToSendTo() {
+        val connection = JSONObject().put("provider", "anthropic").put("model", "claude-x").put("ready", true)
+        val allowed = smsConsent(connection)
+        assertTrue(bankTextsAllowed(canRead = true, senders = 2, consent = allowed, connection = connection))
+        // Another service, another model, or its default model: each asks in Bank messages first.
+        assertFalse(bankTextsAllowed(true, 2, allowed, JSONObject().put("provider", "openai").put("model", "claude-x")))
+        assertFalse(bankTextsAllowed(true, 2, allowed, JSONObject().put("provider", "anthropic").put("model", "claude-y")))
+        assertFalse(bankTextsAllowed(true, 2, allowed, JSONObject().put("provider", "anthropic").put("model", JSONObject.NULL)))
+        // Any stored permission used to do: one from before version 2, or one that doesn't read, doesn't.
+        assertFalse(bankTextsAllowed(true, 2, """{"provider":"anthropic","model":"claude-x"}""", connection))
+        assertFalse(bankTextsAllowed(true, 2, "yes", connection))
+        assertFalse(bankTextsAllowed(true, 2, null, connection))
+        // No assistant known, no senders chosen, or SMS access off.
+        assertFalse(bankTextsAllowed(true, 2, allowed, null))
+        assertFalse(bankTextsAllowed(true, 0, allowed, connection))
+        assertFalse(bankTextsAllowed(false, 2, allowed, connection))
+    }
+
+    @Test fun anAddCardNamesItsTextsAndTheirWordsAreReadAgainWhenItsApplied() {
+        val searched = sms("Purchase SAR 45.00 at Careem")
+        val early = sms("Purchase SAR 12.00 at Bakery")
+        val late = sms("Purchase SAR 80.00 at Pharmacy")
+        val deleted = sms("Purchase SAR 5.00 at Kiosk")
+        val other = BankSms(smsId("Card", clock, "Refund SAR 9.00"), "Card", clock, "Refund SAR 9.00")
+        fun named(text: BankSms) = JSONObject().put("id", text.id).put("sender", text.sender).put("received", text.received)
+        val card = JSONObject().put("action", "add").put("texts", JSONArray(listOf(searched, early, late, deleted, other).map(::named)))
+        val reads = mutableListOf<Triple<String, Long, Long>>()
+        val (texts, missing) = bankTextsOfCard(card, cached = { id -> searched.takeIf { it.id == id } }) { sender, from, until ->
+            reads += Triple(sender, from, until)
+            // The phone holds more from each sender than the card names, and no longer the deleted one.
+            if (sender == "Bank") listOf(late, sms("Balance SAR 900.00"), early) else listOf(other)
+        }
+        assertEquals(listOf(searched, early, late, other), texts)
+        assertEquals(1, missing)
+        // One reading for each sender, from just before its earliest text to just after its latest; what a search found isn't read again.
+        assertEquals(listOf("Bank", "Card"), reads.map { it.first })
+        assertTrue(reads[0].second < early.received && reads[0].third > deleted.received && reads[0].second > early.received - 600_000)
+        // A card made when cards kept the words still adds them, with nothing read.
+        val old = JSONObject().put("action", "add").put("texts", JSONArray().put(named(deleted).put("body", deleted.body)))
+        assertEquals(listOf(deleted) to 0, bankTextsOfCard(old, { null }) { _, _, _ -> error("An old card's texts aren't read again.") })
+        // Nothing left of a card's texts: all of them are missing.
+        assertEquals(emptyList<BankSms>() to 2, bankTextsOfCard(JSONObject().put("texts", JSONArray(listOf(early, late).map(::named))), { null }) { _, _, _ -> emptyList() })
+    }
+
+    @Test fun aReadCardCountsOnlyTheTextsOutsideTheOpenReview() {
+        // The open review's texts are read already and wait for the user's ticks: Bank messages reads the rest.
+        assertEquals(2, bankTextsToRead(listOf("a", "b", "c", "d"), listOf("b", "d")))
+        assertEquals(0, bankTextsToRead(listOf("a", "b"), listOf("a", "b", "gone")))
+        assertEquals(3, bankTextsToRead(listOf("a", "b", "c"), emptyList()))
+        assertEquals(0, bankTextsToRead(emptyList(), emptyList()))
+    }
+
+    @Test fun aCardIsCheckedAgainAgainstTheBudgetAsItsApplied() {
+        val budget = budget().apply { getJSONArray("accounts").put(JSONObject().put("id", "closed").put("name", "Old card").put("kind", "credit").put("archived", true)) }
+        fun limit(account: String) = JSONObject().put("action", "limit").put("accountId", account).put("limit", 250_000L)
+        fun remember(account: String) = JSONObject().put("action", "remember").put("sender", "Bank").put("ref", "1234").put("accountId", account)
+        assertNull(bankTextsCardProblem(limit("card"), budget))
+        assertNull(bankTextsCardProblem(remember("checking"), budget))
+        // The account went since the card was made, or is no longer a card: nothing is done, and that's said.
+        assertEquals(R.string.bank_texts_unknown_account, bankTextsCardProblem(limit("deleted"), budget))
+        assertEquals(R.string.bank_texts_not_card, bankTextsCardProblem(limit("checking"), budget))
+        assertEquals(R.string.bank_texts_unknown_account, bankTextsCardProblem(remember("deleted"), budget))
+        assertEquals(R.string.bank_texts_unknown_account, bankTextsCardProblem(remember("closed"), budget))
+        assertEquals(R.string.bank_texts_unknown_account, bankTextsCardProblem(limit("card"), null))
+        // Reading and adding texts name no account.
+        assertNull(bankTextsCardProblem(JSONObject().put("action", "read").put("note", ""), null))
+        assertNull(bankTextsCardProblem(JSONObject().put("action", "add"), budget))
+    }
+
     @Test fun eachSettledTextKeepsWhatBecameOfIt() {
         val pair = listOf(sms("one"), sms("two"))
         val added = item(0, "checking", "-12.00", balance = "88.00", sources = pair)

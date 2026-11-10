@@ -183,12 +183,16 @@ struct TransactionsList: View {
     @State private var jump: RegisterTarget?
     @State private var importing = false
     @State private var asking: AssistantRequest?
+    /// The transactions a card of the assistant asked to see: the list shows them alone, as a
+    /// filter that Clear takes off.
+    @State private var only: Set<String>
 
     init(target: RegisterTarget) {
         self.target = target
         _category = State(initialValue: target.category)
         _from = State(initialValue: target.from)
         _through = State(initialValue: target.through)
+        _only = State(initialValue: Set(target.only))
     }
 
     private struct LinesKey: Equatable {
@@ -202,7 +206,7 @@ struct TransactionsList: View {
         return RegisterIndex.Filter(account: target.account, status: status, category: category, flag: flag, from: from, through: through,
                                     minimum: low, maximum: high,
                                     invalidAmount: !minimum.isEmpty && low == nil || !maximum.isEmpty && high == nil,
-                                    search: query, order: order)
+                                    search: query, order: order, only: only)
     }
 
     private var account: JSON? { target.account.isEmpty ? nil : store.budget?.row("accounts", id: target.account) }
@@ -362,7 +366,7 @@ struct TransactionsList: View {
 
     private var activeFilters: Int {
         [status, flag, minimum, maximum].count { !$0.isEmpty } + (order != "newest" ? 1 : 0) + (from.isEmpty && through.isEmpty ? 0 : 1)
-            + (category.isEmpty || category == target.category ? 0 : 1)
+            + (category.isEmpty || category == target.category ? 0 : 1) + (only.isEmpty ? 0 : 1)
     }
 
     private var list: some View {
@@ -446,6 +450,8 @@ struct TransactionsList: View {
 
     private var filterSummary: String {
         var parts: [String] = []
+        // The ones a card of the assistant named: "Assistant · 3 transactions".
+        if !only.isEmpty { parts += [String(localized: "Assistant"), transactionCount(only.count)] }
         if !from.isEmpty || !through.isEmpty { parts.append(dateRangeLabel(from, through)) }
         switch status {
         case "approval": parts.append(String(localized: "Needs approval"))
@@ -484,7 +490,7 @@ struct TransactionsList: View {
     }
 
     private func clearFilters() {
-        status = ""; flag = ""; order = "newest"; from = ""; through = ""; category = target.category; minimum = ""; maximum = ""
+        status = ""; flag = ""; order = "newest"; from = ""; through = ""; category = target.category; minimum = ""; maximum = ""; only = []
     }
 
     private func row(_ line: TransactionLine) -> some View {
@@ -546,7 +552,7 @@ struct TransactionsList: View {
                     Button { bulk([line.id], "duplicate", done: String(localized: "Duplicated \(line.payee).")) } label: {
                         Label("Duplicate", systemImage: "plus.square.on.square")
                     }
-                    Button { asking = AssistantRequest(selected: [line.id]) } label: { Label("Ask the assistant", systemImage: "sparkles") }
+                    Button { ask([line.id]) } label: { Label("Ask the assistant", systemImage: "sparkles") }
                     Button {
                         selecting = true
                         selected = [line.id]
@@ -559,6 +565,12 @@ struct TransactionsList: View {
 
     private func toggleCleared(_ line: TransactionLine) {
         bulk([line.id], "status", line.cleared == "cleared" ? "uncleared" : "cleared")
+    }
+
+    /// Opens the assistant about these transactions, saying where it's asked from: all
+    /// transactions, or an account's.
+    private func ask(_ ids: [String]) {
+        asking = AssistantRequest(page: target.account.isEmpty ? "transactions" : "accounts", account: target.account, selected: ids)
     }
 
     private func endSelection() {
@@ -601,7 +613,10 @@ struct TransactionsList: View {
                         Label("Duplicate", systemImage: "plus.square.on.square")
                     }
                     Button {
-                        asking = AssistantRequest(selected: Array(selected))
+                        // In the order they're listed: a message takes the first 200 of them.
+                        let listed = sections?.flatMap { $0.lines.map(\.id) } ?? []
+                        let ids = listed.filter { selected.contains($0) }
+                        ask(ids.isEmpty ? Array(selected) : ids)
                         endSelection()
                     } label: { Label("Ask the assistant", systemImage: "sparkles") }
                     Divider()

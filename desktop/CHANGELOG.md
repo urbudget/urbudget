@@ -7,6 +7,46 @@ Notable changes to UrBudget, organized using [Keep a Changelog](https://keepacha
 ### Added
 
 - On the phones, the assistant's proposals can be changed before they're applied, as on the desktop: a part is left out with its checkbox, or given another category or amount with its pencil, and Apply makes what's left ("Apply 2 of 3"), still as one undo step. Use the assistant's version puts it back as proposed. An import's fixes work the same way.
+- The assistant can propose more kinds of change, each a card you apply and can undo: a transfer between two of your accounts; another date or account for a transaction; a transaction split across categories; adding, renaming, moving or hiding categories and groups, and setting or removing a target; adding, changing, pausing, entering or skipping a scheduled transaction; and deleting transactions, but only ones you selected and sent with your message, on a red card that lists each one. A reconciled transaction keeps its date and account and is never deleted this way. Deleting a category or a schedule stays in the app.
+- Ask the assistant to remember something ("the joint account is the one we call House") and it proposes a note. Notes are kept in the budget, so they sync with it, and go to the service with every message. Settings › Assistant › Notes for the assistant lists them, to add and remove your own: up to 30, of 200 characters each.
+- When the assistant needs you to choose (which account, which month), it asks with a card whose answers are buttons. It can also answer with a few figures on a card, each with a bar.
+- Show in the budget on a card goes to what it's about: the register with those transactions selected, or the Budget page on that month with those categories marked.
+- Under the last reply, up to two things waiting in the budget are offered as buttons: overspending to cover, transactions without a category, imports to approve. They're counted from the budget, not by the service, and nothing is sent until you press one.
+- Conversations can be renamed and searched, and the open one's name is at the top of the panel. One that has grown long offers Continue in a new conversation, which starts from the last things said and what became of the proposals.
+- The conversation list shows how many tokens the open conversation has used.
+- A reply has a thumbs up and a thumbs down, kept with the conversation on your device. A report about a reply can include a line of details (which tools the reply used, the service and model, the app's version, the language): it's shown in the form, to change or remove before it's sent.
+- Before the first message to a service, and again after you change service, the assistant says what gets sent and to whom, with the switch for sharing memos, on the three apps.
+- A line above the message field says what goes with the message (the page and month, an account or category, selected transactions, the file being imported), and each part can be taken off. A sent message shows what went with it.
+- On Android, Ask the assistant on a selection in the register and on a category. On the phones, Categorize with the assistant after a bank import and Cover with the assistant on an overspent month, as the desktop has.
+
+### Changed
+
+- An assistant's card says what it offers now and what it has to say in one place. A waiting card is kept up to date with the budget: when a change you made since would alter it, the card is made again and says so, so Apply applies what's shown. A card the assistant corrects is replaced by the new one rather than left beside it.
+- A finished card folds to a line that opens to show its rows as they were applied, and when. A discarded card can be restored, and one that couldn't be applied offers Ask for a new version.
+- Reports, spreadsheets and converted bank files are things the assistant made, not changes: they keep their own buttons (Preview, Print or save as PDF, Excel, Open, Save, Review import) and have Remove in a menu in place of Apply and Discard.
+- Leaving a row out of a card, or changing its category or amount, shows at once; Select all, Select none and Only the ones to check appear on a card with more than five rows.
+- On the desktop, Undo and Redo move an applied card with them: undoing its change marks the card undone, and it can be applied again. On the phones, a card's Undo shows only while its change is the one Undo would take back.
+- The phones show what the assistant is doing while it works, and format a reply as it's written.
+- The conversation follows a reply only while you're at its end; otherwise Jump to latest takes you there.
+- Stop keeps what was written so far. A reply cut off at its length limit says so and offers Continue.
+- When something goes wrong, the message has the button that helps: sign in again, open the settings, see your usage, try again, or start a new conversation.
+- A message can be 20,000 characters, counted as characters whatever the language.
+- With a Claude key, a conversation's instructions and tools stay as they began, and its requests are cached, which costs less. Not yet tried against Claude.
+- "Save as PDF" reads Print or save as PDF, and the plan notice says UrBudget.
+
+### Fixed
+
+- On Android, the chat assistant could search bank texts with a service or model you hadn't allowed in Bank messages. It now reads them only under that permission.
+- One-time codes are left out of what a search of bank texts gives the assistant, and the answer says how many were left out.
+- A card that adds transactions from bank texts keeps which texts, not their words, and reads them again from the phone when it's applied.
+- A photo sent to the assistant goes without its location and camera details (JPEG and PNG).
+- A file chosen for a message and taken off again, or never sent, is no longer kept in the budget's folder.
+- On the desktop, closing the assistant lost the message being written, and a request made from a page (Ask the assistant about these) could ride along with a later message. The draft, files and selection are now kept, and a request is used once.
+- A card naming a transaction deleted since keeps the rest instead of failing whole.
+- On the desktop, a card whose change couldn't be made no longer reads Applied.
+- A step that failed no longer shows the tool's own message, written for the model.
+- On Android, Back with the assistant open over a bank import closes the assistant.
+- An import's fix card says which fixes didn't take and keeps saying it, in place of a message that went away.
 
 ## [1.0.11] - 2026-10-29
 

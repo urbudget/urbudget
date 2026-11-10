@@ -1,6 +1,6 @@
 import type { BankField, BankFixes, BankSession, BankStructure, FixResult, LeftOutReason, Statement, StatementLine } from "../bridge";
 import type { BankColumns } from "../types";
-import { getLanguage, localDate, msg, t } from "../i18n";
+import { getLanguage, list, localDate, msg, t } from "../i18n";
 
 /** What a line left out is, by why (in English: translate it with `t`). */
 export const LEFT_OUT: Record<LeftOutReason, string> = {
@@ -96,6 +96,32 @@ const latestOf = (session: BankSession | undefined) => {
   while (session && replaced.has(session)) session = replaced.get(session);
   return session;
 };
+/**
+ * What an assistant's card says once its fixes were applied to the import, when not all of them
+ * took: how many did, and the card's own words for the ones that didn't (the first five).
+ * Nothing when they all took. `rows` are the card's, each named by the fix it shows.
+ *
+ * The import answers for the fixes in the order they were given (how the file reads first, then
+ * fields, then lines to include), so each answer is matched to its row by its place among its kind.
+ */
+export function fixesNote(rows: { key?: string; label: string }[], fixes: BankFixes, results: FixResult[]): string | undefined {
+  const done = results.filter((r) => r.applied).length;
+  if (done === results.length) return undefined;
+  const seen = { field: 0, include: 0 };
+  const refused = results.flatMap((r) => {
+    const fix = r.fix === "field" ? fixes.fields?.[seen.field++] : r.fix === "include" ? fixes.include?.[seen.include++] : undefined;
+    if (r.applied) return [];
+    const key = r.fix === "structure" ? "x" : fix && "field" in fix ? `f:${fix.line}:${fix.field}` : fix ? `i:${fix.line}` : "";
+    const labels = rows.filter((row) => row.key === key).map((row) => row.label);
+    // One the card has no row for goes by its line.
+    return labels.length ? labels : r.line ? [r.line] : [];
+  });
+  return t("Fixes applied: {n} of {m}. Not applied: {list}", {
+    n: done,
+    m: results.length,
+    list: list([...refused.slice(0, 5), ...(refused.length > 5 ? ["…"] : [])]),
+  });
+}
 
 /** The session read another way. */
 export const restructure = (session: BankSession, change: Partial<BankStructure>) =>

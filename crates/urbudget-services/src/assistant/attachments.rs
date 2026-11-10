@@ -61,6 +61,130 @@ fn limit(kind: Kind) -> u64 {
     }
 }
 
+/// A photo without what its camera wrote into it: where and when it was taken, the device, an
+/// embedded preview. A JPEG keeps which way up it is; a PNG loses its text and Exif chunks. A
+/// file that doesn't read as either goes as it is, and so do WebP and GIF.
+fn scrub<'a>(mime: &str, bytes: &'a [u8]) -> std::borrow::Cow<'a, [u8]> {
+    let cleaned = match mime {
+        "image/jpeg" => scrub_jpeg(bytes),
+        "image/png" => scrub_png(bytes),
+        _ => None,
+    };
+    cleaned.map_or(std::borrow::Cow::Borrowed(bytes), std::borrow::Cow::Owned)
+}
+
+/// Exif's orientation (1 to 8) from an APP1 segment's contents, when it has one.
+fn exif_orientation(exif: &[u8]) -> Option<u16> {
+    let tiff = exif.strip_prefix(b"Exif\0\0")?;
+    let little = match tiff.get(..2)? {
+        b"II" => true,
+        b"MM" => false,
+        _ => return None,
+    };
+    let short = |at: usize| tiff.get(at..at + 2).map(|b| if little { u16::from_le_bytes([b[0], b[1]]) } else { u16::from_be_bytes([b[0], b[1]]) });
+    let long = |at: usize| tiff.get(at..at + 4).map(|b| if little { u32::from_le_bytes([b[0], b[1], b[2], b[3]]) } else { u32::from_be_bytes([b[0], b[1], b[2], b[3]]) });
+    let first = long(4)? as usize;
+    for entry in 0..short(first)? as usize {
+        let at = first.checked_add(2 + entry * 12)?;
+        if short(at)? == 0x0112 {
+            return short(at + 8).filter(|o| (1..=8).contains(o));
+        }
+    }
+    None
+}
+
+fn scrub_jpeg(bytes: &[u8]) -> Option<Vec<u8>> {
+    if !bytes.starts_with(&[0xFF, 0xD8]) {
+        return None;
+    }
+    let mut kept: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut orientation = None;
+    let mut removed = false;
+    let mut at = 2;
+    loop {
+        if *bytes.get(at)? != 0xFF {
+            return None;
+        }
+        // Any number of fill bytes may come before a marker.
+        let mut marker_at = at + 1;
+        while *bytes.get(marker_at)? == 0xFF {
+            marker_at += 1;
+        }
+        let marker = bytes[marker_at];
+        // The picture itself starts here and runs to the end.
+        if marker == 0xDA {
+            kept.extend_from_slice(&bytes[at..]);
+            break;
+        }
+        // Markers that stand alone.
+        if marker == 0x01 || (0xD0..=0xD9).contains(&marker) {
+            kept.extend_from_slice(&bytes[at..=marker_at]);
+            at = marker_at + 1;
+            continue;
+        }
+        let length = u16::from_be_bytes([*bytes.get(marker_at + 1)?, *bytes.get(marker_at + 2)?]) as usize;
+        let end = marker_at.checked_add(1 + length)?;
+        if length < 2 || end > bytes.len() {
+            return None;
+        }
+        // APP1 is Exif or XMP; APP13 is Photoshop's and IPTC's.
+        if marker == 0xE1 || marker == 0xED {
+            removed = true;
+            if marker == 0xE1 && orientation.is_none() {
+                orientation = exif_orientation(&bytes[marker_at + 3..end]);
+            }
+        } else {
+            kept.extend_from_slice(&bytes[at..end]);
+        }
+        at = end;
+    }
+    if !removed {
+        return None;
+    }
+    let mut out = Vec::with_capacity(kept.len() + 40);
+    out.extend_from_slice(&[0xFF, 0xD8]);
+    // Which way up the photo is, and nothing else: a receipt on its side still reads.
+    if let Some(o) = orientation.filter(|o| *o != 1) {
+        out.extend_from_slice(&[0xFF, 0xE1, 0x00, 0x22]);
+        out.extend_from_slice(b"Exif\0\0II*\0\x08\0\0\0\x01\0\x12\x01\x03\0\x01\0\0\0");
+        out.extend_from_slice(&o.to_le_bytes());
+        out.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+    }
+    out.extend_from_slice(&kept);
+    Some(out)
+}
+
+fn scrub_png(bytes: &[u8]) -> Option<Vec<u8>> {
+    const SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
+    if !bytes.starts_with(SIGNATURE) {
+        return None;
+    }
+    let mut out = Vec::with_capacity(bytes.len());
+    out.extend_from_slice(SIGNATURE);
+    let mut removed = false;
+    let mut at = SIGNATURE.len();
+    while at < bytes.len() {
+        let head = bytes.get(at..at + 8)?;
+        let length = u32::from_be_bytes([head[0], head[1], head[2], head[3]]) as usize;
+        // Length, type, data and its check.
+        let end = at.checked_add(12)?.checked_add(length)?;
+        if end > bytes.len() {
+            return None;
+        }
+        let kind = &head[4..8];
+        if matches!(kind, b"eXIf" | b"tEXt" | b"zTXt" | b"iTXt" | b"tIME") {
+            removed = true;
+        } else {
+            out.extend_from_slice(&bytes[at..end]);
+        }
+        at = end;
+        if kind == b"IEND" {
+            break;
+        }
+    }
+    removed.then_some(out)
+}
+
 /// The attachments of one budget, in `<budget folder>/assistant/files`.
 pub struct Files {
     dir: Option<PathBuf>,
@@ -83,7 +207,14 @@ impl Files {
     fn valid_id(id: &str) -> bool {
         !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
     }
-    pub fn save(&self, name: &str, bytes: &[u8]) -> Result<Meta, String> {
+    /// Where a file waits between being chosen and being sent: beside the kept files, so a file
+    /// that's never sent is never among a conversation's.
+    fn waiting(&self) -> Option<PathBuf> {
+        self.dir.as_ref().map(|d| d.with_file_name("staged"))
+    }
+    /// Keeps a file the user chose until its message is sent (`adopt`) or it's taken off again
+    /// (`discard`). A photo is kept without where and when it was taken.
+    pub fn stage(&self, name: &str, bytes: &[u8]) -> Result<Meta, String> {
         let (kind, mime) = kind_of(name).ok_or_else(|| t!("Attach an image, a PDF, a spreadsheet (xlsx, xls, ods), a CSV or a text file."))?;
         if bytes.is_empty() {
             return Err(t!("{name} is empty.", name));
@@ -91,8 +222,9 @@ impl Files {
         if bytes.len() as u64 > limit(kind) {
             return Err(t!("{name} is larger than {size} MB.", name, size = limit(kind) >> 20));
         }
-        let dir = self.dir.as_ref().ok_or_else(|| t!("No folder for attachments."))?;
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        let bytes = if kind == Kind::Image { scrub(mime, bytes) } else { std::borrow::Cow::Borrowed(bytes) };
+        let dir = self.waiting().ok_or_else(|| t!("No folder for attachments."))?;
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let meta = Meta {
             id: new_id("file"),
             name: truncate(name.rsplit(['/', '\\']).next().unwrap_or(name), 120),
@@ -100,20 +232,52 @@ impl Files {
             size: bytes.len() as u64,
             kind,
         };
-        std::fs::write(dir.join(format!("{}.bin", meta.id)), bytes).map_err(|e| e.to_string())?;
+        std::fs::write(dir.join(format!("{}.bin", meta.id)), &bytes).map_err(|e| e.to_string())?;
         std::fs::write(dir.join(format!("{}.json", meta.id)), serde_json::to_vec(&meta).map_err(|e| e.to_string())?)
             .map_err(|e| e.to_string())?;
         Ok(meta)
+    }
+    /// Moves a waiting file among the kept ones, when its message is sent. One already kept (a
+    /// message sent again after it failed) stays where it is.
+    pub fn adopt(&self, id: &str) -> Result<(), String> {
+        let (Some(dir), Some(waiting), true) = (self.dir.as_ref(), self.waiting(), Self::valid_id(id)) else { return Ok(()) };
+        if !waiting.join(format!("{id}.json")).is_file() {
+            return Ok(());
+        }
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        // The file itself first: its description is what says it's there.
+        for extension in ["bin", "json"] {
+            std::fs::rename(waiting.join(format!("{id}.{extension}")), dir.join(format!("{id}.{extension}"))).map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+    /// Forgets a waiting file the user took off their message. A file already sent stays.
+    pub fn discard(&self, id: &str) {
+        if let (Some(waiting), true) = (self.waiting(), Self::valid_id(id)) {
+            for extension in ["bin", "json"] {
+                let _ = std::fs::remove_file(waiting.join(format!("{id}.{extension}")));
+            }
+        }
+    }
+    /// Forgets every waiting file: what an earlier session chose and never sent.
+    pub fn discard_waiting(&self) {
+        if let Some(waiting) = self.waiting() {
+            let _ = std::fs::remove_dir_all(waiting);
+        }
+    }
+    /// The folder a file is in: among the kept files, or waiting to be sent.
+    fn holding(&self, id: &str) -> Option<PathBuf> {
+        if !Self::valid_id(id) {
+            return None;
+        }
+        [self.dir.clone(), self.waiting()].into_iter().flatten().find(|d| d.join(format!("{id}.json")).is_file())
     }
     pub fn get(&self, id: &str) -> Result<Meta, String> {
         if let Some((meta, _)) = self.memory.get(id) {
             return Ok(meta.clone());
         }
         let missing = || t!("No attachment has the id {id}.", id);
-        if !Self::valid_id(id) {
-            return Err(missing());
-        }
-        let dir = self.dir.as_ref().ok_or_else(missing)?;
+        let dir = self.holding(id).ok_or_else(missing)?;
         let raw = std::fs::read(dir.join(format!("{id}.json"))).map_err(|_| missing())?;
         serde_json::from_slice(&raw).map_err(|_| missing())
     }
@@ -122,10 +286,7 @@ impl Files {
             return Ok(bytes.clone());
         }
         let missing = || t!("The file for attachment {id} is gone.", id);
-        if !Self::valid_id(id) {
-            return Err(missing());
-        }
-        let dir = self.dir.as_ref().ok_or_else(missing)?;
+        let dir = self.holding(id).ok_or_else(missing)?;
         std::fs::read(dir.join(format!("{id}.bin"))).map_err(|_| missing())
     }
     pub fn base64(&self, id: &str) -> Result<String, String> {
@@ -560,5 +721,89 @@ mod tests {
         assert!(skipped.is_empty());
         assert_eq!(rows[0].transfer_account_id.as_deref(), Some("card"));
         assert_eq!(rows[1].transfer_account_id, None);
+    }
+
+    /// A JPEG as a camera writes it: JFIF, Exif (on its side, with a place), XMP, then the picture.
+    fn camera_jpeg() -> Vec<u8> {
+        let segment = |marker: u8, body: &[u8]| {
+            let mut s = vec![0xFF, marker];
+            s.extend_from_slice(&((body.len() + 2) as u16).to_be_bytes());
+            s.extend_from_slice(body);
+            s
+        };
+        // Orientation 6, big-endian as some cameras write it, and a place after it.
+        let mut exif = b"Exif\0\0MM\0*\0\0\0\x08\0\x02\x01\x12\0\x03\0\0\0\x01\0\x06\0\0\x88\x25\0\x04\0\0\0\x01\0\0\0\x26\0\0\0\0".to_vec();
+        exif.extend_from_slice(b"GPS 24.7136N 46.6753E");
+        let mut jpeg = vec![0xFF, 0xD8];
+        jpeg.extend(segment(0xE0, b"JFIF\0\x01\x01\0\0\x01\0\x01\0\0"));
+        jpeg.extend(segment(0xE1, &exif));
+        jpeg.extend(segment(0xE1, b"http://ns.adobe.com/xap/1.0/\0<x:xmpmeta>Riyadh</x:xmpmeta>"));
+        jpeg.extend(segment(0xDB, &[0; 65]));
+        jpeg.extend(segment(0xDA, &[1, 1, 0, 0, 63, 0]));
+        jpeg.extend_from_slice(&[0x12, 0x34, 0xFF, 0x00, 0x56, 0xFF, 0xD9]);
+        jpeg
+    }
+
+    #[test]
+    fn a_photo_is_kept_without_where_it_was_taken_but_the_right_way_up() {
+        let photo = camera_jpeg();
+        let clean = scrub("image/jpeg", &photo);
+        let found = |needle: &[u8]| clean.windows(needle.len()).any(|w| w == needle);
+        assert!(!found(b"GPS") && !found(b"Riyadh") && !found(b"xmpmeta"));
+        // The picture and its tables are untouched, and it still says it's on its side.
+        assert!(found(b"JFIF") && clean.ends_with(&[0x12, 0x34, 0xFF, 0x00, 0x56, 0xFF, 0xD9]));
+        assert!(clean.starts_with(&[0xFF, 0xD8, 0xFF, 0xE1, 0x00, 0x22]));
+        assert_eq!(exif_orientation(&clean[6..38]), Some(6));
+        // Nothing to take out: the same bytes. Not a JPEG at all: the same bytes.
+        let plain = scrub("image/jpeg", &clean);
+        assert_eq!(exif_orientation(&plain[6..38]), Some(6));
+        assert!(!plain.windows(3).any(|w| w == b"GPS"));
+        assert_eq!(&*scrub("image/jpeg", b"not a picture"), b"not a picture");
+        assert_eq!(&*scrub("image/jpeg", &photo[..40]), &photo[..40]);
+    }
+
+    #[test]
+    fn a_png_loses_its_text_and_exif() {
+        let chunk = |kind: &[u8; 4], data: &[u8]| {
+            let mut c = (data.len() as u32).to_be_bytes().to_vec();
+            c.extend_from_slice(kind);
+            c.extend_from_slice(data);
+            c.extend_from_slice(&[0; 4]);
+            c
+        };
+        let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
+        png.extend(chunk(b"IHDR", &[0; 13]));
+        png.extend(chunk(b"tEXt", b"Location\0Riyadh"));
+        png.extend(chunk(b"eXIf", b"MM\0*GPS"));
+        png.extend(chunk(b"IDAT", &[7; 20]));
+        png.extend(chunk(b"IEND", &[]));
+        let clean = scrub("image/png", &png);
+        assert!(!clean.windows(6).any(|w| w == b"Riyadh") && !clean.windows(3).any(|w| w == b"GPS"));
+        assert!(clean.windows(4).any(|w| w == b"IDAT") && clean.windows(4).any(|w| w == b"IEND"));
+        assert_eq!(clean.len(), png.len() - (12 + 15) - (12 + 7));
+    }
+
+    #[test]
+    fn a_chosen_file_waits_until_its_message_is_sent() {
+        let folder = tempfile::tempdir().unwrap();
+        let files = Files::open(folder.path().join("files"));
+        let kept = files.stage("notes.txt", b"rent 1200").unwrap();
+        let dropped = files.stage("other.txt", b"never sent").unwrap();
+        // Chosen, not sent: nothing among the conversation's files, and it reads from where it waits.
+        assert!(!folder.path().join("files").exists());
+        assert_eq!(files.bytes(&kept.id).unwrap(), b"rent 1200");
+        files.discard(&dropped.id);
+        assert!(files.get(&dropped.id).is_err());
+        files.adopt(&kept.id).unwrap();
+        assert!(folder.path().join("files").join(format!("{}.bin", kept.id)).is_file());
+        assert_eq!(files.get(&kept.id).unwrap(), kept);
+        // Sent again, or never there: nothing to do. Taking it off now leaves what was sent.
+        files.adopt(&kept.id).unwrap();
+        files.adopt("file_unknown").unwrap();
+        files.discard(&kept.id);
+        assert_eq!(files.bytes(&kept.id).unwrap(), b"rent 1200");
+        let late = files.stage("late.txt", b"x").unwrap();
+        files.discard_waiting();
+        assert!(files.get(&late.id).is_err() && files.get(&kept.id).is_ok());
     }
 }

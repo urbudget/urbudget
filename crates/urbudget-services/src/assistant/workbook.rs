@@ -707,6 +707,7 @@ pub fn build(title: String, sheets: Vec<Sheet>, b: &Budget) -> Result<Proposal, 
         fixes: None,
         review: None,
         bank_texts: None,
+        ..Proposal::default()
     })
 }
 

@@ -1,11 +1,16 @@
 package app.urbudget.nativeapp.ui
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import app.urbudget.nativeapp.ProposalAction
 import app.urbudget.nativeapp.ProposalChoices
 import app.urbudget.nativeapp.ResourceWords
 import app.urbudget.nativeapp.Words
@@ -107,21 +112,153 @@ class ProposalCardUiTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         var done = 0
         val proposal = mutableStateOf(JSONObject().put("id", "p1").put("kind", "bankTexts").put("status", "proposed").put("title", "Set a credit limit")
+            .put("actions", JSONArray(listOf("applyBankTexts", "askChanges", "discard")))
             .put("bankTexts", JSONObject().put("action", "limit").put("accountId", "card").put("limit", 250_050L))
             .put("card", JSONObject().put("kicker", "Bank messages").put("rows", JSONArray().put(JSONObject().put("label", "Credit limit for Visa").put("detail", "None set yet").put("amount", 250_050L)))))
         compose.setContent {
-            MaterialTheme {
-                AssistantProposalCard(proposal.value, "SAR", busy = false, canUndo = false, apply = {}, undo = {}, discard = {}, refine = {},
-                    reviewImport = {}, saveImport = {}, report = {}, spreadsheet = {}, applyBankTexts = { done++ })
-            }
+            MaterialTheme { AssistantProposalCard(proposal.value, "SAR", busy = false, act = { if (it == ProposalAction.ApplyBankTexts) done++ }) }
         }
         compose.onNodeWithText("Credit limit for Visa").assertExists()
         compose.onNodeWithText(context.getString(app.urbudget.nativeapp.R.string.bank_texts_apply_limit)).performClick()
         compose.runOnIdle { assertEquals(1, done) }
-        // Applied, it folds to a line that says so, with nothing more to do.
-        proposal.value = JSONObject(proposal.value.toString()).put("status", "applied")
-        compose.onNodeWithText(context.getString(app.urbudget.nativeapp.R.string.assistant_applied_title, "Set a credit limit")).assertExists()
+        // Applied, it folds to its title with that said under it, and nothing more to do; the line opens on what it set.
+        proposal.value = JSONObject(proposal.value.toString()).put("status", "applied").put("actions", JSONArray())
+        compose.onNodeWithTag("assistant-card-line").assertTextEquals("Set a credit limit")
+        compose.onNodeWithText("Applied").assertExists()
         compose.onNodeWithText(context.getString(app.urbudget.nativeapp.R.string.bank_texts_apply_limit)).assertDoesNotExist()
+        compose.onNodeWithText("Credit limit for Visa").assertDoesNotExist()
+        compose.onNodeWithTag("assistant-card-line").performClick()
+        compose.onNodeWithText("Credit limit for Visa").assertExists()
+    }
+
+    @Test fun aCardDrawsOnlyWhatTheCoreOffersAndAKindItDoesntKnowPlainly() {
+        val acts = mutableListOf<ProposalAction>()
+        val proposal = mutableStateOf(draft(rows).put("kind", "somethingNewer").put("actions", JSONArray(listOf("apply", "somethingNewer", "discard")))
+            .put("message", JSONObject().put("tone", "info").put("text", "Your budget changed.")))
+        compose.setContent { MaterialTheme { AssistantProposalCard(proposal.value, "SAR", busy = false, act = { acts += it }, choose = {}, change = {}) } }
+        // Its rows to read, what it says, and the buttons this app knows: nothing to tick or change.
+        compose.onNodeWithTag("assistant-card-update").assertExists()
+        compose.onNodeWithTag("assistant-card-message:info").assertExists()
+        compose.onNodeWithText("Careem · Oct 3").assertExists()
+        compose.onNodeWithContentDescription("Apply: Careem · Oct 3").assertDoesNotExist()
+        compose.onNodeWithText("Apply reviewed changes").performClick()
+        compose.onNodeWithText("Discard").performClick()
+        compose.runOnIdle { assertEquals(listOf(ProposalAction.Apply, ProposalAction.Discard), acts) }
+        // A failed card says why in its own strip, and offers a new version.
+        proposal.value = draft(rows).put("status", "failed").put("actions", JSONArray(listOf("askAgain", "discard")))
+            .put("message", JSONObject().put("tone", "error").put("text", "This can't be applied any more."))
+        compose.onNodeWithTag("assistant-card-message:error").assertExists()
+        compose.onNodeWithText("This can't be applied any more.").assertExists()
+        compose.onNodeWithText("Ask for a new version").performClick()
+        compose.runOnIdle { assertEquals(ProposalAction.AskAgain, acts.last()) }
+        compose.onNodeWithContentDescription("Apply: Careem · Oct 3").assertDoesNotExist()
+    }
+
+    @Test fun aFinishedCardFoldsToALineThatKeepsUndoAndOpensOnItsRows() {
+        val acts = mutableListOf<ProposalAction>()
+        val applied = draft(rows).put("status", "applied").put("actions", JSONArray(listOf("undo", "show")))
+        val proposal = mutableStateOf(applied)
+        val undoable = mutableStateOf<String?>("p1")
+        compose.setContent { MaterialTheme { AssistantProposalCard(proposal.value, "SAR", busy = false, act = { acts += it }, undoable = undoable.value, choose = {}, change = {}) } }
+        // The line is the title alone; where the card stands is under it, with what can still be done.
+        compose.onNodeWithTag("assistant-card-line").assertTextEquals("Categorize 2 transactions")
+        compose.onNodeWithText("Applied").assertExists()
+        compose.onNodeWithText("Careem · Oct 3").assertDoesNotExist()
+        compose.onNodeWithText("Undo this proposal").performClick()
+        compose.onNodeWithText("Show in the budget").performClick()
+        compose.runOnIdle { assertEquals(listOf(ProposalAction.Undo, ProposalAction.Show), acts) }
+        // Opened, its rows are there to read, as they were applied.
+        compose.onNodeWithTag("assistant-card-line").performClick()
+        compose.onNodeWithText("Careem · Oct 3").assertExists()
+        compose.onNodeWithContentDescription("Apply: Careem · Oct 3").assertDoesNotExist()
+        // Undo only while the budget's own Undo would take this card's change back.
+        undoable.value = null
+        compose.onNodeWithText("Undo this proposal").assertDoesNotExist()
+        compose.onNodeWithText("Show in the budget").assertExists()
+        // Undone, it can be applied again from inside; set aside, it can be put back.
+        proposal.value = draft(rows).put("status", "undone").put("actions", JSONArray(listOf("apply", "askChanges", "discard")))
+        compose.onNodeWithTag("assistant-card-line").assertTextEquals("Categorize 2 transactions")
+        compose.onNodeWithText("Undone").assertExists()
+        compose.onNodeWithText("Apply reviewed changes").performClick()
+        proposal.value = draft(rows).put("status", "discarded").put("actions", JSONArray(listOf("restore")))
+        compose.onNodeWithText("Discarded").assertExists()
+        compose.onNodeWithText("Restore").performClick()
+        compose.runOnIdle { assertEquals(listOf(ProposalAction.Apply, ProposalAction.Restore), acts.takeLast(2)) }
+    }
+
+    @Test fun aFinishedCardsButtonsGoUnderItsStateWhenTheyDontFitBesideIt() {
+        val applied = draft(rows).put("status", "applied").put("actions", JSONArray(listOf("undo", "show")))
+        val width = mutableStateOf(600.dp)
+        compose.setContent { MaterialTheme { Box(Modifier.requiredWidth(width.value)) { AssistantProposalCard(applied, "SAR", busy = false, act = {}, undoable = "p1") } } }
+        fun state() = compose.onNodeWithText("Applied").getUnclippedBoundsInRoot()
+        fun undo() = compose.onNodeWithText("Undo this proposal").getUnclippedBoundsInRoot()
+        fun show() = compose.onNodeWithText("Show in the budget").getUnclippedBoundsInRoot()
+        // With the room, the state starts the line and the buttons end it.
+        assertTrue(undo().left > state().right && undo().top < state().bottom && show().left >= undo().right)
+        val whole = show().let { it.right - it.left }
+        // Without it the buttons go under the state, side by side and whole: neither is squeezed.
+        width.value = 300.dp
+        compose.waitForIdle()
+        assertTrue(undo().top >= state().bottom && show().top >= state().bottom)
+        assertEquals(whole, show().let { it.right - it.left })
+    }
+
+    @Test fun aThingTheAssistantMadeHasItsOwnButtonsAndRemoveInItsMenu() {
+        val acts = mutableListOf<ProposalAction>()
+        val report = JSONObject().put("id", "p1").put("kind", "report").put("status", "proposed").put("title", "October in review").put("made", true)
+            .put("actions", JSONArray(listOf("preview", "print", "excel", "remove"))).put("card", JSONObject().put("kicker", "Report").put("rows", JSONArray()))
+        val proposal = mutableStateOf(report)
+        compose.setContent { MaterialTheme { AssistantProposalCard(proposal.value, "SAR", busy = false, act = { acts += it }) } }
+        compose.onNodeWithText("Preview").performClick()
+        compose.onNodeWithText("Discard").assertDoesNotExist()
+        compose.onNodeWithText("Remove").assertDoesNotExist()
+        compose.onNodeWithTag("assistant-card-menu").performClick()
+        compose.onNodeWithText("Remove").performClick()
+        compose.runOnIdle { assertEquals(listOf(ProposalAction.Preview, ProposalAction.Remove), acts) }
+        // Removed, it folds to a line with Restore.
+        proposal.value = JSONObject(report.toString()).put("status", "discarded").put("actions", JSONArray(listOf("restore")))
+        compose.onNodeWithTag("assistant-card-line").assertTextEquals("October in review")
+        compose.onNodeWithText("Removed").assertExists()
+        compose.onNodeWithText("Restore").assertExists()
+    }
+
+    @Test fun aQuestionsAnswersAreButtonsAndFiguresHaveBarsAndADeletionSaysHowMany() {
+        val answers = mutableListOf<String>()
+        val question = JSONObject().put("id", "p1").put("kind", "question").put("status", "proposed").put("title", "Which account paid for it?")
+            .put("actions", JSONArray(listOf("answer"))).put("card", JSONObject().put("kicker", "Question").put("rows", JSONArray(listOf(
+                JSONObject().put("label", "Checking").put("key", "o:0"), JSONObject().put("label", "Visa").put("key", "o:1")))))
+        val proposal = mutableStateOf(question)
+        compose.setContent { MaterialTheme { AssistantProposalCard(proposal.value, "SAR", busy = false, act = {}, choose = {}, answer = { answers += it }) } }
+        // Each answer is a button, never a row to tick; pressing one sends its words.
+        compose.onNodeWithContentDescription("Apply: Visa").assertDoesNotExist()
+        compose.onNodeWithText("Visa").performClick()
+        compose.runOnIdle { assertEquals(listOf("Visa"), answers) }
+        // Answered, it folds to what was asked, and its answers are no longer buttons.
+        proposal.value = JSONObject(question.toString()).put("status", "applied").put("actions", JSONArray())
+        compose.onNodeWithText("Asked: Which account paid for it?").assertExists()
+        compose.onNodeWithTag("assistant-card-state").assertDoesNotExist()
+        compose.onNodeWithTag("assistant-card-line").performClick()
+        compose.onAllNodesWithTag("assistant-answer").assertCountEquals(0)
+        compose.onNodeWithText("Visa").assertExists()
+
+        // Figures: a bar for each row, and Remove in the menu with Show as the button.
+        proposal.value = JSONObject().put("id", "p2").put("kind", "figures").put("status", "proposed").put("title", "Spending in October").put("made", true)
+            .put("actions", JSONArray(listOf("remove", "show"))).put("card", JSONObject().put("kicker", "Figures").put("rows", JSONArray(listOf(
+                JSONObject().put("label", "Groceries").put("amount", -120_000L), JSONObject().put("label", "Dining out").put("amount", -60_000L))))
+                .put("total", JSONObject().put("label", "Total").put("amount", -180_000L)))
+        compose.onAllNodesWithTag("assistant-figure-bar").assertCountEquals(2)
+        compose.onNodeWithText("Total").assertExists()
+        compose.onNodeWithText("Show in the budget").assertExists()
+
+        // A deletion's button says how many it deletes, and fewer once some are left out.
+        val deleting = listOf(row("Careem · Oct 3", -3800, "t:a", null, JSONObject()), row("Extra Electronics · Oct 5", -89900, "t:b", null, JSONObject()))
+        val delete = { skipped: Boolean -> JSONObject().put("id", "p3").put("kind", "delete").put("status", "proposed").put("title", "Delete 2 transactions")
+            .put("actions", JSONArray(listOf("apply", "askChanges", "discard")))
+            .put("card", JSONObject().put("kicker", "Proposal · Delete").put("rows", JSONArray(deleting.map { JSONObject(it.toString()).put("skipped", skipped && it.optString("key") == "t:b") }))) }
+        proposal.value = delete(false)
+        compose.onNodeWithTag("assistant-card-main").assertTextEquals("Delete 2 transactions")
+        proposal.value = delete(true)
+        compose.onNodeWithTag("assistant-card-main").assertTextEquals("Delete 1 transaction")
     }
 
     /** The card as the assistant screen keeps it: each revision made by `marking`, the card it gives shown, and a row's editor over it. */
@@ -131,8 +268,13 @@ class ProposalCardUiTest {
         val revise = { revision: JSONObject -> revisions += revision; proposal.value = marking(revision, proposal.value, start) }
         compose.setContent {
             MaterialTheme {
-                AssistantProposalCard(proposal.value, "SAR", busy = false, canUndo = false, apply = { applied++ }, undo = {}, discard = {}, refine = {},
-                    reviewImport = {}, saveImport = {}, report = {}, spreadsheet = {}, revise = revise, change = { changing.value = it })
+                AssistantProposalCard(proposal.value, "SAR", busy = false, act = { action ->
+                    when (action) {
+                        ProposalAction.Apply -> applied++
+                        ProposalAction.UseOriginal -> revise(ProposalChoices.original())
+                        else -> {}
+                    }
+                }, choose = revise, change = { changing.value = it })
                 changing.value?.let { row ->
                     ProposalRowEditor(row, budget, null, null, "2026-10", { change ->
                         revise(ProposalChoices.change(proposal.value.optJSONObject("choices"), row.text("key"), change)); changing.value = null
@@ -148,6 +290,8 @@ class ProposalCardUiTest {
         val set = revision.getJSONArray("set").let { list -> (0 until list.length()).map(list::getJSONObject) }
         val next = JSONObject(proposal.toString())
         if (skip.isEmpty() && set.isEmpty()) next.remove("choices") else next.put("choices", revision)
+        // The assistant's own version is on offer once the user has chosen something.
+        next.put("actions", JSONArray(if (next.has("choices")) listOf("apply", "askChanges", "useOriginal", "discard") else listOf("apply", "askChanges", "discard")))
         next.getJSONObject("card").put("rows", JSONArray(start.map { row ->
             val given = set.firstOrNull { it.getString("key") == row.optString("key") }
             JSONObject(row.toString()).put("skipped", row.optString("key") in skip).put("edited", given != null).apply {
@@ -159,7 +303,8 @@ class ProposalCardUiTest {
     }
 
     private fun draft(rows: List<JSONObject>) = JSONObject().put("id", "p1").put("title", "Categorize 2 transactions").put("kind", "transactions")
-        .put("status", "proposed").put("card", JSONObject().put("kicker", "Proposal · Transactions").put("rows", JSONArray(rows)).put("stats", JSONArray()).put("more", 0))
+        .put("status", "proposed").put("made", false).put("actions", JSONArray(listOf("apply", "askChanges", "discard")))
+        .put("card", JSONObject().put("kicker", "Proposal · Transactions").put("rows", JSONArray(rows)).put("stats", JSONArray()).put("more", 0))
     private fun row(label: String, amount: Long, key: String, detail: String?, edit: JSONObject) =
         JSONObject().put("label", label).put("amount", amount).put("key", key).put("edit", edit).apply { if (detail != null) put("detail", detail) }
     private fun category(id: String, name: String) = JSONObject().put("id", id).put("name", name).put("group", "Everyday")

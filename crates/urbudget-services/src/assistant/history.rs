@@ -2,10 +2,48 @@
 //! append-only: earlier turns are sent back exactly as they were, which some models require.
 use crate::t;
 use super::attachments::Meta;
+use super::llm::{Provider, Usage};
 use super::proposals::{Card, Proposal, Status};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+
+/// What went with a message besides its words, for the panel to show on it: where the user was
+/// and what they attached. The model gets the same in the message's note.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SentWith {
+    /// The page's key as the app sent it ("budget", "transactions"…); the app names it.
+    pub page: String,
+    /// YYYY-MM, when the page shows a month.
+    pub month: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    /// How many selected transactions were attached.
+    pub transactions: usize,
+    /// Which ones, by id: the only transactions a deletion can be proposed for. Not in the view.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub selected: Vec<String>,
+    /// The bank file on the Import page went too.
+    pub import: bool,
+}
+
+/// What a conversation was started from, when it carries on an earlier one that grew too long.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Carried {
+    /// The earlier conversation's title.
+    pub from: String,
+    /// What the model is told of it with the first message.
+    pub text: String,
+}
+
+/// A conversation is long enough to offer carrying on in a new one when its latest request sent
+/// more than this many tokens: each further round costs that much again.
+pub const LONG: u64 = 120_000;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -23,6 +61,8 @@ pub enum Item {
         /// are made against this, never the import as it is later.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         import: Option<crate::bank_statement::Brief>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sent_with: Option<SentWith>,
     },
     Assistant {
         text: String,
@@ -50,6 +90,14 @@ pub enum Item {
         provider: String,
         value: Value,
     },
+    /// Something the app tells the model partway through (its last step, a change of language).
+    /// It's sent in the user's turn and stays where it was said, so earlier turns never change;
+    /// the panel doesn't show it.
+    Note {
+        text: String,
+    },
+    /// The reply before this stopped at its length limit.
+    Cut,
     Error {
         text: String,
         #[serde(default)]
@@ -58,19 +106,40 @@ pub enum Item {
     Stopped,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Thread {
     pub id: String,
     pub title: String,
     pub created: String,
     pub updated: String,
-    /// The instructions the conversation started with; kept so earlier turns stay valid.
+    /// The instructions the conversation started with, the language part included; kept so
+    /// earlier turns stay valid. Some models refuse a conversation whose instructions, tools or
+    /// earlier messages changed since they last answered (see `anthropic.rs`).
     #[serde(default)]
     pub instructions: String,
+    /// The app's language the instructions were written for ("en" or "ar"). A switch since is
+    /// told in a note, not by changing the instructions.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub language: String,
+    /// Whether the bank-text tools were offered when the conversation began. The tool list
+    /// stays that way for its whole life.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bank_texts: Option<bool>,
     pub items: Vec<Item>,
     #[serde(default)]
     pub proposals: Vec<Proposal>,
+    /// Tokens every request of the conversation used, added up.
+    #[serde(default)]
+    pub usage: Usage,
+    /// Tokens the latest request sent: how much the next one will, at least.
+    #[serde(default)]
+    pub last_input: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub carried: Option<Carried>,
+    /// The user's thumbs on replies, by the reply's place in `items`: true is up.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub ratings: BTreeMap<usize, bool>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -119,9 +188,8 @@ pub fn list(folder: &Path) -> Vec<Listing> {
         .filter_map(Result::ok)
         .filter(|e| e.path().extension().is_some_and(|x| x == "json"))
         .filter_map(|e| {
-            let raw = std::fs::read(e.path()).ok()?;
-            let t: Thread = serde_json::from_slice(&raw).ok()?;
-            Some(Listing { id: t.id, title: t.title, updated: t.updated })
+            // Only the three fields: the rest of the file is passed over, not built.
+            serde_json::from_slice::<Listing>(&std::fs::read(e.path()).ok()?).ok()
         })
         .collect();
     out.sort_by(|a, b| b.updated.cmp(&a.updated));
@@ -136,12 +204,16 @@ pub fn delete(folder: &Path, id: &str) -> Result<(), String> {
         _ => Ok(()),
     }
 }
-/// Removes every conversation and attached file of this budget.
+/// Removes every conversation and attached file of this budget. A file chosen for a message
+/// that isn't sent yet is no conversation's, and stays for it.
 pub fn delete_all(folder: &Path) -> Result<(), String> {
-    match std::fs::remove_dir_all(root(folder)) {
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
-        _ => Ok(()),
+    for kept in [threads(folder), files(folder)] {
+        match std::fs::remove_dir_all(kept) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.to_string()),
+            _ => {}
+        }
     }
+    Ok(())
 }
 
 /// What the panel needs to draw a proposal: no stored change or import rows.
@@ -167,8 +239,87 @@ pub struct ProposalView<'a> {
     /// For a `bankTexts` card, what the phone does when it's applied.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bank_texts: Option<&'a Value>,
+    /// A report, a spreadsheet or a converted file: something made, not a change to apply.
+    pub made: bool,
+    /// What the card offers now, in order, the first being the main one. The apps name and draw
+    /// them; one an app doesn't know it leaves out.
+    pub actions: Vec<&'static str>,
+    /// What the card has to say about itself, in one place: `tone` is "info" (it was brought up
+    /// to date), "warn" (something to check) or "error" (it can't be applied).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub applied_at: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replaced_by: Option<&'a str>,
+}
+
+/// What a card offers, by its kind and where it stands.
+///
+/// - A change waiting: "apply" (or "applyToImport" for an import's fixes, "applyBankTexts" on the
+///   phone), "askChanges", "useOriginal" once the user has chosen on it, "discard".
+/// - Applied: "undo", which the app shows while the change is still the budget's latest.
+/// - Failed: "askAgain" (ask the assistant for a new version) and "discard".
+/// - Set aside or replaced: "restore".
+/// - Something made: "preview", "print" and "excel" for a report; "open" and "save" for a
+///   spreadsheet; "reviewImport" and "saveCsv" for a converted file; "remove" for each, and for
+///   figures.
+/// - A question: "answer", until the user's next message.
+/// - "show", where the card names categories or transactions the app can go to.
+fn actions(p: &Proposal, sheets: usize) -> Vec<&'static str> {
+    use Status::*;
+    let mut actions: Vec<&'static str> = match (p.kind.as_str(), p.status) {
+        (_, Discarded | Replaced) => vec!["restore"],
+        ("report", _) if sheets > 0 => vec!["preview", "print", "excel", "remove"],
+        ("report", _) => vec!["preview", "print", "remove"],
+        ("spreadsheet", _) => vec!["open", "save", "remove"],
+        ("import", Applied) => vec!["saveCsv"],
+        ("import", _) => vec!["reviewImport", "saveCsv", "remove"],
+        ("figures", _) => vec!["remove"],
+        ("question", Proposed) => vec!["answer"],
+        ("question", _) => vec![],
+        (_, Failed) => vec!["askAgain", "discard"],
+        ("fix" | "bankTexts", Applied) => vec![],
+        ("fix", _) => vec!["applyToImport", "askChanges", "discard"],
+        ("bankTexts", _) => vec!["applyBankTexts", "askChanges", "discard"],
+        (_, Applied) => vec!["undo"],
+        (_, Proposed | Undone) => vec!["apply", "askChanges", "discard"],
+    };
+    if p.review.is_some() && matches!(p.status, Proposed | Undone) && !p.made() {
+        let at = actions.len() - 1;
+        actions.insert(at, "useOriginal");
+    }
+    // New transactions are there to show only once they're added, and deleted ones only until.
+    let there = match &p.change {
+        Some(super::proposals::Change::Add { .. }) => p.status == Applied,
+        Some(super::proposals::Change::Delete { .. }) => p.status != Applied,
+        _ => true,
+    };
+    let names = !p.card.highlight.categories.is_empty() || !p.card.highlight.transactions.is_empty();
+    if names && there && (p.change.is_some() || p.kind == "figures") && matches!(p.status, Proposed | Undone | Applied) {
+        actions.push("show");
+    }
+    actions
+}
+
+/// What a card says about itself, apart from the warning that's part of what it proposes.
+fn message(p: &Proposal) -> Option<Value> {
+    let said = |tone: &str, text: &str| json!({ "tone": tone, "text": text });
+    match (&p.problem, p.status) {
+        // A report or a file can't fail: an older app may have marked one so.
+        (_, Status::Failed) if p.made() => None,
+        (Some(text), Status::Failed) => Some(said("error", text)),
+        (None, Status::Failed) => Some(said("error", &t!("This can't be applied any more."))),
+        (Some(text), _) => Some(said(if p.updated { "info" } else { "warn" }, text)),
+        (None, _) => None,
+    }
 }
 pub fn proposal_view(p: &Proposal) -> Value {
+    let sheets = match (&p.workbook, &p.report) {
+        (Some(w), _) => w.sheets.len(),
+        (None, Some(r)) => super::workbook::report_tables(&r.body).len(),
+        _ => 0,
+    };
     serde_json::to_value(ProposalView {
         id: &p.id,
         title: &p.title,
@@ -177,31 +328,67 @@ pub fn proposal_view(p: &Proposal) -> Value {
         card: &p.card,
         problem: p.problem.as_deref(),
         rows: p.import.as_ref().map_or(0, |i| i.rows.len()),
-        sheets: match (&p.workbook, &p.report) {
-            (Some(w), _) => w.sheets.len(),
-            (None, Some(r)) => super::workbook::report_tables(&r.body).len(),
-            _ => 0,
-        },
+        sheets,
         fixes: p.fixes.as_ref(),
         choices: p.review.as_ref().map(|r| &r.revision),
         bank_texts: p.bank_texts.as_ref(),
+        made: p.made(),
+        actions: actions(p, sheets),
+        message: message(p),
+        applied_at: p.applied_at.as_deref(),
+        replaced_by: p.replaced_by.as_deref(),
     })
     .unwrap_or(Value::Null)
 }
 
-/// The conversation as the panel shows it.
-pub fn view(t: &Thread) -> Value {
+/// What the panel offers under an error, by its code and the service in use: "signIn" (sign in
+/// with ChatGPT again), "settings" (the key, the model or the service needs changing), "usage"
+/// (the plan's limit: open its usage page), "newConversation" (this one no longer fits: carry on
+/// in a new one), "retry", or "none" when asking again wouldn't help.
+pub fn error_action(code: &str, provider: Provider) -> &'static str {
+    let plan = provider == Provider::Chatgpt;
+    match code {
+        "full" => "newConversation",
+        "signIn" if plan => "signIn",
+        "signIn" | "model" | "notEligible" | "unsupported" => "settings",
+        "limit" if plan => "usage",
+        "refused" => "none",
+        _ => "retry",
+    }
+}
+
+/// The conversation as the panel shows it. Only its last entry, when that's an error, carries
+/// an `action`: an earlier error's moment has passed. A reply carries its place in the history
+/// (`index`, for rating it), the tools its turn had called by then, and the user's thumb.
+pub fn view(t: &Thread, provider: Provider) -> Value {
     let mut entries = vec![];
-    for item in &t.items {
+    let mut called: Vec<&str> = vec![];
+    for (index, item) in t.items.iter().enumerate() {
         match item {
-            Item::User { text, attachments, .. } => entries.push(json!({
-                "kind": "user",
-                "text": text,
-                "attachments": attachments,
-            })),
-            Item::Assistant { text } if !text.trim().is_empty() => {
-                entries.push(json!({ "kind": "assistant", "text": text }))
+            Item::User { text, attachments, sent_with, .. } => {
+                called.clear();
+                let mut entry = json!({ "kind": "user", "text": text, "attachments": attachments });
+                if let Some(with) = sent_with {
+                    entry["with"] = json!(with);
+                    if let Some(shown) = entry["with"].as_object_mut() {
+                        shown.remove("selected");
+                    }
+                }
+                entries.push(entry);
             }
+            Item::Call { name, .. } => {
+                if !called.contains(&name.as_str()) {
+                    called.push(name);
+                }
+            }
+            Item::Assistant { text } if !text.trim().is_empty() => {
+                let mut entry = json!({ "kind": "assistant", "text": text, "index": index, "tools": called });
+                if let Some(up) = t.ratings.get(&index) {
+                    entry["rating"] = json!(if *up { "up" } else { "down" });
+                }
+                entries.push(entry);
+            }
+            Item::Cut => entries.push(json!({ "kind": "cut" })),
             Item::Result { step, failed, proposal, .. } => {
                 if !step.is_empty() {
                     entries.push(json!({ "kind": "step", "text": step, "failed": failed }));
@@ -215,7 +402,53 @@ pub fn view(t: &Thread) -> Value {
             _ => {}
         }
     }
-    json!({ "id": t.id, "title": t.title, "entries": entries })
+    if let Some(last) = entries.last_mut().filter(|e| e["kind"] == "error") {
+        last["action"] = json!(error_action(last["code"].as_str().unwrap_or_default(), provider));
+    }
+    let mut view = json!({ "id": t.id, "title": t.title, "entries": entries, "usage": t.usage, "long": t.last_input > LONG });
+    if let Some(carried) = &t.carried {
+        view["continuedFrom"] = json!(carried.from);
+    }
+    view
+}
+
+/// What a conversation hands to the one that carries it on: the words said last, oldest first,
+/// and what became of its proposals. No lookups, files or thinking.
+pub fn carry(t: &Thread) -> String {
+    const EXCHANGES: usize = 8;
+    let cut = |text: &str, max: usize| super::tools::truncate(text.trim(), max);
+    let mut said: Vec<String> = t
+        .items
+        .iter()
+        .rev()
+        .filter_map(|item| match item {
+            Item::User { text, .. } if !text.trim().is_empty() => Some(format!("The user: {}", cut(text, 600))),
+            Item::Assistant { text } if !text.trim().is_empty() => Some(format!("You: {}", cut(text, 1200))),
+            _ => None,
+        })
+        .take(EXCHANGES)
+        .collect();
+    said.reverse();
+    for p in &t.proposals {
+        said.push(format!("Proposal \u{201c}{}\u{201d}: {}", p.title, super::status_word(p.status)));
+    }
+    said.join("\n")
+}
+
+/// Takes Claude's thinking out of the kept replies. Its newer models refuse a block of thinking
+/// once anything before it has changed (the instructions, the tools, an earlier message); without
+/// the thinking the same conversation is accepted, and only that reasoning is lost. Says whether
+/// there was any to take out.
+pub fn drop_thinking(items: &mut [Item]) -> bool {
+    let mut dropped = false;
+    for item in items {
+        let Item::Raw { provider, value } = item else { continue };
+        let Some(blocks) = value.as_array_mut().filter(|_| provider == "anthropic") else { continue };
+        let before = blocks.len();
+        blocks.retain(|b| !matches!(b["type"].as_str(), Some("thinking" | "redacted_thinking")));
+        dropped |= blocks.len() != before;
+    }
+    dropped
 }
 
 /// Pairs every call with a result, so a stopped turn can still be sent back.
@@ -258,8 +491,8 @@ mod tests {
             created: "2026-10-16T10:00:00Z".into(),
             updated: "2026-10-16T10:01:00Z".into(),
             instructions: "x".into(),
-            items: vec![Item::User { text: "hi".into(), attachments: vec![], context: String::new(), at: String::new(), import: None }],
-            proposals: vec![],
+            items: vec![Item::User { text: "hi".into(), attachments: vec![], context: String::new(), at: String::new(), import: None, sent_with: None }],
+            ..Thread::default()
         };
         save(dir.path(), &t).unwrap();
         assert_eq!(load(dir.path(), "t_1").unwrap(), t);
@@ -267,6 +500,57 @@ mod tests {
         delete(dir.path(), "t_1").unwrap();
         assert!(list(dir.path()).is_empty());
         assert!(load(dir.path(), "../budget").is_err());
+    }
+
+    #[test]
+    fn only_the_last_error_says_what_helps() {
+        let error = |code: &str| Item::Error { text: "It failed.".into(), code: code.into() };
+        let mut t = Thread { id: "t_1".into(), title: "x".into(), created: String::new(), updated: String::new(), instructions: String::new(),
+            items: vec![error("busy"), error("signIn")], proposals: vec![], ..Default::default() };
+        let entries = |t: &Thread, provider| view(t, provider)["entries"].as_array().unwrap().clone();
+        let plan = entries(&t, Provider::Chatgpt);
+        assert!(plan[0].get("action").is_none());
+        assert_eq!(plan[1]["action"], "signIn");
+        assert_eq!(entries(&t, Provider::Anthropic)[1]["action"], "settings");
+        // Asking again helps when the service was busy, and never after a refusal.
+        assert_eq!((error_action("busy", Provider::Openai), error_action("other", Provider::Chatgpt)), ("retry", "retry"));
+        assert_eq!((error_action("refused", Provider::Anthropic), error_action("limit", Provider::Chatgpt), error_action("limit", Provider::Openai)), ("none", "usage", "retry"));
+        assert_eq!((error_action("model", Provider::Chatgpt), error_action("unsupported", Provider::Openai)), ("settings", "settings"));
+        // Once the conversation has moved on, the error offers nothing.
+        t.items.push(Item::Stopped);
+        assert!(entries(&t, Provider::Chatgpt).iter().all(|e| e.get("action").is_none()));
+    }
+
+    #[test]
+    fn a_card_says_what_it_offers_and_what_it_has_to_say() {
+        use crate::assistant::proposals::{build, build_report, Change, Move};
+        let b = urbudget_core::test_support::sample();
+        let offered = |p: &Proposal| proposal_view(p)["actions"].as_array().unwrap().iter().map(|a| a.as_str().unwrap().to_owned()).collect::<Vec<_>>().join(" ");
+        let mut change = build(Change::Moves { month: "2026-10".into(), moves: vec![Move { from: None, to: Some("food".into()), amount: 1000 }] }, "Give food more room".into(), &b).unwrap();
+        assert_eq!(offered(&change), "apply askChanges discard show");
+        assert!(!proposal_view(&change)["made"].as_bool().unwrap() && proposal_view(&change).get("message").is_none());
+        // Brought up to date with the budget: said gently. Something to check: a warning.
+        change.problem = Some("Your budget changed.".into());
+        change.updated = true;
+        assert_eq!(proposal_view(&change)["message"], json!({ "tone": "info", "text": "Your budget changed." }));
+        change.updated = false;
+        assert_eq!(proposal_view(&change)["message"]["tone"], "warn");
+        change.status = Status::Failed;
+        assert_eq!((offered(&change).as_str(), proposal_view(&change)["message"]["tone"].as_str()), ("askAgain discard", Some("error")));
+        change.status = Status::Applied;
+        change.applied_at = Some("2026-10-21T10:00:00Z".into());
+        assert_eq!((offered(&change).as_str(), proposal_view(&change)["appliedAt"].as_str()), ("undo show", Some("2026-10-21T10:00:00Z")));
+        for set_aside in [Status::Discarded, Status::Replaced] {
+            change.status = set_aside;
+            assert_eq!(offered(&change), "restore");
+        }
+        // A report is something made: opened and saved, never applied; removed, and put back.
+        let mut report = build_report("October in review".into(), None, "## Spending\n\n| Category | Spent |\n|---|---:|\n| Food | 10.00 |".into());
+        assert_eq!((offered(&report).as_str(), proposal_view(&report)["made"].as_bool()), ("preview print excel remove", Some(true)));
+        report.status = Status::Discarded;
+        assert_eq!(offered(&report), "restore");
+        report.status = Status::Failed;
+        assert!(proposal_view(&report).get("message").is_none() && offered(&report).starts_with("preview"));
     }
 
     #[test]

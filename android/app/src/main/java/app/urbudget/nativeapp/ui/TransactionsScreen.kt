@@ -12,9 +12,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -59,6 +62,7 @@ import app.urbudget.nativeapp.Words
 import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -167,7 +171,8 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
                                 setCategory: (String) -> Unit, edit: (JSONObject) -> Unit, add: () -> Unit, editAccount: (JSONObject) -> Unit,
                                 reconcile: (JSONObject) -> Unit, editSchedule: (JSONObject?) -> Unit, vm: BudgetViewModel,
                                 bar: @Composable RowScope.() -> Unit, setDockHidden: (Boolean) -> Unit,
-                                initialFrom: String = "", initialThrough: String = "", initialSearch: String = "", payCard: (String) -> Unit = {}, openAccount: (String) -> Unit = {}) {
+                                initialFrom: String = "", initialThrough: String = "", initialSearch: String = "", payCard: (String) -> Unit = {}, openAccount: (String) -> Unit = {},
+                                openId: String? = null, showing: Showing? = null) {
     val currency = budget.text("currency")
     val monthFirst = budget.text("dateFormat") == "mdy"
     var searching by rememberSaveable { mutableStateOf(initialSearch.isNotEmpty()) }
@@ -239,6 +244,29 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
         computing = false
     }
     val lines = produced?.takeIf { it.first == accountFilter }?.second
+    // "Show in the budget" on an assistant's card that names transactions: they're selected here, in
+    // the register's own selection, with the search and filters that could hide them put away and
+    // the first of them in view. Each request is taken once, so coming back doesn't select them again.
+    val registerList = rememberLazyListState()
+    var shownKey by rememberSaveable { mutableIntStateOf(0) }
+    LaunchedEffect(showing?.key) {
+        val target = showing?.takeIf { it.key != shownKey && it.what.transactions.isNotEmpty() } ?: return@LaunchedEffect
+        shownKey = target.key
+        val wanted = target.what.transactions.toSet()
+        val unfiltered = search.isEmpty() && status.isEmpty() && flagFilter.isEmpty() && from.isEmpty() && through.isEmpty() && minimum.isEmpty() && maximum.isEmpty()
+        val before = produced
+        searching = false; search = ""; status = ""; flagFilter = ""; from = ""; through = ""; minimum = ""; maximum = ""
+        // The whole register's lines: the ones here now, or the next ones once the filters are gone.
+        val whole = snapshotFlow { produced }.first { it != null && (unfiltered || it !== before) }?.second.orEmpty()
+        // One that has gone from the budget since the card was made isn't there to select.
+        val found = whole.mapNotNullTo(LinkedHashSet()) { line -> (line as? TxLine)?.id?.takeIf { it in wanted } }
+        selected = found
+        if (found.isEmpty()) return@LaunchedEffect
+        // A frame for the selection to take the place of what stands above the lines, and one for the list to be laid out.
+        repeat(2) { withFrameNanos { } }
+        // With a selection open the lines are the list's only items: the day's band above the first of them comes into view with it.
+        registerList.scrollToItem((whole.indexOfFirst { it is TxLine && it.id in found } - 1).coerceAtLeast(0))
+    }
     val visibleIds = remember(lines) { lines.orEmpty().mapNotNull { (it as? TxLine)?.id } }
     val allSelected = selecting && selected.size >= visibleIds.size && selected.containsAll(visibleIds)
     val selectedTotal = remember(selected, lines) { lines.orEmpty().sumOf { if (it is TxLine && it.id in selected) it.amount else 0L } }
@@ -270,7 +298,8 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
         else -> stringResource(R.string.tab_transactions)
     }
     val earliest = remember(budget) { budget.rows("transactions").minOfOrNull { it.text("date") } }
-    Box(Modifier.fillMaxSize()) {
+    // On a large screen the register is the list, and a transaction opens beside it (the app puts the form there).
+    ListDetail(detail = { RegisterPaneHint() }, list = { Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             if (selecting) Row(Modifier.fillMaxWidth().background(ur.bg).statusBarsPadding().height(64.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 RoundIconButton(Icons.Outlined.Close, stringResource(R.string.selection_end), { selected = emptySet() })
@@ -301,26 +330,35 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
                 }
             }
             Box(Modifier.fillMaxWidth().height(2.dp)) { if (computing && lines != null) LinearProgressIndicator(Modifier.matchParentSize(), color = ur.accent, trackColor = ur.bg) }
-            LazyColumn(Modifier.fillMaxSize().testTag("register"), contentPadding = PaddingValues(bottom = DockRoom)) {
+            // Beside a transaction the register is a card of its own, inset from the pane's edges, so its
+            // bands don't run up against the rail or the form: its first band rounds at the top, its last
+            // row at the bottom, and the cards above it line up with its edges.
+            val beside = LocalSplitList.current != null
+            val cardInset = if (beside) 0.dp else Gutter
+            val scheduledShown = schedules.isNotEmpty() && !searching && !selecting
+            LazyColumn(Modifier.fillMaxSize().then(if (beside) Modifier.padding(horizontal = 10.dp) else Modifier).testTag("register"), state = registerList,
+                contentPadding = PaddingValues(bottom = DockRoom)) {
                 if (account != null && summary != null) item(key = "summary", contentType = "summary") {
                     AccountSummaryCard(account, summary.rows("accounts").firstOrNull { it.text("id") == accountFilter }, currency,
                         { reconcile(account) }, { editAccount(account) }, if (account.text("kind") == "credit") ({ payCard(account.text("id")) }) else null,
-                        Modifier.padding(horizontal = Gutter).padding(bottom = 14.dp))
+                        Modifier.padding(horizontal = cardInset).padding(bottom = 14.dp))
                 }
                 // A loan's figures and payoff planner (LoanHeader.kt), or a debt's prompt to add them.
                 if (account != null && summary != null && loanShown) item(key = "loan", contentType = "loan") {
-                    LoanHeader(account, budget, accountBalance, vm, Modifier.padding(horizontal = Gutter).padding(bottom = 14.dp))
+                    LoanHeader(account, budget, accountBalance, vm, Modifier.padding(horizontal = cardInset).padding(bottom = 14.dp))
                 }
                 if (toApprove > 0 && status != "approval" && !selecting) item(key = "approve", contentType = "notice") {
-                    Notice(countText(R.plurals.transactions_to_approve, toApprove), Modifier.padding(horizontal = Gutter).padding(bottom = 12.dp),
+                    Notice(countText(R.plurals.transactions_to_approve, toApprove), Modifier.padding(horizontal = cardInset).padding(bottom = 12.dp),
                         tone = "info", action = stringResource(R.string.common_review), onAction = { status = "approval"; searching = true }, icon = Icons.Outlined.NewReleases)
                 }
-                if (schedules.isNotEmpty() && !searching && !selecting) {
+                if (scheduledShown) {
                     item(key = "scheduled", contentType = "band") {
                         val (incoming, outgoing) = scheduledSoon
                         val soon = listOfNotNull(if (incoming != 0L) Money.signed(incoming, currency) else null, if (outgoing != 0L) money(outgoing, currency) else null)
-                        Band(stringResource(R.string.scheduled_band, "${schedules.size}"), trailing = if (soon.isEmpty()) null else stringResource(R.string.scheduled_band_30_days, soon.joinToString("  ")),
-                            open = scheduledOpen, onClick = { scheduledOpen = !scheduledOpen })
+                        Box(if (beside) Modifier.clip(PaneListShape) else Modifier) {
+                            Band(stringResource(R.string.scheduled_band, "${schedules.size}"), trailing = if (soon.isEmpty()) null else stringResource(R.string.scheduled_band_30_days, soon.joinToString("  ")),
+                                open = scheduledOpen, onClick = { scheduledOpen = !scheduledOpen })
+                        }
                     }
                     val shown = if (!scheduledOpen) emptyList() else if (showAllScheduled) schedules else schedules.take(3)
                     items(shown, key = { "s:${it.text("id")}" }, contentType = { "schedule" }) { schedule ->
@@ -345,9 +383,15 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
                 }
                 items(list.orEmpty(), key = { line -> when (line) { is DayLine -> "d:${line.date}"; is TxLine -> line.id } },
                     contentType = { if (it is DayLine) 0 else 1 }) { line ->
-                    when (line) {
+                    val edge = when {
+                        !beside -> null
+                        line === list?.firstOrNull() && !scheduledShown -> PaneListShape
+                        line === list?.lastOrNull() -> PaneListFoot
+                        else -> null
+                    }
+                    Box(if (edge != null) Modifier.clip(edge) else Modifier) { when (line) {
                         is DayLine -> Band(line.label)
-                        is TxLine -> TransactionLine(line, selecting, line.id in selected,
+                        is TxLine -> TransactionLine(line, selecting, line.id in selected || !selecting && line.id == openId,
                             open = {
                                 if (selecting) selected = if (line.id in selected) selected - line.id else selected + line.id
                                 else budget.row("transactions", line.id)?.let(edit)
@@ -363,7 +407,7 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
                             },
                             approve = { withCurrentBudget(budget, vm) { vm.runCommand("workflow", bulkAction(setOf(line.id), "approve", "", accountFilter)) } },
                             jump = { if (line.otherAccount.isNotBlank()) openAccount(line.otherAccount) })
-                    }
+                    } }
                 }
             }
         }
@@ -376,7 +420,7 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
                 delete = { confirmDelete = true },
                 more = { bulk = "payee" }, flags = flags)
         }
-    }
+    } })
     if (filtersOpen) FiltersSheet(budget, status, { status = it }, flagFilter, { flagFilter = it }, minimum, { minimum = it }, maximum, { maximum = it },
         order, { order = it }, categoryFilter, setCategory, accountFilter.isBlank()) { filtersOpen = false }
     if (datesOpen) DatesSheet(from, through, { f, t -> from = f; through = t }, earliest) { datesOpen = false }
@@ -387,6 +431,14 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
         text = { Text(stringResource(R.string.delete_transactions_message)) }, containerColor = ur.surface,
         confirmButton = { TextButton({ withCurrentBudget(budget, vm) { vm.runCommand("workflow", bulkAction(selected, "delete", "", accountFilter)); selected = emptySet() }; confirmDelete = false }) { Text(stringResource(R.string.common_delete), color = ur.negative) } },
         dismissButton = { TextButton({ confirmDelete = false }) { Text(stringResource(R.string.common_cancel)) } })
+}
+
+/** Beside the register on a large screen, until a transaction is opened there. */
+@Composable
+private fun RegisterPaneHint() {
+    Box(Modifier.fillMaxSize().statusBarsPadding(), contentAlignment = Alignment.Center) {
+        EmptyState(stringResource(R.string.register_pane_title), stringResource(R.string.register_pane_detail))
+    }
 }
 
 /** A date range as the register's pill shows it: "5 Oct 2026 – 4 Nov 2026", with the interface's month names. */
@@ -641,7 +693,9 @@ private data class SplitDraft(val original: JSONObject, val category: String, va
  */
 @Composable
 internal fun TransactionDialog(original: JSONObject?, budget: JSONObject, initialAccount: String, vm: BudgetViewModel, close: () -> Unit, saveOverride: ((JSONObject) -> Unit)? = null, dialogTitle: String? = null, extraFields: (@Composable () -> Unit)? = null,
-                               summary: JSONObject? = null) {
+                               summary: JSONObject? = null, host: FormHost? = null) {
+    val placed = host ?: if (wideWindow()) FormHost.SideWindow else FormHost.Screen
+    val pane = (placed as? FormHost.Beside)?.pane
     val editorState by vm.state.collectAsStateWithLifecycle()
     val openedBudget = remember { budget }
     val openedIdentity = remember { vm.state.value.budgetIdentity }
@@ -702,6 +756,15 @@ internal fun TransactionDialog(original: JSONObject?, budget: JSONObject, initia
                 .put("transfer", it.transfer).put("payee", it.payee).put("transferStatus", it.transferStatus)
         }))
     SideEffect { checkpoint.save(rawDraft) }
+    // Beside the register, the app asks before dropping changes when another row or tab is chosen. What
+    // it opened with is kept wherever the form is, so folding and unfolding the phone doesn't forget it.
+    val opening = remember { rawDraft.toString() }
+    if (pane != null) SideEffect { pane.dirty = rawDraft.toString() != opening; pane.discard = checkpoint::discard }
+    // Half open on a table, the keypad keeps to the flat half below the fold and the form stays above it.
+    // The form's foot is measured all along, so it's current the moment the phone is set on a table.
+    val table = tableTop()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    var formBottom by remember { mutableStateOf<Float?>(null) }
     val save: () -> Unit = {
         runCatching {
             require(account.isNotBlank()) { Words[R.string.transaction_choose_account] }; LocalDate.parse(date)
@@ -741,8 +804,9 @@ internal fun TransactionDialog(original: JSONObject?, budget: JSONObject, initia
             }
         }.onFailure { error = it.message }
     }
-    FullScreenDialog(cancel) {
-        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
+    val form: @Composable () -> Unit = {
+        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()
+            .onGloballyPositioned { formBottom = it.boundsInWindow().bottom }) {
             Box(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 6.dp)) {
                 IconButton(cancel, Modifier.align(Alignment.CenterStart)) { Icon(Icons.Outlined.Close, stringResource(R.string.common_cancel), tint = ur.text) }
                 Text(dialogTitle ?: if (original == null) stringResource(R.string.transaction_new) else stringResource(R.string.transaction_edit), Modifier.align(Alignment.Center), style = MaterialTheme.typography.titleMedium, color = ur.text)
@@ -846,9 +910,19 @@ internal fun TransactionDialog(original: JSONObject?, budget: JSONObject, initia
                 Spacer(Modifier.height(24.dp))
             }
             AnimatedVisibility(keypad, enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
-                AmountKeypad(pad, { keypad = false; if (original == null && payee.isBlank() && transfer.isBlank()) picker = "payee" })
+                // On a table: the whole flat half, the keys centred in it, like a calculator lying on the desk.
+                val flatHalf = if (table != null) formBottom?.let { bottom -> with(density) { bottom.toDp() } - table } else null
+                Box(Modifier.fillMaxWidth().then(if (flatHalf != null && flatHalf > 160.dp) Modifier.height(flatHalf) else Modifier), contentAlignment = Alignment.Center) {
+                    AmountKeypad(pad, { keypad = false; if (original == null && payee.isBlank() && transfer.isBlank()) picker = "payee" })
+                }
             }
         }
+    }
+    when (placed) {
+        is FormHost.Beside -> FormPane(cancel, form)
+        FormHost.Side -> SidePanel(cancel, ownWindow = false, form)
+        FormHost.SideWindow -> SidePanel(cancel, ownWindow = true, form)
+        FormHost.Screen -> FullScreenDialog(cancel, form)
     }
     when (picker) {
         "payee" -> PayeePickerSheet(budget, payees, account, payee, transfer, onPayee = { name ->
@@ -1033,6 +1107,13 @@ private fun BulkTransactionDialog(ids: Set<String>, account: String, budget: JSO
             "payee", "memo" -> Field(value, { value = it }, if (operation == "payee") stringResource(R.string.payee_label) else stringResource(R.string.memo_label))
             "duplicate" -> Text(stringResource(R.string.bulk_duplicate_help), color = ur.muted, style = MaterialTheme.typography.bodySmall)
             "delete" -> CheckRow(stringResource(R.string.bulk_delete_confirm), confirmDelete, { confirmDelete = it })
+        }
+        // The selection can go to the assistant instead, to ask about: its panel opens on it, with nothing sent.
+        LocalAssistantAsk.current?.let { ask ->
+            ListCard {
+                ListRow(stringResource(R.string.assistant_ask_assistant), Modifier.testTag("bulk-ask-assistant"), icon = Icons.AutoMirrored.Outlined.Chat, chevron = false,
+                    onClick = { ask.transactions(ids.toList()); done() })
+            }
         }
     }
 }

@@ -114,7 +114,7 @@ internal fun preparedBankImport(file: JSONObject, thread: String, proposal: Stri
     BankImportDraft(file.text("account"), file.text("name"), file.text("csv"), prepared = thread to proposal)
 
 /** The engine's answer, or why there's none; cancelled with whoever waits for it. */
-private suspend fun BudgetViewModel.ask(method: String, params: JSONObject, anyRevision: Boolean = false): JSONObject = suspendCancellableCoroutine { waiting ->
+internal suspend fun BudgetViewModel.ask(method: String, params: JSONObject, anyRevision: Boolean = false): JSONObject = suspendCancellableCoroutine { waiting ->
     val job = query(method, params, onError = { if (waiting.isActive) waiting.resumeWithException(IllegalStateException(it)) }, anyRevision = anyRevision) {
         if (waiting.isActive) waiting.resume(it)
     }
@@ -152,6 +152,7 @@ internal fun BankImportDialog(budget: JSONObject, vm: BudgetViewModel, draft: Ba
                               onImported: () -> Unit = {}, askAssistant: ((Uri) -> Unit)? = null, fixWithAssistant: (() -> Unit)? = null, close: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val importSaid = LocalImportSaid.current
     val budgetState by vm.state.collectAsStateWithLifecycle()
     var statement by remember { mutableStateOf<BankStatement?>(null) }
     var rows by remember { mutableStateOf<List<BankReviewRow>?>(null) }
@@ -289,7 +290,11 @@ internal fun BankImportDialog(budget: JSONObject, vm: BudgetViewModel, draft: Ba
                 val choices = withContext(Dispatchers.Default) { bankReviewChoices(imported, selected, true) }
                 require(source === vm.state.value.budget) { Words[R.string.bank_budget_changed_review] }
                 val failures = vm.operationFailureEpoch
-                vm.runCommand("bankApply", JSONObject().put("accountId", accountId).put("choices", choices).put("remember", remember ?: JSONObject.NULL)) { onImported(); close() }
+                vm.runCommand("bankApply", JSONObject().put("accountId", accountId).put("choices", choices).put("remember", remember ?: JSONObject.NULL)) {
+                    // The budget has them now: said, with the ones still without a category offered to the assistant.
+                    importSaid(source, vm.state.value.budget, false)
+                    onImported(); close()
+                }
                 // A failure counts even when it reads as the last one did, so Importing… never stays.
                 vm.afterPending {
                     if (vm.operationFailureEpoch != failures) { error = vm.state.value.error ?: Words[R.string.model_action_not_saved]; loading = false; saving = false }

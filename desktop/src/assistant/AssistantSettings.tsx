@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { Copy, LoaderCircle } from "lucide-react";
+import { Copy, LoaderCircle, X } from "lucide-react";
 import { errorText } from "../format";
+import { apply as applyPatch } from "../patch";
+import type { Budget } from "../types";
 import { useToast } from "../ui";
 import { assistant, type Model, type Provider, type Status } from "./api";
 import "./assistant.css";
@@ -11,9 +13,91 @@ const SERVICES: [Provider, string][] = [
   ["openai", msg("OpenAI API key")],
   ["anthropic", msg("Anthropic API key (Claude)")],
 ];
+/** The most a note holds; the core cuts a longer one short. */
+const NOTE = 200;
 
-/** Settings › Assistant: which service it uses, privacy, conversations, and (on a computer) other AI apps. */
-export function AssistantSettings() {
+/**
+ * The budget's notes for the assistant: each with a way to remove it, and a field to add one.
+ * The whole list is saved each time, as the change the core makes of it: one undo step, like
+ * any other edit.
+ */
+function Notes({ budget, transform }: { budget: Budget; transform: (work: (budget: Budget) => Promise<Budget>) => Promise<void> }) {
+  const toast = useToast();
+  const notes = budget.assistantNotes ?? [];
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  /** Saves the list; says whether it was kept. */
+  const save = async (wanted: string[]) => {
+    setBusy(true);
+    try {
+      const patch = await assistant.notes(budget, wanted);
+      const kept = applyPatch(budget, patch).assistantNotes ?? [];
+      // Nothing to save when the list is as it was (a note that's already there).
+      if (kept.length !== notes.length || kept.some((text, i) => text !== notes[i])) await transform(async (b) => applyPatch(b, patch));
+      return true;
+    } catch (e) {
+      toast({ message: errorText(e), tone: "error" });
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="panel assistant-settings">
+      <h2>{t("Notes for the assistant")}</h2>
+      <p className="help">
+        {t("Short notes the assistant keeps for this budget and gets with every message. It adds one when you ask it to remember something.")}
+      </p>
+      {notes.length === 0 ? (
+        <p className="help">{t("No notes yet.")}</p>
+      ) : (
+        <ul className="assistant-notes">
+          {notes.map((text) => (
+            <li key={text}>
+              <span dir="auto">{text}</span>
+              <button
+                className="icon-button"
+                aria-label={t("Remove note")}
+                title={t("Remove note")}
+                disabled={busy}
+                onClick={() => void save(notes.filter((kept) => kept !== text))}
+              >
+                <X size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form
+        className="assistant-key assistant-note-add"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const text = note.trim();
+          if (!text || busy) return;
+          void save([...notes, text]).then((kept) => kept && setNote(""));
+        }}
+      >
+        <input aria-label={t("Add a note")} placeholder={t("Add a note")} maxLength={NOTE} value={note} onChange={(e) => setNote(e.target.value)} />
+        <button className="primary" disabled={!note.trim() || busy}>
+          {busy ? <LoaderCircle size={14} className="spin" /> : null} {t("Add a note")}
+        </button>
+      </form>
+    </section>
+  );
+}
+
+/**
+ * Settings › Assistant: which service it uses, privacy, conversations, the notes it keeps for the
+ * open budget (when the page is given the budget and a way to change it), and (on a computer)
+ * other AI apps.
+ */
+export function AssistantSettings({
+  budget,
+  transform,
+}: {
+  budget?: Budget;
+  transform?: (work: (budget: Budget) => Promise<Budget>) => Promise<void>;
+} = {}) {
   const toast = useToast();
   const [status, setStatus] = useState<Status | null>(null);
   const [models, setModels] = useState<Model[]>([]);
@@ -245,6 +329,8 @@ export function AssistantSettings() {
           )}
         </div>
       </section>
+
+      {budget && transform && <Notes budget={budget} transform={transform} />}
 
       <section className="panel assistant-settings">
         <h2>{t("Use your budget in other AI apps")}</h2>

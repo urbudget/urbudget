@@ -23,6 +23,7 @@ import app.urbudget.nativeapp.BudgetViewModel
 import app.urbudget.nativeapp.R
 import app.urbudget.nativeapp.Words
 import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.urbudget.nativeapp.accountBadges
 import app.urbudget.nativeapp.records
 import app.urbudget.nativeapp.upsertRecord
@@ -219,6 +220,7 @@ private fun createAccount(budget: JSONObject, record: JSONObject) {
 @Composable
 internal fun AccountDialog(original: JSONObject?, budget: JSONObject, vm: BudgetViewModel, focusLoan: Boolean = false, close: () -> Unit) {
     val openedBudget = remember { budget }
+    val state by vm.state.collectAsStateWithLifecycle()
     val accountId = remember { original?.text("id")?.ifBlank { null } ?: UUID.randomUUID().toString() }
     // An untyped account is read as the accounts list reads it: an imported debt stays a debt.
     val balanceNow = remember { original?.let { account -> vm.state.value.summary?.rows("accounts")?.firstOrNull { it.text("id") == account.text("id") }?.optLong("balance") ?: account.optLong("openingBalance") } ?: 0L }
@@ -300,7 +302,7 @@ internal fun AccountDialog(original: JSONObject?, budget: JSONObject, vm: Budget
         if (original != null) Text(stringResource(R.string.account_kind_switch_help),
             style = MaterialTheme.typography.bodySmall, color = ur.muted)
         if (showLoan) {
-            LoanDetailsFields(budget, vm.state.value.summary, type, loan, { loan = it; loanChanged = true }, imported,
+            LoanDetailsFields(budget, state.summary, type, loan, { loan = it; loanChanged = true }, imported,
                 importable?.let { terms -> { loan = loanDraft(terms); loanChanged = true; imported = true } }, focusLoan)
             if (!AccountTypes.isLoanType(type)) Text(stringResource(R.string.loan_details_not_loan_type, typeLabel(type).lowercase()),
                 style = MaterialTheme.typography.bodySmall, color = ur.muted)

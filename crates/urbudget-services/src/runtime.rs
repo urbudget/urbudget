@@ -8,7 +8,10 @@ use std::sync::Mutex;
 use std::collections::HashMap;
 
 #[derive(Default)]
-struct History { token: String, undo: Vec<crate::patch::Patch>, redo: Vec<crate::patch::Patch>, proposal: Option<(String, String)> }
+/// `proposal` is the assistant's card (conversation, proposal) whose change is the latest in
+/// `undo`; `undone` is the one whose change is the latest in `redo`. The budget's own Undo and
+/// Redo move a card between them, and its conversation is told.
+struct History { token: String, undo: Vec<crate::patch::Patch>, redo: Vec<crate::patch::Patch>, proposal: Option<(String, String)>, undone: Option<(String, String)> }
 
 pub struct Runtime {
     pub db: Database,
@@ -942,6 +945,7 @@ impl Runtime {
             if history.undo.len() > 50 { history.undo.remove(0); }
             history.redo.clear();
             history.proposal = None;
+            history.undone = None;
         }
         history.token = saved.token.clone();
         (!history.undo.is_empty(), !history.redo.is_empty())
@@ -978,6 +982,7 @@ impl Runtime {
         let history = histories.entry(store.id().to_owned()).or_default();
         if history.token != status.token { *history = History { token: status.token.clone(), ..History::default() }; }
         let next = if redo { history.redo.last() } else { history.undo.last() }.cloned();
+        let mut moved = None;
         if let Some(patch) = next {
             let mut next = before.clone();
             patch.apply(&mut next);
@@ -986,10 +991,34 @@ impl Runtime {
             if redo { history.redo.pop(); history.undo.push(inverse); }
             else { history.undo.pop(); history.redo.push(inverse); }
             history.token = saved.token;
-            history.proposal = None;
+            moved = Self::card_moved(history, redo);
         }
         drop(histories); drop(store);
+        self.tell_card(moved);
         self.load()
+    }
+
+    /// After an undo or redo: the assistant's card whose change it was, and where the card now
+    /// stands. Undo of a card's change leaves it undone (and next in line for Redo); Redo puts
+    /// it back as applied. Anything else leaves no card at either end.
+    fn card_moved(history: &mut History, redo: bool) -> Option<((String, String), assistant::proposals::Status)> {
+        use assistant::proposals::Status;
+        if redo {
+            let card = history.undone.take();
+            history.proposal = card.clone();
+            card.map(|c| (c, Status::Applied))
+        } else {
+            let card = history.proposal.take();
+            history.undone = card.clone();
+            card.map(|c| (c, Status::Undone))
+        }
+    }
+    /// Tells a card's conversation where it stands after the budget's own Undo or Redo. A
+    /// conversation deleted since has nothing to tell.
+    fn tell_card(&self, moved: Option<((String, String), assistant::proposals::Status)>) {
+        if let Some(((thread, proposal), status)) = moved {
+            let _ = assistant::assistant_mark(&self.db, &self.assistant, thread, proposal, status, None);
+        }
     }
 
     /// `undo_redo` for a client that patches its own copy: the reply says what changed and no budget
@@ -1005,6 +1034,7 @@ impl Runtime {
         let history = histories.entry(store.id().to_owned()).or_default();
         if history.token != status.token { *history = History { token: status.token.clone(), ..History::default() }; }
         let next = if redo { history.redo.last() } else { history.undo.last() }.cloned();
+        let mut moved = None;
         let (patch, saved) = match next {
             Some(next) => {
                 let edit = store.edit_patch(&status.token, next)?;
@@ -1012,13 +1042,14 @@ impl Runtime {
                 if redo { history.redo.pop(); history.undo.push(edit.inverse); }
                 else { history.undo.pop(); history.redo.push(edit.inverse); }
                 history.token = edit.status.token.clone();
-                history.proposal = None;
+                moved = Self::card_moved(history, redo);
                 (edit.patch, edit.status)
             }
             None => (crate::patch::Patch::default(), status),
         };
         let (undo, redo_left) = (!history.undo.is_empty(), !history.redo.is_empty());
         drop(histories);
+        self.tell_card(moved);
         // Committed: failed totals must not read as a failed undo. Null tells the app to ask.
         let summary = store.read_draft(None, |b| totals(b, &month, as_of.as_deref())).ok();
         let mut reply = Self::ack(&saved, undo, redo_left);
@@ -1106,21 +1137,41 @@ impl Runtime {
                 self.save(&budget, &token)?;
                 self.load()
             }
+            "assistant_notes_commit" => {
+                let patch = assistant::assistant_notes(&self.db, None, field(&p, "notes")?)?;
+                if !patch.is_empty() {
+                    let mut store = self.db.store()?;
+                    let budget = store.full_draft(Some(patch))?;
+                    let token = store.status()?.token;
+                    drop(store);
+                    self.save(&budget, &token)?;
+                }
+                self.load()
+            }
+            "assistant_thread" => {
+                let mut view = assistant::dispatch(method, p.clone(), &self.db, &self.assistant, &self.simplefin, &self.cloud).await?;
+                let store = self.db.store()?;
+                let (id, token) = (store.id().to_owned(), store.status()?.token);
+                drop(store);
+                let thread = text("id")?;
+                let histories = self.history.lock().unwrap_or_else(|e| e.into_inner());
+                if let Some((_, proposal)) = histories.get(&id).filter(|h| h.token == token && !h.undo.is_empty()).and_then(|h| h.proposal.as_ref()).filter(|(of, _)| of == &thread) {
+                    view["undoable"] = json!(proposal);
+                }
+                Ok(view)
+            }
             "assistant_apply_commit" => {
                 let token = self.db.store()?.status()?.token;
-                let mut result = assistant::dispatch("assistant_apply", p.clone(), &self.db, &self.assistant, &self.simplefin, &self.cloud).await?;
+                // The card is marked applied once its change is saved: a save that fails leaves
+                // it as it was, to apply again.
+                let mut asked = p.clone();
+                asked["settle"] = json!(false);
+                let mut result = assistant::dispatch("assistant_apply", asked, &self.db, &self.assistant, &self.simplefin, &self.cloud).await?;
                 if !result["patch"].is_null() {
-                    let saved = (|| -> Result<(), String> {
-                        let patch = serde_json::from_value(result["patch"].clone()).map_err(|e| e.to_string())?;
-                        let budget = self.db.store()?.full_draft(Some(patch))?;
-                        self.save(&budget, &token).map(|_| ())
-                    })();
-                    if let Err(error) = saved {
-                        let mut reset = p;
-                        reset["status"] = json!("proposed");
-                        let _ = assistant::dispatch("assistant_mark", reset, &self.db, &self.assistant, &self.simplefin, &self.cloud).await;
-                        return Err(error);
-                    }
+                    let patch = serde_json::from_value(result["patch"].clone()).map_err(|e| e.to_string())?;
+                    let budget = self.db.store()?.full_draft(Some(patch))?;
+                    self.save(&budget, &token)?;
+                    result["proposal"] = assistant::assistant_mark(&self.db, &self.assistant, text("threadId")?, text("proposalId")?, assistant::proposals::Status::Applied, None)?;
                     let snapshot = self.load()?;
                     let changed = snapshot["token"].as_str() != Some(&token);
                     if changed {
