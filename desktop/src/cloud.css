@@ -115,6 +115,68 @@
 .plan-line {
   margin: 0 0 6px;
 }
+.pairing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+.pairing p {
+  margin: 0;
+  max-width: 420px;
+}
+/* In the unlock form the code sits with the form's own text, not centred in a dialog. */
+.pairing-start {
+  align-items: flex-start;
+  text-align: start;
+}
+.pairing-qr {
+  width: 220px;
+  height: 220px;
+  border-radius: 6px;
+}
+.pairing-code,
+.pairing-code-input {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  letter-spacing: 0.04em;
+}
+.pairing-code {
+  font-size: 17px;
+  user-select: all;
+}
+/* The one showing of a recovery code: set apart, so it reads as the thing to copy down. */
+.recovery-code {
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2, transparent);
+  font-size: 18px;
+}
+/* The dialog closes only by its own button, so it has no close button in its heading. */
+.modal.must-save .modal-heading .icon-button {
+  visibility: hidden;
+}
+/* What's rarely needed, folded away: the other ways to unlock, and sync's less used actions. */
+.unlock-help,
+.sync-more {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.unlock-help summary,
+.sync-more summary {
+  width: fit-content;
+  cursor: pointer;
+}
+.unlock-help > p,
+.sync-more > p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  margin: 8px 0 0;
+}
 .sync-footer {
   display: flex;
   flex-wrap: wrap;

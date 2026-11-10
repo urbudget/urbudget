@@ -16,8 +16,9 @@ export function statement(db: D1Database, sql: string, values: Params = {}) {
 }
 export const headJson = (h = "h") => `json_object('budgetId',${h}.budget_id,'incarnation',${h}.incarnation,'version',${h}.version,
  'keyGeneration',${h}.key_generation,'state',${h}.state,'payload',json(${h}.payload),'updatedSequence',${h}.updated_sequence,
- 'updatedAt',${h}.updated_at,'deletedAt',${h}.deleted_at,'retainedUntil',${h}.retained_until,'device',${h}.device)`;
-export type Account = { user_id: string; protocol: number; key_generation: string | null; salt: string | null; key_check: string | null; catalog_epoch: string; catalog_sequence: string; min_cursor: string };
+ 'updatedAt',${h}.updated_at,'deletedAt',${h}.deleted_at,'retainedUntil',${h}.retained_until,'device',${h}.device,
+ 'legacy',json(${h}.legacy))`;
+export type Account = { user_id: string; protocol: number; key_generation: string | null; salt: string | null; key_check: string | null; recovery_salt: string | null; recovery_wrapped: string | null; catalog_epoch: string; catalog_sequence: string; min_cursor: string };
 export type Installation = { last_sequence: string; last_digest: string | null; receipt: string | null; status: string };
 export type Staging = { sequence: string; digest: string; manifest: string; object_key: string | null; expires_at: string; claim: string | null; decision: string | null };
 export type MutationResult = { state: "terminal"; receipt: Receipt } | { state: "prepared"; sequence: string; digest: string; expiresAt: string; blobReady: boolean };
@@ -34,8 +35,15 @@ export async function installation(db: D1Database, user: string, id: string) {
 export async function staged(db: D1Database, user: string, id: string) {
   return statement(db, "SELECT * FROM sync_staging_v2 WHERE user_id=$user AND installation_id=$id", { user, id }).first<Staging>();
 }
+/**
+ * Whether this account may set up or move to protocol 2: everyone once SYNC_V2_ENABLED is "1",
+ * and before that the accounts listed by id in SYNC_V2_ACCOUNTS, for a staged start.
+ */
+export function activationEnabled(env: Env, user: string) {
+  return env.SYNC_V2_ENABLED === "1" || (env.SYNC_V2_ACCOUNTS ?? "").split(",").some(id => id.trim() === user);
+}
 export async function requireProtocolAccess(env: Env, user: string) {
-  if (env.SYNC_V2_ENABLED !== "1" && (await account(env.DB, user))?.protocol !== 2)
+  if (!activationEnabled(env, user) && (await account(env.DB, user))?.protocol !== 2)
     throw new ApiError(409, "activation_disabled", "Sync v2 is not enabled for this account.");
 }
 export async function register(env: Env, user: string, id: string) {
@@ -81,7 +89,8 @@ function parameters(env: Env, user: string, id: string, seq: string, digest: str
     version: m.expectedVersion ?? "0", nextIncarnation: m.newIncarnation ?? m.incarnation ?? "", kind: m.kind,
     bytes: m.payload?.length ?? 0, payload: m.payload ? canonical(m.payload) : null, sha: m.payload?.sha256 ?? null,
     expectedProtocol: m.expectedProtocol ?? 2, salt: m.key?.salt ?? null, check: m.key?.check ?? null,
-    sourceSha: m.source?.sha256 ?? null, enabled: env.SYNC_V2_ENABLED === "1" ? 1 : 0,
+    recoverySalt: m.key?.recovery?.salt ?? null, recoveryWrapped: m.key?.recovery?.wrapped ?? null,
+    sourceSha: m.source?.sha256 ?? null, enabled: activationEnabled(env, user) ? 1 : 0,
     maxBudgets: MAX_BUDGETS, maxBytes: MAX_TOTAL_BYTES, maxStaging: MAX_STAGING_BYTES, maxCounter: MAX_COUNTER.toString(),
     retained: new Date(Date.now() + RETENTION_MS).toISOString(), nextEpoch: randomId("epoch"),
   };
@@ -212,10 +221,16 @@ function controlWrites(db: D1Database, m: Manifest, p: Params) {
         SELECT b.user_id,b.budget_id,lower(hex(randomblob(16))),CAST(b.revision AS TEXT),a.key_generation,'active',b.object_key,
           json_object('format','legacy-v1','sha256',NULL,'length',b.size,'meta',b.meta,'context',json_object('budgetId',b.budget_id)),
           b.size,'1',b.updated_at,b.device,$marker FROM sync_budgets b JOIN sync_accounts_v2 a ON a.user_id=b.user_id
-        WHERE b.user_id=$user AND ${readyClaim} AND ${appliedAccount}`, p));
+        WHERE b.user_id=$user AND ${readyClaim} AND ${appliedAccount}`, p),
+      // The incarnation is random per row, so the origin is read back from the row it went to.
+      // Nothing writes this column again: later updates keep it, and a restore's new
+      // incarnation stops matching it.
+      statement(db, `UPDATE sync_heads_v2 SET legacy=json_object('incarnation',incarnation,'revision',version)
+        WHERE user_id=$user AND applied_by=$marker AND ${readyClaim} AND ${appliedAccount}`, p));
   } else {
     statements.push(statement(db, `UPDATE sync_accounts_v2 SET protocol=2,key_generation=${m.kind === "keySetup" ? "'0'" : "CAST(CAST(key_generation AS INTEGER)+1 AS TEXT)"},
-      salt=$salt,key_check=$check,catalog_epoch=$nextEpoch,catalog_sequence='1',min_cursor='0',updated_at=$at,applied_by=$marker,legacy_cleanup=1
+      salt=$salt,key_check=$check,recovery_salt=$recoverySalt,recovery_wrapped=$recoveryWrapped,
+      catalog_epoch=$nextEpoch,catalog_sequence='1',min_cursor='0',updated_at=$at,applied_by=$marker,legacy_cleanup=1
       WHERE user_id=$user AND ${readyClaim}`, p));
     if (m.kind === "keyReset") {
       statements.push(statement(db, `DELETE FROM sync_heads_v2 WHERE user_id=$user AND ${readyClaim} AND ${appliedAccount}`, p));
@@ -229,7 +244,9 @@ function controlWrites(db: D1Database, m: Manifest, p: Params) {
           FROM sync_staging_v2 s JOIN sync_accounts_v2 a ON a.user_id=s.user_id WHERE s.user_id=i.user_id AND s.installation_id=i.installation_id)
         WHERE i.user_id=$user AND i.installation_id<>$id AND EXISTS(SELECT 1 FROM sync_staging_v2 s WHERE s.user_id=i.user_id AND s.installation_id=i.installation_id)
           AND ${readyClaim} AND ${appliedAccount}`, p),
-      statement(db, `DELETE FROM sync_staging_v2 WHERE user_id=$user AND installation_id<>$id AND ${readyClaim} AND ${appliedAccount}`, p));
+      statement(db, `DELETE FROM sync_staging_v2 WHERE user_id=$user AND installation_id<>$id AND ${readyClaim} AND ${appliedAccount}`, p),
+      // A device approval in flight carries the key this reset retires.
+      statement(db, `DELETE FROM sync_pairings_v2 WHERE user_id=$user AND ${readyClaim} AND ${appliedAccount}`, p));
     }
   }
   statements.push(statement(db, `DELETE FROM sync_events_v2 WHERE user_id=$user AND ${readyClaim} AND ${appliedAccount}`, p),

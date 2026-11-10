@@ -57,6 +57,9 @@ object NativeServices {
 
     @Synchronized fun initialize(context: Context) {
         if (ready) return
+        // The sync test app (-PsyncTestServer) talks to its test server. The engine reads this only
+        // in a development build, which is the only kind that build makes.
+        if (BuildConfig.DEBUG && BuildConfig.SYNC_TEST_SERVER.isNotEmpty()) android.system.Os.setenv("URBUDGET_API", BuildConfig.SYNC_TEST_SERVER, true)
         // In-place upgrade from the released Tauri Android app keeps its library and sealed vault.
         val directory = if (File(context.filesDir, "budgets.json").exists() || File(context.filesDir, "budget.sqlite3").exists()) context.filesDir else File(context.filesDir, "native")
         decode(NativeBridge.initialize(context.applicationContext, directory.absolutePath))
@@ -91,7 +94,7 @@ object NativeServices {
             val result = decode(NativeBridge.service("{\"version\":1,\"method\":${JSONObject.quote(method)},\"params\":$params}"))
             if (method in setOf("create_budget", "library_trash", "library_restore", "library_recover", "sync_enable", "sync_setup", "save_budget", "edit_budget", "native_apply_patch", "assistant_apply_commit", "assistant_undo_commit", "simplefin_import", "accept_ynab_import", "resolve_ynab", "undo_budget", "redo_budget", "restore_backup_file", "restore_budget", "apply_due_schedules")) runCatching { notifySaved() } // It's committed: a failure here must not read as a refusal.
             if (method in setOf("sync_now", "sync_resolve") && result is JSONObject) syncCompletedSource.tryEmit(result)
-            if (method in setOf("account_verify", "account_sign_out", "account_delete", "sync_setup", "sync_enable", "sync_reset", "sync_lock")) refreshSyncStatus()
+            if (method in setOf("account_verify", "account_sign_out", "account_delete", "sync_setup", "sync_enable", "sync_reset", "sync_lock", "sync_recovery_create", "sync_unlock_code")) refreshSyncStatus()
             result
         } finally {
             // Reads started while a credential transition was in progress must not be joined

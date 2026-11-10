@@ -186,17 +186,17 @@ it("refreshes a Play renewal between prepare and commit, but replays receipts be
   env.SYNC_V2_ENABLED="1";
   await env.DB.prepare("INSERT INTO subscriptions(id,user_id,customer_id,status,updated_at,event_at) VALUES ('comp:prepare','usr_refresh','synthetic','active','2026-01-01','2026-01-01')").run();
   const installationId="renewal_device", account="usr_refresh", root="/api/v2/sync";
-  const request=async(path:string,body:unknown)=>app.request(root+path,{method:"POST",headers:{...authorization,"Content-Type":"application/json","X-Sync-Installation":installationId},body:JSON.stringify(body)},env);
+  const request=async(path:string,body:unknown)=>app.request(root+path,{method:"POST",headers:{...authorization,"Content-Type":"application/json","X-Sync-Client":"2","X-Sync-Installation":installationId},body:JSON.stringify(body)},env);
   expect((await request("/installations",{installationId})).status).toBe(200);
   const setup={accountId:account,installationId,operationId:"setup",kind:"keySetup",keyGeneration:null,catalogEpoch:null,expectedProtocol:1,key:{salt:"abcdefghijklmnop",check:"synthetic-check"}};
   const first=await (await request("/mutations/1/prepare",setup)).json();
   expect((await (await request("/mutations/1/commit",{digest:first.digest})).json()).receipt.outcome).toBe("accepted");
-  const bootstrap=await (await app.request(root+"/bootstrap",{headers:authorization},env)).json();
+  const bootstrap=await (await app.request(root+"/bootstrap",{headers:{...authorization,"X-Sync-Client":"2"}},env)).json();
   const bytes=new TextEncoder().encode("encrypted snapshot");
   const manifest={accountId:account,installationId,operationId:"create",kind:"create",keyGeneration:bootstrap.keyGeneration,catalogEpoch:bootstrap.catalogEpoch,budgetId:"budget",expectedVersion:"0",newIncarnation:"incarnation",
     payload:{format:"v2",sha256:await sha256("encrypted snapshot"),length:bytes.length,meta:"ZW5jcnlwdGVk",context:{format:"v2",accountId:account,keyGeneration:bootstrap.keyGeneration,budgetId:"budget",incarnation:"incarnation",operationId:"create",parentVersion:"0"}}};
   const prepared=await (await request("/mutations/2/prepare",manifest)).json();expect(prepared.state).toBe("prepared");
-  expect((await app.request(root+"/mutations/2/blob",{method:"PUT",headers:{...authorization,"X-Sync-Installation":installationId,"X-Sync-Digest":prepared.digest},body:bytes},env)).status).toBe(200);
+  expect((await app.request(root+"/mutations/2/blob",{method:"PUT",headers:{...authorization,"X-Sync-Client":"2","X-Sync-Installation":installationId,"X-Sync-Digest":prepared.digest},body:bytes},env)).status).toBe(200);
   await env.DB.prepare("DELETE FROM subscriptions WHERE id='comp:prepare'").run();
   await receipt("commit-renewal","SUBSCRIPTION_STATE_ACTIVE","2000-01-01");
   let calls=0;

@@ -215,6 +215,12 @@ conflicts, offline edits, races, schedules, a new passphrase, removing and re-ad
 signing out, a 5,000-transaction budget and a random run that must end with both the same.
 `-- stress 1500` runs only the random run, longer; other names run only those scenarios.
 
+Sync v2 by hand, between a computer and a phone: `node scripts/sync-v2-try.mjs` starts a
+separate local server with Sync v2 on (port 8788, its own data in `.wrangler/sync-v2-qa/try`,
+kept between runs), where every account that signs in has the Sync plan, and prints how
+to start the desktop app and the Android sync test app against it
+([android/README.md › Trying sync by hand](../android/README.md#trying-sync-by-hand)).
+
 ## Going live
 
 Accounts needed: Cloudflare (hosting), Resend (email) and Polar (payments). For signed installers: an Apple Developer membership and a Windows code-signing certificate.

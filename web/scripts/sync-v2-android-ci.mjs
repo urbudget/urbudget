@@ -46,7 +46,7 @@ INSERT INTO subscriptions(id,user_id,customer_id,status,updated_at,event_at) VAL
     const login = await post("/api/v1/auth/start", {email});
     if (!/^[0-9]{6}$/.test(login.devCode)) throw new Error("Local QA login codes are unavailable.");
     const verified = await post("/api/v1/auth/verify", {email, code:login.devCode, client:"desktop", deviceName:"Android CI seed check"});
-    const bootstrap = await fetch(`${local.url}/api/v2/sync/bootstrap`, {headers:{Authorization:`Bearer ${verified.token}`}});
+    const bootstrap = await fetch(`${local.url}/api/v2/sync/bootstrap`, {headers:{Authorization:`Bearer ${verified.token}`,"X-Sync-Client":"2"}});
     if (!bootstrap.ok || !(await bootstrap.json()).activationEnabled) throw new Error("Synthetic Android subscription or v2 activation is unavailable.");
     console.log("Android CI local seed/login/subscription/v2 bootstrap check passed.");
   } else {

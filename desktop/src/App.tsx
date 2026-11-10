@@ -469,7 +469,7 @@ export default function App() {
       <button className="primary" onClick={() => setDialog({ type: "newBudget" })}>{t("New budget")}</button>{" "}
       <button className="secondary" onClick={() => setDialog({ type: "manageBudgets" })}>{t("Budgets")}</button>
       </div>}
-      <div className="settings-page"><SyncSettings cloud={cloud} budgetId="" isClean={() => true} openBudget={switchBudget} /></div>
+      <div className="settings-page empty-library-sync"><SyncSettings cloud={cloud} budgetId="" isClean={() => true} openBudget={switchBudget} /></div>
       {dialog?.type === "newBudget" && <NewBudgetDialog close={close} open={switchBudget} />}
       {dialog?.type === "manageBudgets" && <ManageBudgetsDialog close={close} open={switchBudget} changed={model.refreshDatabase} review={async (id) => { await flushAllEditorDrafts(); await model.switchBudget(id, true); }} onNew={() => setDialog({ type: "newBudget" })} />}
     </div>

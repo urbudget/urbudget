@@ -47,7 +47,13 @@ export type CloudStatus = {
   email: string | null;
   /** What protects saved secrets (Keychain, Windows encrypted storage), or null when they last until the app closes. */
   credentialStore: string | null;
-  sync: { unlocked: boolean; last: SyncReport | null; protocol?: number; enabled?: boolean };
+  sync: {
+    unlocked: boolean; last: SyncReport | null; protocol?: number; enabled?: boolean;
+    /** The account's key is made from a passphrase, as far as this computer last heard. */
+    passphrase?: boolean;
+    /** The account has a recovery code, as far as this computer last heard. */
+    recovery?: boolean;
+  };
   site: string;
   library?: LibrarySnapshot;
 };
@@ -68,9 +74,16 @@ export const cloud = {
   /** Opens a page of urbudget.app in the browser, signed in when this computer is. */
   open: (next: string) => invoke<void>("account_open", { next }),
   syncNow: (openClean: boolean) => invoke<SyncReport>("sync_now", { openClean }),
-  syncHasKey: () => invoke<boolean>("sync_has_key"),
-  syncSetup: (passphrase: string) => invoke<{ created: boolean }>("sync_setup", { passphrase }),
-  syncReset: (passphrase: string) => invoke<void>("sync_reset", { passphrase }),
+  syncKeyInfo: () => invoke<SyncKeyInfo>("sync_key_info"),
+  /** Unlocks sync with the passphrase, or sets sync up: with that passphrase, or with none and a
+   *  key made here, whose recovery code comes back to be shown once. */
+  syncSetup: (passphrase?: string) => invoke<{ created: boolean; recoveryCode?: string }>("sync_setup", { passphrase: passphrase ?? null }),
+  /** A new key, from a passphrase or made here with its own recovery code. */
+  syncReset: (passphrase?: string) => invoke<{ recoveryCode?: string }>("sync_reset", { passphrase: passphrase ?? null }),
+  /** Unlocks sync here with whichever code was typed: one a device that syncs shows, or the recovery code. */
+  syncUnlockCode: (code: string) => invoke<{ created: boolean }>("sync_unlock_code", { code }),
+  /** Where sync is unlocked: a new recovery code. The one before stops working. */
+  syncRecoveryCreate: () => invoke<{ recoveryCode: string }>("sync_recovery_create"),
   syncTrack: (ids: string[]) => invoke<void>("sync_track", { ids }),
   syncDownload: (id: string) => invoke<string>("sync_download", { id }),
   /** "merge" merges again with the answers in `choices`; "local" and "cloud" keep one whole version. */
@@ -78,7 +91,25 @@ export const cloud = {
     invoke<SyncReport>("sync_resolve", { id, keep, openClean, choices: choices ?? null, review: review ?? null }),
   syncRemove: (id: string) => invoke<void>("sync_remove", { id }),
   syncLock: () => invoke<void>("sync_lock"),
+  /** On a computer that syncs: a one-time code that hands the sync key to another device. */
+  syncPairOffer: () => invoke<PairingOffer>("sync_pair_offer"),
+  /** Takes back a code nobody used. */
+  syncPairCancel: (id: string) => invoke<void>("sync_pair_cancel", { id }),
+  /** On a computer that doesn't sync yet: a code to show, for a phone that syncs to scan and approve. */
+  syncPairRequest: () => invoke<PairingOffer>("sync_pair_request"),
+  /** Whether a device that syncs has approved the code this computer shows; sync is unlocked once it has. */
+  syncPairWait: (code: string) => invoke<{ ready: boolean }>("sync_pair_wait", { code }),
 };
+
+/**
+ * What the account's sync key is and how this computer can get it. `setup` and `reset` say
+ * whether setting sync up, or resetting it, asks for a passphrase or makes the key here and
+ * shows a recovery code ("code").
+ */
+export type SyncKeyInfo = { exists: boolean; passphrase: boolean; recovery: boolean; setup: "code" | "passphrase"; reset: "code" | "passphrase" };
+
+/** A code for adding a device: as 24 characters, and as a QR code's squares row by row ("1" is dark). */
+export type PairingOffer = { id: string; code: string; qr: { size: number; modules: string }; expiresAt: string };
 
 /** Locked v2 accounts still reconcile catalog, receipts and deletion; uploads require the key. */
 export function syncCanReconcile(status: Pick<CloudStatus, "email" | "sync"> | null | undefined) {

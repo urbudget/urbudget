@@ -132,6 +132,8 @@ sync.put("/key", async (c) => {
         .bind(userId, generation),
       c.env.DB.prepare(`UPDATE sync_keys SET salt = ?2, key_check = ?3, created_at = ?4, generation = generation + 1
         WHERE user_id = ?1 AND generation = ?5`).bind(userId, salt, check, now(), generation),
+      // A device approval in flight carries the key this reset retires.
+      c.env.DB.prepare("DELETE FROM sync_pairings_v2 WHERE user_id = ?1 AND key_generation = CAST(?2 AS TEXT)").bind(userId, generation),
     ]);
     if (!results[1].meta.changes) {
       await assertGeneration(c, generation);

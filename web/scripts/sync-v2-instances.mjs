@@ -3,9 +3,10 @@
 // Every sync_now below represents a native scheduler wake, never per-budget enrollment.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { createInterface } from "node:readline";
-import { mkdir, writeFile, readFile } from "node:fs/promises";
+import { mkdir, writeFile, readFile, cp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { startLocal, web } from "./sync-v2-local.mjs";
 const pause = ms => new Promise(r => setTimeout(r, ms));
@@ -75,7 +76,8 @@ async function device(name) {
     const id = ++d.next; const timer = setTimeout(() => { d.pending.delete(id); reject(new Error(`${name}: ${method} timed out: ${d.stderr}`)); }, 45000);
     d.pending.set(id, { resolve, reject, timer, method }); d.child.stdin.write(JSON.stringify({ id, method, params }) + "\n");
   });
-  d.restart = async () => { const child = d.child; child.kill(); await new Promise(r => child.once("exit", r)); d.start(); };
+  d.halt = async () => { const child = d.child; child.kill(); await new Promise(r => child.once("exit", r)); };
+  d.restart = async () => { await d.halt(); d.start(); };
   d.stop = () => { d.child.kill(); fault.stop(); for (const p of d.pending.values()) clearTimeout(p.timer); };
   d.start(); devices.push(d); return d;
 }
@@ -87,7 +89,10 @@ async function entry(d, remoteId) { return (await snapshot(d)).entries.find(e =>
 async function open(d, remoteId) { const e = await entry(d, remoteId); assert.ok(e, `${d.name}: remote budget missing`); await d.call("library_open", { id: e.id }); return e; }
 async function edit(d, change) { const state = await d.call("load_budget"); change(state.budget); await d.call("save_budget", { budget: state.budget, expectedToken: state.token, ackOnly: true }); }
 async function equalBudgets(remoteId) { const values = []; for (const d of devices) { await open(d, remoteId); values.push((await d.call("load_budget")).budget); } for (const b of values.slice(1)) assert.deepEqual(b, values[0]); return values[0]; }
-async function test(name, run) { const start = Date.now(); await run(); passed.push(name); console.log(`PASS ${name} (${((Date.now() - start) / 1000).toFixed(1)}s)`); }
+// `--only <words>` runs the scenarios whose name has them. Most build on the ones before, so it
+// is for a scenario that stands alone, such as the last.
+const only = process.argv.includes("--only") ? process.argv[process.argv.indexOf("--only") + 1] : null;
+async function test(name, run) { if (only && !name.includes(only)) return; const start = Date.now(); await run(); passed.push(name); console.log(`PASS ${name} (${((Date.now() - start) / 1000).toFixed(1)}s)`); }
 const initial = () => ({ schemaVersion: 2, name: "Three device budget", currency: "SAR", accounts: [{ id: "checking", name: "Checking", kind: "cash", openingBalance: 100000, archived: false }], categories: [{ id: "food", name: "Food", group: "Daily", target: 0 }], transactions: [], assignments: [] });
 const transaction = (id, month = "10") => ({ id, date: `2026-${month}-10`, accountId: "checking", payee: id, amount: -100, status: "uncleared", memo: id, splits: [{ categoryId: "food", amount: -100 }], transferAccountId: null, transferStatus: null });
 try {
@@ -114,19 +119,53 @@ try {
       assert.ok((await b.call("load_budget")).budget.transactions.some(t=>t.id==="legacy-no-open-budget"));
       await a.call("library_open",{id:a.id});
       await settle(); const oldIds = new Map(devices.map(d => [d, a.id]));
-      for (const d of [a, b]) { d.fault.legacy = false; await d.call("sync_setup", { passphrase }); await wake(d); }
-      for (const d of [a, b]) { const list = await snapshot(d); const live=list.entries.filter(e=>e.lifecycle==="active"); assert.equal(live.length, 1, JSON.stringify(list)); assert.equal(live[0].id, oldIds.get(d)); assert.equal(live[0].remoteId, a.id); }
+      const linked = async d => { const list = await snapshot(d); const live=list.entries.filter(e=>e.lifecycle==="active"); assert.equal(live.length, 1, JSON.stringify(list)); assert.equal(live[0].id, oldIds.get(d)); assert.equal(live[0].remoteId, a.id); };
+      a.fault.legacy = false; await a.call("sync_setup", { passphrase }); await wake(a); await linked(a);
       a.remote = a.id;
-      await edit(a, budget => budget.transactions.push(transaction("after-legacy-migration"))); await wake(a); await wake(b);
-      assert.deepEqual((await a.call("load_budget")).budget, (await b.call("load_budget")).budget);
+      await edit(a, budget => budget.transactions.push(transaction("after-legacy-migration"))); await wake(a);
+      // B unlocks only now, after another device has rewritten the migrated head, holding work
+      // it never synced: its copy links at the revision it last had and merges what it missed.
+      await edit(b, budget => budget.transactions.push(transaction("late-device-unsynced-work")));
+      // It was unlocked on protocol 1 and the move keeps the key, so nobody types it again.
+      b.fault.legacy = false; b.fault.requests.length = 0; await wake(b); await wake(b); await linked(b);
+      assert.notEqual((await b.call("cloud_status")).sync.unlocked, false);
+      await wake(a);
+      const both = (await a.call("load_budget")).budget;
+      for (const id of ["after-legacy-migration", "late-device-unsynced-work"]) assert.equal(both.transactions.filter(t => t.id === id).length, 1, id);
+      assert.deepEqual(both, (await b.call("load_budget")).budget);
       // Keep C's legacy ledger/base until the ID has been restored under a new incarnation.
       await edit(c, budget => budget.transactions.push(transaction("late-legacy-private-work")));
       await a.call("library_trash", { id: a.id }); await wake(a); await a.call("library_restore", { id: a.id }); await wake(a); await wake(b);
-      c.fault.legacy = false; await c.call("sync_setup", { passphrase }); await wake(c); await wake(c);
+      c.fault.legacy = false; await c.call("sync_setup", { passphrase }); await wake(c); const told = await wake(c);
       const list = await snapshot(c), old = list.entries.find(e => e.id === oldIds.get(c)), current = list.entries.find(e => e.remoteId === a.remote);
       assert.equal(old.scope, "local"); assert.equal(old.accountId, null); assert.ok(current && current.id !== old.id, JSON.stringify(list));
+      // A copy that can't be linked stays, and every pass says why on its row.
+      assert.match(told.budgets.find(e => e.id === old.id)?.message ?? "", /Kept on this device only/, JSON.stringify(told));
       await c.call("library_open", { id: old.id }); assert.ok((await c.call("load_budget")).budget.transactions.some(t => t.id === "late-legacy-private-work"));
       await c.call("library_open", { id: current.id }); assert.ok(!(await c.call("load_budget")).budget.transactions.some(t => t.id === "late-legacy-private-work"));
+    });
+    await test("an account still on protocol 1 can reset its passphrase while activation is on", async () => {
+      assert.ok(local.execute, "This scenario requires the isolated managed Worker");
+      const otherId = local.accountId + "_v1", otherEmail = "v1-" + local.email;
+      await local.execute(`INSERT INTO users(id,email,created_at) VALUES ('${otherId}','${otherEmail}','2026-01-01'); INSERT INTO subscriptions(id,user_id,customer_id,status,updated_at,event_at) VALUES ('comp:${otherId}','${otherId}','synthetic','active','2026-01-01','2026-01-01');`);
+      const d = await device("fourth"); await signIn(d, otherEmail);
+      const forgotten = "a passphrase nobody remembers", chosen = "the passphrase chosen at reset";
+      d.fault.legacy = true; await d.call("sync_setup", { passphrase: forgotten });
+      const id = await d.call("create_budget", { budget: { ...initial(), name: "Reset on protocol 1" } }); await d.call("library_open", { id });
+      await d.call("sync_track", { ids: [id] }); await wake(d);
+      // A second device of this protocol 1 account takes the key from the first by code: the
+      // same hand-over as on protocol 2, with no activation and no passphrase typed.
+      const e = await device("fifth"); await signIn(e, otherEmail); e.fault.legacy = true;
+      const offered = await d.call("sync_pair_offer"); assert.deepEqual(await e.call("sync_pair_accept", { code: offered.code }), { created: false });
+      await e.call("sync_download", { id }); await e.call("library_open", { id });
+      assert.equal((await e.call("load_budget")).budget.name, "Reset on protocol 1");
+      // The server now offers protocol 2. Moving to it proves the old passphrase, which is
+      // the one thing someone resetting doesn't have, so the reset stays on protocol 1.
+      d.fault.legacy = false; await d.call("sync_reset", { passphrase: chosen }); await wake(d);
+      await assert.rejects(d.call("sync_setup", { passphrase: forgotten }), /isn't the sync passphrase/);
+      await d.call("sync_setup", { passphrase: chosen }); await wake(d); await wake(d);
+      const live = (await snapshot(d)).entries.filter(e => e.lifecycle === "active");
+      assert.equal(live.length, 1, JSON.stringify(live)); assert.equal(live[0].id, id); assert.equal(live[0].accountId, otherId); assert.equal(live[0].remoteId, id);
     });
   } else {
   await test("setup empty account and discover automatically enrolled budget", async () => {
@@ -193,6 +232,71 @@ try {
     await wake(a); assert.equal(a.fault.dropped, 1); await a.restart(); await a.call("sync_setup", { passphrase }); await settle();
     assert.equal((await equalBudgets(a.remote)).transactions.filter(t => t.id === "offline-survivor").length, 1);
   });
+  await test("a data folder restored from a backup syncs under a new identity and keeps its edits", async () => {
+    await open(a, a.remote); await settle();
+    const backup = resolve(root, "desktop-backup");
+    await a.halt(); await cp(a.folder, backup, { recursive: true }); a.start(); await a.call("sync_setup", { passphrase });
+    // The device goes on syncing, so the server's sequence for its identity passes the backup's.
+    await edit(a, budget => budget.transactions.push(transaction("after-the-backup"))); await settle();
+    await a.halt(); await rm(a.folder, { recursive: true, force: true }); await cp(backup, a.folder, { recursive: true }); a.start();
+    await a.call("sync_setup", { passphrase });
+    const registrations = () => a.fault.requests.filter(r => r.method === "POST" && r.path.endsWith("/installations")).length, before = registrations();
+    await edit(a, budget => budget.transactions.push(transaction("after-the-restore")));
+    const report = await wake(a);
+    assert.ok(a.fault.requests.some(r => r.path.endsWith("/prepare") && r.status === 409), "the restored sequence must have been refused");
+    assert.equal(registrations(), before + 1, "the restored folder registers a new installation");
+    assert.equal(report.state, "ok", JSON.stringify(report));
+    await settle();
+    const budget = await equalBudgets(a.remote);
+    for (const id of ["after-the-backup", "after-the-restore"]) assert.equal(budget.transactions.filter(t => t.id === id).length, 1, id);
+    // It keeps uploading under the new identity.
+    await edit(a, budget => budget.transactions.push(transaction("second-after-the-restore"))); await settle();
+    assert.ok((await equalBudgets(a.remote)).transactions.some(t => t.id === "second-after-the-restore"));
+  });
+  await test("a signed-in device unlocks with a code from one that syncs, and no passphrase", async () => {
+    await c.call("sync_lock"); assert.equal((await wake(c)).state, "locked");
+    const offered = await a.call("sync_pair_offer");
+    assert.match(offered.code, /^[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){5}$/);
+    assert.equal(offered.qr.modules.length, offered.qr.size ** 2);
+    await assert.rejects(c.call("sync_pair_accept", { code: "0000-0000-0000-0000-0000-0000" }), /expired or was already used/);
+    await assert.rejects(c.call("sync_pair_accept", { code: offered.code.slice(0, 20) }), /all 24 characters/);
+    // Typed the way people type: lower case, no hyphens.
+    await c.call("sync_pair_accept", { code: offered.code.replaceAll("-", "").toLowerCase() });
+    assert.notEqual((await wake(c)).state, "locked");
+    // The server handed the sealed key out once.
+    await assert.rejects(b.call("sync_pair_accept", { code: offered.code }), /expired or was already used/);
+    const withdrawn = await a.call("sync_pair_offer"); await a.call("sync_pair_cancel", { id: withdrawn.id });
+    await assert.rejects(c.call("sync_pair_accept", { code: withdrawn.code }), /expired or was already used/);
+    await open(c, a.remote); await edit(c, budget => budget.transactions.push(transaction("from-the-paired-device"))); await settle();
+    assert.ok((await equalBudgets(a.remote)).transactions.some(t => t.id === "from-the-paired-device"));
+    // A locked device has no key to hand over.
+    await c.call("sync_lock"); await assert.rejects(c.call("sync_pair_offer"), /Unlock sync on this device/);
+    await c.call("sync_setup", { passphrase }); await settle();
+  });
+  await test("a new device shows a code, and a device that syncs approves it by scanning", async () => {
+    await c.call("sync_lock"); assert.equal((await wake(c)).state, "locked");
+    // The new device makes the code and waits; nothing is on the server until someone approves.
+    const asked = await c.call("sync_pair_request"), scanned = "URBUDGET-ASK:1:" + asked.code.replaceAll("-", "");
+    assert.equal(asked.qr.modules.length, asked.qr.size ** 2);
+    assert.deepEqual(await c.call("sync_pair_wait", { code: asked.code }), { ready: false });
+    assert.equal((await wake(c)).state, "locked");
+    // A scan on the wrong screen is told where it belongs, and hands nothing over.
+    await assert.rejects(b.call("sync_pair_accept", { code: scanned }), /waiting to be added/);
+    const shown = await a.call("sync_pair_offer");
+    await assert.rejects(b.call("sync_pair_approve", { code: "URBUDGET-PAIR:1:" + shown.code.replaceAll("-", "") }), /for the device being added/);
+    await a.call("sync_pair_cancel", { id: shown.id });
+    // A locked device can't approve; one that syncs can.
+    await b.call("sync_lock"); await assert.rejects(b.call("sync_pair_approve", { code: scanned }), /Unlock sync on this device/);
+    await b.call("sync_setup", { passphrase });
+    await a.call("sync_pair_approve", { code: scanned });
+    const ready = await c.call("sync_pair_wait", { code: asked.code });
+    assert.equal(ready.ready, true, JSON.stringify(ready));
+    assert.notEqual((await wake(c)).state, "locked");
+    // Collected once: asking again finds nothing waiting.
+    assert.deepEqual(await c.call("sync_pair_wait", { code: asked.code }), { ready: false });
+    await open(c, a.remote); await edit(c, budget => budget.transactions.push(transaction("from-the-approved-device"))); await settle();
+    assert.ok((await equalBudgets(a.remote)).transactions.some(t => t.id === "from-the-approved-device"));
+  });
   await test("eviction keeps discovery and restores download", async () => {
     const e = await entry(b, a.remote); await b.call("library_evict", { id: e.id }); assert.equal((await entry(b, a.remote)).missing, true);
     await open(b, a.remote); assert.equal((await entry(b, a.remote)).missing, false); await equalBudgets(a.remote);
@@ -258,7 +362,13 @@ try {
     await b.call("editor_checkpoint", { budgetId: id, id: "qa-raw-editor", epoch, target: { kind: "transaction", id: "unsaved" }, baseline: {}, values });
     await edit(a, budget => budget.transactions.push(transaction("incoming-while-editor"))); await wake(a);
     const report = await wake(b); assert.ok(report.budgets.some(e => e.id === id && e.state === "waiting"), JSON.stringify(report));
+    // This copy has nothing of its own to upload, but it is behind: its status can't say synced.
+    assert.equal((await b.call("cloud_status")).sync.last.budgets.find(e => e.id === id)?.state, "waiting");
     await b.restart(); await b.call("sync_setup", { passphrase });
+    // The process that had the form open is gone. Its draft stays to recover, and no longer
+    // holds this budget's sync in both directions until someone finds and discards it.
+    const after = await wake(b); assert.ok(!after.budgets.some(e => e.id === id && e.state === "waiting"), JSON.stringify(after));
+    assert.ok((await b.call("load_budget")).budget.transactions.some(t => t.id === "incoming-while-editor"));
     const recovered = await b.call("editor_recovery", { budgetId: id }); assert.deepEqual(recovered.find(e => e.editorId === "qa-raw-editor")?.draft, values);
     await b.call("editor_discard", { budgetId: id, id: "qa-raw-editor", epoch }); await settle(); await equalBudgets(a.remote);
   });
@@ -336,6 +446,25 @@ try {
     a.fault.offline = false; await settle();
     assert.equal((await entry(a, a.remote)).incarnation, before.incarnation);
     assert.ok((await equalBudgets(a.remote)).transactions.some(t => t.id === "offline-delete-undo"));
+  });
+  await test("a restore the server holds back waits for its own receipt when the person asks again", async () => {
+    const before = await entry(a, a.remote);
+    await a.call("library_trash", { id: before.id }); await settle();
+    // The server refuses the restore for now, as a publication pause does: its request keeps
+    // the installation's delivery slot, and its outcome is unknown.
+    a.fault.prepareError = "publication_paused";
+    await a.call("library_restore", { id: before.id });
+    assert.equal((await wake(a)).state, "attention");
+    // The row shows an error, so the person asks again. This pass must not finish the first
+    // request as superseded: when its real receipt arrives, the two would disagree for good.
+    await a.call("library_restore", { id: before.id }); await wake(a);
+    a.fault.prepareError = null; await settle();
+    assert.equal((await entry(a, a.remote)).lifecycle, "active");
+    const report = await wake(a); assert.equal(report.state, "ok", JSON.stringify(report));
+    assert.ok(!(await a.call("cloud_status")).sync.last.budgets.some(e => e.state === "error"));
+    // The installation still uploads.
+    await open(a, a.remote); await edit(a, budget => budget.transactions.push(transaction("after-a-held-restore"))); await settle();
+    assert.ok((await equalBudgets(a.remote)).transactions.some(t => t.id === "after-a-held-restore"));
   });
   await test("locked clients publish trash while content restoration waits for unlock", async () => {
     const before = await entry(a, a.remote);
@@ -418,7 +547,7 @@ try {
     const peerId = await b.call("create_budget", { budget: { ...initial(), name: "Peer data after reset" } });
     await b.call("library_open", { id: peerId }); await wake(b);
     const peerRemote = (await snapshot(b)).entries.find(e => e.id === peerId).remoteId;
-    const bootstrap = async () => (await fetch(`${local.url}/api/v2/sync/bootstrap`, { headers: { Authorization: `Bearer ${local.token}` } })).json();
+    const bootstrap = async () => (await fetch(`${local.url}/api/v2/sync/bootstrap`, { headers: { Authorization: `Bearer ${local.token}`, "X-Sync-Client": "2" } })).json();
     const before = await bootstrap(); await a.call("sync_reset", { passphrase }); const after = await bootstrap();
     assert.equal(after.keyGeneration, before.keyGeneration, "retry repeated the already committed key reset");
     await c.call("sync_setup", { passphrase }); await settle(); a.remote = peerRemote;
@@ -427,6 +556,86 @@ try {
   await test("deleting the final active budget stays empty after process restart", async () => {
     await a.call("library_trash", { id: (await entry(a, a.remote)).id }); await wake(a); assert.equal((await a.call("load_budget")).budget, null);
     await a.restart(); assert.equal((await a.call("load_budget")).budget, null); assert.equal((await snapshot(a)).activeId, null);
+  });
+  // Last: its devices are another account's, and the scenarios above compare every device.
+  await test("sync set up with nothing typed: a key made on the first device, its recovery code, and a reset", async () => {
+    assert.ok(local.execute, "This scenario requires the isolated managed Worker");
+    const id = local.accountId + "_code", email = "code-" + local.email, token = "code-" + local.token;
+    await local.execute(`INSERT INTO users(id,email,created_at) VALUES ('${id}','${email}','2026-01-01');
+      INSERT INTO subscriptions(id,user_id,customer_id,status,updated_at,event_at) VALUES ('comp:${id}','${id}','synthetic','active','2026-01-01','2026-01-01');
+      INSERT INTO sessions(id,user_id,kind,created_at,last_seen_at,expires_at) VALUES ('${createHash("sha256").update(token).digest("hex")}','${id}','desktop','2026-01-01','2099-01-01','2099-12-31');`);
+    const server = async () => (await fetch(`${local.url}/api/v2/sync/bootstrap`, { headers: { Authorization: `Bearer ${token}`, "X-Sync-Client": "2" } })).json();
+    const shape = /^([0-9A-HJKMNP-TV-Z]{4}-){5}[0-9A-HJKMNP-TV-Z]{4}$/;
+    const first = await device("code-first"), second = await device("code-second"), third = await device("code-third"), fourth = await device("code-fourth");
+    for (const d of [first, second, third, fourth]) await signIn(d, email);
+    assert.deepEqual(await first.call("sync_key_info"), { exists: false, passphrase: false, recovery: false, setup: "code", reset: "passphrase" });
+    // The answer to the first try is lost after the server took it. The code made for that try
+    // was never shown, so the retry ends with one that works.
+    first.fault.dropCommit = true;
+    await assert.rejects(first.call("sync_setup"), /OFFLINE/);
+    const lost = (await server()).recovery;
+    const made = await first.call("sync_setup");
+    assert.match(made.recoveryCode, shape, JSON.stringify(made));
+    let account = await server();
+    assert.equal(account.protocol, 2); assert.equal(account.keyGeneration, "0"); assert.equal(account.salt, null);
+    assert.ok(account.recovery && account.recovery.wrapped !== lost.wrapped, "the retry replaced the copy sealed for the lost code");
+    assert.deepEqual(await second.call("sync_key_info"), { exists: true, passphrase: false, recovery: true, setup: "code", reset: "code" });
+    let status = (await first.call("cloud_status")).sync;
+    assert.equal(status.unlocked, true); assert.equal(status.passphrase, false); assert.equal(status.recovery, true);
+    const budget = await first.call("create_budget", { budget: { ...initial(), name: "Nothing typed" } });
+    await first.call("library_open", { id: budget }); await wake(first); await wake(first);
+    const remote = (await snapshot(first)).entries.find(e => e.id === budget).remoteId; assert.ok(remote);
+    const has = async d => { await wake(d); await wake(d); return (await snapshot(d)).entries.some(e => e.remoteId === remote && e.lifecycle === "active"); };
+    // Nothing typed opens this account, and a wrong or short code leaves the device locked.
+    await assert.rejects(second.call("sync_setup", { passphrase: "any passphrase at all" }), /has no passphrase/);
+    await assert.rejects(second.call("sync_setup"), /already set up/);
+    await assert.rejects(second.call("sync_recover", { code: "0000-0000-0000-0000-0000-0000" }), /isn't the recovery code/);
+    await assert.rejects(second.call("sync_recover", { code: made.recoveryCode.slice(0, 20) }), /all 24 characters/);
+    assert.equal((await wake(second)).state, "locked");
+    // The recovery code, on a device with no other device at hand.
+    assert.deepEqual(await second.call("sync_recover", { code: made.recoveryCode.replaceAll("-", "").toLowerCase() }), { created: false, protocol: 2 });
+    assert.ok(await has(second));
+    // A third device takes the key from the second by code, as on any account. Its screen has
+    // one box for a code, whichever kind it is, so the engine works out which.
+    await assert.rejects(third.call("sync_unlock_code", { code: "0000-0000-0000-0000-0000-0000" }), /didn't work/);
+    assert.equal((await wake(third)).state, "locked");
+    const offered = await second.call("sync_pair_offer");
+    assert.deepEqual(await third.call("sync_unlock_code", { code: offered.code }), { created: false, protocol: 2 });
+    assert.ok(await has(third));
+    // A new recovery code: the old one stops working, and nothing else changes.
+    const before = await server(), heads = (await snapshot(first)).entries.map(e => [e.remoteId, e.incarnation]);
+    const replaced = await third.call("sync_recovery_create");
+    assert.match(replaced.recoveryCode, shape); assert.notEqual(replaced.recoveryCode, made.recoveryCode);
+    assert.deepEqual(await server(), { ...before, recovery: (await server()).recovery });
+    assert.notEqual((await server()).recovery.wrapped, before.recovery.wrapped);
+    await assert.rejects(fourth.call("sync_unlock_code", { code: made.recoveryCode }), /didn't work/);
+    assert.deepEqual(await fourth.call("sync_unlock_code", { code: replaced.recoveryCode.toLowerCase() }), { created: false, protocol: 2 });
+    for (const d of [first, second, third, fourth]) assert.ok(await has(d), d.name);
+    assert.deepEqual((await snapshot(first)).entries.map(e => [e.remoteId, e.incarnation]), heads, "no budget was uploaded again");
+    // A device that only locked takes none of this back: it can't make a code.
+    await fourth.call("sync_lock");
+    await assert.rejects(fourth.call("sync_recovery_create"), /Unlock sync on this device/);
+    await assert.rejects(fourth.call("sync_pair_offer"), /Unlock sync on this device/);
+    // A reset with nothing typed: a new key with its own code. The other devices hold the old
+    // key, so they are locked until one of the three ways gives them the new one.
+    const reset = await first.call("sync_reset");
+    assert.match(reset.recoveryCode, shape); assert.notEqual(reset.recoveryCode, replaced.recoveryCode);
+    account = await server();
+    assert.equal(account.keyGeneration, "1"); assert.equal(account.salt, null); assert.ok(account.recovery);
+    // As after any reset, each device keeps its copy of a budget sealed with the old key, for
+    // the person to bring back. A budget made now is sealed with the new one.
+    await wake(first);
+    assert.equal((await snapshot(first)).entries.find(e => e.id === budget).lifecycle, "recovery");
+    const later = await first.call("create_budget", { budget: { ...initial(), name: "After the reset" } });
+    await first.call("library_open", { id: later }); await wake(first); await wake(first);
+    assert.equal((await wake(second)).state, "locked");
+    await assert.rejects(second.call("sync_recover", { code: replaced.recoveryCode }), /isn't the recovery code/);
+    await second.call("sync_recover", { code: reset.recoveryCode });
+    status = (await second.call("cloud_status")).sync;
+    assert.equal(status.unlocked, true); assert.equal(status.passphrase, false); assert.equal(status.recovery, true);
+    await wake(second); await wake(second);
+    const arrived = (await snapshot(second)).entries.filter(e => e.lifecycle === "active" && e.remoteId);
+    assert.equal(arrived.length, 1, JSON.stringify(await snapshot(second))); assert.equal(arrived[0].name, "After the reset");
   });
   }
   console.log(JSON.stringify({ passed, root, requests: devices.map(d => ({ device: d.name, count: d.fault.requests.length })) }, null, 2));

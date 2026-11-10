@@ -7,10 +7,7 @@ pub fn empty_snapshot() -> Value {
         "undoAvailable":false,"redoAvailable":false})
 }
 pub(crate) fn process_owner() -> String {
-    static OWNER: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    OWNER
-        .get_or_init(|| format!("{}-{}", std::process::id(), crate::budgets::new_id()))
-        .clone()
+    urbudget_core::sync_storage::process_owner()
 }
 
 /// Repair only jobs whose OS lease has been released (including process death). A live

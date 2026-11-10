@@ -44,9 +44,10 @@ export async function startLocal({ port = 8788, stamp = Date.now().toString() } 
   const base = ["--config", config, "--local", "--persist-to", persist];
   await command(["d1", "migrations", "apply", "urbudget-sync-v2-local", ...base]);
   const accountId = `usr_qa_${stamp}`, email = `sync-v2-${stamp}@example.test`, token = `local-only-${stamp}`;
-  const sql = `INSERT INTO users(id,email,created_at) VALUES ('${accountId}','${email}','2026-01-01');
-INSERT INTO sessions(id,user_id,kind,created_at,last_seen_at,expires_at) VALUES ('${createHash("sha256").update(token).digest("hex")}','${accountId}','desktop','2026-01-01','2099-01-01','2099-12-31');
-INSERT INTO subscriptions(id,user_id,customer_id,status,updated_at,event_at) VALUES ('comp:${stamp}','${accountId}','synthetic','active','2026-01-01','2026-01-01');`;
+  // OR IGNORE: a stamp that's used again (scripts/sync-v2-try.mjs) starts on the data it left.
+  const sql = `INSERT OR IGNORE INTO users(id,email,created_at) VALUES ('${accountId}','${email}','2026-01-01');
+INSERT OR IGNORE INTO sessions(id,user_id,kind,created_at,last_seen_at,expires_at) VALUES ('${createHash("sha256").update(token).digest("hex")}','${accountId}','desktop','2026-01-01','2099-01-01','2099-12-31');
+INSERT OR IGNORE INTO subscriptions(id,user_id,customer_id,status,updated_at,event_at) VALUES ('comp:${stamp}','${accountId}','synthetic','active','2026-01-01','2026-01-01');`;
   const seed = resolve(persist, "seed.sql"); await writeFile(seed, sql);
   await command(["d1", "execute", "urbudget-sync-v2-local", ...base, "--file", seed]);
   const child = spawn(process.execPath, [cli, "dev", "--config", config, "--local", "--persist-to", persist, "--port", String(port), "--ip", "127.0.0.1", "--show-interactive-dev-session", "false"], { cwd: web, env, windowsHide: true, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"] });
@@ -54,7 +55,7 @@ INSERT INTO subscriptions(id,user_id,customer_id,status,updated_at,event_at) VAL
   const url = `http://127.0.0.1:${port}`;
   for (let i = 0; i < 100; i++) {
     if (child.exitCode !== null) throw new Error(`Local Worker exited: ${output}`);
-    try { const response = await fetch(`${url}/api/v2/sync/bootstrap`, { headers: { Authorization: `Bearer ${token}` } }); if (response.ok) return { url, accountId, email, token, persist, child,
+    try { const response = await fetch(`${url}/api/v2/sync/bootstrap`, { headers: { Authorization: `Bearer ${token}`, "X-Sync-Client": "2" } }); if (response.ok) return { url, accountId, email, token, persist, child,
       execute: sql => command(["d1", "execute", "urbudget-sync-v2-local", ...base, "--command", sql]),
       logs: () => output, stop: () => stopOwnedWorker(child, port) }; } catch {}
     await delay(200);

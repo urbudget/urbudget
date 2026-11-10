@@ -22,13 +22,31 @@ pub async fn sync_has_key(cloud: State<'_, Cloud>) -> Result<bool, String> {
 }
 
 #[tauri::command(async)]
-pub async fn sync_setup(cloud: State<'_, Cloud>, library: State<'_, Library>, passphrase: String) -> Result<Value, String> {
+pub async fn sync_key_info(cloud: State<'_, Cloud>, library: State<'_, Library>) -> Result<Value, String> {
+    urbudget_services::cloud::sync::sync_key_info(&cloud, &library).await
+}
+
+/// Without a passphrase, sets sync up with a key made here and answers with its recovery code.
+#[tauri::command(async)]
+pub async fn sync_setup(cloud: State<'_, Cloud>, library: State<'_, Library>, passphrase: Option<String>) -> Result<Value, String> {
     urbudget_services::cloud::sync::sync_setup(&cloud, &library, passphrase).await
 }
 
 #[tauri::command(async)]
-pub async fn sync_reset(cloud: State<'_, Cloud>, library: State<'_, Library>, passphrase: String) -> Result<(), String> {
+pub async fn sync_reset(cloud: State<'_, Cloud>, library: State<'_, Library>, passphrase: Option<String>) -> Result<Value, String> {
     urbudget_services::cloud::sync::sync_reset(&cloud, &library, passphrase).await
+}
+
+/// Unlocks sync with whichever code the person typed: one a device that syncs shows, or the
+/// recovery code.
+#[tauri::command(async)]
+pub async fn sync_unlock_code(cloud: State<'_, Cloud>, library: State<'_, Library>, code: String) -> Result<Value, String> {
+    urbudget_services::cloud::pairing::unlock(&cloud, &library, &code).await
+}
+
+#[tauri::command(async)]
+pub async fn sync_recovery_create(cloud: State<'_, Cloud>, library: State<'_, Library>) -> Result<Value, String> {
+    urbudget_services::cloud::recovery::create(&cloud, &library).await
 }
 
 #[tauri::command(async)]
@@ -63,4 +81,24 @@ pub async fn sync_remove(cloud: State<'_, Cloud>, id: String) -> Result<(), Stri
 #[tauri::command(async)]
 pub async fn sync_lock(cloud: State<'_, Cloud>) -> Result<(), String> {
     urbudget_services::cloud::sync::sync_lock(&cloud).await
+}
+
+#[tauri::command(async)]
+pub async fn sync_pair_offer(cloud: State<'_, Cloud>, library: State<'_, Library>) -> Result<Value, String> {
+    urbudget_services::cloud::pairing::offer(&cloud, &library).await
+}
+
+#[tauri::command(async)]
+pub async fn sync_pair_cancel(cloud: State<'_, Cloud>, id: String) -> Result<(), String> {
+    urbudget_services::cloud::pairing::cancel(&cloud, &id).await
+}
+
+#[tauri::command]
+pub fn sync_pair_request(cloud: State<'_, Cloud>) -> Result<Value, String> {
+    urbudget_services::cloud::pairing::request(&cloud)
+}
+
+#[tauri::command(async)]
+pub async fn sync_pair_wait(cloud: State<'_, Cloud>, library: State<'_, Library>, code: String) -> Result<Value, String> {
+    urbudget_services::cloud::pairing::wait(&cloud, &library, &code).await
 }

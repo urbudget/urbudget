@@ -6,6 +6,8 @@
 	<array><string>app.urbudget.account-sync</string></array>
 	<key>UIBackgroundModes</key>
 	<array><string>fetch</string></array>
+	<key>NSCameraUsageDescription</key>
+	<string>UrBudget uses the camera to scan the code that adds a device to sync.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

@@ -278,6 +278,60 @@ mod tests {
         assert!(library.pending_delivery("account-a").unwrap().is_none());
     }
     #[test]
+    fn replacing_a_restored_installation_drops_its_unanswered_request_and_keeps_the_edits() {
+        let d = tempfile::tempdir().unwrap();
+        let mut library = Budgets::load(d.path()).unwrap();
+        let id = library.create().unwrap();
+        let mut s = Store::open_budget(&library.database(&id).unwrap(), &id).unwrap();
+        let binding = bound(&mut s);
+        library.mark_available(&id).unwrap();
+        // An earlier request completed, so this identity has moved past sequence 1.
+        let first = prepare(&mut s, "First upload");
+        let slot = library
+            .prepare_delivery("account-a", &first.operation_id, Some(&id), &first.manifest, &first.payload, &first.metadata, &first.digest)
+            .unwrap();
+        let receipt = json!({"outcome":"rejected","code":"conflict"});
+        library.record_delivery_receipt("account-a", &slot.sequence, &slot.digest, &receipt).unwrap();
+        // The server has answered this one: it is completed, never abandoned.
+        let answered = library.pending_delivery("account-a").unwrap().unwrap();
+        assert!(library.replace_installation("account-a", &answered).is_err());
+        s.acknowledge_upload(&first.operation_id, &first.digest, None, &receipt).unwrap();
+        library.complete_delivery("account-a", &slot.sequence, &slot.digest).unwrap();
+        s.forget_completed_upload(&first.operation_id).unwrap();
+        let before = library.account_state("account-a").unwrap();
+        assert_eq!(before["nextSequence"], "2");
+        let mut state = before.clone();
+        state["registered"] = json!(true);
+        library.set_account_state("account-a", &state).unwrap();
+        // The next request is the one the server refuses as behind its sequence.
+        let second = prepare(&mut s, "Edit made after the restore");
+        let stale = library
+            .prepare_delivery("account-a", &second.operation_id, Some(&id), &second.manifest, &second.payload, &second.metadata, &second.digest)
+            .unwrap();
+        let cancelled = json!({"outcome":"cancelled","code":"installation_replaced"});
+        s.acknowledge_upload(&second.operation_id, &stale.digest, None, &cancelled).unwrap();
+        let installation = library.replace_installation("account-a", &stale).unwrap();
+        let after = library.account_state("account-a").unwrap();
+        assert_eq!(after["installationId"], installation);
+        assert_ne!(after["installationId"], before["installationId"]);
+        assert_eq!(after["nextSequence"], "1");
+        assert_eq!(after["replacedInstallation"], before["installationId"]);
+        assert!(after.get("registered").is_none(), "the new identity must register");
+        assert!(library.pending_delivery("account-a").unwrap().is_none());
+        // The budget's last synced base is untouched and its changes still wait to upload.
+        assert_eq!(s.sync_binding().unwrap(), Some(binding));
+        assert!(s.sync_dirty().unwrap());
+        assert!(s.pending_upload().unwrap().is_none());
+        assert_eq!(s.saved().unwrap().0.name, "Edit made after the restore");
+        // Under the new identity sequence 1 is a different request from the old identity's.
+        s.forget_completed_upload(&second.operation_id).unwrap();
+        let again = prepare(&mut s, "Edit made after the restore, and one more");
+        let fresh = library
+            .prepare_delivery("account-a", &again.operation_id, Some(&id), &again.manifest, &again.payload, &again.metadata, &again.digest)
+            .unwrap();
+        assert_eq!((fresh.sequence.as_str(), fresh.installation_id.as_str()), ("1", installation.as_str()));
+    }
+    #[test]
     fn control_receipt_requires_durable_local_application() {
         let d = tempfile::tempdir().unwrap();
         let mut l = Budgets::load(d.path()).unwrap();
@@ -329,6 +383,54 @@ mod tests {
         budget.name = "Modern save".into();
         save(&mut modern, &budget);
         assert_eq!(modern.saved().unwrap().0.name, "Modern save");
+    }
+    #[test]
+    fn a_dead_process_checkpoint_keeps_its_draft_without_holding_incoming_changes() {
+        let d = tempfile::tempdir().unwrap();
+        let mut s = Store::open(&d.path().join("b.db")).unwrap();
+        let binding = bound(&mut s);
+        let checkpoint = |owner: String| EditorCheckpoint {
+            editor_id: format!("editor-{owner}"),
+            epoch: "one".into(),
+            process_owner: owner,
+            target: json!({"kind":"transaction"}),
+            baseline: Value::Null,
+            draft: json!({"amount":"-"}),
+        };
+        // The app was killed with a form open: the row stays, written by a process now gone.
+        let orphan = checkpoint("1234-earlier-run".into());
+        s.checkpoint_editor(&orphan).unwrap();
+        assert!(s.live_editor_checkpoints().unwrap().is_empty());
+        let mut incoming = binding.base.clone();
+        incoming.name = "Changed on another device".into();
+        let next = Binding {
+            remote_version: "2".into(),
+            base: incoming.clone(),
+            ..binding.clone()
+        };
+        let token = s.status().unwrap().token;
+        s.save_sync_v2(&incoming, &token, &next, None).unwrap();
+        assert_eq!(s.saved().unwrap().0, incoming);
+        assert_eq!(s.editor_checkpoints().unwrap(), [orphan.clone()]);
+        // A form this process has open still holds them.
+        let live = checkpoint(process_owner());
+        s.checkpoint_editor(&live).unwrap();
+        assert_eq!(s.live_editor_checkpoints().unwrap(), [live.clone()]);
+        let mut later = incoming.clone();
+        later.name = "Changed again".into();
+        let after = Binding {
+            remote_version: "3".into(),
+            base: later.clone(),
+            ..binding.clone()
+        };
+        let token = s.status().unwrap().token;
+        assert!(s.save_sync_v2(&later, &token, &after, None).is_err());
+        s.clear_editor_checkpoint(&live.editor_id, &live.epoch).unwrap();
+        // Another incarnation replaces the budget, so it waits for the orphaned draft too.
+        let mut restored = after.clone();
+        restored.identity.incarnation = "restored".into();
+        assert!(s.adopt_sync_v2(&later, &token, &restored).is_err());
+        assert_eq!(s.saved().unwrap().0, incoming);
     }
     #[test]
     fn clean_restore_rebinds_but_dirty_or_checkpointed_content_is_preserved() {
@@ -399,6 +501,14 @@ pub struct EditorCheckpoint {
     pub target: Value,
     pub baseline: Value,
     pub draft: Value,
+}
+
+/// Names this process on the editor checkpoints it writes: different in every run of the app.
+pub fn process_owner() -> String {
+    static OWNER: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    OWNER
+        .get_or_init(|| format!("{}-{}", std::process::id(), crate::budgets::new_id()))
+        .clone()
 }
 
 pub fn decimal(value: &str) -> Result<u64> {
@@ -822,6 +932,17 @@ impl Store {
             serde_json::from_str(&row.map_err(|e| e.to_string())?).map_err(|e| e.to_string())
         })
         .collect()
+    }
+    /// The checkpoints of editors that may still be open: those this process wrote. One left by
+    /// a process that has since died is a draft to recover, kept until it's discarded, and no
+    /// longer a form on screen that incoming changes would pull the ground from under.
+    pub fn live_editor_checkpoints(&self) -> Result<Vec<EditorCheckpoint>> {
+        let owner = process_owner();
+        Ok(self
+            .editor_checkpoints()?
+            .into_iter()
+            .filter(|checkpoint| checkpoint.process_owner == owner)
+            .collect())
     }
     pub fn clear_editor_checkpoint(&self, editor_id: &str, epoch: &str) -> Result<()> {
         self.connection

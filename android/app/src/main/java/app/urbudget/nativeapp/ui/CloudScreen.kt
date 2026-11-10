@@ -49,6 +49,13 @@ internal fun CloudScreen(vm: BudgetViewModel) {
     var repeated by remember { mutableStateOf("") }
     var confirmation by remember { mutableStateOf("") }
     var pendingBudget by remember { mutableStateOf<JSONObject?>(null) }
+    // What the account's sync key is, as the engine last answered `sync_key_info`: whether one
+    // exists, whether a passphrase or a recovery code opens it, and how setup and reset go.
+    var keyInfo by remember { mutableStateOf<JSONObject?>(null) }
+    // A recovery code just made, shown until the person says they've saved it.
+    var newCode by remember { mutableStateOf("") }
+    // Sync's less used rows (recovery code, reset, lock) are folded away until asked for.
+    var more by remember { mutableStateOf(false) }
     var automatic by remember { mutableStateOf(preferences.automaticSync) }
     var overviewRevision by remember { mutableIntStateOf(0) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -109,6 +116,37 @@ internal fun CloudScreen(vm: BudgetViewModel) {
         }
     }
     val sync = status?.optJSONObject("sync")
+    val unlockedNow = sync?.optBoolean("unlocked") == true
+    // While sync is locked here, what its one row does depends on the account's key.
+    LaunchedEffect(signedIn, unlockedNow) {
+        if (signedIn.isBlank()) keyInfo = null
+        else if (!unlockedNow) try { keyInfo = withContext(Dispatchers.IO) { NativeServices.call("sync_key_info") } as? JSONObject }
+            catch (cancel: CancellationException) { throw cancel }
+            catch (_: Exception) { /* The row asks again when it's tapped. */ }
+    }
+    /** The locked row: turns sync on for an account's first device, or opens the way to unlock it. */
+    fun startSync() = work {
+        val info = withContext(Dispatchers.IO) { NativeServices.call("sync_key_info") } as? JSONObject ?: JSONObject()
+        keyInfo = info; phrase = ""; repeated = ""
+        when {
+            // A passphrase where the account has one; otherwise a code, which is all there is.
+            info.optBoolean("exists") -> dialog = if (info.optBoolean("passphrase")) "unlock" else "pairUnlock"
+            // Sync that still makes its key from a passphrase asks for one.
+            info.optString("setup") != "code" -> dialog = "setup"
+            // Nothing to choose: the key is made here, and its recovery code comes back to show.
+            else -> {
+                val made = withContext(Dispatchers.IO) { NativeServices.call("sync_setup") } as? JSONObject ?: JSONObject()
+                newCode = made.recoveryCode()
+                vm.service("sync_now")
+            }
+        }
+    }
+    /** A reset makes a key here with a recovery code, or asks for a new passphrase where sync still uses one. */
+    fun askReset() = call("sync_key_info") { answer ->
+        val info = answer as? JSONObject ?: JSONObject()
+        keyInfo = info; phrase = ""; repeated = ""
+        dialog = if (info.optString("reset") == "code") "resetGenerated" else "reset"
+    }
     val report = sync?.optJSONObject("last")
     val reportedBudgets = remember(report) { report?.rows("budgets").orEmpty() }
     fun purchaseMessage(result: JSONObject) {
@@ -121,7 +159,8 @@ internal fun CloudScreen(vm: BudgetViewModel) {
     }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 4.dp, bottom = DockRoom), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text(stringResource(R.string.cloud_intro), Modifier.padding(horizontal = 4.dp), color = ur.muted, style = MaterialTheme.typography.bodyMedium) }
-        if (signedIn.isNotBlank() && sync?.optInt("protocol", 1) != 2) item { Text(stringResource(R.string.cloud_legacy_library), color = ur.muted) }
+        // For an account that syncs the older way. One that hasn't set sync up has nothing to keep syncing.
+        if (signedIn.isNotBlank() && sync?.optInt("protocol", 1) != 2 && sync?.optBoolean("unlocked") == true) item { Text(stringResource(R.string.cloud_legacy_library), color = ur.muted) }
         if (busy) item { LinearProgressIndicator(Modifier.fillMaxWidth(), color = ur.accent) }
         error?.let { item { FormError(it) } }
         notice?.let { item { Notice(it, tone = "info") } }
@@ -131,7 +170,8 @@ internal fun CloudScreen(vm: BudgetViewModel) {
                 Text(stringResource(R.string.cloud_sign_in_intro), color = ur.text2, style = MaterialTheme.typography.bodyMedium)
                 Field(email, { email = it; sent = false; code = "" }, stringResource(R.string.cloud_email))
                 if (sent) Field(code, { code = it }, stringResource(R.string.cloud_code))
-                val sendCode = { call("account_start", JSONObject().put("email", email.trim())) { sent = true; notice = context.getString(R.string.cloud_check_email) } }
+                // A local development server answers with the code itself and sends no email.
+                val sendCode = { call("account_start", JSONObject().put("email", email.trim())) { answer -> sent = true; code = (answer as? JSONObject)?.optString("devCode").orEmpty(); notice = context.getString(R.string.cloud_check_email) } }
                 if (sent) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     PrimaryButton(stringResource(R.string.cloud_sign_in), { call("account_verify", JSONObject().put("email", email.trim()).put("code", code.trim())) { code = "" } }, Modifier.weight(1f), enabled = !busy && code.isNotBlank())
                     SecondaryButton(stringResource(R.string.cloud_new_code), sendCode, Modifier.weight(1f), enabled = !busy && email.contains('@'))
@@ -164,10 +204,23 @@ internal fun CloudScreen(vm: BudgetViewModel) {
                     overview?.optJSONObject("sync")?.let { ListRow(if (it.optBoolean("active")) stringResource(R.string.cloud_subscription_active) else stringResource(R.string.cloud_subscription_needed),
                         icon = Icons.Outlined.CloudSync, iconTint = if (it.optBoolean("active")) ur.positive else ur.warning, iconFill = if (it.optBoolean("active")) ur.positiveSoft else ur.warningSoft, chevron = false, divider = true) }
                     SwitchRow(stringResource(R.string.cloud_sync_automatically), automatic, { automatic = it; preferences.automaticSync = it }, subtitle = stringResource(R.string.cloud_while_open), divider = true)
-                    if (sync?.optBoolean("unlocked") == true) {
+                    if (unlockedNow) {
                         ListRow(stringResource(R.string.cloud_sync_now), icon = Icons.Outlined.Sync, onClick = { if (!busy) call("sync_now") }, chevron = false, divider = true)
-                        ListRow(stringResource(R.string.cloud_lock), icon = Icons.Outlined.Lock, iconTint = ur.text2, iconFill = ur.zeroSoft, onClick = { if (!busy) call("sync_lock") }, chevron = false)
-                    } else ListRow(stringResource(R.string.cloud_set_up_or_unlock), icon = Icons.Outlined.Key, onClick = { if (!busy) call("sync_has_key") { exists -> phrase = ""; repeated = ""; dialog = if (exists == true) "unlock" else "setup" } })
+                        ListRow(stringResource(R.string.pair_add_device), icon = Icons.Outlined.Devices, onClick = { if (!busy) dialog = "addDevice" }, divider = true)
+                        // What few people need, and nobody often, folds away.
+                        ListRow(stringResource(R.string.cloud_more_sync), icon = Icons.Outlined.MoreHoriz, iconTint = ur.text2, iconFill = ur.zeroSoft, onClick = { more = !more }, chevron = false, divider = more)
+                        if (more) {
+                            if (sync?.optInt("protocol", 1) == 2) ListRow(stringResource(R.string.recovery_row), onClick = { if (!busy) dialog = "recoverySettings" }, divider = true)
+                            ListRow(stringResource(R.string.cloud_reset_passphrase), onClick = { if (!busy) askReset() }, divider = true)
+                            ListRow(stringResource(R.string.cloud_lock), onClick = { if (!busy) call("sync_lock") }, chevron = false)
+                        }
+                    } else {
+                        // One row, named for what it will do once the account's key is known.
+                        val exists = keyInfo?.let { it.optBoolean("exists") }
+                        ListRow(stringResource(when (exists) { true -> R.string.cloud_unlock_sync; false -> R.string.cloud_turn_on_sync; null -> R.string.cloud_set_up_or_unlock }),
+                            icon = Icons.Outlined.Key, onClick = { if (!busy) startSync() }, divider = exists == true)
+                        if (exists == true) ListRow(stringResource(R.string.cloud_cant_unlock), onClick = { if (!busy) askReset() })
+                    }
                 }
             }
             if (report != null && (report.text("message").isNotBlank() || report.text("at").isNotBlank())) item {
@@ -200,7 +253,6 @@ internal fun CloudScreen(vm: BudgetViewModel) {
             }
             item {
                 ListCard {
-                    ListRow(stringResource(R.string.cloud_reset_passphrase), onClick = { if (!busy) { phrase = ""; repeated = ""; dialog = "reset" } }, divider = true)
                     ListRow(stringResource(R.string.cloud_delete_account), titleColor = ur.negative, onClick = { if (!busy) { confirmation = ""; dialog = "deleteAccount" } })
                 }
             }
@@ -216,7 +268,27 @@ internal fun CloudScreen(vm: BudgetViewModel) {
         else Text(stringResource(R.string.cloud_passphrase_safe))
         FilledField(phrase, { phrase = it }, label = { Text(stringResource(R.string.cloud_passphrase_field)) }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
         if (dialog != "unlock") FilledField(repeated, { repeated = it }, label = { Text(stringResource(R.string.cloud_passphrase_repeat)) }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
+        // The account already has a key, so a code can hand it over instead.
+        else TextButton({ phrase = ""; dialog = "pairUnlock" }, enabled = !busy) { Text(stringResource(R.string.pair_unlock_with_code)) }
     }
+    if (dialog == "addDevice") AddDeviceDialog { dialog = "" }
+    if (dialog == "pairUnlock") UnlockWithCodeDialog(keyInfo?.optBoolean("recovery") == true, { dialog = "" }) { dialog = ""; work {}; vm.service("sync_now") }
+    // The current code can't be shown: this phone never kept it. So the one thing to do is make a new one.
+    if (dialog == "recoverySettings") AlertDialog(onDismissRequest = { dialog = "" }, title = { Text(stringResource(R.string.recovery_row)) },
+        text = { Text(stringResource(if (sync?.optBoolean("recovery") == true) R.string.recovery_settings_has else R.string.recovery_settings_none)) },
+        confirmButton = { TextButton({ call("sync_recovery_create") { answer -> newCode = (answer as? JSONObject)?.recoveryCode().orEmpty(); dialog = "" } }, enabled = !busy) { Text(stringResource(R.string.recovery_make)) } },
+        dismissButton = { TextButton({ dialog = "" }) { Text(stringResource(R.string.common_cancel)) } })
+    // A new key made here, with its own recovery code.
+    if (dialog == "resetGenerated") AlertDialog(onDismissRequest = { dialog = "" }, title = { Text(stringResource(R.string.recovery_reset_title)) },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(stringResource(R.string.recovery_reset_message))
+            Text(stringResource(R.string.recovery_reset_detail))
+            // Asked from a phone that can't unlock: there may be a way that deletes nothing.
+            if (!unlockedNow) Text(stringResource(R.string.recovery_reset_instead))
+        } },
+        confirmButton = { TextButton({ call("sync_reset") { answer -> newCode = (answer as? JSONObject)?.recoveryCode().orEmpty(); dialog = ""; vm.service("sync_now") } }, enabled = !busy) { Text(stringResource(R.string.recovery_reset_confirm), color = ur.negative) } },
+        dismissButton = { TextButton({ dialog = "" }) { Text(stringResource(R.string.common_cancel)) } })
+    if (newCode.isNotBlank() && dialog == "") RecoveryCodeDialog(newCode) { newCode = "" }
     if (dialog == "deleteAccount") FormDialog(stringResource(R.string.cloud_delete_title), { dialog = "" }, stringResource(R.string.cloud_delete_confirm), enabled = !busy && confirmation.trim().equals(signedIn, ignoreCase = true), onConfirm = {
         call("account_delete", JSONObject().put("confirm", confirmation)) { dialog = "" }
     }) { Text(stringResource(R.string.cloud_delete_message)); Field(confirmation, { confirmation = it }, stringResource(R.string.cloud_delete_type, signedIn)) }

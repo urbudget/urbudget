@@ -91,7 +91,7 @@ import matches or sync merges.
 | Reports | Twelve report modes, ranges and account/category filters, category/payee/day transaction drilldowns, shared forecasts, CSV export |
 | Library | Multiple budgets, fresh start, undo/redo, JSON import/export, manual and automatic backups, retention and restore, formatting and appearance |
 | Account | Email-code sign-in, sign-out, account overview/deletion; only sync needs an account |
-| Sync | Existing end-to-end encryption and protocol, passphrase setup/unlock/reset, track/download/remove, per-field and whole-budget conflict review; automatic sync on foreground, after edits and every minute while open |
+| Sync | Existing end-to-end encryption and protocol; setup with a key made on the device and a recovery code, or a passphrase where the account's sync still makes its key from one; unlock by passphrase, or by a code (one from a device that syncs, scanned or typed, or the recovery code, in the same box); a recovery code, reset and lock under More; track/download/remove, per-field and whole-budget conflict review; automatic sync on foreground, after edits and every minute while open |
 | Billing | The monthly sync subscription (`urbudget_sync`, base plan `monthly`) at Play's localized price, pending/cancelled states, account-bound restore, server verification, subscription management |
 | Banks | SimpleFIN setup claim, secure tokens, account links, import range/sign handling, request quotas, download/match/duplicate review, import and disconnect; bank files (CSV, Excel, OFX, QFX, QIF, CAMT.053, MT940; the format their content says; a PDF goes to the assistant with the file attached) read as an import session: the lines that need attention (fix a line's date, payee, memo or amount), those left out (include them) and those changed (undo), the account and sheet in the file, signs and the date-order question, Fix with the assistant (its fixes apply to the import), then the review with transfer pairing and refund labels; the account remembers how its file read (its CSV columns are chosen on the desktop) |
 | YNAB | Multiple saved tokens, plans, delta sync with full-download fallback, conflict/discrepancy review, ZIP and Register/Plan CSV imports |
@@ -641,6 +641,51 @@ test's waits, and on one with 462 budgets a run never finished
 ([follow-ups](../docs/FOLLOW-UPS.md#what-fast-edits-on-android-left)). Build again
 without `-PrustDebug=true` before timing anything. The `sync-lifecycle` job in
 [android-native.yml](../.github/workflows/android-native.yml) runs this test in CI.
+
+## Trying sync by hand
+
+Sync v2 is off at urbudget.app, and switching it on there moves real accounts for good.
+To try it between a computer and a phone, run a server on the computer and install the
+sync test app:
+
+```powershell
+# web/ (after npm ci)
+node scripts/sync-v2-try.mjs
+```
+
+Sign in to both apps with the same address, any address: no email is sent, the apps
+fill in the sign-in code, and every account on this server has the Sync plan.
+
+The script starts a local server with Sync v2 on at `http://127.0.0.1:8788` and prints
+the lines for the computer and the phone. The phone's are:
+
+```powershell
+# Repository root. A phone is arm64-v8a, an emulator x86_64.
+.\android\gradlew.bat -p android :app:assembleDebug "-PsyncTestServer=http://127.0.0.1:8788" -PandroidAbis=arm64-v8a
+adb install -r android\app\build\outputs\apk\debug\app-debug.apk
+adb reverse tcp:8788 tcp:8788
+```
+
+`-PsyncTestServer` makes the debug build a different app:
+
+| | Debug build | Sync test app |
+| --- | --- | --- |
+| Id | `app.urbudget.nativeapp` | `app.urbudget.synctest` |
+| Name on the phone | UrBudget | UrBudget sync test |
+| Server | urbudget.app | The one given, never urbudget.app |
+| Rust engine | Optimized | Development build, as with `-PrustDebug=true` |
+
+It installs beside the app and has its own budgets and sign-in, so a phone's real
+budgets and account are never touched. Gradle refuses the property with a release or
+preview task, and refuses `urbudget.app` as the server. Plain `http` is allowed only
+to this computer (`127.0.0.1`, `10.0.2.2`, `localhost`), which `adb reverse` gives a
+phone on USB; run that line again whenever the phone has been unplugged. An `https`
+test server needs no cable.
+
+What it can't show: buying the Sync plan (Google Play doesn't know this app, so the
+server gives every account the plan), and timings (the engine isn't optimized). The APK
+lands where the debug build's does, so build again without the property before
+installing the ordinary debug app.
 
 ## Verification and remaining external acceptance
 

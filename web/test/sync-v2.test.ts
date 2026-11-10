@@ -8,7 +8,9 @@ import { cleanupSyncObjects } from "../src/sync";
 
 let env: TestEnv;
 const accountId = "usr_v2", installationId = "device_a";
-const auth = { Authorization: "Bearer v2-test-session" };
+const session = { Authorization: "Bearer v2-test-session" };
+// What a current client sends. A client from before the level sends only `session`.
+const auth = { ...session, "X-Sync-Client": "2" };
 const json = (body: unknown, extra: Record<string, string> = {}) => ({ ...auth, "Content-Type": "application/json", ...extra });
 const headers = (device = installationId) => ({ ...auth, "X-Sync-Installation": device });
 const call = (path: string, init: RequestInit = {}) => app.request(`/api/v2/sync${path}`, { ...init, headers: { ...auth, ...init.headers } }, env);
@@ -198,6 +200,30 @@ describe("sync v2 account controls and retention", () => {
     await expect(env.DB.prepare("UPDATE sync_keys SET generation=generation+1 WHERE user_id=?1").bind(accountId).run()).rejects.toThrow("sync_upgrade_required");
     await expect(env.DB.prepare("INSERT INTO sync_budgets(user_id,budget_id,revision,object_key,size,updated_at) VALUES (?1,'resurrect',1,'bad',1,'2026-01-01')").bind(accountId).run()).rejects.toThrow("sync_upgrade_required");
     expect((await app.request("/api/v1/sync/key", { headers: auth }, env)).status).toBe(426);
+  });
+  it("keeps a migrated head's v1 origin through updates, and a restore stops matching it", async () => {
+    await env.DB.prepare("INSERT INTO sync_keys(user_id,salt,key_check,created_at,generation) VALUES (?1,'abcdefghijklmnop','check','2026-01-01',7)").bind(accountId).run();
+    await env.SYNC.put("legacy-ciphertext", "legacy bytes");
+    await env.DB.prepare("INSERT INTO sync_budgets(user_id,budget_id,revision,object_key,size,updated_at) VALUES (?1,'budget_a',42,'legacy-ciphertext',12,'2026-01-01')").bind(accountId).run();
+    await registered(); const b = await boot();
+    await perform("1", { accountId, installationId, operationId: "migrate", kind: "migrateProtocol", keyGeneration: "7", catalogEpoch: b.catalogEpoch, expectedProtocol: 1 });
+    const head = async () => (await (await call("/catalog/snapshot", { headers: await scope() })).json()).budgets[0];
+    const seeded = await head();
+    expect(seeded).toMatchObject({ version: "42", payload: { format: "legacy-v1" }, legacy: { incarnation: seeded.incarnation, revision: "42" } });
+    // Another device rewrites it before a late one has linked its copy: the origin still says
+    // which v1 history this incarnation continues.
+    const update = await content("2", { kind: "update", incarnation: seeded.incarnation, newIncarnation: undefined, expectedVersion: "42" });
+    const updated = (await perform("2", update.m, update.bytes)).receipt.budget;
+    expect(updated).toMatchObject({ version: "43", incarnation: seeded.incarnation, payload: { format: "v2" }, legacy: seeded.legacy });
+    const trash: Manifest = { ...update.m, operationId: "trash", kind: "trash", expectedVersion: "43" }; delete trash.payload;
+    await perform("3", trash);
+    const restore = await content("4", { kind: "restore", incarnation: seeded.incarnation, expectedVersion: "44", source: { incarnation: seeded.incarnation, version: "44", sha256: update.m.payload!.sha256 } }, "resealed restored bytes");
+    const restored = (await perform("4", restore.m, restore.bytes)).receipt.budget;
+    expect(restored.incarnation).toBe("incarnation_4");
+    expect(restored.legacy.incarnation).toBe(seeded.incarnation);
+    // A budget made on protocol 2 never had a v1 history.
+    const fresh = await content("5", { budgetId: "budget_b" });
+    expect((await perform("5", fresh.m, fresh.bytes)).receipt.budget.legacy).toBeNull();
   });
   it("expires staging with a terminal receipt and retains sequence fences", async () => {
     await setup(); const a = await content("2"); await post("/mutations/2/prepare", a.m);
@@ -452,6 +478,178 @@ it("durably reclaims active, trash and staged content after account deletion dur
   expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM sync_object_garbage").first("n")).toBe(0);
 });
 
+
+describe("device approval", () => {
+  const sealed = "c2VhbGVkLWtleS1ieXRlcw", id = "0123456789abcdef0123456789abcdef";
+  const put = (pairing: string, body: unknown) => call(`/pairings/${pairing}`, { method: "PUT", headers: json(body), body: JSON.stringify(body) });
+  const other = async () => {
+    await env.DB.prepare("INSERT INTO users(id,email,created_at) VALUES ('usr_other','other@example.test','2026-01-01')").run();
+    await env.DB.prepare("INSERT INTO sessions(id,user_id,kind,created_at,last_seen_at,expires_at) VALUES (?1,'usr_other','desktop','2026-01-01','2099-01-01','2099-12-31')").bind(await sha256("other-session")).run();
+    return { Authorization: "Bearer other-session", "X-Sync-Client": "2" };
+  };
+  it("hands a sealed key over once, to the same account only", async () => {
+    await setup();
+    const stored = await put(id, { wrapped: sealed, keyGeneration: "0" });
+    expect(stored.status, await stored.clone().text()).toBe(200);
+    expect(Date.parse((await stored.json()).expiresAt) - Date.now()).toBeLessThanOrEqual(5 * 60_000);
+    const stranger = await app.request(`/api/v2/sync/pairings/${id}`, { headers: await other() }, env);
+    expect(stranger.status).toBe(404);
+    const taken = await call(`/pairings/${id}`);
+    expect(await taken.json()).toEqual({ wrapped: sealed, keyGeneration: "0" });
+    expect((await call(`/pairings/${id}`)).status).toBe(404);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM sync_pairings_v2").first("n")).toBe(0);
+  });
+  it("works on a protocol 1 account, with no activation", async () => {
+    env.SYNC_V2_ENABLED = undefined;
+    await env.DB.prepare("INSERT INTO sync_keys(user_id,salt,key_check,created_at,generation) VALUES (?1,'abcdefghijklmnop','check','2026-01-01',7)").bind(accountId).run();
+    expect((await put(id, { wrapped: sealed, keyGeneration: "7" })).status).toBe(200);
+    expect((await (await call(`/pairings/${id}`)).json()).keyGeneration).toBe("7");
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM sync_accounts_v2").first("n")).toBe(0);
+  });
+  it("refuses an account with no key, another key generation and malformed input", async () => {
+    expect((await put(id, { wrapped: sealed, keyGeneration: "0" })).status).toBe(404);
+    await setup();
+    const stale = await put(id, { wrapped: sealed, keyGeneration: "3" });
+    expect(stale.status).toBe(409); expect((await stale.json()).error).toBe("sync_key_changed");
+    expect((await put("not-a-pairing-id", { wrapped: sealed, keyGeneration: "0" })).status).toBe(400);
+    expect((await put(id, { wrapped: "x".repeat(345), keyGeneration: "0" })).status).toBe(400);
+    expect((await put(id, { wrapped: "spaces are not base64url", keyGeneration: "0" })).status).toBe(400);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM sync_pairings_v2").first("n")).toBe(0);
+  });
+  it("keeps at most three waiting, expires them and lets the offering device cancel", async () => {
+    await setup();
+    const ids = ["a", "b", "c", "d"].map(x => x.repeat(32));
+    for (const pairing of ids.slice(0, 3)) expect((await put(pairing, { wrapped: sealed, keyGeneration: "0" })).status).toBe(200);
+    const fourth = await put(ids[3], { wrapped: sealed, keyGeneration: "0" });
+    expect(fourth.status).toBe(429); expect((await fourth.json()).error).toBe("too_many_pairings");
+    // Offering the same code again replaces it rather than counting twice.
+    expect((await put(ids[0], { wrapped: sealed, keyGeneration: "0" })).status).toBe(200);
+    expect((await call(`/pairings/${ids[0]}`, { method: "DELETE" })).status).toBe(200);
+    expect((await call(`/pairings/${ids[0]}`)).status).toBe(404);
+    await env.DB.prepare("UPDATE sync_pairings_v2 SET expires_at='2026-01-01T00:00:00.000Z' WHERE id=?1").bind(ids[1]).run();
+    expect((await call(`/pairings/${ids[1]}`)).status).toBe(404);
+    await env.DB.prepare("UPDATE sync_pairings_v2 SET expires_at='2026-01-01T00:00:00.000Z'").run();
+    await maintainSyncV2(env);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM sync_pairings_v2").first("n")).toBe(0);
+  });
+  it("is cleared by a key reset on either protocol and by deleting the account", async () => {
+    await setup();
+    expect((await put(id, { wrapped: sealed, keyGeneration: "0" })).status).toBe(200);
+    const b = await boot();
+    const reset: Manifest = { accountId, installationId, operationId: "reset", kind: "keyReset", keyGeneration: "0", catalogEpoch: b.catalogEpoch, expectedProtocol: 2, key: { salt: "ponmlkjihgfedcba", check: "new-check" } };
+    expect((await perform("2", reset)).receipt.outcome).toBe("accepted");
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM sync_pairings_v2").first("n")).toBe(0);
+    expect((await put(id, { wrapped: sealed, keyGeneration: "1" })).status).toBe(200);
+    await env.DB.prepare("DELETE FROM users WHERE id=?1").bind(accountId).run();
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM sync_pairings_v2").first("n")).toBe(0);
+  });
+});
+
+describe("keys not made from a passphrase, and the recovery code", () => {
+  const recovery = { salt: "recoverysalt0001", wrapped: "c2VhbGVkLWtleS1mb3ItdGhlLXJlY292ZXJ5LWNvZGU" };
+  const generated = async (kind: "keySetup" | "keyReset" = "keySetup"): Promise<Manifest> => {
+    const b = await boot();
+    return { accountId, installationId, operationId: `generated_${kind}`, kind, keyGeneration: b.keyGeneration, catalogEpoch: b.catalogEpoch, expectedProtocol: b.protocol, key: { check: "generated-check", recovery } };
+  };
+  const put = (body: unknown) => call("/recovery", { method: "PUT", headers: json(body), body: JSON.stringify(body) });
+  it("sets up a key with a recovery code and no salt", async () => {
+    await registered();
+    expect((await perform("1", await generated())).receipt).toMatchObject({ outcome: "accepted", kind: "keySetup", keyGeneration: "0" });
+    expect(await boot()).toMatchObject({ protocol: 2, keyGeneration: "0", salt: null, check: "generated-check", recovery });
+  });
+  it("refuses a key nothing could ever unlock on a second device, and malformed recovery details", async () => {
+    await registered();
+    const m = await generated();
+    for (const key of [{ check: "c" }, { check: "c", recovery: { salt: recovery.salt } }, { check: "c", recovery: { ...recovery, wrapped: "not base64!" } }, { check: "c", recovery: { ...recovery, extra: 1 } }, { check: "c", salt: "short", recovery }])
+      expect((await post("/mutations/1/prepare", { ...m, key })).status, JSON.stringify(key)).toBe(400);
+    // Both together: a passphrase account that also has a recovery code.
+    expect((await perform("1", { ...m, key: { salt: "abcdefghijklmnop", check: "c", recovery } })).receipt.outcome).toBe("accepted");
+    expect(await boot()).toMatchObject({ salt: "abcdefghijklmnop", recovery });
+  });
+  it("replaces the recovery code without touching the key, its generation or the budgets", async () => {
+    await registered(); await perform("1", await generated());
+    const a = await content("2"); await perform("2", a.m, a.bytes);
+    const before = await boot(), next = { salt: "recoverysalt0002", wrapped: "YW5vdGhlci1zZWFsZWQta2V5" };
+    expect((await put({ keyGeneration: "0", ...next })).status).toBe(200);
+    expect(await boot()).toEqual({ ...before, recovery: next });
+    expect((await call("/budgets/budget_a/content?version=1&incarnation=incarnation_2", { headers: await scope() })).status).toBe(200);
+  });
+  it("adds a recovery code to an account whose key is made from a passphrase", async () => {
+    await setup();
+    expect((await boot()).recovery).toBeNull();
+    expect((await put({ keyGeneration: "0", ...recovery })).status).toBe(200);
+    expect(await boot()).toMatchObject({ salt: "abcdefghijklmnop", recovery });
+  });
+  it("refuses a recovery code for another generation, a malformed one, and an account not on protocol 2", async () => {
+    expect((await put({ keyGeneration: "0", ...recovery })).status).toBe(409);
+    await registered(); await perform("1", await generated());
+    const stale = await put({ keyGeneration: "1", ...recovery });
+    expect(stale.status).toBe(409); expect((await stale.json()).error).toBe("sync_key_changed");
+    for (const body of [{ keyGeneration: "0", salt: recovery.salt }, { keyGeneration: "0", salt: "short", wrapped: recovery.wrapped }, { keyGeneration: "0", ...recovery, wrapped: "x".repeat(345) }])
+      expect((await put(body)).status, JSON.stringify(body)).toBe(400);
+    expect((await boot()).recovery).toEqual(recovery);
+  });
+  it("a reset carries the new key's recovery code, and one made from a passphrase leaves none behind", async () => {
+    await registered(); await perform("1", await generated());
+    const next = { salt: "recoverysalt0003", wrapped: "dGhlLW5ldy1rZXktc2VhbGVk" };
+    const reset = await generated("keyReset"); reset.key = { check: "second-check", recovery: next };
+    expect((await perform("2", reset)).receipt).toMatchObject({ outcome: "accepted", keyGeneration: "1" });
+    expect(await boot()).toMatchObject({ keyGeneration: "1", salt: null, check: "second-check", recovery: next });
+    // The old generation's code can't be put back.
+    expect((await put({ keyGeneration: "0", ...recovery })).status).toBe(409);
+    const typed = await generated("keyReset"); typed.operationId = "typed"; typed.key = { salt: "abcdefghijklmnop", check: "third-check" };
+    await perform("3", typed);
+    expect(await boot()).toMatchObject({ keyGeneration: "2", salt: "abcdefghijklmnop", recovery: null });
+  });
+  it("is removed with the account", async () => {
+    await registered(); await perform("1", await generated());
+    await env.DB.prepare("DELETE FROM users WHERE id=?1").bind(accountId).run();
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM sync_accounts_v2").first("n")).toBe(0);
+  });
+});
+
+describe("clients from before the current level", () => {
+  const old = (path: string, init: RequestInit = {}) => app.request(`/api/v2/sync${path}`, { ...init, headers: { ...session, ...init.headers } }, env);
+  it("are never offered protocol 2 and keep syncing an account that isn't on it", async () => {
+    const response = await old("/bootstrap");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ protocol: 1, activationEnabled: false });
+    expect((await boot()).activationEnabled).toBe(true);
+    const registration = await old("/installations", { method: "POST", headers: { "Content-Type": "application/json", "X-Sync-Installation": installationId }, body: JSON.stringify({ installationId }) });
+    expect(registration.status).toBe(426);
+    expect(await registration.json()).toMatchObject({ error: "sync_upgrade_required" });
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM sync_accounts_v2").first("n")).toBe(0);
+  });
+  it("are told to update on an account that is on protocol 2, on every route", async () => {
+    await setup(); const a = await content("2"); await perform("2", a.m, a.bytes);
+    for (const path of ["/bootstrap", "/catalog/snapshot", "/installations", "/budgets/budget_a/content?version=1&incarnation=incarnation_2", "/pairings/" + "a".repeat(32)]) {
+      const response = await old(path, { headers: await scope() });
+      expect(response.status, path).toBe(426);
+      expect((await response.json()).message).toMatch(/Update UrBudget/);
+    }
+    for (const level of ["1", "", "two"]) expect((await old("/bootstrap", { headers: { "X-Sync-Client": level } })).status, level).toBe(426);
+    expect((await old("/bootstrap", { headers: { "X-Sync-Client": "3" } })).status).toBe(200);
+  });
+});
+
+describe("a staged start", () => {
+  it("lets only the listed accounts set up protocol 2 while it is off for everyone else", async () => {
+    delete env.SYNC_V2_ENABLED;
+    env.SYNC_V2_ACCOUNTS = "usr_someone_else, usr_another";
+    expect((await boot()).activationEnabled).toBe(false);
+    expect((await registered()).status).toBe(409);
+    env.SYNC_V2_ACCOUNTS = `usr_someone_else, ${accountId}`;
+    expect((await boot()).activationEnabled).toBe(true);
+    expect((await setup()).receipt).toMatchObject({ outcome: "accepted", protocol: 2 });
+    // Once on protocol 2 the account stays there, listed or not.
+    delete env.SYNC_V2_ACCOUNTS;
+    const a = await content("2");
+    expect((await perform("2", a.m, a.bytes)).receipt.outcome).toBe("accepted");
+    // Part of an id is not a match.
+    env.SYNC_V2_ACCOUNTS = accountId.slice(0, -1);
+    expect((await boot()).activationEnabled).toBe(false);
+  });
+});
 
 describe("release review server fences and cleanup", () => {
   it("does not reserve dormant accounts or allocate objects for terminal policy rejections", async () => {

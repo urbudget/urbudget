@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Cloud as CloudIcon, CloudOff, LoaderCircle, Lock, RefreshCw } from "lucide-react";
-import { cloud, type BudgetSync, type Cloud, type Overview } from "./cloud";
+import { Cloud as CloudIcon, CloudOff, Copy, LoaderCircle, Lock, RefreshCw } from "lucide-react";
+import { cloud, type BudgetSync, type Cloud, type Overview, type PairingOffer, type SyncKeyInfo } from "./cloud";
 import { errorText, formatDate } from "./format";
 import { Modal } from "./forms";
 import { SyncConflicts } from "./SyncConflicts";
@@ -196,16 +196,92 @@ const BUDGET_STATES: Record<BudgetSync["state"], string> = {
   subscription_required: msg("Subscription required"),
 };
 
-function Passphrase({ cloud: state, onDone }: { cloud: Cloud; onDone: (created: boolean) => void }) {
+/** Sync was unlocked or set up here. `recoveryCode` is there when this made the account's key
+ *  without a passphrase: the code is shown once, for the person to keep. */
+type Unlocked = (created: boolean, recoveryCode?: string) => void;
+
+/** Sets sync up on the account's first computer, or unlocks it on another. Each case shows one
+ *  thing to do: turn sync on, type the passphrase the account has, or use a code. Anything
+ *  else is under "Can't unlock?". */
+function UnlockSync({ cloud: state, onDone }: { cloud: Cloud; onDone: Unlocked }) {
+  const [info, setInfo] = useState<SyncKeyInfo | null>(null);
+  const [error, setError] = useState("");
+  /** On an account with a passphrase: unlock with a code instead. */
+  const [useCode, setUseCode] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const load = useCallback(() => {
+    setError("");
+    void cloud.syncKeyInfo().then(setInfo, (e) => setError(errorText(e)));
+  }, []);
+  useEffect(load, [load]);
+  if (error)
+    return (
+      <p className="notice error">
+        <CloudOff size={14} /> <span>{error}</span>
+        <button className="secondary" onClick={load}>
+          {t("Try again")}
+        </button>
+      </p>
+    );
+  if (!info) return <LoaderCircle size={16} className="spin" />;
+  if (!info.exists) return info.setup === "code" ? <TurnOnSync cloud={state} onDone={onDone} /> : <Passphrase cloud={state} exists={false} onDone={onDone} />;
+  const byCode = !info.passphrase || useCode;
+  return (
+    <>
+      {byCode ? <CodeUnlock cloud={state} recovery={info.recovery} onDone={() => onDone(false)} /> : <Passphrase cloud={state} exists onDone={onDone} />}
+      <details className="unlock-help">
+        <summary>{t("Can't unlock?")}</summary>
+        <p className="help">
+          {info.passphrase && (
+            <button type="button" className="link-button" onClick={() => setUseCode(!byCode)}>
+              {byCode ? t("Use the sync passphrase instead") : t("Use a code from another device instead")}
+            </button>
+          )}
+          <button type="button" className="link-button" onClick={() => setResetting(true)}>
+            {t("Reset sync…")}
+          </button>
+        </p>
+      </details>
+      {resetting && <ResetSync cloud={state} generated={info.reset === "code"} locked close={() => setResetting(false)} onDone={(code) => onDone(false, code)} />}
+    </>
+  );
+}
+
+/** Sync's first computer on an account that needs no passphrase: the key is made here, and its
+ *  recovery code comes back for the person to keep. */
+function TurnOnSync({ cloud: state, onDone }: { cloud: Cloud; onDone: Unlocked }) {
   const toast = useToast();
-  const [exists, setExists] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+  const turnOn = async () => {
+    setBusy(true);
+    try {
+      const { created, recoveryCode } = await cloud.syncSetup();
+      await state.refresh();
+      onDone(created, recoveryCode);
+    } catch (err) {
+      toast({ message: errorText(err), tone: "error" });
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="passphrase">
+      <div>
+        <button className="primary" disabled={busy} onClick={() => void turnOn()}>
+          {busy && <LoaderCircle size={14} className="spin" />} {t("Turn on sync")}
+        </button>
+      </div>
+      <small className="muted">{t("No passphrase to choose. You'll get a recovery code to keep.")}</small>
+    </div>
+  );
+}
+
+/** The passphrase of an account whose key is made from one: chosen on its first computer
+ *  (`exists` false), typed on the others. */
+function Passphrase({ cloud: state, exists, onDone }: { cloud: Cloud; exists: boolean; onDone: Unlocked }) {
+  const toast = useToast();
   const [passphrase, setPassphrase] = useState("");
   const [again, setAgain] = useState("");
   const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    void cloud.syncHasKey().then(setExists).catch((e) => toast({ message: errorText(e), tone: "error" }));
-  }, []);
-  if (exists === null) return <LoaderCircle size={16} className="spin" />;
   const mismatch = !exists && again.length > 0 && again !== passphrase;
   return (
     <form
@@ -219,7 +295,6 @@ function Passphrase({ cloud: state, onDone }: { cloud: Cloud; onDone: (created: 
           onDone(created);
         } catch (err) {
           toast({ message: errorText(err), tone: "error" });
-        } finally {
           setBusy(false);
         }
       }}
@@ -254,6 +329,203 @@ function Passphrase({ cloud: state, onDone }: { cloud: Cloud; onDone: (created: 
   );
 }
 
+/** A code as people type it: 24 characters, in any case, with or without the hyphens. */
+const codeComplete = (code: string) => code.replace(/[\s-]/g, "").length >= 24;
+
+/** How often a computer showing its own code asks whether a phone has approved it. */
+const PAIRING_ASK_MS = 3000;
+
+/** Unlocks sync on this computer with nothing typed from memory. A computer has no camera, so
+ *  it shows a code of its own for a phone that syncs to scan and approve. Its one box takes
+ *  whichever code the person has instead: the one another device shows under Add a device, or
+ *  the account's recovery code (`recovery`: it has one). */
+function CodeUnlock({ cloud: state, recovery, onDone }: { cloud: Cloud; recovery: boolean; onDone: () => void }) {
+  const toast = useToast();
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [shown, setShown] = useState<PairingOffer | null>(null);
+  const [expired, setExpired] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const finish = useRef({ state, onDone });
+  finish.current = { state, onDone };
+  useEffect(() => {
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    setShown(null);
+    setExpired(false);
+    void cloud.syncPairRequest().then(
+      (made) => {
+        if (stopped) return;
+        setShown(made);
+        const ask = async () => {
+          if (stopped) return;
+          if (Date.parse(made.expiresAt) <= Date.now()) return setExpired(true);
+          try {
+            if ((await cloud.syncPairWait(made.code)).ready) {
+              if (stopped) return;
+              stopped = true;
+              await finish.current.state.refresh();
+              return finish.current.onDone();
+            }
+          } catch (err) {
+            if (stopped) return;
+            // The phone's answer arrived and couldn't be used, or the server can't be reached.
+            toast({ message: errorText(err), tone: "error" });
+            return setExpired(true);
+          }
+          timer = setTimeout(ask, PAIRING_ASK_MS);
+        };
+        timer = setTimeout(ask, PAIRING_ASK_MS);
+      },
+      // No code to show: typing one from another device still works.
+      () => {},
+    );
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [attempt]);
+  return (
+    <form
+      className="passphrase"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setBusy(true);
+        try {
+          await cloud.syncUnlockCode(code);
+          await state.refresh();
+          onDone();
+        } catch (err) {
+          toast({ message: errorText(err), tone: "error" });
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      {expired ? (
+        <p className="help">
+          {t("This code has expired.")}{" "}
+          <button type="button" className="link-button" onClick={() => setAttempt((n) => n + 1)}>
+            {t("Make a new code")}
+          </button>
+        </p>
+      ) : (
+        shown && (
+          <div className="pairing pairing-start">
+            <p className="help">
+              {t("Scan this with UrBudget on a phone that already syncs: open Account & sync there and choose Add a device.")}
+            </p>
+            <QrCode qr={shown.qr} label={t("QR code for unlocking sync on this computer")} />
+          </div>
+        )
+      )}
+      <label>
+        {recovery ? t("Or type a code from another device, or your recovery code") : t("Or type a code from another device")}
+        <input
+          className="pairing-code-input"
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"
+          autoComplete="off"
+          autoCapitalize="characters"
+          spellCheck={false}
+          dir="ltr"
+          required
+        />
+      </label>
+      <div>
+        <button className="primary" disabled={busy || !codeComplete(code)}>
+          {busy && <LoaderCircle size={14} className="spin" />} {t("Unlock sync")}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** The QR code's squares as one path, with the four-square margin scanners expect. Always dark
+ *  on white, whatever the window's theme: a scanner reads contrast, not style. */
+function QrCode({ qr, label }: { qr: PairingOffer["qr"]; label: string }) {
+  const margin = 4;
+  let path = "";
+  for (let y = 0; y < qr.size; y++)
+    for (let x = 0; x < qr.size; x++)
+      if (qr.modules[y * qr.size + x] === "1") path += `M${x + margin} ${y + margin}h1v1h-1z`;
+  const side = qr.size + margin * 2;
+  return (
+    <svg className="pairing-qr" viewBox={`0 0 ${side} ${side}`} role="img" aria-label={label} shapeRendering="crispEdges">
+      <rect width={side} height={side} fill="#fff" />
+      <path d={path} fill="#000" />
+    </svg>
+  );
+}
+
+/** On a computer that syncs: shows a one-time code that hands the sync key to another device.
+ *  The code is taken back when this closes, and stops working by itself after five minutes. */
+function AddDevice({ close }: { close: () => void }) {
+  const [offer, setOffer] = useState<PairingOffer | null>(null);
+  const [error, setError] = useState("");
+  const [expired, setExpired] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    let id = "";
+    let closed = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    setOffer(null);
+    setError("");
+    setExpired(false);
+    void cloud.syncPairOffer().then(
+      (made) => {
+        if (closed) return void cloud.syncPairCancel(made.id).catch(() => {});
+        id = made.id;
+        setOffer(made);
+        timer = setTimeout(() => setExpired(true), Math.max(0, Date.parse(made.expiresAt) - Date.now()));
+      },
+      (e) => {
+        if (!closed) setError(errorText(e));
+      },
+    );
+    return () => {
+      closed = true;
+      clearTimeout(timer);
+      if (id) void cloud.syncPairCancel(id).catch(() => {});
+    };
+  }, [attempt]);
+  return (
+    <Modal title={t("Add a device")} close={close}>
+      {error ? (
+        <p className="notice">
+          <span>{error}</span>
+        </p>
+      ) : !offer ? (
+        <LoaderCircle size={16} className="spin" />
+      ) : expired ? (
+        <p>{t("This code has expired.")}</p>
+      ) : (
+        <div className="pairing">
+          <p>{t("Sign in to UrBudget on the other device, then scan this code there or type it.")}</p>
+          <QrCode qr={offer.qr} label={t("QR code for adding a device")} />
+          <code className="pairing-code" dir="ltr">
+            {offer.code}
+          </code>
+          <p className="muted">
+            {t("It works once, for 5 minutes. Only use it on a device of your own: anyone who has it can read your budgets, and UrBudget will never ask you for it.")}
+          </p>
+        </div>
+      )}
+      <div className="modal-actions">
+        {(error || expired) && (
+          <button className="secondary" onClick={() => setAttempt((n) => n + 1)}>
+            {t("Make a new code")}
+          </button>
+        )}
+        <button className="primary" data-autofocus onClick={close}>
+          {t("Done")}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 /** Settings › Account & sync. */
 export function SyncSettings({
   cloud: state,
@@ -273,6 +545,10 @@ export function SyncSettings({
   const overviewRequest = useRef(0);
   const [confirm, setConfirm] = useState<null | { title: string; text: ReactNode; label: string; danger?: boolean; action: () => Promise<void> }>(null);
   const [resetting, setResetting] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [recovery, setRecovery] = useState(false);
+  /** A recovery code just made, shown until the person says they've saved it. */
+  const [newCode, setNewCode] = useState("");
   const [busyId, setBusyId] = useState("");
   const [reviewing, setReviewing] = useState<BudgetSync | null>(null);
   const status = state.status;
@@ -480,7 +756,8 @@ export function SyncSettings({
       </section>
 
       <section className="panel sync-panel">
-        {status.email && status.sync.protocol !== 2 && <p className="help">{t("Automatic budget discovery is not enabled for this account yet. Existing budgets keep syncing; use the controls below to add or download budgets.")}</p>}
+        {/* For an account that syncs the older way. One that hasn't set sync up has nothing to keep syncing. */}
+        {status.email && status.sync.protocol !== 2 && status.sync.unlocked && <p className="help">{t("Automatic budget discovery is not enabled for this account yet. Existing budgets keep syncing; use the controls below to add or download budgets.")}</p>}
         <div className="panel-title">
           <h2>
             <CloudIcon size={18} /> {t("Sync")}
@@ -492,7 +769,7 @@ export function SyncSettings({
           )}
         </div>
         <p className="help">
-          {t("Keeps your budgets the same on all your computers. End-to-end encrypted: they're encrypted on your computer before upload, and only your sync passphrase opens them. $3/month, cancel anytime.")}
+          {t("Keeps your budgets the same on all your devices. End-to-end encrypted: they're encrypted on your computer before upload, and nobody else, including us, can read them. $3/month, cancel anytime.")}
         </p>
         {!status.email ? (
           <p className="muted">{t("Sign in above to use sync.")}</p>
@@ -525,11 +802,13 @@ export function SyncSettings({
             </span>
           </div>
         ) : !status.sync.unlocked ? (
-          <Passphrase
+          <UnlockSync
             cloud={state}
-            onDone={(created) => {
+            onDone={(created, recoveryCode) => {
+              if (recoveryCode) setNewCode(recoveryCode);
               toast({
-                message: created && status.sync.protocol === 2 ? t("Sync is on. Your budgets are uploading, encrypted.") : t("Sync is unlocked on this computer."),
+                // `status` is from before this: an account just set up wasn't on protocol 2 in it yet.
+                message: created && (recoveryCode || status.sync.protocol === 2) ? t("Sync is on. Your budgets are uploading, encrypted.") : t("Sync is unlocked on this computer."),
                 tone: "success",
               });
               void state.syncNow();
@@ -554,7 +833,7 @@ export function SyncSettings({
                   {report.state === "offline"
                     ? t("Offline. Sync picks up when you're back online.")
                     : report.state === "locked"
-                      ? t("Enter your sync passphrase to sync.")
+                      ? t("Unlock sync on this computer to sync.")
                       : report.message ?? t("Sync couldn't finish.")}
                 </span>
               </p>
@@ -562,26 +841,40 @@ export function SyncSettings({
             <div className="setting-list">{report?.budgets.map(budgetRow)}</div>
             <p className="muted sync-footer">
               {report?.state === "ok" ? t("Last synced {when}.", { when: ago(report.at) }) : ""}{" "}
-              <button className="link-button" onClick={() => setResetting(true)}>
-                {t("Reset passphrase…")}
-              </button>{" "}
-              <button
-                className="link-button"
-                onClick={() =>
-                  setConfirm({
-                    title: t("Lock sync on this computer?"),
-                    text: <p>{t("This computer forgets the sync key and stops syncing until you enter the passphrase again.")}</p>,
-                    label: t("Lock"),
-                    action: async () => {
-                      await cloud.syncLock();
-                      await state.refresh();
-                    },
-                  })
-                }
-              >
-                <Lock size={12} /> {t("Lock on this computer")}
+              <button className="link-button" onClick={() => setAdding(true)}>
+                {t("Add a device…")}
               </button>
             </p>
+            {/* What few people need, and nobody often. */}
+            <details className="sync-more">
+              <summary>{t("More")}</summary>
+              <p className="muted sync-footer">
+                {status.sync.protocol === 2 && (
+                  <button className="link-button" onClick={() => setRecovery(true)}>
+                    {t("Recovery code…")}
+                  </button>
+                )}
+                <button className="link-button" onClick={() => setResetting(true)}>
+                  {status.sync.protocol === 2 ? t("Reset sync…") : t("Reset passphrase…")}
+                </button>
+                <button
+                  className="link-button"
+                  onClick={() =>
+                    setConfirm({
+                      title: t("Lock sync on this computer?"),
+                      text: <p>{t("This computer forgets the sync key and stops syncing until you unlock sync on it again.")}</p>,
+                      label: t("Lock"),
+                      action: async () => {
+                        await cloud.syncLock();
+                        await state.refresh();
+                      },
+                    })
+                  }
+                >
+                  <Lock size={12} /> {t("Lock on this computer")}
+                </button>
+              </p>
+            </details>
           </>
         )}
       </section>
@@ -590,7 +883,10 @@ export function SyncSettings({
           {confirm.text}
         </Confirm>
       )}
-      {resetting && <ResetPassphrase cloud={state} close={() => setResetting(false)} />}
+      {resetting && <ResetSync cloud={state} generated={status.sync.protocol === 2} close={() => setResetting(false)} onDone={(code) => code && setNewCode(code)} />}
+      {adding && <AddDevice close={() => setAdding(false)} />}
+      {recovery && <RecoveryCodeSettings cloud={state} close={() => setRecovery(false)} onCode={setNewCode} />}
+      {newCode && <RecoveryCode code={newCode} close={() => setNewCode("")} />}
       {reviewing && (
         <SyncConflicts
           budget={reviewing}
@@ -610,46 +906,132 @@ export function SyncSettings({
   );
 }
 
-function ResetPassphrase({ cloud: state, close }: { cloud: Cloud; close: () => void }) {
+/** A recovery code that was just made, shown once. It isn't kept on this computer, so the
+ *  dialog stays until the person says they've saved it. */
+function RecoveryCode({ code, close }: { code: string; close: () => void }) {
+  const toast = useToast();
+  return (
+    // The one way out is the button that says it's saved. Escape and a click outside do
+    // nothing, and there's no close button: a slip would lose the only showing.
+    <Modal title={t("Save your recovery code")} close={() => {}} className="must-save">
+      <div className="pairing">
+        <p>{t("If you ever have no device that syncs, this code gets your budgets back. Keep it somewhere safe: we can't show it again.")}</p>
+        <code className="pairing-code recovery-code" dir="ltr">
+          {code}
+        </code>
+        <button
+          className="secondary"
+          onClick={() =>
+            void navigator.clipboard.writeText(code).then(
+              () => toast({ message: t("Recovery code copied."), tone: "success" }),
+              () => toast({ message: t("Couldn't copy the code. Select it and copy it yourself."), tone: "error" }),
+            )
+          }
+        >
+          <Copy size={14} /> {t("Copy")}
+        </button>
+      </div>
+      <div className="modal-actions">
+        <button className="primary" onClick={close}>
+          {t("I've saved it")}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/** Account & sync › Recovery code, where sync is unlocked: makes a new code. Nothing can show
+ *  the current one, which this computer never kept. */
+function RecoveryCodeSettings({ cloud: state, close, onCode }: { cloud: Cloud; close: () => void; onCode: (code: string) => void }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const sync = state.status?.sync;
+  const make = async () => {
+    setBusy(true);
+    try {
+      const { recoveryCode } = await cloud.syncRecoveryCreate();
+      await state.refresh();
+      close();
+      onCode(recoveryCode);
+    } catch (err) {
+      toast({ message: errorText(err), tone: "error" });
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal title={t("Recovery code")} close={close}>
+      <p>{t("A recovery code unlocks sync on a new device when you have no other device to add it from.")}</p>
+      {sync?.recovery ? (
+        <p>{t("Your account has one, which was shown when it was made and can't be shown again. If you've lost it, or someone else may have seen it, make a new one. The old code stops working and nothing else changes.")}</p>
+      ) : (
+        <p>{t("Your account doesn't have one yet. Your sync passphrase keeps working after you make one.")}</p>
+      )}
+      <div className="modal-actions">
+        <button className="secondary" onClick={close} disabled={busy}>
+          {t("Cancel")}
+        </button>
+        <button className="primary" disabled={busy} onClick={() => void make()}>
+          {busy && <LoaderCircle size={14} className="spin" />} {sync?.recovery ? t("Make a new recovery code") : t("Make a recovery code")}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/** A new sync key. `generated`: the key is made here and comes with a recovery code, which
+ *  `onDone` is given to show; otherwise the person chooses a new passphrase. `locked`: asked
+ *  from a computer that can't unlock sync, as the way to start over. */
+function ResetSync({ cloud: state, generated, locked, close, onDone }: { cloud: Cloud; generated: boolean; locked?: boolean; close: () => void; onDone: (recoveryCode?: string) => void }) {
   const toast = useToast();
   const [passphrase, setPassphrase] = useState("");
   const [again, setAgain] = useState("");
   const [busy, setBusy] = useState(false);
   return (
-    <Modal title={t("Choose a new sync passphrase")} close={close}>
+    <Modal title={generated ? t("Reset sync?") : t("Choose a new sync passphrase")} close={close}>
       <form
         className="passphrase"
         onSubmit={async (e) => {
           e.preventDefault();
           setBusy(true);
           try {
-            await cloud.syncReset(passphrase);
+            const { recoveryCode } = await cloud.syncReset(generated ? undefined : passphrase);
             await state.refresh();
             void state.syncNow();
-            toast({ message: t("New passphrase set. This computer's budgets are uploading again."), tone: "success" });
+            toast({ message: generated ? t("Sync was reset.") : t("New passphrase set. This computer's budgets are uploading again."), tone: "success" });
             close();
+            onDone(recoveryCode);
           } catch (err) {
             toast({ message: errorText(err), tone: "error" });
             setBusy(false);
           }
         }}
       >
-        <p>
-          {t("The cloud copies made with the old passphrase are deleted, and this computer's budgets upload again. Your other computers keep their budgets and need the new passphrase to sync.")}
-        </p>
-        <label>
-          {t("New passphrase")}
-          <input type="password" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} autoComplete="new-password" minLength={8} required />
-        </label>
-        <label>
-          {t("Type it again")}
-          <input type="password" value={again} onChange={(e) => setAgain(e.target.value)} autoComplete="new-password" />
-        </label>
+        {generated ? (
+          <>
+            <p>{t("Resetting makes a new sync key and a new recovery code, and deletes the cloud copies made with the old key.")}</p>
+            <p>{t("Budgets stay on the devices that have them. On each device they then show under Budgets as recovered copies, to bring back and add to sync again. Your other devices need to be added again.")}</p>
+            {locked && <p>{t("If another device of yours still syncs, add this computer from it instead: nothing is deleted that way.")}</p>}
+          </>
+        ) : (
+          <>
+            <p>
+              {t("The cloud copies made with the old passphrase are deleted, and this computer's budgets upload again. Your other computers keep their budgets and need the new passphrase to sync.")}
+            </p>
+            <label>
+              {t("New passphrase")}
+              <input type="password" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} autoComplete="new-password" minLength={8} required />
+            </label>
+            <label>
+              {t("Type it again")}
+              <input type="password" value={again} onChange={(e) => setAgain(e.target.value)} autoComplete="new-password" />
+            </label>
+          </>
+        )}
         <div className="modal-actions">
           <button type="button" className="secondary" onClick={close} disabled={busy}>
             {t("Cancel")}
           </button>
-          <button className="danger" disabled={busy || passphrase.length < 8 || passphrase !== again}>
+          <button className="danger" disabled={busy || (!generated && (passphrase.length < 8 || passphrase !== again))}>
             {busy && <LoaderCircle size={14} className="spin" />} {t("Reset sync")}
           </button>
         </div>

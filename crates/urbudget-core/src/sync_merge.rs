@@ -1064,9 +1064,14 @@ fn removed_occurrence(
     let now = crate::schedules::read(other)
         .ok()?
         .into_iter()
-        .find(|s| s.id == id)?;
-    if now.next_date.as_deref().is_some_and(|next| next <= due) {
-        return None;
+        .find(|s| s.id == id);
+    match now {
+        Some(now) if now.next_date.as_deref().is_some_and(|next| next <= due) => return None,
+        // A one-time schedule leaves the list once it's entered or skipped, so one that's gone
+        // there has moved past this occurrence. A repeating one that's gone was deleted, which
+        // says nothing about an occurrence this side entered.
+        None if then.frequency != "never" => return None,
+        _ => {}
     }
     let mut entered = posted(base, t)?;
     // Entering it stamps when; that isn't an edit.
@@ -2262,6 +2267,88 @@ mod tests {
                 .memo,
             "Paid in cash"
         );
+    }
+
+    /// A base with a one-time schedule due on 1 October: what a transaction dated ahead becomes.
+    fn with_one_time_schedule() -> Budget {
+        let mut base = with_rent_schedule();
+        base.extra.get_mut("schedules").unwrap()[0]["frequency"] = json!("never");
+        base
+    }
+
+    #[test]
+    fn a_one_time_scheduled_transaction_deleted_where_it_was_entered_stays_deleted() {
+        let base = with_one_time_schedule();
+        // Entering a one-time schedule removes it from the list, so the desktop has neither the
+        // schedule nor, once the person deleted it, the transaction.
+        let (mut desktop, mut phone) = (base.clone(), base.clone());
+        crate::schedules::apply(&mut desktop, "2026-10-02", None, false).unwrap();
+        desktop.transactions.retain(|t| t.id != RENT);
+        assert!(crate::schedules::read(&desktop).unwrap().is_empty());
+        crate::schedules::apply(&mut phone, "2026-10-02", None, false).unwrap();
+        assert!(phone.transactions.iter().any(|t| t.id == RENT));
+        for merged in [
+            clean(&base, &phone, &desktop),
+            clean(&base, &desktop, &phone),
+        ] {
+            assert!(!merged.transactions.iter().any(|t| t.id == RENT));
+            assert!(crate::schedules::read(&merged).unwrap().is_empty());
+        }
+    }
+
+    #[test]
+    fn a_one_time_scheduled_transaction_skipped_on_the_other_side_isnt_entered_by_this_one() {
+        let base = with_one_time_schedule();
+        let (mut desktop, mut phone) = (base.clone(), base.clone());
+        crate::schedules::apply(&mut desktop, "2026-10-02", Some("s1"), true).unwrap();
+        crate::schedules::apply(&mut phone, "2026-10-02", None, false).unwrap();
+        for merged in [
+            clean(&base, &phone, &desktop),
+            clean(&base, &desktop, &phone),
+        ] {
+            assert!(!merged.transactions.iter().any(|t| t.id == RENT));
+        }
+    }
+
+    #[test]
+    fn a_one_time_scheduled_transaction_edited_after_it_was_entered_asks_when_the_other_side_deleted_it(
+    ) {
+        let base = with_one_time_schedule();
+        let (mut desktop, mut phone) = (base.clone(), base.clone());
+        crate::schedules::apply(&mut desktop, "2026-10-02", None, false).unwrap();
+        desktop.transactions.retain(|t| t.id != RENT);
+        crate::schedules::apply(&mut phone, "2026-10-02", None, false).unwrap();
+        phone
+            .transactions
+            .iter_mut()
+            .find(|t| t.id == RENT)
+            .unwrap()
+            .memo = "Paid in cash".into();
+        let merged = merge(Some(&base), &phone, &desktop, &Choices::new()).unwrap();
+        assert_eq!(merged.conflicts.len(), 1);
+        assert_eq!(merged.conflicts[0].key, format!("transaction/{RENT}"));
+    }
+
+    #[test]
+    fn a_one_time_scheduled_transaction_both_sides_entered_is_kept_once() {
+        let base = with_one_time_schedule();
+        let (mut desktop, mut phone) = (base.clone(), base.clone());
+        crate::schedules::apply(&mut desktop, "2026-10-02", None, false).unwrap();
+        crate::schedules::apply(&mut phone, "2026-10-02", None, false).unwrap();
+        let merged = clean(&base, &phone, &desktop);
+        assert_eq!(merged.transactions.iter().filter(|t| t.id == RENT).count(), 1);
+    }
+
+    #[test]
+    fn an_entered_occurrence_is_kept_when_the_other_side_deleted_its_repeating_schedule() {
+        let base = with_rent_schedule();
+        let (mut desktop, mut phone) = (base.clone(), base.clone());
+        desktop.extra.insert("schedules".into(), json!([]));
+        crate::schedules::apply(&mut phone, "2026-10-02", None, false).unwrap();
+        let merged = merge(Some(&base), &phone, &desktop, &answer(&[("*", "local")]))
+            .unwrap()
+            .budget;
+        assert!(merged.transactions.iter().any(|t| t.id == RENT));
     }
 
     #[test]

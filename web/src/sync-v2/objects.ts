@@ -34,6 +34,7 @@ export async function reclaimObjects(env: Env, keys: string[]) {
 
 export async function maintainSyncV2(env: Env) {
   const at = now();
+  await statement(env.DB, "DELETE FROM sync_pairings_v2 WHERE expires_at<=$at", { at }).run();
   const pending = await statement(env.DB, "SELECT user_id,installation_id,sequence,digest FROM sync_staging_v2 WHERE expires_at<=$at LIMIT 100", { at }).all<{ user_id: string; installation_id: string; sequence: string; digest: string }>();
   for (const s of pending.results) {
     try { await finish(env, s.user_id, s.installation_id, s.sequence, s.digest, "expire"); } catch { /* Retry each durable reservation independently. */ }

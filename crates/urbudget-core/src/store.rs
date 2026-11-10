@@ -1302,7 +1302,14 @@ impl Store {
         if !adopting {
             self.check_sync_writable()?;
         }
-        if self.has_unsaved_draft() || !self.editor_checkpoints()?.is_empty() {
+        // Incoming changes to the same budget wait only for editors that may still be open.
+        // Replacing it with another incarnation waits for every draft, a dead process's too.
+        let held = if adopting {
+            self.editor_checkpoints()?
+        } else {
+            self.live_editor_checkpoints()?
+        };
+        if self.has_unsaved_draft() || !held.is_empty() {
             return Err(t!("Save your changes first."));
         }
         if adopting && self.folder().join("recovery.json").exists() {

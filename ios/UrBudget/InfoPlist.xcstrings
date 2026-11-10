@@ -62,6 +62,23 @@
         }
       }
     },
+    "NSCameraUsageDescription" : {
+      "comment" : "Why the app asks for the camera: only to scan the one-time code that adds a device to sync.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يستخدم UrBudget الكاميرا لمسح الرمز الذي يضيف جهازًا إلى المزامنة."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "UrBudget uses the camera to scan the code that adds a device to sync."
+          }
+        }
+      }
+    },
     "OFX bank statement" : {
       "comment" : "File type description.",
       "localizations" : {

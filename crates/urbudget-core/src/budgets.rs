@@ -2904,6 +2904,57 @@ impl Budgets {
         .map_err(error)?;
         tx.commit().map_err(error)
     }
+    /// Gives this library a new installation identity, for when the server has answered that
+    /// its sequence is behind the one it holds for this identity: the data folder was restored
+    /// from a backup or copied, and another run of it went on to use those sequences. The
+    /// unanswered request in the slot is dropped with the old identity, never replayed: what
+    /// it carried is still in the budget or its lifecycle job, and goes again under the new
+    /// identity through the usual version checks. A request the server has answered is kept.
+    pub fn replace_installation(&mut self, account: &str, abandoned: &DeliverySlot) -> Result<String> {
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(error)?;
+        let stored = read_json::<DeliverySlot>(
+            &tx,
+            "SELECT data FROM delivery_slot WHERE account_id=?1",
+            account,
+        )?;
+        if stored.as_ref() != Some(abandoned) {
+            return Err("Delivery changed while its installation was being replaced.".into());
+        }
+        if abandoned.receipt.is_some() {
+            return Err("A delivery the server has answered must be completed, not abandoned.".into());
+        }
+        let (previous, raw): (String, String) = tx
+            .query_row(
+                "SELECT installation_id,data FROM account_sync WHERE account_id=?1",
+                [account],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .map_err(error)?;
+        let mut state: Value = serde_json::from_str(&raw).map_err(error)?;
+        if let Some(state) = state.as_object_mut() {
+            // The new identity registers on the next connection.
+            state.remove("registered");
+            state.remove("blockedDelivery");
+            state.insert("replacedInstallation".into(), json!(previous));
+        }
+        let installation = new_id();
+        tx.execute(
+            "UPDATE account_sync SET installation_id=?2,next_sequence='1',data=?3 WHERE account_id=?1",
+            params![account, installation, serde_json::to_string(&state).map_err(error)?],
+        )
+        .map_err(error)?;
+        // Completed sequences belonged to the old identity; the new one counts from 1 again.
+        tx.execute("DELETE FROM delivery_completed WHERE account_id=?1", [account])
+            .map_err(error)?;
+        tx.execute("DELETE FROM delivery_slot WHERE account_id=?1", [account])
+            .map_err(error)?;
+        bump(&tx)?;
+        tx.commit().map_err(error)?;
+        Ok(installation)
+    }
     /// Advance only after the separate per-budget/lifecycle receipt marker is durable.
     pub fn complete_delivery(&mut self, account: &str, sequence: &str, digest: &str) -> Result<()> {
         let Some(slot) = self.pending_delivery(account)? else {

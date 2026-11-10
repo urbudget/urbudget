@@ -526,11 +526,11 @@
           <div class="vault-lock" aria-hidden="true">
             <span class="vault-wire"></span>
             <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></svg>
-            <span class="vault-lock-label">Sealed with your passphrase</span>
+            <span class="vault-lock-label">Sealed with your key</span>
           </div>
           <figure class="ledger ledger-sealed" data-cipher>
             <figcaption>On our server, with sync</figcaption>
-            <p class="visually-hidden">The same budget, encrypted: unreadable without your passphrase.</p>
+            <p class="visually-hidden">The same budget, encrypted: unreadable without your key.</p>
             <ul aria-hidden="true">
               <li><span>x9Qe</span><span>k2Rv8+Wq0</span></li>
               <li><span>Hb0tz7Fm/</span><span>Zp4Lw=yN</span></li>
@@ -540,7 +540,7 @@
           </figure>
         </div>
         <div class="vault-notes">
-          <p id="sync"><b>Device sync, if you want it.</b> For <span data-price="sync">$3</span> a month, sync keeps your budgets the same on all your computers. Each computer encrypts a budget with your passphrase before uploading it (Argon2id and XChaCha20-Poly1305), so the server only holds data it can't read. If you forget the passphrase, your budgets are still on your computers: reset sync and upload them again. <a href="/account/?subscribe=1">Turn on sync</a></p>
+          <p id="sync"><b>Device sync, if you want it.</b> For <span data-price="sync">$3</span> a month, sync keeps your budgets the same on all your devices. Each device encrypts a budget before uploading it (XChaCha20-Poly1305), with a key only your devices hold, so the server only holds data it can't read. If you ever lose every way to unlock sync, your budgets are still on your devices: reset sync and add them again. <a href="/account/?subscribe=1">Turn on sync</a></p>
           <p><b>No tracking on this website.</b> There are no ads, no third-party analytics and no tracking cookies. Page views are counted per day, without cookies or anything that identifies you; the <a href="/privacy/">privacy policy</a> has the details.</p>
         </div>
       </div>

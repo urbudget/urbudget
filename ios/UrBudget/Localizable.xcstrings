@@ -11,12 +11,192 @@
         }
       }
     },
+    "Add a device" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إضافة جهاز"
+          }
+        }
+      }
+    },
+    "Add this device" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إضافة هذا الجهاز"
+          }
+        }
+      }
+    },
+    "Add this device to sync?" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هل تريد إضافة هذا الجهاز إلى المزامنة؟"
+          }
+        }
+      }
+    },
+    "Adding a computer? Scan its code" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هل تضيف كمبيوتر؟ امسح رمزه"
+          }
+        }
+      }
+    },
+    "Allow UrBudget to use the camera in Settings, or type the code instead." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اسمح لـ UrBudget باستخدام الكاميرا من «الإعدادات»، أو اكتب الرمز بدلًا من ذلك."
+          }
+        }
+      }
+    },
+    "Can't unlock? Reset sync" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر فتح القفل؟ أعد تعيين المزامنة"
+          }
+        }
+      }
+    },
+    "Code" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الرمز"
+          }
+        }
+      }
+    },
+    "Copied" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تم النسخ"
+          }
+        }
+      }
+    },
+    "Done. The other device unlocks in a few seconds." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تم. سيُفتح قفل الجهاز الآخر خلال ثوانٍ."
+          }
+        }
+      }
+    },
+    "I've saved it" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حفظتُه"
+          }
+        }
+      }
+    },
+    "If you ever have no device that syncs, this code gets your budgets back. Keep it somewhere safe: we can't show it again." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إن لم يبقَ معك يومًا أي جهاز تعمل عليه المزامنة، فهذا الرمز يعيد إليك ميزانياتك. احفظه في مكان آمن: لا نستطيع عرضه مرة أخرى."
+          }
+        }
+      }
+    },
+    "It will be able to read every budget in your account. Only continue if the code is on a device of your own." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سيتمكن من قراءة كل ميزانيات حسابك. لا تتابع إلا إذا كان الرمز معروضًا على جهاز يخصّك."
+          }
+        }
+      }
+    },
+    "It works once, for 5 minutes. Only use it on a device of your own: anyone who has it can read your budgets, and UrBudget will never ask you for it." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يعمل مرة واحدة، ولمدة 5 دقائق. استخدمه على جهاز يخصّك فقط: من يحصل عليه يستطيع قراءة ميزانياتك، ولن يطلبه UrBudget منك أبدًا."
+          }
+        }
+      }
+    },
+    "Make a new code" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إنشاء رمز جديد"
+          }
+        }
+      }
+    },
     "Month total: %@ → %@" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "إجمالي الشهر: ⁨%1$@⁩ ← ⁨%2$@⁩"
+          }
+        }
+      }
+    },
+    "On a device where UrBudget already syncs, open Account & sync and choose Add a device. Then scan the code it shows, or type it here." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "على جهاز تعمل عليه مزامنة UrBudget، افتح «الحساب والمزامنة» واختر «إضافة جهاز». ثم امسح الرمز الذي يعرضه، أو اكتبه هنا."
+          }
+        }
+      }
+    },
+    "On a device where UrBudget already syncs, open Account & sync and choose Add a device. Then scan the code it shows, or type it here. No device at hand? Type your recovery code." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "على جهاز تعمل عليه مزامنة UrBudget، افتح «الحساب والمزامنة» واختر «إضافة جهاز». ثم امسح الرمز الذي يعرضه، أو اكتبه هنا. ليس معك جهاز؟ اكتب رمز الاسترداد."
+          }
+        }
+      }
+    },
+    "Only your devices can open your budgets. UrBudget can't read or recover them." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا تستطيع فتح ميزانياتك إلا أجهزتك. لا يستطيع UrBudget قراءتها ولا استعادتها."
+          }
+        }
+      }
+    },
+    "QR code for adding a device" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "رمز QR لإضافة جهاز"
           }
         }
       }
@@ -47,6 +227,56 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "التغيّر: ⁨%@⁩"
+          }
+        }
+      }
+    },
+    "Recovery code" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "رمز الاسترداد"
+          }
+        }
+      }
+    },
+    "Reset sync" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إعادة تعيين المزامنة"
+          }
+        }
+      }
+    },
+    "Reset sync?" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إعادة تعيين المزامنة؟"
+          }
+        }
+      }
+    },
+    "Resetting makes a new sync key and a new recovery code, and deletes the cloud copies made with the old key. Budgets stay on the devices that have them, as recovered copies in the budget library to bring back and add to sync again. If another device of yours still syncs, add this iPhone from it instead: nothing is deleted that way." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تُنشئ إعادة التعيين مفتاح مزامنة جديدًا ورمز استرداد جديدًا، وتحذف النسخ السحابية المنشأة بالمفتاح القديم. تبقى الميزانيات على الأجهزة التي تحتوي عليها، كنسخ مستردّة في مكتبة الميزانيات لتستعيدها وتضيفها إلى المزامنة مجددًا. إن كانت المزامنة ما زالت تعمل على جهاز آخر لك، فأضف هذا الـ iPhone منه بدلًا من ذلك: بهذه الطريقة لا يُحذف شيء."
+          }
+        }
+      }
+    },
+    "Resetting makes a new sync key and a new recovery code, and deletes the cloud copies made with the old key. Budgets stay on the devices that have them, as recovered copies in the budget library to bring back and add to sync again. Your other devices need to be added again." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تُنشئ إعادة التعيين مفتاح مزامنة جديدًا ورمز استرداد جديدًا، وتحذف النسخ السحابية المنشأة بالمفتاح القديم. تبقى الميزانيات على الأجهزة التي تحتوي عليها، كنسخ مستردّة في مكتبة الميزانيات لتستعيدها وتضيفها إلى المزامنة مجددًا. ويجب إضافة أجهزتك الأخرى من جديد."
           }
         }
       }
@@ -161,6 +391,16 @@
         }
       }
     },
+    "Save your recovery code" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "احفظ رمز الاسترداد"
+          }
+        }
+      }
+    },
     "Saved on this device" : {
       "localizations" : {
         "ar" : {
@@ -207,6 +447,96 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "إزالة التنزيل"
+          }
+        }
+      }
+    },
+    "Scan the code" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مسح الرمز"
+          }
+        }
+      }
+    },
+    "Sign in to UrBudget on the new device, then scan this code there or type it." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سجِّل الدخول إلى UrBudget على الجهاز الجديد، ثم امسح هذا الرمز هناك أو اكتبه."
+          }
+        }
+      }
+    },
+    "The camera isn’t available" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الكاميرا غير متاحة"
+          }
+        }
+      }
+    },
+    "This code has expired." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "انتهت صلاحية هذا الرمز."
+          }
+        }
+      }
+    },
+    "Turn on sync" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تشغيل المزامنة"
+          }
+        }
+      }
+    },
+    "Unlock with a code" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فتح القفل برمز"
+          }
+        }
+      }
+    },
+    "Unlock with your sync passphrase" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فتح القفل بعبارة مرور المزامنة"
+          }
+        }
+      }
+    },
+    "Your account has a recovery code, for unlocking sync when you have no other device at hand. It was shown when it was made and can't be shown again. If you've lost it, make a new one: the old code stops working and nothing else changes." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لحسابك رمز استرداد، يفتح قفل المزامنة حين لا يكون معك جهاز آخر. عُرض عند إنشائه ولا يمكن عرضه مجددًا. إن فقدته فأنشئ رمزًا جديدًا: يتوقف الرمز القديم عن العمل ولا يتغير شيء آخر."
+          }
+        }
+      }
+    },
+    "Your account has no recovery code yet. One unlocks sync on a new device when you have no other device at hand. Your sync passphrase keeps working." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ليس لحسابك رمز استرداد بعد. يفتح الرمز قفل المزامنة على جهاز جديد حين لا يكون معك جهاز آخر. وتبقى عبارة مرور المزامنة صالحة."
           }
         }
       }
@@ -16320,16 +16650,6 @@
         }
       }
     },
-    "Only your sync passphrase opens your budgets. UrBudget can't read or recover them." : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "لا يفتح ميزانياتك إلا عبارة مرور المزامنة الخاصة بك، ولا يستطيع UrBudget قراءتها أو استعادتها."
-          }
-        }
-      }
-    },
     "Open" : {
       "localizations" : {
         "ar" : {
@@ -19203,16 +19523,6 @@
         }
       }
     },
-    "Reset forgotten sync passphrase" : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "إعادة تعيين عبارة مرور المزامنة المنسية"
-          }
-        }
-      }
-    },
     "Reset passphrase" : {
       "localizations" : {
         "ar" : {
@@ -20826,16 +21136,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "إعداد المساعد"
-          }
-        }
-      }
-    },
-    "Set up or unlock sync" : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "إعداد المزامنة أو فتح قفلها"
           }
         }
       }

@@ -9,6 +9,14 @@ val requestedAbis = providers.gradleProperty("androidAbis").orElse("arm64-v8a,x8
 require(requestedAbis.isNotEmpty() && requestedAbis.all { it in listOf("arm64-v8a", "x86_64") }) { "androidAbis supports arm64-v8a,x86_64." }
 val uploadValues = listOf("URBUDGET_ANDROID_KEYSTORE", "URBUDGET_ANDROID_KEY_ALIAS", "URBUDGET_ANDROID_STORE_PASSWORD", "URBUDGET_ANDROID_KEY_PASSWORD").map { System.getenv(it)?.takeIf(String::isNotBlank) }
 require(uploadValues.none { it != null } || uploadValues.all { it != null }) { "Set all four URBUDGET_ANDROID_* signing variables." }
+// -PsyncTestServer=http://127.0.0.1:8788 makes the debug build a sync test app: it talks to that
+// server and never to urbudget.app, and it has its own id and name, so it installs beside the app
+// and can't touch the budgets or the account already on a phone (README.md, Trying sync by hand).
+val syncTestServer = providers.gradleProperty("syncTestServer").orNull?.trim()?.trimEnd('/')?.takeIf(String::isNotEmpty)
+require(syncTestServer == null || (Regex("""http://(127\.0\.0\.1|10\.0\.2\.2|localhost)(:\d+)?|https://[A-Za-z0-9.-]+(:\d+)?""").matches(syncTestServer)
+    && !Regex("""https://([a-z0-9-]+\.)*urbudget\.app(:\d+)?""", RegexOption.IGNORE_CASE).matches(syncTestServer))) {
+    "syncTestServer is a test server's origin: http://127.0.0.1:<port>, http://10.0.2.2:<port> or an https:// one, never urbudget.app."
+}
 
 android {
     namespace = "app.urbudget.nativeapp"
@@ -22,6 +30,9 @@ android {
         versionName = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += requestedAbis }
+        // Empty in every build but the sync test app.
+        buildConfigField("String", "SYNC_TEST_SERVER", "\"\"")
+        manifestPlaceholders["appLabel"] = "@string/app_name"
     }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions {
@@ -33,7 +44,13 @@ android {
         keyAlias = uploadValues[1]; storePassword = uploadValues[2]; keyPassword = uploadValues[3]
     }
     buildTypes {
-        debug { applicationIdSuffix = ".nativeapp" }
+        debug {
+            applicationIdSuffix = if (syncTestServer == null) ".nativeapp" else ".synctest"
+            if (syncTestServer != null) {
+                buildConfigField("String", "SYNC_TEST_SERVER", "\"$syncTestServer\"")
+                manifestPlaceholders["appLabel"] = "UrBudget sync test"
+            }
+        }
         release {
             if (uploadValues.all { it != null }) signingConfig = signingConfigs.getByName("upload")
             isMinifyEnabled = true
@@ -65,15 +82,16 @@ kotlin { compilerOptions { jvmTarget.set(JvmTarget.JVM_17) } }
 val repositoryRoot = rootProject.projectDir.parentFile
 val rustManifest = repositoryRoot.resolve("crates/urbudget-android/Cargo.toml")
 val rustTarget = layout.buildDirectory.dir("rust-target")
-// Instrumentation-only development Rust build enables the loopback API override. Release always stays optimized.
-val rustDebug = providers.gradleProperty("rustDebug").orElse("false").map(String::toBoolean).get()
+// A development Rust build is the only one that accepts another server (URBUDGET_API): for
+// instrumentation, and for the sync test app. Release always stays optimized.
+val rustDebug = syncTestServer != null || providers.gradleProperty("rustDebug").orElse("false").map(String::toBoolean).get()
 // Inspect resolved tasks: aggregate names (assemble/build) and abbreviations can include release.
 // This runs even when buildRustEngine is up to date, before a QA library can be packaged.
 val rustAppProject = project
 gradle.taskGraph.whenReady {
     require(!rustDebug || allTasks.none {
         it.project == rustAppProject && (it.name.contains("release", true) || it.name.contains("preview", true))
-    }) { "rustDebug is only for isolated debug instrumentation." }
+    }) { "rustDebug and syncTestServer are only for debug builds: isolated instrumentation and the sync test app." }
 }
 val nativeOutputs = layout.buildDirectory.dir("generated/rustJniLibs")
 val buildRust = tasks.register("buildRustEngine") {
@@ -120,6 +138,9 @@ dependencies {
     // Custom Tabs: pages the services open show over the app, and their close button comes back to it.
     implementation("androidx.browser:browser:1.8.0")
     implementation("androidx.work:work-runtime-ktx:2.11.2")
+    // Google's code scanner: its own camera screen, so the app asks for no camera permission.
+    // Used to add a device to sync by scanning a one-time code (ui/DevicePairing.kt).
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
     implementation(platform("androidx.compose:compose-bom:2025.08.00"))
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.compose.material3:material3")

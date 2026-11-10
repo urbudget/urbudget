@@ -36,6 +36,8 @@ targets:
         LSRequiresIPhoneOS: true
         BGTaskSchedulerPermittedIdentifiers: [app.urbudget.account-sync]
         UIBackgroundModes: [fetch]
+        # Only to scan the one-time code that adds a device to sync (Account & sync).
+        NSCameraUsageDescription: UrBudget uses the camera to scan the code that adds a device to sync.
         UILaunchScreen: {}
         # Bank statements, YNAB exports and JSON backups open in UrBudget from Files, Mail and AirDrop
         # (as a copy). It's never the default app for these types.

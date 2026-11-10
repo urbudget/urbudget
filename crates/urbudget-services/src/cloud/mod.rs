@@ -1,6 +1,8 @@
 //! UrBudget's online parts, all optional: an account (email sign-in codes, no password) and
 //! end-to-end encrypted sync for subscribers. Budgeting never needs either of them.
 pub mod crypto;
+pub mod pairing;
+pub mod recovery;
 pub mod sync;
 mod notifications;
 pub mod v2;

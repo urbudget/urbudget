@@ -47,6 +47,11 @@
     // Whose GitHub releases' download counts the admin page shows. The repository is public; the
     // optional GITHUB_TOKEN secret keeps GitHub's shared per-address rate limit out of the way.
     "GITHUB_REPO": "urbudget/urbudget"
+    // Sync v2 (SYNC_V2.md, Switching it on). All three are absent: v2 is off, and every account
+    // syncs through protocol 1. They go here, as vars, when the time comes:
+    //   "SYNC_V2_ACCOUNTS": "usr_…,usr_…"   a staged start: only these account ids may set up or move to v2
+    //   "SYNC_V2_ENABLED": "1"               v2 for every account; an account that has moved stays on it
+    //   "SYNC_V2_PUBLICATION_PAUSED": "1"    the incident brake: pauses uploads and key changes, keeps reads and deletion
   }
   // Secrets (npx wrangler secret put NAME, or wrangler secret bulk):
   //   POLAR_ACCESS_TOKEN      Polar organization access token

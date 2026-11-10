@@ -125,6 +125,11 @@ pub struct Status {
     pub unlocked: bool,
     pub protocol: u8,
     pub enabled: bool,
+    /// The account's key is made from a passphrase, as far as this device last heard. False
+    /// for a key made in the app, which a code from another device or the recovery code opens.
+    pub passphrase: bool,
+    /// The account has a recovery code, as far as this device last heard.
+    pub recovery: bool,
     pub last: Option<Report>,
 }
 
@@ -393,8 +398,12 @@ impl Engine {
             }
         }
     }
-    fn install_key(&self, key: crypto::Key, generation: u64) -> Result<(), String> {
+    pub(super) fn install_key(&self, key: crypto::Key, generation: u64) -> Result<(), String> {
         self.install_key_with(key, generation, |key| self.set_key(key))
+    }
+    /// The key this device unlocked protocol 1 with, and the key generation it belongs to.
+    pub(super) fn legacy_key(&self) -> Option<(crypto::Key, u64)> {
+        Some((self.key()?, self.state().generation))
     }
     fn install_key_with(&self, key: crypto::Key, generation: u64, write_key: impl Fn(Option<crypto::Key>) -> Result<(), String>) -> Result<(), String> {
         // Clear first: a failed state write must not pair an old key with a new generation.
@@ -410,6 +419,9 @@ impl Engine {
             unlocked: self.key().is_some(),
             protocol: 1,
             enabled: self.key().is_some(),
+            // Protocol 1 only knows keys made from a passphrase.
+            passphrase: true,
+            recovery: false,
             last: self.last.lock().unwrap_or_else(|e| e.into_inner()).clone(),
         }
     }
@@ -738,10 +750,43 @@ pub async fn sync_has_key(cloud: &Cloud) -> Result<bool, String> {
     }
 }
 
-/// Unlocks sync on this computer with the passphrase, or sets the passphrase on first use.
-/// Returns whether it was new (then this computer's budgets start syncing).
-pub async fn sync_setup(cloud: &Cloud, library: &Library, passphrase: String) -> Result<Value, String> {
-    if let Some(result)=super::v2::try_setup(cloud,library,&passphrase,false).await? {return Ok(result);}
+/// What the account's sync key is and how this device can get it, for the screen that sets
+/// sync up or unlocks it:
+/// - `exists`: the account has a key (another device set sync up).
+/// - `passphrase`: that key is made from a passphrase, which unlocks any device.
+/// - `recovery`: it has a recovery code, which does too.
+/// - `setup` and `reset`: `"code"` when setting sync up, or resetting it, makes the key here
+///   and shows a recovery code, with nothing to choose; `"passphrase"` when it asks for one.
+pub async fn sync_key_info(cloud: &Cloud, library: &Library) -> Result<Value, String> {
+    let made_here = |by_code: bool| if by_code { "code" } else { "passphrase" };
+    if let Some((_, bootstrap)) = super::v2::probe_bootstrap(cloud, library).await.map_err(super::pairing::told)? {
+        let v2 = bootstrap["protocol"] == 2;
+        return Ok(json!({
+            "exists": !bootstrap["keyGeneration"].is_null(),
+            "passphrase": bootstrap["salt"].is_string(),
+            "recovery": bootstrap["recovery"].is_object(),
+            "setup": made_here(v2 || bootstrap["activationEnabled"] == true),
+            // An account still on protocol 1 resets there, with a passphrase (`v2::setup`).
+            "reset": made_here(v2),
+        }));
+    }
+    let exists = match cloud.call(reqwest::Method::GET, "/sync/key", None, true).await {
+        Ok(_) => true,
+        Err(f) if f.code == "no_key" => false,
+        Err(f) => return Err(f.message),
+    };
+    Ok(json!({"exists":exists,"passphrase":exists,"recovery":false,"setup":"passphrase","reset":"passphrase"}))
+}
+
+/// Unlocks sync on this computer with the passphrase, or sets sync up on the account's first
+/// device: with that passphrase, or with `None` and a key made here, whose recovery code the
+/// answer carries as `recoveryCode`. Returns whether it was new (then this computer's budgets
+/// start syncing).
+pub async fn sync_setup(cloud: &Cloud, library: &Library, passphrase: Option<String>) -> Result<Value, String> {
+    let passphrase = passphrase.filter(|typed| !typed.is_empty());
+    if let Some(result)=super::v2::try_setup(cloud,library,passphrase.as_deref(),false).await? {return Ok(result);}
+    // Protocol 1 only knows keys made from a passphrase.
+    let Some(passphrase) = passphrase else { return Err(t!("Enter your sync passphrase.")); };
     let _one = cloud.sync.operation().await?;
     if passphrase.chars().count() < 8 {
         return Err(t!("Use a passphrase of at least 8 characters."));
@@ -801,10 +846,13 @@ fn track(cloud: &Cloud, library: &Library, ids: &[String]) -> Result<(), String>
     })
 }
 
-/// A new passphrase: the cloud copies made with the old one are deleted, and this computer's
-/// budgets upload again.
-pub async fn sync_reset(cloud: &Cloud, library: &Library, passphrase: String) -> Result<(), String> {
-    if let Some(_)=super::v2::try_setup(cloud,library,&passphrase,true).await? {return Ok(());}
+/// A new key: the cloud copies made with the old one are deleted, and this computer's budgets
+/// upload again. The key is made from `passphrase`, or with `None` made here, and the answer
+/// then carries its recovery code as `recoveryCode`.
+pub async fn sync_reset(cloud: &Cloud, library: &Library, passphrase: Option<String>) -> Result<Value, String> {
+    let passphrase = passphrase.filter(|typed| !typed.is_empty());
+    if let Some(reset)=super::v2::try_setup(cloud,library,passphrase.as_deref(),true).await? {return Ok(reset);}
+    let Some(passphrase) = passphrase else { return Err(t!("Choose a new sync passphrase.")); };
     let _one = cloud.sync.operation().await?;
     if passphrase.chars().count() < 8 {
         return Err(t!("Use a passphrase of at least 8 characters."));
@@ -812,7 +860,8 @@ pub async fn sync_reset(cloud: &Cloud, library: &Library, passphrase: String) ->
     create_key(&cloud, passphrase, true).await?;
     cloud.sync.set_state(|s| s.budgets.clear())?;
     let ids: Vec<String> = library.lock().list().into_iter().filter(|l| !l.missing).map(|l| l.id).collect();
-    track(&cloud, &library, &ids)
+    track(&cloud, &library, &ids)?;
+    Ok(json!({ "created": false }))
 }
 
 /// Starts syncing budgets that are only on this computer.

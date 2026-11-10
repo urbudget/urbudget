@@ -242,3 +242,6 @@ kbd {
 .empty-library-page { min-height: 100vh; }
 .empty-library-titlebar { --titlebar: 36px; min-height: 42px; }
 .empty-library-page > .settings-page { padding: 24px; }
+/* The account and sync panels under it: apart as on a page, and on a first launch in the welcome's column. */
+.empty-library-sync { display: flex; flex-direction: column; gap: 12px; }
+.empty-library-page > .welcome + .empty-library-sync { max-width: 820px; padding: 0 16px 24px; }

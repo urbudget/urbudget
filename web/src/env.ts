@@ -28,6 +28,8 @@ export interface Env {
   DEV_LOGIN_CODES?: string;
   /** Enables first-time sync v2 setup/migration only. Absent in production until approved. */
   SYNC_V2_ENABLED?: string;
+  /** Account ids (`usr_…`), comma-separated, that may set up or move to sync v2 before SYNC_V2_ENABLED is on. */
+  SYNC_V2_ACCOUNTS?: string;
   /** Emergency compatible rollback: retain v2 reads/receipts/deletion while pausing publication. */
   SYNC_V2_PUBLICATION_PAUSED?: string;
 

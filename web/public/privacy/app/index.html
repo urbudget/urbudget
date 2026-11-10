@@ -57,12 +57,15 @@
         <p>For purchases made through <strong>Google Play</strong>, Google processes your payment. The app sends Google an obscured identifier derived from your UrBudget account ID to bind the purchase to that account. The app sends our server the purchase token and product identifier; we verify these with Google and store the token, its account association, product and internal entitlement identifiers, purchase state, expiry and acknowledgment state. We use this information to grant or restore Sync access and respond to renewals, cancellations and refunds. Google handles payment details; we do not receive your full card number.</p>
         <p>For purchases made through the <strong>App Store</strong>, Apple processes your payment. The app gives Apple an identifier derived from your UrBudget account ID (an app account token) to bind the purchase to that account. The app sends our server the transaction Apple signed, and Apple sends our server notifications about it, such as renewals, billing problems, expiry and refunds. The signed transaction includes its identifiers, the product, purchase and expiry dates, the App Store country and price, and the app account token. We store the transaction identifiers, the app account token, the product, the purchase, expiry and refund dates, the auto-renewal and billing-retry status, and whether it was a test purchase. We use this information to grant or restore Sync access and respond to renewals, cancellations and refunds. Apple handles payment details and your Apple Account; we do not receive your full card number.</p>
         <h3>Sync (only if you subscribe)</h3>
-        <p>Each device encrypts your budgets with a key made from your sync passphrase before uploading them. We store:</p>
+        <p>Each device encrypts your budgets before uploading them, with a key that only your devices hold. The key is made from your sync passphrase or, for an account set up without one, made at random on your first device. We store:</p>
         <ul>
           <li>the <strong>encrypted budget files</strong> and their encrypted names, which we cannot read;</li>
           <li>each file's <strong>size</strong>, a <strong>revision number</strong>, the <strong>time</strong> it was uploaded and the device name that uploaded it;</li>
-          <li>a random salt and an encrypted check value that lets your devices test a passphrase. We never receive your passphrase or the key made from it, so we cannot decrypt your budgets or recover them if the passphrase is lost.</li>
+          <li>a random salt and an encrypted check value that lets your devices test a passphrase or a key;</li>
+          <li>if your account has a recovery code, a copy of the key encrypted with that code, which we cannot open;</li>
+          <li>while you add a device, for up to five minutes, a copy of the key encrypted with a one-time code that only your own devices show, which we cannot open either.</li>
         </ul>
+        <p>We never receive your passphrase, your recovery code or the key, so we cannot decrypt your budgets, or recover them if you lose every way to unlock sync.</p>
         <h3>Email</h3>
         <p>We send only the email you need: sign-in codes and messages about your account or subscription. No newsletters or marketing unless you ask for them. If you write to us, we keep the conversation so we can help you.</p>
         <h3 id="assistant-reports">Assistant reports</h3>
@@ -116,7 +119,7 @@
         <p>Deleting your account removes its sign-in sessions and synced budgets. It does not remove local files, exports or operating-system backups from your devices, or a report that has no account association. Purchase records may remain for the reasons above. Before deleting an account, we ask the payment provider to stop renewals of its known subscriptions; if this fails, deletion does not proceed. You can also manage or cancel a Google Play subscription in Google Play. We can't cancel an App Store subscription: only you can, in your Apple Account settings, and it keeps renewing until you do, so the app reminds you before you delete your account. You can delete local budgets in the app and manage backups through your operating system.</p>
 
         <h2>Security</h2>
-        <p>Everything between your device and our servers travels over HTTPS. Synced budgets are end-to-end encrypted (XChaCha20-Poly1305, with a key derived from your passphrase using Argon2id). Sign-in uses one-time codes, and the website's session cookie can't be read by scripts. We keep as little data as we can, because data we don't have can't leak.</p>
+        <p>Everything between your device and our servers travels over HTTPS. Synced budgets are end-to-end encrypted (XChaCha20-Poly1305, with a key derived from your passphrase using Argon2id, or a random key your first device makes). Sign-in uses one-time codes, and the website's session cookie can't be read by scripts. We keep as little data as we can, because data we don't have can't leak.</p>
 
         <h2>Children</h2>
         <p>UrBudget isn't directed at children under 16, and we don't knowingly collect their personal data.</p>

@@ -15,12 +15,22 @@ export type Manifest = {
   keyGeneration: string | null; catalogEpoch: string | null;
   budgetId?: string; incarnation?: string; expectedVersion?: string; newIncarnation?: string;
   payload?: Payload; source?: { incarnation: string; version: string; sha256: string | null };
-  expectedProtocol?: number; key?: { salt: string; check: string };
+  expectedProtocol?: number; key?: KeyDetails;
 };
+/** A recovery code's copy of the account key: sealed with a key stretched from the code and `salt`. */
+export type Recovery = { salt: string; wrapped: string };
+/**
+ * What the server keeps about an account key, none of which opens anything. `salt` is there when
+ * the key is made from a passphrase; `recovery` when it has a recovery code. A key has at least
+ * one of them, or nothing could ever unlock a second device.
+ */
+export type KeyDetails = { salt?: string; check: string; recovery?: Recovery };
 export type Head = {
   budgetId: string; incarnation: string; version: string; keyGeneration: string;
   state: "active" | "trashed" | "purged"; payload: Payload | null;
   updatedSequence: string; updatedAt: string; deletedAt: string | null; retainedUntil: string | null; device: string;
+  /** Set on a head moved over from protocol 1: the incarnation and v1 revision it started with. */
+  legacy: { incarnation: string; revision: string } | null;
 };
 export type Receipt = {
   sequence: string; digest: string; operationId: string; kind: Kind;
@@ -46,6 +56,19 @@ const invalid = (message: string): never => { throw new ApiError(400, "invalid_m
 function fields(value: unknown, allowed: string[]) {
   return !!value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).every(k => allowed.includes(k));
 }
+const salt = (value: unknown): value is string => typeof value === "string" && /^[A-Za-z0-9_-]{16,128}$/.test(value);
+/** A sealed 32-byte key is 76 bytes; the bound leaves room without admitting anything else. */
+export const sealedKey = (value: unknown): value is string => typeof value === "string" && /^[A-Za-z0-9_-]{1,344}$/.test(value);
+export function validRecovery(value: unknown): value is Recovery {
+  return fields(value, ["salt", "wrapped"]) && salt((value as Recovery).salt) && sealedKey((value as Recovery).wrapped);
+}
+function validKey(value: unknown): value is KeyDetails {
+  if (!fields(value, ["salt", "check", "recovery"])) return false;
+  const key = value as KeyDetails;
+  return typeof key.check === "string" && !!key.check && key.check.length <= 1024
+    && (key.salt === undefined || salt(key.salt)) && (key.recovery === undefined || validRecovery(key.recovery))
+    && (key.salt !== undefined || key.recovery !== undefined);
+}
 /** Cancellation never interprets or publishes payload/control fields. It only
  * authenticates whose exact immutable manifest is being terminally abandoned. */
 export function parseCancellationManifest(value: Record<string, unknown>, account: string, installation: string) {
@@ -68,7 +91,7 @@ export function parseManifest(value: Record<string, unknown>, account: string, i
     if ([m.budgetId, m.payload, m.source, m.incarnation, m.newIncarnation, m.expectedVersion].some(v => v !== undefined)) invalid("Account controls cannot contain budget data.");
     if (m.expectedProtocol !== 1 && m.expectedProtocol !== 2) invalid("Account controls require the expected protocol.");
     if (m.kind === "migrateProtocol" && m.key !== undefined) invalid("Migration preserves the current key details.");
-    if (m.kind !== "migrateProtocol" && (!fields(m.key, ["salt", "check"]) || !m.key || typeof m.key.salt !== "string" || !/^[A-Za-z0-9_-]{16,128}$/.test(m.key.salt) || typeof m.key.check !== "string" || !m.key.check || m.key.check.length > 1024)) invalid("The proposed key details are invalid.");
+    if (m.kind !== "migrateProtocol" && !validKey(m.key)) invalid("The proposed key details are invalid.");
   } else {
     if (!validId(m.budgetId)) invalid("The budget ID is invalid.");
     if (m.key !== undefined || m.expectedProtocol !== undefined || (m.kind !== "restore" && m.source !== undefined)) invalid("The mutation contains unrelated control data.");
