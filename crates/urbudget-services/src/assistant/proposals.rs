@@ -1684,6 +1684,10 @@ fn card_as(change: &Change, before: &Budget, after: &Budget, single: Option<bool
             for (i, op) in ops.iter().enumerate() {
                 let key = Some(format!("h:{i}"));
                 let of = |id: &str| existing.iter().find(|s| s.id == id).ok_or_else(|| t!("A schedule in this proposal was deleted."));
+                // A schedule by name: its payee, or for a transfer, which has none, the other account.
+                let who = |s: &crate::schedules::Schedule| if s.transaction.payee.is_empty() { names.category_label_shown(&s.transaction) } else { s.transaction.payee.clone() };
+                // Which one, when two have the same payee: its account and how often it comes.
+                let which = |s: &crate::schedules::Schedule| format!("{} · {}", names.account(&s.transaction.account_id), frequency_label(&s.frequency));
                 rows.push(match op {
                     ScheduleOp::Add { schedule } => {
                         let s: crate::schedules::Schedule = serde_json::from_value(schedule.clone()).map_err(|e| t!("Invalid schedules: {error}", error = e))?;
@@ -1716,8 +1720,8 @@ fn card_as(change: &Change, before: &Budget, after: &Budget, single: Option<bool
                             parts.push(t!("next on {date}", date = short_date(date)));
                         }
                         Row {
-                            label: s.transaction.payee.clone(),
-                            detail: (!parts.is_empty()).then(|| parts.join(" · ")),
+                            label: who(s),
+                            detail: Some(if parts.is_empty() { which(s) } else { parts.join(" · ") }),
                             amount: Some(amount.unwrap_or(s.transaction.amount)),
                             before: amount.map(|_| s.transaction.amount),
                             after: *amount,
@@ -1727,13 +1731,14 @@ fn card_as(change: &Change, before: &Budget, after: &Budget, single: Option<bool
                     }
                     ScheduleOp::Pause { id, paused } => {
                         let s = of(id)?;
-                        Row { label: s.transaction.payee.clone(), amount: Some(s.transaction.amount), badge: Some(if *paused { t!("pause") } else { t!("resume") }), key, ..Row::default() }
+                        Row { label: who(s), detail: Some(which(s)), amount: Some(s.transaction.amount), badge: Some(if *paused { t!("pause") } else { t!("resume") }), key, ..Row::default() }
                     }
                     ScheduleOp::Enter { id } | ScheduleOp::Skip { id } => {
                         let s = of(id)?;
                         let due = s.next_date.as_deref().map(short_date).unwrap_or_default();
                         Row {
-                            label: format!("{} · {due}", s.transaction.payee),
+                            label: format!("{} · {due}", who(s)),
+                            detail: Some(which(s)),
                             amount: Some(s.transaction.amount),
                             badge: Some(if matches!(op, ScheduleOp::Enter { .. }) { t!("enter") } else { t!("skip") }),
                             key,

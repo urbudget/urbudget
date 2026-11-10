@@ -763,8 +763,10 @@ export const ProposalCard = memo(function ProposalCard({
     const line = (
       <>
         {p.status === "applied" || asked ? <Check size={14} aria-hidden /> : <Undo2 size={14} aria-hidden />}
+        {/* "Asked:" apart from the question, so each is cut at its own end whichever way it reads. */}
+        {asked && <span className="proposal-asked">{t("Asked: {question}", { question: "" }).trim()}</span>}
         <span className="proposal-done-title" dir="auto" title={p.title}>
-          {asked ? t("Asked: {question}", { question: p.title }) : p.title}
+          {p.title}
         </span>
       </>
     );

@@ -640,9 +640,11 @@ it("asks a question with its answers as buttons, and folds to what was asked onc
   expect(button(/^Everyday/).disabled).toBe(true);
   cleanup();
   show({ ...question, status: "applied", actions: [] });
-  expect(screen.getByText("Asked: Which account did you pay from?")).toBeTruthy();
+  // "Asked:" and the question, each its own piece of the line, so each is cut at its own end.
+  expect(screen.getByText("Asked:").className).toBe("proposal-asked");
+  expect(screen.getByText("Which account did you pay from?")).toBeTruthy();
   expect(screen.queryByText("Everyday")).toBeNull();
-  fireEvent.click(button(/Asked: Which account/));
+  fireEvent.click(button(/Asked:\s*Which account/));
   // Its answers are there to read, no longer to press.
   expect(screen.getByText("Everyday").closest("button")).toBeNull();
 });

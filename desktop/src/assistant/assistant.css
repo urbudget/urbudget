@@ -197,6 +197,17 @@
 .assistant-reply-actions.waiting {
   visibility: hidden;
 }
+/*
+ * Under the latest reply they show. Under an earlier one they stay out of the way until it's
+ * pointed at or holds the keyboard; a thumb that was given stays, to say so. They keep their
+ * room either way, so nothing moves.
+ */
+.assistant-reply-actions {
+  transition: opacity 0.12s var(--ease);
+}
+.assistant-item:not(:hover):not(:focus-within):has(~ .assistant-item .assistant-reply) .assistant-reply-actions:not(:has([aria-pressed="true"])) {
+  opacity: 0;
+}
 .assistant-flag {
   display: inline-flex;
   align-items: center;
@@ -462,7 +473,9 @@
   align-items: center;
   align-self: center;
   height: 28px;
-  margin-top: -40px;
+  /* It takes no room of its own. With any, the conversation was a little taller than its box,
+     so even an empty one could scroll, and the button, once shown, never left. */
+  margin-top: -28px;
   padding: 0 11px;
   border: 1px solid var(--border-strong);
   border-radius: 999px;
@@ -889,6 +902,15 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+/* A row's name takes a second line before it's cut short. */
+.proposal-label > span:first-child {
+  display: -webkit-box;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
 .proposal-label small {
   color: var(--muted);
   font-size: 11.5px;
@@ -1042,7 +1064,11 @@ button.proposal-more:hover {
   border-top: 1px solid var(--border);
   background: var(--surface-2);
   color: var(--text-2);
-  font-weight: 500;
+  font-weight: 400;
+}
+.proposal-message span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .proposal-message.warn {
   background: var(--warning-soft);
@@ -1162,6 +1188,22 @@ button.proposal-fold:hover {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+/* Opened, the title is read in full. */
+.proposal-fold[aria-expanded="true"] {
+  align-items: flex-start;
+}
+.proposal-fold[aria-expanded="true"] .proposal-done-title {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.proposal-fold[aria-expanded="true"] svg {
+  margin-top: 3px;
+}
+/* An answered question: "Asked:" keeps its place, and the question is cut at its own end, in whichever direction it reads. */
+.proposal-asked {
+  flex: none;
+  color: var(--muted);
+}
 .proposal-fold .proposal-chevron {
   flex: none;
   color: var(--muted);
@@ -1240,10 +1282,14 @@ button.proposal-fold:hover {
   flex-direction: column;
   min-width: 0;
 }
+/* Up to two lines, so two conversations that begin alike can be told apart. */
 .assistant-history-text > span {
+  display: -webkit-box;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 .assistant-history-text small {
   color: var(--muted);

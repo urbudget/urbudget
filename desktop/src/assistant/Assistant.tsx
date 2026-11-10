@@ -1169,6 +1169,8 @@ export function AssistantPanel({
     setOpening(null);
     setFreshFrom(0);
     setRunning(false);
+    // Nothing of the last conversation's place is kept: a new one starts at its end.
+    scroll.land();
     setTimeout(() => input.current?.focus());
   };
   /** Opens a conversation: one from the history, or the one that carries this one on. */
