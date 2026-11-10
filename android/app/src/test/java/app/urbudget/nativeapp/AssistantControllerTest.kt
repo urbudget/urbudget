@@ -299,12 +299,15 @@ class AssistantControllerTest {
         try {
             var failing = false
             var title = "Spending"
+            // How many times the conversation was asked for: the service answers on its own thread,
+            // so what a read led to is waited for, never looked at the moment the clock is moved.
+            val reads = java.util.concurrent.atomic.AtomicInteger()
             val controller = controller(store) { method, _ ->
                 when (method) {
                     "assistant_status" -> JSONObject().put("provider", "chatgpt").put("ready", true)
                     "assistant_send" -> "t1"
-                    "assistant_thread" -> if (failing) error("The conversation couldn't be read.") else JSONObject().put("id", "t1").put("title", title).put("running", true)
-                        .put("entries", JSONArray(listOf(JSONObject().put("kind", "user").put("text", "Hi"))))
+                    "assistant_thread" -> { reads.incrementAndGet(); if (failing) error("The conversation couldn't be read.") else JSONObject().put("id", "t1").put("title", title).put("running", true)
+                        .put("entries", JSONArray(listOf(JSONObject().put("kind", "user").put("text", "Hi")))) }
                     "assistant_rate" -> error("That reply is gone.")
                     else -> JSONArray()
                 }
@@ -314,23 +317,30 @@ class AssistantControllerTest {
             settle { controller.state.value.running }
             // While a reply runs the conversation is read again every second or so.
             failing = true
-            advanceTimeBy(1300); runCurrent()
-            assertEquals("The conversation couldn't be read." to null, controller.state.value.let { it.quiet to it.error })
+            advanceTimeBy(1300)
+            settle { controller.state.value.quiet == "The conversation couldn't be read." }
+            assertEquals(null, controller.state.value.error)
             // Dismissed, the same failure coming again isn't said again.
             controller.dismissQuiet()
-            advanceTimeBy(3000); runCurrent()
+            val before = reads.get()
+            advanceTimeBy(3000)
+            settle { reads.get() > before }
+            // (The read that failed again has had its say by the time the next one is asked for.)
+            advanceTimeBy(1300)
+            settle { reads.get() > before + 1 }
             assertEquals(null to null, controller.state.value.let { it.quiet to it.error })
             // Once it has been read, a new failure is news.
             failing = false; title = "Read again"
             advanceTimeBy(1300)
             settle { controller.state.value.thread?.optString("title") == "Read again" }
             failing = true
-            advanceTimeBy(1300); runCurrent()
-            assertEquals("The conversation couldn't be read.", controller.state.value.quiet)
+            advanceTimeBy(1300)
+            settle { controller.state.value.quiet == "The conversation couldn't be read." }
 
             // What the user just asked for fails in a dialog, and leaves the line alone.
-            controller.rate(1, true); runCurrent()
-            assertEquals("The conversation couldn't be read." to "That reply is gone.", controller.state.value.let { it.quiet to it.error })
+            controller.rate(1, true)
+            settle { controller.state.value.error == "That reply is gone." }
+            assertEquals("The conversation couldn't be read.", controller.state.value.quiet)
         } finally { store.clear(); Dispatchers.resetMain() }
     }
 
