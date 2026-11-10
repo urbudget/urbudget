@@ -68,7 +68,9 @@ too and left for later. Each is a code reading, not yet reproduced unless it say
 Added 9 November 2026. Android now follows a Fold's posture and hinge (`ui/Adaptive.kt`): sheets,
 the assistant and a new transaction float at the window's end, a hinge running top to bottom splits
 the app into a phone on one side and what's opened on the other, and half open on a table the keypad
-and sheets keep to the flat half. A sheet keeps the kind it opened as, so folding with one open
+and sheets keep to the flat half. With the assistant open the window is two screens, the app (as a
+phone, with its own sheets) and the assistant, both in use; typing follows the side last touched
+(`ProvideAppSide`, `SharedScreenFocus`). A sheet keeps the kind it opened as, so folding with one open
 leaves it a floating card on the outer screen until it closes (and unfolding, a bottom sheet). Checked
 on a Pixel Fold emulator (flat, book, table, folded, dark, Arabic) and flat on the Galaxy Fold; not
 yet half open on the Galaxy Fold, or on a dual-screen phone.
@@ -87,6 +89,19 @@ yet half open on the Galaxy Fold, or on a dual-screen phone.
   screens differ in density remakes the screen when it folds, for the same reason.
 - Half open like a book, Reports' report, the register's form and the budget's category take the
   far side, but Accounts and More pages show only a hint there until something is opened.
+
+## iPhone Duo
+
+Added 10 November 2026. Apple's foldable (7.6" inner screen, 5.4" outer) shipped in October 2026.
+The iPhone app has no wide layout: unfolded it shows the phone layout, and only its tab bar adapts
+(`.sidebarAdaptable` in `App/UrBudgetApp.swift`). It's locked to portrait on iPhone, and CI builds
+with GitHub's current macOS image rather than a pinned Xcode, so whether a given build fills the
+inner screen (reportedly it needs the iOS 27.1 SDK) isn't known.
+
+- Waiting for a Mac with Xcode 27.1 and its iPhone Duo simulator. Done looks like Android's
+  foldable work on iPhone: Transactions and Reports with list and detail side by side, a category
+  beside the budget, sheets and the assistant at the side (the assistant usable beside the app), and
+  nothing across the fold.
 
 ## What fast edits on Android left
 

@@ -158,6 +158,30 @@ internal fun verticalHinge(): HingeSpan? {
 @Composable
 internal fun tableTop(): Dp? = LocalFold.current.let { if (it.stacked) it.hinge?.bottom else null }
 
+// ---------- The app beside the assistant ----------
+
+/** The app's width from the window's start edge while the assistant shares the window beside it; null while the app has it all. */
+internal val LocalAppArea = staticCompositionLocalOf<Dp?> { null }
+
+/**
+ * The app as a screen of its own beside the assistant: what's inside takes [width] for the window's
+ * width, so a phone-wide side lays out as a phone (the dock, sheets from its foot), sees no fold, and
+ * its sheets and full-screen forms keep to that side ([LocalAppArea]). With no [width] it's the window.
+ */
+@Composable
+internal fun ProvideAppSide(width: Dp?, content: @Composable () -> Unit) {
+    if (width == null) return content()
+    val real = LocalWindowInfo.current
+    val px = with(LocalDensity.current) { width.roundToPx() }
+    val side = remember(real, px) {
+        object : androidx.compose.ui.platform.WindowInfo {
+            override val isWindowFocused: Boolean get() = real.isWindowFocused
+            override val containerSize: androidx.compose.ui.unit.IntSize get() = androidx.compose.ui.unit.IntSize(px, real.containerSize.height)
+        }
+    }
+    CompositionLocalProvider(LocalWindowInfo provides side, LocalFold provides FoldState(), LocalAppArea provides width, content = content)
+}
+
 // ---------- Panels at the side ----------
 
 /** The gap a floating panel keeps from the window's edges, as the rail does. */

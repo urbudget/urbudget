@@ -82,7 +82,8 @@ internal fun UrSheet(onDismiss: () -> Unit, content: @Composable ColumnScope.() 
     if (LocalSheetPane.current) return PaneSheet(onDismiss, content)
     // Which kind is decided as it opens and kept: folding or unfolding with a sheet open resizes it
     // rather than making it again, which would lose what's open or typed inside it.
-    val wide = wideWindow()
+    // Beside the assistant it always floats, kept to the app's side, where a bottom sheet would span both.
+    val wide = wideWindow() || LocalAppArea.current != null
     val floating = remember { wide }
     if (floating) return FloatingSheet(onDismiss, content)
     // On a table the sheet keeps below the fold: its content stops short of the hinge by the handle
@@ -126,7 +127,7 @@ private fun FloatingSheet(onDismiss: () -> Unit, content: @Composable ColumnScop
     }
     val closeLabel = stringResource(R.string.common_close)
     val paneLabel = stringResource(R.string.sheet_pane)
-    PanelWindow {
+    PanelWindow(LocalAppArea.current) {
         androidx.activity.compose.BackHandler(onBack = dismiss)
         FollowLanguage {
             // One transition for the dimmed page and the card, so it's gone only once both are.
@@ -173,10 +174,13 @@ private fun PaneSheet(onDismiss: () -> Unit, content: @Composable ColumnScope.()
 /**
  * A floating panel's window: the whole screen, undimmed and unanimated (the panel brings its own),
  * making room for the keyboard. It closes only when [content] says so (its Back handler, a tap
- * beside the panel), so a sheet can slide away before it goes.
+ * beside the panel), so a sheet can slide away before it goes. Given the app's [area] beside the
+ * assistant, the window covers only that side, and touches beyond it reach the assistant.
  */
 @Composable
-private fun PanelWindow(content: @Composable () -> Unit) {
+private fun PanelWindow(area: Dp? = null, content: @Composable () -> Unit) {
+    val ltr = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Ltr
+    val areaPx = area?.let { with(androidx.compose.ui.platform.LocalDensity.current) { it.roundToPx() } }
     androidx.compose.ui.window.Dialog({}, androidx.compose.ui.window.DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false,
         usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         val window = (androidx.compose.ui.platform.LocalView.current.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window
@@ -184,8 +188,30 @@ private fun PanelWindow(content: @Composable () -> Unit) {
             window?.setDimAmount(0f)
             window?.setWindowAnimations(0)
             @Suppress("DEPRECATION") window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+            if (window != null && areaPx != null) {
+                window.setLayout(areaPx, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
+                window.setGravity(android.view.Gravity.TOP or if (ltr) android.view.Gravity.LEFT else android.view.Gravity.RIGHT)
+                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or android.view.WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH)
+                if (window.callback !is SharedScreenFocus) window.callback = SharedScreenFocus(window, window.callback)
+            }
         }
         content()
+    }
+}
+
+/**
+ * Typing follows the finger between the two screens: a touch on the assistant's side lets go of the
+ * keyboard so the assistant can take it (and the sheet stays behind the keyboard rather than over
+ * it), and a touch back on the sheet takes it again.
+ */
+private class SharedScreenFocus(private val window: android.view.Window, private val inner: android.view.Window.Callback) : android.view.Window.Callback by inner {
+    private val away = android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
+    override fun dispatchTouchEvent(event: android.view.MotionEvent): Boolean {
+        when (event.actionMasked) {
+            android.view.MotionEvent.ACTION_OUTSIDE -> window.addFlags(away)
+            android.view.MotionEvent.ACTION_DOWN -> window.clearFlags(away)
+        }
+        return inner.dispatchTouchEvent(event)
     }
 }
 
@@ -552,12 +578,16 @@ internal fun Notice(text: String, modifier: Modifier = Modifier, tone: String = 
 internal fun FullScreenDialog(onDismiss: () -> Unit, content: @Composable () -> Unit) {
     androidx.activity.compose.BackHandler(onBack = onDismiss)
     val shown = remember { androidx.compose.animation.core.MutableTransitionState(false).apply { targetState = true } }
+    // Beside the assistant it covers the app's side only, as the screen it is there.
+    val area = LocalAppArea.current
+    Box(Modifier.fillMaxSize()) { Box(Modifier.fillMaxHeight().then(if (area != null) Modifier.width(area) else Modifier.fillMaxWidth())) {
     androidx.compose.animation.AnimatedVisibility(shown, enter = androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(240)) { it / 6 } +
         androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(200))) {
         // On a large screen the form keeps the pages' readable width, centred (Adaptive.kt).
         Box(Modifier.fillMaxSize().background(ur.bg).clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, null) {},
             contentAlignment = Alignment.TopCenter) { Box(Modifier.widthIn(max = ReadableWidth).fillMaxSize()) { content() } }
     }
+    } }
 }
 
 /** The same form in the pane beside a list on a large screen (ListDetail), rather than over the screen. */

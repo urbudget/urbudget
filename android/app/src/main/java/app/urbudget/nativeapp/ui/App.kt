@@ -154,19 +154,33 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     // A large screen has the tabs in a rail at its start instead of the dock. With room for both, the
     // register and Reports show their list and detail side by side, and the register's transaction
     // form opens beside it rather than over the screen (Adaptive.kt).
-    val wide = wideWindow() && state.budget != null
+    val fullWide = wideWindow() && state.budget != null
+    val fullHinge = if (fullWide) verticalHinge() else null
+    // The assistant on a large screen shares it as a second screen: it stands at the window's end (the
+    // far side of a hinge) and the app keeps the rest as a screen of its own, both in use at once. A
+    // phone-wide side lays the app out as a phone (the dock, sheets from its own foot) (ProvideAppSide).
+    val assistantBeside = fullWide && assistant
+    val assistantWidth = panelWidth(max = 520.dp)
+    val appWidth = when {
+        !assistantBeside -> null
+        fullHinge != null -> fullHinge.start
+        else -> windowWidth() - assistantWidth - PanelMargin * 2 -
+            RailInsets.only(WindowInsetsSides.End).asPaddingValues().calculateEndPadding(androidx.compose.ui.platform.LocalLayoutDirection.current)
+    }
+    val appWindow = appWidth ?: windowWidth()
+    val wide = appWindow >= MediumWidth && state.budget != null
     // A hinge splitting the screen top to bottom (a Fold half open, a dual-screen phone): its start side
     // is a phone of its own, with the dock, and a list ends where the hinge runs, with what's chosen
     // from it (or anything opened, floating) on the other side. Without one the tabs stand in a rail.
-    val hinge = if (wide) verticalHinge() else null
+    val hinge = if (wide && appWidth == null) fullHinge else null
     val rail = wide && hinge == null
-    val room = pageRoom(rail)
+    val room = if (rail) appWindow - RailRoom - railStartInset() else appWindow
     val pageStart = if (rail) railStartInset() + RailRoom else 0.dp
     val hingeRoom = hinge?.let { it.start - pageStart }?.takeIf { it >= 280.dp }
     val split = wide && (hingeRoom != null || (rail && room >= SplitWidth))
     val formBeside = split && tab == 1 && morePage.isEmpty()
     // Elsewhere on a large screen the form floats at the side, over the page, rather than taking the screen.
-    val formAtSide = wideWindow() && !formBeside
+    val formAtSide = appWindow >= MediumWidth && !formBeside
     val paneForm = remember { PaneForm() }
     // A new form each time one opens, so the next row's opens fresh in the same place.
     var formKey by remember { mutableIntStateOf(0) }
@@ -234,8 +248,8 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
                 if (it.sessionId == open.sessionId) it.copy(session = applied.getJSONObject("session"), view = "lines", assisted = it.assisted + outcome.lines, notice = outcome.notice) else it
             }
             if (outcome.applied > 0) assistantController.imported(thread, proposal.text("id"))
-            // Back to the import, to see them.
-            assistant = false
+            // Back to the import, to see them; beside the assistant it's already in view.
+            if (!assistantBeside) assistant = false
         }
     }
     fun openTab(index: Int) {
@@ -325,9 +339,11 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     val exportFile = { saveFile.launch("UrBudget-${LocalDate.now()}.json") }
     // Back closes what's open, newest first; pages register their own handlers (search, selection)
     // after this one, so theirs come first. Then an account goes back to Accounts, a page to the first tab.
-    BackHandler(editor == null && (assistant || morePage.isNotEmpty() || tab != 0 || accountFilter.isNotEmpty() || categoryFilter.isNotEmpty())) {
+    // Beside the app the assistant closes once the app has nowhere left to go back to.
+    val appBack = morePage.isNotEmpty() || tab != 0 || accountFilter.isNotEmpty() || categoryFilter.isNotEmpty()
+    BackHandler(editor == null && (assistant || appBack)) {
         when {
-            assistant -> assistant = false
+            assistant && (!assistantBeside || !appBack) -> assistant = false
             morePage.isNotEmpty() -> closePage()
             tab == 1 && returnTab >= 0 -> closeRegister()
             tab == 1 && accountFilter.isNotEmpty() -> { accountFilter = ""; tab = 2 }
@@ -389,6 +405,10 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     LaunchedEffect(state.exported) { if (state.exported) { vm.exportSaid(); toast(context.getString(R.string.backup_exported), false) } }
     CompositionLocalProvider(LocalToast provides toast, LocalLoanActions provides loanActions, LocalSplitList provides splitList) {
     Box(Modifier.fillMaxSize().background(ur.bg).nestedScroll(scrollWatcher)) {
+    // The app's own screen: the whole window, or its start side while the assistant shares it.
+    Box(Modifier.align(Alignment.TopStart).fillMaxHeight().then(if (appWidth != null) Modifier.width(appWidth) else Modifier.fillMaxWidth())) {
+    ProvideAppSide(appWidth) {
+    Box(Modifier.fillMaxSize()) {
         // The page, its add button and messages. On a large screen they keep a readable width, centred
         // beside the rail; on a phone the width is never reached and the page fills the screen as before.
         Box(Modifier.fillMaxSize().then(if (rail) Modifier.windowInsetsPadding(RailInsets.only(WindowInsetsSides.Start)).padding(start = RailRoom) else Modifier),
@@ -494,16 +514,27 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
             enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
             TabDock(if (tab == 4) 4 else tab, ::openTab)
         }
-        AnimatedVisibility(assistant && budget != null, enter = fadeIn(tween(180)), exit = fadeOut(tween(180))) {
+    }
+    }
+    }
+        // On a phone the assistant rises over a dimmed page; beside the app on a large screen both stay in use.
+        AnimatedVisibility(assistant && budget != null && !assistantBeside, enter = fadeIn(tween(180)), exit = fadeOut(tween(180))) {
             Box(Modifier.fillMaxSize().background(ur.scrim).clickable(remember { MutableInteractionSource() }, null) { assistant = false })
         }
         val assistantDrag = rememberPanelDrag(assistant) { assistant = false }
-        // On a large screen the assistant stands at the window's end, full height, and the page it's
-        // talking about stays in view beside it (the end side, when a hinge splits the screen).
-        if (wideWindow()) AnimatedVisibility(assistant && budget != null, Modifier.align(Alignment.CenterEnd), enter = panelEnter(), exit = panelExit()) {
-            Box(Modifier.windowInsetsPadding(RailInsets).padding(PanelMargin).width(panelWidth(max = 520.dp)).fillMaxHeight()
+        // One assistant, wherever it stands: folding moves it between the side and the phone's panel
+        // with what's being typed in it.
+        val assistantPanel = remember {
+            movableContentOf { importing: JSONObject?, fix: (String, JSONObject) -> Unit, place: AssistantPlace, drag: Modifier ->
+                AssistantScreen(vm, onClose = { assistant = false }, importing = importing, applyFix = fix, place = place, dragArea = drag)
+            }
+        }
+        // On a large screen the assistant stands at the window's end, full height, as a screen of its own
+        // beside the app (the end side, when a hinge splits the screen).
+        if (fullWide) AnimatedVisibility(assistant && budget != null, Modifier.align(Alignment.CenterEnd), enter = panelEnter(), exit = panelExit()) {
+            Box(Modifier.windowInsetsPadding(RailInsets).padding(PanelMargin).width(assistantWidth).fillMaxHeight()
                 .floatingPanel(ur.surface, ur.dark, ur.border).padding(top = 6.dp)) {
-                AssistantScreen(vm, onClose = { assistant = false }, importing = importScreen, applyFix = ::applyFix, place = assistantPlace, dragArea = Modifier)
+                assistantPanel(importScreen, ::applyFix, assistantPlace, Modifier)
             }
         }
         else AnimatedVisibility(assistant && budget != null, Modifier.align(Alignment.BottomCenter),
@@ -515,11 +546,13 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
                     Box(Modifier.size(36.dp, 5.dp).clip(CircleShape).background(ur.borderStrong))
                 }
                 Box(Modifier.weight(1f).navigationBarsPadding()) {
-                    AssistantScreen(vm, onClose = { assistant = false }, importing = importScreen, applyFix = ::applyFix, place = assistantPlace, dragArea = assistantDrag.dragArea)
+                    assistantPanel(importScreen, ::applyFix, assistantPlace, assistantDrag.dragArea)
                 }
             }
         }
     }
+    // What the app opens keeps to its own screen while the assistant shares the window.
+    ProvideAppSide(appWidth) {
     if (drawer && budget != null) MoreDrawer(budget, { drawer = false }, ::openPage, { openEditor("bankImport"); drawer = false },
         { openEditor("ynabImport"); drawer = false })
     if (budget != null) when (editor) {
@@ -540,14 +573,15 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
         "schedule" -> ScheduleDialog(selected, budget, vm) { editor = null }
         "payee" -> PayeeDialog(selected, budget, vm) { editor = null }
         "rule" -> RuleDialog(selected, budget, vm) { editor = null }
-        // Hidden while the assistant is open over it. A PDF statement goes to the assistant,
-        // attached to its next message.
+        // Hidden while the assistant is open over it on a phone; beside it on a large screen, the two in
+        // view at once. A PDF statement goes to the assistant, attached to its next message.
         "bankImport" -> bankImport?.let { draft ->
-            if (!assistant) BankImportDialog(budget, vm, draft, { change -> bankImport = bankImport?.let(change) },
+            if (!assistant || assistantBeside) BankImportDialog(budget, vm, draft, { change -> bankImport = bankImport?.let(change) },
                 askAssistant = { uri -> assistantController.attach(context, uri); editor = null; bankImport = null; assistant = true },
                 fixWithAssistant = { assistantController.prefill(fixImportText); assistant = true }) { editor = null; bankImport = null }
         }
         "ynabImport" -> YnabImportDialog(budget, vm) { editor = null }
+    }
     }
     afterForm?.let { then ->
         AlertDialog(onDismissRequest = { afterForm = null }, title = { Text(stringResource(R.string.transaction_unsaved_title)) },
