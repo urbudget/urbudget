@@ -614,6 +614,13 @@ run. iPhone: written, the translation check passes, and nothing was compiled.
 - The guide has renaming, searching and continuing a conversation, and a new entry,
   `assistant-notes`.
 
+**The desktop's cards in a narrow panel** (the same day, from a screenshot of the test
+window): a finished card's line held its state, the time, its title and its buttons, and the
+title was squeezed out. The title and its chevron now have the line, with the state and the
+buttons under it; the time is the time alone today and has no year this year. A waiting
+card's hint shares its line with Discard, and a stat that is words reads from its own start.
+The phones already put a finished card's buttons under its line.
+
 **Seen in the desktop app** (10 November 2026, a debug build of this branch on a scratch copy
 of the QA budget, driven through the QA harness). On the first pass no model answered: the QA
 folder's ChatGPT sign-in, made on 24 October, had ended, and the refresh was refused. So what
@@ -660,12 +667,31 @@ messages on the sample budget):
 - The history list showed the tokens used: 154,060 sent, 13,696 of them from cache, and 546
   received, after five messages.
 
+**The other cards, answered by ChatGPT** (the same day, seven more short messages; each change
+was applied and read in the app beside ones made by hand):
+
+- Categories: "add Pets to the group Groceries is in, with 150 set aside each month, and rename
+  Fitness to Gym" made one card. Applied, the Budget page showed Pets in Everyday with "150.00
+  SAR needed by the 30th", worded as the other targets are, and Gym with Fitness's activity.
+- Schedules: asked for a monthly transfer and a Netflix payment, it found the Netflix schedule
+  already there and asked, with a question card, whether to pause it. The card then added two
+  and paused one. In Scheduled the transfer read "To: Savings Account · No Category
+  (Transfer)", as the app's own do, and the old Netflix read Paused. The card named the
+  transfer twice on its row; it now names it once.
+- A split and a move in one card: Nesto became "Split (2)", and Fitness Time moved to Cash
+  wallet on its new date with its category kept. Show in the budget went to All transactions
+  with both selected, since they're in two accounts.
+- Deleting: two transactions selected in the register and sent with "Delete these" made a red
+  card listing both, with "Delete 2 transactions". Applied, the count went from 2,541 to 2,539;
+  the card's Undo brought both back.
+- Continuing: `assistant_continue` on the conversation above made a new one, "… (continued)",
+  that said in one sentence everything the first had changed. It was called directly: the
+  banner that offers it shows only past 120,000 tokens.
+
 **Not checked**
 
-- With a model: a delete card, category and schedule cards, a split or a change of date or
-  account on a transaction that exists, a reply cut at its length, and continuing a long
-  conversation. Their changes are covered by tests of what they do to a budget, and the loop's
-  by a scripted model.
+- With a model: a reply cut at its length (it needs a lower limit than the app sets), and the
+  banner on a conversation that has really grown long.
 - Anything against Anthropic (3.1, 3.2), as decided.
 - The phones on a screen. iPhone was never compiled. Android's Rust library wasn't rebuilt
   for this branch (the checks ran with `-x buildRustEngine`), so an emulator would run the

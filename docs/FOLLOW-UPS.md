@@ -61,15 +61,13 @@ Added 10 November 2026. The review's plan, and what was built from it on
 
 **Not yet run** (the whole branch):
 
-- ChatGPT answered six short messages on the desktop: a question, a note, a question card, a
-  transfer and figures (the plan's "As built" has them). The transfer was shaped wrongly and
-  was fixed. The other new changes haven't been asked of a model: a delete card, category and
-  schedule cards, a split or a change of date or account on a transaction that exists, a reply
-  cut at its length, continuing a long conversation. The transfer shows what to look for: a
-  change that passes the budget's checks but isn't shaped as the app's own editor leaves it.
-  Done looks like each of them asked for once, applied, and read in the register, the Budget
-  page or Scheduled beside one made by hand.
-- Five short messages sent 154,060 tokens and only 13,696 came from cache. Nearly all of each
+- ChatGPT answered thirteen short messages on the desktop, and every new kind of card was
+  made, applied and read in the app beside ones made by hand (the plan's "As built" has them).
+  One was shaped wrongly, a transfer inside the budget, and was fixed. Left: a reply cut at its
+  length, which needs a lower limit than the app sets, and the long-conversation banner on a
+  conversation that has really reached 120,000 tokens. Only ChatGPT's default model was asked.
+- Five short messages sent 154,060 tokens and only 13,696 came from cache; a conversation of
+  one message sent 15,432 with 5,376 from cache. Nearly all of each
   request is the instructions and the tool list, which are the same every time. Not known: why
   so little is cached on the ChatGPT plan (the request may need a cache key), and how much of
   the tool list could go to tools described only when they're offered. Done looks like the
