@@ -138,11 +138,13 @@ async fn turn(assistant: &Assistant, job: &Job, cancelled: &AtomicBool, written:
         let (cut, used) = (reply.cut, reply.usage);
         let mut calls = vec![];
         let mut items = vec![];
+        // What it said, with each text's place among the round's items.
+        let mut said: Vec<(usize, String)> = vec![];
         for part in reply.parts {
             match part {
                 Part::Raw(value) => items.push(Item::Raw { provider: provider.into(), value }),
                 Part::Text(text) => {
-                    emit(&job.thread_id, json!({ "type": "message", "text": text }));
+                    said.push((items.len(), text.clone()));
                     items.push(Item::Assistant { text });
                 }
                 Part::Call(call) => {
@@ -153,8 +155,9 @@ async fn turn(assistant: &Assistant, job: &Job, cancelled: &AtomicBool, written:
         }
         // The round is kept whole from here, so there's nothing of it left for Stop to save. The
         // text is cleared inside the lock on the conversation: a Stop gets one or the other.
-        let (import, selected) = assistant.with_thread_guarded(&job.folder, &job.thread_id, Some(cancelled), |t| {
+        let (first, import, selected) = assistant.with_thread_guarded(&job.folder, &job.thread_id, Some(cancelled), |t| {
             lock(written).clear();
+            let first = t.items.len();
             t.items.extend(items);
             t.usage.add(used);
             t.last_input = used.input;
@@ -164,11 +167,16 @@ async fn turn(assistant: &Assistant, job: &Job, cancelled: &AtomicBool, written:
             }
             // The import the latest message was sent from, as it read then, and the transactions
             // attached to it.
-            t.items.iter().rev().find_map(|i| match i {
+            let (import, selected) = t.items.iter().rev().find_map(|i| match i {
                 Item::User { import, sent_with, .. } => Some((import.clone(), sent_with.as_ref().map(|w| w.selected.clone()).unwrap_or_default())),
                 _ => None,
-            }).unwrap_or_default()
+            }).unwrap_or_default();
+            (first, import, selected)
         }).map_err(other)?;
+        // Said once it's kept, with its place in the conversation: what rating it names.
+        for (at, text) in said {
+            emit(&job.thread_id, json!({ "type": "message", "text": text, "index": first + at }));
+        }
         if calls.is_empty() {
             if cut {
                 emit(&job.thread_id, json!({ "type": "cut" }));
