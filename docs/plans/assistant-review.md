@@ -530,3 +530,44 @@ on a screen on any of the three.
 
 Not built in the core: 4.8 is the apps' own.
 
+**Phase 1 and the screens' part of phase 3, the apps** (10 November 2026). Desktop: `npx tsc
+-b` and all 799 UI tests pass. Android: it compiles and its 312 JVM tests pass; the
+instrumented tests compile and weren't run. iPhone: written, the translation check passes, and
+nothing was compiled. Nothing was seen on a screen.
+
+- 1.2: what the assistant is doing shows on the three apps. The phones read events every
+  100 ms while a reply runs and format the reply as it's written; Android hands the live text
+  to the finished reply in one step.
+- 1.3: the phones keep the draft and the selection per conversation in the controller (Android
+  the files too). A request from elsewhere starts its own conversation unless the open one has
+  no messages, on the three apps, and adds to a draft that's there.
+- 1.4: the line of what goes with a message, with each part removable, and the same on the
+  sent message. The month goes from the pages that show one (Budget; Reports on Android), so
+  from the others the core uses today's. A selection over 200 is cut where it's handed over.
+- 1.5: iPhone sends the page, account and category it was opened from. Android has "Ask the
+  assistant" on a register selection and on a category.
+- 1.6: one rule for scrolling (`follow.ts`, `assistantFollows`, `AssistantFollow`), with "Jump
+  to latest". On iPhone it's measured from the content's frame.
+- 1.7: checking, couldn't load, not set up and not ready each say so.
+- 1.8: Android keeps reading events with the app stopped, while the process lives; iPhone asks
+  for background time while a reply runs. Neither is guaranteed: Android can freeze a cached
+  process, and a foreground service wasn't added.
+- 1.9: the title in the header, rename, search, and every conversation listed. The desktop asks
+  before deleting one.
+- 1.10: one announcement for a finished reply and one for a new card; text takes its direction
+  from itself on the desktop and Android.
+- 3.3, 3.4, 3.5, 3.12 on screen: tokens used (in the history list, under the open conversation),
+  the long-conversation banner and "Continue in a new conversation", Continue after a cut
+  reply, thumbs, and the details line in a report.
+- Desktop only: focus goes to the field and back to the button, Esc closes, the report preview
+  keeps the keyboard, the panel leaves the page 420 px beside the sidebar, cards are memoised
+  and a streamed reply re-renders only itself.
+- iPhone only: the conversation stays current with the sheet closed, with a dot on More's
+  Assistant row; each card has its own busy state; a link shows its host; Sign out and Remove
+  saved key ask first.
+- Android only: a scroll of the list no longer drags the panel shut; a report table's rows
+  scroll together; background failures are a quiet line.
+
+Left as it was: a draft doesn't outlive the app being closed, on any of the three. On iPhone a
+message's files are dropped when the conversation is changed.
+
