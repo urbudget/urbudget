@@ -269,19 +269,33 @@ export default function App() {
     }
   });
   const [assistantRequest, setAssistantRequest] = useState<AssistantRequest | null>(null);
+  // The user opened the panel themselves (rather than it being open from last time): the
+  // keyboard goes to its message field, and back to its button when it closes.
+  const [assistantByUser, setAssistantByUser] = useState(false);
+  const assistantToggle = useRef<HTMLButtonElement>(null);
+  const assistantWasOpen = useRef(assistantOpen);
+  useEffect(() => {
+    // Only when closing left the keyboard nowhere: it was in the panel.
+    if (assistantWasOpen.current && !assistantOpen && (!document.activeElement || document.activeElement === document.body)) assistantToggle.current?.focus();
+    assistantWasOpen.current = assistantOpen;
+  }, [assistantOpen]);
+  /** The one category selected on the Budget page, which a message to the assistant says is in view. */
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [highlight, setHighlight] = useState<Card["highlight"] | null>(null);
   const [settingsTab, setSettingsTab] = useState<{ tab: SettingsTab; key: number } | null>(null);
   const openSettings = (tab: SettingsTab) => {
     setSettingsTab({ tab, key: Date.now() });
     setPage("settings");
   };
-  const assistantWidth = useAssistantWidth();
+  // Never so wide that the page between it and the sidebar has no room left.
+  const assistantWidth = useAssistantWidth(layout.width);
   // The budget right after the assistant's last applied change, so its Undo only shows while it is the latest edit.
   const lastApplied = useRef<{ id: string; budget: Budget } | null>(null);
   const budgetNow = useRef(budget);
   budgetNow.current = budget;
   const showAssistant = (open: boolean) => {
     setAssistantOpen(open);
+    if (open) setAssistantByUser(true);
     try {
       localStorage.setItem("lb:assistant:open", open ? "1" : "0");
     } catch {
@@ -298,6 +312,7 @@ export default function App() {
     const key = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "j") {
         e.preventDefault();
+        setAssistantByUser(true);
         setAssistantOpen((open) => {
           try {
             localStorage.setItem("lb:assistant:open", open ? "0" : "1");
@@ -668,6 +683,7 @@ export default function App() {
   );
   const assistantButton = (
     <button
+      ref={assistantToggle}
       className="assistant-toggle"
       aria-pressed={assistantOpen}
       title={keyLabel(t("Assistant (Ctrl+J)"))}
@@ -812,6 +828,7 @@ export default function App() {
               transform={transformCalculated}
               onEditorChange={setPlanningEditor}
               onEditCategory={editCategory}
+              onSelection={setSelectedCategory}
               onAsk={(names) =>
                 ask({ text: t("Help me with {categories} this month.", { categories: names.length === 1 ? names[0] : list(names) }) })
               }
@@ -946,10 +963,12 @@ export default function App() {
             budget={budget}
             budgetId={budgetId}
             summary={summary}
+            autoFocus={assistantByUser}
             screen={{
               page,
               month,
               accountId: page === "transactions" ? accountId : null,
+              categoryId: page === "budget" ? selectedCategory : null,
               // The bank file on the Import page: the assistant is told its lines, as they read when a message is sent.
               import:
                 page === "import" && importing?.session && importing.content !== undefined

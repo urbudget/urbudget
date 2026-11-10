@@ -153,10 +153,13 @@ export function BudgetPage({
   onOpenSample,
   onOpenRegister,
   onAsk,
+  onSelection,
   onPayCard,
 }: {
   /** Opens the assistant about these categories (by name). */
   onAsk?: (names: string[]) => void;
+  /** Told the category selected when it is the only one (null otherwise, and when the page is left): what's in view. */
+  onSelection?: (categoryId: string | null) => void;
   /** Pays a credit card (by account id), from its payment category in the inspector. */
   onPayCard?: (accountId: string) => void;
   /** Opens a register (an account, or "all") filtered to a category and dates, or to spending
@@ -468,6 +471,11 @@ export function BudgetPage({
     [edit],
   );
 
+  const only = selected.length === 1 ? selected[0] : null;
+  useEffect(() => {
+    onSelection?.(only);
+  }, [only]);
+  useEffect(() => () => onSelection?.(null), []);
   useEffect(() => {
     if (!selected.length) return;
     const key = (e: KeyboardEvent) => {

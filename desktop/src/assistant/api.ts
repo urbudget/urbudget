@@ -85,23 +85,53 @@ export type Proposal = {
 };
 /**
  * What to offer under an error: signing in with ChatGPT again, the assistant's settings, ChatGPT's
- * usage page, asking again, or nothing.
+ * usage page, asking again, carrying the conversation on in a new one (this one no longer fits
+ * the model), or nothing.
  */
-export type ErrorAction = "signIn" | "settings" | "usage" | "retry" | "none";
+export type ErrorAction = "signIn" | "settings" | "usage" | "retry" | "newConversation" | "none";
+/**
+ * What went with a message besides its words: the page's key as the app sent it ("" when the
+ * user took where they were off the message), the month as YYYY-MM, the account's and the
+ * category's names, how many selected transactions were attached, and whether the bank file
+ * being imported went too.
+ */
+export type SentWith = { page: string; month: string; account?: string; category?: string; transactions: number; import: boolean };
 export type Entry =
-  | { kind: "user"; text: string; attachments: Attachment[]; selected?: number }
-  | { kind: "assistant"; text: string }
+  /** Messages sent before the app kept it have no `with`. */
+  | { kind: "user"; text: string; attachments: Attachment[]; with?: SentWith }
+  /**
+   * `index` names the reply for rating, and `tools` are the tools its turn had called; a reply
+   * still arriving has neither until the conversation is read again.
+   */
+  | { kind: "assistant"; text: string; index?: number; tools?: string[]; rating?: "up" | "down" }
   | { kind: "step"; text: string; failed: boolean }
   | { kind: "proposal"; proposal: Proposal }
   /** Only a conversation's last entry has an `action`: an earlier error's moment has passed. */
   | { kind: "error"; text: string; code: string; action?: ErrorAction }
+  /** The reply before it stopped at its length limit. */
+  | { kind: "cut" }
   | { kind: "stopped" };
-export type ThreadView = { id: string; title: string; entries: Entry[]; running: boolean };
+/** Tokens every request of a conversation used, added up. */
+export type Usage = { input: number; output: number; cached: number };
+export type ThreadView = {
+  id: string;
+  title: string;
+  entries: Entry[];
+  running: boolean;
+  usage?: Usage;
+  /** Its latest request was long enough that carrying on in a new conversation is worth offering. */
+  long?: boolean;
+  /** The title of the conversation this one carries on. */
+  continuedFrom?: string;
+};
 export type Listing = { id: string; title: string; updated: string };
-/** What the user is looking at, sent with each message. */
+/**
+ * What the user is looking at, sent with each message. A `page` of "" says they took where they
+ * are off the message, and then there is no month, account or category either.
+ */
 export type Screen = {
   page: string;
-  month: string;
+  month?: string;
   accountId?: string | null;
   categoryId?: string | null;
   selected: string[];
@@ -114,10 +144,16 @@ export type AssistantEvent = { threadId: string } & (
   | { type: "delta"; text: string }
   /** A piece of the model's reasoning summary, shown while it works. */
   | { type: "thinking"; text: string }
+  /** What it is doing now (a lookup under way), already in the app's language. */
+  | { type: "activity"; text: string }
   | { type: "message"; text: string }
   | { type: "step"; text: string; failed: boolean }
   | { type: "proposal"; proposal: Proposal }
   | { type: "error"; text: string; code: string; action?: ErrorAction }
+  /** The reply just written stopped at its length limit. */
+  | { type: "cut" }
+  /** An earlier card, folded away by the one that corrects it. The panel doesn't act on it yet. */
+  | { type: "replaced"; proposal: Proposal }
   | { type: "done"; stopped?: boolean }
 );
 export type Model = { id: string; name: string };
@@ -158,6 +194,12 @@ export const assistant = {
   threads: () => invoke<Listing[]>("assistant_threads"),
   thread: (id: string) => invoke<ThreadView>("assistant_thread", { id }),
   deleteThread: (id: string) => invoke<void>("assistant_delete_thread", { id }),
+  /** Gives a conversation another title, of 1 to 80 characters. */
+  renameThread: (id: string, title: string) => invoke<void>("assistant_rename_thread", { id, title }),
+  /** Starts a conversation that begins with what was said last in this one, and returns its id. */
+  continue: (threadId: string) => invoke<string>("assistant_continue", { threadId }),
+  /** The user's thumb on a reply (by its `index`): up, down, or null to take it off. It stays on this computer. */
+  rate: (threadId: string, index: number, up: boolean | null) => invoke<void>("assistant_rate", { threadId, index, up }),
   deleteAll: () => invoke<void>("assistant_delete_all"),
   /** Keeps a file for the next message, until it's sent or taken off again. `data` is base64. */
   attach: (name: string, data: string) => invoke<Attachment>("assistant_attach", { name, data }),
@@ -166,7 +208,7 @@ export const assistant = {
   /** Sends a message; the reply arrives as events. Returns the conversation id. */
   send: (budget: Budget, threadId: string | null, text: string, attachments: string[], screen: Screen) =>
     read<string>(budget, "assistant_send", { threadId, text, attachments, screen }),
-  /** Asks again after an error, without a new message. */
+  /** Asks again after an error, or for the rest of a reply that was cut short, without a new message. */
   retry: (budget: Budget, threadId: string, screen: Screen) => read<void>(budget, "assistant_retry", { threadId, screen }),
   stop: (threadId: string) => invoke<void>("assistant_stop", { threadId }),
   /** The proposal's change as a patch for `budget`, or a refreshed card when the budget moved. */

@@ -256,6 +256,30 @@ it("gives a part another amount, keeping its sign, and Esc leaves it as it was",
   expect(engine).toHaveBeenCalledTimes(1);
 });
 
+it("gives the keyboard back to a row's pencil when its editor closes", async () => {
+  render(<Card engine={vi.fn(marking)} />);
+  const pencil = () => screen.getByRole("button", { name: "Change Extra Electronics · Oct 5" });
+  fireEvent.click(pencil());
+  const editor = screen.getByRole("group", { name: "Change Extra Electronics · Oct 5" });
+  expect(editor.contains(document.activeElement)).toBe(true);
+  fireEvent.click(within(editor).getByRole("button", { name: "Cancel" }));
+  expect(document.activeElement).toBe(pencil());
+  // After a save too, once the card is back and the pencil can be used again.
+  fireEvent.click(pencil());
+  const again = screen.getByRole("group", { name: "Change Extra Electronics · Oct 5" });
+  fireEvent.change(within(again).getByRole("combobox"), { target: { value: "Groc" } });
+  fireEvent.click(screen.getByRole("option", { name: /Groceries/ }));
+  fireEvent.click(within(again).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(document.activeElement).toBe(pencil()));
+  // Leaving a part out closes an open editor without moving the keyboard to its pencil.
+  fireEvent.click(pencil());
+  const box = screen.getByRole("checkbox", { name: "Apply: Careem · Oct 3" });
+  box.focus();
+  fireEvent.click(box);
+  await waitFor(() => expect(screen.queryByRole("group", { name: "Change Extra Electronics · Oct 5" })).toBeNull());
+  expect(document.activeElement).not.toBe(pencil());
+});
+
 it("lists every part of a long change, a few until asked for all", () => {
   const many: CardRow[] = Array.from({ length: 30 }, (_, i) => ({ label: `Shop ${i + 1}`, amount: -(i + 1) * 100, key: `t:${i}` }));
   render(

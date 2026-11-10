@@ -42,29 +42,62 @@
 .assistant-head strong {
   font-size: 13.5px;
 }
-.assistant-context {
+/* The open conversation's title: cut short where the header runs out (the whole of it is its
+   tooltip). */
+.assistant-title {
+  min-width: 0;
   overflow: hidden;
-  max-width: 180px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--zero-soft);
-  color: var(--text-2);
-  font-size: 11.5px;
-  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Text that reads in its own direction (dir="auto") but starts on the layout's side, not its
+   own: a title, a lookup's line, a card's labels. Right to left, styles.css turns them to the right. */
+.assistant-title,
+.assistant-step > span,
+.proposal-label > *,
+.assistant-history-text > span {
+  text-align: left;
+}
+.assistant-rename-open {
+  flex: none;
+  margin-inline-start: -4px;
+  color: var(--muted);
+}
+.assistant-rename {
+  display: flex;
+  flex: 1;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+}
+.assistant-rename input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  font-size: 13px;
+}
 .assistant-tools {
   display: flex;
+  flex: none;
   gap: 2px;
   margin-inline-start: auto;
 }
+/* Checking the assistant, or saying it couldn't be loaded. */
 .assistant-loading {
-  display: grid;
+  display: flex;
   flex: 1;
-  place-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-content: center;
+  align-items: center;
+  justify-content: center;
   padding: 24px;
   color: var(--muted);
+}
+.assistant-loading p {
+  flex: 1 0 100%;
+  margin: 0;
+  text-align: center;
 }
 
 /* Conversation */
@@ -117,6 +150,34 @@
   margin: 0;
   white-space: pre-wrap;
 }
+/* What went with the message: where it was sent from, the selection, the import. */
+.assistant-sent-with {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+/* Where a conversation carries on from, and a reply that ran out of room. */
+.assistant-continued {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+.assistant-cut {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+.assistant-opening {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  margin: auto 0;
+  color: var(--muted);
+}
 
 /* Replies */
 .assistant-reply {
@@ -125,12 +186,22 @@
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
+/* Under a reply: reporting it, and the user's thumb on it. They hold their place while it arrives. */
+.assistant-reply-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  align-self: flex-start;
+  margin-top: 4px;
+}
+.assistant-reply-actions.waiting {
+  visibility: hidden;
+}
 .assistant-flag {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  align-self: flex-start;
-  margin-top: 4px;
+  margin-inline-end: 4px;
   padding: 0;
   border: 0;
   background: none;
@@ -143,8 +214,25 @@
   color: var(--text-2);
   text-decoration: underline;
 }
-.assistant-flag.waiting {
-  visibility: hidden;
+.assistant-thumb {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--muted);
+}
+.assistant-thumb:hover:not(:disabled),
+.assistant-thumb:focus-visible {
+  background: var(--hover);
+  color: var(--text);
+}
+.assistant-thumb[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 .reply-report textarea {
   width: 100%;
@@ -357,23 +445,26 @@
     transform: translateY(-2px);
   }
 }
+/* "Jump to latest", over the end of the conversation while the user reads further up. */
 .assistant-jump {
   position: sticky;
   bottom: 12px;
   z-index: 2;
-  display: grid;
+  display: inline-flex;
   flex: none;
+  gap: 5px;
+  align-items: center;
   align-self: center;
-  width: 30px;
-  height: 30px;
-  margin-top: -42px;
-  padding: 0;
-  place-items: center;
+  height: 28px;
+  margin-top: -40px;
+  padding: 0 11px;
   border: 1px solid var(--border-strong);
   border-radius: 999px;
   background: var(--surface);
   box-shadow: var(--shadow-md);
   color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
 }
 .assistant-jump:hover {
   color: var(--text);
@@ -505,6 +596,44 @@
   gap: 8px;
   padding: 10px 12px 12px;
   border-top: 1px solid var(--border);
+}
+/* Over the field: what a conversation needs before it can go on (signing in, a key), or that
+   it has grown long, each with the one thing to do about it. */
+.assistant-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12px;
+}
+.assistant-banner > span {
+  flex: 1 1 180px;
+}
+/* "With this message": what goes with the next one, each part with its own ×. */
+.assistant-with {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.assistant-with-label {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.assistant-with-place {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.assistant-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11.5px;
 }
 .assistant-files {
   display: flex;
@@ -839,8 +968,10 @@ button.proposal-more:hover {
   color: var(--muted);
   font-size: 12px;
 }
+/* In a narrow panel the buttons go onto a second line instead of being cut off. */
 .proposal-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   align-items: center;
   padding: 9px 12px;
@@ -882,6 +1013,80 @@ button.proposal-more:hover {
 }
 .proposal.done button {
   margin-inline-start: auto;
+}
+
+/* Conversations: a field to find one by its title over the list of them all, which scrolls. */
+.popover.assistant-history {
+  width: 300px;
+  max-width: calc(100vw - 16px);
+  padding: 4px;
+  overflow: hidden;
+}
+.assistant-history-box {
+  display: flex;
+  flex-direction: column;
+  max-height: min(410px, calc(100vh - 26px));
+}
+.assistant-history-box > input {
+  flex: none;
+  margin: 2px 2px 6px;
+  height: 30px;
+  font-size: 13px;
+}
+.assistant-history-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.assistant-history-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  text-align: start;
+}
+.assistant-history-item:hover,
+.assistant-history-item:focus-visible {
+  background: var(--accent-soft);
+  outline: none;
+}
+.assistant-history-item .menu-icon {
+  flex: none;
+  margin-top: 2px;
+}
+.assistant-history-item[aria-current] {
+  font-weight: 600;
+}
+.assistant-history-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.assistant-history-text > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.assistant-history-text small {
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+.assistant-history-note {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 8px;
+  color: var(--muted);
+}
+.assistant-history .menu-item {
+  flex: none;
 }
 
 /* First use, and dropping files */

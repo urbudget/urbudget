@@ -148,6 +148,12 @@ export function inline(text: string): ReactNode[] {
   return out;
 }
 
+/** A column's side as the table reads: "left" is where a row starts, "right" (amounts) where it ends. */
+const side = (align: "left" | "right" | "center") => (align === "left" ? "start" : align === "right" ? "end" : "center");
+
+// Each block takes its direction from its own text (dir="auto"), so an Arabic paragraph, list or
+// table reads right to left in the English layout and an English one left to right in the Arabic.
+// A list takes one direction for all its items, so its markers stay in its own margin.
 function MarkdownView({ text, streaming = false }: { text: string; streaming?: boolean }) {
   const source = streaming ? closeOpen(text) : text;
   return (
@@ -156,7 +162,7 @@ function MarkdownView({ text, streaming = false }: { text: string; streaming?: b
         switch (b.kind) {
           case "p":
             return (
-              <p key={i}>
+              <p key={i} dir="auto">
                 {b.lines.map((l, j) => (
                   <Fragment key={j}>
                     {j > 0 && <br />}
@@ -167,7 +173,7 @@ function MarkdownView({ text, streaming = false }: { text: string; streaming?: b
             );
           case "h":
             return (
-              <h4 key={i} className="md-heading">
+              <h4 key={i} className="md-heading" dir="auto">
                 {inline(b.text)}
               </h4>
             );
@@ -185,21 +191,23 @@ function MarkdownView({ text, streaming = false }: { text: string; streaming?: b
               </li>
             ));
             return b.ordered ? (
-              <ol key={i} start={b.start}>
+              <ol key={i} start={b.start} dir="auto">
                 {items}
               </ol>
             ) : (
-              <ul key={i}>{items}</ul>
+              <ul key={i} dir="auto">
+                {items}
+              </ul>
             );
           }
           case "table":
             return (
               <div key={i} className="md-table">
-                <table>
+                <table dir="auto">
                   <thead>
                     <tr>
                       {b.head.map((h, j) => (
-                        <th key={j} style={{ textAlign: b.align[j] }}>
+                        <th key={j} style={{ textAlign: side(b.align[j] ?? "left") }}>
                           {inline(h)}
                         </th>
                       ))}
@@ -209,7 +217,7 @@ function MarkdownView({ text, streaming = false }: { text: string; streaming?: b
                     {b.rows.map((r, j) => (
                       <tr key={j}>
                         {b.head.map((_, k) => (
-                          <td key={k} style={{ textAlign: b.align[k] }}>
+                          <td key={k} style={{ textAlign: side(b.align[k] ?? "left") }}>
                             {inline(r[k] ?? "")}
                           </td>
                         ))}
@@ -221,7 +229,7 @@ function MarkdownView({ text, streaming = false }: { text: string; streaming?: b
             );
           case "quote":
             return (
-              <blockquote key={i}>
+              <blockquote key={i} dir="auto">
                 {b.lines.map((l, j) => (
                   <Fragment key={j}>
                     {j > 0 && <br />}
@@ -232,7 +240,8 @@ function MarkdownView({ text, streaming = false }: { text: string; streaming?: b
             );
           case "code":
             return (
-              <pre key={i} className="md-code">
+              // Code reads left to right whatever is around it.
+              <pre key={i} className="md-code" dir="ltr">
                 {b.text}
               </pre>
             );

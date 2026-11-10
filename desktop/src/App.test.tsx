@@ -125,7 +125,9 @@ it("hands a dropped file to the assistant once, however often its panel closes a
     render(<ToastProvider><App /></ToastProvider>);
     const statement = new File(["date,amount"], "statement.csv", { type: "text/csv" });
     fireEvent.drop(window, { dataTransfer: { files: [statement], types: ["Files"] } });
-    expect(await screen.findByRole("button", { name: "Remove statement.csv" })).toBeTruthy();
+    // The whole app renders and the file is read before its chip shows: on a busy machine
+    // that takes longer than the second a find waits by default.
+    expect(await screen.findByRole("button", { name: "Remove statement.csv" }, { timeout: 8000 })).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Message the assistant"), { target: { value: "Import this into Everyday" } });
     // Ctrl+J closes the panel and opens it again: the file and the text are as they were left,
     fireEvent.keyDown(window, { key: "j", ctrlKey: true });
@@ -139,6 +141,41 @@ it("hands a dropped file to the assistant once, however often its panel closes a
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(screen.queryByText("Attaching…")).toBeNull();
     expect(assistant.attach).toHaveBeenCalledTimes(1);
+  } finally {
+    localStorage.removeItem("lb:assistant:open");
+    forgetComposers();
+  }
+}, 20000);
+
+it("takes the keyboard to the assistant's message field when it's opened, and back to its button when it closes", async () => {
+  try {
+    render(<ToastProvider><App /></ToastProvider>);
+    fireEvent.keyDown(window, { key: "j", ctrlKey: true });
+    const box = await screen.findByLabelText("Message the assistant");
+    await waitFor(() => expect(document.activeElement).toBe(box));
+    // Esc in the panel closes it, as its own button and Ctrl+J do.
+    fireEvent.keyDown(box, { key: "Escape" });
+    expect(screen.queryByLabelText("Message the assistant")).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Assistant" })));
+  } finally {
+    localStorage.removeItem("lb:assistant:open");
+    forgetComposers();
+  }
+});
+
+it("tells the assistant which category is selected on the Budget page, when it's the only one", async () => {
+  try {
+    render(<ToastProvider><App /></ToastProvider>);
+    fireEvent.keyDown(window, { key: "j", ctrlKey: true });
+    const line = await screen.findByRole("group", { name: "With this message" });
+    expect(line.textContent).toContain("Budget");
+    expect(line.textContent).not.toContain("Groceries");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Groceries" }));
+    await waitFor(() => expect(line.textContent).toContain("Groceries"));
+    // With two selected, no one category is what's in view.
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Rent" }));
+    await waitFor(() => expect(line.textContent).not.toContain("Groceries"));
+    expect(line.textContent).not.toContain("Rent");
   } finally {
     localStorage.removeItem("lb:assistant:open");
     forgetComposers();

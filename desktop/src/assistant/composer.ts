@@ -1,8 +1,20 @@
 import { useCallback, useSyncExternalStore } from "react";
 import type { Attachment } from "./api";
 
-/** A message being put together: its text, the files waiting to go with it and the transactions picked for it. */
-export type Composer = { draft: string; attachments: Attachment[]; selected: string[] };
+/**
+ * A message being put together: its text, the files waiting to go with it and the transactions
+ * picked for it. `selectedOf` is how many were picked where they came from, when that was more
+ * than a message takes.
+ */
+export type Composer = { draft: string; attachments: Attachment[]; selected: string[]; selectedOf?: number };
+
+/** The most selected transactions a message takes: the assistant refuses one with more. */
+export const SELECTION_LIMIT = 200;
+/** A selection as a message takes it: its first 200, and how many there were when that's more. */
+export const attachable = (ids: string[]): Pick<Composer, "selected" | "selectedOf"> => ({
+  selected: ids.slice(0, SELECTION_LIMIT),
+  selectedOf: ids.length > SELECTION_LIMIT ? ids.length : undefined,
+});
 
 const EMPTY: Composer = { draft: "", attachments: [], selected: [] };
 // Kept here rather than in the panel, so closing the panel doesn't throw away a message half

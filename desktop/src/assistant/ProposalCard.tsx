@@ -1,5 +1,5 @@
 import { useEditorCheckpoint } from "../editorCheckpoint";
-import { useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import { memo, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Check, Eye, FileDown, FileSpreadsheet, LoaderCircle, Pencil, RefreshCw, TriangleAlert, Undo2 } from "lucide-react";
 import { editableAmount, errorText, evaluateAmount, money } from "../format";
 import type { Budget } from "../types";
@@ -34,7 +34,10 @@ function Row({
 }) {
   const editable = choosing && !row.skipped && (row.edit?.category || row.edit?.amount);
   return (
-    <div className={`proposal-row${row.tone === "warn" ? " warn" : ""}${row.skipped ? " skipped" : ""}${row.edited ? " edited" : ""}`}>
+    <div
+      className={`proposal-row${row.tone === "warn" ? " warn" : ""}${row.skipped ? " skipped" : ""}${row.edited ? " edited" : ""}`}
+      data-row={row.key}
+    >
       {choosing && row.key && (
         <input
           type="checkbox"
@@ -45,9 +48,16 @@ function Row({
           onChange={onToggle}
         />
       )}
+      {/* A payee or a category reads in its own direction, whichever way the app is laid out. */}
       <span className="proposal-label">
-        <span title={row.label}>{row.label}</span>
-        {row.detail && <small title={row.detail}>{row.detail}</small>}
+        <span dir="auto" title={row.label}>
+          {row.label}
+        </span>
+        {row.detail && (
+          <small dir="auto" title={row.detail}>
+            {row.detail}
+          </small>
+        )}
       </span>
       {row.badge && <span className={`proposal-badge${row.tone === "warn" ? " warn" : ""}`}>{row.badge}</span>}
       {budget && row.amount !== undefined ? (
@@ -70,6 +80,8 @@ function Row({
         <button
           type="button"
           className="proposal-edit"
+          // Its editor opens under the row: the conversation doesn't scroll for that (see useFollow).
+          data-grows
           disabled={busy}
           aria-label={t("Change {item}", { item: row.label })}
           title={
@@ -184,8 +196,11 @@ function RowEditor({
  * can be left out (its checkbox) or given another category or amount (its pencil), and Apply
  * makes what's left; an applied card shrinks to one line with Undo while the change is still the
  * latest one.
+ *
+ * Drawn again only when what it's given changes: the panel hands it the same functions for as
+ * long as the proposal is the same, so typing a message or a reply streaming in leaves it alone.
  */
-export function ProposalCard({
+export const ProposalCard = memo(function ProposalCard({
   budgetId,
   proposal: p,
   budget: book,
@@ -223,6 +238,13 @@ export function ProposalCard({
   const busy = pending > 0;
   const [editing, setEditing] = useState<string | null>(null);
   const [all, setAll] = useState(false);
+  const card = useRef<HTMLDivElement>(null);
+  /** The row whose editor just closed: the keyboard goes back to its pencil. */
+  const closed = useRef<string | null>(null);
+  const closeEditor = () => {
+    closed.current = editing;
+    setEditing(null);
+  };
   // The choices as the revisions sent will leave them: each is made on the one before and sent
   // once that one is back, so one started before the last reply lands doesn't drop its change.
   const latest = useRef(p.choices ?? NONE);
@@ -231,6 +253,19 @@ export function ProposalCard({
     // Nothing on its way: the card's own (one that failed leaves them as they were).
     if (!pending) latest.current = p.choices ?? NONE;
   }, [p.choices, pending]);
+  useLayoutEffect(() => {
+    // After a save the pencil can't be reached until the card is back; and if the keyboard has
+    // gone somewhere else meanwhile, it stays there.
+    if (editing !== null || closed.current === null || pending) return;
+    const key = closed.current;
+    closed.current = null;
+    const active = document.activeElement;
+    if (active && active !== document.body && !card.current?.contains(active)) return;
+    const pencil = [...(card.current?.querySelectorAll<HTMLElement>(".proposal-row") ?? [])]
+      .find((row) => row.dataset.row === key)
+      ?.querySelector<HTMLElement>(".proposal-edit");
+    pencil?.focus();
+  }, [editing, pending]);
   const run = (work: () => Promise<void>) => async () => {
     setPending((n) => n + 1);
     try {
@@ -292,7 +327,7 @@ export function ProposalCard({
   };
   const change = (row: CardRow, values: Omit<RowChange, "key">) => {
     const key = row.key!;
-    setEditing(null);
+    closeEditor();
     return revise((choices) => {
       const was = choices.set.find((s) => s.key === key);
       return { skip: choices.skip, set: [...choices.set.filter((s) => s.key !== key), { ...was, ...values, key }] };
@@ -302,10 +337,10 @@ export function ProposalCard({
   const shown = all ? c.rows : c.rows.filter((r, i) => i < SHOWN || (editing !== null && r.key === editing));
   const apply = p.kind === "fix" ? msg("Apply to the import") : msg("Apply");
   return (
-    <div className={`proposal${p.status === "failed" ? " failed" : ""}`} aria-label={t("Proposal: {title}", { title: p.title })}>
+    <div ref={card} className={`proposal${p.status === "failed" ? " failed" : ""}`} aria-label={t("Proposal: {title}", { title: p.title })}>
       <div className="proposal-head">
         <span className="proposal-kicker">{c.kicker}</span>
-        <strong>{p.title}</strong>
+        <strong dir="auto">{p.title}</strong>
       </div>
       {c.stats.length > 0 && (
         <div className="proposal-stats">
@@ -334,13 +369,13 @@ export function ProposalCard({
               budget={book}
               busy={busy}
               onSave={(values) => change(row, values)}
-              onCancel={() => setEditing(null)}
+              onCancel={closeEditor}
             />
           )}
         </div>
       ))}
       {c.rows.length > SHOWN && (
-        <button type="button" className="proposal-more link-button" onClick={() => setAll((a) => !a)}>
+        <button type="button" className="proposal-more link-button" data-grows aria-expanded={all} onClick={() => setAll((a) => !a)}>
           {all ? t("Show fewer") : t("Show all {count}", { count: c.rows.length })}
         </button>
       )}
@@ -445,4 +480,4 @@ export function ProposalCard({
       </div>
     </div>
   );
-}
+});

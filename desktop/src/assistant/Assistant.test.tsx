@@ -29,7 +29,11 @@ vi.mock("./api", async (importOriginal) => {
       detach: vi.fn(async () => {}),
       open: vi.fn(async () => {}),
       saveImport: vi.fn(),
-      deleteThread: vi.fn(),
+      deleteThread: vi.fn(async () => {}),
+      renameThread: vi.fn(async () => {}),
+      continue: vi.fn(),
+      rate: vi.fn(async () => {}),
+      reportReply: vi.fn(),
       report: vi.fn(),
       print: vi.fn(async () => {}),
       spreadsheet: vi.fn(),
@@ -42,8 +46,9 @@ vi.mock("./api", async (importOriginal) => {
 });
 vi.mock("../bridge", () => ({ api: { reveal: vi.fn() } }));
 import { assistant } from "./api";
-import { AssistantBoundary, AssistantPanel, Markdown, suggestions, thinkingTitle, type Request } from "./Assistant";
+import { AssistantBoundary, AssistantPanel, Markdown, place, suggestions, thinkingTitle, widest, type Request } from "./Assistant";
 import { forgetComposers } from "./composer";
+import { following } from "./follow";
 import { printReport } from "./Report";
 import { demoBudget } from "../demo";
 import { ToastProvider } from "../ui";
@@ -453,7 +458,8 @@ it("attaches the selection an entry point sends", async () => {
   vi.mocked(assistant.status).mockResolvedValue(ready);
   panel({ request: { key: 1, selected: ["t1", "t2"] } });
   expect(await screen.findByText("2 selected transactions")).toBeTruthy();
-  expect(screen.getByText("2 selected")).toBeTruthy();
+  // It's one of the things the line over the field says go with the message.
+  expect(within(screen.getByRole("group", { name: "With this message" })).getByText("2 selected transactions")).toBeTruthy();
 });
 
 it("takes an entry point's request once, not again each time the panel reopens", async () => {
@@ -673,6 +679,14 @@ it("previews a report and prints only the report", async () => {
   const dialog = await screen.findByRole("dialog", { name: "October 2026 in review" });
   expect(dialog.querySelector("td")?.textContent).toBe("Dining out");
   expect(dialog.textContent).toContain("Household");
+  // Once it's there, the keyboard is on its first control, and Tab stays inside it.
+  const print = within(dialog).getByRole("button", { name: "Print or save as PDF" });
+  const shut = within(dialog).getByRole("button", { name: "Close the preview" });
+  await waitFor(() => expect(document.activeElement).toBe(print));
+  fireEvent.keyDown(print, { key: "Tab", shiftKey: true });
+  expect(document.activeElement).toBe(shut);
+  fireEvent.keyDown(shut, { key: "Tab" });
+  expect(document.activeElement).toBe(print);
   const before = document.title;
   // The card and its preview both say that printing is how a PDF gets saved.
   expect(screen.getAllByRole("button", { name: "Print or save as PDF" })).toHaveLength(2);
@@ -803,7 +817,13 @@ it("renders lists after a sentence, tables and code, and never links or HTML", (
   );
   expect(container.querySelector("p")?.textContent).toBe("Here is where it went:");
   expect(container.querySelectorAll("ul li")).toHaveLength(2);
-  expect(container.querySelector("td:last-child")?.getAttribute("style")).toContain("right");
+  // Columns are aligned by the side a row starts and ends on, so a table reads right in Arabic too.
+  expect(container.querySelector("td:first-child")?.getAttribute("style")).toContain("start");
+  expect(container.querySelector("td:last-child")?.getAttribute("style")).toContain("end");
+  // Each block takes its direction from its own text.
+  expect(container.querySelector("p")?.getAttribute("dir")).toBe("auto");
+  expect(container.querySelector("ul")?.getAttribute("dir")).toBe("auto");
+  expect(container.querySelector("table")?.getAttribute("dir")).toBe("auto");
   expect(container.querySelector("a")).toBeNull();
   expect(container.querySelector(".md-link")?.textContent).toBe("the report");
   expect(container.querySelector("code")?.textContent).toBe("code");
@@ -870,4 +890,509 @@ it("offers fixes for an import to apply there", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Apply to the import" }));
   await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1));
   expect(screen.getByText("Each applies only to a line that hasn't changed")).toBeTruthy();
+});
+
+const hello = { kind: "user" as const, text: "Hi there", attachments: [] };
+/** Opens the panel on a conversation it remembers, with these entries. */
+function remembered(view: Partial<Awaited<ReturnType<typeof assistant.thread>>> = {}) {
+  localStorage.setItem("lb:assistant:thread:b1", "t_9");
+  vi.mocked(assistant.thread).mockResolvedValue({ id: "t_9", title: "Hi", running: false, entries: [hello], ...view });
+}
+/** Sends a message from the box and waits for the conversation it went to. */
+async function say(text: string) {
+  const box = await messageBox();
+  fireEvent.change(box, { target: { value: text } });
+  fireEvent.keyDown(box, { key: "Enter" });
+  await waitFor(() => expect(assistant.send).toHaveBeenCalled());
+}
+const count = (n: number) => n.toLocaleString();
+
+it("says what the assistant is doing while no text arrives, and stops saying it when something does", async () => {
+  vi.mocked(assistant.status).mockResolvedValue(ready);
+  vi.mocked(assistant.send).mockResolvedValue("t_1");
+  vi.mocked(assistant.thread).mockResolvedValue({ id: "t_1", title: "Dining", entries: [hello], running: true });
+  panel();
+  await say("Hi there");
+  await waitFor(() => expect(assistant.thread).toHaveBeenCalledWith("t_1"));
+  act(() => emit({ threadId: "t_1", type: "started" }));
+  expect(await screen.findByText("Thinking")).toBeTruthy();
+  act(() => emit({ threadId: "t_1", type: "activity", text: "Looking at the month" }));
+  expect(screen.getByText("Looking at the month…")).toBeTruthy();
+  expect(screen.queryByText("Thinking")).toBeNull();
+  // The lookup's own line takes its place once it's done.
+  act(() => emit({ threadId: "t_1", type: "step", text: "Checked October 2026", failed: false }));
+  expect(screen.queryByText("Looking at the month…")).toBeNull();
+  expect(screen.getByText("Thinking")).toBeTruthy();
+  // Text arriving is the reply itself: nothing else is said to be going on.
+  act(() => {
+    emit({ threadId: "t_1", type: "activity", text: "Looking up transactions" });
+    emit({ threadId: "t_1", type: "delta", text: "Dining out" });
+  });
+  expect(screen.queryByText("Looking up transactions…")).toBeNull();
+  expect(await screen.findByText("Dining out")).toBeTruthy();
+  // Another conversation's doings aren't this one's.
+  act(() => emit({ threadId: "t_other", type: "activity", text: "Reading the file" }));
+  expect(screen.queryByText("Reading the file…")).toBeNull();
+});
+
+it("says what goes with a message and shows it on the message once sent", async () => {
+  vi.mocked(assistant.status).mockResolvedValue(ready);
+  vi.mocked(assistant.send).mockResolvedValue("t_1");
+  const budget = demoBudget();
+  const account = budget.accounts[0];
+  vi.mocked(assistant.thread).mockResolvedValue({
+    id: "t_1",
+    title: "Odd",
+    running: true,
+    entries: [
+      { kind: "user", text: "Anything odd here?", attachments: [], with: { page: "transactions", month: "2026-10", account: account.name, transactions: 2, import: false } },
+    ],
+  });
+  panel({ budget, screen: { page: "transactions", month: "2026-10", accountId: account.id }, request: { key: 1, selected: ["t1", "t2"] } });
+  const line = await screen.findByRole("group", { name: "With this message" });
+  // The page and the account in view; a month only where the page shows one.
+  expect(line.textContent).toContain(`Transactions · ${account.name}`);
+  expect(line.textContent).not.toContain("October");
+  expect(within(line).getByText("2 selected transactions")).toBeTruthy();
+  await say("Anything odd here?");
+  expect(vi.mocked(assistant.send).mock.calls[0][4]).toMatchObject({ page: "transactions", month: "2026-10", accountId: account.id, selected: ["t1", "t2"] });
+  // The same line, small, on the bubble; and the selection has gone with it.
+  const bubble = (await screen.findByText("Anything odd here?")).closest(".assistant-user") as HTMLElement;
+  await waitFor(() => expect(bubble.querySelector(".assistant-sent-with")?.textContent).toBe(`Transactions · ${account.name} · 2 selected transactions`));
+  expect(within(screen.getByRole("group", { name: "With this message" })).queryByText("2 selected transactions")).toBeNull();
+});
+
+it("names the category selected on the Budget page, and nothing for a message sent before this was kept", async () => {
+  vi.mocked(assistant.status).mockResolvedValue(ready);
+  remembered();
+  const budget = demoBudget();
+  const category = budget.categories[0];
+  panel({ budget, screen: { page: "budget", month: "2026-10", categoryId: category.id } });
+  expect((await screen.findByRole("group", { name: "With this message" })).textContent).toContain(`Budget · October 2026 · ${category.name}`);
+  expect((await screen.findByText("Hi there")).closest(".assistant-user")?.querySelector(".assistant-sent-with")).toBeNull();
+  expect(place("budget", "2026-10")).toEqual(["Budget", "October 2026"]);
+  expect(place("reports", "2026-10")).toEqual(["Reports"]);
+  expect(place("", "2026-10", "Checking")).toEqual([]);
+});
+
+it("doesn't send a part of what goes with a message once the user takes it off, for that message only", async () => {
+  vi.mocked(assistant.status).mockResolvedValue(ready);
+  vi.mocked(assistant.send).mockResolvedValue("t_1");
+  vi.mocked(assistant.thread).mockResolvedValue({ id: "t_1", title: "Hi", entries: [hello], running: false });
+  const file = { account: "checking", content: "date,amount", session: {} as never };
+  panel({ screen: { page: "import", month: "2026-10", import: file } });
+  const line = await screen.findByRole("group", { name: "With this message" });
+  expect(line.textContent).toContain("Import a bank file");
+  expect(within(line).getByText("The file being imported")).toBeTruthy();
+  // Each part has its own ×.
+  fireEvent.click(within(line).getByRole("button", { name: "Remove The file being imported" }));
+  expect(screen.queryByText("The file being imported")).toBeNull();
+  fireEvent.click(within(line).getByRole("button", { name: "Remove Import a bank file" }));
+  expect(screen.queryByRole("group", { name: "With this message" })).toBeNull();
+  await say("Hi there");
+  const sent = vi.mocked(assistant.send).mock.calls[0][4];
+  // Where the user is, taken off: no page, and no month, account or category with it.
+  expect(sent.page).toBe("");
+  expect(sent).not.toHaveProperty("month");
+  expect(sent).not.toHaveProperty("accountId");
+  expect(sent.import).toBeUndefined();
+  // The next message starts with all of it again.
+  await waitFor(() => expect(screen.getByRole("group", { name: "With this message" }).textContent).toContain("Import a bank file"));
+  expect(screen.getByText("The file being imported")).toBeTruthy();
+});
+
+it("attaches the first 200 of a longer selection, and says how many were selected", async () => {
+  vi.mocked(assistant.status).mockResolvedValue(ready);
+  vi.mocked(assistant.send).mockResolvedValue("t_1");
+  vi.mocked(assistant.thread).mockResolvedValue({ id: "t_1", title: "Hi", entries: [], running: true });
+  const ids = Array.from({ length: 1234 }, (_, i) => `t${i}`);
+  panel({ request: { key: 1, selected: ids } });
+  // The chip says how many are attached, and the sentence how many there were.
+  expect(await screen.findByText("200 selected transactions")).toBeTruthy();
+  expect(screen.getByText(`Only the first 200 of ${count(1234)} selected transactions are attached.`)).toBeTruthy();
+  await say("Categorize these");
+  expect(vi.mocked(assistant.send).mock.calls[0][4].selected).toEqual(ids.slice(0, 200));
+  await waitFor(() => expect(screen.queryByText(/Only the first 200/)).toBeNull());
+});
+
+it("offers the rest of a reply that was cut short, where the conversation ends", async () => {
+  vi.mocked(assistant.status).mockResolvedValue(ready);
+  vi.mocked(assistant.retry).mockResolvedValue(undefined);
+  remembered({
+    entries: [hello, { kind: "assistant", text: "The first part", index: 1 }, { kind: "cut" }, { kind: "assistant", text: "The second part", index: 3 }, { kind: "cut" }],
+  });
+  panel();
+  await screen.findByText("The second part");
+  expect(screen.getAllByText("The reply was cut short.")).toHaveLength(2);
+  // Only the one the conversation ends on can be carried on.
+  const go = screen.getAllByRole("button", { name: "Continue" });
+  expect(go).toHaveLength(1);
+  fireEvent.click(go[0]);
+  await waitFor(() => expect(assistant.retry).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(assistant.retry).mock.calls[0][1]).toBe("t_9");
+});
+
+it("marks a reply cut short as it arrives", async () => {
+  vi.mocked(assistant.status).mockResolvedValue(ready);
+  remembered({ running: true });
+  panel();
+  await screen.findByText("Hi there");
+  act(() => {
+    emit({ threadId: "t_9", type: "message", text: "As far as it got" });
+    emit({ threadId: "t_9", type: "cut" });
+  });
+  expect(screen.getByText("The reply was cut short.")).toBeTruthy();
+  // Still arriving as far as the panel knows: nothing to press yet.
+  expect(screen.queryByRole("button", { name: "Continue" })).toBeNull();
+});
+
+it("offers to carry a long conversation on in a new one, and opens it", async () => {
+  vi.mocked(assistant.status).mockResolvedValue(ready);
+  localStorage.setItem("lb:assistant:thread:b1", "t_9");
+  vi.mocked(assistant.thread).mockImplementation(async (id) =>
+    id === "t_9"
+      ? { id, title: "October so far", running: false, long: true, entries: [hello, { kind: "assistant", text: "Hello", index: 1 }] }
+      : { id, title: "October so far", running: false, long: false, entries: [], continuedFrom: "October so far" },
+  );
+  vi.mocked(assistant.continue).mockResolvedValue("t_10");
+  panel();
+  expect(await screen.findByText("This conversation is getting long, so replies are slower and use more of your plan or key.")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Continue in a new conversation" }));
+  await waitFor(() => expect(assistant.continue).toHaveBeenCalledWith("t_9"));
+  // The new one is open, remembered, and says what it carries on.
+  expect(await screen.findByText("Continued from “October so far”")).toBeTruthy();
+  expect(assistant.thread).toHaveBeenLastCalledWith("t_10");
+  expect(localStorage.getItem("lb:assistant:thread:b1")).toBe("t_10");
+  expect(screen.queryByText(/getting long/)).toBeNull();
+  expect(screen.queryByText("Hi there")).toBeNull();
+});
+
+it("offers the same under an error that says the conversation no longer fits", async () => {
+  vi.mocked(assistant.status).mockResolvedValue(ready);
+  remembered({ entries: [hello, { kind: "error", text: "This conversation is too long for the model.", code: "full", action: "newConversation" }] });
+  vi.mocked(assistant.continue).mockResolvedValue("t_10");
+  panel();
+  const problem = (await screen.findByText("This conversation is too long for the model.")).closest(".assistant-problem") as HTMLElement;
+  fireEvent.click(within(problem).getByRole("button", { name: "Continue in a new conversation" }));
+  await waitFor(() => expect(assistant.continue).toHaveBeenCalledWith("t_9"));
+  expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+});
+
+it("shows the open conversation's title, and renames it", async () => {
+  vi.mocked(assistant.status).mockResolvedValue(ready);
+  remembered({ title: "Groceries since June" });
+  const onClose = vi.fn();
+  panel({ onClose });
+  const title = await screen.findByText("Groceries since June");
+  // Cut short where the header runs out, with the whole of it a hover away.
+  expect(title.getAttribute("title")).toBe("Groceries since June");
+  const pencil = screen.getByRole("button", { name: "Rename conversation" });
+  fireEvent.click(pencil);
+  let field = screen.getByLabelText("Conversation name") as HTMLInputElement;
+  expect(field.value).toBe("Groceries since June");
+  expect(document.activeElement).toBe(field);
+  // Esc leaves the title as it was, and closes only the field.
+  fireEvent.change(field, { target: { value: "Something else" } });
+  fireEvent.keyDown(field, { key: "Escape" });
+  expect(screen.queryByLabelText("Conversation name")).toBeNull();
+  expect(assistant.renameThread).not.toHaveBeenCalled();
+  expect(onClose).not.toHaveBeenCalled();
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Rename conversation" }));
+  // Enter keeps what was typed.
+  fireEvent.click(screen.getByRole("button", { name: "Rename conversation" }));
+  field = screen.getByLabelText("Conversation name") as HTMLInputElement;
+  fireEvent.change(field, { target: { value: "  Food this summer " } });
+  fireEvent.submit(field.closest("form")!);
+  await waitFor(() => expect(assistant.renameThread).toHaveBeenCalledWith("t_9", "Food this summer"));
+  expect(await screen.findByText("Food this summer")).toBeTruthy();
+  expect(screen.queryByLabelText("Conversation name")).toBeNull();
+});
+
+it("lists every conversation with its date, finds one by its title, and opens it", async () => {
+  vi.mocked(assistant.status).mockResolvedValue(ready);
+  const all = Array.from({ length: 20 }, (_, i) => ({ id: `t_${i}`, title: i === 9 ? "Rent" : i === 17 ? "Groceries since June" : `Conversation ${i}`, updated: "2026-10-16T10:00:00Z" }));
+  vi.mocked(assistant.threads).mockResolvedValue(all);
+  remembered({ title: "Rent", usage: { input: 12345, output: 678, cached: 10000 } });
+  panel();
+  await screen.findByText("Hi there");
+  fireEvent.click(screen.getByRole("button", { name: "Conversations" }));
+  const search = await screen.findByLabelText("Search conversations");
+  // All of them, not the newest few; the open one is marked and says what it has used.
+  await waitFor(() => expect(document.querySelectorAll(".assistant-history-item")).toHaveLength(20));
+  const here = document.querySelector('.assistant-history-item[aria-current="true"]') as HTMLElement;
+  expect(here.textContent).toContain("Rent");
+  expect(here.textContent).toContain("2026");
+  expect(here.textContent).toContain(`Tokens: ${count(12345)} sent (${count(10000)} from cache), ${count(678)} received`);
+  fireEvent.change(search, { target: { value: "zzz" } });
+  expect(screen.getByText("No conversation matches.")).toBeTruthy();
+  fireEvent.change(search, { target: { value: " grocer" } });
+  expect(document.querySelectorAll(".assistant-history-item")).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: /Groceries since June/ }));
+  await waitFor(() => expect(assistant.thread).toHaveBeenLastCalledWith("t_17"));
+  expect(localStorage.getItem("lb:assistant:thread:b1")).toBe("t_17");
+  expect(screen.queryByLabelText("Search conversations")).toBeNull();
+});
+
+it("says when the conversations can't be listed, instead of that there are none", async () => {
+  vi.mocked(assistant.status).mockResolvedValue(ready);
+  vi.mocked(assistant.threads).mockRejectedValueOnce("The folder can't be read.").mockResolvedValue([]);
+  panel();
+  await messageBox();
+  fireEvent.click(screen.getByRole("button", { name: "Conversations" }));
+  expect(await screen.findByText("The conversations couldn't be loaded.")).toBeTruthy();
+  expect(screen.queryByText("No earlier conversations")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+  expect(await screen.findByText("No earlier conversations")).toBeTruthy();
+});
+
+it("asks before deleting a conversation", async () => {
+  vi.mocked(assistant.status).mockResolvedValue(ready);
+  vi.mocked(assistant.threads).mockResolvedValue([{ id: "t_9", title: "Rent", updated: "2026-10-16T10:00:00Z" }]);
+  remembered({ title: "Rent" });
+  panel();
+  await screen.findByText("Hi there");
+  const ask = async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Conversations" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete this conversation" }));
+    return screen.getByRole("dialog", { name: "Delete this conversation?" });
+  };
+  let dialog = await ask();
+  expect(dialog.textContent).toContain("“Rent”");
+  expect(dialog.textContent).toContain("can't be undone");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByRole("dialog", { name: "Delete this conversation?" })).toBeNull();
+  expect(assistant.deleteThread).not.toHaveBeenCalled();
+  expect(screen.getByText("Hi there")).toBeTruthy();
+  dialog = await ask();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+  expect(assistant.deleteThread).toHaveBeenCalledWith("t_9");
+  expect(screen.queryByText("Hi there")).toBeNull();
+  expect(localStorage.getItem("lb:assistant:thread:b1")).toBeNull();
+});
+
+it("keeps the user's thumb on a reply, and takes it off when it's pressed again", async () => {
+  vi.mocked(assistant.status).mockResolvedValue(ready);
+  remembered({ entries: [hello, { kind: "assistant", text: "You spent 4,070.00.", index: 3, tools: ["get_report"] }] });
+  panel();
+  const thumb = (name: string) => screen.getByRole("button", { name });
+  expect((await screen.findByRole("button", { name: "Good reply" })).getAttribute("aria-pressed")).toBe("false");
+  fireEvent.click(thumb("Good reply"));
+  await waitFor(() => expect(thumb("Good reply").getAttribute("aria-pressed")).toBe("true"));
+  expect(assistant.rate).toHaveBeenLastCalledWith("t_9", 3, true);
+  fireEvent.click(thumb("Good reply"));
+  await waitFor(() => expect(thumb("Good reply").getAttribute("aria-pressed")).toBe("false"));
+  expect(assistant.rate).toHaveBeenLastCalledWith("t_9", 3, null);
+  fireEvent.click(thumb("Bad reply"));
+  await waitFor(() => expect(thumb("Bad reply").getAttribute("aria-pressed")).toBe("true"));
+  expect(assistant.rate).toHaveBeenLastCalledWith("t_9", 3, false);
+  expect(thumb("Good reply").getAttribute("aria-pressed")).toBe("false");
+});
+
+it("starts a report with the details of where the reply came from, for the user to keep or clear", async () => {
+  vi.mocked(assistant.status).mockResolvedValue({ ...ready, provider: "anthropic", model: "claude-sonnet" });
+  vi.mocked(assistant.reportReply).mockResolvedValue("rep_1");
+  remembered({ entries: [hello, { kind: "assistant", text: "You spent 4,070.00.", index: 3, tools: ["get_month", "get_report"] }] });
+  panel();
+  fireEvent.click(await screen.findByRole("button", { name: "Report a problem" }));
+  const details = screen.getByLabelText("Details to include") as HTMLTextAreaElement;
+  // No version here: there's no native side to ask in a test.
+  expect(details.value).toBe("App: UrBudget desktop · Service: Anthropic · Model: claude-sonnet · Tools: get_month, get_report · Language: en");
+  fireEvent.change(screen.getByLabelText("What's wrong? (optional)"), { target: { value: "The total is wrong." } });
+  fireEvent.click(screen.getByRole("button", { name: "Send report" }));
+  await waitFor(() => expect(assistant.reportReply).toHaveBeenCalledWith("You spent 4,070.00.", `The total is wrong.\n\n${details.value}`));
+});
+
+it("waits quietly for a remembered conversation, offering nothing that would send into it", async () => {
+  vi.mocked(assistant.status).mockResolvedValue(ready);
+  localStorage.setItem("lb:assistant:thread:b1", "t_9");
+  let arrive: (view: Awaited<ReturnType<typeof assistant.thread>>) => void = () => {};
+  vi.mocked(assistant.thread).mockReturnValue(new Promise((resolve) => (arrive = resolve)));
+  panel();
+  await messageBox();
+  expect(screen.getByText("Loading…")).toBeTruthy();
+  expect(screen.queryByText("What would you like to do?")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Cover the overspent category" })).toBeNull();
+  await act(async () => arrive({ id: "t_9", title: "Hi", running: false, entries: [hello] }));
+  expect(await screen.findByText("Hi there")).toBeTruthy();
+  expect(screen.queryByText("Loading…")).toBeNull();
+});
+
+it("says when a conversation can't be loaded, and keeps it to try again", async () => {
+  vi.mocked(assistant.status).mockResolvedValue(ready);
+  localStorage.setItem("lb:assistant:thread:b1", "t_9");
+  vi.mocked(assistant.thread).mockRejectedValueOnce("The file can't be read.").mockResolvedValue({ id: "t_9", title: "Hi", running: false, entries: [hello] });
+  panel();
+  expect(await screen.findByText("This conversation couldn't be loaded.")).toBeTruthy();
+  // Not forgotten, and nothing offered that would start another in its place unasked.
+  expect(localStorage.getItem("lb:assistant:thread:b1")).toBe("t_9");
+  expect(screen.queryByText("What would you like to do?")).toBeNull();
+  expect(screen.getAllByRole("button", { name: "New conversation" })).toHaveLength(2);
+  fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+  expect(await screen.findByText("Hi there")).toBeTruthy();
+  expect(screen.queryByText("This conversation couldn't be loaded.")).toBeNull();
+});
+
+it("says when the assistant can't be loaded, and tries again", async () => {
+  vi.mocked(assistant.status).mockRejectedValueOnce("The settings can't be read.").mockResolvedValue(ready);
+  panel();
+  expect(screen.getByText("Checking the assistant…")).toBeTruthy();
+  expect(await screen.findByText("The assistant couldn't be loaded.")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+  expect(await messageBox()).toBeTruthy();
+  expect(screen.queryByText("The assistant couldn't be loaded.")).toBeNull();
+});
+
+it("offers the one thing that helps over the field of a conversation that can't go on", async () => {
+  vi.mocked(assistant.status).mockResolvedValue({ ...ready, ready: false, account: null });
+  vi.mocked(assistant.signIn).mockResolvedValue(ready);
+  remembered();
+  const handlers = panel();
+  // The conversation is still there to read, not replaced by the sign-in screen.
+  expect(await screen.findByText("Hi there")).toBeTruthy();
+  const banner = screen.getByText("Sign in to use the assistant").closest(".assistant-banner") as HTMLElement;
+  expect(screen.getByRole("button", { name: "Send" })).toHaveProperty("disabled", true);
+  fireEvent.click(within(banner).getByRole("button", { name: "Continue with ChatGPT" }));
+  await waitFor(() => expect(screen.queryByText("Sign in to use the assistant")).toBeNull());
+  expect(assistant.signIn).toHaveBeenCalledTimes(1);
+  // Signing in is all it does: nothing is asked again by itself.
+  expect(assistant.retry).not.toHaveBeenCalled();
+  // With a key gone, it's the assistant's settings.
+  act(() => tell({ ...ready, ready: false, provider: "openai", account: null }));
+  fireEvent.click(within(screen.getByText(/your own OpenAI API key/).closest(".assistant-banner") as HTMLElement).getByRole("button", { name: "Open settings" }));
+  expect(handlers.onOpenSettings).toHaveBeenCalledTimes(1);
+});
+
+it("starts a new conversation for something asked from elsewhere, unless a reply is still arriving", async () => {
+  vi.mocked(assistant.status).mockResolvedValue(ready);
+  remembered();
+  const view = render(<Hosted />);
+  await screen.findByText("Hi there");
+  view.rerender(<Hosted ask={{ key: 5, text: "Help me import this statement." }} />);
+  const box = await messageBox();
+  await waitFor(() => expect(box.value).toBe("Help me import this statement."));
+  // Its own subject: the conversation that was open is left as it was.
+  expect(screen.queryByText("Hi there")).toBeNull();
+  expect(localStorage.getItem("lb:assistant:thread:b1")).toBeNull();
+  expect(assistant.send).not.toHaveBeenCalled();
+  cleanup();
+  forgetComposers();
+  // While a reply is arriving, it waits in the field of the conversation it arrives in.
+  remembered({ running: true });
+  const busy = render(<Hosted />);
+  await screen.findByText("Hi there");
+  busy.rerender(<Hosted ask={{ key: 6, text: "Is rent paid?" }} />);
+  await waitFor(() => expect((screen.getByLabelText("Message the assistant") as HTMLTextAreaElement).value).toBe("Is rent paid?"));
+  expect(screen.getByText("Hi there")).toBeTruthy();
+  expect(localStorage.getItem("lb:assistant:thread:b1")).toBe("t_9");
+});
+
+it("can start a new conversation while a reply is arriving in another, as it can open one", async () => {
+  vi.mocked(assistant.status).mockResolvedValue(ready);
+  remembered({ running: true });
+  panel();
+  await screen.findByText("Hi there");
+  expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "New conversation" }));
+  expect(screen.queryByText("Hi there")).toBeNull();
+  expect(screen.getByText("What would you like to do?")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
+  // What the reply left behind goes on saying isn't shown here.
+  act(() => emit({ threadId: "t_9", type: "delta", text: "elsewhere" }));
+  expect(screen.queryByText("elsewhere")).toBeNull();
+});
+
+it("closes on Esc, except while a reply is arriving", async () => {
+  vi.mocked(assistant.status).mockResolvedValue(ready);
+  remembered({ running: true });
+  const onClose = vi.fn();
+  panel({ onClose });
+  await screen.findByText("Hi there");
+  const box = await messageBox();
+  // Stopping a reply is a button, not a key pressed in passing.
+  fireEvent.keyDown(box, { key: "Escape" });
+  expect(onClose).not.toHaveBeenCalled();
+  vi.mocked(assistant.thread).mockResolvedValue({ id: "t_9", title: "Hi", running: false, entries: [hello] });
+  act(() => emit({ threadId: "t_9", type: "done" }));
+  await screen.findByRole("button", { name: "Send" });
+  fireEvent.keyDown(box, { key: "Escape" });
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+it("answers a notice with Esc before closing the panel", async () => {
+  let now: Status = { ...ready, planNoticeSeen: false };
+  vi.mocked(assistant.status).mockImplementation(async () => now);
+  vi.mocked(assistant.settings).mockImplementation(async (change) => (now = { ...now, planNoticeSeen: change.planNoticeSeen ?? now.planNoticeSeen }));
+  const onClose = vi.fn();
+  panel({ onClose });
+  const notice = await screen.findByRole("dialog", { name: "You're using your ChatGPT plan" });
+  fireEvent.keyDown(within(notice).getByRole("button", { name: "Got it" }), { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(assistant.settings).toHaveBeenCalledWith({ planNoticeSeen: true });
+  expect(onClose).not.toHaveBeenCalled();
+  fireEvent.keyDown(await messageBox(), { key: "Escape" });
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+it("takes the keyboard to the message field when the user opens it, and not otherwise", async () => {
+  vi.mocked(assistant.status).mockResolvedValue(ready);
+  // Open from last time, as the app starts: the keyboard stays where it is.
+  panel();
+  const untouched = await messageBox();
+  expect(document.activeElement).not.toBe(untouched);
+  cleanup();
+  panel({ autoFocus: true });
+  const box = await messageBox();
+  await waitFor(() => expect(document.activeElement).toBe(box));
+});
+
+it("reads aloud that a reply finished or a card arrived, never the text as it streams", async () => {
+  vi.mocked(assistant.status).mockResolvedValue(ready);
+  remembered({ running: true });
+  panel();
+  await screen.findByText("Hi there");
+  const said = () => document.querySelector('.assistant [aria-live="polite"]')?.textContent;
+  // The conversation itself isn't a live region, and the row that says what's going on isn't one either.
+  expect(document.querySelector(".assistant-feed")?.hasAttribute("aria-live")).toBe(false);
+  expect(document.querySelectorAll(".assistant [aria-live], .assistant [role=status]")).toHaveLength(1);
+  act(() => {
+    emit({ threadId: "t_9", type: "started" });
+    emit({ threadId: "t_9", type: "delta", text: "Dining out is over." });
+  });
+  expect(said()).toBe("");
+  act(() => {
+    emit({ threadId: "t_9", type: "message", text: "Dining out is over." });
+    emit({ threadId: "t_9", type: "proposal", proposal });
+  });
+  expect(said()).toBe("A proposal is ready to review.");
+  act(() => emit({ threadId: "t_9", type: "done" }));
+  expect(said()).toBe("The assistant replied.");
+  // The next reply is said again: what was said is cleared as it starts.
+  act(() => emit({ threadId: "t_9", type: "started" }));
+  expect(said()).toBe("");
+});
+
+it("stops following the end on any move up, and follows again once back at the end", () => {
+  const at = (top: number) => ({ top, height: 1000, view: 400 });
+  // At the end: followed, however it got there.
+  expect(following({ following: false, top: 300 }, at(600))).toBe(true);
+  expect(following({ following: false, top: 300 }, at(599))).toBe(true);
+  // Any move up stops it, even a small one.
+  expect(following({ following: true, top: 600 }, at(590))).toBe(false);
+  // A move down that stops short of the end changes nothing.
+  expect(following({ following: false, top: 300 }, at(450))).toBe(false);
+  expect(following({ following: true, top: 300 }, at(450))).toBe(true);
+  // New text made it taller without the user moving: still followed.
+  expect(following({ following: true, top: 600 }, { top: 600, height: 1200, view: 400 })).toBe(true);
+  // What's in it got shorter (rows folded away) and the box was pushed up to its new end: followed.
+  expect(following({ following: true, top: 600 }, { top: 400, height: 800, view: 400 })).toBe(true);
+});
+
+it("keeps room for the page beside the panel in a narrow window", () => {
+  // Wide enough: as wide as it likes, up to its own limit.
+  expect(widest(1600, 248)).toBe(640);
+  // The page keeps 420 between the sidebar and the panel.
+  expect(widest(1100, 248)).toBe(432);
+  expect(widest(1100, 52)).toBe(628);
+  // Never narrower than the panel can be.
+  expect(widest(700, 248)).toBe(320);
 });
