@@ -621,6 +621,29 @@ buttons under it; the time is the time alone today and has no year this year. A 
 card's hint shares its line with Discard, and a stat that is words reads from its own start.
 The phones already put a finished card's buttons under its line.
 
+**A round of polish** (the same day, the desktop in the test window and Android on an
+emulator):
+
+- Desktop: "Jump to latest" took room of its own, so an empty conversation could scroll and
+  the button never left once shown; it takes none now. A budget card's rows broke their names
+  in the middle of a word, so what a row was and will be moved under its name, and the amounts
+  keep one column. The buttons under earlier replies wait until a reply is pointed at. An
+  opened card shows its whole title, a row's name and a conversation's title in the list take a
+  second line, and "Asked:" stands apart from its question so an English one in an Arabic
+  window is cut at its end. A schedule card's row for a schedule already there says which
+  account and how often.
+- Android, on the UrBudgetSmsQa emulator with this branch's engine built for it and the test
+  window's budget and conversations copied in (the core lays its files out the same way on
+  both): a finished card's title has its line, with state and buttons under it; the
+  conversation's title has the panel's width under the header; opening a card at the end of
+  the list no longer scrolls its title away; waiting rows line up and amounts keep one column;
+  details are quieter and the total sits under a hairline; cards have an edge in the dark
+  theme; the message field has a fill; card text starts at the card's start in Arabic.
+  `ProposalCardUiTest` passes on the emulator (9 tests).
+- Not looked at on Android: a running reply, an error entry, the sending notice, attachments,
+  the row editor, bank-text and import cards, a wide window. iPhone wasn't touched: its cards
+  already stack, and nothing of it can be seen here.
+
 **Seen in the desktop app** (10 November 2026, a debug build of this branch on a scratch copy
 of the QA budget, driven through the QA harness). On the first pass no model answered: the QA
 folder's ChatGPT sign-in, made on 24 October, had ended, and the refresh was refused. So what

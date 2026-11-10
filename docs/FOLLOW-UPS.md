@@ -81,11 +81,13 @@ Added 10 November 2026. The review's plan, and what was built from it on
 - iPhone was never compiled; the plan's "As built" lists where it's least sure to. Done looks
   like a build on a Mac or in CI, its unit tests passing, and a pass through a conversation on
   a phone.
-- Android compiles and its JVM tests pass, but its Rust library wasn't rebuilt (the checks ran
-  with `-x buildRustEngine`) and the instrumented tests only compile. Done looks like a build
-  with the engine, `ProposalCardUiTest` passing on an emulator, and a pass on the Fold: a card
-  applied and undone, Show in the budget both ways, the notice before a first message, and
-  Back with the assistant over an import.
+- Android was built with this branch's engine and seen on an emulator, with a budget and
+  conversations copied in from the desktop's test window; `ProposalCardUiTest` passes there.
+  It has no sign-in on the emulator, so nothing was sent from it. Not seen: a running reply, an
+  error entry, the notice before a first message, attachments, the row editor, bank-text and
+  import cards, and any of it on the Fold or a wide window. Done looks like a signed-in pass on
+  the Fold: a message sent, a card applied and undone, Show in the budget both ways, and Back
+  with the assistant over an import.
 - The eval set in the plan isn't built. `llm::script` answers the loop in tests; the forty
   tasks, and running each provider's default model on them twice, are left.
 
