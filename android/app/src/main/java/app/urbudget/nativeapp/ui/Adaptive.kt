@@ -38,7 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.window.layout.FoldingFeature
 import androidx.window.layout.WindowInfoTracker
-import androidx.window.layout.WindowLayoutInfo
+import kotlinx.coroutines.flow.map
 
 /*
  * Large screens and foldables: an unfolded Fold, a dual-screen phone, a tablet, a phone on its side.
@@ -128,11 +128,13 @@ private tailrec fun Context.activity(): Activity? = when (this) {
 internal fun ProvideFold(content: @Composable () -> Unit) {
     val activity = LocalContext.current.activity()
     if (activity == null) return content()
-    val flow = remember(activity) { WindowInfoTracker.getOrCreate(activity).windowLayoutInfo(activity) }
-    val layout by flow.collectAsStateWithLifecycle(WindowLayoutInfo(emptyList()))
+    // The window's features, with none to begin with. (The library's own WindowLayoutInfo can't be
+    // made here to begin with: its constructor is for the library alone, and lint says so.)
+    val flow = remember(activity) { WindowInfoTracker.getOrCreate(activity).windowLayoutInfo(activity).map { it.displayFeatures } }
+    val features by flow.collectAsStateWithLifecycle(emptyList())
     val density = LocalDensity.current
-    val fold = remember(layout, density) {
-        val feature = layout.displayFeatures.filterIsInstance<FoldingFeature>().firstOrNull()
+    val fold = remember(features, density) {
+        val feature = features.filterIsInstance<FoldingFeature>().firstOrNull()
         if (feature == null || !feature.isSeparating) FoldState()
         else with(density) {
             val b = feature.bounds
