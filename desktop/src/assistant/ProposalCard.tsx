@@ -283,11 +283,22 @@ function Message({ message }: { message: CardMessage }) {
   );
 }
 
-/** When a card was applied, as the app writes a date and time; nothing when it can't be read. */
-function appliedTime(at: string) {
+/**
+ * When a card was applied, as the app writes a date and time, and no longer than it needs to be
+ * beside the card's buttons: the time alone today, no year this year. Nothing when it can't be read.
+ */
+export function appliedTime(at: string, now = new Date()) {
   const date = new Date(at);
-  return Number.isNaN(date.getTime()) ? "" : localDateTime(date, { dateStyle: "medium", timeStyle: "short" });
+  if (Number.isNaN(date.getTime())) return "";
+  if (date.toDateString() === now.toDateString()) return localDateTime(date, { timeStyle: "short" });
+  if (date.getFullYear() === now.getFullYear()) return localDateTime(date, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  return localDateTime(date, { dateStyle: "medium", timeStyle: "short" });
 }
+/** The same in full, for the line's tooltip. */
+const appliedFull = (at: string) => {
+  const date = new Date(at);
+  return Number.isNaN(date.getTime()) ? undefined : localDateTime(date, { dateStyle: "medium", timeStyle: "short" });
+};
 
 /**
  * A card the assistant made: a change it prepared, a thing it made (a report, a spreadsheet, a
@@ -520,7 +531,8 @@ export const ProposalCard = memo(function ProposalCard({
           {c.stats.map((s) => (
             <div key={s.label}>
               <small>{s.label}</small>
-              <b className="num">{s.text ?? (s.amount !== undefined ? money(s.amount) : "")}</b>
+              {/* Words read from their own start; only an amount is set as a number, at the end. */}
+              {s.text !== undefined ? <b dir="auto" title={s.text}>{s.text}</b> : <b className="num">{s.amount !== undefined ? money(s.amount) : ""}</b>}
             </div>
           ))}
         </div>
@@ -745,22 +757,15 @@ export const ProposalCard = memo(function ProposalCard({
             : p.made
               ? t("Removed")
               : t("Discarded");
+    // The line is the card's title, with all the width there is. What became of it, and what
+    // can still be done with it, sit on a line of their own under it: beside the title they
+    // left it no room in a narrow panel.
     const line = (
       <>
         {p.status === "applied" || asked ? <Check size={14} aria-hidden /> : <Undo2 size={14} aria-hidden />}
-        {asked ? (
-          // An answered question: what was asked is the whole of the line.
-          <span className="proposal-done-title" dir="auto" title={p.title}>
-            {t("Asked: {question}", { question: p.title })}
-          </span>
-        ) : (
-          <>
-            <span className="proposal-state">{state}</span>
-            <span className="proposal-done-title" dir="auto" title={p.title}>
-              {p.title}
-            </span>
-          </>
-        )}
+        <span className="proposal-done-title" dir="auto" title={p.title}>
+          {asked ? t("Asked: {question}", { question: p.title }) : p.title}
+        </span>
       </>
     );
     const details = c.rows.length > 0 || c.stats.length > 0 || !!c.total || !!c.check || !!c.warning || !!c.note;
@@ -768,6 +773,7 @@ export const ProposalCard = memo(function ProposalCard({
     // it again). What changes it or sets it aside waits under its rows.
     const under = ["askChanges", "useOriginal", "discard"];
     const below = buttons(p.actions.filter((a) => under.includes(a)), false).filter(Boolean);
+    const onLine = buttons(p.actions.filter((a) => !under.includes(a)), false).filter(Boolean);
     return (
       <div ref={card} className={`proposal done ${p.status}${p.kind === "delete" ? " destructive" : ""}`} aria-label={t("Proposal: {title}", { title: p.title })}>
         <div className="proposal-done-line">
@@ -780,7 +786,16 @@ export const ProposalCard = memo(function ProposalCard({
           ) : (
             <span className="proposal-fold">{line}</span>
           )}
-          {buttons(p.actions.filter((a) => !under.includes(a)), false)}
+          {(!asked || onLine.length > 0) && (
+            <div className="proposal-done-meta">
+              {!asked && (
+                <span className="proposal-state" title={p.status === "applied" && p.appliedAt ? appliedFull(p.appliedAt) : undefined}>
+                  {state}
+                </span>
+              )}
+              {onLine}
+            </div>
+          )}
         </div>
         {p.message && <Message message={p.message} />}
         {open && details && (

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { demoBudget } from "../demo";
 import { money } from "../format";
 import type { CardRow, Proposal, Revision } from "./api";
-import { ProposalCard, SETTLE, type CardHandlers } from "./ProposalCard";
+import { ProposalCard, SETTLE, appliedTime, type CardHandlers } from "./ProposalCard";
 
 afterEach(() => {
   cleanup();
@@ -518,10 +518,14 @@ it("folds a finished card to one line that opens to its rows, as they were", asy
     card: { ...draft().card, rows: rows.map((r) => (r.key === "t:b" ? { ...r, skipped: true } : r)) },
   });
   const on = show(applied);
-  // When, in the app's own date and time, then what.
-  const when = new Date("2026-10-21T10:00:00Z").toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  // What, and under it when, in the app's own date and time and no longer than it needs to be.
+  const when = appliedTime("2026-10-21T10:00:00Z");
   // (Text is matched with its spaces made plain ones: a time may be written with a narrow one.)
   expect(screen.getByText(`Applied ${when}`.replace(/\s+/g, " "))).toBeTruthy();
+  // The state and the card's buttons sit under the title, not beside it.
+  expect(document.querySelector(".proposal-fold .proposal-state")).toBeNull();
+  expect(document.querySelector(".proposal-done-meta .proposal-state")).toBeTruthy();
+  expect(document.querySelectorAll(".proposal-done-meta button").length).toBe(2);
   expect(screen.queryByText("Careem · Oct 3")).toBeNull();
   const line = button(/Categorize 2 transactions/);
   expect(line.getAttribute("aria-expanded")).toBe("false");

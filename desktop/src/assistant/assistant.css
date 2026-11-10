@@ -1079,39 +1079,48 @@ button.proposal-more:hover {
   border-top: 1px solid var(--border);
   background: var(--surface-2);
 }
-/* Setting a card aside sits at the far end of the row, away from the main button. */
+/* Setting a card aside sits at the far end, away from the main button. */
 .proposal-actions .proposal-discard {
-  order: 1;
+  order: 2;
   margin-inline-start: auto;
   color: var(--text-2);
 }
-/* Under the buttons, on a line of its own. */
+/*
+ * Under the buttons. It's too wide to sit beside them, so it starts a line, and leaves room at
+ * that line's end for Discard: the two share it, where Discard alone used to take a line of
+ * its own once the buttons wrapped.
+ */
 .proposal-hint {
-  order: 2;
-  flex: 1 0 100%;
+  order: 1;
+  flex: 1 0 calc(100% - 110px);
+  align-self: center;
+  min-width: 0;
   color: var(--muted);
   font-size: 11.5px;
 }
 .proposal.failed {
   border-color: color-mix(in srgb, var(--negative) 40%, var(--border));
 }
-/* A finished card: one line that says what became of it, which opens to its rows as they were. */
+/*
+ * A finished card: its title on a line that opens to its rows as they were, and under it what
+ * became of it with what can still be done. The title has the line to itself, so nothing
+ * crowds it in a narrow panel.
+ */
 .proposal.done {
   box-shadow: none;
   color: var(--text-2);
 }
 .proposal-done-line {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px 8px;
-  align-items: center;
+  flex-direction: column;
+  gap: 4px;
   padding: 7px 12px;
 }
 .proposal-fold {
   display: flex;
-  flex: 1 1 140px;
   gap: 6px;
   align-items: center;
+  width: 100%;
   min-width: 0;
   padding: 1px 0;
   border: 0;
@@ -1121,6 +1130,15 @@ button.proposal-more:hover {
   font: inherit;
   text-align: start;
 }
+/* Under the title, in line with it: the state, then the buttons at the far end. They wrap under the state when they don't fit beside it. */
+.proposal-done-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  align-items: center;
+  min-width: 0;
+  padding-inline-start: 20px;
+}
 button.proposal-fold:hover {
   color: var(--text);
 }
@@ -1129,16 +1147,23 @@ button.proposal-fold:hover {
   color: var(--positive);
 }
 .proposal-state {
-  flex: none;
+  overflow: hidden;
+  min-width: 0;
+  margin-inline-end: auto;
   color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .proposal-done-title {
+  flex: 1 1 auto;
   overflow: hidden;
   min-width: 0;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 .proposal-fold .proposal-chevron {
+  flex: none;
   color: var(--muted);
   transition: transform 0.15s var(--ease);
 }
