@@ -86,8 +86,9 @@ struct MoreView: View {
                         badge: sync.conflicts)
             }
             Button { sheet = .assistant } label: {
+                // A dot while a reply or a proposal that arrived with the assistant closed is unseen.
                 MoreRow(title: String(localized: "Assistant"), detail: String(localized: "Ask about your budget and review its changes"),
-                        symbol: "sparkles", tint: .urBrand)
+                        symbol: "sparkles", tint: .urBrand, dot: AssistantController.shared.unseen)
             }
             .foregroundStyle(Color.primary)
         }
@@ -162,13 +163,15 @@ struct MoreView: View {
     }
 }
 
-/// A row of More: a tinted symbol, the page's name, what it's for, and a count when something needs attention.
+/// A row of More: a tinted symbol, the page's name, what it's for, and a count when something
+/// needs attention, or a dot when something new is waiting there.
 struct MoreRow: View {
     var title: String
     var detail: String
     var symbol: String
     var tint: Color
     var badge = 0
+    var dot = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -186,6 +189,9 @@ struct MoreRow: View {
                 Text("\(badge)").font(.caption.bold()).foregroundStyle(.white)
                     .padding(.horizontal, 7).frame(minHeight: 20)
                     .background(Color.urWarning, in: Capsule())
+            }
+            if dot {
+                Circle().fill(Color.urAccent).frame(width: 9, height: 9).accessibilityLabel("New reply")
             }
         }
         .accessibilityElement(children: .combine)

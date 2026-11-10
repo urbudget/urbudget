@@ -48,8 +48,13 @@ final class AssistantMarkdownTests: XCTestCase {
 
     func testOnlyWebLinksStayLinks() {
         let safe = AssistantMarkdown.inline("[site](https://urbudget.app) and **bold**")
-        XCTAssertEqual(String(safe.characters), "site and bold")
+        // A link's host follows its text, so friendly words can't hide where it goes.
+        XCTAssertEqual(String(safe.characters), "site (urbudget.app) and bold")
         XCTAssertEqual(safe.runs.compactMap(\.link).map(\.absoluteString), ["https://urbudget.app"])
+        XCTAssertEqual(String(AssistantMarkdown.inline("[**your** bank](https://bank.example/login) now").characters), "your bank (bank.example) now")
+        // Text that already names the host isn't given it twice, and a printed report writes the address itself.
+        XCTAssertEqual(String(AssistantMarkdown.inline("[urbudget.app/help](https://urbudget.app/help)").characters), "urbudget.app/help")
+        XCTAssertEqual(String(AssistantMarkdown.inline("[site](https://urbudget.app)", showHosts: false).characters), "site")
         let unsafe = AssistantMarkdown.inline("[call](tel:123) [run](javascript:alert(1))")
         XCTAssertTrue(unsafe.runs.allSatisfy { $0.link == nil })
         XCTAssertEqual(String(AssistantMarkdown.inline("plain text").characters), "plain text")
@@ -122,14 +127,146 @@ final class AssistantPresentationTests: XCTestCase {
         XCTAssertEqual(AssistantExport.fileName(String(repeating: "a", count: 80), extension: "md").count, 63)
         XCTAssertEqual(assistantLimited("ab😀c", utf16: 3), "ab")
         XCTAssertEqual(assistantLimited("ab😀c", utf16: 4), "ab😀")
-        XCTAssertEqual(AssistantScreen.context(month: "2026-10", selected: ["t1"])["platform"], "ios")
+        XCTAssertEqual(AssistantWith(month: "2026-10", selected: ["t1"]).screen["platform"], "ios")
+    }
+
+    func testWhatGoesWithAMessageAndTheScreenItSends() {
+        let budget: JSON = ["accounts": [["id": "a1", "name": "Checking"]], "categories": [["id": "c1", "name": "Groceries"]]]
+        // From a category's sheet on Budget, with transactions selected.
+        var with = AssistantWith(page: "budget", month: "2026-11", category: "c1", selected: ["t1", "t2", "t3"])
+        XCTAssertEqual(with.parts(budget: budget).map(\.kind), [.place, .selection])
+        XCTAssertEqual(with.parts(budget: budget).map(\.text), ["Budget · November 2026 · Groceries", "3 selected transactions"])
+        var screen = with.screen
+        XCTAssertEqual(screen["platform"], "ios")
+        XCTAssertEqual(screen["page"], "budget")
+        XCTAssertEqual(screen["month"], "2026-11")
+        XCTAssertEqual(screen["categoryId"], "c1")
+        XCTAssertFalse(screen.has("accountId"))
+        XCTAssertEqual(screen["selected"], ["t1", "t2", "t3"])
+        XCTAssertTrue(screen["import"].isNull)
+        XCTAssertEqual(screen.text("today"), Dates.today)
+        // The place taken off: no page, and no month, account or category either. The rest still goes.
+        with.placeOff = true
+        XCTAssertEqual(with.parts(budget: budget).map(\.kind), [.selection])
+        screen = with.screen
+        XCTAssertEqual(screen["page"], "")
+        XCTAssertFalse(screen.has("month"))
+        XCTAssertFalse(screen.has("categoryId"))
+        XCTAssertEqual(screen["selected"], ["t1", "t2", "t3"])
+
+        // An account's register names the account; it shows no month, so none goes.
+        let register = AssistantWith(page: "accounts", month: "2026-11", account: "a1")
+        XCTAssertEqual(register.parts(budget: budget).map(\.text), ["Accounts · Checking"])
+        XCTAssertEqual(register.screen["accountId"], "a1")
+        XCTAssertFalse(register.screen.has("month"))
+
+        // Over an import, the file being imported goes until it's taken off.
+        var importing = AssistantWith(page: "import", account: "a1", importing: ["account": "a1", "content": "Date,Amount", "session": [:]])
+        XCTAssertEqual(importing.parts(budget: budget).map(\.text), ["Import bank file · Checking", "The file being imported"])
+        XCTAssertEqual(importing.screen["import"].text("account"), "a1")
+        importing.importOff = true
+        XCTAssertEqual(importing.parts(budget: budget).map(\.kind), [.place])
+        XCTAssertTrue(importing.screen["import"].isNull)
+
+        // Opened from More, it is on the month Budget shows.
+        let more = AssistantWith(month: "2026-11")
+        XCTAssertEqual(more.parts(budget: nil).map(\.text), ["Assistant · November 2026"])
+        XCTAssertEqual(more.screen["page"], "assistant")
+        XCTAssertEqual(more.screen["month"], "2026-11")
+    }
+
+    func testASentMessageShowsWhatWentWithIt() {
+        let with: JSON = ["page": "budget", "month": "2026-11", "category": "Groceries", "transactions": 3, "import": true]
+        XCTAssertEqual(AssistantWith.sent(with), "Budget · November 2026 · Groceries · 3 selected transactions · The file being imported")
+        XCTAssertEqual(AssistantWith.sent(["page": "transactions", "month": "", "transactions": 1, "import": false]), "Transactions · 1 selected transaction")
+        // A page this version doesn't know is left unnamed; the rest still shows.
+        XCTAssertEqual(AssistantWith.sent(["page": "somewhereNew", "month": "", "account": "Checking", "transactions": 0, "import": false]), "Checking")
+        // Nothing went with it, or it's from before this was kept.
+        XCTAssertNil(AssistantWith.sent(["page": "", "month": "", "transactions": 0, "import": false]))
+        XCTAssertNil(AssistantWith.sent(.null))
+    }
+
+    func testASelectionOver200IsCutToItsFirst200() {
+        let few = (0..<200).map { "t\($0)" }
+        XCTAssertEqual(AssistantSelection.capped(few).ids, few)
+        XCTAssertNil(AssistantSelection.capped(few).total)
+        let many = (0..<350).map { "t\($0)" }
+        let capped = AssistantSelection.capped(many)
+        XCTAssertEqual(capped.ids, Array(many.prefix(200)))
+        XCTAssertEqual(capped.total, 350)
+        XCTAssertEqual(AssistantSelection.limit, 200)
+    }
+
+    func testReportDetailsLineAndHowItJoinsTheReason() {
+        let line = AssistantReportDetails.line(version: "1.0.1", provider: "chatgpt", model: "", tools: ["get_month", "get_spending"], language: "en")
+        XCTAssertEqual(line, "App: UrBudget iPhone 1.0.1 · Service: ChatGPT · Model: default · Tools: get_month, get_spending · Language: en")
+        XCTAssertEqual(AssistantReportDetails.line(version: "1.0.1", provider: "anthropic", model: "claude-x", tools: [], language: "ar"),
+                       "App: UrBudget iPhone 1.0.1 · Service: Anthropic · Model: claude-x · Tools: none · Language: ar")
+        XCTAssertTrue(AssistantReportDetails.line(version: "1", provider: "openai", model: "", tools: [], language: "en").contains("Service: OpenAI"))
+        // After a blank line. Details the person cleared send the reason alone.
+        XCTAssertEqual(AssistantReportDetails.reason(" Wrong total ", details: line), "Wrong total\n\n" + line)
+        XCTAssertEqual(AssistantReportDetails.reason("Wrong total", details: "  "), "Wrong total")
+        XCTAssertEqual(AssistantReportDetails.reason("", details: line), line)
+        // The details are cut to what's left of the reason's 1,000 characters; the person's words never are.
+        let long = String(repeating: "a", count: 950)
+        let joined = AssistantReportDetails.reason(long, details: line)
+        XCTAssertEqual(joined.utf16.count, 1000)
+        XCTAssertTrue(joined.hasPrefix(long + "\n\nApp: UrBudget iPhone 1.0.1"))
+        let full = String(repeating: "b", count: 999)
+        XCTAssertEqual(AssistantReportDetails.reason(full, details: line), full)
+        XCTAssertEqual(AssistantReportDetails.reason(String(repeating: "c", count: 1000), details: line).utf16.count, 1000)
+    }
+
+    func testHistoryIsSearchedByTitle() {
+        let threads: [JSON] = [["id": "t1", "title": "Cover overspending"], ["id": "t2", "title": "October report"], ["id": "t3", "title": "Café spending"]]
+        XCTAssertEqual(AssistantHistory.matching(threads, "").count, 3)
+        XCTAssertEqual(AssistantHistory.matching(threads, "  ").count, 3)
+        XCTAssertEqual(AssistantHistory.matching(threads, "SPEND").map { $0.text("id") }, ["t1", "t3"])
+        XCTAssertEqual(AssistantHistory.matching(threads, "cafe").map { $0.text("id") }, ["t3"])
+        XCTAssertTrue(AssistantHistory.matching(threads, "groceries").isEmpty)
+    }
+
+    func testTextIsAddedToAMessageBeingWrittenAndNeverOverIt() {
+        XCTAssertEqual(AssistantDraft.adding("Help me with Groceries this month.", to: ""), "Help me with Groceries this month.")
+        XCTAssertEqual(AssistantDraft.adding("Revise: ", to: "  \n"), "Revise: ")
+        XCTAssertEqual(AssistantDraft.adding("Revise the proposal: ", to: "A long message"), "A long message\nRevise the proposal: ")
+        XCTAssertEqual(AssistantDraft.adding("Again", to: "First\n"), "First\nAgain")
+        // The same request twice doesn't write its words twice.
+        XCTAssertEqual(AssistantDraft.adding("Import this statement.", to: "Import this statement."), "Import this statement.")
+        XCTAssertTrue(AssistantDraft().isEmpty)
+        XCTAssertFalse(AssistantDraft(selected: ["t1"]).isEmpty)
+    }
+
+    func testTheConversationFollowsOnlyWhileItsEndIsOnScreen() {
+        // The end is on screen: it follows, whatever it did before.
+        XCTAssertTrue(AssistantFollow.next(false, top: -400, restingTop: -380, bottom: 600, viewport: 600))
+        // New text grew the content under a top that didn't move: still following.
+        XCTAssertTrue(AssistantFollow.next(true, top: -400, restingTop: -400, bottom: 760, viewport: 600))
+        // The content moved down from where it rested: the person scrolled up, however slowly.
+        XCTAssertFalse(AssistantFollow.next(true, top: -380, restingTop: -400, bottom: 780, viewport: 600))
+        // Scrolled up, new text doesn't pull them back.
+        XCTAssertFalse(AssistantFollow.next(false, top: -300, restingTop: -400, bottom: 900, viewport: 600))
+        // The first measure has nothing before it.
+        XCTAssertTrue(AssistantFollow.next(true, top: 0, restingTop: .greatestFiniteMagnitude, bottom: 900, viewport: 0))
+        // Where it rests: where it is with the end on screen, and otherwise only ever higher.
+        XCTAssertEqual(AssistantFollow.resting(-380, top: -400, bottom: 600, viewport: 600), -400)
+        XCTAssertEqual(AssistantFollow.resting(-400, top: -395, bottom: 800, viewport: 600), -400)
+        XCTAssertEqual(AssistantFollow.resting(-400, top: -460, bottom: 800, viewport: 600), -460)
+    }
+
+    func testUsageIsOneLineHiddenWhenNothingWasCounted() {
+        let sent = 2400.formatted(.number.locale(.app))
+        XCTAssertEqual(AssistantUsage.line(["input": 2400, "output": 60, "cached": 800]), "Tokens: \(sent) sent (800 from cache), 60 received")
+        XCTAssertNil(AssistantUsage.line(["input": 0, "output": 0, "cached": 0]))
+        XCTAssertNil(AssistantUsage.line(.null))
     }
 
     func testAnErrorOffersOnlyWhatItsActionNames() {
         // An earlier error comes without an action, whatever its code.
         let earlier: JSON = ["kind": "error", "text": "It failed.", "code": "signIn"]
         XCTAssertNil(AssistantErrorAction.of(earlier))
-        let named: [(String, AssistantErrorAction)] = [("signIn", .signIn), ("settings", .settings), ("usage", .usage), ("retry", .retry)]
+        let named: [(String, AssistantErrorAction)] = [("signIn", .signIn), ("settings", .settings), ("usage", .usage), ("retry", .retry),
+                                                       ("newConversation", .newConversation)]
         for (name, action) in named {
             var last = earlier
             last["action"] = .string(name)

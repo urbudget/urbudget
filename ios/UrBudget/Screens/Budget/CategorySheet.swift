@@ -333,7 +333,10 @@ struct CategorySheet: View {
         Menu {
             if !payment { Button { route.append(.details) } label: { Label("Name, group & note", systemImage: "pencil") } }
             Button { route.append(.history) } label: { Label("Money moves this month", systemImage: "clock.arrow.circlepath") }
-            Button { asking = AssistantRequest(text: String(localized: "Help me with \(category.text("name")) this month.")) } label: {
+            Button {
+                // Asked from Budget, about this category.
+                asking = AssistantRequest(page: "budget", category: categoryId, text: String(localized: "Help me with \(category.text("name")) this month."))
+            } label: {
                 Label("Ask the assistant", systemImage: "sparkles")
             }
             let hidden = category.flag("hidden")

@@ -7,6 +7,9 @@ struct AssistantSettingsView: View {
     private let controller = AssistantController.shared
     @State private var key = ""
     @State private var deletingHistory = false
+    /// Signing out and removing a key stop the assistant, so each asks first.
+    @State private var signingOut = false
+    @State private var removingKey = false
 
     init() {}
 
@@ -94,6 +97,18 @@ struct AssistantSettingsView: View {
         } message: {
             Text("This deletes every conversation and attached file for the open budget on this device. Running replies are stopped.")
         }
+        .alert("Sign out of ChatGPT?", isPresented: $signingOut) {
+            Button("Sign out", role: .destructive) { controller.signOut() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The assistant stops answering until you sign in again. Your conversations stay on this device.")
+        }
+        .alert("Remove the saved key?", isPresented: $removingKey) {
+            Button("Remove", role: .destructive) { controller.forgetKey(provider: controller.provider) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The assistant stops answering until you save a key again. Your conversations stay on this device.")
+        }
     }
 
     @ViewBuilder
@@ -117,7 +132,7 @@ struct AssistantSettingsView: View {
                 }
                 Button("Cancel sign-in", role: .cancel) { controller.cancelSignIn() }
             } else if ready {
-                Button("Sign out", role: .destructive) { controller.signOut() }
+                Button("Sign out", role: .destructive) { signingOut = true }
                     .disabled(controller.busy.contains("signOut"))
             } else {
                 Button("Continue with ChatGPT") { controller.signIn() }
@@ -150,7 +165,7 @@ struct AssistantSettingsView: View {
                 } icon: {
                     Image(systemName: "key.fill").foregroundStyle(Color.urPositive)
                 }
-                Button("Remove saved key", role: .destructive) { controller.forgetKey(provider: provider) }
+                Button("Remove saved key", role: .destructive) { removingKey = true }
                     .disabled(checking)
             } else {
                 SecureField("API key", text: $key)

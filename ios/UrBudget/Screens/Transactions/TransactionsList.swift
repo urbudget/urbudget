@@ -546,7 +546,7 @@ struct TransactionsList: View {
                     Button { bulk([line.id], "duplicate", done: String(localized: "Duplicated \(line.payee).")) } label: {
                         Label("Duplicate", systemImage: "plus.square.on.square")
                     }
-                    Button { asking = AssistantRequest(selected: [line.id]) } label: { Label("Ask the assistant", systemImage: "sparkles") }
+                    Button { ask([line.id]) } label: { Label("Ask the assistant", systemImage: "sparkles") }
                     Button {
                         selecting = true
                         selected = [line.id]
@@ -559,6 +559,12 @@ struct TransactionsList: View {
 
     private func toggleCleared(_ line: TransactionLine) {
         bulk([line.id], "status", line.cleared == "cleared" ? "uncleared" : "cleared")
+    }
+
+    /// Opens the assistant about these transactions, saying where it's asked from: all
+    /// transactions, or an account's.
+    private func ask(_ ids: [String]) {
+        asking = AssistantRequest(page: target.account.isEmpty ? "transactions" : "accounts", account: target.account, selected: ids)
     }
 
     private func endSelection() {
@@ -601,7 +607,10 @@ struct TransactionsList: View {
                         Label("Duplicate", systemImage: "plus.square.on.square")
                     }
                     Button {
-                        asking = AssistantRequest(selected: Array(selected))
+                        // In the order they're listed: a message takes the first 200 of them.
+                        let listed = sections?.flatMap { $0.lines.map(\.id) } ?? []
+                        let ids = listed.filter { selected.contains($0) }
+                        ask(ids.isEmpty ? Array(selected) : ids)
                         endSelection()
                     } label: { Label("Ask the assistant", systemImage: "sparkles") }
                     Divider()

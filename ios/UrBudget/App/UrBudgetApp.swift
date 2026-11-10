@@ -72,8 +72,11 @@ struct RootView: View {
             case .active:
                 store.foreground()
                 startForegroundWork()
+                AssistantController.shared.enterForeground()
             case .background:
-                HostEvents.shared.stop()
+                // A reply still being written keeps its events coming for the time iOS grants
+                // it; the assistant stops them itself when the reply ends or that time is up.
+                if !AssistantController.shared.enterBackground() { HostEvents.shared.stop() }
                 sync.enterBackground()
             default:
                 break

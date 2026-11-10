@@ -1,49 +1,32 @@
 import SwiftUI
 
-/// Saved conversations: open one, or delete it from this device.
+/// Saved conversations: search them by title, open one, rename it, or delete it from this device.
 struct AssistantHistorySheet: View {
     @Environment(\.dismiss) private var dismiss
     private let controller = AssistantController.shared
     @State private var deleting: String?
+    @State private var search = ""
+    /// The conversation being renamed, and the name typed for it.
+    @State private var renaming: String?
+    @State private var newTitle = ""
 
     var body: some View {
+        let shown = AssistantHistory.matching(controller.threads, search)
         NavigationStack {
             List {
                 if let error = controller.error { FormErrorView(message: error) }
                 if controller.threads.isEmpty {
                     Text("No saved conversations yet").foregroundStyle(Color.secondary)
+                } else if shown.isEmpty {
+                    Text("No conversation matches.").foregroundStyle(Color.secondary)
                 }
-                ForEach(Array(controller.threads.enumerated()), id: \.offset) { _, thread in
-                    let id = thread.text("id")
-                    Button {
-                        if id != controller.threadId { controller.openThread(id) }
-                        dismiss()
-                    } label: {
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(thread.text("title").isEmpty ? String(localized: "New conversation") : thread.text("title"))
-                                    .foregroundStyle(Color.primary)
-                                    .lineLimit(2)
-                                Text(Money.date(String(thread.text("updated").prefix(10))))
-                                    .font(.footnote)
-                                    .foregroundStyle(Color.secondary)
-                            }
-                            Spacer(minLength: 8)
-                            if id == controller.threadId {
-                                Image(systemName: "checkmark").foregroundStyle(Color.urAccent)
-                                    .accessibilityLabel(String(localized: "state.open", defaultValue: "Open", comment: "Something that is open now (a state, not a button)."))
-                            }
-                        }
-                    }
-                    .swipeActions {
-                        Button("Delete", systemImage: "trash", role: .destructive) { deleting = id }
-                    }
-                    .contextMenu {
-                        Button("Delete conversation", systemImage: "trash", role: .destructive) { deleting = id }
-                    }
+                // By its id: a row keeps its place and its swipe when the list is searched or reloaded.
+                ForEach(shown, id: \.idText) { thread in
+                    row(thread)
                 }
             }
             .groupedList()
+            .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search conversations")
             .navigationTitle("Conversations")
             .inlineTitle()
             .toolbar {
@@ -59,8 +42,61 @@ struct AssistantHistorySheet: View {
             } message: {
                 Text("This removes its saved history from this device.")
             }
+            .alert("Rename conversation", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+                TextField("Conversation name", text: $newTitle)
+                Button("Save") {
+                    let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if let renaming, !title.isEmpty { controller.renameThread(renaming, to: title) }
+                    renaming = nil
+                }
+                Button("Cancel", role: .cancel) { renaming = nil }
+            }
         }
         .presentationDetents([.medium, .large])
+    }
+
+    /// A conversation: its title and when it was last added to, and for the open one, the
+    /// tokens it has used.
+    private func row(_ thread: JSON) -> some View {
+        let id = thread.text("id")
+        let isOpen = id == controller.threadId
+        let usage = isOpen ? AssistantUsage.line(controller.thread?["usage"] ?? .null) : nil
+        return Button {
+            if !isOpen { controller.openThread(id) }
+            dismiss()
+        } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(thread.text("title").isEmpty ? String(localized: "New conversation") : thread.text("title"))
+                        .foregroundStyle(Color.primary)
+                        .lineLimit(2)
+                    Text(Money.date(String(thread.text("updated").prefix(10))))
+                        .font(.footnote)
+                        .foregroundStyle(Color.secondary)
+                    if let usage {
+                        Text(usage).font(.caption).foregroundStyle(Color.secondary)
+                    }
+                }
+                Spacer(minLength: 8)
+                if isOpen {
+                    Image(systemName: "checkmark").foregroundStyle(Color.urAccent)
+                        .accessibilityLabel(String(localized: "state.open", defaultValue: "Open", comment: "Something that is open now (a state, not a button)."))
+                }
+            }
+        }
+        .swipeActions {
+            Button("Delete", systemImage: "trash", role: .destructive) { deleting = id }
+            Button("Rename conversation", systemImage: "pencil") { rename(thread) }.tint(Color.urAccent)
+        }
+        .contextMenu {
+            Button("Rename conversation", systemImage: "pencil") { rename(thread) }
+            Button("Delete conversation", systemImage: "trash", role: .destructive) { deleting = id }
+        }
+    }
+
+    private func rename(_ thread: JSON) {
+        newTitle = thread.text("title")
+        renaming = thread.text("id")
     }
 }
 
@@ -72,7 +108,7 @@ struct AssistantContextPicker: View {
     @State private var rows: [AssistantContextRow]?
     @State private var search = ""
 
-    static let limit = 200
+    static let limit = AssistantSelection.limit
 
     var body: some View {
         let chosen = Set(selected)
@@ -140,7 +176,7 @@ struct AssistantContextRow: Identifiable, Sendable {
     var search: String
 
     static func rows(_ budget: JSON) -> [AssistantContextRow] {
-        let currency = budget.text("currency", "SAR")
+        let currency = budget.text("currency")
         let accounts = Dictionary(budget.rows("accounts").map { ($0.text("id"), $0.text("name")) }, uniquingKeysWith: { first, _ in first })
         return budget.rows("transactions")
             .sorted { $0.text("date") > $1.text("date") }

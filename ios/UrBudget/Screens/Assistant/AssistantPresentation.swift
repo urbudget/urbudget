@@ -60,12 +60,237 @@ struct AssistantThreadPresentation: Sendable {
     }
 }
 
-/// What the assistant is told about the screen a message was sent from.
-enum AssistantScreen {
-    /// `importing` is the bank file being imported, when the assistant is open over its import.
-    static func context(month: String, selected: [String], importing: JSON? = nil) -> JSON {
-        ["platform": "ios", "page": importing == nil ? "assistant" : "import", "month": .string(month), "today": .string(Dates.today),
-         "selected": JSON(selected), "import": importing ?? .null]
+/// One part of "With this message", shown above the field with its own ×.
+struct AssistantWithPart: Identifiable, Equatable {
+    enum Kind: String {
+        /// Where the person is: the page, its month, the account or category in view.
+        case place
+        /// The transactions they selected.
+        case selection
+        /// The bank file being imported.
+        case importing
+    }
+
+    var kind: Kind
+    var text: String
+    var id: String { kind.rawValue }
+}
+
+/// What goes with the next message besides its words: where the person is, the transactions they
+/// selected, and the bank file being imported. Each part can be taken off before it's sent, and
+/// the next message starts with them all again.
+struct AssistantWith: Equatable {
+    /// The page, by the key the service knows it by ("budget", "transactions", "accounts",
+    /// "import"…); "assistant" when it was opened from nowhere in particular.
+    var page = "assistant"
+    /// The month the app is on (YYYY-MM). It goes only with a page that shows one.
+    var month = ""
+    /// The account and the category in view, by id.
+    var account = ""
+    var category = ""
+    var selected: [String] = []
+    /// The bank file being imported, when the assistant is open over its import.
+    var importing: JSON?
+    /// The person took where they are, or the file being imported, off this message.
+    var placeOff = false
+    var importOff = false
+
+    /// The pages that show a month: Budget, and the assistant opened over the app, which is on
+    /// the month Budget shows.
+    static func showsMonth(_ page: String) -> Bool { page == "budget" || page == "assistant" }
+
+    /// The `screen` a message is sent with. A place taken off is an empty `page` with no month,
+    /// account or category, as the service reads it.
+    var screen: JSON {
+        let file: JSON = importOff ? .null : importing ?? .null
+        var out: JSON = ["platform": "ios", "page": .string(placeOff ? "" : page), "today": .string(Dates.today),
+                         "selected": JSON(selected), "import": file]
+        guard !placeOff else { return out }
+        if Self.showsMonth(page) && !month.isEmpty { out["month"] = .string(month) }
+        if !account.isEmpty { out["accountId"] = .string(account) }
+        if !category.isEmpty { out["categoryId"] = .string(category) }
+        return out
+    }
+
+    /// The parts still on the message, in the order they're shown. `budget` names the account
+    /// and the category.
+    func parts(budget: JSON?) -> [AssistantWithPart] {
+        var out: [AssistantWithPart] = []
+        let accountName = account.isEmpty ? "" : budget?.row("accounts", id: account)?.text("name") ?? ""
+        let categoryName = category.isEmpty ? "" : budget?.row("categories", id: category)?.text("name") ?? ""
+        if !placeOff, let named = Self.place(page: page, month: Self.showsMonth(page) ? month : "", account: accountName, category: categoryName) {
+            out.append(AssistantWithPart(kind: .place, text: named))
+        }
+        if !selected.isEmpty { out.append(AssistantWithPart(kind: .selection, text: Self.selection(selected.count))) }
+        if importing != nil && !importOff { out.append(AssistantWithPart(kind: .importing, text: String(localized: "The file being imported"))) }
+        return out
+    }
+
+    /// The same line on a sent message, from what the service kept with it (the entry's `with`):
+    /// nil for a message from before that was kept, or one nothing went with.
+    static func sent(_ with: JSON) -> String? {
+        guard with.isObject else { return nil }
+        var parts: [String] = []
+        if let named = Self.place(page: with.text("page"), month: with.text("month"), account: with.text("account"), category: with.text("category")) {
+            parts.append(named)
+        }
+        let transactions = Int(with.long("transactions"))
+        if transactions > 0 { parts.append(Self.selection(transactions)) }
+        if with.flag("import") { parts.append(String(localized: "The file being imported")) }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    /// "Budget · November 2026", then the account's or the category's name; nil when there's no
+    /// place to name (it was taken off, or the page is one this version doesn't know and nothing
+    /// else came with it).
+    static func place(page: String, month: String, account: String, category: String) -> String? {
+        var parts: [String] = []
+        if let name = pageName(page) { parts.append(name) }
+        if Dates.isMonth(month) { parts.append(Dates.monthLabel(month)) }
+        if !account.isEmpty { parts.append(account) }
+        if !category.isEmpty { parts.append(category) }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    /// "3 selected transactions".
+    static func selection(_ count: Int) -> String { String(localized: "\(count) selected transactions", locale: .app) }
+
+    /// The page's name as the app's own tabs and More list write it.
+    static func pageName(_ page: String) -> String? {
+        switch page {
+        case "budget": return String(localized: "Budget")
+        case "transactions": return String(localized: "Transactions")
+        case "accounts": return String(localized: "Accounts")
+        case "reports": return String(localized: "Reports")
+        case "payees": return String(localized: "Payees & rules")
+        case "scheduled": return String(localized: "Scheduled")
+        case "settings": return String(localized: "Settings & data")
+        case "import": return String(localized: "Import bank file")
+        case "bankConnections": return String(localized: "Bank connections")
+        case "assistant": return String(localized: "Assistant")
+        default: return nil
+        }
+    }
+}
+
+/// The transactions that can go with one message.
+enum AssistantSelection {
+    /// As many as the service takes with a message.
+    static let limit = 200
+
+    /// A selection handed over from another screen: its first 200, and how many there were when
+    /// that's more, for the sentence that says so.
+    static func capped(_ ids: [String]) -> (ids: [String], total: Int?) {
+        guard ids.count > limit else { return (ids, nil) }
+        return (Array(ids.prefix(limit)), ids.count)
+    }
+}
+
+/// The message being written in a conversation: its words and the transactions selected for it.
+/// The controller keeps one per conversation, so closing the sheet or looking at another
+/// conversation doesn't lose a long message.
+struct AssistantDraft: Equatable {
+    var text = ""
+    var selected: [String] = []
+    /// How many transactions were handed over when only the first 200 could be attached.
+    var total: Int?
+
+    var isEmpty: Bool { text.isEmpty && selected.isEmpty }
+
+    /// `text` added to what's written already, on a line of its own: a request from another
+    /// screen or a card's Ask for changes never replaces a message being written. Text that's
+    /// there already isn't added twice.
+    static func adding(_ text: String, to draft: String) -> String {
+        guard !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return text }
+        guard !text.isEmpty, !draft.contains(text) else { return draft }
+        return draft + (draft.hasSuffix("\n") ? "" : "\n") + text
+    }
+}
+
+/// When the conversation follows new text: only while its end is on screen. Scrolling up stops
+/// it; coming back to the end, or Jump to latest, starts it again.
+enum AssistantFollow {
+    /// How far below the bottom of the screen the end may be and still count as on screen.
+    static let slack: CGFloat = 32
+    /// How far the content may settle downwards on its own (a lazy stack measuring its rows)
+    /// before that counts as the person scrolling up.
+    static let drift: CGFloat = 8
+
+    /// Whether to follow after the content moved or grew. `top` and `bottom` are its edges in the
+    /// scroll view's coordinates, `restingTop` where its top rests while following (`resting`),
+    /// `viewport` the scroll view's height. With the end on screen it follows. Otherwise new
+    /// text, which grows the content and leaves its top where it was, changes nothing; only the
+    /// content having moved down from where it rested, which is the person scrolling up however
+    /// slowly, stops it.
+    static func next(_ following: Bool, top: CGFloat, restingTop: CGFloat, bottom: CGFloat, viewport: CGFloat) -> Bool {
+        if bottom <= viewport + slack { return true }
+        return following && top <= restingTop + drift
+    }
+
+    /// Where a scroll up is measured from after this move. With the end on screen that's where
+    /// the top is now; otherwise it only ever goes up, as text is added and scrolled to.
+    static func resting(_ resting: CGFloat, top: CGFloat, bottom: CGFloat, viewport: CGFloat) -> CGFloat {
+        bottom <= viewport + slack ? top : min(resting, top)
+    }
+}
+
+/// The saved conversations whose title has what was searched for.
+enum AssistantHistory {
+    static func matching(_ threads: [JSON], _ search: String) -> [JSON] {
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return threads }
+        return threads.filter { $0.text("title").range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil }
+    }
+}
+
+/// The tokens a conversation's requests used, as one quiet line. No prices: plans and keys differ.
+enum AssistantUsage {
+    /// Nil when nothing was counted: a conversation from before counting, or with no reply yet.
+    static func line(_ usage: JSON) -> String? {
+        let sent = usage.long("input")
+        let cached = usage.long("cached")
+        let received = usage.long("output")
+        guard sent != 0 || cached != 0 || received != 0 else { return nil }
+        return String(localized: "Tokens: \(grouped(sent)) sent (\(grouped(cached)) from cache), \(grouped(received)) received")
+    }
+
+    /// "12,345": thousands separated, in Western digits as the app's other numbers.
+    private static func grouped(_ value: Int64) -> String { Int(clamping: value).formatted(.number.locale(.app)) }
+}
+
+/// The line of details a report of a reply offers to send with it, and how it joins the reason.
+enum AssistantReportDetails {
+    /// The reason's limit, in UTF-16 units as the service counts it.
+    static let reasonLimit = 1000
+
+    /// The app's version as the App Store shows it ("1.0.1").
+    static var appVersion: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "" }
+
+    /// "App: UrBudget iPhone 1.0.1 · Service: ChatGPT · Model: default · Tools: none · Language: en".
+    /// Never translated: it's read by whoever looks into the report.
+    static func line(version: String, provider: String, model: String, tools: [String], language: String) -> String {
+        let service: String
+        switch provider {
+        case "anthropic": service = "Anthropic"
+        case "openai": service = "OpenAI"
+        default: service = "ChatGPT"
+        }
+        let chosen = model.isEmpty ? "default" : model
+        let called = tools.isEmpty ? "none" : tools.joined(separator: ", ")
+        return ["App: UrBudget iPhone \(version)", "Service: \(service)", "Model: \(chosen)", "Tools: \(called)", "Language: \(language)"]
+            .joined(separator: " · ")
+    }
+
+    /// The reason as it's sent: the person's words, a blank line, then the details, cut to what
+    /// still fits in the reason's 1,000 characters. Their own words are never cut to make room.
+    static func reason(_ reason: String, details: String) -> String {
+        let reason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        let details = details.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !details.isEmpty else { return reason }
+        guard !reason.isEmpty else { return assistantLimited(details, utf16: reasonLimit) }
+        let room = reasonLimit - reason.utf16.count - 2
+        guard room > 0 else { return reason }
+        return reason + "\n\n" + assistantLimited(details, utf16: room)
     }
 }
 
@@ -78,6 +303,8 @@ enum AssistantErrorAction: String {
     case settings
     /// The plan's limit was reached: ChatGPT's usage page.
     case usage
+    /// The conversation no longer fits the model: carry it on in a new one.
+    case newConversation
     /// Ask again.
     case retry
 
@@ -143,6 +370,7 @@ enum AssistantExport {
         case "step": return String(localized: "Step", comment: "Heading for a step the assistant took, in an exported conversation")
         case "error": return String(localized: "Error", comment: "Heading for an error in an exported conversation")
         case "stopped": return String(localized: "Stopped", comment: "Heading for a reply that was stopped, in an exported conversation")
+        case "cut": return String(localized: "The reply was cut short.")
         default: return kind.prefix(1).uppercased() + kind.dropFirst()
         }
     }
@@ -160,7 +388,9 @@ enum AssistantExport {
     }
 
     /// A title as a file name: letters, digits, spaces, "_" and "-" only, at most 60 characters.
-    static func fileName(_ title: String, extension suffix: String, fallback: String = "Conversation") -> String {
+    /// One with no title is named in the app's language.
+    static func fileName(_ title: String, extension suffix: String,
+                         fallback: String = String(localized: "file.conversation", defaultValue: "Conversation", comment: "The file name of an exported conversation that has no title.")) -> String {
         let cleaned = String(title.prefix(60)).map { character -> String in
             character.isLetter || character.isNumber || " _-".contains(character) ? String(character) : "_"
         }.joined().trimmingCharacters(in: .whitespaces)
@@ -222,13 +452,15 @@ enum AssistantAttachments {
     }
 
     /// A photo from the library: kept as it is when the services read its format, otherwise JPEG.
+    /// The library gives no file name, so it's "Photo 2" in the app's language.
     static func photo(_ data: Data, type: UTType?, number: Int) throws -> (name: String, data: Data) {
         let kept: [(UTType, String)] = [(.png, "png"), (.jpeg, "jpg"), (.gif, "gif"), (.webP, "webp")]
+        let title = String(localized: "Photo \(number)", locale: .app, comment: "The file name of a photo attached from the library: Photo 1, Photo 2…")
         if let type, let match = kept.first(where: { type.conforms(to: $0.0) }) {
-            return prepare(name: "Photo \(number).\(match.1)", data: data)
+            return prepare(name: "\(title).\(match.1)", data: data)
         }
         guard let jpeg = jpeg(data) else { throw AppError(String(localized: "This photo couldn't be read. Choose another, or attach it as a file.")) }
-        return ("Photo \(number).jpg", jpeg)
+        return ("\(title).jpg", jpeg)
     }
 
     /// The image at most `maxPixel` on its longer side, upright, as JPEG at 85% quality.

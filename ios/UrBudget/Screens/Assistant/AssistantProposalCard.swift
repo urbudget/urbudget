@@ -27,7 +27,11 @@ struct AssistantProposalActions {
 struct AssistantProposalCard: View {
     var proposal: JSON
     var currency: String
+    /// A change to a card is being made, on this card or another: its buttons wait.
     var busy: Bool
+    /// The action running on this card ("apply", "report", "import", "open"…): the button that
+    /// asked for it spins. Nil while this card is only waiting on another's.
+    var working: String? = nil
     var canUndo: Bool
     var actions: AssistantProposalActions
     @State private var page = 0
@@ -253,12 +257,12 @@ struct AssistantProposalCard: View {
             } else {
                 switch kind {
                 case "report":
-                    primary("Read report · Print / PDF", "doc.text.magnifyingglass", actions.report)
+                    primary("Read report · Print / PDF", "doc.text.magnifyingglass", actions.report, spins: "report")
                 case "import":
-                    primary("Review \(proposal.long("rows")) import rows", "tray.and.arrow.down", actions.reviewImport)
+                    primary("Review \(proposal.long("rows")) import rows", "tray.and.arrow.down", actions.reviewImport, spins: "import")
                     Button("Export converted CSV", systemImage: "square.and.arrow.up", action: actions.saveImport)
                 case "spreadsheet":
-                    primary("Open spreadsheet", "tablecells", { actions.spreadsheet(true) })
+                    primary("Open spreadsheet", "tablecells", { actions.spreadsheet(true) }, spins: "open")
                     Button("Export Excel file", systemImage: "square.and.arrow.up") { actions.spreadsheet(false) }
                 case "fix":
                     // The import applies them, each only to a line that hasn't changed.
@@ -315,10 +319,12 @@ struct AssistantProposalCard: View {
         .buttonStyle(.borderless)
     }
 
-    private func primary(_ title: LocalizedStringKey, _ symbol: String, _ action: @escaping () -> Void, enabled: Bool = true) -> some View {
+    /// The card's main button. It spins only while its own action (`spins`) runs on this card,
+    /// and waits, as the card's other buttons do, while any card's change is being made.
+    private func primary(_ title: LocalizedStringKey, _ symbol: String, _ action: @escaping () -> Void, enabled: Bool = true, spins: String = "apply") -> some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                if busy { ProgressView().controlSize(.small).tint(.white) } else { Image(systemName: symbol) }
+                if working == spins { ProgressView().controlSize(.small).tint(.white) } else { Image(systemName: symbol) }
                 Text(title)
             }
             .font(.subheadline.weight(.semibold))
@@ -326,7 +332,7 @@ struct AssistantProposalCard: View {
             .padding(.vertical, 4)
         }
         .buttonStyle(.borderedProminent)
-        .disabled(busy || !enabled)
+        .disabled(busy || working != nil || !enabled)
     }
 
     /// How much Apply makes ("Apply 2 of 3") while some of the card's rows are left out.

@@ -26930,6 +26930,325 @@
           }
         }
       }
+    },
+    "With this message" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مع هذه الرسالة"
+          }
+        }
+      }
+    },
+    "The file being imported" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الملف الجاري استيراده"
+          }
+        }
+      }
+    },
+    "Only the first 200 of %lld selected transactions are attached." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُرفقت أول 200 معاملة فقط من أصل %lld معاملة محددة."
+          }
+        }
+      }
+    },
+    "Jump to latest" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الانتقال إلى الأحدث"
+          }
+        }
+      }
+    },
+    "Checking the assistant…" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ التحقق من المساعد…"
+          }
+        }
+      }
+    },
+    "The assistant couldn't be loaded." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر تحميل المساعد."
+          }
+        }
+      }
+    },
+    "The reply was cut short." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "انقطع الرد قبل اكتماله."
+          }
+        }
+      }
+    },
+    "This conversation is getting long, so replies are slower and use more of your plan or key." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "طالت هذه المحادثة، فأصبحت الردود أبطأ وتستهلك أكثر من خطتك أو مفتاحك."
+          }
+        }
+      }
+    },
+    "Continue in a new conversation" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المتابعة في محادثة جديدة"
+          }
+        }
+      }
+    },
+    "Continued from “%@”" : {
+      "comment" : "At the top of a conversation that carries on an earlier one: that one's title.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تتمة «⁨%@⁩»"
+          }
+        }
+      }
+    },
+    "Rename conversation" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إعادة تسمية المحادثة"
+          }
+        }
+      }
+    },
+    "Conversation name" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اسم المحادثة"
+          }
+        }
+      }
+    },
+    "Search conversations" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البحث في المحادثات"
+          }
+        }
+      }
+    },
+    "No conversation matches." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا توجد محادثة مطابقة."
+          }
+        }
+      }
+    },
+    "Tokens: %@ sent (%@ from cache), %@ received" : {
+      "comment" : "What a conversation's requests used: tokens sent, how many of those came from the service's cache, and tokens received. Each is a formatted number.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الرموز: ⁨%1$@⁩ مُرسَلة (⁨%2$@⁩ من الذاكرة المؤقتة)، ⁨%3$@⁩ مُستلَمة"
+          }
+        }
+      }
+    },
+    "Good reply" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "رد جيد"
+          }
+        }
+      }
+    },
+    "Bad reply" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "رد غير جيد"
+          }
+        }
+      }
+    },
+    "Details to include" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تفاصيل تُرفق بالبلاغ"
+          }
+        }
+      }
+    },
+    "Sent with your report. Remove anything you'd rather not send." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تُرسَل مع بلاغك. احذف ما لا تريد إرساله."
+          }
+        }
+      }
+    },
+    "The assistant replied." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ردّ المساعد."
+          }
+        }
+      }
+    },
+    "A proposal is ready to review." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اقتراح جاهز للمراجعة."
+          }
+        }
+      }
+    },
+    "Remove %@" : {
+      "comment" : "Takes a part of “With this message” off the message being written (VoiceOver): where the person is, or the file being imported.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إزالة ⁨%@⁩"
+          }
+        }
+      }
+    },
+    "Photo %lld" : {
+      "comment" : "The file name of a photo attached from the library: Photo 1, Photo 2…",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "صورة %lld"
+          }
+        }
+      }
+    },
+    "file.conversation" : {
+      "comment" : "The file name of an exported conversation that has no title.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "محادثة"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conversation"
+          }
+        }
+      }
+    },
+    "file.report" : {
+      "comment" : "The file name of a saved report that has no title.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تقرير"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Report"
+          }
+        }
+      }
+    },
+    "New reply" : {
+      "comment" : "On More's Assistant row: a reply or a proposal arrived while the assistant was closed (VoiceOver).",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "رد جديد"
+          }
+        }
+      }
+    },
+    "Sign out of ChatGPT?" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تسجيل الخروج من ChatGPT؟"
+          }
+        }
+      }
+    },
+    "The assistant stops answering until you sign in again. Your conversations stay on this device." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يتوقف المساعد عن الرد إلى أن تسجّل الدخول مجددًا. تبقى محادثاتك على هذا الجهاز."
+          }
+        }
+      }
+    },
+    "Remove the saved key?" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إزالة المفتاح المحفوظ؟"
+          }
+        }
+      }
+    },
+    "The assistant stops answering until you save a key again. Your conversations stay on this device." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يتوقف المساعد عن الرد إلى أن تحفظ مفتاحًا مجددًا. تبقى محادثاتك على هذا الجهاز."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

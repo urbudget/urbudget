@@ -629,7 +629,8 @@ struct BankFileImportView: View {
     /// The assistant, asked to read a PDF statement into the account, with the PDF attached.
     private func readWithAssistant(_ pdf: URL) {
         let name = accountName
-        asking = AssistantRequest(text: String(localized: "Import this statement into \(name). Find the transactions, ask me about anything unclear, and prepare them for the import review."),
+        asking = AssistantRequest(page: "import", account: account,
+                                  text: String(localized: "Import this statement into \(name). Find the transactions, ask me about anything unclear, and prepare them for the import review."),
                                   files: [pdf])
     }
 
@@ -638,7 +639,9 @@ struct BankFileImportView: View {
     private func fixWithAssistant() {
         guard let session, let content else { return }
         let importing: JSON = ["account": .string(account), "content": .string(content), "session": session]
-        asking = AssistantRequest(text: BankStatementText.fixImport, importing: importing) { thread, proposal in applyFix(thread, proposal) }
+        asking = AssistantRequest(page: "import", account: account, text: BankStatementText.fixImport, importing: importing) { thread, proposal in
+            applyFix(thread, proposal)
+        }
     }
 
     /// Fixes the assistant proposed: applied to this import, each only where its line hasn't changed.

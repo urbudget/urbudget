@@ -8,10 +8,15 @@ extension Notification.Name {
 
 /// Drains the services' `host_events` while the app is in the foreground, as Android's
 /// NativeServices.pollEvents does, and posts each one as a `.urbudgetHostEvent` notification.
+/// It carries on in the background only for the time iOS grants the assistant to finish a reply.
 @MainActor
 final class HostEvents {
     static let shared = HostEvents()
     private var task: Task<Void, Never>?
+    /// Set by the assistant while a reply is being written: its text arrives in small pieces,
+    /// so events are read ten times a second and it shows as it's written. Otherwise they are
+    /// few and can wait a little longer.
+    var fast = false
 
     func start() {
         guard task == nil else { return }
@@ -24,7 +29,7 @@ final class HostEvents {
                                                         userInfo: ["event": event.text("event"), "payload": event["payload"]])
                     }
                 }
-                try? await Task.sleep(for: .milliseconds(700))
+                try? await Task.sleep(for: .milliseconds(fast ? 100 : 700))
             }
         }
     }

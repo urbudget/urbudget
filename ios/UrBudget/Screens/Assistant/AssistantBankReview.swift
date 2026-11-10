@@ -78,7 +78,7 @@ enum AssistantBankReview {
 
     /// Rows from the engine's `bankPreview`, whose candidates are a shared pool (`candidateSets`).
     static func prepare(_ rows: [JSON], budget: JSON, candidateSets: [JSON], allowIdlessDuplicate: Bool = true) throws -> [AssistantBankRow] {
-        let currency = budget.text("currency", "SAR")
+        let currency = budget.text("currency")
         let transactions = Dictionary(budget.rows("transactions").map { ($0.text("id"), $0) }, uniquingKeysWith: { first, _ in first })
         let accounts = Dictionary(budget.rows("accounts").map { ($0.text("id"), $0.text("name")) }, uniquingKeysWith: { first, _ in first })
         var pools: [Int: Pool] = [:]
