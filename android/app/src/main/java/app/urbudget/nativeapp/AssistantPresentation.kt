@@ -167,6 +167,21 @@ internal fun assistantFollows(following: Boolean, before: AssistantListFrame?, n
     else -> following
 }
 
+/**
+ * What stands under a reply for copying, reporting and rating it. The latest reply has its buttons
+ * out; an earlier one keeps them behind one quiet button, so a long conversation isn't a column of
+ * them. A reply of the turn still being answered has none yet: they'd come in under it while the
+ * rest of the answer is written below, and push that down.
+ */
+internal enum class AssistantReplyTools { Shown, Folded, Waiting }
+
+/** [index] is the reply's place among [entries], and [running] whether the conversation's reply is still being made. */
+internal fun assistantReplyTools(index: Int, entries: List<JSONObject>, running: Boolean): AssistantReplyTools = when {
+    running && index > entries.indexOfLast { it.optString("kind") == "user" } -> AssistantReplyTools.Waiting
+    index == entries.indexOfLast { it.optString("kind") == "assistant" } -> AssistantReplyTools.Shown
+    else -> AssistantReplyTools.Folded
+}
+
 /** The conversations whose title has [query] in it, whatever the case; all of them for no query. */
 internal fun assistantThreadsMatching(threads: List<JSONObject>, query: String): List<JSONObject> {
     val wanted = query.trim()

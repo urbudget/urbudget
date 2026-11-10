@@ -261,6 +261,19 @@ class AssistantPresentationTest {
         assertTrue(assistantFollows(true, null, frame(0, 0, more = true)))
     }
 
+    @Test fun onlyTheLatestReplyHasItsButtonsOutAndNoneComeInWhileItsTurnIsStillAnswered() {
+        val entries = listOf("user", "step", "assistant", "user", "assistant", "proposal", "assistant").map { JSONObject().put("kind", it) }
+        fun tools(running: Boolean) = entries.indices.filter { entries[it].getString("kind") == "assistant" }.map { assistantReplyTools(it, entries, running) }
+        // At rest: the latest reply's are out, the earlier ones' behind their one button.
+        assertEquals(listOf(AssistantReplyTools.Folded, AssistantReplyTools.Folded, AssistantReplyTools.Shown), tools(running = false))
+        // While the turn is answered its replies have none, so nothing comes in above what's being written; earlier turns are as they were.
+        assertEquals(listOf(AssistantReplyTools.Folded, AssistantReplyTools.Waiting, AssistantReplyTools.Waiting), tools(running = true))
+        // A reply asked for again with no message of the user's before it.
+        val alone = listOf(JSONObject().put("kind", "assistant"))
+        assertEquals(AssistantReplyTools.Waiting, assistantReplyTools(0, alone, running = true))
+        assertEquals(AssistantReplyTools.Shown, assistantReplyTools(0, alone, running = false))
+    }
+
     @Test fun conversationsAreSearchedByTitleWhateverTheCase() {
         val threads = listOf("October groceries", "Rent in 2026", "خطة أكتوبر").map { JSONObject().put("id", it).put("title", it) }
         fun found(query: String) = assistantThreadsMatching(threads, query).map { it.getString("title") }

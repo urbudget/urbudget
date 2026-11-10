@@ -2974,6 +2974,7 @@
     </plurals>
     <string name="assistant_steps_fewer">عرض أقل</string>
     <string name="assistant_copy_reply">نسخ الرد</string>
+    <string name="assistant_reply_actions">نسخ هذا الرد أو الإبلاغ عنه أو تقييمه</string>
     <string name="assistant_add_to_message">إضافة ملف أو معاملات</string>
     <string name="assistant_notice_title">ما الذي يُرسَل</string>
     <string name="assistant_notice_sent">رسائلك، وما يظهر على الشاشة، والملفات التي ترفقها، وتفاصيل الميزانية التي يبحث عنها المساعد ليجيبك تُرسَل إلى ⁨%1$s⁩. وتحكم شروطه وسياسة الخصوصية لديه طريقة معالجتها والاحتفاظ بها.</string>

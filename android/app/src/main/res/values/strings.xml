@@ -2517,6 +2517,8 @@
     </plurals>
     <string name="assistant_steps_fewer">Show fewer</string>
     <string name="assistant_copy_reply">Copy reply</string>
+    <!-- The one button under an earlier reply that brings out Copy, Report and the thumbs. -->
+    <string name="assistant_reply_actions">Copy, report or rate this reply</string>
     <string name="assistant_add_to_message">Add a file or transactions</string>
     <!-- The notice before the first message to a service: what's sent, and to whom. %1$s is the company, OpenAI or Anthropic. -->
     <string name="assistant_notice_title">What gets sent</string>
