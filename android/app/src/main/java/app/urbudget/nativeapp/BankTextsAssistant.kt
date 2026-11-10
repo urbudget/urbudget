@@ -189,10 +189,14 @@ internal object BankTextsAssistant {
         fun row(label: String, detail: String? = null, amount: Long? = null) = JSONObject().put("label", label).apply { detail?.let { put("detail", it) }; amount?.let { put("amount", it) } }
         val (title, rows, note, apply) = when (val action = args.optString("action")) {
             "read" -> {
-                val waiting = inbox.pendingCount(identity)
-                val open = inbox.state(identity, "draft") != null
+                // What Bank messages will read: the texts waiting outside the open review, whose own are read already.
+                val batch = runCatching { SmsBatch.restore(inbox.state(identity, "draft")) { ids -> inbox.waiting(identity, ids) } }.getOrNull()
+                val waiting = bankTextsToRead(inbox.pending(identity).map { it.id }, batch?.messages?.map { it.id }.orEmpty())
+                val open = batch != null
                 val written = args.optString("note").trim().take(2000)
                 require(waiting > 0 || open) { Words[R.string.bank_texts_nothing_waiting] }
+                // The open review is read again only with a note to read it with: without one the card would do nothing.
+                require(waiting > 0 || written.isNotEmpty()) { Words[R.string.bank_texts_nothing_new] }
                 Proposed(Words[R.string.bank_texts_title_read],
                     listOfNotNull(row(if (waiting > 0) Words.count(R.plurals.bank_texts_card_read, waiting.toLong()) else Words[R.string.bank_texts_card_read_again]),
                         written.ifBlank { null }?.let { row(Words[R.string.bank_texts_card_note], it) }),
@@ -245,11 +249,14 @@ internal object BankTextsAssistant {
      * Does what an applied card says. The page it gives to open is Bank messages, to read what's
      * waiting (with the texts the card added); none when nothing more is to be done there. Texts
      * a card named that are no longer on the phone are left out and counted in its notice; with
-     * none of them left, nothing is done and that's the error.
+     * none of them left, nothing is done and that's the error. A card is checked again as it's
+     * applied: the account it names may have gone since it was made, and then nothing is done
+     * and that's the error too, so the card never says Applied for it.
      */
     suspend fun apply(context: Context, vm: BudgetViewModel, apply: JSONObject): Applied {
         val identity = checkNotNull(vm.state.value.budgetIdentity) { Words[R.string.bank_texts_not_set_up] }
         val inbox = SmsInbox.get(context)
+        bankTextsCardProblem(apply, vm.state.value.budget)?.let { error(Words[it]) }
         return when (apply.optString("action")) {
             "read" -> { reads.value = Read(apply.optString("note")); Applied("Bank messages") }
             "add" -> {
@@ -282,6 +289,34 @@ internal object BankTextsAssistant {
  */
 internal fun bankTextsAllowed(canRead: Boolean, senders: Int, consent: String?, connection: JSONObject?): Boolean =
     canRead && senders > 0 && connection != null && smsConsented(consent, connection)
+
+/**
+ * How many texts a "read" card will have Bank messages read: those [waiting] that aren't in the
+ * open review ([reviewed]), whose texts are read already and wait only for the user's ticks.
+ */
+internal fun bankTextsToRead(waiting: List<String>, reviewed: List<String>): Int {
+    val inReview = reviewed.toSet()
+    return waiting.count { it !in inReview }
+}
+
+/**
+ * Why a card can't be applied to [budget] as it is now, as the words to say it with; none when
+ * it can. A card that remembers digits needs its account still open, and one that sets a credit
+ * limit needs its account still there and still a card: either may have gone since the card
+ * was made.
+ */
+internal fun bankTextsCardProblem(apply: JSONObject, budget: JSONObject?): Int? {
+    val account = budget?.row("accounts", apply.optString("accountId"))
+    return when (apply.optString("action")) {
+        "remember" -> R.string.bank_texts_unknown_account.takeIf { account == null || account.optBoolean("archived") }
+        "limit" -> when {
+            account == null -> R.string.bank_texts_unknown_account
+            account.text("kind") != "credit" -> R.string.bank_texts_not_card
+            else -> null
+        }
+        else -> null
+    }
+}
 
 /** How far either side of a text's time its sender's texts are read to find it again; an MMS is timed to the second. */
 private const val CardTextMargin = 60_000L

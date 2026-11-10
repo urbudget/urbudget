@@ -2051,13 +2051,11 @@
     <!-- A step the assistant couldn't complete, then its description. -->
     <string name="assistant_step_failed">تعذّر الإكمال: \u2068%1$s\u2069</string>
     <string name="assistant_reply_stopped">توقّف الرد</string>
-    <string name="assistant_you">أنت</string>
     <string name="assistant_couldnt_finish">تعذّر الإكمال</string>
     <string name="assistant_try_again">إعادة المحاولة</string>
     <string name="assistant_report_reply">الإبلاغ عن الرد</string>
     <string name="assistant_working">جارٍ العمل…</string>
     <string name="assistant_continue_reply">متابعة الرد المنقطع</string>
-    <string name="assistant_remove_attachment">إزالة المرفق</string>
     <plurals name="assistant_selected_transactions">
         <item quantity="zero">لا معاملات محددة</item>
         <item quantity="one">معاملة محددة واحدة</item>
@@ -2082,8 +2080,8 @@
     <string name="assistant_clear">مسح</string>
     <string name="assistant_done_count">تم (\u2068%1$s\u2069)</string>
     <string name="assistant_error_title">تعذّر إكمال ذلك</string>
-    <string name="assistant_applied_title">✓ طُبِّق: \u2068%1$s\u2069</string>
-    <string name="assistant_discarded_title">تم تجاهله: \u2068%1$s\u2069</string>
+    <string name="assistant_applied_at">طُبِّق \u2068%1$s\u2069</string>
+    <string name="assistant_asked">سؤال: \u2068%1$s\u2069</string>
     <string name="assistant_undo_proposal">التراجع عن هذا الاقتراح</string>
     <string name="assistant_previous_rows">الصفوف السابقة</string>
     <string name="assistant_next_rows">الصفوف التالية</string>
@@ -2099,8 +2097,6 @@
     </plurals>
     <!-- A check the engine ran that did not pass, then what it says. -->
     <string name="assistant_check">تحقّق: \u2068%1$s\u2069</string>
-    <string name="assistant_dismiss">إخفاء</string>
-    <string name="assistant_read_report">قراءة التقرير · طباعة / PDF</string>
     <plurals name="assistant_review_import_rows">
         <item quantity="zero">لا صفوف للمراجعة</item>
         <item quantity="one">مراجعة صف استيراد واحد</item>
@@ -2115,9 +2111,8 @@
     <string name="assistant_apply_changes">تطبيق التغييرات المراجَعة</string>
     <string name="assistant_ask_changes">طلب تعديلات</string>
     <string name="assistant_discard">تجاهل</string>
-    <string name="assistant_applied">✓ طُبِّق</string>
+    <string name="assistant_applied">طُبِّق</string>
     <string name="assistant_discarded">تم تجاهله</string>
-    <string name="assistant_could_not_apply">تعذّر التطبيق</string>
     <!-- While a proposal waits, each of its parts can be left out with its checkbox or changed with its pencil. -->
     <!-- Apply when some parts are left out: how many of them it makes. -->
     <string name="assistant_apply_some">تطبيق \u2068%1$s\u2069 من \u2068%2$s\u2069</string>
@@ -2129,12 +2124,10 @@
     <string name="assistant_amount_required">أدخل مبلغًا.</string>
     <!-- Fixes the assistant proposes for a bank file being imported. -->
     <string name="assistant_fix_apply">تطبيق على الاستيراد</string>
-    <string name="assistant_fix_apply_from_import">تطبيق من الاستيراد</string>
     <string name="assistant_fix_apply_some">تطبيق \u2068%1$s\u2069 من \u2068%2$s\u2069 على الاستيراد</string>
     <string name="assistant_fix_each_line">لا يُطبَّق كل تصحيح إلا على سطر لم يتغيّر.</string>
     <string name="assistant_fix_open_import">افتح الاستيراد الذي تخصّه هذه التصحيحات.</string>
     <string name="assistant_fix_other_import">هذه التصحيحات تخصّ استيرادًا آخر.</string>
-    <string name="assistant_fix_applied">✓ طُبِّقت على الاستيراد</string>
     <string name="assistant_export_report_tables">تصدير جداول التقرير إلى Excel</string>
     <string name="assistant_save_text">حفظ النص</string>
     <string name="assistant_share_report">مشاركة التقرير</string>
@@ -2142,7 +2135,7 @@
     <string name="assistant_print">طباعة / PDF</string>
     <string name="assistant_report_a_reply">الإبلاغ عن رد</string>
     <string name="assistant_send_report">إرسال البلاغ</string>
-    <string name="assistant_report_note">لن يُرسَل إلى UrBudget إلا المقتطف والشرح أدناه. احذف أي شيء خاص قبل الإرسال.</string>
+    <string name="assistant_report_note">لا يُرسَل إلا ما تتركه في هذه الحقول: نص الرد، وشرحك، والتفاصيل.</string>
     <string name="assistant_excerpt">المقتطف المحدد</string>
     <string name="assistant_what_went_wrong">ما الخطأ في الرد؟</string>
     <string name="assistant_model_default">الافتراضي لدى المزوّد</string>
@@ -2191,9 +2184,6 @@
     <string name="assistant_action_failed">تعذّر على المساعد إكمال هذا الإجراء.</string>
     <string name="assistant_attach_limit">أرفق خمسة ملفات على الأكثر في كل رسالة.</string>
     <string name="assistant_select_limit">حدّد 200 معاملة على الأكثر في كل رسالة.</string>
-    <string name="assistant_proposal_applied">طُبِّق الاقتراح</string>
-    <string name="assistant_budget_changed_review">تغيّرت ميزانيتك. راجع الاقتراح المحدَّث قبل تطبيقه.</string>
-    <string name="assistant_budget_changed_undo">تغيّرت ميزانيتك بعد هذا الاقتراح. استخدم سجل التراجع في الميزانية لمراجعة التغييرات اللاحقة.</string>
     <!-- The reference number UrBudget gave the report. -->
     <string name="assistant_report_sent">أُرسل البلاغ · \u2068%1$s\u2069</string>
     <string name="assistant_file_too_large">اختر ملفًا أصغر من 25 ميغابايت.</string>
@@ -3019,4 +3009,69 @@
     <string name="assistant_ask_assistant">اسأل المساعد</string>
     <string name="assistant_help_category">ساعدني في ⁨%1$s⁩ هذا الشهر.</string>
     <string name="assistant_thinking">يفكّر: ⁨%1$s⁩</string>
+    <string name="assistant_preview">معاينة</string>
+    <string name="assistant_ask_again">طلب نسخة جديدة</string>
+    <string name="assistant_ask_again_prompt">أعِدّ «⁨%1$s⁩» من جديد. تعذّر تطبيقه: ⁨%2$s⁩</string>
+    <string name="assistant_show_in_budget">عرض في الميزانية</string>
+    <plurals name="assistant_delete_transactions">
+        <item quantity="zero">حذف لا معاملات</item>
+        <item quantity="one">حذف معاملة واحدة</item>
+        <item quantity="two">حذف معاملتين</item>
+        <item quantity="few">حذف ⁨%1$s⁩ معاملات</item>
+        <item quantity="many">حذف ⁨%1$s⁩ معاملة</item>
+        <item quantity="other">حذف ⁨%1$s⁩ معاملة</item>
+    </plurals>
+    <string name="assistant_select_none">إلغاء تحديد الكل</string>
+    <string name="assistant_select_check">ما يحتاج إلى مراجعة فقط</string>
+    <string name="assistant_undone">تم التراجع عنه</string>
+    <string name="assistant_replaced">استُبدل بنسخة أحدث</string>
+    <string name="assistant_removed">أُزيل</string>
+    <string name="assistant_card_line">⁨%1$s⁩: ⁨%2$s⁩</string>
+    <string name="assistant_card_open">عرض محتواها</string>
+    <string name="assistant_card_close">إخفاء محتواها</string>
+    <string name="assistant_update_app">حدِّث UrBudget لاستخدام هذه البطاقة.</string>
+    <string name="assistant_fix_note">التصحيحات المطبَّقة: ⁨%1$s⁩ من ⁨%2$s⁩. لم يُطبَّق: ⁨%3$s⁩</string>
+    <string name="list_separator">"، "</string>
+    <string name="assistant_notes_title">ملاحظات للمساعد</string>
+    <string name="assistant_notes_help">ملاحظات قصيرة يحتفظ بها المساعد لهذه الميزانية وتصله مع كل رسالة. ويضيف واحدة عندما تطلب منه أن يتذكر شيئًا.</string>
+    <string name="assistant_notes_add">إضافة ملاحظة</string>
+    <string name="assistant_notes_remove">إزالة الملاحظة</string>
+    <string name="assistant_notes_none">لا ملاحظات بعد.</string>
+    <string name="assistant_categorize">التصنيف مع المساعد</string>
+    <string name="assistant_categorize_one">صنّف المعاملة الجديدة في ⁨%1$s⁩.</string>
+    <plurals name="assistant_categorize_new">
+        <item quantity="zero">لا معاملات جديدة لتصنيفها في ⁨%2$s⁩.</item>
+        <item quantity="one">صنّف المعاملة الجديدة في ⁨%2$s⁩.</item>
+        <item quantity="two">صنّف المعاملتين الجديدتين في ⁨%2$s⁩.</item>
+        <item quantity="few">صنّف ⁨%1$s⁩ معاملات جديدة في ⁨%2$s⁩.</item>
+        <item quantity="many">صنّف ⁨%1$s⁩ معاملة جديدة في ⁨%2$s⁩.</item>
+        <item quantity="other">صنّف ⁨%1$s⁩ معاملة جديدة في ⁨%2$s⁩.</item>
+    </plurals>
+    <plurals name="assistant_categorize_first">
+        <item quantity="zero">صنّف هذه المعاملات (⁨%2$s⁩) من أصل ⁨%1$s⁩ معاملة جديدة في ⁨%3$s⁩.</item>
+        <item quantity="one">صنّف هذه المعاملات (⁨%2$s⁩) من أصل معاملة جديدة واحدة في ⁨%3$s⁩.</item>
+        <item quantity="two">صنّف هذه المعاملات (⁨%2$s⁩) من أصل معاملتين جديدتين في ⁨%3$s⁩.</item>
+        <item quantity="few">صنّف هذه المعاملات (⁨%2$s⁩) من أصل ⁨%1$s⁩ معاملات جديدة في ⁨%3$s⁩.</item>
+        <item quantity="many">صنّف هذه المعاملات (⁨%2$s⁩) من أصل ⁨%1$s⁩ معاملة جديدة في ⁨%3$s⁩.</item>
+        <item quantity="other">صنّف هذه المعاملات (⁨%2$s⁩) من أصل ⁨%1$s⁩ معاملة جديدة في ⁨%3$s⁩.</item>
+    </plurals>
+    <string name="assistant_cover">التغطية مع المساعد</string>
+    <string name="assistant_cover_prompt">غطِّ الفئات التي تجاوزتُ فيها الإنفاق هذا الشهر.</string>
+    <plurals name="bank_imported_review">
+        <item quantity="zero">لم تُستورد أي معاملات للمراجعة.</item>
+        <item quantity="one">استُوردت معاملة واحدة للمراجعة.</item>
+        <item quantity="two">استُوردت معاملتان للمراجعة.</item>
+        <item quantity="few">استُوردت ⁨%1$s⁩ معاملات للمراجعة.</item>
+        <item quantity="many">استُوردت ⁨%1$s⁩ معاملة للمراجعة.</item>
+        <item quantity="other">استُوردت ⁨%1$s⁩ معاملة للمراجعة.</item>
+    </plurals>
+    <plurals name="bank_sync_imported_review">
+        <item quantity="zero">لم تُستورد أي معاملات من بنكك.</item>
+        <item quantity="one">استُوردت معاملة واحدة من بنكك للمراجعة.</item>
+        <item quantity="two">استُوردت معاملتان من بنكك للمراجعة.</item>
+        <item quantity="few">استُوردت ⁨%1$s⁩ معاملات من بنكك للمراجعة.</item>
+        <item quantity="many">استُوردت ⁨%1$s⁩ معاملة من بنكك للمراجعة.</item>
+        <item quantity="other">استُوردت ⁨%1$s⁩ معاملة من بنكك للمراجعة.</item>
+    </plurals>
+    <string name="bank_texts_nothing_new">لا رسائل جديدة بانتظار القراءة. لقراءة المراجعة المفتوحة من جديد، أرفق ملاحظة تُقرأ بها.</string>
 </resources>

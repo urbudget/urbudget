@@ -396,15 +396,192 @@ class AssistantControllerTest {
         } finally { store.clear(); Dispatchers.resetMain() }
     }
 
+    @Test fun choicesOnACardShowAtOnceAndGoToTheCoreInOneCallAMomentAfterTheLastAndBeforeApply() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val store = ViewModelStore()
+        try {
+            val calls = mutableListOf<String>()
+            val revisions = mutableListOf<JSONObject>()
+            var reads = 0
+            var saves = 0
+            var changed = 0
+            var card = card("p1", "proposed", "apply", "askChanges", "discard")
+            val controller = controller(store, saved = { saves++ }) { method, params ->
+                when (method) {
+                    "assistant_status" -> JSONObject().put("provider", "chatgpt").put("ready", true)
+                    "assistant_thread" -> { reads++; conversation(card).apply { if (card.getString("status") == "applied") put("undoable", "p1") } }
+                    "assistant_revise" -> { calls += "revise"; revisions += params.getJSONObject("revision"); card = JSONObject(card.toString()).put("choices", params.getJSONObject("revision")); card }
+                    "assistant_apply_commit" -> {
+                        calls += "apply"
+                        card = JSONObject(card.toString()).put("status", "applied").put("actions", JSONArray(listOf("undo")))
+                        JSONObject().put("patch", JSONObject()).put("proposal", card).put("undoAvailable", true)
+                    }
+                    else -> JSONArray()
+                }
+            }
+            fun shown() = controller.state.value.entries.last().getJSONObject("proposal")
+            runCurrent()
+            controller.openThread("t1"); settle { controller.state.value.entries.size == 2 }
+            val before = reads
+            // Three ticks in a row: each shows at once, and nothing goes to the core while they keep coming.
+            val one = ProposalChoices.toggle(null, "t:a", skipped = false)
+            val two = ProposalChoices.toggle(one, "t:b", skipped = false)
+            val three = ProposalChoices.toggle(two, "t:a", skipped = true)
+            controller.choose("p1", one); advanceTimeBy(400); runCurrent()
+            controller.choose("p1", two); advanceTimeBy(400); runCurrent()
+            assertSame(two, controller.cards.choices("p1"))
+            controller.choose("p1", three); advanceTimeBy(ProposalChoiceDelay - 1); runCurrent()
+            assertEquals(emptyList<String>(), calls)
+            // A moment after the last of them they go in one call, and the card that comes back takes its place with no conversation read.
+            advanceTimeBy(2); settle { calls.size == 1 }
+            assertTrue(sameJson(JSONObject("""{"skip":["t:b"],"set":[]}"""), revisions.single()))
+            assertNull(controller.cards.choices("p1"))
+            assertTrue(sameJson(three, shown().getJSONObject("choices")))
+            assertEquals(before, reads)
+            // The card is never busy for a tick: only for what's done with it.
+            assertFalse(controller.state.value.cardBusy("p1"))
+
+            // Apply right after a tick sends the tick first, then applies; a second tap while it runs does nothing.
+            val four = ProposalChoices.toggle(three, "t:b", skipped = true)
+            controller.choose("p1", four)
+            controller.apply("p1") { changed++ }
+            controller.apply("p1") { changed++ }
+            assertTrue(controller.state.value.cardBusy("p1") && !controller.state.value.cardBusy("p2"))
+            settle { !controller.state.value.cardBusy("p1") && "apply" in calls }
+            assertEquals(listOf("revise", "revise", "apply"), calls)
+            assertTrue(sameJson(JSONObject("""{"skip":[],"set":[]}"""), revisions.last()))
+            assertEquals(listOf(1, 1), listOf(saves, changed))
+            assertEquals("applied", shown().getString("status"))
+            // Which card the budget's Undo would take back is the conversation's to say.
+            assertEquals("p1", controller.state.value.undoable)
+            // The tick's own moment passes with nothing more to send.
+            advanceTimeBy(ProposalChoiceDelay + 100); runCurrent()
+            assertEquals(3, calls.size)
+        } finally { store.clear(); Dispatchers.resetMain() }
+    }
+
+    @Test fun aCardIsPutInItsPlaceByWhatsDoneWithItAndFollowsTheBudget() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val store = ViewModelStore()
+        try {
+            val events = MutableSharedFlow<JSONObject>(extraBufferCapacity = 64)
+            val calls = mutableListOf<String>()
+            var reads = 0
+            var card = card("p1", "proposed", "applyToImport", "askChanges", "discard").put("kind", "transactions")
+            var refuse: String? = null
+            val controller = controller(store, events) { method, params ->
+                when (method) {
+                    "assistant_status" -> JSONObject().put("provider", "chatgpt").put("ready", true)
+                    "assistant_thread" -> { reads++; conversation(card) }
+                    "assistant_mark" -> {
+                        refuse?.let { error(it) }
+                        calls += "mark ${params.getString("status")}${if (params.has("note")) " " + params.getString("note") else ""}"
+                        card = JSONObject(card.toString()).put("status", params.getString("status")); card
+                    }
+                    "database_status" -> JSONObject().put("token", "token-7")
+                    "assistant_undo_commit" -> { calls += "undo ${params.getString("expectedToken")}"; card = JSONObject(card.toString()).put("status", "undone"); JSONObject().put("proposal", card) }
+                    else -> JSONArray()
+                }
+            }
+            fun shown() = controller.state.value.entries.last().getJSONObject("proposal")
+            runCurrent()
+            controller.openThread("t1"); settle { controller.state.value.entries.size == 2 }
+            // The budget changed while a change waits: the conversation is read again, so the card is the one made on the budget as it is.
+            val opened = reads
+            controller.budgetChanged(); advanceTimeBy(100); settle { reads == opened + 1 }
+
+            // A card the app carries out itself takes the card's turn: a second tap does nothing, and it's marked with what there is to say.
+            val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+            var runs = 0
+            controller.carryOut("p1") { runs++; gate.await(); CardDone("applied", "Fixes applied: 1 of 2. Not applied: Line 4: date") }
+            runCurrent()
+            controller.carryOut("p1") { runs++; null }
+            runCurrent()
+            assertEquals(1 to true, runs to controller.state.value.cardBusy("p1"))
+            gate.complete(Unit); settle { !controller.state.value.cardBusy("p1") }
+            assertEquals(listOf("mark applied Fixes applied: 1 of 2. Not applied: Line 4: date"), calls)
+            assertEquals("applied", shown().getString("status"))
+            // One that fails says why, and marks nothing; one that leaves the card as it is marks nothing either.
+            controller.carryOut("p1") { error("That account isn’t open in this budget.") }; settle { !controller.state.value.cardBusy("p1") }
+            assertEquals("That account isn’t open in this budget.", controller.state.value.error)
+            controller.dismissError()
+            controller.carryOut("p1") { null }; settle { !controller.state.value.cardBusy("p1") }
+            assertEquals(1, calls.size)
+
+            // Undo asks the core with the budget's token as it is now; the card that comes back is undone.
+            controller.undoProposal("p1") {}; settle { !controller.state.value.cardBusy("p1") }
+            assertEquals("undo token-7", calls.last())
+            assertEquals("undone", shown().getString("status"))
+            // Set aside and put back; a step the core refuses is said in its words.
+            controller.mark("p1", "discarded"); settle { !controller.state.value.cardBusy("p1") }
+            controller.mark("p1", "proposed"); settle { !controller.state.value.cardBusy("p1") }
+            assertEquals(listOf("mark discarded", "mark proposed"), calls.takeLast(2))
+            refuse = "This proposal was already handled."
+            controller.mark("p1", "discarded"); settle { !controller.state.value.cardBusy("p1") }
+            assertEquals("This proposal was already handled.", controller.state.value.error)
+            refuse = null
+
+            // A newer card made in its place: the event's view of the earlier one replaces it where it stands.
+            val size = controller.state.value.entries.size
+            events.emit(JSONObject().put("event", "assistant://event").put("payload", JSONObject().put("threadId", "t1").put("type", "replaced")
+                .put("proposal", JSONObject(card.toString()).put("status", "replaced").put("replacedBy", "p2").put("actions", JSONArray(listOf("restore"))))))
+            runCurrent()
+            assertEquals(listOf("replaced", "p2", size), listOf(shown().getString("status"), shown().getString("replacedBy"), controller.state.value.entries.size))
+
+            // A thing the assistant made doesn't change with the budget: nothing is read for it.
+            card = card("p1", "proposed", "preview", "remove").put("kind", "report").put("made", true)
+            controller.reloadThread(); advanceTimeBy(100); settle { shown().getString("kind") == "report" }
+            val settled = reads
+            controller.budgetChanged(); advanceTimeBy(200); runCurrent()
+            assertEquals(settled, reads)
+        } finally { store.clear(); Dispatchers.resetMain() }
+    }
+
+    @Test fun theBudgetsNotesAreSavedAsAWholeListAndTheBudgetComesBackWithThem() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val store = ViewModelStore()
+        try {
+            val saved = mutableListOf<String>()
+            var said = 0
+            var full = false
+            val controller = controller(store, saved = { said++ }) { method, params ->
+                when (method) {
+                    "assistant_status" -> JSONObject().put("provider", "chatgpt").put("ready", true)
+                    "assistant_notes_commit" -> { if (full) error("A budget keeps up to 30 notes."); saved += params.getJSONArray("notes").toString(); JSONObject().put("token", "t2") }
+                    else -> JSONArray()
+                }
+            }
+            runCurrent()
+            var refreshed = 0
+            var done = 0
+            controller.saveNotes(listOf("Rent is due on the 1st", "Careem is transport"), { refreshed++ }) { done++ }; runCurrent()
+            assertEquals(listOf("""["Rent is due on the 1st","Careem is transport"]"""), saved)
+            assertEquals(listOf(1, 1, 1), listOf(said, refreshed, done))
+            // The core's limits are the core's to say; nothing is taken as saved.
+            full = true
+            controller.saveNotes(listOf("One too many"), { refreshed++ }) { done++ }; runCurrent()
+            assertEquals("A budget keeps up to 30 notes.", controller.state.value.error)
+            assertEquals(listOf(1, 1, 1), listOf(said, refreshed, done))
+        } finally { store.clear(); Dispatchers.resetMain() }
+    }
+
+    /** A card as the conversation's view gives it, offering [actions]. */
+    private fun card(id: String, status: String, vararg actions: String) = JSONObject().put("id", id).put("kind", "budget").put("status", status).put("title", "Cover Dining out")
+        .put("made", false).put("actions", JSONArray(actions.toList())).put("card", JSONObject().put("kicker", "Proposal").put("rows", JSONArray()))
+
+    /** A conversation with one card, as the core shows it. */
+    private fun conversation(card: JSONObject) = JSONObject().put("id", "t1").put("title", "Dining out").put("running", false)
+        .put("entries", JSONArray(listOf(JSONObject().put("kind", "user").put("text", "Cover Dining out"), JSONObject().put("kind", "proposal").put("proposal", JSONObject(card.toString())))))
+
     /** Runs what's ready until [done]: a conversation that was read is compared on a worker thread, which takes a moment of real time. */
     private fun TestScope.settle(done: () -> Boolean) {
         repeat(600) { runCurrent(); if (done()) return; Thread.sleep(5) }
         fail("The controller didn't get there.")
     }
 
-    private fun controller(store: ViewModelStore, events: Flow<JSONObject> = emptyFlow(), service: suspend (String, JSONObject) -> Any?): AssistantController =
+    private fun controller(store: ViewModelStore, events: Flow<JSONObject> = emptyFlow(), saved: () -> Unit = {}, service: suspend (String, JSONObject) -> Any?): AssistantController =
         ViewModelProvider(store, object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
-            override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T = AssistantController(service, events) as T
+            override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T = AssistantController(service, events, saved) as T
         })[AssistantController::class.java]
 }

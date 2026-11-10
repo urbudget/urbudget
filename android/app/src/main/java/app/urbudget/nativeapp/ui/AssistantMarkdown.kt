@@ -35,9 +35,12 @@ import kotlinx.coroutines.withContext
 internal fun AssistantMarkdown(source: String, modifier: Modifier = Modifier) {
     val blocks = preparedMarkdown(source) ?: return
     var page by remember(source) { mutableIntStateOf(0) }
-    val pages = ((blocks.size + 39) / 40).coerceAtLeast(1)
+    // A reply that was written while the panel was open showed whole, so it stays whole once it's finished:
+    // whoever was reading it is where they were, not back on a first page. A long reply met later is paged.
+    val whole = remember(source) { MarkdownCache.wasWritten(source) }
+    val pages = if (whole) 1 else ((blocks.size + 39) / 40).coerceAtLeast(1)
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        key(page) { blocks.subList(page * 40, minOf(blocks.size, (page + 1) * 40)).forEach { block -> AssistantMarkdownBlockView(block) } }
+        key(page) { (if (whole) blocks else blocks.subList(page * 40, minOf(blocks.size, (page + 1) * 40))).forEach { block -> AssistantMarkdownBlockView(block) } }
         if (pages > 1) MarkdownPages(page, pages) { page = it }
     }
 }
@@ -85,8 +88,17 @@ private object MarkdownCache {
     }
     /** The live reply as it was last laid out. */
     @Volatile var live: Pair<String, List<AssistantMarkdownBlock>>? = null
+    /** The latest replies that were written live here, by their text. */
+    private val written = ArrayDeque<String>()
     @Synchronized fun get(source: String): List<AssistantMarkdownBlock>? = replies[source]
     @Synchronized fun put(source: String, blocks: List<AssistantMarkdownBlock>) { replies[source] = blocks }
+    @Synchronized fun written(source: String) { written.remove(source); written.addLast(source); if (written.size > 8) written.removeFirst() }
+    @Synchronized fun wasWritten(source: String): Boolean = source.trim() in written
+}
+
+/** A reply has just been written live, [source] being its whole text: it showed whole as it came, and goes on showing whole now that it's finished. */
+internal fun assistantReplyWritten(source: String) {
+    if (source.isNotBlank()) MarkdownCache.written(source.trim())
 }
 
 /** Lays a reply out ahead of showing it, off the main thread. */

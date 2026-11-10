@@ -238,6 +238,7 @@ private fun BankConnectionReview(entry: SyncEntry, through: String, reviewedBudg
                                  close: () -> Unit, skip: () -> Unit, imported: () -> Unit) {
     val review = entry.review
     val scope = rememberCoroutineScope()
+    val importSaid = LocalImportSaid.current
     val requests = rememberPreviewJobs(review)
     // The options name themselves in the interface language; the choices made so far stay.
     val preparationKey = remember(review, reviewedBudget, budget, languageKey()) { Any() }
@@ -264,7 +265,11 @@ private fun BankConnectionReview(entry: SyncEntry, through: String, reviewedBudg
                 try {
                     val choices = withContext(Dispatchers.Default) { bankReviewChoices(sourceRows, selected, false) }
                     require(reviewedBudget === vm.state.value.budget) { Words[R.string.bank_budget_changed_download] }
-                    requests.track(vm.service("simplefin_import", JSONObject().put("account", review.text("accountId")).put("through", through).put("choices", choices), onError = { loading = false; error = it }) { imported() })
+                    requests.track(vm.service("simplefin_import", JSONObject().put("account", review.text("accountId")).put("through", through).put("choices", choices), onError = { loading = false; error = it }) {
+                        // The budget has them now: said, with the ones still without a category offered to the assistant.
+                        importSaid(reviewedBudget, vm.state.value.budget, true)
+                        imported()
+                    })
                 } catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { loading = false; error = failure.message }
             }
         }

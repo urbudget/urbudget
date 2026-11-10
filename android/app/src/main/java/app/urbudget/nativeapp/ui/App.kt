@@ -43,12 +43,17 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import app.urbudget.nativeapp.AccountTypes
 import app.urbudget.nativeapp.AssistantController
 import app.urbudget.nativeapp.AssistantPlace
+import app.urbudget.nativeapp.AssistantShow
+import app.urbudget.nativeapp.AssistantStart
 import app.urbudget.nativeapp.BudgetViewModel
+import app.urbudget.nativeapp.CardDone
 import app.urbudget.nativeapp.NativePreferences
 import app.urbudget.nativeapp.NativeServices
 import app.urbudget.nativeapp.PageRequests
+import app.urbudget.nativeapp.ProposalCards
 import app.urbudget.nativeapp.BudgetUiState
 import app.urbudget.nativeapp.R
+import app.urbudget.nativeapp.Words
 import androidx.compose.ui.res.stringResource
 import app.urbudget.nativeapp.fixImportText
 import app.urbudget.nativeapp.fixOutcome
@@ -99,11 +104,31 @@ internal val morePages = listOf(
 )
 
 /**
- * "Ask the assistant" on a page: hands the assistant the selected transactions, or a category
- * to ask about, and opens its panel on them with nothing sent.
+ * "Ask the assistant" on a page: hands the assistant the selected transactions, a category to
+ * ask about, or a request in words with the transactions it's about, and opens its panel on
+ * them with nothing sent.
  */
-internal class AssistantAsk(val transactions: (List<String>) -> Unit, val category: (JSONObject) -> Unit)
+internal class AssistantAsk(val transactions: (List<String>) -> Unit, val category: (JSONObject) -> Unit,
+                            val request: (text: String, transactions: List<String>) -> Unit)
 internal val LocalAssistantAsk = staticCompositionLocalOf<AssistantAsk?> { null }
+
+/**
+ * Says that an import added transactions, once the budget has them: [before] and [after] are the
+ * budget either side of it, and [fromBank] tells a bank sync from a bank file. With some of them
+ * still without a category, the message offers to categorize those with the assistant.
+ */
+internal val LocalImportSaid = staticCompositionLocalOf<(before: JSONObject?, after: JSONObject?, fromBank: Boolean) -> Unit> { { _, _, _ -> } }
+
+/** Where an assistant card's "Show in the budget" last led, for the page it led to: [key] tells one request from the next. */
+internal class Showing(val key: Int, val what: AssistantShow)
+
+/** A message with something to do about it besides Undo: the offer is the snackbar's action. */
+private class OfferVisuals(override val message: String, val offer: String) : SnackbarVisuals {
+    override val actionLabel: String get() = offer
+    override val withDismissAction: Boolean get() = false
+    // Long enough to read the offer and reach it.
+    override val duration: SnackbarDuration get() = SnackbarDuration.Long
+}
 
 /** A page's title in the interface's language, from its key. */
 @Composable
@@ -127,6 +152,9 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     val assistantController: AssistantController = viewModel()
     // Another budget has its own conversations; one opened clears an error from before it was.
     LaunchedEffect(state.budgetIdentity) { state.budgetIdentity?.let(assistantController::budgetOpened) }
+    // The budget changed, by whatever hand (an edit, the ⋯ menu's Undo or Redo, a message's Undo, a sync):
+    // the open conversation's cards that the budget moves show where they now stand.
+    LaunchedEffect(state.budgetRevision) { assistantController.budgetChanged() }
     // "Ask the assistant" on a page: the panel opens on what's handed over, in a new conversation unless the open one is empty, and nothing is sent.
     val askAssistant = remember(assistantController, context) {
         AssistantAsk(
@@ -134,8 +162,11 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
             category = { category ->
                 assistantController.handOver(context.getString(R.string.assistant_help_category, category.text("name")), categoryId = category.text("id"))
                 assistant = true
-            })
+            },
+            request = { text, ids -> assistantController.handOver(text, selected = ids); assistant = true })
     }
+    // Where a card's "Show in the budget" led: the page it led to takes it from here.
+    var showing by remember { mutableStateOf<Showing?>(null) }
     // A bank file being imported: kept while the assistant is open over it, to fix its lines. A rotation
     // or the Fold opening no longer remakes the screen, so the review keeps its choices too; this
     // holder still brings the import back if the activity is made again (a new text size, which it
@@ -241,20 +272,43 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     val importScreen = remember(importing) {
         importing?.session?.let { JSONObject().put("account", importing.account).put("content", importing.content).put("session", it) }
     }
-    fun applyFix(thread: String, proposal: JSONObject) {
+    /**
+     * Applies a card's fixes to the import it's for. The card offers this only over that import,
+     * so anything else here is said and nothing is done. The card is then marked as the import
+     * took them: applied when any did, with a note naming the ones that didn't.
+     */
+    fun applyFix(proposal: JSONObject) {
         val open = importing
         val fixes = proposal.optJSONObject("fixes")
         val session = open?.session
-        if (open == null || fixes == null || session == null) return assistantController.note(context.getString(R.string.assistant_fix_open_import))
-        if (fixes.optJSONObject("scope")?.optString("session") != open.sessionId) return assistantController.note(context.getString(R.string.assistant_fix_other_import))
-        vm.query("bankApplyFixes", JSONObject().put("accountId", open.account).put("content", open.content).put("session", session).put("fixes", fixes),
-            onError = { assistantController.note(it) }, anyRevision = true) { applied ->
+        if (open == null || fixes == null || session == null) return assistantController.showError(context.getString(R.string.assistant_fix_open_import))
+        if (fixes.optJSONObject("scope")?.optString("session") != open.sessionId) return assistantController.showError(context.getString(R.string.assistant_fix_other_import))
+        val beside = assistantBeside
+        assistantController.carryOut(proposal.text("id")) {
+            // A change to the import still fits after an edit to the budget meanwhile.
+            val applied = vm.ask("bankApplyFixes", JSONObject().put("accountId", open.account).put("content", open.content).put("session", session).put("fixes", fixes), anyRevision = true)
             val outcome = fixOutcome(applied)
             bankImport = bankImport?.let {
                 if (it.sessionId == open.sessionId) it.copy(session = applied.getJSONObject("session"), view = "lines", assisted = it.assisted + outcome.lines, notice = outcome.notice) else it
             }
-            if (outcome.applied > 0) assistantController.imported(thread, proposal.text("id"))
             // Back to the import, to see them; beside the assistant it's already in view.
+            if (!beside) assistant = false
+            // With none taken the card still waits, and says which didn't take.
+            CardDone(if (outcome.applied > 0) "applied" else "proposed", ProposalCards.fixNote(proposal, applied))
+        }
+    }
+    /**
+     * Goes to what an assistant's card names: the register with its transactions selected, or
+     * the Budget tab on its month with its categories marked. Over the app the panel gives way;
+     * beside it both stay in view.
+     */
+    fun show(target: AssistantShow) {
+        leaveForm {
+            morePage = ""; parentPage = ""; accountFilter = ""; categoryFilter = ""; rangeFrom = ""; rangeThrough = ""; rangeSearch = ""; returnTab = -1
+            dockHidden = false; addExpanded = true
+            if (target.transactions.isNotEmpty()) tab = 1
+            else { target.month?.takeIf { it != state.month }?.let(vm::selectMonth); tab = 0 }
+            showing = Showing((showing?.key ?: 0) + 1, target)
             if (!assistantBeside) assistant = false
         }
     }
@@ -412,7 +466,27 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     val undoLabel = stringResource(R.string.common_undo)
     val toast = remember(snack, scope, vm, undoLabel) { { message: String, undo: Boolean -> snack.toast(scope, vm, message, undo, undoLabel) } }
     LaunchedEffect(state.exported) { if (state.exported) { vm.exportSaid(); toast(context.getString(R.string.backup_exported), false) } }
-    CompositionLocalProvider(LocalToast provides toast, LocalLoanActions provides loanActions, LocalSplitList provides splitList, LocalAssistantAsk provides askAssistant) {
+    // An import added transactions: said with Undo, and with those still without a category offered to the assistant.
+    val categorizeLabel = stringResource(R.string.assistant_categorize)
+    val importSaid = remember(snack, scope, toast, askAssistant, categorizeLabel) {
+        { before: JSONObject?, after: JSONObject?, fromBank: Boolean ->
+            if (before != null && after != null) scope.launch {
+                // Two budgets are compared, off the main thread.
+                val imported = withContext(Dispatchers.Default) { AssistantStart.uncategorized(before, after) }
+                if (imported.added > 0) {
+                    val message = Words.count(if (fromBank) R.plurals.bank_sync_imported_review else R.plurals.bank_imported_review, imported.added.toLong())
+                    if (imported.ids.isEmpty()) toast(message, true)
+                    else {
+                        snack.currentSnackbarData?.dismiss()
+                        if (snack.showSnackbar(OfferVisuals(message, categorizeLabel)) == SnackbarResult.ActionPerformed) askAssistant.request(AssistantStart.categorize(imported), imported.ids)
+                    }
+                }
+            }
+            Unit
+        }
+    }
+    CompositionLocalProvider(LocalToast provides toast, LocalLoanActions provides loanActions, LocalSplitList provides splitList, LocalAssistantAsk provides askAssistant,
+        LocalImportSaid provides importSaid) {
     Box(Modifier.fillMaxSize().background(ur.bg).nestedScroll(scrollWatcher)) {
     // The app's own screen: the whole window, or its start side while the assistant shares it. Under the
     // assistant on a phone it's out of a screen reader's way, as a page under a sheet is.
@@ -463,7 +537,7 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
             else -> pageStates.SaveableStateProvider(if (tab == 1) "register:$accountFilter|$categoryFilter|$rangeFrom|$rangeThrough|$rangeSearch" else "tab:$tab") { when (tab) {
                 0 -> BudgetScreen(budget, state.summary, state.month, vm::selectMonth, vm, common,
                     onTransactions = { target -> openRegister(target, 0) },
-                    onPayCard = { card -> openEditor("cardPayment", JSONObject().put("id", card)) })
+                    onPayCard = { card -> openEditor("cardPayment", JSONObject().put("id", card)) }, showing = showing)
                 1 -> TransactionsScreen(budget, state.summary, accountFilter, categoryFilter,
                     onBack = when {
                         returnTab >= 0 -> ({ leaveForm { closeRegister() } })
@@ -474,7 +548,9 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
                     editAccount = { openEditor("account", it) }, reconcile = { openEditor("reconcile", it) },
                     editSchedule = { openEditor("schedule", it) }, vm = vm, bar = common, setDockHidden = { dockHidden = it },
                     openAccount = { id -> accountFilter = id; categoryFilter = ""; rangeFrom = ""; rangeThrough = "" },
-                    openId = if (formOpenBeside) selected?.text("id") else null)
+                    openId = if (formOpenBeside) selected?.text("id") else null,
+                    // An assistant card's transactions are shown in the whole register, where every one of them is.
+                    showing = showing?.takeIf { accountFilter.isEmpty() && categoryFilter.isEmpty() && rangeFrom.isEmpty() && rangeThrough.isEmpty() && rangeSearch.isEmpty() })
                 2 -> AccountsScreen(budget, state.summary, open = { account -> accountFilter = account.text("id"); categoryFilter = ""; tab = 1 },
                     edit = { openEditor("account", it) }, reconcile = { openEditor("reconcile", it) }, add = { openEditor("account") },
                     vm = vm, bar = common)
@@ -502,9 +578,19 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
         }
         Box(Modifier.align(Alignment.BottomStart).then(dockSide), contentAlignment = Alignment.BottomCenter) {
         SnackbarHost(snack, Modifier.navigationBarsPadding().padding(bottom = if (rail) 16.dp else 96.dp)) { data ->
-            Snackbar(data, Modifier.padding(horizontal = 12.dp), shape = RoundedCornerShape(16.dp),
-                containerColor = if (ur.dark) androidx.compose.ui.graphics.Color(0xFF262C3E) else androidx.compose.ui.graphics.Color(0xFF1D1D1F),
-                contentColor = if (ur.dark) ur.text else androidx.compose.ui.graphics.Color(0xFFF5F5F7), actionColor = if (ur.dark) ur.accent else androidx.compose.ui.graphics.Color(0xFF78A7FF))
+            val fill = if (ur.dark) androidx.compose.ui.graphics.Color(0xFF262C3E) else androidx.compose.ui.graphics.Color(0xFF1D1D1F)
+            val ink = if (ur.dark) ur.text else androidx.compose.ui.graphics.Color(0xFFF5F5F7)
+            val action = if (ur.dark) ur.accent else androidx.compose.ui.graphics.Color(0xFF78A7FF)
+            val offer = data.visuals as? OfferVisuals
+            if (offer == null) Snackbar(data, Modifier.padding(horizontal = 12.dp), shape = RoundedCornerShape(16.dp), containerColor = fill, contentColor = ink, actionColor = action)
+            // A message with an offer keeps Undo beside it, on a line of their own under the words.
+            else Snackbar(Modifier.padding(horizontal = 12.dp).testTag("import-said"), shape = RoundedCornerShape(16.dp), containerColor = fill, contentColor = ink, actionOnNewLine = true,
+                action = {
+                    Row {
+                        TextButton({ vm.undo(); data.dismiss() }) { Text(undoLabel, color = action) }
+                        TextButton({ data.performAction() }) { Text(offer.offer, color = action) }
+                    }
+                }) { Text(offer.message) }
         }
         }
         } }
@@ -538,9 +624,13 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
         val assistantDrag = rememberPanelDrag(assistant) { assistant = false }
         // One assistant, wherever it stands: folding moves it between the side and the phone's panel
         // with what's being typed in it.
+        // Whether the panel is over the app or beside it, and where a card's Show leads, as they are when asked.
+        val covering by rememberUpdatedState(!assistantBeside)
+        val showTarget by rememberUpdatedState<(AssistantShow) -> Unit> { show(it) }
         val assistantPanel = remember {
-            movableContentOf { importing: JSONObject?, fix: (String, JSONObject) -> Unit, place: AssistantPlace, drag: Modifier ->
-                AssistantScreen(vm, onClose = { assistant = false }, importing = importing, applyFix = fix, place = place, dragArea = drag)
+            movableContentOf { importing: JSONObject?, fix: (JSONObject) -> Unit, place: AssistantPlace, drag: Modifier ->
+                AssistantScreen(vm, onClose = { assistant = false }, importing = importing, applyFix = fix, place = place, dragArea = drag,
+                    covers = { covering }, show = { showTarget(it) })
             }
         }
         // On a large screen the assistant stands at the window's end, full height, as a screen of its own

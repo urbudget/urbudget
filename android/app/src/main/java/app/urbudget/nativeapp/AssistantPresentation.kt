@@ -2,6 +2,10 @@ package app.urbudget.nativeapp
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 
 /**
  * Append tokens once; publish at a bounded cadence instead of copying a reply for every token.
@@ -275,6 +279,255 @@ internal enum class AssistantErrorAction(val label: Int) {
 internal fun assistantProviderCompany(provider: String): String = if (provider == "anthropic") "Anthropic" else "OpenAI"
 
 /**
+ * What a proposal card can offer, as the core names it in the card's `actions`. The card draws a
+ * button for each one this app knows, in the order given, and leaves out any other.
+ */
+internal enum class ProposalAction(val key: String) {
+    Apply("apply"), ApplyToImport("applyToImport"), ApplyBankTexts("applyBankTexts"), AskChanges("askChanges"), UseOriginal("useOriginal"),
+    Discard("discard"), Remove("remove"), Restore("restore"), Undo("undo"), AskAgain("askAgain"), Show("show"),
+    Preview("preview"), Print("print"), Excel("excel"), Open("open"), Save("save"), ReviewImport("reviewImport"), SaveCsv("saveCsv"), Answer("answer");
+
+    companion object {
+        private val known = values().associateBy { it.key }
+        fun of(key: String): ProposalAction? = known[key]
+    }
+}
+
+/** Where a card's "Show in the budget" leads: the register with [transactions] selected, or else the Budget tab on [month] with [categories] marked. */
+internal data class AssistantShow(val month: String?, val categories: List<String>, val transactions: List<String>)
+
+/** When a card was applied, as the app writes a day and a time ("21/10/2026, 14:30"); none when [at] (RFC 3339) doesn't read. */
+internal fun assistantMoment(at: String, zone: ZoneId = ZoneId.systemDefault(), time: DateTimeFormatter = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)): String? =
+    runCatching { OffsetDateTime.parse(at).atZoneSameInstant(zone) }.getOrNull()
+        ?.let { Words[R.string.sms_moment, Money.date(it.toLocalDate().toString()), Money.ltr(it.toLocalTime().format(time))] }
+
+/**
+ * A proposal card as the core's view of it says to draw it (its `kind`, `status`, `made`,
+ * `actions`, `message` and `appliedAt`). Nothing here works out from kind and status what a card
+ * offers: that is the core's `actions`.
+ */
+internal object ProposalCards {
+    private val kinds = setOf("budget", "transactions", "payees", "notes", "categories", "schedules", "delete", "fix", "bankTexts",
+        "report", "spreadsheet", "import", "figures", "question")
+    private val onLine = setOf(ProposalAction.Undo, ProposalAction.Restore, ProposalAction.Show)
+
+    /** Whether this app draws the card's kind in full. Any other is drawn plainly, with a line saying an update is needed. */
+    fun known(proposal: JSONObject): Boolean = proposal.optString("kind") in kinds
+
+    /**
+     * The actions the card offers that this app knows, in the core's order. Undo is one only
+     * while the budget's own Undo would take this card's change back: [undoable] is the id of
+     * the card it would (the conversation's `undoable`).
+     */
+    fun actions(proposal: JSONObject, undoable: String?): List<ProposalAction> = proposal.strings("actions").mapNotNull(ProposalAction::of)
+        .filter { it != ProposalAction.Undo || (!undoable.isNullOrEmpty() && undoable == proposal.optString("id")) }
+
+    /** The card's buttons, the first being the main one. Remove is in the card's menu and a question's answers are its rows, so neither is a button. */
+    fun buttons(proposal: JSONObject, undoable: String?): List<ProposalAction> =
+        actions(proposal, undoable).filter { it != ProposalAction.Remove && it != ProposalAction.Answer }
+
+    /** A card that's done with: applied, set aside, undone or replaced. It folds to one line. */
+    fun finished(proposal: JSONObject): Boolean = proposal.optString("status") in setOf("applied", "discarded", "undone", "replaced")
+
+    /** The buttons a finished card keeps beside its line: Undo, Restore and Show. */
+    fun lineButtons(proposal: JSONObject, undoable: String?): List<ProposalAction> = buttons(proposal, undoable).filter { it in onLine }
+
+    /** The buttons a finished card shows once it's opened: whatever else it still offers. */
+    fun openedButtons(proposal: JSONObject, undoable: String?): List<ProposalAction> = buttons(proposal, undoable).filter { it !in onLine }
+
+    /**
+     * A finished card's line: where it stands, then its title. "Applied 21/10/2026, 14:30: …"
+     * (plain "Applied" when the core kept no time), "Undone", "Replaced by a newer version",
+     * "Discarded", or "Removed" for a thing the assistant made. A question that was answered
+     * reads "Asked: …" instead.
+     */
+    fun finishedLine(proposal: JSONObject, moment: (String) -> String? = ::assistantMoment): String {
+        val title = proposal.optString("title")
+        val words = when (proposal.optString("status")) {
+            "applied" -> {
+                if (proposal.optString("kind") == "question") return Words[R.string.assistant_asked, title]
+                moment(proposal.optString("appliedAt"))?.let { Words[R.string.assistant_applied_at, it] } ?: Words[R.string.assistant_applied]
+            }
+            "undone" -> Words[R.string.assistant_undone]
+            "replaced" -> Words[R.string.assistant_replaced]
+            else -> Words[if (proposal.optBoolean("made")) R.string.assistant_removed else R.string.assistant_discarded]
+        }
+        return Words[R.string.assistant_card_line, words, title]
+    }
+
+    /** What the card has to say about itself: its tone ("info", "warn" or "error") and its words. None when it says nothing. */
+    fun message(proposal: JSONObject): Pair<String, String>? =
+        proposal.optJSONObject("message")?.let { said -> said.optString("text").takeIf(String::isNotEmpty)?.let { said.optString("tone") to it } }
+
+    /** What "Ask for a new version" sends: the card's title, and why it couldn't be applied. */
+    fun askAgain(proposal: JSONObject): String =
+        Words[R.string.assistant_ask_again_prompt, proposal.optString("title"), message(proposal)?.second.orEmpty()]
+
+    /**
+     * A change the budget's own changes move: one that waits is made again on the budget each
+     * time the conversation is read, and the budget's Undo and Redo take an applied one back and
+     * put it back. A conversation with one is read again when the budget changes.
+     */
+    fun followsBudget(proposal: JSONObject): Boolean = !proposal.optBoolean("made") && proposal.optString("kind") !in setOf("question", "fix", "bankTexts") &&
+        proposal.optString("status") in setOf("proposed", "undone", "applied")
+
+    /**
+     * How long each row's bar is on a figures card: the row's share of the largest amount on the
+     * card, by absolute value, from 0 to 1. A card with no amounts has bars of no length.
+     */
+    fun barShares(rows: List<JSONObject>): List<Float> {
+        val sizes = rows.map { Math.abs(it.optLong("amount")).toDouble() }
+        val largest = sizes.maxOrNull()?.takeIf { it > 0 } ?: return rows.map { 0f }
+        return sizes.map { (it / largest).toFloat() }
+    }
+
+    /**
+     * How many transactions a delete card deletes: its rows still chosen, or every one of them
+     * ([more] counts those left off the card) when none can be left out.
+     */
+    fun deleting(rows: List<JSONObject>, more: Int): Int {
+        val keyed = rows.filter { it.optString("key").isNotEmpty() }
+        return if (keyed.isEmpty()) rows.size + more else keyed.count { !it.optBoolean("skipped") }
+    }
+
+    /** Where the card's Show leads, from its `highlight`: its transactions when it names any, else its month and categories. None when it names neither. */
+    fun show(proposal: JSONObject): AssistantShow? {
+        val highlight = proposal.optJSONObject("card")?.optJSONObject("highlight") ?: return null
+        val transactions = highlight.strings("transactions")
+        val categories = highlight.strings("categories")
+        return when {
+            transactions.isNotEmpty() -> AssistantShow(null, emptyList(), transactions)
+            categories.isNotEmpty() -> AssistantShow(highlight.optString("month").ifEmpty { null }, categories, emptyList())
+            else -> null
+        }
+    }
+
+    /**
+     * What a `fix` card is marked with when its import took only some of its fixes: "Fixes
+     * applied: 1 of 3. Not applied: …", naming the rows that didn't take, up to five then "…".
+     * None when every one took. [applied] is what the import says became of each fix
+     * (`bankApplyFixes`), in the order of the card's `fixes`.
+     */
+    fun fixNote(proposal: JSONObject, applied: JSONObject): String? {
+        val results = applied.records("results")
+        val took = results.count { it.optBoolean("applied") }
+        if (took == results.size) return null
+        val rows = proposal.optJSONObject("card")?.records("rows").orEmpty()
+        val fields = proposal.optJSONObject("fixes")?.records("fields").orEmpty()
+        val places = HashMap<String, Int>()
+        val labels = LinkedHashSet<String>()
+        for (result in results) {
+            val kind = result.optString("fix")
+            val place = places[kind] ?: 0
+            places[kind] = place + 1
+            if (result.optBoolean("applied")) continue
+            val line = if (result.isNull("line")) "" else result.optString("line")
+            // The row's key on the card, as the core makes it for each kind of fix.
+            val key = when (kind) {
+                "structure" -> "x"
+                "include" -> "i:$line"
+                "field" -> fields.getOrNull(place)?.let { "f:$line:${it.optString("field")}" }
+                else -> null
+            }
+            val label = rows.firstOrNull { key != null && it.optString("key") == key }?.optString("label").orEmpty()
+                .ifEmpty { if (line.isEmpty()) "" else Words[R.string.bank_line_number, line] }
+            if (label.isNotEmpty()) labels += label
+        }
+        val comma = Words[R.string.list_separator]
+        val list = labels.take(5).joinToString(comma) + if (labels.size > 5) "$comma…" else ""
+        return Words[R.string.assistant_fix_note, Money.count(took.toLong()), Money.count(results.size.toLong()), list]
+    }
+}
+
+/** How long a card waits after the user's last choice on it before the choices go to the core, in one call. */
+internal const val ProposalChoiceDelay = 600L
+
+/**
+ * The notes the assistant keeps for the open budget (its `assistantNotes`), as the assistant's
+ * settings list and save them: always the whole list.
+ */
+internal object AssistantNotes {
+    /** A note's length, in the characters the core counts. */
+    const val Length = 200
+    /** How many notes a budget keeps. */
+    const val Limit = 30
+
+    /** The budget's notes; none when it has no `assistantNotes`. */
+    fun list(budget: JSONObject?): List<String> = budget.strings("assistantNotes").filter(String::isNotEmpty)
+
+    /** [note] as the core keeps one: on one line with single spaces, and at most 200 characters, whole ones only. */
+    fun cleaned(note: String): String {
+        val line = note.split(Regex("\\s+")).filter(String::isNotEmpty).joinToString(" ")
+        return line.substring(0, line.offsetByCodePoints(0, minOf(Length, line.codePointCount(0, line.length)))).trim()
+    }
+
+    /** The list with [note] at its end; none when there's nothing to add, or it's there already. */
+    fun adding(note: String, notes: List<String>): List<String>? = cleaned(note).takeIf { it.isNotEmpty() && it !in notes }?.let { notes + it }
+
+    /** The list without the note at [index]. */
+    fun removing(index: Int, notes: List<String>): List<String> = notes.filterIndexed { at, _ -> at != index }
+}
+
+/**
+ * Starting points other pages offer: the assistant opened with a request in its message field
+ * for the user to send. Nothing is sent by itself.
+ */
+internal object AssistantStart {
+    /** What an import added: how many transactions, and of those the ones that still have no category, with the names of the accounts they're in. */
+    data class Imported(val added: Int = 0, val ids: List<String> = emptyList(), val accounts: List<String> = emptyList())
+
+    /**
+     * The transactions in [after] that weren't in [before], and of them those that still have no
+     * category: none at all, or the Uncategorized placeholder (the desktop's uncategorizedImports).
+     * Payee rules may have categorized the rest. Tracking accounts use no categories, and
+     * transfers need none.
+     */
+    fun uncategorized(before: JSONObject, after: JSONObject): Imported {
+        val known = before.records("transactions").mapTo(HashSet()) { it.optString("id") }
+        val budgeted = after.records("accounts").filter { it.optString("kind") != "tracking" && it.optBoolean("onBudget", true) }
+            .associate { it.optString("id") to it.optString("name") }
+        val placeholders = after.records("categories").filter { it.optString("name") in setOf("Uncategorized", "Uncategorized Transactions") }
+            .mapTo(hashSetOf("local-uncategorized")) { it.optString("id") }
+        fun JSONObject.none(key: String) = isNull(key) || optString(key).isEmpty()
+        var added = 0
+        val ids = mutableListOf<String>()
+        val accounts = LinkedHashSet<String>()
+        for (transaction in after.records("transactions")) {
+            if (transaction.optString("id") in known) continue
+            added++
+            val name = budgeted[transaction.optString("accountId")] ?: continue
+            if (!transaction.none("transferAccountId")) continue
+            val open = transaction.records("splits").all { part -> part.none("transferAccountId") && (part.none("categoryId") || part.optString("categoryId") in placeholders) }
+            if (!open) continue
+            ids += transaction.optString("id")
+            accounts += name
+        }
+        return Imported(added, ids, accounts.toList())
+    }
+
+    /**
+     * What the assistant is asked about them, ready to send with them attached (the desktop's
+     * categorizeText). A message takes 200 of them: over that, it says these are the first.
+     */
+    fun categorize(imported: Imported): String {
+        val where = joined(imported.accounts)
+        val count = imported.ids.size
+        return when {
+            count > AssistantSelectionLimit -> Words.count(R.plurals.assistant_categorize_first, count.toLong(), Money.count(AssistantSelectionLimit.toLong()), where)
+            count == 1 -> Words[R.string.assistant_categorize_one, where]
+            else -> Words.count(R.plurals.assistant_categorize_new, count.toLong(), where)
+        }
+    }
+
+    /** "Checking", "Checking and Savings", "Checking, Savings and Cash". */
+    fun joined(names: List<String>): String =
+        if (names.size < 2) names.firstOrNull().orEmpty() else Words[R.string.chart_and, names.dropLast(1).joinToString(Words[R.string.list_separator]), names.last()]
+}
+
+private fun JSONObject?.strings(key: String): List<String> =
+    this?.optJSONArray(key)?.let { list -> (0 until list.length()).map(list::optString) }.orEmpty()
+
+/**
  * What the user chose on a proposal card, as `assistant_revise` takes it (desktop ProposalCard):
  * `skip` lists the keys of rows left out, `set` the rows given another category (null: Ready to
  * Assign) or amount. Each choice is made from the card's current `choices`.
@@ -329,7 +582,46 @@ internal object ProposalChoices {
         return if (choosing && chosen < keyed.size) Partial(chosen, keyed.size) else null
     }
 
+    /**
+     * `choices` with every row of [rows] that can be left out in or out, as [keep] says of each:
+     * all of them, none, or only the ones marked to check. Categories and amounts given stay,
+     * but for an amount of nothing on a row that's in again.
+     */
+    fun select(choices: JSONObject?, rows: List<JSONObject>, keep: (JSONObject) -> Boolean): JSONObject {
+        val keyed = rows.filter { it.optString("key").isNotEmpty() }
+        val kept = keyed.filter(keep).mapTo(HashSet()) { it.optString("key") }
+        return revision(keyed.map { it.optString("key") }.filter { it !in kept },
+            choices?.records("set").orEmpty().filterNot { it.optString("key") in kept && it.has("amount") && !it.isNull("amount") && it.optLong("amount") == 0L })
+    }
+
+    /** Whether a row is marked to check: "Only the ones to check" keeps those. */
+    fun toCheck(row: JSONObject): Boolean = row.optString("tone") == "warn"
+
+    /**
+     * A card's rows as choices that haven't reached the core yet leave them ([pending], the
+     * revision on its way): rows left out or put back, an amount given, and a category given,
+     * whose name ([category]; null is Ready to Assign) the row shows as `given` until the core's
+     * card says it in its own words.
+     */
+    fun shown(rows: List<JSONObject>, pending: JSONObject?, category: (String?) -> String): List<JSONObject> {
+        if (pending == null) return rows
+        val skip = pending.strings("skip").toSet()
+        val set = pending.records("set").associateBy { it.optString("key") }
+        return rows.map { row ->
+            val key = row.optString("key")
+            val given = set[key]
+            if (key.isEmpty() || (given == null && (key in skip) == row.optBoolean("skipped"))) return@map row
+            JSONObject(row.toString()).put("skipped", key in skip).also { shown ->
+                if (given?.has("amount") == true && !given.isNull("amount") && given.optLong("amount") != row.optLong("amount")) shown.put("amount", given.optLong("amount")).put("edited", true)
+                if (given?.has("category") == true) {
+                    val to = if (given.isNull("category")) null else given.optString("category")
+                    val edit = shown.optJSONObject("edit")
+                    val had = edit?.optString("categoryId")?.takeUnless { edit.isNull("categoryId") || it.isEmpty() }
+                    if (to != had) { edit?.put("categoryId", to ?: JSONObject.NULL); shown.put("edited", true).put("given", category(to)) }
+                }
+            }
+        }
+    }
+
     private fun revision(skip: List<String>, set: List<JSONObject>) = JSONObject().put("skip", JSONArray(skip)).put("set", JSONArray(set))
-    private fun JSONObject?.strings(key: String): List<String> =
-        this?.optJSONArray(key)?.let { list -> (0 until list.length()).map(list::optString) }.orEmpty()
 }

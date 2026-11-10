@@ -7,10 +7,12 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Base64
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.urbudget.nativeapp.ui.assistantReplyWritten
 import app.urbudget.nativeapp.ui.warmAssistantMarkdown
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -50,12 +52,43 @@ data class AssistantState(
     /** Something done unasked failed (the conversation read again, a refresh on coming back): said in a line of the panel, once. */
     val quiet: String? = null,
     val notice: String? = null,
-    val undoProposal: String? = null,
     /** What the reply is doing now ("Searching bank texts"), while a lookup runs. */
     val activity: String? = null,
 ) {
     val threadId get() = thread?.optString("id").orEmpty()
+    /** The card whose change the budget's own Undo would take back now, as the conversation's view says: only that card offers Undo. */
+    val undoable: String? get() = thread?.optString("undoable")?.ifEmpty { null }
+    /** What's waiting in the budget that the assistant can help with, under the last reply: each a button's `text` and the `prompt` it sends. */
+    val next: List<JSONObject> get() = thread?.records("next").orEmpty()
+    /** Whether something is being done with the card [proposal]: only that card waits, never the others. */
+    fun cardBusy(proposal: String) = AssistantController.card(proposal) in busy
 }
+
+/**
+ * What the user has done with the open conversation's cards that the core doesn't keep: the page
+ * of rows each shows, the finished ones opened, and the choices made on one that haven't gone to
+ * the core yet. It lives with the controller, so a card scrolled away and back is as it was left;
+ * and it's Compose state, so a tick shows at once.
+ */
+class AssistantCards {
+    private val pages = mutableStateMapOf<String, Int>()
+    private val opened = mutableStateMapOf<String, Boolean>()
+    internal val choices = mutableStateMapOf<String, JSONObject>()
+
+    /** The page of its rows the card [proposal] shows, from 0. */
+    fun page(proposal: String): Int = pages[proposal] ?: 0
+    fun page(proposal: String, page: Int) { pages[proposal] = page }
+    /** Whether the finished card [proposal] is opened to show its rows. */
+    fun opened(proposal: String): Boolean = opened[proposal] == true
+    fun open(proposal: String, open: Boolean) { opened[proposal] = open }
+    /** The choices made on [proposal] that the core doesn't have yet (`ProposalChoices`); none once it has them. */
+    fun choices(proposal: String): JSONObject? = choices[proposal]
+
+    internal fun clear() { pages.clear(); opened.clear(); choices.clear() }
+}
+
+/** What became of a card the app carries out itself: where it now stands ("applied", or "proposed" when nothing took), and what there is to say about it. */
+class CardDone(val status: String = "applied", val note: String? = null)
 
 /** Where the user is when they ask: the page, and the account or category its register shows. */
 data class AssistantPlace(val page: String = "assistant", val accountId: String? = null, val categoryId: String? = null)
@@ -105,6 +138,8 @@ class AssistantController(
         withContext(Dispatchers.IO) { NativeServices.call(method, params) }
     },
     events: Flow<JSONObject> = NativeServices.events,
+    /** The budget was saved by a call here (a card applied or undone, the notes): the app's sync hears of it. */
+    private val saved: () -> Unit = { NativeServices.notifySaved() },
 ) : ViewModel() {
     private val mutable = MutableStateFlow(AssistantState())
     val state = mutable.asStateFlow()
@@ -112,7 +147,14 @@ class AssistantController(
     val composer = AssistantComposer()
     /** Unsent messages of the conversations that aren't open, by conversation; "" is one not begun yet. */
     private val drafts = HashMap<String, AssistantDraft>()
-    private var undoToken: String? = null
+    /** The open conversation's cards as the user left them: pages, the ones opened, and choices on their way to the core. */
+    val cards = AssistantCards()
+    /** Each card's wait before its choices go to the core, started again by every choice. */
+    private val choiceTimers = HashMap<String, Job>()
+    /** Choices go to the core one call at a time, in the order they were made. */
+    private val choiceLane = Mutex()
+    /** How many times a card was put in the conversation from a call's answer: a conversation read meanwhile may be from before it. */
+    private var cardChanges = 0L
     private val stream = AssistantStreamBuffer()
     private var streamPublish: Job? = null
     /** The reply a `message` event announced, until the conversation is read back with it. */
@@ -161,8 +203,15 @@ class AssistantController(
                     "message" -> {
                         // The live text stays until the conversation is read back with the reply in it.
                         val text = event.optString("text")
+                        // It was read as it was written: finished, it's shown whole as it was, not from a first page.
+                        assistantReplyWritten(text)
                         if (assistantShows(state.value.entries, text)) stream.clearReply() else { stream.settle(); awaited = text }
                         mutable.update { it.copy(activity = null) }
+                        reloadThread()
+                    }
+                    // A newer card was made in an earlier one's place: the earlier one changes where it stands, and no second card is added for it.
+                    "replaced" -> {
+                        event.optJSONObject("proposal")?.let { showCard(thread, it) }
                         reloadThread()
                     }
                     "step", "proposal", "error", "cut", "done" -> {
@@ -260,7 +309,10 @@ class AssistantController(
         val generation = conversationGeneration
         if (state.value.threadId != id) return@withLock
         val ended = endings
+        val changes = cardChanges
         val thread = call("assistant_thread", JSONObject().put("id", id)) as JSONObject
+        // A card changed while this was read: what was read may be from before it, so it's read once more.
+        if (changes != cardChanges) reloads.trySend(id)
         val prior = presentation
         val prepared = withContext(Dispatchers.Default) {
             assistantThreadPresentation(thread, prior).also { now ->
@@ -303,6 +355,14 @@ class AssistantController(
         else if (id.isNotEmpty()) close(aside = false)
     }
     fun reloadThread() { state.value.threadId.takeIf(String::isNotEmpty)?.let(reloads::trySend) }
+    /**
+     * The budget changed: an edit, the app's own Undo or Redo, a sync. A conversation with a card
+     * the budget moves is read again, so the card shows where it now stands: one that waits is
+     * made again on the budget as it is, and Undo and Redo take an applied one back and put it back.
+     */
+    fun budgetChanged() {
+        if (state.value.undoable != null || state.value.entries.any { entry -> entry.optJSONObject("proposal")?.let(ProposalCards::followsBudget) == true }) reloadThread()
+    }
     private fun reloadHistory() = operation("history", quiet = true) { loadHistory() }
     fun dismissError() { mutable.update { it.copy(error = null) } }
     private var budget: String? = null
@@ -327,7 +387,6 @@ class AssistantController(
     }
     fun showError(message: String?) { mutable.update { it.copy(error = message) } }
     fun dismissNotice() { mutable.update { it.copy(notice = null) } }
-    fun note(text: String) { mutable.update { it.copy(notice = text) } }
     /** Puts `text` in the composer, unsent: after what's already typed there, never over it. */
     fun prefill(text: String) { composer.text = assistantDraftWith(composer.text, text) }
 
@@ -367,11 +426,31 @@ class AssistantController(
      */
     private fun close(aside: Boolean) {
         if (aside) leave()
+        leaveCards()
         conversationGeneration++; clearStream(); presentation = null
-        mutable.update { it.copy(thread = null, entries = emptyList(), running = false, streaming = "", thinking = "", undoProposal = null, activity = null) }
-        undoToken = null
+        // What was said about the conversation left (a report of one of its replies was sent) isn't about the next.
+        mutable.update { it.copy(thread = null, entries = emptyList(), running = false, streaming = "", thinking = "", activity = null, notice = null) }
         // A conversation opens at its end.
         if (aside) enter("") else composer.scroll = null
+    }
+    /**
+     * The open conversation is being left: choices on its cards still on their way to the core
+     * go now, and its cards start as the core has them when it's opened again.
+     */
+    private fun leaveCards() {
+        val thread = state.value.threadId
+        choiceTimers.values.forEach { it.cancel() }
+        choiceTimers.clear()
+        val waiting = cards.choices.toMap()
+        cards.clear()
+        if (thread.isNotEmpty()) waiting.forEach { (proposal, revision) ->
+            viewModelScope.launch {
+                try { choiceLane.withLock { call("assistant_revise", proposalParams(thread, proposal).put("revision", revision)) } }
+                catch (cancel: CancellationException) { throw cancel }
+                // The card says where it stands when its conversation is next read.
+                catch (_: Exception) {}
+            }
+        }
     }
     /** The panel with no conversation open. The one that was open keeps its unsent message. */
     fun newChat() = close(aside = true)
@@ -386,9 +465,9 @@ class AssistantController(
     fun openThread(id: String) = operation("open") { open(id, aside = true) }
     private suspend fun open(id: String, aside: Boolean) {
         if (aside) leave()
+        leaveCards()
         conversationGeneration++; clearStream(); presentation = null
-        mutable.update { it.copy(thread = JSONObject().put("id", id), entries = emptyList(), running = false, streaming = "", thinking = "", undoProposal = null, activity = null) }
-        undoToken = null
+        mutable.update { it.copy(thread = JSONObject().put("id", id), entries = emptyList(), running = false, streaming = "", thinking = "", activity = null, notice = null) }
         if (aside) enter(id) else composer.scroll = null
         // Its reply may be part way through a round: only whole rounds are shown from here.
         joined = true
@@ -537,37 +616,136 @@ class AssistantController(
     }
     fun stop() = operation("stop") { call("assistant_stop", JSONObject().put("threadId", state.value.threadId)); loadThread(state.value.threadId) }
 
-    fun apply(proposal: String, changed: () -> Unit) = operation("proposal") {
-        val id = state.value.threadId
-        val params = proposalParams(id, proposal)
-        val outcome = call("assistant_apply_commit", params) as JSONObject
-        val patch = outcome.optJSONObject("patch")
-        if (patch != null) {
-            undoToken = outcome.optJSONObject("snapshot")?.optString("token")
-                ?: (call("database_status") as JSONObject).optString("token")
-            mutable.update { it.copy(undoProposal = if (outcome.optBoolean("undoAvailable")) proposal else null, notice = Words[R.string.assistant_proposal_applied]) }
-            NativeServices.notifySaved(); changed()
-        } else mutable.update { it.copy(notice = Words[R.string.assistant_budget_changed_review]) }
-        loadThread(id)
+    /**
+     * Puts a card's view, as a call or an event gave it, in its place in the open conversation:
+     * the card shows where it stands without the conversation being read again.
+     */
+    private fun showCard(thread: String, view: JSONObject) {
+        if (state.value.threadId != thread) return
+        val entries = state.value.entries
+        val at = entries.indexOfFirst { it.optJSONObject("proposal")?.optString("id") == view.optString("id") }
+        if (at < 0) return
+        cardChanges++
+        val shown = entries.toMutableList().also { it[at] = JSONObject().put("kind", "proposal").put("proposal", view) }
+        presentation = presentation?.copy(entries = shown)
+        mutable.update { if (it.threadId == thread) it.copy(entries = shown) else it }
     }
-    fun undoProposal(proposal: String, changed: () -> Unit) = operation("proposal") {
-        val id = state.value.threadId
-        val token = (call("database_status") as JSONObject).optString("token")
-        require(token == undoToken && proposal == state.value.undoProposal) { Words[R.string.assistant_budget_changed_undo] }
-        call("assistant_undo_commit", proposalParams(id, proposal).put("expectedToken", token))
-        undoToken = null; mutable.update { it.copy(undoProposal = null) }; NativeServices.notifySaved(); changed(); loadThread(id)
+
+    /**
+     * The user's choices on a card (`ProposalChoices`): rows left out or put back, categories and
+     * amounts given. The card shows them at once; they go to the core in one call a moment after
+     * the last of them, and before Apply.
+     */
+    fun choose(proposal: String, revision: JSONObject) {
+        val thread = state.value.threadId
+        cards.choices[proposal] = revision
+        choiceTimers.remove(proposal)?.cancel()
+        choiceTimers[proposal] = viewModelScope.launch {
+            delay(ProposalChoiceDelay)
+            choiceTimers.remove(proposal)
+            try { settle(thread, proposal, whole = false) }
+            catch (cancel: CancellationException) { throw cancel }
+            catch (failure: Exception) { refused(thread, failure) }
+        }
     }
-    /** The proposal made again with the user's choices on its card (`ProposalChoices`): rows left out, categories or amounts given. */
-    fun revise(proposal: String, revision: JSONObject) = operation("proposal") {
-        val id = state.value.threadId
-        call("assistant_revise", proposalParams(id, proposal).put("revision", revision)); loadThread(id)
+    /**
+     * Sends a card's choices now, unless the core has them, and waits for the card they make.
+     * [whole]: until the core has every choice, for Apply to make what the card shows; otherwise
+     * a choice made while one call was out waits its own moment.
+     */
+    private suspend fun settle(thread: String, proposal: String, whole: Boolean) {
+        if (whole) choiceTimers.remove(proposal)?.cancel()
+        choiceLane.withLock {
+            do {
+                val revision = cards.choices[proposal] ?: return
+                val view = try { call("assistant_revise", proposalParams(thread, proposal).put("revision", revision)) as JSONObject }
+                    catch (cancel: CancellationException) { throw cancel }
+                    // What the core wouldn't take isn't shown as chosen: the card goes back to what the core has.
+                    catch (failure: Exception) { if (cards.choices[proposal] === revision) cards.choices.remove(proposal); throw failure }
+                showCard(thread, view)
+                // The card that came back has these choices on it, unless another was made meanwhile.
+                val settled = cards.choices[proposal] === revision
+                if (settled) cards.choices.remove(proposal)
+            } while (whole && !settled)
+        }
     }
-    fun discard(proposal: String) = operation("proposal") {
-        call("assistant_mark", proposalParams(state.value.threadId, proposal).put("status", "discarded")); loadThread(state.value.threadId)
+    /** Choices the core refused, sent a moment after they were made: said, and the conversation read again for the card as the core has it. */
+    private fun refused(thread: String, failure: Exception) {
+        mutable.update { it.copy(error = failure.message ?: Words[R.string.assistant_action_failed]) }
+        if (state.value.threadId == thread) reloadThread()
     }
-    fun imported(thread: String, proposal: String) = operation("proposal") {
-        call("assistant_mark", proposalParams(thread, proposal).put("status", "applied"))
+    /**
+     * Something done with one card of the open conversation. It takes that card's turn: the card
+     * waits, the others don't, and a second tap while it runs does nothing. When it fails the
+     * conversation is read again, so under what's said the card shows where the core has it.
+     */
+    private fun onCard(proposal: String, work: suspend (thread: String) -> Unit) = operation(card(proposal)) {
+        val thread = state.value.threadId
+        try { work(thread) }
+        catch (cancel: CancellationException) { throw cancel }
+        catch (failure: Exception) { if (state.value.threadId == thread) reloadThread(); throw failure }
+    }
+    /** The assistant's own version of a card again: none of the user's choices. Its rows as the assistant made them come back from the core. */
+    fun useOriginal(proposal: String) = onCard(proposal) { thread ->
+        cards.choices[proposal] = ProposalChoices.original()
+        settle(thread, proposal, whole = true)
+    }
+    /**
+     * Applies a card's change: the user's choices go to the core first, then the budget is saved
+     * and the card marked. The card that comes back is shown as it is: applied, or made again
+     * with its message when the budget moved in the moment between.
+     */
+    fun apply(proposal: String, changed: () -> Unit) = onCard(proposal) { thread ->
+        settle(thread, proposal, whole = true)
+        val outcome = call("assistant_apply_commit", proposalParams(thread, proposal)) as JSONObject
+        outcome.optJSONObject("proposal")?.let { showCard(thread, it) }
+        if (outcome.optJSONObject("patch") != null) { saved(); changed() }
+        // Which card the budget's Undo would take back, and what's waiting next, come with the conversation.
         if (state.value.threadId == thread) loadThread(thread)
+    }
+    /** Takes an applied card's change back. The core allows it only while that change is the budget's latest, and says so otherwise. */
+    fun undoProposal(proposal: String, changed: () -> Unit) = onCard(proposal) { thread ->
+        val token = (call("database_status") as JSONObject).optString("token")
+        val outcome = call("assistant_undo_commit", proposalParams(thread, proposal).put("expectedToken", token)) as JSONObject
+        outcome.optJSONObject("proposal")?.let { showCard(thread, it) }
+        saved(); changed()
+        if (state.value.threadId == thread) loadThread(thread)
+    }
+    /**
+     * Records where the user puts a card: set aside ("discarded": Discard, or Remove for a thing
+     * the assistant made) or back ("proposed": Restore). The core refuses a step that can't
+     * follow from where the card stands, and its words are said.
+     */
+    fun mark(proposal: String, status: String) = onCard(proposal) { thread ->
+        // Choices on a card set aside have nowhere to go.
+        choiceTimers.remove(proposal)?.cancel()
+        cards.choices.remove(proposal)
+        marked(thread, proposal, CardDone(status))
+    }
+    /**
+     * A card the app carries out itself (bank texts on the phone, an import's fixes): [work] does
+     * it and says where the card now stands, or nothing to leave it as it is. The user's choices
+     * go to the core first. A failure is said, and the card stays as it was.
+     */
+    fun carryOut(proposal: String, work: suspend () -> CardDone?) = onCard(proposal) { thread ->
+        settle(thread, proposal, whole = true)
+        work()?.let { marked(thread, proposal, it) }
+    }
+    /** The assistant's converted file was imported: its card is applied. */
+    fun imported(thread: String, proposal: String) = operation(card(proposal)) { marked(thread, proposal, CardDone()) }
+    private suspend fun marked(thread: String, proposal: String, done: CardDone) {
+        val params = proposalParams(thread, proposal).put("status", done.status)
+        done.note?.let { params.put("note", it) }
+        showCard(thread, call("assistant_mark", params) as JSONObject)
+        if (state.value.threadId == thread) loadThread(thread)
+    }
+    /**
+     * Saves the notes the assistant keeps for the open budget, the whole list: the budget comes
+     * back with them, as it does from an applied card.
+     */
+    fun saveNotes(notes: List<String>, changed: () -> Unit, done: () -> Unit = {}) = operation("notes") {
+        call("assistant_notes_commit", JSONObject().put("notes", JSONArray(notes)))
+        saved(); changed(); done()
     }
     fun report(proposal: String, done: (JSONObject) -> Unit) = operation("report") {
         done(call("assistant_report", proposalParams(state.value.threadId, proposal)) as JSONObject)
@@ -589,6 +767,8 @@ class AssistantController(
     override fun onCleared() { reloads.close(); super.onCleared() }
 
     companion object {
+        /** What's being done with one card, among the things under way (`AssistantState.busy`). */
+        internal fun card(proposal: String) = "card:$proposal"
         private fun proposalParams(thread: String, proposal: String) = JSONObject().put("threadId", thread).put("proposalId", proposal)
         private fun JSONObject.copy() = JSONObject(toString())
         private fun Any?.objects(): List<JSONObject> = (this as? JSONArray)?.let { list -> (0 until list.length()).mapNotNull(list::optJSONObject) }.orEmpty()

@@ -6,6 +6,7 @@ import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -46,6 +47,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.urbudget.nativeapp.AssistantAnnouncement
+import app.urbudget.nativeapp.AssistantCards
 import app.urbudget.nativeapp.AssistantController
 import app.urbudget.nativeapp.AssistantEntryKind
 import app.urbudget.nativeapp.AssistantErrorAction
@@ -55,8 +57,12 @@ import app.urbudget.nativeapp.AssistantPart
 import app.urbudget.nativeapp.AssistantPlace
 import app.urbudget.nativeapp.AssistantScroll
 import app.urbudget.nativeapp.AssistantSelectionLimit
+import app.urbudget.nativeapp.AssistantShow
 import app.urbudget.nativeapp.AssistantUsage
 import app.urbudget.nativeapp.BuildConfig
+import app.urbudget.nativeapp.CardDone
+import app.urbudget.nativeapp.ProposalAction
+import app.urbudget.nativeapp.ProposalCards
 import app.urbudget.nativeapp.SignInService
 import app.urbudget.nativeapp.assistantFollows
 import app.urbudget.nativeapp.assistantPageName
@@ -76,6 +82,7 @@ import app.urbudget.nativeapp.BudgetViewModel
 import app.urbudget.nativeapp.Money
 import app.urbudget.nativeapp.ProposalChoices
 import app.urbudget.nativeapp.R
+import app.urbudget.nativeapp.Words
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -92,13 +99,15 @@ import java.time.ZoneId
  * Native chat and proposal review for the same Rust assistant used by desktop. `importing` is the
  * bank file being imported when the assistant is open over its import ({account, content,
  * session}); fixes it proposes for that import go to `applyFix`. `place` is where the app is,
- * which goes with a message unless the user takes it off.
+ * which goes with a message unless the user takes it off. `covers` says whether the panel is
+ * over the app (a phone) rather than beside it, and `show` takes the app to what a card names.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantController = viewModel(), onClose: (() -> Unit)? = null,
-                             importing: JSONObject? = null, applyFix: ((thread: String, proposal: JSONObject) -> Unit)? = null,
-                             place: AssistantPlace = AssistantPlace(), dragArea: Modifier = Modifier) {
+                             importing: JSONObject? = null, applyFix: ((proposal: JSONObject) -> Unit)? = null,
+                             place: AssistantPlace = AssistantPlace(), dragArea: Modifier = Modifier,
+                             covers: () -> Boolean = { true }, show: (AssistantShow) -> Unit = {}) {
     // Token updates only recompose the live reply, not history, proposal controls or composer.
     val panel = remember(controller) { controller.state.map { it.copy(streaming = "", thinking = "") }.distinctUntilChanged() }
     // From what the controller holds now: a panel opened again shows its conversation at once, not an empty one first.
@@ -137,8 +146,15 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
     var afterNotice by remember { mutableStateOf<(() -> Unit)?>(null) }
     var pendingExport by remember { mutableStateOf<Pair<String, ByteArray>?>(null) }
     var exportError by remember { mutableStateOf<String?>(null) }
-    // A proposal card's row being given another category or amount: the proposal, and the row.
-    var changing by remember { mutableStateOf<Pair<JSONObject, JSONObject>?>(null) }
+    // A proposal card's row being given another category or amount: the card, and the row as it shows.
+    var changing by remember { mutableStateOf<Pair<String, JSONObject>?>(null) }
+    // The import the panel is open over, by its session: a card of fixes applies only there.
+    val importSession = importing?.optJSONObject("session")?.optJSONObject("scope")?.text("session")?.ifEmpty { null }
+    // A category's name, for a card's row to show the one just given it.
+    val categories = remember(budget) { budget.rows("categories").associate { it.text("id") to it.text("name") } }
+    val unassigned = stringResource(R.string.category_unassigned)
+    val deleted = stringResource(R.string.category_deleted)
+    val categoryName = remember(categories, unassigned, deleted) { { id: String? -> if (id == null) unassigned else categories[id] ?: deleted } }
     val entries = state.entries
     // Steps in a row read as one line, the latest; the rest are a tap away.
     val rows = remember(entries) { assistantRows(entries) }
@@ -148,8 +164,11 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
     val continuedFrom = state.thread?.text("continuedFrom").orEmpty()
     val started = entries.isNotEmpty() || continuedFrom.isNotEmpty()
     val interrupted = !state.running && entries.lastOrNull()?.let(AssistantEntryKind::of) == AssistantEntryKind.User
-    // The list's items, to know its last: where it carries on from, the start screen, the conversation, the reply being written, what it's doing.
-    val count = (if (continuedFrom.isNotEmpty()) 1 else 0) + (if (!started && !opening) 1 else 0) + rows.size + (if (writing) 1 else 0) + (if (state.running || interrupted) 1 else 0)
+    // What's waiting in the budget that the assistant can help with: offered under the last reply, while nothing runs.
+    val next = remember(state.thread, state.running, writing) { if (state.running || writing) emptyList() else state.next }
+    // The list's items, to know its last: where it carries on from, the start screen, the conversation, the reply being written, what it's doing, what's next.
+    val count = (if (continuedFrom.isNotEmpty()) 1 else 0) + (if (!started && !opening) 1 else 0) + rows.size + (if (writing) 1 else 0) +
+        (if (state.running || interrupted) 1 else 0) + (if (next.isNotEmpty()) 1 else 0)
     val end by rememberUpdatedState(count - 1)
     // The list opens where the panel left it, or at its end.
     val list = remember(controller) { composer.scroll?.let { LazyListState(it.index, it.offset) } ?: LazyListState((count - 1).coerceAtLeast(0)) }
@@ -233,6 +252,42 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
         }
     }
     fun retry() = whenTold { scope.launch { controller.retry(sending(), checkBankTexts()) } }
+    // Whether a message can go now: a card's answer, a new version asked for and what's next all go as one.
+    val canSend = ready && !state.running && "send" !in state.busy
+    /** What a card's button does. The card says which it offers; this is where each leads. */
+    fun act(proposal: JSONObject, action: ProposalAction) {
+        val id = proposal.text("id")
+        when (action) {
+            ProposalAction.Apply -> controller.apply(id, vm::refresh)
+            ProposalAction.ApplyToImport -> applyFix?.invoke(proposal)
+            // A bank-text card is done on the phone: Bank messages opens when it reads.
+            ProposalAction.ApplyBankTexts -> proposal.optJSONObject("bankTexts")?.let { payload ->
+                controller.carryOut(id) {
+                    val done = BankTextsAssistant.apply(context.applicationContext, vm, payload)
+                    // Over the app the panel gives way to the page; beside it both stay in view. With texts
+                    // gone from the phone since, it stays: the card says so, where a card says what it has to.
+                    done.page?.let { PageRequests.page.value = it; if (done.notice == null && covers()) onClose?.invoke() }
+                    CardDone(note = done.notice)
+                }
+            }
+            // After what's already typed, on a line of its own: never over it.
+            ProposalAction.AskChanges -> controller.prefill(Words[R.string.assistant_refine_prompt, proposal.text("title")] + " ")
+            ProposalAction.UseOriginal -> controller.useOriginal(id)
+            ProposalAction.Discard, ProposalAction.Remove -> controller.mark(id, "discarded")
+            ProposalAction.Restore -> controller.mark(id, "proposed")
+            ProposalAction.Undo -> controller.undoProposal(id, vm::refresh)
+            ProposalAction.AskAgain -> ask(ProposalCards.askAgain(proposal))
+            ProposalAction.Show -> ProposalCards.show(proposal)?.let(show)
+            ProposalAction.Preview -> controller.report(id) { report = it }
+            ProposalAction.Print -> controller.report(id) { printAssistantReport(context, it) }
+            ProposalAction.Excel, ProposalAction.Save -> controller.spreadsheet(id, false, ::savePath)
+            ProposalAction.Open -> controller.spreadsheet(id, true)
+            ProposalAction.ReviewImport -> { val thread = state.threadId; controller.importFile(id) { importFile = it.put("assistantThreadId", thread).put("assistantProposalId", id) } }
+            ProposalAction.SaveCsv -> controller.saveImport(id, ::savePath)
+            // A question's answers are its rows.
+            ProposalAction.Answer -> {}
+        }
+    }
     val signingIn = "signIn" in state.busy || state.status?.optBoolean("signingIn") == true
     Column(Modifier.fillMaxSize().imePadding()) {
         Row(Modifier.fillMaxWidth().then(dragArea).padding(start = 20.dp, end = 4.dp, top = 2.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -306,37 +361,14 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
                 val entry = row.second.first()
                 when (AssistantEntryKind.of(entry)) {
                     AssistantEntryKind.Proposal -> entry.optJSONObject("proposal")?.let { proposal ->
-                        val refinePrompt = stringResource(R.string.assistant_refine_prompt, proposal.text("title"))
-                        AssistantProposalCard(proposal, budget.text("currency"), state.busy.contains("proposal"), state.undoProposal == proposal.text("id"),
-                            apply = { controller.apply(proposal.text("id"), vm::refresh) },
-                            applyFix = applyFix?.let { fix -> { fix(state.threadId, proposal) } },
-                            undo = { controller.undoProposal(proposal.text("id"), vm::refresh) },
-                            discard = { controller.discard(proposal.text("id")) },
-                            // After what's already typed, on a line of its own: never over it.
-                            refine = { controller.prefill("$refinePrompt ") },
-                            reviewImport = { val thread = state.threadId; controller.importFile(proposal.text("id")) {
-                                importFile = it.put("assistantThreadId", thread).put("assistantProposalId", proposal.text("id"))
-                            } },
-                            saveImport = { controller.saveImport(proposal.text("id"), ::savePath) },
-                            report = { controller.report(proposal.text("id")) { report = it } },
-                            spreadsheet = { open -> controller.spreadsheet(proposal.text("id"), open) { if (!open) savePath(it) } },
-                            revise = { controller.revise(proposal.text("id"), it) },
-                            change = { row -> changing = proposal to row },
-                            // A bank-text card is done on the phone: Bank messages opens when it reads.
-                            applyBankTexts = proposal.optJSONObject("bankTexts")?.let { payload -> {
-                                val thread = state.threadId
-                                val id = proposal.text("id")
-                                scope.launch {
-                                    runCatching { BankTextsAssistant.apply(context.applicationContext, vm, payload) }
-                                        .onSuccess { done ->
-                                            controller.imported(thread, id)
-                                            // Texts that have gone from the phone since: the panel stays open to say so.
-                                            done.notice?.let(controller::note)
-                                            done.page?.let { PageRequests.page.value = it; if (done.notice == null) onClose?.invoke() }
-                                        }
-                                        .onFailure { controller.showError(it.message) }
-                                }
-                            } })
+                        val id = proposal.text("id")
+                        // Only the card being changed waits; its ticks show at once and go to the core together.
+                        AssistantProposalCard(proposal, budget.text("currency"), state.cardBusy(id), act = { act(proposal, it) }, undoable = state.undoable,
+                            cards = controller.cards, choose = { controller.choose(id, it) }, change = { row -> changing = id to row },
+                            // An answer goes as the user's message, by the way Send does.
+                            answer = { ask(it) }, canSend = canSend,
+                            fixHere = importSession != null && proposal.optJSONObject("fixes")?.optJSONObject("scope")?.text("session") == importSession,
+                            category = categoryName)
                     }
                     AssistantEntryKind.Step -> AssistantSteps(row.second)
                     AssistantEntryKind.Stopped -> Text(stringResource(R.string.assistant_reply_stopped), style = MaterialTheme.typography.labelMedium, color = ur.muted)
@@ -419,6 +451,14 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
             else if (interrupted) item(key = "interrupted", contentType = "working") {
                 TextButton({ retry() }, enabled = "send" !in state.busy) { Text(stringResource(R.string.assistant_continue_reply)) }
             }
+            // The core's words, already in the app's language: each sends its own message.
+            if (next.isNotEmpty()) item(key = "next", contentType = "next") {
+                FlowRow(Modifier.testTag("assistant-next"), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    next.forEach { step ->
+                        AssistChip({ ask(step.text("prompt")) }, label = { Text(step.text("text"), style = LocalTextStyle.current.own) }, enabled = canSend)
+                    }
+                }
+            }
         }
         // Away from the end new text isn't followed. This goes back to it, and follows again.
         if (!following && count > 0) Surface({ scope.launch { following = true; list.toEnd(end) } },
@@ -484,7 +524,7 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
         }
     }
 
-    if (settings) AssistantSettingsDialog(controller) { settings = false }
+    if (settings) AssistantSettingsDialog(controller, vm) { settings = false }
     // The notice of what's sent, and to whom, before the first message to a service. Continue keeps
     // that it was read and sends what waited; Not now sends nothing and leaves the message as typed.
     afterNotice?.let { send ->
@@ -560,9 +600,12 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
         scope.launch { val bytes = withContext(Dispatchers.Default) { document.text("body").toByteArray() }; saveBytes("${document.text("title").take(60)}.md", bytes) }
     }) }
     reportReply?.let { entry -> AssistantReplyReportDialog(entry, state.status, controller) { reportReply = null } }
-    changing?.let { (proposal, row) ->
+    changing?.let { (id, row) ->
         ProposalRowEditor(row, budget, vm, budgetState.summary, budgetState.month, { change ->
-            controller.revise(proposal.text("id"), ProposalChoices.change(proposal.optJSONObject("choices"), row.text("key"), change)); changing = null
+            // On top of the card's choices as they stand now: those on their way to the core, or else the core's.
+            val choices = controller.cards.choices(id)
+                ?: entries.firstNotNullOfOrNull { entry -> entry.optJSONObject("proposal")?.takeIf { it.text("id") == id } }?.optJSONObject("choices")
+            controller.choose(id, ProposalChoices.change(choices, row.text("key"), change)); changing = null
         }) { changing = null }
     }
     if (contextPicker) Dialog(onDismissRequest = { contextPicker = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -572,7 +615,8 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
         }
         val selected = composer.selected
         val selectedIds = remember(selected) { selected.toSet() }
-        Surface(Modifier.fillMaxWidth().fillMaxHeight(.85f).padding(16.dp), shape = MaterialTheme.shapes.large) {
+        // On a wide window it keeps the pages' readable width rather than the window's.
+        Surface(Modifier.widthIn(max = ReadableWidth).fillMaxWidth().fillMaxHeight(.85f).padding(16.dp), shape = MaterialTheme.shapes.large) {
             Column(Modifier.padding(16.dp)) {
                 Text(stringResource(R.string.assistant_transactions_to_discuss), style = MaterialTheme.typography.titleLarge)
                 Text(stringResource(R.string.assistant_select_up_to), style = MaterialTheme.typography.bodySmall)
@@ -678,113 +722,212 @@ private fun conversationDay(updated: String): String =
     Money.date(runCatching { Instant.parse(updated).atZone(ZoneId.systemDefault()).toLocalDate().toString() }.getOrDefault(updated.take(10)))
 
 /**
- * A change the assistant prepared, applied only from here. While it waits, each part of it can be
- * left out (its checkbox) or given another category or amount (its pencil, `change`); `revise`
- * makes the card again with those choices, and Apply makes what's left (desktop ProposalCard).
+ * A card the assistant made, drawn as the core's view of it says: a change to apply, a thing it
+ * made (a report, a spreadsheet, a converted file, figures), or a question whose answers are
+ * buttons. Its buttons are the core's `actions`, the first the main one, and one this app
+ * doesn't know is left out; what it has to say is its `message`, in one strip. While a change
+ * waits, each part of it can be left out (its checkbox) or given another category or amount (its
+ * pencil); the choices show at once and Apply makes what's left. A finished card folds to a line
+ * that opens on its rows, as they were.
+ *
+ * [cards] keeps what the user did with the card (its page, whether it's opened, choices on their
+ * way to the core); [choose] takes the user's choices as a revision (`ProposalChoices`), [change]
+ * opens a row's editor and [answer] sends a question's answer. [fixHere] says the import a card
+ * of fixes is for is the one open, and [category] names a category for a row just given one.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun AssistantProposalCard(proposal: JSONObject, currency: String, busy: Boolean, canUndo: Boolean, apply: () -> Unit, undo: () -> Unit, discard: () -> Unit,
-    refine: () -> Unit, reviewImport: () -> Unit, saveImport: () -> Unit, report: () -> Unit, spreadsheet: (Boolean) -> Unit, applyFix: (() -> Unit)? = null,
-    revise: ((JSONObject) -> Unit)? = null, change: ((JSONObject) -> Unit)? = null, applyBankTexts: (() -> Unit)? = null) {
+internal fun AssistantProposalCard(proposal: JSONObject, currency: String, busy: Boolean, act: (ProposalAction) -> Unit, undoable: String? = null,
+    cards: AssistantCards = remember { AssistantCards() }, choose: ((JSONObject) -> Unit)? = null, change: ((JSONObject) -> Unit)? = null,
+    answer: ((String) -> Unit)? = null, canSend: Boolean = true, fixHere: Boolean = false, category: (String?) -> String = { it.orEmpty() }) {
+    val id = proposal.text("id")
     val card = proposal.optJSONObject("card") ?: JSONObject()
-    val rows = remember(card) { card.rows("rows") }
-    var page by remember(proposal.text("id")) { mutableIntStateOf(0) }
-    val pages = ((rows.size + 19) / 20).coerceAtLeast(1)
-    val currentPage = page.coerceAtMost(pages - 1)
-    val status = proposal.text("status")
-    // Its parts, to leave out or change, while it waits.
-    val choices = proposal.optJSONObject("choices")
-    val choosing = revise != null && status == "proposed" && rows.any { it.text("key").isNotEmpty() }
+    val kind = proposal.text("kind")
+    // A kind this app doesn't know is drawn plainly: its rows to read, and what it offers that the app knows.
+    val known = ProposalCards.known(proposal)
+    val finished = ProposalCards.finished(proposal)
+    val actions = remember(proposal, undoable) { ProposalCards.actions(proposal, undoable) }
+    val buttons = remember(proposal, undoable) { if (finished) ProposalCards.openedButtons(proposal, undoable) else ProposalCards.buttons(proposal, undoable) }
+    val cardRows = remember(card) { card.rows("rows") }
+    // Its parts, to leave out or change, while it waits to be applied.
+    val choosing = choose != null && known && !finished && !proposal.optBoolean("made") && kind != "question" &&
+        buttons.any { it == ProposalAction.Apply || it == ProposalAction.ApplyToImport } && cardRows.any { it.text("key").isNotEmpty() }
+    // What the user chose that the core doesn't have yet shows on the rows at once.
+    val pending = if (choosing) cards.choices(id) else null
+    val choices = pending ?: proposal.optJSONObject("choices")
+    val rows = remember(cardRows, pending) { ProposalChoices.shown(cardRows, pending, category) }
     val chosen = rows.count { it.text("key").isNotEmpty() && !it.optBoolean("skipped") }
     val partial = ProposalChoices.partial(rows, choosing)
-    val original: (() -> Unit)? = if (revise != null && choices != null) ({ revise(ProposalChoices.original()) }) else null
-    if (status == "applied" || status == "discarded") {
-        Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = ur.surface2, contentColor = ur.text)) {
-            Column(Modifier.padding(16.dp)) {
-                Text(stringResource(if (status == "applied") R.string.assistant_applied_title else R.string.assistant_discarded_title, proposal.text("title")), style = MaterialTheme.typography.titleSmall)
-                if (status == "applied" && canUndo) TextButton(undo, enabled = !busy) { Text(stringResource(R.string.assistant_undo_proposal)) }
-            }
+    val destructive = kind == "delete" && known
+    val opened = !finished || cards.opened(id)
+    val language = languageKey()
+
+    @Composable
+    fun label(action: ProposalAction): String = when (action) {
+        ProposalAction.Apply -> when {
+            destructive -> countText(R.plurals.assistant_delete_transactions, ProposalCards.deleting(rows, card.optInt("more")))
+            partial != null -> stringResource(R.string.assistant_apply_some, "${partial.chosen}", "${partial.total}")
+            else -> stringResource(R.string.assistant_apply_changes)
         }
-        return
+        // Fixes for a bank file being imported: the import applies them, each only to a line that hasn't changed.
+        ProposalAction.ApplyToImport -> if (partial != null) stringResource(R.string.assistant_fix_apply_some, "${partial.chosen}", "${partial.total}") else stringResource(R.string.assistant_fix_apply)
+        ProposalAction.ApplyBankTexts -> stringResource(when (proposal.optJSONObject("bankTexts")?.optString("action")) {
+            "read" -> R.string.bank_texts_apply_read; "add" -> R.string.bank_texts_apply_add
+            "remember" -> R.string.bank_texts_apply_remember; else -> R.string.bank_texts_apply_limit
+        })
+        ProposalAction.AskChanges -> stringResource(R.string.assistant_ask_changes)
+        ProposalAction.UseOriginal -> stringResource(R.string.assistant_use_original)
+        ProposalAction.Discard -> stringResource(R.string.assistant_discard)
+        ProposalAction.Remove -> stringResource(R.string.common_remove)
+        ProposalAction.Restore -> stringResource(R.string.common_restore)
+        ProposalAction.Undo -> stringResource(R.string.assistant_undo_proposal)
+        ProposalAction.AskAgain -> stringResource(R.string.assistant_ask_again)
+        ProposalAction.Show -> stringResource(R.string.assistant_show_in_budget)
+        ProposalAction.Preview -> stringResource(R.string.assistant_preview)
+        ProposalAction.Print -> stringResource(R.string.assistant_print)
+        ProposalAction.Excel -> stringResource(R.string.assistant_export_report_tables)
+        ProposalAction.Open -> stringResource(R.string.assistant_open_spreadsheet)
+        ProposalAction.Save -> stringResource(R.string.assistant_export_excel)
+        ProposalAction.ReviewImport -> countText(R.plurals.assistant_review_import_rows, proposal.optInt("rows"))
+        ProposalAction.SaveCsv -> stringResource(R.string.assistant_export_csv)
+        ProposalAction.Answer -> ""
     }
-    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = ur.surface2, contentColor = ur.text)) {
+    fun enabled(action: ProposalAction): Boolean = !busy && when (action) {
+        // Nothing chosen: nothing to apply.
+        ProposalAction.Apply -> !(choosing && chosen == 0)
+        // Only over the import the fixes are for.
+        ProposalAction.ApplyToImport -> fixHere && !(choosing && chosen == 0)
+        ProposalAction.AskAgain -> canSend
+        else -> true
+    }
+
+    Card(Modifier.fillMaxWidth().testTag("assistant-card:$id"), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = ur.surface2, contentColor = ur.text),
+        // A card that deletes wears the app's colour for what can't be taken lightly.
+        border = if (destructive && !finished) BorderStroke(1.dp, ur.negative) else null) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             // The card's words are the assistant's or the budget's, in whatever language: each reads in its own direction.
             val own = LocalTextStyle.current.own
-            Text(card.text("kicker"), style = MaterialTheme.typography.labelMedium.own, color = MaterialTheme.colorScheme.primary)
-            Text(proposal.text("title"), Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium.own, fontWeight = FontWeight.Bold)
-            card.rows("stats").forEach { stat -> Text("${stat.text("label")}: ${if (stat.has("amount") && !stat.isNull("amount")) money(stat.optLong("amount"), currency) else stat.text("text")}", Modifier.fillMaxWidth(), style = own) }
-            rows.subList(currentPage * 20, minOf(rows.size, (currentPage + 1) * 20)).forEach { row ->
-                val key = row.text("key")
-                val edit = row.optJSONObject("edit")
-                val editable = !row.optBoolean("skipped") && (edit?.optBoolean("category") == true || edit?.optBoolean("amount") == true)
-                ProposalRow(row, currency, busy,
-                    toggle = if (choosing && key.isNotEmpty()) ({ revise?.invoke(ProposalChoices.toggle(choices, key, row.optBoolean("skipped"))) }) else null,
-                    change = if (choosing && key.isNotEmpty() && editable && change != null) ({ change(row) }) else null)
-            }
-            card.optJSONObject("total")?.let { ProposalRow(it, currency, busy) }
-            if (pages > 1) Row {
-                TextButton({ page = currentPage - 1 }, enabled = currentPage > 0) { Text(stringResource(R.string.assistant_previous_rows)) }
-                Text(stringResource(R.string.assistant_page, "${currentPage + 1}", "$pages"), Modifier.padding(12.dp))
-                TextButton({ page = currentPage + 1 }, enabled = currentPage + 1 < pages) { Text(stringResource(R.string.assistant_next_rows)) }
-            }
-            if (card.optInt("more") > 0) Text(countText(R.plurals.assistant_more_rows, card.optInt("more")), style = MaterialTheme.typography.labelSmall)
-            card.optJSONArray("check")?.let { Text(if (it.optBoolean(0)) "✓ " + it.optString(1) else stringResource(R.string.assistant_check, it.optString(1)), color = if (it.optBoolean(0)) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error) }
-            listOf("warning", "note").forEach { if (card.text(it).isNotEmpty()) Text(card.text(it), Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall.own) }
-            if (proposal.text("problem").isNotEmpty() && proposal.text("kind") != "fix") Text(proposal.text("problem"), Modifier.fillMaxWidth(), style = own, color = MaterialTheme.colorScheme.error)
-            if (status == "failed") TextButton(discard, enabled = !busy) { Text(stringResource(R.string.assistant_dismiss)) }
-            else when (proposal.text("kind")) {
-                // Fixes for a bank file being imported: the import applies them, each only to a line that hasn't changed.
-                "fix" -> if (status == "proposed" || status == "undone") {
-                    Button(applyFix ?: {}, enabled = !busy && applyFix != null && !(choosing && chosen == 0)) {
-                        Text(when {
-                            applyFix == null -> stringResource(R.string.assistant_fix_apply_from_import)
-                            partial != null -> stringResource(R.string.assistant_fix_apply_some, "${partial.chosen}", "${partial.total}")
-                            else -> stringResource(R.string.assistant_fix_apply)
-                        })
-                    }
-                    Text(stringResource(if (applyFix != null) R.string.assistant_fix_each_line else R.string.assistant_fix_open_import), style = MaterialTheme.typography.bodySmall)
-                    Row { TextButton(refine, enabled = !busy) { Text(stringResource(R.string.assistant_ask_changes)) }; TextButton(discard, enabled = !busy) { Text(stringResource(R.string.assistant_discard)) } }
-                    if (original != null) TextButton(original, enabled = !busy) { Text(stringResource(R.string.assistant_use_original)) }
-                } else Text(stringResource(if (status == "applied") R.string.assistant_fix_applied else R.string.assistant_discarded), style = MaterialTheme.typography.labelMedium)
-                "bankTexts" -> if (status == "proposed") {
-                    Button(applyBankTexts ?: {}, enabled = !busy && applyBankTexts != null) {
-                        Text(stringResource(when (proposal.optJSONObject("bankTexts")?.optString("action")) {
-                            "read" -> R.string.bank_texts_apply_read; "add" -> R.string.bank_texts_apply_add
-                            "remember" -> R.string.bank_texts_apply_remember; else -> R.string.bank_texts_apply_limit
-                        }))
-                    }
-                    Row { TextButton(refine, enabled = !busy) { Text(stringResource(R.string.assistant_ask_changes)) }; TextButton(discard, enabled = !busy) { Text(stringResource(R.string.assistant_discard)) } }
-                } else Text(stringResource(if (status == "applied") R.string.assistant_applied else R.string.assistant_discarded), style = MaterialTheme.typography.labelMedium)
-                "report" -> Button(report, enabled = !busy) { Text(stringResource(R.string.assistant_read_report)) }
-                "import" -> { Button(reviewImport, enabled = !busy) { Text(countText(R.plurals.assistant_review_import_rows, proposal.optInt("rows"))) }; TextButton(saveImport) { Text(stringResource(R.string.assistant_export_csv)) } }
-                "spreadsheet" -> { Button({ spreadsheet(true) }, enabled = !busy) { Text(stringResource(R.string.assistant_open_spreadsheet)) }; TextButton({ spreadsheet(false) }) { Text(stringResource(R.string.assistant_export_excel)) } }
-                else -> when (status) {
-                    "proposed", "undone" -> {
-                        Button(apply, enabled = !busy && !(choosing && chosen == 0)) {
-                            Text(if (partial != null) stringResource(R.string.assistant_apply_some, "${partial.chosen}", "${partial.total}") else stringResource(R.string.assistant_apply_changes))
-                        }
-                        Row { TextButton(refine, enabled = !busy) { Text(stringResource(R.string.assistant_ask_changes)) }; TextButton(discard, enabled = !busy) { Text(stringResource(R.string.assistant_discard)) } }
-                        if (original != null) TextButton(original, enabled = !busy) { Text(stringResource(R.string.assistant_use_original)) }
-                    }
-                    "applied" -> { Text(stringResource(R.string.assistant_applied), color = MaterialTheme.colorScheme.primary); if (canUndo) TextButton(undo, enabled = !busy) { Text(stringResource(R.string.assistant_undo_proposal)) } }
-                    "discarded" -> Text(stringResource(R.string.assistant_discarded), style = MaterialTheme.typography.labelMedium)
-                    "failed" -> Text(stringResource(R.string.assistant_could_not_apply), color = MaterialTheme.colorScheme.error)
+            if (finished) {
+                // One line: where the card stands, then its title. A tap opens its rows, as they were.
+                val line = remember(proposal, language) { ProposalCards.finishedLine(proposal) }
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                    .clickable(onClickLabel = stringResource(if (opened) R.string.assistant_card_close else R.string.assistant_card_open), role = Role.Button) { cards.open(id, !opened) }
+                    .testTag("assistant-card-line"), verticalAlignment = Alignment.CenterVertically) {
+                    Text(line, Modifier.weight(1f).padding(vertical = 4.dp), style = MaterialTheme.typography.titleSmall.own)
+                    Icon(if (opened) Icons.Outlined.KeyboardArrowUp else Icons.Outlined.KeyboardArrowDown, null, tint = ur.muted)
+                }
+                // What can still be done about it stays on the line: take it back, put it back, go to what it names.
+                val onLine = ProposalCards.lineButtons(proposal, undoable)
+                if (onLine.isNotEmpty()) FlowRow(Modifier.offset(x = (-12).dp)) {
+                    onLine.forEach { action -> TextButton({ act(action) }, enabled = enabled(action)) { Text(label(action)) } }
                 }
             }
-            if (proposal.text("kind") == "report" && proposal.optInt("sheets") > 0) TextButton({ spreadsheet(false) }) { Text(stringResource(R.string.assistant_export_report_tables)) }
-            if (status != "failed" && proposal.text("kind") in listOf("report", "spreadsheet", "import")) TextButton(discard, enabled = !busy) { Text(stringResource(R.string.assistant_discard)) }
+            if (opened) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(card.text("kicker"), Modifier.weight(1f), style = MaterialTheme.typography.labelMedium.own, color = if (destructive) ur.negative else MaterialTheme.colorScheme.primary)
+                    // What sets a thing the assistant made aside is in its menu, not beside its main buttons.
+                    if (ProposalAction.Remove in actions) CardMenu(!busy) { act(ProposalAction.Remove) }
+                }
+                if (!finished) Text(proposal.text("title"), Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium.own, fontWeight = FontWeight.Bold)
+                card.rows("stats").forEach { stat -> Text("${stat.text("label")}: ${if (stat.has("amount") && !stat.isNull("amount")) money(stat.optLong("amount"), currency) else stat.text("text")}", Modifier.fillMaxWidth(), style = own) }
+                if (kind == "question" && ProposalAction.Answer in actions) {
+                    // Each answer is a button: pressing one sends its words as the user's message.
+                    rows.forEach { row ->
+                        OutlinedButton({ answer?.invoke(row.text("label")) }, Modifier.fillMaxWidth().testTag("assistant-answer"), enabled = !busy && canSend && answer != null) {
+                            Text(row.text("label"), Modifier.fillMaxWidth(), style = own)
+                        }
+                    }
+                } else {
+                    // With many parts to tick, all of them at once: every one, none, or only those marked to check.
+                    if (choosing && rows.count { it.text("key").isNotEmpty() } > 5) FlowRow(Modifier.offset(x = (-12).dp).testTag("assistant-card-select")) {
+                        TextButton({ choose?.invoke(ProposalChoices.select(choices, rows) { true }) }, enabled = !busy) { Text(stringResource(R.string.selection_all)) }
+                        TextButton({ choose?.invoke(ProposalChoices.select(choices, rows) { false }) }, enabled = !busy) { Text(stringResource(R.string.assistant_select_none)) }
+                        if (rows.any { it.text("key").isNotEmpty() && ProposalChoices.toCheck(it) }) {
+                            TextButton({ choose?.invoke(ProposalChoices.select(choices, rows, ProposalChoices::toCheck)) }, enabled = !busy) { Text(stringResource(R.string.assistant_select_check)) }
+                        }
+                    }
+                    // Figures show each row's share of the largest amount as a bar.
+                    val shares = remember(rows, kind) { if (kind == "figures") ProposalCards.barShares(rows) else null }
+                    val pages = ((rows.size + 19) / 20).coerceAtLeast(1)
+                    val page = cards.page(id).coerceIn(0, pages - 1)
+                    for (at in page * 20 until minOf(rows.size, (page + 1) * 20)) {
+                        val row = rows[at]
+                        val key = row.text("key")
+                        val edit = row.optJSONObject("edit")
+                        val editable = !row.optBoolean("skipped") && (edit?.optBoolean("category") == true || edit?.optBoolean("amount") == true)
+                        ProposalRow(row, currency, busy,
+                            toggle = if (choosing && key.isNotEmpty()) ({ choose?.invoke(ProposalChoices.toggle(choices, key, row.optBoolean("skipped"))) }) else null,
+                            change = if (choosing && key.isNotEmpty() && editable && change != null) ({ change(row) }) else null, bar = shares?.get(at))
+                    }
+                    card.optJSONObject("total")?.let { ProposalRow(it, currency, busy) }
+                    if (pages > 1) Row {
+                        TextButton({ cards.page(id, page - 1) }, enabled = page > 0) { Text(stringResource(R.string.assistant_previous_rows)) }
+                        Text(stringResource(R.string.assistant_page, "${page + 1}", "$pages"), Modifier.padding(12.dp))
+                        TextButton({ cards.page(id, page + 1) }, enabled = page + 1 < pages) { Text(stringResource(R.string.assistant_next_rows)) }
+                    }
+                }
+                if (card.optInt("more") > 0) Text(countText(R.plurals.assistant_more_rows, card.optInt("more")), style = MaterialTheme.typography.labelSmall)
+                card.optJSONArray("check")?.let { Text(if (it.optBoolean(0)) "✓ " + it.optString(1) else stringResource(R.string.assistant_check, it.optString(1)), color = if (it.optBoolean(0)) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error) }
+                // The warning that's part of what the card proposes, apart from what the card says about itself.
+                if (card.text("warning").isNotEmpty()) CardStrip(card.text("warning"), "warn")
+                if (card.text("note").isNotEmpty()) Text(card.text("note"), Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall.own)
+            }
+            // What the card has to say about itself, in the one place for it. Folded, only what still matters: news of a card that's done with is past.
+            ProposalCards.message(proposal)?.takeIf { (tone, _) -> opened || tone != "info" }?.let { (tone, text) -> CardStrip(text, tone) }
+            if (!known) Text(stringResource(R.string.assistant_update_app), Modifier.testTag("assistant-card-update"), style = MaterialTheme.typography.bodySmall, color = ur.text2)
+            if (opened && buttons.isNotEmpty()) {
+                val main = buttons.first()
+                Button({ act(main) }, Modifier.testTag("assistant-card-main"), enabled = enabled(main),
+                    colors = if (destructive && main == ProposalAction.Apply) ButtonDefaults.buttonColors(containerColor = ur.negative, contentColor = if (ur.dark) ur.bg else Color.White) else ButtonDefaults.buttonColors()) {
+                    Text(label(main))
+                }
+                if (ProposalAction.ApplyToImport in buttons) Text(stringResource(if (fixHere) R.string.assistant_fix_each_line else R.string.assistant_fix_open_import), style = MaterialTheme.typography.bodySmall)
+                if (buttons.size > 1) FlowRow(Modifier.offset(x = (-12).dp)) {
+                    buttons.drop(1).forEach { action -> TextButton({ act(action) }, enabled = enabled(action)) { Text(label(action)) } }
+                }
+            }
         }
+    }
+}
+
+/** A card's ⋯ menu: Remove, which sets a thing the assistant made aside. */
+@Composable
+private fun CardMenu(enabled: Boolean, remove: () -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton({ open = true }, Modifier.testTag("assistant-card-menu"), enabled = enabled) {
+            Icon(Icons.Outlined.MoreHoriz, stringResource(R.string.common_more_actions), tint = ur.muted)
+        }
+        DropdownMenu(open, { open = false }, containerColor = ur.surface) {
+            DropdownMenuItem(text = { Text(stringResource(R.string.common_remove)) }, onClick = { open = false; remove() }, leadingIcon = { Icon(Icons.Outlined.DeleteOutline, null) })
+        }
+    }
+}
+
+/**
+ * What a card says, in one strip: quiet for news of it ("info"), the app's warning for something
+ * to check ("warn"), its error for what can't be done ("error").
+ */
+@Composable
+private fun CardStrip(text: String, tone: String) {
+    val fill = when (tone) { "error" -> ur.negativeSoft; "warn" -> ur.warningSoft; else -> ur.surface }
+    val ink = when (tone) { "error" -> ur.negative; "warn" -> ur.warning; else -> ur.muted }
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(fill).padding(horizontal = 10.dp, vertical = 8.dp).testTag("assistant-card-message:$tone"),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Icon(when (tone) { "error" -> Icons.Outlined.ErrorOutline; "warn" -> Icons.Outlined.WarningAmber; else -> Icons.Outlined.Info }, null, Modifier.size(18.dp), tint = ink)
+        Text(text, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall.own, color = if (tone == "info") ur.text2 else ur.text)
     }
 }
 
 /**
  * A card row. While the card waits, its checkbox (`toggle`) leaves it out or puts it back, and its
  * pencil (`change`) gives it another category or amount. A row left out stays, dimmed and struck
- * through; an amount the user gave shows in the accent colour.
+ * through; an amount the user gave shows in the accent colour, and so does a category just given
+ * (`given`) until the core's card says it. On a figures card [bar] is the row's share of the
+ * card's largest amount, from 0 to 1.
  */
 @Composable
-private fun ProposalRow(row: JSONObject, currency: String, busy: Boolean, toggle: (() -> Unit)? = null, change: (() -> Unit)? = null) {
+private fun ProposalRow(row: JSONObject, currency: String, busy: Boolean, toggle: (() -> Unit)? = null, change: (() -> Unit)? = null, bar: Float? = null) {
     val skipped = row.optBoolean("skipped")
     val label = row.text("label")
     val applyLabel = stringResource(R.string.assistant_apply_row, label)
@@ -797,7 +940,11 @@ private fun ProposalRow(row: JSONObject, currency: String, busy: Boolean, toggle
                     color = if (row.optBoolean("edited")) MaterialTheme.colorScheme.primary else Color.Unspecified)
             }
             if (row.text("detail").isNotEmpty()) Text(row.text("detail"), Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall.own)
+            if (bar != null) Box(Modifier.padding(vertical = 4.dp).fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(ur.border).testTag("assistant-figure-bar")) {
+                Box(Modifier.fillMaxWidth(bar).fillMaxHeight().background(ur.accent))
+            }
             if (row.has("before") || row.has("after")) Text(stringResource(R.string.change_from_to, money(row.optLong("before"), currency), money(row.optLong("after"), currency)), style = MaterialTheme.typography.bodySmall)
+            if (row.text("given").isNotEmpty()) Text(row.text("given"), style = MaterialTheme.typography.labelSmall.own, color = MaterialTheme.colorScheme.primary)
             if (row.text("badge").isNotEmpty()) Text(row.text("badge"), style = MaterialTheme.typography.labelSmall.own, color = if (row.text("tone") == "warn") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
         }
         if (change != null) IconButton(change, enabled = !busy) { Icon(Icons.Outlined.Edit, stringResource(R.string.assistant_change_row, label)) }
@@ -865,7 +1012,8 @@ private fun conversationMarkdown(thread: JSONObject, currency: String): String =
 private fun AssistantReportDialog(report: JSONObject, close: () -> Unit, export: () -> Unit) {
     val context = LocalContext.current
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize().padding(12.dp), shape = MaterialTheme.shapes.large) {
+        // A report reads at the pages' readable width, however wide the window.
+        Surface(Modifier.widthIn(max = ReadableWidth).fillMaxSize().padding(12.dp), shape = MaterialTheme.shapes.large) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(report.text("title"), style = MaterialTheme.typography.headlineSmall)
                 Text("${Money.own(report.text("budget"))} · ${Money.own(report.text("period"))} · ${Money.ltr(report.text("created").take(10))}", style = MaterialTheme.typography.labelMedium)

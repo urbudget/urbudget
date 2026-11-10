@@ -17,6 +17,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -61,6 +62,7 @@ import app.urbudget.nativeapp.Words
 import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -170,7 +172,7 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
                                 reconcile: (JSONObject) -> Unit, editSchedule: (JSONObject?) -> Unit, vm: BudgetViewModel,
                                 bar: @Composable RowScope.() -> Unit, setDockHidden: (Boolean) -> Unit,
                                 initialFrom: String = "", initialThrough: String = "", initialSearch: String = "", payCard: (String) -> Unit = {}, openAccount: (String) -> Unit = {},
-                                openId: String? = null) {
+                                openId: String? = null, showing: Showing? = null) {
     val currency = budget.text("currency")
     val monthFirst = budget.text("dateFormat") == "mdy"
     var searching by rememberSaveable { mutableStateOf(initialSearch.isNotEmpty()) }
@@ -242,6 +244,29 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
         computing = false
     }
     val lines = produced?.takeIf { it.first == accountFilter }?.second
+    // "Show in the budget" on an assistant's card that names transactions: they're selected here, in
+    // the register's own selection, with the search and filters that could hide them put away and
+    // the first of them in view. Each request is taken once, so coming back doesn't select them again.
+    val registerList = rememberLazyListState()
+    var shownKey by rememberSaveable { mutableIntStateOf(0) }
+    LaunchedEffect(showing?.key) {
+        val target = showing?.takeIf { it.key != shownKey && it.what.transactions.isNotEmpty() } ?: return@LaunchedEffect
+        shownKey = target.key
+        val wanted = target.what.transactions.toSet()
+        val unfiltered = search.isEmpty() && status.isEmpty() && flagFilter.isEmpty() && from.isEmpty() && through.isEmpty() && minimum.isEmpty() && maximum.isEmpty()
+        val before = produced
+        searching = false; search = ""; status = ""; flagFilter = ""; from = ""; through = ""; minimum = ""; maximum = ""
+        // The whole register's lines: the ones here now, or the next ones once the filters are gone.
+        val whole = snapshotFlow { produced }.first { it != null && (unfiltered || it !== before) }?.second.orEmpty()
+        // One that has gone from the budget since the card was made isn't there to select.
+        val found = whole.mapNotNullTo(LinkedHashSet()) { line -> (line as? TxLine)?.id?.takeIf { it in wanted } }
+        selected = found
+        if (found.isEmpty()) return@LaunchedEffect
+        // A frame for the selection to take the place of what stands above the lines, and one for the list to be laid out.
+        repeat(2) { withFrameNanos { } }
+        // With a selection open the lines are the list's only items: the day's band above the first of them comes into view with it.
+        registerList.scrollToItem((whole.indexOfFirst { it is TxLine && it.id in found } - 1).coerceAtLeast(0))
+    }
     val visibleIds = remember(lines) { lines.orEmpty().mapNotNull { (it as? TxLine)?.id } }
     val allSelected = selecting && selected.size >= visibleIds.size && selected.containsAll(visibleIds)
     val selectedTotal = remember(selected, lines) { lines.orEmpty().sumOf { if (it is TxLine && it.id in selected) it.amount else 0L } }
@@ -311,7 +336,7 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
             val beside = LocalSplitList.current != null
             val cardInset = if (beside) 0.dp else Gutter
             val scheduledShown = schedules.isNotEmpty() && !searching && !selecting
-            LazyColumn(Modifier.fillMaxSize().then(if (beside) Modifier.padding(horizontal = 10.dp) else Modifier).testTag("register"),
+            LazyColumn(Modifier.fillMaxSize().then(if (beside) Modifier.padding(horizontal = 10.dp) else Modifier).testTag("register"), state = registerList,
                 contentPadding = PaddingValues(bottom = DockRoom)) {
                 if (account != null && summary != null) item(key = "summary", contentType = "summary") {
                     AccountSummaryCard(account, summary.rows("accounts").firstOrNull { it.text("id") == accountFilter }, currency,

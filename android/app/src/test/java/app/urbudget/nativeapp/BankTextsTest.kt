@@ -79,6 +79,31 @@ class BankTextsTest {
         assertEquals(emptyList<BankSms>() to 2, bankTextsOfCard(JSONObject().put("texts", JSONArray(listOf(early, late).map(::named))), { null }) { _, _, _ -> emptyList() })
     }
 
+    @Test fun aReadCardCountsOnlyTheTextsOutsideTheOpenReview() {
+        // The open review's texts are read already and wait for the user's ticks: Bank messages reads the rest.
+        assertEquals(2, bankTextsToRead(listOf("a", "b", "c", "d"), listOf("b", "d")))
+        assertEquals(0, bankTextsToRead(listOf("a", "b"), listOf("a", "b", "gone")))
+        assertEquals(3, bankTextsToRead(listOf("a", "b", "c"), emptyList()))
+        assertEquals(0, bankTextsToRead(emptyList(), emptyList()))
+    }
+
+    @Test fun aCardIsCheckedAgainAgainstTheBudgetAsItsApplied() {
+        val budget = budget().apply { getJSONArray("accounts").put(JSONObject().put("id", "closed").put("name", "Old card").put("kind", "credit").put("archived", true)) }
+        fun limit(account: String) = JSONObject().put("action", "limit").put("accountId", account).put("limit", 250_000L)
+        fun remember(account: String) = JSONObject().put("action", "remember").put("sender", "Bank").put("ref", "1234").put("accountId", account)
+        assertNull(bankTextsCardProblem(limit("card"), budget))
+        assertNull(bankTextsCardProblem(remember("checking"), budget))
+        // The account went since the card was made, or is no longer a card: nothing is done, and that's said.
+        assertEquals(R.string.bank_texts_unknown_account, bankTextsCardProblem(limit("deleted"), budget))
+        assertEquals(R.string.bank_texts_not_card, bankTextsCardProblem(limit("checking"), budget))
+        assertEquals(R.string.bank_texts_unknown_account, bankTextsCardProblem(remember("deleted"), budget))
+        assertEquals(R.string.bank_texts_unknown_account, bankTextsCardProblem(remember("closed"), budget))
+        assertEquals(R.string.bank_texts_unknown_account, bankTextsCardProblem(limit("card"), null))
+        // Reading and adding texts name no account.
+        assertNull(bankTextsCardProblem(JSONObject().put("action", "read").put("note", ""), null))
+        assertNull(bankTextsCardProblem(JSONObject().put("action", "add"), budget))
+    }
+
     @Test fun eachSettledTextKeepsWhatBecameOfIt() {
         val pair = listOf(sms("one"), sms("two"))
         val added = item(0, "checking", "-12.00", balance = "88.00", sources = pair)
