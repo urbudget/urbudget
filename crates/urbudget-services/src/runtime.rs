@@ -1106,6 +1106,17 @@ impl Runtime {
                 self.save(&budget, &token)?;
                 self.load()
             }
+            "assistant_notes_commit" => {
+                let patch = assistant::assistant_notes(&self.db, None, field(&p, "notes")?)?;
+                if !patch.is_empty() {
+                    let mut store = self.db.store()?;
+                    let budget = store.full_draft(Some(patch))?;
+                    let token = store.status()?.token;
+                    drop(store);
+                    self.save(&budget, &token)?;
+                }
+                self.load()
+            }
             "assistant_apply_commit" => {
                 let token = self.db.store()?.status()?.token;
                 let mut result = assistant::dispatch("assistant_apply", p.clone(), &self.db, &self.assistant, &self.simplefin, &self.cloud).await?;

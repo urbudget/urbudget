@@ -51,9 +51,30 @@ pub enum Delta<'a> {
     Arguments(&'a str),
 }
 
+/// What a request used, in tokens. `input` counts everything sent, `cached` the part of it the
+/// service read from its cache, which costs a fraction of the rest.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Usage {
+    pub input: u64,
+    pub output: u64,
+    pub cached: u64,
+}
+impl Usage {
+    pub fn add(&mut self, other: Usage) {
+        self.input += other.input;
+        self.output += other.output;
+        self.cached += other.cached;
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct Reply {
     pub parts: Vec<Part>,
+    pub usage: Usage,
+    /// The reply stopped at its length limit: its text is unfinished, and a call it was writing
+    /// is incomplete and must not run.
+    pub cut: bool,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
@@ -73,6 +94,8 @@ pub enum FailureKind {
     Unsupported,
     /// The chosen model isn't available.
     Model,
+    /// The conversation no longer fits what the model can read.
+    Full,
     Other,
 }
 #[derive(Clone, Debug)]
@@ -106,6 +129,16 @@ pub struct Request<'a> {
     pub tools: &'a [Spec],
     /// The reply's last step: the model answers with what it has, calling no tools.
     pub answer_only: bool,
+    /// A conversation that will be sent again with more at its end, so what the service has read
+    /// of it is worth keeping. A request made once and not again isn't: it would pay to be kept
+    /// and never be read back.
+    pub kept: bool,
+}
+
+/// Something the app tells the model in the middle of a conversation, as each service takes it:
+/// text in the user's turn, marked as the app's own.
+pub fn reminder(text: &str) -> String {
+    format!("<system-reminder>\n{text}\n</system-reminder>")
 }
 
 /// Sends the conversation and streams the reply (and any reasoning summary) to `on_delta`.
@@ -115,6 +148,10 @@ pub async fn respond(
     request: &Request<'_>,
     on_delta: &mut (dyn FnMut(Delta) + Send),
 ) -> Result<Reply, Failure> {
+    #[cfg(test)]
+    if let Some(played) = script::next(request, on_delta) {
+        return played;
+    }
     match credentials.provider {
         Provider::Chatgpt | Provider::Openai => openai::respond(client, credentials, request, on_delta).await,
         Provider::Anthropic => anthropic::respond(client, credentials, request, on_delta).await,
@@ -151,6 +188,72 @@ pub fn user_text(item: &Item, files: &Files) -> String {
     }
     parts.push(if text.trim().is_empty() { "(No message; see the attachments.)".to_string() } else { text.clone() });
     parts.join("\n\n")
+}
+
+/// Replies for tests of the loop, in place of a service: a test queues them under a model name
+/// of its own, and `respond` plays the next one for a request that names that model.
+#[cfg(test)]
+pub mod script {
+    use super::*;
+    use std::collections::{HashMap, VecDeque};
+    use std::sync::Mutex;
+
+    /// A request as the loop made it.
+    #[derive(Clone, Debug)]
+    pub struct Asked {
+        pub instructions: String,
+        pub items: Vec<Item>,
+        pub tools: Vec<&'static str>,
+        pub answer_only: bool,
+    }
+    #[derive(Default)]
+    struct Stage {
+        replies: VecDeque<Result<Reply, Failure>>,
+        asked: Vec<Asked>,
+    }
+    static STAGES: Mutex<Option<HashMap<String, Stage>>> = Mutex::new(None);
+
+    fn stage<T>(model: &str, f: impl FnOnce(&mut Stage) -> T) -> T {
+        let mut stages = STAGES.lock().unwrap_or_else(|e| e.into_inner());
+        f(stages.get_or_insert_with(HashMap::new).entry(model.to_owned()).or_default())
+    }
+    /// Queues replies for requests that name `model`.
+    pub fn play(model: &str, replies: Vec<Result<Reply, Failure>>) {
+        stage(model, |s| s.replies.extend(replies));
+    }
+    /// The requests made of `model` so far.
+    pub fn asked(model: &str) -> Vec<Asked> {
+        stage(model, |s| s.asked.clone())
+    }
+    pub fn text(text: &str) -> Result<Reply, Failure> {
+        Ok(Reply { parts: vec![Part::Text(text.into())], ..Reply::default() })
+    }
+    pub fn call(id: &str, name: &str, arguments: Value) -> Result<Reply, Failure> {
+        Ok(Reply { parts: vec![Part::Call(Call { call_id: id.into(), name: name.into(), arguments: arguments.to_string() })], ..Reply::default() })
+    }
+    pub(super) fn next(request: &Request<'_>, on_delta: &mut (dyn FnMut(Delta) + Send)) -> Option<Result<Reply, Failure>> {
+        let played = stage(request.model, |s| {
+            if s.replies.is_empty() && s.asked.is_empty() {
+                return None;
+            }
+            s.asked.push(Asked {
+                instructions: request.instructions.to_owned(),
+                items: request.items.to_vec(),
+                tools: request.tools.iter().map(|t| t.name).collect(),
+                answer_only: request.answer_only,
+            });
+            Some(s.replies.pop_front().unwrap_or_else(|| Err(Failure::new(FailureKind::Other, "The script has no more replies."))))
+        })?;
+        if let Ok(reply) = &played {
+            on_delta(Delta::Started);
+            for part in &reply.parts {
+                if let Part::Text(text) = part {
+                    on_delta(Delta::Text(text));
+                }
+            }
+        }
+        Some(played)
+    }
 }
 
 /// Splits a byte stream into server-sent events: (event name, data).

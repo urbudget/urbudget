@@ -829,6 +829,7 @@ async fn run_analysis(
         context: String::new(),
         at: now(),
         import: None,
+        sent_with: None,
     }];
     if !input.note.trim().is_empty() {
         items.push(Item::User {
@@ -837,6 +838,7 @@ async fn run_analysis(
             context: String::new(),
             at: now(),
             import: None,
+            sent_with: None,
         });
     }
     let instructions = INSTRUCTIONS.replace("{LANGUAGE}", language());
@@ -867,6 +869,8 @@ async fn run_analysis(
             items: &items,
             files: &files,
             tools: &specs, answer_only: false,
+            // A batch is mostly read in one request, so it isn't kept: see `Request::kept`.
+            kept: false,
         };
         {
             // After a payee lookup the model carries on thinking; after a failed check it fixes its answer.
@@ -945,6 +949,7 @@ async fn run_analysis(
                 context: String::new(),
                 at: now(),
                 import: None,
+                sent_with: None,
             });
         }
         for call in calls {
@@ -1249,6 +1254,7 @@ mod tests {
                 name: name.into(),
                 arguments: args.to_string(),
             })],
+            ..llm::Reply::default()
         }
     }
     #[test]
@@ -1279,6 +1285,7 @@ mod tests {
         let mut fake = Fake {
             replies: vec![llm::Reply {
                 parts: vec![llm::Part::Text("All imported!".into())],
+                ..llm::Reply::default()
             }]
             .into(),
             requests: vec![],

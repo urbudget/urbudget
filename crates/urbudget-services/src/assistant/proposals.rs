@@ -88,6 +88,43 @@ pub enum Change {
     #[serde(rename_all = "camelCase")]
     Add { account: String, transactions: Vec<NewTransaction>, from_file: bool },
     Payees { renames: Vec<Rename>, rules: Vec<Rule> },
+    /// Notes the assistant keeps for the budget (`notes`): ones to keep and ones to forget.
+    Notes { add: Vec<String>, remove: Vec<String> },
+}
+
+/// Where the notes the assistant keeps are, in the budget's extras: a list of sentences.
+const NOTES: &str = "assistantNotes";
+/// A note is a sentence; a budget keeps up to this many.
+pub const NOTE_LENGTH: usize = 200;
+pub const NOTE_COUNT: usize = 30;
+
+/// The notes the user asked the assistant to keep for this budget, in the order they were kept.
+pub fn notes(b: &Budget) -> Vec<String> {
+    b.extra.get(NOTES).and_then(Value::as_array).map(|list| list.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default()
+}
+fn keep_notes(b: &mut Budget, notes: Vec<String>) -> Result<(), String> {
+    if notes.len() > NOTE_COUNT {
+        return Err(t!("The assistant keeps up to {limit} notes. Remove one first.", limit = NOTE_COUNT));
+    }
+    if notes.is_empty() {
+        b.extra.remove(NOTES);
+    } else {
+        b.extra.insert(NOTES.into(), json!(notes));
+    }
+    Ok(())
+}
+/// The change that makes the budget's notes exactly `wanted`: what the assistant's settings save.
+pub fn notes_patch(current: &Budget, wanted: Vec<String>) -> Result<Patch, String> {
+    let mut clean: Vec<String> = vec![];
+    for note in wanted {
+        let note: String = note.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(NOTE_LENGTH).collect();
+        if !note.is_empty() && !clean.contains(&note) {
+            clean.push(note);
+        }
+    }
+    let mut after = current.clone();
+    keep_notes(&mut after, clean)?;
+    Ok(Patch::diff(current, &after))
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
@@ -379,6 +416,7 @@ impl Change {
             Change::Moves { .. } | Change::AutoAssign { .. } => "budget",
             Change::Edits { .. } | Change::Add { .. } => "transactions",
             Change::Payees { .. } => "payees",
+            Change::Notes { .. } => "notes",
         }
     }
     /// The budget after the change, or why it can't be made.
@@ -500,6 +538,16 @@ impl Change {
                     b = workflows::apply(b, &json!({ "type": "renamePayee", "from": r.from, "to": r.to }))?;
                 }
                 add_rules(&mut b, rules);
+            }
+            Change::Notes { add, remove } => {
+                let mut kept = notes(&b);
+                kept.retain(|n| !remove.contains(n));
+                for note in add {
+                    if !kept.contains(note) {
+                        kept.push(note.clone());
+                    }
+                }
+                keep_notes(&mut b, kept)?;
             }
         }
         validate(&b)?;
@@ -732,6 +780,7 @@ impl Change {
             Change::Edits { edits, rules } => edits.is_empty() && rules.is_empty(),
             Change::Add { transactions, .. } => transactions.is_empty(),
             Change::Payees { renames, rules } => renames.is_empty() && rules.is_empty(),
+            Change::Notes { add, remove } => add.is_empty() && remove.is_empty(),
         }
     }
     /// One new transaction, shown by its splits.
@@ -875,6 +924,10 @@ impl Change {
             Change::Payees { renames, rules } => Change::Payees {
                 renames: renames.iter().filter(|x| !r.skips(&format!("p:{}", x.from))).cloned().collect(),
                 rules: rules.iter().filter(|x| !r.skips(&format!("r:{}", x.id))).cloned().collect(),
+            },
+            Change::Notes { add, remove } => Change::Notes {
+                add: add.iter().enumerate().filter(|(i, _)| !r.skips(&format!("n:+{i}"))).map(|(_, n)| n.clone()).collect(),
+                remove: remove.iter().enumerate().filter(|(i, _)| !r.skips(&format!("n:-{i}"))).map(|(_, n)| n.clone()).collect(),
             },
         })
     }
@@ -1171,6 +1224,17 @@ fn card_as(change: &Change, before: &Budget, after: &Budget, single: Option<bool
                 rows.push(rule_row(r, &names));
             }
             Ok(Card { kicker: t!("Proposal · Payees"), rows, ..Card::default() })
+        }
+        Change::Notes { add, remove } => {
+            let row = |(i, note): (usize, &String), sign: char, badge: String| Row { label: note.clone(), badge: Some(badge), key: Some(format!("n:{sign}{i}")), ..Row::default() };
+            let mut rows: Vec<Row> = add.iter().enumerate().map(|n| row(n, '+', t!("remember"))).collect();
+            rows.extend(remove.iter().enumerate().map(|n| row(n, '-', t!("forget"))));
+            Ok(Card {
+                kicker: t!("Proposal · Notes"),
+                rows,
+                note: Some(t!("Kept with this budget and sent to the assistant with every message. You can read and change them in the assistant's settings.")),
+                ..Card::default()
+            })
         }
     }
 }

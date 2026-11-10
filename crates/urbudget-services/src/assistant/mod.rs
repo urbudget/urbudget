@@ -341,6 +341,24 @@ impl Assistant {
         self.with_thread_guarded(folder, id, None, f)
     }
     fn with_thread_guarded<T>(&self, folder: &Path, id: &str, cancelled: Option<&AtomicBool>, f: impl FnOnce(&mut Thread) -> T) -> Result<T, String> {
+        let mut threads = self.loaded(folder, id, cancelled)?;
+        let (dir, thread) = threads.get_mut(id).expect("thread loaded");
+        let out = f(thread);
+        if self.settings().keep_history {
+            history::save(dir, thread)?;
+        }
+        Ok(out)
+    }
+    /// Reads a conversation, loading it first if needed. A look never writes its file.
+    fn peek<T>(&self, folder: &Path, id: &str, f: impl FnOnce(&Thread) -> T) -> Result<T, String> {
+        self.peek_guarded(folder, id, None, f)
+    }
+    fn peek_guarded<T>(&self, folder: &Path, id: &str, cancelled: Option<&AtomicBool>, f: impl FnOnce(&Thread) -> T) -> Result<T, String> {
+        let threads = self.loaded(folder, id, cancelled)?;
+        Ok(f(&threads.get(id).expect("thread loaded").1))
+    }
+    /// The conversations in use, with this one among them.
+    fn loaded(&self, folder: &Path, id: &str, cancelled: Option<&AtomicBool>) -> Result<MutexGuard<'_, HashMap<String, (PathBuf, Thread)>>, String> {
         let mut threads = lock(&self.threads);
         // Abort can arrive while a local tool is doing synchronous work. Test cancellation
         // under the history lock so that no late tool result can resurrect a deleted chat.
@@ -349,12 +367,7 @@ impl Assistant {
             let t = history::load(folder, id)?;
             threads.insert(id.to_owned(), (folder.to_owned(), t));
         }
-        let (dir, thread) = threads.get_mut(id).expect("thread loaded");
-        let out = f(thread);
-        if self.settings().keep_history {
-            history::save(dir, thread)?;
-        }
-        Ok(out)
+        Ok(threads)
     }
     /// Once per budget folder and session, before the first new attachment: removes attached
     /// files no conversation refers to, such as those of conversations that weren't kept.
@@ -391,7 +404,7 @@ impl Assistant {
         }
     }
     fn thread_copy(&self, folder: &Path, id: &str) -> Result<Thread, String> {
-        self.with_thread(folder, id, |t| t.clone())
+        self.peek(folder, id, |t| t.clone())
     }
     fn is_running(&self, id: &str) -> bool {
         lock(&self.running).contains_key(id)
@@ -649,7 +662,7 @@ pub fn assistant_threads(db: &Database, assistant: &Assistant) -> Result<Vec<his
 pub fn assistant_thread(db: &Database, assistant: &Assistant, id: String) -> Result<Value, String> {
     let folder = folder(&db)?;
     let provider = assistant.settings().provider;
-    let mut view = assistant.with_thread(&folder, &id, |t| history::view(t, provider))?;
+    let mut view = assistant.peek(&folder, &id, |t| history::view(t, provider))?;
     view["running"] = json!(assistant.is_running(&id));
     Ok(view)
 }
@@ -725,11 +738,15 @@ pub fn assistant_send(
     if text.is_empty() && attachments.is_empty() {
         return Err(t!("Type a message or attach a file."));
     }
-    if text.len() > 20_000 {
+    // Characters, as the message fields count them: Arabic takes two bytes a letter.
+    if text.chars().count() > 20_000 {
         return Err(t!("That message is too long."));
     }
     if attachments.len() > 5 {
         return Err(t!("Attach up to 5 files at a time."));
+    }
+    if screen.selected.len() > SELECTED {
+        return Err(t!("Attach up to {limit} transactions at a time.", limit = SELECTED));
     }
     let folder = folder(&db)?;
     let budget = db.snapshot(patch)?;
@@ -755,9 +772,10 @@ pub fn assistant_send(
                 title,
                 created: now(),
                 updated: now(),
-                instructions: prompt::INSTRUCTIONS.into(),
-                items: vec![],
-                proposals: vec![],
+                instructions: prompt::in_language(prompt::INSTRUCTIONS),
+                language: crate::i18n::language().code().into(),
+                bank_texts: Some(screen.bank_texts),
+                ..Thread::default()
             };
             lock(&assistant.threads).insert(id.clone(), (folder.clone(), thread));
             id
@@ -778,9 +796,19 @@ pub fn assistant_send(
     for id in &attachments {
         files.adopt(id)?;
     }
+    let names = tools::Names::new(&budget);
+    let sent_with = history::SentWith {
+        page: screen.page.clone(),
+        month: screen.month.clone(),
+        account: screen.account_id.as_deref().filter(|a| names.accounts.contains_key(a)).map(|a| names.account(a)),
+        category: screen.category_id.as_deref().filter(|c| names.categories.contains_key(c)).map(|c| names.category(Some(c))),
+        transactions: budget.transactions.iter().filter(|t| screen.selected.contains(&t.id)).count(),
+        import: import.is_some(),
+    };
     assistant.with_thread(&folder, &id, |t| {
         history::settle(&mut t.items);
         let stopped = matches!(t.items.last(), Some(Item::Stopped));
+        settle_start(t, screen.bank_texts);
         let earlier: Vec<String> = t
             .proposals
             .iter()
@@ -789,8 +817,12 @@ pub fn assistant_send(
                 None => format!("\u{201c}{}\u{201d} {}", p.title, status_word(p.status)),
             })
             .collect();
-        let context = prompt::context(&budget, &screen, settings.share_memos, &earlier, import.as_ref(), stopped);
-        t.items.push(Item::User { text: text.clone(), attachments: metas, context, at: now(), import });
+        let mut context = prompt::context(&budget, &screen, settings.share_memos, &earlier, import.as_ref(), stopped);
+        // The first message of a conversation that carries on another says what came before.
+        if let Some(carried) = t.carried.as_ref().filter(|_| !t.items.iter().any(|i| matches!(i, Item::User { .. }))) {
+            context.push_str(&format!("\nThis conversation carries on an earlier one, \u{201c}{}\u{201d}, that had grown too long. What was said last in it, as background and not as a request:\n{}", carried.from, carried.text));
+        }
+        t.items.push(Item::User { text: text.clone(), attachments: metas, context, at: now(), import, sent_with: Some(sent_with) });
         t.updated = now();
     })?;
     let job = agent::Job {
@@ -822,7 +854,15 @@ pub fn assistant_retry(
     }
     let folder = folder(&db)?;
     let budget = db.snapshot(patch)?;
-    assistant.with_thread(&folder, &thread_id, |t| history::settle(&mut t.items))?;
+    assistant.with_thread(&folder, &thread_id, |t| {
+        history::settle(&mut t.items);
+        settle_start(t, screen.bank_texts);
+        // A reply that ran out of room is asked for its rest, in a note: the conversation
+        // can't end on the model's own words.
+        if matches!(t.items.last(), Some(Item::Cut)) {
+            t.items.push(Item::Note { text: CARRY_ON.into() });
+        }
+    })?;
     let job = agent::Job {
         thread_id: thread_id.clone(),
         folder,
@@ -852,6 +892,86 @@ fn start(assistant: &Assistant, id: String, job: agent::Job) {
     });
     lock(&assistant.running).insert(id, RunningTask { handle, cancelled, written });
     let _ = ready.send(());
+}
+
+/// At most this many selected transactions go with a message.
+const SELECTED: usize = 200;
+const CARRY_ON: &str = "Your last reply stopped at its length limit. Carry on from exactly where it stopped, without repeating what you've written.";
+
+/// Settles what a conversation's requests begin with, so it never changes afterwards (see
+/// `anthropic.rs`): the instructions with their language part, and whether the bank-text tools
+/// are offered. A change of the app's language since is said in a note.
+fn settle_start(t: &mut Thread, bank_texts: bool) {
+    let now = crate::i18n::language().code();
+    if t.language.is_empty() {
+        // A conversation from before its language was kept with it. Its requests so far began
+        // with the instructions in the app's language of the time: most likely this one.
+        if t.instructions.is_empty() {
+            t.instructions = prompt::INSTRUCTIONS.into();
+        }
+        t.instructions = prompt::in_language(&t.instructions);
+    } else if t.language != now {
+        t.items.push(Item::Note { text: prompt::language_note().into() });
+    }
+    t.language = now.into();
+    if t.bank_texts.is_none() {
+        t.bank_texts = Some(bank_texts);
+    }
+}
+
+/// The change that makes the budget's notes for the assistant exactly `notes`, for the window to
+/// apply: what the assistant's settings save.
+pub fn assistant_notes(db: &Database, patch: Option<Patch>, notes: Vec<String>) -> Result<Patch, String> {
+    db.read(patch, |current| proposals::notes_patch(current, notes))
+}
+
+/// Gives a conversation another title.
+pub fn assistant_rename_thread(db: &Database, assistant: &Assistant, id: String, title: String) -> Result<(), String> {
+    let title: String = title.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(80).collect();
+    if title.is_empty() {
+        return Err(t!("Give the conversation a name."));
+    }
+    assistant.with_thread(&folder(db)?, &id, |t| t.title = title)
+}
+
+/// Starts a conversation that carries on one that has grown long: it begins with what was said
+/// last in the earlier one, and none of its lookups or files. Returns the new conversation's id.
+pub fn assistant_continue(db: &Database, assistant: &Assistant, thread_id: String) -> Result<String, String> {
+    if assistant.is_running(&thread_id) {
+        return Err(t!("Wait for the current reply, or stop it."));
+    }
+    let folder = folder(db)?;
+    let earlier = assistant.thread_copy(&folder, &thread_id)?;
+    let id = new_id("t");
+    let thread = Thread {
+        id: id.clone(),
+        title: t!("{title} (continued)", title = tools::truncate(&earlier.title, 50)),
+        created: now(),
+        updated: now(),
+        instructions: prompt::in_language(prompt::INSTRUCTIONS),
+        language: crate::i18n::language().code().into(),
+        bank_texts: earlier.bank_texts,
+        carried: Some(history::Carried { from: earlier.title.clone(), text: history::carry(&earlier) }),
+        ..Thread::default()
+    };
+    lock(&assistant.threads).insert(id.clone(), (folder.clone(), thread));
+    assistant.with_thread(&folder, &id, |_| ())?;
+    Ok(id)
+}
+
+/// Keeps the user's thumb on a reply (`up`), or takes it off (`None`). `index` is the reply's
+/// place in the conversation, as its view gives it. Ratings stay on the device.
+pub fn assistant_rate(db: &Database, assistant: &Assistant, thread_id: String, index: usize, up: Option<bool>) -> Result<(), String> {
+    assistant.with_thread(&folder(db)?, &thread_id, |t| {
+        if !matches!(t.items.get(index), Some(Item::Assistant { .. })) {
+            return Err(t!("That reply is gone."));
+        }
+        match up {
+            Some(up) => t.ratings.insert(index, up),
+            None => t.ratings.remove(&index),
+        };
+        Ok(())
+    })?
 }
 
 #[derive(Serialize)]
@@ -1171,9 +1291,59 @@ pub fn spreadsheet_saved(db: &Database, assistant: &Assistant, thread_id: &str, 
     })
 }
 
+/// The services as tests need them: with a budget, and with a model that answers from a script.
+#[cfg(test)]
+pub(crate) mod testing {
+    use super::*;
+
+    /// The services with the sample budget open and saved.
+    pub fn with_budget(directory: &Path) -> crate::runtime::Runtime {
+        let runtime = crate::runtime::Runtime::new(directory).unwrap();
+        let initial = runtime.load().unwrap();
+        crate::block_on(runtime.dispatch("save_budget", json!({ "budget": urbudget_core::test_support::sample(), "expectedToken": initial["token"] }))).unwrap();
+        runtime
+    }
+    /// The same, set to a model of the test's own, whose replies come from `llm::script`.
+    pub fn scripted(directory: &Path, model: &str) -> crate::runtime::Runtime {
+        let runtime = with_budget(directory);
+        // Kept by this assistant alone: the secrets file is one for the whole test process, and
+        // another test may clear it while this one's reply is running.
+        lock(&runtime.assistant.memory).insert(secret_service(Provider::Openai), "sk-a-key-for-tests-that-is-never-sent".into());
+        let change: SettingsChange = serde_json::from_value(json!({ "provider": "openai", "model": model })).unwrap();
+        assistant_settings(&runtime.assistant, change).unwrap();
+        runtime
+    }
+    pub fn screen() -> prompt::Screen {
+        serde_json::from_value(json!({ "page": "budget", "month": "2026-10", "today": "2026-10-21" })).unwrap()
+    }
+    /// Sends a message and waits for its reply to end. Returns the conversation's id.
+    pub fn say(runtime: &crate::runtime::Runtime, thread: Option<&str>, text: &str, screen: prompt::Screen) -> String {
+        let id = assistant_send(&runtime.simplefin, &runtime.db, &runtime.assistant, None, thread.map(str::to_owned), text.into(), vec![], screen).unwrap();
+        finished(runtime, &id);
+        id
+    }
+    pub fn finished(runtime: &crate::runtime::Runtime, id: &str) {
+        crate::block_on(async {
+            for _ in 0..1000 {
+                if !runtime.assistant.is_running(id) { break; }
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        });
+        assert!(!runtime.assistant.is_running(id), "the reply never ended");
+    }
+    pub fn items(runtime: &crate::runtime::Runtime, id: &str) -> Vec<Item> {
+        let folder = runtime.db.store().unwrap().folder().to_path_buf();
+        runtime.assistant.thread_copy(&folder, id).unwrap().items
+    }
+    pub fn view(runtime: &crate::runtime::Runtime, id: &str) -> Value {
+        assistant_thread(&runtime.db, &runtime.assistant, id.to_owned()).unwrap()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::testing::with_budget;
 
     #[test]
     fn stale_sign_in_callbacks_cannot_replace_the_current_registration() {
@@ -1231,7 +1401,7 @@ mod tests {
         let a = tempfile::tempdir().unwrap();
         let b = tempfile::tempdir().unwrap();
         let assistant = Assistant::new(a.path().join("settings"));
-        let thread = Thread { id: "t_private".into(), title: "Private".into(), created: now(), updated: now(), instructions: String::new(), items: vec![], proposals: vec![] };
+        let thread = Thread { id: "t_private".into(), title: "Private".into(), created: now(), updated: now(), instructions: String::new(), items: vec![], proposals: vec![], ..Default::default() };
         history::save(a.path(), &thread).unwrap();
         assert!(assistant.thread_copy(a.path(), &thread.id).is_ok());
         assert!(assistant.thread_copy(b.path(), &thread.id).is_err());
@@ -1242,7 +1412,7 @@ mod tests {
     fn cancelled_tool_results_cannot_resurrect_a_conversation_during_deletion() {
         let directory = tempfile::tempdir().unwrap();
         let assistant = Assistant::new(directory.path().join("settings"));
-        let thread = Thread { id: "t_cancelled".into(), title: "Synthetic".into(), created: now(), updated: now(), instructions: String::new(), items: vec![], proposals: vec![] };
+        let thread = Thread { id: "t_cancelled".into(), title: "Synthetic".into(), created: now(), updated: now(), instructions: String::new(), items: vec![], proposals: vec![], ..Default::default() };
         history::save(directory.path(), &thread).unwrap();
         let cancelled = AtomicBool::new(true);
         // Delete has cancelled the job and removed its memory entry; its history file can
@@ -1262,7 +1432,7 @@ mod tests {
         let folder = tempfile::tempdir().unwrap();
         let assistant = Assistant::new(folder.path().join("settings"));
         let id = "t_no_credentials".to_owned();
-        let thread = Thread { id: id.clone(), title: "Test".into(), created: now(), updated: now(), instructions: String::new(), items: vec![], proposals: vec![] };
+        let thread = Thread { id: id.clone(), title: "Test".into(), created: now(), updated: now(), instructions: String::new(), items: vec![], proposals: vec![], ..Default::default() };
         history::save(folder.path(), &thread).unwrap();
         let job = agent::Job { thread_id: id.clone(), folder: folder.path().to_path_buf(), budget: crate::domain::Budget::default(),
             today: "2026-10-21".into(), month: "2026-10".into(), share_memos: false, bank_sync: Value::Null, bank_texts: false, platform: String::new() };
@@ -1279,12 +1449,54 @@ mod tests {
         assert!(matches!(result.items.last(), Some(Item::Error { code, .. }) if code == "signIn"));
     }
 
-    /// The services with the sample budget open and saved.
-    fn with_budget(directory: &Path) -> crate::runtime::Runtime {
-        let runtime = crate::runtime::Runtime::new(directory).unwrap();
-        let initial = runtime.load().unwrap();
-        crate::block_on(runtime.dispatch("save_budget", json!({ "budget": urbudget_core::test_support::sample(), "expectedToken": initial["token"] }))).unwrap();
-        runtime
+    #[test]
+    fn a_conversations_start_is_settled_once_and_a_change_of_language_is_a_note() {
+        // From before its language was kept with it: settled as the app is now, English here.
+        let mut old = Thread { instructions: prompt::INSTRUCTIONS.into(), ..Thread::default() };
+        settle_start(&mut old, true);
+        assert_eq!((old.language.as_str(), old.bank_texts, old.instructions.as_str()), ("en", Some(true), prompt::INSTRUCTIONS));
+        // Settled, it stays: another phone reading texts doesn't change what it was offered.
+        settle_start(&mut old, false);
+        assert_eq!((old.bank_texts, old.items.len()), (Some(true), 0));
+        // Begun in Arabic, the app now in English: its instructions stay, and a note says so.
+        let arabic = format!("{}\n\n{}", prompt::INSTRUCTIONS, prompt::ARABIC);
+        let mut switched = Thread { instructions: arabic.clone(), language: "ar".into(), bank_texts: Some(false), ..Thread::default() };
+        settle_start(&mut switched, false);
+        assert_eq!(switched.instructions, arabic);
+        assert!(matches!(&switched.items[..], [Item::Note { text }] if text.contains("switched the app to English")));
+        settle_start(&mut switched, false);
+        assert_eq!((switched.items.len(), switched.language.as_str()), (1, "en"));
+    }
+
+    #[test]
+    fn a_conversation_is_renamed_rated_and_carried_on() {
+        let directory = tempfile::tempdir().unwrap();
+        let runtime = with_budget(directory.path());
+        let folder = runtime.db.store().unwrap().folder().to_path_buf();
+        let said = |text: &str| Item::User { text: text.into(), attachments: vec![], context: String::new(), at: now(), import: None, sent_with: None };
+        let thread = Thread { id: "t_long".into(), title: "October".into(), created: now(), updated: now(),
+            items: vec![said("How is October going?"), Item::Assistant { text: "You've spent 1,240.00 so far.".into() }], bank_texts: Some(false), ..Thread::default() };
+        history::save(&folder, &thread).unwrap();
+
+        assistant_rename_thread(&runtime.db, &runtime.assistant, thread.id.clone(), "  October   so far ".into()).unwrap();
+        assert!(assistant_rename_thread(&runtime.db, &runtime.assistant, thread.id.clone(), "  ".into()).is_err());
+        assert_eq!(assistant_threads(&runtime.db, &runtime.assistant).unwrap()[0].title, "October so far");
+
+        // A thumb is on a reply, by its place; it can be changed and taken off.
+        assistant_rate(&runtime.db, &runtime.assistant, thread.id.clone(), 1, Some(false)).unwrap();
+        assert!(assistant_rate(&runtime.db, &runtime.assistant, thread.id.clone(), 0, Some(true)).is_err());
+        let view = assistant_thread(&runtime.db, &runtime.assistant, thread.id.clone()).unwrap();
+        assert_eq!((&view["entries"][1]["rating"], &view["entries"][1]["index"]), (&json!("down"), &json!(1)));
+        assistant_rate(&runtime.db, &runtime.assistant, thread.id.clone(), 1, None).unwrap();
+        assert!(assistant_thread(&runtime.db, &runtime.assistant, thread.id.clone()).unwrap()["entries"][1].get("rating").is_none());
+
+        // Carried on: a new conversation that begins with what was said last, and none of the rest.
+        let next = assistant_continue(&runtime.db, &runtime.assistant, thread.id.clone()).unwrap();
+        let carried = runtime.assistant.thread_copy(&folder, &next).unwrap();
+        assert_eq!(carried.title, "October so far (continued)");
+        let text = carried.carried.unwrap().text;
+        assert!(text.contains("The user: How is October going?") && text.contains("You: You've spent 1,240.00 so far."));
+        assert_eq!(assistant_thread(&runtime.db, &runtime.assistant, next).unwrap()["continuedFrom"], "October so far");
     }
 
     #[test]
@@ -1292,8 +1504,8 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let runtime = with_budget(directory.path());
         let folder = runtime.db.store().unwrap().folder().to_path_buf();
-        let said = Item::User { text: "How is October going?".into(), attachments: vec![], context: String::new(), at: now(), import: None };
-        let thread = Thread { id: "t_stop".into(), title: "Stop".into(), created: now(), updated: now(), instructions: String::new(), items: vec![said], proposals: vec![] };
+        let said = Item::User { text: "How is October going?".into(), attachments: vec![], context: String::new(), at: now(), import: None, sent_with: None };
+        let thread = Thread { id: "t_stop".into(), title: "Stop".into(), created: now(), updated: now(), instructions: String::new(), items: vec![said], proposals: vec![], ..Default::default() };
         history::save(&folder, &thread).unwrap();
         // A reply in the middle of its sentence.
         let running = |written: &str| {
@@ -1355,7 +1567,7 @@ mod tests {
             month: "2026-10".into(), moves: vec![proposals::Move { from: None, to: Some("food".into()), amount: 1000 }],
         }, "Give food more room".into(), &before).unwrap();
         let folder = runtime.db.store().unwrap().folder().to_path_buf();
-        let mut thread = Thread { id: "t_commit".into(), title: "Synthetic proposal".into(), created: now(), updated: now(), instructions: String::new(), items: vec![], proposals: vec![proposal.clone()] };
+        let mut thread = Thread { id: "t_commit".into(), title: "Synthetic proposal".into(), created: now(), updated: now(), instructions: String::new(), items: vec![], proposals: vec![proposal.clone()], ..Default::default() };
         history::save(&folder, &thread).unwrap();
         let request = json!({"threadId":thread.id,"proposalId":proposal.id});
         let applied = call("assistant_apply_commit", request.clone()).unwrap();

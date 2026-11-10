@@ -408,3 +408,45 @@ passing):
   and the next message's note tells the model its reply was cut short.
 - 0.5: `noticeDue` in the status and `told` in a settings change, per service. The apps show the
   notice; the core doesn't refuse a message sent without it.
+
+**Phases 1 and 3, the core** (10 November 2026; `cargo test -p urbudget-services`, 238 unit tests
+and the integration tests passing; the desktop's Rust side type-checks). Nothing here has been
+sent to a real model yet.
+
+- 3.1: a conversation's request only grows at its end. Its instructions are the ones it began
+  with, language part included (`Thread.language`); its tools are the ones it began with
+  (`Thread.bank_texts`); the last round's "answer now", a change of the app's language and
+  "carry on" after a cut reply are notes in the user's turn (`Item::Note`), kept where they were
+  said. A conversation from before this is settled the first time it's used (`settle_start`).
+  When Claude refuses a block of thinking all the same, the loop takes the thinking out of the
+  kept replies and asks once more (`anthropic::thinking_refused`, `history::drop_thinking`).
+- 3.2: `cache_control` at the top of an Anthropic request, for a conversation (`Request::kept`).
+  A batch of bank texts is read in one request, so it isn't kept.
+- 3.3: both services' usage is read and added up per conversation (`Thread.usage`, in its view).
+- 3.4: a conversation whose latest request sent over 120,000 tokens says so (`long` in its
+  view), and a service saying it's full is its own error (`full`, offering `newConversation`).
+  `assistant_continue` starts a conversation that begins with the last eight things said and
+  what became of the proposals. It's built from the kept words, not written by the model, so it
+  never fails for lack of room.
+- 3.5: a reply cut off at its length limit runs none of its calls (each is answered "make it
+  again with less in it"), and one with only text is marked (`Item::Cut`, `cut` in the view);
+  asking again adds a note to carry on.
+- 3.6: the instructions give no app its directions. What's known about bank sync and bank texts
+  is in those tools' descriptions; the guide's bank-connections entry names the signs setting on
+  each app.
+- 3.7: `get_app_guide` lists the topic ids on its `topic`, and asks for questions in English.
+- 3.8: `propose_notes` and its card (`Change::Notes`); the notes are `assistantNotes` in the
+  budget, sent with each message's note. `assistant_notes` gives the settings screen its patch,
+  and `assistant_notes_commit` saves it for the phones.
+- 3.9: reading a conversation never writes it (`peek`), and listing reads three fields of each
+  file. One lock for all conversations is kept: once a look doesn't write, it's held for a
+  moment only, and a lock per conversation would add ways for a deleted one to come back.
+- 3.10: a message's limit is 20,000 characters.
+- 3.11: `llm::script` answers the loop in tests, by model name; `agent.rs` has the loop's tests.
+- 3.12, the core's part: a reply's view says which tools its turn called and carries the user's
+  thumb (`assistant_rate`, kept in the conversation). What a report sends is still the excerpt
+  and the reason; the apps put the details in the reason, where the user sees and can cut them.
+- 1.4: what went with a message is kept with it (`SentWith`, `with` in the view), and more than
+  200 selected transactions is refused by the core too.
+- 1.9: `assistant_rename_thread`.
+

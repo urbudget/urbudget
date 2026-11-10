@@ -60,6 +60,27 @@ pub(crate) fn assistant_thread(db: State<'_, Database>, assistant: State<'_, Ass
 }
 
 #[tauri::command(async)]
+pub(crate) fn assistant_rename_thread(db: State<'_, Database>, assistant: State<'_, Assistant>, id: String, title: String) -> Result<(), String> {
+    shared::assistant_rename_thread(&db, &assistant, id, title)
+}
+
+#[tauri::command(async)]
+pub(crate) fn assistant_continue(db: State<'_, Database>, assistant: State<'_, Assistant>, thread_id: String) -> Result<String, String> {
+    shared::assistant_continue(&db, &assistant, thread_id)
+}
+
+#[tauri::command(async)]
+pub(crate) fn assistant_rate(db: State<'_, Database>, assistant: State<'_, Assistant>, thread_id: String, index: usize, up: Option<bool>) -> Result<(), String> {
+    shared::assistant_rate(&db, &assistant, thread_id, index, up)
+}
+
+/// The change that makes the budget's notes for the assistant exactly `notes`.
+#[tauri::command(async)]
+pub(crate) fn assistant_notes(db: State<'_, Database>, patch: Option<Patch>, notes: Vec<String>) -> Result<Patch, String> {
+    shared::assistant_notes(&db, patch, notes)
+}
+
+#[tauri::command(async)]
 pub(crate) fn assistant_delete_thread(db: State<'_, Database>, assistant: State<'_, Assistant>, id: String) -> Result<(), String> {
     shared::assistant_delete_thread(&db, &assistant, id)
 }

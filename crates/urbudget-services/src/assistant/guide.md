@@ -249,13 +249,13 @@ ios: Go to **More** → **Import bank file** (or open an account and tap **Impor
 ## bank-connections: Connect a bank with SimpleFIN
 keywords: simplefin, bank connection, connect bank, sync bank, link account, download transactions, bank sync
 what: SimpleFIN Bridge downloads transactions from a connected bank into linked accounts, with a review first.
-desktop: Go to **Settings & data** → **Import** → **Bank sync** and click **Open SimpleFIN Bridge** to add your bank and make a setup token. Paste the token in **Setup token** and click **Connect**. Under **Syncs into**, choose the UrBudget account for each bank account (and the first day to bring in), click **Sync now**, and review the rows before they're imported. After that, click **Sync** at the top of a linked account's register, or right-click it → **Sync with bank**.
+desktop: Go to **Settings & data** → **Import** → **Bank sync** and click **Open SimpleFIN Bridge** to add your bank and make a setup token. Paste the token in **Setup token** and click **Connect**. Under **Syncs into**, choose the UrBudget account for each bank account (and the first day to bring in), click **Sync now**, and review the rows before they're imported. After that, click **Sync** at the top of a linked account's register, or right-click it → **Sync with bank**. If a card's purchases come in as money in, turn on **Purchases arrive as money in** for it under **Syncs into**.
 android: Go to **More** → **Bank connections**:
 1. Paste your **SimpleFIN setup token** (**Get a token** helps you get one) and tap **Connect**.
 2. Under **Bank accounts**, tap each bank account, choose its **Budget account** and **First import from** date (optionally **Reverse bank amount signs**), then tap **Save**.
 3. Tap **Download activity** and review each account: use the import / **Mark checked** button, or **Skip this account**.
 **Refresh accounts**, **Unlink account** and **Disconnect this device** manage the connection.
-ios: Go to **More** → **Bank connections** → **Get a setup token** (on SimpleFIN Bridge), paste the token in **SimpleFIN setup token** and tap **Connect**. Tap each bank account to link it (choose the **Budget account**, set **First import from**, tap **Save**). Then tap **Download activity** and review each account, finishing with "Import N", **Mark checked** or **Skip this account**.
+ios: Go to **More** → **Bank connections** → **Get a setup token** (on SimpleFIN Bridge), paste the token in **SimpleFIN setup token** and tap **Connect**. Tap each bank account to link it (choose the **Budget account**, set **First import from**, tap **Save**). Then tap **Download activity** and review each account, finishing with "Import N", **Mark checked** or **Skip this account**. If a card's purchases come in as money in, turn on **Reverse bank amount signs** in its link.
 
 ## ynab-import: Import from YNAB
 keywords: ynab, you need a budget, import ynab, migrate, switch from ynab

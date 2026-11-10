@@ -15,6 +15,8 @@ use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 /// answers with what it found ([LAST]) rather than ending the reply without a word.
 const ROUNDS: usize = 12;
 const LAST: &str = "This is the last step of this reply. Answer now from what you found, without calling tools, and say briefly what you couldn't finish so the user can ask again.";
+/// What a call gets back when the reply it was written in stopped at its length limit.
+const CUT_CALL: &str = "Your reply reached its length limit before this call was complete, so it wasn't run. Make it again with less in it, or in parts.";
 
 pub struct Job {
     pub thread_id: String,
@@ -68,32 +70,28 @@ fn code(kind: FailureKind) -> &'static str {
         FailureKind::Refused => "refused",
         FailureKind::Unsupported => "unsupported",
         FailureKind::Model => "model",
+        FailureKind::Full => "full",
         FailureKind::Other => "other",
     }
 }
 
 async fn turn(assistant: &Assistant, job: &Job, cancelled: &AtomicBool, written: &Mutex<String>) -> Result<(), llm::Failure> {
-    let specs: Vec<_> = tools::specs().into_iter().filter(|s| job.bank_texts || !phone::answers(s.name)).collect();
     let files = Files::open(history::files(&job.folder));
     let other = |e: String| llm::Failure::new(FailureKind::Other, e);
+    // The tools are the ones the conversation began with, whatever this phone reads now: a
+    // request's tools and instructions stay the same for its whole life (see `anthropic.rs`).
+    let offered = assistant.peek_guarded(&job.folder, &job.thread_id, Some(cancelled), |t| t.bank_texts).map_err(other)?.unwrap_or(job.bank_texts);
+    let specs: Vec<_> = tools::specs().into_iter().filter(|s| offered || !phone::answers(s.name)).collect();
+    // Thinking a model refused to take back is left out once, and the round asked again.
+    let mut without_thinking = false;
     for round in 0..ROUNDS {
         let credentials = assistant.credentials().await?;
         let model = assistant.model().await?;
-        let thread = assistant.with_thread_guarded(&job.folder, &job.thread_id, Some(cancelled), |t| t.clone()).map_err(other)?;
-        // The app's language is read for every request, so a switch applies to the next reply.
-        let mut instructions = super::prompt::in_language(if thread.instructions.is_empty() { super::prompt::INSTRUCTIONS } else { &thread.instructions });
         let last = round == ROUNDS - 1;
         if last {
-            instructions = format!("{instructions}\n\n{LAST}");
+            // Said in the conversation, where it stays: the instructions never change.
+            assistant.with_thread_guarded(&job.folder, &job.thread_id, Some(cancelled), |t| t.items.push(Item::Note { text: LAST.into() })).map_err(other)?;
         }
-        let request = Request {
-            model: &model,
-            instructions: &instructions,
-            items: &thread.items,
-            files: &files,
-            tools: &specs,
-            answer_only: last,
-        };
         let provider = match credentials.provider {
             llm::Provider::Anthropic => "anthropic",
             _ => "openai",
@@ -101,6 +99,17 @@ async fn turn(assistant: &Assistant, job: &Job, cancelled: &AtomicBool, written:
         // Busy services get two more tries, as long as nothing was shown yet.
         let mut attempt = 0;
         let reply = loop {
+            let thread = assistant.peek_guarded(&job.folder, &job.thread_id, Some(cancelled), |t| t.clone()).map_err(other)?;
+            let instructions = if thread.instructions.is_empty() { super::prompt::in_language(super::prompt::INSTRUCTIONS) } else { thread.instructions.clone() };
+            let request = Request {
+                model: &model,
+                instructions: &instructions,
+                items: &thread.items,
+                files: &files,
+                tools: &specs,
+                answer_only: last,
+                kept: true,
+            };
             let mut streamed = false;
             let mut on_delta = |delta: Delta| match delta {
                 Delta::Text(text) => {
@@ -116,9 +125,14 @@ async fn turn(assistant: &Assistant, job: &Job, cancelled: &AtomicBool, written:
                     attempt += 1;
                     tokio::time::sleep(std::time::Duration::from_millis(1500 * attempt as u64 * attempt as u64)).await;
                 }
+                Err(f) if super::anthropic::thinking_refused(&f) && !without_thinking => {
+                    without_thinking = true;
+                    assistant.with_thread_guarded(&job.folder, &job.thread_id, Some(cancelled), |t| { history::drop_thinking(&mut t.items); }).map_err(other)?;
+                }
                 other => break other,
             }
         }?;
+        let (cut, used) = (reply.cut, reply.usage);
         let mut calls = vec![];
         let mut items = vec![];
         for part in reply.parts {
@@ -136,18 +150,28 @@ async fn turn(assistant: &Assistant, job: &Job, cancelled: &AtomicBool, written:
         }
         // The round is kept whole from here, so there's nothing of it left for Stop to save. The
         // text is cleared inside the lock on the conversation: a Stop gets one or the other.
-        assistant.with_thread_guarded(&job.folder, &job.thread_id, Some(cancelled), |t| {
+        let import = assistant.with_thread_guarded(&job.folder, &job.thread_id, Some(cancelled), |t| {
             lock(written).clear();
-            t.items.extend(items)
+            t.items.extend(items);
+            t.usage.add(used);
+            t.last_input = used.input;
+            // A reply with no calls that ran out of room is marked, for the panel to offer its rest.
+            if cut && calls.is_empty() {
+                t.items.push(Item::Cut);
+            }
+            // The import the latest message was sent from, as it read then.
+            t.items.iter().rev().find_map(|i| match i {
+                Item::User { import, .. } => Some(import.clone()),
+                _ => None,
+            }).flatten()
         }).map_err(other)?;
         if calls.is_empty() {
+            if cut {
+                emit(&job.thread_id, json!({ "type": "cut" }));
+            }
             return Ok(());
         }
-        // The import the latest message was sent from, as it read then.
-        let import = thread.items.iter().rev().find_map(|i| match i {
-            Item::User { import, .. } => Some(import.as_ref()),
-            _ => None,
-        }).flatten();
+        let import = import.as_ref();
         let context = tools::Context {
             budget: &job.budget,
             today: &job.today,
@@ -161,10 +185,16 @@ async fn turn(assistant: &Assistant, job: &Job, cancelled: &AtomicBool, written:
         for call in calls {
             // What it's doing now, for the panel while a slow lookup (the phone's search) runs.
             emit(&job.thread_id, json!({ "type": "activity", "text": tools::working(&call.name) }));
+            let unrun = |error: &str| tools::Outcome { output: json!({ "error": error }), step: String::new(), proposal: None };
             let outcome = match serde_json::from_str::<Value>(&call.arguments) {
+                // Written as the reply ran out of room: it may be cut off anywhere, even where it
+                // still reads as whole.
+                _ if cut => unrun(CUT_CALL),
                 Ok(args) if args.is_object() && job.bank_texts && phone::answers(&call.name) => {
                     phone::outcome(&call.name, phone::ask(assistant, &job.thread_id, &call.name, &args).await)
                 }
+                // Offered when the conversation began, and not answered here now.
+                Ok(args) if args.is_object() && phone::answers(&call.name) => unrun("Bank texts can't be read here right now: Bank messages isn't set up for this budget on this device."),
                 Ok(args) if args.is_object() => tools::call(&call.name, &args, &context),
                 _ => tools::Outcome {
                     output: json!({ "error": "The arguments weren't a valid JSON object. Call the tool again." }),
@@ -204,4 +234,128 @@ async fn turn(assistant: &Assistant, job: &Job, cancelled: &AtomicBool, written:
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::assistant::llm::{script, Failure, Reply, Usage};
+    use crate::assistant::testing::{finished, items, say, screen, scripted, view};
+    use crate::assistant::{assistant_continue, assistant_retry, prompt};
+
+    fn kinds(view: &Value) -> Vec<&str> {
+        view["entries"].as_array().unwrap().iter().map(|e| e["kind"].as_str().unwrap()).collect()
+    }
+
+    #[test]
+    fn a_lookup_then_an_answer_with_what_it_used_added_up() {
+        let directory = tempfile::tempdir().unwrap();
+        let runtime = scripted(directory.path(), "script-lookup");
+        let used = |input, output, cached| Usage { input, output, cached };
+        script::play("script-lookup", vec![
+            script::call("c1", "get_month", json!({})).map(|r| Reply { usage: used(900, 20, 0), ..r }),
+            script::text("You have money ready to assign.").map(|r| Reply { usage: used(1500, 40, 800), ..r }),
+        ]);
+        let id = say(&runtime, None, "How is October?", screen());
+        let shown = view(&runtime, &id);
+        assert_eq!(kinds(&shown), ["user", "step", "assistant"]);
+        assert_eq!(shown["usage"], json!({ "input": 2400, "output": 60, "cached": 800 }));
+        assert_eq!((&shown["long"], &shown["entries"][2]["tools"]), (&json!(false), &json!(["get_month"])));
+        // What went with the message is on it, for the panel.
+        assert_eq!(shown["entries"][0]["with"]["page"], "budget");
+        // The second request carried the lookup's answer back.
+        let asked = script::asked("script-lookup");
+        assert!(matches!(asked[1].items.last(), Some(Item::Result { failed: false, .. })));
+    }
+
+    #[test]
+    fn the_last_step_is_asked_for_in_a_note_and_the_instructions_never_change() {
+        let directory = tempfile::tempdir().unwrap();
+        let runtime = scripted(directory.path(), "script-rounds");
+        let mut replies: Vec<_> = (0..ROUNDS - 1).map(|i| script::call(&format!("c{i}"), "get_setup", json!({}))).collect();
+        replies.push(script::text("Here's what I found."));
+        script::play("script-rounds", replies);
+        let id = say(&runtime, None, "Look at everything", screen());
+        let asked = script::asked("script-rounds");
+        assert_eq!(asked.len(), ROUNDS);
+        assert!(asked.iter().all(|a| a.instructions == asked[0].instructions && a.tools == asked[0].tools));
+        assert!(asked[..ROUNDS - 1].iter().all(|a| !a.answer_only && !a.items.iter().any(|i| matches!(i, Item::Note { .. }))));
+        let last = &asked[ROUNDS - 1];
+        assert!(last.answer_only && matches!(last.items.last(), Some(Item::Note { text }) if text == LAST));
+        assert_eq!(kinds(&view(&runtime, &id)).last(), Some(&"assistant"));
+    }
+
+    #[test]
+    fn a_reply_cut_off_at_its_limit_runs_no_call_and_is_asked_for_its_rest() {
+        let directory = tempfile::tempdir().unwrap();
+        let runtime = scripted(directory.path(), "script-cut");
+        script::play("script-cut", vec![
+            // A call written as the reply ran out of room, even one that reads as whole.
+            script::call("c1", "propose_budget_moves", json!({ "month": "2026-10", "moves": [{ "from": "ready_to_assign", "to": "food", "amount": 5 }] })).map(|r| Reply { cut: true, ..r }),
+            script::text("Your groceries in October were").map(|r| Reply { cut: true, ..r }),
+            script::text("1,240.00 in all."),
+        ]);
+        let id = say(&runtime, None, "Cover groceries", screen());
+        let kept = items(&runtime, &id);
+        assert!(kept.iter().any(|i| matches!(i, Item::Result { output, failed: true, proposal: None, .. } if output.contains("length limit"))));
+        let shown = view(&runtime, &id);
+        assert_eq!(kinds(&shown), ["user", "assistant", "cut"]);
+        // Asking for the rest says so in a note, and the conversation doesn't end on the model's words.
+        assistant_retry(&runtime.simplefin, &runtime.db, &runtime.assistant, None, id.clone(), screen()).unwrap();
+        finished(&runtime, &id);
+        let asked = script::asked("script-cut");
+        assert!(matches!(asked[2].items.last(), Some(Item::Note { text }) if text.contains("Carry on")));
+        assert_eq!(kinds(&view(&runtime, &id)), ["user", "assistant", "cut", "assistant"]);
+    }
+
+    #[test]
+    fn refused_thinking_is_left_out_once_and_a_full_conversation_is_carried_on() {
+        let directory = tempfile::tempdir().unwrap();
+        let runtime = scripted(directory.path(), "script-refused");
+        script::play("script-refused", vec![script::text("Hello.")]);
+        let id = say(&runtime, None, "Hi", screen());
+        // A reply kept from Claude, with its thinking.
+        let folder = runtime.db.store().unwrap().folder().to_path_buf();
+        runtime.assistant.with_thread(&folder, &id, |t| t.items.push(Item::Raw { provider: "anthropic".into(), value: json!([{ "type": "thinking", "thinking": "", "signature": "sig" }, { "type": "text", "text": "Hello." }]) })).unwrap();
+        let refused = Failure { kind: FailureKind::Other, message: "x".into(), detail: "invalid_request_error messages.1.content.0: Invalid `signature` in `thinking` block.".into() };
+        script::play("script-refused", vec![Err(refused), script::text("Still here."), Err(Failure::new(FailureKind::Full, "Too long."))]);
+        say(&runtime, Some(&id), "Are you there?", screen());
+        let asked = script::asked("script-refused");
+        assert_eq!(asked.len(), 3);
+        assert!(asked[1].items.iter().any(|i| matches!(i, Item::Raw { value, .. } if value.to_string().contains("signature"))));
+        assert!(!asked[2].items.iter().any(|i| matches!(i, Item::Raw { value, .. } if value.to_string().contains("signature"))));
+        assert_eq!(kinds(&view(&runtime, &id)).last(), Some(&"assistant"));
+
+        // Out of room: the error offers a new conversation, which begins with what was said last.
+        say(&runtime, Some(&id), "And now?", screen());
+        let shown = view(&runtime, &id);
+        let last = shown["entries"].as_array().unwrap().last().unwrap();
+        assert_eq!((last["code"].as_str(), last["action"].as_str()), (Some("full"), Some("newConversation")));
+        let next = assistant_continue(&runtime.db, &runtime.assistant, id).unwrap();
+        script::play("script-refused", vec![script::text("Carrying on.")]);
+        say(&runtime, Some(&next), "Where were we?", screen());
+        let first = script::asked("script-refused").last().unwrap().items[0].clone();
+        assert!(matches!(first, Item::User { context, .. } if context.contains("carries on an earlier one") && context.contains("The user: Are you there?")));
+    }
+
+    #[test]
+    fn the_tools_offered_are_the_ones_the_conversation_began_with() {
+        let directory = tempfile::tempdir().unwrap();
+        let runtime = scripted(directory.path(), "script-tools");
+        let with_texts = prompt::Screen { bank_texts: true, ..screen() };
+        // Begun without bank texts: setting them up later doesn't change its tools.
+        script::play("script-tools", vec![script::text("Hello."), script::text("Still no texts here.")]);
+        let id = say(&runtime, None, "Hi", screen());
+        say(&runtime, Some(&id), "And my texts?", with_texts.clone());
+        let asked = script::asked("script-tools");
+        assert!(asked[0].tools == asked[1].tools && !asked[1].tools.contains(&"get_bank_texts"));
+        // Begun with them and asked from where they aren't read: offered still, and answered plainly.
+        script::play("script-tools", vec![script::text("Hello."), script::call("c1", "get_bank_texts", json!({})), script::text("I can't read them here.")]);
+        let id = say(&runtime, None, "Hi", prompt::Screen { bank_texts: true, ..with_texts });
+        // The first reply never asked the phone, so nothing waited on it.
+        say(&runtime, Some(&id), "What's waiting?", screen());
+        let asked = script::asked("script-tools");
+        assert!(asked[3].tools.contains(&"get_bank_texts"));
+        assert!(items(&runtime, &id).iter().any(|i| matches!(i, Item::Result { output, failed: true, .. } if output.contains("isn't set up"))));
+    }
 }
