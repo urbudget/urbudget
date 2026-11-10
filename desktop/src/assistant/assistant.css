@@ -852,6 +852,10 @@
     background-color 0.12s var(--ease),
     color 0.12s var(--ease);
 }
+.proposal-edit-gap {
+  width: 22px;
+  margin-inline: -4px -6px;
+}
 .proposal-edit:hover:not(:disabled),
 .proposal-edit:focus-visible {
   background: var(--accent-soft);
@@ -906,7 +910,7 @@
 .proposal-label > span:first-child {
   display: -webkit-box;
   white-space: normal;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   line-clamp: 2;
@@ -928,8 +932,10 @@
   color: var(--positive);
   font-weight: 600;
 }
-.proposal-change {
+/* An amount as it was and as it will be, under the row's name. */
+.proposal-label > .proposal-change {
   font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
 }
 .proposal-badge {
   padding: 1px 7px;

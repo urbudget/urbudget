@@ -124,6 +124,10 @@ const Row = memo(function Row({
               {row.detail}
             </small>
           )}
+          {/* What it was and what it will be, under the name: beside the amount it left the name no room. */}
+          {row.before !== undefined && row.after !== undefined && row.before !== row.after && (
+            <small className="num proposal-change">{ltr(`${money(row.before)} → ${money(row.after)}`)}</small>
+          )}
         </span>
         {row.badge && <span className={`proposal-badge${row.tone === "warn" ? " warn" : ""}`}>{row.badge}</span>}
         {budget && row.amount !== undefined ? (
@@ -136,11 +140,6 @@ const Row = memo(function Row({
               {money(row.amount)}
             </span>
           )
-        )}
-        {row.before !== undefined && row.after !== undefined && row.before !== row.after && (
-          <span className="num muted proposal-change">
-            {ltr(`${money(row.before)} → ${money(row.after)}`)}
-          </span>
         )}
         {editable && (
           <button
@@ -162,6 +161,8 @@ const Row = memo(function Row({
             <Pencil size={12} aria-hidden />
           </button>
         )}
+        {/* A row with nothing to change keeps the pencil's place, so the amounts stay in one column. */}
+        {choosing && !editable && row.key && <span className="proposal-edit-gap" aria-hidden />}
       </div>
       {/* Bars run left to right in Arabic too, as the app's charts do. */}
       {share !== undefined && (
