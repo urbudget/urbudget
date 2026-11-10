@@ -2988,4 +2988,35 @@
     <string name="assistant_notice_title">ما الذي يُرسَل</string>
     <string name="assistant_notice_sent">رسائلك، وما يظهر على الشاشة، والملفات التي ترفقها، وتفاصيل الميزانية التي يبحث عنها المساعد ليجيبك تُرسَل إلى ⁨%1$s⁩. وتحكم شروطه وسياسة الخصوصية لديه طريقة معالجتها والاحتفاظ بها.</string>
     <string name="assistant_notice_kept">يبقى ملف ميزانيتك وسجل المحادثات وتسجيل الدخول على هذا الجهاز. ولا يتغير شيء في الميزانية حتى تطبّق التغيير بنفسك.</string>
+    <string name="assistant_with_message">مع هذه الرسالة</string>
+    <string name="assistant_with_import">الملف الجاري استيراده</string>
+    <plurals name="assistant_only_first">
+        <item quantity="zero">أُرفقت أول 200 معاملة فقط من أصل ⁨%1$s⁩ معاملة محددة.</item>
+        <item quantity="one">أُرفقت أول 200 معاملة فقط من أصل ⁨%1$s⁩ معاملة محددة.</item>
+        <item quantity="two">أُرفقت أول 200 معاملة فقط من أصل ⁨%1$s⁩ معاملة محددة.</item>
+        <item quantity="few">أُرفقت أول 200 معاملة فقط من أصل ⁨%1$s⁩ معاملات محددة.</item>
+        <item quantity="many">أُرفقت أول 200 معاملة فقط من أصل ⁨%1$s⁩ معاملة محددة.</item>
+        <item quantity="other">أُرفقت أول 200 معاملة فقط من أصل ⁨%1$s⁩ معاملة محددة.</item>
+    </plurals>
+    <string name="assistant_jump_latest">الانتقال إلى الأحدث</string>
+    <string name="assistant_checking">جارٍ التحقق من المساعد…</string>
+    <string name="assistant_not_loaded">تعذّر تحميل المساعد.</string>
+    <string name="assistant_cut">انقطع الرد قبل اكتماله.</string>
+    <string name="assistant_long">طالت هذه المحادثة، فأصبحت الردود أبطأ وتستهلك أكثر من خطتك أو مفتاحك.</string>
+    <string name="assistant_continue_new">المتابعة في محادثة جديدة</string>
+    <string name="assistant_continued_from">تتمة «⁨%1$s⁩»</string>
+    <string name="assistant_rename">إعادة تسمية المحادثة</string>
+    <string name="assistant_conversation_name">اسم المحادثة</string>
+    <string name="assistant_search_conversations">البحث في المحادثات</string>
+    <string name="assistant_no_match">لا توجد محادثة مطابقة.</string>
+    <string name="assistant_tokens">الرموز: ⁨%1$s⁩ مُرسَلة (⁨%2$s⁩ من الذاكرة المؤقتة)، ⁨%3$s⁩ مُستلَمة</string>
+    <string name="assistant_good_reply">رد جيد</string>
+    <string name="assistant_bad_reply">رد غير جيد</string>
+    <string name="assistant_report_details">تفاصيل تُرفق بالبلاغ</string>
+    <string name="assistant_report_details_help">تُرسَل مع بلاغك. احذف ما لا تريد إرساله.</string>
+    <string name="assistant_replied">ردّ المساعد.</string>
+    <string name="assistant_proposal_ready">اقتراح جاهز للمراجعة.</string>
+    <string name="assistant_ask_assistant">اسأل المساعد</string>
+    <string name="assistant_help_category">ساعدني في ⁨%1$s⁩ هذا الشهر.</string>
+    <string name="assistant_thinking">يفكّر: ⁨%1$s⁩</string>
 </resources>

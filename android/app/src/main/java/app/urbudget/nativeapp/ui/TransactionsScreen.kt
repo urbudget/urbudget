@@ -1083,5 +1083,12 @@ private fun BulkTransactionDialog(ids: Set<String>, account: String, budget: JSO
             "duplicate" -> Text(stringResource(R.string.bulk_duplicate_help), color = ur.muted, style = MaterialTheme.typography.bodySmall)
             "delete" -> CheckRow(stringResource(R.string.bulk_delete_confirm), confirmDelete, { confirmDelete = it })
         }
+        // The selection can go to the assistant instead, to ask about: its panel opens on it, with nothing sent.
+        LocalAssistantAsk.current?.let { ask ->
+            ListCard {
+                ListRow(stringResource(R.string.assistant_ask_assistant), Modifier.testTag("bulk-ask-assistant"), icon = Icons.AutoMirrored.Outlined.Chat, chevron = false,
+                    onClick = { ask.transactions(ids.toList()); done() })
+            }
+        }
     }
 }

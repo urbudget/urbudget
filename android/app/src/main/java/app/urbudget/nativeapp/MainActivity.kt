@@ -35,6 +35,10 @@ class MainActivity : AppCompatActivity() {
     private val assistant: AssistantController by viewModels()
     /** The configuration the screens are drawn in; a language change replaces it. */
     private var interfaceConfiguration by mutableStateOf<Configuration?>(null)
+    /** Whether the activity is started: on screen, or about to be. */
+    @Volatile private var inFront = false
+    /** Pages and files the core asked to open while the app was behind another, for when it's in front again. */
+    private val toOpen = ArrayDeque<JSONObject>()
 
     @OptIn(kotlinx.coroutines.FlowPreview::class)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -45,35 +49,40 @@ class MainActivity : AppCompatActivity() {
         // the first frame asking at once each make one, the store clears the first, and a screen left on
         // that one shows the welcome page over a budget that's still there.
         val model = model
+        val assistant = assistant
         setContent {
             ProvideLanguage(interfaceConfiguration ?: resources.configuration) { UrBudgetTheme { UrBudgetApp(model) } }
         }
         if (savedInstanceState == null) intent?.getStringExtra(SmsWorker.PAGE)?.let { PageRequests.page.value = it }
+        // The core's events are read by asking for them. At rest that's a few times a second while the
+        // app is in front. While a reply runs it's ten times a second and carries on behind another
+        // app, for as long as the process lives: the core waits only so long for the phone's answer
+        // to a bank-text lookup, and the conversation should be whole when the user comes back.
+        lifecycleScope.launch(Dispatchers.IO) {
+            runCatching { NativeServices.initialize(applicationContext) }
+            while (isActive) {
+                val replying = assistant.replyRunning
+                if (replying || inFront) runCatching { NativeServices.pollEvents() }
+                delay(assistantPollDelay(replying))
+            }
+        }
         lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) {
-                launch {
-                    NativeServices.events.collect { event ->
-                        val payload = event.optJSONObject("payload") ?: return@collect
-                        runCatching {
-                            when (event.optString("event")) {
-                                "host://open-url" -> {
-                                    val uri = Uri.parse(payload.getString("url"))
-                                    require(uri.scheme in setOf("https", "http"))
-                                    // A Custom Tab over the app, as iOS shows these pages in a Safari sheet: its close
-                                    // button always comes back here, whatever the browser does with the page's own
-                                    // links (Firefox asks before "Return to UrBudget" opens the app, and a "Stay in
-                                    // Firefox" leaves no way back). A browser without Custom Tabs opens it as before.
-                                    CustomTabsIntent.Builder().setShowTitle(true).build().launchUrl(this@MainActivity, uri)
-                                }
-                                "host://open-file" -> shareFile(payload.getString("path"))
-                            }
-                        }.onFailure { model.notifyError(it.message ?: getString(R.string.error_no_app_to_open)) }
+            NativeServices.events.collect { event ->
+                val payload = event.optJSONObject("payload") ?: return@collect
+                when (event.optString("event")) {
+                    // Something to open is opened once the app is in front again.
+                    "host://open-url", "host://open-file" -> if (inFront) open(event, payload) else toOpen += event
+                    // The assistant's bank-text questions (services assistant/phone.rs), answered here whether or not the app is in front.
+                    "assistant://phone" -> launch {
+                        val answer = BankTextsAssistant.answer(applicationContext, model, payload)
+                        runCatching { withContext(Dispatchers.IO) { NativeServices.call("assistant_phone_reply", JSONObject().put("requestId", payload.optString("requestId")).put("answer", answer)) } }
                     }
                 }
-                launch(Dispatchers.IO) {
-                    runCatching { NativeServices.initialize(applicationContext) }
-                    while (isActive) { runCatching { NativeServices.pollEvents() }; delay(300) }
-                }
+            }
+        }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch { while (toOpen.isNotEmpty()) toOpen.removeFirst().let { open(it, it.optJSONObject("payload") ?: JSONObject()) } }
                 launch(Dispatchers.IO) {
                     runCatching {
                         NativeServices.initialize(applicationContext)
@@ -91,13 +100,35 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        inFront = true
         NativeServices.setForeground(true)
+        // A reply may have ended while the app was behind another: the open conversation is read again.
+        assistant.reloadThread()
     }
 
     override fun onStop() {
+        inFront = false
         NativeServices.setForeground(false)
         SyncWorker.enqueue(applicationContext)
         super.onStop()
+    }
+
+    /** Opens what the core asked for: a page in a Custom Tab, or a file it made. */
+    private suspend fun open(event: JSONObject, payload: JSONObject) {
+        runCatching {
+            when (event.optString("event")) {
+                "host://open-url" -> {
+                    val uri = Uri.parse(payload.getString("url"))
+                    require(uri.scheme in setOf("https", "http"))
+                    // A Custom Tab over the app, as iOS shows these pages in a Safari sheet: its close
+                    // button always comes back here, whatever the browser does with the page's own
+                    // links (Firefox asks before "Return to UrBudget" opens the app, and a "Stay in
+                    // Firefox" leaves no way back). A browser without Custom Tabs opens it as before.
+                    CustomTabsIntent.Builder().setShowTitle(true).build().launchUrl(this@MainActivity, uri)
+                }
+                "host://open-file" -> shareFile(payload.getString("path"))
+            }
+        }.onFailure { model.notifyError(it.message ?: getString(R.string.error_no_app_to_open)) }
     }
 
     override fun onNewIntent(intent: Intent) {

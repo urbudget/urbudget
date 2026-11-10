@@ -2534,4 +2534,39 @@
     <string name="assistant_notice_title">What gets sent</string>
     <string name="assistant_notice_sent">Your messages, what’s on screen, the files you attach, and the budget details the assistant looks up to answer you go to %1$s. Its terms and privacy policy govern how it processes and retains them.</string>
     <string name="assistant_notice_kept">Your budget file, conversation history and sign-in are kept on this device. Nothing in the budget changes until you apply a change yourself.</string>
+    <!-- Above the message field: what goes with the next message, each part with its own ×. A sent message shows the same line. -->
+    <string name="assistant_with_message">With this message</string>
+    <string name="assistant_with_import">The file being imported</string>
+    <!-- By the message field when more than 200 transactions were selected where they were handed to the assistant. %1$s is how many were selected. -->
+    <plurals name="assistant_only_first">
+        <item quantity="one">Only the first 200 of %1$s selected transactions are attached.</item>
+        <item quantity="other">Only the first 200 of %1$s selected transactions are attached.</item>
+    </plurals>
+    <string name="assistant_jump_latest">Jump to latest</string>
+    <string name="assistant_checking">Checking the assistant…</string>
+    <string name="assistant_not_loaded">The assistant couldn\'t be loaded.</string>
+    <string name="assistant_cut">The reply was cut short.</string>
+    <string name="assistant_long">This conversation is getting long, so replies are slower and use more of your plan or key.</string>
+    <string name="assistant_continue_new">Continue in a new conversation</string>
+    <!-- The first line of a conversation that carries on another. %1$s is the earlier conversation's title. -->
+    <string name="assistant_continued_from">Continued from “%1$s”</string>
+    <string name="assistant_rename">Rename conversation</string>
+    <string name="assistant_conversation_name">Conversation name</string>
+    <string name="assistant_search_conversations">Search conversations</string>
+    <string name="assistant_no_match">No conversation matches.</string>
+    <!-- Under the open conversation in the history list: tokens its requests used. Each is a grouped number. -->
+    <string name="assistant_tokens">Tokens: %1$s sent (%2$s from cache), %3$s received</string>
+    <string name="assistant_good_reply">Good reply</string>
+    <string name="assistant_bad_reply">Bad reply</string>
+    <string name="assistant_report_details">Details to include</string>
+    <string name="assistant_report_details_help">Sent with your report. Remove anything you\'d rather not send.</string>
+    <!-- Read aloud by a screen reader: once when a reply has finished, once when a proposal card arrives. -->
+    <string name="assistant_replied">The assistant replied.</string>
+    <string name="assistant_proposal_ready">A proposal is ready to review.</string>
+    <!-- In the register's selection sheet and a category's menu: hands them to the assistant, unsent. -->
+    <string name="assistant_ask_assistant">Ask the assistant</string>
+    <!-- Put in the message box by a category's "Ask the assistant". %1$s is the category's name. -->
+    <string name="assistant_help_category">Help me with %1$s this month.</string>
+    <!-- The latest line of the model's thinking, while a reply runs. -->
+    <string name="assistant_thinking">Thinking: %1$s</string>
 </resources>

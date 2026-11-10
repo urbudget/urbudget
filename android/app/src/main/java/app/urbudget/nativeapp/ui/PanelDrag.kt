@@ -4,6 +4,8 @@ import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.DraggableState
 import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.Composable
@@ -19,6 +21,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Velocity
@@ -53,13 +57,26 @@ internal class PanelDrag(private val scope: CoroutineScope, private val close: (
     private val drag = DraggableState { by(it) }
     val dragArea: Modifier = Modifier.draggable(drag, Orientation.Vertical, onDragStopped = { settle(it) })
 
-    /** A list in the panel scrolls first; only what it can't use, pulling down at its start, moves the panel. */
+    /** Whether the drag under way has scrolled the list: such a drag reads on, and never closes the panel. */
+    private var scrolledList = false
+
+    /** A finger came down on the panel: what the last drag did no longer counts. */
+    fun touched() { scrolledList = false }
+
+    /**
+     * A list in the panel scrolls first; only what it can't use, pulling down at its start, moves the
+     * panel. A drag that began by scrolling the list stops at the list's start instead: reaching the
+     * top of a long conversation doesn't carry on into closing it.
+     */
     val connection = object : NestedScrollConnection {
         override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset =
             if (source == NestedScrollSource.UserInput && available.y < 0f && offset > 0f) Offset(0f, by(available.y)) else Offset.Zero
 
-        override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset =
-            if (source == NestedScrollSource.UserInput && available.y > 0f) Offset(0f, by(available.y)) else Offset.Zero
+        override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+            if (source != NestedScrollSource.UserInput) return Offset.Zero
+            if (consumed.y != 0f) scrolledList = true
+            return if (available.y > 0f && !scrolledList) Offset(0f, by(available.y)) else Offset.Zero
+        }
 
         override suspend fun onPreFling(available: Velocity): Velocity =
             if (offset > 0f) { settle(available.y); available } else Velocity.Zero
@@ -79,3 +96,5 @@ internal fun rememberPanelDrag(open: Boolean, close: () -> Unit): PanelDrag {
 /** Moves the panel with the drag and lets a list in it hand over what it can't scroll. */
 internal fun Modifier.panelDrag(drag: PanelDrag): Modifier =
     offset { IntOffset(0, drag.offset.roundToInt()) }.onSizeChanged { drag.height = it.height }.nestedScroll(drag.connection)
+        // Watches each finger come down, taking nothing from what's under it.
+        .pointerInput(drag) { awaitEachGesture { awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial); drag.touched() } }

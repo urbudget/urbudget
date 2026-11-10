@@ -2,6 +2,7 @@ package app.urbudget.nativeapp.ui
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -9,6 +10,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -90,10 +92,8 @@ internal fun AssistantSettingsDialog(controller: AssistantController, close: () 
                     }
                     HorizontalDivider()
                     ShareMemosSwitch(status, controller)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) { Text(stringResource(R.string.assistant_keep_history)); Text(stringResource(R.string.assistant_keep_history_detail), style = MaterialTheme.typography.bodySmall) }
-                        Switch(status?.optBoolean("keepHistory", true) ?: true, { controller.settings(JSONObject().put("keepHistory", it)) })
-                    }
+                    LabelledSwitch(stringResource(R.string.assistant_keep_history), stringResource(R.string.assistant_keep_history_detail),
+                        status?.optBoolean("keepHistory", true) ?: true) { controller.settings(JSONObject().put("keepHistory", it)) }
                     OutlinedButton({ deleteHistory = true }) { Text(stringResource(R.string.assistant_delete_everything)) }
                 }
                 TextButton(close, Modifier.align(Alignment.End)) { Text(stringResource(R.string.common_done)) }
@@ -109,8 +109,15 @@ internal fun AssistantSettingsDialog(controller: AssistantController, close: () 
 /** Whether memo text goes with budget lookups: here in the settings, and in the notice of what's sent, where it can be turned off before a first message. */
 @Composable
 internal fun ShareMemosSwitch(status: JSONObject?, controller: AssistantController) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) { Text(stringResource(R.string.assistant_share_memos)); Text(stringResource(R.string.assistant_share_memos_detail), style = MaterialTheme.typography.bodySmall) }
-        Switch(status?.optBoolean("shareMemos", true) ?: true, { controller.settings(JSONObject().put("shareMemos", it)) })
+    LabelledSwitch(stringResource(R.string.assistant_share_memos), stringResource(R.string.assistant_share_memos_detail),
+        status?.optBoolean("shareMemos", true) ?: true) { controller.settings(JSONObject().put("shareMemos", it)) }
+}
+
+/** A switch with its words: one thing to tap, and one to a screen reader, which reads the words with the switch's state. */
+@Composable
+private fun LabelledSwitch(title: String, detail: String, checked: Boolean, change: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().toggleable(checked, role = Role.Switch, onValueChange = change), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(end = 12.dp)) { Text(title); Text(detail, style = MaterialTheme.typography.bodySmall) }
+        Switch(checked, null)
     }
 }

@@ -148,8 +148,11 @@ internal fun CategorySheet(category: JSONObject, budget: JSONObject, total: JSON
                     Text(category.text("name"), style = MaterialTheme.typography.headlineSmall, color = ur.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text(if (category.optBoolean("hidden")) stringResource(R.string.category_group_hidden, category.text("group")) else category.text("group"), style = MaterialTheme.typography.bodyMedium, color = ur.muted)
                 }
-                CategoryMenu(payment, category.optBoolean("hidden"), { action ->
-                    if (action == "hide" || action == "show") withCurrentBudget(budget, vm) {
+                val askAssistant = LocalAssistantAsk.current
+                CategoryMenu(payment, category.optBoolean("hidden"), askAssistant != null, { action ->
+                    // The assistant's panel opens on a question about this category, unsent; the sheet gets out of its way.
+                    if (action == "ask") { askAssistant?.category(category); close() }
+                    else if (action == "hide" || action == "show") withCurrentBudget(budget, vm) {
                         vm.upsert("categories", category.copyJson().put("hidden", action == "hide"))
                         toast(Words[if (action == "hide") R.string.category_hid else R.string.category_shown_again, category.text("name")], true)
                         close()
@@ -256,7 +259,7 @@ internal fun monthBounds(month: String): Pair<String, String> = runCatching {
 }.getOrDefault("" to "")
 
 @Composable
-private fun CategoryMenu(payment: Boolean, hidden: Boolean, open: (String) -> Unit) {
+private fun CategoryMenu(payment: Boolean, hidden: Boolean, assistant: Boolean, open: (String) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         IconButton({ expanded = true }) { Icon(Icons.Outlined.MoreHoriz, stringResource(R.string.category_actions), tint = ur.text2) }
@@ -267,6 +270,7 @@ private fun CategoryMenu(payment: Boolean, hidden: Boolean, open: (String) -> Un
                 if (!payment) add(Triple("renameGroup", R.string.group_rename_or_merge, Icons.Outlined.DriveFileRenameOutline))
                 add(Triple("history", R.string.category_moves_menu, Icons.Outlined.History))
                 add(if (hidden) Triple("show", R.string.category_show, Icons.Outlined.Visibility) else Triple("hide", R.string.category_hide, Icons.Outlined.VisibilityOff))
+                if (assistant) add(Triple("ask", R.string.assistant_ask_assistant, Icons.AutoMirrored.Outlined.Chat))
             }
             items.forEach { (id, label, icon) -> DropdownMenuItem(text = { Text(stringResource(label)) }, leadingIcon = { Icon(icon, null) }, onClick = { open(id); expanded = false }) }
             if (!payment) {

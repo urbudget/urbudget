@@ -1,6 +1,5 @@
 package app.urbudget.nativeapp.ui
 
-import app.urbudget.nativeapp.BankTextsAssistant
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -33,6 +32,9 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -96,6 +98,13 @@ internal val morePages = listOf(
     MorePage("Settings & data", R.string.page_settings, R.string.page_settings_detail, Icons.Outlined.Settings),
 )
 
+/**
+ * "Ask the assistant" on a page: hands the assistant the selected transactions, or a category
+ * to ask about, and opens its panel on them with nothing sent.
+ */
+internal class AssistantAsk(val transactions: (List<String>) -> Unit, val category: (JSONObject) -> Unit)
+internal val LocalAssistantAsk = staticCompositionLocalOf<AssistantAsk?> { null }
+
 /** A page's title in the interface's language, from its key. */
 @Composable
 internal fun pageTitle(page: String): String = morePages.firstOrNull { it.key == page }?.let { stringResource(it.title) }
@@ -118,17 +127,14 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     val assistantController: AssistantController = viewModel()
     // Another budget has its own conversations; one opened clears an error from before it was.
     LaunchedEffect(state.budgetIdentity) { state.budgetIdentity?.let(assistantController::budgetOpened) }
-    // The assistant's bank-text questions (services assistant/phone.rs), answered here while the app is open.
-    val appContext = LocalContext.current.applicationContext
-    LaunchedEffect(vm) {
-        NativeServices.events.collect { envelope ->
-            if (envelope.optString("event") != "assistant://phone") return@collect
-            val request = envelope.optJSONObject("payload") ?: return@collect
-            launch {
-                val answer = BankTextsAssistant.answer(appContext, vm, request)
-                runCatching { withContext(Dispatchers.IO) { NativeServices.call("assistant_phone_reply", JSONObject().put("requestId", request.optString("requestId")).put("answer", answer)) } }
-            }
-        }
+    // "Ask the assistant" on a page: the panel opens on what's handed over, in a new conversation unless the open one is empty, and nothing is sent.
+    val askAssistant = remember(assistantController, context) {
+        AssistantAsk(
+            transactions = { ids -> assistantController.handOver(selected = ids); assistant = true },
+            category = { category ->
+                assistantController.handOver(context.getString(R.string.assistant_help_category, category.text("name")), categoryId = category.text("id"))
+                assistant = true
+            })
     }
     // A bank file being imported: kept while the assistant is open over it, to fix its lines. A rotation
     // or the Fold opening no longer remakes the screen, so the review keeps its choices too; this
@@ -406,10 +412,12 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     val undoLabel = stringResource(R.string.common_undo)
     val toast = remember(snack, scope, vm, undoLabel) { { message: String, undo: Boolean -> snack.toast(scope, vm, message, undo, undoLabel) } }
     LaunchedEffect(state.exported) { if (state.exported) { vm.exportSaid(); toast(context.getString(R.string.backup_exported), false) } }
-    CompositionLocalProvider(LocalToast provides toast, LocalLoanActions provides loanActions, LocalSplitList provides splitList) {
+    CompositionLocalProvider(LocalToast provides toast, LocalLoanActions provides loanActions, LocalSplitList provides splitList, LocalAssistantAsk provides askAssistant) {
     Box(Modifier.fillMaxSize().background(ur.bg).nestedScroll(scrollWatcher)) {
-    // The app's own screen: the whole window, or its start side while the assistant shares it.
-    Box(Modifier.align(Alignment.TopStart).fillMaxHeight().then(if (appWidth != null) Modifier.width(appWidth) else Modifier.fillMaxWidth())) {
+    // The app's own screen: the whole window, or its start side while the assistant shares it. Under the
+    // assistant on a phone it's out of a screen reader's way, as a page under a sheet is.
+    Box(Modifier.align(Alignment.TopStart).fillMaxHeight().then(if (appWidth != null) Modifier.width(appWidth) else Modifier.fillMaxWidth())
+        .then(if (assistant && !assistantBeside && budget != null) Modifier.clearAndSetSemantics { } else Modifier)) {
     ProvideAppSide(appWidth) {
     Box(Modifier.fillMaxSize()) {
         // The page, its add button and messages. On a large screen they keep a readable width, centred
@@ -522,7 +530,10 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     }
         // On a phone the assistant rises over a dimmed page; beside the app on a large screen both stay in use.
         AnimatedVisibility(assistant && budget != null && !assistantBeside, enter = fadeIn(tween(180)), exit = fadeOut(tween(180))) {
-            Box(Modifier.fillMaxSize().background(ur.scrim).clickable(remember { MutableInteractionSource() }, null) { assistant = false })
+            // Named for what a tap on it does, as the scrim of a sheet is.
+            val closeLabel = stringResource(R.string.assistant_close)
+            Box(Modifier.fillMaxSize().background(ur.scrim).clickable(remember { MutableInteractionSource() }, null, onClickLabel = closeLabel) { assistant = false }
+                .semantics { contentDescription = closeLabel })
         }
         val assistantDrag = rememberPanelDrag(assistant) { assistant = false }
         // One assistant, wherever it stands: folding moves it between the side and the phone's panel

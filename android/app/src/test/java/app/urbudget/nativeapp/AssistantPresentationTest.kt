@@ -69,12 +69,13 @@ class AssistantPresentationTest {
         assertEquals(AssistantErrorAction.SignIn, AssistantErrorAction.of(error("signIn")))
         assertEquals(AssistantErrorAction.Settings, AssistantErrorAction.of(error("settings")))
         assertEquals(AssistantErrorAction.Usage, AssistantErrorAction.of(error("usage")))
+        assertEquals(AssistantErrorAction.NewConversation, AssistantErrorAction.of(error("newConversation")))
         // An earlier error carries no action; "none" is one asking again wouldn't help. Neither has a button, nor has an action this app doesn't know.
         assertNull(AssistantErrorAction.of(error(null)))
         assertNull(AssistantErrorAction.of(error("none")))
         assertNull(AssistantErrorAction.of(error(JSONObject.NULL)))
         assertNull(AssistantErrorAction.of(error("somethingNewer")))
-        assertEquals(listOf("Continue with ChatGPT", "Assistant settings", "Plan usage", "Try again"), AssistantErrorAction.values().map { Words[it.label] })
+        assertEquals(listOf("Continue with ChatGPT", "Assistant settings", "Plan usage", "Continue in a new conversation", "Try again"), AssistantErrorAction.values().map { Words[it.label] })
     }
 
     @Test fun theNoticeOfWhatsSentNamesTheCompanyBehindTheService() {
@@ -137,6 +138,194 @@ class AssistantPresentationTest {
         assertNull(ProposalChoices.partial(rows, choosing = false))
         assertNull(ProposalChoices.partial(rows.map { JSONObject(it.toString()).put("skipped", false) }, choosing = true))
         assertEquals(ProposalChoices.Partial(0, 3), ProposalChoices.partial(rows.map { JSONObject(it.toString()).put("skipped", true) }, choosing = true))
+    }
+
+    @Test fun textThatWasJustWrittenStaysLiveUntilItsEntryIsShown() {
+        val buffer = AssistantStreamBuffer()
+        buffer.append("Weighing the months", thinking = true)
+        assertEquals("" to "Weighing the months", buffer.drain())
+        // Words arriving end the thinking that led to them.
+        buffer.append("You spent ")
+        buffer.append("1,240.00.")
+        assertEquals("You spent 1,240.00." to "", buffer.drain())
+        // The round ends: its text is still what's live, until the conversation shows it.
+        buffer.settle()
+        assertEquals("You spent 1,240.00." to "", buffer.drain())
+        buffer.append("Next, ")
+        assertEquals("You spent 1,240.00.\n\nNext, " to "", buffer.drain())
+        buffer.shown()
+        assertEquals("Next, " to "", buffer.drain())
+        buffer.shown()
+        assertNull(buffer.drain())
+    }
+
+    @Test fun onlyTheLatestLineOfThinkingIsKeptToShow() {
+        assertEquals("", assistantThinkingLine(""))
+        assertEquals("Comparing October with September", assistantThinkingLine("**Reading the budget**\n\nLooking at groceries.\nComparing October with September\n\n"))
+        assertEquals("Reading the budget", assistantThinkingLine("## **Reading the budget**"))
+        val buffer = AssistantStreamBuffer()
+        repeat(2_000) { buffer.append("Line $it of a long think\n", thinking = true) }
+        assertEquals("Line 1999 of a long think", buffer.drain()!!.second)
+    }
+
+    @Test fun aReplyIsShownOnceTheConversationsLatestReplyIsIt() {
+        val entries = listOf(JSONObject().put("kind", "user").put("text", "Hi"), JSONObject().put("kind", "assistant").put("text", "Hello.\n"), JSONObject().put("kind", "step").put("text", "Looked up"))
+        assertTrue(assistantShows(entries, "Hello."))
+        assertFalse(assistantShows(entries, "Hello again."))
+        assertFalse(assistantShows(emptyList(), "Hello."))
+    }
+
+    @Test fun eventsAreReadFasterWhileAReplyRuns() {
+        assertEquals(100L, assistantPollDelay(replying = true))
+        assertEquals(300L, assistantPollDelay(replying = false))
+    }
+
+    @Test fun anEntryOfAKindThisAppDoesntKnowHasNoKindSoItIsNeverDrawnAsAReply() {
+        fun kind(name: String) = AssistantEntryKind.of(JSONObject().put("kind", name))
+        assertEquals(listOf(AssistantEntryKind.User, AssistantEntryKind.Assistant, AssistantEntryKind.Step, AssistantEntryKind.Proposal, AssistantEntryKind.Stopped,
+            AssistantEntryKind.Error, AssistantEntryKind.Cut), listOf("user", "assistant", "step", "proposal", "stopped", "error", "cut").map(::kind))
+        assertNull(kind("somethingNewer"))
+        assertNull(AssistantEntryKind.of(JSONObject()))
+    }
+
+    @Test fun whatGoesWithAMessageIsItsPartsLessTheOnesTakenOff() {
+        val budget = AssistantPlace("budget")
+        val register = AssistantPlace("transactions", accountId = "a1", categoryId = "c1")
+        val file = JSONObject().put("account", "a1").put("content", "Date,Amount").put("session", JSONObject())
+        // The month goes only from a page that shows one.
+        assertEquals(AssistantSending(budget, "2026-11"), assistantSending(budget, "2026-11", emptyList(), null))
+        assertEquals(AssistantSending(register, null, listOf("t1", "t2")), assistantSending(register, "2026-11", listOf("t1", "t2"), null))
+        // Over an import the page is the import's, and its file goes too.
+        val importing = assistantSending(budget, "2026-11", emptyList(), file)
+        assertEquals("import" to null, importing.place?.page to importing.month)
+        assertSame(file, importing.import)
+        // A category handed over with "Ask the assistant" is the one in view.
+        assertEquals(AssistantPlace("budget", categoryId = "c9"), assistantSending(budget, "2026-11", emptyList(), null, category = "c9").place)
+        // Each part comes off on its own.
+        assertEquals(AssistantSending(null, null, listOf("t1"), file), assistantSending(register, "2026-11", listOf("t1"), file, setOf(AssistantPart.Place), category = "c9"))
+        assertEquals(AssistantSending(register.copy(page = "import"), null, listOf("t1")), assistantSending(register, "2026-11", listOf("t1"), file, setOf(AssistantPart.Import)))
+        assertEquals(AssistantSending(budget, "2026-11"), assistantSending(budget, "2026-11", listOf("t1"), null, setOf(AssistantPart.Transactions)))
+    }
+
+    @Test fun theScreenSentLeavesOutMonthAccountAndCategoryOnceThePlaceIsTakenOff() {
+        val here = assistantScreen(AssistantSending(AssistantPlace("budget", categoryId = "c9"), "2026-11", listOf("t1")), "2026-11-10", bankTexts = true)
+        assertJson("""{"platform":"android","page":"budget","month":"2026-11","categoryId":"c9","today":"2026-11-10","selected":["t1"],"import":null,"bankTexts":true}""", here)
+        val register = assistantScreen(AssistantSending(AssistantPlace("transactions", accountId = "a1")), "2026-11-10", bankTexts = false)
+        assertJson("""{"platform":"android","page":"transactions","accountId":"a1","today":"2026-11-10","selected":[],"import":null,"bankTexts":false}""", register)
+        // No page says the user took where they are off the message.
+        val file = JSONObject().put("account", "a1")
+        val nowhere = assistantScreen(AssistantSending(null, null, listOf("t1"), file), "2026-11-10", bankTexts = false)
+        assertJson("""{"platform":"android","page":"","today":"2026-11-10","selected":["t1"],"import":{"account":"a1"},"bankTexts":false}""", nowhere)
+        assertFalse(nowhere.has("month") || nowhere.has("accountId") || nowhere.has("categoryId"))
+    }
+
+    @Test fun aPagesKeyNamesThePageAsTheAppDoes() {
+        assertEquals(listOf("Budget", "Transactions", "Accounts", "Reports", "Scheduled", "Payees & rules", "Settings & data", "Bank messages", "Bank connections", "Import bank file"),
+            listOf("budget", "transactions", "accounts", "reports", "scheduled", "payees", "settings", "bankMessages", "bankConnections", "import").map { Words[assistantPageName(it)!!] })
+        assertNull(assistantPageName("somewhereNew"))
+        assertEquals(listOf(true, true, false, false), listOf("budget", "reports", "transactions", "import").map(::assistantPageShowsMonth))
+    }
+
+    @Test fun aSelectionOver200IsCutToItsFirst200AndSaysHowManyThereWere() {
+        val few = (1..200).map { "t$it" }
+        assertEquals(few to null, assistantSelection(few))
+        val many = (1..201).map { "t$it" }
+        assertEquals(few to 201, assistantSelection(many))
+        assertEquals(emptyList<String>() to null, assistantSelection(emptyList()))
+        assertEquals("Only the first 200 of 1,250 selected transactions are attached.", Words.count(R.plurals.assistant_only_first, 1250))
+    }
+
+    @Test fun somethingPutInTheComposerGoesAfterWhatsTypedNeverOverIt() {
+        assertEquals("Fix these lines.", assistantDraftWith("", "Fix these lines."))
+        assertEquals("Fix these lines.", assistantDraftWith("  \n", "Fix these lines."))
+        assertEquals("About rent\nRevise the proposal ‘Cover rent’: ", assistantDraftWith("About rent  ", "Revise the proposal ‘Cover rent’: "))
+        // Put in a second time, it's there already.
+        assertEquals("About rent\nFix these lines.", assistantDraftWith("About rent\nFix these lines.", "Fix these lines."))
+    }
+
+    @Test fun newTextIsFollowedOnlyFromTheEnd() {
+        fun frame(index: Int, offset: Int, more: Boolean, scrolling: Boolean = false) = AssistantListFrame(index, offset, more, scrolling)
+        // At the end it follows, however it got there.
+        assertTrue(assistantFollows(false, frame(3, 0, more = true, scrolling = true), frame(9, 40, more = false, scrolling = true)))
+        assertTrue(assistantFollows(false, null, frame(0, 0, more = false)))
+        // Text arriving under a still list leaves it as it was: followed if it was at the end before.
+        assertTrue(assistantFollows(true, frame(9, 40, more = false), frame(9, 40, more = true)))
+        assertFalse(assistantFollows(false, frame(4, 10, more = true), frame(4, 10, more = true)))
+        // A finger resting on the list at its end doesn't stop it either.
+        assertTrue(assistantFollows(true, frame(9, 40, more = false, scrolling = true), frame(9, 40, more = true, scrolling = true)))
+        // Scrolling away from the end stops it.
+        assertFalse(assistantFollows(true, frame(9, 40, more = false, scrolling = true), frame(9, 12, more = true, scrolling = true)))
+        assertFalse(assistantFollows(true, frame(9, 40, more = true, scrolling = true), frame(8, 300, more = true, scrolling = true)))
+        // The list moving with no scroll (the conversation was read again) doesn't.
+        assertTrue(assistantFollows(true, frame(9, 40, more = true), frame(8, 40, more = true)))
+        assertTrue(assistantFollows(true, null, frame(0, 0, more = true)))
+    }
+
+    @Test fun conversationsAreSearchedByTitleWhateverTheCase() {
+        val threads = listOf("October groceries", "Rent in 2026", "خطة أكتوبر").map { JSONObject().put("id", it).put("title", it) }
+        fun found(query: String) = assistantThreadsMatching(threads, query).map { it.getString("title") }
+        assertEquals(listOf("October groceries", "Rent in 2026", "خطة أكتوبر"), found("  "))
+        assertEquals(listOf("October groceries"), found("OCTOBER"))
+        assertEquals(listOf("Rent in 2026"), found(" rent "))
+        assertEquals(listOf("خطة أكتوبر"), found("أكتوبر"))
+        assertEquals(emptyList<String>(), found("holiday"))
+    }
+
+    @Test fun aConversationsTokensAreSaidOnlyWhenItUsedSome() {
+        fun thread(input: Long, output: Long, cached: Long) = JSONObject().put("usage", JSONObject().put("input", input).put("output", output).put("cached", cached))
+        assertEquals(AssistantUsage(sent = 2400, cached = 800, received = 60), AssistantUsage.of(thread(2400, 60, 800)))
+        assertNull(AssistantUsage.of(thread(0, 0, 0)))
+        assertNull(AssistantUsage.of(JSONObject()))
+        assertNull(AssistantUsage.of(null))
+        assertEquals("Tokens: 12,400 sent (8,000 from cache), 960 received", Words[R.string.assistant_tokens, Money.count(12400), Money.count(8000), Money.count(960)])
+    }
+
+    @Test fun aReportsDetailsNameTheAppTheServiceAndTheTools() {
+        assertEquals("App: UrBudget Android 1.0.0 · Service: ChatGPT · Model: default · Tools: get_month, list_transactions · Language: en",
+            assistantReportDetails("1.0.0", "chatgpt", null, listOf("get_month", "list_transactions"), "en"))
+        assertEquals("App: UrBudget Android 1.0.1 · Service: Anthropic · Model: claude-haiku-5-5 · Tools: none · Language: ar",
+            assistantReportDetails("1.0.1", "anthropic", "claude-haiku-5-5", emptyList(), "ar"))
+        assertTrue(assistantReportDetails("1.0.0", "openai", " ", listOf(""), "en").contains("Service: OpenAI · Model: default · Tools: none"))
+    }
+
+    @Test fun aReportsDetailsFollowTheReasonAndOnlyTheyAreCutToFit() {
+        val details = "App: UrBudget Android 1.0.0 · Service: ChatGPT · Model: default · Tools: none · Language: en"
+        assertEquals("It added the months wrongly.\n\n$details", assistantReportReason("  It added the months wrongly. ", details))
+        // Cleared by the user, nothing is added; with no reason, they go alone.
+        assertEquals("It added the months wrongly.", assistantReportReason("It added the months wrongly.", "  "))
+        assertEquals(details, assistantReportReason("", details))
+        // The whole keeps within the reason's 1,000 characters: the details give way, the user's words don't.
+        val long = "x".repeat(950)
+        val sent = assistantReportReason(long, details)
+        assertEquals(1000, sent.length)
+        assertEquals("$long\n\n${details.take(48)}", sent)
+        val full = "y".repeat(999)
+        assertEquals(full, assistantReportReason(full, details))
+        assertEquals("z".repeat(1000), assistantReportReason("z".repeat(1000), details))
+        // Never cut between the two halves of one character.
+        val emoji = "💸".repeat(40)
+        assertEquals("x".repeat(990) + "\n\n" + "💸".repeat(4), assistantReportReason("x".repeat(990), emoji))
+        assertEquals("x".repeat(989) + "\n\n" + "💸".repeat(4), assistantReportReason("x".repeat(989), emoji))
+    }
+
+    @Test fun aFinishedReplyAndANewCardAreAnnouncedOnceAndNothingElseIs() {
+        fun heard(running: Boolean, vararg kinds: String, conversation: String = "t1") = AssistantHeard.of(conversation, running, kinds.map { JSONObject().put("kind", it) })
+        val asked = heard(true, "user")
+        // Opening a conversation, and text as it's written, say nothing.
+        assertEquals(emptyList<AssistantAnnouncement>(), AssistantAnnouncement.between(null, heard(false, "user", "assistant")))
+        assertEquals(emptyList<AssistantAnnouncement>(), AssistantAnnouncement.between(heard(false, "user", "assistant", conversation = "t0"), heard(false, "user", "assistant", "proposal")))
+        assertEquals(emptyList<AssistantAnnouncement>(), AssistantAnnouncement.between(asked, heard(true, "user", "step")))
+        // A card as it arrives; the reply once it has finished.
+        assertEquals(listOf(AssistantAnnouncement.Proposal), AssistantAnnouncement.between(heard(true, "user", "step"), heard(true, "user", "step", "proposal")))
+        assertEquals(listOf(AssistantAnnouncement.Replied), AssistantAnnouncement.between(heard(true, "user", "step", "proposal"), heard(false, "user", "step", "proposal", "assistant")))
+        assertEquals(listOf(AssistantAnnouncement.Proposal, AssistantAnnouncement.Replied), AssistantAnnouncement.between(asked, heard(false, "user", "proposal", "assistant")))
+        assertEquals(listOf(AssistantAnnouncement.Replied), AssistantAnnouncement.between(asked, heard(false, "user", "assistant", "cut")))
+        // Stopped, or failed: the screen says so, not this.
+        assertEquals(emptyList<AssistantAnnouncement>(), AssistantAnnouncement.between(asked, heard(false, "user", "assistant", "stopped")))
+        assertEquals(emptyList<AssistantAnnouncement>(), AssistantAnnouncement.between(asked, heard(false, "user", "error")))
+        // A card changed after the reply (applied, discarded) is the same card.
+        assertEquals(emptyList<AssistantAnnouncement>(), AssistantAnnouncement.between(heard(false, "user", "proposal", "assistant"), heard(false, "user", "proposal", "assistant")))
+        assertEquals(listOf("The assistant replied.", "A proposal is ready to review."), AssistantAnnouncement.values().map { Words[it.words] })
     }
 
     /** Key order is the JSON library's, not the revision's. */
