@@ -1687,10 +1687,13 @@ fn card_as(change: &Change, before: &Budget, after: &Budget, single: Option<bool
                 rows.push(match op {
                     ScheduleOp::Add { schedule } => {
                         let s: crate::schedules::Schedule = serde_json::from_value(schedule.clone()).map_err(|e| t!("Invalid schedules: {error}", error = e))?;
-                        let who = if s.transaction.payee.is_empty() { names.category_label_shown(&s.transaction) } else { s.transaction.payee.clone() };
+                        // A transfer with no payee is named by its accounts, once: not again as its category.
+                        let named = s.transaction.payee.is_empty();
+                        let who = if named { names.category_label_shown(&s.transaction) } else { s.transaction.payee.clone() };
+                        let from = short_date(&s.anchor_date);
                         Row {
                             label: format!("{} · {}", who, frequency_label(&s.frequency)),
-                            detail: Some(t!("from {date} · {category}", date = short_date(&s.anchor_date), category = names.category_label_shown(&s.transaction))),
+                            detail: Some(if named { t!("from {date}", date = from) } else { t!("from {date} · {category}", date = from, category = names.category_label_shown(&s.transaction)) }),
                             amount: Some(s.transaction.amount),
                             badge: Some(t!("new")),
                             key,

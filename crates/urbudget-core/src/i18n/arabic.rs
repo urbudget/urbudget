@@ -996,6 +996,7 @@ pub(super) const MESSAGES: &[(&str, &str)] = &[
     ("enter", "إدخال"),
     ("skip", "تخطي"),
     ("from {date} · {category}", "من {date} · {category}"),
+    ("from {date}", "من {date}"),
     ("next on {date}", "التالية في {date}"),
     ("Kept with this budget and sent to the assistant with every message. You can read and change them in the assistant's settings.",
      "تُحفظ مع هذه الميزانية وتُرسَل إلى المساعد مع كل رسالة. ويمكنك قراءتها وتغييرها من إعدادات المساعد."),
