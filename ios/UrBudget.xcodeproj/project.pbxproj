@@ -72,7 +72,6 @@
 		DF42CAE6D18B0933CA3E54FE /* HostEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8D38E2F1A866D1AE77F98DF /* HostEvents.swift */; };
 		DFC90330CCFE3C8C2643A568 /* ImportsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06EDC3834B31CCE82F50D45 /* ImportsTests.swift */; };
 		E1BC9133B810DBC4CD904D8B /* AssistantMarkdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39903BD2392419C0AECBF469 /* AssistantMarkdown.swift */; };
-		E41CB4E0C15C36C0DC3602C3 /* AssistantBankReview.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFAF10D3D73C9543313BA294 /* AssistantBankReview.swift */; };
 		E4D8F543FC5F2C0A251A7418 /* AssistantPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 242C3743FADB21A977C86AE8 /* AssistantPresentation.swift */; };
 		E4E1F011DF1A243D25E71E98 /* BankNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2381B29DB1FB8DF428D699D9 /* BankNames.swift */; };
 		E7063078B94564F7C0761A53 /* Pickers.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAE8316D72650A3B8CF3D9B0 /* Pickers.swift */; };
@@ -162,7 +161,6 @@
 		AD7851B3DD07B81609A9952E /* ReportsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportsView.swift; sourceTree = "<group>"; };
 		ADDA0CE14B318D8517E9D41C /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = System/Library/Frameworks/CoreFoundation.framework; sourceTree = SDKROOT; };
 		AE41779963DD98FDE2415FBF /* SyncCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncCoordinator.swift; sourceTree = "<group>"; };
-		AFAF10D3D73C9543313BA294 /* AssistantBankReview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantBankReview.swift; sourceTree = "<group>"; };
 		B13D5E63FF0C57FD76896A3D /* UnassignedSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnassignedSheet.swift; sourceTree = "<group>"; };
 		B5210A0405CF003115CC38C2 /* UrBudget-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "UrBudget-Bridging-Header.h"; sourceTree = "<group>"; };
 		B74674DCD250F1208F2FC4EA /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -358,7 +356,6 @@
 		AD4A09CE9BEFE432D46BD6EC /* Assistant */ = {
 			isa = PBXGroup;
 			children = (
-				AFAF10D3D73C9543313BA294 /* AssistantBankReview.swift */,
 				4D8A40E4172E0968B2AE9A95 /* AssistantController.swift */,
 				457C18CD082A7FDC03E29A10 /* AssistantHistory.swift */,
 				8BC522539F9AEB88FFD74BF8 /* AssistantImportReview.swift */,
@@ -591,7 +588,6 @@
 				4BF85E03BF62E33F9A850FCD /* AccountsView.swift in Sources */,
 				6B4BD0746FF232AF327CD7E5 /* AmountPad.swift in Sources */,
 				DEA2A25236BE875AE4F4385E /* AppActions.swift in Sources */,
-				E41CB4E0C15C36C0DC3602C3 /* AssistantBankReview.swift in Sources */,
 				8A01652343646AD833E6D790 /* AssistantController.swift in Sources */,
 				D45B5C5AC5B728811FB32A25 /* AssistantHistory.swift in Sources */,
 				A4E9CB81AA73FC405306A190 /* AssistantImportReview.swift in Sources */,

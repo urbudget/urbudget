@@ -10,6 +10,9 @@ struct AssistantSettingsView: View {
     /// Signing out and removing a key stop the assistant, so each asks first.
     @State private var signingOut = false
     @State private var removingKey = false
+    /// The note being typed, and why the notes couldn't be saved when they couldn't.
+    @State private var note = ""
+    @State private var notesError: String?
 
     init() {}
 
@@ -76,6 +79,7 @@ struct AssistantSettingsView: View {
                 Text("Privacy")
             }
             .disabled(status == nil)
+            notesSection
             Section {
                 Button("Delete all conversations and attachments", role: .destructive) { deletingHistory = true }
                     .disabled(controller.busy.contains("delete"))
@@ -108,6 +112,72 @@ struct AssistantSettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("The assistant stops answering until you save a key again. Your conversations stay on this device.")
+        }
+    }
+
+    /// The notes the assistant keeps for the open budget: each with a button that removes it,
+    /// and a field that adds one. Every change saves the whole list as one change to the budget.
+    private var notesSection: some View {
+        let notes = AssistantNotes.list(store.budget)
+        let saving = controller.busy.contains("notes")
+        let typed = AssistantNotes.cleaned(note)
+        return Section {
+            if notes.isEmpty {
+                Text("No notes yet.").foregroundStyle(Color.secondary)
+            }
+            ForEach(Array(notes.enumerated()), id: \.offset) { index, text in
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text(text).frame(maxWidth: .infinity, alignment: .leading)
+                    Button {
+                        saveNotes(AssistantNotes.removing(index, from: notes))
+                    } label: {
+                        Image(systemName: "minus.circle.fill").foregroundStyle(Color.urNegative)
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Remove note")
+                }
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                TextField("Add a note", text: $note)
+                    .onChange(of: note) { _, value in
+                        // A note is at most 200 characters, as the service keeps it.
+                        if value.unicodeScalars.count > AssistantNotes.length { note = AssistantNotes.limited(value) }
+                        notesError = nil
+                    }
+                    .onSubmit(addNote)
+                Button(action: addNote) {
+                    Image(systemName: "plus.circle.fill")
+                }
+                .buttonStyle(.borderless)
+                .disabled(typed.isEmpty)
+                .accessibilityLabel("Add a note")
+            }
+            if let notesError { FormErrorView(message: notesError) }
+        } header: {
+            Text("Notes for the assistant")
+        } footer: {
+            Text("Short notes the assistant keeps for this budget and gets with every message. It adds one when you ask it to remember something.")
+        }
+        .disabled(saving || store.budget == nil)
+    }
+
+    /// Adds the note in the field to the budget's notes. One that's there already just clears the field.
+    private func addNote() {
+        let notes = AssistantNotes.list(store.budget)
+        guard !AssistantNotes.cleaned(note).isEmpty else { return }
+        guard let added = AssistantNotes.adding(note, to: notes) else {
+            note = ""
+            return
+        }
+        saveNotes(added) { note = "" }
+    }
+
+    /// Saves the whole list; the budget comes back with it. A refusal (too many notes) shows under the field.
+    private func saveNotes(_ notes: [String], saved: (() -> Void)? = nil) {
+        notesError = nil
+        controller.saveNotes(notes) { problem in
+            notesError = problem
+            if problem == nil { saved?() }
         }
     }
 

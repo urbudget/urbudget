@@ -347,52 +347,220 @@ final class ProposalChoicesTests: XCTestCase {
         XCTAssertEqual(ProposalChoices.partial(rows.map { row -> JSON in var row = row; row["skipped"] = true; return row }, choosing: true),
                        ProposalChoices.Partial(chosen: 0, total: 3))
     }
-}
 
-final class AssistantBankReviewTests: XCTestCase {
-    func testDefaultChoicesMatchTheDesktop() {
-        XCTAssertEqual(AssistantBankReview.defaultChoice(duplicate: true, possibleDuplicate: false, candidates: ["a"], previouslyMatched: []), "skip")
-        XCTAssertEqual(AssistantBankReview.defaultChoice(duplicate: false, possibleDuplicate: true, candidates: [], previouslyMatched: []), "review")
-        XCTAssertEqual(AssistantBankReview.defaultChoice(duplicate: false, possibleDuplicate: false, candidates: [], previouslyMatched: []), "new")
-        XCTAssertEqual(AssistantBankReview.defaultChoice(duplicate: false, possibleDuplicate: false, candidates: ["a"], previouslyMatched: []), "match:a")
-        XCTAssertEqual(AssistantBankReview.defaultChoice(duplicate: false, possibleDuplicate: false, candidates: ["a"], previouslyMatched: ["a"]), "review")
-        XCTAssertEqual(AssistantBankReview.defaultChoice(duplicate: false, possibleDuplicate: false, candidates: ["a", "b"], previouslyMatched: []), "review")
+    func testSeveralTicksGoInOneRevision() {
+        // Each choice is made on the choices as they stand, so the one revision sent after the
+        // last of them carries them all.
+        var choices: JSON = .null
+        choices = ProposalChoices.toggle(choices, key: "t:a", skipped: false)
+        choices = ProposalChoices.toggle(choices, key: "t:b", skipped: false)
+        choices = ProposalChoices.change(choices, key: "t:c", change: ["category": "groceries"])
+        choices = ProposalChoices.toggle(choices, key: "t:a", skipped: true)
+        XCTAssertEqual(choices, ["skip": ["t:b"], "set": [["key": "t:c", "category": "groceries"]]])
     }
 
-    func testReviewRowsAndChoices() throws {
-        Money.configure(budget: ["currency": "USD"])
-        let budget: JSON = ["currency": "USD", "transactions": [["id": "x1", "date": "2026-10-03", "payee": "Shop", "memo": "", "amount": -500]]]
-        let items: [JSON] = [
-            ["id": "r1", "date": "2026-10-03", "payee": "SHOP 123", "rename": "Shop", "memo": "card", "amount": -500, "candidateSet": 0],
-            ["id": "r2", "date": "2026-10-04", "payee": "Cafe", "memo": "", "amount": -300, "candidateSet": 1, "duplicate": true],
-            ["id": "r3", "date": "2026-10-05", "payee": "Cafe", "memo": "", "amount": -300, "candidateSet": 1, "duplicate": true, "idless": true],
-            ["id": "r4", "date": "2026-10-06", "payee": "Pay", "memo": "", "amount": 9000, "candidateSet": 1, "possibleDuplicate": true, "idless": true],
+    func testSelectAllNoneAndOnlyTheOnesToCheck() {
+        let rows: [JSON] = [["key": "t:a"], ["key": "t:b", "tone": "warn"], ["key": "t:c"], ["label": "unkeyed"]]
+        let none = ProposalChoices.select(.null, rows: rows) { _ in false }
+        XCTAssertEqual(none, ["skip": ["t:a", "t:b", "t:c"], "set": []])
+        XCTAssertEqual(ProposalChoices.select(none, rows: rows) { _ in true }, ProposalChoices.original)
+        XCTAssertEqual(ProposalChoices.select(.null, rows: rows) { _ in true }, ProposalChoices.original)
+        XCTAssertEqual(ProposalChoices.select(none, rows: rows) { $0.text("tone") == "warn" }, ["skip": ["t:a", "t:c"], "set": []])
+        // A row put back loses an amount of nothing given to it; other choices stay.
+        let chosen: JSON = ["skip": ["t:a"], "set": [["key": "t:a", "amount": 0], ["key": "t:c", "amount": -500]]]
+        XCTAssertEqual(ProposalChoices.select(chosen, rows: rows) { _ in true }, ["skip": [], "set": [["key": "t:c", "amount": -500]]])
+    }
+
+    func testChoicesShowOnTheRowsBeforeTheServiceHasThem() {
+        let rows: [JSON] = [["label": "Careem", "amount": -3800, "key": "t:a", "edit": ["category": true, "categoryId": "transport", "amount": true]],
+                            ["label": "Jarir", "amount": -9900, "key": "t:b", "skipped": true],
+                            ["label": "Total"]]
+        let pending: JSON = ["skip": ["t:a"], "set": [["key": "t:b", "amount": -5000, "category": .null]]]
+        let shown = ProposalChoices.shown(rows, pending: pending, sent: ["skip": ["t:b"], "set": []]) { $0 ?? "Ready to Assign" }
+        // Left out at once, as it was otherwise.
+        XCTAssertTrue(shown[0].flag("skipped"))
+        XCTAssertEqual(shown[0].long("amount"), -3800)
+        // Put back, with the amount and the category just given.
+        XCTAssertFalse(shown[1].flag("skipped"))
+        XCTAssertEqual(shown[1].long("amount"), -5000)
+        XCTAssertTrue(shown[1].flag("edited"))
+        XCTAssertEqual(shown[1].text("given"), "Ready to Assign")
+        XCTAssertFalse(shown[1]["edit"].has("categoryId"))
+        XCTAssertEqual(shown[2], rows[2])
+        // Apply says how much is chosen now.
+        XCTAssertEqual(ProposalChoices.partial(shown, choosing: true), ProposalChoices.Partial(chosen: 1, total: 2))
+        // What the card was already made with isn't laid over it a second time.
+        let same = ProposalChoices.shown(rows, pending: pending, sent: pending) { _ in "x" }
+        XCTAssertEqual(same[1].long("amount"), -9900)
+        XCTAssertTrue(same[1].text("given").isEmpty)
+        // A category is named, and the row's editor starts from it.
+        let named = ProposalChoices.shown(rows, pending: ["skip": [], "set": [["key": "t:a", "category": "groceries"]]], sent: .null) { $0 == "groceries" ? "Groceries" : "?" }
+        XCTAssertEqual(named[0].text("given"), "Groceries")
+        XCTAssertEqual(named[0]["edit"].text("categoryId"), "groceries")
+        XCTAssertEqual(named[0].long("amount"), -3800)
+        XCTAssertNil(ProposalChoices.partial(named, choosing: true))
+    }
+}
+
+/// A card is drawn from what the service's view of it says: the actions it offers, what it has to
+/// say, and where it stands.
+final class AssistantCardTests: XCTestCase {
+    func testACardShowsTheActionsItKnowsInTheServicesOrder() {
+        let waiting: JSON = ["id": "p1", "kind": "budget", "status": "proposed", "actions": ["apply", "askChanges", "useOriginal", "discard", "show"]]
+        XCTAssertEqual(AssistantCard.actions(waiting), [.apply, .askChanges, .useOriginal, .discard, .show])
+        XCTAssertEqual(AssistantCard.main(waiting), .apply)
+        XCTAssertEqual(AssistantCard.buttons(waiting, canUndo: false), [.apply, .askChanges, .useOriginal, .discard, .show])
+        // One this version doesn't know is skipped: Android's own, a report's Print, a newer service's.
+        let texts: JSON = ["kind": "bankTexts", "status": "proposed", "actions": ["applyBankTexts", "askChanges", "discard"]]
+        XCTAssertEqual(AssistantCard.actions(texts), [.askChanges, .discard])
+        XCTAssertNil(AssistantCard.main(texts))
+        let report: JSON = ["kind": "report", "status": "proposed", "made": true, "actions": ["preview", "print", "excel", "remove", "somethingNewer"]]
+        XCTAssertEqual(AssistantCard.actions(report), [.preview, .excel, .remove])
+        XCTAssertEqual(AssistantCard.main(report), .preview)
+        // Remove is in the card's menu, not among its buttons.
+        XCTAssertEqual(AssistantCard.buttons(report, canUndo: false), [.preview, .excel])
+        let figures: JSON = ["kind": "figures", "status": "proposed", "made": true, "actions": ["remove", "show"]]
+        XCTAssertNil(AssistantCard.main(figures))
+        XCTAssertEqual(AssistantCard.buttons(figures, canUndo: false), [.show])
+        // A question's answers are its rows.
+        let question: JSON = ["kind": "question", "status": "proposed", "actions": ["answer"]]
+        XCTAssertNil(AssistantCard.main(question))
+        XCTAssertTrue(AssistantCard.buttons(question, canUndo: false).isEmpty)
+        XCTAssertEqual(AssistantCard.main(["status": "failed", "actions": ["askAgain", "discard"]]), .askAgain)
+        XCTAssertTrue(AssistantCard.actions(["status": "applied"]).isEmpty)
+        // A kind this version doesn't know is drawn plainly; a bank-text card is known, with no Apply of its own here.
+        XCTAssertTrue(AssistantCard.known(["kind": "delete"]))
+        XCTAssertTrue(AssistantCard.known(["kind": "bankTexts"]))
+        XCTAssertFalse(AssistantCard.known(["kind": "somethingNewer"]))
+    }
+
+    func testUndoShowsOnlyOnTheCardTheBudgetsUndoWouldTakeBack() {
+        let applied: JSON = ["kind": "budget", "status": "applied", "actions": ["undo", "show"]]
+        XCTAssertEqual(AssistantCard.lineActions(applied, canUndo: true), [.undo, .show])
+        XCTAssertEqual(AssistantCard.lineActions(applied, canUndo: false), [.show])
+        XCTAssertTrue(AssistantCard.openedActions(applied).isEmpty)
+        // An undone card keeps Show on its line; applying it again is inside it.
+        let undone: JSON = ["kind": "budget", "status": "undone", "actions": ["apply", "askChanges", "discard", "show"]]
+        XCTAssertEqual(AssistantCard.lineActions(undone, canUndo: false), [.show])
+        XCTAssertEqual(AssistantCard.openedActions(undone), [.apply, .askChanges, .discard])
+        XCTAssertEqual(AssistantCard.lineActions(["kind": "budget", "status": "discarded", "actions": ["restore"]], canUndo: false), [.restore])
+        // A converted file that was imported can still be saved.
+        XCTAssertEqual(AssistantCard.openedActions(["kind": "import", "made": true, "status": "applied", "actions": ["saveCsv"]]), [.saveCsv])
+    }
+
+    func testAFinishedCardsLineSaysWhatBecameOfIt() {
+        Money.configure(budget: ["currency": "USD", "dateFormat": "iso"])
+        for status in ["applied", "discarded", "undone", "replaced"] { XCTAssertTrue(AssistantCard.finished(["status": .string(status)])) }
+        for status in ["proposed", "failed", ""] { XCTAssertFalse(AssistantCard.finished(["status": .string(status)])) }
+        XCTAssertEqual(AssistantCard.finishedWords(["status": "applied"]), "Applied")
+        // With the time the service kept, as the budget writes dates and the device the time.
+        let at = LibraryDates.instant("2026-10-21T10:00:00Z")!
+        XCTAssertEqual(AssistantCard.finishedWords(["status": "applied", "appliedAt": "2026-10-21T10:00:00Z"]), "Applied " + LibraryDates.label(at))
+        XCTAssertEqual(AssistantCard.finishedWords(["status": "applied", "appliedAt": "not a time"]), "Applied")
+        XCTAssertEqual(AssistantCard.finishedWords(["status": "undone"]), "Undone")
+        XCTAssertEqual(AssistantCard.finishedWords(["status": "replaced", "replacedBy": "p2"]), "Replaced by a newer version")
+        XCTAssertEqual(AssistantCard.finishedWords(["status": "discarded"]), "Discarded")
+        // A thing the assistant made is removed, not discarded.
+        XCTAssertEqual(AssistantCard.finishedWords(["status": "discarded", "made": true]), "Removed")
+        // A question that was answered.
+        XCTAssertEqual(AssistantCard.asked(["kind": "question", "status": "applied", "title": "Which account?"]), "Asked: Which account?")
+        XCTAssertNil(AssistantCard.asked(["kind": "question", "status": "proposed", "title": "Which account?"]))
+        XCTAssertNil(AssistantCard.asked(["kind": "budget", "status": "applied", "title": "Move money"]))
+    }
+
+    func testACardSaysWhatItHasToSayInItsTone() {
+        XCTAssertNil(AssistantCard.message(["status": "proposed"]))
+        let updated = AssistantCard.message(["message": ["tone": "info", "text": "Updated for your budget as it is now."]])
+        XCTAssertEqual(updated?.tone, "info")
+        XCTAssertEqual(updated?.text, "Updated for your budget as it is now.")
+        XCTAssertEqual(AssistantCard.message(["message": ["tone": "error", "text": "This can't be applied any more."]])?.tone, "error")
+        XCTAssertNil(AssistantCard.message(["message": ["tone": "warn", "text": ""]]))
+        // Ask for a new version sends the card's title and why it couldn't be applied.
+        let failed: JSON = ["title": "Cover Dining", "status": "failed", "message": ["tone": "error", "text": "Fun has only 5.00 left."]]
+        XCTAssertEqual(AssistantCard.askAgain(failed), "Prepare “Cover Dining” again. It couldn't be applied: Fun has only 5.00 left.")
+    }
+
+    func testWhichCardsFollowTheBudget() {
+        XCTAssertTrue(AssistantCard.followsBudget(["kind": "budget", "status": "proposed"]))
+        XCTAssertTrue(AssistantCard.followsBudget(["kind": "transactions", "status": "undone"]))
+        XCTAssertTrue(AssistantCard.followsBudget(["kind": "delete", "status": "applied"]))
+        XCTAssertFalse(AssistantCard.followsBudget(["kind": "budget", "status": "discarded"]))
+        XCTAssertFalse(AssistantCard.followsBudget(["kind": "report", "made": true, "status": "proposed"]))
+        XCTAssertFalse(AssistantCard.followsBudget(["kind": "question", "status": "proposed"]))
+        XCTAssertFalse(AssistantCard.followsBudget(["kind": "fix", "status": "proposed"]))
+    }
+
+    func testFiguresBarsAreSharesOfTheLargestAmount() {
+        let rows: [JSON] = [["label": "Rent", "amount": -120000], ["label": "Food", "amount": -30000], ["label": "Refund", "amount": 60000], ["label": "Note"]]
+        XCTAssertEqual(AssistantCard.barShares(rows), [1, 0.25, 0.5, 0])
+        XCTAssertEqual(AssistantCard.barShares([["label": "A", "amount": 0], ["label": "B"]]), [0, 0])
+        XCTAssertTrue(AssistantCard.barShares([]).isEmpty)
+    }
+
+    func testADeleteCardCountsTheTransactionsStillChosen() {
+        let rows: [JSON] = [["key": "t:a"], ["key": "t:b", "skipped": true], ["key": "t:c"]]
+        XCTAssertEqual(AssistantCard.deleting(rows, more: 0), 2)
+        XCTAssertEqual(AssistantCard.deleting([["label": "A"], ["label": "B"]], more: 3), 5)
+    }
+
+    func testAFixCardIsMarkedWithTheFixesThatDidNotTake() {
+        let proposal: JSON = [
+            "id": "p1", "kind": "fix",
+            "card": ["rows": [["label": "Line 3 · date: 1/2 → 2026-02-01", "key": "f:3:date"], ["label": "Line 4 · amount: n/a → -12.40", "key": "f:4:amount"],
+                              ["label": "Include line 9", "key": "i:9"]]],
+            "fixes": ["fields": [["line": "3", "field": "date"], ["line": "4", "field": "amount"]], "include": [["line": "9"]]],
         ]
-        let sets: [JSON] = [["candidates": ["x1"], "previouslyMatchedCandidates": [], "candidateDetails": []],
-                            ["candidates": [], "previouslyMatchedCandidates": [], "candidateDetails": []]]
-        let rows = try AssistantBankReview.prepare(items, budget: budget, candidateSets: sets)
-        XCTAssertEqual(rows.map(\.initial), ["match:x1", "skip", "skip", "review"])
-        XCTAssertEqual(rows[0].payee, "Shop")
-        XCTAssertEqual(rows[0].bankText, "SHOP 123")
-        XCTAssertTrue(rows[0].options.contains { $0.value == "match:x1" && $0.label.hasPrefix("Match: ") && $0.label.contains("Shop") })
-        XCTAssertTrue(rows[1].locked)
-        XCTAssertFalse(rows[2].locked)
-        XCTAssertEqual(rows[2].options.map(\.value), ["skip", "new"])
-        XCTAssertFalse(rows[0].source.has("candidateSet"))
+        let all: [JSON] = [["line": "3", "fix": "field", "applied": true], ["line": "4", "fix": "field", "applied": true], ["line": "9", "fix": "include", "applied": true]]
+        XCTAssertNil(AssistantCard.fixNote(all, proposal: proposal))
+        let some: [JSON] = [["line": "3", "fix": "field", "applied": true],
+                            ["line": "4", "fix": "field", "applied": false, "problem": "This value changed since this fix was made."],
+                            ["line": "9", "fix": "include", "applied": false]]
+        XCTAssertEqual(AssistantCard.fixNote(some, proposal: proposal), "Fixes applied: 1 of 3. Not applied: Line 4 · amount: n/a → -12.40, Include line 9")
+        // A fix with no row on the card is named by its line; after five of them, "…".
+        let many: [JSON] = (1...7).map { number -> JSON in ["line": .string(String(number)), "fix": "revert", "applied": false] }
+        XCTAssertEqual(AssistantCard.fixNote(many, proposal: proposal), "Fixes applied: 0 of 7. Not applied: Line 1, Line 2, Line 3, Line 4, Line 5, …")
+    }
 
-        let counts = AssistantBankReview.counts(rows, [:])
-        XCTAssertEqual(counts.importing, 1)
-        XCTAssertEqual(counts.undecided, 1)
-        let summary = AssistantBankReview.summary(rows)
-        XCTAssertEqual(summary.text, "4 rows · 2 already imported · 1 renamed by your payee rules")
-        XCTAssertTrue(summary.idless)
+    func testTheNotesListIsEditedAsAWhole() {
+        XCTAssertTrue(AssistantNotes.list(nil).isEmpty)
+        XCTAssertTrue(AssistantNotes.list(["currency": "USD"]).isEmpty)
+        let notes = AssistantNotes.list(["assistantNotes": ["Never take money from Holiday fund", "Rent is due on the 1st"]])
+        XCTAssertEqual(notes, ["Never take money from Holiday fund", "Rent is due on the 1st"])
+        // Added at the end, on one line with single spaces.
+        XCTAssertEqual(AssistantNotes.adding("  Groceries are\n shared  ", to: notes), notes + ["Groceries are shared"])
+        // Nothing to add, or there already.
+        XCTAssertNil(AssistantNotes.adding("   ", to: notes))
+        XCTAssertNil(AssistantNotes.adding("Rent is due on the 1st", to: notes))
+        XCTAssertEqual(AssistantNotes.removing(0, from: notes), ["Rent is due on the 1st"])
+        XCTAssertEqual(AssistantNotes.removing(5, from: notes), notes)
+        // A note is at most 200 characters.
+        XCTAssertEqual(AssistantNotes.cleaned(String(repeating: "a", count: 250)).count, 200)
+        XCTAssertEqual(AssistantNotes.limited("Short"), "Short")
+    }
 
-        let choices = AssistantBankReview.choices(rows, [2: "new", 3: "review"])
-        XCTAssertEqual(choices.map { $0.text("action") }, ["match", "skip", "new", "skip"])
-        XCTAssertEqual(choices[0]["matchId"], "x1")
-        XCTAssertTrue(choices[1]["matchId"].isNull)
-        XCTAssertTrue(choices[2]["row"].text("importId").hasPrefix("bank:manual:"))
-        XCTAssertFalse(choices[0]["row"].has("importId"))
-        XCTAssertThrowsError(try AssistantBankReview.prepare([["id": "r", "candidateSet": 5]], budget: budget, candidateSets: []))
+    func testAnImportsUncategorizedTransactionsAndWhatIsAskedAboutThem() {
+        let before: JSON = ["accounts": [["id": "a1", "name": "Checking", "kind": "cash"], ["id": "a2", "name": "Car loan", "kind": "tracking"]],
+                            "categories": [["id": "c1", "name": "Groceries"], ["id": "u", "name": "Uncategorized"]],
+                            "transactions": [["id": "old", "accountId": "a1", "splits": [["amount": -100]]]]]
+        var after = before
+        after["transactions"] = .array(before["transactions"].array + [
+            ["id": "n1", "accountId": "a1", "splits": [["amount": -500]]],
+            ["id": "n2", "accountId": "a1", "splits": [["amount": -700, "categoryId": "c1"]]],
+            ["id": "n3", "accountId": "a1", "splits": [["amount": -900, "categoryId": "u"]]],
+            ["id": "n4", "accountId": "a2", "splits": [["amount": -100]]],
+            ["id": "n5", "accountId": "a1", "transferAccountId": "a2", "splits": [["amount": -100]]],
+        ])
+        // New, in a budget account, not a transfer, and with no category or only the placeholder.
+        let fresh = AssistantStart.uncategorized(before: before, after: after)
+        XCTAssertEqual(fresh.ids, ["n1", "n3"])
+        XCTAssertEqual(fresh.accounts, ["Checking"])
+        XCTAssertTrue(AssistantStart.uncategorized(before: after, after: after).ids.isEmpty)
+        XCTAssertEqual(AssistantStart.categorize(fresh), "Categorize the 2 new transactions in Checking.")
+        XCTAssertEqual(AssistantStart.categorize(AssistantStart.Imported(ids: ["n1"], accounts: ["Checking", "Savings"])),
+                       "Categorize the new transaction in Checking and Savings.")
+        XCTAssertEqual(AssistantStart.joined(["A", "B", "C"]), "A, B and C")
+        // A message takes 200 of them.
+        let many = AssistantStart.Imported(ids: (0..<230).map { "t\($0)" }, accounts: ["Checking"])
+        XCTAssertEqual(AssistantStart.categorize(many), "Categorize these 200 of the 230 new transactions in Checking.")
     }
 }

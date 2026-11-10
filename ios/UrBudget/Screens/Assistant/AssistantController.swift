@@ -30,6 +30,10 @@ final class AssistantController {
     private(set) var busy: Set<String> = []
     /// The action running on a proposal card, by the proposal's id: only that card's button spins.
     private(set) var cardWork: [String: String] = [:]
+    /// The person's choices on proposal cards that the service doesn't have yet, by the
+    /// proposal's id (`ProposalChoices`): a card shows them at once, and they're sent in one
+    /// call a moment after the last of them.
+    private(set) var choices: [String: JSON] = [:]
     /// The reply as it streams in, read as Markdown like a finished one; only the live reply
     /// reads it, so tokens don't redraw the history.
     private(set) var liveBlocks: [AssistantMarkdownBlock] = []
@@ -49,11 +53,19 @@ final class AssistantController {
     private(set) var unseen = false
     var error: String?
     var notice: String?
-    private(set) var undoProposal: String?
+    /// The notice that offers Undo, and the budget revision its change left. The notice offers
+    /// it only while it's the one showing and the budget hasn't changed since.
+    private(set) var undoNotice: (text: String, revision: String)?
     /// Counts applied proposals and finished imports, for a success haptic.
     private(set) var successes = 0
 
     var threadId: String { thread?.text("id") ?? "" }
+    /// The card whose change the budget's Undo would take back, as the conversation's view
+    /// names it; empty when it's none of this conversation's.
+    var undoable: String { thread?.text("undoable") ?? "" }
+    /// What's waiting in the budget that the assistant can help with, offered under the last
+    /// reply: each is a button's words (`text`) and the message it sends (`prompt`).
+    var next: [JSON] { thread?.rows("next") ?? [] }
     var ready: Bool { status?.flag("ready") == true }
     var provider: String { status?.text("provider", "chatgpt") ?? "chatgpt" }
     var signingIn: Bool { busy.contains("signIn") || status?.flag("signingIn") == true }
@@ -63,7 +75,9 @@ final class AssistantController {
     @ObservationIgnored private weak var store: BudgetStore?
     @ObservationIgnored private var identity: String?
     @ObservationIgnored private var connected = false
-    @ObservationIgnored private var undoToken: String?
+    /// The wait before a card's choices are sent, and the call sending them, by proposal id.
+    @ObservationIgnored private var choiceTimers: [String: Task<Void, Never>] = [:]
+    @ObservationIgnored private var revising: [String: Task<Void, Error>] = [:]
     @ObservationIgnored private let stream = AssistantStreamBuffer()
     @ObservationIgnored private var streamPublish: Task<Void, Never>?
     /// A finished message is in the buffer's past: keep showing it until the reloaded thread has it.
@@ -108,6 +122,8 @@ final class AssistantController {
     func connect(_ store: BudgetStore) {
         self.store = store
         if connected && identity != store.identity {
+            // Choices not yet sent were for the other budget's cards: they have nowhere to go here.
+            dropChoices()
             newChat()
             threads = []
             drafts = [:]
@@ -155,9 +171,11 @@ final class AssistantController {
         ["threadId": .string(thread), "proposalId": .string(proposal)]
     }
 
-    /// Runs one action of a proposal card and marks that card while it runs, so only its button
-    /// spins. Actions under the same `label` still run one at a time across the conversation.
-    private func card(_ proposal: String, _ action: String, label: String = "proposal", _ work: @escaping @MainActor () async throws -> Void) {
+    /// Runs one action of a proposal card and marks that card while it runs: only its buttons
+    /// wait, and only the one that asked spins, while other cards carry on. An action given a
+    /// `label` (a report, an export) still runs one at a time across the conversation.
+    private func card(_ proposal: String, _ action: String, label: String? = nil, _ work: @escaping @MainActor () async throws -> Void) {
+        let label = label ?? "card:" + proposal
         guard !busy.contains(label), cardWork[proposal] == nil else { return }
         cardWork[proposal] = action
         operation(label) { [self] in
@@ -295,8 +313,15 @@ final class AssistantController {
             reloadThread()
             if type == "done" { reloadHistory() }
             tell(type, stopped: event.flag("stopped"))
+        case "replaced":
+            // The assistant made a newer proposal in an earlier one's place. The earlier card's
+            // new view takes its place at once (never a second card), and what was being chosen
+            // on it has nothing left to change; the newer card comes as a proposal of its own.
+            forgetChoices(event["proposal"].text("id"))
+            place(event["proposal"])
+            reloadThread()
         default:
-            // "replaced" and anything newer: the conversation shows it when it's next read.
+            // Anything newer: the conversation shows it when it's next read.
             break
         }
     }
@@ -421,8 +446,17 @@ final class AssistantController {
     func dismissError() { error = nil }
     func dismissNotice() { notice = nil }
 
+    /// Says that the assistant's import review imported a statement, as the app's own message
+    /// does after a bank file's import: with Undo, while the import is still the budget's last
+    /// change (`revision` is the budget's once it was saved).
+    func sayImported(_ text: String, revision: String) {
+        notice = text
+        undoNotice = (text: text, revision: revision)
+    }
+
     func newChat() {
         keepDraft()
+        leaveChoices()
         generation += 1
         conversation += 1
         clearStream()
@@ -432,14 +466,13 @@ final class AssistantController {
         setRunning(false)
         dropAttachments()
         thinking = ""
-        undoProposal = nil
-        undoToken = nil
         bringDraft()
     }
 
     func openThread(_ id: String) {
         operation("open") { [self] in
             keepDraft()
+            leaveChoices()
             generation += 1
             conversation += 1
             clearStream()
@@ -449,8 +482,6 @@ final class AssistantController {
             setRunning(false)
             thinking = ""
             dropAttachments()
-            undoProposal = nil
-            undoToken = nil
             bringDraft()
             try await loadThread(id)
         }
@@ -462,6 +493,8 @@ final class AssistantController {
             drafts[id] = nil
             if threadId == id {
                 clearDraft()
+                // Its cards are gone with it, and what was being chosen on them.
+                dropChoices()
                 newChat()
             }
             try await loadHistory()
@@ -473,6 +506,7 @@ final class AssistantController {
             _ = try await call("assistant_delete_all")
             drafts = [:]
             if !threadId.isEmpty { clearDraft() }
+            dropChoices()
             newChat()
             try await loadHistory()
         }
@@ -626,6 +660,23 @@ final class AssistantController {
         operation("link") { [self] in _ = try await call("assistant_open", ["link": .string(link)]) }
     }
 
+    /// Saves the budget's notes for the assistant, always as the whole list: one change to the
+    /// budget, which is read again with it as an applied proposal's is. `done` gets nil once
+    /// it's saved, or why it wasn't (the service says when there are too many).
+    func saveNotes(_ notes: [String], done: @escaping @MainActor (String?) -> Void) {
+        guard !busy.contains("notes") else { return }
+        busy.insert("notes")
+        Task { @MainActor in
+            defer { busy.remove("notes") }
+            do {
+                _ = try await call("assistant_notes_commit", ["notes": JSON(notes)], changesBudget: true)
+                done(nil)
+            } catch {
+                done(Self.message(error))
+            }
+        }
+    }
+
     // MARK: Attachments
 
     /// Files chosen in Files, read and sent to the service one by one. One that came with
@@ -709,24 +760,32 @@ final class AssistantController {
     /// Sends the message being written with what goes with it (`screen`, from `AssistantWith`).
     /// Once it's sent, the field keeps only what was typed since and the selection is used up;
     /// `done` then lets the screen start the next message with everything on it again.
-    func send(screen: JSON, done: @escaping @MainActor () -> Void) {
-        let text = draft
+    /// With `preset`, those words are sent for the person instead (a question's answer, a next
+    /// step, a card asked for again): the message being written and its files stay as they are.
+    func send(_ preset: String? = nil, screen: JSON, done: @escaping @MainActor () -> Void) {
+        let text = preset ?? draft
         operation("send") { [self] in
             guard screen["selected"].array.count <= AssistantSelection.limit else {
                 throw AppError(String(localized: "Select up to 200 transactions per message."))
             }
             let generation = generation
+            // The assistant reads the cards as the person left them: choices still waiting go first.
+            for proposal in Array(choices.keys) { try? await settleChoices(proposal) }
+            guard generation == self.generation else { return }
             clearStream()
             thinking = ""
+            let files = preset == nil ? attachments.map { $0.text("id") } : []
             let params: JSON = ["threadId": threadId.isEmpty ? .null : .string(threadId), "text": .string(text),
-                                "attachments": JSON(attachments.map { $0.text("id") }), "screen": screen]
+                                "attachments": JSON(files), "screen": screen]
             let result = try await call("assistant_send", params).string
             guard generation == self.generation else { return }
             if threadId != result { thread = ["id": .string(result)] }
             setRunning(true)
-            attachments = []
-            requestFiles = []
-            if draft == text { draft = "" }
+            if preset == nil {
+                attachments = []
+                requestFiles = []
+                if draft == text { draft = "" }
+            }
             select([])
             done()
             try await loadThread(result)
@@ -754,74 +813,227 @@ final class AssistantController {
 
     // MARK: Proposals
 
-    /// Rechecks the proposal against the budget as it is now, then commits it as one change. A
-    /// proposal the budget has moved past comes back refreshed, for another review.
+    /// A proposal card of the open conversation, as the service last showed it.
+    private func shownCard(_ proposal: String) -> JSON? {
+        entries.first { $0.kind == "proposal" && $0.json["proposal"].text("id") == proposal }?.json["proposal"]
+    }
+
+    /// Puts a card's newer view (from an event, or from a call that returns the card) in the
+    /// open conversation in place of the one it shows: the card changes where it is.
+    private func place(_ proposal: JSON) {
+        let id = proposal.text("id")
+        guard proposal.isObject, !id.isEmpty, var shown = thread else { return }
+        var rows = shown["entries"].array
+        guard let index = rows.firstIndex(where: { $0.text("kind") == "proposal" && $0["proposal"].text("id") == id }) else { return }
+        rows[index]["proposal"] = proposal
+        shown["entries"] = .array(rows)
+        let prepared = AssistantThreadPresentation.make(shown, previous: presentation)
+        presentation = prepared
+        thread = prepared.thread
+        entries = prepared.entries
+    }
+
+    /// The budget changed while the conversation is on screen. A change that waits is made
+    /// again on it when the conversation is read, and the budget's own Undo and Redo move an
+    /// applied card between applied and undone: with such a card, the conversation is read again.
+    func budgetChanged() {
+        guard entries.contains(where: { $0.kind == "proposal" && AssistantCard.followsBudget($0.json["proposal"]) }) else { return }
+        reloadThread()
+    }
+
+    /// Rechecks the proposal against the budget as it is now, then commits it as one change:
+    /// the service saves the budget first and marks the card applied after. Choices still
+    /// waiting on the card go to the service first. A proposal the budget has moved past comes
+    /// back changed instead, and its card says why: the card is the one place that's said.
     func apply(_ proposal: String) {
         card(proposal, "apply") { [self] in
             let id = threadId
-            let outcome = try await call("assistant_apply_commit", proposalParams(id, proposal), changesBudget: true)
+            try await settleChoices(proposal)
+            let outcome: JSON
+            do {
+                outcome = try await call("assistant_apply_commit", proposalParams(id, proposal), changesBudget: true)
+            } catch {
+                // Where the card stands is read again before the error shows.
+                if threadId == id { try? await loadThread(id) }
+                throw error
+            }
+            guard threadId == id else { return }
+            place(outcome["proposal"])
             if !outcome["patch"].isNull {
-                var token = outcome["snapshot"].text("token")
-                if token.isEmpty { token = try await call("database_status").text("token") }
-                undoToken = token
-                undoProposal = outcome["undoAvailable"].bool ? proposal : nil
                 notice = String(localized: "Proposal applied")
                 successes += 1
-            } else {
-                notice = String(localized: "Your budget changed. Review the refreshed proposal before applying it.")
             }
             try await loadThread(id)
         }
     }
 
-    /// Undoes an applied proposal, only while it is still the budget's latest change.
+    /// Takes an applied proposal's change back. The service allows it only while that change is
+    /// still the budget's latest, and says so when it isn't; the budget's revision goes with the
+    /// call as `expectedToken` (`BudgetStore.service`).
     func undo(_ proposal: String) {
         card(proposal, "undo") { [self] in
             let id = threadId
-            let token = try await call("database_status").text("token")
-            guard token == undoToken && proposal == undoProposal else {
-                throw AppError(String(localized: "Your budget changed after this proposal. Use the budget's undo history to review subsequent changes."))
+            do {
+                let outcome = try await call("assistant_undo_commit", proposalParams(id, proposal), changesBudget: true)
+                if threadId == id { place(outcome["proposal"]) }
+            } catch {
+                // Whether it can still be undone is read again before the error shows.
+                if threadId == id { try? await loadThread(id) }
+                throw error
             }
-            var params = proposalParams(id, proposal)
-            params["expectedToken"] = .string(token)
-            _ = try await call("assistant_undo_commit", params, changesBudget: true)
-            undoToken = nil
-            undoProposal = nil
-            try await loadThread(id)
+            if threadId == id { try await loadThread(id) }
         }
     }
 
-    /// The proposal made again with the person's choices on its card (`ProposalChoices`): rows
-    /// left out, categories or amounts given.
-    func revise(_ proposal: String, _ revision: JSON) {
-        card(proposal, "revise") { [self] in
-            let id = threadId
-            var params = proposalParams(id, proposal)
-            params["revision"] = revision
-            _ = try await call("assistant_revise", params)
-            try await loadThread(id)
+    /// Records where a card stands (`assistant_mark`) and shows the card as the service has it
+    /// then. A step that can't follow from where the card stands is refused: the conversation
+    /// is read again, and the service's reason shows.
+    private func mark(_ thread: String, _ proposal: String, _ status: String, note: String? = nil) async throws {
+        do {
+            var params = proposalParams(thread, proposal)
+            params["status"] = .string(status)
+            if let note { params["note"] = .string(note) }
+            let marked = try await call("assistant_mark", params)
+            if threadId == thread { place(marked) }
+        } catch {
+            if threadId == thread { try? await loadThread(thread) }
+            throw error
         }
+        if threadId == thread { try await loadThread(thread) }
     }
 
+    /// Sets a card aside. A thing the assistant made (a report, a spreadsheet, a converted
+    /// file, figures) is removed the same way.
     func discard(_ proposal: String) {
         card(proposal, "discard") { [self] in
-            var params = proposalParams(threadId, proposal)
-            params["status"] = "discarded"
-            _ = try await call("assistant_mark", params)
-            try await loadThread(threadId)
+            let id = threadId
+            // What was being chosen on it has nothing left to change; a call already sending
+            // some of it finishes first, so it isn't refused by a card that's gone.
+            forgetChoices(proposal)
+            _ = try? await revising[proposal]?.value
+            try await mark(id, proposal, "discarded")
         }
     }
 
-    /// The bank-file review imported a converted statement: its card is done.
-    func imported(thread: String, proposal: String) {
+    /// Puts a discarded, removed or replaced card back to wait again.
+    func restore(_ proposal: String) {
+        card(proposal, "restore") { [self] in try await mark(threadId, proposal, "proposed") }
+    }
+
+    /// The bank-file review imported a converted statement, or an import applied a card's
+    /// fixes: its card is done. `note` says which of the fixes didn't take, when some didn't.
+    func imported(thread: String, proposal: String, note: String? = nil) {
         successes += 1
-        card(proposal, "mark") { [self] in
-            var params = proposalParams(thread, proposal)
-            params["status"] = "applied"
-            _ = try await call("assistant_mark", params)
-            if threadId == thread { try await loadThread(thread) }
+        card(proposal, "mark") { [self] in try await mark(thread, proposal, "applied", note: note) }
+    }
+
+    /// A `fix` card as the service has it once the choices still waiting on it are sent: what
+    /// its import applies. `done` gets the conversation's id and the card.
+    func whenSettled(_ proposal: String, done: @escaping @MainActor (String, JSON) -> Void) {
+        card(proposal, "apply") { [self] in
+            let id = threadId
+            try await settleChoices(proposal)
+            guard threadId == id, let settled = shownCard(proposal) else { return }
+            done(id, settled)
         }
     }
+
+    // MARK: Choices on a card
+
+    /// The person's choices on a card as they stand: those still waiting to be sent, else the
+    /// ones the service made the card with.
+    func choicesNow(_ proposal: String) -> JSON {
+        choices[proposal] ?? shownCard(proposal)?["choices"] ?? .null
+    }
+
+    /// Keeps the person's choices on a card (`ProposalChoices`: rows left out, categories or
+    /// amounts given). The card shows them at once. They go to the service in one call, about
+    /// 600 ms after the last of them or at once with `now`, and always before Apply.
+    func choose(_ proposal: String, _ revision: JSON, now: Bool = false) {
+        guard !threadId.isEmpty, cardWork[proposal] == nil else { return }
+        choices[proposal] = revision
+        choiceTimers[proposal]?.cancel()
+        choiceTimers[proposal] = Task { @MainActor in
+            if !now { try? await Task.sleep(for: .milliseconds(600)) }
+            // Another choice was made meanwhile: its own wait sends them all.
+            guard !Task.isCancelled else { return }
+            choiceTimers[proposal] = nil
+            do {
+                try await settleChoices(proposal)
+            } catch {
+                if !(error is CancellationError) { self.error = Self.message(error) }
+            }
+        }
+    }
+
+    /// Has the service make a card again with every choice made on it so far, and waits for
+    /// that: what Apply does first, and the wait after the last choice.
+    private func settleChoices(_ proposal: String) async throws {
+        choiceTimers[proposal]?.cancel()
+        choiceTimers[proposal] = nil
+        // A call on its way took the choices as they were then; those made since go in another.
+        while let sending = sendChoices(proposal) { try await sending.value }
+    }
+
+    /// The call sending a card's waiting choices: the one on its way, or a new one. There is
+    /// one `assistant_revise` per card at a time. Nil when the service has every choice.
+    private func sendChoices(_ proposal: String) -> Task<Void, Error>? {
+        if let running = revising[proposal] { return running }
+        guard let revision = choices[proposal], !threadId.isEmpty else { return nil }
+        let id = threadId
+        let sending = Task { @MainActor () async throws -> Void in
+            // Cleared before anyone waiting on this call carries on, so they never find it again.
+            defer { revising[proposal] = nil }
+            do {
+                var params = proposalParams(id, proposal)
+                params["revision"] = revision
+                let revised = try await call("assistant_revise", params)
+                // The conversation was left meanwhile, and its waiting choices with it.
+                guard threadId == id else { return }
+                place(revised)
+                // Choices made while it ran stay, for the next call.
+                if choices[proposal] == revision { choices[proposal] = nil }
+            } catch {
+                // The card goes back to what the service has of it.
+                if threadId == id { choices[proposal] = nil }
+                throw error
+            }
+        }
+        revising[proposal] = sending
+        return sending
+    }
+
+    /// Forgets the choices waiting on a card, unsent.
+    private func forgetChoices(_ proposal: String) {
+        choiceTimers[proposal]?.cancel()
+        choiceTimers[proposal] = nil
+        if choices[proposal] != nil { choices[proposal] = nil }
+    }
+
+    /// Forgets every card's waiting choices, unsent: another budget's, or a deleted conversation's.
+    private func dropChoices() {
+        for timer in choiceTimers.values { timer.cancel() }
+        choiceTimers = [:]
+        if !choices.isEmpty { choices = [:] }
+    }
+
+    /// The conversation is being left. The choices still waiting on its cards go to the service
+    /// as they are, so its cards have them when it's opened again; a failure isn't shown.
+    private func leaveChoices() {
+        let id = threadId
+        let waiting = choices
+        dropChoices()
+        guard !id.isEmpty else { return }
+        for (proposal, revision) in waiting {
+            Task { @MainActor in
+                var params = proposalParams(id, proposal)
+                params["revision"] = revision
+                _ = try? await call("assistant_revise", params)
+            }
+        }
+    }
+
+    // MARK: A card's files
 
     func report(_ proposal: String, done: @escaping @MainActor (JSON) -> Void) {
         card(proposal, "report", label: "report") { [self] in done(try await call("assistant_report", proposalParams(threadId, proposal))) }
@@ -860,8 +1072,9 @@ final class AssistantController {
         }
     }
 
-    /// Sends only the excerpt and explanation the person approved to UrBudget. `done` gets the
-    /// report's reference, for the form to keep on screen.
+    /// Sends UrBudget only what the person left in the report's fields: the reply's text, and
+    /// their explanation with the details under it. `done` gets the report's reference, for the
+    /// form to keep on screen.
     func reportReply(text: String, reason: String, done: @escaping @MainActor (String) -> Void) {
         operation("reportReply") { [self] in
             done(try await call("assistant_report_reply", ["text": .string(text), "reason": .string(reason)]).string)

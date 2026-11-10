@@ -495,14 +495,22 @@ struct BankConnectionsView: View {
         let through = through
         let revision = reviewRevision
         run(importing: true) {
+            let before = store.budget ?? [:]
             _ = try await store.service("simplefin_import", ["account": .string(entry.accountId), "through": .string(through), "choices": choices,
                                                              "expectedToken": .string(revision)], changesBudget: true)
             imported.insert(entry.accountId)
             if first == entry.accountId { first = nil }
             let name = entry.name
             let date = Money.date(through)
+            // The message offers the assistant for the ones that came in with no category.
+            var offer: ToastAction?
+            if count > 0 {
+                let after = store.budget ?? [:]
+                let fresh = await Task.detached(priority: .userInitiated) { AssistantStart.uncategorized(before: before, after: after) }.value
+                offer = AssistantStart.offer(fresh)
+            }
             store.showToast(count > 0 ? String(localized: "Imported \(count) transactions into \(name). They're waiting for your approval.", locale: .app)
-                                      : String(localized: "\(name) is checked through \(date)."), undo: true)
+                                      : String(localized: "\(name) is checked through \(date)."), undo: true, offer: offer)
             importing = false
             // The other accounts' rows are checked against the budget with this import in it.
             try await sync(refresh: false)

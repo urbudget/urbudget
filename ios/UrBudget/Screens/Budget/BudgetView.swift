@@ -6,6 +6,8 @@ struct RegisterTarget: Hashable {
     var account = ""
     var from = ""
     var through = ""
+    /// Only these transactions, when a card of the assistant asks to see the ones it names.
+    var only: [String] = []
 }
 
 /// A request to move money: the category it starts from, and whether money goes to or comes from another.
@@ -70,6 +72,8 @@ struct BudgetView: View {
     @State private var search = ""
     @State private var reordering = false
     @State private var addCompact = false
+    /// The assistant, opened from the overspent notice with its request ready.
+    @State private var asking: AssistantRequest?
 
     private struct ModelKey: Equatable { var version: Int; var month: String; var ready: Bool }
 
@@ -105,6 +109,7 @@ struct BudgetView: View {
         }
         .task(id: ModelKey(version: store.version, month: store.month, ready: store.summary != nil)) { await rebuild() }
         .sheet(item: $sheet) { sheetContent($0) }
+        .sheet(item: $asking) { AssistantView(request: $0) }
         .cover(item: $launchEditor) { TransactionEditor(request: $0) }
         .onAppear(perform: loadFolds)
         .onChange(of: collapsed) { _, folds in
@@ -220,8 +225,12 @@ struct BudgetView: View {
                            tone: "attention", icon: "tag.fill", action: String(localized: "Review")) { path.append(RegisterTarget(category: NeedsCategory)) }
                 }
                 if overspent > 0 && filter == "all" {
+                    // The assistant opens with the request in its field, for the person to send.
                     Notice(text: String(localized: "\(overspent) overspent categories", locale: .app), tone: "negative",
-                           icon: "exclamationmark.circle.fill", action: String(localized: "Show")) { filter = "overspent" }
+                           icon: "exclamationmark.circle.fill", action: String(localized: "Show"),
+                           secondary: .init(label: String(localized: "Cover with the assistant")) {
+                               asking = AssistantRequest(page: "budget", text: AssistantStart.cover)
+                           }) { filter = "overspent" }
                 }
                 if filter != "all" {
                     HStack {

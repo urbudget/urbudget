@@ -57,6 +57,8 @@ struct BankFileImportView: View {
     /// A PDF chosen, which the assistant reads.
     @State private var pdf: URL?
     @State private var asking: AssistantRequest?
+    /// A card's fixes are being applied to this import.
+    @State private var applyingFix = false
     /// A statement opened from another app, and the account it goes into (from an account's register).
     private let opened: URL?
     private let presetAccount: String
@@ -644,16 +646,19 @@ struct BankFileImportView: View {
         }
     }
 
-    /// Fixes the assistant proposed: applied to this import, each only where its line hasn't changed.
+    /// Fixes the assistant proposed: applied to this import, each only where its line hasn't
+    /// changed. One card's fixes are applied at a time, so a second tap doesn't apply them twice.
     private func applyFix(_ thread: String, _ proposal: JSON) {
         let fixes = proposal["fixes"]
-        guard fixes.isObject, let session, let content else { return }
+        guard !applyingFix, fixes.isObject, let session, let content else { return }
         guard fixes["scope"].text("session") == sessionId else {
             AssistantController.shared.notice = String(localized: "These fixes are for another import.")
             return
         }
         let was = sessionId
+        applyingFix = true
         Task {
+            defer { applyingFix = false }
             do {
                 let applied = try await store.query("bankApplyFixes", ["accountId": .string(account), "content": .string(content), "session": session, "fixes": fixes])
                 guard sessionId == was else { return }
@@ -662,7 +667,11 @@ struct BankFileImportView: View {
                 assisted.formUnion(outcome.lines)
                 stage = .lines
                 preview = nil
-                if outcome.applied > 0 { AssistantController.shared.imported(thread: thread, proposal: proposal.text("id")) }
+                // The card is done, and says which of its fixes didn't take when some didn't.
+                if outcome.applied > 0 {
+                    AssistantController.shared.imported(thread: thread, proposal: proposal.text("id"),
+                                                        note: AssistantCard.fixNote(applied.rows("results"), proposal: proposal))
+                }
                 // Back to the import, to see them.
                 asking = nil
                 refresh()
@@ -689,9 +698,14 @@ struct BankFileImportView: View {
                 let choices = await Task.detached(priority: .userInitiated) {
                     BankReview.choices(rows, selected, allowIdlessDuplicate: true)
                 }.value
+                let before = store.budget ?? [:]
                 try await store.importsCommand("bankApply", ["accountId": .string(accountId), "choices": choices, "remember": remember],
                                                since: preview.revision, stale: changedAgain)
-                store.showToast(String(localized: "Imported \(importing) transactions. They're waiting for your approval.", locale: .app), undo: true)
+                // The message offers the assistant for the ones that came in with no category.
+                let after = store.budget ?? [:]
+                let fresh = await Task.detached(priority: .userInitiated) { AssistantStart.uncategorized(before: before, after: after) }.value
+                store.showToast(String(localized: "Imported \(importing) transactions. They're waiting for your approval.", locale: .app), undo: true,
+                                offer: AssistantStart.offer(fresh))
                 dismiss()
             } catch {
                 saving = false

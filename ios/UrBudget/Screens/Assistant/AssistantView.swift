@@ -175,6 +175,9 @@ struct AssistantView: View {
             controller.connect(store)
             controller.refresh()
         }
+        // The budget changed under the open conversation (sync, another screen, its own Undo or
+        // Redo): its waiting cards are brought up to date, and an applied one is shown where it stands.
+        .onChange(of: store.revision) { _, _ in controller.budgetChanged() }
         .sensoryFeedback(.impact(weight: .light), trigger: sent)
         .sensoryFeedback(.success, trigger: controller.successes)
         .fileImporter(isPresented: $choosingFiles, allowedContentTypes: AssistantAttachments.contentTypes,
@@ -214,8 +217,9 @@ struct AssistantView: View {
         .sheet(item: $replyReport) { AssistantReplyReportForm(excerpt: $0.value.excerpt, tools: $0.value.tools) }
         .sheet(item: $changing) { item in
             AssistantRowEditor(row: item.value.row) { change in
-                let proposal = item.value.proposal
-                controller.revise(proposal.text("id"), ProposalChoices.change(proposal["choices"], key: item.value.row.text("key"), change: change))
+                // Made on the person's choices as they stand now, not as they were when the editor opened.
+                let id = item.value.proposal.text("id")
+                controller.choose(id, ProposalChoices.change(controller.choicesNow(id), key: item.value.row.text("key"), change: change))
             }
         }
         .sheet(item: $share) { AssistantShareSheet(items: [$0.value]) { share = nil }.presentationDetents([.medium, .large]) }
@@ -261,6 +265,8 @@ struct AssistantView: View {
                             .font(.subheadline)
                             .disabled(controller.busy.contains("send"))
                             .padding(.vertical, 8)
+                    } else if !controller.next.isEmpty {
+                        nextSteps
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
@@ -303,6 +309,21 @@ struct AssistantView: View {
                 withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
             }
         }
+    }
+
+    /// What's waiting in the budget that the assistant can help with, under the last reply while
+    /// nothing is running: each a small button in the service's words that sends its request.
+    private var nextSteps: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(controller.next.enumerated()), id: \.offset) { _, step in
+                Button(step.text("text")) { say(step.text("prompt")) }
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
+                    .controlSize(.small)
+                    .disabled(!canSay)
+            }
+        }
+        .padding(.vertical, 7)
     }
 
     private var emptyState: some View {
@@ -368,12 +389,13 @@ struct AssistantView: View {
         case "proposal":
             let proposal = entry.json["proposal"]
             if proposal.isObject {
-                // Its buttons wait while any card's change is made; only its own action spins.
-                let working = controller.cardWork[proposal.text("id")]
-                AssistantProposalCard(proposal: proposal, currency: currency,
-                                      busy: controller.busy.contains("proposal") || working != nil,
-                                      working: working,
-                                      canUndo: controller.undoProposal == proposal.text("id"),
+                let id = proposal.text("id")
+                // Only its own action makes a card wait, and the button that asked spins. Undo
+                // shows on the card the conversation's view names as the one that can be undone.
+                let working = controller.cardWork[id]
+                AssistantProposalCard(proposal: proposal, currency: currency, busy: working != nil, working: working,
+                                      choices: controller.choices[id], canUndo: controller.undoable == id, canSend: canSay,
+                                      categoryName: { planningCategoryName(store.budget, $0 ?? Unassigned) ?? "" },
                                       actions: actions(for: proposal))
             }
         case "step":
@@ -460,11 +482,15 @@ struct AssistantView: View {
             apply: { controller.apply(id) },
             undo: { controller.undo(id) },
             discard: { controller.discard(id) },
+            restore: { controller.restore(id) },
             refine: {
                 // Added under whatever is being written, never over it.
                 controller.addToDraft(String(localized: "Revise the proposal ‘\(proposal.text("title"))’: "))
                 composing = true
             },
+            askAgain: { say(AssistantCard.askAgain(proposal)) },
+            show: { show(proposal["card"]["highlight"]) },
+            answer: { say($0) },
             reviewImport: {
                 controller.importFile(id) { file, thread in
                     importReview = AssistantSheetItem(value: AssistantImportRequest(file: file, threadId: thread, proposalId: id))
@@ -481,9 +507,37 @@ struct AssistantView: View {
                     }
                 }
             },
-            applyFix: request?.applyFix.map { fix -> () -> Void in { fix(controller.threadId, proposal) } },
-            revise: { controller.revise(id, $0) },
+            // The import applies the card as the service has it once its waiting choices are sent.
+            applyFix: request?.applyFix.map { fix -> () -> Void in { controller.whenSettled(id) { thread, settled in fix(thread, settled) } } },
+            // Back to the assistant's version goes at once; a tick waits a moment for the next.
+            revise: { revision in controller.choose(id, revision, now: revision == ProposalChoices.original) },
             change: { changing = AssistantSheetItem(value: AssistantRowChange(proposal: proposal, row: $0)) })
+    }
+
+    /// A message can be sent for the person now: a question's answer, a next step, or a card
+    /// asked for again.
+    private var canSay: Bool { controller.ready && !controller.running && !controller.busy.contains("send") }
+
+    /// Sends `text` as the person's message, as Send does the field's: after the notice of what
+    /// gets sent when it's due, and with what's on "With this message". The message being
+    /// written stays in the field.
+    private func say(_ text: String) {
+        guard canSay, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        whenTold {
+            sent += 1
+            controller.send(text, screen: with.screen) {
+                placeOff = false
+                importOff = false
+            }
+        }
+    }
+
+    /// Goes to what a card names, once the assistant has closed: its transactions in the
+    /// Transactions tab, or else the Budget tab on its month.
+    private func show(_ highlight: JSON) {
+        let destination = AppActions.Destination(month: highlight.text("month"), transactions: highlight["transactions"].array.map(\.string))
+        dismiss()
+        AppActions.shared.destination = destination
     }
 
     private func shareFile(_ path: String) {
@@ -555,15 +609,20 @@ struct AssistantView: View {
     @ViewBuilder
     private var noticeBar: some View {
         if let notice = controller.notice {
-            Notice(text: notice, tone: "info", icon: "info.circle.fill", action: String(localized: "Dismiss")) { controller.dismissNotice() }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 6)
-                .background(Color.groupedBackground)
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .task(id: notice) {
-                    try? await Task.sleep(for: .seconds(8))
-                    if controller.notice == notice { controller.dismissNotice() }
-                }
+            // An import's notice offers Undo while the import is still the budget's last change.
+            let undo = controller.undoNotice?.text == notice && controller.undoNotice?.revision == store.revision
+            Notice(text: notice, tone: "info", icon: "info.circle.fill", action: undo ? String(localized: "Undo") : String(localized: "Dismiss")) {
+                if undo { store.undo() }
+                controller.dismissNotice()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 6)
+            .background(Color.groupedBackground)
+            .transition(.move(edge: .top).combined(with: .opacity))
+            .task(id: notice) {
+                try? await Task.sleep(for: .seconds(8))
+                if controller.notice == notice { controller.dismissNotice() }
+            }
         }
     }
 

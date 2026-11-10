@@ -977,6 +977,17 @@
         }
       }
     },
+    "%@ and %@" : {
+      "comment" : "A list of names and its last one: “Checking, Savings and Cash”.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⁨%1$@⁩ و⁨%2$@⁩"
+          }
+        }
+      }
+    },
     "%@ and %@ by month" : {
       "localizations" : {
         "ar" : {
@@ -5318,6 +5329,17 @@
         }
       }
     },
+    "Applied %@" : {
+      "comment" : "On a finished assistant card: when its change was applied, as a date and a time.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "طُبِّق ⁨%@⁩"
+          }
+        }
+      }
+    },
     "Applied %@ to existing transactions." : {
       "comment" : "A rule, as Contains “…”",
       "localizations" : {
@@ -5547,26 +5569,6 @@
                 }
               }
             }
-          }
-        }
-      }
-    },
-    "Applied to the import" : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "طُبّقت على الاستيراد"
-          }
-        }
-      }
-    },
-    "Applied: %@" : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "تم التطبيق: ⁨%@⁩"
           }
         }
       }
@@ -5927,6 +5929,16 @@
         }
       }
     },
+    "Ask for a new version" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "طلب نسخة جديدة"
+          }
+        }
+      }
+    },
     "Ask for changes" : {
       "localizations" : {
         "ar" : {
@@ -5943,6 +5955,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "سؤال المساعد"
+          }
+        }
+      }
+    },
+    "Asked: %@" : {
+      "comment" : "On an assistant card: a question the person has answered.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سؤال: ⁨%@⁩"
           }
         }
       }
@@ -7433,6 +7456,158 @@
         }
       }
     },
+    "Categorize the %lld new transactions in %@." : {
+      "comment" : "What the assistant is asked about the transactions an import added with no category; the last value names their accounts.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$#@count@ في ⁨%2$@⁩."
+          },
+          "substitutions" : {
+            "count" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "zero" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "لا معاملات جديدة لتصنيفها"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "صنّف المعاملة الجديدة"
+                    }
+                  },
+                  "two" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "صنّف المعاملتين الجديدتين"
+                    }
+                  },
+                  "few" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "صنّف %arg معاملات جديدة"
+                    }
+                  },
+                  "many" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "صنّف %arg معاملة جديدة"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "صنّف %arg معاملة جديدة"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$#@count@ in %2$@."
+          },
+          "substitutions" : {
+            "count" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "Categorize the new transaction"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "Categorize the %arg new transactions"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Categorize these 200 of the %lld new transactions in %@." : {
+      "comment" : "As above, when the import added more than the 200 a message takes.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "صنّف هذه المعاملات (200) من أصل %1$#@count@ في ⁨%2$@⁩."
+          },
+          "substitutions" : {
+            "count" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "zero" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg معاملة جديدة"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "معاملة جديدة واحدة"
+                    }
+                  },
+                  "two" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "معاملتين جديدتين"
+                    }
+                  },
+                  "few" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg معاملات جديدة"
+                    }
+                  },
+                  "many" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg معاملة جديدة"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg معاملة جديدة"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Categorize with the assistant" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التصنيف مع المساعد"
+          }
+        }
+      }
+    },
     "Categorized %@ as %@." : {
       "comment" : "First: a count of transactions or a payee; second: a category",
       "localizations" : {
@@ -8778,12 +8953,33 @@
         }
       }
     },
+    "Cover my overspent categories this month." : {
+      "comment" : "What the assistant is asked from the Budget tab's overspent notice.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "غطِّ الفئات التي تجاوزتُ فيها الإنفاق هذا الشهر."
+          }
+        }
+      }
+    },
     "Cover overspending" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "تغطية الإنفاق الزائد"
+          }
+        }
+      }
+    },
+    "Cover with the assistant" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التغطية مع المساعد"
           }
         }
       }
@@ -9389,6 +9585,71 @@
         }
       }
     },
+    "Delete %lld transactions" : {
+      "comment" : "The main button of an assistant card that deletes transactions.",
+      "localizations" : {
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "لا معاملات للحذف"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "حذف معاملة واحدة"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "حذف معاملتين"
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "حذف %lld معاملات"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "حذف %lld معاملة"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "حذف %lld معاملة"
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Delete %lld transaction"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Delete %lld transactions"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Delete account" : {
       "localizations" : {
         "ar" : {
@@ -9827,16 +10088,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "تم التجاهل"
-          }
-        }
-      }
-    },
-    "Discarded: %@" : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "تم التجاهل: ⁨%@⁩"
           }
         }
       }
@@ -11286,6 +11537,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "صحّحه المساعد"
+          }
+        }
+      }
+    },
+    "Fixes applied: %lld of %lld. Not applied: %@" : {
+      "comment" : "Kept on an assistant card whose import took only some of its fixes; the last value lists the ones that didn't take.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التصحيحات المطبَّقة: %1$lld من %2$lld. لم يُطبَّق: ⁨%3$@⁩"
           }
         }
       }
@@ -15584,6 +15846,16 @@
         }
       }
     },
+    "No notes yet." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا ملاحظات بعد."
+          }
+        }
+      }
+    },
     "No payee" : {
       "localizations" : {
         "ar" : {
@@ -15926,6 +16198,16 @@
         }
       }
     },
+    "Notes for the assistant" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ملاحظات للمساعد"
+          }
+        }
+      }
+    },
     "Nothing coming up" : {
       "localizations" : {
         "ar" : {
@@ -16257,16 +16539,6 @@
         }
       }
     },
-    "Only the excerpt and explanation below will be sent to UrBudget. Edit out anything private before sending." : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "لن يُرسَل إلى UrBudget إلا المقتطف والشرح أدناه. احذف أي معلومات خاصة قبل الإرسال."
-          }
-        }
-      }
-    },
     "Only the newest %lld are kept. Removed backups can't be recovered." : {
       "localizations" : {
         "ar" : {
@@ -16327,6 +16599,27 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "Only the ones to check" : {
+      "comment" : "On an assistant card with many rows: chooses only the rows marked to check.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ما يحتاج إلى مراجعة فقط"
+          }
+        }
+      }
+    },
+    "Only what you leave in these fields is sent: the reply's text, your explanation and the details." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يُرسَل إلا ما تتركه في هذه الحقول: نص الرد، وشرحك، والتفاصيل."
           }
         }
       }
@@ -17575,6 +17868,17 @@
         }
       }
     },
+    "Prepare “%@” again. It couldn't be applied: %@" : {
+      "comment" : "The message Ask for a new version sends the assistant: a card's title, and why it couldn't be applied.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أعِدّ «⁨%1$@⁩» من جديد. تعذّر تطبيقه: ⁨%2$@⁩"
+          }
+        }
+      }
+    },
     "Previous" : {
       "localizations" : {
         "ar" : {
@@ -18658,6 +18962,16 @@
         }
       }
     },
+    "Remove note" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إزالة الملاحظة"
+          }
+        }
+      }
+    },
     "Remove saved key" : {
       "localizations" : {
         "ar" : {
@@ -18704,6 +19018,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "إزالة النسخة السحابية من هذه الميزانية؟"
+          }
+        }
+      }
+    },
+    "Removed" : {
+      "comment" : "On a finished assistant card: a report, spreadsheet, converted file or figures that was removed.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُزيل"
           }
         }
       }
@@ -19029,6 +19354,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "الاستبدال بـ «⁨%@⁩»"
+          }
+        }
+      }
+    },
+    "Replaced by a newer version" : {
+      "comment" : "On a finished assistant card: the assistant made a newer proposal in its place.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استُبدل بنسخة أحدث"
           }
         }
       }
@@ -20466,17 +20802,6 @@
         }
       }
     },
-    "Sent with your message: %@" : {
-      "comment" : "Menu section; the value is the budget month",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "يُرسَل مع رسالتك: ⁨%@⁩"
-          }
-        }
-      }
-    },
     "Series" : {
       "localizations" : {
         "ar" : {
@@ -20933,6 +21258,16 @@
         }
       }
     },
+    "Short notes the assistant keeps for this budget and gets with every message. It adds one when you ask it to remember something." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ملاحظات قصيرة يحتفظ بها المساعد لهذه الميزانية وتصله مع كل رسالة. ويضيف واحدة عندما تطلب منه أن يتذكر شيئًا."
+          }
+        }
+      }
+    },
     "Show" : {
       "localizations" : {
         "ar" : {
@@ -21054,6 +21389,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "إظهار الفئات المخفية"
+          }
+        }
+      }
+    },
+    "Show in the budget" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عرض في الميزانية"
           }
         }
       }
@@ -24006,16 +24351,6 @@
         }
       }
     },
-    "Undo this proposal" : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "التراجع عن هذا الاقتراح"
-          }
-        }
-      }
-    },
     "Undone" : {
       "localizations" : {
         "ar" : {
@@ -24183,6 +24518,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "القادم"
+          }
+        }
+      }
+    },
+    "Update UrBudget to use this card." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حدِّث UrBudget لاستخدام هذه البطاقة."
           }
         }
       }
@@ -24997,16 +25342,6 @@
         }
       }
     },
-    "Your budget changed after this proposal. Use the budget's undo history to review subsequent changes." : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "تغيّرت ميزانيتك بعد هذا الاقتراح. استخدم سجل التراجع في الميزانية لمراجعة التغييرات اللاحقة."
-          }
-        }
-      }
-    },
     "Your budget changed since this preview. Choose Replace again to replace it as it is now." : {
       "localizations" : {
         "ar" : {
@@ -25063,16 +25398,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "تغيّرت ميزانيتك. عاين كشف الحساب هذا مرة أخرى."
-          }
-        }
-      }
-    },
-    "Your budget changed. Review the refreshed proposal before applying it." : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "تغيّرت ميزانيتك. راجع الاقتراح المحدَّث قبل تطبيقه."
           }
         }
       }

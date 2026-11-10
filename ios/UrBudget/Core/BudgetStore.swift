@@ -266,12 +266,14 @@ actor BudgetRepository {
 }
 
 /// A short message above the tab bar, with Undo for the last change when it offers it, or
-/// another action (adding a payee rule) in its place.
+/// another action (adding a payee rule) in its place. It can also offer something more on a
+/// line of its own (categorizing an import's transactions with the assistant).
 struct Toast: Identifiable, Equatable {
     let id = UUID()
     var message: String
     var undo: Bool
     var action: ToastAction?
+    var offer: ToastAction?
 
     static func == (a: Toast, b: Toast) -> Bool { a.id == b.id }
 }
@@ -424,8 +426,8 @@ final class BudgetStore {
         loading = false
     }
 
-    func showToast(_ message: String, undo: Bool = false, action: ToastAction? = nil) {
-        toast = Toast(message: message, undo: undo, action: action)
+    func showToast(_ message: String, undo: Bool = false, action: ToastAction? = nil, offer: ToastAction? = nil) {
+        toast = Toast(message: message, undo: undo, action: action, offer: offer)
     }
 
     // MARK: Library and history

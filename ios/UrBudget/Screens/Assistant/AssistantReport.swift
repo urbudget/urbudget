@@ -200,7 +200,7 @@ struct AssistantReplyReportForm: View {
     @ViewBuilder
     private var fields: some View {
         Section {
-            Text("Only the excerpt and explanation below will be sent to UrBudget. Edit out anything private before sending.")
+            Text("Only what you leave in these fields is sent: the reply's text, your explanation and the details.")
                 .font(.subheadline)
         }
         Section {

@@ -34,6 +34,8 @@ struct RegisterIndex: Sendable {
         var invalidAmount = false
         var search = ""
         var order = "newest"
+        /// Only these transactions, by id; empty for any.
+        var only: Set<String> = []
     }
 
     let entries: [Entry]
@@ -49,6 +51,7 @@ struct RegisterIndex: Sendable {
         if filter.invalidAmount { return [] }
         let terms = filter.search.split(whereSeparator: \.isWhitespace).map(String.init)
         var found = entries.filter { row in
+            if !filter.only.isEmpty && !filter.only.contains(row.id) { return false }
             if !filter.account.isEmpty && row.accountAmounts[filter.account] == nil { return false }
             let statuses = filter.account.isEmpty ? [row.status] : row.accountStatuses[filter.account] ?? []
             switch filter.status {
