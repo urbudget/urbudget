@@ -55,7 +55,7 @@ vi.mock("./api", async (importOriginal) => {
 });
 vi.mock("../bridge", () => ({ api: { reveal: vi.fn() } }));
 import { assistant } from "./api";
-import { AssistantBoundary, AssistantPanel, Markdown, place, REFRESH, suggestions, thinkingTitle, widest, type Request } from "./Assistant";
+import { AssistantBoundary, AssistantPanel, Elapsed, Markdown, place, REFRESH, suggestions, thinkingTitle, widest, type Request } from "./Assistant";
 import { AssistantSettings } from "./AssistantSettings";
 import { forgetComposers } from "./composer";
 import { following } from "./follow";
@@ -1767,6 +1767,22 @@ it("keeps the next steps under the last reply up to date with the budget", async
     });
     expect(assistant.thread).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole("button", { name: "Cover 1 overspent category" })).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("says how long a reply has been coming only once the wait is long enough to wonder", () => {
+  vi.useFakeTimers();
+  try {
+    const { container } = render(<Elapsed since={Date.now()} />);
+    // Nothing for the first seconds: most replies begin before anyone wonders.
+    act(() => void vi.advanceTimersByTime(7000));
+    expect(container.textContent).toBe("");
+    act(() => void vi.advanceTimersByTime(2000));
+    expect(container.textContent).toBe("9 s");
+    act(() => void vi.advanceTimersByTime(5000));
+    expect(container.textContent).toBe("14 s");
   } finally {
     vi.useRealTimers();
   }
