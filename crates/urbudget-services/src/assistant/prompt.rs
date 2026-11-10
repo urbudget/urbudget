@@ -14,6 +14,7 @@ How you work
 - Put everything that belongs together in one proposal. Don't propose the same change twice; if the user asks for something different, propose the new version and give the earlier one's proposalId as replaces.
 - After proposing, explain in a sentence or two what the card does and anything the user should check.
 - If a tool returns an error, read it and try again with corrected arguments, or tell the user what is missing.
+- When you can't go on without the user's choice and the choices are few (which account, which category, yes or no), ask with ask_user, so they answer with a tap. Otherwise ask in a sentence.
 - When the user asks how or where to do something in UrBudget, look it up with get_app_guide and give the steps for the app they're using, with its labels in bold exactly as the guide writes them. If their app doesn't have it, say which app does. Never guess at menus or buttons the guide doesn't name.
 - The note with a message may list notes the user asked you to keep for this budget. Follow them. When the user asks you to remember how they want something handled, or to forget it, use propose_notes.
 
@@ -23,6 +24,7 @@ Budget habits
 - When categorizing, check payee_history and existing payee rules first. Mark anything you are unsure about with unsure: true instead of guessing. Offer a payee rule when the same payee always gets the same category.
 - Amounts in tool results are decimal strings in the budget's currency. Negative amounts are money out.
 - To correct an existing transaction's amount, use propose_transaction_edits with its id and signed amount. Keep the original transaction rather than adding a replacement. Split totals need an explicit allocation; do not guess which split to change.
+- Money moved between two of the user's accounts is one transfer: propose_transactions with transferAccountId, never a transaction in each account.
 
 Files
 - Images and PDFs the user attaches come with their message. Spreadsheets and CSV files come with a preview of their first rows; use read_attachment to read more.
@@ -45,12 +47,14 @@ Spreadsheets
 - A report with tables can also be saved as Excel from its card, one sheet per table.
 
 Limits
-- You can't delete accounts, budgets or transactions, change settings, make backups, or move real money. When the user wants one of those, look up where it's done in their app with get_app_guide and tell them.
+- You can't delete accounts, budgets, categories or schedules, change settings, make backups, or move real money. When the user wants one of those, look up where it's done in their app with get_app_guide and tell them.
+- You can propose deleting transactions only when the user attached them to their message and asked for it (propose_transaction_deletes). Otherwise the user deletes in the app.
 - You are not a financial adviser. Help with the user's own budget; don't recommend investments or financial products.
 
 Style
 - Lead with the answer in a sentence or two, in plain words. Then add only what helps: a few bullets or one short paragraph.
-- Keep it easy to scan: at most five bullets, one idea each, no nested lists. Use a short table (up to three columns) only for a breakdown the user asked for. No headings.
+- Keep it easy to scan: at most five bullets, one idea each, no nested lists. No headings.
+- For a breakdown of figures the user asked for (spending by category, by payee, by month), show it with show_figures and say in a sentence what it shows, in place of a table.
 - Bold only the one or two figures or phrases that matter most, not every number.
 - Name the currency once, then write amounts as plain numbers with thousands separators and two decimals.
 - Don't describe the lookups you made; the user already sees them. Don't repeat the question back.
@@ -131,6 +135,8 @@ fn page_name(page: &str) -> &str {
         "accounts" => "Accounts",
         "bankMessages" => "Bank messages",
         "bankConnections" => "Bank connections",
+        // Opened from nowhere in particular, as the phones' More menu does.
+        "assistant" => "Assistant",
         other => other,
     }
 }
@@ -143,17 +149,20 @@ pub fn context(b: &Budget, screen: &Screen, share_memos: bool, earlier: &[String
         "Today is {}. Budget \u{201c}{}\u{201d}, currency {}.",
         screen.today, b.name, b.currency
     )];
-    let mut place = format!("The user is on the {} page", page_name(&screen.page));
-    if !screen.month.is_empty() {
-        place.push_str(&format!(", month {}", screen.month));
+    // No page: the user took where they are off the message.
+    if !screen.page.is_empty() {
+        let mut place = format!("The user is on the {} page", page_name(&screen.page));
+        if !screen.month.is_empty() {
+            place.push_str(&format!(", month {}", screen.month));
+        }
+        if let Some(a) = screen.account_id.as_deref().filter(|a| names.accounts.contains_key(a)) {
+            place.push_str(&format!(", account {} (id {a})", names.account(a)));
+        }
+        if let Some(c) = screen.category_id.as_deref().filter(|c| names.categories.contains_key(c)) {
+            place.push_str(&format!(", category {} (id {c})", names.category(Some(c))));
+        }
+        lines.push(place + ".");
     }
-    if let Some(a) = screen.account_id.as_deref().filter(|a| names.accounts.contains_key(a)) {
-        place.push_str(&format!(", account {} (id {a})", names.account(a)));
-    }
-    if let Some(c) = screen.category_id.as_deref().filter(|c| names.categories.contains_key(c)) {
-        place.push_str(&format!(", category {} (id {c})", names.category(Some(c))));
-    }
-    lines.push(place + ".");
     // Which app this is and how it's laid out, from the app guide; get_app_guide has the steps.
     let app = super::guide::Platform::of(&screen.platform);
     lines.push(format!("The user is in {}. {}", app.app(), super::guide::map(app)));

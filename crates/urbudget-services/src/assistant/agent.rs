@@ -153,7 +153,7 @@ async fn turn(assistant: &Assistant, job: &Job, cancelled: &AtomicBool, written:
         }
         // The round is kept whole from here, so there's nothing of it left for Stop to save. The
         // text is cleared inside the lock on the conversation: a Stop gets one or the other.
-        let import = assistant.with_thread_guarded(&job.folder, &job.thread_id, Some(cancelled), |t| {
+        let (import, selected) = assistant.with_thread_guarded(&job.folder, &job.thread_id, Some(cancelled), |t| {
             lock(written).clear();
             t.items.extend(items);
             t.usage.add(used);
@@ -162,11 +162,12 @@ async fn turn(assistant: &Assistant, job: &Job, cancelled: &AtomicBool, written:
             if cut && calls.is_empty() {
                 t.items.push(Item::Cut);
             }
-            // The import the latest message was sent from, as it read then.
+            // The import the latest message was sent from, as it read then, and the transactions
+            // attached to it.
             t.items.iter().rev().find_map(|i| match i {
-                Item::User { import, .. } => Some(import.clone()),
+                Item::User { import, sent_with, .. } => Some((import.clone(), sent_with.as_ref().map(|w| w.selected.clone()).unwrap_or_default())),
                 _ => None,
-            }).flatten()
+            }).unwrap_or_default()
         }).map_err(other)?;
         if calls.is_empty() {
             if cut {
@@ -184,6 +185,7 @@ async fn turn(assistant: &Assistant, job: &Job, cancelled: &AtomicBool, written:
             bank_sync: &job.bank_sync,
             import,
             platform: super::guide::Platform::of(&job.platform),
+            selected: &selected,
         };
         for call in calls {
             // What it's doing now, for the panel while a slow lookup (the phone's search) runs.
@@ -378,6 +380,68 @@ mod tests {
         assert!(matches!(asked.last().unwrap().items.iter().rev().find(|i| matches!(i, Item::User { .. })), Some(Item::User { context, .. }) if context.contains("replaced by a newer proposal")));
         // The tool says how to name the one it corrects.
         assert!(tools::specs().iter().filter(|s| s.name.starts_with("propose_") && s.name != "propose_bank_texts").all(|s| s.parameters["properties"]["replaces"].is_object()));
+    }
+
+    #[test]
+    fn a_question_is_answered_by_the_next_message_and_only_what_was_attached_can_be_deleted() {
+        let directory = tempfile::tempdir().unwrap();
+        let runtime = scripted(directory.path(), "script-ask");
+        // The sample budget with one purchase in it.
+        let mut budget = urbudget_core::test_support::sample();
+        budget.transactions.push(urbudget_core::test_support::purchase());
+        let token = runtime.load().unwrap()["token"].clone();
+        crate::block_on(runtime.dispatch("save_budget", json!({ "budget": budget, "expectedToken": token }))).unwrap();
+        let cards = |id: &str| -> Vec<Value> {
+            view(&runtime, id)["entries"].as_array().unwrap().iter().filter(|e| e["kind"] == "proposal").map(|e| e["proposal"].clone()).collect()
+        };
+
+        script::play("script-ask", vec![script::call("c1", "ask_user", json!({ "question": "Which account did you pay from?", "options": ["Cash", "Card"] })), script::text("")]);
+        let id = say(&runtime, None, "Record my coffee", screen());
+        assert_eq!((cards(&id)[0]["kind"].as_str(), cards(&id)[0]["actions"].clone()), (Some("question"), json!(["answer"])));
+        // Tapped or typed, the next message is the answer, and the question is done.
+        script::play("script-ask", vec![script::text("Recorded.")]);
+        say(&runtime, Some(&id), "Card", screen());
+        assert_eq!((cards(&id)[0]["status"].as_str(), cards(&id)[0]["actions"].clone()), (Some("applied"), json!([])));
+
+        // A deletion is refused for a transaction that wasn't attached, and proposed for one that was.
+        let delete = || vec![script::call("c2", "propose_transaction_deletes", json!({ "ids": ["tx"] })), script::text("Done.")];
+        script::play("script-ask", delete());
+        say(&runtime, Some(&id), "Delete that purchase", screen());
+        assert!(items(&runtime, &id).iter().any(|i| matches!(i, Item::Result { output, failed: true, .. } if output.contains("isn't one of the transactions the user attached"))));
+        script::play("script-ask", delete());
+        say(&runtime, Some(&id), "Delete this one", prompt::Screen { selected: vec!["tx".into()], ..screen() });
+        let card = cards(&id).pop().unwrap();
+        assert_eq!((card["kind"].as_str(), card["card"]["rows"][0]["amount"].as_i64()), (Some("delete"), Some(-5000)));
+        let applied = crate::block_on(runtime.dispatch("assistant_apply_commit", json!({ "threadId": id, "proposalId": card["id"] }))).unwrap();
+        assert_eq!(applied["snapshot"]["budget"]["transactions"].as_array().map(Vec::len), Some(0));
+    }
+
+    #[test]
+    fn what_is_waiting_in_the_budget_is_offered_under_the_last_reply() {
+        let directory = tempfile::tempdir().unwrap();
+        let runtime = scripted(directory.path(), "script-next");
+        // Food has 200.00 and a purchase of 300.00; another purchase has no category.
+        let mut budget = urbudget_core::test_support::sample();
+        let bought = |id: &str, amount: i64, category: Option<&str>| {
+            let mut t = urbudget_core::test_support::purchase();
+            (t.id, t.amount) = (id.into(), amount);
+            (t.splits[0].amount, t.splits[0].category_id) = (amount, category.map(str::to_owned));
+            t
+        };
+        budget.transactions = vec![bought("a", -30000, Some("food")), bought("b", -1200, None)];
+        let token = runtime.load().unwrap()["token"].clone();
+        crate::block_on(runtime.dispatch("save_budget", json!({ "budget": budget, "expectedToken": token }))).unwrap();
+
+        script::play("script-next", vec![script::text("October looks tight.")]);
+        let id = say(&runtime, None, "How is October?", screen());
+        let next = view(&runtime, &id)["next"].clone();
+        assert_eq!(next.as_array().map(Vec::len), Some(2));
+        assert_eq!((next[0]["id"].as_str(), next[0]["text"].as_str(), next[1]["id"].as_str()), (Some("cover"), Some("Cover 1 overspent category"), Some("categorize")));
+        // A reply that just proposed covering it doesn't offer to cover it again; the card is the next step.
+        let cover = json!({ "month": "2026-10", "moves": [{ "from": "ready_to_assign", "to": "food", "amount": 100 }] });
+        script::play("script-next", vec![script::call("c1", "propose_budget_moves", cover), script::text("Prepared.")]);
+        say(&runtime, Some(&id), "Cover it", screen());
+        assert!(view(&runtime, &id).get("next").is_none());
     }
 
     #[test]

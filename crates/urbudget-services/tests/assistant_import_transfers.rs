@@ -6,7 +6,7 @@ use urbudget_core::{bank_import, bank_statement, domain::Budget, engine};
 use urbudget_services::assistant::{attachments::{Files, ImportRow}, proposals::ImportFile, tools::{call, Context}};
 
 fn context<'a>(budget: &'a Budget, files: &'a Files) -> Context<'a> {
-    Context { budget, today: "2026-10-28", month: "2026-10", share_memos: true, files, bank_sync: &Value::Null, import: None, platform: urbudget_services::assistant::guide::Platform::Desktop }
+    Context { budget, today: "2026-10-28", month: "2026-10", share_memos: true, files, bank_sync: &Value::Null, import: None, platform: urbudget_services::assistant::guide::Platform::Desktop, selected: &[] }
 }
 
 fn import(budget: Budget, file: &str, session: &bank_statement::Session) -> Budget {

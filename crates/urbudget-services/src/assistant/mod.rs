@@ -171,6 +171,8 @@ pub struct AssistantState {
     /// The budget each waiting proposal was last made again on (`budget_stamp`), so a
     /// conversation is brought up to date once per change to the budget, not at every look.
     checked: Mutex<HashMap<String, u64>>,
+    /// What's waiting in the budget (`next_steps`), counted once per state of it and month.
+    counted: Mutex<Option<(u64, String, [usize; 3])>>,
 }
 
 struct RunningTask {
@@ -223,6 +225,7 @@ impl Assistant {
             models: Mutex::new(HashMap::new()),
             pruned: Mutex::new(std::collections::HashSet::new()),
             checked: Mutex::new(HashMap::new()),
+            counted: Mutex::new(None),
         }))
     }
     fn settings_path(&self) -> PathBuf {
@@ -668,11 +671,71 @@ pub fn assistant_threads(db: &Database, assistant: &Assistant) -> Result<Vec<his
 pub fn assistant_thread(db: &Database, assistant: &Assistant, id: String, patch: Option<Patch>) -> Result<Value, String> {
     let folder = folder(&db)?;
     // A budget that can't be read doesn't keep the conversation from being shown.
-    let _ = refresh_proposals(db, assistant, &folder, &id, patch);
+    let _ = refresh_proposals(db, assistant, &folder, &id, patch.clone());
     let provider = assistant.settings().provider;
     let mut view = assistant.peek(&folder, &id, |t| history::view(t, provider))?;
-    view["running"] = json!(assistant.is_running(&id));
+    let running = assistant.is_running(&id);
+    view["running"] = json!(running);
+    if !running {
+        let next = next_steps(db, assistant, &folder, &id, patch, &view).unwrap_or_default();
+        if !next.is_empty() {
+            view["next"] = json!(next);
+        }
+    }
     Ok(view)
+}
+
+/// What the panel offers under the conversation's last reply: what in the budget is waiting
+/// to be done that the assistant can help with. Each is a button's words and the message it
+/// sends. They come from the budget by rule, not from the model: overspent categories in the
+/// month the user last asked about, spending without a category, and imports waiting for
+/// approval. Nothing is offered while a card waits (the card is the next step), or for what
+/// the reply itself just did.
+fn next_steps(db: &Database, assistant: &Assistant, folder: &Path, id: &str, patch: Option<Patch>, view: &Value) -> Result<Vec<Value>, String> {
+    let Some(last) = view["entries"].as_array().and_then(|e| e.last()).filter(|e| e["kind"] == "assistant") else { return Ok(vec![]) };
+    let (waiting, month) = assistant.peek(folder, id, |t| {
+        let month = t.items.iter().rev().find_map(|i| match i {
+            Item::User { sent_with: Some(with), .. } if !with.month.is_empty() => Some(with.month.clone()),
+            _ => None,
+        });
+        (t.proposals.iter().any(|p| matches!(p.status, Status::Proposed | Status::Undone) && !p.made()), month)
+    })?;
+    if waiting {
+        return Ok(vec![]);
+    }
+    let month = month.unwrap_or_else(|| chrono::Local::now().format("%Y-%m").to_string());
+    let stamp = budget_stamp(db, &patch)?;
+    let counts = {
+        let known = lock(&assistant.counted).clone();
+        match known.filter(|(at, of, _)| *at == stamp && *of == month) {
+            Some((_, _, counts)) => counts,
+            None => {
+                let counts = db.read(patch, |b| {
+                    let names = tools::Names::new(b);
+                    let overspent = crate::engine::calculate(b, &month)?.categories.iter().filter(|c| c.available < 0).count();
+                    let uncategorized = b.transactions.iter().filter(|t| names.needs_category(t)).count();
+                    let unapproved = b.transactions.iter().filter(|t| t.extra.get("approved") == Some(&json!(false))).count();
+                    Ok([overspent, uncategorized, unapproved])
+                })?;
+                *lock(&assistant.counted) = Some((stamp, month.clone(), counts));
+                counts
+            }
+        }
+    };
+    let used = |tool: &str| last["tools"].as_array().is_some_and(|tools| tools.iter().any(|t| t == tool));
+    let [overspent, uncategorized, unapproved] = counts;
+    let mut steps = vec![];
+    if overspent > 0 && !used("propose_budget_moves") && !used("propose_auto_assign") {
+        steps.push(json!({ "id": "cover", "text": t!("Cover {n|# overspent category|# overspent categories}", n = overspent), "prompt": t!("Cover my overspent categories this month.") }));
+    }
+    if uncategorized > 0 && !used("propose_transaction_edits") {
+        steps.push(json!({ "id": "categorize", "text": t!("Categorize {n|# transaction|# transactions}", n = uncategorized), "prompt": t!("Categorize my transactions that have no category yet.") }));
+    }
+    if unapproved > 0 && !used("propose_transaction_edits") {
+        steps.push(json!({ "id": "review", "text": t!("Review {n|# imported transaction|# imported transactions}", n = unapproved), "prompt": t!("Help me review the imported transactions waiting for approval.") }));
+    }
+    steps.truncate(2);
+    Ok(steps)
 }
 
 /// What tells one state of the budget from another, cheaply: the saved budget's token and the
@@ -861,16 +924,24 @@ pub fn assistant_send(
         account: screen.account_id.as_deref().filter(|a| names.accounts.contains_key(a)).map(|a| names.account(a)),
         category: screen.category_id.as_deref().filter(|c| names.categories.contains_key(c)).map(|c| names.category(Some(c))),
         transactions: budget.transactions.iter().filter(|t| screen.selected.contains(&t.id)).count(),
+        selected: budget.transactions.iter().filter(|t| screen.selected.contains(&t.id)).map(|t| t.id.clone()).collect(),
         import: import.is_some(),
     };
     assistant.with_thread(&folder, &id, |t| {
         history::settle(&mut t.items);
         let stopped = matches!(t.items.last(), Some(Item::Stopped));
         settle_start(t, screen.bank_texts);
+        // A question the assistant asked is answered by this message, tapped or typed.
+        for asked in t.proposals.iter_mut().filter(|p| p.kind == "question" && p.status == Status::Proposed) {
+            asked.status = Status::Applied;
+        }
         let earlier: Vec<String> = t
             .proposals
             .iter()
+            .filter(|p| p.kind != "question")
             .map(|p| match p.choices() {
+                // A report or a file was made, not proposed.
+                _ if p.made() => format!("\u{201c}{}\u{201d} {}", p.title, if p.status == Status::Discarded { "removed by the user" } else { "made for the user" }),
                 Some(choices) => format!("\u{201c}{}\u{201d} {} ({choices})", p.title, status_word(p.status)),
                 None => format!("\u{201c}{}\u{201d} {}", p.title, status_word(p.status)),
             })
@@ -1647,7 +1718,7 @@ mod tests {
         let mut b = urbudget_core::test_support::sample();
         let bought = |id: &str, payee: &str| urbudget_core::domain::Transaction { id: id.into(), payee: payee.into(), ..urbudget_core::test_support::purchase() };
         b.transactions = vec![bought("a", "Shop"), bought("b", "Bakery")];
-        let memo = |id: &str| proposals::Edit { id: id.into(), amount: None, previous_amount: None, category: None, payee: None, memo: Some("October".into()), cleared: None, approve: false, flag: None, unsure: false };
+        let memo = |id: &str| proposals::Edit { id: id.into(), amount: None, previous_amount: None, category: None, payee: None, memo: Some("October".into()), cleared: None, approve: false, flag: None, unsure: false, ..Default::default() };
         let both = proposals::build(proposals::Change::Edits { edits: vec![memo("a"), memo("b")], rules: vec![] }, "Note two purchases".into(), &b).unwrap();
         assert_eq!(both.card.rows.len(), 2);
         b.transactions.remove(0);

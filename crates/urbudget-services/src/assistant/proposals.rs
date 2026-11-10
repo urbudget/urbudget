@@ -23,7 +23,7 @@ pub struct Move {
     pub to: Option<String>,
     pub amount: i64,
 }
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Edit {
     pub id: String,
@@ -49,8 +49,18 @@ pub struct Edit {
     pub flag: Option<Option<String>>,
     #[serde(default)]
     pub unsure: bool,
+    /// Another day, YYYY-MM-DD.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub date: Option<String>,
+    /// Another account for it to be in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
+    /// Its parts in place of the ones it has, as (category, amount, memo). They add up to its
+    /// amount (the new one, when that changes too).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub splits: Option<Vec<(Option<String>, i64, String)>>,
 }
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct NewTransaction {
     /// Chosen once, so applying later makes the same records the card showed.
@@ -62,6 +72,97 @@ pub struct NewTransaction {
     pub cleared: bool,
     /// (category, amount, memo); a None category is Ready to Assign.
     pub splits: Vec<(Option<String>, i64, String)>,
+    /// The other account, when it's a transfer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transfer: Option<String>,
+}
+
+/// One change to the categories or their groups.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "op", rename_all = "camelCase")]
+pub enum CategoryOp {
+    /// `id` is chosen when it's proposed, so a target in the same proposal can name it.
+    Add { id: String, name: String, group: String },
+    Rename { id: String, name: String },
+    Move { id: String, group: String },
+    Hide { id: String, hidden: bool },
+    RenameGroup { from: String, to: String },
+    /// A target: "setAside" or "refill" each month, a "balance" to keep, or a balance "byDate"
+    /// (`by`). No `amount` removes it. `since` is the month it's set in, YYYY-MM.
+    Target { id: String, amount: Option<i64>, kind: String, by: Option<String>, since: String },
+}
+
+/// One change to the scheduled transactions.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "op", rename_all = "camelCase")]
+pub enum ScheduleOp {
+    /// A new schedule, whole, as the budget keeps them.
+    Add { schedule: Value },
+    #[serde(rename_all = "camelCase")]
+    Change {
+        id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        amount: Option<i64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        payee: Option<String>,
+        /// Some(None) is Ready to Assign.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        category: Option<Option<String>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        frequency: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        next_date: Option<String>,
+    },
+    Pause { id: String, paused: bool },
+    /// Enters the one that's due next as a transaction.
+    Enter { id: String },
+    /// Passes over the one that's due next.
+    Skip { id: String },
+}
+
+/// How often a schedule repeats, as a card says it.
+pub fn frequency_label(frequency: &str) -> String {
+    match frequency {
+        "never" => t!("once"),
+        "daily" => t!("every day"),
+        "weekly" => t!("every week"),
+        "everyOtherWeek" => t!("every other week"),
+        "twiceAMonth" => t!("twice a month"),
+        "every4Weeks" => t!("every 4 weeks"),
+        "monthly" => t!("every month"),
+        "everyOtherMonth" => t!("every other month"),
+        "every3Months" => t!("every 3 months"),
+        "every4Months" => t!("every 4 months"),
+        "twiceAYear" => t!("twice a year"),
+        "yearly" => t!("every year"),
+        "everyOtherYear" => t!("every other year"),
+        other => other.to_owned(),
+    }
+}
+pub const FREQUENCIES: [&str; 13] = [
+    "never", "daily", "weekly", "everyOtherWeek", "twiceAMonth", "every4Weeks", "monthly", "everyOtherMonth", "every3Months", "every4Months", "twiceAYear", "yearly",
+    "everyOtherYear",
+];
+/// A target's kind, as a card says it.
+fn target_label(kind: &str) -> String {
+    match kind {
+        "refill" => t!("refill up to, each month"),
+        "balance" => t!("a balance to keep"),
+        "byDate" => t!("a balance by a date"),
+        _ => t!("set aside each month"),
+    }
+}
+pub const TARGETS: [&str; 4] = ["setAside", "refill", "balance", "byDate"];
+
+fn schedule_mut<'a>(b: &'a mut Budget, id: &str) -> Result<&'a mut Value, String> {
+    b.extra
+        .get_mut("schedules")
+        .and_then(Value::as_array_mut)
+        .and_then(|list| list.iter_mut().find(|s| s["id"] == id))
+        .ok_or_else(|| t!("A schedule in this proposal was deleted."))
+}
+fn category_mut<'a>(b: &'a mut Budget, id: &str) -> Result<&'a mut Category, String> {
+    b.categories.iter_mut().find(|c| c.id == id).ok_or_else(|| t!("A category in this proposal was deleted."))
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -90,6 +191,12 @@ pub enum Change {
     Payees { renames: Vec<Rename>, rules: Vec<Rule> },
     /// Notes the assistant keeps for the budget (`notes`): ones to keep and ones to forget.
     Notes { add: Vec<String>, remove: Vec<String> },
+    /// Categories and their groups: added, renamed, moved, hidden, and their targets.
+    Categories { ops: Vec<CategoryOp> },
+    /// Scheduled transactions: added, changed, paused, entered or skipped.
+    Schedules { ops: Vec<ScheduleOp> },
+    /// Transactions the user attached to their message, deleted.
+    Delete { ids: Vec<String> },
 }
 
 /// Where the notes the assistant keeps are, in the budget's extras: a list of sentences.
@@ -365,7 +472,7 @@ impl Proposal {
     /// A report, a spreadsheet or a converted file: something the assistant made, to open and
     /// save, not a change to apply.
     pub fn made(&self) -> bool {
-        matches!(self.kind.as_str(), "report" | "spreadsheet" | "import")
+        matches!(self.kind.as_str(), "report" | "spreadsheet" | "import" | "figures")
     }
     /// Waiting on the user, and a change to the budget: what's kept up to date with it.
     pub fn waiting_change(&self) -> bool {
@@ -446,6 +553,9 @@ impl Change {
             Change::Edits { .. } | Change::Add { .. } => "transactions",
             Change::Payees { .. } => "payees",
             Change::Notes { .. } => "notes",
+            Change::Categories { .. } => "categories",
+            Change::Schedules { .. } => "schedules",
+            Change::Delete { .. } => "delete",
         }
     }
     /// The budget after the change, or why it can't be made.
@@ -480,11 +590,16 @@ impl Change {
                         .iter_mut()
                         .find(|t| t.id == e.id)
                         .ok_or_else(|| t!("A transaction in this proposal was deleted."))?;
+                    // A reconciled transaction stays in the account and on the day its balance was
+                    // checked against.
+                    if t.status == Cleared::Reconciled && (e.date.is_some() || e.account.is_some()) {
+                        return Err(t!("{payee} on {date} is reconciled, so its date and account stay as they are.", payee = t.payee, date = t.date));
+                    }
                     if let Some(amount) = e.amount {
                         if amount == 0 {
                             return Err(t!("Enter an amount other than zero."));
                         }
-                        if t.splits.len() > 1 || t.splits.iter().any(|s| ledger::transfer(s).is_some()) {
+                        if e.splits.is_none() && (t.splits.len() > 1 || t.splits.iter().any(|s| ledger::transfer(s).is_some())) {
                             return Err(t!("{payee} on {date} has split amounts. Edit its splits in the register so they add up to the new total.", payee = t.payee, date = t.date));
                         }
                         if e.previous_amount.is_some_and(|was| t.amount != was && t.amount != amount) {
@@ -493,9 +608,28 @@ impl Change {
                         t.amount = amount;
                         // Whole transfers have no category within the budget, and one when
                         // crossing its edge. A normal transaction has its one category split.
-                        if let Some(split) = t.splits.first_mut() {
+                        if let Some(split) = t.splits.first_mut().filter(|_| e.splits.is_none()) {
                             split.amount = amount;
                         }
+                    }
+                    if let Some(parts) = &e.splits {
+                        if t.transfer_account_id.is_some() {
+                            return Err(t!("{payee} on {date} is a transfer, which has no categories to split.", payee = t.payee, date = t.date));
+                        }
+                        let total: i64 = parts.iter().map(|p| p.1).sum();
+                        if parts.is_empty() || total != t.amount {
+                            return Err(t!("The parts for {payee} on {date} add up to {total}, not {amount}.", payee = t.payee, date = t.date, total = money(total), amount = money(t.amount)));
+                        }
+                        t.splits = parts.iter().map(|(category, amount, memo)| part(category, *amount, memo)).collect();
+                    }
+                    if let Some(date) = &e.date {
+                        t.date = date.clone();
+                    }
+                    if let Some(account) = &e.account {
+                        if t.transfer_account_id.as_ref() == Some(account) {
+                            return Err(t!("{payee} on {date} is already a transfer with that account.", payee = t.payee, date = t.date));
+                        }
+                        t.account_id = account.clone();
                     }
                     if let Some(category) = &e.category {
                         if t.transfer_account_id.is_some() || t.splits.len() != 1 || ledger::transfer(&t.splits[0]).is_some() {
@@ -540,21 +674,9 @@ impl Change {
                         memo: n.memo.clone(),
                         amount: n.amount,
                         status: if n.cleared { Cleared::Cleared } else { Cleared::Uncleared },
-                        splits: n
-                            .splits
-                            .iter()
-                            .map(|(category, amount, memo)| Split {
-                                extra: if memo.is_empty() {
-                                    Default::default()
-                                } else {
-                                    serde_json::Map::from_iter([("memo".to_string(), json!(memo))]).into()
-                                },
-                                category_id: category.clone(),
-                                amount: *amount,
-                            })
-                            .collect(),
-                        transfer_account_id: None,
-                        transfer_status: None,
+                        splits: n.splits.iter().map(|(category, amount, memo)| part(category, *amount, memo)).collect(),
+                        transfer_account_id: n.transfer.clone(),
+                        transfer_status: n.transfer.as_ref().map(|_| Cleared::Uncleared),
                     };
                     workflows::apply_payee_rules(&b, &mut t);
                     ids.insert(t.id.clone());
@@ -567,6 +689,134 @@ impl Change {
                     b = workflows::apply(b, &json!({ "type": "renamePayee", "from": r.from, "to": r.to }))?;
                 }
                 add_rules(&mut b, rules);
+            }
+            Change::Categories { ops } => {
+                for op in ops {
+                    match op {
+                        CategoryOp::Add { id, name, group } => {
+                            if b.categories.iter().any(|c| c.group == *group && c.name.to_lowercase() == name.to_lowercase()) {
+                                return Err(t!("{group} already has a category named {name}.", group, name));
+                            }
+                            b.categories.push(Category { extra: Default::default(), id: id.clone(), name: name.clone(), group: group.clone(), target: 0 });
+                            b = workflows::apply(b, &json!({ "type": "organizeCategory", "id": id, "group": group }))?;
+                        }
+                        CategoryOp::Rename { id, name } => category_mut(&mut b, id)?.name = name.clone(),
+                        CategoryOp::Move { id, group } => {
+                            category_mut(&mut b, id)?;
+                            b = workflows::apply(b, &json!({ "type": "organizeCategory", "id": id, "group": group }))?;
+                        }
+                        CategoryOp::Hide { id, hidden } => {
+                            let c = category_mut(&mut b, id)?;
+                            if *hidden {
+                                c.extra.insert("hidden".into(), json!(true));
+                            } else {
+                                c.extra.remove("hidden");
+                            }
+                        }
+                        CategoryOp::RenameGroup { from, to } => {
+                            if !b.categories.iter().any(|c| c.group == *from) {
+                                return Err(t!("A group in this proposal is gone."));
+                            }
+                            b = workflows::apply(b, &json!({ "type": "renameGroup", "from": from, "to": to }))?;
+                        }
+                        CategoryOp::Target { id, amount, kind, by, since } => {
+                            let c = category_mut(&mut b, id)?;
+                            if c.payment_account().is_some() {
+                                return Err(t!("{name} pays a credit card: its target is set from the card.", name = c.name));
+                            }
+                            match amount {
+                                None => {
+                                    c.target = 0;
+                                    c.extra.remove("goal");
+                                }
+                                Some(amount) => {
+                                    // The goal as the apps' own target editor writes it: an amount in
+                                    // thousandths, the month it was set, and how it's funded.
+                                    let mut goal = c.extra.get("goal").and_then(Value::as_object).cloned().unwrap_or_default();
+                                    let (kind_of, whole) = match kind.as_str() {
+                                        "refill" => ("NEED", json!(false)),
+                                        "balance" => ("TB", Value::Null),
+                                        "byDate" => ("TBD", Value::Null),
+                                        _ => ("NEED", json!(true)),
+                                    };
+                                    goal.insert("goal_type".into(), json!(kind_of));
+                                    goal.insert("goal_needs_whole_amount".into(), whole);
+                                    goal.insert("goal_target".into(), json!(amount * 10));
+                                    goal.entry("goal_creation_month").or_insert(json!(format!("{since}-01")));
+                                    if kind_of == "NEED" {
+                                        goal.insert("goal_cadence".into(), json!(1));
+                                        goal.insert("goal_cadence_frequency".into(), json!(1));
+                                    }
+                                    match by.as_ref().filter(|_| kind_of == "TBD") {
+                                        Some(date) => goal.insert("goal_target_date".into(), json!(date)),
+                                        None => goal.remove("goal_target_date"),
+                                    };
+                                    goal.remove("goal_snoozed_at");
+                                    c.target = *amount;
+                                    c.extra.insert("goal".into(), Value::Object(goal));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Change::Schedules { ops } => {
+                for op in ops {
+                    match op {
+                        ScheduleOp::Add { schedule } => {
+                            let list = b.extra.entry("schedules").or_insert(json!([]));
+                            list.as_array_mut().ok_or_else(|| t!("Invalid schedules: {error}", error = "not a list"))?.push(schedule.clone());
+                        }
+                        ScheduleOp::Change { id, amount, payee, category, frequency, next_date } => {
+                            let s = schedule_mut(&mut b, id)?;
+                            let name = s["transaction"]["payee"].as_str().unwrap_or_default().to_owned();
+                            let one = s["transaction"]["splits"].as_array().is_some_and(|parts| parts.len() == 1);
+                            if (amount.is_some() || category.is_some()) && !one {
+                                return Err(t!("{payee} is split between categories. Change it in Scheduled.", payee = name));
+                            }
+                            if let Some(amount) = amount {
+                                if *amount == 0 {
+                                    return Err(t!("Enter an amount other than zero."));
+                                }
+                                s["transaction"]["amount"] = json!(amount);
+                                s["transaction"]["splits"][0]["amount"] = json!(amount);
+                            }
+                            if let Some(category) = category {
+                                s["transaction"]["splits"][0]["categoryId"] = json!(category);
+                            }
+                            if let Some(payee) = payee {
+                                s["transaction"]["payee"] = json!(payee);
+                            }
+                            if let Some(frequency) = frequency {
+                                s["frequency"] = json!(frequency);
+                            }
+                            if let Some(date) = next_date {
+                                s["nextDate"] = json!(date);
+                                s["transaction"]["date"] = json!(date);
+                            }
+                        }
+                        ScheduleOp::Pause { id, paused } => schedule_mut(&mut b, id)?["paused"] = json!(paused),
+                        ScheduleOp::Enter { id } | ScheduleOp::Skip { id } => {
+                            let due = crate::schedules::read(&b)?
+                                .into_iter()
+                                .find(|s| &s.id == id)
+                                .ok_or_else(|| t!("A schedule in this proposal was deleted."))?
+                                .next_date
+                                .ok_or_else(|| t!("That schedule has nothing left to enter."))?;
+                            crate::schedules::apply(&mut b, &due, Some(id), matches!(op, ScheduleOp::Skip { .. }))?;
+                        }
+                    }
+                }
+                crate::schedules::validate_schedules(&b)?;
+            }
+            Change::Delete { ids } => {
+                for id in ids {
+                    let t = b.transactions.iter().find(|t| &t.id == id).ok_or_else(|| t!("A transaction in this proposal was deleted."))?;
+                    if t.status == Cleared::Reconciled || t.transfer_status == Some(Cleared::Reconciled) {
+                        return Err(t!("{payee} on {date} is reconciled. Delete it in the register if you mean to.", payee = t.payee, date = t.date));
+                    }
+                }
+                b.transactions.retain(|t| !ids.contains(&t.id));
             }
             Change::Notes { add, remove } => {
                 let mut kept = notes(&b);
@@ -581,6 +831,15 @@ impl Change {
         }
         validate(&b)?;
         Ok(b)
+    }
+}
+
+/// One part of a transaction: its category, amount and memo.
+fn part(category: &Option<String>, amount: i64, memo: &str) -> Split {
+    Split {
+        extra: if memo.is_empty() { Default::default() } else { serde_json::Map::from_iter([("memo".to_string(), json!(memo))]).into() },
+        category_id: category.clone(),
+        amount,
     }
 }
 
@@ -847,6 +1106,11 @@ impl Change {
                 let gone = edits.len() - kept.len();
                 (Change::Edits { edits: kept, rules: rules.clone() }, gone)
             }
+            Change::Delete { ids: wanted } => {
+                let kept: Vec<String> = wanted.iter().filter(|id| ids.contains(id.as_str())).cloned().collect();
+                let gone = wanted.len() - kept.len();
+                (Change::Delete { ids: kept }, gone)
+            }
             _ => (self.clone(), 0),
         }
     }
@@ -859,6 +1123,9 @@ impl Change {
             Change::Add { transactions, .. } => transactions.is_empty(),
             Change::Payees { renames, rules } => renames.is_empty() && rules.is_empty(),
             Change::Notes { add, remove } => add.is_empty() && remove.is_empty(),
+            Change::Categories { ops } => ops.is_empty(),
+            Change::Schedules { ops } => ops.is_empty(),
+            Change::Delete { ids } => ids.is_empty(),
         }
     }
     /// One new transaction, shown by its splits.
@@ -1007,6 +1274,24 @@ impl Change {
                 add: add.iter().enumerate().filter(|(i, _)| !r.skips(&format!("n:+{i}"))).map(|(_, n)| n.clone()).collect(),
                 remove: remove.iter().enumerate().filter(|(i, _)| !r.skips(&format!("n:-{i}"))).map(|(_, n)| n.clone()).collect(),
             },
+            Change::Categories { ops } => {
+                // A new category left out takes what was to be done with it along.
+                let left: Vec<&str> = ops.iter().enumerate().filter(|(i, _)| r.skips(&format!("g:{i}"))).filter_map(|(_, op)| match op {
+                    CategoryOp::Add { id, .. } => Some(id.as_str()),
+                    _ => None,
+                }).collect();
+                fn of(op: &CategoryOp) -> Option<&str> {
+                    match op {
+                        CategoryOp::Rename { id, .. } | CategoryOp::Move { id, .. } | CategoryOp::Hide { id, .. } | CategoryOp::Target { id, .. } => Some(id.as_str()),
+                        _ => None,
+                    }
+                }
+                Change::Categories {
+                    ops: ops.iter().enumerate().filter(|(i, op)| !r.skips(&format!("g:{i}")) && !of(op).is_some_and(|id| left.contains(&id))).map(|(_, op)| op.clone()).collect(),
+                }
+            }
+            Change::Schedules { ops } => Change::Schedules { ops: ops.iter().enumerate().filter(|(i, _)| !r.skips(&format!("h:{i}"))).map(|(_, op)| op.clone()).collect() },
+            Change::Delete { ids } => Change::Delete { ids: ids.iter().filter(|id| !r.skips(&format!("t:{id}"))).cloned().collect() },
         })
     }
 }
@@ -1210,6 +1495,16 @@ fn card_as(change: &Change, before: &Budget, after: &Budget, single: Option<bool
                 if let Some(f) = &e.flag {
                     parts.push(f.as_ref().map_or_else(|| t!("Remove flag"), |f| flag_label(f)));
                 }
+                if e.splits.is_some() {
+                    let said: Vec<String> = new.splits.iter().map(|s| format!("{} {}", names.category_shown(s.category_id.as_deref()), money(s.amount.abs()))).collect();
+                    parts.push(t!("Split: {parts}", parts = said.join(comma())));
+                }
+                if e.date.is_some() && new.date != old.date {
+                    parts.push(t!("Date: {from} \u{2192} {to}", from = short_date(&old.date), to = short_date(&new.date)));
+                }
+                if e.account.is_some() && new.account_id != old.account_id {
+                    parts.push(t!("Account: {from} \u{2192} {to}", from = was.account(&old.account_id), to = names.account(&new.account_id)));
+                }
                 let rule = rules.iter().any(|r| new.payee.to_lowercase().contains(&r.matching.to_lowercase()));
                 rows.push(Row {
                     label: format!("{} · {}", new.payee, short_date(&new.date)),
@@ -1265,7 +1560,7 @@ fn card_as(change: &Change, before: &Budget, after: &Budget, single: Option<bool
                         amount: Some(t.amount),
                         key: Some(format!("t:{}", n.id)),
                         edit: Some(RowEdit {
-                            category: t.splits.len() == 1,
+                            category: t.splits.len() == 1 && t.transfer_account_id.is_none(),
                             category_id: (t.splits.len() == 1).then(|| t.splits[0].category_id.clone()).flatten(),
                             amount: true,
                         }),
@@ -1303,6 +1598,125 @@ fn card_as(change: &Change, before: &Budget, after: &Budget, single: Option<bool
                 rows.push(rule_row(r, &names));
             }
             Ok(Card { kicker: t!("Proposal · Payees"), rows, ..Card::default() })
+        }
+        Change::Categories { ops } => {
+            let was = Names::new(before);
+            let mut rows = vec![];
+            let mut touched = vec![];
+            for (i, op) in ops.iter().enumerate() {
+                let key = Some(format!("g:{i}"));
+                let name = |id: &str| names.category(Some(id));
+                rows.push(match op {
+                    CategoryOp::Add { name, group, .. } => Row { label: t!("New category: {name}", name), detail: Some(group.clone()), key, ..Row::default() },
+                    CategoryOp::Rename { id, name } => Row { label: t!("{from} → {to}", from = was.category(Some(id)), to = name), detail: Some(t!("rename")), key, ..Row::default() },
+                    CategoryOp::Move { id, group } => {
+                        let from = before.categories.iter().find(|c| &c.id == id).map_or_else(String::new, |c| c.group.clone());
+                        Row { label: name(id), detail: Some(t!("{from} → {to}", from, to = group)), key, ..Row::default() }
+                    }
+                    CategoryOp::Hide { id, hidden } => Row { label: name(id), badge: Some(if *hidden { t!("hide") } else { t!("show") }), key, ..Row::default() },
+                    CategoryOp::RenameGroup { from, to } => Row { label: t!("Group: {from} → {to}", from, to), detail: Some(t!("rename")), key, ..Row::default() },
+                    CategoryOp::Target { id, amount: Some(amount), kind, by, .. } => Row {
+                        label: name(id),
+                        detail: Some(match by.as_ref().filter(|_| kind == "byDate") {
+                            Some(date) => t!("Target: {kind}, {date}", kind = target_label(kind), date = short_date(date)),
+                            None => t!("Target: {kind}", kind = target_label(kind)),
+                        }),
+                        amount: Some(*amount),
+                        key,
+                        ..Row::default()
+                    },
+                    CategoryOp::Target { id, amount: None, .. } => Row { label: name(id), badge: Some(t!("remove target")), key, ..Row::default() },
+                });
+                if let CategoryOp::Rename { id, .. } | CategoryOp::Move { id, .. } | CategoryOp::Hide { id, .. } | CategoryOp::Target { id, .. } | CategoryOp::Add { id, .. } = op {
+                    if !touched.contains(id) {
+                        touched.push(id.clone());
+                    }
+                }
+            }
+            Ok(Card { kicker: t!("Proposal · Categories"), rows, highlight: Highlight { categories: touched, ..Highlight::default() }, ..Card::default() })
+        }
+        Change::Schedules { ops } => {
+            let existing = crate::schedules::read(before).unwrap_or_default();
+            let mut rows = vec![];
+            for (i, op) in ops.iter().enumerate() {
+                let key = Some(format!("h:{i}"));
+                let of = |id: &str| existing.iter().find(|s| s.id == id).ok_or_else(|| t!("A schedule in this proposal was deleted."));
+                rows.push(match op {
+                    ScheduleOp::Add { schedule } => {
+                        let s: crate::schedules::Schedule = serde_json::from_value(schedule.clone()).map_err(|e| t!("Invalid schedules: {error}", error = e))?;
+                        Row {
+                            label: format!("{} · {}", s.transaction.payee, frequency_label(&s.frequency)),
+                            detail: Some(t!("from {date} · {category}", date = short_date(&s.anchor_date), category = names.category_label_shown(&s.transaction))),
+                            amount: Some(s.transaction.amount),
+                            badge: Some(t!("new")),
+                            key,
+                            ..Row::default()
+                        }
+                    }
+                    ScheduleOp::Change { id, amount, payee, category, frequency, next_date } => {
+                        let s = of(id)?;
+                        let mut parts = vec![];
+                        if let Some(payee) = payee {
+                            parts.push(t!("Payee: {from} \u{2192} {to}", from = s.transaction.payee, to = payee));
+                        }
+                        if let Some(category) = category {
+                            parts.push(t!("{from} \u{2192} {to}", from = names.category_label_shown(&s.transaction), to = names.category_shown(category.as_deref())));
+                        }
+                        if let Some(frequency) = frequency {
+                            parts.push(t!("{from} \u{2192} {to}", from = frequency_label(&s.frequency), to = frequency_label(frequency)));
+                        }
+                        if let Some(date) = next_date {
+                            parts.push(t!("next on {date}", date = short_date(date)));
+                        }
+                        Row {
+                            label: s.transaction.payee.clone(),
+                            detail: (!parts.is_empty()).then(|| parts.join(" · ")),
+                            amount: Some(amount.unwrap_or(s.transaction.amount)),
+                            before: amount.map(|_| s.transaction.amount),
+                            after: *amount,
+                            key,
+                            ..Row::default()
+                        }
+                    }
+                    ScheduleOp::Pause { id, paused } => {
+                        let s = of(id)?;
+                        Row { label: s.transaction.payee.clone(), amount: Some(s.transaction.amount), badge: Some(if *paused { t!("pause") } else { t!("resume") }), key, ..Row::default() }
+                    }
+                    ScheduleOp::Enter { id } | ScheduleOp::Skip { id } => {
+                        let s = of(id)?;
+                        let due = s.next_date.as_deref().map(short_date).unwrap_or_default();
+                        Row {
+                            label: format!("{} · {due}", s.transaction.payee),
+                            amount: Some(s.transaction.amount),
+                            badge: Some(if matches!(op, ScheduleOp::Enter { .. }) { t!("enter") } else { t!("skip") }),
+                            key,
+                            ..Row::default()
+                        }
+                    }
+                });
+            }
+            Ok(Card { kicker: t!("Proposal · Scheduled"), rows, ..Card::default() })
+        }
+        Change::Delete { ids } => {
+            let was = Names::new(before);
+            let rows: Vec<Row> = ids
+                .iter()
+                .filter_map(|id| before.transactions.iter().find(|t| &t.id == id))
+                .map(|t| Row {
+                    label: format!("{} · {}", t.payee, short_date(&t.date)),
+                    detail: Some(format!("{} · {}", was.account(&t.account_id), was.category_label_shown(t))),
+                    amount: Some(t.amount),
+                    key: Some(format!("t:{}", t.id)),
+                    ..Row::default()
+                })
+                .collect();
+            Ok(Card {
+                kicker: t!("Proposal · Delete"),
+                rows,
+                warning: Some(t!("These leave the budget. Undo brings them back while this is its latest change.")),
+                highlight: Highlight { transactions: ids.clone(), ..Highlight::default() },
+                ..Card::default()
+            })
         }
         Change::Notes { add, remove } => {
             let row = |(i, note): (usize, &String), sign: char, badge: String| Row { label: note.clone(), badge: Some(badge), key: Some(format!("n:{sign}{i}")), ..Row::default() };
@@ -1457,6 +1871,37 @@ pub fn build_import(
     })
 }
 
+/// A question the assistant asks with its answers as buttons: the user's pick is their next
+/// message. Kept as a card so it's still there when the conversation is opened again.
+pub fn build_question(question: String, options: Vec<String>) -> Proposal {
+    let rows: Vec<Row> = options.iter().enumerate().map(|(i, o)| Row { label: o.clone(), key: Some(format!("o:{i}")), ..Row::default() }).collect();
+    let card = Card { kicker: t!("Question"), rows, ..Card::default() };
+    Proposal {
+        id: new_id("p"),
+        summary: json!({ "question": question, "options": options }),
+        title: question,
+        kind: "question".into(),
+        card,
+        ..Proposal::default()
+    }
+}
+
+/// Figures the assistant looked up, as a card to read at a glance: a row for each, a total
+/// when it's a sum, and what the app can go to from it.
+pub fn build_figures(title: String, period: Option<String>, rows: Vec<Row>, total: bool, highlight: Highlight) -> Proposal {
+    let sum: i64 = rows.iter().filter_map(|r| r.amount).sum();
+    let card = Card {
+        kicker: t!("Figures"),
+        stats: period.iter().map(|p| Stat { label: t!("Period"), text: Some(p.clone()), amount: None }).collect(),
+        total: total.then(|| Row { label: t!("Total"), amount: Some(sum), ..Row::default() }),
+        rows,
+        highlight,
+        ..Card::default()
+    };
+    let summary = summary(&title, &card);
+    Proposal { id: new_id("p"), title, kind: "figures".into(), card, summary, ..Proposal::default() }
+}
+
 /// A card for fixes to a bank file being imported: each fix, with why.
 pub fn build_fix(fixes: crate::bank_statement::Fixes, rows: Vec<Row>, note: Option<String>) -> Proposal {
     let count = fixes.fields.len() + fixes.include.len() + fixes.structure.is_some() as usize;
@@ -1537,6 +1982,7 @@ mod tests {
                 approve: true,
                 flag: None,
                 unsure: false,
+                ..Default::default()
             }],
             rules: vec![Rule { id: "r1".into(), matching: "bakery".into(), payee: String::new(), category: Some("coffee".into()) }],
         };
@@ -1561,6 +2007,7 @@ mod tests {
                 amount: -18640,
                 cleared: false,
                 splits: vec![(Some("groceries".into()), -14290, String::new()), (Some("dining".into()), -4350, String::new())],
+                ..Default::default()
             }],
             from_file: true,
         };
@@ -1674,8 +2121,8 @@ mod tests {
         let b = sample();
         let change = Change::Edits {
             edits: vec![
-                Edit { id: "t1".into(), amount: None, previous_amount: None, category: None, payee: None, memo: Some("team lunch".into()), cleared: None, approve: false, flag: None, unsure: false },
-                Edit { id: "t2".into(), amount: None, previous_amount: None, category: Some(Some("coffee".into())), payee: Some("Bakery".into()), memo: None, cleared: None, approve: true, flag: None, unsure: true },
+                Edit { id: "t1".into(), amount: None, previous_amount: None, category: None, payee: None, memo: Some("team lunch".into()), cleared: None, approve: false, flag: None, unsure: false, ..Default::default() },
+                Edit { id: "t2".into(), amount: None, previous_amount: None, category: Some(Some("coffee".into())), payee: Some("Bakery".into()), memo: None, cleared: None, approve: true, flag: None, unsure: true, ..Default::default() },
             ],
             rules: vec![Rule { id: "r1".into(), matching: "bakery".into(), payee: String::new(), category: Some("coffee".into()) }],
         };
@@ -1725,6 +2172,7 @@ mod tests {
             edits: vec![Edit {
                 id: "t1".into(), amount: Some(amount), previous_amount: Some(b.transactions[0].amount),
                 category: None, payee: None, memo: None, cleared: None, approve: false, flag: None, unsure: true,
+                ..Default::default()
             }],
             rules: vec![],
         }, "Correct the amount".into(), b).unwrap()
@@ -1803,6 +2251,7 @@ mod tests {
                 amount: -18640,
                 cleared: false,
                 splits: vec![(Some("groceries".into()), -14290, String::new()), (Some("dining".into()), -4350, String::new())],
+                ..Default::default()
             }],
             from_file: true,
         };
@@ -1837,6 +2286,7 @@ mod tests {
             amount,
             cleared: false,
             splits: vec![(Some("groceries".into()), amount, String::new())],
+            ..Default::default()
         };
         let change = Change::Add { account: "checking".into(), transactions: vec![new("a", -1000), new("b", -2000)], from_file: false };
         let p = build(change, "Two".into(), &b).unwrap();

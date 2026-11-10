@@ -24,6 +24,9 @@ pub struct SentWith {
     pub category: Option<String>,
     /// How many selected transactions were attached.
     pub transactions: usize,
+    /// Which ones, by id: the only transactions a deletion can be proposed for. Not in the view.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub selected: Vec<String>,
     /// The bank file on the Import page went too.
     pub import: bool,
 }
@@ -259,7 +262,9 @@ pub struct ProposalView<'a> {
 /// - Failed: "askAgain" (ask the assistant for a new version) and "discard".
 /// - Set aside or replaced: "restore".
 /// - Something made: "preview", "print" and "excel" for a report; "open" and "save" for a
-///   spreadsheet; "reviewImport" and "saveCsv" for a converted file; "remove" for each.
+///   spreadsheet; "reviewImport" and "saveCsv" for a converted file; "remove" for each, and for
+///   figures.
+/// - A question: "answer", until the user's next message.
 /// - "show", where the card names categories or transactions the app can go to.
 fn actions(p: &Proposal, sheets: usize) -> Vec<&'static str> {
     use Status::*;
@@ -270,6 +275,9 @@ fn actions(p: &Proposal, sheets: usize) -> Vec<&'static str> {
         ("spreadsheet", _) => vec!["open", "save", "remove"],
         ("import", Applied) => vec!["saveCsv"],
         ("import", _) => vec!["reviewImport", "saveCsv", "remove"],
+        ("figures", _) => vec!["remove"],
+        ("question", Proposed) => vec!["answer"],
+        ("question", _) => vec![],
         (_, Failed) => vec!["askAgain", "discard"],
         ("fix" | "bankTexts", Applied) => vec![],
         ("fix", _) => vec!["applyToImport", "askChanges", "discard"],
@@ -281,10 +289,14 @@ fn actions(p: &Proposal, sheets: usize) -> Vec<&'static str> {
         let at = actions.len() - 1;
         actions.insert(at, "useOriginal");
     }
-    // New transactions are there to show only once they're added.
-    let there = p.status == Applied || !matches!(p.change, Some(super::proposals::Change::Add { .. }));
+    // New transactions are there to show only once they're added, and deleted ones only until.
+    let there = match &p.change {
+        Some(super::proposals::Change::Add { .. }) => p.status == Applied,
+        Some(super::proposals::Change::Delete { .. }) => p.status != Applied,
+        _ => true,
+    };
     let names = !p.card.highlight.categories.is_empty() || !p.card.highlight.transactions.is_empty();
-    if names && there && p.change.is_some() && matches!(p.status, Proposed | Undone | Applied) {
+    if names && there && (p.change.is_some() || p.kind == "figures") && matches!(p.status, Proposed | Undone | Applied) {
         actions.push("show");
     }
     actions
@@ -358,6 +370,9 @@ pub fn view(t: &Thread, provider: Provider) -> Value {
                 let mut entry = json!({ "kind": "user", "text": text, "attachments": attachments });
                 if let Some(with) = sent_with {
                     entry["with"] = json!(with);
+                    if let Some(shown) = entry["with"].as_object_mut() {
+                        shown.remove("selected");
+                    }
                 }
                 entries.push(entry);
             }

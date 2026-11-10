@@ -505,3 +505,28 @@ on a screen on any of the three.
 - 2.10: a card of new transactions names them, so the app can show them once they're added.
 - Deleting every conversation leaves a file chosen for a message that isn't sent yet.
 
+**Phase 4, the core** (10 November 2026; 249 unit tests passing, the loop's among them):
+
+- 4.1: `propose_transactions` takes `transferAccountId`, and a transfer is one transaction
+  between two accounts. `propose_transaction_edits` takes a date and an account; a reconciled
+  transaction keeps both.
+- 4.2: `ask_user` makes a question card whose rows are the answers. The user's next message
+  answers it, tapped or typed, and the card is done.
+- 4.3: `propose_category_changes` (`Change::Categories`): add, rename, move, hide, rename a
+  group, and set or remove a target. Targets are the four kinds the apps' own editor writes,
+  each month only. A new category left out on the card takes its target with it. Deleting a
+  category stays in the app.
+- 4.4: an edit's `splits` put a transaction's parts in place of the ones it has; they must
+  add up to its amount.
+- 4.5: `propose_schedule_changes` (`Change::Schedules`): add, change, pause, enter and skip.
+  `get_setup` lists schedules with their ids, paused ones too. Deleting one stays in the app.
+- 4.6: `show_figures` makes a card of up to 12 rows with an optional total, and names the month
+  and categories, or the transactions, it's about, for the app to go to.
+- 4.7: a conversation's view has `next`: up to two things waiting in the budget (overspent
+  categories, spending with no category, imports waiting for approval), each a button's words
+  and the message it sends. They're counted from the budget, once per change to it.
+- 4.9: `propose_transaction_deletes` (`Change::Delete`), only for transactions attached to the
+  latest message (`SentWith.selected`, `Context.selected`). A reconciled one is refused.
+
+Not built in the core: 4.8 is the apps' own.
+
