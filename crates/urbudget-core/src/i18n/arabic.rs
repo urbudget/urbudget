@@ -966,6 +966,7 @@ pub(super) const MESSAGES: &[(&str, &str)] = &[
     ("{group} already has a category named {name}.", "في مجموعة {group} فئة باسم {name} أصلًا."),
     ("{name} pays a credit card: its target is set from the card.", "فئة {name} تسدّد بطاقة ائتمان، وهدفها يُحدَّد من البطاقة."),
     ("{payee} is split between categories. Change it in Scheduled.", "معاملة {payee} مقسَّمة بين فئات. عدّلها من المعاملات المجدولة."),
+    ("A scheduled transfer inside the budget has no category.", "التحويل المجدول داخل الميزانية ليس له فئة."),
     ("That schedule has nothing left to enter.", "لم يبقَ في هذه المعاملة المجدولة ما يُدخَل."),
     ("{payee} on {date} is reconciled. Delete it in the register if you mean to.", "معاملة {payee} بتاريخ {date} مُسوّاة. احذفها من سجل المعاملات إن كنت تقصد ذلك."),
     ("remember", "حفظ"),

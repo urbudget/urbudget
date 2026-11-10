@@ -639,6 +639,11 @@ impl<'a> Names<'a> {
     fn on_budget(&self, account: &str) -> bool {
         self.accounts.get(account).is_some_and(|a| a.on_budget())
     }
+    /// Whether a transfer between these two accounts stays on one side of the budget (both in
+    /// it, or both tracking). It then moves nothing in or out of the budget and has no category.
+    pub fn same_side(&self, account: &str, other: &str) -> bool {
+        self.on_budget(account) == self.on_budget(other)
+    }
     /// Spending in a budget account that has no category yet.
     pub fn needs_category(&self, t: &Transaction) -> bool {
         t.transfer_account_id.is_none()
@@ -1651,13 +1656,17 @@ fn propose_transactions(args: &Value, ctx: &Context) -> Result<Outcome, String> 
                 if t["splits"].as_array().is_some_and(|parts| !parts.is_empty()) {
                     return Err("A transfer isn't split between categories.".into());
                 }
+                if names.same_side(account, id) && t["categoryId"].as_str().is_some_and(|c| !c.is_empty()) {
+                    return Err(format!("A transfer between {} and {} has no category: it moves nothing in or out of the budget. Leave categoryId out.", a.name, other.name));
+                }
                 Some(id.to_owned())
             }
         };
-        // A transfer is named by its accounts; a payee is asked for everything else.
+        // A transfer is named by its accounts and has no payee, as the app's own don't: a name
+        // given for one would join the payee list. A payee is asked for everything else.
         let payee = match (arg(t, "payee"), &transfer) {
-            (Some(p), _) => truncate(p, 200),
-            (None, Some(_)) => String::new(),
+            (_, Some(_)) => String::new(),
+            (Some(p), None) => truncate(p, 200),
             (None, None) => return Err("Each transaction needs a payee.".into()),
         };
         let amount = parse_money(&t["amount"])?;
@@ -1839,14 +1848,20 @@ fn propose_schedule_changes(args: &Value, ctx: &Context) -> Result<Outcome, Stri
             Some(id) => Some(names.accounts.get(id).map(|_| id.to_owned()).ok_or_else(|| format!("No account has the id {id}."))?),
         };
         let payee = match (arg(a, "payee"), &transfer) {
-            (Some(p), _) => truncate(p, 200),
-            (None, Some(_)) => String::new(),
+            (_, Some(_)) => String::new(),
+            (Some(p), None) => truncate(p, 200),
             (None, None) => return Err("Each new schedule needs a payee.".into()),
         };
         let category = match a["categoryId"].as_str().filter(|s| !s.is_empty()) {
             Some(c) => category_or_rta(&names, c)?,
             None => None,
         };
+        // A transfer that stays on one side of the budget has no category and no parts, as
+        // the app's own don't.
+        let plain = transfer.as_ref().is_some_and(|other| names.same_side(account, other));
+        if plain && category.is_some() {
+            return Err("A repeating transfer between those two accounts has no category: it moves nothing in or out of the budget. Leave categoryId out.".into());
+        }
         let schedule = schedules::Schedule {
             extra: Default::default(),
             id: new_id("sch"),
@@ -1863,7 +1878,7 @@ fn propose_schedule_changes(args: &Value, ctx: &Context) -> Result<Outcome, Stri
                 memo: a["memo"].as_str().map(|m| truncate(m, 500)).unwrap_or_default(),
                 amount,
                 status: Cleared::Uncleared,
-                splits: vec![Split { extra: Default::default(), category_id: category, amount }],
+                splits: if plain { vec![] } else { vec![Split { extra: Default::default(), category_id: category, amount }] },
                 transfer_status: transfer.as_ref().map(|_| Cleared::Uncleared),
                 transfer_account_id: transfer,
             },
@@ -2703,6 +2718,26 @@ pub mod tests {
         let after = p.change.unwrap().run(b.clone()).unwrap();
         let t = after.transactions.last().unwrap();
         assert_eq!((t.account_id.as_str(), t.transfer_account_id.as_deref(), t.amount, t.transfer_status), ("checking", Some("card"), -50000, Some(Cleared::Uncleared)));
+        // Between two budget accounts it has no parts, as the app's own transfers don't, so the
+        // register doesn't read it as money out of Unassigned. Its card names the other account
+        // and offers no category.
+        assert!(t.splits.is_empty());
+        // Nor a payee, whatever name was given for it.
+        let named = call("propose_transactions", &json!({ "accountId": "checking", "transactions": [{ "date": "2026-10-16", "amount": -500, "payee": "Card", "transferAccountId": "card" }] }), &ctx(&b, &files));
+        assert_eq!(named.proposal.unwrap().change.unwrap().run(b.clone()).unwrap().transactions.last().unwrap().payee, "");
+        assert_eq!(p.card.rows.len(), 1);
+        assert_eq!((p.card.rows[0].label.as_str(), p.card.rows[0].amount), ("Transfer: Card", Some(-50000)));
+        assert!(p.card.rows[0].edit.as_ref().is_some_and(|e| !e.category && e.amount));
+        assert!(call("propose_transactions", &json!({ "accountId": "checking", "transactions": [{ "date": "2026-10-16", "amount": -500, "transferAccountId": "card", "categoryId": "dining" }] }), &ctx(&b, &files)).proposal.is_none());
+        // One that leaves the budget for a tracking account is spending, and keeps its category.
+        let mut wider = b.clone();
+        wider.accounts.push(Account { id: "tracking".into(), name: "Tracking".into(), kind: AccountKind::Tracking, opening_balance: 0, archived: false, extra: Default::default() });
+        let out = call("propose_transactions", &json!({ "accountId": "checking", "transactions": [{ "date": "2026-10-16", "amount": -500, "transferAccountId": "tracking", "categoryId": "dining" }] }), &ctx(&wider, &files));
+        let p2 = out.proposal.unwrap();
+        let after2 = p2.change.unwrap().run(wider.clone()).unwrap();
+        let t2 = after2.transactions.last().unwrap();
+        assert_eq!((t2.splits.len(), t2.splits[0].category_id.as_deref()), (1, Some("dining")));
+        assert_eq!(p2.card.rows[0].label, "Dining out");
         // The card's balance moves by what left the account.
         let balance = |b: &Budget, id: &str| engine::calculate(b, "2026-10").unwrap().accounts.iter().find(|a| a.id == id).unwrap().balance;
         assert_eq!(balance(&after, "card") - balance(&b, "card"), 50000);

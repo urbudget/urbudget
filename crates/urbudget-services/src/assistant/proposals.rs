@@ -154,6 +154,13 @@ fn target_label(kind: &str) -> String {
 }
 pub const TARGETS: [&str; 4] = ["setAside", "refill", "balance", "byDate"];
 
+/// A transfer between two accounts on the same side of the budget (both in it, or both
+/// tracking) moves nothing in or out of the budget. It has no category and no parts, as the
+/// app's own transfers don't; with a part, the register would read it as money out of Unassigned.
+fn plain_transfer(b: &Budget, account: &str, other: &str) -> bool {
+    let on = |id: &str| b.accounts.iter().find(|a| a.id == id).is_some_and(|a| a.on_budget());
+    on(account) == on(other)
+}
 fn schedule_mut<'a>(b: &'a mut Budget, id: &str) -> Result<&'a mut Value, String> {
     b.extra
         .get_mut("schedules")
@@ -584,6 +591,7 @@ impl Change {
                 )?;
             }
             Change::Edits { edits, rules } => {
+                let in_budget: HashSet<String> = b.accounts.iter().filter(|a| a.on_budget()).map(|a| a.id.clone()).collect();
                 for e in edits {
                     let t = b
                         .transactions
@@ -630,6 +638,18 @@ impl Change {
                             return Err(t!("{payee} on {date} is already a transfer with that account.", payee = t.payee, date = t.date));
                         }
                         t.account_id = account.clone();
+                        // Its shape follows its account, as the app's own editor leaves it. A
+                        // transfer that now stays on one side of the budget has no parts; one that
+                        // now crosses its edge has one, in Unassigned until it's given a category.
+                        // What sits in a tracking account has no category.
+                        let inside = in_budget.contains(account.as_str());
+                        match &t.transfer_account_id {
+                            Some(other) if inside == in_budget.contains(other.as_str()) => t.splits.clear(),
+                            Some(_) if t.splits.is_empty() => t.splits.push(part(&None, t.amount, "")),
+                            Some(_) => {}
+                            None if !inside => t.splits.iter_mut().for_each(|s| s.category_id = None),
+                            None => {}
+                        }
                     }
                     if let Some(category) = &e.category {
                         if t.transfer_account_id.is_some() || t.splits.len() != 1 || ledger::transfer(&t.splits[0]).is_some() {
@@ -661,6 +681,7 @@ impl Change {
                 let mut ids = HashSet::new();
                 let now = stamp_now();
                 for n in transactions {
+                    let plain = n.transfer.as_ref().is_some_and(|other| plain_transfer(&b, account, other));
                     let mut t = Transaction {
                         extra: serde_json::Map::from_iter([
                             ("approved".to_string(), json!(true)),
@@ -674,7 +695,7 @@ impl Change {
                         memo: n.memo.clone(),
                         amount: n.amount,
                         status: if n.cleared { Cleared::Cleared } else { Cleared::Uncleared },
-                        splits: n.splits.iter().map(|(category, amount, memo)| part(category, *amount, memo)).collect(),
+                        splits: if plain { vec![] } else { n.splits.iter().map(|(category, amount, memo)| part(category, *amount, memo)).collect() },
                         transfer_account_id: n.transfer.clone(),
                         transfer_status: n.transfer.as_ref().map(|_| Cleared::Uncleared),
                     };
@@ -770,8 +791,13 @@ impl Change {
                         ScheduleOp::Change { id, amount, payee, category, frequency, next_date } => {
                             let s = schedule_mut(&mut b, id)?;
                             let name = s["transaction"]["payee"].as_str().unwrap_or_default().to_owned();
-                            let one = s["transaction"]["splits"].as_array().is_some_and(|parts| parts.len() == 1);
-                            if (amount.is_some() || category.is_some()) && !one {
+                            let parts = s["transaction"]["splits"].as_array().map_or(0, Vec::len);
+                            // A transfer inside the budget has no parts: its amount is its own, and it has no category.
+                            let whole = parts == 0 && s["transaction"]["transferAccountId"].is_string();
+                            if category.is_some() && whole {
+                                return Err(t!("A scheduled transfer inside the budget has no category."));
+                            }
+                            if (amount.is_some() || category.is_some()) && parts != 1 && !whole {
                                 return Err(t!("{payee} is split between categories. Change it in Scheduled.", payee = name));
                             }
                             if let Some(amount) = amount {
@@ -779,7 +805,9 @@ impl Change {
                                     return Err(t!("Enter an amount other than zero."));
                                 }
                                 s["transaction"]["amount"] = json!(amount);
-                                s["transaction"]["splits"][0]["amount"] = json!(amount);
+                                if !whole {
+                                    s["transaction"]["splits"][0]["amount"] = json!(amount);
+                                }
                             }
                             if let Some(category) = category {
                                 s["transaction"]["splits"][0]["categoryId"] = json!(category);
@@ -1543,6 +1571,16 @@ fn card_as(change: &Change, before: &Budget, after: &Budget, single: Option<bool
             for n in transactions {
                 let t = after.transactions.iter().find(|t| t.id == n.id).ok_or_else(|| t!("Missing new transaction"))?;
                 if single.unwrap_or(transactions.len() == 1) {
+                    if t.splits.is_empty() {
+                        // A transfer inside the budget: one row named by the other account, with no category to choose.
+                        rows.push(Row {
+                            label: names.category_label_shown(t),
+                            amount: Some(t.amount),
+                            key: Some("s:0".into()),
+                            edit: Some(RowEdit { amount: true, ..RowEdit::default() }),
+                            ..Row::default()
+                        });
+                    }
                     for (i, s) in t.splits.iter().enumerate() {
                         rows.push(Row {
                             label: names.category_shown(s.category_id.as_deref()),
@@ -1570,7 +1608,12 @@ fn card_as(change: &Change, before: &Budget, after: &Budget, single: Option<bool
             }
             let mut stats = vec![];
             if let (Some(true), [t]) = (single, &transactions[..]) {
-                stats.push(Stat { label: t!("Payee"), text: Some(t.payee.clone()), amount: None });
+                // A transfer with no payee given is named by the other account, as the register names it.
+                let payee = match &t.transfer {
+                    Some(other) if t.payee.is_empty() => t!("Transfer: {account}", account = names.account(other)),
+                    _ => t.payee.clone(),
+                };
+                stats.push(Stat { label: t!("Payee"), text: Some(payee), amount: None });
                 stats.push(Stat { label: t!("Date"), text: Some(short_date(&t.date)), amount: None });
                 stats.push(Stat { label: t!("Amount"), text: None, amount: Some(t.amount) });
             }
@@ -1644,8 +1687,9 @@ fn card_as(change: &Change, before: &Budget, after: &Budget, single: Option<bool
                 rows.push(match op {
                     ScheduleOp::Add { schedule } => {
                         let s: crate::schedules::Schedule = serde_json::from_value(schedule.clone()).map_err(|e| t!("Invalid schedules: {error}", error = e))?;
+                        let who = if s.transaction.payee.is_empty() { names.category_label_shown(&s.transaction) } else { s.transaction.payee.clone() };
                         Row {
-                            label: format!("{} · {}", s.transaction.payee, frequency_label(&s.frequency)),
+                            label: format!("{} · {}", who, frequency_label(&s.frequency)),
                             detail: Some(t!("from {date} · {category}", date = short_date(&s.anchor_date), category = names.category_label_shown(&s.transaction))),
                             amount: Some(s.transaction.amount),
                             badge: Some(t!("new")),
@@ -2236,6 +2280,37 @@ mod tests {
         assert_eq!(t.transfer_account_id.as_deref(), Some("tracking"));
         assert_eq!((t.amount, t.splits[0].amount), (-120000, -120000));
         assert_eq!(t.splits[0].category_id.as_deref(), Some("dining"));
+    }
+
+    #[test]
+    fn a_transaction_moved_to_another_account_takes_the_shape_that_account_gives_it() {
+        let mut b = sample();
+        b.accounts.push(Account {
+            id: "tracking".into(), name: "Tracking".into(), kind: AccountKind::Tracking,
+            opening_balance: 0, archived: false, extra: Default::default(),
+        });
+        let moved = |b: &Budget, id: &str, account: &str| {
+            let change = Change::Edits { edits: vec![Edit { id: id.into(), account: Some(account.into()), ..Default::default() }], rules: vec![] };
+            change.run(b.clone()).unwrap().transactions.into_iter().find(|t| t.id == id).unwrap()
+        };
+        // Spending moved into a tracking account has no category there.
+        assert_eq!(b.transactions[0].splits[0].category_id.as_deref(), Some("dining"));
+        let t = moved(&b, "t1", "tracking");
+        assert_eq!((t.account_id.as_str(), t.splits.len(), t.splits[0].category_id.as_deref()), ("tracking", 1, None));
+        // A transfer inside the budget has no parts. Moved so it crosses the budget's edge it has
+        // one, in Unassigned; moved back inside, none again.
+        let transfer = &mut b.transactions[1];
+        transfer.transfer_account_id = Some("card".into());
+        transfer.transfer_status = Some(Cleared::Uncleared);
+        transfer.payee.clear();
+        transfer.splits.clear();
+        let id = transfer.id.clone();
+        let amount = transfer.amount;
+        let across = moved(&b, &id, "tracking");
+        assert_eq!((across.splits.len(), across.splits[0].category_id.as_deref(), across.splits[0].amount), (1, None, amount));
+        let mut wider = b.clone();
+        wider.transactions[1] = across;
+        assert!(moved(&wider, &id, "checking").splits.is_empty());
     }
 
     #[test]
