@@ -52,11 +52,67 @@ too and left for later. Each is a code reading, not yet reproduced unless it say
 
 - A budget-moves revision can change a category the card doesn't show (one money only passes
   through), and leaving one side of a move out shows the other as left out too.
-- A part of a proposal that no longer exists (a deleted transaction) fails the whole proposal,
-  even when it's left out.
-- Two edits to one transaction, or two fixes to one cell, share a row key.
-- Memo fixes always fail when memos aren't shared with the assistant; an import's lines go to
-  the provider with any message sent from the import page.
+
+## What the assistant review left
+
+Added 10 November 2026. The review's plan, and what was built from it on
+`claude/assistant-review`, is [plans/assistant-review.md](plans/assistant-review.md); its
+"As built" says what was seen working and what wasn't checked. These are left.
+
+**Not yet run** (the whole branch):
+
+- No model has answered this branch. The QA folder's ChatGPT sign-in had ended, so the few
+  short replies that were agreed didn't happen. Every request carries the new tools
+  (`propose_notes`, `propose_category_changes`, `propose_schedule_changes`,
+  `propose_transaction_deletes`, `ask_user`, `show_figures`), so the first thing to learn is
+  whether OpenAI's API takes them as written. Done looks like, on the desktop with a ChatGPT
+  sign-in: a question answered from the budget, a note proposed and applied, a question card
+  answered by its button, a figures card, and the tokens used showing in the history list.
+- Nothing was tried against Anthropic. The requests are built to its published rules for kept
+  thinking and caching and checked by tests of what they contain. Done looks like a
+  twelve-round reply, a change of language and bank texts being set up, with
+  `prefix_mismatch_behavior: "drop_block"` under the `thinking-binding-controls-2026-08-01`
+  header leaving `input_transformations` empty, and `cache_read_input_tokens` above zero from
+  the second round.
+- iPhone was never compiled; the plan's "As built" lists where it's least sure to. Done looks
+  like a build on a Mac or in CI, its unit tests passing, and a pass through a conversation on
+  a phone.
+- Android compiles and its JVM tests pass, but its Rust library wasn't rebuilt (the checks ran
+  with `-x buildRustEngine`) and the instrumented tests only compile. Done looks like a build
+  with the engine, `ProposalCardUiTest` passing on an emulator, and a pass on the Fold: a card
+  applied and undone, Show in the budget both ways, the notice before a first message, and
+  Back with the assistant over an import.
+- The eval set in the plan isn't built. `llm::script` answers the loop in tests; the forty
+  tasks, and running each provider's default model on them twice, are left.
+
+**Left as it was, or not finished:**
+
+- A draft doesn't outlive the app being closed, on any of the three. On iPhone a message's
+  files are dropped when the conversation is changed.
+- Android reads a reply's events with the app in the background only while the process lives,
+  and iPhone only for the background time it's given. Neither says "Paused when you left". A
+  foreground service on Android wasn't added.
+- WebP and GIF files go to the provider as they are; only JPEG and PNG lose their location
+  and camera details (`attachments::scrub`).
+- All conversations share one lock (`mod.rs`). A look no longer writes, so it's held briefly;
+  a lock per conversation would need care that a deleted one can't come back.
+- "Continue in a new conversation" starts from the last eight things said and what became of
+  the proposals, as they were written. The plan had the model write the summary.
+- Desktop: discarding the last waiting card doesn't read the conversation again, so the
+  buttons for what's waiting don't come back until the next reply. The line under the message
+  field still names the service ("Using ChatGPT plan") after its sign-in has ended.
+- iPhone: an exported conversation writes "replaced" in English; Show in the budget doesn't
+  mark the categories on the Budget tab; the notice after an import reviewed in the assistant
+  has no "Categorize with the assistant".
+- Deleting a category or a schedule stays in the app, on purpose. Deleting transactions is
+  only for ones selected and sent with the message.
+
+**Arabic:**
+
+- The words this work added (the core's in `i18n/arabic.rs`, and the three apps' catalogs)
+  were written with the work and follow `docs/LOCALIZATION.md`, but no Arabic reader has gone
+  over them. "Ask the assistant" isn't worded the same on the three apps, and the zero form
+  of "Delete {n} transactions" differs between Android and iPhone.
 
 **Desktop** (`desktop/src/bridge.ts`, `desktop/src-tauri/src/lib.rs`):
 

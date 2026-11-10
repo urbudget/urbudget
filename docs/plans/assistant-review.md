@@ -1,8 +1,8 @@
 # The assistant: what it sees, what it can do, what it shows, and how to make it better
 
-**Status:** proposal of 2026-11-10, being built on `claude/assistant-review` since the same day.
-What's built so far is in [As built](#as-built), at the end; where that section and the plan
-differ, that section is right.
+**Status:** proposal of 2026-11-10, built the same day on `claude/assistant-review` (not pushed).
+What was built is in [As built](#as-built), at the end; where that section and the plan differ,
+that section is right. What's left is under Assistant in [FOLLOW-UPS.md](../FOLLOW-UPS.md).
 **Goal:** an assistant that is safe with what it's given, behaves the same on the three apps, shows
 cards whose state can be trusted, costs less to run, and can do more of what people ask it.
 **Scope:** the chat assistant: the shared core in `crates/urbudget-services/src/assistant/`, and its
@@ -570,4 +570,90 @@ nothing was compiled. Nothing was seen on a screen.
 
 Left as it was: a draft doesn't outlive the app being closed, on any of the three. On iPhone a
 message's files are dropped when the conversation is changed.
+
+**Phase 2 and phase 4, the apps** (10 November 2026). Desktop: `npx tsc -b` and all 835 UI tests
+pass. Android: it compiles and its 329 JVM tests pass; the instrumented tests compile and weren't
+run. iPhone: written, the translation check passes, and nothing was compiled.
+
+- 2.1, 2.7, 2.8: the three apps draw a card from what the core says. Its buttons are its
+  `actions`, in that order, the first the main one; what it has to say is one strip by tone, with
+  the card's own warning beside it. A thing the assistant made has no state and no Apply, and
+  Remove in a ⋯ menu. A kind an app doesn't know is a plain card with "Update UrBudget to use
+  this card." On iPhone `print` isn't a button of its own: the report's page prints.
+- 2.3: a finished card folds to a line ("Applied {time}", "Discarded", "Undone", "Replaced by a
+  newer version", "Removed") that opens to its rows, read-only. Undo, Restore and Show sit on
+  the line (on the phones, under it).
+- 2.4: the desktop applies with `settle: false`, makes the change in the window, then marks the
+  card. The window's own Undo and Redo move the card with them (`appliedCards` in `App.tsx`,
+  by the budget being the very one a card left or found). The phones show Undo for the card the
+  view names (`undoable`) and read the conversation again when the budget's revision changes.
+- 2.5: "Ask for a new version" on a card that couldn't be applied sends its reason.
+- 2.6: ticks, categories and amounts show at once and go to the core in one call 600 ms after
+  the last, and before Apply. Only the card in hand waits. Select all, Select none and Only the
+  ones to check appear over five rows.
+- 2.2: a waiting card is read again when the budget changes under an open conversation, and the
+  `replaced` event puts the new view on the earlier card in place.
+- 2.9: an import's fix card says which fixes didn't take ("Fixes applied: 2 of 3. Not applied:
+  …"), and stays waiting with that note when none did. Android checks a bank-text card again
+  when it's applied: an account that's gone, or isn't the card's, fails with a message.
+- 2.10: Show in the budget. Desktop: the register on those transactions, selected, or the
+  Budget page on the month with the categories marked. Android: the same, with the groups
+  unfolded. iPhone: the register filtered to them, or the Budget tab on the month; categories
+  aren't marked there.
+- 3.8: Notes for the assistant in its settings on the three apps, the desktop's as one undo
+  step.
+- 4.2, 4.6, 4.9 on screen: a question's answers are buttons that send through Send; figures
+  have a bar by share of the largest; a delete card is red with "Delete {n} transactions".
+- 4.7: the buttons for what's waiting, under the last reply.
+- 4.8: the phones have "Categorize with the assistant" after a bank import (Android had no
+  message after an import, so one was added, with Undo) and "Cover with the assistant" on the
+  overspent notice.
+- 3.12: the report form says what it sends.
+- iPhone only: the assistant's import review uses the bank import's own rows, so it has the
+  suggested-transfer guard and refunds; `AssistantBankReview.swift` is gone from the project.
+- The guide has renaming, searching and continuing a conversation, and a new entry,
+  `assistant-notes`.
+
+**Seen in the desktop app** (10 November 2026, a debug build of this branch on a scratch copy
+of the QA budget, driven through the QA harness). No model answered: the QA folder's ChatGPT
+sign-in, made on 24 October, had ended, and the refresh was refused. So what follows was seen
+with the real core and no model:
+
+- The notice of what gets sent came up before the first message, and Continue sent it.
+- The refused sign-in showed as the last entry with its own button, Continue with ChatGPT, and
+  the panel then said "Sign in to use the assistant".
+- The sent message carried "Budget · November 2026" under it, and the line above the field
+  followed the page.
+- A conversation from 24 October drew the new way: applied cards as lines that open, Show in
+  the budget on the ones that name transactions, the buttons for what's waiting under the last
+  reply.
+- Show in the budget went to the account's register with the two transactions selected.
+- Rename, search and a thumb were kept across reopening the conversation and the app.
+- A note was added and removed in Settings › Assistant.
+- A kept card put back to waiting by hand, with its two categories swapped, came up remade,
+  saying "Your budget changed since this was proposed, so it was updated." Unticking a row made
+  the button "Apply 1 of 2" at once. Apply folded it to "Applied Nov 10, 2026, 6:28 PM" with
+  Undo. The window's Undo made it "Undone" with Apply again, Redo made it Applied, and the
+  card's own Undo made it Undone.
+
+**Not checked**
+
+- Anything a model has to answer: the new tools as OpenAI's API takes them, usage counts, a
+  cut reply, continuing a long conversation, a question card, figures, a delete card, notes
+  proposed by the assistant. The loop's tests answer with a scripted model.
+- Anything against Anthropic (3.1, 3.2), as decided.
+- The phones on a screen. iPhone was never compiled. Android's Rust library wasn't rebuilt
+  for this branch (the checks ran with `-x buildRustEngine`), so an emulator would run the
+  new screens on the old core until it is.
+- The desktop in Arabic, and at narrow widths.
+- The eval set wasn't built: `llm::script` and the loop's tests are there, the forty tasks
+  aren't.
+
+Where iPhone is least sure to compile: the `@ViewBuilder` switch over the card's actions and
+the `ViewThatFits` over them (`AssistantProposalCard.swift`); `Button(role:)` and `.tint` given
+a ternary with `nil`; the stored `Task<Void, Error>` with a `defer` inside and the
+tuple-typed stored property in the `@Observable` controller (`AssistantController.swift`);
+`.sheet(item: Binding(get:set:))` on `AppActions.shared` (`UrBudgetApp.swift`); a `Section`
+with header and footer returned from a computed property (`AssistantSettingsView.swift`); and
+the two plural catalog entries with two substitutions.
 
