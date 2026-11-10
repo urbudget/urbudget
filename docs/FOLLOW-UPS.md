@@ -61,13 +61,19 @@ Added 10 November 2026. The review's plan, and what was built from it on
 
 **Not yet run** (the whole branch):
 
-- No model has answered this branch. The QA folder's ChatGPT sign-in had ended, so the few
-  short replies that were agreed didn't happen. Every request carries the new tools
-  (`propose_notes`, `propose_category_changes`, `propose_schedule_changes`,
-  `propose_transaction_deletes`, `ask_user`, `show_figures`), so the first thing to learn is
-  whether OpenAI's API takes them as written. Done looks like, on the desktop with a ChatGPT
-  sign-in: a question answered from the budget, a note proposed and applied, a question card
-  answered by its button, a figures card, and the tokens used showing in the history list.
+- ChatGPT answered six short messages on the desktop: a question, a note, a question card, a
+  transfer and figures (the plan's "As built" has them). The transfer was shaped wrongly and
+  was fixed. The other new changes haven't been asked of a model: a delete card, category and
+  schedule cards, a split or a change of date or account on a transaction that exists, a reply
+  cut at its length, continuing a long conversation. The transfer shows what to look for: a
+  change that passes the budget's checks but isn't shaped as the app's own editor leaves it.
+  Done looks like each of them asked for once, applied, and read in the register, the Budget
+  page or Scheduled beside one made by hand.
+- Five short messages sent 154,060 tokens and only 13,696 came from cache. Nearly all of each
+  request is the instructions and the tool list, which are the same every time. Not known: why
+  so little is cached on the ChatGPT plan (the request may need a cache key), and how much of
+  the tool list could go to tools described only when they're offered. Done looks like the
+  second request of a conversation reading most of its start from cache.
 - Nothing was tried against Anthropic. The requests are built to its published rules for kept
   thinking and caching and checked by tests of what they contain. Done looks like a
   twelve-round reply, a change of language and bank texts being set up, with

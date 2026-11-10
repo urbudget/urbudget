@@ -615,9 +615,9 @@ run. iPhone: written, the translation check passes, and nothing was compiled.
   `assistant-notes`.
 
 **Seen in the desktop app** (10 November 2026, a debug build of this branch on a scratch copy
-of the QA budget, driven through the QA harness). No model answered: the QA folder's ChatGPT
-sign-in, made on 24 October, had ended, and the refresh was refused. So what follows was seen
-with the real core and no model:
+of the QA budget, driven through the QA harness). On the first pass no model answered: the QA
+folder's ChatGPT sign-in, made on 24 October, had ended, and the refresh was refused. So what
+follows was seen with the real core and no model:
 
 - The notice of what gets sent came up before the first message, and Continue sent it.
 - The refused sign-in showed as the last entry with its own button, Continue with ChatGPT, and
@@ -636,11 +636,36 @@ with the real core and no model:
   Undo. The window's Undo made it "Undone" with Apply again, Redo made it Applied, and the
   card's own Undo made it Undone.
 
+**Answered by ChatGPT** (the same day, after a new sign-in in the test window; six short
+messages on the sample budget):
+
+- OpenAI's API took every request, so it takes the tool list as written, the new tools in it.
+- "How much is unassigned this month?" was answered with the budget's own figure, and the
+  buttons for what's waiting came up under the reply.
+- "Remember that I call the Al Rajhi Current account my main account" made a notes card.
+  Applied, the next message's "my main account" was read as Al Rajhi Current.
+- Asked to record a transfer and to ask where it goes, it made a question card with the other
+  accounts as buttons. Pressing one sent it, the card folded to "Asked: …", and a transfer card
+  followed.
+- That transfer was the one thing found wrong. Between two budget accounts it was added with a
+  part in Unassigned, so the register read "From Unassigned" where the app's own transfers read
+  "No Category (Transfer)", and the card offered it a category. Fixed the same day
+  (`plain_transfer` in `proposals.rs`, `Names::same_side` in `tools.rs`): such a transfer has no
+  parts and no payee, on a new transaction and a new schedule; a transaction moved to another
+  account takes that account's shape. Asked again on the fixed build, the card's row read
+  "Transfer: Savings Account" and the register "No Category (Transfer)", with both balances
+  moved by 200.00.
+- "Show my three biggest spending categories in October as figures" made a figures card with
+  its bars, a total and Show in the budget.
+- The history list showed the tokens used: 154,060 sent, 13,696 of them from cache, and 546
+  received, after five messages.
+
 **Not checked**
 
-- Anything a model has to answer: the new tools as OpenAI's API takes them, usage counts, a
-  cut reply, continuing a long conversation, a question card, figures, a delete card, notes
-  proposed by the assistant. The loop's tests answer with a scripted model.
+- With a model: a delete card, category and schedule cards, a split or a change of date or
+  account on a transaction that exists, a reply cut at its length, and continuing a long
+  conversation. Their changes are covered by tests of what they do to a budget, and the loop's
+  by a scripted model.
 - Anything against Anthropic (3.1, 3.2), as decided.
 - The phones on a screen. iPhone was never compiled. Android's Rust library wasn't rebuilt
   for this branch (the checks ran with `-x buildRustEngine`), so an emulator would run the
