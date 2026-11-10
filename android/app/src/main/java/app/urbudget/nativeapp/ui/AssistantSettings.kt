@@ -54,6 +54,8 @@ internal fun AssistantSettingsDialog(controller: AssistantController, vm: Budget
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         // On a wide window the settings keep the pages' readable width rather than the window's.
         Surface(Modifier.widthIn(max = ReadableWidth).fillMaxWidth().fillMaxHeight(.94f).padding(12.dp), shape = MaterialTheme.shapes.large) {
+            // Its fields are grey on the dialog's white, as a sheet's are: in the dialog's own fill they had no edge to be seen by.
+            CompositionLocalProvider(LocalFieldFill provides ur.surface2) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(stringResource(R.string.assistant_settings), style = MaterialTheme.typography.headlineSmall)
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -81,7 +83,7 @@ internal fun AssistantSettingsDialog(controller: AssistantController, vm: Budget
                             // The service keeps the app answering the browser; it starts here, while the app is in front.
                             Button({ SignInService.start(context); controller.signIn() }) { Text(stringResource(R.string.assistant_continue_chatgpt)) }
                         }
-                        Row { TextButton({ controller.openLink("usage") }) { Text(stringResource(R.string.assistant_plan_usage)) }; TextButton({ controller.openLink("disconnect") }) { Text(stringResource(R.string.assistant_connected_apps)) } }
+                        Row(Modifier.offset(x = (-12).dp)) { TextButton({ controller.openLink("usage") }) { Text(stringResource(R.string.assistant_plan_usage)) }; TextButton({ controller.openLink("disconnect") }) { Text(stringResource(R.string.assistant_connected_apps)) } }
                     } else {
                         val saved = status?.optBoolean(if (provider == "openai") "hasOpenaiKey" else "hasAnthropicKey") == true
                         Text(stringResource(R.string.assistant_api_billing, if (provider == "openai") "OpenAI" else "Anthropic"))
@@ -90,15 +92,15 @@ internal fun AssistantSettingsDialog(controller: AssistantController, vm: Budget
                             FilledField(key, { key = it }, label = { Text(stringResource(R.string.assistant_api_key)) }, visualTransformation = PasswordVisualTransformation(), singleLine = true, modifier = Modifier.fillMaxWidth())
                             Button({ controller.setKey(provider, key) { key = "" } }, enabled = key.isNotBlank() && "key" !in state.busy) { Text(stringResource(if ("key" in state.busy) R.string.assistant_checking_key else R.string.assistant_verify_key)) }
                         }
-                        TextButton({ controller.openLink(if (provider == "openai") "openaiKeys" else "anthropicKeys") }) { Text(stringResource(R.string.assistant_get_key)) }
+                        TextButton({ controller.openLink(if (provider == "openai") "openaiKeys" else "anthropicKeys") }, Modifier.offset(x = (-12).dp)) { Text(stringResource(R.string.assistant_get_key)) }
                     }
-                    status?.text("storage")?.takeIf(String::isNotEmpty)?.let { Text(stringResource(R.string.assistant_credentials, it), style = MaterialTheme.typography.bodySmall) }
-                    if (ready && status?.text("storage").isNullOrEmpty()) Text(stringResource(R.string.assistant_credentials_memory), style = MaterialTheme.typography.bodySmall)
+                    status?.text("storage")?.takeIf(String::isNotEmpty)?.let { Text(stringResource(R.string.assistant_credentials, it), style = MaterialTheme.typography.bodySmall, color = ur.text2) }
+                    if (ready && status?.text("storage").isNullOrEmpty()) Text(stringResource(R.string.assistant_credentials_memory), style = MaterialTheme.typography.bodySmall, color = ur.text2)
                     if (ready) {
                         Choice(stringResource(R.string.assistant_model), status?.text("model").orEmpty(), modelChoices) {
                             controller.settings(JSONObject().put("model", it))
                         }
-                        TextButton(controller::models, enabled = "models" !in state.busy) { Text(stringResource(R.string.assistant_refresh_models)) }
+                        TextButton(controller::models, Modifier.offset(x = (-12).dp), enabled = "models" !in state.busy) { Text(stringResource(R.string.assistant_refresh_models)) }
                     }
                     HorizontalDivider()
                     ShareMemosSwitch(status, controller)
@@ -109,6 +111,7 @@ internal fun AssistantSettingsDialog(controller: AssistantController, vm: Budget
                     AssistantNotesSection(notes, "notes" in state.busy) { list, saved -> controller.saveNotes(list, vm::refresh, saved) }
                 }
                 TextButton(close, Modifier.align(Alignment.End)) { Text(stringResource(R.string.common_done)) }
+            }
             }
         }
     }
@@ -129,7 +132,7 @@ private fun AssistantNotesSection(notes: List<String>, busy: Boolean, save: (Lis
     val adding = remember(draft, notes) { AssistantNotes.adding(draft, notes) }
     Column(Modifier.fillMaxWidth().testTag("assistant-notes"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(stringResource(R.string.assistant_notes_title), style = MaterialTheme.typography.titleMedium)
-        Text(stringResource(R.string.assistant_notes_help), style = MaterialTheme.typography.bodySmall)
+        Text(stringResource(R.string.assistant_notes_help), style = MaterialTheme.typography.bodySmall, color = ur.text2)
         if (notes.isEmpty()) Text(stringResource(R.string.assistant_notes_none), style = MaterialTheme.typography.bodyMedium, color = ur.muted)
         notes.forEachIndexed { index, note ->
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -159,7 +162,7 @@ internal fun ShareMemosSwitch(status: JSONObject?, controller: AssistantControll
 @Composable
 private fun LabelledSwitch(title: String, detail: String, checked: Boolean, change: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().toggleable(checked, role = Role.Switch, onValueChange = change), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f).padding(end = 12.dp)) { Text(title); Text(detail, style = MaterialTheme.typography.bodySmall) }
+        Column(Modifier.weight(1f).padding(end = 12.dp)) { Text(title); Text(detail, style = MaterialTheme.typography.bodySmall, color = ur.text2) }
         Switch(checked, null)
     }
 }

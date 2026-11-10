@@ -2,6 +2,7 @@ package app.urbudget.nativeapp
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -296,10 +297,17 @@ internal enum class ProposalAction(val key: String) {
 /** Where a card's "Show in the budget" leads: the register with [transactions] selected, or else the Budget tab on [month] with [categories] marked. */
 internal data class AssistantShow(val month: String?, val categories: List<String>, val transactions: List<String>)
 
-/** When a card was applied, as the app writes a day and a time ("21/10/2026, 14:30"); none when [at] (RFC 3339) doesn't read. */
-internal fun assistantMoment(at: String, zone: ZoneId = ZoneId.systemDefault(), time: DateTimeFormatter = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)): String? =
-    runCatching { OffsetDateTime.parse(at).atZoneSameInstant(zone) }.getOrNull()
-        ?.let { Words[R.string.sms_moment, Money.date(it.toLocalDate().toString()), Money.ltr(it.toLocalTime().format(time))] }
+/**
+ * When a card was applied, as the app writes a day and a time ("21/10/2026, 14:30"), and no longer
+ * than it needs to be under the card's title: the time alone on [today]. None when [at] (RFC 3339)
+ * doesn't read.
+ */
+internal fun assistantMoment(at: String, zone: ZoneId = ZoneId.systemDefault(), time: DateTimeFormatter = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT),
+                             today: LocalDate = LocalDate.now(zone)): String? =
+    runCatching { OffsetDateTime.parse(at).atZoneSameInstant(zone) }.getOrNull()?.let {
+        val clock = Money.ltr(it.toLocalTime().format(time))
+        if (it.toLocalDate() == today) clock else Words[R.string.sms_moment, Money.date(it.toLocalDate().toString()), clock]
+    }
 
 /**
  * A proposal card as the core's view of it says to draw it (its `kind`, `status`, `made`,
@@ -335,24 +343,25 @@ internal object ProposalCards {
     /** The buttons a finished card shows once it's opened: whatever else it still offers. */
     fun openedButtons(proposal: JSONObject, undoable: String?): List<ProposalAction> = buttons(proposal, undoable).filter { it !in onLine }
 
+    /** A question that was answered: its line says what was asked, and it has no state to show. */
+    private fun asked(proposal: JSONObject): Boolean = proposal.optString("kind") == "question" && proposal.optString("status") == "applied"
+
+    /** A finished card's line: its title, with the line to itself. A question that was answered reads "Asked: …". */
+    fun finishedTitle(proposal: JSONObject): String =
+        proposal.optString("title").let { title -> if (asked(proposal)) Words[R.string.assistant_asked, title] else title }
+
     /**
-     * A finished card's line: where it stands, then its title. "Applied 21/10/2026, 14:30: …"
-     * (plain "Applied" when the core kept no time), "Undone", "Replaced by a newer version",
-     * "Discarded", or "Removed" for a thing the assistant made. A question that was answered
-     * reads "Asked: …" instead.
+     * Where a finished card stands, under its title: "Applied 21/10/2026, 14:30" (the time alone
+     * today, plain "Applied" when the core kept no time), "Undone", "Replaced by a newer
+     * version", "Discarded", or "Removed" for a thing the assistant made. None for a question
+     * that was answered: its title says it.
      */
-    fun finishedLine(proposal: JSONObject, moment: (String) -> String? = ::assistantMoment): String {
-        val title = proposal.optString("title")
-        val words = when (proposal.optString("status")) {
-            "applied" -> {
-                if (proposal.optString("kind") == "question") return Words[R.string.assistant_asked, title]
-                moment(proposal.optString("appliedAt"))?.let { Words[R.string.assistant_applied_at, it] } ?: Words[R.string.assistant_applied]
-            }
-            "undone" -> Words[R.string.assistant_undone]
-            "replaced" -> Words[R.string.assistant_replaced]
-            else -> Words[if (proposal.optBoolean("made")) R.string.assistant_removed else R.string.assistant_discarded]
-        }
-        return Words[R.string.assistant_card_line, words, title]
+    fun finishedState(proposal: JSONObject, moment: (String) -> String? = ::assistantMoment): String? = when (proposal.optString("status")) {
+        "applied" -> if (asked(proposal)) null
+            else moment(proposal.optString("appliedAt"))?.let { Words[R.string.assistant_applied_at, it] } ?: Words[R.string.assistant_applied]
+        "undone" -> Words[R.string.assistant_undone]
+        "replaced" -> Words[R.string.assistant_replaced]
+        else -> Words[if (proposal.optBoolean("made")) R.string.assistant_removed else R.string.assistant_discarded]
     }
 
     /** What the card has to say about itself: its tone ("info", "warn" or "error") and its words. None when it says nothing. */

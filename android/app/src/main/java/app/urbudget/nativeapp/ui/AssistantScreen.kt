@@ -30,15 +30,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -290,24 +294,30 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
     }
     val signingIn = "signIn" in state.busy || state.status?.optBoolean("signingIn") == true
     Column(Modifier.fillMaxSize().imePadding()) {
-        Row(Modifier.fillMaxWidth().then(dragArea).padding(start = 20.dp, end = 4.dp, top = 2.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.fillMaxWidth().then(dragArea).padding(start = 8.dp, end = 4.dp, top = 2.dp, bottom = 2.dp)) {
             val title = state.thread?.text("title").orEmpty()
             val renameLabel = stringResource(R.string.assistant_rename)
-            // Under the panel's name, the open conversation's: a tap renames it.
-            Column(Modifier.weight(1f).then(if (title.isEmpty()) Modifier else Modifier.clip(RoundedCornerShape(10.dp))
-                .clickable(onClickLabel = renameLabel, role = Role.Button) { renaming = state.threadId to title }.testTag("assistant-title"))) {
-                Text(stringResource(R.string.assistant_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = ur.text)
+            // Under the panel's name and its buttons, the open conversation's, with the panel's width to
+            // itself: beside four buttons a phone had room for half of it. A tap renames it.
+            Column(Modifier.fillMaxWidth().then(if (title.isEmpty()) Modifier else Modifier.clip(RoundedCornerShape(10.dp))
+                .clickable(onClickLabel = renameLabel, role = Role.Button) { renaming = state.threadId to title }.testTag("assistant-title"))
+                .padding(start = 12.dp, end = 12.dp, bottom = 4.dp)) {
+                Box(Modifier.heightIn(min = 48.dp), contentAlignment = Alignment.CenterStart) {
+                    Text(stringResource(R.string.assistant_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = ur.text)
+                }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(title.ifEmpty { stringResource(R.string.assistant_tagline) }, Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.bodySmall.own, color = ur.muted)
                     if (title.isNotEmpty()) Icon(Icons.Outlined.Edit, null, Modifier.size(13.dp), tint = ur.muted)
                 }
             }
-            IconButton({ history = true }) { Icon(Icons.Outlined.History, stringResource(R.string.assistant_history), tint = ur.text) }
-            // What's typed comes along; a reply still running in the conversation left carries on there.
-            IconButton(controller::startNew) { Icon(Icons.Outlined.AddComment, stringResource(R.string.assistant_new), tint = ur.text) }
-            IconButton({ settings = true }) { Icon(Icons.Outlined.Settings, stringResource(R.string.assistant_settings), tint = ur.text) }
-            if (onClose != null) IconButton(onClose) { Icon(Icons.Outlined.Close, stringResource(R.string.assistant_close), tint = ur.text) }
+            Row(Modifier.align(Alignment.TopEnd)) {
+                IconButton({ history = true }) { Icon(Icons.Outlined.History, stringResource(R.string.assistant_history), tint = ur.text) }
+                // What's typed comes along; a reply still running in the conversation left carries on there.
+                IconButton(controller::startNew) { Icon(Icons.Outlined.AddComment, stringResource(R.string.assistant_new), tint = ur.text) }
+                IconButton({ settings = true }) { Icon(Icons.Outlined.Settings, stringResource(R.string.assistant_settings), tint = ur.text) }
+                if (onClose != null) IconButton(onClose) { Icon(Icons.Outlined.Close, stringResource(R.string.assistant_close), tint = ur.text) }
+            }
         }
         if (state.busy.isNotEmpty()) LinearProgressIndicator(Modifier.fillMaxWidth(), color = ur.accent)
         state.notice?.let { notice ->
@@ -348,7 +358,8 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
                         listOf(R.string.assistant_prompt_where, R.string.assistant_prompt_cover, R.string.assistant_prompt_report)
                     prompts.take(4).map { stringResource(it) }.forEach { prompt ->
                         // A prompt is a whole question: tapping it asks.
-                        Surface({ ask(prompt) }, Modifier.fillMaxWidth().testTag("assistant-prompt"), enabled = "send" !in state.busy, shape = RoundedCornerShape(16.dp), color = ur.surface2) {
+                        Surface({ ask(prompt) }, Modifier.fillMaxWidth().testTag("assistant-prompt"), enabled = "send" !in state.busy, shape = RoundedCornerShape(16.dp), color = ur.surface2,
+                            border = darkEdge()) {
                             Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text(prompt, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, color = ur.text)
                                 Icon(Icons.AutoMirrored.Outlined.Send, null, Modifier.size(18.dp), tint = ur.accent)
@@ -368,7 +379,9 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
                             // An answer goes as the user's message, by the way Send does.
                             answer = { ask(it) }, canSend = canSend,
                             fixHere = importSession != null && proposal.optJSONObject("fixes")?.optJSONObject("scope")?.text("session") == importSession,
-                            category = categoryName)
+                            category = categoryName,
+                            // A card opened is being read where it stands: the list doesn't go on to its end and take the card's title out of view.
+                            folded = { following = false })
                     }
                     AssistantEntryKind.Step -> AssistantSteps(row.second)
                     AssistantEntryKind.Stopped -> Text(stringResource(R.string.assistant_reply_stopped), style = MaterialTheme.typography.labelMedium, color = ur.muted)
@@ -382,7 +395,7 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
                             Text(it, Modifier.testTag("assistant-sent-with"), style = MaterialTheme.typography.labelSmall, color = ur.muted, textAlign = TextAlign.End)
                         }
                     }
-                    AssistantEntryKind.Error -> Surface(color = ur.warningSoft, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                    AssistantEntryKind.Error -> Surface(color = ur.warningSoft, shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(stringResource(R.string.assistant_couldnt_finish), style = MaterialTheme.typography.labelLarge, color = ur.warning)
                             SelectionContainer { Text(entry.text("text"), style = LocalTextStyle.current.own, color = ur.text) }
@@ -503,9 +516,12 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
                 composer.selectedOf?.let { Text(countText(R.plurals.assistant_only_first, it), Modifier.padding(bottom = 4.dp), style = MaterialTheme.typography.bodySmall, color = ur.text2) }
             }
         }
+        // The field is grey on the panel's white, as a field in a sheet is: in the panel's own fill it had no edge to be seen by.
+        // Its buttons keep to its foot as it grows, in line with a single line of it.
+        CompositionLocalProvider(LocalFieldFill provides ur.surface2) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             // A file or transactions to go with the message, from one button.
-            Box {
+            Box(Modifier.padding(bottom = 4.dp)) {
                 var adding by remember { mutableStateOf(false) }
                 IconButton({ adding = true }, enabled = !state.running) { Icon(Icons.Outlined.AddCircleOutline, stringResource(R.string.assistant_add_to_message), tint = ur.text) }
                 DropdownMenu(adding, { adding = false }, containerColor = ur.surface) {
@@ -516,11 +532,12 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
                 }
             }
             FilledField(composer.text, { composer.text = it.take(20_000) }, Modifier.weight(1f), label = { Text(stringResource(R.string.assistant_ask)) }, maxLines = 6)
-            if (state.running) IconButton(controller::stop) { Icon(Icons.Outlined.StopCircle, stringResource(R.string.assistant_stop), tint = ur.text) }
-            else FilledIconButton({ ask(composer.text) }, enabled = ready && "send" !in state.busy && (composer.text.isNotBlank() || state.attachments.isNotEmpty()),
+            if (state.running) IconButton(controller::stop, Modifier.padding(bottom = 4.dp)) { Icon(Icons.Outlined.StopCircle, stringResource(R.string.assistant_stop), tint = ur.text) }
+            else FilledIconButton({ ask(composer.text) }, Modifier.padding(bottom = 4.dp), enabled = ready && "send" !in state.busy && (composer.text.isNotBlank() || state.attachments.isNotEmpty()),
                 colors = IconButtonDefaults.filledIconButtonColors(containerColor = ur.accent, contentColor = if (ur.dark) ur.bg else Color.White)) {
                 Icon(Icons.AutoMirrored.Outlined.Send, stringResource(R.string.assistant_send))
             }
+        }
         }
     }
 
@@ -557,7 +574,7 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
                     } }.onSuccess { saveBytes(it.first, it.second) }.onFailure { exportError = it.message }
                 }
             }, Modifier.padding(horizontal = 8.dp)) { Text(stringResource(R.string.assistant_export_conversation)) }
-            LazyColumn(Modifier.fillMaxWidth().heightIn(max = height * .6f), contentPadding = PaddingValues(bottom = 12.dp)) {
+            LazyColumn(Modifier.fillMaxWidth().heightIn(max = height * .6f), contentPadding = PaddingValues(top = 6.dp, bottom = 12.dp)) {
                 if (state.threads.isEmpty()) item { Text(stringResource(R.string.assistant_no_conversations), Modifier.padding(20.dp), color = ur.muted) }
                 else if (found.isEmpty()) item { Text(stringResource(R.string.assistant_no_match), Modifier.padding(20.dp), color = ur.muted) }
                 items(found, key = { it.text("id") }) { thread ->
@@ -689,13 +706,21 @@ private fun WithPart(label: String, remove: () -> Unit) {
 /** A line above the message field with the one thing to do about it; with no [text], just that. */
 @Composable
 private fun AssistantBanner(text: String?, action: String, enabled: Boolean, act: () -> Unit) {
-    Surface(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(top = 6.dp).testTag("assistant-banner"), shape = RoundedCornerShape(16.dp), color = ur.surface2) {
+    Surface(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(top = 6.dp).testTag("assistant-banner"), shape = RoundedCornerShape(16.dp), color = ur.surface2,
+        border = darkEdge()) {
         Column(Modifier.padding(start = 14.dp, end = 6.dp, top = if (text != null) 10.dp else 0.dp)) {
             if (text != null) Text(text, Modifier.padding(end = 8.dp), style = MaterialTheme.typography.bodySmall, color = ur.text2)
             TextButton(act, Modifier.align(Alignment.End), enabled = enabled) { Text(action) }
         }
     }
 }
+
+/**
+ * The edge the app's cards have on the dark theme (`ListCard`), where a card's fill is all but the
+ * panel's own and only an edge tells them apart. None on the light theme.
+ */
+@Composable
+private fun darkEdge(): BorderStroke? = if (ur.dark) BorderStroke(1.dp, ur.border) else null
 
 /**
  * Where the user is, as "With this message" and a sent message say it: the page, its month when
@@ -734,12 +759,14 @@ private fun conversationDay(updated: String): String =
  * way to the core); [choose] takes the user's choices as a revision (`ProposalChoices`), [change]
  * opens a row's editor and [answer] sends a question's answer. [fixHere] says the import a card
  * of fixes is for is the one open, and [category] names a category for a row just given one.
+ * [folded] is told when the user opens a finished card or folds it again.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun AssistantProposalCard(proposal: JSONObject, currency: String, busy: Boolean, act: (ProposalAction) -> Unit, undoable: String? = null,
     cards: AssistantCards = remember { AssistantCards() }, choose: ((JSONObject) -> Unit)? = null, change: ((JSONObject) -> Unit)? = null,
-    answer: ((String) -> Unit)? = null, canSend: Boolean = true, fixHere: Boolean = false, category: (String?) -> String = { it.orEmpty() }) {
+    answer: ((String) -> Unit)? = null, canSend: Boolean = true, fixHere: Boolean = false, category: (String?) -> String = { it.orEmpty() },
+    folded: () -> Unit = {}) {
     val id = proposal.text("id")
     val card = proposal.optJSONObject("card") ?: JSONObject()
     val kind = proposal.text("kind")
@@ -802,34 +829,48 @@ internal fun AssistantProposalCard(proposal: JSONObject, currency: String, busy:
     }
 
     Card(Modifier.fillMaxWidth().testTag("assistant-card:$id"), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = ur.surface2, contentColor = ur.text),
-        // A card that deletes wears the app's colour for what can't be taken lightly.
-        border = if (destructive && !finished) BorderStroke(1.dp, ur.negative) else null) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            // The card's words are the assistant's or the budget's, in whatever language: each reads in its own direction.
-            val own = LocalTextStyle.current.own
-            if (finished) {
-                // One line: where the card stands, then its title. A tap opens its rows, as they were.
-                val line = remember(proposal, language) { ProposalCards.finishedLine(proposal) }
+        // A card that deletes wears the app's colour for what can't be taken lightly; on the dark theme every card has the app's edge.
+        border = if (destructive && !finished) BorderStroke(1.dp, ur.negative) else darkEdge()) {
+        // What can still be done about a finished card: take it back, put it back, go to what it names.
+        val onLine = if (finished) ProposalCards.lineButtons(proposal, undoable) else emptyList()
+        // A line of text buttons is as tall as a finger needs, with its words in its middle: where one ends the card, it is most of the card's foot.
+        val endsInButtons = if (opened) buttons.size > 1 else onLine.isNotEmpty()
+        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = if (endsInButtons) 4.dp else 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // The card's words are the assistant's or the budget's, in whatever language: each reads in its own direction, from the card's start.
+            val own = LocalTextStyle.current.card
+            if (finished) Column {
+                // The line is the card's title, with all the width there is; a tap opens its rows, as they were. Folded, a long one keeps to three lines.
+                val title = remember(proposal, language) { ProposalCards.finishedTitle(proposal) }
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-                    .clickable(onClickLabel = stringResource(if (opened) R.string.assistant_card_close else R.string.assistant_card_open), role = Role.Button) { cards.open(id, !opened) }
+                    .clickable(onClickLabel = stringResource(if (opened) R.string.assistant_card_close else R.string.assistant_card_open), role = Role.Button) { folded(); cards.open(id, !opened) }
                     .testTag("assistant-card-line"), verticalAlignment = Alignment.CenterVertically) {
-                    Text(line, Modifier.weight(1f).padding(vertical = 4.dp), style = MaterialTheme.typography.titleSmall.own)
+                    Text(title, Modifier.weight(1f).padding(vertical = 4.dp), style = MaterialTheme.typography.titleSmall.card,
+                        maxLines = if (opened) Int.MAX_VALUE else 3, overflow = TextOverflow.Ellipsis)
                     Icon(if (opened) Icons.Outlined.KeyboardArrowUp else Icons.Outlined.KeyboardArrowDown, null, tint = ur.muted)
                 }
-                // What can still be done about it stays on the line: take it back, put it back, go to what it names.
-                val onLine = ProposalCards.lineButtons(proposal, undoable)
-                if (onLine.isNotEmpty()) FlowRow(Modifier.offset(x = (-12).dp)) {
-                    onLine.forEach { action -> TextButton({ act(action) }, enabled = enabled(action)) { Text(label(action)) } }
-                }
+                // Under the title, quieter: what became of the card, and at the line's end what can still be done
+                // about it. Beside the title they left it no room. The buttons go under the state when both don't fit.
+                val state = remember(proposal, language) { ProposalCards.finishedState(proposal) }
+                if (state != null || onLine.isNotEmpty()) CardStateLine(Modifier.fillMaxWidth().testTag("assistant-card-state"),
+                    state = { if (state != null) Text(state, Modifier.padding(top = 2.dp), style = MaterialTheme.typography.labelMedium, color = ur.muted) },
+                    buttons = { if (onLine.isNotEmpty()) FlowRow { onLine.forEach { action -> TextButton({ act(action) }, enabled = enabled(action)) { Text(label(action)) } } } })
             }
             if (opened) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(card.text("kicker"), Modifier.weight(1f), style = MaterialTheme.typography.labelMedium.own, color = if (destructive) ur.negative else MaterialTheme.colorScheme.primary)
+                // What the card is, then its title. A thing the assistant made keeps its menu in the card's corner,
+                // over the end of the first of them: there it takes no line of its own, and no width from the title.
+                Box {
+                    val menu = ProposalAction.Remove in actions
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(card.text("kicker"), Modifier.fillMaxWidth().padding(end = if (menu) 40.dp else 0.dp), style = MaterialTheme.typography.labelMedium.card,
+                            color = if (destructive) ur.negative else MaterialTheme.colorScheme.primary)
+                        if (!finished) Text(proposal.text("title"), Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium.card, fontWeight = FontWeight.Bold)
+                    }
                     // What sets a thing the assistant made aside is in its menu, not beside its main buttons.
-                    if (ProposalAction.Remove in actions) CardMenu(!busy) { act(ProposalAction.Remove) }
+                    if (menu) CardMenu(!busy, Modifier.align(Alignment.TopEnd).offset(x = 12.dp, y = (-16).dp)) { act(ProposalAction.Remove) }
                 }
-                if (!finished) Text(proposal.text("title"), Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium.own, fontWeight = FontWeight.Bold)
-                card.rows("stats").forEach { stat -> Text("${stat.text("label")}: ${if (stat.has("amount") && !stat.isNull("amount")) money(stat.optLong("amount"), currency) else stat.text("text")}", Modifier.fillMaxWidth(), style = own) }
+                // What the card is about, quieter than its rows.
+                card.rows("stats").forEach { stat -> Text("${stat.text("label")}: ${if (stat.has("amount") && !stat.isNull("amount")) money(stat.optLong("amount"), currency) else stat.text("text")}", Modifier.fillMaxWidth(),
+                    style = MaterialTheme.typography.bodyMedium.card, color = ur.text2) }
                 if (kind == "question" && ProposalAction.Answer in actions) {
                     // Each answer is a button: pressing one sends its words as the user's message.
                     rows.forEach { row ->
@@ -850,19 +891,23 @@ internal fun AssistantProposalCard(proposal: JSONObject, currency: String, busy:
                     val shares = remember(rows, kind) { if (kind == "figures") ProposalCards.barShares(rows) else null }
                     val pages = ((rows.size + 19) / 20).coerceAtLeast(1)
                     val page = cards.page(id).coerceIn(0, pages - 1)
+                    // A row's parts that can be changed: its category, its amount, or both.
+                    fun changeable(row: JSONObject): Boolean = row.text("key").isNotEmpty() && row.optJSONObject("edit")?.let { it.optBoolean("category") || it.optBoolean("amount") } == true
+                    // Where any row has a pencil, every row keeps its room, so the amounts stay in one column.
+                    val pencils = choosing && change != null && rows.any(::changeable)
                     for (at in page * 20 until minOf(rows.size, (page + 1) * 20)) {
                         val row = rows[at]
                         val key = row.text("key")
-                        val edit = row.optJSONObject("edit")
-                        val editable = !row.optBoolean("skipped") && (edit?.optBoolean("category") == true || edit?.optBoolean("amount") == true)
                         ProposalRow(row, currency, busy,
                             toggle = if (choosing && key.isNotEmpty()) ({ choose?.invoke(ProposalChoices.toggle(choices, key, row.optBoolean("skipped"))) }) else null,
-                            change = if (choosing && key.isNotEmpty() && editable && change != null) ({ change(row) }) else null, bar = shares?.get(at))
+                            change = if (pencils && changeable(row) && !row.optBoolean("skipped") && change != null) ({ change(row) }) else null, bar = shares?.get(at), pencilRoom = pencils)
                     }
-                    card.optJSONObject("total")?.let { ProposalRow(it, currency, busy) }
-                    if (pages > 1) Row {
+                    // The total stands apart from what it adds up, under the app's hairline.
+                    card.optJSONObject("total")?.let { Hairline(); ProposalRow(it, currency, busy, strong = true, pencilRoom = pencils) }
+                    // In line with the rows, as the card's other text buttons are.
+                    if (pages > 1) Row(Modifier.offset(x = (-12).dp), verticalAlignment = Alignment.CenterVertically) {
                         TextButton({ cards.page(id, page - 1) }, enabled = page > 0) { Text(stringResource(R.string.assistant_previous_rows)) }
-                        Text(stringResource(R.string.assistant_page, "${page + 1}", "$pages"), Modifier.padding(12.dp))
+                        Text(stringResource(R.string.assistant_page, "${page + 1}", "$pages"), Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.labelLarge, color = ur.text2)
                         TextButton({ cards.page(id, page + 1) }, enabled = page + 1 < pages) { Text(stringResource(R.string.assistant_next_rows)) }
                     }
                 }
@@ -890,11 +935,52 @@ internal fun AssistantProposalCard(proposal: JSONObject, currency: String, busy:
     }
 }
 
+/**
+ * A card's words read in their own direction, as [own] has it, and start where the card does,
+ * whichever way the app reads. Left to their own direction's start, a payee's name in Latin letters
+ * sat at the far end of an Arabic card's row, against its amount, and an Arabic one likewise in English.
+ */
+private val TextStyle.card: TextStyle
+    @Composable @ReadOnlyComposable get() = own.copy(textAlign = if (LocalLayoutDirection.current == LayoutDirection.Rtl) TextAlign.Right else TextAlign.Left)
+
+/**
+ * Under a finished card's title: where the card stands at the line's start, and at its end the
+ * buttons for what can still be done about it. When the two don't fit side by side the buttons go
+ * under the state, from the line's start. Either may be empty. A text button's words stand 12 dp
+ * inside it, so the buttons reach that far past the line for their words to end, or start, where
+ * the card's other words do.
+ */
+@Composable
+private fun CardStateLine(modifier: Modifier, state: @Composable () -> Unit, buttons: @Composable () -> Unit) {
+    Layout({ Box { state() }; Box { buttons() } }, modifier) { (stateBox, buttonBox), constraints ->
+        val inset = 12.dp.roundToPx()
+        val gap = 8.dp.roundToPx()
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        // The buttons as wide as they are on one line: it's with that they fit beside the state or don't, not folded to fit.
+        val inOneLine = buttonBox.maxIntrinsicWidth(constraints.maxHeight)
+        val said = stateBox.measure(loose)
+        val offered = buttonBox.measure(if (constraints.hasBoundedWidth) loose.copy(maxWidth = constraints.maxWidth + inset) else loose)
+        val width = if (constraints.hasBoundedWidth) constraints.maxWidth else said.width + gap + offered.width
+        val beside = said.width == 0 || offered.width == 0 || said.width + gap + inOneLine - inset <= width
+        val height = if (beside) maxOf(said.height, offered.height) else said.height + offered.height
+        layout(width, height) {
+            if (beside) {
+                said.placeRelative(0, (height - said.height) / 2)
+                // With no state beside them the buttons start the line; with one, they end it.
+                offered.placeRelative(if (said.width == 0) -inset else width - offered.width + inset, (height - offered.height) / 2)
+            } else {
+                said.placeRelative(0, 0)
+                offered.placeRelative(-inset, said.height)
+            }
+        }
+    }
+}
+
 /** A card's ⋯ menu: Remove, which sets a thing the assistant made aside. */
 @Composable
-private fun CardMenu(enabled: Boolean, remove: () -> Unit) {
+private fun CardMenu(enabled: Boolean, modifier: Modifier = Modifier, remove: () -> Unit) {
     var open by remember { mutableStateOf(false) }
-    Box {
+    Box(modifier) {
         IconButton({ open = true }, Modifier.testTag("assistant-card-menu"), enabled = enabled) {
             Icon(Icons.Outlined.MoreHoriz, stringResource(R.string.common_more_actions), tint = ur.muted)
         }
@@ -924,30 +1010,43 @@ private fun CardStrip(text: String, tone: String) {
  * pencil (`change`) gives it another category or amount. A row left out stays, dimmed and struck
  * through; an amount the user gave shows in the accent colour, and so does a category just given
  * (`given`) until the core's card says it. On a figures card [bar] is the row's share of the
- * card's largest amount, from 0 to 1.
+ * card's largest amount, from 0 to 1. A card's total is [strong]. With [pencilRoom] a row with no
+ * pencil keeps a pencil's room at its end, so its amount lines up with those of the rows that have one.
  */
 @Composable
-private fun ProposalRow(row: JSONObject, currency: String, busy: Boolean, toggle: (() -> Unit)? = null, change: (() -> Unit)? = null, bar: Float? = null) {
+private fun ProposalRow(row: JSONObject, currency: String, busy: Boolean, toggle: (() -> Unit)? = null, change: (() -> Unit)? = null, bar: Float? = null, strong: Boolean = false,
+                        pencilRoom: Boolean = false) {
     val skipped = row.optBoolean("skipped")
     val label = row.text("label")
     val applyLabel = stringResource(R.string.assistant_apply_row, label)
     Row(Modifier.padding(start = if (row.optBoolean("indent")) 16.dp else 0.dp).alpha(if (skipped) .5f else 1f), verticalAlignment = Alignment.CenterVertically) {
-        if (toggle != null) Checkbox(!skipped, { toggle() }, Modifier.semantics { contentDescription = applyLabel }, enabled = !busy)
+        // The box is as wide to the finger as ever, and drawn in line with the card's title: the room around it reaches into the card's margin.
+        if (toggle != null) Box(Modifier.width(36.dp).wrapContentWidth(Alignment.End, unbounded = true)) {
+            Checkbox(!skipped, { toggle() }, Modifier.semantics { contentDescription = applyLabel }, enabled = !busy)
+        }
         Column(Modifier.weight(1f)) {
-            Row {
-                Text(label, Modifier.weight(1f), style = LocalTextStyle.current.own, textDecoration = if (skipped) TextDecoration.LineThrough else null)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(label, Modifier.weight(1f), style = LocalTextStyle.current.card, fontWeight = if (strong) FontWeight.SemiBold else null,
+                    textDecoration = if (skipped) TextDecoration.LineThrough else null)
                 if (row.has("amount")) Text(money(row.optLong("amount"), currency), fontWeight = FontWeight.SemiBold,
                     color = if (row.optBoolean("edited")) MaterialTheme.colorScheme.primary else Color.Unspecified)
             }
-            if (row.text("detail").isNotEmpty()) Text(row.text("detail"), Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall.own)
+            // Under the row's name, quieter than it.
+            if (row.text("detail").isNotEmpty()) Text(row.text("detail"), Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall.card, color = ur.text2)
             if (bar != null) Box(Modifier.padding(vertical = 4.dp).fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(ur.border).testTag("assistant-figure-bar")) {
                 Box(Modifier.fillMaxWidth(bar).fillMaxHeight().background(ur.accent))
             }
-            if (row.has("before") || row.has("after")) Text(stringResource(R.string.change_from_to, money(row.optLong("before"), currency), money(row.optLong("after"), currency)), style = MaterialTheme.typography.bodySmall)
+            if (row.has("before") || row.has("after")) Text(stringResource(R.string.change_from_to, money(row.optLong("before"), currency), money(row.optLong("after"), currency)), style = MaterialTheme.typography.bodySmall, color = ur.text2)
             if (row.text("given").isNotEmpty()) Text(row.text("given"), style = MaterialTheme.typography.labelSmall.own, color = MaterialTheme.colorScheme.primary)
-            if (row.text("badge").isNotEmpty()) Text(row.text("badge"), style = MaterialTheme.typography.labelSmall.own, color = if (row.text("tone") == "warn") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+            if (row.text("badge").isNotEmpty()) Text(row.text("badge"), style = MaterialTheme.typography.labelSmall.own, color = if (row.text("tone") == "warn") ur.warning else MaterialTheme.colorScheme.primary)
         }
-        if (change != null) IconButton(change, enabled = !busy) { Icon(Icons.Outlined.Edit, stringResource(R.string.assistant_change_row, label)) }
+        // The pencil is quieter than the row it changes, and ends where the amounts of the card's other rows do: like the checkbox, it reaches into the card's margin.
+        if (change != null) Box(Modifier.width(36.dp).wrapContentWidth(Alignment.Start, unbounded = true)) {
+            IconButton(change, enabled = !busy, colors = IconButtonDefaults.iconButtonColors(contentColor = ur.muted)) {
+                Icon(Icons.Outlined.Edit, stringResource(R.string.assistant_change_row, label), Modifier.size(20.dp))
+            }
+        }
+        else if (pencilRoom) Spacer(Modifier.width(36.dp))
     }
 }
 

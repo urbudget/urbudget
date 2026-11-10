@@ -1884,7 +1884,7 @@
     <string name="assistant_provider_chatgpt">ChatGPT plan · browser sign-in</string>
     <string name="assistant_provider_openai">OpenAI API key</string>
     <string name="assistant_provider_anthropic">Anthropic API key</string>
-    <string name="assistant_sign_in_browser">Sign in in your browser, then return here. Your ChatGPT plan must allow this app\'s usage.</string>
+    <string name="assistant_sign_in_browser">Sign in with your browser, then return here. Your ChatGPT plan must allow this app\'s usage.</string>
     <string name="assistant_signed_in">Signed in</string>
     <!-- The email address of the ChatGPT account. -->
     <string name="assistant_signed_in_as">Signed in %1$s</string>
@@ -2570,13 +2570,11 @@
     <!-- Over a card with many rows that can be left out. -->
     <string name="assistant_select_none">Select none</string>
     <string name="assistant_select_check">Only the ones to check</string>
-    <!-- A finished card folds to one line: where it stands, then its title. %1$s is when it was applied. -->
+    <!-- A finished card folds to its title, and under it where it stands. %1$s is when it was applied: the time alone today, the day and the time before that. -->
     <string name="assistant_applied_at">Applied %1$s</string>
     <string name="assistant_undone">Undone</string>
     <string name="assistant_replaced">Replaced by a newer version</string>
     <string name="assistant_removed">Removed</string>
-    <!-- %1$s is where the card stands ("Discarded"), %2$s its title. -->
-    <string name="assistant_card_line">%1$s: %2$s</string>
     <!-- A question the user has answered. %1$s is the question. -->
     <string name="assistant_asked">Asked: %1$s</string>
     <string name="assistant_card_open">Show what it has</string>

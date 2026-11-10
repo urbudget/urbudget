@@ -361,23 +361,34 @@ class AssistantPresentationTest {
         assertFalse(ProposalCards.known(JSONObject().put("kind", "somethingNewer")))
     }
 
-    @Test fun aFinishedCardsLineSaysWhereItStandsThenItsTitle() {
+    @Test fun aFinishedCardsLineIsItsTitleAndUnderItWhereItStands() {
         Money.configure(JSONObject().put("currency", "SAR"))
         Money.useInterface(java.util.Locale.ENGLISH, false)
         fun card(status: String, kind: String = "budget") = JSONObject().put("kind", kind).put("status", status).put("title", "Cover Dining out")
-        // The day as the budget writes dates, and the time where the phone is.
-        val clock: (String) -> String? = { assistantMoment(it, java.time.ZoneId.of("Asia/Riyadh"), java.time.format.DateTimeFormatter.ofPattern("HH:mm")) }
-        assertEquals("Applied 2026-10-21, 13:00: Cover Dining out", ProposalCards.finishedLine(card("applied").put("appliedAt", "2026-10-21T10:00:00Z"), clock))
-        assertEquals("Applied 2026-10-22, 01:30: Cover Dining out", ProposalCards.finishedLine(card("applied").put("appliedAt", "2026-10-21T22:30:00.123456789+00:00"), clock))
+        // The day as the budget writes dates, and the time where the phone is; on the day itself, the time alone.
+        val riyadh = java.time.ZoneId.of("Asia/Riyadh")
+        val hours = java.time.format.DateTimeFormatter.ofPattern("HH:mm")
+        val clock: (String) -> String? = { assistantMoment(it, riyadh, hours, java.time.LocalDate.parse("2026-10-23")) }
+        val thatDay: (String) -> String? = { assistantMoment(it, riyadh, hours, java.time.LocalDate.parse("2026-10-22")) }
+        assertEquals("Cover Dining out", ProposalCards.finishedTitle(card("applied")))
+        assertEquals("Applied 2026-10-21, 13:00", ProposalCards.finishedState(card("applied").put("appliedAt", "2026-10-21T10:00:00Z"), clock))
+        assertEquals("Applied 2026-10-22, 01:30", ProposalCards.finishedState(card("applied").put("appliedAt", "2026-10-21T22:30:00.123456789+00:00"), clock))
+        // The day is the phone's, not the core's: half past one in Riyadh is already the 22nd.
+        assertEquals("Applied 01:30", ProposalCards.finishedState(card("applied").put("appliedAt", "2026-10-21T22:30:00Z"), thatDay))
+        assertEquals("Applied 2026-10-21, 13:00", ProposalCards.finishedState(card("applied").put("appliedAt", "2026-10-21T10:00:00Z"), thatDay))
         // The core kept no time, or one that doesn't read: plain "Applied".
-        assertEquals("Applied: Cover Dining out", ProposalCards.finishedLine(card("applied"), clock))
-        assertEquals("Applied: Cover Dining out", ProposalCards.finishedLine(card("applied").put("appliedAt", "yesterday"), clock))
-        assertEquals("Undone: Cover Dining out", ProposalCards.finishedLine(card("undone"), clock))
-        assertEquals("Replaced by a newer version: Cover Dining out", ProposalCards.finishedLine(card("replaced"), clock))
-        assertEquals("Discarded: Cover Dining out", ProposalCards.finishedLine(card("discarded"), clock))
-        // A thing the assistant made is removed, not discarded; a question that was answered says what was asked.
-        assertEquals("Removed: Cover Dining out", ProposalCards.finishedLine(card("discarded", "report").put("made", true), clock))
-        assertEquals("Asked: Cover Dining out", ProposalCards.finishedLine(card("applied", "question").put("appliedAt", "2026-10-21T10:00:00Z"), clock))
+        assertEquals("Applied", ProposalCards.finishedState(card("applied"), clock))
+        assertEquals("Applied", ProposalCards.finishedState(card("applied").put("appliedAt", "yesterday"), clock))
+        assertEquals("Undone", ProposalCards.finishedState(card("undone"), clock))
+        assertEquals("Replaced by a newer version", ProposalCards.finishedState(card("replaced"), clock))
+        assertEquals("Discarded", ProposalCards.finishedState(card("discarded"), clock))
+        // A thing the assistant made is removed, not discarded.
+        assertEquals("Removed", ProposalCards.finishedState(card("discarded", "report").put("made", true), clock))
+        // A question that was answered says what was asked, and nothing under it; set aside unanswered, it's a card like any other.
+        val answered = card("applied", "question").put("appliedAt", "2026-10-21T10:00:00Z")
+        assertEquals("Asked: Cover Dining out", ProposalCards.finishedTitle(answered))
+        assertNull(ProposalCards.finishedState(answered, clock))
+        assertEquals("Cover Dining out" to "Discarded", card("discarded", "question").let { ProposalCards.finishedTitle(it) to ProposalCards.finishedState(it, clock) })
     }
 
     @Test fun aCardSaysOneThingAboutItselfAndAskingAgainSendsItsReason() {

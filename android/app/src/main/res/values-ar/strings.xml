@@ -3026,7 +3026,6 @@
     <string name="assistant_undone">تم التراجع عنه</string>
     <string name="assistant_replaced">استُبدل بنسخة أحدث</string>
     <string name="assistant_removed">أُزيل</string>
-    <string name="assistant_card_line">⁨%1$s⁩: ⁨%2$s⁩</string>
     <string name="assistant_card_open">عرض محتواها</string>
     <string name="assistant_card_close">إخفاء محتواها</string>
     <string name="assistant_update_app">حدِّث UrBudget لاستخدام هذه البطاقة.</string>
