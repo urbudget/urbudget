@@ -63,6 +63,24 @@ class AssistantPresentationTest {
         repeat(20) { assertNotSame(first.entries[it], second.entries[it]) }
     }
 
+    @Test fun anErrorsButtonIsTheOneTheCoreNamesAndOnlyTheLatestErrorHasOne() {
+        fun error(action: Any?) = JSONObject().put("kind", "error").put("text", "It failed.").apply { action?.let { put("action", it) } }
+        assertEquals(AssistantErrorAction.Retry, AssistantErrorAction.of(error("retry")))
+        assertEquals(AssistantErrorAction.SignIn, AssistantErrorAction.of(error("signIn")))
+        assertEquals(AssistantErrorAction.Settings, AssistantErrorAction.of(error("settings")))
+        assertEquals(AssistantErrorAction.Usage, AssistantErrorAction.of(error("usage")))
+        // An earlier error carries no action; "none" is one asking again wouldn't help. Neither has a button, nor has an action this app doesn't know.
+        assertNull(AssistantErrorAction.of(error(null)))
+        assertNull(AssistantErrorAction.of(error("none")))
+        assertNull(AssistantErrorAction.of(error(JSONObject.NULL)))
+        assertNull(AssistantErrorAction.of(error("somethingNewer")))
+        assertEquals(listOf("Continue with ChatGPT", "Assistant settings", "Plan usage", "Try again"), AssistantErrorAction.values().map { Words[it.label] })
+    }
+
+    @Test fun theNoticeOfWhatsSentNamesTheCompanyBehindTheService() {
+        assertEquals(listOf("OpenAI", "OpenAI", "Anthropic"), listOf("chatgpt", "openai", "anthropic").map(::assistantProviderCompany))
+    }
+
     @Test fun leavingARowOutAndPuttingItBackChangesOnlyItsKey() {
         assertJson("""{"skip":[],"set":[]}""", ProposalChoices.original())
         val one = ProposalChoices.toggle(null, "t:b", skipped = false)

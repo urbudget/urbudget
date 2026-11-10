@@ -37,6 +37,34 @@ internal fun assistantThreadPresentation(thread: JSONObject, previous: Assistant
 }
 
 /**
+ * What the button under an error does, with its label. The core says which in the entry's `action`
+ * (services `history::error_action`), and only for the conversation's last entry: an earlier error
+ * has none, and neither has one that asking again wouldn't help ("none"), so those show no button.
+ */
+internal enum class AssistantErrorAction(val label: Int) {
+    /** Sign in with ChatGPT again, then ask for the reply again. */
+    SignIn(R.string.assistant_continue_chatgpt),
+    /** The key, the model or the service needs changing: the assistant's settings. */
+    Settings(R.string.assistant_settings),
+    /** The plan's limit was reached: ChatGPT's usage page. */
+    Usage(R.string.assistant_plan_usage),
+    Retry(R.string.assistant_try_again);
+
+    companion object {
+        fun of(entry: JSONObject): AssistantErrorAction? = when (entry.optString("action")) {
+            "signIn" -> SignIn
+            "settings" -> Settings
+            "usage" -> Usage
+            "retry" -> Retry
+            else -> null
+        }
+    }
+}
+
+/** Whose service the messages go to, as the notice of what's sent names it: a ChatGPT plan and an OpenAI key are both OpenAI's. */
+internal fun assistantProviderCompany(provider: String): String = if (provider == "anthropic") "Anthropic" else "OpenAI"
+
+/**
  * What the user chose on a proposal card, as `assistant_revise` takes it (desktop ProposalCard):
  * `skip` lists the keys of rows left out, `set` the rows given another category (null: Ready to
  * Assign) or amount. Each choice is made from the card's current `choices`.

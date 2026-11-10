@@ -38,6 +38,8 @@ final class AssistantController {
     var ready: Bool { status?.flag("ready") == true }
     var provider: String { status?.text("provider", "chatgpt") ?? "chatgpt" }
     var signingIn: Bool { busy.contains("signIn") || status?.flag("signingIn") == true }
+    /// The notice of what gets sent hasn't been read for the chosen service yet.
+    var noticeDue: Bool { status?.flag("noticeDue") == true }
 
     @ObservationIgnored private weak var store: BudgetStore?
     @ObservationIgnored private var identity: String?
@@ -193,6 +195,10 @@ final class AssistantController {
         case "started":
             running = true
         case "delta", "thinking":
+            // Only a reply under way has a live text. Events are polled, so tokens written just
+            // before Stop can arrive after the conversation was read back with that text kept in
+            // it, and would show a second time under it.
+            guard running else { break }
             stream.append(event.text("text"), thinking: type == "thinking")
             scheduleStreamPublish()
         case "message", "step", "proposal", "error", "done":
@@ -241,7 +247,7 @@ final class AssistantController {
         thread = nil
         entries = []
         running = false
-        attachments = []
+        dropAttachments()
         streaming = ""
         thinking = ""
         undoProposal = nil
@@ -258,7 +264,7 @@ final class AssistantController {
             running = false
             streaming = ""
             thinking = ""
-            attachments = []
+            dropAttachments()
             undoProposal = nil
             undoToken = nil
             try await loadThread(id)
@@ -283,10 +289,12 @@ final class AssistantController {
 
     // MARK: Settings
 
-    func settings(_ change: JSON) {
+    /// `done` runs once the change is saved and the status read again.
+    func settings(_ change: JSON, done: (@MainActor () -> Void)? = nil) {
         operation("settings") { [self] in
             _ = try await call("assistant_settings", ["change": change])
             try await loadStatus()
+            done?()
         }
     }
 
@@ -294,7 +302,8 @@ final class AssistantController {
 
     /// Starts ChatGPT sign-in. The service asks the app to show ChatGPT's page (host://open-url)
     /// and waits on its one-time 127.0.0.1 listener until the page redirects back or it's cancelled.
-    func signIn() {
+    /// `done` runs only when it signed in.
+    func signIn(done: (@MainActor () -> Void)? = nil) {
         signInCancelled = false
         operation("signIn") { [self] in
             if var shown = status {
@@ -305,6 +314,7 @@ final class AssistantController {
             do {
                 _ = try await call("assistant_sign_in")
                 try? await loadStatus()
+                done?()
             } catch {
                 try? await loadStatus()
                 // Cancelling here is the person's own choice, not a failure to report.
@@ -397,10 +407,37 @@ final class AssistantController {
     private func upload(_ name: String, _ data: Data, generation: Int) async throws {
         let encoded = await Task.detached(priority: .userInitiated) { data.base64EncodedString() }.value
         let meta = try await call("assistant_attach", ["name": .string(name), "data": .string(encoded)])
-        if generation == self.generation && attachments.count < AssistantAttachments.limit { attachments.append(meta) }
+        if generation == self.generation && attachments.count < AssistantAttachments.limit {
+            attachments.append(meta)
+        } else {
+            // It went on no message: the conversation was left while the file was read.
+            detach([meta.text("id")])
+        }
     }
 
-    func removeAttachment(_ id: String) { attachments.removeAll { $0.text("id") == id } }
+    func removeAttachment(_ id: String) {
+        attachments.removeAll { $0.text("id") == id }
+        // A message being sent takes its files with it; only one still waiting is forgotten.
+        if !busy.contains("send") { detach([id]) }
+    }
+
+    /// Takes every file off the message being written, as starting or opening a conversation does.
+    private func dropAttachments() {
+        let ids = attachments.map { $0.text("id") }
+        attachments = []
+        if !busy.contains("send") { detach(ids) }
+    }
+
+    /// Has the service forget files taken off a message before it was sent: they wait in its
+    /// staging folder until Send. A failure isn't shown; the service clears that folder itself
+    /// in a later session.
+    private func detach(_ ids: [String]) {
+        let ids = ids.filter { !$0.isEmpty }
+        guard !ids.isEmpty else { return }
+        Task { @MainActor in
+            for id in ids { _ = try? await call("assistant_detach", ["id": .string(id)]) }
+        }
+    }
 
     // MARK: Messages
 

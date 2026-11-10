@@ -341,7 +341,10 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     // after this one, so theirs come first. Then an account goes back to Accounts, a page to the first tab.
     // Beside the app the assistant closes once the app has nowhere left to go back to.
     val appBack = morePage.isNotEmpty() || tab != 0 || accountFilter.isNotEmpty() || categoryFilter.isNotEmpty()
-    BackHandler(editor == null && (assistant || appBack)) {
+    // A bank import the assistant covers on a phone isn't drawn, so it has no Back of its own and
+    // Back would leave the app: it closes the assistant instead, back to the import.
+    val assistantOverImport = assistant && !assistantBeside && editor == "bankImport"
+    BackHandler((editor == null && (assistant || appBack)) || assistantOverImport) {
         when {
             assistant && (!assistantBeside || !appBack) -> assistant = false
             morePage.isNotEmpty() -> closePage()

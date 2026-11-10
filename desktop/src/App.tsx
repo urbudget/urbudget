@@ -17,6 +17,7 @@ import { api } from "./bridge";
 import { apply as applyPatch, type Patch } from "./patch";
 import { AssistantBoundary, AssistantPanel, useAssistantWidth, type Request as AssistantRequest } from "./assistant/Assistant";
 import { assistant, type Card, type Proposal } from "./assistant/api";
+import { hasUnsent } from "./assistant/composer";
 import { LoanActionsContext, hasLoan, loanTerms, type LoanActions } from "./Planning";
 import { LoanPlanner } from "./LoanPlanner";
 import { LoanPaymentForm } from "./LoanPayment";
@@ -400,7 +401,7 @@ export default function App() {
   };
   // Saves the budget (and makes the on-close backup) before the installer replaces the app.
   const installUpdate = (automatic = false) => {
-    if (importing?.file || importing?.session || assistantWorking.current) {
+    if (importing?.file || importing?.session || assistantWorking.current || hasUnsent(budgetId)) {
       if (!automatic) fail(new Error(t("Finish your import or assistant work before installing an update.")));
       return;
     }
@@ -418,7 +419,7 @@ export default function App() {
   });
   // or any once UrBudget has sat unused in the background with nothing to lose: no unsaved
   // change, no dialog or form open, no import under way (on its page or not) and nothing unsent
-  // in the assistant, none of which a restart keeps.
+  // in the assistant (its panel open or not), none of which a restart keeps.
   useAutomaticUpdate(
     automaticUpdate,
     () =>
@@ -429,6 +430,7 @@ export default function App() {
       !planningEditor &&
       !(importing?.file || importing?.session) &&
       !assistantWorking.current &&
+      !hasUnsent(budgetId) &&
       !document.querySelector('[aria-modal="true"]') &&
       !document.activeElement?.matches("input, textarea, select, [contenteditable]"),
     () => installUpdate(true),
@@ -955,6 +957,8 @@ export default function App() {
                   : undefined,
             }}
             request={assistantRequest}
+            // Taken once: closing and reopening the panel doesn't attach or ask it again.
+            onRequestTaken={() => setAssistantRequest(null)}
             width={assistantWidth.width}
             onResize={assistantWidth.setWidth}
             onClose={() => showAssistant(false)}

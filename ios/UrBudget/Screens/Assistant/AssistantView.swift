@@ -45,6 +45,8 @@ struct AssistantView: View {
     @State private var settingsShown = false
     @State private var historyShown = false
     @State private var contextShown = false
+    /// What waits on the notice of what gets sent: a message, or a reply asked for again.
+    @State private var afterNotice: AssistantSheetItem<() -> Void>?
     @State private var choosingFiles = false
     @State private var choosingPhotos = false
     @State private var photoItems: [PhotosPickerItem] = []
@@ -65,7 +67,7 @@ struct AssistantView: View {
     init(request: AssistantRequest? = nil) { self.request = request }
 
     private var sheetShown: Bool {
-        historyShown || contextShown || report != nil || importReview != nil || replyReport != nil || share != nil || preview != nil || changing != nil
+        historyShown || contextShown || afterNotice != nil || report != nil || importReview != nil || replyReport != nil || share != nil || preview != nil || changing != nil
     }
 
     var body: some View {
@@ -128,6 +130,12 @@ struct AssistantView: View {
         }
         .sheet(isPresented: $historyShown) { AssistantHistorySheet() }
         .sheet(isPresented: $contextShown) { AssistantContextPicker(selected: $selected) }
+        .sheet(item: $afterNotice) { waiting in
+            AssistantSendNotice {
+                afterNotice = nil
+                waiting.value()
+            }
+        }
         .sheet(item: $report) { AssistantReportView(report: $0.value) }
         .sheet(item: $importReview) { item in
             AssistantImportReview(request: item.value) {
@@ -176,7 +184,7 @@ struct AssistantView: View {
                         .accessibilityElement(children: .combine)
                         .accessibilityLabel("The assistant is working")
                     } else if controller.entries.last?.kind == "user" {
-                        Button("Continue interrupted reply", systemImage: "arrow.clockwise") { controller.retry(importing: request?.importing) }
+                        Button("Continue interrupted reply", systemImage: "arrow.clockwise") { retry() }
                             .font(.subheadline)
                             .disabled(controller.busy.contains("send"))
                             .padding(.vertical, 8)
@@ -272,9 +280,12 @@ struct AssistantView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label("Couldn’t finish", systemImage: "exclamationmark.triangle.fill").font(.subheadline.weight(.semibold)).foregroundStyle(Color.urNegative)
                 Text(entry.json.text("text")).font(.subheadline)
-                Button("Try again") { controller.retry(importing: request?.importing) }
-                    .font(.subheadline.weight(.semibold))
-                    .disabled(controller.running || controller.busy.contains("send"))
+                // Only the conversation's last error says what helps; an earlier one has no button.
+                if let action = AssistantErrorAction.of(entry.json) {
+                    errorButton(action)
+                        .font(.subheadline.weight(.semibold))
+                        .disabled(controller.running || controller.busy.contains("send") || controller.signingIn)
+                }
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -282,6 +293,27 @@ struct AssistantView: View {
         default:
             AssistantReply(text: entry.json.text("text"), blocks: entry.blocks) { excerpt in
                 replyReport = AssistantSheetItem(value: excerpt)
+            }
+        }
+    }
+
+    /// The button under the conversation's last error, doing what the service says helps.
+    @ViewBuilder
+    private func errorButton(_ action: AssistantErrorAction) -> some View {
+        switch action {
+        case .retry:
+            Button("Try again") { retry() }
+        case .settings:
+            Button("Assistant settings") { settingsShown = true }
+        case .usage:
+            Button("Plan usage") { controller.openLink("usage") }
+        case .signIn:
+            Button("Continue with ChatGPT") {
+                // Signed in, it asks again, unless another conversation was opened meanwhile.
+                let thread = controller.threadId
+                controller.signIn {
+                    if controller.threadId == thread { retry() }
+                }
             }
         }
     }
@@ -397,14 +429,32 @@ struct AssistantView: View {
             && (!message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !controller.attachments.isEmpty)
     }
 
+    /// Runs `action` at once, or once the person has read the notice of what gets sent when it's due
+    /// for the chosen service (the first message to it, or a reply asked for again after another
+    /// was chosen): nothing goes to a service before that. Not now there leaves `action` undone.
+    private func whenTold(_ action: @escaping () -> Void) {
+        if controller.ready && controller.noticeDue {
+            afterNotice = AssistantSheetItem(value: action)
+        } else {
+            action()
+        }
+    }
+
     private func send() {
         guard canSend else { return }
-        let text = message
-        sent += 1
-        controller.send(text, selected: selected, importing: request?.importing) {
-            if message == text { message = "" }
-            selected = []
+        whenTold {
+            let text = message
+            sent += 1
+            controller.send(text, selected: selected, importing: request?.importing) {
+                if message == text { message = "" }
+                selected = []
+            }
         }
+    }
+
+    /// Asks for the reply again, after an error or an interrupted reply.
+    private func retry() {
+        whenTold { controller.retry(importing: request?.importing) }
     }
 
     private var composer: some View {
@@ -617,6 +667,50 @@ private struct AssistantChip: View {
         .padding(.trailing, 6)
         .padding(.vertical, 6)
         .background(Color.cardBackground, in: Capsule())
+    }
+}
+
+/// What gets sent, and to whom, shown before the first message to each service. Continue has the
+/// service remember it was read, then sends what waited on it; Not now sends nothing and leaves
+/// the message as typed. The memo switch is here so it can be turned off before anything goes.
+private struct AssistantSendNotice: View {
+    /// Called once the service has it that the notice was read.
+    var proceed: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    private let controller = AssistantController.shared
+
+    var body: some View {
+        let company = AssistantNotice.recipient(controller.provider)
+        NavigationStack {
+            Form {
+                Section {
+                    Text("Your messages, what's on screen, the files you attach, and the budget details the assistant looks up to answer you go to \(company). Its terms and privacy policy govern how it processes and retains them.")
+                        .font(.subheadline)
+                    Text("Your budget file, conversation history and sign-in are kept on this device. Nothing in the budget changes until you apply a change yourself.")
+                        .font(.subheadline)
+                }
+                Section {
+                    AssistantMemosToggle()
+                }
+                if let error = controller.error { FormErrorView(message: error) }
+            }
+            .navigationTitle("What gets sent")
+            .inlineTitle()
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Not now") {
+                        controller.dismissError()
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Continue") { controller.settings(["told": true], done: { proceed() }) }
+                        .fontWeight(.semibold)
+                        .disabled(controller.busy.contains("settings"))
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 }
 

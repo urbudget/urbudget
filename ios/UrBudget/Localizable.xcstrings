@@ -15845,6 +15845,17 @@
         }
       }
     },
+    "Not now" : {
+      "comment" : "Closes the notice of what gets sent without sending the message.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ليس الآن"
+          }
+        }
+      }
+    },
     "Not reconciled" : {
       "localizations" : {
         "ar" : {
@@ -24625,6 +24636,17 @@
         }
       }
     },
+    "What gets sent" : {
+      "comment" : "Title of the notice before a first message to the assistant's provider.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ما الذي يُرسَل"
+          }
+        }
+      }
+    },
     "What the payoff date and the interest are worked out from. Amounts in %@." : {
       "localizations" : {
         "ar" : {
@@ -25055,6 +25077,16 @@
         }
       }
     },
+    "Your budget file, conversation history and sign-in are kept on this device. Nothing in the budget changes until you apply a change yourself." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يبقى ملف ميزانيتك وسجل المحادثات وتسجيل الدخول على هذا الجهاز. ولا يتغير شيء في الميزانية حتى تطبّق التغيير بنفسك."
+          }
+        }
+      }
+    },
     "Your budget, with a second pair of eyes" : {
       "localizations" : {
         "ar" : {
@@ -25091,6 +25123,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "يتضمن ما استوردته سعر فائدة هذا القرض ودفعته."
+          }
+        }
+      }
+    },
+    "Your messages, what's on screen, the files you attach, and the budget details the assistant looks up to answer you go to %@. Its terms and privacy policy govern how it processes and retains them." : {
+      "comment" : "The value is OpenAI or Anthropic",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "رسائلك، وما يظهر على الشاشة، والملفات التي ترفقها، وتفاصيل الميزانية التي يبحث عنها المساعد ليجيبك تُرسَل إلى ⁨%@⁩. وتحكم شروطه وسياسة الخصوصية لديه طريقة معالجتها والاحتفاظ بها."
           }
         }
       }

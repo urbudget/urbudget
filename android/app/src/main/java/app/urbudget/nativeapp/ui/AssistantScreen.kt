@@ -38,7 +38,10 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.urbudget.nativeapp.AssistantController
+import app.urbudget.nativeapp.AssistantErrorAction
 import app.urbudget.nativeapp.AssistantPlace
+import app.urbudget.nativeapp.SignInService
+import app.urbudget.nativeapp.assistantProviderCompany
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -85,8 +88,19 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
     var importFile by remember { mutableStateOf<JSONObject?>(null) }
     var report by remember { mutableStateOf<JSONObject?>(null) }
     var reportReply by remember { mutableStateOf<String?>(null) }
-    // Whether this budget reads bank texts here: the phone then answers the assistant's bank-text tools.
-    val bankTexts by produceState(false, budgetState.budgetIdentity) { value = withContext(Dispatchers.IO) { BankTextsAssistant.available(context, budgetState.budgetIdentity) } }
+    // Whether chat may search this budget's bank texts here: the phone then answers the assistant's
+    // bank-text tools. The permission to send texts is for one service and model, so it's asked
+    // again when either changes, and as each message goes: senders, SMS access or the permission
+    // itself may have changed in Bank messages while this panel stood beside it.
+    var bankTexts by remember { mutableStateOf(false) }
+    suspend fun checkBankTexts(): Boolean {
+        val identity = budgetState.budgetIdentity
+        val connection = controller.state.value.status
+        return withContext(Dispatchers.IO) { BankTextsAssistant.available(context, identity, connection) }.also { bankTexts = it }
+    }
+    LaunchedEffect(budgetState.budgetIdentity, state.status?.text("provider"), state.status?.text("model")) { checkBankTexts() }
+    // What waits on the notice of what's sent: a message, or a reply asked for again.
+    var afterNotice by remember { mutableStateOf<(() -> Unit)?>(null) }
     var pendingExport by remember { mutableStateOf<Pair<String, ByteArray>?>(null) }
     var exportError by remember { mutableStateOf<String?>(null) }
     // A proposal card's row being given another category or amount: the proposal, and the row.
@@ -121,7 +135,23 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
     // Steps in a row read as one line, the latest; the rest are a tap away.
     val rows = remember(entries) { assistantRows(entries) }
     val clipboard = LocalClipboardManager.current
-    fun ask(text: String) = controller.send(text, budgetState.month, selected, importing, bankTexts, place) { message = ""; selected = emptyList() }
+    /**
+     * Sends at once, or once the user has read the notice of what's sent when it's due for the
+     * service in use (the first message to it, or a reply asked for again after another was chosen):
+     * nothing goes to a service before that.
+     */
+    fun whenTold(send: () -> Unit) {
+        val status = controller.state.value.status
+        if (status?.optBoolean("ready") == true && status.optBoolean("noticeDue")) afterNotice = send else send()
+    }
+    fun ask(text: String) = whenTold {
+        scope.launch {
+            val texts = checkBankTexts()
+            controller.send(text, budgetState.month, selected, importing, texts, place) { message = ""; selected = emptyList() }
+        }
+    }
+    fun retry() = whenTold { scope.launch { controller.retry(budgetState.month, importing, checkBankTexts(), place) } }
+    val signingIn = "signIn" in state.busy || state.status?.optBoolean("signingIn") == true
     Column(Modifier.fillMaxSize().imePadding()) {
         Row(Modifier.fillMaxWidth().then(dragArea).padding(start = 20.dp, end = 4.dp, top = 2.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -187,7 +217,12 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
                                 val id = proposal.text("id")
                                 scope.launch {
                                     runCatching { BankTextsAssistant.apply(context.applicationContext, vm, payload) }
-                                        .onSuccess { page -> controller.imported(thread, id); page?.let { PageRequests.page.value = it; onClose?.invoke() } }
+                                        .onSuccess { done ->
+                                            controller.imported(thread, id)
+                                            // Texts that have gone from the phone since: the panel stays open to say so.
+                                            done.notice?.let(controller::note)
+                                            done.page?.let { PageRequests.page.value = it; if (done.notice == null) onClose?.invoke() }
+                                        }
                                         .onFailure { controller.showError(it.message) }
                                 }
                             } })
@@ -205,7 +240,22 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(stringResource(R.string.assistant_couldnt_finish), style = MaterialTheme.typography.labelLarge, color = ur.warning)
                             SelectionContainer { Text(entry.text("text"), color = ur.text) }
-                            TextButton({ controller.retry(budgetState.month, importing, bankTexts, place) }, enabled = !state.running) { Text(stringResource(R.string.assistant_try_again)) }
+                            // What helps is the core's to say, and only for the latest error: an earlier one, or one asking again wouldn't help, has no button.
+                            AssistantErrorAction.of(entry)?.let { action ->
+                                TextButton({
+                                    when (action) {
+                                        AssistantErrorAction.Retry -> retry()
+                                        AssistantErrorAction.Settings -> settings = true
+                                        AssistantErrorAction.Usage -> controller.openLink("usage")
+                                        // The sign-in the settings start, with its service kept answering the browser; signed in, the reply is asked for again.
+                                        AssistantErrorAction.SignIn -> { SignInService.start(context); controller.signIn { retry() } }
+                                    }
+                                }, enabled = when (action) {
+                                    AssistantErrorAction.Retry -> !state.running
+                                    AssistantErrorAction.SignIn -> !state.running && !signingIn
+                                    else -> true
+                                }) { Text(stringResource(action.label)) }
+                            }
                         }
                     }
                     // The assistant's reply as text, with copying and reporting it to hand.
@@ -232,7 +282,7 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
                 }
             }
             else if (entries.lastOrNull()?.text("kind") == "user") item {
-                TextButton({ controller.retry(budgetState.month, importing, bankTexts, place) }, enabled = "send" !in state.busy) { Text(stringResource(R.string.assistant_continue_reply)) }
+                TextButton({ retry() }, enabled = "send" !in state.busy) { Text(stringResource(R.string.assistant_continue_reply)) }
             }
         }
         if (state.attachments.isNotEmpty() || selected.isNotEmpty()) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -263,6 +313,21 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
     }
 
     if (settings) AssistantSettingsDialog(controller) { settings = false }
+    // The notice of what's sent, and to whom, before the first message to a service. Continue keeps
+    // that it was read and sends what waited; Not now sends nothing and leaves the message as typed.
+    afterNotice?.let { send ->
+        AlertDialog(onDismissRequest = { afterNotice = null }, title = { Text(stringResource(R.string.assistant_notice_title)) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(stringResource(R.string.assistant_notice_sent, assistantProviderCompany(state.status?.text("provider").orEmpty())))
+                    Text(stringResource(R.string.assistant_notice_kept))
+                    ShareMemosSwitch(state.status, controller)
+                }
+            },
+            // Not while the memo switch is still being saved: the message goes with the choice made here.
+            confirmButton = { TextButton({ afterNotice = null; controller.told(send) }, enabled = "settings" !in state.busy) { Text(stringResource(R.string.common_continue)) } },
+            dismissButton = { TextButton({ afterNotice = null }) { Text(stringResource(R.string.sms_not_now)) } })
+    }
     if (history) ModalBottomSheet(onDismissRequest = { history = false }) {
         Text(stringResource(R.string.assistant_conversations), Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.titleLarge)
         if (state.thread != null) TextButton({

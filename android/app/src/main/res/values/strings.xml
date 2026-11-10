@@ -2505,6 +2505,11 @@
     <string name="bank_texts_apply_add">Add to the review</string>
     <string name="bank_texts_apply_remember">Remember it</string>
     <string name="bank_texts_apply_limit">Set the limit</string>
+    <!-- Texts an "add" card named that aren't on the phone when it's applied: the rest are added, and this says how many weren't. -->
+    <plurals name="bank_texts_gone">
+        <item quantity="one">%1$s text couldn’t be found on this phone any more, so it wasn’t added.</item>
+        <item quantity="other">%1$s texts couldn’t be found on this phone any more, so they weren’t added.</item>
+    </plurals>
     <!-- Under an account in Balances after adding: the bank's figure in the review's latest text that gives one. %1$s the figure, %2$s its date, %3$s an amount. -->
     <string name="sms_bank_matches">Matches the bank’s %1$s on %2$s</string>
     <string name="sms_bank_differs">The bank said %1$s on %2$s: %3$s different</string>
@@ -2525,4 +2530,8 @@
     <string name="assistant_steps_fewer">Show fewer</string>
     <string name="assistant_copy_reply">Copy reply</string>
     <string name="assistant_add_to_message">Add a file or transactions</string>
+    <!-- The notice before the first message to a service: what's sent, and to whom. %1$s is the company, OpenAI or Anthropic. -->
+    <string name="assistant_notice_title">What gets sent</string>
+    <string name="assistant_notice_sent">Your messages, what’s on screen, the files you attach, and the budget details the assistant looks up to answer you go to %1$s. Its terms and privacy policy govern how it processes and retains them.</string>
+    <string name="assistant_notice_kept">Your budget file, conversation history and sign-in are kept on this device. Nothing in the budget changes until you apply a change yourself.</string>
 </resources>

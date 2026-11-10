@@ -374,7 +374,7 @@ export function ProposalCard({
               <Eye size={13} aria-hidden /> {t("Preview")}
             </button>
             <button className="secondary small" disabled={busy} onClick={onPrint && run(onPrint)}>
-              <FileDown size={13} aria-hidden /> {t("Save as PDF")}
+              <FileDown size={13} aria-hidden /> {t("Print or save as PDF")}
             </button>
             {p.sheets > 0 && onSheet && (
               <button

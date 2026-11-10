@@ -89,10 +89,7 @@ internal fun AssistantSettingsDialog(controller: AssistantController, close: () 
                         TextButton(controller::models, enabled = "models" !in state.busy) { Text(stringResource(R.string.assistant_refresh_models)) }
                     }
                     HorizontalDivider()
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) { Text(stringResource(R.string.assistant_share_memos)); Text(stringResource(R.string.assistant_share_memos_detail), style = MaterialTheme.typography.bodySmall) }
-                        Switch(status?.optBoolean("shareMemos", true) ?: true, { controller.settings(JSONObject().put("shareMemos", it)) })
-                    }
+                    ShareMemosSwitch(status, controller)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) { Text(stringResource(R.string.assistant_keep_history)); Text(stringResource(R.string.assistant_keep_history_detail), style = MaterialTheme.typography.bodySmall) }
                         Switch(status?.optBoolean("keepHistory", true) ?: true, { controller.settings(JSONObject().put("keepHistory", it)) })
@@ -107,4 +104,13 @@ internal fun AssistantSettingsDialog(controller: AssistantController, close: () 
         text = { Text(stringResource(R.string.assistant_delete_history_message)) },
         confirmButton = { TextButton({ controller.deleteAll(); deleteHistory = false }) { Text(stringResource(R.string.assistant_delete_all)) } },
         dismissButton = { TextButton({ deleteHistory = false }) { Text(stringResource(R.string.common_cancel)) } })
+}
+
+/** Whether memo text goes with budget lookups: here in the settings, and in the notice of what's sent, where it can be turned off before a first message. */
+@Composable
+internal fun ShareMemosSwitch(status: JSONObject?, controller: AssistantController) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) { Text(stringResource(R.string.assistant_share_memos)); Text(stringResource(R.string.assistant_share_memos_detail), style = MaterialTheme.typography.bodySmall) }
+        Switch(status?.optBoolean("shareMemos", true) ?: true, { controller.settings(JSONObject().put("shareMemos", it)) })
+    }
 }

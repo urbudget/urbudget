@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -55,6 +56,7 @@ class AssistantController(
     private val service: suspend (String, JSONObject) -> Any? = { method, params ->
         withContext(Dispatchers.IO) { NativeServices.call(method, params) }
     },
+    events: Flow<JSONObject> = NativeServices.events,
 ) : ViewModel() {
     private val mutable = MutableStateFlow(AssistantState())
     val state = mutable.asStateFlow()
@@ -69,14 +71,17 @@ class AssistantController(
     init {
         refresh()
         viewModelScope.launch {
-            NativeServices.events.collect { envelope ->
+            events.collect { envelope ->
                 if (envelope.optString("event") != "assistant://event") return@collect
                 val event = envelope.optJSONObject("payload") ?: return@collect
                 if (event.optString("threadId") != state.value.threadId) return@collect
                 when (event.optString("type")) {
                     "started" -> mutable.update { it.copy(running = true, activity = null) }
                     "activity" -> mutable.update { it.copy(activity = event.optString("text").ifBlank { null }) }
-                    "delta", "thinking" -> {
+                    // Only a reply under way has a live text. Events are polled, so what was written
+                    // just before Stop can arrive after the conversation was read back with that text
+                    // kept in it, and would show a second time under it.
+                    "delta", "thinking" -> if (state.value.running) {
                         stream.append(event.optString("text"), thinking = event.optString("type") == "thinking")
                         scheduleStreamPublish()
                     }
@@ -200,10 +205,12 @@ class AssistantController(
     fun prefilled() { mutable.update { it.copy(draft = null) } }
     fun newChat() {
         conversationGeneration++; clearStream(); presentation = null
+        detach(state.value.attachments)
         mutable.update { it.copy(thread = null, entries = emptyList(), running = false, attachments = emptyList(), streaming = "", thinking = "", undoProposal = null) }; undoToken = null
     }
     fun openThread(id: String) = operation("open") {
         conversationGeneration++; clearStream(); presentation = null
+        detach(state.value.attachments)
         mutable.update { it.copy(thread = JSONObject().put("id", id), entries = emptyList(), running = false, streaming = "", thinking = "", attachments = emptyList(), undoProposal = null) }
         undoToken = null; loadThread(id)
     }
@@ -215,6 +222,15 @@ class AssistantController(
     fun deleteAll() = operation("delete") { call("assistant_delete_all"); newChat(); loadHistory() }
     fun settings(change: JSONObject) = operation("settings") {
         call("assistant_settings", JSONObject().put("change", change)); loadStatus()
+    }
+    /**
+     * The user read the notice of what's sent, and to whom: kept for the service in use, so it
+     * isn't due again until another is chosen. [done] then sends what waited on it. It takes the
+     * settings' turn, which the notice's memo switch takes too: the notice offers Continue only
+     * once a change of that switch is saved, so the message goes with the choice made there.
+     */
+    fun told(done: () -> Unit) = operation("settings") {
+        call("assistant_settings", JSONObject().put("change", JSONObject().put("told", true))); loadStatus(); done()
     }
     fun models() = operation("models") { loadModels(true) }
     /** Browser return and Activity recreation may miss the original sign-in coroutine's result. */
@@ -229,10 +245,12 @@ class AssistantController(
             finally { mutable.update { it.copy(busy = it.busy - "signInStatus") } }
         }
     }
-    fun signIn() = operation("signIn") {
+    /** [done] runs once signed in: a reply that failed for want of it is asked for again. */
+    fun signIn(done: () -> Unit = {}) = operation("signIn") {
         mutable.update { it.copy(status = it.status?.copy()?.put("signingIn", true)) }
         try { call("assistant_sign_in", JSONObject().put("returnPackage", BuildConfig.APPLICATION_ID)) }
         finally { loadStatus() }
+        if (state.value.status?.optBoolean("ready") == true) done()
     }
     fun cancelSignIn() = operation("cancel") { call("assistant_cancel_sign_in"); loadStatus() }
     fun signOut() = operation("signOut") { try { call("assistant_sign_out") } finally { loadStatus() } }
@@ -250,9 +268,27 @@ class AssistantController(
             JSONObject().put("name", file.first).put("data", Base64.encodeToString(file.second, Base64.NO_WRAP))
         }
         val attachment = call("assistant_attach", params) as JSONObject
-        if (generation == conversationGeneration) mutable.update { it.copy(attachments = it.attachments + attachment) }
+        // Attached to a conversation that was left meanwhile: it has no message to go with.
+        if (generation == conversationGeneration) mutable.update { it.copy(attachments = it.attachments + attachment) } else detach(listOf(attachment))
     }
-    fun removeAttachment(id: String) { mutable.update { it.copy(attachments = it.attachments.filterNot { file -> file.optString("id") == id }) } }
+    fun removeAttachment(id: String) {
+        detach(state.value.attachments.filter { it.optString("id") == id })
+        mutable.update { it.copy(attachments = it.attachments.filterNot { file -> file.optString("id") == id }) }
+    }
+    /**
+     * Forgets files that were attached and won't be sent: taken off the message, or left behind with
+     * its conversation. The core keeps an attached file aside until Send. A message on its way
+     * takes its files with it, so nothing is forgotten then; and one the core couldn't forget is
+     * cleared with the rest it has aside, later.
+     */
+    private fun detach(files: List<JSONObject>) {
+        val ids = files.map { it.optString("id") }.filter(String::isNotEmpty)
+        if (ids.isEmpty() || "send" in state.value.busy) return
+        viewModelScope.launch {
+            for (id in ids) try { call("assistant_detach", JSONObject().put("id", id)) }
+                catch (cancel: CancellationException) { throw cancel } catch (_: Exception) {}
+        }
+    }
     /** `import` is the bank file being imported, when the assistant is open over its import: the assistant is told its lines. */
     fun send(text: String, month: String, selected: List<String> = emptyList(), import: JSONObject? = null, bankTexts: Boolean = false,
              place: AssistantPlace = AssistantPlace(), done: () -> Unit) = operation("send") {

@@ -124,6 +124,33 @@ final class AssistantPresentationTests: XCTestCase {
         XCTAssertEqual(assistantLimited("ab😀c", utf16: 4), "ab😀")
         XCTAssertEqual(AssistantScreen.context(month: "2026-10", selected: ["t1"])["platform"], "ios")
     }
+
+    func testAnErrorOffersOnlyWhatItsActionNames() {
+        // An earlier error comes without an action, whatever its code.
+        let earlier: JSON = ["kind": "error", "text": "It failed.", "code": "signIn"]
+        XCTAssertNil(AssistantErrorAction.of(earlier))
+        let named: [(String, AssistantErrorAction)] = [("signIn", .signIn), ("settings", .settings), ("usage", .usage), ("retry", .retry)]
+        for (name, action) in named {
+            var last = earlier
+            last["action"] = .string(name)
+            XCTAssertEqual(AssistantErrorAction.of(last), action)
+        }
+        // "none" is the service saying asking again wouldn't help; a newer action is left alone.
+        for name in ["none", "", "somethingNewer"] {
+            var last = earlier
+            last["action"] = .string(name)
+            XCTAssertNil(AssistantErrorAction.of(last))
+        }
+        var absent = earlier
+        absent["action"] = .null
+        XCTAssertNil(AssistantErrorAction.of(absent))
+    }
+
+    func testTheNoticeNamesWhoTheServiceSendsTo() {
+        XCTAssertEqual(AssistantNotice.recipient("chatgpt"), "OpenAI")
+        XCTAssertEqual(AssistantNotice.recipient("openai"), "OpenAI")
+        XCTAssertEqual(AssistantNotice.recipient("anthropic"), "Anthropic")
+    }
 }
 
 /// The revisions a proposal card sends `assistant_revise`, as the desktop's ProposalCard builds them.

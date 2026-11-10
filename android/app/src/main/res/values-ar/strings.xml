@@ -2956,6 +2956,14 @@
     <string name="bank_texts_apply_add">أضف إلى المراجعة</string>
     <string name="bank_texts_apply_remember">تذكّرها</string>
     <string name="bank_texts_apply_limit">حدّد الحد</string>
+    <plurals name="bank_texts_gone">
+        <item quantity="zero">لا رسائل مفقودة من هذا الهاتف.</item>
+        <item quantity="one">تعذّر العثور على رسالة واحدة على هذا الهاتف، فلم تُضَف.</item>
+        <item quantity="two">تعذّر العثور على رسالتين على هذا الهاتف، فلم تُضافا.</item>
+        <item quantity="few">تعذّر العثور على ⁨%1$s⁩ رسائل على هذا الهاتف، فلم تُضَف.</item>
+        <item quantity="many">تعذّر العثور على ⁨%1$s⁩ رسالة على هذا الهاتف، فلم تُضَف.</item>
+        <item quantity="other">تعذّر العثور على ⁨%1$s⁩ رسالة على هذا الهاتف، فلم تُضَف.</item>
+    </plurals>
     <string name="sms_bank_matches">يطابق \u2068%1$s\u2069 لدى البنك في \u2068%2$s\u2069</string>
     <string name="sms_bank_differs">ذكر البنك \u2068%1$s\u2069 في \u2068%2$s\u2069: الفرق \u2068%3$s\u2069</string>
     <string name="sms_bank_held">يشمل \u2068%1$s\u2069 لدى البنك في \u2068%2$s\u2069 مبالغ معلّقة قدرها \u2068%3$s\u2069</string>
@@ -2977,4 +2985,7 @@
     <string name="assistant_steps_fewer">عرض أقل</string>
     <string name="assistant_copy_reply">نسخ الرد</string>
     <string name="assistant_add_to_message">أضف ملفًا أو معاملات</string>
+    <string name="assistant_notice_title">ما الذي يُرسَل</string>
+    <string name="assistant_notice_sent">رسائلك، وما يظهر على الشاشة، والملفات التي ترفقها، وتفاصيل الميزانية التي يبحث عنها المساعد ليجيبك تُرسَل إلى ⁨%1$s⁩. وتحكم شروطه وسياسة الخصوصية لديه طريقة معالجتها والاحتفاظ بها.</string>
+    <string name="assistant_notice_kept">يبقى ملف ميزانيتك وسجل المحادثات وتسجيل الدخول على هذا الجهاز. ولا يتغير شيء في الميزانية حتى تطبّق التغيير بنفسك.</string>
 </resources>

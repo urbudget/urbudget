@@ -67,7 +67,24 @@ vi.mock("./SettingsPage", async (importOriginal) => {
       : <actual.SettingsPage {...props} />,
   };
 });
+// The assistant's side of the app, signed in, for the panel the window hosts.
+vi.mock("./assistant/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./assistant/api")>();
+  const status = { provider: "chatgpt", ready: true, account: null, model: null, shareMemos: true, keepHistory: true, planNoticeSeen: true,
+    noticeDue: false, hasOpenaiKey: false, hasAnthropicKey: false, storage: null, signingIn: false, mcp: { command: "", args: [], config: {} } };
+  return {
+    ...actual,
+    assistant: {
+      ...actual.assistant,
+      status: vi.fn(async () => status),
+      attach: vi.fn(async (name: string) => ({ id: "file_1", name, mime: "text/csv", size: 11, kind: "csv" })),
+      onEvent: vi.fn(async () => () => {}),
+    },
+  };
+});
 import App from "./App";
+import { assistant } from "./assistant/api";
+import { forgetComposers } from "./assistant/composer";
 import { api } from "./bridge";
 import { ToastProvider } from "./ui";
 import { AppliedChangeError } from "./useBudget";
@@ -101,6 +118,31 @@ it("preserves an unfinished import when an update is requested from Settings", a
   fireEvent.click(screen.getByRole("button", { name: "Restart to update" }));
   expect(automatic.install).not.toHaveBeenCalled();
   expect(await screen.findByText("Finish your import or assistant work before installing an update.")).toBeTruthy();
+});
+
+it("hands a dropped file to the assistant once, however often its panel closes and reopens", async () => {
+  try {
+    render(<ToastProvider><App /></ToastProvider>);
+    const statement = new File(["date,amount"], "statement.csv", { type: "text/csv" });
+    fireEvent.drop(window, { dataTransfer: { files: [statement], types: ["Files"] } });
+    expect(await screen.findByRole("button", { name: "Remove statement.csv" })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Message the assistant"), { target: { value: "Import this into Everyday" } });
+    // Ctrl+J closes the panel and opens it again: the file and the text are as they were left,
+    fireEvent.keyDown(window, { key: "j", ctrlKey: true });
+    expect(screen.queryByLabelText("Message the assistant")).toBeNull();
+    // (still unsent, which an update by itself waits for)
+    expect(automatic.safe!()).toBe(false);
+    fireEvent.keyDown(window, { key: "j", ctrlKey: true });
+    expect(await screen.findByLabelText("Message the assistant")).toHaveProperty("value", "Import this into Everyday");
+    expect(screen.getAllByText("statement.csv")).toHaveLength(1);
+    // and the drop isn't made a second time.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.queryByText("Attaching…")).toBeNull();
+    expect(assistant.attach).toHaveBeenCalledTimes(1);
+  } finally {
+    localStorage.removeItem("lb:assistant:open");
+    forgetComposers();
+  }
 });
 
 it("renders newly created categories while Rust is still calculating their totals", () => {

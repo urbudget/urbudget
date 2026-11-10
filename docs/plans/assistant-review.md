@@ -450,3 +450,28 @@ sent to a real model yet.
   200 selected transactions is refused by the core too.
 - 1.9: `assistant_rename_thread`.
 
+**Phase 0, the apps** (10 November 2026). Desktop: `npx tsc -b` and all 765 UI tests pass.
+Android: it compiles and its 286 JVM tests pass (the instrumented tests compile and weren't
+run). iPhone: written, the translation check passes, and nothing was compiled. Nothing was seen
+on a screen on any of the three.
+
+- 0.1: on Android, chat reads bank texts only under the permission Bank messages itself asks
+  for (`bankTextsAllowed`: the same provider and model), checked as each message goes and for
+  each of the phone's answers. The sending notice already said chat can search these texts.
+- 0.3: an "add" card keeps each text's id, sender and time, and finds the texts again when
+  it's applied (`bankTextsOfCard`); it says how many are no longer on the phone.
+- 0.4: the desktop clears a request once the panel takes it, and the draft, files and selection
+  are kept per budget outside the panel (`composer.ts`), so closing it loses nothing and
+  reopening replays nothing. A request arriving over a draft is added after it. A kept draft
+  holds back an update's install, as an unfinished import does.
+- 0.5: the notice of what gets sent, on the three apps, before the first message to a service
+  and again after the service is changed, with the memo switch in it. Asking for a reply again
+  waits behind it too.
+- 0.6: taking a file off a message forgets it (`assistant_detach`), on the three apps.
+- 0.7: the phones draw the button the core names under the last error, and sign in again from
+  it. The desktop does the same in place of its own table.
+- 0.9: the phones ignore text that arrives after Stop, which their polling could show twice.
+- 0.10: "UrBudget" in the plan notice, "Report a problem", "Print or save as PDF".
+- 0.11: it was real. On an Android phone, Back with the assistant open over a bank import now
+  closes the assistant.
+

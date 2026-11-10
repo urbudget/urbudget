@@ -125,7 +125,7 @@ export async function printReport(report: ReportView, mode: "frame" | "page" = f
   }
 }
 
-/** A full-size preview of a report, with Save as PDF. */
+/** A full-size preview of a report, to print or save as a PDF. */
 export function ReportPreview({ threadId, proposalId, onClose }: { threadId: string; proposalId: string; onClose: () => void }) {
   const [report, setReport] = useState<ReportView | null>(null);
   const [error, setError] = useState("");
@@ -146,7 +146,7 @@ export function ReportPreview({ threadId, proposalId, onClose }: { threadId: str
           <strong>{report?.title ?? tc("noun", "Report")}</strong>
           <span className="report-toolbar-hint">{t("Preview")}</span>
           <button className="primary small" disabled={!report} autoFocus onClick={() => report && void printReport(report)}>
-            <FileDown size={14} aria-hidden /> {t("Save as PDF")}
+            <FileDown size={14} aria-hidden /> {t("Print or save as PDF")}
           </button>
           <button className="icon-button" aria-label={t("Close the preview")} title={t("Close (Esc)")} onClick={onClose}>
             <X size={16} />

@@ -15,6 +15,8 @@ export type Status = {
   shareMemos: boolean;
   keepHistory: boolean;
   planNoticeSeen: boolean;
+  /** The notice of what gets sent, and to whom, hasn't been shown for the chosen service yet. */
+  noticeDue: boolean;
   hasOpenaiKey: boolean;
   hasAnthropicKey: boolean;
   /** Where secrets are kept; null when they only last until the app closes. */
@@ -81,12 +83,18 @@ export type Proposal = {
   /** What the user left out or changed on the card. */
   choices?: Revision;
 };
+/**
+ * What to offer under an error: signing in with ChatGPT again, the assistant's settings, ChatGPT's
+ * usage page, asking again, or nothing.
+ */
+export type ErrorAction = "signIn" | "settings" | "usage" | "retry" | "none";
 export type Entry =
   | { kind: "user"; text: string; attachments: Attachment[]; selected?: number }
   | { kind: "assistant"; text: string }
   | { kind: "step"; text: string; failed: boolean }
   | { kind: "proposal"; proposal: Proposal }
-  | { kind: "error"; text: string; code: string }
+  /** Only a conversation's last entry has an `action`: an earlier error's moment has passed. */
+  | { kind: "error"; text: string; code: string; action?: ErrorAction }
   | { kind: "stopped" };
 export type ThreadView = { id: string; title: string; entries: Entry[]; running: boolean };
 export type Listing = { id: string; title: string; updated: string };
@@ -109,7 +117,7 @@ export type AssistantEvent = { threadId: string } & (
   | { type: "message"; text: string }
   | { type: "step"; text: string; failed: boolean }
   | { type: "proposal"; proposal: Proposal }
-  | { type: "error"; text: string; code: string }
+  | { type: "error"; text: string; code: string; action?: ErrorAction }
   | { type: "done"; stopped?: boolean }
 );
 export type Model = { id: string; name: string };
@@ -117,23 +125,44 @@ export type Model = { id: string; name: string };
 export type ReportView = { title: string; period?: string | null; body: string; created: string; budget: string };
 export type Link = "usage" | "disconnect" | "openaiKeys" | "anthropicKeys";
 
+const watching = new Set<(status: Status) => void>();
+/** Passes a status the app is given on to whoever is watching (`onStatus`), whoever asked for it. */
+const noted = async (answer: Promise<Status>) => {
+  const status = await answer;
+  for (const watch of watching) watch(status);
+  return status;
+};
+
 export const assistant = {
-  status: () => invoke<Status>("assistant_status"),
+  status: () => noted(invoke<Status>("assistant_status")),
   /** Opens the browser and waits for ChatGPT to send the user back. */
-  signIn: () => invoke<Status>("assistant_sign_in"),
+  signIn: () => noted(invoke<Status>("assistant_sign_in")),
   cancelSignIn: () => invoke<void>("assistant_cancel_sign_in"),
-  signOut: () => invoke<Status>("assistant_sign_out"),
-  settings: (change: Partial<{ provider: Provider; model: string; shareMemos: boolean; keepHistory: boolean; planNoticeSeen: boolean }>) =>
-    invoke<Status>("assistant_settings", { change }),
-  setKey: (provider: Provider, key: string) => invoke<Status>("assistant_set_key", { provider, key }),
-  forgetKey: (provider: Provider) => invoke<Status>("assistant_forget_key", { provider }),
+  signOut: () => noted(invoke<Status>("assistant_sign_out")),
+  /** `told` says the user read the notice of what gets sent, for the service in use. */
+  settings: (change: Partial<{ provider: Provider; model: string; shareMemos: boolean; keepHistory: boolean; planNoticeSeen: boolean; told: boolean }>) =>
+    noted(invoke<Status>("assistant_settings", { change })),
+  setKey: (provider: Provider, key: string) => noted(invoke<Status>("assistant_set_key", { provider, key })),
+  forgetKey: (provider: Provider) => noted(invoke<Status>("assistant_forget_key", { provider })),
+  /**
+   * Hears every status the app is given, so a change made in Settings (another service, say)
+   * reaches the open panel at once. Returns how to stop listening.
+   */
+  onStatus: (handler: (status: Status) => void) => {
+    watching.add(handler);
+    return () => {
+      watching.delete(handler);
+    };
+  },
   models: (refresh = false) => invoke<Model[]>("assistant_models", { refresh }),
   threads: () => invoke<Listing[]>("assistant_threads"),
   thread: (id: string) => invoke<ThreadView>("assistant_thread", { id }),
   deleteThread: (id: string) => invoke<void>("assistant_delete_thread", { id }),
   deleteAll: () => invoke<void>("assistant_delete_all"),
-  /** Saves a file for the next message. `data` is base64. */
+  /** Keeps a file for the next message, until it's sent or taken off again. `data` is base64. */
   attach: (name: string, data: string) => invoke<Attachment>("assistant_attach", { name, data }),
+  /** Forgets a file taken off the message before it was sent. */
+  detach: (id: string) => invoke<void>("assistant_detach", { id }),
   /** Sends a message; the reply arrives as events. Returns the conversation id. */
   send: (budget: Budget, threadId: string | null, text: string, attachments: string[], screen: Screen) =>
     read<string>(budget, "assistant_send", { threadId, text, attachments, screen }),

@@ -62,12 +62,7 @@ struct AssistantSettingsView: View {
                 }
             }
             Section {
-                Toggle(isOn: Binding(get: { status?.flag("shareMemos", true) ?? true }, set: { controller.settings(["shareMemos": .bool($0)]) })) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Share transaction memos")
-                        Text("Include memo text in budget lookups sent to the provider.").font(.footnote).foregroundStyle(Color.secondary)
-                    }
-                }
+                AssistantMemosToggle()
                 Toggle(isOn: Binding(get: { status?.flag("keepHistory", true) ?? true }, set: { controller.settings(["keepHistory": .bool($0)]) })) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Keep conversation history")
@@ -201,5 +196,21 @@ struct AssistantSettingsView: View {
         if !current.isEmpty && !choices.contains(where: { $0.0 == current }) { choices.append((current, current)) }
         var seen = Set<String>()
         return choices.filter { seen.insert($0.0).inserted }
+    }
+}
+
+/// Whether memo text goes to the provider: in the settings, and in the notice before a first
+/// message, so it can be switched off before anything is sent.
+struct AssistantMemosToggle: View {
+    private let controller = AssistantController.shared
+
+    var body: some View {
+        let status = controller.status
+        Toggle(isOn: Binding(get: { status?.flag("shareMemos", true) ?? true }, set: { controller.settings(["shareMemos": .bool($0)]) })) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Share transaction memos")
+                Text("Include memo text in budget lookups sent to the provider.").font(.footnote).foregroundStyle(Color.secondary)
+            }
+        }
     }
 }

@@ -69,6 +69,30 @@ enum AssistantScreen {
     }
 }
 
+/// What the button under an error does, as the service names it in the entry's `action`. Only the
+/// conversation's last entry carries one: an earlier error's moment has passed.
+enum AssistantErrorAction: String {
+    /// Sign in with ChatGPT again, then ask again.
+    case signIn
+    /// The key, the model or the service needs changing: the assistant's settings.
+    case settings
+    /// The plan's limit was reached: ChatGPT's usage page.
+    case usage
+    /// Ask again.
+    case retry
+
+    /// Nil when the error offers nothing: it has no `action`, or "none" (asking again wouldn't
+    /// help), or one this version doesn't know.
+    static func of(_ entry: JSON) -> AssistantErrorAction? { AssistantErrorAction(rawValue: entry.text("action")) }
+}
+
+/// The notice before a first message to a service: what gets sent, and to whom.
+enum AssistantNotice {
+    /// The company the chosen service's messages go to: a ChatGPT plan and an OpenAI key are both
+    /// OpenAI's. A name, so it isn't translated.
+    static func recipient(_ provider: String) -> String { provider == "anthropic" ? "Anthropic" : "OpenAI" }
+}
+
 /// Conversations and reports as files to save or share.
 enum AssistantExport {
     /// The conversation as Markdown, proposals written out with their rows (Android's conversationMarkdown).

@@ -25,6 +25,7 @@ import { keyLabel } from "../platform";
 import { today, type Budget, type Summary } from "../types";
 import { Menu, useToast } from "../ui";
 import { ACCEPT, assistant, fileData, type Attachment, type Card, type Entry, type Listing, type Proposal, type Revision, type Screen, type Status } from "./api";
+import { useComposer } from "./composer";
 import { Markdown } from "./Markdown";
 import { describe, logError } from "./errors";
 import { ProposalCard } from "./ProposalCard";
@@ -213,7 +214,7 @@ function Reply({ text, live }: { text: string; live: boolean }) {
         onClick={() => setReporting(true)}
       >
         <Flag size={11} aria-hidden />
-        {t("Report")}
+        {t("Report a problem")}
       </button>
       {reporting && <ReplyReport text={text} close={() => setReporting(false)} />}
     </>
@@ -328,12 +329,99 @@ function SignIn({ status, onStatus, onOpenSettings }: { status: Status; onStatus
   );
 }
 
+/**
+ * What gets sent, and to whom, said once for each service before a first message goes to it.
+ * Nothing is sent until the user goes on. The keyboard stays inside it, and Esc is "Not now".
+ */
+function SentNotice({
+  status,
+  onStatus,
+  onContinue,
+  onClose,
+}: {
+  status: Status;
+  onStatus: (s: Status) => void;
+  onContinue: () => Promise<void>;
+  onClose: () => void;
+}) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const go = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await onContinue();
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    // A click beside the notice leaves the keyboard where it is, inside it.
+    <div className="assistant-notice-shade" onMouseDown={(e) => e.target === e.currentTarget && e.preventDefault()}>
+      <div
+        className="assistant-notice"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="assistant-sent-title"
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.stopPropagation();
+            onClose();
+          } else if (e.key === "Enter" && e.repeat) {
+            // Enter still held down from sending the message isn't an answer.
+            e.preventDefault();
+          } else if (e.key === "Tab") {
+            const stops = [...e.currentTarget.querySelectorAll<HTMLElement>("button, input")];
+            if (document.activeElement !== stops[e.shiftKey ? 0 : stops.length - 1]) return;
+            e.preventDefault();
+            stops[e.shiftKey ? stops.length - 1 : 0].focus();
+          }
+        }}
+      >
+        <h3 id="assistant-sent-title">{t("What gets sent")}</h3>
+        <p>
+          {t("Your messages, what's on screen, the files you attach, and the budget details the assistant looks up to answer you go to {provider}. Its terms and privacy policy govern how it processes and retains them.", {
+            provider: status.provider === "anthropic" ? "Anthropic" : "OpenAI",
+          })}
+        </p>
+        <p>{t("Your budget file, conversation history and sign-in are kept on this computer. Nothing in the budget changes until you apply a change yourself.")}</p>
+        <label className="setting-row toggle">
+          <span>
+            <strong>{t("Share memos")}</strong>
+            <small>{t("Dates, payees, amounts and categories are always shared when the assistant looks something up.")}</small>
+          </span>
+          <input
+            type="checkbox"
+            role="switch"
+            checked={status.shareMemos}
+            onChange={(e) =>
+              void assistant
+                .settings({ shareMemos: e.target.checked })
+                .then(onStatus)
+                .catch((err) => toast({ message: errorText(err), tone: "error" }))
+            }
+          />
+        </label>
+        <div className="assistant-notice-actions">
+          <button className="link-button" onClick={onClose}>
+            {t("Not now")}
+          </button>
+          <button className="primary" autoFocus onClick={() => void go()}>
+            {t("Continue")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function AssistantPanel({
   budget,
   budgetId,
   summary,
   screen,
   request,
+  onRequestTaken,
   width,
   onResize,
   onClose,
@@ -350,6 +438,8 @@ export function AssistantPanel({
   summary: Summary;
   screen: Omit<Screen, "selected" | "today">;
   request: Request | null;
+  /** The request is in the message box now: whoever made it forgets it, so reopening the panel doesn't bring it back. */
+  onRequestTaken?: () => void;
   width: number;
   onResize: (width: number) => void;
   onClose: () => void;
@@ -360,7 +450,7 @@ export function AssistantPanel({
   canUndo: (p: Proposal) => boolean;
   onReviewImport: (threadId: string, p: Proposal) => void;
   onHighlight: (highlight: Card["highlight"] | null) => void;
-  /** Whether there's a message being written, attached to or sent, which closing would lose. */
+  /** Whether there's a message being written, attached to or sent, which closing the app would lose. */
   onWorking?: (working: boolean) => void;
 }) {
   const toast = useToast();
@@ -379,10 +469,13 @@ export function AssistantPanel({
     setLiveState(text);
   };
   const [thinking, setThinking] = useState("");
-  const [draft, setDraft] = useState("");
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  // What's in the message box is kept outside the panel, so it's still there when the panel reopens.
+  const [{ draft, attachments, selected }, compose] = useComposer(budgetId);
+  const setDraft = (text: string) => compose((c) => ({ ...c, draft: text }));
   const [uploading, setUploading] = useState(0);
-  const [selected, setSelected] = useState<string[]>([]);
+  /** What waits behind the notice of what gets sent: a message, or asking again after an error. */
+  const [held, setHeld] = useState<{ text: string } | "retry" | null>(null);
+  const [signingIn, setSigningIn] = useState(false);
   const [problem, setProblem] = useState("");
   const [threads, setThreads] = useState<Listing[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -437,12 +530,19 @@ export function AssistantPanel({
     void assistant.status().then(setStatus).catch((e) => setProblem(errorText(e)));
     const refresh = () => void assistant.status().then(setStatus).catch(() => {});
     window.addEventListener("focus", refresh);
-    return () => window.removeEventListener("focus", refresh);
+    // A service chosen in Settings while the panel is open is the one a message goes to, and
+    // the one the notice of what gets sent is about.
+    const unwatch = assistant.onStatus(setStatus);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      unwatch();
+    };
   }, []);
-  // Another budget has its own conversations.
+  // Another budget has its own conversations, and nothing of the last one's waiting to be sent.
   useEffect(() => {
     const id = store.get(threadKey);
     remember(id);
+    setHeld(null);
     void load(id, true);
   }, [budgetId, load]);
 
@@ -483,7 +583,7 @@ export function AssistantPanel({
           case "error":
             setLive(null);
             setThinking("");
-            setEntries((list) => [...list, { kind: "error", text: e.text, code: e.code }]);
+            setEntries((list) => [...list, { kind: "error", text: e.text, code: e.code, action: e.action }]);
             break;
           case "done":
             setRunning(false);
@@ -545,7 +645,7 @@ export function AssistantPanel({
       try {
         const ready = await fileData(file);
         const saved = await assistant.attach(ready.name, ready.data);
-        setAttachments((list) => [...list, saved]);
+        compose((c) => ({ ...c, attachments: [...c.attachments, saved] }));
       } catch (e) {
         toast({ message: errorText(e), tone: "error" });
       } finally {
@@ -560,13 +660,11 @@ export function AssistantPanel({
     const message = text.trim();
     if (!message && !attachments.length) return;
     setProblem("");
-    const sent = { text: message, attachments, selected };
+    const sent = { draft: message, attachments, selected };
     stick.current = true;
     setAway(false);
     setEntries((list) => [...list, { kind: "user", text: message, attachments }]);
-    setDraft("");
-    setAttachments([]);
-    setSelected([]);
+    compose(() => ({ draft: "", attachments: [], selected: [] }));
     setRunning(true);
     setLive(null);
     setThinking("");
@@ -581,21 +679,29 @@ export function AssistantPanel({
     } catch (e) {
       setRunning(false);
       setEntries((list) => list.slice(0, -1));
-      setDraft(sent.text);
-      setAttachments(sent.attachments);
-      setSelected(sent.selected);
+      compose(() => sent);
       setProblem(errorText(e));
     }
+  };
+  /** Sends a message, once the user has been told what gets sent and to whom: the notice asks first. */
+  const submit = (text: string) => {
+    if (!status?.ready || running || uploading) return;
+    if (!text.trim() && !attachments.length) return;
+    if (status.noticeDue) setHeld({ text });
+    else void send(text);
   };
 
   // Entry points: "Ask about these", a dropped file, a question from the inspector.
   useEffect(() => {
     if (!request || handled.current === request.key || !status) return;
     handled.current = request.key;
-    if (request.selected?.length) setSelected(request.selected);
+    onRequestTaken?.();
+    const { text, selected: chosen } = request;
+    if (chosen?.length) compose((c) => ({ ...c, selected: chosen }));
     if (request.files?.length) void upload(request.files);
-    if (request.text && request.send && status.ready) void send(request.text);
-    else if (request.text) setDraft(request.text);
+    // A message already being written is kept: the request goes on a new line after it.
+    if (text && request.send && status.ready && !draft.trim()) submit(text);
+    else if (text) compose((c) => ({ ...c, draft: c.draft.trim() ? `${c.draft.trimEnd()}\n${text}` : text }));
     setTimeout(() => input.current?.focus());
   }, [request, status]);
   // The message field is as tall as its text (up to 160px) however the text got there: typed,
@@ -640,6 +746,43 @@ export function AssistantPanel({
     } catch (e) {
       setProblem(errorText(e));
     }
+  };
+  /** Asks again after an error. That sends the conversation too, so the notice comes first when it's due. */
+  const askAgain = (now: Status | null = status) => {
+    if (now?.ready && now.noticeDue) setHeld("retry");
+    else void retry();
+  };
+  /** Signs in with ChatGPT again from an error that asked for it, then asks again by itself. */
+  const signInAgain = async () => {
+    setSigningIn(true);
+    try {
+      const next = await assistant.signIn();
+      setStatus(next);
+      if (next.ready) askAgain(next);
+    } catch (e) {
+      toast({ message: errorText(e), tone: "error" });
+      void assistant.status().then(setStatus).catch(() => {});
+    } finally {
+      setSigningIn(false);
+    }
+  };
+  const closeNotice = () => {
+    setHeld(null);
+    setTimeout(() => input.current?.focus());
+  };
+  /** The user read the notice and goes on: it's marked read for this service, and what waited is sent. */
+  const proceed = async () => {
+    const waited = held;
+    if (!waited) return;
+    try {
+      setStatus(await assistant.settings({ told: true }));
+    } catch (e) {
+      toast({ message: errorText(e), tone: "error" });
+      return;
+    }
+    closeNotice();
+    if (waited === "retry") void retry();
+    else void send(waited.text);
   };
 
   const contextLabel =
@@ -729,42 +872,35 @@ export function AssistantPanel({
         );
       }
       case "error": {
-        const actionable = last && !running;
-        const chatgpt = status?.provider === "chatgpt";
+        // The core says what helps; only the error the conversation ends on offers it.
+        const action = last && !running ? (e.action ?? "none") : "none";
         return (
           <div className="assistant-problem" role="alert">
             <strong>{e.code === "limit" ? t("Usage limit reached") : e.code === "refused" ? t("Declined") : t("Something went wrong")}</strong>
             <p>{e.text}</p>
-            {actionable && (
+            {action !== "none" && (
               <div className="assistant-problem-actions">
-                {e.code === "limit" && chatgpt ? (
+                {action === "usage" ? (
                   <button className="primary small" onClick={() => void assistant.open("usage")}>
                     {t("Manage usage")}
                   </button>
-                ) : e.code === "signIn" ? (
-                  chatgpt ? (
-                    <button
-                      className="primary small"
-                      onClick={() =>
-                        void assistant
-                          .signIn()
-                          .then(setStatus)
-                          .catch((err) => toast({ message: errorText(err), tone: "error" }))
-                      }
-                    >
-                      {t("Continue with ChatGPT")}
+                ) : action === "signIn" ? (
+                  <>
+                    <button className="primary small" disabled={signingIn} aria-busy={signingIn} onClick={() => void signInAgain()}>
+                      {signingIn && <LoaderCircle size={13} className="spin" aria-hidden />} {t("Continue with ChatGPT")}
                     </button>
-                  ) : (
-                    <button className="primary small" onClick={onOpenSettings}>
-                      {t("Open settings")}
-                    </button>
-                  )
-                ) : e.code === "model" || e.code === "notEligible" ? (
-                  <button className="secondary small" onClick={onOpenSettings}>
+                    {signingIn && (
+                      <button className="link-button" onClick={() => void assistant.cancelSignIn()}>
+                        {t("Cancel")}
+                      </button>
+                    )}
+                  </>
+                ) : action === "settings" ? (
+                  <button className="primary small" onClick={onOpenSettings}>
                     {t("Open settings")}
                   </button>
                 ) : (
-                  <button className="secondary small" onClick={() => void retry()}>
+                  <button className="secondary small" onClick={() => askAgain()}>
                     {t("Try again")}
                   </button>
                 )}
@@ -950,7 +1086,7 @@ export function AssistantPanel({
                   <h3>{t("What would you like to do?")}</h3>
                   <div className="assistant-ideas">
                     {ideas.map((idea) => (
-                      <button key={idea} className="assistant-idea" onClick={() => void send(idea)}>
+                      <button key={idea} className="assistant-idea" onClick={() => submit(idea)}>
                         {idea}
                       </button>
                     ))}
@@ -981,7 +1117,7 @@ export function AssistantPanel({
                   <span className="assistant-file selection">
                     <ListChecks size={13} aria-hidden />
                     {tn(selected.length, "{count} selected transaction", "{count} selected transactions")}
-                    <button className="assistant-file-remove" aria-label={t("Don't attach the selection")} onClick={() => setSelected([])}>
+                    <button className="assistant-file-remove" aria-label={t("Don't attach the selection")} onClick={() => compose((c) => ({ ...c, selected: [] }))}>
                       <X size={12} />
                     </button>
                   </span>
@@ -993,7 +1129,11 @@ export function AssistantPanel({
                     <button
                       className="assistant-file-remove"
                       aria-label={t("Remove {name}", { name: a.name })}
-                      onClick={() => setAttachments((list) => list.filter((x) => x.id !== a.id))}
+                      onClick={() => {
+                        compose((c) => ({ ...c, attachments: c.attachments.filter((x) => x.id !== a.id) }));
+                        // It was only waiting for this message. If forgetting it fails, it goes when the app next starts.
+                        void assistant.detach(a.id).catch(() => {});
+                      }}
                     >
                       <X size={12} />
                     </button>
@@ -1024,7 +1164,7 @@ export function AssistantPanel({
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault();
-                    if (canSend) void send(draft);
+                    if (canSend) submit(draft);
                   }
                 }}
               />
@@ -1051,19 +1191,20 @@ export function AssistantPanel({
                     <Square size={11} fill="currentColor" />
                   </button>
                 ) : (
-                  <button className="assistant-send" aria-label={t("Send")} title={t("Send (Enter)")} disabled={!canSend} onClick={() => void send(draft)}>
+                  <button className="assistant-send" aria-label={t("Send")} title={t("Send (Enter)")} disabled={!canSend} onClick={() => submit(draft)}>
                     <ArrowUp size={15} />
                   </button>
                 )}
               </div>
             </div>
           </div>
-          {status.provider === "chatgpt" && !status.planNoticeSeen && (
+          {/* One notice at a time: the plan's comes first, and what gets sent waits behind it. */}
+          {status.provider === "chatgpt" && !status.planNoticeSeen ? (
             <div className="assistant-notice-shade">
               <div className="assistant-notice" role="dialog" aria-modal="true" aria-labelledby="assistant-notice-title">
                 <h3 id="assistant-notice-title">{t("You're using your ChatGPT plan")}</h3>
                 <p>
-                  {t("Messages here count toward your ChatGPT plan's usage, the same as using ChatGPT. You can set a limit for Local Budget in ChatGPT's settings.")}
+                  {t("Messages here count toward your ChatGPT plan's usage, the same as using ChatGPT. You can set a limit for UrBudget in ChatGPT's settings.")}
                 </p>
                 <div className="assistant-notice-actions">
                   <button className="link-button" onClick={() => void assistant.open("usage")}>
@@ -1075,6 +1216,8 @@ export function AssistantPanel({
                 </div>
               </div>
             </div>
+          ) : (
+            held && <SentNotice status={status} onStatus={setStatus} onContinue={proceed} onClose={closeNotice} />
           )}
         </>
       )}
