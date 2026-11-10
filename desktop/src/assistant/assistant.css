@@ -214,6 +214,12 @@
   color: var(--text-2);
   text-decoration: underline;
 }
+/* Under the conversation's last reply: what in the budget is waiting that the assistant can help with. */
+.assistant-next {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 .assistant-thumb {
   display: grid;
   width: 20px;
@@ -748,9 +754,30 @@
 }
 .proposal-head {
   display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 10px 12px 8px;
+}
+.proposal-titles {
+  display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 1px;
-  padding: 10px 12px 8px;
+  min-width: 0;
+}
+/* A thing the assistant made is removed from its menu, not from a button beside the main ones. */
+.proposal-menu {
+  width: 24px;
+  height: 24px;
+  margin-block: -2px;
+  margin-inline-end: -4px;
+}
+/* A change that deletes: the app's destructive colour on its edge and its kicker. */
+.proposal.destructive {
+  border-color: color-mix(in srgb, var(--negative) 45%, var(--border));
+}
+.proposal.destructive .proposal-kicker {
+  color: var(--negative);
 }
 .proposal-kicker {
   color: var(--accent);
@@ -899,6 +926,60 @@
   background: var(--surface-2);
   font-weight: 600;
 }
+/* Over a long list of parts to choose among: all of them, none, or only the ones marked to check. */
+.proposal-select {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  padding: 5px 8px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+/* Figures: under each row, its amount as a share of the largest on the card. */
+.proposal-bar {
+  height: 4px;
+  margin: -2px 12px 7px;
+  border-radius: 2px;
+  background: var(--zero-soft);
+}
+.proposal-bar i {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+/* A question: each answer is a button as wide as the card. */
+.proposal-answers {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 12px 12px;
+}
+.proposal-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  padding: 7px 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: start;
+}
+.proposal-answer:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.proposal-answer small {
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 400;
+}
 .proposal-more {
   padding: 6px 12px;
   border-top: 1px solid var(--border);
@@ -941,7 +1022,8 @@ button.proposal-more:hover {
   text-overflow: ellipsis;
 }
 .proposal-check,
-.proposal-warning {
+.proposal-warning,
+.proposal-message {
   display: flex;
   gap: 6px;
   align-items: center;
@@ -950,8 +1032,27 @@ button.proposal-more:hover {
   font-weight: 600;
 }
 .proposal-check svg,
-.proposal-warning svg {
+.proposal-warning svg,
+.proposal-message svg {
   flex: none;
+}
+/* What the card says of itself, by its tone: brought up to date (quiet), something to check, or
+   it can't be applied. The warning that's part of what it proposes is a strip of its own. */
+.proposal-message {
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-weight: 500;
+}
+.proposal-message.warn {
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-weight: 600;
+}
+.proposal-message.error {
+  background: var(--negative-soft);
+  color: var(--negative);
+  font-weight: 600;
 }
 .proposal-check.ok {
   background: var(--positive-soft);
@@ -978,41 +1079,88 @@ button.proposal-more:hover {
   border-top: 1px solid var(--border);
   background: var(--surface-2);
 }
-.proposal-hint {
+/* Setting a card aside sits at the far end of the row, away from the main button. */
+.proposal-actions .proposal-discard {
+  order: 1;
   margin-inline-start: auto;
+  color: var(--text-2);
+}
+/* Under the buttons, on a line of its own. */
+.proposal-hint {
+  order: 2;
+  flex: 1 0 100%;
   color: var(--muted);
   font-size: 11.5px;
 }
 .proposal.failed {
-  border-color: color-mix(in srgb, var(--warning) 40%, var(--border));
+  border-color: color-mix(in srgb, var(--negative) 40%, var(--border));
 }
+/* A finished card: one line that says what became of it, which opens to its rows as they were. */
 .proposal.done {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  padding: 8px 12px;
   box-shadow: none;
   color: var(--text-2);
 }
-.proposal.done > span {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+.proposal-done-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  align-items: center;
+  padding: 7px 12px;
 }
-.proposal.done svg {
+.proposal-fold {
+  display: flex;
+  flex: 1 1 140px;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  padding: 1px 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+}
+button.proposal-fold:hover {
+  color: var(--text);
+}
+.proposal-fold svg {
   flex: none;
   color: var(--positive);
 }
+.proposal-state {
+  flex: none;
+  color: var(--muted);
+}
+.proposal-done-title {
+  overflow: hidden;
+  min-width: 0;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.proposal-fold .proposal-chevron {
+  color: var(--muted);
+  transition: transform 0.15s var(--ease);
+}
+.proposal-fold[aria-expanded="true"] .proposal-chevron {
+  transform: rotate(180deg);
+}
 .proposal.done.discarded,
-.proposal.done.undone {
+.proposal.done.undone,
+.proposal.done.replaced {
   color: var(--muted);
 }
-.proposal.done.discarded svg,
-.proposal.done.undone svg {
+.proposal.done.discarded .proposal-fold svg,
+.proposal.done.undone .proposal-fold svg,
+.proposal.done.replaced .proposal-fold svg {
   color: var(--muted);
 }
-.proposal.done button {
-  margin-inline-start: auto;
+.proposal-details {
+  border-top: 1px solid var(--border);
+}
+.proposal-details > :first-child,
+.proposal-details > :first-child > .proposal-row {
+  border-top: 0;
 }
 
 /* Conversations: a field to find one by its title over the list of them all, which scrolls. */
@@ -1185,6 +1333,33 @@ button.proposal-more:hover {
   display: flex;
   gap: 6px;
   align-items: center;
+}
+/* The notes the assistant keeps for the budget: each on a line with its remove button, then the field that adds one. */
+.assistant-notes {
+  margin: 0 0 10px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  list-style: none;
+}
+.assistant-notes li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding-block: 5px;
+  padding-inline: 12px 6px;
+}
+.assistant-notes li + li {
+  border-top: 1px solid var(--border);
+}
+.assistant-notes li > span {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.assistant-note-add input {
+  flex: 1 1 auto;
+  max-width: 420px;
 }
 .assistant-mcp {
   max-width: 100%;

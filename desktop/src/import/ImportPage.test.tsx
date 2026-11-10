@@ -20,7 +20,7 @@ import { api } from "../bridge";
 import { demoBudget } from "../demo";
 import { ToastProvider } from "../ui";
 import { ImportPage, type ImportState } from "./ImportPage";
-import { applyToLatest, roles, withRole } from "./model";
+import { applyToLatest, fixesNote, roles, withRole } from "./model";
 
 afterEach(cleanup);
 beforeEach(() => vi.clearAllMocks());
@@ -571,6 +571,46 @@ it("keeps both of two changes that land at once", async () => {
   install(a);
   install(b);
   expect(Object.keys(shown.edits.fields).sort()).toEqual(["one", "two"]);
+});
+
+it("says which of an assistant's fixes didn't take, in the card's own words", () => {
+  const s = session("s1", 2);
+  const fixes: BankFixes = {
+    scope: s.scope,
+    baseRevision: s.revision,
+    baseStructure: s.structure,
+    fields: [
+      { line: "30", lineVersion: 0, field: "amount", from: "n/a", to: "-12.40" },
+      { line: "31", lineVersion: 0, field: "date", from: "2/10", to: "2026-10-02" },
+    ],
+    include: [{ line: "90", lineVersion: 0, include: true }],
+  };
+  const rows = [
+    { key: "f:30:amount", label: "Line 30 · amount: n/a → -12.40" },
+    { key: "f:31:date", label: "Line 31 · date: 2/10 → 2026-10-02" },
+    { key: "i:90", label: "Line 90 · include it" },
+    { key: "x", label: "Purchases written as positive" },
+  ];
+  const result = (fix: string, line: string | undefined, applied: boolean) => ({ fix, line, applied, problem: applied ? undefined : "This line changed since this fix was made." });
+  // All took: nothing to say.
+  expect(fixesNote(rows, fixes, [result("field", "30", true), result("field", "31", true), result("include", "90", true)])).toBeUndefined();
+  // Each answer is for the fix in its place among its kind, and is named as its row is.
+  expect(fixesNote(rows, fixes, [result("field", "30", true), result("field", "31", false), result("include", "90", false)])).toBe(
+    "Fixes applied: 1 of 3. Not applied: Line 31 · date: 2/10 → 2026-10-02, Line 90 · include it",
+  );
+  // How the file reads comes first, and nothing takes when it doesn't.
+  expect(fixesNote(rows, fixes, [result("structure", undefined, false), result("field", "30", false), result("field", "31", false), result("include", "90", false)])).toBe(
+    "Fixes applied: 0 of 4. Not applied: Purchases written as positive, Line 30 · amount: n/a → -12.40, Line 31 · date: 2/10 → 2026-10-02, Line 90 · include it",
+  );
+  // The first five are named; the rest are an ellipsis.
+  const many = Array.from({ length: 7 }, (_, i) => ({ line: String(i + 1), lineVersion: 0, include: true }));
+  expect(
+    fixesNote(
+      many.map((f) => ({ key: `i:${f.line}`, label: `Line ${f.line} · include it` })),
+      { ...fixes, fields: [], include: many },
+      many.map((f, i) => result("include", f.line, i === 0)),
+    ),
+  ).toBe("Fixes applied: 1 of 7. Not applied: Line 2 · include it, Line 3 · include it, Line 4 · include it, Line 5 · include it, Line 6 · include it, …");
 });
 
 it("chooses a column whose name another column has too by its place", () => {

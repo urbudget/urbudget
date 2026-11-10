@@ -66,14 +66,29 @@ export type Card = {
   more: number;
   highlight: { month?: string; categories: string[]; transactions: string[] };
 };
-export type ProposalStatus = "proposed" | "applied" | "discarded" | "undone" | "failed";
+export type ProposalStatus = "proposed" | "applied" | "discarded" | "undone" | "failed" | "replaced";
+/** What a card has to say about itself: it was brought up to date (info), there's something to check (warn), or it can't be applied (error). */
+export type CardMessage = { tone: "info" | "warn" | "error"; text: string };
 export type Proposal = {
   id: string;
   title: string;
-  kind: "budget" | "transactions" | "payees" | "import" | "report" | "spreadsheet" | "fix";
+  /**
+   * A change (budget, transactions, payees, notes, categories, schedules, delete, fix), a thing
+   * made (report, spreadsheet, import, figures) or a question. One the app doesn't know is
+   * drawn as a plain card.
+   */
+  kind: string;
   status: ProposalStatus;
   card: Card;
-  problem?: string;
+  /** A thing the assistant made (a report, a spreadsheet, a converted file, figures), not a change. */
+  made: boolean;
+  /** What the card offers now, in order, the first being the main one. One the app doesn't know is left out. */
+  actions: string[];
+  message?: CardMessage;
+  /** When it was applied (RFC 3339). */
+  appliedAt?: string;
+  /** The newer proposal made in its place. */
+  replacedBy?: string;
   /** Rows in a converted import file. */
   rows: number;
   /** Sheets it can save as a spreadsheet: a spreadsheet's sheets, or a report's tables. */
@@ -123,7 +138,11 @@ export type ThreadView = {
   long?: boolean;
   /** The title of the conversation this one carries on. */
   continuedFrom?: string;
+  /** What in the budget is waiting that the assistant can help with, offered under the last reply. */
+  next?: NextStep[];
 };
+/** A next step: its button's words, already in the app's language, and the message it sends. */
+export type NextStep = { id: string; text: string; prompt: string };
 export type Listing = { id: string; title: string; updated: string };
 /**
  * What the user is looking at, sent with each message. A `page` of "" says they took where they
@@ -146,13 +165,14 @@ export type AssistantEvent = { threadId: string } & (
   | { type: "thinking"; text: string }
   /** What it is doing now (a lookup under way), already in the app's language. */
   | { type: "activity"; text: string }
-  | { type: "message"; text: string }
+  /** A finished reply, with its place in the conversation (`index`, for rating it). */
+  | { type: "message"; text: string; index?: number }
   | { type: "step"; text: string; failed: boolean }
   | { type: "proposal"; proposal: Proposal }
   | { type: "error"; text: string; code: string; action?: ErrorAction }
   /** The reply just written stopped at its length limit. */
   | { type: "cut" }
-  /** An earlier card, folded away by the one that corrects it. The panel doesn't act on it yet. */
+  /** An earlier card as it is now that a newer one corrects it: it takes that card's place. */
   | { type: "replaced"; proposal: Proposal }
   | { type: "done"; stopped?: boolean }
 );
@@ -168,6 +188,7 @@ const noted = async (answer: Promise<Status>) => {
   for (const watch of watching) watch(status);
   return status;
 };
+const marked = new Set<(threadId: string, proposal: Proposal) => void>();
 
 export const assistant = {
   status: () => noted(invoke<Status>("assistant_status")),
@@ -192,7 +213,8 @@ export const assistant = {
   },
   models: (refresh = false) => invoke<Model[]>("assistant_models", { refresh }),
   threads: () => invoke<Listing[]>("assistant_threads"),
-  thread: (id: string) => invoke<ThreadView>("assistant_thread", { id }),
+  /** The conversation, with its waiting cards brought up to date with `budget` as the window has it. */
+  thread: (budget: Budget, id: string) => read<ThreadView>(budget, "assistant_thread", { id }),
   deleteThread: (id: string) => invoke<void>("assistant_delete_thread", { id }),
   /** Gives a conversation another title, of 1 to 80 characters. */
   renameThread: (id: string, title: string) => invoke<void>("assistant_rename_thread", { id, title }),
@@ -211,14 +233,38 @@ export const assistant = {
   /** Asks again after an error, or for the rest of a reply that was cut short, without a new message. */
   retry: (budget: Budget, threadId: string, screen: Screen) => read<void>(budget, "assistant_retry", { threadId, screen }),
   stop: (threadId: string) => invoke<void>("assistant_stop", { threadId }),
-  /** The proposal's change as a patch for `budget`, or a refreshed card when the budget moved. */
+  /**
+   * The proposal's change as a patch for `budget`, or a refreshed card when the budget moved.
+   * The card isn't marked applied here: that's `mark`, once the change is in the budget.
+   */
   apply: (budget: Budget, threadId: string, proposalId: string) =>
-    read<{ patch: Patch | null; proposal: Proposal }>(budget, "assistant_apply", { threadId, proposalId }),
+    read<{ patch: Patch | null; proposal: Proposal }>(budget, "assistant_apply", { threadId, proposalId, settle: false }),
   /** The proposal as the user chose on its card, made again on `budget`: every row, those left out marked. */
   revise: (budget: Budget, threadId: string, proposalId: string, revision: Revision) =>
     read<Proposal>(budget, "assistant_revise", { threadId, proposalId, revision }),
-  mark: (threadId: string, proposalId: string, status: ProposalStatus) =>
-    invoke<Proposal>("assistant_mark", { threadId, proposalId, status }),
+  /**
+   * Records what was done with a card (applied, set aside, put back, undone) and returns it as
+   * it is now; the core refuses a step that can't follow from where the card stands. `note` is
+   * what the app has to say about it, which becomes the card's message.
+   */
+  mark: async (threadId: string, proposalId: string, status: ProposalStatus, note?: string) => {
+    const proposal = await invoke<Proposal>("assistant_mark", { threadId, proposalId, status, note });
+    for (const hear of marked) hear(threadId, proposal);
+    return proposal;
+  },
+  /**
+   * Hears of every card the app marks, whoever marked it, so one that changes outside the panel
+   * (the window's Undo took its change back, its import was finished) is up to date in the open
+   * panel. Returns how to stop listening.
+   */
+  onMarked: (handler: (threadId: string, proposal: Proposal) => void) => {
+    marked.add(handler);
+    return () => {
+      marked.delete(handler);
+    };
+  },
+  /** The change that makes the budget's notes for the assistant exactly `notes`, as a patch for `budget`. */
+  notes: (budget: Budget, notes: string[]) => read<Patch>(budget, "assistant_notes", { notes }),
   importFile: (threadId: string, proposalId: string) =>
     invoke<{ account: string; name: string; csv: string }>("assistant_import", { threadId, proposalId }),
   /** Saves the converted file where the user chooses; null when they cancel. */

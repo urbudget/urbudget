@@ -266,6 +266,22 @@ it("shows a transfer from each side, linked to the other, with no category neede
   expect(other.getAttribute("aria-selected")).toBe("true");
 });
 
+it("opens on the transactions an assistant's card names, all of them selected", () => {
+  setup();
+  // Two that the register shows, by the ids its rows go by.
+  const ids = dataRows()
+    .slice(1, 3)
+    .map((r) => r.id.replace(/^reg-/, ""));
+  expect(ids).toHaveLength(2);
+  cleanup();
+  // One that's gone since the card was made is passed over.
+  setup("all", demoBudget(), { initialFilter: { select: [ids[1], "gone", ids[0]] } });
+  const selected = dataRows().filter((r) => r.getAttribute("aria-selected") === "true");
+  expect(selected.map((r) => r.id).sort()).toEqual(ids.map((id) => `reg-${id}`).sort());
+  // With them selected, what can be done to a selection is offered.
+  expect(screen.getByRole("toolbar", { name: "Selected transactions" })).toBeTruthy();
+});
+
 it("distinguishes spending awaiting a category from explicit Unassigned money and filters it", () => {
   const b = produce(demoBudget(), (d) => {
     const base = d.transactions.find((t) => t.accountId === "checking")!;

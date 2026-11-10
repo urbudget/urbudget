@@ -65,6 +65,8 @@ export type RegisterFilter = {
   to?: string;
   /** A transaction to select and scroll to: a transfer opened from its other account. */
   focus?: string;
+  /** Transactions to select, the first of them in the register's order scrolled to: the ones an assistant's card names. */
+  select?: string[];
   /** Only spending that needs a category (the budget page's count). */
   uncategorized?: boolean;
 };
@@ -528,10 +530,10 @@ export function Register({
   // The filters a change of account (or of initialFilter) resets to, and a transaction to show
   // once they apply: see the focus effect below.
   const reset = useRef<Filters | null>(null);
-  const focus = useRef<string | null>(null);
+  const focus = useRef<string[] | null>(null);
   useEffect(() => {
     reset.current = fromInitial(initialFilter, budget);
-    focus.current = initialFilter?.focus ?? null;
+    focus.current = initialFilter?.select?.length ? initialFilter.select : initialFilter?.focus ? [initialFilter.focus] : null;
     setFilters(reset.current);
     setSelected(new Set());
     setEditing(null);
@@ -1037,17 +1039,19 @@ export function Register({
     else if (top + rowHeight > el.scrollTop + viewport) el.scrollTop = top + rowHeight - viewport;
   };
   // A transfer's link from the other account opens this register on its transaction, selected and
-  // mid-screen. The account change resets the filters and scroll a render or two later (the
-  // search is deferred), so it's shown again each time until they have settled.
+  // mid-screen; an assistant's card opens it on the transactions it names, all selected, the
+  // first of them mid-screen. The account change resets the filters and scroll a render or two
+  // later (the search is deferred), so they're shown again each time until those have settled.
   const settled = filters === reset.current && query === filters.text.trim().toLowerCase();
   useEffect(() => {
-    const id = focus.current;
+    const ids = focus.current;
     const el = scroller.current;
-    if (!id || !el) return;
-    const index = items.findIndex((i) => i.kind === "row" && i.r.t.id === id);
+    if (!ids || !el) return;
+    const wanted = new Set(ids);
+    const index = items.findIndex((i) => i.kind === "row" && wanted.has(i.r.t.id));
     if (index < 0) return;
     const key = items[index].key;
-    setSelected(new Set([id]));
+    setSelected(new Set(items.flatMap((i) => (i.kind === "row" && wanted.has(i.r.t.id) ? [i.r.t.id] : []))));
     setCursor(key);
     anchor.current = key;
     el.scrollTop = Math.max(0, rowsTop + topOf(index) - viewport / 2);

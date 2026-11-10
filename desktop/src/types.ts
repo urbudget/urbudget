@@ -257,6 +257,8 @@ export type Budget = {
   expectedIncome?: number;
   /** This budget's names for the flag colors ("red": "Reimburse"); a color without one goes by its color. */
   flagNames?: Record<string, string>;
+  /** Short notes the assistant keeps for this budget and is sent with every message; absent when there are none. */
+  assistantNotes?: string[];
   name: string;
   currency: string;
   numberFormat?: import("./format").NumberFormat;

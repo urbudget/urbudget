@@ -19,6 +19,7 @@ import {
   ArrowUp,
   Check,
   ChevronDown,
+  Copy,
   FileSpreadsheet,
   FileText,
   Flag,
@@ -62,7 +63,7 @@ import { reducedMotion, useFollow } from "./follow";
 import { History } from "./History";
 import { Markdown } from "./Markdown";
 import { describe, logError } from "./errors";
-import { ProposalCard } from "./ProposalCard";
+import { ProposalCard, type CardHandlers } from "./ProposalCard";
 import { printReport, ReportPreview } from "./Report";
 import { ReplyReport, reportDetails } from "./ReplyReport";
 import { formatCount, getDirection, getLanguage, msg, msgc, t, tn, useLanguage } from "../i18n";
@@ -320,8 +321,9 @@ type About = { version: string; provider: Provider; model?: string | null };
 
 /**
  * One reply. A live reply reads its text from the stream and keeps the same element when it
- * finishes, so nothing jumps; its buttons hold their place meanwhile. Submitting a report stays
- * inside the app, and a thumb stays on this computer.
+ * finishes, so nothing jumps; its buttons hold their place meanwhile. Copying takes the reply's
+ * text as it was written, submitting a report stays inside the app, and a thumb stays on this
+ * computer.
  */
 const Reply = memo(function Reply({
   text,
@@ -344,18 +346,31 @@ const Reply = memo(function Reply({
   about: About;
   onRate: (index: number, up: boolean | null) => void;
 }) {
+  const toast = useToast();
   const streamed = useSyncExternalStore(live ? stream.subscribe : unheard, () => (live ? stream.get() : null));
   const whole = live ? (streamed ?? "") : text;
   const [reporting, setReporting] = useState(false);
   const [animate] = useState(live);
   const shown = useReveal(whole, animate);
   const typing = live || shown.length < whole.length;
+  // Where there's no clipboard to write to, that is said too, not thrown.
+  const copy = () =>
+    void Promise.resolve()
+      .then(() => navigator.clipboard.writeText(whole))
+      .then(
+        () => toast({ message: t("Copied.") }),
+        (e) => toast({ message: errorText(e), tone: "error" }),
+      );
   return (
     <>
       <div className={`assistant-reply${typing ? " typing" : ""}`}>
         <Markdown text={shown} streaming={typing} />
       </div>
       <div className={`assistant-reply-actions${typing ? " waiting" : ""}`}>
+        <button className="assistant-flag" tabIndex={typing ? -1 : 0} disabled={typing} onClick={copy}>
+          <Copy size={11} aria-hidden />
+          {t("Copy")}
+        </button>
         <button
           className="assistant-flag"
           title={t("Report this reply to UrBudget's developer")}
@@ -430,10 +445,17 @@ const fileIcon = (a: Attachment) =>
 const planLabel = (s: Status) =>
   s.provider === "chatgpt" ? t("Using ChatGPT plan") : s.provider === "openai" ? t("Using your OpenAI key") : t("Using your Anthropic key");
 
-/** The latest proposal still waiting for the user, whose rows the page highlights. */
+/**
+ * The latest change still waiting to be applied, whose rows the page highlights. A thing the
+ * assistant made isn't one, and neither is a question.
+ */
 const pending = (entries: Entry[]) =>
-  [...entries].reverse().find((e): e is Extract<Entry, { kind: "proposal" }> => e.kind === "proposal" && e.proposal.status === "proposed")
+  [...entries]
+    .reverse()
+    .find((e): e is Extract<Entry, { kind: "proposal" }> => e.kind === "proposal" && e.proposal.status === "proposed" && e.proposal.actions.includes("apply"))
     ?.proposal;
+/** How long after the window's budget last changed a conversation's waiting cards are brought up to date (milliseconds). */
+export const REFRESH = 500;
 const same = (a: Entry[], b: Entry[]) => a.length === b.length && JSON.stringify(a) === JSON.stringify(b);
 
 function SignIn({ status, onStatus, onOpenSettings }: { status: Status; onStatus: (s: Status) => void; onOpenSettings: () => void }) {
@@ -610,9 +632,14 @@ function useLatest<T extends Record<string, (...args: never[]) => unknown>>(now:
 /** What a card's buttons do, by the conversation and the proposal they belong to. */
 type CardActions = {
   apply: (threadId: string, p: Proposal) => Promise<void>;
-  revise: (threadId: string, p: Proposal, revision: Revision) => Promise<void>;
+  revise: (threadId: string, p: Proposal, revision: Revision) => Promise<Proposal>;
   discard: (threadId: string, p: Proposal) => Promise<void>;
+  restore: (threadId: string, p: Proposal) => Promise<void>;
   undo: (threadId: string, p: Proposal) => Promise<void>;
+  askChanges: (threadId: string, p: Proposal) => void;
+  askAgain: (threadId: string, p: Proposal) => void;
+  show: (threadId: string, p: Proposal) => void;
+  answer: (threadId: string, p: Proposal, label: string) => void;
   review: (threadId: string, p: Proposal) => void;
   preview: (threadId: string, p: Proposal) => void;
   print: (threadId: string, p: Proposal) => Promise<void>;
@@ -620,13 +647,19 @@ type CardActions = {
   save: (threadId: string, p: Proposal) => Promise<void>;
 };
 
-/** A proposal's card in the conversation, drawn again only when the proposal, the budget or its Undo changes. */
+/**
+ * A proposal's card in the conversation, drawn again only when what it's given changes: the
+ * proposal, the budget, or whether its change can still be undone, its fixes applied or its
+ * question answered.
+ */
 const ProposalItem = memo(function ProposalItem({
   threadId,
   proposal: p,
   budget,
   budgetId,
   canUndo,
+  fixable,
+  answerable,
   does,
 }: {
   threadId: string;
@@ -634,39 +667,32 @@ const ProposalItem = memo(function ProposalItem({
   budget: Budget;
   budgetId: string;
   canUndo: boolean;
+  fixable: boolean;
+  answerable: boolean;
   does: CardActions;
 }) {
-  const on = useMemo(
+  const on = useMemo<CardHandlers>(
     () => ({
-      apply: () => does.apply(threadId, p),
-      revise: (revision: Revision) => does.revise(threadId, p, revision),
+      // The card as the core just made it with the user's choices, when there is one: an
+      // import's fixes are applied from the card itself.
+      apply: (now) => does.apply(threadId, now ?? p),
+      revise: (revision) => does.revise(threadId, p, revision),
       discard: () => does.discard(threadId, p),
+      restore: () => does.restore(threadId, p),
       undo: () => does.undo(threadId, p),
+      askChanges: () => does.askChanges(threadId, p),
+      askAgain: () => does.askAgain(threadId, p),
+      show: () => does.show(threadId, p),
+      answer: (label) => does.answer(threadId, p, label),
       review: () => does.review(threadId, p),
+      saveCsv: () => does.save(threadId, p),
       preview: () => does.preview(threadId, p),
       print: () => does.print(threadId, p),
-      sheet: (open: boolean) => does.sheet(threadId, p, open),
-      save: () => does.save(threadId, p),
+      sheet: (open) => does.sheet(threadId, p, open),
     }),
     [does, threadId, p],
   );
-  return (
-    <ProposalCard
-      budgetId={budgetId}
-      proposal={p}
-      budget={budget}
-      canUndo={canUndo}
-      onApply={on.apply}
-      onRevise={on.revise}
-      onDiscard={on.discard}
-      onUndo={on.undo}
-      onReview={on.review}
-      onPreview={on.preview}
-      onPrint={on.print}
-      onSheet={on.sheet}
-      onSave={on.save}
-    />
-  );
+  return <ProposalCard budgetId={budgetId} proposal={p} budget={budget} canUndo={canUndo} fixable={fixable} answerable={answerable} on={on} />;
 });
 
 export function AssistantPanel({
@@ -683,8 +709,10 @@ export function AssistantPanel({
   onApply,
   onUndo,
   canUndo,
+  canApplyFix,
   onReviewImport,
   onHighlight,
+  onShow,
   onWorking,
   autoFocus = false,
 }: {
@@ -703,10 +731,16 @@ export function AssistantPanel({
   onOpenSettings: () => void;
   /** Applies a proposal to the budget; resolves to the card as it is afterwards. */
   onApply: (threadId: string, p: Proposal) => Promise<Proposal>;
+  /** Takes an applied proposal's change back; fails when the window's Undo didn't. */
   onUndo: (threadId: string, p: Proposal) => Promise<Proposal>;
+  /** The window can still take the proposal's change back: it is the budget's latest. */
   canUndo: (p: Proposal) => boolean;
+  /** The import a card's fixes are for is open. Left out, any is taken to be. */
+  canApplyFix?: (p: Proposal) => boolean;
   onReviewImport: (threadId: string, p: Proposal) => void;
   onHighlight: (highlight: Card["highlight"] | null) => void;
+  /** Goes to what a card names: its transactions in the register, or its categories on the Budget page. */
+  onShow?: (highlight: Card["highlight"]) => void;
   /** Whether there's a message being written, attached to or sent, which closing the app would lose. */
   onWorking?: (working: boolean) => void;
 }) {
@@ -722,8 +756,8 @@ export function AssistantPanel({
    */
   const [opening, setOpening] = useState<"loading" | "failed" | null>(() => (store.get(threadKey) ? "loading" : null));
   const [entries, setEntries] = useState<Entry[]>([]);
-  /** The open conversation besides what was said in it: its title, what it has used, whether it has grown long, what it carries on. */
-  const [meta, setMeta] = useState<Pick<ThreadView, "title" | "usage" | "long" | "continuedFrom"> | null>(null);
+  /** The open conversation besides what was said in it: its title, what it has used, whether it has grown long, what it carries on, and what's waiting in the budget to offer under its last reply. */
+  const [meta, setMeta] = useState<Pick<ThreadView, "title" | "usage" | "long" | "continuedFrom" | "next"> | null>(null);
   /** Entries from this index on arrived while the panel was open, and fade in. */
   const [freshFrom, setFreshFrom] = useState(0);
   const [running, setRunning] = useState(false);
@@ -767,6 +801,9 @@ export function AssistantPanel({
   const [version, setVersion] = useState("");
   const current = useRef(threadId);
   current.current = threadId;
+  /** The budget as the window has it now: a conversation's waiting cards are brought up to date with it. */
+  const budgetNow = useRef(budget);
+  budgetNow.current = budget;
   const historyButton = useRef<HTMLButtonElement>(null);
   const renameButton = useRef<HTMLButtonElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -800,10 +837,10 @@ export function AssistantPanel({
       setMeta(null);
     }
     try {
-      const view = await assistant.thread(id);
+      const view = await assistant.thread(budgetNow.current, id);
       if (current.current !== id) return;
       setEntries((prev) => (same(prev, view.entries) ? prev : view.entries));
-      setMeta({ title: view.title, usage: view.usage, long: view.long, continuedFrom: view.continuedFrom });
+      setMeta({ title: view.title, usage: view.usage, long: view.long, continuedFrom: view.continuedFrom, next: view.next });
       setOpening(null);
       if (opening) {
         setFreshFrom(view.entries.length);
@@ -879,7 +916,8 @@ export function AssistantPanel({
             setThinking("");
             setActivity("");
             replied.current = true;
-            setEntries((list) => [...list, { kind: "assistant", text: e.text }]);
+            // Its place comes with it, so its thumbs are there as soon as it has finished.
+            setEntries((list) => [...list, { kind: "assistant", text: e.text, index: e.index }]);
             break;
           case "step": {
             // A reply cut short by a lookup ends here, keeping its place and element.
@@ -894,6 +932,10 @@ export function AssistantPanel({
           case "proposal":
             setEntries((list) => [...list, { kind: "proposal", proposal: e.proposal }]);
             setSaid(t("A proposal is ready to review."));
+            break;
+          case "replaced":
+            // The earlier card as it is now that a newer one corrects it: in its place, not after it.
+            setEntries((list) => list.map((entry) => (entry.kind === "proposal" && entry.proposal.id === e.proposal.id ? { kind: "proposal", proposal: e.proposal } : entry)));
             break;
           case "error":
             setLive(null);
@@ -951,6 +993,33 @@ export function AssistantPanel({
     onHighlight(waiting ? waiting.card.highlight : null);
   }, [waiting]);
   useEffect(() => () => onHighlight(null), []);
+  // A card that changes outside the panel (the window's Undo took its change back, its import
+  // was finished) is the one the app marked: it takes its place here as it is now.
+  useEffect(
+    () =>
+      assistant.onMarked((id, p) => {
+        if (id === current.current) replace(p);
+      }),
+    [],
+  );
+  // The core brings waiting changes up to date whenever the conversation is read. So it is read
+  // again once the budget has stopped changing, while a change waits here (a card that was
+  // updated says so), or while it ends on a reply: the next steps offered under one are counted
+  // from the budget too. Not while a reply is arriving: that ends by reading it anyway.
+  const stale = useRef(false);
+  stale.current =
+    !running &&
+    !opening &&
+    (entries[entries.length - 1]?.kind === "assistant" || entries.some((e) => e.kind === "proposal" && e.proposal.actions.includes("apply")));
+  const settled = useRef(budget);
+  useEffect(() => {
+    if (settled.current === budget) return;
+    settled.current = budget;
+    const timer = setTimeout(() => {
+      if (stale.current && current.current) void load(current.current);
+    }, REFRESH);
+    return () => clearTimeout(timer);
+  }, [budget]);
 
   const upload = async (files: File[]) => {
     const room = 5 - attachments.length;
@@ -983,7 +1052,10 @@ export function AssistantPanel({
     const message = text.trim();
     if (!message && !attachments.length) return;
     setProblem("");
-    const sent = { draft: message, attachments, selected, selectedOf };
+    // A message being written that isn't this one (a card's or a next step's button sent its own
+    // words) stays in the field.
+    const writing = draft.trim() && draft.trim() !== message ? draft : "";
+    const sent = { draft: writing || message, attachments, selected, selectedOf };
     const from = without.place
       ? { page: "" }
       : { page: screen.page, month: screen.month, accountId: screen.accountId, categoryId: screen.categoryId };
@@ -1005,7 +1077,7 @@ export function AssistantPanel({
         },
       },
     ]);
-    compose(() => ({ draft: "", attachments: [], selected: [] }));
+    compose(() => ({ draft: writing, attachments: [], selected: [] }));
     setRunning(true);
     setLive(null);
     setThinking("");
@@ -1156,12 +1228,45 @@ export function AssistantPanel({
   };
   const replace = (p: Proposal) =>
     setEntries((list) => list.map((e) => (e.kind === "proposal" && e.proposal.id === p.id ? { kind: "proposal", proposal: p } : e)));
+  /**
+   * What a card's button does, and the card as it is afterwards. When it can't be done (the
+   * proposal is gone, or was handled somewhere else), that is said and the conversation is read
+   * again, so the card shows what the core has and not a button that no longer works.
+   */
   const act = <A extends unknown[]>(work: (...args: A) => Promise<Proposal>) => async (...args: A) => {
     try {
-      replace(await work(...args));
+      const now = await work(...args);
+      replace(now);
+      return now;
     } catch (e) {
       toast({ message: errorText(e), tone: "error" });
+      if (current.current) void load(current.current);
+      throw e;
     }
+  };
+  /** The same, for a button that only needs to know when it's done. */
+  const done = <A extends unknown[]>(work: (...args: A) => Promise<Proposal>) => {
+    const acted = act(work);
+    return async (...args: A) => {
+      await acted(...args);
+    };
+  };
+  /** Words for the message field, added after whatever is being written, with the keyboard at their end. */
+  const write = (text: string) => {
+    compose((c) => ({ ...c, draft: c.draft.trim() ? `${c.draft.trimEnd()}\n${text}` : text }));
+    setTimeout(() => {
+      const field = input.current;
+      if (!field) return;
+      field.focus();
+      field.setSelectionRange(field.value.length, field.value.length);
+    });
+  };
+  /** A message can be sent now: the assistant is ready, and nothing is arriving, attaching or still opening. */
+  const sendable = !!status?.ready && !running && !uploading && !opening;
+  /** A message a button sends for the user. When one can't be sent right now, it waits in the field. */
+  const say = (text: string) => {
+    if (sendable) submit(text);
+    else write(text);
   };
   const retry = async () => {
     if (!current.current) return;
@@ -1217,10 +1322,18 @@ export function AssistantPanel({
   // What cards and replies do. They're handed the same functions for the panel's whole life
   // (useLatest), so typing a message or a reply streaming in doesn't draw each of them again.
   const does = useLatest({
-    apply: act((id: string, p: Proposal) => onApply(id, p)),
+    apply: done((id: string, p: Proposal) => onApply(id, p)),
     revise: act((id: string, p: Proposal, revision: Revision) => assistant.revise(budget, id, p.id, revision)),
-    discard: act((id: string, p: Proposal) => assistant.mark(id, p.id, "discarded")),
-    undo: act((id: string, p: Proposal) => onUndo(id, p)),
+    // A thing the assistant made is removed the same way a change is set aside.
+    discard: done((id: string, p: Proposal) => assistant.mark(id, p.id, "discarded")),
+    restore: done((id: string, p: Proposal) => assistant.mark(id, p.id, "proposed")),
+    undo: done((id: string, p: Proposal) => onUndo(id, p)),
+    askChanges: (_id: string, p: Proposal) => write(t("Revise the proposal “{title}”: ", { title: p.title })),
+    askAgain: (_id: string, p: Proposal) =>
+      say(t("Prepare “{title}” again. It couldn't be applied: {reason}", { title: p.title, reason: p.message?.text ?? "" })),
+    show: (_id: string, p: Proposal) => onShow?.(p.card.highlight),
+    // Through the same door as Send, so the notice of what gets sent and what goes with the message apply.
+    answer: (_id: string, _p: Proposal, label: string) => submit(label),
     review: (id: string, p: Proposal) => onReviewImport(id, p),
     preview: (id: string, p: Proposal) => setPreview({ threadId: id, id: p.id }),
     print: async (id: string, p: Proposal) => {
@@ -1290,7 +1403,19 @@ export function AssistantPanel({
       case "step":
         return null;
       case "proposal":
-        return <ProposalItem threadId={current.current!} proposal={e.proposal} budget={budget} budgetId={budgetId} canUndo={canUndo(e.proposal)} does={does} />;
+        return (
+          <ProposalItem
+            threadId={current.current!}
+            proposal={e.proposal}
+            budget={budget}
+            budgetId={budgetId}
+            canUndo={canUndo(e.proposal)}
+            fixable={e.proposal.kind !== "fix" || (canApplyFix?.(e.proposal) ?? true)}
+            // Only a question waits on whether a message can be sent: the other cards aren't drawn again for it.
+            answerable={e.proposal.kind !== "question" || sendable}
+            does={does}
+          />
+        );
       case "error": {
         // The core says what helps; only the error the conversation ends on offers it.
         const action = last && !running ? (e.action ?? "none") : "none";
@@ -1398,6 +1523,18 @@ export function AssistantPanel({
           <i />
         </span>
         <span className="assistant-activity-text">{activity ? `${activity}…` : thinking || t("Thinking")}</span>
+      </div>,
+    );
+  else if (meta?.next?.length && entries.length > 0)
+    // Under the last reply, once nothing is arriving: what's waiting in the budget that the
+    // assistant can help with. The core words them, in the app's language.
+    feedItems.push(
+      <div key="next" className="assistant-item assistant-next">
+        {meta.next.map((step) => (
+          <button key={step.id} className="assistant-idea" disabled={!sendable} onClick={() => submit(step.prompt)}>
+            {step.text}
+          </button>
+        ))}
       </div>,
     );
 

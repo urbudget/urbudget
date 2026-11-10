@@ -83,7 +83,7 @@ vi.mock("./assistant/api", async (importOriginal) => {
   };
 });
 import App from "./App";
-import { assistant } from "./assistant/api";
+import { assistant, type Proposal } from "./assistant/api";
 import { forgetComposers } from "./assistant/composer";
 import { api } from "./bridge";
 import { ToastProvider } from "./ui";
@@ -362,6 +362,190 @@ it.each(["card", "loan"])("keeps the %s payment draft and save-only retry mounte
     state.budget = null;
   }
 });
+
+/** An assistant's card as the core has it, by where it stands. */
+const assistantCard = (status: Proposal["status"] = "proposed"): Proposal => ({
+  id: "p_1",
+  title: "Cover dining",
+  kind: "budget",
+  status,
+  made: false,
+  actions: status === "applied" ? ["undo", "show"] : ["apply", "askChanges", "discard"],
+  rows: 0,
+  sheets: 0,
+  card: {
+    kicker: "Proposal · Budget",
+    rows: [{ label: "Dining out", amount: 24000 }],
+    stats: [],
+    more: 0,
+    highlight: { month: "2026-03", categories: ["dining"], transactions: [] },
+  },
+});
+const assistantSpies: { mockRestore: () => void }[] = [];
+/**
+ * The window with the assistant open on a conversation that holds a change, and a budget that
+ * changes as the window's does: `commit` is what saving a change does with it. The core's side
+ * keeps where the card stands, and `done` lists what was asked of it, in order.
+ */
+async function withAssistantCard(
+  commit: (work: (b: Budget) => Promise<Budget>, held: { budget: Budget }, done: string[]) => Promise<void>,
+  status: Proposal["status"] = "proposed",
+) {
+  const held = { budget: demoBudget() };
+  const done: string[] = [];
+  const core = { status };
+  state.budget = () => held.budget;
+  state.transform.mockReset().mockImplementation((work: (b: Budget) => Promise<Budget>) => commit(work, held, done));
+  localStorage.setItem("lb:assistant:open", "1");
+  // (The window's budget has no id here, so that's the name its conversation is remembered under.)
+  localStorage.setItem("lb:assistant:thread:undefined", "t_1");
+  const thread = vi.spyOn(assistant, "thread").mockImplementation(async () => ({
+    id: "t_1",
+    title: "Dining",
+    running: false,
+    entries: [{ kind: "proposal", proposal: assistantCard(core.status) }],
+  }));
+  const apply = vi.spyOn(assistant, "apply").mockImplementation(async () => {
+    done.push("apply");
+    return { patch: { name: "Covered" }, proposal: assistantCard(core.status) };
+  });
+  const mark = vi.spyOn(assistant, "mark").mockImplementation(async (_thread, _id, to) => {
+    done.push(`mark ${to}`);
+    core.status = to;
+    return assistantCard(to);
+  });
+  assistantSpies.push(thread, apply, mark);
+  const view = render(<ToastProvider><App /></ToastProvider>);
+  // The whole app renders before the card shows: on a busy machine that takes a while.
+  await screen.findByLabelText("Proposal: Cover dining", {}, { timeout: 8000 });
+  return {
+    held,
+    done,
+    thread,
+    apply,
+    mark,
+    card: () => screen.getByLabelText("Proposal: Cover dining"),
+    /** The window drawn again, as it is when its budget changes. */
+    again: () => view.rerender(<ToastProvider><App /></ToastProvider>),
+  };
+}
+const withoutAssistantCard = () => {
+  for (const spy of assistantSpies.splice(0)) spy.mockRestore();
+  state.budget = null;
+  state.transform.mockReset();
+  localStorage.removeItem("lb:assistant:open");
+  localStorage.removeItem("lb:assistant:thread:undefined");
+  forgetComposers();
+};
+/** Whether the page marks this category for the assistant. */
+const marksCategory = (id: string) => [...document.querySelectorAll("style")].some((s) => s.textContent?.includes(`[data-category="${id}"]`));
+
+it("marks an assistant's card applied only once its change is in the budget, and follows the window's Undo and Redo", async () => {
+  try {
+    const { held, done, apply, mark, card, again } = await withAssistantCard(async (work, held, done) => {
+      held.budget = await work(held.budget);
+      done.push("commit");
+    });
+    const before = held.budget;
+    fireEvent.click(within(card()).getByRole("button", { name: "Apply" }));
+    // The change is made as a patch, committed in the window, and only then is the card marked.
+    await waitFor(() => expect(done).toEqual(["apply", "commit", "mark applied"]));
+    expect(apply).toHaveBeenCalledWith(before, "t_1", "p_1");
+    expect(mark).toHaveBeenCalledWith("t_1", "p_1", "applied");
+    const after = held.budget;
+    expect(after.name).toBe("Covered");
+    expect(await screen.findByText("Applied: Cover dining")).toBeTruthy();
+    again();
+    // Its Undo is there while the change is the budget's latest.
+    expect(await within(card()).findByRole("button", { name: "Undo" })).toBeTruthy();
+    // The window's own Undo (Ctrl+Z, the header's button) takes the change back: the card is marked to match,
+    held.budget = before;
+    again();
+    await waitFor(() => expect(done).toEqual(["apply", "commit", "mark applied", "mark undone"]));
+    // and its Redo makes it again.
+    held.budget = after;
+    again();
+    await waitFor(() => expect(done).toEqual(["apply", "commit", "mark applied", "mark undone", "mark applied"]));
+    // A budget that's neither says nothing of the card.
+    held.budget = { ...after, name: "Edited since" };
+    again();
+    held.budget = after;
+    again();
+    expect(done).toHaveLength(5);
+    // The card's own Undo marks it undone only when the window's Undo ran.
+    state.undo.mockReturnValue(false);
+    fireEvent.click(within(card()).getByRole("button", { name: "Undo" }));
+    expect(await screen.findByText("Finish the current operation or recovery first.")).toBeTruthy();
+    expect(done).toHaveLength(5);
+    state.undo.mockImplementation(() => ((held.budget = before), true));
+    await waitFor(() => expect(within(card()).getByRole("button", { name: "Undo" })).toHaveProperty("disabled", false));
+    fireEvent.click(within(card()).getByRole("button", { name: "Undo" }));
+    await waitFor(() => expect(done).toEqual(["apply", "commit", "mark applied", "mark undone", "mark applied", "mark undone"]));
+    expect(await within(card()).findByText("Undone")).toBeTruthy();
+    again();
+    // Marked by the button, not a second time by the budget going back.
+    expect(done).toHaveLength(6);
+  } finally {
+    withoutAssistantCard();
+  }
+}, 30000);
+
+it("leaves an assistant's card as it was when its change couldn't be made, and says so", async () => {
+  try {
+    const { thread, apply, mark, card } = await withAssistantCard(async (work, held) => {
+      await work(held.budget);
+      throw new Error("The budget couldn't be checked.");
+    });
+    fireEvent.click(within(card()).getByRole("button", { name: "Apply" }));
+    expect(await screen.findByText("The budget couldn't be checked.")).toBeTruthy();
+    expect(apply).toHaveBeenCalledTimes(1);
+    // Nothing to put back: the card was never marked.
+    expect(mark).not.toHaveBeenCalled();
+    // It shows what the core has, read again, and can be applied again.
+    await waitFor(() => expect(thread).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(within(card()).getByRole("button", { name: "Apply" })).toHaveProperty("disabled", false));
+  } finally {
+    withoutAssistantCard();
+  }
+}, 30000);
+
+it("marks an assistant's card applied when its change is in the draft though it couldn't be saved", async () => {
+  try {
+    const { mark, card } = await withAssistantCard(async (work, held) => {
+      held.budget = await work(held.budget);
+      throw new AppliedChangeError(async () => {});
+    });
+    fireEvent.click(within(card()).getByRole("button", { name: "Apply" }));
+    // Applying it again would make the change twice: the card says applied, and the save's problem is said.
+    await waitFor(() => expect(mark).toHaveBeenCalledWith("t_1", "p_1", "applied"));
+    expect(await screen.findByText(/already applied to your draft but could not be saved/)).toBeTruthy();
+    expect(await within(card()).findByText("Applied")).toBeTruthy();
+  } finally {
+    withoutAssistantCard();
+  }
+}, 30000);
+
+it("goes to the month and the categories an assistant's card names, marked on the Budget page until it's left", async () => {
+  try {
+    // An applied card: nothing of it is marked for waiting to be applied.
+    const { card } = await withAssistantCard(async () => {}, "applied");
+    fireEvent.click(screen.getByRole("button", { name: /^All transactions/ }));
+    expect(screen.queryByRole("grid", { name: "Monthly plan" })).toBeNull();
+    expect(marksCategory("dining")).toBe(false);
+    fireEvent.click(within(card()).getByRole("button", { name: "Show in the budget" }));
+    expect(await screen.findByRole("grid", { name: "Monthly plan" })).toBeTruthy();
+    expect(document.querySelector(".month-long")?.textContent).toBe("March 2026");
+    await waitFor(() => expect(marksCategory("dining")).toBe(true));
+    // The marks go when the month it showed is left, and don't come back with it.
+    fireEvent.click(screen.getByRole("button", { name: "Next month" }));
+    await waitFor(() => expect(marksCategory("dining")).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Previous month" }));
+    expect(document.querySelector(".month-long")?.textContent).toBe("March 2026");
+    expect(marksCategory("dining")).toBe(false);
+  } finally {
+    withoutAssistantCard();
+  }
+}, 30000);
 
 it("puts the report groups in the page header, after its title", async () => {
   render(<App />);

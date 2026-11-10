@@ -86,7 +86,8 @@ export function ReplyReport({ text, details: about = "", close }: { text: string
           }
         }}>
           <p className="help">
-            {t("Send the text below to UrBudget for review. Remove names, balances or anything private first. Reports are deleted after 90 days. No other conversation text, attachments or account details are added.")}
+            {t("Send the text below to UrBudget for review. Remove names, balances or anything private first. Reports are deleted after 90 days.")}{" "}
+            {t("Only what you leave in these fields is sent: the reply's text, your explanation and the details.")}
           </p>
           <label className="field-wide">
             {t("Reply to include")}

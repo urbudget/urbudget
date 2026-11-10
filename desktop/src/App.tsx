@@ -12,7 +12,7 @@ import {
   TriangleAlert,
   Undo2,
 } from "lucide-react";
-import { useBudget, type SyncState } from "./useBudget";
+import { AppliedChangeError, useBudget, type SyncState } from "./useBudget";
 import { api } from "./bridge";
 import { apply as applyPatch, type Patch } from "./patch";
 import { AssistantBoundary, AssistantPanel, useAssistantWidth, type Request as AssistantRequest } from "./assistant/Assistant";
@@ -23,7 +23,7 @@ import { LoanPlanner } from "./LoanPlanner";
 import { LoanPaymentForm } from "./LoanPayment";
 import { ATTACH_LIMIT, categorizeText, fixImportText, importHelpText, type Uncategorized } from "./BankImport";
 import { ImportPage, type ImportState } from "./import/ImportPage";
-import { applyToLatest } from "./import/model";
+import { applyToLatest, fixesNote } from "./import/model";
 import { BankSync, BankSyncDetails, syncHelpText } from "./BankSync";
 import { Payees } from "./PayeesPage";
 import { Reports } from "./Reports";
@@ -282,6 +282,8 @@ export default function App() {
   /** The one category selected on the Budget page, which a message to the assistant says is in view. */
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [highlight, setHighlight] = useState<Card["highlight"] | null>(null);
+  /** The categories a card's "Show in the budget" went to, marked on the Budget page in that month until it's left. */
+  const [shown, setShown] = useState<{ month: string; categories: string[] } | null>(null);
   const [settingsTab, setSettingsTab] = useState<{ tab: SettingsTab; key: number } | null>(null);
   const openSettings = (tab: SettingsTab) => {
     setSettingsTab({ tab, key: Date.now() });
@@ -289,10 +291,23 @@ export default function App() {
   };
   // Never so wide that the page between it and the sidebar has no room left.
   const assistantWidth = useAssistantWidth(layout.width);
-  // The budget right after the assistant's last applied change, so its Undo only shows while it is the latest edit.
-  const lastApplied = useRef<{ id: string; budget: Budget } | null>(null);
+  // The assistant's changes applied in this window, each with the budget as it was just before
+  // and just after. Budgets share what they don't change and are never altered in place, so the
+  // budget being one of these very objects again says the window's Undo took the change back, or
+  // its Redo made it again: the card is marked to match, whichever button or key did it. A card's
+  // own Undo shows only while the budget is the one its change left.
+  const appliedCards = useRef<{ threadId: string; id: string; before: Budget; after: Budget; undone: boolean }[]>([]);
   const budgetNow = useRef(budget);
   budgetNow.current = budget;
+  useEffect(() => {
+    for (const card of appliedCards.current) {
+      if (budget !== (card.undone ? card.after : card.before)) continue;
+      card.undone = !card.undone;
+      // The panel hears of it from the mark itself. A card that can't take the step (its
+      // conversation was deleted, it was set aside since) stays as it is.
+      void assistant.mark(card.threadId, card.id, card.undone ? "undone" : "applied").catch(() => {});
+    }
+  }, [budget]);
   const showAssistant = (open: boolean) => {
     setAssistantOpen(open);
     if (open) setAssistantByUser(true);
@@ -301,8 +316,15 @@ export default function App() {
     } catch {
       /* not remembered */
     }
-    if (!open) setHighlight(null);
+    if (!open) {
+      setHighlight(null);
+      setShown(null);
+    }
   };
+  // The marks a card's "Show in the budget" left go when the page or the month it showed is left.
+  useEffect(() => {
+    if (shown && (page !== "budget" || month !== shown.month)) setShown(null);
+  }, [page, month, shown]);
   /** Opens the assistant, optionally with a question, a selection or files ready to send. */
   const ask = (request: Omit<AssistantRequest, "key"> = {}) => {
     showAssistant(true);
@@ -543,8 +565,14 @@ export default function App() {
   };
   const dialogLoan = dialog && (dialog.type === "planner" || dialog.type === "loanPayment") ? loanTerms(budget, dialog.account.id) : undefined;
 
-  /** Applies an assistant proposal as one undoable change; a refreshed card comes back when the budget moved. */
-  /** Fixes the assistant proposed for the import in progress: applied there, where each still fits. */
+  /** The import in progress, when it's the one a card's fixes are for. */
+  const importFor = (p: Proposal) =>
+    p.fixes && importing?.session && importing.content !== undefined && p.fixes.scope.session === importing.session.scope.session ? importing : null;
+  /**
+   * Fixes the assistant proposed for the import in progress: applied there, where each still
+   * fits. The card says what became of them: applied when any took, with a note naming the ones
+   * that didn't; left waiting, with the same note, when none did.
+   */
   const applyFix = async (threadId: string, p: Proposal): Promise<Proposal> => {
     const fixes = p.fixes;
     const open = importing?.session && importing.content !== undefined ? importing : null;
@@ -563,79 +591,120 @@ export default function App() {
         : was,
     );
     setPage("import");
-    const refused = applied.results.filter((r) => !r.applied);
-    const done = applied.results.length - refused.length;
-    toast({
-      message: refused.length
-        ? `${tn(applied.results.length, "Applied {done} of {count} fixes.", "Applied {done} of {count} fixes.", { done })} ${
-            refused.length === 1 ? t("One no longer fits") : tn(refused.length, "{count} no longer fit", "{count} no longer fit")
-          }: ${refused[0].problem ?? t("the line changed")}`
-        : done === 1
-          ? t("Applied the fix to the import.")
-          : tn(done, "Applied {count} fix to the import.", "Applied {count} fixes to the import."),
-      tone: refused.length && !done ? "error" : undefined,
-    });
-    return done ? assistant.mark(threadId, p.id, "applied") : p;
+    const done = applied.results.filter((r) => r.applied).length;
+    // Which didn't take is the card's to say, where it stays to be read: not a toast's.
+    const note = fixesNote(p.card.rows, fixes, applied.results);
+    if (note) return assistant.mark(threadId, p.id, done ? "applied" : p.status, note);
+    toast({ message: done === 1 ? t("Applied the fix to the import.") : tn(done, "Applied {count} fix to the import.", "Applied {count} fixes to the import.") });
+    return assistant.mark(threadId, p.id, "applied");
   };
+  /**
+   * Applies an assistant proposal as one undoable change. The core makes the change as a patch
+   * without marking the card; the card is marked applied only once the change is in the window's
+   * budget, so one that couldn't be made stays as it was. When the budget moved in the moment
+   * between, the card comes back changed instead, and says why.
+   */
   const applyProposal = async (threadId: string, p: Proposal): Promise<Proposal> => {
     if (p.kind === "fix") return applyFix(threadId, p);
     if (!currentSummary) throw new Error(t("Wait for the budget calculation to finish before applying these changes."));
     let outcome = null as { patch: Patch | null; proposal: Proposal } | null;
-    let after: Budget | null = null;
+    let made = null as { before: Budget; after: Budget } | null;
     try {
       await model.transform(async (b) => {
         outcome = await assistant.apply(b, threadId, p.id);
         if (!outcome.patch) throw new Error("refreshed");
-        after = applyPatch(b, outcome.patch);
-        return after;
+        made = { before: b, after: applyPatch(b, outcome.patch) };
+        return made.after;
       });
     } catch (e) {
       if (outcome && !outcome.patch) return outcome.proposal;
-      if (outcome?.patch) await assistant.mark(threadId, p.id, "proposed").catch(() => {});
-      throw e;
+      // In the window's budget though not saved yet: the card is applied, and what couldn't be
+      // saved is said as it is for any other change.
+      if (!(e instanceof AppliedChangeError) || !made) throw e;
+      fail(e);
     }
-    if (after) lastApplied.current = { id: p.id, budget: after };
+    const card = { threadId, id: p.id, ...made!, undone: false };
+    // As many as the window's Undo goes back.
+    appliedCards.current = [...appliedCards.current.filter((c) => c.id !== p.id), card].slice(-30);
+    const marked = await assistant.mark(threadId, p.id, "applied");
     toast({
       message: t("Applied: {proposal}", { proposal: p.title }),
-      action: {
-        label: t("Undo"),
-        onClick: () => {
-          // As the card's Undo: only while it's still the latest edit, or this would undo the one made since.
-          if (lastApplied.current?.id === p.id && lastApplied.current.budget === budgetNow.current) void undoProposal(threadId, p);
-          else toast({ message: t("Not undone: the budget has changed since it was applied.") });
-        },
-      },
+      // As the card's Undo: only while its change is still the budget's latest.
+      action: { label: t("Undo"), onClick: () => void undoProposal(threadId, p).catch(fail) },
     });
-    return outcome!.proposal;
+    return marked;
   };
+  /**
+   * Takes an applied proposal's change back with the window's Undo, and marks the card undone
+   * only when that ran: not when another change has been made since (Undo would take that one
+   * back), nor while something is being saved.
+   */
   const undoProposal = async (threadId: string, p: Proposal): Promise<Proposal> => {
-    if (lastApplied.current?.id === p.id) {
-      model.undo();
-      lastApplied.current = null;
-    }
+    const card = appliedCards.current.find((c) => c.id === p.id && c.threadId === threadId && !c.undone);
+    if (!card || card.after !== budgetNow.current) throw new Error(t("Not undone: the budget has changed since it was applied."));
+    if (!model.undo()) throw new Error(t("Finish the current operation or recovery first."));
+    card.undone = true;
     return assistant.mark(threadId, p.id, "undone");
   };
   /** Opens the assistant with an import's uncategorized transactions attached and a request ready to send. */
   const categorize = (uncategorized: Uncategorized) =>
     ask({ text: categorizeText(uncategorized), selected: uncategorized.ids.slice(0, ATTACH_LIMIT) });
   const reviewImport = async (threadId: string, p: Proposal) => {
-    try {
+    // Already open: it's shown as it was left, not started over.
+    if (importing?.proposal?.threadId === threadId && importing.proposal.id === p.id) return setPage("import");
+    const open = async () => {
       const file = await assistant.importFile(threadId, p.id);
       const account = budget.accounts.find((a) => a.id === file.account);
       if (!account) throw new Error(t("That account no longer exists."));
       openImport({ account: account.id, file: new File([file.csv], file.name, { type: "text/csv" }), proposal: { threadId, id: p.id } });
-    } catch (e) {
-      fail(e);
+    };
+    // Reviewing this file takes the place of an import in progress. One with fixes made to its
+    // lines, or choices made in its review, isn't replaced without asking.
+    const changed = !!importing?.session && (importing.session.revision > 0 || Object.keys(importing.choices?.picked ?? {}).length > 0);
+    if (changed)
+      confirm(
+        t("Replace the import in progress?"),
+        t("The import into {account} has changes that haven't been imported yet. Reviewing this file takes its place, and those changes are lost.", {
+          account: budget.accounts.find((a) => a.id === importing?.account)?.name ?? "",
+        }),
+        t("Review import"),
+        open,
+      );
+    else await open().catch(fail);
+  };
+  /**
+   * Goes to what an assistant's card names: its transactions in the register (the account they
+   * are all in, or all accounts), selected, with the first in view; otherwise its categories on
+   * the Budget page, in its month, marked.
+   */
+  const showInBudget = (named: Card["highlight"]) => {
+    if (named.transactions.length) {
+      const wanted = new Set(named.transactions);
+      const accounts = new Set(budget.transactions.filter((tx) => wanted.has(tx.id)).map((tx) => tx.accountId));
+      setAccountId(accounts.size === 1 ? [...accounts][0] : "all");
+      setRegisterFilter({ select: named.transactions });
+      setPage("transactions");
+    } else if (named.categories.length) {
+      const at = named.month ?? month;
+      setMonth(at);
+      setPage("budget");
+      setShown({ month: at, categories: named.categories });
+      // Once the page is there, the first of them is brought into view.
+      const first = named.categories[0];
+      setTimeout(() => [...document.querySelectorAll<HTMLElement>("[data-category]")].find((row) => row.dataset.category === first)?.scrollIntoView?.({ block: "nearest" }));
     }
   };
   const highlightStyle = (() => {
-    if (!assistantOpen || !highlight) return "";
+    if (!assistantOpen || (!highlight && !shown)) return "";
     const esc = (v: string) => (typeof CSS !== "undefined" && CSS.escape ? CSS.escape(v) : v.replace(/["\\]/g, "\\$&"));
+    // What the latest waiting card would change, and what a card's "Show in the budget" went to.
+    const categories =
+      page === "budget"
+        ? [...(highlight && (!highlight.month || highlight.month === month) ? highlight.categories : []), ...(shown?.month === month ? shown.categories : [])]
+        : [];
     const selectors = [
-      ...(page === "budget" && (!highlight.month || highlight.month === month)
-        ? highlight.categories.map((c) => `[data-category="${esc(c)}"] > *`)
-        : []),
-      ...(page === "transactions" ? highlight.transactions.map((t) => `[id="reg-${esc(t)}"]`) : []),
+      ...categories.map((c) => `[data-category="${esc(c)}"] > *`),
+      ...(page === "transactions" && highlight ? highlight.transactions.map((t) => `[id="reg-${esc(t)}"]`) : []),
     ];
     return selectors.length
       ? `${selectors.join(",")}{background:var(--accent-soft)!important;box-shadow:inset ${getDirection() === "rtl" ? -3 : 3}px 0 0 var(--accent)}`
@@ -896,6 +965,7 @@ export default function App() {
               transform={model.transform}
               onImported={(count, uncategorized) => {
                 const from = importing.proposal;
+                // The file's card says it was imported; the open panel hears of it from the mark.
                 if (from) void assistant.mark(from.threadId, from.id, "applied").catch(() => {});
                 setImporting(null);
                 setAccountId(importing.account);
@@ -927,6 +997,7 @@ export default function App() {
               syncLabel={t(syncLabels[sync])}
               metadata={metadata}
               edit={edit}
+              transform={model.transform}
               flush={model.flush}
               onReload={reload}
               onExport={() => void exportDraft()}
@@ -984,9 +1055,11 @@ export default function App() {
             onOpenSettings={() => openSettings("assistant")}
             onApply={applyProposal}
             onUndo={undoProposal}
-            canUndo={(p) => lastApplied.current?.id === p.id && lastApplied.current.budget === budget}
+            canUndo={(p) => appliedCards.current.some((c) => c.id === p.id && !c.undone && c.after === budget)}
+            canApplyFix={(p) => !!importFor(p)}
             onReviewImport={(threadId, p) => void reviewImport(threadId, p)}
             onHighlight={setHighlight}
+            onShow={showInBudget}
           />
         </AssistantBoundary>
       )}
