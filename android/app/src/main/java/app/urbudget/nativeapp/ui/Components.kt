@@ -191,12 +191,15 @@ internal fun Field(value: String, onChange: (String) -> Unit, label: String, num
         keyboardOptions = KeyboardOptions(keyboardType = if (numeric) KeyboardType.Decimal else KeyboardType.Text))
 }
 
-/** A free text field in the app's filled style, for secrets, chat and other inputs Field doesn't cover. */
+/**
+ * A free text field in the app's filled style, for secrets, chat and other inputs Field doesn't cover.
+ * A [placeholder] stands in the field until something is typed, where a [label] stays over what's typed.
+ */
 @Composable
 internal fun FilledField(value: String, onValueChange: (String) -> Unit, modifier: Modifier = Modifier, label: (@Composable () -> Unit)? = null,
                          visualTransformation: androidx.compose.ui.text.input.VisualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
-                         singleLine: Boolean = false, maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE) {
-    TextField(value, onValueChange, modifier, label = label, visualTransformation = visualTransformation, singleLine = singleLine, maxLines = maxLines,
+                         singleLine: Boolean = false, maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE, placeholder: (@Composable () -> Unit)? = null) {
+    TextField(value, onValueChange, modifier, label = label, placeholder = placeholder, visualTransformation = visualTransformation, singleLine = singleLine, maxLines = maxLines,
         shape = RoundedCornerShape(12.dp), colors = fieldColors())
 }
 

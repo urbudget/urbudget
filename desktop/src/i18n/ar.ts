@@ -2640,6 +2640,7 @@ export const ar: Catalog = {
   "The rest of the app is fine, and nothing in your budget changed. The details are saved in errors.log in the app's data folder.": "بقية التطبيق تعمل كالمعتاد، ولم يتغير شيء في ميزانيتك. حُفظت التفاصيل في الملف errors.log في مجلد بيانات التطبيق.",
   "The sign-in is kept in {storage}.": "يُحفظ تسجيل الدخول في {storage}.",
   "Thinking": "جارٍ التفكير",
+  "{seconds} s": "{seconds} ث",
   "To": "إلى",
   "Transfer: {name}": "تحويل: {name}",
   "Transfers": "التحويلات",

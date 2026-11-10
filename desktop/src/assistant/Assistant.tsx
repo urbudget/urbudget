@@ -314,6 +314,23 @@ function createStream() {
   };
 }
 type Stream = ReturnType<typeof createStream>;
+
+/** From when a wait is long enough to wonder about, its length is said. */
+const WONDER = 8;
+/**
+ * How long the reply has been coming, beside what the assistant is doing: nothing for the first
+ * seconds, then the seconds, counted where the wait began. It says the app is still at work
+ * while a lookup or the model's thinking takes its time.
+ */
+export function Elapsed({ since }: { since: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(tick);
+  }, []);
+  const seconds = Math.floor((now - since) / 1000);
+  return seconds < WONDER ? null : <span className="assistant-elapsed">{t("{seconds} s", { seconds })}</span>;
+}
 const unheard = () => () => {};
 
 /** What a report says about the app and the service the reply came from (ReplyReport's details). */
@@ -761,6 +778,10 @@ export function AssistantPanel({
   /** Entries from this index on arrived while the panel was open, and fade in. */
   const [freshFrom, setFreshFrom] = useState(0);
   const [running, setRunning] = useState(false);
+  /** When the reply now running began, for saying how long it has been coming. */
+  const runningSince = useRef(0);
+  if (running && !runningSince.current) runningSince.current = Date.now();
+  if (!running) runningSince.current = 0;
   /** The reply streaming in right now, before it is complete: its text is in `stream`, and here only whether there is one. */
   const [stream] = useState(createStream);
   const [streaming, setStreaming] = useState(false);
@@ -1525,6 +1546,7 @@ export function AssistantPanel({
           <i />
         </span>
         <span className="assistant-activity-text">{activity ? `${activity}…` : thinking || t("Thinking")}</span>
+        <Elapsed since={runningSince.current || Date.now()} />
       </div>,
     );
   else if (meta?.next?.length && entries.length > 0)

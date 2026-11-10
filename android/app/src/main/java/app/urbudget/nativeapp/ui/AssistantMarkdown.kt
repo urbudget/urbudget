@@ -13,6 +13,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
@@ -21,9 +23,11 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import app.urbudget.nativeapp.R
 import kotlinx.coroutines.Dispatchers
@@ -56,7 +60,8 @@ internal fun AssistantLiveMarkdown(source: String, modifier: Modifier = Modifier
     // Scrolled away and back, it starts from what it last showed rather than from nothing.
     val blocks by produceState(remember { MarkdownCache.live?.takeIf { source.startsWith(it.first) }?.second ?: MarkdownCache.get(source).orEmpty() }) {
         snapshotFlow { latest }.collect { text ->
-            value = MarkdownCache.get(text) ?: withContext(Dispatchers.Default) { markdownBlocks(text) }
+            // Marks its last line hasn't finished making are tidied, so they never show as symbols.
+            value = MarkdownCache.get(text) ?: withContext(Dispatchers.Default) { markdownBlocks(markdownLive(text)) }
             MarkdownCache.live = text to value
             delay(100)
         }
@@ -129,16 +134,15 @@ private fun AssistantMarkdownBlockView(block: AssistantMarkdownBlock, tableScrol
         "table" -> {
             var page by remember(block) { mutableIntStateOf(0) }
             val body = block.rows.subList(minOf(1, block.rows.size), block.rows.size)
-            val columns = remember(block) { block.rows.maxOfOrNull { it.size } ?: 0 }
             Column {
                 Column(Modifier.horizontalScroll(rememberScrollState())) {
-                    block.rows.firstOrNull()?.let { MarkdownTableRow(it, true, columns) }
-                    body.subList(page * 30, minOf(body.size, (page + 1) * 30)).forEach { MarkdownTableRow(it, false, columns) }
+                    block.rows.firstOrNull()?.let { MarkdownTableRow(it, true, block) }
+                    body.subList(page * 30, minOf(body.size, (page + 1) * 30)).forEach { MarkdownTableRow(it, false, block) }
                 }
                 if (body.size > 30) MarkdownPages(page, (body.size + 29) / 30) { page = it }
             }
         }
-        "tableHeader", "tableRow" -> Row(Modifier.horizontalScroll(tableScroll ?: rememberScrollState())) { MarkdownTableRow(block.rows.first(), block.kind == "tableHeader", block.columns) }
+        "tableHeader", "tableRow" -> Row(Modifier.horizontalScroll(tableScroll ?: rememberScrollState())) { MarkdownTableRow(block.rows.first(), block.kind == "tableHeader", block) }
         "code" -> Surface(color = MaterialTheme.colorScheme.surfaceContainerHighest, shape = MaterialTheme.shapes.small) {
             Text(block.text, Modifier.horizontalScroll(rememberScrollState()).padding(10.dp), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall.own)
         }
@@ -148,14 +152,28 @@ private fun AssistantMarkdownBlockView(block: AssistantMarkdownBlock, tableScrol
     }
 }
 
-/** A row of a table, as wide as the table's widest row ([columns]) so every row scrolls as far as the others. */
+/**
+ * A row of a table. Every row has the table's columns ([table]'s `widths`), each as wide as its
+ * longest cell needs, so a table of a few short columns fits a phone without scrolling sideways and
+ * every row scrolls as far as the others. A column the table says is right-aligned (amounts) ends
+ * where its heading ends.
+ */
 @Composable
-private fun MarkdownTableRow(cells: List<String>, heading: Boolean, columns: Int = cells.size) {
+private fun MarkdownTableRow(cells: List<String>, heading: Boolean, table: AssistantMarkdownBlock) {
+    // The widths are for the text's size as the app sets it: larger text gets wider columns.
+    val scale = LocalDensity.current.fontScale
+    // A column's side is the table's, whatever language a cell is in: a name in English and one in Arabic start at the same edge.
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     Row {
-        repeat(maxOf(columns, cells.size)) { index ->
+        repeat(maxOf(table.widths.size, cells.size)) { index ->
             val cell = cells.getOrElse(index) { "" }
-            Text(remember(cell) { markdownInline(cell) }, Modifier.width(160.dp).padding(6.dp),
-                fontWeight = if (heading) FontWeight.Bold else FontWeight.Normal, style = MaterialTheme.typography.bodySmall.own)
+            Text(remember(cell) { markdownInline(cell) }, Modifier.width((table.widths.getOrElse(index) { MarkdownColumnWidest }).dp * scale).padding(6.dp),
+                fontWeight = if (heading) FontWeight.Bold else FontWeight.Normal, style = MaterialTheme.typography.bodySmall.own,
+                textAlign = when (table.aligns.getOrNull(index)) {
+                    MarkdownAlign.End -> if (rtl) TextAlign.Left else TextAlign.Right
+                    MarkdownAlign.Center -> TextAlign.Center
+                    else -> if (rtl) TextAlign.Right else TextAlign.Left
+                })
         }
     }
 }
@@ -169,8 +187,15 @@ private fun MarkdownPages(page: Int, pages: Int, select: (Int) -> Unit) {
     }
 }
 
-/** [table] and [columns] are for a table's row that stands as a block of its own: which table of the document it's in, and that table's widest row. */
-internal data class AssistantMarkdownBlock(val kind: String, val text: String = "", val rows: List<List<String>> = emptyList(), val table: Int = -1, val columns: Int = 0)
+/** How a table's column lines its cells up, as the line under its headings says (`---`, `:---:`, `---:`). */
+internal enum class MarkdownAlign { Start, Center, End }
+
+/**
+ * [table] and [columns] are for a table's row that stands as a block of its own: which table of the document it's in, and that table's widest row.
+ * [widths] are a table's columns in dp, one for each, and [aligns] how each lines its cells up; a row that stands on its own carries its table's.
+ */
+internal data class AssistantMarkdownBlock(val kind: String, val text: String = "", val rows: List<List<String>> = emptyList(), val table: Int = -1, val columns: Int = 0,
+                                           val widths: List<Int> = emptyList(), val aligns: List<MarkdownAlign> = emptyList())
 
 internal fun markdownDocumentBlocks(source: String): List<AssistantMarkdownBlock> {
     var tables = 0
@@ -178,8 +203,73 @@ internal fun markdownDocumentBlocks(source: String): List<AssistantMarkdownBlock
         if (block.kind != "table") return@flatMap listOf(block)
         val table = tables++
         val columns = block.rows.maxOfOrNull { it.size } ?: 0
-        block.rows.mapIndexed { index, cells -> AssistantMarkdownBlock(if (index == 0) "tableHeader" else "tableRow", rows = listOf(cells), table = table, columns = columns) }
+        block.rows.mapIndexed { index, cells ->
+            AssistantMarkdownBlock(if (index == 0) "tableHeader" else "tableRow", rows = listOf(cells), table = table, columns = columns, widths = block.widths, aligns = block.aligns)
+        }
     }
+}
+
+/** The narrowest and the widest a table's column is drawn, in dp: a longer cell takes more lines. */
+internal const val MarkdownColumnNarrowest = 56
+internal const val MarkdownColumnWidest = 220
+
+/**
+ * How wide each column of a table is drawn, in dp, from its longest cell: about what that cell's
+ * text takes at the table's size, with the cell's own padding. Counted, not measured, so it's the
+ * same wherever the table is laid out and costs nothing as a reply's table grows row by row.
+ */
+internal fun markdownColumnWidths(rows: List<List<String>>): List<Int> {
+    val columns = rows.maxOfOrNull { it.size } ?: 0
+    return List(columns) { column ->
+        val longest = rows.maxOf { cells -> cells.getOrNull(column)?.let(::markdownCellLength) ?: 0f }
+        (longest * 7.6f + 14f).toInt().coerceIn(MarkdownColumnNarrowest, MarkdownColumnWidest)
+    }
+}
+
+/** A cell's length as it's drawn: without its marks, and with a wide character (Chinese, Japanese, Korean) counted as nearly two. */
+private fun markdownCellLength(cell: String): Float =
+    cell.replace(inlineMarkup) { it.groupValues[1].ifEmpty { it.groupValues[2].ifEmpty { it.groupValues[3] } } }.sumOf { if (it.code >= 0x2E80) 1.8 else 1.0 }.toFloat()
+
+/**
+ * A reply that's still being written, as it's laid out meanwhile: the same text, less the marks
+ * its last line hasn't finished making, which would otherwise show as symbols until the rest of
+ * them came. Bold and code that have begun are drawn as they'll be; a link shows its words; a
+ * list's or heading's mark waits for its first word; and a table's headings are a table's from
+ * their first cell, before the line under them has come. Whole lines are left as they are, so
+ * the finished reply is laid out exactly as the live one was.
+ */
+internal fun markdownLive(source: String): String {
+    val written = source.split('\n')
+    // Inside a block of code nothing is a mark.
+    if (written.count { it.trimStart().startsWith("```") } % 2 == 1) return source
+    val last = written.lastIndex
+    var line = written[last]
+    // A link shows its words while its address is written, and before it.
+    line = line.replace(linkPart, "$1")
+    // Half of a closing or opening pair of stars is not a star to show.
+    if (line.endsWith("*") && !line.endsWith("**") && line.trim() != "*") line = line.dropLast(1)
+    if (boldMark.findAll(line).count() % 2 == 1) line = if (line.endsWith("**")) line.dropLast(2) else "$line**"
+    if (line.count { it == '`' } % 2 == 1) line = if (line.endsWith("`")) line.dropLast(1) else "$line`"
+    // A mark with nothing after it yet: a list's, a quote's, a heading's, the start of a block of code.
+    if (line.trim().matches(loneMark)) line = ""
+    val lines = if (line == written[last]) written else written.subList(0, last) + line
+    // The table being written: the run of lines with cells that ends the text, or ends just before its last, empty line.
+    val end = if (lines[last].isEmpty() && last > 0) last - 1 else last
+    var start = end
+    while (start >= 0 && lines[start].isNotBlank() && '|' in lines[start]) start--
+    start++
+    val tidied = if (start > end || !lines[start].trimStart().startsWith("|")) lines else {
+        fun cells(row: String) = row.trim().removePrefix("|").removeSuffix("|").split('|').map(String::trim)
+        when {
+            // Only its headings so far: they're a table's already, before the line under them has come.
+            end == start -> lines.subList(0, end + 1) + "|---|" + lines.subList(end + 1, lines.size)
+            // That line is part way: it stands whole, with what it already says of how each column lines up.
+            end == start + 1 && end == last && lines[end].matches(tableDividerPart) && !cells(lines[end]).all { it.matches(tableDivider) } ->
+                lines.subList(0, end) + cells(lines[end]).joinToString("|", "|", "|") { if (it.matches(tableDivider)) it else "---" }
+            else -> lines
+        }
+    }
+    return if (tidied === written) source else tidied.joinToString("\n")
 }
 
 internal fun markdownBlocks(source: String): List<AssistantMarkdownBlock> {
@@ -198,9 +288,11 @@ internal fun markdownBlocks(source: String): List<AssistantMarkdownBlock> {
                 blocks += AssistantMarkdownBlock("code", code.joinToString("\n"))
             }
             '|' in line && index + 1 < lines.size && cells(lines[index + 1]).all { it.matches(tableDivider) } -> {
-                val table = mutableListOf(cells(line)); index += 2
+                val table = mutableListOf(cells(line))
+                val aligns = cells(lines[index + 1]).map { if (!it.endsWith(':')) MarkdownAlign.Start else if (it.startsWith(':')) MarkdownAlign.Center else MarkdownAlign.End }
+                index += 2
                 while (index < lines.size && lines[index].isNotBlank() && '|' in lines[index]) table += cells(lines[index++])
-                blocks += AssistantMarkdownBlock("table", rows = table)
+                blocks += AssistantMarkdownBlock("table", rows = table, widths = markdownColumnWidths(table), aligns = aligns)
             }
             line.trim().matches(horizontalRule) -> { blocks += AssistantMarkdownBlock("rule"); index++ }
             line.startsWith('#') -> { blocks += AssistantMarkdownBlock("heading", line.replace(headingPrefix, "")); index++ }
@@ -214,6 +306,12 @@ internal fun markdownBlocks(source: String): List<AssistantMarkdownBlock> {
 
 private val inlineMarkup = Regex("\\*\\*([^*]+)\\*\\*|`([^`]+)`|\\[([^]]+)]\\((https?://[^)\\s]+)\\)")
 private val tableDivider = Regex(":?-{3,}:?")
+/** The line under a table's headings, as far as it has been written. */
+private val tableDividerPart = Regex("[\\s|:-]*")
+/** A link at the end of a line that's still being written: its words, with or without the start of its address. */
+private val linkPart = Regex("\\[([^\\]]*)(?:](?:\\([^)\\s]*)?)?$")
+private val boldMark = Regex("\\*\\*")
+private val loneMark = Regex("[-*+>]|#{1,6}|`{1,2}")
 private val horizontalRule = Regex("[-*_]{3,}")
 private val headingPrefix = Regex("^#{1,6}\\s*")
 private val listPrefix = Regex("^\\s*[-*]\\s+")

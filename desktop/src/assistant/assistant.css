@@ -226,10 +226,14 @@
   text-decoration: underline;
 }
 /* Under the conversation's last reply: what in the budget is waiting that the assistant can help with. */
+/* What's waiting, under the last reply: small buttons in a row, as the starting ideas are. (An
+   item is a column, which had stretched each to the panel's width, like a field.) */
 .assistant-next {
   display: flex;
+  flex-direction: row;
   flex-wrap: wrap;
   gap: 6px;
+  align-items: flex-start;
 }
 .assistant-thumb {
   display: grid;
@@ -432,6 +436,14 @@
     background-position: 0 0;
   }
 }
+/* How long the reply has been coming, once that's long enough to wonder. */
+.assistant-elapsed {
+  flex: none;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
 .assistant-dots {
   display: inline-flex;
   flex: none;
@@ -460,6 +472,27 @@
   40% {
     opacity: 1;
     transform: translateY(-2px);
+  }
+}
+/* A reply still being written: a soft dot after its last words, gone once it's whole. */
+.assistant-reply.typing > p:last-child::after,
+.assistant-reply.typing > :is(ul, ol):last-child > li:last-child::after {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-inline-start: 5px;
+  border-radius: 50%;
+  background: var(--muted);
+  content: "";
+  animation: assistant-writing 1s ease-in-out infinite;
+}
+@keyframes assistant-writing {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 0.9;
   }
 }
 /* "Jump to latest", over the end of the conversation while the user reads further up. */
@@ -491,7 +524,9 @@
 @media (prefers-reduced-motion: reduce) {
   .assistant-item.enter,
   .assistant-dots i,
-  .assistant-activity-text {
+  .assistant-activity-text,
+  .assistant-reply.typing > p:last-child::after,
+  .assistant-reply.typing > :is(ul, ol):last-child > li:last-child::after {
     animation: none;
   }
   .assistant-activity-text {

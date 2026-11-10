@@ -644,6 +644,27 @@ emulator):
   the row editor, bank-text and import cards, a wide window. iPhone wasn't touched: its cards
   already stack, and nothing of it can be seen here.
 
+**A second round of polish, on messages** (the same day): how a reply reads, how it reads
+while it arrives, and how the conversation meets the message field.
+
+- Desktop, watched live on three replies from ChatGPT, sampled every 150 ms, and on a
+  conversation written by hand with every kind of formatting. It already followed the end
+  without jumping, never showed half-made formatting, and kept its place as the field grew.
+  Changed: a soft dot follows the last words of a reply being written; a wait over eight
+  seconds says how long it has been (one reply spent 24 seconds on "Thinking"); the buttons for
+  what's waiting are small ones in a row, where each had stretched to the panel's width.
+- Android, on the emulator. Seen in the real app: the seeded conversations and the composer.
+  Drawn by a harness that played a scripted run into the real screen, since the emulator has no
+  sign-in: a reply arriving. Changed: a reply being written no longer shows raw Markdown on
+  its unfinished line (`markdownLive`); table columns are as wide as their longest cell, where
+  every column was 160dp and a third was cut off; a reply of a turn still being answered has
+  no buttons under it, so nothing jumps at the handover; earlier replies keep theirs behind one
+  quiet "⋯"; step lines are smaller; "Jump to latest" is a round arrow; the field's hint is a
+  placeholder, and Stop takes Send's place and colour; "With this message" is hidden while
+  the assistant can't send and only the page would be listed.
+- Left: "Jump to latest" still floats over what's under it on both; a real model's stream and
+  a docked keyboard weren't seen on Android; iPhone wasn't touched.
+
 **Seen in the desktop app** (10 November 2026, a debug build of this branch on a scratch copy
 of the QA budget, driven through the QA harness). On the first pass no model answered: the QA
 folder's ChatGPT sign-in, made on 24 October, had ended, and the refresh was refused. So what

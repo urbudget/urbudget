@@ -19,6 +19,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Send
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.outlined.*
@@ -59,6 +60,7 @@ import app.urbudget.nativeapp.AssistantHeard
 import app.urbudget.nativeapp.AssistantListFrame
 import app.urbudget.nativeapp.AssistantPart
 import app.urbudget.nativeapp.AssistantPlace
+import app.urbudget.nativeapp.AssistantReplyTools
 import app.urbudget.nativeapp.AssistantScroll
 import app.urbudget.nativeapp.AssistantSelectionLimit
 import app.urbudget.nativeapp.AssistantShow
@@ -72,10 +74,12 @@ import app.urbudget.nativeapp.assistantFollows
 import app.urbudget.nativeapp.assistantPageName
 import app.urbudget.nativeapp.assistantProviderCompany
 import app.urbudget.nativeapp.assistantReportDetails
+import app.urbudget.nativeapp.assistantReplyTools
 import app.urbudget.nativeapp.assistantReportReason
 import app.urbudget.nativeapp.assistantSending
 import app.urbudget.nativeapp.assistantThreadsMatching
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
@@ -426,10 +430,16 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
                             Text(stringResource(R.string.common_continue))
                         }
                     }
-                    // The assistant's reply as text, with copying, reporting and rating it to hand.
+                    // The assistant's reply as text, with copying, reporting and rating it to hand: out under the
+                    // latest reply, behind one button under an earlier one, and not there yet while its turn is still answered.
                     AssistantEntryKind.Assistant -> Column(Modifier.fillMaxWidth()) {
                         SelectionContainer { AssistantMarkdown(entry.text("text")) }
-                        Row(Modifier.offset(x = (-12).dp)) {
+                        val tools = assistantReplyTools(row.first, entries, state.running)
+                        var unfolded by rememberSaveable { mutableStateOf(false) }
+                        if (tools == AssistantReplyTools.Folded && !unfolded) IconButton({ unfolded = true }, Modifier.offset(x = (-12).dp).testTag("assistant-reply-more")) {
+                            Icon(Icons.Outlined.MoreHoriz, stringResource(R.string.assistant_reply_actions), Modifier.size(18.dp), tint = ur.muted)
+                        }
+                        else if (tools != AssistantReplyTools.Waiting) Row(Modifier.offset(x = (-12).dp).testTag("assistant-reply-tools")) {
                             IconButton({ clipboard.setText(AnnotatedString(entry.text("text"))) }) {
                                 Icon(Icons.Outlined.ContentCopy, stringResource(R.string.assistant_copy_reply), Modifier.size(18.dp), tint = ur.muted)
                             }
@@ -473,14 +483,13 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
                 }
             }
         }
-        // Away from the end new text isn't followed. This goes back to it, and follows again.
+        // Away from the end new text isn't followed. This goes back to it, and follows again. A small round
+        // button, as a phone's messages have: over the list it takes no room, and it covers a word or two of
+        // what's being read rather than a card's row or its buttons, which a line of words across the middle did.
         if (!following && count > 0) Surface({ scope.launch { following = true; list.toEnd(end) } },
-            Modifier.align(Alignment.BottomCenter).padding(bottom = 6.dp).testTag("assistant-jump"), shape = RoundedCornerShape(18.dp), color = ur.surface,
+            Modifier.align(Alignment.BottomCenter).padding(bottom = 2.dp).testTag("assistant-jump"), shape = CircleShape, color = ur.surface,
             border = BorderStroke(1.dp, ur.border), shadowElevation = 3.dp) {
-            Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Icon(Icons.Outlined.ArrowDownward, null, Modifier.size(16.dp), tint = ur.accent)
-                Text(stringResource(R.string.assistant_jump_latest), style = MaterialTheme.typography.labelLarge, color = ur.accent)
-            }
+            Icon(Icons.Outlined.ArrowDownward, stringResource(R.string.assistant_jump_latest), Modifier.padding(10.dp).size(20.dp), tint = ur.accent)
         }
         }
         // A conversation that can't be replied to as things stand gets the one thing that helps, not just a greyed Send.
@@ -502,7 +511,10 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
                 at.accountId?.let { id -> remember(budget, id) { budget.row("accounts", id)?.text("name") } },
                 at.categoryId?.let { id -> remember(budget, id) { budget.row("categories", id)?.text("name") } })
         }
-        if (state.attachments.isNotEmpty() || here != null || next.selected.isNotEmpty() || next.import != null || composer.selectedOf != null) {
+        // Where the user is goes unasked, so alone it's said only where a message can go: under "sign in" or "set up" it was a
+        // line about a message that can't be sent yet. Anything the user put with the message is always said.
+        val added = state.attachments.isNotEmpty() || next.selected.isNotEmpty() || next.import != null || composer.selectedOf != null
+        if (added || here != null && (ready || state.status == null)) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(top = 4.dp).testTag("assistant-with")) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(stringResource(R.string.assistant_with_message), Modifier.align(Alignment.CenterVertically), style = MaterialTheme.typography.labelMedium, color = ur.muted)
@@ -531,10 +543,15 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
                         leadingIcon = { Icon(Icons.Outlined.Checklist, null) })
                 }
             }
-            FilledField(composer.text, { composer.text = it.take(20_000) }, Modifier.weight(1f), label = { Text(stringResource(R.string.assistant_ask)) }, maxLines = 6)
-            if (state.running) IconButton(controller::stop, Modifier.padding(bottom = 4.dp)) { Icon(Icons.Outlined.StopCircle, stringResource(R.string.assistant_stop), tint = ur.text) }
+            // What to write stands in the field until something is written, as a message field's does: a label
+            // over the words made one line of them two lines tall, and stayed over a message of several lines.
+            FilledField(composer.text, { composer.text = it.take(20_000) }, Modifier.weight(1f).testTag("assistant-field"),
+                placeholder = { Text(stringResource(R.string.assistant_ask), color = ur.muted, maxLines = 1, overflow = TextOverflow.Ellipsis) }, maxLines = 6)
+            // Stop stands where Send does, in its shape and colour: only the sign in it changes as a reply starts and ends.
+            val sendColors = IconButtonDefaults.filledIconButtonColors(containerColor = ur.accent, contentColor = if (ur.dark) ur.bg else Color.White)
+            if (state.running) FilledIconButton(controller::stop, Modifier.padding(bottom = 4.dp), colors = sendColors) { Icon(Icons.Filled.Stop, stringResource(R.string.assistant_stop)) }
             else FilledIconButton({ ask(composer.text) }, Modifier.padding(bottom = 4.dp), enabled = ready && "send" !in state.busy && (composer.text.isNotBlank() || state.attachments.isNotEmpty()),
-                colors = IconButtonDefaults.filledIconButtonColors(containerColor = ur.accent, contentColor = if (ur.dark) ur.bg else Color.White)) {
+                colors = sendColors) {
                 Icon(Icons.AutoMirrored.Outlined.Send, stringResource(R.string.assistant_send))
             }
         }
@@ -1176,20 +1193,24 @@ internal fun assistantRows(entries: List<JSONObject>): List<Pair<Int, List<JSONO
 private fun AssistantSteps(steps: List<JSONObject>) {
     var open by remember(steps.size) { mutableStateOf(false) }
     val shown = if (open) steps else steps.filterIndexed { i, step -> i == steps.lastIndex || step.optBoolean("failed") }
+    val more = steps.size - shown.size
+    // What was looked up is a note beside the conversation: smaller and quieter than a reply's words or a card's title.
     Column(Modifier.fillMaxWidth().testTag("assistant-steps"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        shown.forEach { step ->
+        shown.forEachIndexed { index, step ->
             val failed = step.optBoolean("failed")
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Icon(if (failed) Icons.Outlined.ErrorOutline else Icons.Outlined.Check, null, Modifier.size(16.dp), tint = if (failed) ur.warning else ur.muted)
-                Text(if (failed) stringResource(R.string.assistant_step_failed, step.text("text")) else step.text("text"), style = MaterialTheme.typography.labelLarge,
-                    color = if (failed) ur.warning else ur.text2)
+            // The latest line says how many more there are, and is the button that shows them: tall enough to tap, though its words are small.
+            val opens = more > 0 && index == shown.lastIndex
+            Row(if (opens) Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(10.dp)).clickable(role = Role.Button) { open = true }.testTag("assistant-steps-toggle") else Modifier,
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(if (failed) Icons.Outlined.ErrorOutline else Icons.Outlined.Check, null, Modifier.size(14.dp), tint = if (failed) ur.warning else ur.muted)
+                Text(if (failed) stringResource(R.string.assistant_step_failed, step.text("text")) else step.text("text"), Modifier.weight(1f, fill = false),
+                    style = MaterialTheme.typography.labelMedium, color = if (failed) ur.warning else ur.text2)
+                if (opens) Text(countText(R.plurals.assistant_steps_more, more), Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelMedium, color = ur.accent, maxLines = 1)
             }
         }
-        // Tall enough to tap, though its words are small.
-        if (open || steps.size > shown.size) Box(Modifier.padding(start = 22.dp).heightIn(min = 48.dp).clickable(role = Role.Button) { open = !open }.testTag("assistant-steps-toggle"),
+        if (open) Box(Modifier.padding(start = 20.dp).heightIn(min = 48.dp).clickable(role = Role.Button) { open = false }.testTag("assistant-steps-toggle"),
             contentAlignment = Alignment.CenterStart) {
-            Text(if (open) stringResource(R.string.assistant_steps_fewer) else countText(R.plurals.assistant_steps_more, steps.size - shown.size),
-                style = MaterialTheme.typography.labelLarge, color = ur.accent)
+            Text(stringResource(R.string.assistant_steps_fewer), style = MaterialTheme.typography.labelMedium, color = ur.accent)
         }
     }
 }
