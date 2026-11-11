@@ -2,7 +2,15 @@
 
 **Target:** UrBudget 1.0.0 (1), installed through TestFlight on a physical iPhone.
 
-**Status:** ready for Mac setup and testing; the Mac automation and complete native video have not been run.
+**Status (31 October 2026):** Mac harness implemented under
+`ios/automation/app-review/`; 20 host tests pass. A complete physical-device walkthrough
+was recorded and all nine flows verified, including disposable-account deletion and
+revocation of an independent browser session. The 8:55 native original and caption-guided
+1:38 review copy both passed full decoding. After reviewing the edits, the owner explicitly
+authorized sending. The six-part response and video were sent to Apple on 31 October 2026;
+App Store Connect showed the new message at 1:19 PM and its attachment. Private access
+Notes are updated. The strict `--mode final` certification was not run, and no separate
+full human playback attestation was collected. No build resubmission or release was performed.
 
 **Release baseline:** `ios-v1.0.0` (`0bd6d44`), bundle `app.urbudget`.
 
@@ -20,14 +28,26 @@ demonstrate a different app from the submitted build. Feature work remains for 1
 | Item | Starting point or action needed on the Mac |
 | --- | --- |
 | Physical device | iPhone 16 Pro Max; select its identifier explicitly in Xcode. |
-| Installed OS | Last queried on 31 October: iOS 26.5.2 (23F84). An update download was observed, but installation was not verified. Read the actual version again. |
+| Installed OS | Verified on the Mac: iOS 27.2 (24B119), physical iPhone 16 Pro Max. |
 | Installed app | Last queried: `app.urbudget`, version 1.0.0, build 1, TestFlight distribution. Recheck before every final take. |
 | Review access | `review@urbudget.app` has complimentary Sync. Its existing sign-in code is in App Store Connect's private App Review Information Password field. Recheck access before filming. |
-| Disposable account | A separate, accessible email address is still needed for registration and deletion. The earlier answer “ok” did not identify an address. |
-| Sync passphrase | No passphrase was established during the Windows preparation. Inspect the current account state; retain any new passphrase privately and update review instructions. |
-| Assistant access | A working supported provider account/key is needed to demonstrate a real response. Configure it privately before the take. |
-| Apple reply | An unsent draft was saved in App Store Connect. Its video and actual iOS-version placeholders still need completion. |
-| Existing video | The Windows test used about 2.4 screenshots per second. It is capture evidence, not the final review video. No complete native walkthrough has been verified. |
+| Disposable account | The owner selected a disposable address and approved a separate final-take alias. Both remain in private local configuration; the signed-in Gmail inbox received the preflight code. |
+| Sync passphrase | Review account encryption was set up on the Mac session; the sample reached Synced. The passphrase is retained in mode-0600 local storage and saved in private App Review Notes. No existing passphrase was reset. |
+| Assistant access | Owner configured provider access privately. A real response and the Report reply form were verified; the report was canceled. |
+| Apple reply | The six-part response was sent with the 1:38 video, chapter timestamps, exact Assistant setup and verified iOS version. Delivery and attachment were verified in App Store Connect. |
+| Existing video | The Windows screenshot test and Mac checkpoint are superseded by the complete native recorded rehearsal and its caption-guided review copy, accepted for sending by the owner. |
+
+The Mac checkpoint original is a 56.7-second, 1320×2868 native HEVC recording.
+Full decode passed; the owner confirmed smooth, readable playback without an automation
+overlay. The extra Home Screen pause exposed a stop-gesture targeting problem, fixed by
+explicitly selecting SpringBoard before opening Control Center. The original and hash are
+retained under ignored `reports/app-review-mac/evidence/`.
+
+The review account's reusable sign-in code was successfully tested by the owner before
+capture. The recorded flow shows that account's active entitlement and Sync, then the
+disposable account's normal emailed-code sign-in. This avoids filming the reusable review
+credential. A recorded first complete rehearsal remains labeled rehearsal until the final
+acceptance checks pass. A partial preflight must not be relabeled as a full rehearsal.
 
 Build 1 has a free budgeting core and optional paid Sync access; it does not require a paid app
 license. Its account screen predates the Subscribe, Restore and Manage subscription controls
@@ -39,6 +59,42 @@ The Windows preparation files are under the ignored `reports/app-review-2026-10-
 They will not arrive through an ordinary Git checkout. The steps below are self-contained;
 retrieve the saved response directly from App Store Connect. Transfer private evidence separately
 only if needed, following [the artifact policy](../ARTIFACTS.md).
+
+## Mac execution results
+
+The completed run is `reports/app-review-mac/evidence/recorded-walkthrough-02/`.
+It contains the native `IMG_5782.MP4`, `review-walkthrough-guided.mp4`, a timestamped journal,
+original/export/edit manifests with SHA-256 hashes, and before/after session-revocation
+evidence. These are private, ignored artifacts, not source files.
+
+The sample's Groceries assignment changed from 600.00 to 650.00 SAR. Available changed
+from 475.00 to 512.50 after the 12.50 outflow; Unassigned changed from 3,200.00 to 3,150.00,
+and Checking's working balance from 4,875.00 to 4,862.50. The account and report showed one
+demonstration transaction and 137.50 category spending. A real Assistant reply and its
+report form were shown; no report was submitted. The disposable account was registered,
+deleted, and its existing browser session lost access. Local sample balances remained.
+
+The final presentation edit is 97.6 seconds, H.264 at 30 fps, with the full 1320×2868 app
+screen above a separate caption guide (1320×3136 total). The guide names each app section,
+action and result. It omits production details, editing notes, step counts and speed labels.
+Routine entry is accelerated up to 2×; the App Review draft discloses the editing.
+Repeated Budget/Accounts verification loops, idle time and setup waits are removed.
+`guided-review-manifest.json` records all 19 source intervals, speeds, captions and hashes;
+`short-edit/render.py` reproduces the edit. The silent source audio track is omitted.
+Full decoding and visual inspection of every segment passed. No app outcomes were
+synthesized. The original remains on the phone and Mac; the superseded 6:01 edit is
+retained locally. The harness dismisses the observed email keyboard with Return before
+resolving the request button, avoiding the Hide My Email popup that blocked the first
+code request; this was checked without sending another code.
+
+Future presentation exports must stay under two minutes. Keep validation in the evidence
+journal, cut its repeated navigation from the presentation, and show key results at normal
+speed with concise captions outside the app screen.
+
+The first recording attempt is retained separately because its Assistant tap left the
+question unsent. The corrected harness waits for the composer layout and verifies send
+acceptance before waiting for a provider reply. Focus was restored and the automation
+session, Appium server and WDA test were stopped. UrBudget's installed binary was preserved.
 
 ## Mac and phone setup
 
@@ -265,7 +321,8 @@ a clean take can use a newly created sample budget without deleting the previous
 
 Read credentials through a private local configuration or interactive input. Keep codes, API
 keys and passphrases out of command arguments, Git and console/page-source logs. Pause automation
-for the owner's passcode, provider authentication and normal email-code entry. Before deleting
+for the owner's passcode and provider authentication. Normal email codes can use a private
+handoff or a mode-0600 receipt from the explicitly authorized mailbox session. Before deleting
 an account, require an explicitly selected disposable address, match it to the signed-in
 identity and reject `review@urbudget.app` or any other account. Default deletion to disabled.
 
@@ -282,7 +339,7 @@ Allow about 6–8 minutes, extending it for real network responses rather than h
 | 0:20 | Budget → selected category → increase Assigned by 50.00, then save/close. If the field is an absolute total, enter its previous value plus 50.00. | Assigned and Available each increase by 50.00; Unassigned decreases by 50.00. |
 | 1:00 | Transactions → add Outflow of 12.50. Payee `Review Cafe`; same category and sample cash/checking account; today; memo `App Review demonstration`. Save once. | One new transaction in the register. Category Available and the account's working balance each decrease by 12.50; Assigned stays unchanged. Compare the working balance, not a cleared-only balance. |
 | 2:00 | Accounts → same account's register; then Reports → a populated spending report, including today's date. | The transaction appears in its account and relevant report. The selected category's net Available change from the initial baseline is +37.50. |
-| 2:45 | More → Account & sync → enter `review@urbudget.app` → Send sign-in code → use the private review code → Sign in. | Signed-in review identity and active complimentary Sync entitlement. No invented Subscribe/Restore step. |
+| 2:45 | More → Account & sync → show `review@urbudget.app`, signed in privately before capture. Verify its reusable code beforehand without recording it; ordinary sign-in appears in the disposable-account stage. | Signed-in review identity and active complimentary Sync entitlement. No invented Subscribe/Restore step. |
 | 3:15 | Set up or unlock sync according to the account's actual state. Start syncing only this sample budget, then Sync now. | Successful synchronization status. Record any new passphrase privately for Apple's access instructions. Verify cloud download separately during rehearsal if a second device is available. |
 | 4:15 | More → Assistant. Ask “Summarize this sample budget and explain how much is available to spend.” Open the answer's flag / Report reply form, then cancel. | A real provider response and the reporting form. Do not submit a false report. If provider access is missing, show the setup accurately and mark this demonstration incomplete. |
 | 5:15 | Sign out of the review account. Enter the agreed new disposable email, request its normal email code and sign in. | Normal account creation through email verification. Keep the inbox and unrelated messages outside the recording. |
@@ -364,16 +421,18 @@ explicit instruction. Retaining the same build does not guarantee a particular r
 
 ## Mac acceptance checklist
 
-- [ ] Xcode sees the physical phone; exact installed OS and TestFlight 1.0.0 (1) are recorded.
-- [ ] Separately provisioned WDA starts and controls the existing app without replacing it.
-- [ ] Tap, scroll and canceled text-entry probes work against observed controls.
-- [ ] A short native recording succeeds while WDA controls the app; playback and overlays checked.
-- [ ] The walkthrough harness has observed locators, money assertions and safe failure handling.
-- [ ] A full rehearsal passes using sample data; required accounts and provider access work.
-- [ ] Final native footage starts with launch and visibly covers all applicable requested flows.
-- [ ] Original exported, hash retained, full decode and full playback review passed.
-- [ ] Review login still works; Sync access instructions match the account's final state.
-- [ ] Saved Apple response and Notes contain the real video details and no unresolved placeholders.
+- [x] Xcode sees the physical phone; exact installed OS and TestFlight 1.0.0 (1) are recorded.
+- [x] Separately provisioned WDA starts and controls the existing app without replacing it.
+- [x] Tap, scroll and canceled text-entry probes work against observed controls.
+- [x] A native recording checkpoint succeeds while WDA controls the app; playback and overlays checked.
+- [x] The walkthrough harness has observed locators, money assertions and safe failure handling.
+- [x] A complete recorded rehearsal covers all required flows, with observed recovery from the system email suggestion.
+- [x] Native footage starts with launch and visibly covers all applicable requested flows.
+- [x] Original exported, hash retained, original and annotated copy fully decoded.
+- [ ] Separate full human playback/privacy attestation collected (not collected; owner explicitly authorized sending after reviewing the edits).
+- [x] Review login was verified before capture; the protected account was preserved and private Sync instructions updated.
+- [x] Six-part Apple response and private Notes saved with actual device, build and video details.
+- [x] Final six-part response and 1:38 review copy sent on explicit owner authorization; new message and attachment verified. No build resubmission or release performed.
 
 ## Handoff to the Mac session
 
