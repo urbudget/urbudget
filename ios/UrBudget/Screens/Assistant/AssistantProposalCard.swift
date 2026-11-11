@@ -53,11 +53,18 @@ struct AssistantProposalCard: View {
     /// Names the category the person gave a row (nil: Ready to Assign), until the card says it.
     var categoryName: (String?) -> String = { _ in "" }
     var actions: AssistantProposalActions
-    @State private var page = 0
-    /// A finished card's rows are open to read.
-    @State private var opened = false
+    /// The page of rows this card shows, and whether it's opened once finished: kept with the
+    /// conversation, so the card is as it was left when it scrolls away and back.
+    var cards: AssistantCards
+    /// A finished card was opened (true) or folded again: the conversation stops following its
+    /// end, so the card is read where it stands.
+    var onOpen: ((Bool) -> Void)? = nil
 
     private static let pageSize = 20
+
+    private var id: String { proposal.text("id") }
+    /// A finished card's rows are open to read.
+    private var opened: Bool { cards.opened(id) }
 
     /// The person's choices as they stand: those not sent yet, else the ones the card was made with.
     private var chosen: JSON { choices ?? proposal["choices"] }
@@ -86,50 +93,46 @@ struct AssistantProposalCard: View {
         }
     }
 
-    /// A card that's done with, as one line: what became of it, then its title, and the actions
-    /// it still offers. The chevron opens its rows to read, as they were.
+    /// A card that's done with, folded: its title with the line to itself (three lines of it at
+    /// most), and under it, quieter, what became of it and the actions it still offers. The
+    /// chevron opens its rows to read, as they were.
     private var finished: some View {
         let status = proposal.text("status")
         let card = proposal["card"]
-        let title = proposal.text("title")
+        let title = AssistantCard.finishedTitle(proposal)
         let line = AssistantCard.lineActions(proposal, canUndo: canUndo)
         let inside = AssistantCard.openedActions(proposal)
+        let opened = self.opened
         return VStack(alignment: .leading, spacing: 10) {
-            Button {
-                withAnimation(.easeOut(duration: 0.2)) { opened.toggle() }
-            } label: {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Image(systemName: Self.finishedSymbol(proposal))
-                        .foregroundStyle(status == "applied" ? Color.urPositive : Color.secondary)
-                    VStack(alignment: .leading, spacing: 2) {
-                        if let asked = AssistantCard.asked(proposal) {
-                            Text(asked).font(.subheadline.weight(.semibold)).foregroundStyle(Color.primary)
-                        } else {
-                            Text(AssistantCard.finishedWords(proposal)).font(.footnote).foregroundStyle(Color.secondary)
-                            Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(Color.primary)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: Self.finishedSymbol(proposal))
+                    .foregroundStyle(status == "applied" ? Color.urPositive : Color.secondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Button {
+                        withAnimation(.easeOut(duration: 0.2)) { cards.open(id, !opened) }
+                        onOpen?(!opened)
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(title)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Color.primary)
+                                .lineLimit(opened ? nil : 3)
+                                .multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 8)
+                            // Points the way text reads while folded (mirrored right to left), down when open.
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.weight(.bold))
+                                .rotationEffect(.degrees(opened ? 90 : 0))
+                                .flipsForRightToLeftLayoutDirection(true)
+                                .foregroundStyle(Color.secondary)
                         }
+                        .contentShape(Rectangle())
                     }
-                    .multilineTextAlignment(.leading)
-                    Spacer(minLength: 8)
-                    // Points the way text reads while folded (mirrored right to left), down when open.
-                    Image(systemName: "chevron.right")
-                        .font(.footnote.weight(.bold))
-                        .rotationEffect(.degrees(opened ? 90 : 0))
-                        .flipsForRightToLeftLayoutDirection(true)
-                        .foregroundStyle(Color.secondary)
+                    .buttonStyle(.plain)
+                    .accessibilityHint(opened ? Text("Collapse \(title)") : Text("Expand \(title)"))
+                    stateLine(AssistantCard.finishedState(proposal), line)
                 }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityHint(opened ? Text("Collapse \(title)") : Text("Expand \(title)"))
-            if !line.isEmpty {
-                HStack(spacing: 20) {
-                    ForEach(line, id: \.self) { action in
-                        button(action, rows: [], choosing: false)
-                    }
-                }
-                .font(.subheadline.weight(.semibold))
-                .buttonStyle(.borderless)
             }
             if opened {
                 details(card, rows: card.rows("rows"), choosing: false)
@@ -143,15 +146,56 @@ struct AssistantProposalCard: View {
                     .font(.subheadline.weight(.semibold))
                     .buttonStyle(.borderless)
                 }
-            } else if status == "applied" {
-                // How it was applied (an import that took only some of its fixes) shows without
-                // opening it.
-                messageStrip
+            } else if let said = AssistantCard.foldedMessage(proposal) {
+                // Folded, only what still matters shows without opening it: an import that took
+                // only some of its fixes. News of a card that's done with is past.
+                strip(said)
             }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.cardBackground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    /// Under a finished card's title: where the card stands at the line's start, and at its end
+    /// the buttons for what can still be done about it. When the two don't fit side by side the
+    /// buttons go under the state, and one under another when they don't fit a line themselves.
+    @ViewBuilder
+    private func stateLine(_ state: String?, _ line: [AssistantCardAction]) -> some View {
+        if state != nil || !line.isEmpty {
+            ViewThatFits(in: .horizontal) {
+                // With no state beside them the buttons start the line; with one, they end it.
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    if let state {
+                        stateText(state)
+                        Spacer(minLength: 8)
+                    }
+                    HStack(spacing: 20) { lineButtons(line) }
+                    if state == nil { Spacer(minLength: 0) }
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    if let state { stateText(state) }
+                    HStack(spacing: 20) { lineButtons(line) }
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    if let state { stateText(state) }
+                    lineButtons(line)
+                }
+            }
+            .font(.subheadline.weight(.semibold))
+            .buttonStyle(.borderless)
+        }
+    }
+
+    private func stateText(_ state: String) -> some View {
+        Text(state).font(.footnote).foregroundStyle(Color.secondary).lineLimit(1)
+    }
+
+    @ViewBuilder
+    private func lineButtons(_ line: [AssistantCardAction]) -> some View {
+        ForEach(line, id: \.self) { action in
+            button(action, rows: [], choosing: false)
+        }
     }
 
     /// A card that waits on the person: to apply it, answer it, or open what it made.
@@ -196,7 +240,9 @@ struct AssistantProposalCard: View {
     @ViewBuilder
     private func details(_ card: JSON, rows: [JSON], choosing: Bool) -> some View {
         let pages = max(1, (rows.count + Self.pageSize - 1) / Self.pageSize)
-        let current = min(page, pages - 1)
+        let current = min(max(0, cards.page(id)), pages - 1)
+        // Where any row has a pencil, every row keeps its room, so the amounts stay in one column.
+        let pencils = actions.change != nil && AssistantCard.pencilRoom(rows, choosing: choosing)
         let shown = Array(rows[min(rows.count, current * Self.pageSize)..<min(rows.count, (current + 1) * Self.pageSize)])
         // A figures card draws a bar on each row: its share of the card's largest amount.
         let shares = proposal.text("kind") == "figures" ? AssistantCard.barShares(rows) : []
@@ -215,17 +261,20 @@ struct AssistantProposalCard: View {
             VStack(spacing: 0) {
                 ForEach(Array(shown.enumerated()), id: \.offset) { index, row in
                     if index > 0 { Divider().padding(.leading, 12) }
-                    rowView(row, total: false, choosing: choosing, share: Self.share(shares, current * Self.pageSize + index))
+                    rowView(row, total: false, choosing: choosing, share: Self.share(shares, current * Self.pageSize + index), pencilRoom: pencils)
                 }
                 if card["total"].isObject {
+                    // The total stands apart from what it adds up, under a hairline, its amount under theirs.
                     Divider()
-                    rowView(card["total"], total: true)
+                    rowView(card["total"], total: true, pencilRoom: pencils)
                 }
             }
             .background(Color.insetBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         if pages > 1 {
-            AssistantPager(page: current, pages: pages, previous: String(localized: "Previous rows"), next: String(localized: "Next rows")) { page = $0 }
+            AssistantPager(page: current, pages: pages, previous: String(localized: "Previous rows"), next: String(localized: "Next rows")) {
+                cards.show(page: $0, of: id)
+            }
         }
         if card.long("more") > 0 {
             Text("\(card.long("more")) more rows").font(.caption).foregroundStyle(Color.secondary)
@@ -258,29 +307,27 @@ struct AssistantProposalCard: View {
         if !card.text("note").isEmpty {
             Text(card.text("note")).font(.footnote).foregroundStyle(Color.secondary)
         }
-        messageStrip
+        if let said = AssistantCard.message(proposal) { strip(said) }
     }
 
     /// What the card has to say about itself, as a strip in its tone: quiet when it was only
     /// brought up to date, the app's warning for something to check, and its error when the
     /// card can't be applied.
     @ViewBuilder
-    private var messageStrip: some View {
-        if let message = AssistantCard.message(proposal) {
-            switch message.tone {
-            case "error":
-                Notice(text: message.text, tone: "negative", icon: "exclamationmark.octagon.fill")
-            case "warn":
-                Notice(text: message.text, tone: "attention", icon: "exclamationmark.triangle.fill")
-            default:
-                Label(message.text, systemImage: "info.circle")
-                    .font(.footnote)
-                    .foregroundStyle(Color.secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.insetBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
+    private func strip(_ message: (tone: String, text: String)) -> some View {
+        switch message.tone {
+        case "error":
+            Notice(text: message.text, tone: "negative", icon: "exclamationmark.octagon.fill")
+        case "warn":
+            Notice(text: message.text, tone: "attention", icon: "exclamationmark.triangle.fill")
+        default:
+            Label(message.text, systemImage: "info.circle")
+                .font(.footnote)
+                .foregroundStyle(Color.secondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.insetBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
     }
 
@@ -350,8 +397,9 @@ struct AssistantProposalCard: View {
     /// A row. While the card waits (`choosing`), its check leaves it out or puts it back, and its
     /// pencil gives it another category or amount: both show at once, from the choices as they
     /// stand. A row left out stays, dimmed and struck through; an amount the person gave shows
-    /// in the accent colour. `share` is a figures row's bar.
-    private func rowView(_ row: JSON, total: Bool, choosing: Bool = false, share: Double? = nil) -> some View {
+    /// in the accent colour. `share` is a figures row's bar. With `pencilRoom`, a row without a
+    /// pencil keeps the room of one, so every amount on the card ends in the same column.
+    private func rowView(_ row: JSON, total: Bool, choosing: Bool = false, share: Double? = nil, pencilRoom: Bool = false) -> some View {
         let key = row.text("key")
         let label = row.text("label")
         let skipped = row.flag("skipped")
@@ -375,10 +423,13 @@ struct AssistantProposalCard: View {
                 .accessibilityLabel("Apply: \(label)")
                 .accessibilityAddTraits(skipped ? [] : .isSelected)
             }
-            rowText(row, total: total, leading: (pickable ? 0 : 12) + (row.flag("indent") ? 16 : 0), trailing: editable ? 0 : 12, share: share)
+            rowText(row, total: total, leading: (pickable ? 0 : 12) + (row.flag("indent") ? 16 : 0),
+                    trailing: editable ? 0 : pencilRoom ? 44 : 12, share: share)
             if editable {
                 Button { actions.change?(row) } label: {
+                    // Quieter than the amount it stands beside.
                     Image(systemName: "pencil")
+                        .foregroundStyle(Color.secondary)
                         .frame(minWidth: 44, minHeight: 44)
                         .contentShape(Rectangle())
                 }
@@ -660,7 +711,7 @@ struct AssistantRowEditor: View {
         let edit = row["edit"]
         let label = row.text("label")
         NavigationStack(path: $route) {
-            Form {
+            CompactForm {
                 Section {
                     if edit.flag("category") {
                         NavigationLink(value: Route.category) {

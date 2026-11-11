@@ -13,6 +13,16 @@ struct UrBudgetApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                // The iPhone Duo's fold, for every screen and sheet (UI/Fold.swift).
+                .modifier(FoldReader())
+                // No scroll bars anywhere, as on Android. A list that's a column down a wide window,
+                // or a pane beside the bar an unfolded Duo stands at its side, put its bar over
+                // its own figures rather than at the window's edge.
+                .scrollIndicators(.hidden)
+                // Text a step under iOS's own size, the scale Android's screens use (UI/Theme.swift).
+                .onAppear { AppTypeScale.apply() }
+                .onReceive(NotificationCenter.default.publisher(for: UIContentSizeCategory.didChangeNotification)) { _ in AppTypeScale.apply() }
+                .onReceive(NotificationCenter.default.publisher(for: UIScene.didActivateNotification)) { _ in AppTypeScale.apply() }
                 .environment(store)
                 .environment(sync)
                 .environment(appStore)
@@ -109,6 +119,9 @@ struct RootView: View {
             LaunchRoute.file = nil
             open(documents.appendingPathComponent(name))
         }
+        #if DEBUG
+        .task(id: store.loading) { if !store.loading { await SyncQA.run(store: store, sync: sync) } }
+        #endif
         .sheet(isPresented: $showingLibrary) { NavigationStack { LibraryView() } }
         .sheet(isPresented: $welcomePreview) { WelcomeView() }
         // The quick action and the Add a transaction shortcut, once a budget is open.
@@ -231,6 +244,14 @@ struct MainTabs: View {
     /// times, so asking for the same ones again shows them again.
     @State private var register = RegisterTarget()
     @State private var registerShown = 0
+    /// The tabs' width, and the whole window's (which the assistant can share with them).
+    @State private var width: CGFloat = 0
+    @State private var window = WindowSpan()
+    /// Where the tabs themselves lie, for the fold's dock to end at the fold.
+    @State private var tabsSpan = WindowSpan()
+    @Environment(\.fold) private var fold
+    /// A screen has its foot in use (a selection's actions): the fold's dock steps aside, as the tab bar does.
+    @State private var tabsHidden = false
 
     private static let tabs: [(tab: AppTab, title: String, symbol: String)] = [
         (.budget, String(localized: "Budget"), "square.grid.2x2"),
@@ -240,8 +261,58 @@ struct MainTabs: View {
         (.more, String(localized: "More"), "ellipsis.circle"),
     ]
 
+    /// The page the assistant is told the app is on while it's open beside it.
+    private var place: String {
+        switch tab {
+        case .budget: return "budget"
+        case .transactions: return "transactions"
+        case .accounts: return "accounts"
+        case .reports: return "reports"
+        case .more: return "assistant"
+        }
+    }
+
     var body: some View {
+        let actions = AppActions.shared
+        // The assistant's side: the far side of a fold, or a share of a wide window.
+        let side = WideLayout.assistantSide(span: window, fold: fold)
+        let beside = actions.panel != nil && side != nil
+        return HStack(spacing: 0) {
+            tabs
+                // Beside the assistant the app is a screen of its own: it sees no fold, lays out
+                // by the width it has, and keeps its tab bar.
+                .environment(\.fold, beside ? FoldState() : fold)
+                .measuringSpan($tabsSpan)
+                .overlay(alignment: .bottomLeading) {
+                    // On the start side of a fold the tabs stand in a dock that keeps to that side.
+                    if !beside, !tabsHidden, fold.docksTabs, let hinge = WideLayout.hinge(across: tabsSpan, fold: fold) {
+                        FoldDock(tabs: Self.tabs, selection: $tab).frame(width: hinge.before).ignoresSafeArea(.keyboard)
+                    }
+                }
+                .onPreferenceChange(TabsHiddenKey.self) { tabsHidden = $0 }
+            // On a wide window, or across a fold, the assistant sits beside the app, and both stay in use.
+            if let panel = actions.panel, let side {
+                if side.gap > 0 { FoldGap(width: side.gap) } else { Divider().ignoresSafeArea() }
+                AssistantView(request: panel.request, beside: true, place: place)
+                    .id(panel.id)
+                    .frame(width: side.width)
+                    .transition(.move(edge: .trailing))
+            }
+        }
+        .animation(.snappy(duration: 0.25), value: actions.panel?.id)
+        .measuringSpan($window)
+        .onChange(of: side != nil, initial: true) { _, fits in
+            actions.besideFits = fits
+            // The window narrowed (or the phone folded) with the assistant beside the app: it
+            // closes, its conversation kept.
+            if !fits { actions.panel = nil }
+        }
+    }
+
+    private var tabs: some View {
         tabView
+            .measuringWidth($width)
+            .environment(\.windowWidth, width)
             .background {
             // Hidden buttons carry ⌘1–⌘5, as the desktop's sidebar shortcuts do.
                 ForEach(Array(Self.tabs.enumerated()), id: \.offset) { index, destination in
@@ -254,7 +325,7 @@ struct MainTabs: View {
             .onChange(of: AppActions.shared.destination) { _, destination in go(destination) }
             // The assistant, asked for by a message over the tabs (an import's "Categorize with
             // the assistant"), which no screen of its own could present.
-            .sheet(item: Binding(get: { AppActions.shared.asking }, set: { AppActions.shared.asking = $0 })) { AssistantView(request: $0) }
+            .assistant(Binding(get: { AppActions.shared.asking }, set: { AppActions.shared.asking = $0 }))
     }
 
     /// Goes where a card of the assistant asked: the Transactions tab showing its transactions
@@ -291,19 +362,25 @@ struct MainTabs: View {
     }
 
     @ViewBuilder private func screen(_ tab: AppTab) -> some View {
-        switch tab {
-        case .budget: BudgetView()
-        case .transactions: NavigationStack { TransactionsList(target: register) }.id(registerShown)
-        case .accounts: AccountsView()
-        case .reports: ReportsView()
-        case .more: MoreView()
+        // Accounts and More have no detail of their own: on a fold they keep to its start side.
+        Group {
+            switch tab {
+            case .budget: BudgetView()
+            case .transactions: RegisterTab(target: register).id(registerShown)
+            case .accounts: FoldPage { AccountsView() }
+            case .reports: ReportsView()
+            case .more: FoldPage { MoreView() }
+            }
         }
+        .tabBarOffFold()
     }
 }
 
 /// A short message above the tab bar, with Undo for the change it describes.
 struct ToastView: View {
     @Environment(BudgetStore.self) private var store
+    @Environment(\.fold) private var fold
+    @State private var span = WindowSpan()
 
     var body: some View {
         ZStack {
@@ -357,6 +434,10 @@ struct ToastView: View {
                 }
             }
         }
+        // On a fold a message keeps to the start side, over the dock, clear of what's open on the other.
+        .frame(width: WideLayout.hinge(across: span, fold: fold)?.before)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .measuringSpan($span)
         .animation(.spring(duration: 0.3), value: store.toast)
         .sensoryFeedback(.success, trigger: store.toast?.id) { _, new in new != nil }
     }
@@ -381,10 +462,15 @@ struct AddTransactionButton: View {
     var account = ""
     var compact = false
     @State private var editing: TransactionEditorRequest?
+    /// On a wide window's Transactions tab the new transaction opens beside the register.
+    @Environment(\.editorPane) private var pane
+    /// On a fold the tabs stand in a dock at this screen's foot, which the button floats over.
+    @Environment(\.dockRoom) private var dockRoom
 
     var body: some View {
         Button {
-            editing = TransactionEditorRequest(account: account)
+            let request = TransactionEditorRequest(account: account)
+            if let pane { pane.open(request) } else { editing = request }
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: "plus")
@@ -409,7 +495,7 @@ struct AddTransactionButton: View {
         .glassCapsule()
         .animation(.snappy(duration: 0.28), value: compact)
         .padding(.trailing, 16)
-        .padding(.bottom, 12)
+        .padding(.bottom, 12 + dockRoom)
         .accessibilityLabel("Add transaction")
         .keyboardShortcut("n", modifiers: .command)
         .sensoryFeedback(.impact(weight: .light), trigger: editing != nil)
@@ -454,14 +540,27 @@ extension View {
     }
 }
 
-/// The ⋯ menu: undo, redo and Settings.
+/// The ⋯ menu: undo, redo, the budget library and Settings.
+/// The assistant, a tap away on every tab's bar, as on Android. It's told the page it was asked from.
+struct AssistantBarButton: View {
+    var page = "assistant"
+    var account = ""
+    @State private var asking: AssistantRequest?
+
+    var body: some View {
+        Button { asking = AssistantRequest(page: page, account: account) } label: { Image(systemName: "sparkles") }
+            .accessibilityLabel("Assistant")
+            .assistant($asking)
+    }
+}
+
 struct BudgetActionsMenu: View {
     @Environment(BudgetStore.self) private var store
     @Environment(SyncCoordinator.self) private var sync
     @State private var page: Page?
 
     enum Page: String, Identifiable {
-        case settings, sync, assistant
+        case library, settings, sync, assistant
         var id: String { rawValue }
     }
 
@@ -474,30 +573,36 @@ struct BudgetActionsMenu: View {
                 .keyboardShortcut("z", modifiers: [.command, .shift])
                 .disabled(!store.redoAvailable || store.busy)
             Divider()
-            Button { page = .assistant } label: { Label("Assistant", systemImage: "sparkles") }
+            Button { page = .library } label: { Label("Budgets", systemImage: "books.vertical") }
+            // Also a button on the bar; here too, for a bar too crowded to show it (an iPad's, with its tabs).
+            Button { if !AppActions.shared.openBeside(nil) { page = .assistant } } label: { Label("Assistant", systemImage: "sparkles") }
             if sync.signedIn && sync.unlocked {
                 Button { Task { try? await sync.syncNow() } } label: { Label("Sync now", systemImage: "arrow.triangle.2.circlepath") }
                     .disabled(sync.syncing)
             }
-            Button { page = .sync } label: { Label(sync.signedIn ? sync.statusLabel : String(localized: "Account & sync"), systemImage: "icloud") }
+            Button { page = .sync } label: { Label(sync.signedIn ? sync.statusLabel : String(localized: "Account & sync"), systemImage: sync.statusSymbol) }
             Button { page = .settings } label: { Label("Settings & data", systemImage: "gearshape") }
         } label: {
             Label(sync.signedIn ? sync.statusLabel : String(localized: "More actions"), systemImage: "ellipsis.circle")
                 .font(.caption)
                 .overlay(alignment: .topTrailing) {
-                    // A budget waiting for a sync decision shows here on every tab.
-                    if sync.conflicts > 0 { Circle().fill(Color.urWarning).frame(width: 8, height: 8).offset(x: 2, y: -2) }
+                    // Sync that's paused or waiting for a decision shows here on every tab.
+                    if sync.needsYou { Circle().fill(Color.urWarning).frame(width: 8, height: 8).offset(x: 2, y: -2) }
                 }
         }
-        .accessibilityLabel(sync.conflicts > 0 ? Text("More actions, a synced budget needs review") : Text("More actions"))
+        .accessibilityLabel(sync.conflicts > 0 ? Text("More actions, a synced budget needs review") : sync.needsYou ? Text("More actions, sync is paused") : Text("More actions"))
         .sheet(item: $page) { page in
             switch page {
             case .assistant:
                 AssistantView()
-            case .settings, .sync:
+            case .library, .settings, .sync:
                 NavigationStack {
                     Group {
-                        if page == .settings { SettingsView() } else { AccountSyncView() }
+                        switch page {
+                        case .library: LibraryView()
+                        case .settings: SettingsView()
+                        default: AccountSyncView()
+                        }
                     }
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { self.page = nil } } }
                 }

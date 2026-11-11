@@ -59,7 +59,7 @@ distribution; privacy/store disclosures must be updated for that release. See th
 
 ## Android fast edits (unreleased)
 
-As of 5 November 2026 Android's edits, previews and totals run on the store's copy, on main and not yet released. iPhone's app code is unchanged, but its saves use the changed shared `save_budget`, and the Simulator tests haven't run on that. On the Fold, with the real budget, an edit saves in 47 to 58 ms against 450 to 710 ms before, and the changed row is on screen in 94 to 113 ms. Its exports matched before and after. See [the plan](plans/engine-edits.md#as-built) and [FOLLOW-UPS.md](FOLLOW-UPS.md#what-fast-edits-on-android-left).
+As of 5 November 2026 Android's edits, previews and totals run on the store's copy, on main and not yet released. iPhone followed on 11 November 2026 (unreleased, and not timed): its edits run in the store too, and its Simulator tests pass on Xcode 27.1. On the Fold, with the real budget, an edit saves in 47 to 58 ms against 450 to 710 ms before, and the changed row is on screen in 94 to 113 ms. Its exports matched before and after. See [the plan](plans/engine-edits.md#as-built) and [FOLLOW-UPS.md](FOLLOW-UPS.md#what-fast-edits-on-android-left).
 
 ## Desktop 1.0.10
 

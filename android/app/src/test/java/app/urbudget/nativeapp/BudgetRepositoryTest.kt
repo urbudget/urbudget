@@ -50,6 +50,13 @@ class BudgetRepositoryTest {
         assertEquals("Original", repository.undo().budget!!.getString("name"))
     }
 
+    @Test fun samplesAreMarkedWhenCreated() = runTest {
+        val repository = BudgetRepository(MemoryStorage(), engine, "2026-10")
+        repository.load()
+        assertNotNull(repository.create("Sample budget", "SAR", sample = true).budget!!.optJSONObject("sample"))
+        assertFalse(repository.create("My budget", "SAR", sample = false).budget!!.has("sample"))
+    }
+
     @Test fun invalidImportLeavesLastDurableBudgetUntouched() = runTest {
         val storage = MemoryStorage(BUDGET)
         val repository = BudgetRepository(storage, engine, "2026-10")

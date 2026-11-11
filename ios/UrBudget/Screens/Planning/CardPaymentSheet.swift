@@ -45,7 +45,7 @@ struct CardPaymentSheet: View {
             }
             .navigationDestination(for: CardPaymentRoute.self) { _ in sourcePicker }
         }
-        .presentationDetents([.large])
+        .sheetDetents([.large])
         .interactiveDismissDisabled(saving)
         .retainingEditorDraft("cardPayment", values: ["accountId": .string(accountId), "from": .string(from), "choice": .string(choice), "amountExpression": .string(pad.text), "date": .string(date), "memo": .string(memo)])
         .onAppear(perform: load)
@@ -68,7 +68,7 @@ struct CardPaymentSheet: View {
     private func form(_ card: JSON) -> some View {
         let currency = store.currency
         let source = sources.first { $0.text("id") == from }
-        return Form {
+        return CompactForm {
             Section {
                 HStack(alignment: .top) {
                     Figure(label: String(localized: "Owed on the card"), value: money(owed, currency), color: owed > 0 ? .urNegative : .primary)
@@ -147,7 +147,10 @@ struct CardPaymentSheet: View {
                 .buttonStyle(.borderedProminent)
                 .buttonBorderShape(.capsule)
                 .padding(.horizontal)
+                .padding(.top, 8)
                 .padding(.bottom, 8)
+                // The page's own ground behind it, so what scrolls under isn't read through its edges.
+                .background(Color.groupedBackground)
                 .disabled(saving)
             }
         }
@@ -181,7 +184,7 @@ struct CardPaymentSheet: View {
                     Text(detail).font(.footnote).foregroundStyle(Color.secondary)
                 }
                 Spacer()
-                Text(money(figure, currency)).monospacedDigit().fontWeight(.semibold).foregroundStyle(Color.primary)
+                Text(money(figure, currency)).monospacedDigit().lineLimit(1).layoutPriority(1).fontWeight(.semibold).foregroundStyle(Color.primary)
             }
         }
         .accessibilityAddTraits(choice == id ? .isSelected : [])
@@ -207,7 +210,7 @@ struct CardPaymentSheet: View {
                     AccountIcon(account: account, balance: balances[id] ?? 0)
                     Text(account.text("name")).foregroundStyle(Color.primary)
                     Spacer()
-                    Text(money(balances[id] ?? 0, currency)).monospacedDigit()
+                    Text(money(balances[id] ?? 0, currency)).monospacedDigit().lineLimit(1).layoutPriority(1)
                         .foregroundStyle((balances[id] ?? 0) < 0 ? Color.urNegative : .primary)
                     if id == from { Image(systemName: "checkmark").foregroundStyle(Color.urAccent).fontWeight(.semibold) }
                 }

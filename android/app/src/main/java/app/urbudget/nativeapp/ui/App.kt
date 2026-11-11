@@ -428,7 +428,8 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     val common: @Composable RowScope.() -> Unit = {
         RoundIconButton(Icons.AutoMirrored.Outlined.Chat, stringResource(R.string.assistant_title), { assistant = true })
         // Sync's state sits in the menu, so a narrow screen keeps room for the month beside these buttons.
-        OverflowMenu(vm, if (cloudStatus?.isNull("email") == false) syncState(cloudStatus) else null, { openPage("Account & sync") }) { openPage("Settings & data") }
+        OverflowMenu(vm, if (cloudStatus?.isNull("email") == false) syncState(cloudStatus) else null, { openPage("Account & sync") },
+            library = { openPage("Budget library") }) { openPage("Settings & data") }
     }
     val budget = state.budget
     // The register and Reports split into list and detail (ListDetail) with room for both, and have it.
@@ -786,9 +787,9 @@ private fun BusyBar(vm: BudgetViewModel, modifier: Modifier) {
     if (busy) LinearProgressIndicator(modifier.fillMaxWidth().statusBarsPadding().height(2.dp), color = ur.accent, trackColor = ur.bg)
 }
 
-/** The ⋯ menu: undo, redo and Settings. It follows only the undo, redo and busy flags. */
+/** The ⋯ menu: undo, redo, the budget library and Settings. It follows only the undo, redo and busy flags. */
 @Composable
-private fun OverflowMenu(vm: BudgetViewModel, sync: Int?, openSync: () -> Unit, settings: () -> Unit) {
+private fun OverflowMenu(vm: BudgetViewModel, sync: Int?, openSync: () -> Unit, library: () -> Unit, settings: () -> Unit) {
     val state by remember(vm) { vm.state.map { Triple(it.undoAvailable, it.redoAvailable, it.busy) }.distinctUntilChanged() }
         .collectAsStateWithLifecycle(Triple(false, false, false))
     val (undoAvailable, redoAvailable, busy) = state
@@ -814,6 +815,7 @@ private fun OverflowMenu(vm: BudgetViewModel, sync: Int?, openSync: () -> Unit, 
             DropdownMenuItem(text = { Text(stringResource(R.string.common_redo)) }, leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Redo, null) }, enabled = redoAvailable && !busy,
                 onClick = { vm.redo(); open = false })
             HorizontalDivider(color = ur.border)
+            DropdownMenuItem(text = { Text("Budgets") }, leadingIcon = { Icon(Icons.Outlined.FolderOpen, null) }, onClick = { library(); open = false })
             DropdownMenuItem(text = { Text(stringResource(R.string.page_settings)) }, leadingIcon = { Icon(Icons.Outlined.Settings, null) }, onClick = { settings(); open = false })
         }
     }

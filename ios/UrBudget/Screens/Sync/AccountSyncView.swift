@@ -26,7 +26,7 @@ struct AccountSyncView: View {
     private var signedIn: String { status.text("email") }
 
     var body: some View {
-        Form {
+        CompactForm {
             Section {
                 Text("Your budgets stay on this device. Sync is optional, and budgets are encrypted before they leave it.")
                     .font(.subheadline).foregroundStyle(Color.secondary)
@@ -44,6 +44,18 @@ struct AccountSyncView: View {
                     Button("Delete account and cloud data", role: .destructive) { deletingAccount = true }
                 }
                 .disabled(busy)
+            } else {
+                // Before signing in, what sync costs and how it's kept private, as on Android.
+                Section("Sync subscription") {
+                    Text("UrBudget is free. Sync is an optional subscription. The App Store shows its price and handles payment.")
+                    Text("Sign in above to subscribe or restore purchases.").font(.footnote).foregroundStyle(Color.secondary)
+                        .listRowSeparator(.hidden, edges: .top)
+                }
+                .font(.subheadline)
+                Section("Encrypted sync") {
+                    Text("Budgets are encrypted before uploading. Only your sync passphrase opens them.")
+                }
+                .font(.subheadline)
             }
             Section {
                 Button("Privacy & your choices") { run { _ = try await store.service("account_open", ["next": "/privacy/app/"]) } }
@@ -51,6 +63,7 @@ struct AccountSyncView: View {
             }
         }
         .navigationTitle("Account & sync")
+        .inlineTitle()
         .overlay(alignment: .top) { if busy { ProgressView().padding(8) } }
         .task {
             // Status follows sign-ins and sync attempts while the screen is open.
@@ -126,19 +139,23 @@ struct AccountSyncView: View {
                         .textContentType(.oneTimeCode)
                         .numberKeyboard()
                         .focused($typingCode)
-                    Button("Sign in") {
+                    Button {
                         run {
                             _ = try await store.service("account_verify", ["email": .string(email.trimmingCharacters(in: .whitespaces)),
                                                                            "code": .string(code.trimmingCharacters(in: .whitespaces))])
                             code = ""
                             await sync.syncAutomatically()
                         }
-                    }
-                    .fontWeight(.semibold)
+                    } label: { Text("Sign in").fontWeight(.semibold).frame(maxWidth: .infinity) }
+                    .buttonStyle(.borderedProminent).buttonBorderShape(.capsule)
+                    .listRowSeparator(.hidden)
                     .disabled(busy || code.trimmingCharacters(in: .whitespaces).isEmpty)
                     Button("Send a new code", action: sendCode).disabled(busy || !email.contains("@"))
                 } else {
-                    Button("Send sign-in code", action: sendCode).fontWeight(.semibold).disabled(busy || !email.contains("@"))
+                    Button(action: sendCode) { Text("Send sign-in code").fontWeight(.semibold).frame(maxWidth: .infinity) }
+                        .buttonStyle(.borderedProminent).buttonBorderShape(.capsule)
+                        .listRowSeparator(.hidden)
+                        .disabled(busy || !email.contains("@"))
                 }
             } else {
                 Label {
@@ -164,8 +181,13 @@ struct AccountSyncView: View {
 
     private func sendCode() {
         run {
-            _ = try await store.service("account_start", ["email": .string(email.trimmingCharacters(in: .whitespaces))])
+            let reply = try await store.service("account_start", ["email": .string(email.trimmingCharacters(in: .whitespaces))])
             sent = true
+            #if DEBUG
+            // A development server (`wrangler dev`, with URBUDGET_API) says the code it would have
+            // emailed: no mail is sent there. The real service never does.
+            if !reply.text("devCode").isEmpty { code = reply.text("devCode") }
+            #endif
             notice = String(localized: "Check your email for a sign-in code. It may land in your Junk folder.")
             typingCode = true
         }
@@ -352,7 +374,7 @@ private struct PassphraseSheet: View {
             }
             if needsRepeat && !repeated.isEmpty && phrase != repeated { FormErrorView(message: String(localized: "The passphrases don't match.")) }
         }
-        .presentationDetents([.medium])
+        .sheetDetents([.medium])
     }
 
     private var title: String {
@@ -480,6 +502,6 @@ private struct DeleteAccountSheet: View {
                      : "This deletes your account and cloud budgets and stops subscription renewals. Budgets on your devices stay. Purchase records may be kept as the privacy policy describes.")
             }
         }
-        .presentationDetents([.medium])
+        .sheetDetents([.medium])
     }
 }

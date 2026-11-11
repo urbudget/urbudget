@@ -4794,16 +4794,6 @@
         }
       }
     },
-    "Add transactions as you spend, or import the statement file your bank lets you download (CSV, OFX, QFX or QIF) from an account's page. Each one comes out of its category." : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "أضف المعاملات كلما أنفقت، أو استورد من صفحة الحساب كشف الحساب الذي يتيح لك بنكك تنزيله (CSV أو OFX أو QFX أو QIF). تُخصم كل معاملة من فئتها."
-          }
-        }
-      }
-    },
     "Add your accounts" : {
       "localizations" : {
         "ar" : {
@@ -7271,16 +7261,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "CSV أو Excel أو OFX أو QIF أو CAMT.053 أو MT940؛ وPDF عبر المساعد"
-          }
-        }
-      }
-    },
-    "CSV, OFX, QFX or QIF, reviewed first" : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ملف CSV أو OFX أو QFX أو QIF، مع مراجعته أولًا"
           }
         }
       }
@@ -20682,16 +20662,6 @@
         }
       }
     },
-    "Select a payee to see its transactions. Tiles show payees with net spending; the total and table include refunds." : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "اختر مستفيدًا لعرض معاملاته. تعرض المربعات المستفيدين ذوي صافي الإنفاق؛ أما الإجمالي والجدول فيشملان المبالغ المستردة."
-          }
-        }
-      }
-    },
     "Select all" : {
       "localizations" : {
         "ar" : {
@@ -22489,16 +22459,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "لإزالته من الرسم"
-          }
-        }
-      }
-    },
-    "Tap a day for its spending. Darker means more." : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "اضغط على يوم لترى إنفاقه. اللون الأغمق يعني إنفاقًا أكبر."
           }
         }
       }
@@ -27571,6 +27531,772 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "يتوقف المساعد عن الرد إلى أن تحفظ مفتاحًا مجددًا. تبقى محادثاتك على هذا الجهاز."
+          }
+        }
+      }
+    },
+    "Delete permanently" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حذف نهائي"
+          }
+        }
+      }
+    },
+    "Delete %@ permanently?" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حذف ⁨%@⁩ نهائيًا؟"
+          }
+        }
+      }
+    },
+    "It's deleted from this device with its backups and assistant chats. This can't be undone." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تُحذف من هذا الجهاز مع نسخها الاحتياطية ومحادثات المساعد. لا يمكن التراجع عن ذلك."
+          }
+        }
+      }
+    },
+    "Empty Trash" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إفراغ المهملات"
+          }
+        }
+      }
+    },
+    "Empty Trash?" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إفراغ المهملات؟"
+          }
+        }
+      }
+    },
+    "Restore a budget, or delete it permanently." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استعد ميزانية أو احذفها نهائيًا."
+          }
+        }
+      }
+    },
+    "%lld budgets in Trash on this device" : {
+      "localizations" : {
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "لا ميزانيات في المهملات على هذا الجهاز"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "ميزانية واحدة في المهملات على هذا الجهاز"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "ميزانيتان في المهملات على هذا الجهاز"
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ميزانيات في المهملات على هذا الجهاز"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ميزانية في المهملات على هذا الجهاز"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ميزانية في المهملات على هذا الجهاز"
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld budget in Trash on this device"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld budgets in Trash on this device"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld budgets are deleted from this device with their backups and assistant chats. This can't be undone." : {
+      "localizations" : {
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "لا ميزانيات لحذفها."
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "تُحذف ميزانية واحدة من هذا الجهاز مع نسخها الاحتياطية ومحادثات المساعد. لا يمكن التراجع عن ذلك."
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "تُحذف ميزانيتان من هذا الجهاز مع نسخهما الاحتياطية ومحادثات المساعد. لا يمكن التراجع عن ذلك."
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "تُحذف %lld ميزانيات من هذا الجهاز مع نسخها الاحتياطية ومحادثات المساعد. لا يمكن التراجع عن ذلك."
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "تُحذف %lld ميزانية من هذا الجهاز مع نسخها الاحتياطية ومحادثات المساعد. لا يمكن التراجع عن ذلك."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "تُحذف %lld ميزانية من هذا الجهاز مع نسخها الاحتياطية ومحادثات المساعد. لا يمكن التراجع عن ذلك."
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld budget is deleted from this device with its backups and assistant chats. This can't be undone."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld budgets are deleted from this device with their backups and assistant chats. This can't be undone."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld budgets deleted" : {
+      "localizations" : {
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "لم تُحذف أي ميزانية"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "حُذفت ميزانية واحدة"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "حُذفت ميزانيتان"
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "حُذفت %lld ميزانيات"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "حُذفت %lld ميزانية"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "حُذفت %lld ميزانية"
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld budget deleted"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld budgets deleted"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "This is a sample budget." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هذه ميزانية تجريبية."
+          }
+        }
+      }
+    },
+    "Try anything here; your own budget is separate." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جرّب ما تشاء هنا؛ فميزانيتك الخاصة منفصلة."
+          }
+        }
+      }
+    },
+    "Go to my budget" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الانتقال إلى ميزانيتي"
+          }
+        }
+      }
+    },
+    "Delete sample" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حذف الميزانية التجريبية"
+          }
+        }
+      }
+    },
+    "Deleted the sample budget." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حُذفت الميزانية التجريبية."
+          }
+        }
+      }
+    },
+    "CSV, Excel, OFX, QIF and more, reviewed first" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ملف CSV أو Excel أو OFX أو QIF وغيرها، تراجعه قبل الاستيراد"
+          }
+        }
+      }
+    },
+    "Add transactions as you spend, or import the statement file your bank lets you download (CSV, Excel, OFX, QIF and more) from an account's page. Each one comes out of its category." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أضف المعاملات كلما أنفقت، أو استورد من صفحة الحساب كشف الحساب الذي يتيح لك بنكك تنزيله (CSV أو Excel أو OFX أو QIF وغيرها). تُخصم كل معاملة من فئتها."
+          }
+        }
+      }
+    },
+    "More actions, sync is paused" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إجراءات أخرى، المزامنة متوقفة مؤقتًا"
+          }
+        }
+      }
+    },
+    "Recorded a payment of %@ to %@ for %@." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سُجّلت دفعة بقيمة ⁨%1$@⁩ إلى ⁨%2$@⁩ بتاريخ ⁨%3$@⁩."
+          }
+        }
+      }
+    },
+    "%lld more steps" : {
+      "localizations" : {
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "لا خطوات أخرى"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "خطوة أخرى"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "خطوتان أخريان"
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld خطوات أخرى"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld خطوة أخرى"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld خطوة أخرى"
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld more step"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld more steps"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Copy, report or rate this reply" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "نسخ هذا الرد أو الإبلاغ عنه أو تقييمه"
+          }
+        }
+      }
+    },
+    "Thinking: %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يفكّر: ⁨%@⁩"
+          }
+        }
+      }
+    },
+    "replaced" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مستبدَل"
+          }
+        }
+      }
+    },
+    "%@ so far" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⁨%@⁩ حتى الآن"
+          }
+        }
+      }
+    },
+    "See transactions" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عرض المعاملات"
+          }
+        }
+      }
+    },
+    "See categories" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عرض الفئات"
+          }
+        }
+      }
+    },
+    "Shown" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ظاهر"
+          }
+        }
+      }
+    },
+    "Hides or shows this in the chart" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يُخفيه أو يُظهره في الرسم"
+          }
+        }
+      }
+    },
+    "Picks this payee" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يحدّد هذا المستفيد"
+          }
+        }
+      }
+    },
+    "Tap a day for its spending, and again for its transactions." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "انقر يومًا لعرض إنفاقه، ومرة أخرى لعرض معاملاته."
+          }
+        }
+      }
+    },
+    "Tap a payee for its figures, and again for its transactions. Tiles show payees with net spending, in the colour of the group most of it went to; the total and table include refunds." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "انقر مستفيدًا لعرض أرقامه، ومرة أخرى لعرض معاملاته. تعرض المربعات المستفيدين ذوي الإنفاق الصافي، بلون المجموعة التي ذهب إليها معظمه؛ ويشمل الإجمالي والجدول المبالغ المستردة."
+          }
+        }
+      }
+    },
+    "Nothing spent" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا إنفاق"
+          }
+        }
+      }
+    },
+    "Overview" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "نظرة عامة"
+          }
+        }
+      }
+    },
+    "No transaction open" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا توجد معاملة مفتوحة"
+          }
+        }
+      }
+    },
+    "Tap one in the list to see or change it here." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "انقر على معاملة في القائمة لعرضها أو تعديلها هنا."
+          }
+        }
+      }
+    },
+    "Discard your changes?" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هل تريد تجاهل تغييراتك؟"
+          }
+        }
+      }
+    },
+    "This transaction has changes that aren't saved." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "في هذه المعاملة تغييرات لم تُحفظ."
+          }
+        }
+      }
+    },
+    "This side is for what you open" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هذا الجانب لما تفتحه"
+          }
+        }
+      }
+    },
+    "A category, the assistant or a new transaction opens here, clear of the fold." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تُفتح هنا الفئة أو المساعد أو المعاملة الجديدة، بعيدًا عن الطيّة."
+          }
+        }
+      }
+    },
+    "Tabs" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "علامات التبويب"
+          }
+        }
+      }
+    },
+    "Scheduled · %lld" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المجدولة · %lld"
+          }
+        }
+      }
+    },
+    "30 days: %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 يومًا: ⁨%@⁩"
+          }
+        }
+      }
+    },
+    "Changes whether it has cleared" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تبديل حالة المقاصّة"
+          }
+        }
+      }
+    },
+    "Folds the scheduled transactions away" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يطوي المعاملات المجدولة"
+          }
+        }
+      }
+    },
+    "Shows the scheduled transactions" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يعرض المعاملات المجدولة"
+          }
+        }
+      }
+    },
+    "UrBudget is free. Sync is an optional subscription. The App Store shows its price and handles payment." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تطبيق UrBudget مجاني. والمزامنة اشتراك اختياري، يعرض App Store سعره ويتولى الدفع."
+          }
+        }
+      }
+    },
+    "Sign in above to subscribe or restore purchases." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سجِّل الدخول أعلاه للاشتراك أو لاستعادة المشتريات."
+          }
+        }
+      }
+    },
+    "Budgets are encrypted before uploading. Only your sync passphrase opens them." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تُشفَّر الميزانيات قبل رفعها، ولا تفتحها إلا عبارة مرور المزامنة الخاصة بك."
+          }
+        }
+      }
+    },
+    "Show what targets still need" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إظهار ما تحتاجه الأهداف"
+          }
+        }
+      }
+    },
+    "The amount under each category's name, such as “120.00 needed”" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المبلغ تحت اسم كل فئة، مثل «120.00 مطلوب»"
+          }
+        }
+      }
+    },
+    "Open scheduled transactions" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فتح المعاملات المجدولة"
+          }
+        }
+      }
+    },
+    "Whether the schedules atop each register start unfolded" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ما إذا كانت المعاملات المجدولة أعلى كل سجل معاملات تظهر مفتوحة"
+          }
+        }
+      }
+    },
+    "Open on" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "صفحة البدء"
+          }
+        }
+      }
+    },
+    "All transactions" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "كل المعاملات"
+          }
+        }
+      }
+    },
+    "The page you see when the app starts or you switch budgets." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الصفحة التي تظهر عند تشغيل التطبيق أو التبديل بين الميزانيات."
+          }
+        }
+      }
+    },
+    "These apply on this device, to every budget." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تنطبق على هذا الجهاز وعلى كل الميزانيات."
           }
         }
       }

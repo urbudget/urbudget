@@ -30,9 +30,13 @@ private let frequencies: [(id: String, label: String)] = [
 struct TransactionEditor: View {
     @Environment(BudgetStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    /// Set when this form is open beside the register on a wide window, not over the screen.
+    @Environment(\.editorPane) private var pane
     var request: TransactionEditorRequest
 
     @State private var checkpoint: EditorDraftCheckpoint?
+    /// The form as it opened, to tell the pane when something has been typed since.
+    @State private var opening: JSON?
     @State private var loaded = false
     @State private var account = ""
     @State private var payee = ""
@@ -120,7 +124,7 @@ struct TransactionEditor: View {
         let currency = store.currency
         NavigationStack(path: $route) {
             ScrollViewReader { scroll in
-            Form {
+            CompactForm {
                 if let lastSaved {
                     Label(lastSaved, systemImage: "checkmark.circle.fill")
                         .font(.subheadline.weight(.semibold))
@@ -234,7 +238,7 @@ struct TransactionEditor: View {
             .navigationTitle(original == nil ? "New transaction" : "Edit transaction")
             .inlineTitle()
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { checkpoint?.discard(); dismiss() }.disabled(saving) }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { checkpoint?.discard(); close() }.disabled(saving) }
                 ToolbarItem(placement: .confirmationAction) {
                     SaveButton(title: scheduled || repeatable && repeatEvery != "never" && date > today ? String(localized: "Schedule") : String(localized: "Save"),
                                saving: saving) { save() }
@@ -243,6 +247,7 @@ struct TransactionEditor: View {
                 }
             }
             .navigationDestination(for: EditorRoute.self) { destination($0) }
+            .tightTop()
             .safeAreaInset(edge: .bottom) {
                 if keypad {
                     AmountKeypad(pad: pad) {
@@ -250,10 +255,14 @@ struct TransactionEditor: View {
                         // A new transaction goes on to its payee, as YNAB's keypad does.
                         if original == nil && payee.isEmpty && transfer.isEmpty { route = [.payee] }
                     }
+                    // Half open on a table the keypad has the flat half, and the form stays above the fold.
+                    .onFlatHalf(enabled: pane == nil)
                     .transition(.move(edge: .bottom))
                 }
             }
             .animation(.snappy(duration: 0.25), value: keypad)
+            // The form and its keypad together have the far side to its edge.
+            .awayFromSideBar()
             // The keypad steps aside for the keyboard and for the pickers.
             .onChange(of: typing) { _, typing in if typing { keypad = false } }
             .onChange(of: route) { _, route in if !route.isEmpty { keypad = false } }
@@ -266,7 +275,7 @@ struct TransactionEditor: View {
                         try await store.removing("transactions", id: id)
                         store.showToast(String(localized: "Deleted the transaction."), undo: true)
                         checkpoint?.discard()
-                        dismiss()
+                        close()
                     }
                 }
             } message: {
@@ -277,12 +286,32 @@ struct TransactionEditor: View {
             load()
             if checkpoint == nil { checkpoint = EditorDraftCheckpoint(store: store, target: "transaction", baseline: original ?? [:]) }
             checkpoint?.save(rawDraft)
+            if opening == nil { opening = rawDraft }
+            // Debug builds can open the form on a picker (`-open payeePicker`), for screenshots.
+            switch LaunchRoute.open {
+            case "payeePicker": route = [.payee]
+            case "categoryPicker": route = [.category]
+            case "accountPicker": route = [.account]
+            default: return
+            }
+            LaunchRoute.open = nil
+            keypad = false
         }
-        .onChange(of: rawDraft) { _, value in checkpoint?.save(value) }
+        .onChange(of: rawDraft) { _, value in
+            checkpoint?.save(value)
+            // Save & add another starts a new form, which opens as it's first laid out.
+            if opening == nil { opening = value }
+            pane?.dirty = value != opening
+        }
         .task(id: store.version) {
             let budget = budget
             payees = await Task.detached(priority: .userInitiated) { payeeIndex(budget) }.value
         }
+    }
+
+    /// Leaves the form: the pane lets go of it beside the register, a cover dismisses.
+    private func close() {
+        if let pane { pane.close() } else { dismiss() }
     }
 
     private func load() {
@@ -527,7 +556,7 @@ struct TransactionEditor: View {
                 if scheduled { store.showToast(String(localized: "Scheduled for \(Money.date(date)). It's entered on that day.")) }
             }
             checkpoint?.discard()
-            dismiss()
+            close()
         }
     }
 
@@ -540,6 +569,7 @@ struct TransactionEditor: View {
         statusTouched = false
         status = newStatus
         lastSaved = saved
+        opening = nil
         addedAnother += 1
         route = []
         keypad = true

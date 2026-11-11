@@ -18,10 +18,24 @@ enum ReportPalette {
 
     static let series: [Color] = zip(light, dark).map { Color(light: $0, dark: $1) }
     static let other = Color(light: 0xA3A8B0, dark: 0x5D636C)
-    /// Heat levels 0 (nothing spent) to 5: series-1 mixed into the card.
-    static let heat: [Color] = [Color.insetBackground] + [0.14, 0.30, 0.48, 0.70].map(mix) + [series[0]]
+    /// How strongly the month still under way is drawn.
+    static let soFar = 0.45
+    /// Heat levels 0 (nothing spent) to 5, Android's own scale: one blue, darker for more on
+    /// light and brighter for more on dark, its steps far enough apart to tell at a glance.
+    static let heat: [Color] = [Color.insetBackground] + zip([0x86B6EF, 0x5598E7, 0x2A78D6, 0x1C5CAB, 0x104281] as [UInt32],
+                                                             [0x184F95, 0x256ABF, 0x3987E5, 0x6DA7EC, 0x9EC5F4] as [UInt32]).map { Color(light: $0, dark: $1) }
+    /// A date's ink on a heat level: light on the deep steps, dark on the bright ones.
+    static func heatInk(_ level: Int) -> Color {
+        level == 0 ? .secondary : Color(light: level >= 3 ? 0xFFFFFF : 0x1D1D1F, dark: level >= 4 ? 0x0C0E18 : 0xFFFFFF)
+    }
     /// Treemap tiles: levels 0 and 1 share the lightest.
     static let tiles: [Color] = [0.10, 0.10, 0.20, 0.30, 0.42, 0.56].map(mix)
+
+    /// A series colour as a treemap tile wears it: mixed into the card, so its words stay readable.
+    static func tile(_ code: Int) -> Color {
+        guard (0...7).contains(code) else { return Color(light: blend(surfaceLight, 0xA3A8B0, 0.42), dark: blend(surfaceDark, 0x5D636C, 0.6)) }
+        return Color(light: blend(surfaceLight, light[code], 0.34), dark: blend(surfaceDark, dark[code], 0.46))
+    }
 
     static func color(_ code: Int?) -> Color {
         guard let code else { return .secondary }
@@ -111,20 +125,59 @@ struct ReportLegendKey: View {
     }
 }
 
+/// Which colour is which. With `onToggle`, each name hides and shows its series: a hidden one keeps
+/// an empty key and is struck through.
 struct ReportLegendView: View {
     var items: [ReportLegendItem]
+    var hidden: Set<String> = []
+    var onToggle: ((String) -> Void)? = nil
+    /// Keys in the softer fill treemap tiles wear.
+    var tiles = false
 
     var body: some View {
-        ReportFlowLayout(spacing: 16, lineSpacing: 4) {
-            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                HStack(spacing: 6) {
-                    ReportLegendKey(color: ReportPalette.color(item.color), line: item.line, dashed: item.dashed)
-                    Text(item.label).font(.caption).foregroundStyle(Color.secondary).lineLimit(1)
+        if let onToggle {
+            ReportFlowLayout(spacing: 4, lineSpacing: 2) {
+                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                    let off = hidden.contains(item.label)
+                    Button { onToggle(item.label) } label: {
+                        HStack(spacing: 6) {
+                            if off {
+                                RoundedRectangle(cornerRadius: 2, style: .continuous).stroke(Color.secondary.opacity(0.6), lineWidth: 1).frame(width: 10, height: 10)
+                            } else {
+                                ReportLegendKey(color: ReportPalette.color(item.color), line: item.line, dashed: item.dashed)
+                            }
+                            Text(item.label).font(.caption).foregroundStyle(off ? Color.secondary.opacity(0.7) : Color.secondary).strikethrough(off).lineLimit(1)
+                        }
+                        .padding(.horizontal, 8)
+                        .frame(minHeight: 34)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(item.label)
+                    .accessibilityValue(off ? Text("Hidden") : Text("Shown"))
+                    .accessibilityHint("Hides or shows this in the chart")
                 }
             }
+            .padding(.horizontal, -8)
+        } else {
+            ReportFlowLayout(spacing: 16, lineSpacing: 4) {
+                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                    HStack(spacing: 6) {
+                        ReportLegendKey(color: tiles ? ReportPalette.tile(item.color) : ReportPalette.color(item.color), line: item.line, dashed: item.dashed)
+                        Text(item.label).font(.caption).foregroundStyle(Color.secondary).lineLimit(1)
+                    }
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(spoken)
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(spoken)
+    }
+
+    /// A legend name hidden or shown; the last one showing stays.
+    static func toggled(_ hidden: Set<String>, _ label: String, legend: [ReportLegendItem]) -> Set<String> {
+        if hidden.contains(label) { return hidden.subtracting([label]) }
+        if !legend.contains(where: { !hidden.contains($0.label) && $0.label != label }) { return hidden }
+        return hidden.union([label])
     }
 
     private var spoken: String {
@@ -173,17 +226,17 @@ private struct ReportUnitLabel: ViewModifier {
 }
 
 enum ReportAxis {
-    /// X labels that never crowd: each needs `spacing` points from the last one drawn; the year shows when it changes.
+    /// X labels that never crowd, at an even step (every month, every 2nd, 3rd…) counted back from
+    /// the last one, so the latest always shows. Each needs `spacing` points; the year shows in full
+    /// on the first label and where it changes ("Dec 2025", "Feb", "Apr").
     static func xLabels(_ ticks: [ReportXTick?], keys: [String], band: CGFloat, spacing: CGFloat) -> [String: String] {
+        guard let last = ticks.lastIndex(where: { $0 != nil }) else { return [:] }
+        let step = max(1, Int((spacing / max(band, 0.01)).rounded(.up)))
         var out: [String: String] = [:]
-        var last = -CGFloat.infinity
         var lastYear: Int?
         for (index, tick) in ticks.enumerated() {
-            guard let tick, index < keys.count else { continue }
-            let at = band * (CGFloat(index) + 0.5)
-            if at - last < spacing { continue }
+            guard let tick, index < keys.count, (last - index) % step == 0 else { continue }
             out[keys[index]] = lastYear == nil || lastYear != tick.year ? tick.long : tick.short
-            last = at
             lastYear = tick.year
         }
         return out
@@ -225,28 +278,50 @@ private struct ReportLinePoint: Identifiable {
     var label: String
     var text: String
     var title: String
+    /// A point drawn a second time, to start the dashed stretch into the month under way.
+    var echo = false
 }
 
 /// Columns by month (or any keys): one series, stacked series (positives up, negatives down) or
 /// grouped series side by side, with an optional overlay line and average rule.
+/// With a `legend`, its names hide and show their series and the scale follows. The month still
+/// under way is drawn lighter, and the chart opens on the last complete one.
 struct ReportColumnChart: View {
-    var model: ReportColumnModel
-    var height: CGFloat = 220
+    /// Every series; `model` is what's drawn, without the hidden ones.
+    private var full: ReportColumnModel
+    private var legend: [ReportLegendItem]?
+    private var height: CGFloat
     @State private var selected: Int?
-    @ScaledMetric(relativeTo: .caption2) private var labelSpacing: CGFloat = 44
+    @State private var hidden: Set<String> = []
+    @ScaledMetric(relativeTo: .caption2) private var labelSpacing: CGFloat = 52
     @Environment(\.layoutDirection) private var direction
 
+    init(model: ReportColumnModel, legend: [ReportLegendItem]? = nil, height: CGFloat = 220) {
+        full = model
+        self.legend = legend
+        self.height = height
+    }
+
+    private var model: ReportColumnModel { full.without(hidden) }
+
     var body: some View {
+        let model = model
         let count = model.keys.count
-        let shown = selected.flatMap { $0 < count ? $0 : nil } ?? count - 1
+        let shown = selected.flatMap { $0 < count ? $0 : nil } ?? model.opening
         VStack(alignment: .leading, spacing: 8) {
             if shown >= 0 && shown < model.readouts.count { ReportReadoutView(title: model.titles[shown], rows: model.readouts[shown]) }
             // Months run left to right in every language, so a tap's column is counted from the left.
             GeometryReader { geometry in plot(width: geometry.size.width) }
                 .environment(\.layoutDirection, .leftToRight)
                 .frame(height: height)
+            if let legend, !legend.isEmpty {
+                ReportLegendView(items: legend, hidden: hidden, onToggle: legend.count > 1 ? { label in
+                    withAnimation(.easeInOut(duration: 0.25)) { hidden = ReportLegendView.toggled(hidden, label, legend: legend) }
+                } : nil)
+            }
         }
-        .onChange(of: model.keys) { selected = nil }
+        .onChange(of: full.keys) { selected = nil }
+        .onChange(of: legend?.map(\.label)) { hidden = [] }
     }
 
     private func value(_ series: ReportColumnSeries, _ index: Int) -> Double { index < series.values.count ? series.values[index] : 0 }
@@ -285,15 +360,23 @@ struct ReportColumnChart: View {
                 segment += 1
                 continue
             }
-            out.append(ReportLinePoint(id: out.count, key: model.keys[index], value: value, series: "line-\(segment)", color: line.color, dashed: false,
+            // The stretch into the month under way is dashed: it starts again from the month before.
+            if index == model.partial, let before = out.last, before.series == "line-\(segment)" {
+                segment += 1
+                out.append(ReportLinePoint(id: out.count, key: before.key, value: before.value, series: "line-\(segment)", color: line.color, dashed: true,
+                                           label: line.label, text: "", title: before.title, echo: true))
+            }
+            out.append(ReportLinePoint(id: out.count, key: model.keys[index], value: value, series: "line-\(segment)", color: line.color, dashed: index == model.partial,
                                        label: line.label, text: index < model.lineTexts.count ? model.lineTexts[index] ?? "" : "", title: model.titles[index]))
         }
         return out
     }
 
     private func plot(width: CGFloat) -> some View {
+        let model = model
         let count = max(1, model.keys.count)
         let band = max(1, width - 52) / CGFloat(count)
+        let underWay: String? = model.partial >= 0 && model.partial < model.keys.count ? model.keys[model.partial] : nil
         let barWidth = min(24, max(2, band * 0.62))
         let seriesCount = max(1, model.series.count)
         let groupWidth = min(band * 0.8, CGFloat(seriesCount) * 24 + CGFloat(seriesCount - 1) * 2)
@@ -317,13 +400,13 @@ struct ReportColumnChart: View {
                 if model.grouped {
                     BarMark(x: .value("Month", bar.key), yStart: .value("Amount", bar.start), yEnd: .value("Amount", bar.end), width: .fixed(each))
                         .position(by: .value("Series", bar.series), axis: .horizontal, span: .fixed(groupWidth))
-                        .foregroundStyle(ReportPalette.color(bar.color))
+                        .foregroundStyle(ReportPalette.color(bar.color).opacity(bar.key == underWay ? ReportPalette.soFar : 1))
                         .cornerRadius(3)
                         .accessibilityLabel("\(bar.title), \(bar.label)")
                         .accessibilityValue(bar.text)
                 } else {
                     BarMark(x: .value("Month", bar.key), yStart: .value("Amount", bar.start), yEnd: .value("Amount", bar.end), width: .fixed(barWidth))
-                        .foregroundStyle(ReportPalette.color(bar.color))
+                        .foregroundStyle(ReportPalette.color(bar.color).opacity(bar.key == underWay ? ReportPalette.soFar : 1))
                         .cornerRadius(3)
                         .accessibilityLabel(model.series.count > 1 ? "\(bar.title), \(bar.label)" : bar.title)
                         .accessibilityValue(bar.text)
@@ -344,9 +427,10 @@ struct ReportColumnChart: View {
             ForEach(points) { point in
                 LineMark(x: .value("Month", point.key), y: .value("Amount", point.value), series: .value("Line", point.series))
                     .foregroundStyle(ReportPalette.color(point.color))
-                    .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                    .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round, dash: point.dashed ? [3, 3] : []))
                     .accessibilityLabel("\(point.title), \(point.label)")
                     .accessibilityValue(point.text)
+                    .accessibilityHidden(point.echo)
             }
             if let last = points.last {
                 PointMark(x: .value("Month", last.key), y: .value("Amount", last.value))
@@ -392,23 +476,43 @@ struct ReportColumnChart: View {
 }
 
 /// Lines over months or days on one axis that includes zero; a single line gets a light wash.
+/// With a `legend`, its names hide and show their lines and the scale follows. The stretch into the
+/// month still under way is dashed, and the chart opens on the last complete one.
 struct ReportLinesChart: View {
-    var model: ReportLinesModel
-    var height: CGFloat = 220
+    /// Every line; `model` is what's drawn, without the hidden ones.
+    private var full: ReportLinesModel
+    private var legend: [ReportLegendItem]?
+    private var height: CGFloat
     @State private var selected: Int?
-    @ScaledMetric(relativeTo: .caption2) private var labelSpacing: CGFloat = 44
+    @State private var hidden: Set<String> = []
+    @ScaledMetric(relativeTo: .caption2) private var labelSpacing: CGFloat = 52
+
+    init(model: ReportLinesModel, legend: [ReportLegendItem]? = nil, height: CGFloat = 220) {
+        full = model
+        self.legend = legend
+        self.height = height
+    }
+
+    private var model: ReportLinesModel { full.without(hidden) }
 
     var body: some View {
+        let model = model
         let count = model.keys.count
-        let shown = selected.flatMap { $0 < count ? $0 : nil } ?? count - 1
+        let shown = selected.flatMap { $0 < count ? $0 : nil } ?? model.opening
         VStack(alignment: .leading, spacing: 8) {
             if shown >= 0 && shown < model.readouts.count { ReportReadoutView(title: model.titles[shown], rows: model.readouts[shown]) }
             // Time runs left to right in every language, so a tap's point is counted from the left.
             GeometryReader { geometry in plot(width: geometry.size.width) }
                 .environment(\.layoutDirection, .leftToRight)
                 .frame(height: height)
+            if let legend, !legend.isEmpty {
+                ReportLegendView(items: legend, hidden: hidden, onToggle: legend.count > 1 ? { label in
+                    withAnimation(.easeInOut(duration: 0.25)) { hidden = ReportLegendView.toggled(hidden, label, legend: legend) }
+                } : nil)
+            }
         }
-        .onChange(of: model.keys) { selected = nil }
+        .onChange(of: full.keys) { selected = nil }
+        .onChange(of: legend?.map(\.label)) { hidden = [] }
     }
 
     private func points() -> [ReportLinePoint] {
@@ -421,14 +525,21 @@ struct ReportLinesChart: View {
                     continue
                 }
                 let text = k < model.texts.count && index < model.texts[k].count ? model.texts[k][index] ?? "" : ""
+                // The stretch into the month under way is dashed: it starts again from the month before.
+                if index == model.partial, !series.dashed, let before = out.last, before.series == "\(series.key)#\(segment)" {
+                    segment += 1
+                    out.append(ReportLinePoint(id: out.count, key: before.key, value: before.value, series: "\(series.key)#\(segment)", color: series.color,
+                                               dashed: true, label: series.label, text: "", title: before.title, echo: true))
+                }
                 out.append(ReportLinePoint(id: out.count, key: model.keys[index], value: value, series: "\(series.key)#\(segment)", color: series.color,
-                                           dashed: series.dashed, label: series.label, text: text, title: model.titles[index]))
+                                           dashed: series.dashed || index == model.partial, label: series.label, text: text, title: model.titles[index]))
             }
         }
         return out
     }
 
     private func plot(width: CGFloat) -> some View {
+        let model = model
         let count = max(1, model.keys.count)
         let band = max(1, width - 52) / CGFloat(count)
         let labels = ReportAxis.xLabels(model.xTicks, keys: model.keys, band: band, spacing: labelSpacing)
@@ -437,7 +548,7 @@ struct ReportLinesChart: View {
         let low = model.ticks.first ?? 0
         let high = model.ticks.last ?? 1
         let pointMarks = count <= 1
-        let chosen: [ReportLinePoint] = selected.flatMap { index in index < model.keys.count ? all.filter { $0.key == model.keys[index] } : nil } ?? []
+        let chosen: [ReportLinePoint] = selected.flatMap { index in index < model.keys.count ? all.filter { $0.key == model.keys[index] && !$0.echo } : nil } ?? []
         return Chart {
             RuleMark(y: .value("Zero", 0.0))
                 .foregroundStyle(Color.secondary.opacity(0.6))
@@ -456,6 +567,7 @@ struct ReportLinesChart: View {
                     .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round, dash: point.dashed ? [6, 4] : []))
                     .accessibilityLabel(model.series.count > 1 ? "\(point.title), \(point.label)" : point.title)
                     .accessibilityValue(point.text)
+                    .accessibilityHidden(point.echo)
                 if pointMarks {
                     PointMark(x: .value("Day", point.key), y: .value("Amount", point.value))
                         .foregroundStyle(ReportPalette.color(point.color))
@@ -511,46 +623,62 @@ struct ReportLinesChart: View {
     }
 }
 
-/// Parts of a whole as a ring, largest first, the total in the middle. A tap on a slice selects it.
+/// Parts of a whole as a ring, largest first, the total in the middle. A tap picks a slice: it
+/// stands out, the others fade, and the middle says its amount and share. A second tap, or a tap
+/// on the middle, opens it, where there's something to open.
 struct ReportDonut: View {
     var slices: [ReportSlice]
     var centerValue: String
     var centerLabel: String
-    var onSelect: ((String) -> Void)? = nil
+    var picked: String? = nil
+    var onPick: ((String?) -> Void)? = nil
+    var onOpen: ((String) -> Void)? = nil
+    /// What opening a slice shows: "See transactions", "See categories".
+    var openLabel: String = String(localized: "See transactions")
     @ScaledMetric(relativeTo: .body) private var size: CGFloat = 200
 
     var body: some View {
         let shown = slices.filter { $0.value > 0 }
         let side = min(size, 280)
+        let total = shown.map(\.value).reportSum
+        let chosen = shown.first { $0.key == picked }
+        let opens = chosen.map { canOpen($0.key) } ?? false
         ZStack {
             if shown.isEmpty {
                 Circle().stroke(Color.insetBackground, lineWidth: side * 0.19).padding(side * 0.095)
             } else {
                 Chart(shown) { slice in
-                    SectorMark(angle: .value("Amount", Double(slice.value)), innerRadius: .ratio(0.62), angularInset: shown.count > 1 ? 1 : 0)
-                        .foregroundStyle(ReportPalette.color(slice.color))
+                    SectorMark(angle: .value("Amount", Double(slice.value)), innerRadius: .ratio(0.62),
+                               outerRadius: .ratio(chosen == nil || slice.key == picked ? 1 : 0.95), angularInset: shown.count > 1 ? 1 : 0)
+                        .foregroundStyle(ReportPalette.color(slice.color).opacity(chosen == nil || slice.key == picked ? 1 : 0.35))
                         .cornerRadius(2)
                         .accessibilityLabel(slice.label)
-                        .accessibilityValue(slice.valueText)
+                        .accessibilityValue("\(slice.valueText), \(ReportMath.share(slice.value, total))")
                 }
                 .chartLegend(.hidden)
-                .chartOverlay { proxy in
+                .chartOverlay { _ in
                     GeometryReader { geometry in
-                        if let onSelect {
+                        if onPick != nil {
                             Rectangle().fill(.clear).contentShape(Rectangle())
-                                .onTapGesture { location in
-                                    if let key = sliceKey(at: location, in: geometry.size, shown: shown) { onSelect(key) }
-                                }
+                                .onTapGesture { location in tapped(sliceKey(at: location, in: geometry.size, shown: shown), inMiddle: inMiddle(location, geometry.size)) }
                                 .accessibilityHidden(true)
                         }
                     }
                 }
                 // Clockwise from the top in every language, as `sliceKey` reads a tap.
                 .environment(\.layoutDirection, .leftToRight)
+                .animation(.easeInOut(duration: 0.2), value: picked)
             }
             VStack(spacing: 1) {
-                Text(centerValue).font(.headline).monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
-                Text(centerLabel).font(.caption).foregroundStyle(Color.secondary).lineLimit(1)
+                if let chosen {
+                    Text(chosen.valueText).font(.headline).monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
+                    Text("\(chosen.label) · \(ReportMath.share(chosen.value, total))").font(.caption).foregroundStyle(Color.secondary)
+                        .lineLimit(2).multilineTextAlignment(.center).minimumScaleFactor(0.8)
+                    if opens { Text(openLabel).font(.caption.weight(.semibold)).foregroundStyle(Color.urAccent).padding(.top, 2) }
+                } else {
+                    Text(centerValue).font(.headline).monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
+                    Text(centerLabel).font(.caption).foregroundStyle(Color.secondary).lineLimit(1)
+                }
             }
             .frame(width: side * 0.54)
             .allowsHitTesting(false)
@@ -558,6 +686,24 @@ struct ReportDonut: View {
         }
         .frame(width: side, height: side)
         .frame(maxWidth: .infinity)
+        .sensoryFeedback(.selection, trigger: picked)
+        .accessibilityAction(named: Text(openLabel)) { if let chosen, opens { onOpen?(chosen.key) } }
+    }
+
+    private func canOpen(_ key: String) -> Bool { onOpen != nil && key != "__other" }
+
+    /// A slice picks it, the picked slice or the middle opens it, and anywhere else lets go.
+    private func tapped(_ key: String?, inMiddle: Bool) {
+        if let picked, key == picked || (key == nil && inMiddle) {
+            if canOpen(picked) { onOpen?(picked) } else if key == nil { onPick?(nil) }
+        } else {
+            onPick?(key)
+        }
+    }
+
+    private func inMiddle(_ location: CGPoint, _ size: CGSize) -> Bool {
+        let dx = location.x - size.width / 2, dy = location.y - size.height / 2
+        return (dx * dx + dy * dy).squareRoot() < min(size.width, size.height) / 2 * 0.6
     }
 
     private func sliceKey(at location: CGPoint, in size: CGSize, shown: [ReportSlice]) -> String? {
@@ -585,16 +731,20 @@ struct ReportDonut: View {
 struct ReportBarRowView: View {
     var row: ReportBarRow
     var defaultColor = 0
+    /// With something picked on the chart: whether it's this row. The others fade.
+    var picked: Bool? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 if let color = row.color { ReportLegendKey(color: ReportPalette.color(color)) }
-                Text(row.label).lineLimit(1)
-                Spacer(minLength: 8)
-                Text(row.valueText).fontWeight(.semibold).monospacedDigit().lineLimit(1)
+                // The name has what the figures leave, on two lines if it must: they're never cut.
+                Text(row.label).lineLimit(2).layoutPriority(1)
+                Spacer(minLength: 4)
+                Text(row.valueText).fontWeight(.semibold).monospacedDigit().lineLimit(1).fixedSize().layoutPriority(2)
                 if let detail = row.detail {
-                    Text(detail).font(.footnote).foregroundStyle(Color.secondary).monospacedDigit().lineLimit(1).frame(minWidth: 46, alignment: .trailing)
+                    Text(detail).font(.footnote).foregroundStyle(Color.secondary).monospacedDigit().lineLimit(1).fixedSize()
+                        .frame(minWidth: 40, alignment: .trailing).layoutPriority(2)
                 }
             }
             .font(.subheadline)
@@ -606,9 +756,11 @@ struct ReportBarRowView: View {
             .frame(height: 8)
         }
         .padding(.vertical, 3)
+        .opacity(picked == false ? 0.45 : 1)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(row.label)
         .accessibilityValue([row.valueText, row.detail].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityAddTraits(picked == true ? .isSelected : [])
     }
 }
 
@@ -653,67 +805,123 @@ struct ReportDivergingRowView: View {
     }
 }
 
-/// Days as a grid of weeks (columns) by weekday (rows), shaded in five steps by how much was spent.
-/// Wider ranges scroll sideways, opening on the latest weeks.
-struct ReportHeatCalendar: View {
+/// Days a month at a time, as a calendar: each day shaded in five steps by how much was spent, its
+/// date in the corner. Swipe or use the arrows for other months; it opens on the latest. Days
+/// outside the report's range are left plain.
+struct ReportMonthCalendar: View {
     var model: ReportHeatModel
     var selected: Int
     var onDay: (Int) -> Void
-    @State private var width: CGFloat = 340
+    @State private var page: Int?
 
     var body: some View {
-        // Arabic weekday names need a little more room than "Mon".
-        let left: CGFloat = AppLanguage.isRightToLeft ? 40 : 30
-        let top: CGFloat = 18
-        let cell = min(18, max(9, ((width - left) / CGFloat(max(1, model.weeks))).rounded(.down) - 3))
-        let pitch = cell + 3
-        let contentWidth = left + pitch * CGFloat(model.weeks)
-        let contentHeight = top + pitch * 7
-        ScrollView(.horizontal, showsIndicators: false) {
-            Canvas { context, _ in
-                func origin(_ index: Int) -> CGPoint {
-                    CGPoint(x: left + CGFloat((index + model.lead) / 7) * pitch, y: top + CGFloat((index + model.lead) % 7) * pitch)
+        let months = ReportMonthCalendar.months(model)
+        let shown = min(max(0, page ?? months.count - 1), max(0, months.count - 1))
+        let weekStart = ReportMonthCalendar.weekStart(model)
+        VStack(spacing: 6) {
+            HStack {
+                step(-1, "chevron.backward", String(localized: "Previous month"), enabled: shown > 0, shown: shown)
+                Text(months.indices.contains(shown) ? ReportMath.monthName(months[shown]) : "")
+                    .font(.subheadline.weight(.semibold)).lineLimit(1).frame(maxWidth: .infinity)
+                step(1, "chevron.forward", String(localized: "Next month"), enabled: shown < months.count - 1, shown: shown)
+            }
+            HStack(spacing: 4) {
+                ForEach(0..<7, id: \.self) { k in
+                    Text(ReportMath.weekdayName((k + weekStart) % 7, short: true)).font(.caption2).foregroundStyle(Color.secondary)
+                        .lineLimit(1).minimumScaleFactor(0.7).frame(maxWidth: .infinity)
                 }
-                var previous = -CGFloat.infinity
-                for (k, month) in model.months.enumerated() {
-                    let x = origin(month.index).x
-                    if k == 0 || x - previous >= 28 {
-                        context.draw(Text(month.text).font(.caption2).foregroundStyle(Color.secondary), at: CGPoint(x: x, y: 0), anchor: .topLeading)
+            }
+            .accessibilityHidden(true)
+            if months.indices.contains(shown) { grid(months[shown], weekStart: weekStart) }
+        }
+        .gesture(DragGesture(minimumDistance: 24).onEnded { drag in
+            guard abs(drag.translation.width) > abs(drag.translation.height) * 1.5 else { return }
+            // A swipe towards the start of the line brings the next month, in either direction of writing.
+            let forward = (drag.translation.width < 0) != AppLanguage.isRightToLeft
+            let next = shown + (forward ? 1 : -1)
+            if months.indices.contains(next) { withAnimation(.easeInOut(duration: 0.2)) { page = next } }
+        })
+        .onChange(of: model.days) { page = nil }
+        .onChange(of: selected) { _, index in
+            // A day picked from elsewhere (the Biggest days list) brings its month.
+            guard model.days.indices.contains(index), let at = months.firstIndex(of: String(model.days[index].prefix(7))) else { return }
+            if at != shown { page = at }
+        }
+    }
+
+    private func step(_ by: Int, _ symbol: String, _ label: String, enabled: Bool, shown: Int) -> some View {
+        Button { withAnimation(.easeInOut(duration: 0.2)) { page = shown + by } } label: {
+            Image(systemName: symbol).font(.body.weight(.semibold)).frame(width: 44, height: 36).contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .disabled(!enabled)
+        .accessibilityLabel(label)
+    }
+
+    private func grid(_ month: String, weekStart: Int) -> some View {
+        let cells = ReportMonthCalendar.cells(month, weekStart: weekStart)
+        var index: [String: Int] = [:]
+        for (at, day) in model.days.enumerated() { index[day] = at }
+        let weeks = stride(from: 0, to: cells.count, by: 7).map { Array(cells[$0..<min($0 + 7, cells.count)]) }
+        return VStack(spacing: 4) {
+            ForEach(weeks.indices, id: \.self) { w in
+                HStack(spacing: 4) {
+                    ForEach(0..<7, id: \.self) { k in
+                        let day: String? = k < weeks[w].count ? weeks[w][k] : nil
+                        Group {
+                            if let day { cell(day, at: index[day]) } else { Color.clear }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .aspectRatio(1.15, contentMode: .fit)
                     }
-                    previous = x
                 }
-                for (k, label) in model.weekdayLabels.enumerated() {
-                    let y = top + CGFloat(1 + 2 * k) * pitch + cell / 2
-                    context.draw(Text(label).font(.caption2).foregroundStyle(Color.secondary), at: CGPoint(x: 0, y: y), anchor: .leading)
-                }
-                for (index, level) in model.levels.enumerated() {
-                    let rect = CGRect(origin: origin(index), size: CGSize(width: cell, height: cell))
-                    let shape = Path(roundedRect: rect, cornerRadius: 2)
-                    context.fill(shape, with: .color(ReportPalette.heat[min(5, max(0, level))]))
-                    if level == 0 { context.stroke(shape, with: .color(Color.primary.opacity(0.12)), lineWidth: 1) }
-                    if index == selected { context.stroke(shape, with: .color(.primary), lineWidth: 1.5) }
-                }
-            }
-            .frame(width: contentWidth, height: contentHeight)
-            .contentShape(Rectangle())
-            .onTapGesture { location in
-                let column = Int(((location.x - left) / pitch).rounded(.down))
-                let row = Int(((location.y - top) / pitch).rounded(.down))
-                let index = column * 7 + row - model.lead
-                if column >= 0 && (0...6).contains(row) && model.days.indices.contains(index) { onDay(index) }
             }
         }
-        .defaultScrollAnchor(.trailing)
-        .frame(height: contentHeight)
-        .background {
-            GeometryReader { geometry in
-                Color.clear
-                    .onAppear { width = geometry.size.width }
-                    .onChange(of: geometry.size.width) { _, next in width = next }
-            }
+    }
+
+    @ViewBuilder private func cell(_ day: String, at index: Int?) -> some View {
+        let level = index.map { min(5, max(0, model.levels[$0])) }
+        let picked = index != nil && index == selected
+        let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+        let date = String(Int(day.suffix(2)) ?? 0)
+        let face = Text(date).font(.caption2.weight(picked ? .bold : .medium)).monospacedDigit()
+            .foregroundStyle(level.map(ReportPalette.heatInk) ?? Color.secondary.opacity(0.55))
+            .padding(.horizontal, 5).padding(.vertical, 3)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(level.map { ReportPalette.heat[$0] } ?? Color.clear, in: shape)
+            .overlay { if level == 0 { shape.strokeBorder(Color.primary.opacity(0.12)) } }
+            .overlay { if picked { shape.strokeBorder(Color.primary, lineWidth: 2) } }
+        if let index {
+            Button { onDay(index) } label: { face }
+                .buttonStyle(.plain)
+                .accessibilityLabel(model.titles[index])
+                .accessibilityValue(model.spent[index] ? String(localized: "\(model.amounts[index]) spent") : String(localized: "Nothing spent"))
+                .accessibilityAddTraits(picked ? .isSelected : [])
+        } else {
+            face.accessibilityHidden(true)
         }
-        // Drawn at fixed positions: weeks run left to right, the latest at the right, in every language.
-        .environment(\.layoutDirection, .leftToRight)
+    }
+
+    /// The months the report's days fall in, in order.
+    static func months(_ model: ReportHeatModel) -> [String] {
+        var out: [String] = []
+        for day in model.days where out.last != String(day.prefix(7)) { out.append(String(day.prefix(7))) }
+        return out
+    }
+
+    /// The week starts where the report's does: the first day's weekday less its place in the week.
+    static func weekStart(_ model: ReportHeatModel) -> Int {
+        guard let first = model.days.first else { return 0 }
+        return ((ReportMath.jsWeekday(first) - model.lead) % 7 + 7) % 7
+    }
+
+    /// A month's days in calendar order, with a gap (nil) for each weekday before its first.
+    static func cells(_ month: String, weekStart: Int) -> [String?] {
+        let first = "\(month)-01"
+        let (_, last) = Dates.monthBounds(month)
+        let count = Int(last.suffix(2)) ?? 30
+        let lead = ((ReportMath.jsWeekday(first) - weekStart) % 7 + 7) % 7
+        return Array(repeating: nil, count: lead) + (1...max(1, count)).map { String(format: "%@-%02d", month, $0) }
     }
 }
 
@@ -740,10 +948,13 @@ struct ReportHeatLegend: View {
     }
 }
 
-/// Tiles with areas in proportion to their values, shaded by magnitude; labels where they fit.
+/// Tiles with areas in proportion to their values, each in its group's colour; labels where they
+/// fit. A tap picks a tile (the others fade); a second tap opens it.
 struct ReportTreemap: View {
     var items: [ReportTreemapItem]
-    var onSelect: (ReportTreemapItem) -> Void
+    var picked: String? = nil
+    var onPick: (ReportTreemapItem?) -> Void
+    var onOpen: (ReportTreemapItem) -> Void
     var height: CGFloat = 280
     @Environment(\.layoutDirection) private var direction
 
@@ -754,11 +965,14 @@ struct ReportTreemap: View {
             let sorted = items.filter { $0.value > 0 }.reportSorted(descending: { $0.value })
             let boxes = ReportMath.squarify(sorted, value: { Double($0.value) }, width: geometry.size.width, height: geometry.size.height)
             ZStack(alignment: .topLeading) {
+                // A tap between tiles lets go of the one picked.
+                Color.clear.contentShape(Rectangle()).onTapGesture { onPick(nil) }.accessibilityHidden(true)
                 ForEach(boxes.indices, id: \.self) { index in tile(boxes[index], width: geometry.size.width) }
             }
         }
         .environment(\.layoutDirection, .leftToRight)
         .frame(height: height)
+        .sensoryFeedback(.selection, trigger: picked)
     }
 
     private func tile(_ box: ReportTileBox<ReportTreemapItem>, width: CGFloat) -> some View {
@@ -766,16 +980,19 @@ struct ReportTreemap: View {
         let w = max(0, box.w - 2)
         let h = max(0, box.h - 2)
         let x: Double = direction == .rightToLeft ? Double(width) - box.x - box.w : box.x
-        return Button { onSelect(item) } label: {
+        let chosen = item.key == picked
+        let faded = picked != nil && !chosen
+        return Button { if chosen { onOpen(item) } else { onPick(item) } } label: {
             VStack(alignment: .leading, spacing: 2) {
                 if w > 44 && h > 22 { Text(item.label).font(.caption.weight(.semibold)).lineLimit(1) }
                 if w > 76 && h > 40 { Text(item.valueText).font(.caption).monospacedDigit().lineLimit(1) }
             }
+            .opacity(faded ? 0.5 : 1)
             .padding(.horizontal, 7)
             .padding(.vertical, 5)
             .frame(width: w, height: h, alignment: .topLeading)
-            .background(ReportPalette.tiles[min(5, max(0, item.level))], in: RoundedRectangle(cornerRadius: 3, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous).strokeBorder(Color.primary.opacity(0.1)))
+            .background(ReportPalette.tile(item.color).opacity(faded ? 0.35 : 1), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(chosen ? Color.primary : Color.primary.opacity(0.1), lineWidth: chosen ? 2 : 1))
             .clipped()
             .foregroundStyle(Color.primary)
             .environment(\.layoutDirection, direction)
@@ -784,20 +1001,26 @@ struct ReportTreemap: View {
         .offset(x: x + 1, y: box.y + 1)
         .accessibilityLabel(item.label)
         .accessibilityValue("\(item.valueText), \(item.detail), \(item.more)")
-        .accessibilityHint("Shows this payee's transactions")
+        .accessibilityHint(chosen ? Text("Shows this payee's transactions") : Text("Picks this payee"))
+        .accessibilityAddTraits(chosen ? .isSelected : [])
     }
 }
 
-/// Small columns, one group a month, scaled to the largest value; negatives hang below the line in red.
+/// Small columns, one group a month, scaled to the largest value; negatives hang below the line in
+/// red. The highest and latest columns say their figure (with the model's `short`). With `onSelect`,
+/// a finger picks a month (tapping or dragging across) and the others fade.
 struct ReportMiniBars: View {
     var model: ReportMiniBarsModel
+    var selected: Int = -1
+    var onSelect: ((Int) -> Void)? = nil
 
     var body: some View {
         let ids = model.labels.indices.map(String.init)
+        let labelled = ReportMiniBars.labelled(model)
         Chart {
             ForEach(model.series, id: \.label) { (series: ReportMiniSeries) in
                 ForEach(Array(series.values.enumerated()), id: \.offset) { pair in
-                    bar(series, index: pair.offset, value: pair.element)
+                    bar(series, index: pair.offset, value: pair.element, labelled: labelled)
                 }
             }
             RuleMark(y: .value("Zero", 0.0)).foregroundStyle(Color.secondary.opacity(0.6)).lineStyle(StrokeStyle(lineWidth: 1)).accessibilityHidden(true)
@@ -805,15 +1028,43 @@ struct ReportMiniBars: View {
         .chartXScale(domain: ids)
         .chartXAxis {
             AxisMarks(values: ids) { value in
-                AxisValueLabel(model.labels[Int(value.as(String.self) ?? "") ?? 0])
+                let index = Int(value.as(String.self) ?? "") ?? 0
+                AxisValueLabel { Text(model.labels[index]).fontWeight(index == selected ? .bold : .regular).foregroundStyle(index == selected ? Color.primary : Color.secondary) }
             }
         }
         .chartYAxis(.hidden)
         .chartLegend(.hidden)
+        .chartOverlay { proxy in
+            GeometryReader { geometry in
+                if let onSelect {
+                    Rectangle().fill(.clear).contentShape(Rectangle())
+                        .onTapGesture { location in
+                            guard let index = ReportAxis.index(at: location, proxy: proxy, geometry: geometry, count: model.labels.count) else { return }
+                            onSelect(index == selected ? -1 : index)
+                        }
+                        // Dragging across reads each month in turn; an up-and-down drag still scrolls the page.
+                        .simultaneousGesture(DragGesture(minimumDistance: 10).onChanged { drag in
+                            guard abs(drag.translation.width) > abs(drag.translation.height),
+                                  let index = ReportAxis.index(at: drag.location, proxy: proxy, geometry: geometry, count: model.labels.count) else { return }
+                            if index != selected { onSelect(index) }
+                        })
+                        .accessibilityHidden(true)
+                }
+            }
+        }
         // Months run left to right, as on the reports' other charts.
         .environment(\.layoutDirection, .leftToRight)
-        .frame(height: 130)
+        .frame(height: labelled.isEmpty ? 130 : 146)
+        .sensoryFeedback(.selection, trigger: selected)
         .accessibilityLabel(spoken)
+    }
+
+    /// The columns that say their figure: the highest and the latest, for a single series with short figures.
+    static func labelled(_ model: ReportMiniBarsModel) -> Set<Int> {
+        guard model.series.count == 1, let short = model.short.first, let values = model.series.first?.values, !values.isEmpty else { return [] }
+        var out: Set<Int> = [values.count - 1]
+        if let highest = values.indices.max(by: { values[$0] < values[$1] }) { out.insert(highest) }
+        return out.filter { $0 < short.count && !short[$0].isEmpty }
     }
 
     /// "Income and Spending by month".
@@ -825,16 +1076,22 @@ struct ReportMiniBars: View {
     }
 
     /// One column. Its parts are worked out first: as one expression, Xcode 26 can't type-check it in time.
-    private func bar(_ series: ReportMiniSeries, index: Int, value: Int64) -> some ChartContent {
+    private func bar(_ series: ReportMiniSeries, index: Int, value: Int64, labelled: Set<Int>) -> some ChartContent {
         let month: String = index < model.labels.count ? model.labels[index] : ""
         let spoken: String = index < series.texts.count ? series.texts[index] : ""
         let label: String = "\(month), \(series.label)"
-        let color: Color = value < 0 ? Color.urNegative : ReportPalette.color(series.color)
+        let base: Color = value < 0 ? Color.urNegative : ReportPalette.color(series.color)
+        // The month under way is lighter; with a month picked, the others fade.
+        let strength: Double = selected >= 0 ? (index == selected ? 1 : 0.35) : (index == model.partial ? ReportPalette.soFar : 1)
         let width: MarkDimension = .ratio(model.series.count > 1 ? 0.8 : 0.55)
+        let figure: String = labelled.contains(index) ? (model.short.first?[index] ?? "") : ""
         return BarMark(x: .value("Month", String(index)), y: .value("Amount", Double(value)), width: width)
             .position(by: .value("Series", series.label))
-            .foregroundStyle(color)
+            .foregroundStyle(base.opacity(strength))
             .cornerRadius(3)
+            .annotation(position: value < 0 ? .bottom : .top, spacing: 2) {
+                if !figure.isEmpty { Text(figure).font(.caption2).monospacedDigit().foregroundStyle(Color.secondary).fixedSize() }
+            }
             .accessibilityLabel(label)
             .accessibilityValue(spoken)
     }
@@ -868,14 +1125,15 @@ struct ReportTileCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(tile.label).font(.caption).foregroundStyle(Color.secondary).lineLimit(2)
-            Text(tile.value).font(.title3.weight(.semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
+            Text(tile.value).font(.title3.weight(.semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
+                .fixedSize(horizontal: false, vertical: true)
                 .foregroundStyle(tile.tone == .negative ? Color.urNegative : tile.tone == .positive ? Color.urPositive : Color.primary)
             if let note = tile.note {
                 Text(note).font(.caption).foregroundStyle(Color.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 12)
         .padding(.vertical, 12)
         .background(Color.cardBackground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .accessibilityElement(children: .combine)
@@ -890,12 +1148,15 @@ struct ReportTilesView: View {
     var body: some View {
         let columns = typeSize.isAccessibilitySize ? 1 : 2
         let rows = stride(from: 0, to: tiles.count, by: columns).map { Array(tiles[$0..<min($0 + columns, tiles.count)]) }
-        Grid(horizontalSpacing: 10, verticalSpacing: 10) {
+        // Each row is as tall as its taller tile at the width it really has. (A grid sized its
+        // rows before a note wrapped, and the figure above a two-line note was squeezed smaller.)
+        VStack(spacing: 10) {
             ForEach(rows.indices, id: \.self) { index in
-                GridRow {
+                HStack(alignment: .top, spacing: 10) {
                     ForEach(Array(rows[index].enumerated()), id: \.offset) { _, tile in ReportTileCard(tile: tile) }
-                    if rows[index].count < columns { Color.clear.gridCellUnsizedAxes([.horizontal, .vertical]) }
+                    if rows[index].count < columns { Color.clear.frame(maxWidth: .infinity).frame(height: 1) }
                 }
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
     }

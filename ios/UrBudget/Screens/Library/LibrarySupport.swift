@@ -330,3 +330,13 @@ private struct LibraryCurrencyList: View {
         .accessibilityAddTraits(chosen ? .isSelected : [])
     }
 }
+
+/// Which library entries are in Trash, as Android's library tells them apart.
+enum LibraryTrash {
+    /// A budget in Trash: listed under Trash, apart from the others.
+    static func holds(_ entry: JSON) -> Bool { ["trashed", "purged"].contains(entry.text("lifecycle")) }
+
+    /// A budget in Trash that lives only on this device: it can be deleted permanently. One in the
+    /// account stays until its deletion has synced.
+    static func onDeviceOnly(_ entry: JSON) -> Bool { entry.text("lifecycle") == "trashed" && entry.text("scope") != "account" }
+}

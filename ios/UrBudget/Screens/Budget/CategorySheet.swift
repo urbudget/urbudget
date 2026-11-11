@@ -24,14 +24,35 @@ struct CategorySheet: View {
     var move: (_ category: String, _ direction: String) -> Void
     var transactions: (RegisterTarget) -> Void
     var startRoute: CategoryRoute?
+    /// Beside the budget on a wide window, not a sheet: closes the pane.
+    var close: (() -> Void)?
+    /// Beside the budget: says which category is shown, as the arrows step through them, so the
+    /// budget can mark its row.
+    var shows: ((String) -> Void)?
 
     init(categoryId: String, startAssigning: Bool, move: @escaping (_ category: String, _ direction: String) -> Void,
-         transactions: @escaping (RegisterTarget) -> Void, startRoute: CategoryRoute? = nil) {
+         transactions: @escaping (RegisterTarget) -> Void, startRoute: CategoryRoute? = nil,
+         close: (() -> Void)? = nil, shows: ((String) -> Void)? = nil) {
         _categoryId = State(initialValue: categoryId)
         self.startAssigning = startAssigning
         self.move = move
         self.transactions = transactions
         self.startRoute = startRoute
+        // On its page from the first frame, so the sheet opens at that page's height.
+        _route = State(initialValue: startRoute.map { [$0] } ?? [])
+        self.close = close
+        self.shows = shows
+    }
+
+    /// Closes the category: its sheet, or its pane beside the budget.
+    private func leave() {
+        if let close { close() } else { dismiss() }
+    }
+
+    /// After one of its editors has saved: a sheet closes; beside the budget the category stays,
+    /// with what was just changed.
+    private func finished() {
+        if close != nil { route = [] } else { dismiss() }
     }
 
     @State private var asking: AssistantRequest?
@@ -55,27 +76,28 @@ struct CategorySheet: View {
             }
             .navigationDestination(for: CategoryRoute.self) { route in
                 switch route {
-                case .target: TargetEditor(categoryId: categoryId) { dismiss() }
-                case .details: CategoryDetailsEditor(categoryId: categoryId) { dismiss() }
-                case .delete: DeleteCategoryView(categoryId: categoryId) { dismiss() }
+                case .target: TargetEditor(categoryId: categoryId) { finished() }
+                case .details: CategoryDetailsEditor(categoryId: categoryId) { finished() }
+                case .delete: DeleteCategoryView(categoryId: categoryId) { leave() }
                 case .history: MovesView(categoryId: categoryId)
                 }
             }
         }
-        .presentationDetents(editingAssigned ? [.large] : [.medium, .large])
+        // A page opened from the sheet (the target, the name and note) is a form, and has the full height.
+        .sheetDetents(editingAssigned || !route.isEmpty ? [.large] : [.medium, .large])
         .presentationDragIndicator(.visible)
         .onAppear {
             guard !started else { return }
             started = true
             if startAssigning { beginAssigning() }
-            if let startRoute { route = [startRoute] }
         }
         .task(id: editingAssigned) { await loadSuggestions() }
         .sheet(isPresented: $noting) { NoteEditor(categoryId: categoryId) }
         .sheet(item: Binding(get: { paying.map { IdentifiedText(value: $0) } }, set: { paying = $0?.value })) { CardPaymentSheet(accountId: $0.value) }
         .sheet(item: Binding(get: { loanFor.map { IdentifiedText(value: $0) } }, set: { loanFor = $0?.value })) { LoanEditor(accountId: $0.value) }
-        .sheet(item: $asking) { AssistantView(request: $0) }
+        .assistant($asking)
         .sensoryFeedback(.selection, trigger: categoryId)
+        .onChange(of: categoryId) { _, id in shows?(id) }
         .retainingEditorDraft("assignment", values: ["categoryId": .string(categoryId), "month": .string(store.month), "expression": .string(pad.text)], enabled: editingAssigned)
     }
 
@@ -170,8 +192,13 @@ struct CategorySheet: View {
         return List {
             Section {
                 VStack(spacing: 4) {
+                    // Beside the budget the bar has no room for a title, so the name leads here.
+                    if close != nil {
+                        Text(category.text("name")).font(.title3.weight(.semibold)).multilineTextAlignment(.center).padding(.bottom, 4)
+                            .accessibilityAddTraits(.isHeader)
+                    }
                     Text(money(available, currency))
-                        .font(.system(size: 38, weight: .heavy, design: .rounded)).monospacedDigit()
+                        .font(.system(size: 32, weight: .heavy)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
                         .foregroundStyle(state.status == "zero" ? .primary : colors.ink)
                         .lineLimit(1).minimumScaleFactor(0.5)
                     Text(state.status == "negative" ? "Overspent" : state.status == "credit" ? "Overspent on a card" : payment ? "Set aside for the card" : "Available")
@@ -276,10 +303,12 @@ struct CategorySheet: View {
             }
         }
         .groupedList()
-        .navigationTitle(category.text("name"))
+        .tightTop()
+        // Beside the budget the name leads the page itself (the bar there often has no room for it).
+        .navigationTitle(close == nil ? category.text("name") : "")
         .inlineTitle()
         .toolbar {
-            ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
+            ToolbarItem(placement: .cancellationAction) { Button("Close") { leave() } }
             ToolbarItemGroup(placement: .primaryAction) {
                 let neighbours = neighbours
                 Button { neighbours.previous.map(show) } label: { Image(systemName: "chevron.up") }
@@ -346,7 +375,7 @@ struct CategorySheet: View {
                     store.showToast(hidden ? String(localized: "\(name) is shown again.")
                                            : String(localized: "Hid \(name). Find it under Hidden categories."), undo: true)
                 }
-                dismiss()
+                leave()
             } label: { Label(hidden ? "Show category" : "Hide category", systemImage: hidden ? "eye" : "eye.slash") }
             if !payment {
                 Divider()
@@ -443,7 +472,7 @@ private struct NoteEditor: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            CompactForm {
                 TextField("Note", text: $note, axis: .vertical).lineLimit(5...12)
                 if let error { FormErrorView(message: error) }
             }
@@ -465,7 +494,7 @@ private struct NoteEditor: View {
             .retainingEditorDraft("categoryNote", values: ["categoryId": .string(categoryId), "note": .string(note)])
             .onAppear { if original == nil { original = store.budget?.row("categories", id: categoryId); note = original?.text("note") ?? "" } }
         }
-        .presentationDetents([.medium])
+        .sheetDetents([.medium])
     }
 }
 
@@ -518,7 +547,7 @@ private struct TargetEditor: View {
         if existingType == "DEBT" {
             options.append(("DEBT", String(localized: "Monthly debt payment"), String(localized: "An imported target for a loan payment.")))
         }
-        return Form {
+        return CompactForm {
             Section {
                 Button {
                     keypad = true
@@ -691,7 +720,7 @@ private struct CategoryDetailsEditor: View {
 
     var body: some View {
         let groups = store.budget.map(groupNames) ?? []
-        Form {
+        CompactForm {
             TextField("Name", text: $name)
             Picker("Group", selection: $group) {
                 ForEach(groups.contains(group) ? groups : groups + [group], id: \.self) { Text($0).tag($0) }
@@ -754,7 +783,7 @@ private struct DeleteCategoryView: View {
         let used = budget.rows("assignments").contains { $0.text("categoryId") == categoryId && $0.long("amount") != 0 }
             || budget.rows("transactions").contains { $0.rows("splits").contains { $0.text("categoryId") == categoryId } }
         let destination = destinationName(budget)
-        Form {
+        CompactForm {
             if used {
                 Button { picking = true } label: {
                     HStack {

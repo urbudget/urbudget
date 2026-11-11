@@ -89,7 +89,9 @@ struct CategoryPicker: View {
             }
         }
         .groupedList()
-        .searchable(text: $search, isPresented: $searching, prompt: allowsCreate ? Text("Search or create a category") : Text("Search categories"))
+        // At the top of the list, as on Android, where iOS 26 would float it over the last rows.
+        .searchable(text: $search, isPresented: $searching, placement: .navigationBarDrawer(displayMode: .always),
+                    prompt: allowsCreate ? Text("Search or create a category") : Text("Search categories"))
         .modifier(PickedAfterSearch(searching: $searching, picked: $picked, report: onPick))
         .navigationTitle(title)
         .inlineTitle()
@@ -142,7 +144,7 @@ struct AccountPicker: View {
                         Text(AccountTypes.typeLabel(account)).font(.footnote).foregroundStyle(Color.secondary)
                     }
                     Spacer()
-                    Text(money(balances[id] ?? 0, currency)).monospacedDigit()
+                    Text(money(balances[id] ?? 0, currency)).monospacedDigit().lineLimit(1).layoutPriority(1)
                         .foregroundStyle((balances[id] ?? 0) < 0 ? Color.urNegative : .primary)
                     if id == selected { Image(systemName: "checkmark").foregroundStyle(Color.urAccent).fontWeight(.semibold) }
                 }
@@ -186,9 +188,7 @@ struct PayeePicker: View {
     var onPayee: (String) -> Void
     var onTransfer: (String) -> Void
     @State private var search = ""
-    /// A transaction without a payee yet opens straight on typing one.
     @State private var searching = false
-    @State private var started = false
     @State private var picked: String?
     @State private var pickedTransfer: String?
 
@@ -234,7 +234,7 @@ struct PayeePicker: View {
             }
         }
         .groupedList()
-        .searchable(text: $search, isPresented: $searching, prompt: "Search or add a payee")
+        .searchable(text: $search, isPresented: $searching, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search or add a payee")
         .onSubmit(of: .search) {
             // Return picks the payee typed, or the one match.
             guard !query.isEmpty else { return }
@@ -242,11 +242,8 @@ struct PayeePicker: View {
         }
         .modifier(PickedAfterSearch(searching: $searching, picked: $picked, report: onPayee))
         .modifier(PickedAfterSearch(searching: $searching, picked: $pickedTransfer, report: onTransfer))
-        .onAppear {
-            guard !started else { return }
-            started = true
-            if payee.isEmpty && transfer.isEmpty { searching = true }
-        }
+        // The list is shown first, as on Android: the accounts to transfer with and the payees
+        // used most are a tap away, and the field above them is there to type in.
         .navigationTitle("Payee")
         .inlineTitle()
     }
@@ -284,7 +281,7 @@ struct MonthPickerSheet: View {
                                 .font(.body.weight(.semibold))
                                 .frame(maxWidth: .infinity, minHeight: 46)
                                 .foregroundStyle(chosen ? Color.white : value == now ? Color.urAccent : .primary)
-                                .background(chosen ? Color.urAccent : value == now ? Color.urAccent.opacity(0.14) : Color.insetBackground,
+                                .background(chosen ? Color.urAccent : value == now ? Color.urAccent.opacity(0.14) : Color.cardBackground,
                                             in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                         }
                         .buttonStyle(.plain)
@@ -300,7 +297,7 @@ struct MonthPickerSheet: View {
             .inlineTitle()
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
         }
-        .presentationDetents([.height(360)])
+        .sheetDetents([.height(360)])
     }
 }
 

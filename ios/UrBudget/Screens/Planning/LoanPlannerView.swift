@@ -71,6 +71,7 @@ struct LoanPlannerView: View {
         }
         .groupedList()
         .navigationTitle("Loan planner")
+        .inlineTitle()
         .sheet(item: $editing) { LoanEditor(accountId: $0.id) }
         .task(id: store.version) { await loadPayoffs(lines) }
     }
@@ -87,7 +88,7 @@ struct LoanPlannerView: View {
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 2) {
-                Text(money(line.owed, currency)).monospacedDigit().fontWeight(.semibold).foregroundStyle(Color.primary)
+                Text(money(line.owed, currency)).monospacedDigit().lineLimit(1).layoutPriority(1).fontWeight(.semibold).foregroundStyle(Color.primary)
                 Text("Owed").font(.caption).foregroundStyle(Color.secondary)
             }
         }
@@ -217,7 +218,7 @@ struct LoanEditor: View {
             }
             .navigationDestination(for: LoanRoute.self) { destination($0) }
         }
-        .presentationDetents([.large])
+        .sheetDetents([.large])
         .interactiveDismissDisabled(saving || dirty)
         .retainingEditorDraft("loan", values: ["accountId": .string(accountId), "rate": .string(draft.rate), "payment": .string(draft.payment), "fees": .string(draft.fees), "category": .string(draft.category), "rates": .array(draft.rates.map { ["month": .string($0.month), "rate": .string($0.rate)] }), "extra": .string(extraText), "oneOff": .string(oneOffText), "by": .string(by)])
         .onAppear(perform: load)
@@ -320,7 +321,7 @@ struct LoanEditor: View {
         let then = changed && left > 0 ? current?.scenario?.value : nil
         let paidNow = changed && (then.map { $0.long("months") == 1 && (oneOff ?? 0) >= ($0.rows("schedule").first?.long("payment") ?? .max) } ?? (left == 0))
         let fees = termsValue?.long("monthlyFees") ?? 0
-        return Form {
+        return CompactForm {
             facts(account, saved: saved, terms: termsValue, base: base, currency: currency)
             if let saved, !dirty { interestNotice(saved, currency: currency) }
             if saved == nil, let imported {
@@ -691,7 +692,8 @@ struct LoanEditor: View {
     private func save() {
         let record: JSON
         do {
-            record = try draft.terms(accountId: accountId, saved: saved, requireCategory: true)
+            // The payment category can wait: the first payment recorded asks for it and keeps it.
+            record = try draft.terms(accountId: accountId, saved: saved, requireCategory: false)
         } catch {
             self.error = BudgetStore.readable(error)
             return
@@ -769,7 +771,7 @@ private struct LoanScheduleList: View {
                             HStack {
                                 Text(Money.date(row.text("date"))).fontWeight(.semibold)
                                 Spacer()
-                                Text(money(row.long("payment"), currency)).monospacedDigit().fontWeight(.semibold)
+                                Text(money(row.long("payment"), currency)).monospacedDigit().lineLimit(1).layoutPriority(1).fontWeight(.semibold)
                             }
                             breakdown(row)
                                 .font(.footnote).foregroundStyle(Color.secondary)
@@ -844,7 +846,7 @@ private struct LoanPaymentSheet: View {
         let mortgage = AccountTypes.infer(account, balance: balance) == "mortgage"
         let source = sources.first { $0.text("id") == from }
         NavigationStack(path: $route) {
-            Form {
+            CompactForm {
                 Section {
                     HStack(alignment: .top) {
                         Figure(label: String(localized: "Owed on the loan"), value: money(max(0, -balance), currency))
@@ -906,7 +908,7 @@ private struct LoanPaymentSheet: View {
             }
             .navigationDestination(for: LoanPaymentRoute.self) { destination($0) }
         }
-        .presentationDetents([.large])
+        .sheetDetents([.large])
         .interactiveDismissDisabled(saving)
         .task {
             guard from.isEmpty, let budget = store.budget else { return }
@@ -948,7 +950,7 @@ private struct LoanPaymentSheet: View {
                         AccountIcon(account: source, balance: balances[id] ?? 0)
                         Text(source.text("name")).foregroundStyle(Color.primary)
                         Spacer()
-                        Text(money(balances[id] ?? 0, currency)).monospacedDigit()
+                        Text(money(balances[id] ?? 0, currency)).monospacedDigit().lineLimit(1).layoutPriority(1)
                         if id == from { Image(systemName: "checkmark").foregroundStyle(Color.urAccent).fontWeight(.semibold) }
                     }
                 }
@@ -977,17 +979,47 @@ private struct LoanPaymentSheet: View {
             let name = account.text("name")
             let currency = store.currency
             let original = (collection: "loans", record: terms)
+            // A category chosen here becomes the loan's payment category when it had none, in the
+            // same change, as the desktop does.
+            let remember = LoanPayment.remembersCategory(terms: terms, budget: store.budget ?? [:])
+            let accountId = account.text("id")
+            let (day, chosenCategory) = (date, category)
             saving = true
             Task {
                 defer { saving = false }
                 do {
-                    try await store.planningCommand("loanRecord", params, original: original)
-                    store.showToast(String(localized: "Recorded a payment of \(money(amount, currency)) to \(name)."), undo: true)
+                    if remember {
+                        try await store.planningEdit(original: original, then: [("loanRecord", params)]) { budget in
+                            if budget.rows("loans").contains(where: { $0.text("accountId") == accountId }) {
+                                try budget.upsertRecord("loans", ["accountId": .string(accountId), "categoryId": .string(chosenCategory)])
+                            }
+                        }
+                    } else {
+                        try await store.planningCommand("loanRecord", params, original: original)
+                    }
+                    store.showToast(LoanPayment.recorded(money(amount, currency), to: name, on: day, today: Dates.today), undo: true)
                     dismiss()
                 } catch {
                     self.error = BudgetStore.readable(error)
                 }
             }
         }
+    }
+}
+
+/// What recording a loan payment says and keeps, as Android's LoanHeader.
+enum LoanPayment {
+    /// Whether the category chosen for a payment becomes the loan's own: it has none, or the one it
+    /// had is gone.
+    static func remembersCategory(terms: JSON, budget: JSON) -> Bool {
+        let saved = terms.text("categoryId")
+        return saved.isEmpty || budget.row("categories", id: saved) == nil
+    }
+
+    /// "Recorded a payment of 500.00 to Car loan.", with the day when it's still to come.
+    static func recorded(_ amount: String, to name: String, on date: String, today: String) -> String {
+        date > today
+            ? String(localized: "Recorded a payment of \(amount) to \(name) for \(Money.date(date)).")
+            : String(localized: "Recorded a payment of \(amount) to \(name).")
     }
 }

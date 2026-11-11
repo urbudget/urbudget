@@ -268,7 +268,7 @@ final class ReportsTests: XCTestCase {
         XCTAssertEqual(ReportMath.compactMoney(1_500_000_000, decimal: "."), "15M")
         XCTAssertEqual(ReportMath.compactMoney(-150_000, decimal: "."), "-1.5K")
         XCTAssertEqual(ReportMath.compactMoney(150_000, decimal: ","), "1,5K")
-        XCTAssertEqual(ReportMath.monthXTick("2026-10"), ReportXTick(short: "Oct", long: "Oct 26", year: 2026))
+        XCTAssertEqual(ReportMath.monthXTick("2026-10"), ReportXTick(short: "Oct", long: "Oct 2026", year: 2026))
         XCTAssertEqual(ReportMath.monthAbbrev("2026-09-01"), "Sep")
         XCTAssertEqual(ReportMath.share(1, 3), "33.3%")
         XCTAssertEqual(ReportMath.share(5, 0), "—")
@@ -415,6 +415,144 @@ final class ReportsTests: XCTestCase {
         XCTAssertEqual(crowded.rows.map(\.label), ["Unassigned", "Unassigned", "Unassigned", "Unassigned", "Unassigned", "All others"])
         XCTAssertEqual(crowded.rows.last?.valueText, "3.00")
         XCTAssertEqual(crowded.rows.last?.color, ReportColors.other)
+    }
+
+    /// Android's overviewCardsReadLikeThePhonesReports, the per-month figures a card shows under a finger.
+    func testOverviewCardsSayEachMonthsFigures() throws {
+        let ctx = ReportMath.parseBudget(budget(), today: today)
+        let months = [month("2026-09", income: 100, spending: 100, assets: 300), month("2026-10", income: 100, spending: 9000, assets: 1000, debt: 500)]
+        let model = try XCTUnwrap(ReportMath.overviewModel(data(months, age: 1), ctx, current: "2026-10"))
+        XCTAssertEqual(model.incomeBars.series[0].texts, ["1.00", "1.00"])
+        XCTAssertEqual(model.incomeBars.series[1].texts, ["1.00", "90.00"])
+        XCTAssertEqual(model.netWorthBars.series[0].texts[1], "5.00")
+        XCTAssertEqual(model.netWorthBars.short[0][1], "5")
+        XCTAssertEqual(model.ageBars.titles.count, 2)
+        // The month under way says so, and is the one drawn lighter.
+        XCTAssertEqual(model.incomeBars.titles, ["September 2026", "October 2026 so far"])
+        XCTAssertEqual(model.incomeBars.partial, 1)
+        XCTAssertEqual(try XCTUnwrap(ReportMath.overviewModel(data(months), ctx, current: "2026-11")).incomeBars.partial, -1)
+        // Only a single series labels its highest and latest columns.
+        XCTAssertEqual(ReportMiniBars.labelled(model.incomeBars), [])
+        XCTAssertEqual(ReportMiniBars.labelled(model.netWorthBars), [1])
+        var uneven = model.netWorthBars
+        uneven.series[0].values = [900, 100, 500]
+        uneven.short = [["9", "1", "5"]]
+        XCTAssertEqual(ReportMiniBars.labelled(uneven), [0, 2])
+    }
+
+    /// Android's chartsOpenOnTheLastCompleteMonthAndSayWhichIsUnderWay.
+    func testChartsOpenOnTheLastCompleteMonthAndSayWhichIsUnderWay() {
+        let keys = ["2026-08", "2026-09", "2026-10"]
+        let series = [ReportColumnSeries(key: "in", label: "Income", color: 0, values: [100, 200, 50]),
+                      ReportColumnSeries(key: "out", label: "Spending", color: 1, values: [-80, -120, -10])]
+        let whole: (Double) -> String = { "\(Int64($0))" }
+        let chart = ReportMath.columnModel(label: "Chart", keys: keys, series: series, format: whole, axis: whole, unit: nil, current: "2026-10")
+        XCTAssertEqual(chart.partial, 2)
+        XCTAssertEqual(chart.opening, 1)
+        XCTAssertEqual(chart.titles[2], "October 2026 so far")
+        XCTAssertEqual(chart.titles[1], "September 2026")
+        // A finished range opens on its last month; a plan ahead has none under way.
+        XCTAssertEqual(ReportMath.columnModel(label: "Chart", keys: keys, series: series, format: { _ in "" }, axis: { _ in "" }, unit: nil, current: "2026-11").opening, 2)
+        let plan = ReportMath.linesModel(label: "Plan", keys: keys, series: [ReportLineSeries(key: "a", label: "A", color: 0, values: [1, 2, 3])],
+                                         format: { _ in "" }, axis: { _ in "" }, unit: nil, current: nil)
+        XCTAssertEqual(plan.partial, -1)
+        XCTAssertEqual(plan.opening, 2)
+        // One month alone is opened on even while it's under way.
+        XCTAssertEqual(ReportMath.columnModel(label: "Chart", keys: ["2026-10"], series: series, format: whole, axis: whole, unit: nil, current: "2026-10").opening, 0)
+    }
+
+    /// Android's hidingASeriesRescalesTheRestAndDropsTheTotal.
+    func testHidingASeriesRescalesTheRestAndDropsTheTotal() {
+        let whole: (Double) -> String = { "\(Int64($0))" }
+        let chart = ReportMath.columnModel(label: "Chart", keys: ["2026-09", "2026-10"], series: [
+            ReportColumnSeries(key: "a", label: "Assets", color: 0, values: [90_000, 100_000]),
+            ReportColumnSeries(key: "d", label: "Debts", color: 1, values: [-2_000, -3_000]),
+        ], format: whole, axis: whole, unit: nil, line: ReportLineOverlay(label: "Net worth", color: ReportColors.line, values: [88_000, 97_000]), current: nil)
+        XCTAssertEqual(chart.readouts[1].map(\.label), ["Assets", "Debts", "Net worth"], "The line is the stack's total already")
+        let debts = chart.without(["Assets", "Net worth"])
+        XCTAssertEqual(debts.series.map(\.key), ["d"])
+        XCTAssertNil(debts.line)
+        XCTAssertEqual(debts.texts, [["-2000", "-3000"]])
+        // The scale is the debts' alone now, and says so.
+        XCTAssertTrue((debts.ticks.last ?? 1) <= 0 && (debts.ticks.first ?? -9_999) >= -5_000)
+        XCTAssertEqual(debts.tickLabels, debts.ticks.map(whole))
+        XCTAssertEqual(debts.readouts[1].map(\.label), ["Debts"])
+        // Hiding everything hides nothing.
+        XCTAssertEqual(chart.without(["Assets", "Debts", "Net worth"]), chart)
+        XCTAssertEqual(chart.without([]), chart)
+
+        let lines = ReportMath.linesModel(label: "Lines", keys: ["2026-09", "2026-10"], series: [
+            ReportLineSeries(key: "big", label: "Savings", color: 0, values: [900_000, 950_000]),
+            ReportLineSeries(key: "small", label: "Wallet", color: 1, values: [40, 80]),
+        ], format: whole, axis: whole, unit: nil, current: nil)
+        let wallet = lines.without(["Savings"])
+        XCTAssertEqual(wallet.series.map(\.key), ["small"])
+        XCTAssertEqual(wallet.endLabels, ["80"])
+        XCTAssertLessThanOrEqual(wallet.ticks.last ?? .infinity, 200)
+        XCTAssertEqual(wallet.readouts[0].map(\.label), ["Wallet"])
+        XCTAssertEqual(lines.without(["Savings", "Wallet"]), lines)
+
+        // A legend's last name showing stays.
+        let legend = [ReportLegendItem(label: "Savings", color: 0), ReportLegendItem(label: "Wallet", color: 1)]
+        XCTAssertEqual(ReportLegendView.toggled([], "Savings", legend: legend), ["Savings"])
+        XCTAssertEqual(ReportLegendView.toggled(["Savings"], "Wallet", legend: legend), ["Savings"])
+        XCTAssertEqual(ReportLegendView.toggled(["Savings"], "Savings", legend: legend), [])
+    }
+
+    /// Android's payeeTilesTakeTheirGroupsColour.
+    func testPayeeTilesTakeTheirGroupsColour() {
+        let ctx = ReportMath.parseBudget(budget([("c1", "Groceries", "Food"), ("c2", "Rent", "Bills")], groupOrder: ["Bills", "Food"]), today: today)
+        var report = data([month("2026-10", spending: 16_000)])
+        report.payees = [ReportPayeeSpend(name: "Landlord", amount: 10_000, count: 1, category: "c2"), ReportPayeeSpend(name: "Market", amount: 4_000, count: 6, category: "c1")]
+            + (1...8).map { ReportPayeeSpend(name: "Shop \($0)", amount: 500, count: 1) }
+        let view = ReportMath.payeeView(report, ctx)
+        var colors: [String: Int] = [:]
+        for tile in view.map { colors[tile.key] = tile.color }
+        XCTAssertEqual(colors["Landlord"], ctx.colorOf("Bills"))
+        XCTAssertEqual(colors["Market"], ctx.colorOf("Food"))
+        XCTAssertEqual(colors["Shop 1"], ReportColors.other)
+        XCTAssertEqual(view.legend.map(\.label), ["Bills", "Food"])
+        // The engine names each payee's category; a payee with refunds alone has none.
+        let parsed = ReportMath.parseReport(["months": [], "payees": ["Market": ["amount": 4_000, "count": 6, "category": "c1"], "Refunder": ["amount": -500, "count": 1]]])
+        XCTAssertEqual(parsed.payees.first { $0.name == "Market" }?.category, "c1")
+        XCTAssertNil(parsed.payees.first { $0.name == "Refunder" }?.category)
+    }
+
+    func testAxisLabelsStepBackFromTheLatestMonth() {
+        let keys = (1...12).map { String(format: "2026-%02d", $0) } + ["2027-01"]
+        let ticks = keys.map(ReportMath.monthXTick)
+        // Room for every third label: the latest always shows, and the year where it's first said or changes.
+        let labels = ReportAxis.xLabels(ticks, keys: keys, band: 20, spacing: 52)
+        XCTAssertEqual(labels.keys.sorted(), ["2026-01", "2026-04", "2026-07", "2026-10", "2027-01"])
+        XCTAssertEqual(labels["2026-01"], "Jan 2026")
+        XCTAssertEqual(labels["2026-04"], "Apr")
+        XCTAssertEqual(labels["2027-01"], "Jan 2027")
+        // Room for all of them.
+        XCTAssertEqual(ReportAxis.xLabels(ticks, keys: keys, band: 60, spacing: 52).count, 13)
+        XCTAssertEqual(ReportAxis.xLabels([], keys: [], band: 60, spacing: 52), [:])
+    }
+
+    func testTheMonthCalendarLaysOutEachMonthOfTheRange() {
+        // September to 5 November 2026, weeks starting on Sunday. 1 September 2026 is a Tuesday, two days in.
+        let days = ReportMath.calendarDays(from: "2026-09", to: "2026-11", today: "2026-11-05")
+        XCTAssertEqual(days.first, "2026-09-01")
+        XCTAssertEqual(days.last, "2026-11-05")
+        let heat = ReportHeatModel(days: days, levels: days.map { _ in 0 }, lead: 2, weeks: 10, months: [], weekdayLabels: [],
+                                   titles: days, amounts: days.map { _ in "0.00" }, spent: days.map { _ in false })
+        XCTAssertEqual(ReportMonthCalendar.months(heat), ["2026-09", "2026-10", "2026-11"])
+        XCTAssertEqual(ReportMonthCalendar.weekStart(heat), 0)
+        // October 2026 starts on a Thursday: four gaps, then its 31 days.
+        let october = ReportMonthCalendar.cells("2026-10", weekStart: 0)
+        XCTAssertEqual(october.prefix(5), [nil, nil, nil, nil, "2026-10-01"])
+        XCTAssertEqual(october.count, 35)
+        XCTAssertEqual(october.last, "2026-10-31")
+        // A week starting on Monday moves the gaps; February in a leap year keeps its 29th.
+        XCTAssertEqual(ReportMonthCalendar.cells("2026-10", weekStart: 1).prefix(4), [nil, nil, nil, "2026-10-01"])
+        XCTAssertEqual(ReportMonthCalendar.cells("2028-02", weekStart: 0).last, "2028-02-29")
+        // The report's week start is read back from its first day's place in the week.
+        var monday = heat
+        monday.lead = 1
+        XCTAssertEqual(ReportMonthCalendar.weekStart(monday), 1)
     }
 
     func testChartAccountsTakeTheFirstFreeSlot() {

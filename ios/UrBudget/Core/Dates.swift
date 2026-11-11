@@ -27,6 +27,9 @@ enum Dates {
         arabic.calendar = Calendar(identifier: .gregorian)
         arabic.timeZone = TimeZone(identifier: "UTC")
         arabic.setLocalizedDateFormatFromTemplate(template)
+        // Some Arabic regions add the era ("م") after the year; a budget's dates don't need it,
+        // and Android's don't carry it.
+        arabic.dateFormat = arabic.dateFormat.replacingOccurrences(of: " G", with: "").replacingOccurrences(of: "G", with: "")
         return arabic
     }
 

@@ -1,7 +1,7 @@
 # Fast edits: the open budget lives in the engine
 
 Status: proposal, 2026-11-04. Android's phases 0, 1, 2, 3, 4, 7 and 6 are built as of 2026-11-05.
-Phase 5, the iPhone, isn't built.
+Phase 5, the iPhone, was built on 2026-11-11 and isn't measured.
 
 ## As built
 
@@ -53,8 +53,8 @@ services, which can't call `urbudget-android`.
   totals the store has moved past catch up and ask again.
 - The light copy needed no new hint. `normalize_import_metadata` already writes the fields the app's
   readers check first (`unassigned`, `startingBalance`).
-- A whole budget still crosses on create, import and restore. `save_budget` stays for import,
-  restore and iPhone; create uses `create_budget`.
+- A whole budget still crosses on create, import and restore. `save_budget` stays for import
+  and restore (on iPhone too, since 2026-11-11); create uses `create_budget`.
 - The compare in debug builds wasn't built. It would send the whole budget across on every edit, and
   comparing through `load_budget` repairs the drift it should find. The instrumented test kit does
   it, through `saved_budget`.
@@ -72,7 +72,14 @@ given. A light copy sent through `save_budget` would erase `sourceExport` and ev
 nothing could be able to send the app's copy there before it went light, and that included the
 rollback switch. Phase 7 removed the old path first, and phase 6 came after it.
 
-Phase 5 wasn't started: it needs a Mac.
+Phase 5, the iPhone, was built on 2026-11-11, on a Mac, in one step: every change, undo and redo
+through `edit_budget` and `patchOnly`, previews and reads through `query_budget`, and the light copy.
+`BudgetPatch.swift` is the Swift twin of `patch.rs`; `JSON` is a value there, so it compares records
+by value where Kotlin compares by identity, and a patched copy shares what the patch left alone.
+A backup that replaces the open budget is the one thing still sent whole (`save_budget`), from its
+file. The shared patch cases pass in Swift, and `EngineEditTests` checks the app's copy against the
+store's after every kind of change. Nothing was timed: see
+[FOLLOW-UPS.md](../FOLLOW-UPS.md#what-fast-edits-on-android-left).
 
 ### On the Fold
 
@@ -135,8 +142,8 @@ The aim, on the Fold with that budget, preview build:
 
 ## How it works today
 
-This is how the phones worked on 2026-11-04. iPhone's app still does, though the shared
-`save_budget` under it has changed. Android no longer does. See [As built](#as-built) for both.
+This is how the phones worked on 2026-11-04. Neither does now: Android since 2026-11-05 and
+iPhone since 2026-11-11. See [As built](#as-built) for both.
 
 Three layers hold the budget, and each phone edit crosses them three times.
 

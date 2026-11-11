@@ -72,7 +72,7 @@ struct ScheduleEditor: View {
     var body: some View {
         let currency = store.currency
         NavigationStack(path: $route) {
-            Form {
+            CompactForm {
                 Section {
                     Picker("Direction", selection: $direction) {
                         Text("Outflow").tag("out")

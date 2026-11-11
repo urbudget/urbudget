@@ -17,8 +17,8 @@ Rust engine** step runs [`scripts/build-rust.sh`](scripts/build-rust.sh), which 
 `cargo build` on [`crates/urbudget-ios`](../crates/urbudget-ios) for the iPhone or the Simulator
 and leaves `liburbudget_ios.a` for the linker. Swift calls its C functions (declared in
 `UrBudget/Bridge/UrBudgetCore.h`) from `Core/NativeCore.swift`: each call sends a JSON request
-and gets a JSON reply. `BudgetRepository` keeps the whole open budget, changes it through the
-engine and saves it with `save_budget`. The accounting, storage, sync and imports all happen in
+and gets a JSON reply. `BudgetRepository` keeps a light copy of the open budget; a change runs in
+the store (`edit_budget`) and comes back as a patch to that copy. The accounting, storage, sync and imports all happen in
 that Rust library (the shared crates); Swift draws the screens. The
 [mobile guide](../docs/MOBILE.md) shows how this fits with Android and desktop.
 
@@ -57,12 +57,15 @@ From the command line:
 
 ```sh
 xcodebuild -project ios/UrBudget.xcodeproj -scheme UrBudget \
-  -destination 'platform=iOS Simulator,name=iPhone 16' test
+  -destination 'platform=iOS Simulator,name=iPhone 17' test
 ```
 
 The project is generated from [`project.yml`](project.yml) by
 [XcodeGen](https://github.com/yonaskolb/XcodeGen). After adding or removing Swift files, run
-`xcodegen` in this folder and commit the regenerated `UrBudget.xcodeproj`.
+`xcodegen` in this folder and commit the regenerated `UrBudget.xcodeproj`. XcodeGen writes
+`UrBudget/Info.plist` again from `project.yml` each time, so a document type or permission is added
+in `project.yml`, never in the plist alone (an MT940 type added that way was dropped by the next run,
+until `project.yml` was given it on 11 November 2026).
 
 ## Shared code
 
@@ -77,10 +80,14 @@ SwiftUI screens -> BudgetStore (@Observable) -> BudgetRepository (actor) --+-> u
   `urbudget_service`, `urbudget_free`). They carry versioned JSON, as Android's JNI adapter does.
   Engine requests are passed straight to `urbudget_android::invoke_json`, so an engine request gets
   the same reply on both apps. Panics never cross into Swift.
-- This app sends whole budgets: to the engine for each change and preview, then to `save_budget`.
-  Android no longer does. Its edits, previews and totals use the service methods `edit_budget` and
-  `query_budget`, which this app doesn't call. Moving it to them is phase 5 of the
-  [fast edits plan](../docs/plans/engine-edits.md#as-built), not built.
+- The open budget lives in the store, as on Android. A change says what to do (`edit_budget`: a
+  patch of the records that changed, engine commands, or both as one undo) and the reply is a patch
+  the app applies to its own copy (`Core/BudgetPatch.swift`, the Swift twin of `patch.rs`), with
+  the month's totals. Previews, reports and exports run on the store's copy (`query_budget`), at the
+  revision that's shown. Undo and redo reply with patches too. The app's copy is the light one: an
+  import's own copy of each transaction (`source`) and of the whole export (`sourceExport`) stay in
+  the store, so that copy never goes back as a whole budget; only a backup read from a file does
+  (`save_budget`). This was phase 5 of the [fast edits plan](../docs/plans/engine-edits.md#as-built).
 - Budgets are stored by the shared SQLite `Store` and multi-budget registry in the app's
   Application Support folder. Every change is a revision-checked commit with undo and redo. A save
   writes the changed rows, and `recovery.json` only if its commit fails. If sync or another device
@@ -104,15 +111,16 @@ SwiftUI screens -> BudgetStore (@Observable) -> BudgetRepository (actor) --+-> u
 | Transactions | Register by day, search, status/flag/date/amount/needs-category filters, sorting, approve, cleared, flag, categorize, duplicate, delete, Select and multi-select bulk actions (and Ask the assistant about them) (category, cleared, flag, payee, memo, duplicate, delete) with Undo, Approve all, go to a transfer's other account, CSV export of the whole register or just what's listed, pull to refresh, statement import from an account's register, scheduled transactions with Enter/Skip and editing |
 | Editor | Full-screen editor with Outflow/Inflow, keypad sums, payee picker with transfers and usual categories, category and account pickers, date, repeat, memo, cleared on both transfer sides (new ones cleared when Settings says so), flags, approval, splits, creating a category from the picker, Save & add another, a keypad with 00 that also takes a hardware keyboard's digits, operators, Delete and Return, a payee picker that opens ready to type |
 | Accounts | Net worth (opening the Net worth report), cash/credit/tracking/closed sections with totals, approval and needs-a-category badges, account registers with balances, add/edit (types, net worth), reconcile, card payments, loan details, reorder, close/reopen |
-| Planning | Scheduled transactions (due, coming up, paused, finished; enter, skip, pause, edit), credit card payments, the loan planner (rates, payments, extra and lump-sum comparisons, payoff by a date, amortization chart and schedule), payees and import rules with previews of what they change, each payee's bank names, and an offer to remember a renamed bank payee as a rule, as the desktop makes |
-| Reports | Overview cards and all twelve Android reports (spending by category, payee, over time and calendar; income vs. expense, income breakdown, money in and out; net worth, balance sheet, balance over time, forecast, cash age), with range presets and custom months, account and category filters, drill-downs to transactions, and CSV export, drawn with Swift Charts; drag across a chart to read each month |
+| Planning | Scheduled transactions (due, coming up, paused, finished; enter, skip, pause, edit), credit card payments, the loan planner (rates, payments, extra and lump-sum comparisons, payoff by a date, amortization chart and schedule), payees and import rules with previews of what they change, each payee's bank names, and an offer to remember a renamed bank payee as a rule, as the desktop makes; a loan payment's category becomes the loan's when it had none |
+| Reports | Overview cards and all twelve Android reports (spending by category, payee, over time and calendar; income vs. expense, income breakdown, money in and out; net worth, balance sheet, balance over time, forecast, cash age), with range presets and custom months, account and category filters, drill-downs to transactions, and CSV export, drawn with Swift Charts. Drag across a chart to read each month; it opens on the last complete month, with the one under way drawn lighter and its line dashed. A legend's names hide and show their series. A slice, a payee's tile (in its group's colour) and a day on the month calendar are picked with one tap and opened with a second; the overview's small charts show a month's figures under a finger |
 | Bring in data | Bank files (CSV, Excel, OFX, QFX, QIF, CAMT.053, MT940; the format their content says; a PDF goes to the assistant with the file attached) read as an import session: the lines that need attention (fix a line's date, payee, memo or amount), those left out (include them) and those changed (undo), the account and sheet in the file, signs and the date-order question, Fix with the assistant (its fixes apply to the import), then the review with transfer pairing with another account's uncategorized entry and refund labels; the account remembers how its file read (its CSV columns are chosen on the desktop), SimpleFIN bank connections with per-account review, YNAB import from its API (delta sync, conflicts) or export files |
 | Account & sync | Email-code sign-in, the Sync subscription (its status, and subscribing, restoring and managing it through the App Store), end-to-end encrypted sync with desktop and Android (set up, unlock, reset, track, download, conflicts, remove), automatic sync after changes, on returning and every minute |
-| Around the app | A New transaction quick action on the app icon, an Add a transaction shortcut for Siri, Spotlight and the Action button, and on iPad (iOS 18 and later) tabs that open as a sidebar, with lists kept to a readable width |
+| Around the app | A New transaction quick action on the app icon, an Add a transaction shortcut for Siri, Spotlight and the Action button, and on iPad (iOS 18 and later) tabs that open as a sidebar. A window at least 720 points wide shows list and detail side by side (`UI/WideLayout.swift`): a report beside the reports' list, a transaction beside the register (which stays in use, and asks before unsaved changes are lost), a category beside the budget; from 940 points the assistant sits beside the app, both in use. Narrower, lists keep to a readable width and these open as sheets. On an iPhone Duo (`UI/Fold.swift`): folded it's a phone; open flat, the wide layout with its lines on the crease; half open like a book, the start side is a phone and what's opened takes the far side, with nothing across the fold; half open on a table, sheets and the keypad keep to the flat half. Built from iOS 27.1's hinge and reserved-region reports; seen on the iPhone Duo Simulator folded, flat and half open both ways, not yet on the phone itself ([follow-ups](../docs/FOLLOW-UPS.md#iphone-duo-and-wide-windows)) |
+| Look | The screens are set as Android's are (`UI/Theme.swift`, `UI/Platform.swift`, `UI/Components.swift`), compared with it side by side on the same budget: a tab's title on the bar's own row beside its buttons (search a button there until it's wanted, the assistant one tap away); text a step under the size iOS is set to (`AppTypeScale`, set on the window so sheets follow), which is Android's scale; the budget's groups and the register's days as bands across the list, pinned and solid; rows as close together; the budget and the register on the grey page with white rows; an account's register under a card of its balances; cards and sections a little apart; sheets solid pages, where iOS 26 would make them glass; figures never broken over two lines; a wide list a column down the middle of the window, clear of the bar an unfolded iPhone Duo stands at its side. Surfaces, bars, menus and pickers stay iOS's own ([what's left](../docs/FOLLOW-UPS.md#ios-beside-android)) |
 | Undo | Undo and redo in the ⋯ menu on every tab, Undo on each change's message, and shaking the phone |
-| Assistant | Streamed conversations with history (rename, search, continue in a new one), attachments and what goes with a message, cards drawn from the core's actions (review, apply, undo, restore, questions, figures, deletes, Show in the budget), notes for the assistant, reports with sharing and printing, workbooks, ChatGPT sign-in or OpenAI/Anthropic keys. Written on Windows for the assistant review of November 2026 and not compiled since |
+| Assistant | Streamed conversations with history (rename, search, continue in a new one), attachments and what goes with a message, cards drawn from the core's actions (review, apply, undo, restore, questions, figures, deletes, Show in the budget), notes for the assistant, reports with sharing and printing, workbooks, ChatGPT sign-in or OpenAI/Anthropic keys. A reply being written never shows half-made Markdown; steps fold to the latest; earlier replies keep their buttons behind "⋯"; drafts and their files are kept per conversation. Built and unit-tested on a Mac on 11 November 2026 and seen on the Simulator with saved conversations; no reply has been watched arriving from a model there, since the Simulator has no sign-in |
 | Languages | English and Arabic from String Catalogs, chosen with iOS's per-app language (Settings → UrBudget → Language, System by default), which the app's Settings links to; Arabic lays the app out right to left, keeping amounts and charts left to right ([languages guide](../docs/LOCALIZATION.md)) |
-| Library & settings | Multiple budgets (create in the device's formats with starter categories, sample, open, delete, fresh start), opening backups, statements and YNAB exports shared from Files, Mail or AirDrop, backups (now, retention, restore, prune), unsaved-change recovery, JSON backups compatible with desktop and Android, number and date formats, flag names, CSV exports, theme |
+| Library & settings | Multiple budgets (create in the device's formats with starter categories, sample, open, move to Trash, restore, delete permanently and Empty Trash for ones only on this device, fresh start), opening backups, statements and YNAB exports shared from Files, Mail or AirDrop, backups (now, retention, restore, prune), unsaved-change recovery, JSON backups compatible with desktop and Android, number and date formats, flag names, CSV exports, theme |
 
 Everything in the app works without an account or payment. Sync is the only paid part: the
 auto-renewable App Store subscription `app.urbudget.sync.monthly`, bought in Account & sync with
@@ -136,6 +144,15 @@ Debug builds can open a screen at launch for device screenshots:
 `xcrun devicectl device process launch --device <id> app.urbudget.native -- -tab accounts` or
 `-open sync` (also `library`, `schedules`, `loans`, `payees`, `banks`, `settings`, `assistant`,
 `bankImport`, `ynab`, `unassigned`, `category`, `transaction`, `welcome`, `register`, `networth`).
+`-open assistant -conversation <id>` opens a saved conversation.
+`-fold book` or `-fold table` pretends an iPhone Duo's fold on any simulator (down the window's
+middle, or across it), `-fold flat` and `-fold closed` only where the hinge stands, and `-foldInfo`
+writes over the app what iOS reports of the hinge and the fold.
+`-open` also takes, on Budget: `move`, `month`, `newCategory`, `planning`, `edit` (the last
+transaction's form), `payeePicker`, `categoryPicker`, `accountPicker`; on Accounts: `addAccount`,
+`editAccount`, `reconcile`, `pay`, `loanDetails`; on Reports: `report:categories` and the other
+reports' ids; on Transactions: `select`, `filters`; and on Budget, for a category that still needs
+money: `needs`, `assign`, `target`, `categoryDetails`.
 `-openFile statement.csv` opens a file in the app's Documents folder as if another app had shared
 it (copy one there with `xcrun devicectl device copy to … --domain-type appDataContainer`).
 
@@ -148,9 +165,31 @@ it (copy one there with `xcrun devicectl device copy to … --domain-type appDat
   to be tested. Build 1 predates the StoreKit subscription controls described above.
 - `cargo test -p urbudget-ios` checks the C transport against the Android one, plus storage,
   revision conflicts and undo through the shared services.
-- `UrBudgetTests` covers the JSON layer, money formats, keypad sums, category status, and a full
-  create/assign/undo/transaction/stale-edit/library pass through the real Rust engine, including
-  new budgets' starter categories and formats and backups opened from other apps. The bank-name
-  rules are checked against the desktop's own examples (bankNames.test.ts).
+- `UrBudgetTests` (200 tests, run on the Simulator) covers the JSON layer, money formats, keypad
+  sums, category status, and a full create/assign/undo/transaction/stale-edit/library pass through
+  the real Rust engine, including new budgets' starter categories and formats and backups opened
+  from other apps. The bank-name rules are checked against the desktop's own examples
+  (bankNames.test.ts). `EngineEditTests` covers edits in the store: the shared patch cases
+  (`shared/fixtures/patch-cases.json`), the app's copy against what the store holds after every kind
+  of change, one undo for an edit with its commands, a refused edit saving nothing, an edit made
+  again after sync, an import's `source` and `sourceExport` surviving edits on the light copy, and
+  previews and reads through the published store. Trash is deleted and emptied through the real
+  library; the chart models, the wide layout's sizes, the fold's rules and the assistant's presentation
+  have their own.
+  The engine's services open one library folder per process, so these share `TestLibrary`.
+- Seen on the Simulator on 11 November 2026 (Xcode 27.1, iOS 27.0): on an iPhone 17, a sample
+  budget made, assigned and reported on, the new charts and Trash; on an iPad Air 11-inch, a
+  category beside the budget, a transaction beside the register (opened, saved, and the
+  unsaved-changes question), a report beside the reports' list, and the assistant beside the app
+  in landscape. With a pretended fold, the book layout on the iPad and the table layout on the
+  iPhone 17. On the iPhone Duo Simulator (iOS 27.1, opened in Xcode's Device Hub): the cover
+  screen, and the inner screen flat (a category beside the budget, a transaction beside the
+  register on the crease, the assistant on the far half), half open like a book in English and
+  Arabic (the register, budget and reports' list ending at the fold, with a transaction, a
+  category, a report and the assistant on the far side), and half open on a table (sheets and the
+  keypad below the fold). Not seen: the Duo folded or turned with something open, dark there,
+  a budget with real figures in it only on the iPhone 17 (a 2,481-transaction budget in riyals, the
+  same one in Android's emulator beside it, in English, Arabic and dark), not on the iPad or the Duo; sync, a physical device, or a wide window other than the iPad Air's two
+  orientations.
 - The [Native iOS workflow](../.github/workflows/ios-native.yml) runs both on GitHub's macOS runners,
   plus an unsigned Release build for devices.

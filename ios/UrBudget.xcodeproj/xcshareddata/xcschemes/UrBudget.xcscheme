@@ -74,6 +74,8 @@
             ReferencedContainer = "container:UrBudget.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
+      <CommandLineArguments>
+      </CommandLineArguments>
       <StoreKitConfigurationFileReference
          identifier = "../../UrBudget.storekit">
       </StoreKitConfigurationFileReference>

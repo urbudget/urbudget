@@ -176,13 +176,18 @@ struct TransactionsList: View {
     @State private var confirmDelete = false
     @State private var exportFile: TextFile?
     @State private var exporting = false
+    @Environment(\.horizontalSizeClass) private var widthClass
     @State private var showAllScheduled = false
+    /// Whether the schedules atop the register start unfolded: a preference, on unless turned off.
+    @State private var scheduledOpen = UserDefaults.standard.object(forKey: "showUpcoming") as? Bool ?? true
     @State private var paying: String?
     @State private var loanFor: String?
     @State private var editingSchedule: IdentifiedJSON?
     @State private var jump: RegisterTarget?
     @State private var importing = false
     @State private var asking: AssistantRequest?
+    /// On a wide window, where a transaction opens beside this list (the Transactions tab's pane).
+    @Environment(\.editorPane) private var pane
     /// The transactions a card of the assistant asked to see: the list shows them alone, as a
     /// filter that Clear takes off.
     @State private var only: Set<String>
@@ -237,13 +242,50 @@ struct TransactionsList: View {
         selecting ? String(localized: "\(selected.count) selected", locale: .app) : title
     }
 
+    /// What the selected transactions add up to, under their count, as on Android.
+    private var selectionTotal: String {
+        guard selecting, !selected.isEmpty else { return "" }
+        let total = sections?.flatMap(\.lines).filter { selected.contains($0.id) }.reduce(Int64(0)) { $0 + $1.amount } ?? 0
+        return AppLanguage.leftToRight(money(total, store.currency))
+    }
+
     var body: some View {
         list
             .navigationTitle(screenTitle)
+            .barSubtitle(selectionTotal)
+            .barTitle(target.account.isEmpty && target.category.isEmpty && !selecting)
             .searchable(text: $search, prompt: "Payee, category, memo, amount")
+            .searchMinimized()
             .toolbar { toolbar }
-            .tabBarHidden(selecting)
+            // The selection's dock stands where a phone's tabs are; tabs along the top or the side stay.
+            .tabBarHidden(selecting && widthClass == .compact)
             .overlay(alignment: .bottomTrailing) { if !selecting { AddTransactionButton(account: target.account, compact: addCompact) } }
+            // What can be done to a selection, each action under its name, where the tabs were:
+            // a toolbar would show the symbols alone.
+            .safeAreaInset(edge: .bottom) {
+                if selecting {
+                    VStack(spacing: 6) {
+                        // Beside a form the bar is too narrow for its title, so the count stands here.
+                        if widthClass != .compact {
+                            Text([screenTitle, selectionTotal].filter { !$0.isEmpty }.joined(separator: " · "))
+                                .font(.footnote.weight(.semibold)).monospacedDigit().lineLimit(1)
+                        }
+                        HStack(spacing: 0) { selectionActions }
+                    }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.primary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                        .overlay { RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Color.urHairline.opacity(0.6)) }
+                        .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 4)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.snappy(duration: 0.25), value: selecting)
+            .startPaneContent()
             .task(id: search) {
                 // Typing settles for a moment before the list recomputes.
                 if !search.isEmpty { try? await Task.sleep(for: .milliseconds(150)) }
@@ -256,7 +298,7 @@ struct TransactionsList: View {
             .sheet(item: Binding(get: { loanFor.map { IdentifiedText(value: $0) } }, set: { loanFor = $0?.value })) { LoanEditor(accountId: $0.value) }
             .sheet(item: $editingSchedule) { ScheduleEditor(schedule: $0.value) }
             .sheet(isPresented: $importing) { BankFileImportView(account: target.account) }
-            .sheet(item: $asking) { AssistantView(request: $0) }
+            .assistant($asking)
             .sheet(item: $accountForm) { AccountForm(request: $0) }
             .sheet(item: Binding(get: { reconciling.map { IdentifiedJSON(value: $0) } }, set: { reconciling = $0?.value })) { ReconcileSheet(account: $0.value) }
             .sheet(isPresented: $bulkCategory) {
@@ -351,6 +393,15 @@ struct TransactionsList: View {
             registerSections(prepared.matching(filter), order: filter.order, account: account, budget: budget, today: today)
         }.value
         if !Task.isCancelled { sections = built }
+        // Debug builds can open the register selecting (`-open select`), for screenshots.
+        if LaunchRoute.open == "select" {
+            LaunchRoute.open = nil
+            selecting = true
+            selected = Set(built.flatMap(\.lines).prefix(2).map(\.id))
+        } else if LaunchRoute.open == "filters" {
+            LaunchRoute.open = nil
+            moreFilters = true
+        }
     }
 
     private var schedules: [JSON] {
@@ -362,6 +413,35 @@ struct TransactionsList: View {
                 && (target.account.isEmpty || t.text("accountId") == target.account || t.text("transferAccountId") == target.account)
         }
         .sorted { ($0.flag("paused") ? 1 : 0, $0.text("nextDate")) < ($1.flag("paused") ? 1 : 0, $1.text("nextDate")) }
+    }
+
+    /// The Scheduled band: how many there are, what the next 30 days bring in and take out, and
+    /// a tap folds them away.
+    private func scheduledBand(_ schedules: [JSON], currency: String) -> some View {
+        let horizon = Dates.addDays(Dates.today, 30)
+        let soon = schedules.filter { !$0.flag("paused") && $0.text("nextDate") <= horizon }.map { schedule -> Int64 in
+            let t = schedule["transaction"]
+            return !target.account.isEmpty && t.text("transferAccountId") == target.account ? -t.long("amount") : t.long("amount")
+        }
+        let incoming = soon.filter { $0 > 0 }.reduce(0, +), outgoing = soon.filter { $0 < 0 }.reduce(0, +)
+        let figures = [incoming != 0 ? AppLanguage.leftToRight("+" + money(incoming, currency)) : nil,
+                       outgoing != 0 ? AppLanguage.leftToRight(money(outgoing, currency)) : nil].compactMap { $0 }
+        return Button { withAnimation { scheduledOpen.toggle() } } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(Color.secondary)
+                    .rotationEffect(.degrees(scheduledOpen ? 90 : 0)).flipsForRightToLeftLayoutDirection(true)
+                Text("Scheduled · \(schedules.count)").font(.body.weight(.bold)).foregroundStyle(Color.primary)
+                Spacer(minLength: 8)
+                if !figures.isEmpty {
+                    Text("30 days: \(figures.joined(separator: "  "))").font(.subheadline.weight(.semibold)).monospacedDigit()
+                        .foregroundStyle(Color.secondary).lineLimit(1).minimumScaleFactor(0.8)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(scheduledOpen ? "Folds the scheduled transactions away" : "Shows the scheduled transactions")
+        .listBand(minHeight: 44)
     }
 
     private var activeFilters: Int {
@@ -379,6 +459,9 @@ struct TransactionsList: View {
                     AccountSummary(account: account, reconcile: { reconciling = account }, edit: { accountForm = AccountFormRequest(account: account) },
                                    pay: { paying = account.text("id") }, loan: { loanFor = account.text("id") }, importFile: { importing = true })
                 }
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 10, trailing: 16))
+                .listRowBackground(Color.groupedBackground)
             }
             if !from.isEmpty || !through.isEmpty || activeFilters > 0 {
                 Section {
@@ -389,27 +472,37 @@ struct TransactionsList: View {
                         Button("Clear") { clearFilters() }.font(.subheadline.weight(.semibold)).buttonStyle(.borderless)
                     }
                 }
+                .plainRow()
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.groupedBackground)
             }
             if toApprove > 0 && !selecting {
                 Section {
-                    Notice(text: String(localized: "\(toApprove) transactions to approve", locale: .app), tone: "info", icon: "sparkle",
+                    // One thing to do at a time, so the count stays on one line: Review first, and
+                    // Approve all once they're the ones on screen.
+                    Notice(text: String(localized: "\(toApprove) transactions to approve", locale: .app), tone: "info", icon: "checkmark.seal",
                            action: status == "approval" ? nil : String(localized: "Review"),
-                           secondary: .init(label: String(localized: "Approve all"), action: approveAll)) { status = "approval" }
+                           secondary: status == "approval" ? .init(label: String(localized: "Approve all"), action: approveAll) : nil) { status = "approval" }
                 }
-                .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
-                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 10, trailing: 16))
+                .listRowBackground(Color.groupedBackground)
             }
             if !schedules.isEmpty && query.isEmpty && !selecting {
                 Section {
-                    ForEach(showAllScheduled ? schedules : Array(schedules.prefix(3)), id: \.idText) { schedule in
-                        ScheduleLine(schedule: schedule, account: target.account, currency: currency) { editingSchedule = IdentifiedJSON(value: schedule) }
-                    }
-                    if schedules.count > 3 {
-                        Button(showAllScheduled ? "Show fewer" : "Show \(schedules.count - 3) more") { withAnimation { showAllScheduled.toggle() } }
+                    if scheduledOpen {
+                        ForEach(showAllScheduled ? schedules : Array(schedules.prefix(3)), id: \.idText) { schedule in
+                            ScheduleLine(schedule: schedule, account: target.account, currency: currency) { editingSchedule = IdentifiedJSON(value: schedule) }
+                        }
+                        if schedules.count > 3 {
+                            Button(showAllScheduled ? "Show fewer" : "Show \(schedules.count - 3) more") { withAnimation { showAllScheduled.toggle() } }
+                                .font(.subheadline.weight(.semibold)).foregroundStyle(Color.urAccent)
+                        }
                     }
                 } header: {
-                    Text("Scheduled").textCase(nil).font(.headline).foregroundStyle(Color.primary)
+                    scheduledBand(schedules, currency: currency)
                 }
+                .plainRow()
             }
             if let sections {
                 if sections.isEmpty || sections.allSatisfy(\.lines.isEmpty) {
@@ -422,16 +515,17 @@ struct TransactionsList: View {
                                        detail: String(localized: "Add a purchase, income, or a transfer to see your money in motion."),
                                        symbol: "arrow.left.arrow.right",
                                        action: account?.flag("archived") == true ? nil : String(localized: "Add a transaction")) {
-                                editing = TransactionEditorRequest(account: target.account)
+                                edit(TransactionEditorRequest(account: target.account))
                             }
                         }
                     }
+                    .plainRow()
                 }
                 ForEach(sections) { section in
                     Section {
                         ForEach(section.lines) { line in row(line) }
                     } header: {
-                        if !section.label.isEmpty { Text(section.label).textCase(nil).font(.subheadline.weight(.semibold)).foregroundStyle(Color.primary) }
+                        if !section.label.isEmpty { Text(section.label).font(.body.weight(.bold)).foregroundStyle(Color.primary).listBand(minHeight: 44) }
                     }
                 }
             } else {
@@ -440,7 +534,7 @@ struct TransactionsList: View {
             Color.clear.frame(height: 64).listRowSeparator(.hidden).listRowBackground(Color.clear)
         }
         .listStyle(.plain)
-        .readableWidth()
+        .pageGround()
         .shrinksAddButton($addCompact)
         .refreshable {
             store.foreground(force: true)
@@ -493,18 +587,26 @@ struct TransactionsList: View {
         status = ""; flag = ""; order = "newest"; from = ""; through = ""; category = target.category; minimum = ""; maximum = ""; only = []
     }
 
+    /// Opens a transaction's form: beside the list where there's room, else over the screen.
+    private func edit(_ request: TransactionEditorRequest) {
+        if let pane { pane.open(request) } else { editing = request }
+    }
+
     private func row(_ line: TransactionLine) -> some View {
         let isSelected = selected.contains(line.id)
-        return TransactionRow(line: line, selecting: selecting, isSelected: isSelected)
+        return TransactionRow(line: line, selecting: selecting, isSelected: isSelected,
+                              toggleCleared: { toggleCleared(line) }, approve: { bulk([line.id], "approve") })
             .contentShape(Rectangle())
             .onTapGesture {
                 if selecting {
                     if isSelected { selected.remove(line.id) } else { selected.insert(line.id) }
                 } else if let transaction = store.budget?.row("transactions", id: line.id) {
-                    editing = TransactionEditorRequest(transaction: transaction, account: target.account)
+                    edit(TransactionEditorRequest(transaction: transaction, account: target.account))
                 }
             }
-            .listRowBackground(isSelected ? Color.urAccent.opacity(0.12) : nil)
+            .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 8, trailing: 10))
+            // Selected rows are marked, and so is the one open beside the list.
+            .listRowBackground(isSelected || (!selecting && pane?.openId == line.id) ? Color.urAccent.opacity(0.12) : nil)
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
                 if line.cleared != "reconciled" && !selecting {
                     Button { toggleCleared(line) } label: {
@@ -529,7 +631,7 @@ struct TransactionsList: View {
                 if !selecting {
                     Button {
                         if let transaction = store.budget?.row("transactions", id: line.id) {
-                            editing = TransactionEditorRequest(transaction: transaction, account: target.account)
+                            edit(TransactionEditorRequest(transaction: transaction, account: target.account))
                         }
                     } label: { Label("Edit", systemImage: "pencil") }
                     if line.cleared != "reconciled" {
@@ -585,24 +687,37 @@ struct TransactionsList: View {
                 let ids = Set(sections?.flatMap { $0.lines.map(\.id) } ?? [])
                 Button(selected == ids ? "Select none" : "Select all") { selected = selected == ids ? [] : ids }
             }
-            ToolbarItemGroup(placement: .bottomBarItems) {
+        } else {
+            // Selecting starts from the menu, or from holding a row, so the title keeps its room.
+            ToolbarItemGroup(placement: .trailingBar) {
+                filterMenu
+                // An account's or a category's own register keeps the bar's room for its name.
+                if target.account.isEmpty && target.category.isEmpty { AssistantBarButton(page: "transactions") }
+                BudgetActionsMenu()
+            }
+        }
+    }
+
+    /// What can be done to the selected transactions, each under its name.
+    @ViewBuilder private var selectionActions: some View {
                 let lines = sections?.flatMap(\.lines).filter { selected.contains($0.id) } ?? []
                 if lines.contains(where: { !$0.approved }) {
-                    Button { onSelection("approve") { String(localized: "Approved \($0).") } } label: { Label("Approve", systemImage: "hand.thumbsup") }
+                    Button { onSelection("approve") { String(localized: "Approved \($0).") } } label: { Label("Approve", systemImage: "hand.thumbsup").labelStyle(StackedLabelStyle()) }
                 }
-                Button { bulkCategory = true } label: { Label("Category", systemImage: "tag") }.disabled(selected.isEmpty)
-                Spacer()
-                Button { onSelection("status", "cleared") { String(localized: "Marked \($0) cleared.") } } label: { Label("Cleared", systemImage: "checkmark.circle") }
+                Button { bulkCategory = true } label: { Label("Category", systemImage: "tag").labelStyle(StackedLabelStyle()) }.disabled(selected.isEmpty)
+                Button { onSelection("status", "cleared") { String(localized: "Marked \($0) cleared.") } } label: { Label("Cleared", systemImage: "checkmark.circle").labelStyle(StackedLabelStyle()) }
                     .disabled(selected.isEmpty)
-                Spacer()
                 Menu {
                     Button("No flag") { onSelection("flag") { String(localized: "Removed the flag from \($0).") } }
                     ForEach(flagChoices(store.budget ?? [:]), id: \.id) { choice in
                         Button(choice.name) { onSelection("flag", choice.id) { String(localized: "Flagged \($0) \(choice.name).") } }
                     }
-                } label: { Label("Flag", systemImage: "flag") }
+                } label: { Label("Flag", systemImage: "flag").labelStyle(StackedLabelStyle()) }
                 .disabled(selected.isEmpty)
-                Spacer()
+                Button { confirmDelete = true } label: {
+                    Label("Delete", systemImage: "trash").labelStyle(StackedLabelStyle()).foregroundStyle(Color.urNegative)
+                }
+                .disabled(selected.isEmpty)
                 Menu {
                     Button { bulkText = BulkTextRequest(operation: "payee") } label: { Label("Change payee…", systemImage: "storefront") }
                     Button { bulkText = BulkTextRequest(operation: "memo") } label: { Label("Change memo…", systemImage: "text.alignleft") }
@@ -619,24 +734,15 @@ struct TransactionsList: View {
                         ask(ids.isEmpty ? Array(selected) : ids)
                         endSelection()
                     } label: { Label("Ask the assistant", systemImage: "sparkles") }
-                    Divider()
-                    Button(role: .destructive) { confirmDelete = true } label: { Label("Delete", systemImage: "trash") }
-                } label: { Label("More", systemImage: "ellipsis.circle") }
+                } label: { Label("More", systemImage: "ellipsis.circle").labelStyle(StackedLabelStyle()) }
                 .disabled(selected.isEmpty)
-            }
-        } else {
-            ToolbarItem(placement: .trailingBar) {
-                Button("Select") { selecting = true }.disabled(sections?.allSatisfy(\.lines.isEmpty) ?? true)
-            }
-            ToolbarItemGroup(placement: .trailingBar) {
-                filterMenu
-                BudgetActionsMenu()
-            }
-        }
     }
 
     private var filterMenu: some View {
         Menu {
+            Button { selecting = true } label: { Label("Select", systemImage: "checkmark.circle") }
+                .disabled(sections?.allSatisfy(\.lines.isEmpty) ?? true)
+            Divider()
             Picker("Status", selection: $status) {
                 Text("Any status").tag("")
                 Text("Needs approval").tag("approval")
@@ -715,6 +821,11 @@ private struct TransactionRow: View {
     var line: TransactionLine
     var selecting: Bool
     var isSelected: Bool
+    var toggleCleared: () -> Void
+    var approve: () -> Void
+
+    /// The cleared mark's column at the row's end; the lines under the amount stop short of it.
+    private static let clearedColumn: CGFloat = 34
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
@@ -735,8 +846,16 @@ private struct TransactionRow: View {
                     Text(line.payee).font(.body.weight(.semibold)).lineLimit(1)
                         .foregroundStyle(line.approved ? .primary : Color.urAccent)
                     Spacer(minLength: 8)
-                    Text(line.amountText).figure(17, weight: .semibold).lineLimit(1)
+                    Text(line.amountText).figure(17, weight: .semibold).lineLimit(1).layoutPriority(1)
                         .foregroundStyle(line.amount > 0 ? Color.urPositive : .primary)
+                    // Cleared sits beside the amount it's about, and a tap changes it.
+                    if selecting || line.cleared == "reconciled" {
+                        ClearedMark(status: line.cleared)
+                    } else {
+                        Button(action: toggleCleared) { ClearedMark(status: line.cleared) }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Changes whether it has cleared")
+                    }
                 }
                 HStack(spacing: 6) {
                     ForEach(line.chips, id: \.self) { TagChip(text: $0.text, attention: $0.attention) }
@@ -744,13 +863,22 @@ private struct TransactionRow: View {
                     if !line.accountName.isEmpty {
                         Text(line.accountName).font(.subheadline).foregroundStyle(Color.secondary).lineLimit(1)
                     }
+                    // Approving is a labelled button under the amount, so it never reads as a second cleared mark.
                     if !line.approved && !selecting {
-                        Image(systemName: "sparkle").font(.caption.weight(.bold)).foregroundStyle(Color.urAccent).accessibilityLabel("To approve")
+                        Button(action: approve) {
+                            Label("Approve", systemImage: "checkmark").font(.footnote.weight(.semibold)).labelStyle(.titleAndIcon)
+                                .foregroundStyle(Color.urAccent)
+                                .padding(.horizontal, 9).frame(minHeight: 26)
+                                .background(Color.urAccent.opacity(0.12), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
                     }
+                    Color.clear.frame(width: Self.clearedColumn - 6, height: 1)
                 }
-                if !line.memo.isEmpty { Text(line.memo).font(.subheadline).foregroundStyle(Color.secondary).lineLimit(1) }
+                if !line.memo.isEmpty {
+                    Text(line.memo).font(.subheadline).foregroundStyle(Color.secondary).lineLimit(1).padding(.trailing, Self.clearedColumn)
+                }
             }
-            ClearedMark(status: line.cleared)
         }
         .padding(.vertical, 3)
         .opacity(line.future ? 0.6 : 1)
@@ -801,7 +929,7 @@ private struct ScheduleLine: View {
                             store.showToast(String(localized: "Skipped \(name) on \(Money.date(next))."), undo: true)
                         }
                     }
-                    .buttonStyle(.bordered).buttonBorderShape(.capsule).controlSize(.small)
+                    .buttonStyle(.bordered).buttonBorderShape(.capsule).controlSize(.small).tint(.secondary)
                 }
             }
         }
@@ -870,10 +998,14 @@ private struct AccountSummary: View {
         let total = store.summary?.rows("accounts").first { $0.text("id") == account.text("id") }
         let balance = total?.long("balance") ?? 0
         VStack(alignment: .leading, spacing: 12) {
-            Text(AccountTypes.typeLabel(account)).font(.subheadline).foregroundStyle(Color.secondary)
+            // The whole name, which the bar may have to cut short, over the kind of account it is.
+            VStack(alignment: .leading, spacing: 1) {
+                Text(account.text("name")).font(.headline).lineLimit(2)
+                Text(AccountTypes.typeLabel(account)).font(.subheadline).foregroundStyle(Color.secondary)
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text("Working balance").font(.footnote).foregroundStyle(Color.secondary)
-                Text(money(balance, currency)).font(.system(size: 30, weight: .heavy, design: .rounded)).monospacedDigit()
+                Text(money(balance, currency)).font(.system(.title, weight: .heavy)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
                     .foregroundStyle(balance < 0 ? Color.urNegative : .primary)
                 // A card with a limit: what can still be spent on it.
                 if total != nil, let left = AccountTypes.creditLeft(account, balance: balance) {
@@ -894,17 +1026,30 @@ private struct AccountSummary: View {
                     .buttonStyle(.bordered)
             }
             HStack(spacing: 8) {
-                Button(action: reconcile) { Label("Reconcile", systemImage: "lock").frame(maxWidth: .infinity) }
+                Button(action: reconcile) { action("Reconcile", "lock") }
                     .disabled(total == nil || account.flag("archived"))
-                Button(action: importFile) { Label("Import", systemImage: "square.and.arrow.down").frame(maxWidth: .infinity) }
+                Button(action: importFile) { action("Import", "square.and.arrow.down") }
                     .disabled(account.flag("archived"))
-                Button(action: edit) { Label("Edit", systemImage: "pencil").frame(maxWidth: .infinity) }
+                Button(action: edit) { action("Edit", "pencil") }
                     .accessibilityLabel("Edit account")
             }
-            .labelStyle(StackedLabelStyle())
-            .buttonStyle(.bordered)
+            .buttonStyle(.plain)
         }
-        .padding(.vertical, 6)
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.cardBackground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    /// One of the card's actions: an outlined capsule, its symbol beside its name, as on Android.
+    private func action(_ title: LocalizedStringKey, _ symbol: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: symbol).font(.footnote.weight(.semibold))
+            Text(title).font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
+        }
+        .foregroundStyle(Color.primary)
+        .frame(maxWidth: .infinity, minHeight: 40)
+        .overlay { Capsule().strokeBorder(Color.urHairline, lineWidth: 1) }
+        .contentShape(Capsule())
     }
 
     /// A tracking debt, or any account with loan details saved (Planning.tsx's hasLoan).
@@ -940,7 +1085,7 @@ private struct BulkTextSheet: View {
                 Text("Applies to all \(count) selected transactions. You can undo it.")
             }
         }
-        .presentationDetents([.medium])
+        .sheetDetents([.medium])
     }
 }
 
@@ -955,7 +1100,7 @@ private struct RegisterFiltersSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            CompactForm {
                 Section {
                     AmountField(title: String(localized: "At least"), text: $minimum)
                     AmountField(title: String(localized: "At most"), text: $maximum)
@@ -981,7 +1126,7 @@ private struct RegisterFiltersSheet: View {
             .inlineTitle()
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { finish() } } }
         }
-        .presentationDetents([.medium, .large])
+        .sheetDetents([.medium, .large])
         .onAppear { custom = !from.isEmpty || !through.isEmpty }
     }
 
@@ -999,9 +1144,37 @@ private struct RegisterFiltersSheet: View {
 struct StackedLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
         VStack(spacing: 3) {
-            configuration.icon.font(.body)
-            configuration.title.font(.caption.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
+            configuration.icon.font(.body).frame(height: 22)
+            configuration.title.font(.caption2.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
         }
+        .frame(maxWidth: .infinity)
         .padding(.vertical, 2)
+        .contentShape(Rectangle())
+    }
+}
+
+/// The Transactions tab. On a wide window a transaction opens beside the register, which stays in
+/// use: another row takes its place (asking first if what's typed would be lost), and Cancel or
+/// Save leaves the list on its own again.
+struct RegisterTab: View {
+    var target: RegisterTarget
+    @Environment(\.fold) private var fold
+    @State private var span = WindowSpan()
+    @State private var pane = EditorPane()
+
+    var body: some View {
+        // By the window's width, or by a fold: the register ends where it runs and the form takes the far side.
+        let split = WideLayout.split(.register, span: span, fold: fold)
+        ListDetail(split: split) {
+            NavigationStack { TransactionsList(target: target) }
+                .environment(\.editorPane, split == nil ? nil : pane)
+        } detail: {
+            FarSide(pane: pane) {
+                PaneHint(title: "No transaction open", detail: "Tap one in the list to see or change it here.", symbol: "list.bullet.rectangle")
+            }
+        }
+        .measuringSpan($span)
+        .belowTopTabs(split != nil && split?.hinge != true)
+        .guarding(pane, shown: split != nil)
     }
 }

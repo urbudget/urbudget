@@ -20,6 +20,12 @@ struct ReportMiniSeries: Hashable, Sendable {
 struct ReportMiniBarsModel: Hashable, Sendable {
     var labels: [String]
     var series: [ReportMiniSeries]
+    /// Each month's title, for the figure a card shows while a finger is on that month.
+    var titles: [String] = []
+    /// Each series' figure in short, for the labels on the highest and latest columns.
+    var short: [[String]] = []
+    /// The month still under way (drawn lighter), or -1.
+    var partial = -1
     var top: Int64 { Swift.max(0, series.flatMap(\.values).max() ?? 0) }
     var bottom: Int64 { Swift.min(0, series.flatMap(\.values).min() ?? 0) }
 }
@@ -62,6 +68,8 @@ struct ReportTreemapItem: Identifiable, Hashable, Sendable {
     var detail: String
     var more: String
     var level: Int
+    /// The colour of the group most of it went to, as the donut and the month chart colour it.
+    var color: Int = ReportColors.other
     var id: String { key }
 }
 
@@ -124,6 +132,8 @@ struct ReportPayeeModel: Hashable, Sendable {
     var help: String
     var more: String?
     var rows: [ReportPayeeRow]
+    /// The groups the tiles are coloured by, in budget order.
+    var legend: [ReportLegendItem] = []
 }
 
 struct ReportOverTimeModel: Hashable, Sendable {
@@ -551,6 +561,8 @@ extension ReportMath {
         }
         let noPayee = String(localized: "No payee")
         let levels = heatLevels(big.map(\.amount))
+        func groupOf(_ p: ReportPayeeSpend) -> String? { p.category.flatMap { ctx.groupOf[$0] }.flatMap { $0.isEmpty ? nil : $0 } }
+        let groups = Set(big.compactMap(groupOf))
         let tiles = [
             ReportTile(label: String(localized: "Spending"), value: ctx.money(total), note: String(localized: "at \(all.count) payees", locale: .app)),
             ReportTile(label: String(localized: "Top payee"), value: top.map { $0.name.isEmpty ? noPayee : $0.name } ?? "—",
@@ -562,14 +574,15 @@ extension ReportMath {
         ]
         let map = big.map { p in
             ReportTreemapItem(key: p.name, label: p.name.isEmpty ? noPayee : p.name, value: p.amount, valueText: ctx.money(p.amount),
-                              detail: shown(p.amount), more: "\(transactions(p.count)) · \(average(p))", level: levels.level(p.amount))
+                              detail: shown(p.amount), more: "\(transactions(p.count)) · \(average(p))", level: levels.level(p.amount),
+                              color: groupOf(p).map(ctx.colorOf) ?? ReportColors.other)
         }
         let rows = all.map { p in
             ReportPayeeRow(key: p.name, name: p.name, label: p.name.isEmpty ? noPayee : p.name, amountText: ctx.money(p.amount),
                            detail: "\(share(p.amount, total)) · \(transactions(p.count)) · \(average(p))")
         }
         let tilesNote = String(localized: "Bigger tiles, more spent")
-        let help = String(localized: "Select a payee to see its transactions. Tiles show payees with net spending; the total and table include refunds.")
+        let help = String(localized: "Tap a payee for its figures, and again for its transactions. Tiles show payees with net spending, in the colour of the group most of it went to; the total and table include refunds.")
         let refundsText = ctx.money(refunds)
         let morePayees = String(localized: "\(rest.count) more payees", locale: .app)
         return ReportPayeeModel(
@@ -578,7 +591,8 @@ extension ReportMath {
             map: map,
             help: help + (refunds > 0 ? " " + String(localized: "Net refunds of \(refundsText) at other payees reduce the total.") : ""),
             more: rest.isEmpty ? nil : "\(morePayees) · \(ctx.money(restTotal))",
-            rows: rows)
+            rows: rows,
+            legend: ctx.spendingGroups.filter(groups.contains).map { ReportLegendItem(label: $0, color: ctx.colorOf($0)) })
     }
 
     /// The trend tile: the later half of the months against the earlier half.
@@ -742,9 +756,9 @@ extension ReportMath {
             ReportColumnSeries(key: "income", label: income, color: 0, values: data.months.map { Double($0.income) }),
             ReportColumnSeries(key: "spending", label: spending, color: 1, values: data.months.map { Double($0.spending) }),
         ], format: format, axis: moneyAxis, unit: ctx.axisUnit, grouped: true,
-           line: ReportLineOverlay(label: surplus, color: ReportColors.ink, values: net.map { Double($0) }))
+           line: ReportLineOverlay(label: surplus, color: ReportColors.line, values: net.map { Double($0) }))
         let legend = [ReportLegendItem(label: income, color: 0), ReportLegendItem(label: spending, color: 1),
-                      ReportLegendItem(label: surplus, color: ReportColors.ink, line: true)]
+                      ReportLegendItem(label: surplus, color: ReportColors.line, line: true)]
         let rate = linesModel(label: String(localized: "Budget surplus each month, as a percentage of income"), keys: keys,
                               series: [ReportLineSeries(key: "rate", label: surplusRate, color: 0, values: rates)],
                               format: percent, axis: percent, unit: nil)
@@ -873,7 +887,7 @@ extension ReportMath {
         let chart = columnModel(label: String(localized: "Money into budget accounts above the line, money out below, with the net as a line"), keys: keys, series: [
             ReportColumnSeries(key: "in", label: moneyIn, color: 0, values: inflow.map { Double($0) }),
             ReportColumnSeries(key: "out", label: moneyOut, color: 1, values: outflow.map { -Double($0) }),
-        ], format: format, axis: moneyAxis, unit: ctx.axisUnit, line: ReportLineOverlay(label: netFlow, color: ReportColors.ink, values: net.map { Double($0) }))
+        ], format: format, axis: moneyAxis, unit: ctx.axisUnit, line: ReportLineOverlay(label: netFlow, color: ReportColors.line, values: net.map { Double($0) }))
         var months = keys.enumerated().map { i, m -> ReportFigureRow in
             let monthIn = ctx.money(inflow[i])
             let monthOut = ctx.money(outflow[i])
@@ -893,7 +907,7 @@ extension ReportMath {
             ReportTile(label: netFlow, value: ctx.money(totalIn &- totalOut), tone: totalIn &- totalOut < 0 ? .negative : .positive),
             ReportTile(label: String(localized: "Months in the black"), value: String(localized: "\(blackMonths) of \(keys.count)", locale: .app)),
         ], chart: chart, legend: [ReportLegendItem(label: moneyIn, color: 0), ReportLegendItem(label: moneyOut, color: 1),
-                                  ReportLegendItem(label: netFlow, color: ReportColors.ink, line: true)],
+                                  ReportLegendItem(label: netFlow, color: ReportColors.line, line: true)],
            running: linesModel(label: String(localized: "Net flow added up month by month"), keys: keys,
                                series: [ReportLineSeries(key: "running", label: String(localized: "Running total"), color: 2, values: cumulative.map { Double($0) })],
                                format: format, axis: moneyAxis, unit: ctx.axisUnit),
@@ -947,9 +961,9 @@ extension ReportMath {
         ], chart: columnModel(label: String(localized: "Assets and debts by month with net worth"), keys: keys, series: [
             ReportColumnSeries(key: "assets", label: assets, color: 0, values: data.months.map { Double($0.assets) }),
             ReportColumnSeries(key: "debts", label: debts, color: 1, values: data.months.map { -Double($0.debt) }),
-        ], format: format, axis: moneyAxis, unit: ctx.axisUnit, line: ReportLineOverlay(label: netWorth, color: ReportColors.ink, values: data.months.map { Double($0.netWorth) })),
+        ], format: format, axis: moneyAxis, unit: ctx.axisUnit, line: ReportLineOverlay(label: netWorth, color: ReportColors.line, values: data.months.map { Double($0.netWorth) })),
            legend: [ReportLegendItem(label: assets, color: 0), ReportLegendItem(label: debts, color: 1),
-                    ReportLegendItem(label: netWorth, color: ReportColors.ink, line: true)],
+                    ReportLegendItem(label: netWorth, color: ReportColors.line, line: true)],
            change: columnModel(label: String(localized: "How much net worth grew or shrank each month"), keys: keys, series: [
             ReportColumnSeries(key: "up", label: grew, color: ReportColors.divergingPositive, values: monthly.map { Double(Swift.max(0, $0)) }),
             ReportColumnSeries(key: "down", label: shrank, color: ReportColors.divergingNegative, values: monthly.map { Double(Swift.min(0, $0)) }),
@@ -1198,7 +1212,7 @@ extension ReportMath {
     }
 
     /// The Reports tab's cards: this month's spending, income against spending, net worth and cash age.
-    static func overviewModel(_ data: ReportData, _ ctx: ReportBudget) -> ReportOverviewModel? {
+    static func overviewModel(_ data: ReportData, _ ctx: ReportBudget, current: String? = Dates.currentMonth) -> ReportOverviewModel? {
         guard let last = data.months.last else { return nil }
         let top = 5
         let ranked = last.categories.entries.filter { $0.value > 0 }.reportSorted(descending: { $0.value })
@@ -1221,6 +1235,8 @@ extension ReportMath {
             rows.append(ReportSpendRow(key: "__rest", label: String(localized: "All others"), valueText: ctx.money(rest), color: ReportColors.other, weight: rest))
         }
         let labels = data.months.map { monthAbbrev($0.month) }
+        let partial = partialIndex(data.months.map(\.month), current: current)
+        let titles = data.months.enumerated().map { $0.offset == partial ? soFar(monthName($0.element.month)) : monthName($0.element.month) }
         func mini(_ label: String, _ color: Int, _ values: [Int64], _ text: (Int64) -> String) -> ReportMiniSeries {
             ReportMiniSeries(label: label, color: color, values: values, texts: values.map(text))
         }
@@ -1236,12 +1252,14 @@ extension ReportMath {
             incomeBars: ReportMiniBarsModel(labels: labels, series: [
                 mini(String(localized: "Income"), ReportColors.positive, data.months.map(\.income), ctx.money),
                 mini(String(localized: "Spending"), 0, data.months.map(\.spending), ctx.money),
-            ]),
+            ], titles: titles, partial: partial),
             netWorthText: ctx.money(last.netWorth), netWorthNegative: last.netWorth < 0, assetsText: ctx.money(last.assets),
             debtsText: ctx.money(-last.debt), debtsNegative: last.debt != 0,
-            netWorthBars: ReportMiniBarsModel(labels: labels, series: [mini(String(localized: "Net worth"), 0, data.months.map(\.netWorth), ctx.money)]),
+            netWorthBars: ReportMiniBarsModel(labels: labels, series: [mini(String(localized: "Net worth"), 0, data.months.map(\.netWorth), ctx.money)],
+                                              titles: titles, short: [data.months.map { compactMoney(Double($0.netWorth)) }], partial: partial),
             ageText: daysText(data.ageOfMoney),
-            ageBars: ReportMiniBarsModel(labels: labels, series: [mini(String(localized: "Cash age"), ReportColors.positive, ages, { daysText($0) })]))
+            ageBars: ReportMiniBarsModel(labels: labels, series: [mini(String(localized: "Cash age"), ReportColors.positive, ages, { daysText($0) })],
+                                         titles: titles, short: [data.months.map { (data.ageOfMoneyByMonth[$0.month] ?? nil).map { "\($0)" } ?? "" }], partial: partial))
     }
 
     // MARK: Forecast

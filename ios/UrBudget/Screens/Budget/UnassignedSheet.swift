@@ -75,7 +75,7 @@ struct UnassignedSheet: View {
             List {
                 Section {
                     VStack(spacing: 4) {
-                        Text(money(rta, currency)).font(.system(size: 38, weight: .heavy, design: .rounded)).monospacedDigit()
+                        Text(money(rta, currency)).font(.system(size: 32, weight: .heavy)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
                             .foregroundStyle(rta > 0 ? Color.urPositive : rta < 0 ? Color.urNegative : .primary)
                         Text(rta > 0 ? "Unassigned: ready for a job" : rta < 0 ? "More is assigned than you have" : "All of it is assigned")
                             .foregroundStyle(Color.secondary)
@@ -94,8 +94,11 @@ struct UnassignedSheet: View {
                             .fontWeight(.semibold).frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.capsule)
+                    .controlSize(.large)
                 }
                 .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                 figuresSection(summary, carried: carried, currency: currency)
                 targetsSection(month, targets: targets, income: income, note: note, currency: currency)
@@ -109,12 +112,13 @@ struct UnassignedSheet: View {
                 if !changes.isEmpty { changesSection(changes) }
             }
             .groupedList()
+            .tightTop()
             .navigationTitle(Dates.monthLabel(month))
             .inlineTitle()
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
             .navigationDestination(for: QuickMode.self) { QuickAssignPreview(mode: $0) { dismiss() } }
         }
-        .presentationDetents([.large])
+        .sheetDetents([.large])
         .task(id: store.version) { await quickAssignOutcomes(store, into: $outcomes) }
         .task(id: "\(store.version):\(store.month)") {
             // As the desktop's month summary works it out: the reports engine for this month alone.
@@ -265,7 +269,7 @@ struct GroupQuickAssignSheet: View {
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
             .navigationDestination(for: QuickMode.self) { QuickAssignPreview(mode: $0, categories: ids, scope: group) { dismiss() } }
         }
-        .presentationDetents([.large])
+        .sheetDetents([.large])
         .task(id: store.version) { await quickAssignOutcomes(store, categories: ids, into: $outcomes) }
     }
 }

@@ -11,6 +11,9 @@ import Foundation
 enum ReportColors {
     static let other = -1
     static let ink = -2
+    /// A line laid over columns (surplus, net flow, net worth): a series colour of its own, so it
+    /// reads as a series beside the bars it sums, in the chart and in its legend.
+    static let line = 6
     static let positive = -3
     static let negative = -4
     static let divergingPositive = 0
@@ -350,7 +353,8 @@ enum ReportMath {
                         incomeSources: ReportAmounts(json: m["incomeSources"]), accounts: ReportAmounts(json: m["accounts"]))
         }
         let payees = json["payees"].object.filter { $0.value.isObject }.sorted { $0.key < $1.key }
-            .map { ReportPayeeSpend(name: $0.key, amount: $0.value.long("amount"), count: $0.value.long("count")) }
+            .map { ReportPayeeSpend(name: $0.key, amount: $0.value.long("amount"), count: $0.value.long("count"),
+                                    category: $0.value.text("category").isEmpty ? nil : $0.value.text("category")) }
             .reportSorted(descending: { $0.amount })
         var ages: [String: Int64?] = [:]
         for (key, value) in json["ageOfMoneyByMonth"].object { ages[key] = value.isNull ? nil : value.int }
@@ -536,23 +540,25 @@ enum ReportMath {
     static func monthXTick(_ month: String) -> ReportXTick? {
         guard Dates.isMonth(month) else { return nil }
         let name = Dates.shortMonthName(month)
-        return ReportXTick(short: name, long: "\(name) \(month.dropFirst(2).prefix(2))", year: Dates.year(month))
+        return ReportXTick(short: name, long: "\(name) \(Dates.year(month))", year: Dates.year(month))
     }
 
     static func monthTitle(_ month: String) -> String { monthName(month) }
+    /// A title for the month still under way: "November 2026 so far".
+    static func soFar(_ title: String) -> String { String(localized: "\(title) so far") }
+    /// Which of `keys` is this month, still under way, or -1.
+    static func partialIndex(_ keys: [String], current: String?) -> Int { current.flatMap { keys.firstIndex(of: $0) } ?? -1 }
     static func plainTick(_ text: String) -> ReportXTick { ReportXTick(short: text, long: text, year: 0) }
 
     static func columnModel(
-        label: String, keys: [String], series: [ReportColumnSeries], format: (Double) -> String, axis: (Double) -> String, unit: String?,
+        label: String, keys: [String], series: [ReportColumnSeries], format: (Double) -> String, axis: @escaping (Double) -> String, unit: String?,
         grouped: Bool = false, line: ReportLineOverlay? = nil, average: (label: String, value: Double)? = nil,
-        xTick: (String, Int) -> ReportXTick? = { key, _ in ReportMath.monthXTick(key) }, title: (String) -> String = { ReportMath.monthTitle($0) }
+        xTick: (String, Int) -> ReportXTick? = { key, _ in ReportMath.monthXTick(key) }, title: (String) -> String = { ReportMath.monthTitle($0) },
+        current: String? = Dates.currentMonth
     ) -> ReportColumnModel {
         func at(_ s: ReportColumnSeries, _ i: Int) -> Double { i < s.values.count ? s.values[i] : 0 }
-        let ups = keys.indices.map { i in grouped ? Swift.max(0, series.map { at($0, i) }.max() ?? 0) : series.reduce(0) { $0 + Swift.max(0, at($1, i)) } }
-        let downs = keys.indices.map { i in grouped ? Swift.min(0, series.map { at($0, i) }.min() ?? 0) : series.reduce(0) { $0 + Swift.min(0, at($1, i)) } }
-        let lineValues = line?.values.compactMap { $0 } ?? []
-        let ticks = niceTicks(Swift.min(0, downs.min() ?? 0, lineValues.min() ?? 0),
-                              Swift.max(0, ups.max() ?? 0, lineValues.max() ?? 0, average?.value ?? 0))
+        let ticks = columnTicks(count: keys.count, series: series, grouped: grouped, line: line, average: average?.value)
+        let partial = partialIndex(keys, current: current)
         let readouts = keys.indices.map { i -> [ReportReadout] in
             var rows = series.filter { at($0, i) != 0 }.map { ReportReadout(label: $0.label, value: format(at($0, i)), color: $0.color) }
             let total = series.reduce(0) { $0 + at($1, i) }
@@ -568,15 +574,27 @@ enum ReportMath {
         let lineTexts = line.map { line in keys.indices.map { i -> String? in (i < line.values.count ? line.values[i] : nil).map(format) } }
         return ReportColumnModel(label: label, keys: keys, series: series, grouped: grouped, line: line, average: average?.value,
                                  averageText: average.map { "\($0.label) \(format($0.value))" }, ticks: ticks, tickLabels: ticks.map(axis), unit: unit,
-                                 xTicks: keys.enumerated().map { xTick($0.element, $0.offset) }, titles: keys.map(title), readouts: readouts,
-                                 texts: texts, lineTexts: lineTexts ?? [])
+                                 xTicks: keys.enumerated().map { xTick($0.element, $0.offset) },
+                                 titles: keys.enumerated().map { $0.offset == partial ? soFar(title($0.element)) : title($0.element) }, readouts: readouts,
+                                 texts: texts, lineTexts: lineTexts ?? [], partial: partial, axis: ReportAxisFormat(write: axis))
+    }
+
+    /// A column chart's scale: its stacks (or tallest bars, grouped) and line, with zero.
+    static func columnTicks(count: Int, series: [ReportColumnSeries], grouped: Bool, line: ReportLineOverlay?, average: Double?) -> [Double] {
+        func at(_ s: ReportColumnSeries, _ i: Int) -> Double { i < s.values.count ? s.values[i] : 0 }
+        let ups = (0..<count).map { i in grouped ? Swift.max(0, series.map { at($0, i) }.max() ?? 0) : series.reduce(0) { $0 + Swift.max(0, at($1, i)) } }
+        let downs = (0..<count).map { i in grouped ? Swift.min(0, series.map { at($0, i) }.min() ?? 0) : series.reduce(0) { $0 + Swift.min(0, at($1, i)) } }
+        let lineValues = line?.values.compactMap { $0 } ?? []
+        return niceTicks(Swift.min(0, downs.min() ?? 0, lineValues.min() ?? 0),
+                         Swift.max(0, ups.max() ?? 0, lineValues.max() ?? 0, average ?? 0))
     }
 
     static func linesModel(
-        label: String, keys: [String], series: [ReportLineSeries], format: (Double) -> String, axis: (Double) -> String, unit: String?,
+        label: String, keys: [String], series: [ReportLineSeries], format: (Double) -> String, axis: @escaping (Double) -> String, unit: String?,
         xTick: (String, Int) -> ReportXTick? = { key, _ in ReportMath.monthXTick(key) }, title: (String) -> String = { ReportMath.monthTitle($0) },
-        wash: Bool? = nil
+        wash: Bool? = nil, current: String? = Dates.currentMonth
     ) -> ReportLinesModel {
+        let partial = partialIndex(keys, current: current)
         let known = series.flatMap { $0.values.compactMap { $0 } }
         let ticks = niceTicks(Swift.min(0, known.min() ?? 0), Swift.max(1, known.max() ?? 1))
         func at(_ s: ReportLineSeries, _ i: Int) -> Double? { i < s.values.count ? s.values[i] : nil }
@@ -589,8 +607,9 @@ enum ReportMath {
         }
         let texts = series.map { s in keys.indices.map { at(s, $0).map(format) } }
         return ReportLinesModel(label: label, keys: keys, series: series, wash: wash ?? (series.count == 1), ticks: ticks, tickLabels: ticks.map(axis),
-                                unit: unit, xTicks: keys.enumerated().map { xTick($0.element, $0.offset) }, titles: keys.map(title),
-                                readouts: readouts, endLabels: ends, texts: texts)
+                                unit: unit, xTicks: keys.enumerated().map { xTick($0.element, $0.offset) },
+                                titles: keys.enumerated().map { $0.offset == partial ? soFar(title($0.element)) : title($0.element) },
+                                readouts: readouts, endLabels: ends, texts: texts, partial: partial, axis: ReportAxisFormat(write: axis))
     }
 }
 
@@ -634,6 +653,8 @@ struct ReportPayeeSpend: Equatable, Sendable {
     var name: String
     var amount: Int64
     var count: Int64
+    /// The category most of its spending went to; none for a payee with refunds alone.
+    var category: String? = nil
 }
 
 struct ReportData: Sendable {
@@ -814,6 +835,44 @@ struct ReportColumnModel: Hashable, Sendable {
     /// Each series' value at each key, formatted, for VoiceOver.
     var texts: [[String]]
     var lineTexts: [String?]
+    /// The month still under way (drawn lighter, never opened on), or -1.
+    var partial = -1
+    /// How the axis writes a value, to relabel it when series are hidden.
+    var axis: ReportAxisFormat? = nil
+
+    /// The column a chart opens on: the latest, unless it's the month still under way.
+    var opening: Int { partial == keys.count - 1 && keys.count > 1 ? keys.count - 2 : keys.count - 1 }
+
+    /// The chart with the series named in `hidden` taken out (by their legend label), rescaled to
+    /// what's left. The total and the average are about every series, so they go too. Hiding
+    /// everything hides nothing.
+    func without(_ hidden: Set<String>) -> ReportColumnModel {
+        if hidden.isEmpty { return self }
+        let kept = series.indices.filter { !hidden.contains(series[$0].label) }
+        let overlay = line.flatMap { hidden.contains($0.label) ? nil : $0 }
+        if kept.isEmpty && overlay == nil { return self }
+        var copy = self
+        copy.series = kept.map { series[$0] }
+        copy.texts = kept.map { $0 < texts.count ? texts[$0] : [] }
+        copy.line = overlay
+        if overlay == nil { copy.lineTexts = [] }
+        copy.average = nil
+        copy.averageText = nil
+        if let axis {
+            copy.ticks = ReportMath.columnTicks(count: keys.count, series: copy.series, grouped: grouped, line: overlay, average: nil)
+            copy.tickLabels = copy.ticks.map(axis.write)
+        }
+        copy.readouts = readouts.map { row in row.filter { !hidden.contains($0.label) && $0.color != nil } }
+        return copy
+    }
+}
+
+/// How an axis writes a value, kept with a chart's model so its ticks can be written again. It takes
+/// no part in telling two models apart: the ticks and their labels already do.
+struct ReportAxisFormat: Hashable, @unchecked Sendable {
+    var write: (Double) -> String
+    static func == (a: ReportAxisFormat, b: ReportAxisFormat) -> Bool { true }
+    func hash(into hasher: inout Hasher) {}
 }
 
 struct ReportLineSeries: Hashable, Sendable {
@@ -838,4 +897,29 @@ struct ReportLinesModel: Hashable, Sendable {
     var endLabels: [String?]
     /// Each series' value at each key, formatted, for VoiceOver.
     var texts: [[String?]]
+    /// The month still under way (its stretch of line dashed), or -1.
+    var partial = -1
+    var axis: ReportAxisFormat? = nil
+
+    /// The point a chart opens on: the latest, unless it's the month still under way.
+    var opening: Int { partial == keys.count - 1 && keys.count > 1 ? keys.count - 2 : keys.count - 1 }
+
+    /// The chart with the lines named in `hidden` taken out, rescaled to what's left. Hiding
+    /// everything hides nothing.
+    func without(_ hidden: Set<String>) -> ReportLinesModel {
+        if hidden.isEmpty { return self }
+        let kept = series.indices.filter { !hidden.contains(series[$0].label) }
+        if kept.isEmpty { return self }
+        var copy = self
+        copy.series = kept.map { series[$0] }
+        copy.texts = kept.map { $0 < texts.count ? texts[$0] : [] }
+        copy.endLabels = kept.map { $0 < endLabels.count ? endLabels[$0] : nil }
+        if let axis {
+            let known = copy.series.flatMap { $0.values.compactMap { $0 } }
+            copy.ticks = ReportMath.niceTicks(Swift.min(0, known.min() ?? 0), Swift.max(1, known.max() ?? 1))
+            copy.tickLabels = copy.ticks.map(axis.write)
+        }
+        copy.readouts = readouts.map { row in row.filter { !hidden.contains($0.label) } }
+        return copy
+    }
 }

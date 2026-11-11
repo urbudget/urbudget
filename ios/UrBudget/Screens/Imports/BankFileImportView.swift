@@ -184,7 +184,7 @@ struct BankFileImportView: View {
     // MARK: Choosing the file
 
     private var setup: some View {
-        Form {
+        CompactForm {
             Section {
                 Text("Bring in the transactions your bank exported. You see the lines that don't read and fix them, then check every transaction before anything is saved.")
                     .font(.subheadline).foregroundStyle(Color.secondary)
@@ -281,11 +281,20 @@ struct BankFileImportView: View {
                 }
                 if shown.format == "csv" {
                     // Some card issuers write a purchase as a positive number and a payment as a negative one.
-                    Picker("Purchases in the file", selection: Binding(get: { structure.flag("flipSigns") },
-                                                                       set: { on in restructure { $0["flipSigns"] = .bool(on) } })) {
-                        Text("Negative, as bank accounts write them").tag(false)
-                        Text("Positive, as many card statements write them").tag(true)
+                    // Its name over what's chosen, as on Android: beside each other they don't fit a phone,
+                    // and the choice wrapped to a line of its own in the middle of the row.
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Purchases in the file").font(.footnote).foregroundStyle(Color.secondary)
+                        Picker("Purchases in the file", selection: Binding(get: { structure.flag("flipSigns") },
+                                                                           set: { on in restructure { $0["flipSigns"] = .bool(on) } })) {
+                            Text("Negative, as bank accounts write them").tag(false)
+                            Text("Positive, as many card statements write them").tag(true)
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .padding(.leading, -12)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             .disabled(slow) }
@@ -397,7 +406,8 @@ struct BankFileImportView: View {
             Button { edit?() } label: {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(line.title).font(.body.weight(.semibold)).foregroundStyle(Color.primary).lineLimit(2)
+                        // A button centres its label's lines unless told: a wrapped title started further in than its first line.
+                        Text(line.title).font(.body.weight(.medium)).foregroundStyle(Color.primary).lineLimit(2).multilineTextAlignment(.leading)
                         let detail = ImportsText.line([line.fields["date"] ?? "", line.fields["memo"] ?? ""].filter { !$0.isEmpty })
                         if !detail.isEmpty { Text(detail).font(.footnote).foregroundStyle(Color.secondary).lineLimit(1) }
                     }
@@ -731,7 +741,7 @@ private struct LineFixSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            CompactForm {
                 Section {
                     Text("In the file: \(written)").font(.footnote).foregroundStyle(Color.secondary)
                     if !line.problem.isEmpty {

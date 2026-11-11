@@ -123,13 +123,12 @@ final class CategoryStatusTests: XCTestCase {
 /// The Rust services are one per process, so every storage check shares one temporary library.
 final class RepositoryTests: XCTestCase {
     func testBudgetsAreCalculatedSavedUndoneAndSearchedThroughTheSharedEngine() async throws {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("urbudget-tests-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let repository = BudgetRepository(folder: folder)
-        var snapshot = try await repository.start()
-        XCTAssertNil(snapshot.budget)
-
-        snapshot = try await repository.create(name: "Tests", currency: "USD", sample: true)
+        let repository = try await TestLibrary.repository()
+        // Other tests share this library.
+        let already = try await repository.listBudgets().count
+        var snapshot = try await repository.create(name: "Tests", currency: "USD", sample: true)
+        // A sample is marked as the desktop marks its own, so Budget offers the way back out of it.
+        XCTAssertEqual(snapshot.budget?["sample"].isObject, true)
         let budget = try XCTUnwrap(snapshot.budget)
         let summary = try XCTUnwrap(snapshot.summary)
         let model = buildBudgetModel(budget: budget, summary: summary, month: snapshot.month)
@@ -165,7 +164,8 @@ final class RepositoryTests: XCTestCase {
 
         snapshot = try await repository.create(name: "Second", currency: "EUR", sample: false)
         let budgets = try await repository.listBudgets()
-        XCTAssertEqual(budgets.count, 2)
+        XCTAssertEqual(budgets.count, already + 2)
+        XCTAssertEqual(snapshot.budget?.has("sample"), false)
         snapshot = try await repository.open(id: try XCTUnwrap(budgets.first { $0.text("name") == "Tests" }).text("id"))
         XCTAssertEqual(snapshot.budget?.text("name"), "Tests")
 
@@ -184,7 +184,7 @@ final class RepositoryTests: XCTestCase {
         XCTAssertEqual(snapshot.budget?.text("name"), "Fresh")
         XCTAssertEqual(snapshot.budget?.rows("categories").count, 16)
         let library = try await repository.listBudgets()
-        XCTAssertEqual(library.count, 4)
+        XCTAssertEqual(library.count, already + 4)
         do {
             _ = try await repository.importAsNew(Data(#"{"name":"not a backup"}"#.utf8))
             XCTFail("Only portable UrBudget backups open")
@@ -192,17 +192,15 @@ final class RepositoryTests: XCTestCase {
 
         // Sync saves a downloaded change a moment before an edit: the edit is made again on that
         // version instead of failing with "Your budget changed while saving".
-        var downloaded = try XCTUnwrap(snapshot.budget)
-        downloaded["name"] = "Renamed on the desktop"
-        _ = try NativeCore.service("save_budget", ["budget": downloaded, "expectedToken": .string(snapshot.revision), "ackOnly": true])
+        try EngineEdits.elsewhere(["name": "Renamed on the desktop"], at: snapshot)
         snapshot = try await repository.edit { try $0.upsertRecord("categories", ["id": "after-sync", "name": "Added on the phone", "group": "Everyday", "target": 0]) }
         XCTAssertEqual(snapshot.budget?.text("name"), "Renamed on the desktop")
         XCTAssertNotNil(snapshot.budget?.row("categories", id: "after-sync"))
         // An editor that showed a record sync has since changed still refuses.
         let shown = try XCTUnwrap(snapshot.budget?.row("categories", id: "after-sync"))
-        var renamed = try XCTUnwrap(snapshot.budget)
-        try renamed.upsertRecord("categories", ["id": "after-sync", "name": "Renamed by sync"])
-        _ = try NativeCore.service("save_budget", ["budget": renamed, "expectedToken": .string(snapshot.revision), "ackOnly": true])
+        var renamed = shown
+        renamed["name"] = "Renamed by sync"
+        try EngineEdits.elsewhere(["categories": ["upsert": [renamed], "delete": []]], at: snapshot)
         do {
             _ = try await repository.command("workflow", ["action": ["type": "assignAmount", "month": .string(snapshot.month), "categoryId": "after-sync", "amount": 100]],
                                              original: ("categories", shown))
@@ -214,6 +212,35 @@ final class RepositoryTests: XCTestCase {
         XCTAssertTrue(status.text("email").isEmpty)
         XCTAssertFalse(status["sync"]["unlocked"].bool)
         XCTAssertFalse(status.has("license"))
+    }
+}
+
+final class SyncStandingTests: XCTestCase {
+    private func standing(unlocked: Bool = true, enabled: Bool = true, syncing: Bool = false, pending: Bool = false, _ report: JSON?) -> SyncCoordinator.Standing {
+        SyncCoordinator.standing(unlocked: unlocked, enabled: enabled, syncing: syncing, pending: pending, report: report)
+    }
+
+    /// What the ⋯ menu's sync line says, and when its button carries a dot (paused, or needing a decision).
+    func testSyncSaysWhereItStands() {
+        let synced: JSON = ["state": "ok", "budgets": [["state": "synced"]]]
+        XCTAssertEqual(standing(synced), .synced)
+        XCTAssertEqual(standing(nil), .idle)
+        XCTAssertEqual(standing(syncing: true, synced), .syncing)
+        XCTAssertEqual(standing(pending: true, synced), .waiting)
+        XCTAssertEqual(standing(["state": "offline", "budgets": []]), .offline)
+        XCTAssertEqual(standing(["state": "ok", "budgets": []]), .onDevice)
+        XCTAssertEqual(standing(["state": "ok", "budgets": [["state": "local_only"]]]), .onDevice)
+        XCTAssertEqual(standing(["state": "waiting", "budgets": []]), .waiting)
+        // Paused: locked on this device, or the report says so.
+        XCTAssertEqual(standing(unlocked: false, synced), .paused)
+        XCTAssertEqual(standing(unlocked: false, enabled: true, nil), .paused)
+        XCTAssertEqual(standing(unlocked: false, enabled: false, nil), .idle, "Sync never set up isn't paused")
+        XCTAssertEqual(standing(["state": "ok", "budgets": [["state": "synced"], ["state": "locked"]]]), .paused)
+        // Needing a decision comes before everything but a pause and a run under way.
+        XCTAssertEqual(standing(["state": "ok", "budgets": [["state": "synced"], ["state": "conflict"]]]), .attention)
+        XCTAssertEqual(standing(["state": "offline", "budgets": [["state": "deletion_conflict"]]]), .attention)
+        XCTAssertEqual(standing(["state": "failed", "budgets": []]), .attention)
+        XCTAssertEqual(standing(syncing: true, ["state": "ok", "budgets": [["state": "conflict"]]]), .syncing)
     }
 }
 

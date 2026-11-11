@@ -85,6 +85,7 @@ struct PayeesView: View {
         }
         .groupedList()
         .navigationTitle("Payees & rules")
+        .inlineTitle()
         .searchable(text: $search, prompt: tab == "payees" ? "Search payees" : "Search rules")
         .toolbar {
             ToolbarItem(placement: .trailingBar) {
@@ -251,7 +252,7 @@ private struct PayeeEditor: View {
     var body: some View {
         let currency = store.currency
         NavigationStack(path: $route) {
-            Form {
+            CompactForm {
                 if let original {
                     Section {
                         VStack(alignment: .leading, spacing: 4) {
@@ -371,7 +372,7 @@ private struct PayeeEditor: View {
                 Text([account, category].compactMap { $0 }.joined(separator: " · ")).font(.footnote).foregroundStyle(Color.secondary).lineLimit(1)
             }
             Spacer()
-            Text(money(line.amount, currency)).monospacedDigit().foregroundStyle(line.amount > 0 ? Color.urPositive : .primary)
+            Text(money(line.amount, currency)).monospacedDigit().lineLimit(1).layoutPriority(1).foregroundStyle(line.amount > 0 ? Color.urPositive : .primary)
         }
     }
 
@@ -621,7 +622,7 @@ private struct PayeeRuleEditor: View {
 
     var body: some View {
         NavigationStack(path: $route) {
-            Form {
+            CompactForm {
                 Section {
                     TextField("Bank payee contains", text: $match)
                         .autocorrectionDisabled()
@@ -685,7 +686,7 @@ private struct PayeeRuleEditor: View {
                 Text("It won't rename or categorize imported transactions any more. Transactions it already changed stay as they are.")
             }
         }
-        .presentationDetents([.medium, .large])
+        .sheetDetents([.medium, .large])
         .interactiveDismissDisabled(saving)
         .retainingEditorDraft("payeeRule", values: ["match": .string(match), "payee": .string(payee), "category": .string(category)])
         .onAppear(perform: load)

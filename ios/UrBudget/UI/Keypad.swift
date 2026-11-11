@@ -42,7 +42,7 @@ struct PadAmount: View {
         // The sign and the sum stay left to right with the amount in Arabic.
         let signed = AppLanguage.leftToRight(!sign.isEmpty && !pad.isSum && (pad.cents ?? 0) != 0 ? sign + text : text)
         Text(signed)
-            .font(.system(size: pad.isSum ? 30 : 42, weight: .heavy, design: .rounded))
+            .font(.system(size: pad.isSum ? 30 : 42, weight: .heavy))
             .monospacedDigit()
             .foregroundStyle(color)
             .lineLimit(1)

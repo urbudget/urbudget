@@ -4,12 +4,14 @@ import SwiftUI
 struct AvailablePill: View {
     var text: String
     var status: String
+    /// The figure's size: 14 in the budget's column, where SF's digits run wider than Android's.
+    var size: CGFloat = 15
 
     var body: some View {
         let colors = StatusColors(status)
         HStack(spacing: 4) {
             if status == "credit" { Image(systemName: "creditcard.fill").font(.system(size: 11, weight: .bold)) }
-            Text(text).figure(15, weight: .bold).lineLimit(1)
+            Text(text).font(.sized(size, weight: .bold)).monospacedDigit().lineLimit(1)
         }
         .foregroundStyle(colors.content)
         .padding(.horizontal, 10)
@@ -94,6 +96,7 @@ struct Notice: View {
 
     struct Secondary {
         var label: String
+        var symbol: String?
         var action: () -> Void
     }
 
@@ -107,14 +110,26 @@ struct Notice: View {
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 10) {
-            Image(systemName: icon).foregroundStyle(ink).font(.body.weight(.semibold))
-            Text(text).font(.subheadline).foregroundStyle(Color.primary).frame(maxWidth: .infinity, alignment: .leading)
-            if let secondary {
-                Button(secondary.label, action: secondary.action).font(.subheadline.weight(.semibold)).foregroundStyle(ink).buttonStyle(.borderless)
+        // What it says and its main action on one line; a second action has the line under them,
+        // as on Android, so the words keep their room on a narrow screen.
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 10) {
+                Image(systemName: icon).foregroundStyle(ink).font(.body.weight(.semibold))
+                Text(text).font(.subheadline.weight(secondary == nil ? .regular : .semibold)).foregroundStyle(Color.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if let action, let onAction {
+                    Button(action, action: onAction).font(.subheadline.weight(.bold)).foregroundStyle(ink).buttonStyle(.borderless)
+                }
             }
-            if let action, let onAction {
-                Button(action, action: onAction).font(.subheadline.weight(.bold)).foregroundStyle(ink).buttonStyle(.borderless)
+            if let secondary {
+                Button(action: secondary.action) {
+                    HStack(spacing: 6) {
+                        if let symbol = secondary.symbol { Image(systemName: symbol) }
+                        Text(secondary.label)
+                    }
+                    .font(.subheadline.weight(.semibold)).foregroundStyle(Color.urAccent)
+                }
+                .buttonStyle(.borderless)
             }
         }
         .padding(.horizontal, 14)
@@ -163,7 +178,8 @@ struct ValueRow: View {
                 if let subtitle { Text(subtitle).font(.footnote).foregroundStyle(Color.secondary) }
             }
             Spacer(minLength: 12)
-            Text(value).monospacedDigit().foregroundStyle(color)
+            // A figure is never broken over two lines; its title gives way.
+            Text(value).monospacedDigit().foregroundStyle(color).lineLimit(1).layoutPriority(1)
         }
     }
 }
@@ -290,4 +306,70 @@ struct SaveButton: View {
             Button(title, action: action).fontWeight(.semibold)
         }
     }
+}
+
+/// A plain list's section header as a band across the screen, edge to edge with a hairline above
+/// and below, as Android draws a group in the budget and a day in the register. It's solid, so
+/// rows passing under it while it's pinned don't show through.
+private struct ListBand: ViewModifier {
+    var minHeight: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .textCase(nil)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .leading)
+            .background(Color.urBand)
+            .overlay(alignment: .top) { Hairline() }
+            .overlay(alignment: .bottom) { Hairline() }
+            .listRowInsets(EdgeInsets())
+    }
+}
+
+/// A line one pixel thick across its container (a `Divider` in an overlay stands upright).
+struct Hairline: View {
+    @Environment(\.displayScale) private var scale
+
+    var body: some View {
+        Rectangle().fill(Color.urHairline).frame(maxWidth: .infinity).frame(height: 1 / max(scale, 1))
+    }
+}
+
+extension View {
+    func listBand(minHeight: CGFloat = 40) -> some View { modifier(ListBand(minHeight: minHeight)) }
+}
+
+/// A form set as closely as the app's lists (`groupedList`): sections a little apart, the first
+/// just under the bar.
+struct CompactForm<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        Form { content }
+            #if os(iOS)
+            .listSectionSpacing(.compact)
+            .contentMargins(.top, 8, for: .scrollContent)
+            .clearOfSideBar()
+            #endif
+            .scrollIndicators(.hidden)
+    }
+}
+
+/// A sheet's one main action as a filled button across the page, on the page rather than in a
+/// card, as Android's forms end (Move, Assign to a category).
+private struct PrimaryAction: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
+            .controlSize(.large)
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets())
+            .listRowSeparator(.hidden)
+    }
+}
+
+extension View {
+    func primaryAction() -> some View { modifier(PrimaryAction()) }
 }

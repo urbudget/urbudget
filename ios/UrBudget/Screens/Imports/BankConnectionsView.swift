@@ -579,7 +579,7 @@ private struct BankLinkSheet: View {
         let lastSync = chosen?.text("id") == existing?.text("id") ? existing?["simplefin"].text("lastSync") ?? "" : ""
         let today = Dates.today
         NavigationStack(path: $route) {
-            Form {
+            CompactForm {
                 Section {
                     LabeledContent("Bank", value: bank.text("org").isEmpty ? "SimpleFIN" : bank.text("org"))
                     if !bank["balance"].isNull {
@@ -623,7 +623,7 @@ private struct BankLinkSheet: View {
                 Text("Its budget account keeps the transactions already imported. Downloads stop bringing in this bank account.")
             }
         }
-        .presentationDetents([.medium, .large])
+        .sheetDetents([.medium, .large])
         .onAppear {
             guard !loaded else { return }
             loaded = true

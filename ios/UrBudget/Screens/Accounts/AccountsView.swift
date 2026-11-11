@@ -92,7 +92,7 @@ struct AccountsView: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("Net worth").font(.subheadline).foregroundStyle(Color.secondary)
                                     Text(money(summary.long("netWorth"), currency))
-                                        .font(.system(size: 28, weight: .heavy, design: .rounded)).monospacedDigit()
+                                        .font(.system(.title, weight: .heavy)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
                                         .foregroundStyle(summary.long("netWorth") < 0 ? Color.urNegative : .primary)
                                 }
                                 Spacer()
@@ -116,6 +116,7 @@ struct AccountsView: View {
                                 NavigationLink(value: RegisterTarget(account: line.id)) { row(line) }
                                     .contextMenu { menu(line, section) }
                             }
+                            .compactRows()
                         }
                     } header: {
                         sectionHeader(section, open: open, currency: currency)
@@ -124,6 +125,7 @@ struct AccountsView: View {
                 Color.clear.frame(height: 56).listRowBackground(Color.clear)
             }
             .groupedList()
+            .tightTop()
             .readableWidth()
             .shrinksAddButton($addCompact)
             .refreshable {
@@ -131,10 +133,12 @@ struct AccountsView: View {
                 await sync.syncAutomatically()
             }
             .navigationTitle("Accounts")
+            .barTitle()
             .toolbar {
                 ToolbarItem(placement: .trailingBar) {
                     Button { form = AccountFormRequest() } label: { Image(systemName: "plus") }.accessibilityLabel("Add account")
                 }
+                ToolbarItem(placement: .trailingBar) { AssistantBarButton(page: "accounts") }
                 ToolbarItem(placement: .trailingBar) { BudgetActionsMenu() }
             }
             .navigationDestination(for: RegisterTarget.self) { TransactionsList(target: $0) }
@@ -149,11 +153,19 @@ struct AccountsView: View {
                 switch LaunchRoute.open {
                 case "register": launchPage = (sections.first?.lines.first?.id).map { .register($0) }
                 case "networth": launchPage = .netWorth
+                case "loanRegister": launchPage = (store.budget?.rows("accounts").first { $0.text("kind") == "tracking" && $0.text("name").localizedCaseInsensitiveContains("loan") }?.text("id")).map { .register($0) }
+                case "cardRegister": launchPage = (store.budget?.rows("accounts").first { $0.text("kind") == "credit" }?.text("id")).map { .register($0) }
+                case "addAccount": form = AccountFormRequest()
+                case "editAccount": form = (sections.first?.lines.first?.account).map { AccountFormRequest(account: $0) }
+                case "reconcile": reconciling = sections.first?.lines.first?.account
+                case "pay": paying = store.budget?.rows("accounts").first { $0.text("kind") == "credit" }?.text("id")
+                case "loanDetails": loanFor = store.budget?.rows("accounts").first { $0.text("kind") == "tracking" }?.text("id")
                 default: return
                 }
                 LaunchRoute.open = nil
             }
             .overlay(alignment: .bottomTrailing) { AddTransactionButton(compact: addCompact) }
+            .startPaneContent()
             .sheet(item: $form) { AccountForm(request: $0) }
             .sheet(item: Binding(get: { paying.map { IdentifiedText(value: $0) } }, set: { paying = $0?.value })) { CardPaymentSheet(accountId: $0.value) }
             .sheet(item: Binding(get: { loanFor.map { IdentifiedText(value: $0) } }, set: { loanFor = $0?.value })) { LoanEditor(accountId: $0.value) }
@@ -170,10 +182,10 @@ struct AccountsView: View {
             HStack {
                 // Points to where the text goes (left in Arabic), and down once open.
                 Image(systemName: "chevron.right").font(.caption.weight(.bold)).rotationEffect(.degrees(open ? 90 : 0))
-                    .flipsForRightToLeftLayoutDirection(true)
-                Text(section.name)
+                    .flipsForRightToLeftLayoutDirection(true).foregroundStyle(Color.secondary)
+                Text(section.name).font(.title3.bold())
                 Spacer()
-                Text(total).monospacedDigit()
+                Text(total).monospacedDigit().lineLimit(1)
                     .foregroundStyle(section.id != "closed" && section.total < 0 ? Color.urNegative : .primary)
             }
             .font(.headline)
@@ -185,16 +197,22 @@ struct AccountsView: View {
     }
 
     private func row(_ line: AccountLine) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             AccountIcon(account: line.account, balance: line.balance)
             VStack(alignment: .leading, spacing: 2) {
-                Text(line.name).foregroundStyle(line.inNetWorth ? .primary : .secondary)
+                // One line where it fits, a point smaller before it takes a second.
+                ViewThatFits(in: .horizontal) {
+                    Text(line.name).font(.body.weight(.medium)).lineLimit(1)
+                    Text(line.name).font(.callout.weight(.medium)).lineLimit(1)
+                    Text(line.name).font(.body.weight(.medium)).lineLimit(2)
+                }
+                .foregroundStyle(line.inNetWorth ? .primary : .secondary)
                 // "Checking" under an account called Checking says nothing new.
                 if line.subtitle.caseInsensitiveCompare(line.name) != .orderedSame {
-                    Text(line.subtitle).font(.footnote).foregroundStyle(Color.secondary)
+                    Text(line.subtitle).font(.footnote).foregroundStyle(Color.secondary).lineLimit(1)
                 }
             }
-            Spacer()
+            Spacer(minLength: 4)
             if line.needsCategory > 0 {
                 Circle().fill(Color.urAttention).frame(width: 9, height: 9).accessibilityLabel("Needs a category")
             }
@@ -205,7 +223,8 @@ struct AccountsView: View {
                     .background(Color.urAccent, in: Capsule())
                     .accessibilityLabel("\(line.approvals) to approve")
             }
-            Text(line.balanceText).monospacedDigit().fontWeight(.semibold)
+            // The balance is never broken over two lines; a long name gives way to it.
+            Text(line.balanceText).font(.body.weight(.semibold)).monospacedDigit().lineLimit(1).fixedSize().layoutPriority(1)
                 .foregroundStyle(!line.inNetWorth ? .secondary : line.balance < 0 ? Color.urNegative : .primary)
         }
     }
@@ -385,11 +404,13 @@ struct ReconcileSheet: View {
         let total = store.summary?.rows("accounts").first { $0.text("id") == account.text("id") }
         let cleared = total?.long("cleared") ?? 0
         NavigationStack {
-            Form {
+            CompactForm {
                 Section {
                     VStack(spacing: 4) {
+                        // The account's whole name, which the bar between its two buttons would cut short.
+                        Text(account.text("name")).font(.headline).multilineTextAlignment(.center).padding(.bottom, 6)
                         Text("Is your cleared balance").foregroundStyle(Color.secondary)
-                        Text(money(cleared, currency)).font(.system(size: 34, weight: .heavy, design: .rounded)).monospacedDigit()
+                        Text(money(cleared, currency)).font(.system(size: 32, weight: .heavy)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
                         Text("what your bank shows?").foregroundStyle(Color.secondary)
                     }
                     .frame(maxWidth: .infinity)
@@ -398,7 +419,7 @@ struct ReconcileSheet: View {
                 if !differs && preview == nil {
                     Section {
                         HStack(spacing: 12) {
-                            Button { differs = true } label: { Text("No").frame(maxWidth: .infinity) }.buttonStyle(.bordered)
+                            Button { differs = true } label: { Text("No").frame(maxWidth: .infinity) }.buttonStyle(.bordered).tint(Color.primary)
                             Button {
                                 balance = Money.editable(cleared)
                                 review()
@@ -429,7 +450,7 @@ struct ReconcileSheet: View {
                 }
                 if let error { FormErrorView(message: error) }
             }
-            .navigationTitle("Reconcile \(account.text("name"))")
+            .navigationTitle("Reconcile")
             .inlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
@@ -443,7 +464,7 @@ struct ReconcileSheet: View {
             }
         }
         .retainingEditorDraft("reconcile", values: ["account": account, "balance": .string(balance), "date": .string(date), "differs": .bool(differs)])
-        .presentationDetents([.medium, .large])
+        .sheetDetents([.medium, .large])
     }
 
     private func params() throws -> JSON {

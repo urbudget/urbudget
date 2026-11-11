@@ -24,7 +24,7 @@ struct AssistantSettingsView: View {
         let provider = controller.provider
         let ready = controller.ready
         let signingIn = controller.signingIn
-        Form {
+        CompactForm {
             Section {
                 Text("Answers use your budget and the files you attach. Changes are proposed for your review. Your chosen provider processes the conversation.")
                     .font(.subheadline)
