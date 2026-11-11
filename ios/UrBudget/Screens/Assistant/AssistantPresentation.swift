@@ -3,7 +3,8 @@ import ImageIO
 import UniformTypeIdentifiers
 
 /// Appends tokens once and publishes them at a bounded cadence, instead of copying the reply for
-/// every token (Android's AssistantStreamBuffer).
+/// every token (Android's AssistantStreamBuffer). What's published is the live reply's text and
+/// the latest line of the model's thinking.
 final class AssistantStreamBuffer {
     private var reply = ""
     private var reasoning = ""
@@ -11,12 +12,27 @@ final class AssistantStreamBuffer {
 
     func append(_ text: String, thinking: Bool = false) {
         guard !text.isEmpty else { return }
-        if thinking { reasoning += text } else { reply += text }
+        if thinking {
+            reasoning += text
+            // Only its latest line is shown, so only its tail is kept.
+            if reasoning.count > 4_000 { reasoning = String(reasoning.suffix(2_000)) }
+        } else {
+            // Words are arriving: the thinking that led to them is over.
+            reply += text
+            reasoning = ""
+        }
         changed = true
     }
 
     func clearReply() {
         reply = ""
+        changed = true
+    }
+
+    /// The thinking is over: the round moved on to a lookup, or ended.
+    func rested() {
+        guard !reasoning.isEmpty else { return }
+        reasoning = ""
         changed = true
     }
 
@@ -26,11 +42,68 @@ final class AssistantStreamBuffer {
         changed = false
     }
 
-    /// The reply and the thinking, when either changed since the last call.
+    /// The reply and the latest line of the thinking, when either changed since the last call.
     func drain() -> (reply: String, thinking: String)? {
         guard changed else { return nil }
         changed = false
-        return (reply, reasoning)
+        return (reply, AssistantThinking.line(reasoning))
+    }
+}
+
+/// The model's thinking as the assistant shows it: one line, however long it thinks.
+enum AssistantThinking {
+    /// The latest line of the thinking, without the Markdown marks around a heading.
+    static func line(_ thinking: String) -> String {
+        let marks = CharacterSet(charactersIn: "*#_` ").union(.whitespaces)
+        guard let last = thinking.split(whereSeparator: \.isNewline).last(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) else { return "" }
+        return last.trimmingCharacters(in: marks)
+    }
+}
+
+/// The latest replies that were written live while the assistant was open, by their text. One
+/// of them showed whole as it came, so it goes on showing whole now that it's finished: a long
+/// reply met later is paged instead (`AssistantMarkdownView`).
+struct AssistantWritten {
+    private var texts: [String] = []
+
+    mutating func add(_ text: String) {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        texts.removeAll { $0 == text }
+        texts.append(text)
+        if texts.count > 8 { texts.removeFirst() }
+    }
+
+    func contains(_ text: String) -> Bool { texts.contains(text.trimmingCharacters(in: .whitespacesAndNewlines)) }
+}
+
+/// Failures of work nobody asked for (reading the conversation again, a refresh on coming back),
+/// said in a quiet line of the assistant and not in an alert, and said once: the same failure
+/// of the same work isn't said again until that work has succeeded in between.
+struct AssistantQuiet {
+    /// The line to show; nil when there's nothing to say.
+    private(set) var line: String?
+    private var said: [String: String] = [:]
+
+    /// `work` failed with `message`.
+    mutating func failed(_ work: String, _ message: String) {
+        guard said.updateValue(message, forKey: work) != message else { return }
+        line = message
+    }
+
+    /// `work` succeeded: its failure, if it's the one showing, is over.
+    mutating func worked(_ work: String) {
+        guard let message = said.removeValue(forKey: work) else { return }
+        if line == message { line = nil }
+    }
+
+    /// The person closed the line. The failure it said stays said.
+    mutating func dismiss() { line = nil }
+
+    /// Another budget's assistant: nothing said about the last one holds.
+    mutating func clear() {
+        line = nil
+        said = [:]
     }
 }
 
@@ -57,6 +130,63 @@ struct AssistantThreadPresentation: Sendable {
             return AssistantEntry(id: index, json: entry, blocks: blocks)
         }
         return AssistantThreadPresentation(thread: thread, entries: entries)
+    }
+}
+
+/// A row of the conversation as it's listed: lookups in a row together as one, everything else
+/// on its own (Android's assistantRows). Its id is the place of its first entry.
+struct AssistantRow: Identifiable, Equatable {
+    let id: Int
+    var entries: [AssistantEntry]
+    var kind: String { entries.first?.kind ?? "" }
+}
+
+enum AssistantRows {
+    /// The kinds of entry this version draws. One it doesn't know takes no room at all, rather
+    /// than being drawn as an empty reply.
+    static let kinds: Set<String> = ["user", "assistant", "step", "proposal", "stopped", "error", "cut"]
+
+    static func of(_ entries: [AssistantEntry]) -> [AssistantRow] {
+        var rows: [AssistantRow] = []
+        for entry in entries where kinds.contains(entry.kind) {
+            if entry.kind == "step", let last = rows.last, last.kind == "step" {
+                rows[rows.count - 1].entries.append(entry)
+            } else {
+                rows.append(AssistantRow(id: entry.id, entries: [entry]))
+            }
+        }
+        return rows
+    }
+
+    /// The lookups of a row that show while it's folded: the latest, and any that failed.
+    static func shown(_ steps: [AssistantEntry], open: Bool) -> [AssistantEntry] {
+        guard !open else { return steps }
+        return steps.enumerated().filter { $0.offset == steps.count - 1 || $0.element.json.flag("failed") }.map(\.element)
+    }
+}
+
+/// What stands under a reply for copying, sharing, reporting and rating it. The latest reply
+/// has its buttons out; an earlier one keeps them behind one quiet button, so a long
+/// conversation isn't a column of them. A reply of the turn still being answered has none yet:
+/// they'd come in under it while the rest of the answer is written below, and push that down.
+enum AssistantReplyTools: Equatable {
+    case shown, folded, waiting
+
+    /// The places of the conversation's last message from the person and its last reply (-1
+    /// for none), found once for the whole list.
+    static func marks(_ kinds: [String]) -> (user: Int, assistant: Int) {
+        (kinds.lastIndex(of: "user") ?? -1, kinds.lastIndex(of: "assistant") ?? -1)
+    }
+
+    /// `index` is the reply's place among the conversation's entries, and `running` whether its
+    /// reply is still being made.
+    static func of(_ index: Int, marks: (user: Int, assistant: Int), running: Bool) -> AssistantReplyTools {
+        if running && index > marks.user { return .waiting }
+        return index == marks.assistant ? .shown : .folded
+    }
+
+    static func of(_ index: Int, kinds: [String], running: Bool) -> AssistantReplyTools {
+        of(index, marks: marks(kinds), running: running)
     }
 }
 
@@ -126,6 +256,14 @@ struct AssistantWith: Equatable {
         return out
     }
 
+    /// The parts to list above the field. Where the person is goes unasked, so alone it's said
+    /// only where a message can go (`canSend`: the assistant is ready, or not yet known to be
+    /// otherwise): under "sign in" or "set up" it would be a line about a message that can't be
+    /// sent yet. Anything the person put with the message is always said.
+    static func listed(_ parts: [AssistantWithPart], canSend: Bool) -> [AssistantWithPart] {
+        canSend || parts.contains { $0.kind != .place } ? parts : []
+    }
+
     /// The same line on a sent message, from what the service kept with it (the entry's `with`):
     /// nil for a message from before that was kept, or one nothing went with.
     static func sent(_ with: JSON) -> String? {
@@ -186,16 +324,19 @@ enum AssistantSelection {
     }
 }
 
-/// The message being written in a conversation: its words and the transactions selected for it.
-/// The controller keeps one per conversation, so closing the sheet or looking at another
-/// conversation doesn't lose a long message.
+/// The message being written in a conversation: its words, the transactions selected for it and
+/// the files attached to it. The controller keeps one per conversation, so closing the sheet or
+/// looking at another conversation doesn't lose a long message or what was put with it.
 struct AssistantDraft: Equatable {
     var text = ""
     var selected: [String] = []
     /// How many transactions were handed over when only the first 200 could be attached.
     var total: Int?
+    /// The files attached, as the service knows them: they wait in its staging folder until
+    /// the message is sent or they're taken off.
+    var attachments: [JSON] = []
 
-    var isEmpty: Bool { text.isEmpty && selected.isEmpty }
+    var isEmpty: Bool { text.isEmpty && selected.isEmpty && attachments.isEmpty }
 
     /// `text` added to what's written already, on a line of its own: a request from another
     /// screen or a card's Ask for changes never replaces a message being written. Text that's
@@ -221,10 +362,21 @@ enum AssistantFollow {
     /// `viewport` the scroll view's height. With the end on screen it follows. Otherwise new
     /// text, which grows the content and leaves its top where it was, changes nothing; only the
     /// content having moved down from where it rested, which is the person scrolling up however
-    /// slowly, stops it.
-    static func next(_ following: Bool, top: CGFloat, restingTop: CGFloat, bottom: CGFloat, viewport: CGFloat) -> Bool {
+    /// slowly, stops it. A move that changed the content's height (`relaid`) is the list laying
+    /// itself out, never a finger: rows measured, text arriving, a card opened. It stops nothing.
+    static func next(_ following: Bool, top: CGFloat, restingTop: CGFloat, bottom: CGFloat, viewport: CGFloat, relaid: Bool = false) -> Bool {
         if bottom <= viewport + slack { return true }
+        if relaid { return following }
         return following && top <= restingTop + drift
+    }
+
+    /// Whether to bring the list to its end again after the content moved: only while its end
+    /// is followed, and only when the content grew (`height` over what it `was`) and left its
+    /// end below the screen. That's a lazy stack measuring rows it had only guessed at, or a
+    /// card made again taller, which no arriving text announces. A finger moving the content
+    /// changes no height, so it's never worked against.
+    static func pins(following: Bool, height: CGFloat, was: CGFloat, bottom: CGFloat, viewport: CGFloat) -> Bool {
+        following && height > was + 0.5 && bottom > viewport + slack
     }
 
     /// Where a scroll up is measured from after this move. With the end on screen that's where
@@ -240,6 +392,16 @@ enum AssistantHistory {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return threads }
         return threads.filter { $0.text("title").range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil }
+    }
+
+    /// The day a conversation was last added to (YYYY-MM-DD), where the phone is: the service's
+    /// time is in UTC, and late in the evening that's already tomorrow, or still yesterday.
+    static func day(_ updated: String, zone: TimeZone = .current) -> String {
+        guard let moment = LibraryDates.instant(updated) else { return String(updated.prefix(10)) }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        let parts = calendar.dateComponents([.year, .month, .day], from: moment)
+        return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
     }
 }
 
@@ -313,6 +475,32 @@ enum AssistantErrorAction: String {
     static func of(_ entry: JSON) -> AssistantErrorAction? { AssistantErrorAction(rawValue: entry.text("action")) }
 }
 
+/// What stands above the field of a conversation that can't be carried on as things stand,
+/// with the one thing that helps (Android's banner). Only a conversation that has started
+/// has one: before that, the start of the screen says the same.
+enum AssistantComposerBanner: Equatable {
+    /// The assistant's status couldn't be read: Try again.
+    case notLoaded
+    /// A ChatGPT sign-in is under way in the browser: Cancel sign-in.
+    case signingIn
+    /// Signed out of ChatGPT: Continue with ChatGPT.
+    case signIn
+    /// No key, or none that works: the assistant's settings.
+    case setUp
+    /// Long enough that each reply is slower and costs more: continue in a new conversation.
+    case long
+
+    static func of(started: Bool, status: JSON?, statusFailed: Bool, signingIn: Bool, long: Bool, running: Bool) -> AssistantComposerBanner? {
+        guard started else { return nil }
+        guard let status else { return statusFailed ? .notLoaded : nil }
+        if !status.flag("ready") {
+            guard status.text("provider", "chatgpt") == "chatgpt" else { return .setUp }
+            return signingIn ? .signingIn : .signIn
+        }
+        return long && !running ? .long : nil
+    }
+}
+
 /// The notice before a first message to a service: what gets sent, and to whom.
 enum AssistantNotice {
     /// The company the chosen service's messages go to: a ChatGPT plan and an OpenAI key are both
@@ -383,6 +571,7 @@ enum AssistantExport {
         case "discarded": return String(localized: "discarded", comment: "A proposal's status in an exported conversation")
         case "undone": return String(localized: "undone", comment: "A proposal's status in an exported conversation")
         case "failed": return String(localized: "failed", comment: "A proposal's status in an exported conversation")
+        case "replaced": return String(localized: "replaced", comment: "A proposal's status in an exported conversation")
         default: return status
         }
     }
@@ -565,14 +754,23 @@ enum AssistantCard {
         buttons(proposal, canUndo: false).filter { !onLine.contains($0) }
     }
 
-    /// The words on a finished card's line, before its title: "Applied 21/10/2026, 14:30" in the
-    /// budget's date format (plain "Applied" when the service kept no time), "Undone", "Replaced
-    /// by a newer version", and "Discarded", or "Removed" for a thing the assistant made.
-    static func finishedWords(_ proposal: JSON) -> String {
+    /// When a card was applied, as the app writes a day and a time ("21/10/2026, 14:30"), and
+    /// no longer than it needs to be under the card's title: the time alone on `today` (a day
+    /// where the phone is, YYYY-MM-DD).
+    static func moment(_ at: Date, today: String = Dates.today) -> String {
+        guard Dates.fromPicker(at) == today else { return LibraryDates.label(at) }
+        return at.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(.app))
+    }
+
+    /// Where a finished card stands, under its title: "Applied 21/10/2026, 14:30" in the
+    /// budget's date format (the time alone today, plain "Applied" when the service kept no
+    /// time), "Undone", "Replaced by a newer version", and "Discarded", or "Removed" for a
+    /// thing the assistant made.
+    static func finishedWords(_ proposal: JSON, today: String = Dates.today) -> String {
         switch proposal.text("status") {
         case "applied":
             guard let at = LibraryDates.instant(proposal.text("appliedAt")) else { return String(localized: "Applied") }
-            return String(localized: "Applied \(LibraryDates.label(at))")
+            return String(localized: "Applied \(moment(at, today: today))")
         case "undone": return String(localized: "Undone")
         case "replaced": return String(localized: "Replaced by a newer version")
         default: return proposal.flag("made") ? String(localized: "Removed") : String(localized: "Discarded")
@@ -584,6 +782,33 @@ enum AssistantCard {
         guard proposal.text("kind") == "question", proposal.text("status") == "applied" else { return nil }
         return String(localized: "Asked: \(proposal.text("title"))")
     }
+
+    /// A finished card's line: its title, with the line to itself. A question that was
+    /// answered reads "Asked: …".
+    static func finishedTitle(_ proposal: JSON) -> String { asked(proposal) ?? proposal.text("title") }
+
+    /// What stands under a finished card's title (`finishedWords`). Nil for a question that
+    /// was answered: its title says it.
+    static func finishedState(_ proposal: JSON, today: String = Dates.today) -> String? {
+        asked(proposal) == nil ? finishedWords(proposal, today: today) : nil
+    }
+
+    /// What a finished card says about itself while it's folded: only what still matters. News
+    /// of a card that's done with ("it was brought up to date") is past; a warning or an error
+    /// (an import that took only some of its fixes) shows without opening it.
+    static func foldedMessage(_ proposal: JSON) -> (tone: String, text: String)? {
+        guard let said = message(proposal), said.tone != "info" else { return nil }
+        return said
+    }
+
+    /// A row with a part that can be changed: its category, its amount, or both.
+    static func changeable(_ row: JSON) -> Bool {
+        !row.text("key").isEmpty && (row["edit"].flag("category") || row["edit"].flag("amount"))
+    }
+
+    /// Whether every row of a card keeps room for a pencil: where any row has one (`choosing`:
+    /// the card's parts can be changed now), so the amounts stay in one column.
+    static func pencilRoom(_ rows: [JSON], choosing: Bool) -> Bool { choosing && rows.contains(where: changeable) }
 
     /// What the card has to say about itself: its words and their tone ("info", "warn" or
     /// "error"). Nil when it says nothing.

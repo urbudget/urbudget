@@ -33,10 +33,11 @@ JSON text and shows the reply. An engine request carries the budget it's about, 
 `{"version": 1, "method": "calculate", "budget": {...}, "params": {...}}`, and the engine forgets
 it after the call. A service request works on the budget the shared store has open.
 
-The two apps now use these differently. iOS changes its own whole copy through engine requests
-and saves it with `save_budget`. Android's edits, previews and totals send no budget: they go to
-the service methods `edit_budget` and `query_budget`, run on the store's copy, and the app keeps
-only a light copy ([the contract](plans/engine-edits.md#as-built)). An engine request gets the same
+Both apps' edits, previews and totals send no budget: they go to the service methods
+`edit_budget` and `query_budget`, run on the store's copy, and the app keeps only a light copy
+([the contract](plans/engine-edits.md#as-built)); Android since 5 November 2026 and iOS since the
+11th. Engine requests are left for what has no open budget behind it: a new budget, a file being
+read, a loan's sums. An engine request gets the same
 answer on both, because the iOS adapter passes engine requests straight to the Android one's
 `invoke_json`. On iOS the requests go through `Core/NativeCore.swift`, on Android through
 `NativeBridge.kt`.

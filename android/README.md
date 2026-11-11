@@ -20,8 +20,7 @@ on [`crates/urbudget-android`](../crates/urbudget-android) once for each phone a
 `liburbudget_android.so` into the app. Kotlin calls it through JNI in
 `NativeBridge.kt`: each call sends a JSON request and gets a JSON reply. Edits, previews and
 totals send no budget: they run on the store's copy through `edit_budget` and `query_budget`
-([below](#storage-privacy-and-concurrency)). The iOS app doesn't use those yet, so the two apps
-no longer send the same requests. The accounting, storage, sync and imports all happen in that
+([below](#storage-privacy-and-concurrency)). The iOS app sends the same requests, with the same patches coming back. The accounting, storage, sync and imports all happen in that
 Rust library (the shared crates); Kotlin draws the screens. The
 [mobile guide](../docs/MOBILE.md) shows how this fits with iOS and desktop.
 

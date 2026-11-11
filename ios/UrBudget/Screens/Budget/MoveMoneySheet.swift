@@ -32,7 +32,7 @@ struct MoveMoneySheet: View {
     var body: some View {
         let currency = store.currency
         NavigationStack(path: $route) {
-            Form {
+            CompactForm {
                 Section {
                     Button {
                         keypad = true
@@ -49,8 +49,9 @@ struct MoveMoneySheet: View {
                     Button {
                         (from, to) = (to, from)
                     } label: {
-                        Label("Swap", systemImage: "arrow.up.arrow.down").frame(maxWidth: .infinity)
+                        Label("Swap", systemImage: "arrow.up.arrow.down").font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity)
                     }
+                    .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16))
                     NavigationLink(value: MoveEnd.to) { end("To", to, currency) }
                 }
                 if let error { FormErrorView(message: error) }
@@ -58,11 +59,12 @@ struct MoveMoneySheet: View {
                     Section {
                         Button(action: save) {
                             HStack(spacing: 8) {
-                                if saving { ProgressView() }
+                                if saving { ProgressView().tint(.white) }
                                 Text(from == Unassigned ? "Assign" : "Move").fontWeight(.semibold)
                             }
                             .frame(maxWidth: .infinity)
                         }
+                        .primaryAction()
                         .disabled(saving)
                     }
                 }
@@ -84,7 +86,7 @@ struct MoveMoneySheet: View {
             }
             .animation(.snappy(duration: 0.25), value: keypad)
         }
-        .presentationDetents([.large])
+        .sheetDetents([.large])
         .retainingEditorDraft("moveMoney", values: ["from": .string(from), "to": .string(to), "amountExpression": .string(pad.text), "month": .string(store.month)])
         .onAppear(perform: start)
     }

@@ -112,23 +112,102 @@ struct ReportsView: View {
     @State private var path: [ReportNav] = []
     @State private var filters = ReportFilters()
     @State private var cache = ReportBudgetCache()
+    @State private var span = WindowSpan()
+    @Environment(\.fold) private var fold
 
     init() {}
 
+    /// On a wide window the list of reports stays at the side and the Overview, or the report
+    /// chosen, is beside it; Back from a report returns to the Overview.
     var body: some View {
-        NavigationStack(path: $path) {
-            ReportsOverview(cache: cache)
-                .navigationTitle("Reports")
-                .toolbar { ToolbarItem(placement: .trailingBar) { BudgetActionsMenu() } }
-                .navigationDestination(for: ReportNav.self) { nav in
-                    switch nav {
-                    case .report(let id, let group):
-                        ReportPage(id: id, group: group, filters: filters, cache: cache) { path.append($0) }
-                    case .drill(let request):
-                        ReportDrillView(request: request, cache: cache)
-                    }
+        // By the window's width, or by a fold: the list ends where it runs and the report takes the far side.
+        let split = WideLayout.split(.reports, span: span, fold: fold)
+        let wide = split != nil
+        HStack(spacing: 0) {
+            if let split {
+                NavigationStack {
+                    ReportsIndex(open: shown) { id in path = id.map { [.report($0, group: nil)] } ?? [] }
+                        .startPaneContent()
+                        .navigationTitle("Reports")
+                        .barTitle()
                 }
+                .environment(\.startPane, true)
+                // On the start side of a fold the list keeps clear of the dock the tabs stand in.
+                .contentMargins(.bottom, split.hinge && fold.docksTabs ? FoldDock.room : 0, for: .scrollContent)
+                .frame(width: split.list)
+                if split.hinge { FoldGap(width: split.gap) } else { Divider().ignoresSafeArea() }
+            }
+            NavigationStack(path: $path) {
+                ReportsOverview(cache: cache, listsReports: !wide)
+                    .navigationTitle(wide ? Text("Overview") : Text("Reports"))
+                    .barTitle()
+                    .toolbar {
+                        ToolbarItem(placement: .trailingBar) { AssistantBarButton(page: "reports") }
+                        ToolbarItem(placement: .trailingBar) { BudgetActionsMenu() }
+                    }
+                    .navigationDestination(for: ReportNav.self) { nav in
+                        switch nav {
+                        case .report(let id, let group):
+                            // Beside the list, another report takes this one's place, so the list's mark follows.
+                            ReportPage(id: id, group: group, filters: filters, cache: cache,
+                                       switchTo: wide && group == nil ? { path = [.report($0, group: nil)] } : nil) { path.append($0) }
+                                .id(nav)
+                        case .drill(let request):
+                            ReportDrillView(request: request, cache: cache)
+                        }
+                    }
+            }
         }
+        .measuringSpan($span)
+        .onAppear {
+            // Debug builds can open a report at launch (`-open report:categories`), for screenshots.
+            guard let route = LaunchRoute.open, route.hasPrefix("report:") else { return }
+            LaunchRoute.open = nil
+            path = [.report(String(route.dropFirst(7)), group: nil)]
+        }
+        .belowTopTabs(wide && split?.hinge != true)
+    }
+
+    /// The report the pane is on (whatever was opened from it since), or nil on the Overview.
+    private var shown: String? {
+        if case .report(let id, _)? = path.first { return id }
+        return nil
+    }
+}
+
+/// The reports' list on a wide window: the Overview, then every report by group, the open one marked.
+private struct ReportsIndex: View {
+    var open: String?
+    var choose: (String?) -> Void
+
+    var body: some View {
+        List {
+            Section { row(nil, String(localized: "Overview"), "square.grid.2x2") }
+            ForEach(ReportInfo.groups, id: \.self) { group in
+                Section {
+                    ForEach(ReportInfo.all.filter { $0.group == group }) { report in row(report.id, report.label, report.icon) }
+                } header: {
+                    Text(ReportInfo.groupHeader(group))
+                }
+            }
+        }
+        .groupedList()
+    }
+
+    private func row(_ id: String?, _ label: String, _ icon: String) -> some View {
+        let selected = id == open
+        return Button { choose(id) } label: {
+            Label {
+                Text(label).foregroundStyle(selected ? Color.urAccent : Color.primary).fontWeight(selected ? .semibold : .regular)
+            } icon: {
+                Image(systemName: icon).foregroundStyle(Color.urAccent)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(selected ? Color.urAccent.opacity(0.12) : nil)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
@@ -174,10 +253,16 @@ private struct ReportOverviewKey: Hashable {
 private struct ReportsOverview: View {
     @Environment(BudgetStore.self) private var store
     var cache: ReportBudgetCache
+    /// Every report by group under the cards; beside the reports' own list, the list is left to it.
+    var listsReports = true
     @State private var attempt = 0
     @State private var result: ReportScoped<ReportOverviewKey, ReportOverviewModel?>?
     @State private var failure: ReportScoped<ReportOverviewKey, String>?
     @State private var pickingMonth = false
+    /// The month under a finger on each card's small chart, or -1.
+    @State private var pickedIncome = -1
+    @State private var pickedNetWorth = -1
+    @State private var pickedAge = -1
 
     var body: some View {
         let key = ReportOverviewKey(version: store.version, month: store.month, attempt: attempt)
@@ -199,9 +284,11 @@ private struct ReportsOverview: View {
             } else {
                 Section { ProgressView().frame(maxWidth: .infinity).padding(.vertical, 32) }
             }
-            allReports
+            if listsReports { allReports }
         }
         .groupedList()
+        .tightTop()
+        .environment(\.defaultMinListRowHeight, 30)
         .toolbar {
             if failed == nil && result != nil && !current {
                 ToolbarItem(placement: .leadingBar) { ProgressView().accessibilityLabel("Updating reports") }
@@ -229,6 +316,8 @@ private struct ReportsOverview: View {
             }.value
             guard !Task.isCancelled else { return }
             result = ReportScoped(scope: key, value: model)
+            // New figures start with no month picked.
+            (pickedIncome, pickedNetWorth, pickedAge) = (-1, -1, -1)
         } catch {
             guard !Task.isCancelled else { return }
             failure = ReportScoped(scope: key, value: BudgetStore.readable(error))
@@ -236,26 +325,31 @@ private struct ReportsOverview: View {
     }
 
     private var monthSection: some View {
+        // The month the cards end at, chosen as on Android: its name opens the months, and the
+        // arrows step one at a time. It sits on the page, not in a card of its own.
         Section {
-            HStack {
-                Button { store.selectMonth(Dates.addMonths(store.month, -1)) } label: {
-                    Image(systemName: "chevron.backward").font(.body.weight(.semibold))
-                }
-                .accessibilityLabel("Previous month")
-                Spacer()
+            HStack(spacing: 4) {
                 Button { pickingMonth = true } label: {
-                    Text(Dates.monthLabel(store.month)).font(.headline).foregroundStyle(Color.primary)
+                    HStack(spacing: 5) {
+                        Text(Dates.shortMonthLabel(store.month)).font(.title3.bold())
+                        Image(systemName: "chevron.down").font(.footnote.weight(.bold))
+                    }
+                    .foregroundStyle(Color.primary)
                 }
                 .accessibilityHint("Chooses another month")
                 Spacer()
+                Button { store.selectMonth(Dates.addMonths(store.month, -1)) } label: {
+                    Image(systemName: "chevron.backward").font(.body.weight(.semibold)).frame(width: 36, height: 32)
+                }
+                .accessibilityLabel("Previous month")
                 Button { store.selectMonth(Dates.addMonths(store.month, 1)) } label: {
-                    Image(systemName: "chevron.forward").font(.body.weight(.semibold))
+                    Image(systemName: "chevron.forward").font(.body.weight(.semibold)).frame(width: 36, height: 32)
                 }
                 .accessibilityLabel("Next month")
             }
             .buttonStyle(.borderless)
-        } footer: {
-            Text("The cards cover the six months ending here.")
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 0, leading: 6, bottom: 0, trailing: 0))
         }
     }
 
@@ -264,10 +358,33 @@ private struct ReportsOverview: View {
             Label(title, systemImage: icon).font(.headline).foregroundStyle(Color.urAccent)
         }
         .accessibilityHint("Opens the full report")
+        .listRowSeparator(.hidden)
+    }
+
+    /// A month picked on the income card's small chart: its name, then each series' figure.
+    private func pickedMonth(_ bars: ReportMiniBarsModel, _ index: Int) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            monthCaption(bars, index)
+            HStack(spacing: 16) {
+                ForEach(bars.series, id: \.label) { series in
+                    HStack(spacing: 6) {
+                        ReportLegendKey(color: ReportPalette.color(series.color))
+                        Text(index < series.texts.count ? series.texts[index] : "").font(.headline).monospacedDigit().lineLimit(1)
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(series.label)
+                    .accessibilityValue(index < series.texts.count ? series.texts[index] : "")
+                }
+            }
+        }
+    }
+
+    private func monthCaption(_ bars: ReportMiniBarsModel, _ index: Int) -> some View {
+        Text(index < bars.titles.count ? bars.titles[index] : "").font(.subheadline).foregroundStyle(Color.secondary)
     }
 
     private func bigFigure(_ text: String, negative: Bool) -> some View {
-        Text(text).font(.largeTitle.weight(.bold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
+        Text(text).font(.title.weight(.heavy)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
             .foregroundStyle(negative ? Color.urNegative : Color.primary)
     }
 
@@ -281,14 +398,24 @@ private struct ReportsOverview: View {
             Text(row.valueText).monospacedDigit().lineLimit(1)
         }
         .accessibilityElement(children: .combine)
-        if row.key.hasPrefix("__") && row.key != ReportMath.uncategorized {
-            content
-        } else {
-            NavigationLink(value: ReportNav.drill(ReportDrillRequest(from: month, to: month, accounts: [], categories: [],
-                                                                     target: ReportDrillTarget(title: row.label, dimension: "category", key: row.key)))) {
+        // The rows read as one short table, close together and without lines or arrows between
+        // them, as on Android; a tap still opens the category's transactions.
+        Group {
+            if row.key.hasPrefix("__") && row.key != ReportMath.uncategorized {
                 content
+            } else {
+                content.background {
+                    NavigationLink(value: ReportNav.drill(ReportDrillRequest(from: month, to: month, accounts: [], categories: [],
+                                                                             target: ReportDrillTarget(title: row.label, dimension: "category", key: row.key)))) {
+                        EmptyView()
+                    }
+                    .opacity(0)
+                }
+                .accessibilityAddTraits(.isButton)
             }
         }
+        .listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
     }
 
     @ViewBuilder private func cards(_ model: ReportOverviewModel) -> some View {
@@ -305,6 +432,7 @@ private struct ReportsOverview: View {
             }
             .padding(.vertical, 4)
             .accessibilityElement(children: .combine)
+            .listRowSeparator(.hidden)
             if !model.rows.isEmpty {
                 HStack {
                     Text("Top categories")
@@ -314,7 +442,11 @@ private struct ReportsOverview: View {
                 .font(.footnote)
                 .foregroundStyle(Color.secondary)
                 .accessibilityHidden(true)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 2, trailing: 16))
                 ForEach(model.rows) { spendRow($0, month: model.month, dot: true) }
+                // The table's last row keeps a little room from the card's edge.
+                Color.clear.frame(height: 4).listRowSeparator(.hidden).listRowInsets(EdgeInsets()).accessibilityHidden(true)
             }
             if let lead = model.refundLead {
                 Text(lead).font(.subheadline)
@@ -324,8 +456,13 @@ private struct ReportsOverview: View {
         Section {
             header("Income vs. spending", icon: "arrow.left.arrow.right", id: "incomeExpense")
             VStack(alignment: .leading, spacing: 10) {
-                Text(model.incomeLead).font(.title3.weight(.semibold))
-                ReportMiniBars(model: model.incomeBars)
+                // A month picked on the small chart takes the headline's place.
+                if model.incomeBars.labels.indices.contains(pickedIncome) {
+                    pickedMonth(model.incomeBars, pickedIncome)
+                } else {
+                    Text(model.incomeLead).font(.title3.weight(.semibold))
+                }
+                ReportMiniBars(model: model.incomeBars, selected: pickedIncome) { pickedIncome = $0 }
                 ReportLegendView(items: [ReportLegendItem(label: String(localized: "Income"), color: ReportColors.positive),
                                          ReportLegendItem(label: String(localized: "Spending"), color: 0)])
             }
@@ -334,18 +471,28 @@ private struct ReportsOverview: View {
         Section {
             header("Net worth", icon: "chart.line.uptrend.xyaxis", id: "networth")
             VStack(alignment: .leading, spacing: 8) {
-                bigFigure(model.netWorthText, negative: model.netWorthNegative)
-                ValueRow(title: String(localized: "Assets"), value: model.assetsText)
-                ValueRow(title: String(localized: "Debts"), value: model.debtsText, color: model.debtsNegative ? .urNegative : .primary)
-                ReportMiniBars(model: model.netWorthBars)
+                if let series = model.netWorthBars.series.first, series.values.indices.contains(pickedNetWorth) {
+                    bigFigure(series.texts[pickedNetWorth], negative: series.values[pickedNetWorth] < 0)
+                    monthCaption(model.netWorthBars, pickedNetWorth)
+                } else {
+                    bigFigure(model.netWorthText, negative: model.netWorthNegative)
+                    ValueRow(title: String(localized: "Assets"), value: model.assetsText)
+                    ValueRow(title: String(localized: "Debts"), value: model.debtsText, color: model.debtsNegative ? .urNegative : .primary)
+                }
+                ReportMiniBars(model: model.netWorthBars, selected: pickedNetWorth) { pickedNetWorth = $0 }
             }
             .padding(.vertical, 4)
         }
         Section {
             header("Cash age", icon: "hourglass", id: "age")
             VStack(alignment: .leading, spacing: 8) {
-                bigFigure(model.ageText, negative: false)
-                ReportMiniBars(model: model.ageBars)
+                if let series = model.ageBars.series.first, series.values.indices.contains(pickedAge) {
+                    bigFigure(series.texts[pickedAge], negative: false)
+                    monthCaption(model.ageBars, pickedAge)
+                } else {
+                    bigFigure(model.ageText, negative: false)
+                }
+                ReportMiniBars(model: model.ageBars, selected: pickedAge) { pickedAge = $0 }
             }
             .padding(.vertical, 4)
         }
@@ -480,6 +627,8 @@ private struct ReportPage: View {
     var group: String?
     var filters: ReportFilters
     var cache: ReportBudgetCache
+    /// Beside the reports' list: the title menu's choice replaces this report, where on a phone it changes in place.
+    var switchTo: ((String) -> Void)?
     var navigate: (ReportNav) -> Void
 
     @State private var id: String
@@ -505,11 +654,13 @@ private struct ReportPage: View {
     @State private var exporting = false
     @State private var exportError: String?
 
-    init(id: String, group: String?, filters: ReportFilters, cache: ReportBudgetCache, navigate: @escaping (ReportNav) -> Void) {
+    init(id: String, group: String?, filters: ReportFilters, cache: ReportBudgetCache, switchTo: ((String) -> Void)? = nil,
+         navigate: @escaping (ReportNav) -> Void) {
         _id = State(initialValue: id)
         self.group = group
         self.filters = filters
         self.cache = cache
+        self.switchTo = switchTo
         self.navigate = navigate
     }
 
@@ -548,7 +699,7 @@ private struct ReportPage: View {
         }
         .navigationTitle(group ?? info.label)
         .inlineTitle()
-        .modifier(ReportTitleMenu(enabled: group == nil, current: id) { id = $0 })
+        .modifier(ReportTitleMenu(enabled: group == nil, current: id) { next in if let switchTo { switchTo(next) } else { id = next } })
         .toolbar { toolbar(key: key, viewKey: viewKey) }
         .task(id: store.version) { await loadContext() }
         .task(id: ReportTaskKey(key: key, active: !isForecast)) { await loadData(key) }
@@ -836,7 +987,7 @@ private struct ReportRangeSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            CompactForm {
                 Section {
                     MonthRow(title: String(localized: "From"), month: $from)
                     MonthRow(title: String(localized: "To"), month: $to)
@@ -856,7 +1007,7 @@ private struct ReportRangeSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium])
+        .sheetDetents([.medium])
     }
 }
 
@@ -916,7 +1067,7 @@ private struct ReportFilterSheet: View {
                 }
             }
             .groupedList()
-            .searchable(text: $query, prompt: "Search \(title.lowercased())")
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search \(title.lowercased())")
             .navigationTitle(title)
             .inlineTitle()
             .toolbar {
@@ -945,7 +1096,7 @@ private struct ReportEverydaySheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            CompactForm {
                 Section {
                     AmountField(title: String(localized: "Everyday spending a month"), text: $text)
                     FormErrorView(message: error)
@@ -969,7 +1120,7 @@ private struct ReportEverydaySheet: View {
                 }
             }
         }
-        .presentationDetents([.medium])
+        .sheetDetents([.medium])
     }
 }
 

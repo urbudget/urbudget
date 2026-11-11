@@ -122,3 +122,47 @@ final class LibraryTests: XCTestCase {
         XCTAssertFalse(LibraryCurrencies.valid("US"))
     }
 }
+
+final class LibraryTrashTests: XCTestCase {
+    func testTrashIsListedApartAndOnlyThisDevicesCanBeDeletedForGood() {
+        let open: JSON = ["id": "a", "lifecycle": "active", "scope": "local"]
+        let binned: JSON = ["id": "b", "lifecycle": "trashed", "scope": "local"]
+        let synced: JSON = ["id": "c", "lifecycle": "trashed", "scope": "account"]
+        let purged: JSON = ["id": "d", "lifecycle": "purged", "scope": "account"]
+        let kept: JSON = ["id": "e", "lifecycle": "recovery"]
+        XCTAssertEqual([open, binned, synced, purged, kept].filter(LibraryTrash.holds).map { $0.text("id") }, ["b", "c", "d"])
+        // An account's budget stays until its deletion has synced; one being purged is already going.
+        XCTAssertEqual([open, binned, synced, purged, kept].filter(LibraryTrash.onDeviceOnly).map { $0.text("id") }, ["b"])
+    }
+
+    /// Through the real library: a budget in Trash is deleted for good, and Trash is emptied.
+    func testABudgetInTrashIsDeletedForGoodAndTrashEmptied() async throws {
+        let repository = try await TestLibrary.repository()
+        func entries() async throws -> [JSON] { try await repository.listBudgets() }
+        func id(_ name: String) async throws -> String {
+            let listed = try await entries()
+            return try XCTUnwrap(listed.first { $0.text("name") == name }).text("id")
+        }
+        for name in ["Trash one", "Trash two", "Trash three", "Stays open"] {
+            _ = try await repository.create(name: name, currency: "USD", sample: false, localOnly: true)
+        }
+        // The open budget can't be purged, and neither can one that isn't in Trash.
+        let first = try await id("Trash one")
+        XCTAssertThrowsError(try NativeCore.service("library_purge", ["id": .string(first)]))
+        for name in ["Trash one", "Trash two", "Trash three"] { _ = try await repository.deleteBudget(id: try await id(name)) }
+        var listed = try await entries()
+        XCTAssertEqual(Set(listed.filter(LibraryTrash.onDeviceOnly).map { $0.text("name") }).intersection(["Trash one", "Trash two", "Trash three"]).count, 3)
+
+        _ = try NativeCore.service("library_purge", ["id": .string(first)])
+        listed = try await entries()
+        XCTAssertNil(listed.first { $0.text("name") == "Trash one" })
+        XCTAssertNotNil(listed.first { $0.text("name") == "Trash two" })
+
+        let emptied = try NativeCore.service("library_empty_trash")
+        XCTAssertGreaterThanOrEqual(emptied.long("deleted"), 2)
+        XCTAssertTrue(emptied.rows("failed").isEmpty)
+        listed = try await entries()
+        XCTAssertFalse(listed.contains(where: LibraryTrash.onDeviceOnly))
+        XCTAssertNotNil(listed.first { $0.text("name") == "Stays open" && $0.flag("current") })
+    }
+}

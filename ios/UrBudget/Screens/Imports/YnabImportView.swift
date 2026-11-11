@@ -150,7 +150,7 @@ struct YnabImportView: View {
 
     var body: some View {
         NavigationStack(path: $route) {
-            Form {
+            CompactForm {
                 if !reviewing {
                     Section {
                         Picker("Import from", selection: $mode) {

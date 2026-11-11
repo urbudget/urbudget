@@ -49,7 +49,7 @@ targets:
           - CFBundleTypeName: Bank statement
             CFBundleTypeRole: Viewer
             LSHandlerRank: Alternate
-            LSItemContentTypes: [public.comma-separated-values-text, app.urbudget.ofx, app.urbudget.qfx, app.urbudget.qif]
+            LSItemContentTypes: [public.comma-separated-values-text, app.urbudget.ofx, app.urbudget.qfx, app.urbudget.qif, app.urbudget.mt940]
           - CFBundleTypeName: Budget backup or YNAB export
             CFBundleTypeRole: Viewer
             LSHandlerRank: Alternate
@@ -67,10 +67,18 @@ targets:
             UTTypeDescription: QIF bank statement
             UTTypeConformsTo: [public.data, public.text]
             UTTypeTagSpecification: { public.filename-extension: [qif] }
+          - UTTypeIdentifier: app.urbudget.mt940
+            UTTypeDescription: MT940 bank statement
+            UTTypeConformsTo: [public.data, public.text]
+            UTTypeTagSpecification: { public.filename-extension: [sta, "940", mt940] }
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
+        # An iPhone stays upright all the same: the app delegate allows the others only while an
+        # iPhone Duo is unfolded (FoldOrientation), so it can stand half open on a table.
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
         UISupportedInterfaceOrientations~ipad:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationPortraitUpsideDown
@@ -107,6 +115,9 @@ targets:
     platform: iOS
     sources:
       - path: UrBudgetTests
+      # The patch cases Rust, Kotlin and TypeScript apply too (BudgetPatchTests).
+      - path: ../shared/fixtures/patch-cases.json
+        buildPhase: resources
     dependencies:
       - target: UrBudget
     settings:

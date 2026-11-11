@@ -52,7 +52,7 @@ struct AssistantHistorySheet: View {
                 Button("Cancel", role: .cancel) { renaming = nil }
             }
         }
-        .presentationDetents([.medium, .large])
+        .sheetDetents([.medium, .large])
     }
 
     /// A conversation: its title and when it was last added to, and for the open one, the
@@ -70,7 +70,7 @@ struct AssistantHistorySheet: View {
                     Text(thread.text("title").isEmpty ? String(localized: "New conversation") : thread.text("title"))
                         .foregroundStyle(Color.primary)
                         .lineLimit(2)
-                    Text(Money.date(String(thread.text("updated").prefix(10))))
+                    Text(Money.date(AssistantHistory.day(thread.text("updated"))))
                         .font(.footnote)
                         .foregroundStyle(Color.secondary)
                     if let usage {

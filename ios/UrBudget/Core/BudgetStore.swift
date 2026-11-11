@@ -15,12 +15,20 @@ struct BudgetSnapshot: Sendable {
 }
 
 /// The serial boundary around the shared engine and the SQLite store, as Android's BudgetRepository
-/// with SqliteBudgetStorage. A snapshot is published only after validation, calculation and a
-/// durable, revision-checked commit have all succeeded.
+/// with SqliteBudgetStorage. The open budget lives in the store: an edit says what to do
+/// (`edit_budget`) and gets back what changed, so no budget crosses to the engine and back. A
+/// snapshot is published only after validation, calculation and a durable, revision-checked commit
+/// have all succeeded.
 actor BudgetRepository {
-    /// Sync or another window committed first. The latest budget is in `snapshot`.
-    struct Conflict: Error { var snapshot: BudgetSnapshot }
+    /// Sync or another window committed first. The latest budget is in `snapshot`; `message` says
+    /// why the change wasn't made again on it, when there's more to say than that it changed.
+    struct Conflict: Error {
+        var snapshot: BudgetSnapshot
+        var message: String?
+    }
 
+    /// The light copy: no transaction `source` and no `sourceExport`, which stay in the store. It
+    /// must never go back as a whole budget (`save_budget` would erase them); edits send patches.
     private var current: JSON?
     private var token = ""
     private var isNew = true
@@ -41,6 +49,13 @@ actor BudgetRepository {
         return base.appendingPathComponent("UrBudget", isDirectory: true)
     }
 
+    private static let noBudget = String(localized: "Create or import a budget first.")
+
+    /// The store refused a revision it has moved past ("CONFLICT: …").
+    private static func isConflict(_ error: Error) -> Bool {
+        (error as? AppError)?.message.contains("CONFLICT") == true
+    }
+
     func start() throws -> BudgetSnapshot {
         if !started {
             try NativeCore.initialize(directory: folder ?? Self.directory())
@@ -51,7 +66,7 @@ actor BudgetRepository {
     }
 
     func load() throws -> BudgetSnapshot {
-        let reply = try NativeCore.service("load_budget")
+        let reply = try NativeCore.service("load_budget", ["light": true])
         adopt(reply, budget: reply["budget"])
         return snapshot()
     }
@@ -67,11 +82,10 @@ actor BudgetRepository {
     /// Enters scheduled transactions that have come due, as desktop does when it opens.
     func applyDueSchedules() throws -> BudgetSnapshot? {
         guard started, !isNew else { return nil }
-        let before = token
-        let reply = try NativeCore.service("apply_due_schedules", ["through": .string(Dates.today)])
-        guard reply.text("token") != before else { return nil }
-        adopt(reply, budget: reply["budget"])
-        return snapshot()
+        // The reply is the new revision alone; the budget is read only if it moved.
+        let reply = try NativeCore.service("apply_due_schedules", ["through": .string(Dates.today), "ackOnly": true])
+        guard reply.text("token") != token else { return nil }
+        return try load()
     }
 
     func selectMonth(_ value: String) throws -> BudgetSnapshot {
@@ -83,13 +97,31 @@ actor BudgetRepository {
     func create(name: String, currency: String, sample: Bool, localOnly: Bool = false, adjust: (@Sendable (inout JSON) -> Void)? = nil) throws -> BudgetSnapshot {
         let params: JSON = ["name": .string(name.trimmingCharacters(in: .whitespaces)), "currency": .string(currency.uppercased()), "month": .string(month)]
         var budget = try NativeCore.engine(sample ? "sampleBudget" : "defaultBudget", params: params)
+        // Marked as the desktop marks its sample, so Budget offers the way back out of it.
+        if sample { budget["sample"] = [:] }
         adjust?(&budget)
         let id = try NativeCore.service("create_budget", ["budget": budget, "localOnly": .bool(sample || localOnly)]).string
         return try open(id: id)
     }
 
+    /// A JSON backup replaces the open budget. This is the one place a whole budget is saved: it
+    /// comes from the file, complete, never from the light copy.
     func importBudget(_ data: Data) throws -> BudgetSnapshot {
-        try persist(Self.backup(data))
+        let budget = try Self.backup(data)
+        // calculate validates through the shared engine before anything is written.
+        _ = try NativeCore.engine("calculate", budget: budget, params: ["month": .string(month), "asOfMonth": .string(Dates.currentMonth)])
+        do {
+            try replace(with: budget)
+        } catch where Self.isConflict(error) {
+            // Sync committed first. Once more over what's stored now, as an edit goes again.
+            let fresh = try load()
+            do { try replace(with: budget) } catch { throw Conflict(snapshot: fresh, message: Self.isConflict(error) ? nil : error.localizedDescription) }
+        }
+        return try load()
+    }
+
+    private func replace(with budget: JSON) throws {
+        _ = try NativeCore.service("save_budget", ["budget": budget, "expectedToken": .string(token), "ackOnly": true])
     }
 
     /// A JSON backup as a budget of its own in the library, which then opens (or fills a new, empty library).
@@ -110,43 +142,86 @@ actor BudgetRepository {
     }
 
     func edit(_ transform: @Sendable (inout JSON) throws -> Void) throws -> BudgetSnapshot {
-        try saving { budget in
-            var budget = budget
-            try transform(&budget)
-            return budget
-        }
+        try submit { base in try Self.patchSteps(base, transform) }
     }
 
     /// An edit, then engine commands each on the last one's result, saved as one change (one undo).
     func edit(_ transform: @Sendable (inout JSON) throws -> Void, then commands: [(String, JSON)]) throws -> BudgetSnapshot {
-        try saving { budget in
-            var budget = budget
-            try transform(&budget)
-            for (method, params) in commands { budget = try Self.changed(by: method, params, budget) }
-            return budget
+        try submit { base in
+            try Self.patchSteps(base, transform) + commands.map { Self.commandStep($0.0, $0.1) }
         }
     }
 
     /// With `original`, refuses when that record changed since an editor opened it.
     func command(_ method: String, _ params: JSON, original: (collection: String, record: JSON)? = nil) throws -> BudgetSnapshot {
-        try saving { budget in
-            if let original { try Self.verify(budget, original.collection, original.record) }
-            return try Self.changed(by: method, params, budget)
+        try submit { base in
+            if let original { try Self.verify(base, original.collection, original.record) }
+            return [Self.commandStep(method, params)]
         }
     }
 
-    /// Makes a change on the open budget and saves it. When the budget changed underneath just
-    /// before (sync saving what it downloaded), the change is made again on that version, once:
-    /// an edit or a command means the same there, and an editor's `original` check still refuses
-    /// a record that changed since it opened. Only a second refusal reaches the person.
-    private func saving(_ change: (JSON) throws -> JSON) throws -> BudgetSnapshot {
-        guard let budget = current else { throw AppError(String(localized: "Create or import a budget first.")) }
+    private static func commandStep(_ method: String, _ params: JSON) -> JSON { ["method": .string(method), "params": params] }
+
+    /// What `transform` changes on `base`, as one patch step, or no step when it changes nothing.
+    private static func patchSteps(_ base: JSON, _ transform: (inout JSON) throws -> Void) throws -> [JSON] {
+        var edited = base
+        try transform(&edited)
+        let patch = BudgetPatch.diff(from: base, to: edited)
+        return patch.object.isEmpty ? [] : [["patch": patch]]
+    }
+
+    /// One edit, run in the store. `steps` builds it from a budget, or gives none for no change.
+    /// When the budget changed underneath just before (sync saving what it downloaded), nothing of
+    /// the edit was saved, and it's built again on that version, once: a patch holds whole records,
+    /// so it's never resent as it was, and an editor's `original` check still refuses a record that
+    /// changed since it opened. Only a second refusal reaches the person.
+    private func submit(_ steps: (JSON) throws -> [JSON]) throws -> BudgetSnapshot {
+        guard let base = current else { throw AppError(Self.noBudget) }
+        let plan = try steps(base)
+        if plan.isEmpty { return snapshot() }
+        let asOf = Dates.currentMonth
+        let first: JSON
         do {
-            return try persist(change(budget))
-        } catch is Conflict {
-            guard let fresh = current else { throw AppError(String(localized: "Create or import a budget first.")) }
-            return try persist(change(fresh))
+            first = try run(plan, asOf: asOf)
+        } catch where Self.isConflict(error) {
+            let fresh = try load()
+            let next: JSON, second: JSON
+            do {
+                guard let stored = current else { throw AppError(Self.noBudget) }
+                let again = try steps(stored)
+                if again.isEmpty { return fresh }
+                (next, second) = (stored, try run(again, asOf: asOf))
+            } catch {
+                throw Conflict(snapshot: fresh, message: Self.isConflict(error) ? nil : error.localizedDescription)
+            }
+            return applied(next, second, asOf: asOf) // Outside the do: from here it's saved, not a conflict.
         }
+        return applied(base, first, asOf: asOf)
+    }
+
+    private func run(_ steps: [JSON], asOf: String) throws -> JSON {
+        try NativeCore.service("edit_budget", ["steps": .array(steps), "expectedToken": .string(token),
+                                               "month": .string(month), "asOfMonth": .string(asOf), "light": true])
+    }
+
+    /// The edit is saved, and `reply` says what it changed. Nothing here may read as a failed edit:
+    /// the screen would stay on the budget from before it, and trying again would make it twice.
+    private func applied(_ base: JSON, _ reply: JSON, asOf: String) -> BudgetSnapshot {
+        token = reply.text("token")
+        isNew = reply["isNew"].bool
+        if !reply.text("databasePath").isEmpty { identity = reply.text("databasePath") }
+        undoAvailable = reply["undoAvailable"].bool
+        redoAvailable = reply["redoAvailable"].bool
+        if !reply["patch"].object.isEmpty {
+            let next = BudgetPatch.apply(reply["patch"], to: base)
+            current = next
+            version += 1
+            figures = nil
+            Money.configure(budget: next)
+        }
+        // Null after an undo whose totals failed: `snapshot` asks for them.
+        if reply["summary"].isObject { figures = (version, month, asOf, reply["summary"]) }
+        return snapshot()
     }
 
     /// An editor's record must still be the one it opened, so it never saves over a change from sync.
@@ -158,24 +233,20 @@ actor BudgetRepository {
         }
     }
 
-    private static func changed(by method: String, _ params: JSON, _ budget: JSON) throws -> JSON {
-        let value = try NativeCore.engine(method, budget: budget, params: params)
-        let changed = value["budget"].isObject ? value["budget"] : value
-        guard changed.has("schemaVersion") else { throw AppError(String(localized: "This command did not return an editable budget.")) }
-        return changed
-    }
-
     func undo() throws -> BudgetSnapshot { try history("undo_budget") }
     func redo() throws -> BudgetSnapshot { try history("redo_budget") }
 
     private func history(_ method: String) throws -> BudgetSnapshot {
+        guard let base = current else { return snapshot() }
+        let asOf = Dates.currentMonth
+        let reply: JSON
         do {
-            let reply = try NativeCore.service(method, ["expectedToken": .string(token)])
-            adopt(reply, budget: reply["budget"])
-            return snapshot()
-        } catch let error as AppError where error.message.contains("CONFLICT") {
+            reply = try NativeCore.service(method, ["patchOnly": true, "expectedToken": .string(token), "month": .string(month),
+                                                    "asOfMonth": .string(asOf), "light": true])
+        } catch where Self.isConflict(error) {
             throw Conflict(snapshot: try load())
         }
+        return applied(base, reply, asOf: asOf)
     }
 
     /// A service that commits to the open budget (bank and YNAB imports, sync, assistant changes):
@@ -186,7 +257,7 @@ actor BudgetRepository {
         do {
             let value = try NativeCore.service(method, request)
             return (value, try load())
-        } catch let error as AppError where error.message.contains("CONFLICT") {
+        } catch where Self.isConflict(error) {
             throw Conflict(snapshot: try load())
         }
     }
@@ -197,39 +268,19 @@ actor BudgetRepository {
     func listBudgets() throws -> [JSON] { try NativeCore.service("library_snapshot")["entries"].array }
 
     func open(id: String) throws -> BudgetSnapshot {
-        let reply = try NativeCore.service("library_open", ["id": .string(id)])
-        adopt(reply, budget: reply["budget"])
-        return snapshot()
+        // Its reply is the whole budget without `sourceExport`: never adopted, so nothing can save it back.
+        _ = try NativeCore.service("library_open", ["id": .string(id)])
+        return try load()
     }
 
     func deleteBudget(id: String) throws -> [JSON] { try NativeCore.service("library_trash", ["id": .string(id)])["library"]["entries"].array }
 
-    /// The open budget as a portable JSON backup.
+    /// The open budget as a portable JSON backup: the whole of it, read from the store, with
+    /// everything the light copy leaves out. Compact, or a large budget's backup could pass the
+    /// import limit in indentation alone.
     func exportData() -> Data? {
-        guard let current else { return nil }
-        return try? JSONSerialization.data(withJSONObject: current.foundation, options: [.prettyPrinted, .sortedKeys])
-    }
-
-    private func persist(_ budget: JSON) throws -> BudgetSnapshot {
-        // calculate validates through the shared engine before anything is written.
-        let asOf = Dates.currentMonth
-        let value = try NativeCore.engine("calculate", budget: budget, params: ["month": .string(month), "asOfMonth": .string(asOf)])
-        let reply: JSON
-        do {
-            reply = try NativeCore.service("save_budget", ["budget": budget, "expectedToken": .string(token), "ackOnly": true])
-        } catch let error as AppError where error.message.contains("CONFLICT") {
-            throw Conflict(snapshot: try load())
-        }
-        token = reply.text("token")
-        isNew = reply["isNew"].bool
-        identity = reply.text("databasePath").isEmpty ? identity : reply.text("databasePath")
-        undoAvailable = reply["undoAvailable"].bool
-        redoAvailable = reply["redoAvailable"].bool
-        current = budget
-        version += 1
-        figures = (version, month, asOf, value)
-        Money.configure(budget: budget)
-        return snapshot()
+        guard current != nil, case .string(let text)? = try? NativeCore.service("export_budget", ["compact": true]) else { return nil }
+        return Data(text.utf8)
     }
 
     private func adopt(_ reply: JSON, budget: JSON) {
@@ -244,10 +295,13 @@ actor BudgetRepository {
         if let current { Money.configure(budget: current) }
     }
 
-    private func snapshot() -> BudgetSnapshot {
+    /// What's shown, with its month's totals. They're asked of the store at the revision they'll be
+    /// published with; if it has moved on (sync), what it holds now is loaded, so rows and totals
+    /// are always of one revision.
+    private func snapshot(catchingUp: Bool = true) -> BudgetSnapshot {
         var snapshot = BudgetSnapshot(budget: current, summary: nil, calculationError: nil, month: month, version: version,
                                       identity: identity, revision: token, undoAvailable: undoAvailable, redoAvailable: redoAvailable)
-        guard let current else { return snapshot }
+        guard current != nil else { return snapshot }
         let asOf = Dates.currentMonth
         if let figures, figures.version == version, figures.month == month, figures.asOf == asOf {
             snapshot.summary = figures.value
@@ -255,9 +309,17 @@ actor BudgetRepository {
         }
         do {
             // calculate validates through the shared engine before producing any totals.
-            let value = try NativeCore.engine("calculate", budget: current, params: ["month": .string(month), "asOfMonth": .string(asOf)])
+            let value = try NativeCore.service("query_budget", ["method": "calculate", "params": ["month": .string(month), "asOfMonth": .string(asOf)],
+                                                                "expectedToken": .string(token)])
             figures = (version, month, asOf, value)
             snapshot.summary = value
+        } catch where Self.isConflict(error) && catchingUp {
+            guard let reply = try? NativeCore.service("load_budget", ["light": true]) else {
+                snapshot.calculationError = error.localizedDescription
+                return snapshot
+            }
+            adopt(reply, budget: reply["budget"])
+            return self.snapshot(catchingUp: false)
         } catch {
             snapshot.calculationError = error.localizedDescription
         }
@@ -307,14 +369,26 @@ final class BudgetStore {
     /// Set by the welcome screen as it creates a budget; Budget shows that budget the getting-started steps.
     @ObservationIgnored var setUpFromWelcome = false
 
-    @ObservationIgnored let repository = BudgetRepository()
+    @ObservationIgnored let repository: BudgetRepository
+
+    /// `repository` replaces the app's own, for tests.
+    init(repository: BudgetRepository = BudgetRepository()) { self.repository = repository }
     @ObservationIgnored private var tail: Task<Void, Never>?
     @ObservationIgnored private var pending = 0
     @ObservationIgnored private var lastForeground = Date.distantPast
 
     var currency: String { budget?.text("currency") ?? "SAR" }
     /// The open budget's file name, for settings kept per budget on this device (the container's path can move).
-    var budgetKey: String? { identity.map { URL(fileURLWithPath: $0).lastPathComponent } }
+    /// What this device remembers a budget by (its folded groups, its getting-started steps).
+    var budgetKey: String? { identity.map { BudgetStore.key(forDatabase: $0) } }
+
+    /// Every budget's database has the same file name inside a folder of its own, so the folder
+    /// names the budget; a database kept loose is named by its file.
+    nonisolated static func key(forDatabase path: String) -> String {
+        let url = URL(fileURLWithPath: path)
+        let folder = url.deletingLastPathComponent().lastPathComponent
+        return url.lastPathComponent == "budget.sqlite3" && !folder.isEmpty && folder != "/" ? folder : url.lastPathComponent
+    }
     var monthFirst: Bool { budget?.text("dateFormat") == "mdy" }
 
     func start() { enqueue(showBusy: false) { try await $0.start() } }
@@ -374,7 +448,7 @@ final class BudgetStore {
                 return value
             } catch let conflict as BudgetRepository.Conflict {
                 publish(conflict.snapshot)
-                throw AppError(Self.conflictMessage)
+                throw AppError(conflict.message ?? Self.conflictMessage)
             }
         }
         // Later changes wait for this one whether it succeeds or not.
@@ -578,11 +652,31 @@ final class BudgetStore {
 
     // MARK: Reads
 
-    /// An engine request against the published budget, beside the edit queue (previews, reports).
+    /// Methods the engine answers from `params` alone.
+    private nonisolated static let budgetFree: Set<String> = ["loanProjection", "loanPaymentByDate", "importYnab", "importYnabFiles", "decodeStatement"]
+
+    /// A read (reports, exports, an import's preview), or a dry run of a changing method (`workflow`,
+    /// `reconcile`), which replies `{ summary, transactions }` and saves nothing. It runs on the
+    /// store's copy of the budget, beside the edit queue, at the revision that's shown: if the store
+    /// has moved past it (sync), the app catches up first and asks again, so an answer is never of
+    /// another budget than the one on screen.
     func query(_ method: String, _ params: JSON = [:]) async throws -> JSON {
-        let budget = budget
-        return try await Task.detached(priority: .userInitiated) {
-            try NativeCore.engine(method, budget: budget, params: params)
-        }.value
+        if Self.budgetFree.contains(method) {
+            return try await Task.detached(priority: .userInitiated) { try NativeCore.engine(method, params: params) }.value
+        }
+        guard budget != nil else { throw AppError(String(localized: "Create or import a budget first.")) }
+        func ask(_ revision: String) async throws -> JSON {
+            try await Task.detached(priority: .userInitiated) {
+                try NativeCore.service("query_budget", ["method": .string(method), "params": params, "expectedToken": .string(revision)])
+            }.value
+        }
+        do {
+            return try await ask(revision)
+        } catch let error as AppError where error.message.contains("CONFLICT") {
+            let shown = identity
+            try await perform(showBusy: false) { ((), try await $0.load()) }
+            guard identity == shown else { throw error }
+            return try await ask(revision)
+        }
     }
 }

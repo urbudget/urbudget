@@ -10,6 +10,31 @@ extension Notification.Name {
     static let assistantSignInFinished = Notification.Name("AssistantSignInFinished")
 }
 
+/// What the person has done with the open conversation's cards that the service doesn't keep:
+/// the page of rows each shows, and the finished ones opened to read. It lives with the
+/// controller, so a card scrolled away and back is as it was left (a lazy stack drops a row's
+/// own state when it leaves the screen). A class of its own, so turning a card's page redraws
+/// the cards and not the conversation.
+@MainActor @Observable
+final class AssistantCards {
+    private var pages: [String: Int] = [:]
+    private var open: Set<String> = []
+
+    /// The page of its rows the card `proposal` shows, from 0.
+    func page(_ proposal: String) -> Int { pages[proposal] ?? 0 }
+    func show(page: Int, of proposal: String) { pages[proposal] = page }
+    /// Whether the finished card `proposal` is opened to show its rows.
+    func opened(_ proposal: String) -> Bool { open.contains(proposal) }
+    func open(_ proposal: String, _ opened: Bool) {
+        if opened { open.insert(proposal) } else { open.remove(proposal) }
+    }
+
+    func clear() {
+        if !pages.isEmpty { pages = [:] }
+        if !open.isEmpty { open = [] }
+    }
+}
+
 /// The assistant's presentation state, as Android's AssistantController. Providers, tools,
 /// history, validation and proposals live in Rust (`assistant_*` services); this class only
 /// follows them. One instance serves the chat and its settings and follows the services' events
@@ -37,6 +62,8 @@ final class AssistantController {
     /// The reply as it streams in, read as Markdown like a finished one; only the live reply
     /// reads it, so tokens don't redraw the history.
     private(set) var liveBlocks: [AssistantMarkdownBlock] = []
+    /// The latest line of the model's thinking, while it thinks: gone once words arrive or the
+    /// round moves on.
     private(set) var thinking = ""
     /// What the assistant is doing now ("Looking at October"), shown while no text is arriving.
     private(set) var activity = ""
@@ -53,6 +80,11 @@ final class AssistantController {
     private(set) var unseen = false
     var error: String?
     var notice: String?
+    /// A failure of something nobody asked for (reading the conversation again, a refresh on
+    /// coming back), said in a line of the assistant instead of an alert.
+    private(set) var quiet = AssistantQuiet()
+    /// Each card's page of rows, and the finished cards opened to read.
+    let cards = AssistantCards()
     /// The notice that offers Undo, and the budget revision its change left. The notice offers
     /// it only while it's the one showing and the budget hasn't changed since.
     private(set) var undoNotice: (text: String, revision: String)?
@@ -89,7 +121,15 @@ final class AssistantController {
     @ObservationIgnored private var reload: Task<Void, Never>?
     @ObservationIgnored private var presentation: AssistantThreadPresentation?
     @ObservationIgnored private var generation = 0
+    /// Changes when the message being written is swapped for another conversation's: a file
+    /// still being read then belongs to no message.
+    @ObservationIgnored private var drafting = 0
     @ObservationIgnored private var loadRequest = 0
+    /// The open conversation was opened while its reply ran: what's left of the round under way
+    /// would show as a fragment, so the live text waits for the next round.
+    @ObservationIgnored private var joined = false
+    /// The replies written live while the assistant was open: each stays whole once finished.
+    @ObservationIgnored private var written = AssistantWritten()
     @ObservationIgnored private var signInCancelled = false
     /// The messages being written in the conversations that aren't open, by conversation id
     /// ("" is a new conversation).
@@ -124,10 +164,14 @@ final class AssistantController {
         if connected && identity != store.identity {
             // Choices not yet sent were for the other budget's cards: they have nowhere to go here.
             dropChoices()
-            newChat()
-            threads = []
+            // Its unsent messages go too, with the files that waited on them.
+            for kept in drafts.values { detach(kept.attachments.map { $0.text("id") }) }
             drafts = [:]
+            dropAttachments()
             clearDraft()
+            close(aside: false)
+            threads = []
+            quiet.clear()
         }
         connected = true
         identity = store.identity
@@ -146,21 +190,26 @@ final class AssistantController {
         return try await store.service(method, params, changesBudget: changesBudget)
     }
 
-    /// Runs `work` once at a time per label, showing its error as Android's operation does.
-    private func operation(_ label: String, _ work: @escaping @MainActor () async throws -> Void) {
+    /// Runs `work` once at a time per label, showing its error as Android's operation does: in
+    /// an alert, or for `quiet` work (what the person didn't just ask for) in a line of the
+    /// assistant, which leaves an alert that's up alone.
+    private func operation(_ label: String, quiet: Bool = false, _ work: @escaping @MainActor () async throws -> Void) {
         guard !busy.contains(label) else { return }
         busy.insert(label)
-        error = nil
+        if !quiet { error = nil }
         Task { @MainActor in
             defer { busy.remove(label) }
             do {
                 try await work()
+                if quiet { self.quiet.worked(label) }
             } catch is CancellationError {
             } catch {
-                self.error = Self.message(error)
+                if quiet { self.quiet.failed(label, Self.message(error)) } else { self.error = Self.message(error) }
             }
         }
     }
+
+    func dismissQuiet() { quiet.dismiss() }
 
     private static func message(_ error: Error) -> String {
         let text = BudgetStore.readable(error)
@@ -243,7 +292,7 @@ final class AssistantController {
     /// Status, history and the open conversation; on appearing and returning to the app.
     func refresh() {
         if statusFailed { statusFailed = false }
-        operation("refresh") { [self] in
+        operation("refresh", quiet: true) { [self] in
             do {
                 try await loadStatus()
             } catch {
@@ -271,14 +320,22 @@ final class AssistantController {
             try? await Task.sleep(for: .milliseconds(80))
             reload = nil
             let id = threadId
-            do { try await loadThread(id) } catch {
-                if threadId == id && !(error is CancellationError) { self.error = Self.message(error) }
+            do {
+                try await loadThread(id)
+                quiet.worked("reload")
+            } catch {
+                // Nobody asked for this read, and while a reply runs it comes again every second.
+                if threadId == id && !(error is CancellationError) { quiet.failed("reload", Self.message(error)) }
             }
         }
     }
 
     /// The saved conversations, for the history list.
-    func reloadHistory() { operation("history") { [self] in try await loadHistory() } }
+    func reloadHistory() { operation("history", quiet: true) { [self] in try await loadHistory() } }
+
+    /// Whether the reply `text` was written live while the assistant was open: it showed whole
+    /// then, and stays whole now.
+    func wasWritten(_ text: String) -> Bool { written.contains(text) }
 
     // MARK: Streaming
 
@@ -287,6 +344,13 @@ final class AssistantController {
     private func receive(_ name: String, _ event: JSON) {
         guard name == "assistant://event", !threadId.isEmpty, event.text("threadId") == threadId else { return }
         let type = event.text("type")
+        // Anything but text marks the edge of a round: from here its text is whole, and its
+        // thinking is done.
+        if type != "delta" && type != "thinking" {
+            joined = false
+            stream.rested()
+            if !thinking.isEmpty { thinking = "" }
+        }
         switch type {
         case "started":
             replied = false
@@ -294,8 +358,9 @@ final class AssistantController {
         case "delta", "thinking":
             // Only a reply under way has a live text. Events are polled, so tokens written just
             // before Stop can arrive after the conversation was read back with that text kept in
-            // it, and would show a second time under it.
-            guard running else { break }
+            // it, and would show a second time under it. A conversation opened part way through
+            // a round shows nothing of that round.
+            guard running, !joined else { break }
             // Text is arriving: that says what it's doing better than the last lookup's name.
             if type == "delta" && !activity.isEmpty { activity = "" }
             stream.append(event.text("text"), thinking: type == "thinking")
@@ -306,6 +371,8 @@ final class AssistantController {
         case "message", "step", "proposal", "error", "cut", "done":
             if !activity.isEmpty { activity = "" }
             if type == "message" {
+                // It was read as it was written: finished, it's shown whole as it was.
+                written.add(event.text("text").isEmpty ? liveText : event.text("text"))
                 stream.clearReply()
                 replyPending = true
                 replied = true
@@ -391,7 +458,8 @@ final class AssistantController {
             var shown = ""
             while token == liveToken, liveText != shown {
                 let text = liveText
-                let blocks = await Task.detached(priority: .userInitiated) { AssistantMarkdown.blocks(text) }.value
+                // Marks its last line hasn't finished making are tidied, so they never show as symbols.
+                let blocks = await Task.detached(priority: .userInitiated) { AssistantMarkdown.blocks(AssistantMarkdown.live(text)) }.value
                 // The reply ended or another conversation was opened while this was read.
                 guard token == liveToken else { return }
                 liveBlocks = blocks
@@ -405,6 +473,7 @@ final class AssistantController {
         streamPublish?.cancel()
         streamPublish = nil
         replyPending = false
+        joined = false
         stream.clear()
         showLive("")
     }
@@ -454,8 +523,11 @@ final class AssistantController {
         undoNotice = (text: text, revision: revision)
     }
 
-    func newChat() {
-        keepDraft()
+    /// Shows no conversation. With `aside`, the open one's unsent message is set aside and a
+    /// new conversation's own is brought back; otherwise what's typed, selected and attached
+    /// stays in the field.
+    private func close(aside: Bool) {
+        if aside { keepDraft() }
         leaveChoices()
         generation += 1
         conversation += 1
@@ -464,38 +536,55 @@ final class AssistantController {
         thread = nil
         entries = []
         setRunning(false)
-        dropAttachments()
         thinking = ""
-        bringDraft()
+        if aside { bringDraft() }
+    }
+
+    /// The assistant with no conversation open. The one that was open keeps its unsent message.
+    func newChat() { close(aside: true) }
+
+    /// A new conversation, as the person asks for one. What's typed, selected and attached
+    /// comes along, unless a new conversation's own unsent message is waiting. A reply still
+    /// running in the conversation left carries on there.
+    func startNew() {
+        guard thread != nil else { return }
+        close(aside: !(drafts[""]?.isEmpty ?? true))
     }
 
     func openThread(_ id: String) {
-        operation("open") { [self] in
-            keepDraft()
-            leaveChoices()
-            generation += 1
-            conversation += 1
-            clearStream()
-            presentation = nil
-            thread = ["id": .string(id)]
-            entries = []
-            setRunning(false)
-            thinking = ""
-            dropAttachments()
-            bringDraft()
-            try await loadThread(id)
-        }
+        operation("open") { [self] in try await open(id, aside: true) }
+    }
+
+    /// Opens the conversation `id`. With `aside`, the one being left keeps its unsent message
+    /// and this one's is brought back; otherwise what's typed comes along.
+    private func open(_ id: String, aside: Bool) async throws {
+        if aside { keepDraft() }
+        leaveChoices()
+        generation += 1
+        conversation += 1
+        clearStream()
+        presentation = nil
+        thread = ["id": .string(id)]
+        entries = []
+        setRunning(false)
+        thinking = ""
+        if aside { bringDraft() }
+        // Its reply may be part way through a round: only whole rounds are shown from here.
+        joined = true
+        try await loadThread(id)
     }
 
     func deleteThread(_ id: String) {
         operation("delete") { [self] in
             _ = try await call("assistant_delete_thread", ["id": .string(id)])
-            drafts[id] = nil
             if threadId == id {
-                clearDraft()
-                // Its cards are gone with it, and what was being chosen on them.
+                // Its cards are gone with it, and what was being chosen on them. What's typed
+                // for it isn't lost with it.
                 dropChoices()
-                newChat()
+                close(aside: false)
+            } else {
+                // Another conversation's unsent message goes with it.
+                forget(id)
             }
             try await loadHistory()
         }
@@ -504,10 +593,12 @@ final class AssistantController {
     func deleteAll() {
         operation("delete") { [self] in
             _ = try await call("assistant_delete_all")
+            // Every attached file went too, so no unsent message can keep one. What's typed stays.
             drafts = [:]
-            if !threadId.isEmpty { clearDraft() }
+            attachments = []
+            requestFiles = []
             dropChoices()
-            newChat()
+            close(aside: false)
             try await loadHistory()
         }
     }
@@ -522,12 +613,14 @@ final class AssistantController {
     }
 
     /// Carries a conversation that has grown long on in a new one, which begins with what was
-    /// said last in this one, and opens it as the history list opens one.
+    /// said last in this one, and opens it. What's typed comes along.
     func continueInNew() {
         operation("continue") { [self] in
-            let id = try await call("assistant_continue", ["threadId": .string(threadId)]).string
+            let from = threadId
+            let id = try await call("assistant_continue", ["threadId": .string(from)]).string
+            // Another conversation opened meanwhile keeps its own message.
+            try await open(id, aside: threadId != from)
             try? await loadHistory()
-            openThread(id)
         }
     }
 
@@ -567,18 +660,28 @@ final class AssistantController {
         if !files.isEmpty { attach(files: files, fromRequest: true) }
     }
 
-    /// Keeps the message being written with the conversation being left.
+    /// Keeps the message being written with the conversation being left: its words, its
+    /// selected transactions and its files, which wait with the service until they're sent.
     private func keepDraft() {
-        let kept = AssistantDraft(text: draft, selected: selected, total: selectionTotal)
+        let kept = AssistantDraft(text: draft, selected: selected, total: selectionTotal, attachments: attachments)
         drafts[threadId] = kept.isEmpty ? nil : kept
     }
 
     /// Brings back the message that was being written in the conversation now open.
     private func bringDraft() {
         let kept = drafts.removeValue(forKey: threadId) ?? AssistantDraft()
+        drafting += 1
         draft = kept.text
         selected = kept.selected
         selectionTotal = kept.total
+        attachments = kept.attachments
+        requestFiles = []
+    }
+
+    /// Forgets the unsent message of a conversation that's gone, with its files.
+    private func forget(_ id: String) {
+        guard let kept = drafts.removeValue(forKey: id) else { return }
+        detach(kept.attachments.map { $0.text("id") })
     }
 
     // MARK: Settings
@@ -683,15 +786,15 @@ final class AssistantController {
     /// another screen's request is remembered once it's up, so asking again doesn't upload it twice.
     func attach(files: [URL], fromRequest: Bool = false) {
         operation("attach") { [self] in
-            let generation = generation
+            let drafting = drafting
             for url in files {
                 guard attachments.count < AssistantAttachments.limit else { throw AppError(String(localized: "Attach up to five files per message.")) }
                 let file = try await Task.detached(priority: .userInitiated) { () throws -> (name: String, data: Data) in
                     let read = try AssistantAttachments.read(url)
                     return AssistantAttachments.prepare(name: read.name, data: read.data)
                 }.value
-                try await upload(file.name, file.data, generation: generation)
-                if fromRequest && generation == self.generation { requestFiles.insert(url) }
+                try await upload(file.name, file.data, drafting: drafting)
+                if fromRequest && drafting == self.drafting { requestFiles.insert(url) }
             }
         }
     }
@@ -699,7 +802,7 @@ final class AssistantController {
     /// Photos from the library: formats the service reads stay as they are, others become JPEG.
     func attach(photos: [PhotosPickerItem]) {
         operation("attach") { [self] in
-            let generation = generation
+            let drafting = drafting
             for item in photos {
                 guard attachments.count < AssistantAttachments.limit else { throw AppError(String(localized: "Attach up to five files per message.")) }
                 guard let data = try await item.loadTransferable(type: Data.self) else {
@@ -712,18 +815,19 @@ final class AssistantController {
                     try AssistantAttachments.photo(data, type: type, number: number)
                 }.value
                 guard file.data.count <= AssistantAttachments.maxBytes else { throw AppError(String(localized: "Choose a file smaller than 25 MiB.")) }
-                try await upload(file.name, file.data, generation: generation)
+                try await upload(file.name, file.data, drafting: drafting)
             }
         }
     }
 
-    private func upload(_ name: String, _ data: Data, generation: Int) async throws {
+    private func upload(_ name: String, _ data: Data, drafting: Int) async throws {
         let encoded = await Task.detached(priority: .userInitiated) { data.base64EncodedString() }.value
         let meta = try await call("assistant_attach", ["name": .string(name), "data": .string(encoded)])
-        if generation == self.generation && attachments.count < AssistantAttachments.limit {
+        if drafting == self.drafting && attachments.count < AssistantAttachments.limit {
             attachments.append(meta)
         } else {
-            // It went on no message: the conversation was left while the file was read.
+            // It went on no message: another conversation's message took the field while the
+            // file was read.
             detach([meta.text("id")])
         }
     }
@@ -736,9 +840,10 @@ final class AssistantController {
         if !busy.contains("send") { detach([id]) }
     }
 
-    /// Takes every file off the message being written, as starting or opening a conversation does.
+    /// Takes every file off the message being written: another budget's assistant has no use for them.
     private func dropAttachments() {
         let ids = attachments.map { $0.text("id") }
+        drafting += 1
         attachments = []
         requestFiles = []
         if !busy.contains("send") { detach(ids) }
@@ -1015,6 +1120,8 @@ final class AssistantController {
         for timer in choiceTimers.values { timer.cancel() }
         choiceTimers = [:]
         if !choices.isEmpty { choices = [:] }
+        // Its cards start as the service has them when it's opened again.
+        cards.clear()
     }
 
     /// The conversation is being left. The choices still waiting on its cards go to the service

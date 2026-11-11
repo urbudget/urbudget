@@ -248,3 +248,44 @@ private extension JSON {
         return copy
     }
 }
+
+final class LoanPaymentTests: XCTestCase {
+    func testAPaymentsCategoryBecomesTheLoansWhenItHadNone() {
+        let budget: JSON = ["categories": [["id": "debt", "name": "Car loan"]]]
+        XCTAssertTrue(LoanPayment.remembersCategory(terms: ["accountId": "loan", "categoryId": ""], budget: budget))
+        XCTAssertTrue(LoanPayment.remembersCategory(terms: ["accountId": "loan"], budget: budget))
+        XCTAssertTrue(LoanPayment.remembersCategory(terms: ["accountId": "loan", "categoryId": "deleted"], budget: budget), "Its category is gone")
+        XCTAssertFalse(LoanPayment.remembersCategory(terms: ["accountId": "loan", "categoryId": "debt"], budget: budget))
+    }
+
+    func testAPaymentStillToComeSaysItsDay() {
+        XCTAssertEqual(LoanPayment.recorded("500.00", to: "Car loan", on: "2026-11-11", today: "2026-11-11"), "Recorded a payment of 500.00 to Car loan.")
+        XCTAssertEqual(LoanPayment.recorded("500.00", to: "Car loan", on: "2026-10-01", today: "2026-11-11"), "Recorded a payment of 500.00 to Car loan.")
+        XCTAssertEqual(LoanPayment.recorded("500.00", to: "Car loan", on: "2026-12-01", today: "2026-11-11"),
+                       "Recorded a payment of 500.00 to Car loan for \(Money.date("2026-12-01")).")
+    }
+
+    /// A first payment keeps its category on the loan, in the one change the payment is.
+    func testAFirstPaymentKeepsItsCategoryInOneChange() async throws {
+        let repository = try await TestLibrary.repository()
+        var snapshot = try await repository.create(name: "Loan payment", currency: "USD", sample: true)
+        let category = try XCTUnwrap(snapshot.budget?.rows("categories").first { $0.text("name") == "Groceries" }).text("id")
+        let terms: JSON = ["accountId": "car", "categoryId": "", "annualRateBasisPoints": 500, "monthlyPayment": 50_000, "monthlyFees": 0, "rateHistory": []]
+        snapshot = try await repository.edit { budget in
+            try budget.upsertRecord("accounts", ["id": "car", "name": "Car loan", "kind": "tracking", "accountType": "autoLoan", "openingBalance": -1_000_000, "archived": false])
+            try budget.upsertRecord("loans", terms)
+        }
+        XCTAssertTrue(LoanPayment.remembersCategory(terms: terms, budget: try XCTUnwrap(snapshot.budget)))
+        var chosen = terms
+        chosen["categoryId"] = .string(category)
+        let before = snapshot
+        snapshot = try await repository.edit({ try $0.upsertRecord("loans", ["accountId": "car", "categoryId": .string(category)]) },
+                                             then: [("loanRecord", ["terms": chosen, "from": "sample-checking", "amount": 50_000, "date": .string(Dates.today), "id": "first-payment"])])
+        XCTAssertEqual(snapshot.budget?.rows("loans").first { $0.text("accountId") == "car" }?.text("categoryId"), category)
+        XCTAssertNotNil(snapshot.budget?.row("transactions", id: "first-payment"))
+        snapshot = try await repository.undo()
+        XCTAssertNil(snapshot.budget?.row("transactions", id: "first-payment"), "One undo takes the payment back")
+        XCTAssertEqual(snapshot.budget?.rows("loans").first { $0.text("accountId") == "car" }?.text("categoryId"), "", "and the category with it")
+        XCTAssertTrue(BudgetPatch.same(try XCTUnwrap(snapshot.budget), try XCTUnwrap(before.budget)))
+    }
+}

@@ -96,6 +96,89 @@ enum AssistantMarkdown {
         return blocks
     }
 
+    // MARK: A reply being written
+
+    /// A link at the end of a line that's still being written: its words, with or without the
+    /// start of its address.
+    private static let linkPart = try! NSRegularExpression(pattern: #"\[([^\]]*)(?:\](?:\([^)\s]*)?)?$"#)
+    /// A mark with nothing after it yet: a list's, a quote's, a heading's, the start of code.
+    private static let loneMark = try! NSRegularExpression(pattern: #"^(?:[-*+>]|#{1,6}|`{1,2}|~{1,2})$"#)
+    /// The line under a table's headings, as far as it has been written.
+    private static let dividerPart = try! NSRegularExpression(pattern: #"^[\s|:-]*$"#)
+
+    private static func matches(_ expression: NSRegularExpression, _ text: String) -> Bool {
+        expression.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
+    }
+
+    /// How many times `mark` stands in `line`, counted as its pairs are read: left to right, never overlapping.
+    private static func count(of mark: String, in line: String) -> Int { line.components(separatedBy: mark).count - 1 }
+
+    /// A reply that's still being written, as it's read into blocks meanwhile (Android's
+    /// markdownLive): the same text, less the marks its last line hasn't finished making, which
+    /// would otherwise show as symbols until the rest of them came. Bold, strikethrough and code
+    /// that have begun are drawn as they'll be; a link shows its words; a list's or heading's
+    /// mark waits for its first word; and a table's headings are a table's from their first
+    /// cell, before the line under them has come. Whole lines are left as they are, so the
+    /// finished reply is laid out exactly as the live one was.
+    static func live(_ source: String) -> String {
+        let written = source.components(separatedBy: "\n")
+        // Inside a block of code nothing is a mark. A block ends only with the fence it began with.
+        var fence: String?
+        for line in written {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if let open = fence {
+                if trimmed.hasPrefix(open) { fence = nil }
+            } else {
+                fence = ["```", "~~~"].first { trimmed.hasPrefix($0) }
+            }
+        }
+        if fence != nil { return source }
+        let last = written.count - 1
+        var line = written[last]
+        // A link shows its words while its address is written, and before it.
+        line = linkPart.stringByReplacingMatches(in: line, range: NSRange(line.startIndex..., in: line), withTemplate: "$1")
+        // Half of a closing or opening pair of stars, or of the tildes that strike text through,
+        // is not a mark to show.
+        if line.hasSuffix("*") && !line.hasSuffix("**") && line.trimmingCharacters(in: .whitespaces) != "*" { line.removeLast() }
+        if line.hasSuffix("~") && !line.hasSuffix("~~") { line.removeLast() }
+        // A pair begun and not ended: closed where the line stands, or dropped when it's all there is of it.
+        for mark in ["**", "~~"] where count(of: mark, in: line) % 2 == 1 {
+            if line.hasSuffix(mark) { line.removeLast(2) } else { line += mark }
+        }
+        if count(of: "`", in: line) % 2 == 1 {
+            if line.hasSuffix("`") { line.removeLast() } else { line += "`" }
+        }
+        if matches(loneMark, line.trimmingCharacters(in: .whitespaces)) { line = "" }
+        var lines = written
+        lines[last] = line
+        // The table being written: the run of lines with cells that ends the text, or ends just
+        // before its last, empty line.
+        let end = lines[last].isEmpty && last > 0 ? last - 1 : last
+        var start = end
+        while start >= 0 && !lines[start].trimmingCharacters(in: .whitespaces).isEmpty && lines[start].contains("|") { start -= 1 }
+        start += 1
+        if start <= end && lines[start].trimmingCharacters(in: .whitespaces).hasPrefix("|") {
+            let columns = cells(lines[start]).count
+            if end == start {
+                // Only its headings so far: they're a table's already, before the line under
+                // them has come. That line has a cell for each heading, as `blocks` asks of one.
+                lines.insert("|" + Array(repeating: "---", count: columns).joined(separator: "|") + "|", at: end + 1)
+            } else if end == start + 1 && end == last && matches(dividerPart, lines[end]) {
+                // That line is part way: it stands whole, with what it already says of how each
+                // column lines up, and a plain cell for each column it hasn't reached.
+                let parts = cells(lines[end])
+                if parts.count != columns || dividerAlignments(lines[end]) == nil {
+                    let whole = (0..<columns).map { column -> String in
+                        guard column < parts.count, dividerAlignments("|" + parts[column] + "|") != nil else { return "---" }
+                        return parts[column]
+                    }
+                    lines[end] = "|" + whole.joined(separator: "|") + "|"
+                }
+            }
+        }
+        return lines == written ? source : lines.joined(separator: "\n")
+    }
+
     /// A report's blocks: a long table becomes pieces, so only the rows on screen are drawn.
     static func documentBlocks(_ source: String) -> [AssistantMarkdownBlock] {
         blocks(source).flatMap { block -> [AssistantMarkdownBlock] in
@@ -144,15 +227,30 @@ enum AssistantMarkdown {
         let columns = rows.map(\.count).max() ?? 0
         let padded = rows.map { $0 + Array(repeating: "", count: columns - $0.count) }
         let widths = (0..<columns).map { column in
-            min(28, max(3, padded.map { displayLength($0[column]) }.max() ?? 3))
+            min(28, max(3, Int((padded.map { displayLength($0[column]) }.max() ?? 3).rounded(.up))))
         }
         let aligned = (0..<columns).map { $0 < alignments.count ? alignments[$0] : "leading" }
         return AssistantMarkdownBlock(kind: "table", rows: padded, alignments: aligned, widths: widths)
     }
 
-    /// Roughly how many characters a cell shows once its markup is drawn.
-    private static func displayLength(_ text: String) -> Int {
-        text.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "`", with: "").count
+    /// A web link as it's written in a cell: its words, then its address.
+    private static let webLink = try! NSRegularExpression(pattern: #"\[([^\]]+)\]\((https?://[^)\s]+)\)"#)
+
+    /// Roughly how many characters a cell shows once its markup is drawn: without its marks, a
+    /// link as its words and its host (as `inline` draws one), and a wide character (Chinese,
+    /// Japanese, Korean) counted as nearly two.
+    static func displayLength(_ text: String) -> Double {
+        var shown = text
+        for match in webLink.matches(in: text, range: NSRange(text.startIndex..., in: text)).reversed() {
+            guard let whole = Range(match.range, in: shown), let words = Range(match.range(at: 1), in: shown),
+                  let address = Range(match.range(at: 2), in: shown) else { continue }
+            let said = String(shown[words])
+            let host = URL(string: String(shown[address]))?.host ?? ""
+            let drawn = host.isEmpty || said.lowercased().contains(host.lowercased()) ? said : "\(said) (\(host))"
+            shown.replaceSubrange(whole, with: drawn)
+        }
+        shown = shown.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "`", with: "")
+        return shown.reduce(0) { $0 + (($1.unicodeScalars.first?.value ?? 0) >= 0x2E80 ? 1.8 : 1) }
     }
 
     private static func isRule(_ trimmed: String) -> Bool {
@@ -339,12 +437,16 @@ enum AssistantMarkdown {
 // MARK: Views
 
 /// A reply's blocks. A very long reply is paged so one message never draws thousands of views.
+/// One that was written while the assistant was open showed whole as it came, and stays `whole`
+/// once it's finished: whoever was reading it is where they were, not back on a first page.
 struct AssistantMarkdownView: View {
     var blocks: [AssistantMarkdownBlock]
     var pageSize = 60
+    var whole = false
     @State private var page = 0
 
     var body: some View {
+        let pageSize = whole ? max(1, blocks.count) : pageSize
         let pages = max(1, (blocks.count + pageSize - 1) / pageSize)
         let current = min(page, pages - 1)
         VStack(alignment: .leading, spacing: 10) {

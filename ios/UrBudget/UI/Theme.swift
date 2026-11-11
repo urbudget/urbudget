@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// UrBudget's colours (desktop/src/styles.css, as Android shows them) on iOS's own grouped
 /// backgrounds. The words and status colours stay UrBudget's; surfaces and type follow iOS.
@@ -14,6 +17,9 @@ extension Color {
     static let urZero = Color(light: 0xE9E9EE, dark: 0x2E2E33)
     /// Text on a solid status fill.
     static let urOnSolid = Color(light: 0xFFFFFF, dark: 0x0C0E18)
+    /// A band across a plain list: a group in the budget, a day in the register.
+    static let urBand = Color(light: 0xF5F5F7, dark: 0x1C1C1E)
+    static let urHairline = Color(light: 0xD9D9DE, dark: 0x38383A)
     static let urBrand = Color(light: 0x6D4AE8, dark: 0x6D4AE8)
     /// Chevrons and other faint marks (the system's tertiary label). Fixed colours, unlike
     /// `.primary`/`.secondary`/`.tertiary`, which iOS 26 tints inside buttons.
@@ -67,6 +73,18 @@ extension Text {
     }
 }
 
+extension Font {
+    /// The system font at exactly `size` points at the default text size, growing with Dynamic
+    /// Type: for figures that sit between two text styles (14 points, in the budget's columns).
+    static func sized(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        #if canImport(UIKit)
+        .system(size: UIFontMetrics.default.scaledValue(for: size), weight: weight)
+        #else
+        .system(size: size, weight: weight)
+        #endif
+    }
+}
+
 extension Font.TextStyle {
     /// The text style whose default size is nearest `size` points.
     static func forSize(_ size: CGFloat) -> Font.TextStyle {
@@ -81,4 +99,40 @@ extension Font.TextStyle {
         default: return .largeTitle
         }
     }
+}
+
+/// The app's text one step under the size iOS is set to: body at 16 points where iOS has 17, a
+/// footnote at 12, the scale Android's screens are drawn to, so the same rows hold the same
+/// words on both. It moves with the person's own text size, a step behind it. It's set on the
+/// window, so sheets and the bars follow it too (a sheet doesn't take a size set in SwiftUI).
+@MainActor enum AppTypeScale {
+    #if canImport(UIKit)
+    static let sizes: [UIContentSizeCategory] = [
+        .extraSmall, .small, .medium, .large, .extraLarge, .extraExtraLarge, .extraExtraExtraLarge,
+        .accessibilityMedium, .accessibilityLarge, .accessibilityExtraLarge, .accessibilityExtraExtraLarge,
+        .accessibilityExtraExtraExtraLarge,
+    ]
+
+    nonisolated static func step(_ size: UIContentSizeCategory, in sizes: [UIContentSizeCategory]) -> UIContentSizeCategory {
+        guard let index = sizes.firstIndex(of: size), index > 0 else { return size }
+        return sizes[index - 1]
+    }
+
+    /// Sets every window of the app a step under the system's size; called when the app comes
+    /// forward and when the size is changed in Settings.
+    static func apply() {
+        let stepped = step(UIApplication.shared.preferredContentSizeCategory, in: sizes)
+        for scene in UIApplication.shared.connectedScenes {
+            for window in (scene as? UIWindowScene)?.windows ?? [] {
+                // Asking for an override that isn't set is an error, so that's asked first.
+                let set = window.traitOverrides.contains(UITraitPreferredContentSizeCategory.self)
+                if !set || window.traitOverrides.preferredContentSizeCategory != stepped {
+                    window.traitOverrides.preferredContentSizeCategory = stepped
+                }
+            }
+        }
+    }
+    #else
+    static func apply() {}
+    #endif
 }

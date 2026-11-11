@@ -2,8 +2,12 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// The first screen: create a budget, try the sample, or bring a backup from desktop or Android.
+/// The sample's banner opens it again, to leave the sample for a budget of your own.
 struct WelcomeView: View {
+    /// Set when leaving the sample budget (see `SampleBanner`).
+    var leaving: SampleExit?
     @Environment(BudgetStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
     @State private var name = String(localized: "My budget")
     @State private var currency = Locale.current.currency?.identifier ?? "SAR"
     @State private var importing = false
@@ -12,16 +16,20 @@ struct WelcomeView: View {
     @State private var decimal = StarterBudget.localFormats(currency: "SAR").number.decimal
     @State private var dateFormat = StarterBudget.localFormats(currency: "SAR").date
 
+    init(leaving: SampleExit? = nil) {
+        self.leaving = leaving
+    }
+
     var body: some View {
         NavigationStack {
-            Form {
+            CompactForm {
                 Section {
                     VStack(alignment: .leading, spacing: 14) {
-                        Text(verbatim: "Ur")
-                            .font(.system(size: 26, weight: .heavy, design: .rounded))
-                            .foregroundStyle(.white)
+                        // The app's own mark, as on the Home Screen and on Android's welcome.
+                        Image("Logo").resizable().interpolation(.high)
                             .frame(width: 64, height: 64)
-                            .background(Color.urBrand, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .accessibilityHidden(true)
                         Text("Make room for\nwhat matters.").font(.largeTitle.bold()).fixedSize(horizontal: false, vertical: true)
                         Text("A plan for every part of your money. Your budget lives on this device, and your desktop backups work here too.")
                             .foregroundStyle(Color.secondary)
@@ -47,19 +55,27 @@ struct WelcomeView: View {
                             Text("For bills, needs, wants and savings. Rename or delete any of them later.").font(.footnote).foregroundStyle(Color.secondary)
                         }
                     }
+                    // The one thing this screen is for, so it's the one filled button on it.
                     Button(action: create) {
-                        HStack {
+                        HStack(spacing: 8) {
+                            if store.busy { ProgressView().tint(.white) }
                             Text("Create my budget").fontWeight(.semibold)
-                            if store.busy { Spacer(); ProgressView() }
                         }
+                        .frame(maxWidth: .infinity, minHeight: 34)
                     }
+                    .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.capsule)
+                    .listRowSeparator(.hidden)
                     .disabled(store.busy || name.trimmingCharacters(in: .whitespaces).isEmpty)
                 } footer: {
-                    Text("Next, add the accounts your money is in. You can change the formats in Settings.")
+                    Text("Next, add the accounts your money is in. You can change the formats in Settings."
+                         + (leaving?.delete == true ? " The sample budget is deleted once yours opens." : ""))
                 }
                 Section {
-                    Button { store.createBudget(name: String(localized: "Sample budget"), currency: currency, sample: true) } label: {
-                        Label { rowText("Explore with sample money", "A filled-in budget to try things on") } icon: { Image(systemName: "sparkles") }
+                    if leaving == nil {
+                        Button { store.createBudget(name: String(localized: "Sample budget"), currency: currency, sample: true) } label: {
+                            Label { rowText("Explore with sample money", "A filled-in budget to try things on") } icon: { Image(systemName: "sparkles") }
+                        }
                     }
                     Button { importing = true } label: {
                         Label { rowText("Import UrBudget backup", "A JSON backup from desktop or Android") } icon: { Image(systemName: "square.and.arrow.down") }
@@ -72,7 +88,13 @@ struct WelcomeView: View {
                 FormErrorView(message: fileError)
             }
             .fileImporter(isPresented: $importing, allowedContentTypes: [.json, .plainText, .data]) { result in
-                readBackup(result) { store.importBudget($0) }
+                // Leaving the sample, a backup is a budget of its own rather than the sample's replacement.
+                readBackup(result) { leaving == nil ? store.importBudget($0) : store.importAsNewBudget($0, then: leaveSample) }
+            }
+            .toolbar {
+                if leaving != nil {
+                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                }
             }
         }
     }
@@ -84,10 +106,26 @@ struct WelcomeView: View {
         let date = dateFormat
         let starter = starter
         store.setUpFromWelcome = true
-        store.createBudget(name: name, currency: currency) { budget in
+        store.createBudget(name: name, currency: currency, adjust: { budget in
             number.write(into: &budget)
             budget["dateFormat"] = .string(date)
             if starter { StarterBudget.addCategories(to: &budget) }
+        }, then: leaveSample)
+    }
+
+    /// Once a budget of your own has opened in place of the sample: closes this, and deletes the sample if asked.
+    private func leaveSample() {
+        guard let leaving else { return }
+        dismiss()
+        guard leaving.delete else { return }
+        let store = store
+        Task {
+            do {
+                _ = try await store.deleteBudget(id: leaving.id)
+                store.showToast(String(localized: "Deleted the sample budget."))
+            } catch {
+                store.error = BudgetStore.readable(error)
+            }
         }
     }
 

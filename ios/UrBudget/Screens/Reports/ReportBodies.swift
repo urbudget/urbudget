@@ -108,19 +108,29 @@ struct ReportBodyView: View {
 private struct ReportCategoryBody: View {
     var model: ReportCategoryModel
     var actions: ReportActions
+    /// The slice picked on the ring; the rows under it are marked with it.
+    @State private var picked: String?
 
     var body: some View {
+        // A row in the "Other" slice is picked with it.
+        let others = Set(model.rows.filter { $0.color == ReportColors.other }.map(\.key))
         ReportTilesSection(tiles: model.tiles)
         Section {
             if model.rows.isEmpty {
                 ContentUnavailableView("No spending", systemImage: "chart.pie", description: Text("No spending in these months."))
             } else {
-                ReportDonut(slices: model.slices, centerValue: model.centerValue, centerLabel: model.centerLabel) { key in
-                    if let value = link(key) { actions.navigate(value) }
-                }
+                ReportDonut(slices: model.slices, centerValue: model.centerValue, centerLabel: model.centerLabel, picked: picked,
+                            onPick: { picked = $0 },
+                            onOpen: { key in
+                                picked = nil
+                                if let value = link(key) { actions.navigate(value) }
+                            },
+                            openLabel: model.group != nil ? String(localized: "See transactions") : String(localized: "See categories"))
                 .padding(.vertical, 8)
                 ForEach(model.rows) { row in
-                    ReportLinkRow(value: link(row.key)) { ReportBarRowView(row: row) }
+                    ReportLinkRow(value: link(row.key)) {
+                        ReportBarRowView(row: row, picked: picked.map { $0 == row.key || ($0 == "__other" && others.contains(row.key)) })
+                    }
                 }
             }
         } header: {
@@ -141,6 +151,8 @@ private struct ReportCategoryBody: View {
                 if !changes.rows.isEmpty { ReportLegendView(items: changes.legend).padding(.top, 2) }
             }
         }
+        // New figures start with nothing picked.
+        EmptyView().onChange(of: model.slices) { picked = nil }
     }
 
     /// A group opens its categories; a category opens its transactions.
@@ -157,18 +169,24 @@ private struct ReportPayeeBody: View {
     var actions: ReportActions
     var rows: [ReportPayeeRow]
     var query: String
+    /// The tile picked on the map.
+    @State private var picked: String?
 
     var body: some View {
+        let chosen = model.map.first { $0.key == picked }
         ReportTilesSection(tiles: model.tiles)
         Section {
             if model.map.isEmpty {
                 ContentUnavailableView("No payees", systemImage: "storefront", description: Text("No payees with net spending in these months."))
             } else {
-                ReportTreemap(items: model.map) { item in
-                    actions.navigate(actions.drill(ReportDrillTarget(title: item.label, dimension: "payee", key: item.key)))
+                VStack(alignment: .leading, spacing: 8) {
+                    ReportTreemap(items: model.map, picked: picked, onPick: { picked = $0?.key }, onOpen: open)
+                    if model.legend.count > 1 { ReportLegendView(items: model.legend, tiles: true) }
+                    if let chosen { PickedPayee(item: chosen) { open(chosen) } }
                 }
                 .padding(.vertical, 6)
                 .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
+                .onChange(of: model.map) { picked = nil }
             }
             if let more = model.more {
                 Button { actions.scrollTo("payees:all") } label: {
@@ -205,10 +223,47 @@ private struct ReportPayeeBody: View {
         }
     }
 
+    private func open(_ item: ReportTreemapItem) {
+        picked = nil
+        actions.navigate(actions.drill(ReportDrillTarget(title: item.label, dimension: "payee", key: item.key)))
+    }
+
     /// "12 payees", or "3 of 12 payees" while searching.
     private var countText: String {
         query.isEmpty ? String(localized: "\(model.rows.count) payees", locale: .app)
             : String(localized: "\(rows.count) of \(model.rows.count) payees", locale: .app)
+    }
+}
+
+/// The payee picked on the map: its figures, and the way to its transactions.
+private struct PickedPayee: View {
+    var item: ReportTreemapItem
+    var open: () -> Void
+
+    var body: some View {
+        Button(action: open) {
+            HStack(spacing: 10) {
+                RoundedRectangle(cornerRadius: 2, style: .continuous).fill(ReportPalette.tile(item.color)).frame(width: 10, height: 10)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Text(item.label).fontWeight(.semibold).lineLimit(1)
+                        Spacer(minLength: 8)
+                        Text(item.valueText).fontWeight(.semibold).monospacedDigit().lineLimit(1)
+                    }
+                    Text("\(item.detail) · \(item.more)").font(.footnote).monospacedDigit().foregroundStyle(Color.secondary).lineLimit(2)
+                    Text("See transactions").font(.footnote.weight(.semibold)).foregroundStyle(Color.urAccent)
+                }
+                Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(Color.urAccent)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(Color.insetBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Color.primary)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Shows this payee's transactions")
     }
 }
 
@@ -225,8 +280,7 @@ private struct ReportOverTimeBody: View {
             }
             .pickerStyle(.segmented)
             VStack(alignment: .leading, spacing: 10) {
-                ReportColumnChart(model: model.chart)
-                if !model.legend.isEmpty { ReportLegendView(items: model.legend) }
+                ReportColumnChart(model: model.chart, legend: model.legend)
             }
             .padding(.vertical, 6)
         } header: {
@@ -240,6 +294,7 @@ private struct ReportOverTimeBody: View {
     }
 }
 
+/// The month calendar: a tap picks a day and says what it spent; a second tap, or the link, opens it.
 private struct ReportHeatPanel: View {
     var heat: ReportHeatModel
     var onDrill: (Int) -> Void
@@ -247,26 +302,32 @@ private struct ReportHeatPanel: View {
 
     var body: some View {
         let chosen = heat.days.indices.contains(day)
-        VStack(alignment: .leading, spacing: 10) {
-            Text(caption)
-                .font(.footnote)
-                .foregroundStyle(chosen ? .primary : .secondary)
-            ReportHeatCalendar(model: heat, selected: day) { index in
-                day = index
-                if heat.spent[index] { onDrill(index) }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(caption)
+                    .font(.footnote)
+                    .foregroundStyle(chosen ? .primary : .secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if chosen && heat.spent[day] {
+                    Button("See transactions") { onDrill(day) }
+                        .font(.footnote.weight(.semibold))
+                        .buttonStyle(.borderless)
+                }
             }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Spending by day")
-            .accessibilityValue("\(heat.spent.filter { $0 }.count) of \(heat.days.count) days with spending. The Biggest days list opens each day's transactions.")
+            .frame(minHeight: 22)
+            ReportMonthCalendar(model: heat, selected: day) { index in
+                if index == day { if heat.spent[index] { onDrill(index) } } else { day = index }
+            }
             ReportHeatLegend()
         }
         .padding(.vertical, 6)
+        .sensoryFeedback(.selection, trigger: day)
         .onChange(of: heat.days) { day = -1 }
     }
 
     /// The chosen day ("Thursday 2026-10-01 · 12.00 spent"), or how to choose one.
     private var caption: String {
-        guard heat.days.indices.contains(day) else { return String(localized: "Tap a day for its spending. Darker means more.") }
+        guard heat.days.indices.contains(day) else { return String(localized: "Tap a day for its spending, and again for its transactions.") }
         let amount = heat.amounts[day]
         let spent = heat.spent[day] ? String(localized: "\(amount) spent") : String(localized: "\(amount) nothing spent")
         return "\(heat.titles[day]) · \(spent)"
@@ -354,8 +415,7 @@ private struct ReportIncomeExpenseBody: View {
         ReportTilesSection(tiles: model.tiles)
         Section {
             VStack(alignment: .leading, spacing: 10) {
-                ReportColumnChart(model: model.chart)
-                ReportLegendView(items: model.legend)
+                ReportColumnChart(model: model.chart, legend: model.legend)
             }
             .padding(.vertical, 6)
         } header: {
@@ -386,6 +446,8 @@ private struct ReportIncomeExpenseBody: View {
 private struct ReportIncomeBody: View {
     var model: ReportIncomeModel
     var actions: ReportActions
+    /// The source picked on the ring; its row is marked with it.
+    @State private var picked: String?
 
     var body: some View {
         ReportTilesSection(tiles: model.tiles)
@@ -393,8 +455,14 @@ private struct ReportIncomeBody: View {
             if model.bars.isEmpty {
                 ContentUnavailableView("No income", systemImage: "banknote", description: Text("No income in these months."))
             } else {
-                ReportDonut(slices: model.slices, centerValue: model.centerValue, centerLabel: String(localized: "Positive sources")).padding(.vertical, 8)
-                ForEach(model.bars) { ReportBarRowView(row: $0) }
+                // One source is the whole ring: the list says it all.
+                if model.slices.filter({ $0.value > 0 }).count > 1 {
+                    ReportDonut(slices: model.slices, centerValue: model.centerValue, centerLabel: String(localized: "Positive sources"),
+                                picked: picked, onPick: { picked = $0 })
+                        .padding(.vertical, 8)
+                        .onChange(of: model.slices) { picked = nil }
+                }
+                ForEach(model.bars) { row in ReportBarRowView(row: row, picked: picked.map { $0 == row.key }) }
             }
         } header: {
             ReportSectionHeader(title: String(localized: "Where your income comes from"))
@@ -404,8 +472,7 @@ private struct ReportIncomeBody: View {
         if let monthly = model.monthly {
             Section {
                 VStack(alignment: .leading, spacing: 10) {
-                    ReportColumnChart(model: monthly)
-                    ReportLegendView(items: model.legend)
+                    ReportColumnChart(model: monthly, legend: model.legend)
                 }
                 .padding(.vertical, 6)
             } header: {
@@ -432,8 +499,7 @@ private struct ReportCashFlowBody: View {
         ReportTilesSection(tiles: model.tiles)
         Section {
             VStack(alignment: .leading, spacing: 10) {
-                ReportColumnChart(model: model.chart)
-                ReportLegendView(items: model.legend)
+                ReportColumnChart(model: model.chart, legend: model.legend)
             }
             .padding(.vertical, 6)
         } header: {
@@ -461,8 +527,7 @@ private struct ReportNetWorthBody: View {
         ReportTilesSection(tiles: model.tiles)
         Section {
             VStack(alignment: .leading, spacing: 10) {
-                ReportColumnChart(model: model.chart)
-                ReportLegendView(items: model.legend)
+                ReportColumnChart(model: model.chart, legend: model.legend)
             }
             .padding(.vertical, 6)
         } header: {
@@ -470,8 +535,7 @@ private struct ReportNetWorthBody: View {
         }
         Section {
             VStack(alignment: .leading, spacing: 10) {
-                ReportColumnChart(model: model.change, height: 200)
-                ReportLegendView(items: model.changeLegend)
+                ReportColumnChart(model: model.change, legend: model.changeLegend, height: 200)
             }
             .padding(.vertical, 6)
         } header: {
@@ -523,8 +587,7 @@ private struct ReportBalancesBody: View {
             .padding(.vertical, 4)
             if let chart = model.chart {
                 VStack(alignment: .leading, spacing: 10) {
-                    ReportLinesChart(model: chart, height: 260)
-                    ReportLegendView(items: model.legend)
+                    ReportLinesChart(model: chart, legend: model.legend, height: 260)
                 }
                 .padding(.vertical, 6)
             } else {
@@ -606,8 +669,7 @@ struct ReportForecastBody: View {
             if let model {
                 Group {
                     VStack(alignment: .leading, spacing: 10) {
-                        ReportLinesChart(model: model.chart, height: 260)
-                        ReportLegendView(items: model.legend)
+                        ReportLinesChart(model: model.chart, legend: model.legend, height: 260)
                     }
                     .padding(.vertical, 6)
                     Button(action: editEveryday) {

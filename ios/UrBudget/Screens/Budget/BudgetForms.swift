@@ -15,7 +15,7 @@ struct FormSheet<Content: View>: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            CompactForm {
                 content
                 if let error { FormErrorView(message: error) }
             }
@@ -80,7 +80,7 @@ struct NewCategoryForm: View {
                 .onChange(of: group) { _, value in if value == "__new" { newGroup = true; group = "" } }
             }
         }
-        .presentationDetents([.medium])
+        .sheetDetents([.medium])
         .onAppear {
             guard !started else { return }
             started = true
@@ -112,7 +112,7 @@ struct NewGroupForm: View {
             TextField("Group name", text: $name).wordsCapitalized()
             if taken { FormErrorView(message: String(localized: "There is already a group called \(trimmed).")) }
         }
-        .presentationDetents([.medium])
+        .sheetDetents([.medium])
         .retainingEditorDraft("NewGroupForm", values: ["name": .string(name)])
     }
 }
@@ -135,7 +135,7 @@ struct RenameGroupForm: View {
                 Text("An existing group's name merges the two groups.")
             }
         }
-        .presentationDetents([.medium])
+        .sheetDetents([.medium])
         .onAppear { if name.isEmpty { name = group } }
         .retainingEditorDraft("RenameGroupForm", values: ["group": .string(group), "name": .string(name)])
     }
@@ -180,7 +180,7 @@ struct DeleteGroupForm: View {
                 }
             }
         }
-        .presentationDetents([.medium])
+        .sheetDetents([.medium])
         .onAppear { if target.isEmpty { target = others.first ?? "" } }
         .retainingEditorDraft("DeleteGroupForm", values: ["group": .string(group), "target": .string(target)])
     }
@@ -249,7 +249,7 @@ struct MoveToGroupForm: View {
             .pickerStyle(.inline)
             if group == "__new" { TextField("New group name", text: $newGroup).wordsCapitalized() }
         }
-        .presentationDetents([.medium, .large])
+        .sheetDetents([.medium, .large])
         .onAppear { if group.isEmpty { group = current?.text("group") ?? groups.first ?? "" } }
     }
 }

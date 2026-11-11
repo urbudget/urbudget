@@ -46,7 +46,7 @@ struct AssistantReportView: View {
                     Button("Save text", systemImage: "square.and.arrow.down") { saveText() }
                 }
             }
-            .sheet(item: $share) { AssistantShareSheet(items: [$0.value]) { share = nil }.presentationDetents([.medium, .large]) }
+            .sheet(item: $share) { AssistantShareSheet(items: [$0.value]) { share = nil }.sheetDetents([.medium, .large]) }
             .alert("Couldn’t complete that", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
                 Button("OK", role: .cancel) {}
             } message: {
@@ -144,7 +144,7 @@ struct AssistantReplyReportForm: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            CompactForm {
                 if let reference {
                     Section {
                         Label("Report sent · \(reference)", systemImage: "checkmark.circle.fill")

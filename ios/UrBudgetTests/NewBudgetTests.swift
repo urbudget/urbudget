@@ -24,6 +24,32 @@ final class NewBudgetTests: XCTestCase {
         XCTAssertTrue(categories.dropFirst().allSatisfy { $0.long("target") == 0 })
     }
 
+    func testSamplesAreKnownByTheirMarkOrTheEngineSamplesRecords() {
+        XCTAssertTrue(StarterBudget.isSample(["sample": [:]]))
+        XCTAssertTrue(StarterBudget.isSample(["sample": ["from": "b1"]]))
+        // One made before samples were marked.
+        XCTAssertTrue(StarterBudget.isSample(["accounts": [["id": "sample-checking"]], "transactions": [["id": "sample-market"]]]))
+        // A fresh start from it keeps the account but not the cleared purchase.
+        XCTAssertFalse(StarterBudget.isSample(["accounts": [["id": "sample-checking"]], "transactions": []]))
+        XCTAssertFalse(StarterBudget.isSample(["name": "My budget", "accounts": [["id": "checking"]]]))
+    }
+
+    func testLeavingASampleGoesToTheBudgetItCameFromElseTheLastOpened() {
+        let library: [JSON] = [
+            ["id": "sample", "current": true],
+            ["id": "missing", "missing": true],
+            // The library lists these too; neither is a budget to go back to.
+            ["id": "binned", "lifecycle": "trashed"],
+            ["id": "kept", "lifecycle": "recovery"],
+            ["id": "recent", "lifecycle": "active"],
+            ["id": "home"],
+        ]
+        XCTAssertEqual(StarterBudget.sampleExit(from: ["sample": ["from": "home"]], library: library)?.text("id"), "home")
+        XCTAssertEqual(StarterBudget.sampleExit(from: ["sample": [:]], library: library)?.text("id"), "recent")
+        XCTAssertEqual(StarterBudget.sampleExit(from: ["sample": ["from": "gone"]], library: library)?.text("id"), "recent")
+        XCTAssertNil(StarterBudget.sampleExit(from: ["sample": [:]], library: [["id": "sample", "current": true]]))
+    }
+
     func testFilesFromOtherAppsOpenByWhatTheyHold() {
         func kind(_ name: String) -> OpenedFile.Kind? { OpenedFile(URL(fileURLWithPath: "/tmp/\(name)"))?.kind }
         XCTAssertEqual(kind("backup.json"), .backup)

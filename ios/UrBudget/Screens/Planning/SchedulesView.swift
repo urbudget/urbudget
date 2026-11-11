@@ -131,7 +131,13 @@ struct SchedulesView: View {
             }
         }
         .groupedList()
+        .onAppear {
+            // Debug builds can open the first schedule's form (`-open schedules -edit schedule`), for screenshots.
+            guard ProcessInfo.processInfo.arguments.contains("-editSchedule"), editing == nil, let first = model.coming.first ?? model.due.first else { return }
+            editing = ScheduleEditorRequest(schedule: first.schedule)
+        }
         .navigationTitle("Scheduled")
+        .inlineTitle()
         .toolbar {
             ToolbarItem(placement: .trailingBar) {
                 Button { editing = ScheduleEditorRequest() } label: { Image(systemName: "plus") }
@@ -178,11 +184,11 @@ struct SchedulesView: View {
                 PlanningRowIcon(symbol: item.paused ? "pause.fill" : item.once ? "calendar" : "repeat",
                                 tint: item.due ? .urWarning : item.paused || item.next.isEmpty ? .secondary : .urAccent)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(item.title).foregroundStyle(Color.primary).lineLimit(1)
+                    Text(item.title).foregroundStyle(Color.primary).lineLimit(2)
                     Text(item.subtitle).font(.footnote).foregroundStyle(item.due ? Color.urWarning : .secondary).lineLimit(2)
                 }
                 Spacer(minLength: 8)
-                Text(AppLanguage.leftToRight((item.amount > 0 ? "+" : "") + money(item.amount, currency))).monospacedDigit().fontWeight(.semibold)
+                Text(AppLanguage.leftToRight((item.amount > 0 ? "+" : "") + money(item.amount, currency))).monospacedDigit().lineLimit(1).layoutPriority(1).fontWeight(.semibold)
                     .foregroundStyle(item.amount > 0 ? Color.urPositive : .primary)
             }
             .opacity(item.paused || item.next.isEmpty ? 0.6 : 1)

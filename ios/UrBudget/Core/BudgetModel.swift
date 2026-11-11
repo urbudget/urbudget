@@ -20,6 +20,8 @@ struct CategoryRowModel: Identifiable, Equatable, Sendable {
     var hidden: Bool
     var payment: Bool
     var detail: String?
+    /// The detail is what a target still needs (Settings can hide it; overspending always shows).
+    var needs = false
     var tone: Tone
     var snoozed: Bool
     var progress: Int?
@@ -148,7 +150,8 @@ func buildBudgetModel(budget: JSON, summary: JSON, month: String) -> BudgetModel
         let tone: Tone = ["negative", "credit"].contains(state.status) ? .negative : state.status == "underfunded" ? .warning : .muted
         return CategoryRowModel(
             id: id, name: category.text("name"), group: category.text("group", "Everyday"), hidden: category.flag("hidden"),
-            payment: !category.text("paymentAccountId").isEmpty, detail: detail, tone: tone, snoozed: state.snoozed,
+            payment: !category.text("paymentAccountId").isEmpty, detail: detail,
+            needs: state.status != "credit" && state.status != "negative" && words != nil, tone: tone, snoozed: state.snoozed,
             progress: state.progress, status: state.status, assigned: assigned, assignedText: money(assigned, currency),
             available: available, availableText: money(available, currency), underfunded: state.status == "underfunded",
             overfunded: category.long("target") > 0 && available > category.long("target"), moved: moved.contains(id),

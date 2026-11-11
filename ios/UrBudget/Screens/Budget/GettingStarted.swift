@@ -40,6 +40,20 @@ enum StarterBudget {
         return (LibraryNumberFormat(decimal: decimal, group: group, symbol: LibraryNumberFormat.defaultSymbol(currency)), date)
     }
 
+    /// Whether a budget is a sample to try things on. Samples made before they were marked are known
+    /// by the engine sample's account and purchase (a fresh start from one doesn't carry the purchase).
+    static func isSample(_ budget: JSON) -> Bool {
+        budget["sample"].isObject
+            || (budget.row("accounts", id: "sample-checking") != nil && budget.row("transactions", id: "sample-market") != nil)
+    }
+
+    /// The budget leaving a sample goes to: the one it was opened from, else the one opened most recently.
+    static func sampleExit(from sample: JSON, library: [JSON]) -> JSON? {
+        // The library lists budgets in Trash and ones kept for recovery too: neither can be opened.
+        let others = library.filter { !$0.flag("current") && !$0.flag("missing") && ["", "active"].contains($0.text("lifecycle")) }
+        return others.first { $0.text("id") == sample["sample"].text("from") } ?? others.first
+    }
+
     /// Whether Budget shows a budget the getting-started steps: on for one set up from the welcome
     /// screen, until it's hidden.
     @MainActor static func checklistShown(_ store: BudgetStore) -> Bool {
@@ -80,7 +94,7 @@ struct GettingStartedCard: View {
                           text: String(localized: "Give all of it a job: tap a category's Assigned amount and type on the keypad until Unassigned reaches zero. Quick assign, in the Unassigned sheet, can fill in targets for you."),
                           done: budget.rows("assignments").contains { $0.long("amount") != 0 }, action: (String(localized: "Assign money"), assign)))
         steps.append(Step(title: String(localized: "Record your spending"),
-                          text: String(localized: "Add transactions as you spend, or import the statement file your bank lets you download (CSV, OFX, QFX or QIF) from an account's page. Each one comes out of its category."),
+                          text: String(localized: "Add transactions as you spend, or import the statement file your bank lets you download (CSV, Excel, OFX, QIF and more) from an account's page. Each one comes out of its category."),
                           done: !budget.rows("transactions").isEmpty, action: (String(localized: "Add a transaction"), addTransaction)))
         steps.append(Step(title: String(localized: "Plan for a bigger bill"),
                           text: String(localized: "Pick something that doesn't come every month, like car insurance or gifts, and give it a target. UrBudget works out what to set aside each month so it's ready when it's due."),
@@ -141,5 +155,75 @@ struct GettingStartedCard: View {
         .background(Color.urAccent.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         // When a step gets done, move on to the next one.
         .onChange(of: doneCount) { _, _ in chosen = nil }
+    }
+}
+
+/// Leaving the sample budget with no budget of your own yet: the sample's library id, and whether to
+/// delete it once the new budget opens.
+struct SampleExit: Identifiable {
+    var id: String
+    var delete: Bool
+}
+
+/// Over a sample budget, as the desktop's banner: back to your own budget, deleting the sample on the
+/// way if you like. With no budget of your own yet, both start one from the welcome screen.
+struct SampleBanner: View {
+    @Environment(BudgetStore.self) private var store
+    @State private var library: [JSON] = []
+    @State private var exit: SampleExit?
+    @State private var working = false
+
+    var body: some View {
+        let own = StarterBudget.sampleExit(from: store.budget ?? [:], library: library) != nil
+        VStack(alignment: .leading, spacing: 12) {
+            Label {
+                (Text("This is a sample budget.").bold() + Text(verbatim: " ") + Text("Try anything here; your own budget is separate."))
+                    .fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: "sparkles").foregroundStyle(Color.urAccent)
+            }
+            .font(.subheadline)
+            HStack(spacing: 10) {
+                Button(own ? "Go to my budget" : "Create my budget") { leave(delete: false) }
+                    .buttonStyle(.borderedProminent)
+                Button("Delete sample") { leave(delete: true) }
+                    .buttonStyle(.bordered)
+            }
+            .controlSize(.small)
+            .disabled(working || store.busy)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.urAccent.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .task { library = (try? await store.listBudgets()) ?? [] }
+        .sheet(item: $exit) { WelcomeView(leaving: $0) }
+    }
+
+    /// Opens the budget to go back to and deletes the sample once it's closed; with none, starts one.
+    private func leave(delete: Bool) {
+        guard !working else { return }
+        working = true
+        let sample = store.budget ?? [:]
+        Task {
+            defer { working = false }
+            do {
+                library = try await store.listBudgets()
+                guard let id = library.first(where: { $0.flag("current") })?.text("id") else { return }
+                guard let target = StarterBudget.sampleExit(from: sample, library: library) else {
+                    exit = SampleExit(id: id, delete: delete)
+                    return
+                }
+                let targetId = target.text("id")
+                try await store.perform { repository in ((), try await repository.open(id: targetId)) }
+                if delete {
+                    _ = try await store.deleteBudget(id: id)
+                    store.showToast(String(localized: "Deleted the sample budget."))
+                } else {
+                    store.showToast(String(localized: "Opened \(target.text("name"))"))
+                }
+            } catch {
+                store.error = BudgetStore.readable(error)
+            }
+        }
     }
 }

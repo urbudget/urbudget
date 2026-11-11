@@ -34,7 +34,9 @@ struct MoreView: View {
                 }
             }
             .groupedList()
+            .startPaneContent()
             .navigationTitle("More")
+            .barTitle()
             .navigationDestination(for: MoreRoute.self) { route in
                 switch route {
                 case .library: LibraryView()
@@ -85,7 +87,7 @@ struct MoreView: View {
                 MoreRow(title: String(localized: "Account & sync"), detail: syncDetail, symbol: "arrow.triangle.2.circlepath.icloud", tint: .urAccent,
                         badge: sync.conflicts)
             }
-            Button { sheet = .assistant } label: {
+            Button { if !AppActions.shared.openBeside(nil) { sheet = .assistant } } label: {
                 // A dot while a reply or a proposal that arrived with the assistant closed is unseen.
                 MoreRow(title: String(localized: "Assistant"), detail: String(localized: "Ask about your budget and review its changes"),
                         symbol: "sparkles", tint: .urBrand, dot: AssistantController.shared.unseen)
@@ -119,7 +121,7 @@ struct MoreView: View {
                         symbol: "building.columns", tint: .urAccent)
             }
             Button { sheet = .bankImport } label: {
-                MoreRow(title: String(localized: "Import bank file"), detail: String(localized: "CSV, OFX, QFX or QIF, reviewed first"),
+                MoreRow(title: String(localized: "Import bank file"), detail: String(localized: "CSV, Excel, OFX, QIF and more, reviewed first"),
                         symbol: "doc.badge.arrow.up", tint: .urAccent)
             }
             .foregroundStyle(Color.primary)
@@ -155,7 +157,7 @@ struct MoreView: View {
         case "banks": path = [.banks]
         case "settings": path = [.settings]
         case "assistantSettings": path = [.assistantSettings]
-        case "assistant": sheet = .assistant
+        case "assistant": if !AppActions.shared.openBeside(nil) { sheet = .assistant }
         case "bankImport": sheet = .bankImport
         case "ynab": sheet = .ynabImport
         default: LaunchRoute.open = route
@@ -202,9 +204,14 @@ struct MoreRow: View {
 enum LaunchRoute {
     static let morePages: Set<String> = ["library", "sync", "schedules", "loans", "payees", "banks", "settings",
                                          "assistantSettings", "assistant", "bankImport", "ynab"]
-    static let accountPages: Set<String> = ["register", "networth"]
+    static let accountPages: Set<String> = ["register", "networth", "loanRegister", "cardRegister"]
     static var initialTab: AppTab {
-        tab ?? (open.map(morePages.contains) == true ? .more : open.map(accountPages.contains) == true ? .accounts : .budget)
+        tab ?? (open.map(morePages.contains) == true ? .more : open.map(accountPages.contains) == true ? .accounts : startTab)
+    }
+
+    /// The page the app starts on, and a budget opens on: Budget, or all transactions (Settings).
+    static var startTab: AppTab {
+        open == nil && UserDefaults.standard.string(forKey: "startPage") == "transactions" ? .transactions : .budget
     }
 
     #if DEBUG

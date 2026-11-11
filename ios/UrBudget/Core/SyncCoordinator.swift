@@ -38,19 +38,55 @@ final class SyncCoordinator {
     /// The last sync attempt's report, if any.
     var lastReport: JSON? { status?["sync"]["last"].isObject == true ? status?["sync"]["last"] : nil }
     var conflicts: Int { lastReport?.rows("budgets").count { ["conflict", "error", "update_app", "recovery", "subscription_required", "deletion_conflict"].contains($0.text("state")) } ?? 0 }
+    /// Where sync stands, in the order the app says it.
+    enum Standing { case paused, syncing, attention, idle, offline, waiting, onDevice, synced }
+
+    var standing: Standing {
+        Self.standing(unlocked: unlocked, enabled: status?["sync"]["enabled"].bool == true, syncing: syncing, pending: pending, report: lastReport)
+    }
+
+    nonisolated static func standing(unlocked: Bool, enabled: Bool, syncing: Bool, pending: Bool, report: JSON?) -> Standing {
+        if !unlocked && (enabled || report != nil) { return .paused }
+        if syncing { return .syncing }
+        let states = report?.rows("budgets").map { $0.text("state") } ?? []
+        if states.contains(where: { ["conflict", "error", "update_app", "recovery", "subscription_required", "deletion_conflict"].contains($0) }) { return .attention }
+        guard let report else { return .idle }
+        if report.text("state") == "offline" { return .offline }
+        if report.text("state") == "waiting" || states.contains("queued") { return .waiting }
+        if states.contains(where: { ["paused", "locked", "signed_out"].contains($0) }) { return .paused }
+        if report.text("state") != "ok" { return .attention }
+        if pending || states.contains("waiting") { return .waiting }
+        if states.isEmpty || states.contains("local_only") { return .onDevice }
+        return .synced
+    }
+
     var statusLabel: String {
-        if !unlocked && (status?["sync"]["enabled"].bool == true || lastReport != nil) { return String(localized: "Sync paused") }
-        if syncing { return String(localized: "Syncing…") }
-        if conflicts > 0 { return String(localized: "Sync needs you") }
-        guard let report = lastReport else { return String(localized: "Sync") }
-        if report.text("state") == "offline" { return String(localized: "Offline") }
-        let states = report.rows("budgets").map { $0.text("state") }
-        if report.text("state") == "waiting" || states.contains("queued") { return String(localized: "Waiting to sync") }
-        if states.contains(where: { ["paused", "locked", "signed_out"].contains($0) }) { return String(localized: "Sync paused") }
-        if report.text("state") != "ok" { return String(localized: "Sync needs you") }
-        if pending || states.contains("waiting") { return String(localized: "Waiting to sync") }
-        if states.isEmpty || states.contains("local_only") { return String(localized: "Saved on device") }
-        return String(localized: "Synced")
+        switch standing {
+        case .paused: return String(localized: "Sync paused")
+        case .syncing: return String(localized: "Syncing…")
+        case .attention: return String(localized: "Sync needs you")
+        case .idle: return String(localized: "Sync")
+        case .offline: return String(localized: "Offline")
+        case .waiting: return String(localized: "Waiting to sync")
+        case .onDevice: return String(localized: "Saved on device")
+        case .synced: return String(localized: "Synced")
+        }
+    }
+
+    /// Sync is stopped until the person does something: the ⋯ button carries a dot for it on every tab.
+    var needsYou: Bool { signedIn && [.paused, .attention].contains(standing) }
+
+    /// The symbol beside sync's line in the ⋯ menu.
+    var statusSymbol: String {
+        guard signedIn else { return "icloud" }
+        switch standing {
+        case .paused: return "pause.circle"
+        case .attention: return "exclamationmark.icloud"
+        case .syncing, .waiting: return "arrow.triangle.2.circlepath.icloud"
+        case .offline: return "icloud.slash"
+        case .synced: return "checkmark.icloud"
+        case .idle, .onDevice: return "icloud"
+        }
     }
 
     func refreshStatus() async {

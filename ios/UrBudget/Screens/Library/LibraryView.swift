@@ -19,6 +19,8 @@ struct LibraryView: View {
     @State private var creating = false
     @State private var freshStarting = false
     @State private var deleting: JSON?
+    @State private var purging: JSON?
+    @State private var emptying = false
     @State private var restoring: LibraryBackup?
     /// The revision shown when Restore was chosen: a newer change stops the restore, as on Android.
     @State private var restoreToken = ""
@@ -37,6 +39,7 @@ struct LibraryView: View {
         // One small function per section: Xcode 26's type checker gives up on the whole list at once.
         List {
             budgetsSection(busy: busy)
+            if budgets.contains(where: LibraryTrash.holds) { trashSection(busy: busy) }
             if !drafts.isEmpty {
                 Section("Unfinished edits") {
                     Text("Review these saved fields and re-enter the changes you want to keep.")
@@ -59,6 +62,7 @@ struct LibraryView: View {
         }
         .groupedList()
         .navigationTitle("Budget library")
+        .inlineTitle()
         .toolbar {
             if busy {
                 ToolbarItem(placement: .trailingBar) { ProgressView().accessibilityLabel("Working") }
@@ -81,6 +85,16 @@ struct LibraryView: View {
             Button("Move to Trash", role: .destructive) { delete(entry) }
         } message: { _ in
             Text("Account budgets move to Trash on every device. Restore them from the library. Local-only budgets stay private.")
+        }
+        .confirmationDialog(purgeTitle, isPresented: present($purging), titleVisibility: .visible, presenting: purging) { entry in
+            Button("Delete permanently", role: .destructive) { libraryAction("purge", entry) }
+        } message: { _ in
+            Text("It's deleted from this device with its backups and assistant chats. This can't be undone.")
+        }
+        .confirmationDialog("Empty Trash?", isPresented: $emptying, titleVisibility: .visible) {
+            Button("Empty Trash", role: .destructive) { emptyTrash() }
+        } message: {
+            Text("\(budgets.count(where: LibraryTrash.onDeviceOnly)) budgets are deleted from this device with their backups and assistant chats. This can't be undone.")
         }
         .confirmationDialog("Restore this backup?", isPresented: present($restoring), titleVisibility: .visible, presenting: restoring) { backup in
             Button("Restore", role: .destructive) { restore(backup) }
@@ -111,11 +125,17 @@ struct LibraryView: View {
         return Text("Delete budget?")
     }
 
+    /// "Delete Household permanently?"
+    private var purgeTitle: Text {
+        if let name = purging?.text("name") { return Text("Delete \(name) permanently?") }
+        return Text("Delete permanently")
+    }
+
     // MARK: Sections
 
     private func budgetsSection(busy: Bool) -> some View {
         Section {
-            ForEach(budgets, id: \.idText) { (entry: JSON) in budgetRow(entry) }
+            ForEach(budgets.filter { !LibraryTrash.holds($0) }, id: \.idText) { (entry: JSON) in budgetRow(entry) }
             if !loaded && budgets.isEmpty { ProgressView().frame(maxWidth: .infinity) }
             Button { creating = true } label: { Label("New budget", systemImage: "plus") }
                 .disabled(busy)
@@ -123,6 +143,24 @@ struct LibraryView: View {
             Text("Budgets")
         } footer: {
             Text("Each has its own history, bank links, assistant chats and backups. Hold a budget for library actions. Swipe to move it to Trash.")
+        }
+    }
+
+    /// Budgets in Trash, apart from the others: restore one, or delete it for good.
+    private func trashSection(busy: Bool) -> some View {
+        let onDevice = budgets.count(where: LibraryTrash.onDeviceOnly)
+        return Section {
+            if onDevice > 0 {
+                Button(role: .destructive) { emptying = true } label: {
+                    LibraryRowLabel(title: "Empty Trash", detail: "\(onDevice) budgets in Trash on this device", symbol: "trash.slash", tint: .urNegative)
+                }
+                .disabled(busy)
+            }
+            ForEach(budgets.filter(LibraryTrash.holds), id: \.idText) { (entry: JSON) in budgetRow(entry) }
+        } header: {
+            Text("Trash")
+        } footer: {
+            Text("Restore a budget, or delete it permanently.")
         }
     }
 
@@ -219,9 +257,18 @@ struct LibraryView: View {
             if entry.text("lifecycle") == "recovery" || (trashed && !remote && !entry.flag("missing")) {
                 Button { libraryAction("recover", entry) } label: { Label("Recover as a new budget", systemImage: "doc.on.doc") }
             }
+            if LibraryTrash.onDeviceOnly(entry) {
+                Button(role: .destructive) { purging = entry } label: { Label("Delete permanently", systemImage: "trash.slash") }
+            }
         }
         .swipeActions {
             if !trashed && !recovery { Button(role: .destructive) { deleting = entry } label: { Label("Trash", systemImage: "trash") } }
+            if LibraryTrash.onDeviceOnly(entry) { Button(role: .destructive) { purging = entry } label: { Label("Delete", systemImage: "trash.slash") } }
+        }
+        .swipeActions(edge: .leading) {
+            if entry.text("lifecycle") == "trashed" && !deletionConflict {
+                Button { libraryAction("restore", entry) } label: { Label("Restore", systemImage: "arrow.uturn.backward") }.tint(.urAccent)
+            }
         }
     }
 
@@ -340,6 +387,18 @@ struct LibraryView: View {
         let id = entry.text("id"), name = entry.text("name")
         run(String(localized: "Opened \(name)")) {
             try await store.perform { repository in ((), try await repository.open(id: id)) }
+        }
+    }
+
+    /// Deletes for good every budget in Trash that lives only on this device.
+    private func emptyTrash() {
+        run {
+            let result = try await store.service("library_empty_trash")
+            store.reload()
+            if let failed = result.rows("failed").first {
+                throw AppError(failed.text("error"))
+            }
+            store.showToast(String(localized: "\(Int(result.long("deleted"))) budgets deleted", locale: .app))
         }
     }
 
@@ -493,15 +552,17 @@ private struct LibraryRowLabel: View {
     var title: LocalizedStringKey
     var detail: LocalizedStringKey
     var symbol: String
+    /// The title's colour, for a row that deletes.
+    var tint: Color = .primary
 
     var body: some View {
         Label {
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).foregroundStyle(Color.primary)
+                Text(title).foregroundStyle(tint)
                 Text(detail).font(.footnote).foregroundStyle(Color.secondary)
             }
         } icon: {
-            Image(systemName: symbol)
+            Image(systemName: symbol).foregroundStyle(tint == .primary ? Color.urAccent : tint)
         }
     }
 }
@@ -532,7 +593,7 @@ private struct NewBudgetForm: View {
                 Text("The new budget opens with its own accounts, categories and history. This one stays in the library.")
             }
         }
-        .presentationDetents([.medium, .large])
+        .sheetDetents([.medium, .large])
         .onAppear {
             guard !started else { return }
             started = true
@@ -559,7 +620,7 @@ private struct FreshStartForm: View {
                 Text("The shared engine carries account balances, categories, targets and pending activity into a separate budget. Cleared transactions up to the start date become opening balances. Your original remains in this library.")
             }
         }
-        .presentationDetents([.medium, .large])
+        .sheetDetents([.medium, .large])
         .onAppear {
             guard !started else { return }
             started = true

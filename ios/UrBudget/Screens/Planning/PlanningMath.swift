@@ -221,7 +221,9 @@ enum LoanMath {
         let charged = transactions.contains { t in
             t.text("id") == "loan-interest:\(accountId):\(month)"
                 || t.text("accountId") == accountId && t.text("date").hasPrefix(month)
-                && (t.flag("loanInterest") || t["source"].text("debt_transaction_type") == "interest")
+                && (t.flag("loanInterest") || t["source"].text("debt_transaction_type") == "interest"
+                    // The app's copy leaves an import's `source` in the store; YNAB's interest keeps its name.
+                    || t.flag("hasImportSource") && t.text("payee") == "Loan interest")
         }
         if charged { return [] }
         return transactions.filter { t in

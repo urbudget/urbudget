@@ -74,10 +74,125 @@ struct BudgetView: View {
     @State private var addCompact = false
     /// The assistant, opened from the overspent notice with its request ready.
     @State private var asking: AssistantRequest?
+    @State private var span = WindowSpan()
+    /// The category open beside the budget on a wide window, where a phone shows it as a sheet.
+    @State private var docked: DockedCategory?
 
     private struct ModelKey: Equatable { var version: Int; var month: String; var ready: Bool }
 
+    /// A category beside the budget: the one asked for (which the pane is made for), and the one
+    /// it's on now, as its arrows step through them.
+    private struct DockedCategory {
+        var opened: String
+        var shown: String
+        var assign = false
+        var route: CategoryRoute?
+        var count: Int
+    }
+
+    @Environment(\.fold) private var fold
+    /// A new transaction opened from here on a fold: it takes the far side, where a category would.
+    @State private var pane = EditorPane()
+
+    /// How the budget shares the screen with an open category: by the window's width, or by the
+    /// fold, whose far side is the category's (and waits for one while none is open).
+    private var split: WideLayout.Split? { WideLayout.split(.budget, span: span, fold: fold) }
+    private var wide: Bool { split != nil }
+
+    /// Opens a category: beside the budget where there's room, else as a sheet. Everything else
+    /// (Move money, Unassigned, the forms) is a sheet either way.
+    private func show(_ request: BudgetSheet) {
+        guard wide else { sheet = request; return }
+        switch request {
+        case .category(let id, let assign):
+            docked = DockedCategory(opened: id, shown: id, assign: assign, count: (docked?.count ?? 0) + 1)
+        case .categoryPage(let id, let route):
+            docked = DockedCategory(opened: id, shown: id, route: route, count: (docked?.count ?? 0) + 1)
+        default:
+            sheet = request
+        }
+    }
+
     var body: some View {
+        let split = split
+        let onFold = split?.hinge == true
+        return ListDetail(split: onFold || docked != nil ? split : nil) {
+            stack.environment(\.editorPane, onFold ? pane : nil)
+        } detail: {
+            FarSide(pane: pane) {
+                if let docked {
+                    CategorySheet(categoryId: docked.opened, startAssigning: docked.assign,
+                                  move: { sheet = .move(MoveRequest(category: $0, direction: $1)) },
+                                  transactions: { target in self.docked = nil; path.append(target) },
+                                  startRoute: docked.route,
+                                  close: { self.docked = nil }, shows: { self.docked?.shown = $0 })
+                        .id(docked.count)
+                } else {
+                    FoldSideHint()
+                }
+            }
+        }
+        .measuringSpan($span)
+        .belowTopTabs(wide && !onFold && docked != nil)
+        .guarding(pane, shown: onFold)
+        // The window narrowed with a category beside the budget: it carries on as a sheet.
+        .onChange(of: wide) { _, wide in
+            if !wide, let open = docked {
+                docked = nil
+                sheet = .category(open.shown, assign: false)
+            }
+        }
+        .task(id: ModelKey(version: store.version, month: store.month, ready: store.summary != nil)) { await rebuild() }
+        .sheet(item: $sheet) { sheetContent($0) }
+        .assistant($asking)
+        .cover(item: $launchEditor) { TransactionEditor(request: $0) }
+        .onAppear(perform: loadFolds)
+        .onChange(of: collapsed) { _, folds in
+            guard foldsLoaded, let key = store.budgetKey else { return }
+            UserDefaults.standard.set(Array(folds), forKey: "folds.\(key)")
+        }
+        .onAppear {
+            // Debug builds can open a sheet at launch (`-open unassigned`), for device screenshots.
+            switch LaunchRoute.open {
+            case "unassigned": sheet = .unassigned
+            case "transaction": launchEditor = TransactionEditorRequest()
+            case "category":
+                if let first = store.budget?.rows("categories").first { show(.category(first.text("id"), assign: false)) }
+            // A category with a target that still needs money, and its pages.
+            case "needs", "assign", "target", "categoryDetails":
+                let month = store.month
+                let totals = store.summary?.rows("categories") ?? []
+                let ordinary = store.budget?.rows("categories").filter { $0.text("paymentAccountId").isEmpty && !$0.flag("hidden") } ?? []
+                let short = ordinary.first { c in
+                    CategoryStatus(category: c, summary: totals.first { $0.text("id") == c.text("id") }, month: month).needed > 0
+                } ?? ordinary.first
+                if let id = short?.text("id") {
+                    switch LaunchRoute.open {
+                    case "target": show(.categoryPage(id, .target))
+                    case "categoryDetails": show(.categoryPage(id, .details))
+                    default: show(.category(id, assign: LaunchRoute.open == "assign"))
+                    }
+                }
+            case "move":
+                if let first = store.budget?.rows("categories").first(where: { $0.text("paymentAccountId").isEmpty }) {
+                    sheet = .move(MoveRequest(category: first.text("id"), direction: "to"))
+                }
+            case "newCategory": sheet = .newCategory(group: nil)
+            case "month": sheet = .month
+            case "planning": sheet = .planning
+            case "edit":
+                if let last = store.budget?.rows("transactions").last { launchEditor = TransactionEditorRequest(transaction: last) }
+            // The form on one of its pickers: the form consumes what's left of the route.
+            case "payeePicker", "categoryPicker", "accountPicker":
+                launchEditor = TransactionEditorRequest()
+                return
+            default: return
+            }
+            LaunchRoute.open = nil
+        }
+    }
+
+    private var stack: some View {
         NavigationStack(path: $path) {
             content
                 .navigationTitle(Dates.shortMonthLabel(store.month))
@@ -91,41 +206,12 @@ struct BudgetView: View {
                         }
                     }
                     ToolbarItem(placement: .principal) { monthSwitcher }
-                    ToolbarItem(placement: .trailingBar) {
-                        Menu {
-                            Button { sheet = .newCategory(group: nil) } label: { Label("New category", systemImage: "tag") }
-                            Button { sheet = .newGroup } label: { Label("New category group", systemImage: "folder.badge.plus") }
-                            Divider()
-                            Button { sheet = .addAccount } label: { Label("New account", systemImage: "building.columns") }
-                        } label: {
-                            Image(systemName: "plus")
-                        }
-                        .accessibilityLabel("Add a category or group")
-                    }
+                    ToolbarItem(placement: .trailingBar) { AssistantBarButton(page: "budget") }
                     ToolbarItem(placement: .trailingBar) { BudgetActionsMenu() }
                 }
                 .navigationDestination(for: RegisterTarget.self) { TransactionsList(target: $0) }
                 .overlay(alignment: .bottomTrailing) { AddTransactionButton(compact: addCompact) }
-        }
-        .task(id: ModelKey(version: store.version, month: store.month, ready: store.summary != nil)) { await rebuild() }
-        .sheet(item: $sheet) { sheetContent($0) }
-        .sheet(item: $asking) { AssistantView(request: $0) }
-        .cover(item: $launchEditor) { TransactionEditor(request: $0) }
-        .onAppear(perform: loadFolds)
-        .onChange(of: collapsed) { _, folds in
-            guard foldsLoaded, let key = store.budgetKey else { return }
-            UserDefaults.standard.set(Array(folds), forKey: "folds.\(key)")
-        }
-        .onAppear {
-            // Debug builds can open a sheet at launch (`-open unassigned`), for device screenshots.
-            switch LaunchRoute.open {
-            case "unassigned": sheet = .unassigned
-            case "transaction": launchEditor = TransactionEditorRequest()
-            case "category":
-                if let first = store.budget?.rows("categories").first { sheet = .category(first.text("id"), assign: false) }
-            default: return
-            }
-            LaunchRoute.open = nil
+                .startPaneContent()
         }
     }
 
@@ -183,11 +269,12 @@ struct BudgetView: View {
         let visible = visibleGroups(model)
         let overspent = counts(model)["overspent"] ?? 0
         // Columns as wide as the widest figure: with tabular digits only the longest strings matter.
-        let assignedWidth = max(76, figureWidth(model.widestAssigned, size: 15, bold: false) + 8)
-        let availableWidth = max(88, figureWidth(model.widestAvailable, size: 15, bold: true) + 26)
+        let assignedWidth = max(68, figureWidth(model.widestAssigned, size: 14, bold: true) + 2)
+        let availableWidth = max(80, figureWidth(model.widestAvailable, size: 14, bold: true) + 22)
         let current = Dates.currentMonth
         return List {
             Section {
+                if let budget = store.budget, StarterBudget.isSample(budget) { SampleBanner() }
                 if store.month != current {
                     Button { store.selectMonth(current) } label: {
                         Label("Back to \(Dates.shortMonthLabel(current))", systemImage: "calendar")
@@ -198,13 +285,13 @@ struct BudgetView: View {
                     .buttonBorderShape(.capsule)
                 }
                 UnassignedBanner(amount: model.readyToAssign, currency: currency) { sheet = .unassigned }
-                if checklist, let budget = store.budget, budget["sample"].isNull, budget["importedFrom"].isNull, budget["ynabPlanId"].isNull {
+                if checklist, let budget = store.budget, !StarterBudget.isSample(budget), budget["importedFrom"].isNull, budget["ynabPlanId"].isNull {
                     GettingStartedCard(budget: budget, addAccount: { sheet = .addAccount }, assign: { sheet = .unassigned },
                                        addTransaction: { launchEditor = TransactionEditorRequest() },
                                        setTarget: {
                                            let categories = budget.rows("categories").filter { !$0.flag("hidden") && $0.text("paymentAccountId").isEmpty }
                                            if let first = categories.first(where: { $0.long("target") == 0 && !$0["goal"].isObject }) ?? categories.first {
-                                               sheet = .categoryPage(first.text("id"), .target)
+                                               show(.categoryPage(first.text("id"), .target))
                                            } else {
                                                sheet = .newCategory(group: nil)
                                            }
@@ -228,7 +315,7 @@ struct BudgetView: View {
                     // The assistant opens with the request in its field, for the person to send.
                     Notice(text: String(localized: "\(overspent) overspent categories", locale: .app), tone: "negative",
                            icon: "exclamationmark.circle.fill", action: String(localized: "Show"),
-                           secondary: .init(label: String(localized: "Cover with the assistant")) {
+                           secondary: .init(label: String(localized: "Cover with the assistant"), symbol: "sparkles") {
                                asking = AssistantRequest(page: "budget", text: AssistantStart.cover)
                            }) { filter = "overspent" }
                 }
@@ -249,6 +336,8 @@ struct BudgetView: View {
             }
             .listRowSeparator(.hidden)
             .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+            // What stands above the categories is on the page, as on Android; only they are white.
+            .listRowBackground(Color.groupedBackground)
 
             if model.uncategorized < 0 && (filter == "all" || filter == "overspent") {
                 Section {
@@ -257,6 +346,7 @@ struct BudgetView: View {
                         path.append(RegisterTarget(category: NeedsCategory))
                     }
                 }
+                .plainRow()
             }
             if visible.isEmpty {
                 Section {
@@ -270,24 +360,18 @@ struct BudgetView: View {
                     }
                 }
                 .listRowSeparator(.hidden)
+                .plainRow()
+                .listRowBackground(Color.groupedBackground)
             }
             ForEach(visible, id: \.group.name) { group, rows in
                 let open = !collapsed.contains(group.name)
                 Section {
                     if open {
-                        ForEach(rows) { row in
-                            CategoryLine(row: row, assignedWidth: assignedWidth, availableWidth: availableWidth,
-                                         open: { sheet = .category(row.id, assign: false) },
-                                         assign: { sheet = .category(row.id, assign: true) },
-                                         move: { sheet = .move(MoveRequest(category: row.id, direction: row.available < 0 ? "from" : "to")) },
-                                         hide: { setHidden(row, !row.hidden) },
-                                         regroup: { sheet = .moveToGroup(row.id) },
-                                         page: { sheet = .categoryPage(row.id, $0) })
-                        }
+                        ForEach(rows) { row in line(row, assignedWidth, availableWidth) }
                         .onMove { from, to in reorder(rows, in: group.name, from: from, to: to) }
                         .moveDisabled(!reordering || group.name == HiddenGroup)
                         if rows.isEmpty && group.name != HiddenGroup {
-                            Button { sheet = .newCategory(group: group.name) } label: { Label("Add a category", systemImage: "plus") }
+                            Button { sheet = .newCategory(group: group.name) } label: { Label("Add a category", systemImage: "plus") }.plainRow()
                         }
                     }
                 } header: {
@@ -313,18 +397,36 @@ struct BudgetView: View {
                     .padding(.vertical, 8)
                 }
                 .listRowSeparator(.hidden)
+                .plainRow(vertical: 4)
+                .listRowBackground(Color.groupedBackground)
             }
             Color.clear.frame(height: 64).listRowSeparator(.hidden).listRowBackground(Color.clear)
         }
         .listStyle(.plain)
-        .readableWidth()
+        .pageGround()
         .shrinksAddButton($addCompact)
-        .searchable(text: $search, placement: .automatic, prompt: "Find a category")
+        // Under the bar until the list is pulled down, so the plan starts at the top as on Android.
+        .searchable(text: $search, prompt: "Find a category")
+        .searchMinimized()
         .reorderMode(reordering)
         .refreshable {
             store.foreground(force: true)
             await sync.syncAutomatically()
         }
+    }
+
+    /// A category's row, as close to its neighbours as Android's.
+    private func line(_ row: CategoryRowModel, _ assignedWidth: CGFloat, _ availableWidth: CGFloat) -> some View {
+        CategoryLine(row: row, assignedWidth: assignedWidth, availableWidth: availableWidth,
+                     open: { show(.category(row.id, assign: false)) },
+                     assign: { show(.category(row.id, assign: true)) },
+                     move: { sheet = .move(MoveRequest(category: row.id, direction: row.available < 0 ? "from" : "to")) },
+                     hide: { setHidden(row, !row.hidden) },
+                     regroup: { sheet = .moveToGroup(row.id) },
+                     page: { show(.categoryPage(row.id, $0)) })
+            // The category open beside the budget is marked in it.
+            .listRowBackground(wide && docked?.shown == row.id ? Color.urAccent.opacity(0.12) : nil)
+            .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
     }
 
     /// The sentences about money assigned in later months, one after another.
@@ -497,7 +599,7 @@ struct UnassignedBanner: View {
         Button(action: action) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(money(amount, currency)).font(.system(size: 28, weight: .heavy, design: .rounded)).monospacedDigit()
+                    Text(money(amount, currency)).font(.system(.title, weight: .heavy)).monospacedDigit()
                         .lineLimit(1).minimumScaleFactor(0.6)
                     Text(amount > 0 ? "Tap to assign" : amount < 0 ? "More is assigned than you have" : "All of it is assigned")
                         .font(.footnote).opacity(0.85)
@@ -540,24 +642,19 @@ private struct GroupHeader: View {
             }
         }
         Group {
-            // At the largest text sizes, or when the name doesn't fit on one line beside the totals
-            // (a narrow phone, large figures), the totals go under the name.
+            // The totals stand over the rows' own columns, and a long name takes a second line
+            // beside them, as on Android. At the largest text sizes they go under the name.
             if typeSize.isAccessibilitySize {
                 stacked
             } else {
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 6) {
-                        title(wraps: false)
-                        Spacer(minLength: 4)
-                        column("Assigned", money(assigned, currency), .primary, assignedWidth)
-                        column("Available", money(available, currency), available < 0 ? .urNegative : .primary, availableWidth)
-                    }
-                    stacked
+                HStack(spacing: 6) {
+                    title(wraps: true).frame(maxWidth: .infinity, alignment: .leading)
+                    column("Assigned", money(assigned, currency), .primary, assignedWidth)
+                    column("Available", money(available, currency), available < 0 ? .urNegative : .primary, availableWidth)
                 }
             }
         }
-        .textCase(nil)
-        .padding(.vertical, 4)
+        .listBand(minHeight: 48)
     }
 
     /// The group's name; the hidden categories' own group is named in the app's language.
@@ -565,16 +662,17 @@ private struct GroupHeader: View {
 
     private func title(wraps: Bool) -> some View {
         let displayName = displayName
-        return HStack(spacing: 6) {
+        return HStack(spacing: 2) {
             Button(action: toggle) {
-                HStack(spacing: 6) {
+                HStack(spacing: 5) {
                     // Points the way text reads while folded (mirrored right to left), down when open.
                     Image(systemName: "chevron.right")
                         .font(.footnote.weight(.bold))
                         .rotationEffect(.degrees(open ? 90 : 0))
                         .flipsForRightToLeftLayoutDirection(true)
                         .foregroundStyle(Color.secondary)
-                    Text(displayName).font(.headline).foregroundStyle(Color.primary).lineLimit(wraps ? 2 : 1).multilineTextAlignment(.leading)
+                    Text(displayName).font(.headline).foregroundStyle(Color.primary).lineLimit(wraps ? 3 : 1).multilineTextAlignment(.leading)
+                        .minimumScaleFactor(0.85)
                         .fixedSize(horizontal: !wraps, vertical: false)
                 }
             }
@@ -595,7 +693,7 @@ private struct GroupHeader: View {
                     Divider()
                     Button(role: .destructive) { action("delete") } label: { Label("Delete group…", systemImage: "trash") }
                 } label: {
-                    Image(systemName: "ellipsis").font(.footnote.weight(.bold)).foregroundStyle(Color.secondary).frame(width: 28, height: 28)
+                    Image(systemName: "ellipsis").font(.footnote.weight(.bold)).foregroundStyle(Color.secondary).frame(width: 24, height: 28)
                 }
                 .accessibilityLabel("Actions for group \(name)")
             }
@@ -605,7 +703,7 @@ private struct GroupHeader: View {
     private func column(_ label: LocalizedStringKey, _ value: String, _ color: Color, _ width: CGFloat?) -> some View {
         VStack(alignment: .trailing, spacing: 1) {
             Text(label).font(.caption2.weight(.medium)).foregroundStyle(Color.secondary)
-            Text(value).figure(14, weight: .bold).foregroundStyle(color).lineLimit(1).minimumScaleFactor(0.7)
+            Text(value).font(.sized(14, weight: .bold)).monospacedDigit().foregroundStyle(color).lineLimit(1).minimumScaleFactor(0.7)
         }
         .frame(width: width, alignment: .trailing)
     }
@@ -623,6 +721,7 @@ private struct CategoryLine: View {
     var regroup: () -> Void
     var page: (CategoryRoute) -> Void
     @Environment(\.dynamicTypeSize) private var typeSize
+    @AppStorage("showNeeded") private var showNeeded = true
 
     var body: some View {
         Group {
@@ -677,10 +776,11 @@ private struct CategoryLine: View {
                         .accessibilityLabel("Note: \(row.note)")
                 }
             }
-            if let detail = row.detail {
+            // Settings can hide what targets still need; overspending always shows.
+            if let detail = row.needs && !showNeeded ? nil : row.detail {
                 HStack(spacing: 3) {
                     if row.snoozed && row.status != "negative" { Image(systemName: "moon.zzz.fill") }
-                    Text(detail).lineLimit(2)
+                    Text(detail).lineLimit(2).minimumScaleFactor(0.9)
                 }
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(row.tone.color)
@@ -696,7 +796,7 @@ private struct CategoryLine: View {
             HStack(spacing: 4) {
                 if row.moved { Circle().fill(Color.urAccent).frame(width: 6, height: 6) }
                 if width == nil { Text("Assigned").font(.footnote).foregroundStyle(Color.secondary) }
-                Text(row.assignedText).figure(15).foregroundStyle(row.assigned == 0 ? .secondary : .primary)
+                Text(row.assignedText).font(.sized(14)).monospacedDigit().foregroundStyle(row.assigned == 0 ? .secondary : .primary)
                     .lineLimit(1).minimumScaleFactor(0.7)
             }
             .frame(width: width, alignment: .trailing)
@@ -708,7 +808,7 @@ private struct CategoryLine: View {
     }
 
     private func pillButton(width: CGFloat?) -> some View {
-        Button(action: move) { AvailablePill(text: row.availableText, status: row.status) }
+        Button(action: move) { AvailablePill(text: row.availableText, status: row.status, size: 14) }
             .buttonStyle(.plain)
             .frame(width: width, alignment: .trailing)
             .accessibilityLabel("Move money for \(row.name), \(row.availableText) available")
@@ -732,8 +832,8 @@ private struct UncategorizedLine: View {
                     Text("Needs a category").font(.footnote.weight(.semibold)).foregroundStyle(Color.urNegative)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                Text(money(0, currency)).figure(15).foregroundStyle(Color.secondary).frame(width: assignedWidth, alignment: .trailing)
-                AvailablePill(text: money(activity, currency), status: credit ? "credit" : "negative").frame(width: availableWidth, alignment: .trailing)
+                Text(money(0, currency)).font(.sized(14)).monospacedDigit().foregroundStyle(Color.secondary).frame(width: assignedWidth, alignment: .trailing)
+                AvailablePill(text: money(activity, currency), status: credit ? "credit" : "negative", size: 14).frame(width: availableWidth, alignment: .trailing)
             }
         }
         .buttonStyle(.plain)
@@ -784,7 +884,7 @@ private struct ReorderGroupsSheet: View {
                 }
             }
         }
-        .presentationDetents([.large])
+        .sheetDetents([.large])
         .onAppear {
             guard !loaded, let budget = store.budget else { return }
             loaded = true

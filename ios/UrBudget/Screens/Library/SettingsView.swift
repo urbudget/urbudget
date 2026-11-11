@@ -10,6 +10,9 @@ struct SettingsView: View {
     @AppStorage("automaticSchedules") private var automaticSchedules = true
     /// Read by the transaction editor, as the desktop's preference of the same name.
     @AppStorage("newCleared") private var newCleared = false
+    @AppStorage("showNeeded") private var showNeeded = true
+    @AppStorage("showUpcoming") private var showUpcoming = true
+    @AppStorage("startPage") private var startPage = "budget"
     @State private var name = ""
     @State private var namingIdentity: String?
     @FocusState private var naming: Bool
@@ -28,7 +31,7 @@ struct SettingsView: View {
     init() {}
 
     var body: some View {
-        Form {
+        CompactForm {
             Section("Appearance") {
                 Picker("Theme", selection: $theme) {
                     Text("System").tag("system")
@@ -150,11 +153,12 @@ struct SettingsView: View {
     }
 
     private var preferencesSection: some View {
+        // The same preferences, in the same order, as Android's Settings.
         Section {
-            Toggle(isOn: $automaticSchedules) {
+            Toggle(isOn: $showNeeded) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Enter due schedules on opening")
-                    Text("Scheduled transactions that are due are added when the app opens").font(.footnote).foregroundStyle(Color.secondary)
+                    Text("Show what targets still need")
+                    Text("The amount under each category's name, such as “120.00 needed”").font(.footnote).foregroundStyle(Color.secondary)
                 }
             }
             Toggle(isOn: $newCleared) {
@@ -162,6 +166,32 @@ struct SettingsView: View {
                     Text("New transactions start cleared")
                     Text("Useful if you enter transactions once they've reached your bank").font(.footnote).foregroundStyle(Color.secondary)
                 }
+            }
+            Toggle(isOn: $showUpcoming) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Open scheduled transactions")
+                    Text("Whether the schedules atop each register start unfolded").font(.footnote).foregroundStyle(Color.secondary)
+                }
+            }
+            Toggle(isOn: $automaticSchedules) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Enter due schedules on opening")
+                    Text("Scheduled transactions that are due are added when the app opens").font(.footnote).foregroundStyle(Color.secondary)
+                }
+            }
+            // Its words and its choice side by side, like the switches above it.
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Open on")
+                    Text("The page you see when the app starts or you switch budgets.").font(.footnote).foregroundStyle(Color.secondary)
+                }
+                Spacer(minLength: 4)
+                Picker("Open on", selection: $startPage) {
+                    Text("Budget").tag("budget")
+                    Text("All transactions").tag("transactions")
+                }
+                .labelsHidden()
+                .fixedSize()
             }
             if let budget = store.budget {
                 Button { editingFlags = true } label: {
@@ -178,6 +208,8 @@ struct SettingsView: View {
             }
         } header: {
             Text("Preferences")
+        } footer: {
+            Text("These apply on this device, to every budget.")
         }
     }
 
@@ -369,7 +401,7 @@ private struct FlagNamesForm: View {
                 Text("Use names such as Reimburse or Tax. Leave a name empty to use its color.")
             }
         }
-        .presentationDetents([.medium, .large])
+        .sheetDetents([.medium, .large])
         .retainingEditorDraft("flagNames", values: .object(names.mapValues(JSON.string)))
         .onAppear {
             guard !started else { return }
