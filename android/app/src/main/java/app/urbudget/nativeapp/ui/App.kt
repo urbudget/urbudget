@@ -505,14 +505,12 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
         Box(Modifier.widthIn(max = pageWidth).fillMaxSize()) {
         when {
             state.loading -> CircularProgressIndicator(Modifier.align(Alignment.Center), color = ur.accent)
-            morePage == "Account & sync" && budget == null -> Column(Modifier.fillMaxSize()) {
+            morePage == "Account & sync" && budget == null -> GlassTop(Modifier.fillMaxSize(), top = {
                 PhoneTopBar(pageTitle("Account & sync"), onBack = { morePage = ""; tab = 0 })
-                Box(Modifier.weight(1f)) { CloudScreen(vm) }
-            }
-            morePage == "Budget library" && budget == null -> Column(Modifier.fillMaxSize()) {
+            }) { CloudScreen(vm) }
+            morePage == "Budget library" && budget == null -> GlassTop(Modifier.fillMaxSize(), top = {
                 PhoneTopBar(pageTitle("Budget library"), onBack = { morePage = ""; tab = 0 })
-                Box(Modifier.weight(1f)) { LibraryScreen(null, vm, importFile, exportFile) }
-            }
+            }) { LibraryScreen(null, vm, importFile, exportFile) }
             // Below the status bar; the welcome page's own padding then has no inset left to add.
             budget == null -> Column(Modifier.fillMaxSize().statusBarsPadding()) {
                 TextButton({ morePage = "Budget library" }) { Text(stringResource(R.string.page_library)) }
@@ -521,9 +519,11 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
             }, importFile, if (vm.hasExport()) exportFile else null, if (state.recoveryAvailable) ({ confirmRestore = true }) else null,
                 { tab = 4; morePage = "Account & sync" })
             }
-            tab == 4 && morePage.isNotEmpty() -> pageStates.SaveableStateProvider("page:$morePage") { Column(Modifier.fillMaxSize()) {
+            // Each page's list scrolls under the bar, which turns to glass over it. Bank messages has screens of its own inside and keeps below the bar.
+            tab == 4 && morePage.isNotEmpty() -> pageStates.SaveableStateProvider("page:$morePage") { GlassTop(Modifier.fillMaxSize(), padded = morePage == "Bank messages", top = {
                 PhoneTopBar(pageTitle(morePage), budget.text("name"), onBack = ::closePage, actions = common)
-                Box(Modifier.weight(1f)) {
+            }) {
+                Box(Modifier.fillMaxSize()) {
                     when (morePage) {
                         "Account & sync" -> CloudScreen(vm)
                         "Bank connections" -> BankConnectionsScreen(budget, vm)

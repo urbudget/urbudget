@@ -325,8 +325,9 @@ internal fun RoundIconButton(icon: ImageVector, label: String, onClick: () -> Un
 @Composable
 internal fun PhoneTopBar(title: String? = null, subtitle: String? = null, onBack: (() -> Unit)? = null,
                          leading: (@Composable () -> Unit)? = null, center: (@Composable () -> Unit)? = null,
-                         actions: @Composable RowScope.() -> Unit = {}) {
-    Box(Modifier.fillMaxWidth().background(ur.bg).statusBarsPadding().height(64.dp).padding(horizontal = 12.dp)) {
+                         fill: Color = if (LocalGlassBar.current) Color.Transparent else ur.bg, actions: @Composable RowScope.() -> Unit = {}) {
+    // Over a page as glass (GlassTop) the bar has no fill of its own.
+    Box(Modifier.fillMaxWidth().background(fill).statusBarsPadding().height(64.dp).padding(horizontal = 12.dp)) {
         if (center != null) {
             Row(Modifier.align(Alignment.CenterStart), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (onBack != null) RoundIconButton(Icons.AutoMirrored.Outlined.KeyboardArrowLeft, stringResource(R.string.common_back), onBack)

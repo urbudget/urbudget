@@ -119,7 +119,7 @@ internal fun CloudScreen(vm: BudgetViewModel) {
             else -> R.string.billing_none_found
         })
     }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 4.dp, bottom = DockRoom), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    PageList(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 4.dp, bottom = DockRoom), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text(stringResource(R.string.cloud_intro), Modifier.padding(horizontal = 4.dp), color = ur.muted, style = MaterialTheme.typography.bodyMedium) }
         if (signedIn.isNotBlank() && sync?.optInt("protocol", 1) != 2) item { Text(stringResource(R.string.cloud_legacy_library), color = ur.muted) }
         if (busy) item { LinearProgressIndicator(Modifier.fillMaxWidth(), color = ur.accent) }

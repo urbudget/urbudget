@@ -258,9 +258,8 @@ internal fun ReportsScreen(budget: JSONObject, report: JSONObject?, summary: JSO
  */
 @Composable
 private fun ReportsIndex(open: String?, onOpen: (String) -> Unit, overview: () -> Unit) {
-    Column(Modifier.fillMaxSize()) {
-        PhoneTopBar(stringResource(R.string.tab_reports))
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 4.dp, bottom = DockRoom),
+    GlassTop(Modifier.fillMaxSize(), top = { PhoneTopBar(stringResource(R.string.tab_reports)) }) {
+        PageList(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 4.dp, bottom = DockRoom),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item(key = "overview", contentType = "overview") {
                 CardPart(top = true, bottom = true, live = true) {
@@ -293,11 +292,12 @@ private fun ReportsOverview(budget: JSONObject, month: String, onMonth: (String)
     val failed = error?.forScope(key)
     val current = result?.scope == key
     val model = result?.value
-    Column(Modifier.fillMaxSize()) {
+    GlassTop(Modifier.fillMaxSize(), top = {
         PhoneTopBar(title, actions = bar)
         ProgressLine(failed == null && !current)
+    }) {
         CompositionLocalProvider(LocalStale provides !current) {
-            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Gutter, end = Gutter, bottom = DockRoom)) {
+            PageList(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Gutter, end = Gutter, bottom = DockRoom)) {
                 item(key = "month", contentType = "month") { Row(Modifier.fillMaxWidth()) { MonthSelector(month, onMonth) } }
                 if (failed != null) item(key = "error", contentType = "error") {
                     Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -618,11 +618,12 @@ private fun ReportPage(
         ReportActions(actions.drill, actions.setGroup, actions.setByGroup, actions.toggleChart, actions.toggleExpand, jumpToPayees)
     }
 
-    Column(Modifier.fillMaxSize()) {
+    GlassTop(Modifier.fillMaxSize(), top = {
         PhoneTopBar(stringResource(info.label), onBack = back, actions = bar)
         ProgressLine(if (forecast) forecastLoading else failed == null && !ready)
+    }) {
         CompositionLocalProvider(LocalStale provides (if (forecast) forecastStale else stale)) {
-            LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(start = Gutter, end = Gutter, bottom = DockRoom)) {
+            PageList(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(start = Gutter, end = Gutter, bottom = DockRoom)) {
                 item(key = "blurb", contentType = "chrome") {
                     Text(stringResource(info.blurb), Modifier.padding(top = 2.dp, bottom = 10.dp), color = ur.muted, style = MaterialTheme.typography.bodyMedium)
                 }

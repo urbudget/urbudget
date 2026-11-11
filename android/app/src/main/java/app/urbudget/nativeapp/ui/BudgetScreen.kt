@@ -145,7 +145,8 @@ internal fun BudgetScreen(budget: JSONObject, summary: JSONObject?, month: Strin
     }
     Row(Modifier.fillMaxSize()) {
     Box(if (docked) Modifier.width(split!!.list).fillMaxHeight() else Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.TopCenter) {
-    Column(Modifier.widthIn(max = if (docked) Dp.Infinity else ReadableWidth).fillMaxSize()) {
+    // The bar floats over the list, glass once categories have scrolled under it.
+    GlassTop(Modifier.widthIn(max = if (docked) Dp.Infinity else ReadableWidth).fillMaxSize(), top = {
         PhoneTopBar(leading = {
             Box {
                 RoundIconButton(Icons.Outlined.FilterList, stringResource(R.string.budget_views), { viewsOpen = true }, tint = if (filter != "all") ur.accent else ur.text, dot = filter != "all")
@@ -159,12 +160,15 @@ internal fun BudgetScreen(budget: JSONObject, summary: JSONObject?, month: Strin
                     addCategory = { adding = "" }, addGroup = { addingGroup = true }, planMonth = { planning = true })
             }
         }, center = { MonthSwitcher(month, onMonth) }, actions = bar)
+    }) { val room = glassRoom(budgetList); Column(Modifier.fillMaxSize()) {
         val shown = model
         if (summary == null) {
+            Spacer(Modifier.height(room))
             EmptyState(stringResource(R.string.budget_unavailable_title), stringResource(R.string.budget_unavailable_detail))
             return@Column
         }
         if (shown == null) {
+            Spacer(Modifier.height(room))
             LinearProgressIndicator(Modifier.fillMaxWidth().padding(Gutter), color = ur.accent)
             return@Column
         }
@@ -209,7 +213,7 @@ internal fun BudgetScreen(budget: JSONObject, summary: JSONObject?, month: Strin
             val row = tableRows.indexOfFirst { it in wanted }
             if (row >= 0) budgetList.animateScrollToItem((budgetList.layoutInfo.totalItemsCount - tableRows.size + row).coerceAtLeast(0))
         }
-        LazyColumn(Modifier.fillMaxSize().then(if (wide) Modifier.padding(horizontal = 10.dp) else Modifier).testTag("budget-list"), state = budgetList, contentPadding = PaddingValues(bottom = DockRoom)) {
+        LazyColumn(Modifier.fillMaxSize().then(if (wide) Modifier.padding(horizontal = 10.dp) else Modifier).testTag("budget-list"), state = budgetList, contentPadding = PaddingValues(top = room, bottom = DockRoom)) {
             if (month != current) item(key = "today", contentType = "today") {
                 Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.Center) {
                     FilterPill(stringResource(R.string.month_back_to, shortMonthLabel(current)), false, { onMonth(current) }, Icons.Outlined.Today)
@@ -303,7 +307,7 @@ internal fun BudgetScreen(budget: JSONObject, summary: JSONObject?, month: Strin
                 }
             }
         }
-    }
+    } }
     }
     if (docked) {
         Spacer(Modifier.width(split!!.gap))

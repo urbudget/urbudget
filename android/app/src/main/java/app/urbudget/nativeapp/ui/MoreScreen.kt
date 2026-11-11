@@ -36,7 +36,7 @@ internal fun MoreScreen(page: String, navigate: (String) -> Unit, budget: JSONOb
         "Scheduled" -> SchedulesPage(budget, vm, edit)
         "Payees & rules" -> PayeesPage(budget, vm, edit)
         "Settings & data" -> SettingsPage(navigate, budget, vm, exportFile, importFile, restore, edit)
-        else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 4.dp, bottom = DockRoom)) {
+        else -> PageList(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 4.dp, bottom = DockRoom)) {
             item {
                 ListCard {
                     morePages.forEachIndexed { index, item -> ListRow(stringResource(item.title), subtitle = stringResource(item.detail), icon = item.icon, onClick = { navigate(item.key) }, divider = index < morePages.lastIndex) }
@@ -100,7 +100,7 @@ private fun SchedulesPage(budget: JSONObject, vm: BudgetViewModel, edit: (String
     fun apply(line: ScheduleItem, skip: Boolean) = withCurrentBudget(budget, vm) {
         vm.runCommand("applySchedules", JSONObject().put("through", LocalDate.now().toString()).put("selected", line.id).put("skip", skip))
     }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 4.dp, bottom = DockRoom)) {
+    PageList(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 4.dp, bottom = DockRoom)) {
         item(key = "schedules:actions") {
             Row(Modifier.padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 PrimaryButton(stringResource(R.string.schedule_add), { edit("schedule", null) }, Modifier.weight(1f), icon = Icons.Outlined.Add)
@@ -189,7 +189,7 @@ private fun SettingsPage(navigate: (String) -> Unit, budget: JSONObject, vm: Bud
     var language by remember { mutableStateOf(AppLanguage.choice()) }
     var dialog by remember { mutableStateOf("") }
     val flagNames = remember(budget) { budget.optJSONObject("flagNames")?.let { names -> flagColors.mapNotNull { names.text(it).ifBlank { null } } }.orEmpty() }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 4.dp, bottom = DockRoom), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    PageList(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 4.dp, bottom = DockRoom), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { SectionTitle(stringResource(R.string.tab_budget)) }
         item {
             ListCard {

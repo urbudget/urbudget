@@ -117,7 +117,7 @@ internal fun LibraryScreen(budget: JSONObject?, vm: BudgetViewModel, importFile:
             }
         }
     }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 4.dp, bottom = DockRoom), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    PageList(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 4.dp, bottom = DockRoom), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (drafts.isNotEmpty()) item {
             ListCard {
                 drafts.forEach { draft ->

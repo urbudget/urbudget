@@ -127,9 +127,10 @@ internal fun AccountsScreen(budget: JSONObject, summary: JSONObject?, open: (JSO
         }
     }
     Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize()) {
+        GlassTop(Modifier.fillMaxSize(), top = {
             PhoneTopBar(stringResource(R.string.tab_accounts), actions = { RoundIconButton(Icons.Outlined.Add, stringResource(R.string.account_add), add); bar() })
-            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Gutter, end = Gutter, bottom = DockRoom)) {
+        }) {
+            PageList(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Gutter, end = Gutter, bottom = DockRoom)) {
                 if (summary != null) item(key = "networth", contentType = "networth") {
                     val worth = summary.optLong("netWorth")
                     Row(Modifier.fillMaxWidth().padding(bottom = 4.dp).clip(RoundedCornerShape(18.dp)).background(ur.surface).padding(horizontal = 18.dp, vertical = 14.dp),

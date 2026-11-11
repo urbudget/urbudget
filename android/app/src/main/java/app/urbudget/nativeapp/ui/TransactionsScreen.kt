@@ -300,8 +300,9 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
     val earliest = remember(budget) { budget.rows("transactions").minOfOrNull { it.text("date") } }
     // On a large screen the register is the list, and a transaction opens beside it (the app puts the form there).
     ListDetail(detail = { RegisterPaneHint() }, list = { Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize()) {
-            if (selecting) Row(Modifier.fillMaxWidth().background(ur.bg).statusBarsPadding().height(64.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        // The bar, and the search under it while it's open, float over the register, glass once transactions have scrolled under them.
+        GlassTop(Modifier.fillMaxSize(), top = {
+            if (selecting) Row(Modifier.fillMaxWidth().statusBarsPadding().height(64.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 RoundIconButton(Icons.Outlined.Close, stringResource(R.string.selection_end), { selected = emptySet() })
                 Column(Modifier.weight(1f).padding(start = 12.dp)) {
                     Text(countText(R.plurals.transactions_selected, selected.size), style = MaterialTheme.typography.headlineSmall, color = ur.text)
@@ -316,7 +317,7 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
                 bar()
             })
             AnimatedVisibility(searching && !selecting) {
-                Column(Modifier.fillMaxWidth().background(ur.bg).padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     SearchField(search, { search = it }, stringResource(R.string.register_search_hint), Modifier.padding(horizontal = Gutter))
                     Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = Gutter), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterPill(if (sheetFilters > 0) stringResource(R.string.filters_count, "$sheetFilters") else stringResource(R.string.filters_title), sheetFilters > 0, { filtersOpen = true }, Icons.Outlined.Tune)
@@ -329,7 +330,9 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
                     }
                 }
             }
-            Box(Modifier.fillMaxWidth().height(2.dp)) { if (computing && lines != null) LinearProgressIndicator(Modifier.matchParentSize(), color = ur.accent, trackColor = ur.bg) }
+            Box(Modifier.fillMaxWidth().height(2.dp)) { if (computing && lines != null) LinearProgressIndicator(Modifier.matchParentSize(), color = ur.accent, trackColor = Color.Transparent) }
+        }) {
+            val room = glassRoom(registerList)
             // Beside a transaction the register is a card of its own, inset from the pane's edges, so its
             // bands don't run up against the rail or the form: its first band rounds at the top, its last
             // row at the bottom, and the cards above it line up with its edges.
@@ -337,7 +340,7 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
             val cardInset = if (beside) 0.dp else Gutter
             val scheduledShown = schedules.isNotEmpty() && !searching && !selecting
             LazyColumn(Modifier.fillMaxSize().then(if (beside) Modifier.padding(horizontal = 10.dp) else Modifier).testTag("register"), state = registerList,
-                contentPadding = PaddingValues(bottom = DockRoom)) {
+                contentPadding = PaddingValues(top = room, bottom = DockRoom)) {
                 if (account != null && summary != null) item(key = "summary", contentType = "summary") {
                     AccountSummaryCard(account, summary.rows("accounts").firstOrNull { it.text("id") == accountFilter }, currency,
                         { reconcile(account) }, { editAccount(account) }, if (account.text("kind") == "credit") ({ payCard(account.text("id")) }) else null,
@@ -805,16 +808,20 @@ internal fun TransactionDialog(original: JSONObject?, budget: JSONObject, initia
         }.onFailure { error = it.message }
     }
     val form: @Composable () -> Unit = {
-        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()
+        Column(Modifier.fillMaxSize().navigationBarsPadding().imePadding()
             .onGloballyPositioned { formBottom = it.boundsInWindow().bottom }) {
-            Box(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 6.dp)) {
+            // Cancel, the title and Save float over the form, glass once its fields have scrolled under them.
+            val formScroll = rememberScrollState()
+            GlassTop(Modifier.weight(1f), bar = 56.dp, top = {
+            Box(Modifier.fillMaxWidth().statusBarsPadding().height(56.dp).padding(horizontal = 6.dp)) {
                 IconButton(cancel, Modifier.align(Alignment.CenterStart)) { Icon(Icons.Outlined.Close, stringResource(R.string.common_cancel), tint = ur.text) }
                 Text(dialogTitle ?: if (original == null) stringResource(R.string.transaction_new) else stringResource(R.string.transaction_edit), Modifier.align(Alignment.Center), style = MaterialTheme.typography.titleMedium, color = ur.text)
                 TextButton(save, Modifier.align(Alignment.CenterEnd).testTag("tx-save"), enabled = accounts.isNotEmpty() && !editorState.busy) {
                     Text(if (schedule || repeatable && repeat != "never" && date > today) stringResource(R.string.transaction_schedule_action) else stringResource(R.string.common_save), color = if (accounts.isNotEmpty()) ur.accent else ur.muted, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
             }
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Gutter), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            }) {
+            Column(Modifier.fillMaxSize().verticalScroll(formScroll).padding(horizontal = Gutter).padding(top = glassRoom(formScroll)), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Segmented(listOf("out" to stringResource(R.string.direction_outflow), "in" to stringResource(R.string.direction_inflow)), direction, { direction = it })
                 Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(if (keypad) ur.accentSoft else ur.surface)
                     .clickable(onClickLabel = stringResource(R.string.amount_edit)) { keypad = true; pad.fresh = true }.padding(vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -908,6 +915,7 @@ internal fun TransactionDialog(original: JSONObject?, budget: JSONObject, initia
                     Icon(Icons.Outlined.DeleteOutline, null, tint = ur.negative); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.transaction_delete), color = ur.negative, fontWeight = FontWeight.SemiBold)
                 }
                 Spacer(Modifier.height(24.dp))
+            }
             }
             AnimatedVisibility(keypad, enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
                 // On a table: the whole flat half, the keys centred in it, like a calculator lying on the desk.

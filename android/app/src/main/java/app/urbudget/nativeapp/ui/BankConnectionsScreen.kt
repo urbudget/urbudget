@@ -111,7 +111,7 @@ internal fun BankConnectionsScreen(budget: JSONObject, vm: BudgetViewModel) {
     }
     LaunchedEffect(Unit) { call("simplefin_status") }
     LaunchedEffect(reviewing, pending, loading, ready) { if (reviewing && ready && !loading && pending.isEmpty()) reviewing = false }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 4.dp, bottom = DockRoom), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    PageList(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 4.dp, bottom = DockRoom), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text(stringResource(R.string.bank_sync_intro), Modifier.padding(horizontal = 4.dp), color = ur.muted, style = MaterialTheme.typography.bodyMedium) }
         if (loading) item { LinearProgressIndicator(Modifier.fillMaxWidth(), color = ur.accent) }
         error?.let { item { FormError(it) } }

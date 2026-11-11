@@ -71,7 +71,7 @@ internal fun PayeesPage(budget: JSONObject, vm: BudgetViewModel, edit: (String, 
     val rules = rememberPrepared(budget, language) { ruleLines(budget) }
     val pending = rememberPrepared(budget) { PayeeRules.changes(budget, budget.rows("payeeRules")) }
     val reapply = { withCurrentBudget(budget, vm) { vm.runCommand("workflow", JSONObject().put("action", JSONObject().put("type", "reapplyPayeeRules"))) } }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 4.dp, bottom = DockRoom)) {
+    PageList(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 4.dp, bottom = DockRoom)) {
         item(key = "payees:title") {
             SectionTitle(stringResource(R.string.payees_title), stringResource(R.string.payees_detail)) { IconButton({ edit("payee", null) }) { Icon(Icons.Outlined.Add, stringResource(R.string.payee_add), tint = ur.accent) } }
         }
