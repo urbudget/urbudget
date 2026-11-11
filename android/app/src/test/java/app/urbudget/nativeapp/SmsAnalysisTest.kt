@@ -156,6 +156,9 @@ class SmsAnalysisTest {
         assertNull(smsMmsText(listOf("text/plain" to "Your statement", "image/jpeg" to null)))
         assertNull(smsMmsText(listOf("application/smil" to null)))
         assertNull(smsMmsText(emptyList()))
+        // A short code's latest text is shown to recognise it by, never the code in it; an amount stays.
+        assertEquals("Your code is •••••• for SAR 120.50 at Shop", smsPreviewText("Your code is 482193\nfor SAR 120.50  at Shop"))
+        assertEquals("رمز: ••••", smsPreviewText("رمز: ٤٨٢١"))
     }
 
     @Test fun aTextMatchesWhatsThereOnlyOnTheSameDayInTheSameAccountUnlessAnotherTextHasIt() {
@@ -411,22 +414,37 @@ class SmsAnalysisTest {
         // Before a budget knows any format, its first request reads fewer in full.
         assertEquals(SmsFirstRead + 50, smsRequestSize(List(50) { "junk" } + List(201) { "read" }, SmsFirstRead))
         assertEquals(SmsBatchSize, smsRequestSize(null, SmsFirstRead))
+        // A sender the budget has no format for yet is read fewer at a time, whatever it knows of the others.
+        val known = List(100) { false }; val new = List(100) { true }
+        assertEquals(100 + SmsFirstRead, smsRequestSize(List(200) { "read" }, fresh = known + new))
+        assertEquals(SmsFirstRead, smsRequestSize(List(200) { "read" }, fresh = new + known))
+        assertEquals(200, smsRequestSize(List(200) { "read" }, fresh = known + known))
+        // Texts a format reads cost little, new sender or not; and a request halved after a failure reads fewer still.
+        assertEquals(200, smsRequestSize(List(200) { "review" }, fresh = new + new))
+        assertEquals(30, smsRequestSize(List(200) { "read" }, 30, known + known))
         val code = message(body = "Code 1234")
         val batch = SmsBatch(listOf(code), JSONObject().put("items", JSONArray().put(item(code, null, "ignore").put("template", "filter:code").put("kept", true))))
         assertEquals(0 to 1, batch.templated to batch.kept)
         assertTrue(batch.items(SmsAccounts(accounts, JSONArray()))[0].kept)
     }
 
-    @Test fun onlySkipFormatsConfirmedOverTwoRequestsAreTrustedAndASenderDriftsWhenItsTextsTurnNew() {
+    @Test fun formatsAreTrustedOnceReviewsConfirmThemOftenEnoughAndASenderDriftsWhenItsTextsTurnNew() {
         val skip = JSONObject().put("outcome", JSONObject().put("disposition", "ignore").put("skip", "rewards"))
         val money = JSONObject().put("outcome", JSONObject().put("disposition", "transaction").put("skip", JSONObject.NULL))
-        val confirmed = JSONObject().put("agreed", 1).put("confirmed", 2).put("requests", 1)
+        val confirmed = JSONObject().put("agreed", 1).put("confirmed", SmsSkipTrust).put("requests", SmsSkipTrustRequests)
         assertTrue(smsTrusted(skip, confirmed))
+        // A money format's readings become transactions: it needs more reviews, over more requests.
         assertFalse(smsTrusted(money, confirmed))
-        // Written and confirmed in one request isn't enough; nor is any correction, by the assistant or the user.
-        assertFalse(smsTrusted(skip, JSONObject().put("agreed", 3)))
+        assertTrue(smsTrusted(money, JSONObject().put("confirmed", SmsMoneyTrust).put("requests", SmsMoneyTrustRequests)))
+        assertFalse(smsTrusted(money, JSONObject().put("confirmed", SmsMoneyTrust).put("requests", SmsMoneyTrustRequests - 1)))
+        assertFalse(smsTrusted(money, JSONObject().put("confirmed", SmsMoneyTrust - 1).put("requests", SmsMoneyTrustRequests)))
+        // The request that wrote a format agrees with itself, which says nothing; nor is one later request enough.
+        assertFalse(smsTrusted(skip, JSONObject().put("agreed", 30)))
+        assertFalse(smsTrusted(skip, JSONObject().put("agreed", 1).put("confirmed", SmsSkipTrust).put("requests", 1)))
+        // Any correction takes it away, by the assistant or the user.
         assertFalse(smsTrusted(skip, JSONObject(confirmed.toString()).put("corrected", JSONObject().put("skip", 1))))
         assertFalse(smsTrusted(skip, JSONObject(confirmed.toString()).put("edited", JSONObject().put("payee", 1))))
+        assertFalse(smsTrusted(money, JSONObject().put("confirmed", 40).put("requests", 9).put("edited", JSONObject().put("amount", 1))))
         assertEquals(66, smsAccuracy(JSONObject().put("filled", 3).put("confirmed", 2)))
         assertNull(smsAccuracy(JSONObject()))
         // Six of the last twenty new, after twenty known: the bank changed its wording.

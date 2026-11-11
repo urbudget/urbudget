@@ -9,6 +9,9 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- ChatGPT sign-in keeps the app answering the browser for a few minutes (SignInService). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- A reading of bank messages the user started keeps going when the app is left (SmsReadingService).
+         Needs the foreground service declaration on Play: data sync, started by the user from Bank messages. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <application
         android:allowBackup="false"
@@ -34,6 +37,9 @@
         </service>
         <!-- While ChatGPT sign-in waits in the browser: a short service, so Android doesn't pause the app. -->
         <service android:name=".SignInService" android:exported="false" android:foregroundServiceType="shortService" />
+        <!-- While bank messages the user asked to have read are sent to their assistant: a first reading
+             takes minutes, and Android pauses an app that's out of sight mid-request. -->
+        <service android:name=".SmsReadingService" android:exported="false" android:foregroundServiceType="dataSync" />
         <!-- A language change, the Fold opening or closing, turning the phone or dark mode update the open
              screens in place, so nothing being edited is lost. Not a new text size or display size: Compose
              makes its dialogs' windows again when the density changes and they vanish while still open, so

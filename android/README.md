@@ -109,7 +109,8 @@ texts a bank sends to this phone into transactions. It is opt-in: after the disc
 and Android's permission prompts, choose the senders your bank texts from (up to 50).
 The picker lists names and short codes first, by how many messages each has sent (SMS
 and MMS together), already chosen ones first; a numeric short code shows its latest
-message to recognise it, while named senders and people's phone numbers (listed apart)
+message to recognise it (any run of four to eight digits hidden: it's as often a one-time
+code as anything), while named senders and people's phone numbers (listed apart)
 are never previewed. No contacts access is needed. The first choice of
 senders also picks where collecting starts: new messages only (from that moment), a day
 (from its start, so "Since 3 Oct" holds all of 3 Oct), or everything on the phone. A
@@ -121,9 +122,11 @@ changes it at any time for every sender: an earlier start brings older texts in 
 next scan, a later one takes earlier texts out of what's waiting and out of the open
 review. Changing senders keeps the review's items from the senders that stay.
 
-Its row says where collecting has got to ("newest handled 2 Nov 2026, 07:47": the newest
-text the budget finished with, kept on this phone; older texts can still wait when the start
-moved earlier), and the dialog lists that and,
+Its row, **Collecting**, says one thing: "Up to date through 11 Nov 2026, 01:02" (when the
+newest text the budget finished with came, kept on this phone) when nothing waits, or "12
+waiting since 9 Nov 2026" (the texts not finished with, the open review's among them, and the
+day the earliest came) when something does, since older texts can still wait when the start
+moved earlier. Where collecting starts is in the dialog, which lists that and,
 from the budget itself so it holds on another phone or after a reinstall, each account's
 last day of bank data (transactions from texts or files) and of reconciling. Each has a
 one-tap start: right after the last text handled (nothing read twice, nothing missed), or
@@ -131,7 +134,9 @@ from that day. The dialog also says what a choice does, counted without reading 
 "Brings in about 207 texts · 2 requests · about 5 min", or "Takes out 5 waiting texts".
 Minutes come from this budget's last request of 100 texts or more. A start that brings in
 more than one request's worth is asked first, since reading begins as soon as it's saved;
-the first choice of senders, the sending notice and a long wait to read show the same size.
+the sending notice and a long wait to read show the same size. The first choice of senders
+is senders first: its start is one line ("Since 11 Sep 2026 · Change") that opens the choices,
+with how many texts it brings in.
 
 Texts come from both of Android's stores. Most arrive as SMS, but a phone moved from an
 iPhone keeps that history as MMS (on the test Fold, 2,858 of a bank's 2,913 texts), so
@@ -153,11 +158,24 @@ reading. Neither changes Android's messages or transactions already added.
 The page is built around what needs the user. The first time, a notice names the
 assistant and what is sent (the texts, account and category names, payee category
 history) and asks once per provider and model; permission given before reading became
-automatic is asked again. With it, opening the page reads what's waiting, oldest first,
+automatic is asked again. The notice says what is sent, to whom and when first, then lists
+what goes with the texts, and its button names the provider ("Send to ChatGPT"). Without an
+assistant connected, the page says so before asking for SMS access, with **Open Assistant**; a
+connection that can't be checked offers **Retry**, as does anything else that fails, and an
+error clears with the next thing that works. With it, opening the page reads what's waiting, oldest first,
 into one review; each request carries 200 texts, and the review is saved after every
-request, so **Stop**, or a request that fails, keeps what's been read and the rest wait.
-Readings continue when the page closes. Texts that arrive while a review is open are read
-into it. **Read new texts as they arrive** (off by default) does the same in the
+request, so **Stop**, or a request that fails, keeps what's been read and the rest wait. A
+reading started with a tap opens its review when it's done and something needs the user; the
+reading on opening the page, one that was stopped or failed, and one an assistant card asked
+for leave the review a tap away.
+Readings continue when the page closes, and when the app is left: a reading started from the
+page runs under a foreground service (`SmsReadingService`, type `dataSync`, with a quiet
+notification that opens the page) for as long as it lasts, since Android pauses an app that's
+out of sight within seconds and the request under way would time out and be sent again. A
+request that fails after running 45 seconds or more (it ran out of time, or its answer never
+passed the check) keeps what's been read and tries its texts again half as many at a time, down
+to 15 read in full; one that fails at once (no connection, signed out) says so. Texts that
+arrive while a review is open are read into it. **Read new texts as they arrive** (off by default) does the same in the
 background (`SmsWorker`) for the open budget soon after a text arrives: texts that are
 only codes and alerts leave without a word, and anything about money waits in the
 review, counted in a notification that opens the page (`POST_NOTIFICATIONS` is asked
@@ -177,15 +195,28 @@ number under a reason (`code`, `security`, `balance`, `declined`, `rewards`,
 `marketing`, `other`). On real bank texts that's about a third of writing every text
 out. The service maps numbers back to ids, places each quote as evidence, and rejects a
 reply that misses or repeats a text; the core (`sms_import.rs`) validates the rest:
-exact money, dates, references found in the texts, quotes, and every text accounted for
-once. Any account id the model supplies is discarded; it may only name a transfer's other
+exact money, dates, references found in the texts, quotes (a bank's non-breaking space counts
+as a space), and every text accounted for once. On what the assistant or a template read, the
+written amount and the amount in the budget's currency must each be a number one of the item's
+texts gives, however it groups its digits (`validate_amounts`): an amount no text gives was made
+up, by a reading gone wrong or a text written to mislead it. That isn't checked when the review
+is saved, since the user may correct an amount and types a foreign purchase's. An error about
+one item names its texts' numbers ("Text 17: …"), so the assistant fixes that one rather than
+look through hundreds. Any account id the model supplies is discarded; it may only name a transfer's other
 account from the account list (below), which the phone resolves. `payee_history` follows a payee rule
 to the renamed payee's history, so "S136 M" finds the user's categories for "Tamimi", and
 finds the user's payee a bank's name holds ("MASHAR E" is their "Mashar").
 
 The model also gets the user's payees, the 300 used most recently, each with the category
 they usually give it, and the bank's names they renamed for these senders, so it writes the
-user's spelling and category; for a new merchant whose business is clear it picks the likely
+user's spelling and category. A payee filed under more than one category comes with each of
+them, how often, and its price when every transaction in it was for the same amount, and the
+phone decides the same way (`workflows::category_for`): the category the payee's past
+transactions of this amount have (within 3% for a category that only ever had one price, as a
+subscription billed in another currency moves), so the 16.00 a month to a shop is its
+subscription and what's bought there is shopping, whichever was entered last. With no such
+amount, a category that only ever had one price is left out and the latest of the rest is
+offered, marked to check until the two latest agree. For a new merchant whose business is clear it picks the likely
 category and marks it to check. A code text the phone settled is sent along with the payment
 that follows it (same sender, within fifteen minutes, the same amount), its code hidden: a
 bank often names the biller only there ("مفوتر: زين" before a "Bill Payment" of SAR 299).
@@ -204,7 +235,11 @@ every text it matches exactly as the assistant's items do. Templates and the pay
 from the bank's names are kept per budget and sender in the inbox database. Next time, texts
 in a known format are read on the phone first and sent in a `review` list with that reading;
 the assistant answers only with corrections (silence confirms) and reads the rest (`read`) in
-full, writing templates for new formats and rewriting one its corrections show is wrong.
+full, writing templates for new formats and rewriting one its corrections show is wrong. A
+rewrite retires a format of the same sender only. One with the same lines and another meaning
+(an expense that's a transfer, money taken for an alert) replaces the format in place, since a
+format's id is its lines, and its readings are counted from the start again. A reading
+corrected to a transfer loses the category its payee came with.
 Templates read banks' own ways of writing: an amount grouped and pointed either way
 ("1,234.56", "1.234,56", "12,50", "1'234", "1 249,00", "1,23,456.78"; before three digits a
 separator groups, "Rp 150.000", except a point in a currency with three decimals, "KWD 1.250"),
@@ -212,15 +247,25 @@ digits in any script (Arabic-Indic "١٢٠٫٥٠", Persian, Devanagari, Bengali,
 "１，５００"), a currency as a code or a mark ("$", "£", "€", "Rs.", "₹", "円", "원", "R",
 "Ksh", "ريال", "جنيه"; a mark several currencies share is the budget's when it's one of them,
 and a currency given again beside a balance isn't the amount's), a date in any order with
-the month as a number or a name, in characters ("11月02日") or with no separator ("02Nov"),
+the month as a number or a name (in English, Spanish, French, German, Italian, Portuguese,
+Turkish, Indonesian or Arabic, by its first three letters or more; "jui", which begins both juin
+and juillet, names neither), in characters ("11月02日") or with no separator ("02Nov"),
 with or without a year (one without is the year that puts it on or before the day the text
 came; a Thai Buddhist-era year, "69" for 2569, is turned into ours, and any other year far
-from the text's is left to the assistant), and a time with AM or PM. Free text may end at a
+from the text's is left to the assistant; so is a date more than 20 days from the day the text
+came, which is what a day and month read the wrong way round give), a dinar's millimes after a
+comma where the currency writes them so ("45,500 TND" is 45.500; "KWD 45,500" is 45,500), and a
+time with AM or PM, in any script's digits. Zero-width spaces and byte-order marks are passed
+over like direction marks. Free text may end at a
 space before a slot ("セブンイレブン １，５００円"), tried at a bounded number of places so a
 template still can't make reading hang. A reading reports each template the replay check
 drops and why. The same alert sent twice (one sender, the same words, within two minutes)
 is one item, whatever the assistant answered. The code filter knows one-time codes in English, Arabic, Spanish, French,
 German, Italian, Portuguese, Turkish and Indonesian, with the code before or after its word.
+A code word is a word: "pin" isn't in "SHOPPING" or "SPINNEYS", though "code" may end a compound
+("Bestätigungscode"). The number stands by itself: not an amount (one with separators, or beside
+a currency), a card's masked digits ("*4512") or part of a date. So a purchase that ends "never
+share your OTP" is never taken for a code, which would keep it from the review for good.
 The assistant's own examples come from several countries' banks, not one.
 A template's payee is the one learned for the bank's name, else the user's payee the name
 surely is (theirs followed by a letter or two or a branch number: "MASHAR E", "S136 M"), with
@@ -230,16 +275,26 @@ the bank's, learned for the next text, not the format misreading);
 a row's editor says how often its format was confirmed, and settings list the **Learned
 formats** by sender with an example text and how each is doing, to forget one or all.
 Junk stays on the phone: a code the filter in `sms_templates.rs` recognises, or a text in a
-skip format (rewards, a security alert) the assistant has confirmed three times over two
-requests with no correction; one in 50 of those is still reviewed as an audit, and any
-correction takes the trust away. Requests are sized by lane (`assistant_sms_lanes`): up to
-200 read in full and 400 reviewed, with any junk, in one request of up to 1,000 texts. A
-budget's first request, before it has learned any format, reads 60 in full: 200 of a phone's
-real texts read in full didn't come back within the session's five minutes, and what the first
-request learns makes the next ones mostly reviews.
+skip format (rewards, a security alert) whose readings the assistant confirmed in review three
+times over two requests with no correction (the request that wrote a format agrees with itself
+and doesn't count); one in 50 of those is still reviewed as an audit, and any correction takes
+the trust away. A money format earns the same trust more slowly (`smsTrusted`: ten readings
+confirmed in review over three requests, none corrected by the assistant or changed in date or
+amount by the user). Its texts are then read on the phone alone, never sent, when the reading
+needs nothing from the assistant (`own_money`): a purchase, income or refund in the budget's
+currency, from a name the user has already called something (a payee rule, their transactions,
+a review they changed), with a category that's settled for this amount when it's spending. A
+transfer, a foreign amount, a new merchant and one text in 20 as a check still go to the
+assistant. Such rows wait in the review like any other; nothing is added without the user. Requests are sized by lane (`assistant_sms_lanes`): up to
+200 read in full and 400 reviewed, with any junk, in one request of up to 1,000 texts. Of
+those read in full, at most 60 come from senders the budget has no format for yet (a budget's
+first request, or a bank added later): 200 of a phone's real texts read in full didn't come
+back within the session's five minutes, and what a sender's first request learns makes its next
+ones mostly reviews.
 A format rewritten three times in a month, or unused for 180 days, retires; a sender whose
 recent texts are suddenly mostly new formats is pointed out in the formats list. The
-assistant stays in the loop for every text but junk: templates make its work a review.
+assistant reads every new format and reviews every reading until a format has earned trust;
+after that it sees what's new, what it's needed for, and the checks.
 
 The phone matches each reference to an account: a card remembered for that sender,
 otherwise the one open account whose name carries the card's digits ("4417" is "Visa
@@ -308,7 +363,7 @@ Otherwise it counts what needs the user, and the review is a page of transaction
 - **Ready to add**, ticked by default, and **Holds**, unticked, newest first under the day
   they're dated, each with **Tick all** / **Untick all** and **Tick from a day** (ticks what's
   dated that day or later, unticks the rest): tap a row to change it in the transaction editor, with its messages
-  shown beneath. An unticked row says **Won't be added**: it's cleared with the review. A text that may already be in the budget asks on its row (**Already in your budget?**, **Choose…**): a sheet offers adding it as new or each match from the bank import engine, and **Add** waits for the answer. These rows come first, under **Check these first**, and stay there once answered. A
+  shown beneath. An unticked row says **Won't be added**: it leaves Bank messages with the review. The page's button adds ("Add 12 transactions", the primary button); when a tap would add nothing it reads "Skip 5 messages", is drawn as a secondary button and always asks first, since what it takes out can't be collected again. A tap that adds and also drops 50 or more asks too, and the line above the button turns to the warning colour when unticked transactions go with it. Ticking a row writes the review in the background, the latest state only, and redraws that row alone; changing a row keeps the list as it is while the budget is asked about it again. A text that may already be in the budget asks on its row (**Already in your budget?**, **Choose…**): a sheet offers adding it as new or each match from the bank import engine, and **Add** waits for the answer, which is kept with the review, so **Later** doesn't lose it. These rows come first, under **Check these first**, and stay there once answered. A
   transaction dated before its account's records start (its first transaction, or today
   for an account with none) is already in that account's starting balance: it's tagged
   and unticked. Every edit applies to the review as it is when it runs, so a row the list
@@ -335,8 +390,10 @@ it settles (added, unticked, held, not a transaction, dismissed), erasing its te
 keeping a local fingerprint; messages still waiting on a choice stay.
 
 The manifest requests `READ_SMS` and `RECEIVE_SMS`, not default-SMS status or
-permission to send/change messages, and `POST_NOTIFICATIONS` for background reading. **Before distributing this build through
-Google Play**, complete its SMS permissions declaration under the
+permission to send/change messages, `POST_NOTIFICATIONS` for background reading, and
+`FOREGROUND_SERVICE_DATA_SYNC` for the service that keeps a reading going. **Before distributing this build through
+Google Play**, declare that foreground service (data sync: sending the bank messages the user
+chose to their assistant, started by them from Bank messages), and complete its SMS permissions declaration under the
 [SMS-based money management exception](https://support.google.com/googleplay/android-developer/answer/10208820?hl=en)
 and obtain approval; align the store description, privacy policy and Data safety
 answers with this feature. Eligibility is subject to Google's review. SMS remains
@@ -345,7 +402,9 @@ optional, and denied/revoked access leaves the other budgeting features availabl
 Implementation: `SmsInbox.kt` owns capture (SMS and text-only MMS), sender summaries, coverage and private storage;
 `SmsAnalysis.kt` owns identities, card matching, draft recovery, consent, readings and the
 cancellable service client; `SmsSetup.kt` the cards and accounts to set up, what's suggested for
-each and what applying does (`ui/SmsSetupSection.kt` draws them); `SmsWorker.kt` reads in the background. `ui/SmsPage.kt` holds the
+each and what applying does (`ui/SmsSetupSection.kt` draws them); `SmsWorker.kt` reads in the background
+(trying once more after a failure, not four times: a reading already retries in smaller requests) and
+`SmsReadingService.kt` keeps a reading from the page going when the app is left. `ui/SmsPage.kt` holds the
 page's state: what's stored, the open review and a stage (loading, saving, settling or idle;
 reading is `SmsReadings`'). Every change to storage runs in one lane and ends by reading
 everything back and showing it at once, and the page reads what's waiting by itself only from
@@ -393,6 +452,14 @@ not Ready to Assign).
   Money uses tabular figures. `ui/Design.kt` has the shared pieces: the top bar of
   round buttons, list cards and rows, the solid Available pill, the target bar,
   segmented controls, chips, the cleared mark and sheets.
+- A page's top (its bar, and what stands under it, such as the register's search) floats
+  over its content (`ui/Glass.kt`, `GlassTop`): clear while the content is at its start,
+  frosted glass once it has scrolled under, the content drawn again behind the top, blurred
+  and tinted with the page's colour. Before Android 12 nothing can blur, so the tint is all
+  but solid. A page's list keeps the top's room above its first item (`PageList`, or
+  `glassRoom` for a list of its own); Budget, the register, Accounts, Reports, the More
+  pages and the transaction editor have it. Bank messages has screens of its own inside
+  and keeps below the bar.
 - Budget, Transactions, Accounts and Reports are tabs on a floating tab bar. More opens
   a drawer with the budget and the other pages. "+ Transaction" floats above the bar
   and shrinks to its plus while a list scrolls down. The assistant rises as a sheet.

@@ -62,8 +62,10 @@ class SmsWorker(context: Context, params: WorkerParameters) : CoroutineWorker(co
             Result.success()
         } catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel
         } catch (_: Exception) {
-            // A connection that's down tries again later; one that keeps failing waits for the page.
-            if (runAttemptCount < 4) Result.retry() else Result.success()
+            // A connection that's down tries again later, once: a reading already tries a request that's
+            // too much again in smaller ones, so what still fails waits for the page rather than being
+            // sent, and paid for, over and over.
+            if (runAttemptCount < 2) Result.retry() else Result.success()
         }
     }
 

@@ -37,16 +37,28 @@ internal data class SmsTemplateRow(val id: String, val sender: String, val body:
 /** The share of a template's reviewed rows the assistant confirmed unchanged, once it has some. */
 internal fun smsAccuracy(stats: JSONObject): Int? = stats.optInt("filled").takeIf { it > 0 }?.let { (stats.optInt("confirmed") * 100) / it }
 
+/** How often the assistant must have confirmed a skip format's readings in review, over [SmsSkipTrustRequests] requests, before its texts stay on the phone. */
+internal const val SmsSkipTrust = 3
+internal const val SmsSkipTrustRequests = 2
+/** The same for a money format, whose readings become transactions: more, over more requests. */
+internal const val SmsMoneyTrust = 10
+internal const val SmsMoneyTrustRequests = 3
+
 /**
- * Whether a skip template's texts can stay on the phone: its readings agreed with the assistant
- * three times or more, over two requests or more (writing it counts as one), with no correction
- * by the assistant or the user. Money templates are always reviewed.
+ * Whether a template's texts can be read on the phone alone: the assistant confirmed its readings
+ * in review often enough ([SmsSkipTrust] times for a skip format, [SmsMoneyTrust] for money), over
+ * enough later requests, with no correction by the assistant or the user. Only reviews count: the
+ * request that wrote a format agrees with itself. A trusted skip format's texts stay on the phone;
+ * a trusted money format's do when the user has already named their payee (the core's `own_money`),
+ * and some of each are still sent as a check.
  */
 internal fun smsTrusted(body: JSONObject, stats: JSONObject): Boolean {
     val outcome = body.optJSONObject("outcome") ?: return false
-    if (outcome.isNull("skip") || outcome.optString("skip").isBlank()) return false
     fun none(name: String) = stats.optJSONObject(name)?.let { o -> o.keys().asSequence().all { o.optInt(it) == 0 } } ?: true
-    return stats.optInt("agreed") + stats.optInt("confirmed") >= 3 && 1 + stats.optInt("requests") >= 2 && none("corrected") && none("edited")
+    if (!none("corrected") || !none("edited")) return false
+    val skip = !outcome.isNull("skip") && outcome.optString("skip").isNotBlank()
+    return if (skip) stats.optInt("confirmed") >= SmsSkipTrust && stats.optInt("requests") >= SmsSkipTrustRequests
+        else stats.optInt("confirmed") >= SmsMoneyTrust && stats.optInt("requests") >= SmsMoneyTrustRequests
 }
 
 /** A sender's formats look to have changed: more than 5 of its last 20 texts were new, where before that hardly any were. */
@@ -313,7 +325,7 @@ internal class SmsInbox private constructor(private val context: Context) : SQLi
         JSONArray().also { list -> while (c.moveToNext()) list.put(JSONObject(c.getString(0))) }
     }
 
-    /** Skip templates whose readings the assistant has confirmed enough: their texts stay on the phone. */
+    /** Templates whose readings the assistant has confirmed enough ([smsTrusted]): the phone reads their texts alone where it can. */
     fun trusted(budget: String): JSONArray = readableDatabase.query("sms_templates", arrayOf("id"), "budget=? AND state='trusted'", arrayOf(budget), null, null, null).use { c ->
         JSONArray().also { list -> while (c.moveToNext()) list.put(c.getString(0)) }
     }
@@ -348,9 +360,9 @@ internal class SmsInbox private constructor(private val context: Context) : SQLi
     /**
      * What a reading taught: new templates (each with the text it was written from), templates a
      * rewrite retired, how each template's rows fared, payees learned, and which texts each sender
-     * sent that no template knew. States follow: a skip template becomes trusted once its readings
-     * are confirmed often enough and loses it on any correction; a format rewritten three times in
-     * a month, or unused for 180 days, retires.
+     * sent that no template knew. States follow: a template becomes trusted once its readings
+     * are confirmed often enough ([smsTrusted]) and loses it on any correction; a format rewritten
+     * three times in a month, or unused for 180 days, retires.
      */
     fun learn(budget: String, learning: JSONObject, now: Long = System.currentTimeMillis()) {
         val db = writableDatabase
@@ -366,6 +378,14 @@ internal class SmsInbox private constructor(private val context: Context) : SQLi
                 learned.optString("replaces").takeIf { it.isNotBlank() && !learned.isNull("replaces") }?.let { old -> statsOf(db, budget, old)?.let { before ->
                     stats.put("rewrites", before.optInt("rewrites") + 1).put("rewritesSince", before.optLong("rewritesSince").takeIf { it > 0 } ?: now)
                 } }
+                // The same lines with another meaning (an expense that's a transfer) replace the format in
+                // place: it's a rewrite of itself, and its readings are counted from the start again.
+                if (learned.optBoolean("rewritten")) statsOf(db, budget, id)?.let { before ->
+                    stats.put("rewrites", before.optInt("rewrites") + 1).put("rewritesSince", before.optLong("rewritesSince").takeIf { it > 0 } ?: now)
+                    db.update("sms_templates", ContentValues().apply {
+                        put("body", template.toString()); put("example", learned.optString("example")); put("state", "candidate"); put("stats", stats.toString()); put("last_seen", now)
+                    }, "budget=? AND id=?", arrayOf(budget, id))
+                }
                 db.insertWithOnConflict("sms_templates", null, ContentValues().apply {
                     put("budget", budget); put("id", id); put("sender_key", template.getString("sender"))
                     put("body", template.toString()); put("example", learned.optString("example")); put("state", "candidate")
@@ -545,7 +565,7 @@ internal object SmsReader {
                 "address IN (${group.joinToString(",") { "?" }})", group.toTypedArray(), "date DESC")?.use { c ->
                 while (c.moveToNext() && previews.size < counts.size) {
                     val key = smsSenderKey(c.getString(0) ?: continue)
-                    if (key !in previews) previews[key] = (c.getString(1) ?: "").replace(Regex("\\s+"), " ").trim().take(120)
+                    if (key !in previews) previews[key] = smsPreviewText(c.getString(1) ?: "")
                 }
             }
         }
@@ -726,6 +746,14 @@ internal object SmsReader {
         }
     }
 }
+
+/**
+ * A short code's latest text as the sender picker shows it, to recognise the sender by: one line,
+ * its start, with any run of four to eight digits hidden. A short code's latest text is as often
+ * a one-time code as anything, and that has no business on a screen someone may be looking at.
+ */
+internal fun smsPreviewText(body: String): String =
+    body.replace(Regex("\\s+"), " ").trim().take(120).replace(Regex("(?<![\\p{Nd}])\\p{Nd}{4,8}(?![\\p{Nd}])")) { "•".repeat(it.value.length) }
 
 /** An MMS's text from its parts' types and texts, or null when it carries more than text (a picture, a file). */
 internal fun smsMmsText(parts: List<Pair<String, String?>>): String? {

@@ -377,12 +377,14 @@ internal fun smsOtherSides(items: List<SmsItem>, dismissed: Set<Int>): List<SmsI
  * user answered for the cards and accounts to set up, by [smsCardKey].
  */
 internal data class SmsBatch(val messages: List<BankSms>, val analysis: JSONObject, val ticked: Map<Int, Boolean> = emptyMap(), val dismissed: Set<Int> = emptySet(),
-                             val fresh: Set<String> = emptySet(), val setup: Map<String, SmsSetupPlan> = emptyMap()) {
+                             val fresh: Set<String> = emptySet(), val setup: Map<String, SmsSetupPlan> = emptyMap(),
+                             /** The user's answers for rows that may already be in the budget ("new" or "match:id"), by item. */
+                             val decisions: Map<Int, String> = emptyMap()) {
     fun params(analysis: JSONObject = this.analysis): JSONObject = JSONObject().put("messages", JSONArray(messages.map { it.json() })).put("analysis", analysis)
     // Drafts reference inbox originals by ID; evidence excerpts are part of the local review.
     fun saved(): String = JSONObject().put("v", 2).put("ids", JSONArray(messages.map { it.id })).put("analysis", analysis)
         .put("ticked", JSONObject(ticked.mapKeys { it.key.toString() })).put("dismissed", JSONArray(dismissed.toList())).put("fresh", JSONArray(fresh.toList()))
-        .put("setup", JSONObject(setup.mapValues { it.value.json() })).toString()
+        .put("setup", JSONObject(setup.mapValues { it.value.json() })).put("decisions", JSONObject(decisions.mapKeys { it.key.toString() })).toString()
 
     /** Texts a template read on the phone, which the assistant reviewed rather than read in full. */
     val templated: Int get() = analysis.rows("items").filter { it.text("template").isNotBlank() && !it.optBoolean("kept") }.sumOf { sourceIds(it).size }
@@ -453,7 +455,8 @@ internal data class SmsBatch(val messages: List<BankSms>, val analysis: JSONObje
         val ids = keep.flatMap { sourceIds(all.getJSONObject(it)) }.toSet()
         val at = keep.withIndex().associate { (new, old) -> old to new }
         return SmsBatch(messages.filter { it.id in ids }, JSONObject(analysis.toString()).put("items", JSONArray(keep.map { JSONObject(all.getJSONObject(it).toString()) })),
-            ticked.mapNotNull { (i, on) -> at[i]?.let { it to on } }.toMap(), dismissed.mapNotNull { at[it] }.toSet(), fresh, setup)
+            ticked.mapNotNull { (i, on) -> at[i]?.let { it to on } }.toMap(), dismissed.mapNotNull { at[it] }.toSet(), fresh, setup,
+            decisions.mapNotNull { (i, d) -> at[i]?.let { it to d } }.toMap())
     }
 
     /** The items with a text from [since] on: a later start takes the rest out of the review. */
@@ -510,7 +513,8 @@ internal data class SmsBatch(val messages: List<BankSms>, val analysis: JSONObje
             val dismissed = json.optJSONArray("dismissed")?.let { a -> (0 until a.length()).map { a.getInt(it) }.toSet() }.orEmpty()
             val fresh = json.optJSONArray("fresh")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() }.orEmpty()
             val setup = json.optJSONObject("setup")?.let { s -> s.keys().asSequence().mapNotNull { key -> s.optJSONObject(key)?.let(SmsSetupPlan::of)?.let { key to it } }.toMap() }.orEmpty()
-            SmsBatch(messages, json.getJSONObject("analysis"), ticked, dismissed, fresh, setup)
+            val decisions = json.optJSONObject("decisions")?.let { d -> d.keys().asSequence().associate { it.toInt() to d.getString(it) } }.orEmpty()
+            SmsBatch(messages, json.getJSONObject("analysis"), ticked, dismissed, fresh, setup, decisions)
         }.getOrNull()
     }
 }
@@ -526,18 +530,28 @@ internal const val SmsFirstRead = 60
 /** What one request carries at most: texts it only reviews, and junk read on the phone, cost little of its time. */
 internal const val SmsRequestTexts = 1_000
 private const val SmsReviewTexts = 400
+/** The fewest texts a request reads in full once failures have halved it: one that still fails then says so. */
+internal const val SmsLeastRead = 15
+/**
+ * How long a request must have run for its failure to mean it was too much for the assistant's
+ * time (it ran out, or its answer never came out right): the next reads half as many in full. One
+ * that fails sooner has no connection or no sign-in, and fewer texts wouldn't help.
+ */
+internal const val SmsSlowFailure = 45_000L
 
 /**
  * How many of these texts one request takes, by their lanes ("junk", "review", "read"): up to
  * [most] read in full and [SmsReviewTexts] reviewed, any number of junk, within
- * [SmsRequestTexts]. Without lanes, [SmsBatchSize]: which would be read in full isn't known.
+ * [SmsRequestTexts]. Of those read in full, at most [SmsFirstRead] come from senders the budget
+ * has no format for yet ([fresh], a flag for each text): a bank added later is as new as a
+ * budget's first. Without lanes, [SmsBatchSize]: which would be read in full isn't known.
  */
-internal fun smsRequestSize(lanes: List<String>?, most: Int = SmsBatchSize): Int {
+internal fun smsRequestSize(lanes: List<String>?, most: Int = SmsBatchSize, fresh: List<Boolean>? = null): Int {
     if (lanes == null) return SmsBatchSize
-    var read = 0; var review = 0
+    var read = 0; var review = 0; var new = 0
     lanes.forEachIndexed { i, lane ->
-        when (lane) { "read" -> read++; "review" -> review++ }
-        if (read > most || review > SmsReviewTexts) return i
+        when (lane) { "read" -> { read++; if (fresh?.getOrNull(i) == true) new++ }; "review" -> review++ }
+        if (read > most || review > SmsReviewTexts || new > SmsFirstRead) return i
     }
     return lanes.size.coerceAtLeast(1)
 }
@@ -566,9 +580,14 @@ internal object SmsReadings {
     fun stop() { job?.cancel() }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    /** Starts a reading that carries on when the page closes; [failed] hears why one stopped short. */
+    /**
+     * Starts a reading that carries on when the page closes, and when the app is left: a service
+     * keeps it running in front of Android ([SmsReadingService]), which otherwise pauses an app
+     * that's out of sight within seconds, mid-request. [failed] hears why one stopped short.
+     */
     fun start(context: android.content.Context, analyzer: SmsAnalyzer, identity: String, connection: JSONObject, messages: List<BankSms>, note: String,
               base: SmsBatch?, still: () -> Boolean, failed: (String) -> Unit) {
+        if (messages.isNotEmpty()) SmsReadingService.start(context.applicationContext)
         scope.launch {
             try { read(context.applicationContext, analyzer, identity, connection, messages, note, base, still) }
             catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { failed(failure.message.orEmpty()) }
@@ -589,6 +608,8 @@ internal object SmsReadings {
             current.value = Reading(identity, 0, messages.size)
             var read = base
             var remaining = messages
+            // The most texts a request reads in full: halved when one fails after running a while.
+            var most = SmsBatchSize
             while (remaining.isNotEmpty()) {
                 check(still()) { context.getString(R.string.sms_permission_needed) }
                 // The budget's templates read the texts in formats it knows first: junk stays on the phone, the
@@ -599,10 +620,24 @@ internal object SmsReadings {
                     .put("model", connection.opt("model") ?: JSONObject.NULL).put("messages", JSONArray(texts.map { it.json() })).put("note", note)
                     .put("templates", templates).put("payees", payees).put("trusted", trusted)
                 val probe = remaining.take(SmsRequestTexts)
-                val part = probe.take(smsRequestSize(analyzer.lanes(request(probe)), if (templates.length() == 0) SmsFirstRead else SmsBatchSize))
+                // A sender the budget has no format for yet is read fewer at a time: its first request teaches the rest.
+                val known = (0 until templates.length()).mapTo(HashSet()) { templates.getJSONObject(it).optString("sender") }
+                val lanes = analyzer.lanes(request(probe))
+                val part = probe.take(if (lanes == null) minOf(SmsBatchSize, most) else smsRequestSize(lanes, most, probe.map { smsSenderKey(it.sender) !in known }))
                 current.value = current.value?.copy(part = part.size, live = null)
                 val began = System.currentTimeMillis()
-                val result = analyzer.analyze(request(part)) { live -> current.value = current.value?.copy(live = live) }
+                val result = try {
+                    analyzer.analyze(request(part)) { live -> current.value = current.value?.copy(live = live) }
+                } catch (cancel: CancellationException) { throw cancel
+                } catch (failure: Exception) {
+                    // Too much for one request (it ran out of time, or its answer never passed the check):
+                    // what's been read is saved, and these texts are tried again half as many at a time.
+                    val inFull = lanes?.take(part.size)?.count { it == "read" } ?: part.size
+                    if (System.currentTimeMillis() - began < SmsSlowFailure || inFull <= SmsLeastRead) throw failure
+                    most = (inFull / 2).coerceAtLeast(SmsLeastRead)
+                    current.value = current.value?.copy(part = 0, live = null)
+                    continue
+                }
                 // What the reading taught (templates, how theirs fared, payees) isn't part of the review.
                 val learning = result.remove("learning") as? JSONObject
                 check(still()) { context.getString(R.string.sms_permission_needed) }

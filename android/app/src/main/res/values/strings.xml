@@ -2005,14 +2005,16 @@
     <string name="sms_detail">Turn bank texts into transactions</string>
     <string name="sms_intro_title">Turn bank texts into transactions</string>
     <string name="sms_intro">UrBudget collects the texts your bank sends to this phone. Your assistant reads them and prepares the transactions, and you check them before anything is added. SMS and text-only MMS are read; RCS chat messages aren’t.</string>
-    <string name="sms_disclosure">UrBudget needs SMS access to list senders and to collect messages from the ones you choose, including while the app is closed. Android grants access to all texts; UrBudget keeps only messages from your chosen senders. To turn them into transactions, those messages are sent to the AI provider of the assistant you connect: when you open Bank messages, as they arrive if you turn that on, and when you ask your assistant about them. Only the transactions you add become part of your budget and optional sync.</string>
+    <string name="sms_disclosure">To turn your bank’s messages into transactions, UrBudget sends messages from the senders you choose to the AI provider of the assistant you connect: when you open Bank messages, as they arrive if you turn that on, and when you ask your assistant about them.\n\nFor that, UrBudget needs SMS access to list senders and to collect messages from the ones you choose, including while the app is closed. Android grants access to all texts; UrBudget keeps only messages from your chosen senders.\n\nOnly the transactions you add become part of your budget and optional sync.</string>
     <string name="sms_allow">Allow SMS access</string>
     <string name="sms_open_settings">Open app settings</string>
     <string name="sms_not_now">Not now</string>
     <string name="sms_permission_needed">SMS access is off. Allow it in app settings to choose senders and read their messages.</string>
     <string name="sms_receive_needed">New messages can’t be collected in the background yet. Allow SMS access, or open this page to catch up.</string>
     <string name="sms_read_failed">Messages couldn’t be read. Check SMS access and try again.</string>
-    <string name="sms_connect_assistant">Connect an assistant in More → Assistant to prepare these messages.</string>
+    <string name="sms_connect_assistant">Your assistant reads these messages. Connect one in More → Assistant first.</string>
+    <string name="sms_open_assistant">Open Assistant</string>
+    <string name="sms_assistant_unknown">Couldn’t check your assistant’s connection.</string>
     <string name="sms_choose_bank_title">Choose your bank’s senders</string>
     <string name="sms_choose_bank_detail">Pick the names your bank texts you from. Only their messages are collected, and your assistant reads them to prepare transactions.</string>
     <string name="sms_choose_senders">Choose senders</string>
@@ -2026,6 +2028,15 @@
     <string name="sms_from_date">From a date</string>
     <string name="sms_first_day">First day</string>
     <string name="sms_collect">Collect messages from</string>
+    <!-- The settings row that opens it, and the one thing it says: how far collecting has caught up, or what waits and since when. -->
+    <string name="sms_collecting">Collecting</string>
+    <!-- "Up to date through 11 Nov 2026, 01:02": when the newest text the budget finished with came. -->
+    <string name="sms_collect_through">Up to date through %1$s</string>
+    <!-- "12 waiting since 9 Nov 2026": texts not finished with, the open review's among them, and the day the earliest came. -->
+    <plurals name="sms_collect_waiting">
+        <item quantity="one">%1$s waiting since %2$s</item>
+        <item quantity="other">%1$s waiting since %2$s</item>
+    </plurals>
     <!-- Where collecting starts: "Since 1 Oct 2026". -->
     <string name="sms_since">Since %1$s</string>
     <!-- New messages from a moment: "Since 2 Nov 2026, 19:45". -->
@@ -2035,9 +2046,6 @@
     <string name="sms_after_handled">Right after the last text handled</string>
     <!-- When a text came: "2 Nov 2026, 07:47". -->
     <string name="sms_moment">%1$s, %2$s</string>
-    <!-- Beside where collecting starts: "Since 3 Oct 2026 · newest handled 2 Nov 2026, 07:47". The newest
-         text the budget finished with; older ones can still be waiting when collecting moved earlier. -->
-    <string name="sms_last_handled_at">newest handled %1$s</string>
     <string name="sms_where_title">Where you are</string>
     <string name="sms_last_handled">Last text handled</string>
     <string name="sms_start_after">Start after it</string>
@@ -2116,6 +2124,11 @@
         <item quantity="one">Dismiss %1$s</item>
         <item quantity="other">Dismiss %1$s</item>
     </plurals>
+    <plurals name="sms_dismiss_title">
+        <item quantity="one">Dismiss %1$s message?</item>
+        <item quantity="other">Dismiss %1$s messages?</item>
+    </plurals>
+    <string name="sms_dismiss_detail">They leave Bank messages without being read, and can’t be collected again. The texts in your messaging app stay.</string>
     <string name="sms_cards">Remembered cards</string>
     <string name="sms_cards_none">None yet</string>
     <plurals name="sms_cards_count">
@@ -2134,10 +2147,10 @@
     <string name="sms_revoke">Ask again</string>
     <string name="sms_stop">Stop and clear messages</string>
     <string name="sms_stop_detail">Stop collecting for this budget and remove its messages, review, remembered cards, senders and sending permission from this phone. Transactions you added and the texts in your messaging app stay as they are.</string>
-    <string name="sms_send_title">Send messages to your assistant?</string>
-    <string name="sms_send_notice">UrBudget sends texts from your chosen senders to %1$s when it reads them: when you open Bank messages, and as they arrive if you turn that on. Your account and category names, how you’ve categorized payees, and the transfers you’ve made between your accounts in the last year, with the latest amount, go with them, as do verification-code texts that say what a payment was for, with the code hidden. They aren’t saved in your assistant chats, and the provider’s own data settings apply. When you ask your assistant about bank texts, it can also search texts from your chosen senders on this phone, and what it finds is kept in that chat until you delete it. Nothing is added to your budget until you review it.</string>
-    <string name="sms_send_later">UrBudget won’t ask again for this assistant. You can turn this off at the bottom of Bank messages.</string>
-    <string name="sms_send_confirm">Allow</string>
+    <string name="sms_send_title">Send to your assistant?</string>
+    <string name="sms_send_notice">UrBudget sends messages from your chosen senders to %1$s when it reads them: when you open Bank messages, and as they arrive if you turn that on.\n\nSent with them:\n• Your account and category names\n• How you’ve categorized payees\n• The transfers you’ve made between your accounts in the last year, with the latest amount\n• Verification-code texts that say what a payment was for, with the code hidden\n\nThey aren’t saved in your assistant chats, and the provider’s own data settings apply.\n\nWhen you ask your assistant about bank texts, it can also search texts from your chosen senders on this phone, and what it finds is kept in that chat until you delete it.\n\nNothing is added to your budget until you review it.</string>
+    <string name="sms_send_later">UrBudget won’t ask again for this assistant. To be asked again, open Sending to your assistant in Bank messages.</string>
+    <string name="sms_send_confirm">Send to %1$s</string>
     <string name="sms_default_model">its default model</string>
     <string name="sms_review_title">Review</string>
     <string name="sms_prepare_again">Prepare again with a note</string>
@@ -2151,7 +2164,7 @@
     <string name="sms_section_check_detail">These may already be in your budget. Choose for each one before adding.</string>
     <string name="sms_section_ready">Ready to add</string>
     <string name="sms_section_holds">Holds</string>
-    <string name="sms_holds_detail">Not settled yet. Tick one to add it now; the others are cleared.</string>
+    <string name="sms_holds_detail">Not settled yet. Tick one to add it now; the others won’t be added.</string>
     <plurals name="sms_not_transactions">
         <item quantity="one">%1$s message isn’t a transaction</item>
         <item quantity="other">%1$s messages aren’t transactions</item>
@@ -2159,7 +2172,7 @@
     <string name="sms_show">Show</string>
     <string name="sms_hide">Hide</string>
     <!-- The assistant reading them: "ChatGPT · gpt-… is reading your texts". -->
-    <string name="sms_reading_by">%1$s is reading your texts</string>
+    <string name="sms_reading_by">%1$s is reading your messages</string>
     <!-- Under "… is reading your texts": what the assistant is doing with the texts sent now. -->
     <string name="sms_live_ready">Getting your texts ready</string>
     <plurals name="sms_live_sending">
@@ -2180,18 +2193,18 @@
     <string name="sms_live_corrections">Writing corrections to what the formats read</string>
     <string name="sms_live_formats">Writing formats for next time</string>
     <string name="sms_live_fixing">Correcting what the app’s check found</string>
-    <string name="sms_checking">Checking your texts…</string>
+    <string name="sms_checking">Checking your messages…</string>
     <plurals name="sms_to_review">
         <item quantity="one">%1$s to review</item>
         <item quantity="other">%1$s to review</item>
     </plurals>
     <string name="sms_read_with">Read them with %1$s</string>
     <plurals name="sms_read_count">
-        <item quantity="one">Read %1$s text</item>
-        <item quantity="other">Read %1$s texts</item>
+        <item quantity="one">Read %1$s message</item>
+        <item quantity="other">Read %1$s messages</item>
     </plurals>
-    <string name="sms_reads_note">Codes, alerts and texts already in your budget are handled for you. Nothing is added until you say so.</string>
-    <string name="sms_waiting_title">Texts waiting to be read</string>
+    <string name="sms_reads_note">Codes, alerts and messages already in your budget are handled for you. Nothing is added until you say so.</string>
+    <string name="sms_waiting_title">Messages waiting to be read</string>
     <string name="sms_waiting_detail">Newest first; choose some to read or dismiss</string>
     <!-- When the page last finished: a time today, otherwise a date. -->
     <string name="sms_checked">Checked %1$s</string>
@@ -2235,6 +2248,10 @@
         <item quantity="other">%1$s bank transactions to review</item>
     </plurals>
     <string name="sms_notify_text">Tap to check what your bank texts found.</string>
+    <!-- The notification shown while a reading the user started carries on with the app in the background. -->
+    <string name="sms_reading_service_channel">Reading bank messages</string>
+    <string name="sms_reading_service_title">Reading your bank messages</string>
+    <string name="sms_reading_service_text">UrBudget keeps reading while you use other apps.</string>
     <!-- A folded section of the review: texts for transactions the budget already has (a bank file brought them in), matched to them instead of added again. -->
     <plurals name="sms_known">
         <item quantity="one">%1$s already in your budget</item>
@@ -2245,8 +2262,6 @@
         <item quantity="one">%1$s transaction</item>
         <item quantity="other">%1$s transactions</item>
     </plurals>
-    <string name="sms_which_account">Which account is this?</string>
-    <string name="sms_remember_card">Remember for these digits</string>
     <string name="sms_new_account">New account…</string>
     <!-- Beside the accounts for a card the budget doesn't know: its texts are cleared, not added. -->
     <string name="sms_card_skip">Don’t add these</string>
@@ -2346,9 +2361,13 @@
     <string name="sms_before_start">Before this account’s starting balance</string>
     <string name="sms_tick_all">Tick all</string>
     <string name="sms_untick_all">Untick all</string>
+    <!-- What a row's tick says aloud: "Add City Market". -->
+    <string name="sms_tick_label">Add %1$s</string>
     <string name="sms_balances_title">Balances after adding</string>
     <!-- An account's balance now and after adding: "5,000.00 SAR → −13,506.45 SAR". -->
     <string name="sms_balance_change">%1$s → %2$s</string>
+    <!-- Which way a transfer's money went, from one account to the other: "Checking → Visa". -->
+    <string name="sms_transfer_way">%1$s → %2$s</string>
     <plurals name="sms_balance_more">
         <item quantity="one">and %1$s more account</item>
         <item quantity="other">and %1$s more accounts</item>
@@ -2362,7 +2381,7 @@
     <!-- A text that may be a transaction the budget already has: on its row, and heading the choice. -->
     <string name="sms_decide_title">Already in your budget?</string>
     <string name="sms_decide_detail">This looks like a transaction you already have. Match it so it isn’t counted twice, or add it as new.</string>
-    <string name="sms_show_message">Message</string>
+    <string name="sms_show_message">Show message</string>
     <string name="sms_hide_message">Hide message</string>
     <string name="sms_enter">Enter it</string>
     <string name="sms_is_transaction">It’s a transaction</string>
@@ -2412,8 +2431,8 @@
         <item quantity="other">%1$s rows need your choice</item>
     </plurals>
     <plurals name="sms_clears">
-        <item quantity="one">Clears %1$s other message</item>
-        <item quantity="other">Clears %1$s other messages</item>
+        <item quantity="one">%1$s other message won’t be added</item>
+        <item quantity="other">%1$s other messages won’t be added</item>
     </plurals>
     <!-- The review's caption: how many texts it matches to transactions the budget already has. -->
     <plurals name="sms_matches">
@@ -2430,13 +2449,13 @@
         <item quantity="other">Add %1$s transactions</item>
     </plurals>
     <plurals name="sms_clear">
-        <item quantity="one">Clear %1$s message</item>
-        <item quantity="other">Clear %1$s messages</item>
+        <item quantity="one">Skip %1$s message</item>
+        <item quantity="other">Skip %1$s messages</item>
     </plurals>
     <string name="sms_nothing">Nothing to add yet</string>
     <plurals name="sms_clear_title">
-        <item quantity="one">Clear %1$s message?</item>
-        <item quantity="other">Clear %1$s messages?</item>
+        <item quantity="one">Skip %1$s message?</item>
+        <item quantity="other">Skip %1$s messages?</item>
     </plurals>
     <plurals name="sms_clear_detail">
         <item quantity="one">%1$s message adds nothing and leaves Bank messages: a skipped text, an unticked row, or one from before its account\'s starting balance. It can\'t be collected again.</item>

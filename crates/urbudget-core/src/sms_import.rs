@@ -185,40 +185,84 @@ fn reference(text: &Option<String>) -> bool {
         .map_or(true, |r| !r.trim().is_empty() && r.len() <= 80)
 }
 
+/// A plain decimal without the zeros that change nothing: "0120.50" and "120.5" are one number.
+fn plain(n: &str) -> String {
+    let n = n.trim_start_matches('-');
+    let (whole, fraction) = n.split_once('.').unwrap_or((n, ""));
+    let (whole, fraction) = (whole.trim_start_matches('0'), fraction.trim_end_matches('0'));
+    format!("{}{}{fraction}", if whole.is_empty() { "0" } else { whole }, if fraction.is_empty() { "" } else { "." })
+}
+
+/// Whether a text writes this amount, however it groups its digits, marks its decimals or
+/// writes its digits ("1,065.97", "1.065,97", "١٢٠٫٥٠", "1 249,00"): its separators all grouping,
+/// the last one a decimal point, or as [currency] writes it. An amount the text doesn't write
+/// was made up, by a reading that went wrong or by a text written to mislead it.
+fn writes(body: &str, amount: &str, currency: &str) -> bool {
+    use crate::sms_templates::{decimal, digit, numbers};
+    let wanted = plain(amount);
+    let chars: Vec<char> = body.chars().collect();
+    numbers(&chars).into_iter().any(|(start, end)| {
+        let number = &chars[start..end];
+        let ascii = |part: &[char]| part.iter().filter_map(|c| digit(*c)).filter_map(|d| char::from_digit(d, 10)).collect::<String>();
+        if plain(&ascii(number)) == wanted || plain(&decimal(&number.iter().collect::<String>(), currency)) == wanted {
+            return true;
+        }
+        number.iter().rposition(|c| digit(*c).is_none()).is_some_and(|last| plain(&format!("{}.{}", ascii(&number[..last]), ascii(&number[last + 1..]))) == wanted)
+    })
+}
+
+/// Whether a text holds this quote, exactly or but for how its spaces are written (a bank's
+/// non-breaking space between an amount's groups).
+fn quotes(body: &str, quote: &str) -> bool {
+    let spaced = |text: &str| text.chars().map(|c| if c.is_whitespace() { ' ' } else { c }).collect::<String>();
+    body.contains(quote) || spaced(body).contains(&spaced(quote))
+}
+
 /// Validate coverage and references independently of the model, and again at the save boundary.
 pub fn validate_analysis(
     b: &Budget,
     messages: &[Message],
     analysis: &Analysis,
 ) -> Result<(), String> {
-    validate_review(messages)?;
+    validate_analysis_at(b, messages, analysis).map_err(|(_, error)| error)
+}
+
+/// [validate_analysis], saying which item is wrong (its place in the analysis) when one is: the
+/// assistant is told which text to fix, not to look through hundreds for it.
+pub fn validate_analysis_at(
+    b: &Budget,
+    messages: &[Message],
+    analysis: &Analysis,
+) -> Result<(), (Option<usize>, String)> {
+    validate_review(messages).map_err(|e| (None, e))?;
     let sources: HashMap<_, _> = messages.iter().map(|m| (m.id.as_str(), m)).collect();
     let mut seen = HashSet::new();
     if analysis.items.is_empty() || analysis.items.len() > messages.len() {
-        return Err(crate::t!("Account for every message."));
+        return Err((None, crate::t!("Account for every message.")));
     }
-    for item in &analysis.items {
+    for (at, item) in analysis.items.iter().enumerate() {
+        let wrong = |error: String| Err((Some(at), error));
         // A skipped message is said by its skip code; everything else says what it is.
         let ignored = item.disposition == "ignore";
         if item.source_ids.is_empty() || (!ignored && item.note.trim().is_empty()) || item.note.len() > 2000 {
-            return Err(crate::t!("Every item needs its sources and a note."));
+            return wrong(crate::t!("Every item needs its sources and a note."));
         }
         for id in &item.source_ids {
             if !sources.contains_key(id.as_str()) || !seen.insert(id.as_str()) {
-                return Err(crate::t!("Unknown or repeated source message."));
+                return wrong(crate::t!("Unknown or repeated source message."));
             }
         }
         // Money the user may add is backed by the message's own words.
         let backed = matches!(item.disposition.as_str(), "transaction" | "pending");
         if (backed && item.evidence.is_empty()) || item.evidence.len() > 50 {
-            return Err(crate::t!("Include source evidence for every item."));
+            return wrong(crate::t!("Include source evidence for every item."));
         }
         for e in &item.evidence {
             if !item.source_ids.contains(&e.source_id)
                 || e.quote.trim().is_empty()
-                || !sources[e.source_id.as_str()].body.contains(&e.quote)
+                || !quotes(&sources[e.source_id.as_str()].body, &e.quote)
             {
-                return Err(crate::t!(
+                return wrong(crate::t!(
                     "Evidence must quote an item's original message exactly."
                 ));
             }
@@ -226,24 +270,24 @@ pub fn validate_analysis(
         if item.unsure.len() > UNSURE.len()
             || item.unsure.iter().any(|u| !UNSURE.contains(&u.as_str()))
         {
-            return Err(crate::t!("unsure lists only date, amount, payee, kind or category."));
+            return wrong(crate::t!("unsure lists only date, amount, payee, kind or category."));
         }
         let fields = match (item.disposition.as_str(), &item.transaction) {
             ("transaction" | "pending", Some(t)) if item.skip.is_none() => t,
             ("ignore", None) if item.skip.as_deref().is_some_and(|s| SKIPS.contains(&s)) => continue,
             ("unclear", None) if item.skip.is_none() => continue,
             _ => {
-                return Err(crate::t!(
+                return wrong(crate::t!(
                     "Give a transaction for transaction and pending, a skip code for ignore, and neither for unclear."
                 ))
             }
         };
-        transaction(b, &item.source_ids, &sources, fields)?;
+        transaction(b, &item.source_ids, &sources, fields).map_err(|e| (Some(at), e))?;
     }
     if seen.len() != messages.len() {
-        return Err(crate::t!(
+        return Err((None, crate::t!(
             "The analysis omitted messages. Account for every source exactly once."
-        ));
+        )));
     }
     Ok(())
 }
@@ -315,6 +359,22 @@ fn transaction(
             "Check the transaction direction: money out is negative."
         )),
     }
+}
+
+/// Whether the money in a reading is the texts' own: each item's written amount, and its amount in
+/// the budget's currency, are numbers one of its texts gives. Checked on what the assistant or
+/// a template read, never at the save boundary: the user may correct an amount, and types the one
+/// a foreign purchase was billed. Says which item is wrong.
+pub fn validate_amounts(b: &Budget, messages: &[Message], analysis: &Analysis) -> Result<(), (Option<usize>, String)> {
+    let sources: HashMap<_, _> = messages.iter().map(|m| (m.id.as_str(), m)).collect();
+    for (at, item) in analysis.items.iter().enumerate() {
+        let Some(t) = &item.transaction else { continue };
+        let written_there = |amount: &str, currency: &str| item.source_ids.iter().any(|id| sources.get(id.as_str()).is_some_and(|m| writes(&m.body, amount, currency)));
+        if !written_there(&t.written_amount, &t.currency) || t.amount.as_ref().is_some_and(|a| !written_there(a, &b.currency)) {
+            return Err((Some(at), crate::t!("Copy the amounts from the message: the written amount, and the amount in the budget's currency, are numbers the message gives.")));
+        }
+    }
+    Ok(())
 }
 
 /// Ready to import: its amount is known and its accounts are chosen.

@@ -795,6 +795,59 @@ pub fn payee_rule<'a>(b: &'a Budget, text: &str) -> Option<&'a Value> {
     best.map(|(r, _)| r)
 }
 
+/// One past transaction's category for a payee: the day, how much it was for (without its sign)
+/// and the category the user gave it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Filed {
+    pub date: String,
+    pub amount: i64,
+    pub category_id: String,
+}
+
+/// How far apart two amounts can be and still be one price: a subscription billed in another
+/// currency moves a little each month.
+fn same_price(a: i64, b: i64) -> bool {
+    (a - b).abs() * 100 <= a.max(b) * 3
+}
+
+/// The category a payee's past transactions point to for a new one of [amount] (in cents, either
+/// sign; none when it isn't known), and whether they settle it. A payee filed under one category
+/// gets it. One filed under several gets the category its past transactions of this amount have:
+/// the 16.00 a month to a shop that's its subscription, not the category of what's bought there.
+/// With no such amount, a category that only ever had one price is left out, and the latest of
+/// the rest is offered; it's settled only when the two latest agree, so a change of mind takes
+/// two transactions to stick and until then the category is worth a look.
+pub fn category_for(filed: &[Filed], amount: Option<i64>) -> Option<(String, bool)> {
+    let mut by: BTreeMap<&str, Vec<&Filed>> = BTreeMap::new();
+    for f in filed {
+        by.entry(f.category_id.as_str()).or_default().push(f);
+    }
+    if by.len() <= 1 {
+        return by.keys().next().map(|id| (id.to_string(), true));
+    }
+    // A category whose transactions all had one price: a subscription, a rent, a membership.
+    let priced = |list: &[&Filed]| list.len() >= 2 && same_price(list.iter().map(|f| f.amount).min().unwrap_or(0), list.iter().map(|f| f.amount).max().unwrap_or(0));
+    let latest = |list: &[&Filed]| list.iter().map(|f| f.date.as_str()).max().unwrap_or("").to_string();
+    if let Some(amount) = amount.map(i64::abs).filter(|a| *a > 0) {
+        let best = by.iter().filter_map(|(id, list)| {
+            let near = priced(list);
+            let times = list.iter().filter(|f| f.amount == amount || (near && same_price(f.amount, amount))).count();
+            (times > 0).then(|| (times, latest(list), *id))
+        }).max_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)).then(b.2.cmp(a.2)));
+        if let Some((_, _, id)) = best {
+            return Some((id.to_string(), true));
+        }
+    }
+    let mut rest: Vec<&Filed> = by.values().filter(|list| !priced(list)).flatten().copied().collect();
+    if rest.is_empty() {
+        // Every category has its own price, and this isn't one of them.
+        return None;
+    }
+    rest.sort_by(|a, b| b.date.cmp(&a.date));
+    let settled = rest.len() == 1 || rest[1].category_id == rest[0].category_id;
+    Some((rest[0].category_id.clone(), settled))
+}
+
 /// A payee the user has: the spelling they used last, the category they give it most, how many
 /// transactions have it and the last day one did.
 #[derive(Clone, Debug, PartialEq)]
@@ -803,7 +856,28 @@ pub struct KnownPayee {
     pub category_id: Option<String>,
     pub times: usize,
     pub last: String,
+    /// Each categorized transaction of theirs, for the category one of a given amount gets ([category_for]).
+    pub filed: Vec<Filed>,
     key: String,
+}
+impl KnownPayee {
+    /// The categories the user files this payee under when there's more than one, the most used
+    /// first: each with how often, and its price when it only ever had one.
+    pub fn categories(&self) -> Vec<(String, usize, Option<i64>)> {
+        let mut by: BTreeMap<&str, Vec<i64>> = BTreeMap::new();
+        for f in &self.filed {
+            by.entry(f.category_id.as_str()).or_default().push(f.amount);
+        }
+        if by.len() < 2 {
+            return vec![];
+        }
+        let mut list: Vec<(String, usize, Option<i64>)> = by.into_iter().map(|(id, amounts)| {
+            let (low, high) = (*amounts.iter().min().unwrap_or(&0), *amounts.iter().max().unwrap_or(&0));
+            (id.to_string(), amounts.len(), (amounts.len() >= 2 && same_price(low, high)).then_some(high))
+        }).collect();
+        list.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        list
+    }
 }
 /// The user's payees from the budget's transactions (transfers aside), most recently used first:
 /// what a bank's name for one is matched against.
@@ -817,14 +891,15 @@ impl KnownPayees {
             if key.is_empty() {
                 continue;
             }
-            let known = by.entry(key.clone()).or_insert_with(|| KnownPayee { name: t.payee.clone(), category_id: None, times: 0, last: String::new(), key: key.clone() });
+            let known = by.entry(key.clone()).or_insert_with(|| KnownPayee { name: t.payee.clone(), category_id: None, times: 0, last: String::new(), filed: vec![], key: key.clone() });
             known.times += 1;
             if t.date >= known.last {
                 known.last.clone_from(&t.date);
                 known.name.clone_from(&t.payee);
             }
-            for id in t.splits.iter().filter_map(|s| s.category_id.as_deref()).filter(|id| !placeholder(b, id)) {
+            for (id, amount) in t.splits.iter().filter_map(|s| s.category_id.as_deref().map(|id| (id, s.amount))).filter(|(id, _)| !placeholder(b, id)) {
                 *categories.entry(key.clone()).or_default().entry(id.to_owned()).or_default() += 1;
+                known.filed.push(Filed { date: t.date.clone(), amount: amount.abs(), category_id: id.to_owned() });
             }
         }
         let mut list: Vec<KnownPayee> = by.into_values().map(|mut p| {
@@ -877,16 +952,23 @@ pub fn bank_key(text: &str) -> String {
 /// What the user called each name their bank wrote, from the budget's transactions that keep the
 /// bank's words (`importedPayee`, from a bank file or a bank text): the payee of the latest, and
 /// its category. Whatever the user renamed it to since, in the review or the register, is what it
-/// says. Transfers aside.
-pub struct BankNames(HashMap<String, (String, Option<String>)>);
+/// says. Transfers aside. Every categorized one is kept too, so a name filed under more than one
+/// category gets the one that fits a new transaction's amount ([category_for]).
+pub struct BankNames(HashMap<String, (String, Option<String>)>, HashMap<String, Vec<Filed>>);
 impl BankNames {
     pub fn new(b: &Budget) -> Self {
         let mut by: HashMap<String, (&str, &Transaction)> = HashMap::new();
+        let mut filed: HashMap<String, Vec<Filed>> = HashMap::new();
         for t in b.transactions.iter().filter(|t| t.transfer_account_id.is_none() && !t.payee.trim().is_empty()) {
             let Some(raw) = t.extra.get("importedPayee").and_then(Value::as_str).filter(|s| !s.trim().is_empty()) else { continue };
             let key = bank_key(raw);
             if key.is_empty() {
                 continue;
+            }
+            if let [s] = t.splits.as_slice() {
+                if let Some(id) = s.category_id.as_deref().filter(|id| !placeholder(b, id)) {
+                    filed.entry(key.clone()).or_default().push(Filed { date: t.date.clone(), amount: s.amount.abs(), category_id: id.to_owned() });
+                }
             }
             // The latest by date; of one day's, the one added last.
             if by.get(&key).is_none_or(|(date, _)| t.date.as_str() >= *date) {
@@ -899,7 +981,12 @@ impl BankNames {
                 _ => None,
             };
             (key, (t.payee.clone(), category))
-        }).collect())
+        }).collect(), filed)
+    }
+    /// The category the user's transactions under a name the bank writes point to for one of
+    /// [amount], and whether they settle it ([category_for]).
+    pub fn category(&self, bank: &str, amount: Option<i64>) -> Option<(String, bool)> {
+        category_for(self.1.get(&bank_key(bank))?, amount)
     }
     /// The user's payee for a name the bank writes, and the category they gave it, if any.
     pub fn get(&self, bank: &str) -> Option<(&str, Option<&str>)> {

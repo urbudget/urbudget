@@ -77,6 +77,10 @@ pub struct Learned {
     pub agreed: usize,
     /// The template this one rewrites, when it does.
     pub replaces: Option<String>,
+    /// The same lines as a template the budget has, with another meaning (its kind, its sign, or
+    /// whether it's money at all): the phone replaces that one's meaning and starts its count again.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub rewritten: bool,
 }
 /// How a template's rows fared in one request: filled and confirmed unchanged in review, corrected
 /// by field, and settled on the phone without review (a trusted skip template's texts).
@@ -222,7 +226,7 @@ const INSTRUCTIONS: &str = r#"You read bank text messages (SMS alerts) and turn 
 
 What you get
 - The first message holds the budget's currency, today's date, the user's account names and kinds, the budget's categories, the user's payees, the formats the budget already has templates for, and the texts in two lists. Each text is [number, sender, when the phone received it, text].
-- payees: the user's payees, most recently used first, each [payee, the category id they usually give it or null, times used]. bankNames: names the bank wrote that the user renamed, each [the bank's name, the user's payee, category id or null].
+- payees: the user's payees, most recently used first, each [payee, the category id they usually give it or null, times used]. A payee they file under more than one category has a fourth element, those categories, each [category id, times used, its price when every one of them was for the same amount, or null]: a shop whose monthly subscription is one category and what's bought there another. bankNames: names the bank wrote that the user renamed, each [the bank's name, the user's payee, category id or null].
 - codes: one-time-code texts already settled on the phone, each [the number of the payment it came with, the code text with its code hidden]. It came from the same sender minutes before that payment and gives its amount. It is never one of the texts to put in items or skipped.
 - transfers: where the user moved money between their own accounts over the last year, each [from account, to account, times, last date, last amount], most used first: which account pays their credit card, where their deposits go.
 - read: texts for you to read in full.
@@ -233,10 +237,10 @@ What you get
 What to return
 - Call submit_sms_analysis once.
 - Read texts: put each text about money in items, and every other text's number in skipped under its reason. Every read number appears exactly once: in one item or in skipped.
-- Review texts: check each reading against its text and these rules. Say nothing about a correct reading. For a wrong one, add a correction naming the text: fields holding only the values that change (null for the rest), or disposition "unclear" with a note, or skip with its reason. A text the phone skipped that is about money gets its disposition, a quote, and fields for the whole transaction. The payee and category follow these rules too: a reading with the bank's spelling of one of the user's payees, without the category they usually give it, or without the payee its code text names, is wrong in those fields. A transfer reading whose other account the app can't find (no otherRef, or digits no account's name holds) gets otherAccount when you can tell it. Review texts never go in items or skipped.
+- Review texts: check each reading against its text and these rules. Say nothing about a correct reading. For a wrong one, add a correction naming the text: fields holding only the values that change (null for the rest), or disposition "unclear" with a note, or skip with its reason. A text the phone skipped that is about money gets its disposition, a quote, and fields for the whole transaction. The payee and category follow these rules too: a reading with the bank's spelling of one of the user's payees, without the category they give it (for a payee with several categories, the one this amount fits), or without the payee its code text names, is wrong in those fields. A transfer reading whose other account the app can't find (no otherRef, or digits no account's name holds) gets otherAccount when you can tell it. Review texts never go in items or skipped.
 - Templates: for each format among the read texts that the known templates don't cover, write one (see Templates). When your corrections show a template is wrong for its format, not just for one odd text, write the corrected template with replaces set to its id.
 - Put texts in one item only when they report the same event: both sides of one transfer, or the same alert sent twice. Separate purchases are separate items, even with equal amounts.
-- The tool checks what you send. If it returns an error, fix what it names and call it again.
+- The tool checks what you send. If it returns an error, fix what it names (an error about one item names its texts' numbers) and call it again with the whole answer.
 - For a payee that isn't in payees or bankNames, payee_history shows whether the user has it under another name and which category they give it.
 
 Templates
@@ -277,7 +281,7 @@ The transaction
 - otherAccount: for a transfer, the user's other account by its exact name in accounts, when the texts don't name it in a way the app can match (no otherRef, or digits no account's name holds) but you can tell which it is: the text says what kind of account it is ("your savings account", "your term deposit", "your investment account", whatever the bank calls it) and one of the user's accounts is that, or transfers shows that such money always moves to or from one account (the account that pays their credit card). Null when the app can match otherRef or you can't tell; never guess between two accounts.
 - balance: the balance of the account this text is about that the text gives after this money moved, as an exact decimal with a point and no grouping, negative when overdrawn ("Balance £3,402.17" is "3402.17"), or null. Never a credit limit, a card's credit left (that's available), points, or another account's balance; null when you can't tell which it is.
 - available: a card's credit left that the text gives after this money moved ("Available limit SAR 8,455.00" is "8455.00"), as an exact decimal with a point and no grouping, or null. Never the credit limit itself, and never a bank account's own available balance (that's balance).
-- categoryId: a category id from the list. For one of the user's payees, the category they usually give it. For a new payee whose kind of business is clear (a supermarket, a pharmacy, a petrol station, a restaurant, a phone or utility bill), the closest category, with "category" in unsure. Null only when nothing points to one. A refund takes the purchase's category. Never for a transfer.
+- categoryId: a category id from the list. For one of the user's payees, the category they usually give it; when payees lists several categories for it, the one whose price this amount is (the same amount every month is the subscription, not a purchase), else the one they give what they buy there, with "category" in unsure when the amount doesn't say which. For a new payee whose kind of business is clear (a supermarket, a pharmacy, a petrol station, a restaurant, a phone or utility bill), the closest category, with "category" in unsure. Null only when nothing points to one. A refund takes the purchase's category. Never for a transfer.
 
 Accounts
 - Don't choose accounts other than otherAccount. The app matches accountRef and otherRef to the user's accounts and asks the user when it can't.
@@ -704,6 +708,9 @@ fn correct(m: &Message, read: &sms_import::Item, c: Correction) -> Result<(sms_i
             };
             if changed_now { changed.push(key); }
         }
+        // A correction can't clear a field, and a transfer has no category: one read as a purchase
+        // of a payee the user categorizes loses it here.
+        if t.kind == "transfer" && t.category_id.take().is_some() && !changed.iter().any(|f| f == "categoryId") { changed.push("categoryId".into()); }
     }
     if let Some(quote) = c.quote.filter(|q| !q.trim().is_empty()) {
         if !m.body.contains(&quote) {
@@ -814,7 +821,11 @@ async fn run_analysis(
     let read: Vec<Value> = lanes.read.iter().map(|&i| entry(i, &input.messages[i])).collect();
     // The user's payees with the category each usually gets, and the bank's names they renamed, so
     // the model writes theirs; and the code texts that name what a payment text leaves out.
-    let payees: Vec<Value> = KnownPayees::new(b).recent(PAYEES).iter().map(|p| json!([p.name, p.category_id, p.times])).collect();
+    let payees: Vec<Value> = KnownPayees::new(b).recent(PAYEES).iter().map(|p| {
+        // Filed under more than one category: each with how often, and its price when it only ever had one.
+        let several: Vec<Value> = p.categories().into_iter().map(|(id, times, price)| json!([id, times, price.map(|a| format!("{}.{:02}", a / 100, a % 100))])).collect();
+        if several.is_empty() { json!([p.name, p.category_id, p.times]) } else { json!([p.name, p.category_id, p.times, several]) }
+    }).collect();
     let bank_names: Vec<Value> = input.payees.iter().filter(|p| senders.contains(&p.sender)).take(PAYEES).map(|p| json!([p.raw, p.payee, p.category_id])).collect();
     let codes: Vec<Value> = codes(&input.messages, &lanes).into_iter().map(|(i, text)| json!([i + 1, text])).collect();
     let transfers = routes(b, &today);
@@ -994,7 +1005,21 @@ fn checked(b: &Budget, messages: &[Message], lanes: &Lanes, value: Value) -> Res
             return Err("Write otherAccount exactly as an account's name in accounts, or null.".into());
         }
     }
-    sms_import::validate_analysis(b, messages, &expanded.analysis)?;
+    {
+        // An error about one item names its texts, so the model fixes that one rather than look
+        // through a few hundred for it.
+        let number: HashMap<&str, usize> = messages.iter().enumerate().map(|(i, m)| (m.id.as_str(), i + 1)).collect();
+        let named = |(at, error): (Option<usize>, String)| match at.and_then(|i| expanded.analysis.items.get(i)) {
+            Some(item) => {
+                let texts: Vec<String> = item.source_ids.iter().filter_map(|id| number.get(id.as_str())).map(usize::to_string).collect();
+                format!("Text {}: {error}", texts.join(", "))
+            }
+            None => error,
+        };
+        sms_import::validate_analysis_at(b, messages, &expanded.analysis).map_err(&named)?;
+        // The money is the texts' own: an amount no text gives was made up.
+        sms_import::validate_amounts(b, messages, &expanded.analysis).map_err(&named)?;
+    }
     Ok(expanded)
 }
 
@@ -1162,7 +1187,8 @@ fn learn(b: &Budget, input: &Input, lanes: &Lanes, expanded: Expanded) -> Read {
             payees.insert((sender.clone(), raw.to_lowercase()), Payee { sender, raw: raw.clone(), payee: t.payee.clone(), category_id: t.category_id.clone(), mine: false });
         }
     }
-    let existing: HashSet<&str> = input.templates.iter().map(|t| t.id.as_str()).collect();
+    let existing: HashMap<&str, &Template> = input.templates.iter().map(|t| (t.id.as_str(), t)).collect();
+    let meaning = |o: &sms_templates::Outcome| (o.disposition.clone(), o.kind.clone(), o.sign.clone(), o.skip.clone());
     for written in expanded.templates {
         let examples: Vec<usize> = written.texts.iter().filter_map(|t| t.checked_sub(1)).collect();
         let Some(first) = examples.first().and_then(|e| messages.get(*e)) else { learning.dropped += 1; continue };
@@ -1174,10 +1200,14 @@ fn learn(b: &Budget, input: &Input, lanes: &Lanes, expanded: Expanded) -> Read {
                 for (raw, payee, category) in replay.payees {
                     payees.insert((template.sender.clone(), raw.to_lowercase()), Payee { sender: template.sender.clone(), raw, payee, category_id: category, mine: false });
                 }
-                let replaces = written.replaces.filter(|old| *old != id && existing.contains(old.as_str()));
+                // A rewrite retires a template of the same sender only: a text can't have another bank's formats dropped.
+                let replaces = written.replaces.filter(|old| *old != id && existing.get(old.as_str()).is_some_and(|t| t.sender == template.sender));
                 if let Some(old) = &replaces { learning.retired.push(old.clone()); }
-                if !existing.contains(id.as_str()) && !learning.templates.iter().any(|l| l.template.id == id) {
-                    learning.templates.push(Learned { template, example: first.body.clone(), agreed: replay.agreed, replaces });
+                // The same lines read right and understood wrong (an expense that's a transfer, money
+                // taken for an alert): the id is the lines', so the meaning is replaced in place.
+                let rewritten = existing.get(id.as_str()).is_some_and(|old| meaning(&old.outcome) != meaning(&template.outcome));
+                if (rewritten || !existing.contains_key(id.as_str())) && !learning.templates.iter().any(|l| l.template.id == id) {
+                    learning.templates.push(Learned { template, example: first.body.clone(), agreed: replay.agreed, replaces, rewritten });
                 }
             }
             Err(reason) => {
@@ -1657,6 +1687,69 @@ mod tests {
         // Next time the payee the user settled on comes out of the phone.
         let again = sms_templates::lanes(&b, &input.messages[1..2], &[known], &l.payees, &Default::default());
         assert_eq!(again.review[0].1.transaction.as_ref().unwrap().payee, "Lemon Squeezy");
+    }
+    #[test]
+    fn a_wrong_item_is_named_by_its_text_and_money_no_text_gives_is_refused() {
+        let b = sar_budget();
+        let texts = vec![message("sms:1", "PoS Purchase SAR 12.00 card 4512 at CAFE on 28/10/26"), message("sms:2", "PoS Purchase SAR 1,250.00 card 4512 at SHOP on 28/10/26")];
+        let item = |text: usize, amount: &str, written: &str, date: &str| json!({"texts":[text],"disposition":"transaction","note":"Purchase","quote":"card 4512","unsure":[],
+            "transaction":{"date":date,"amount":amount,"currency":"SAR","writtenAmount":written,"payee":"Shop","memo":"","kind":"expense","accountRef":"4512","otherRef":null,"categoryId":null}});
+        let reply = |second: Value| json!({"items":[item(1, "-12.00", "12.00", "2026-10-28"), second],"skipped":skipped(&[])});
+        // An amount is the text's however the text groups it.
+        assert!(checked(&b, &texts, &Lanes::default(), reply(item(2, "-1250.00", "1250", "2026-10-28"))).is_ok());
+        // One no text gives was made up: refused, and the error names text 2 rather than the whole answer.
+        let error = checked(&b, &texts, &Lanes::default(), reply(item(2, "-1520.00", "1520.00", "2026-10-28"))).unwrap_err();
+        assert!(error.starts_with("Text 2: ") && error.contains("amounts"), "{error}");
+        let error = checked(&b, &texts, &Lanes::default(), reply(item(2, "-1250.00", "1250.00", "28/10/2026"))).unwrap_err();
+        assert!(error.starts_with("Text 2: "), "{error}");
+    }
+    #[test]
+    fn a_format_understood_wrong_is_rewritten_in_place_and_a_transfer_loses_its_category() {
+        let mut b = sar_budget();
+        b.categories.push(urbudget_core::domain::Category { extra: Default::default(), id: "food".into(), name: "Food".into(), group: "Everyday".into(), target: 0 });
+        let known = purchase_template();
+        let other = Template { id: "other-bank".into(), sender: "otherbank".into(), ..purchase_template() };
+        let mut input = input();
+        input.messages = vec![purchase_text("sms:1", "500.00", "MY SAVINGS"), purchase_text("sms:2", "750.00", "MY SAVINGS")];
+        input.templates = vec![known.clone(), other.clone()];
+        // The user's name for it came with a category, which a transfer can't keep.
+        input.payees = vec![Payee { sender: "anb".into(), raw: "MY SAVINGS".into(), payee: "Savings".into(), category_id: Some("food".into()), mine: true }];
+        let fields = json!({"date":null,"amount":null,"currency":null,"writtenAmount":null,"payee":null,"memo":null,"kind":"transfer","accountRef":null,"otherRef":null,"categoryId":null});
+        let correction = |text: usize| json!({"text":text,"fields":fields,"disposition":null,"skip":null,"note":null,"quote":null,"unsure":null});
+        let reply = json!({"items":[],"skipped":skipped(&[]),"corrections":[correction(1), correction(2)],
+            // The same lines, meaning a transfer; and an attempt to drop another bank's format along the way.
+            "templates":[{"replaces":"other-bank","texts":[1, 2],"lines":known.lines,"outcome":{"disposition":"transaction","kind":"transfer","sign":"-","skip":null,"memo":null},"note":"Transfer to {payee}","payee":null}]});
+        let mut fake = Fake { replies: vec![call("submit_sms_analysis", reply)].into(), requests: vec![] };
+        let result = crate::block_on(run_analysis(&b, &input, "test-model", &mut fake, &Shared::default())).unwrap();
+        for item in &result.analysis.items {
+            let t = item.transaction.as_ref().unwrap();
+            assert_eq!((t.kind.as_str(), t.category_id.as_deref(), t.payee.as_str()), ("transfer", None, "Savings"));
+        }
+        let l = &result.learning;
+        assert_eq!(l.templates.len(), 1);
+        assert!(l.templates[0].rewritten && l.templates[0].template.id == known.id && l.templates[0].template.outcome.kind.as_deref() == Some("transfer"));
+        assert!(l.retired.is_empty(), "{:?}", l.retired);
+        assert_eq!(serde_json::to_value(&l.templates[0]).unwrap()["rewritten"], json!(true));
+        // The format read the texts right and was understood wrong: counted against it by its kind.
+        assert_eq!(l.stats[&known.id].corrected.get("kind"), Some(&2));
+    }
+    #[test]
+    fn a_payee_filed_under_two_categories_is_sent_with_both_and_their_prices() {
+        let mut b = sar_budget();
+        for id in ["subs", "shopping"] {
+            b.categories.push(urbudget_core::domain::Category { extra: Default::default(), id: id.into(), name: id.into(), group: "Spending".into(), target: 0 });
+        }
+        for (id, date, amount, category) in [("a1", "2026-08-03", -1600, "subs"), ("a2", "2026-08-19", -24350, "shopping"), ("a3", "2026-09-03", -1600, "subs"), ("a4", "2026-09-21", -8999, "shopping"), ("a5", "2026-10-03", -1600, "subs")] {
+            let mut t = urbudget_core::test_support::purchase();
+            (t.id, t.account_id, t.date, t.payee, t.amount) = (id.into(), "main".into(), date.into(), "Amazon".into(), amount);
+            (t.splits[0].category_id, t.splits[0].amount) = (Some(category.into()), amount);
+            b.transactions.push(t);
+        }
+        let mut fake = Fake { replies: vec![call("submit_sms_analysis", submitted())].into(), requests: vec![] };
+        crate::block_on(run_analysis(&b, &input(), "test-model", &mut fake, &Shared::default())).unwrap();
+        let sent: Value = match &fake.requests[0][0] { Item::User { text, .. } => serde_json::from_str(text).unwrap(), _ => Value::Null };
+        // The subscription has its price; what's bought there has none.
+        assert_eq!(sent["payees"][0], json!(["Amazon", "subs", 5, [["subs", 3, "16.00"], ["shopping", 2, null]]]));
     }
     #[test]
     fn a_template_that_misreads_its_batch_is_dropped_and_a_read_text_is_never_rewritten_from_review() {

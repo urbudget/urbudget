@@ -22,7 +22,8 @@ import org.json.JSONObject
  * above the rows: each made as an account, with the name, type and balance before the texts that
  * they suggest; put in another (a debit card in its current account); or not tracked. [apply]
  * makes them in one change and remembers each card, and their rows move to Ready to add; it's
- * null when the page's own button does it.
+ * null when the page's own button does it. Given, the page's button is Add, so this one is drawn
+ * quieter: a page has one main action.
  */
 internal fun LazyListScope.smsSetupSection(candidates: List<SmsSetupCandidate>, plans: Map<String, SmsSetupPlan>, budget: JSONObject, accounts: List<Pair<String, String>>,
                                            typeNames: Map<String, String>, enabled: Boolean, adds: (SmsItem) -> Boolean, answer: (String, SmsSetupPlan) -> Unit,
@@ -39,7 +40,7 @@ internal fun LazyListScope.smsSetupSection(candidates: List<SmsSetupCandidate>, 
         }
     }
     if (apply != null) item(key = "setup-apply") {
-        PrimaryButton(smsSetupAction(plans), apply, Modifier.fillMaxWidth().testTag("sms-setup-apply"), enabled = enabled)
+        SecondaryButton(smsSetupAction(plans), apply, Modifier.fillMaxWidth().testTag("sms-setup-apply"), enabled = enabled, color = ur.accent)
     }
 }
 

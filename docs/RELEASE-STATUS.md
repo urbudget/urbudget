@@ -44,7 +44,12 @@ background as they arrive, with a notification, is opt-in and asks for
 accounts; the phone matches cards to accounts by remembered choices or the digits
 in account names, and one choice answers every message naming a card. Sending to
 the assistant is asked once per provider and model and can be withdrawn. Model
-sessions are temporary and do not create ordinary assistant chat history. No SMS
+sessions are temporary and do not create ordinary assistant chat history. A format
+the assistant has confirmed often enough is read on the phone alone where the reading
+needs nothing more (junk, and money from a payee the user has already named), a request
+that proves too much is tried again in smaller ones, and a reading started from the page
+keeps going under a foreground service when the app is left (`FOREGROUND_SERVICE_DATA_SYNC`,
+which Play also asks to have declared). No SMS
 is imported automatically; ticked rows across accounts commit in one undoable step.
 New transactions remain uncleared. This is an unreleased source change, not a Play
 submission or approval. Its `READ_SMS`/`RECEIVE_SMS` permissions require the

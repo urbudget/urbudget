@@ -44,7 +44,7 @@ class MoneyTest {
         assertEquals("2730", Money.count(2_730))
         // A counted phrase carries the grouped count.
         Money.configure(JSONObject().put("currency", "SAR"))
-        assertEquals("Read 2,730 texts", Words.count(R.plurals.sms_read_count, 2_730))
+        assertEquals("Read 2,730 messages", Words.count(R.plurals.sms_read_count, 2_730))
     }
     @Test fun parsesExactCentsWithoutFloatingPointRounding() {
         assertEquals(101L, Money.parse("1.01"))

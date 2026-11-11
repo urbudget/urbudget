@@ -128,7 +128,7 @@ class SmsInboxTest {
         assertEquals(0, inbox.payees(first).length()); assertEquals(SmsTemplateSummary(0, 0, 0), inbox.templateSummary(first))
     }
 
-    @Test fun skipFormatsAreTrustedOnceConfirmedAndFormatsRetireWhenUnusedOrRewrittenOften() {
+    @Test fun formatsAreTrustedOnceConfirmedAndRetireWhenUnusedOrRewrittenOften() {
         inbox.configure(first, setOf("BankA"), 0)
         fun template(id: String, skip: String?) = JSONObject().put("id", id).put("sender", "banka").put("lines", JSONArray().put("Line $id {n}"))
             .put("outcome", JSONObject().put("disposition", if (skip == null) "transaction" else "ignore").put("skip", skip ?: JSONObject.NULL)).put("note", "").put("payee", JSONObject.NULL)
@@ -138,15 +138,27 @@ class SmsInboxTest {
         val day = 86_400_000L; val start = 1_000 * day
         inbox.learn(first, JSONObject().put("templates", JSONArray().put(learned(template("s1", "rewards"))).put(learned(template("m1", null)))), start)
         assertEquals(emptyList<String>(), trusted())
-        // Confirmed again in a later request, a skip format is trusted: its texts stay on the phone. A money format never is.
+        // Confirmed in review over two later requests, a skip format is trusted: its texts stay on the phone.
+        // A money format needs more reviews than that.
         val confirmed = JSONObject().put("filled", 2).put("confirmed", 2)
         inbox.learn(first, JSONObject().put("stats", JSONObject().put("s1", confirmed).put("m1", JSONObject(confirmed.toString()))), start)
+        assertEquals(emptyList<String>(), trusted())
+        inbox.learn(first, JSONObject().put("stats", JSONObject().put("s1", confirmed).put("m1", JSONObject(confirmed.toString()))), start)
         assertEquals(listOf("s1"), trusted()); assertEquals("candidate", state("m1"))
+        repeat(3) { inbox.learn(first, JSONObject().put("stats", JSONObject().put("m1", JSONObject(confirmed.toString()))), start) }
+        assertEquals(listOf("m1", "s1"), trusted().sorted())
         inbox.learn(first, JSONObject().put("stats", JSONObject().put("s1", JSONObject().put("settled", 4))), start)
         assertEquals(4, inbox.templateList(first).first { it.id == "s1" }.stats.getInt("settled"))
         // One correction takes the trust away.
-        inbox.learn(first, JSONObject().put("stats", JSONObject().put("s1", JSONObject().put("filled", 1).put("corrected", JSONObject().put("skip", 1)))), start)
+        inbox.learn(first, JSONObject().put("stats", JSONObject().put("s1", JSONObject().put("filled", 1).put("corrected", JSONObject().put("skip", 1)))
+            .put("m1", JSONObject().put("filled", 1).put("corrected", JSONObject().put("amount", 1)))), start)
         assertEquals(emptyList<String>(), trusted())
+        // The same lines given another meaning replace the format in place, and its readings count from the start again.
+        inbox.learn(first, JSONObject().put("templates", JSONArray().put(learned(template("s1", "marketing")).put("rewritten", true))), start)
+        inbox.templateList(first).first { it.id == "s1" }.let { row ->
+            assertEquals("marketing", row.skip); assertEquals("candidate", row.state)
+            assertEquals(1, row.stats.getInt("rewrites")); assertEquals(0, row.stats.optInt("confirmed")); assertFalse(row.stats.has("corrected"))
+        }
         // A format rewritten three times in a month retires with its last rewrite: its texts are read in full.
         var old = "m1"
         listOf("m2", "m3", "m4").forEach { id ->

@@ -1,7 +1,9 @@
 //! Bank-text templates: a format the assistant wrote while reading, read on the phone next time.
 //! A template is lines of literal words and typed slots, compiled here rather than handed to a
 //! regular-expression engine, so a template can neither hang nor match everything. A text a
-//! template reads still goes to the assistant, which reviews the reading.
+//! template reads still goes to the assistant, which reviews the reading, until the format has
+//! earned the budget's trust: then junk, and money whose payee the user has already named, are
+//! read on the phone alone, with some still sent as a check.
 use crate::{
     domain::Budget,
     sms_import::{self, Analysis, Evidence, Item, Message, Transaction},
@@ -77,7 +79,9 @@ fn payee_key(raw: &str) -> String {
 /// the bank's words, renamed in the review or the register since); else the name this sender's
 /// texts were learned under on the phone (a review the user changed, or the assistant's reading);
 /// else their payee the name surely is ("MASHAR E" is their "Mashar"). The category comes from
-/// the same place, else the one they usually give that payee.
+/// the same place, else the one they usually give that payee. Where they file a name under more
+/// than one category, the transaction's amount decides (`workflows::category_for`): the price
+/// that's always their subscription gets its category, and what's bought there another.
 pub struct Names<'a> {
     b: &'a Budget,
     history: BankNames,
@@ -92,14 +96,18 @@ pub struct Named {
     pub payee: String,
     pub category_id: Option<String>,
     pub said: bool,
+    /// The category is worth a look: the user files this payee under more than one, and neither
+    /// this amount nor their latest choices settle which.
+    pub check_category: bool,
 }
 impl<'a> Names<'a> {
     pub fn new(b: &'a Budget, learned: &[Payee]) -> Self {
         let loose = learned.iter().map(|p| ((p.sender.clone(), bank_key(&p.raw)), p.clone())).collect();
         Self { b, history: BankNames::new(b), learned: payee_map(learned), loose, known: KnownPayees::new(b) }
     }
-    /// The user's payee and category for [raw], the name a text from [sender] (its key) gives.
-    pub fn of(&self, sender: &str, raw: &str) -> Option<Named> {
+    /// The user's payee and category for [raw], the name a text from [sender] (its key) gives, in
+    /// a transaction of [amount] (cents, either sign) when it's known.
+    pub fn of(&self, sender: &str, raw: &str, amount: Option<i64>) -> Option<Named> {
         if raw.trim().is_empty() {
             return None;
         }
@@ -109,20 +117,30 @@ impl<'a> Names<'a> {
         let learned = self.learned.get(&(sender.to_string(), payee_key(raw))).or_else(|| self.loose.get(&(sender.to_string(), bank_key(raw))));
         let (payee, category, said) = if let Some(name) = rule_name {
             (name.to_string(), None, true)
-        } else if let Some((payee, category)) = self.history.get(raw) {
-            (payee.to_string(), category.map(String::from), true)
+        } else if let Some((payee, _)) = self.history.get(raw) {
+            (payee.to_string(), None, true)
         } else if let Some(p) = learned {
             (p.payee.clone(), p.category_id.clone(), p.mine)
         } else if let Some(p) = self.known.same(raw) {
-            (p.name.clone(), p.category_id.clone(), false)
+            (p.name.clone(), None, false)
         } else if rule_category.is_some() {
             // A rule that only sets the category keeps the bank's name.
             (raw.trim().to_string(), None, true)
         } else {
             return None;
         };
-        let category = rule_category.map(String::from).or(category).or_else(|| self.known.named(&payee).and_then(|p| p.category_id.clone()));
-        Some(Named { payee, category_id: category, said })
+        // A rule's category first; then what the user's transactions under the bank's name say for
+        // this amount, what the phone learned for the name, and their payee's own transactions.
+        let (category, check) = match (rule_category, self.history.category(raw, amount), category) {
+            (Some(rule), ..) => (Some(rule.to_string()), false),
+            (None, Some((id, settled)), _) => (Some(id), !settled),
+            (None, None, Some(learned)) => (Some(learned), false),
+            (None, None, None) => match self.known.named(&payee).and_then(|p| crate::workflows::category_for(&p.filed, amount)) {
+                Some((id, settled)) => (Some(id), !settled),
+                None => (None, false),
+            },
+        };
+        Some(Named { payee, category_id: category, said, check_category: check })
     }
     /// The category if it's one an item can have: an existing spending category, never for a transfer.
     fn spending(&self, kind: &str, category: Option<String>) -> Option<String> {
@@ -140,16 +158,20 @@ pub fn own_names(names: &Names, messages: &[Message], items: &mut [Item]) {
         let Some(t) = item.transaction.as_mut() else { continue };
         // The bank's words, else the reading's name for them when none were copied.
         let raw = item.raw.clone().unwrap_or_else(|| t.payee.clone());
-        let Some(named) = names.of(&sender_key(sender), &raw) else { continue };
+        let amount = t.amount.as_deref().and_then(|a| sms_import::cents(a).ok());
+        let Some(named) = names.of(&sender_key(sender), &raw, amount) else { continue };
         if named.payee != t.payee {
             // The note names the payee as the reading had it ("Purchase at SALON A").
             if t.payee.chars().count() >= 3 && item.note.contains(t.payee.as_str()) { item.note = item.note.replace(t.payee.as_str(), &named.payee); }
             t.payee = named.payee;
         }
-        // A category the reading chose stands unless the user said what this name is.
-        if let Some(category) = names.spending(&t.kind, named.category_id).filter(|_| named.said || t.category_id.is_none()) { t.category_id = Some(category); }
-        // The user said what this name is: nothing about the payee or its category to check.
-        if named.said { item.unsure.retain(|f| f != "payee" && (f != "category" || t.category_id.is_none())); }
+        // A category the reading chose stands unless the user said what this name is, and which
+        // of their categories this amount is.
+        let settled = named.said && !named.check_category;
+        if let Some(category) = names.spending(&t.kind, named.category_id).filter(|_| settled || t.category_id.is_none()) { t.category_id = Some(category); }
+        // The user said what this name is: nothing about the payee to check, nor its category when that's settled.
+        if named.said { item.unsure.retain(|f| f != "payee" && (f != "category" || t.category_id.is_none() || named.check_category)); }
+        if named.check_category && t.category_id.is_some() && t.kind != "transfer" && !item.unsure.iter().any(|f| f == "category") { item.unsure.push("category".into()); }
     }
 }
 
@@ -277,7 +299,8 @@ pub fn compile(t: &Template) -> Result<Compiled, String> {
 /// A text as templates read it: direction marks gone, spaces collapsed, blank lines dropped.
 fn normalised(body: &str) -> Vec<Vec<char>> {
     body.replace("\r\n", "\n").replace('\r', "\n").lines().map(|line| {
-        let kept: String = line.chars().filter(|c| !matches!(c, '\u{200E}' | '\u{200F}' | '\u{061C}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')).collect();
+        // Direction marks, and the zero-width space, joiner and byte-order mark some gateways leave in.
+        let kept: String = line.chars().filter(|c| !matches!(c, '\u{200E}' | '\u{200F}' | '\u{061C}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{200B}' | '\u{2060}' | '\u{FEFF}')).collect();
         kept.split_whitespace().collect::<Vec<_>>().join(" ").chars().collect::<Vec<char>>()
     }).filter(|l| !l.is_empty()).collect()
 }
@@ -333,11 +356,15 @@ fn number(s: &[char], at: usize, grouping: bool) -> Option<usize> {
 
 /// Currencies with three decimals, where "1.250" is one and a quarter.
 const THREE_PLACES: [&str; 7] = ["KWD", "BHD", "OMR", "JOD", "TND", "LYD", "IQD"];
+/// Of those, the ones whose banks write the decimals after a comma, as French does: "45,500 TND" is
+/// forty-five and a half. Elsewhere a comma before three digits groups ("KWD 45,500").
+const THREE_PLACES_COMMA: [&str; 1] = ["TND"];
 /// An amount as a bank writes it in [currency], as a plain decimal with a point and digits 0–9: the
 /// separator before the last one or two digits is the decimal point and the others group
 /// ("1.234,56" and "1,234.56" are "1234.56", "12,50" is "12.50", "١٢٠٫٥٠" is "120.50"). Before
 /// three digits a separator groups ("Rp 150.000" is 150000, "1.250 EUR" is 1250), except a point in
-/// a currency with three decimals ("KWD 1.250" is 1.250).
+/// a currency with three decimals ("KWD 1.250" is 1.250), or a comma in one that writes them so
+/// ("45,500 TND" is 45.500).
 pub fn decimal(number: &str, currency: &str) -> String {
     let chars: Vec<char> = number.chars().filter(|c| !c.is_whitespace()).collect();
     let Some(last) = chars.iter().rposition(|c| SEPARATORS.contains(c)) else { return ascii_digits(&chars) };
@@ -345,7 +372,8 @@ pub fn decimal(number: &str, currency: &str) -> String {
     let sep = chars[last];
     let point = sep == '٫' || (!matches!(sep, '\'' | '٬') && match after {
         1 | 2 => true,
-        3 => sep == '.' && THREE_PLACES.contains(&currency) && chars[..last].iter().all(|c| *c != '.'),
+        3 => (sep == '.' && THREE_PLACES.contains(&currency) && chars[..last].iter().all(|c| *c != '.'))
+            || (sep == ',' && THREE_PLACES_COMMA.contains(&currency) && chars[..last].iter().all(|c| !SEPARATORS.contains(c))),
         _ => false,
     });
     if point { format!("{}.{}", ascii_digits(&chars[..last]), ascii_digits(&chars[last + 1..])) } else { ascii_digits(&chars) }
@@ -447,12 +475,30 @@ fn date_parts(order: &str) -> Vec<&str> {
     if let Some(s) = start { parts.push(&order[s..]) }
     parts
 }
-const MONTHS: [&str; 12] = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
-/// A month's name or its first three letters or more ("Nov", "Sept", "October"), from 1.
+/// Each month's names in the languages banks write dates in: English, Spanish, French, German,
+/// Italian, Portuguese, Turkish, Indonesian and Arabic, with and without their accents.
+const MONTHS: [&[&str]; 12] = [
+    &["january", "enero", "janvier", "januar", "gennaio", "janeiro", "ocak", "يناير"],
+    &["february", "febrero", "février", "fevrier", "februar", "febbraio", "fevereiro", "şubat", "subat", "فبراير"],
+    &["march", "marzo", "mars", "märz", "marz", "mrz", "março", "marco", "mart", "maret", "مارس"],
+    &["april", "abril", "avril", "aprile", "nisan", "أبريل", "ابريل"],
+    &["may", "mayo", "mai", "maggio", "maio", "mayıs", "mayis", "mei", "مايو"],
+    &["june", "junio", "juin", "juni", "giugno", "junho", "haziran", "يونيو"],
+    &["july", "julio", "juillet", "juli", "luglio", "julho", "temmuz", "يوليو"],
+    &["august", "agosto", "août", "aout", "ağustos", "agustos", "agustus", "أغسطس", "اغسطس"],
+    &["september", "septiembre", "setiembre", "septembre", "settembre", "setembro", "eylül", "eylul", "سبتمبر"],
+    &["october", "octubre", "octobre", "oktober", "ottobre", "outubro", "ekim", "أكتوبر", "اكتوبر"],
+    &["november", "noviembre", "novembre", "novembro", "kasım", "kasim", "نوفمبر"],
+    &["december", "diciembre", "décembre", "decembre", "dezember", "dicembre", "dezembro", "aralık", "aralik", "desember", "ديسمبر"],
+];
+/// A month's name or its first three letters or more ("Nov", "Sept", "October", "ago", "déc"),
+/// from 1. Letters that begin two months' names ("jui": juin, juillet) name neither.
 fn month(name: &str) -> Option<u32> {
     let name = name.to_lowercase();
     (name.chars().count() >= 3).then_some(())?;
-    MONTHS.iter().position(|m| m.starts_with(&name)).map(|i| i as u32 + 1)
+    let mut found = MONTHS.iter().enumerate().filter(|(_, names)| names.iter().any(|m| m.starts_with(&name))).map(|(i, _)| i as u32 + 1);
+    let first = found.next()?;
+    found.next().is_none().then_some(first)
 }
 /// A date written in `order` from `at`: where it ends, and its day, month and year if it gives one.
 /// Between numbers any of / - . stands for the order's, and so do the characters some scripts write
@@ -461,14 +507,15 @@ fn read_date(s: &[char], at: usize, order: &str) -> Option<(usize, u32, u32, Opt
     let (mut d, mut m, mut y) = (None, None, None);
     let mut i = at;
     let mut first = true;
-    // Between parts: up to three characters that are neither digits nor Latin letters.
-    let between = |mut i: usize| {
+    // Between parts: up to three characters that are neither digits nor Latin letters, nor before a
+    // month's name any letters at all ("02 نوفمبر").
+    let between = |mut i: usize, name: bool| {
         let start = i;
-        while i < s.len() && i - start < 3 && !is_digit(&s[i]) && !s[i].is_ascii_alphabetic() { i += 1 }
+        while i < s.len() && i - start < 3 && !is_digit(&s[i]) && !s[i].is_ascii_alphabetic() && !(name && s[i].is_alphabetic()) { i += 1 }
         i
     };
     for part in date_parts(order) {
-        if !first { i = between(i) }
+        if !first { i = between(i, part == "mmm") }
         first = false;
         let start = i;
         if part == "mmm" {
@@ -506,7 +553,8 @@ fn typed(s: &[char], at: usize, kind: Slot, arg: Option<&str>) -> Option<usize> 
             let mut j = i;
             while j < s.len() && (is_digit(&s[j]) || s[j] == ':') { j += 1 }
             let t: String = s[i..j].iter().collect();
-            if !(t.contains(':') && t.split(':').all(|p| (1..=2).contains(&p.len()))) { return None; }
+            // Counted in characters: digits in another script are more than a byte each.
+            if !(t.contains(':') && t.split(':').all(|p| (1..=2).contains(&p.chars().count()))) { return None; }
             // "1:05 PM", "1:05pm", "1:05 p.m."
             let mut k = j;
             while k < s.len() && s[k].is_whitespace() { k += 1 }
@@ -633,8 +681,14 @@ impl Compiled {
     }
 }
 
+/// How far from the day its text came a template's date may be. A bank's alert is written for
+/// that day or one near it; a format that reads the day and month the wrong way round ("03/11" as
+/// 11 March) lands a month or more away, and is left to the assistant.
+const DATE_DAYS: i64 = 20;
+
 /// A date written in `order` ("dd/mm/yy", "mmm dd"), as YYYY-MM-DD. One with no year is in the year
-/// that puts it on or before the day the text came ([received]), give or take a day.
+/// that puts it on or before the day the text came ([received]), give or take a day. None when
+/// it's more than [DATE_DAYS] from that day.
 fn date(value: &str, order: &str, received: &str) -> Option<String> {
     let chars: Vec<char> = value.chars().collect();
     let (end, d, m, y) = read_date(&chars, 0, order)?;
@@ -656,7 +710,9 @@ fn date(value: &str, order: &str, received: &str) -> Option<String> {
         }
         (None, None) => return None,
     };
-    chrono::NaiveDate::from_ymd_opt(y, m, d).map(|day| day.format("%Y-%m-%d").to_string())
+    let day = chrono::NaiveDate::from_ymd_opt(y, m, d)?;
+    if came.is_some_and(|came| (day - came).num_days().abs() > DATE_DAYS) { return None; }
+    Some(day.format("%Y-%m-%d").to_string())
 }
 /// The three-letter code for a currency as a text writes it ([MARKS]); a mark several currencies
 /// share is the [budget]'s when it's one of them.
@@ -693,8 +749,11 @@ pub fn fill(b: &Budget, c: &Compiled, m: &Message, reading: &Reading, names: Opt
         let day = match &reading.date { Some((value, order)) => date(value, order, &m.received_date)?, None => m.received_date.clone() };
         let raw = reading.payee.clone();
         let kind = o.kind.clone()?;
-        let named = raw.as_deref().zip(names).and_then(|(r, n)| n.of(&t.sender, r));
+        let cents = amount.as_deref().and_then(|a| sms_import::cents(a).ok());
+        let named = raw.as_deref().zip(names).and_then(|(r, n)| n.of(&t.sender, r, cents));
         let category = named.as_ref().and_then(|n| names?.spending(&kind, n.category_id.clone()));
+        // Filed under more than one category, with nothing to say which this is: worth a look.
+        let unsure = if category.is_some() && named.as_ref().is_some_and(|n| n.check_category) { vec!["category".to_string()] } else { vec![] };
         let payee = named.map(|n| n.payee).or_else(|| raw.clone()).or_else(|| t.payee.clone())?;
         Item {
             source_ids: vec![m.id.clone()], disposition: o.disposition.clone()?, skip: None,
@@ -708,7 +767,7 @@ pub fn fill(b: &Budget, c: &Compiled, m: &Message, reading: &Reading, names: Opt
                 balance: reading.balance.as_deref().map(|n| decimal(n, &b.currency)),
                 available: reading.available.as_deref().map(|n| decimal(n, &b.currency)),
             }),
-            unsure: vec![], template: Some(t.id.clone()), raw, kept: false,
+            unsure, template: Some(t.id.clone()), raw, kept: false,
         }
     };
     let mut item = item;
@@ -717,8 +776,9 @@ pub fn fill(b: &Budget, c: &Compiled, m: &Message, reading: &Reading, names: Opt
 }
 
 /// The texts split for the assistant: those a template read (with the item it filled, for the
-/// assistant to review), those it reads in full, and junk settled on the phone: texts a trusted
-/// skip template read, and codes the code filter recognised.
+/// assistant to review), those it reads in full, and those read on the phone alone and never sent
+/// (`junk`, each `kept`): junk a trusted skip template read, codes the code filter recognised, and
+/// money a trusted format read whose payee and category the user has already said ([own_money]).
 #[derive(Debug, Default)]
 pub struct Lanes {
     pub review: Vec<(usize, Item)>,
@@ -750,9 +810,17 @@ const CODE_PHRASES: &[&str] = &["otp", "one-time password", "one time password",
 /// Words a code follows ("OTP: 4821", "رمز : 482193", "código: 4821").
 const CODE_WORDS: &[&str] = &["otp", "code", "password", "pin", "passcode", "رمز", "كلمة المرور", "código", "codice", "kode", "kodu"];
 
+/// Code words that stand alone: "pin" isn't in "SHOPPING" or "SPINNEYS".
+const CODE_WORDS_WHOLE: &[&str] = &["otp", "pin"];
+/// Code words that end a word, alone or in a compound ("Bestätigungscode"), but don't begin a longer one ("codes").
+const CODE_WORDS_ENDING: &[&str] = &["code", "password", "passcode"];
+
 /// A one-time code before any template knows the format: a code phrase, and a 4–8 digit number
-/// shortly after a code word, so a purchase that ends "never share your OTP" isn't one.
-/// Conservative on purpose: a miss only means the assistant reads the text.
+/// shortly after a code word, so a purchase that ends "never share your OTP" isn't one. The number
+/// stands by itself: not an amount ("2500.00", "SAR 2500"), a card's digits ("*4512"), or part of a
+/// date ("02/11/2026"). A code word is a word, or in languages that add endings to it, starts one.
+/// Conservative on purpose: a miss only means the assistant reads the text, while a purchase taken
+/// for a code would never be seen.
 pub fn looks_like_code(body: &str) -> bool {
     let lower: Vec<char> = body.to_lowercase().chars().collect();
     let text: String = lower.iter().collect();
@@ -763,21 +831,31 @@ pub fn looks_like_code(body: &str) -> bool {
     let mut found = vec![];
     for word in CODE_WORDS {
         let w: Vec<char> = word.chars().collect();
+        let latin = w[0].is_ascii_alphabetic();
+        let (whole, ending) = (CODE_WORDS_WHOLE.contains(word), CODE_WORDS_ENDING.contains(word));
         for i in 0..(lower.len() + 1).saturating_sub(w.len()) {
-            if lower[i..i + w.len()] == w[..] { found.push((i, i + w.len())) }
+            if lower[i..i + w.len()] != w[..] { continue; }
+            // An Arabic word takes letters on either side ("الرمز", "رمزك"); a Latin one starts a word
+            // ("kodunuz"), unless it ends a compound.
+            if latin && !ending && i > 0 && lower[i - 1].is_alphanumeric() { continue; }
+            if (whole || ending) && lower.get(i + w.len()).is_some_and(|c| c.is_alphanumeric()) { continue; }
+            found.push((i, i + w.len()));
         }
     }
-    let mut i = 0;
-    while i < lower.len() {
-        if is_digit(&lower[i]) {
-            let start = i;
-            while i < lower.len() && is_digit(&lower[i]) { i += 1 }
-            let digits = (4..=8).contains(&(i - start));
-            // After a code word ("OTP: 4821"), or first in the text with one soon after ("482193 is your OTP").
-            let after = found.iter().any(|&(_, e)| e <= start && start - e <= 60);
-            let first = lower[..start].iter().all(|c| !c.is_alphanumeric()) && found.iter().any(|&(s, _)| s >= i && s - i <= 40);
-            if digits && (after || first) { return true; }
-        } else { i += 1 }
+    for (start, end) in numbers(&lower) {
+        // A number of digits only: one with separators is an amount.
+        if !lower[start..end].iter().all(is_digit) || !(4..=8).contains(&(end - start)) { continue; }
+        let before = start.checked_sub(1).map(|i| lower[i]);
+        let after_it = lower.get(end).copied();
+        // A card's masked digits, a decimal's or a date's part, or an amount beside its currency.
+        let masked = before.is_some_and(|c| "*x#•…".contains(c));
+        let joined = |c: Option<char>, next: Option<&char>| c.is_some_and(|c| "/-.,:".contains(c)) && next.is_some_and(is_digit);
+        let part = joined(before, start.checked_sub(2).and_then(|i| lower.get(i))) || joined(after_it, lower.get(end + 1));
+        if masked || part || beside_currency(&lower, start, end) { continue; }
+        // After a code word ("OTP: 4821"), or first in the text with one soon after ("482193 is your OTP").
+        let after = found.iter().any(|&(_, e)| e <= start && start - e <= 60);
+        let first = lower[..start].iter().all(|c| !c.is_alphanumeric()) && found.iter().any(|&(s, _)| s >= end && s - end <= 40);
+        if after || first { return true; }
     }
     false
 }
@@ -790,8 +868,31 @@ fn audited(m: &Message, skip: &str) -> bool {
     skip != "code" && (u16::from(d[0]) << 8 | u16::from(d[1])) % 50 == 0
 }
 
-/// Sorts texts into lanes by the sender's templates, the most specific first. A skip template in
-/// [trusted] settles its texts on the phone; every other template's texts are reviewed.
+/// One in twenty texts a trusted money template reads still goes to review: a bank that changed
+/// what a line means without changing its words is caught within weeks, not never.
+fn audited_money(m: &Message) -> bool {
+    use sha2::{Digest, Sha256};
+    let d = Sha256::digest(m.id.as_bytes());
+    (u16::from(d[2]) << 8 | u16::from(d[3])) % 20 == 0
+}
+
+/// Whether a trusted money format's reading needs nothing from the assistant: a purchase, income
+/// or refund in the budget's currency (a transfer's other account, or a foreign amount, may need
+/// it), from a name the user has already called something (a rule, their transactions, a review
+/// they changed), with a category that's settled for this amount when it's spending, and not
+/// this text's turn to be checked.
+fn own_money(names: &Names, c: &Compiled, m: &Message, item: &Item) -> bool {
+    let Some(t) = &item.transaction else { return false };
+    let Some(raw) = &item.raw else { return false };
+    if t.kind == "transfer" || !item.unsure.is_empty() || audited_money(m) { return false; }
+    let Some(cents) = t.amount.as_deref().and_then(|a| sms_import::cents(a).ok()) else { return false };
+    names.of(&c.template.sender, raw, Some(cents)).is_some_and(|n| n.said && !n.check_category) && (t.kind != "expense" || t.category_id.is_some())
+}
+
+/// Sorts texts into lanes by the sender's templates, the most specific first. A template in
+/// [trusted] settles on the phone the texts that need nothing more: a skip template's junk, and a
+/// money template's readings the user's own names complete ([own_money]). Every other reading is
+/// reviewed.
 pub fn lanes(b: &Budget, messages: &[Message], templates: &[Template], payees: &[Payee], trusted: &std::collections::HashSet<String>) -> Lanes {
     let mut by_sender: HashMap<String, Vec<Compiled>> = HashMap::new();
     for t in templates {
@@ -808,9 +909,10 @@ pub fn lanes(b: &Budget, messages: &[Message], templates: &[Template], payees: &
         match first {
             Some(_) if tie => { lanes.conflicts += 1; lanes.read.push(i) }
             Some((c, reading)) => match fill(b, c, m, &reading, Some(&names)) {
-                Some(item) if item.skip.as_deref().is_some_and(|skip| trusted.contains(&c.template.id) && !audited(m, skip)) => {
-                    lanes.junk.push((i, Item { kept: true, ..item }))
-                }
+                Some(item) if trusted.contains(&c.template.id) && match item.skip.as_deref() {
+                    Some(skip) => !audited(m, skip),
+                    None => own_money(&names, c, m, &item),
+                } => lanes.junk.push((i, Item { kept: true, ..item })),
                 Some(item) => lanes.review.push((i, item)),
                 None => lanes.read.push(i),
             },
@@ -1135,7 +1237,7 @@ On:01/11/26 13:05";
     fn a_rule_comes_first_then_what_the_user_did_then_what_was_read() {
         let mut b = renamed();
         let learned = |payee: &str, mine: bool| [Payee { sender: "anb".into(), raw: "SALON A".into(), payee: payee.into(), category_id: None, mine }];
-        let named = |b: &Budget, learned: &[Payee]| Names::new(b, learned).of("anb", "SALON A").map(|n| (n.payee, n.said));
+        let named = |b: &Budget, learned: &[Payee]| Names::new(b, learned).of("anb", "SALON A", None).map(|n| (n.payee, n.said));
         // Their history beats a name the phone learned, theirs or the assistant's.
         assert_eq!(named(&b, &learned("Salon A", true)), Some(("Blade and Fade".into(), true)));
         // A rule beats both, and gives its category.
@@ -1219,6 +1321,19 @@ On:01/11/26 13:05";
         assert!(l.junk.len() > 180 && !l.review.is_empty() && l.junk.len() + l.review.len() == 200, "{} {}", l.junk.len(), l.review.len());
         // What stays on the phone says so; what's audited is reviewed like any other reading.
         assert!(l.junk.iter().all(|(_, item)| item.kept) && l.review.iter().all(|(_, item)| !item.kept));
+        // A trusted money format reads on the phone alone the texts whose payee the user has named,
+        // one in twenty still reviewed; a name they haven't is the assistant's to read.
+        let money: Vec<Message> = (0..200).map(|i| text(&format!("sms:m{i}"), BODY)).collect();
+        let trusted = std::collections::HashSet::from(["t1".to_string()]);
+        let named = [Payee { sender: "anb".into(), raw: "NOON E".into(), payee: "Noon".into(), category_id: Some("food".into()), mine: true }];
+        let l = lanes(&b, &money, &[purchase()], &named, &trusted);
+        assert!(l.junk.len() > 170 && !l.review.is_empty() && l.junk.len() + l.review.len() == 200, "{} {}", l.junk.len(), l.review.len());
+        assert!(l.junk.iter().all(|(_, item)| item.kept && item.disposition == "transaction" && item.transaction.as_ref().is_some_and(|t| t.payee == "Noon" && t.category_id.as_deref() == Some("food"))));
+        assert_eq!(lanes(&b, &money, &[purchase()], &[], &trusted).review.len(), 200);
+        assert_eq!(lanes(&b, &money, &[purchase()], &named, &Default::default()).review.len(), 200);
+        // The assistant's own guess at the name isn't the user's say-so.
+        let guessed = [Payee { mine: false, ..named[0].clone() }];
+        assert_eq!(lanes(&b, &money, &[purchase()], &guessed, &trusted).review.len(), 200);
         // A code no template knows yet is recognised by its words and its number; money never is.
         let codes = [text("c1", "لـ : شراء
 لا تشارك الرمز
@@ -1234,8 +1349,18 @@ On:01/11/26 13:05";
             "482193 is your one-time PIN for a purchase of $45.00 at BESTBUY", "Doğrulama kodu: 739201"] {
             assert!(looks_like_code(code), "{code}");
         }
-        for money in ["Compra de 45,00 € en MERCADONA con tarjeta 4512. Nunca compartas tu código.", "You spent £12.50 at TESCO with card 4512. We'll never ask for your passcode."] {
+        for money in ["Compra de 45,00 € en MERCADONA con tarjeta 4512. Nunca compartas tu código.", "You spent £12.50 at TESCO with card 4512. We'll never ask for your passcode.",
+            // A code word inside another word isn't one, and neither an amount, a card's digits nor a year is a code.
+            "Purchase SAR 50.00 at SHOPPING MALL card 4512. Never share your OTP.",
+            "Your card ending 1234 was used for SAR 50.00 at SPINNEYS on 2026-11-02. Never share your OTP.",
+            "PIN purchase of SAR 2500 at STORE with card *4512 on 02/11/2026. Never share your PIN.",
+            "PIN purchase of 2500.00 at STORE. Do not share your OTP with anyone.",
+            "Compra con código promocional por 1500 € en TIENDA. No compartas tu código."] {
             assert!(!looks_like_code(money), "{money}");
+        }
+        // A code beside a purchase's amount and card is still a code.
+        for code in ["Your verification code for a purchase of SAR 299.00 at ZAIN on card *4512 is 482193. Do not share it.", "OTP-4821 for your login. Never share it."] {
+            assert!(looks_like_code(code), "{code}");
         }
     }
     #[test]
@@ -1255,6 +1380,77 @@ On:01/11/26 13:05";
         assert!(replay(&b, &purchase(), &messages, &model, &[0]).is_err());
         // A template must read its own example.
         assert!(replay(&b, &purchase(), &[text("sms:9", "Hello")], &[], &[0]).is_err());
+    }
+    #[test]
+    fn a_payee_filed_two_ways_gets_the_category_its_amount_has() {
+        // Amazon: a 16.00 subscription every month, and purchases of all sizes.
+        let mut b = budget();
+        b.categories.push(Category { extra: Default::default(), id: "subs".into(), name: "Online subscriptions".into(), group: "Bills".into(), target: 0 });
+        for (id, date, amount, category) in [("a1", "2026-08-03", -1600, "subs"), ("a2", "2026-08-19", -24350, "food"), ("a3", "2026-09-03", -1600, "subs"),
+            ("a4", "2026-09-21", -8999, "food"), ("a5", "2026-10-03", -1600, "subs")] {
+            let mut extra = crate::domain::Extra::default();
+            extra.insert("importedPayee".into(), serde_json::json!("AMAZON SA"));
+            b.transactions.push(crate::domain::Transaction { extra,
+                id: id.into(), account_id: "main".into(), date: date.into(), payee: "Amazon".into(), memo: String::new(), amount,
+                status: crate::domain::Cleared::Uncleared, transfer_account_id: None, transfer_status: None,
+                splits: vec![crate::domain::Split { extra: Default::default(), category_id: Some(category.into()), amount }] });
+        }
+        let names = Names::new(&b, &[]);
+        let of = |amount: Option<i64>| names.of("anb", "AMAZON SA", amount).map(|n| (n.category_id, n.check_category));
+        // The subscription's price is the subscription, whichever was entered last.
+        assert_eq!(of(Some(-1600)), Some((Some("subs".into()), false)));
+        // A little off, as a price in another currency moves: still the subscription.
+        assert_eq!(of(Some(-1625)), Some((Some("subs".into()), false)));
+        // Any other amount is what they buy there, not the subscription that came last.
+        assert_eq!(of(Some(-5400)), Some((Some("food".into()), false)));
+        // With no amount to go by, the purchases' category, settled since the latest two agree.
+        assert_eq!(of(None), Some((Some("food".into()), false)));
+        // A template's reading of the text says the same, and so does a reading the assistant categorized otherwise.
+        let c = compile(&purchase()).unwrap();
+        let m = text("sms:7", &BODY.replace("NOON E", "AMAZON SA").replace("SAR 1,065.97", "SAR 16.00"));
+        let item = fill(&b, &c, &m, &c.read(&m.body).unwrap(), Some(&names)).unwrap();
+        assert_eq!(item.transaction.as_ref().unwrap().category_id.as_deref(), Some("subs"));
+        let mut items = vec![fill(&b, &c, &m, &c.read(&m.body).unwrap(), None).unwrap()];
+        items[0].transaction.as_mut().unwrap().category_id = Some("food".into());
+        own_names(&names, std::slice::from_ref(&m), &mut items);
+        assert_eq!((items[0].transaction.as_ref().unwrap().payee.as_str(), items[0].transaction.as_ref().unwrap().category_id.as_deref()), ("Amazon", Some("subs")));
+
+        // Two categories with nothing to tell them apart: the latest, and worth a look until two in a row agree.
+        let filed = |rows: &[(&str, i64, &str)]| rows.iter().map(|(d, a, c)| crate::workflows::Filed { date: d.to_string(), amount: *a, category_id: c.to_string() }).collect::<Vec<_>>();
+        let mixed = filed(&[("2026-09-01", 1200, "food"), ("2026-09-08", 4500, "food"), ("2026-10-02", 3000, "fun")]);
+        assert_eq!(crate::workflows::category_for(&mixed, Some(999)), Some(("fun".into(), false)));
+        let again = filed(&[("2026-09-01", 1200, "food"), ("2026-10-02", 3000, "fun"), ("2026-10-09", 2100, "fun")]);
+        assert_eq!(crate::workflows::category_for(&again, Some(999)), Some(("fun".into(), true)));
+        // An amount seen before goes where it went, the latest when it went both ways.
+        assert_eq!(crate::workflows::category_for(&mixed, Some(-1200)), Some(("food".into(), true)));
+        // One category is always it; none says nothing.
+        assert_eq!(crate::workflows::category_for(&filed(&[("2026-09-01", 1200, "food")]), Some(5)), Some(("food".into(), true)));
+        assert_eq!(crate::workflows::category_for(&[], Some(5)), None);
+    }
+    #[test]
+    fn dates_and_amounts_as_more_banks_write_them() {
+        // Month names beyond English, and none that could be two months.
+        for (name, n) in [("ago", 8), ("déc", 12), ("Dez", 12), ("ene", 1), ("mag", 5), ("Eki", 10), ("نوفمبر", 11), ("juin", 6), ("juil", 7), ("Sept", 9)] {
+            assert_eq!(month(name), Some(n), "{name}");
+        }
+        assert_eq!(month("jui"), None);
+        assert_eq!(date("02 نوفمبر 2026", "dd mmm yyyy", "2026-11-02").as_deref(), Some("2026-11-02"));
+        assert_eq!(date("3 ago 2026", "dd mmm yyyy", "2026-08-03").as_deref(), Some("2026-08-03"));
+        // A day and month read the wrong way round land far from the day the text came: left to the assistant.
+        assert_eq!(date("03/11/26", "dd/mm/yy", "2026-11-03").as_deref(), Some("2026-11-03"));
+        assert_eq!(date("03/11/26", "mm/dd/yy", "2026-11-03"), None);
+        assert_eq!(date("28/10/26", "dd/mm/yy", "2026-11-03").as_deref(), Some("2026-10-28"));
+        // A dinar's millimes after a comma, where the currency writes them so; elsewhere a comma groups.
+        assert_eq!(decimal("45,500", "TND"), "45.500");
+        assert_eq!(decimal("45,500", "KWD"), "45500");
+        assert_eq!(decimal("1.250", "KWD"), "1.250");
+        assert_eq!(decimal("1,245,500", "TND"), "1245500");
+        // A time in another script's digits is still a time.
+        let t = Template { id: "t9".into(), sender: "anb".into(), lines: vec!["شراء {amount} {currency} من {payee} الساعة {time}".into()],
+            outcome: Outcome { disposition: Some("transaction".into()), kind: Some("expense".into()), sign: Some("-".into()), ..Outcome::default() }, note: String::new(), payee: None };
+        assert!(compile(&t).unwrap().read("شراء ١٢٠٫٥٠ SAR من متجر الساعة ١٤:٣٥").is_some());
+        // Marks no one sees don't keep a format from reading its text.
+        assert!(compile(&purchase()).unwrap().read(&format!("\u{FEFF}{}", BODY.replace("Amount:", "Amount:\u{200B}"))).is_some());
     }
     #[test]
     fn the_same_format_written_twice_is_one_template() {

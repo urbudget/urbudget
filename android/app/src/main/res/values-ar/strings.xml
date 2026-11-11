@@ -2277,14 +2277,16 @@
     <string name="sms_detail">تحويل رسائل البنك إلى معاملات</string>
     <string name="sms_intro_title">تحويل رسائل البنك إلى معاملات</string>
     <string name="sms_intro">يجمع UrBudget الرسائل التي يرسلها بنكك إلى هذا الهاتف. يقرؤها مساعدك ويجهّز المعاملات، وتراجعها أنت قبل إضافة أي شيء. تُقرأ رسائل SMS ورسائل MMS النصية، ولا تُقرأ رسائل الدردشة RCS.</string>
-    <string name="sms_disclosure">يحتاج UrBudget إلى إذن الرسائل لعرض المرسلين وجمع رسائل من تختارهم، حتى والتطبيق مغلق. يمنح Android إذنًا بقراءة كل الرسائل، لكن UrBudget لا يحتفظ إلا برسائل المرسلين الذين تختارهم. ولتحويلها إلى معاملات، تُرسل هذه الرسائل إلى مزوّد الذكاء الاصطناعي للمساعد الذي تربطه: عند فتح رسائل البنك، وعند وصولها إن فعّلت ذلك، وحين تسأل مساعدك عنها. ولا يصبح جزءًا من ميزانيتك ومزامنتها الاختيارية إلا ما تضيفه من معاملات.</string>
+    <string name="sms_disclosure">لتحويل رسائل بنكك إلى معاملات، يرسل UrBudget رسائل المرسلين الذين تختارهم إلى مزوّد الذكاء الاصطناعي للمساعد الذي تربطه: عند فتح رسائل البنك، وعند وصولها إن فعّلت ذلك، وحين تسأل مساعدك عنها.\n\nلذلك يحتاج UrBudget إلى إذن الرسائل لعرض المرسلين وجمع رسائل من تختارهم، حتى والتطبيق مغلق. يمنح Android إذنًا بقراءة كل الرسائل، لكن UrBudget لا يحتفظ إلا برسائل المرسلين الذين تختارهم.\n\nولا يصبح جزءًا من ميزانيتك ومزامنتها الاختيارية إلا ما تضيفه من معاملات.</string>
     <string name="sms_allow">السماح بالوصول إلى الرسائل</string>
     <string name="sms_open_settings">فتح إعدادات التطبيق</string>
     <string name="sms_not_now">ليس الآن</string>
     <string name="sms_permission_needed">الوصول إلى الرسائل متوقف. اسمح به في إعدادات التطبيق لاختيار المرسلين وقراءة رسائلهم.</string>
     <string name="sms_receive_needed">لا يمكن جمع الرسائل الجديدة في الخلفية بعد. اسمح بالوصول إلى الرسائل، أو افتح هذه الصفحة لجلب ما فاتك.</string>
     <string name="sms_read_failed">تعذرت قراءة الرسائل. تحقق من إذن الرسائل وحاول مجددًا.</string>
-    <string name="sms_connect_assistant">اربط مساعدًا من المزيد ← المساعد لتجهيز هذه الرسائل.</string>
+    <string name="sms_connect_assistant">مساعدك هو من يقرأ هذه الرسائل. اربط مساعدًا من المزيد ← المساعد أولًا.</string>
+    <string name="sms_open_assistant">فتح المساعد</string>
+    <string name="sms_assistant_unknown">تعذّر التحقق من اتصال مساعدك.</string>
     <string name="sms_choose_bank_title">اختر مرسلي بنكك</string>
     <string name="sms_choose_bank_detail">اختر الأسماء التي يراسلك بها بنكك. لا تُجمع إلا رسائلها، ويقرؤها مساعدك ليجهّز المعاملات.</string>
     <string name="sms_choose_senders">اختيار المرسلين</string>
@@ -2297,13 +2299,22 @@
     <string name="sms_from_date">من تاريخ</string>
     <string name="sms_first_day">اليوم الأول</string>
     <string name="sms_collect">اجمع الرسائل منذ</string>
+    <string name="sms_collecting">جمع الرسائل</string>
+    <string name="sms_collect_through">محدَّث حتى \u2068%1$s\u2069</string>
+    <plurals name="sms_collect_waiting">
+        <item quantity="zero">لا رسائل بانتظارك منذ \u2068%2$s\u2069</item>
+        <item quantity="one">رسالة واحدة بانتظارك منذ \u2068%2$s\u2069</item>
+        <item quantity="two">رسالتان بانتظارك منذ \u2068%2$s\u2069</item>
+        <item quantity="few">\u2068%1$s\u2069 رسائل بانتظارك منذ \u2068%2$s\u2069</item>
+        <item quantity="many">\u2068%1$s\u2069 رسالة بانتظارك منذ \u2068%2$s\u2069</item>
+        <item quantity="other">\u2068%1$s\u2069 رسالة بانتظارك منذ \u2068%2$s\u2069</item>
+    </plurals>
     <string name="sms_since">منذ %1$s</string>
     <string name="sms_since_time">منذ %1$s، %2$s</string>
     <string name="sms_collect_help">يُحتسب اليوم من بدايته، وتستمر الرسائل الجديدة في الوصول. أرصدة حساباتك تشمل ما حدث قبل أن تُدخلها، فاجمع منذ ذلك الحين: الرسائل الجديدة فقط إن كنت أدخلت أرصدتك للتو. إذا أخّرت البداية تُزال الرسائل الأقدم منها من الرسائل المنتظرة ومن مراجعتك.</string>
     <string name="sms_collect_now">الآن: %1$s</string>
     <string name="sms_after_handled">مباشرة بعد آخر رسالة عولجت</string>
     <string name="sms_moment">\u2068%1$s\u2069، \u2068%2$s\u2069</string>
-    <string name="sms_last_handled_at">أحدث رسالة عولجت %1$s</string>
     <string name="sms_where_title">أين وصلت</string>
     <string name="sms_last_handled">آخر رسالة عولجت</string>
     <string name="sms_start_after">ابدأ بعدها</string>
@@ -2430,6 +2441,15 @@
         <item quantity="many">تجاهل \u2068%1$s\u2069</item>
         <item quantity="other">تجاهل \u2068%1$s\u2069</item>
     </plurals>
+    <plurals name="sms_dismiss_title">
+        <item quantity="zero">لا رسائل للتجاهل</item>
+        <item quantity="one">تجاهل رسالة واحدة؟</item>
+        <item quantity="two">تجاهل رسالتين؟</item>
+        <item quantity="few">تجاهل \u2068%1$s\u2069 رسائل؟</item>
+        <item quantity="many">تجاهل \u2068%1$s\u2069 رسالة؟</item>
+        <item quantity="other">تجاهل \u2068%1$s\u2069 رسالة؟</item>
+    </plurals>
+    <string name="sms_dismiss_detail">تخرج من رسائل البنك دون أن تُقرأ، ولا يمكن جمعها مرة أخرى. تبقى الرسائل في تطبيق المراسلة كما هي.</string>
     <string name="sms_cards">البطاقات المحفوظة</string>
     <string name="sms_cards_none">لا شيء بعد</string>
     <plurals name="sms_cards_count">
@@ -2452,9 +2472,9 @@
     <string name="sms_stop">إيقاف جمع الرسائل ومسحها</string>
     <string name="sms_stop_detail">أوقف الجمع لهذه الميزانية واحذف من هذا الهاتف رسائلها ومراجعتها والبطاقات المحفوظة والمرسلين وإذن الإرسال. تبقى المعاملات التي أضفتها والرسائل في تطبيق المراسلة كما هي.</string>
     <string name="sms_send_title">إرسال الرسائل إلى مساعدك؟</string>
-    <string name="sms_send_notice">يرسل UrBudget رسائل المُرسلين الذين اخترتهم إلى %1$s عند قراءتها: عند فتح رسائل البنك، وعند وصولها إن فعّلت ذلك. تُرسل معها أسماء حساباتك وفئاتك وطريقة تصنيفك للمستفيدين، والتحويلات التي أجريتها بين حساباتك خلال السنة الأخيرة مع آخر مبلغ لكل منها، ورسائل رموز التحقق التي تذكر الغرض من الدفع، مع إخفاء الرمز. لا تُحفظ في محادثات المساعد، وتسري إعدادات البيانات لدى المزوّد. وحين تسأل مساعدك عن رسائل البنك، يمكنه أيضًا البحث في رسائل المرسلين الذين اخترتهم على هذا الهاتف، ويبقى ما يجده في تلك المحادثة حتى تحذفها. لا يُضاف شيء إلى ميزانيتك قبل مراجعتك.</string>
-    <string name="sms_send_later">لن يسألك UrBudget مجددًا لهذا المساعد. يمكنك إيقاف ذلك أسفل صفحة رسائل البنك.</string>
-    <string name="sms_send_confirm">سماح</string>
+    <string name="sms_send_notice">يرسل UrBudget رسائل المُرسلين الذين اخترتهم إلى %1$s عند قراءتها: عند فتح رسائل البنك، وعند وصولها إن فعّلت ذلك.\n\nيُرسل معها:\n• أسماء حساباتك وفئاتك\n• طريقة تصنيفك للمستفيدين\n• التحويلات التي أجريتها بين حساباتك خلال السنة الأخيرة، مع آخر مبلغ لكل منها\n• رسائل رموز التحقق التي تذكر الغرض من الدفع، مع إخفاء الرمز\n\nلا تُحفظ في محادثات المساعد، وتسري إعدادات البيانات لدى المزوّد.\n\nوحين تسأل مساعدك عن رسائل البنك، يمكنه أيضًا البحث في رسائل المرسلين الذين اخترتهم على هذا الهاتف، ويبقى ما يجده في تلك المحادثة حتى تحذفها.\n\nلا يُضاف شيء إلى ميزانيتك قبل مراجعتك.</string>
+    <string name="sms_send_later">لن يسألك UrBudget مجددًا لهذا المساعد. ليسألك من جديد، افتح «الإرسال إلى مساعدك» في رسائل البنك.</string>
+    <string name="sms_send_confirm">إرسال إلى %1$s</string>
     <string name="sms_default_model">نموذجه الافتراضي</string>
     <string name="sms_review_title">المراجعة</string>
     <string name="sms_prepare_again">إعادة التجهيز مع ملاحظة</string>
@@ -2467,7 +2487,7 @@
     <string name="sms_section_check_detail">قد تكون هذه في ميزانيتك مسبقًا. اختر لكل واحدة قبل الإضافة.</string>
     <string name="sms_section_ready">جاهزة للإضافة</string>
     <string name="sms_section_holds">مبالغ محجوزة</string>
-    <string name="sms_holds_detail">لم تُسوَّ بعد. حدّد ما تريد إضافته الآن، ويُمسح الباقي.</string>
+    <string name="sms_holds_detail">لم تُسوَّ بعد. حدّد ما تريد إضافته الآن، ولن يُضاف الباقي.</string>
     <plurals name="sms_not_transactions">
         <item quantity="zero">لا رسائل ليست معاملات</item>
         <item quantity="one">رسالة واحدة ليست معاملة</item>
@@ -2589,6 +2609,9 @@
         <item quantity="other">\u2068%1$s\u2069 معاملة بنكية للمراجعة</item>
     </plurals>
     <string name="sms_notify_text">اضغط لمراجعة ما وجدته رسائل البنك.</string>
+    <string name="sms_reading_service_channel">قراءة رسائل البنك</string>
+    <string name="sms_reading_service_title">جارٍ قراءة رسائل بنكك</string>
+    <string name="sms_reading_service_text">يواصل UrBudget القراءة أثناء استخدامك تطبيقات أخرى.</string>
     <plurals name="sms_known">
         <item quantity="zero">لا شيء في ميزانيتك مسبقًا</item>
         <item quantity="one">معاملة واحدة في ميزانيتك مسبقًا</item>
@@ -2606,8 +2629,6 @@
         <item quantity="many">\u2068%1$s\u2069 معاملة</item>
         <item quantity="other">\u2068%1$s\u2069 معاملة</item>
     </plurals>
-    <string name="sms_which_account">أي حساب هذا؟</string>
-    <string name="sms_remember_card">التذكّر لهذه الأرقام</string>
     <string name="sms_new_account">حساب جديد…</string>
     <string name="sms_card_skip">لا تُضِف هذه الرسائل</string>
     <string name="sms_card_skipped">لا تُضاف</string>
@@ -2712,8 +2733,10 @@
     <string name="sms_before_start">قبل الرصيد الافتتاحي لهذا الحساب</string>
     <string name="sms_tick_all">تحديد الكل</string>
     <string name="sms_untick_all">إلغاء تحديد الكل</string>
+    <string name="sms_tick_label">إضافة %1$s</string>
     <string name="sms_balances_title">الأرصدة بعد الإضافة</string>
     <string name="sms_balance_change">\u2068%1$s\u2069 ← \u2068%2$s\u2069</string>
+    <string name="sms_transfer_way">\u2068%1$s\u2069 ← \u2068%2$s\u2069</string>
     <plurals name="sms_balance_more">
         <item quantity="zero">ولا حسابات أخرى</item>
         <item quantity="one">وحساب آخر</item>
@@ -2730,7 +2753,7 @@
     <string name="sms_already_added">مضافة من قبل</string>
     <string name="sms_decide_title">هل هي في ميزانيتك مسبقًا؟</string>
     <string name="sms_decide_detail">تبدو هذه معاملة لديك مسبقًا. طابقها حتى لا تُحتسب مرتين، أو أضفها معاملةً جديدة.</string>
-    <string name="sms_show_message">الرسالة</string>
+    <string name="sms_show_message">إظهار الرسالة</string>
     <string name="sms_hide_message">إخفاء الرسالة</string>
     <string name="sms_enter">إدخالها</string>
     <string name="sms_is_transaction">إنها معاملة</string>
@@ -2824,12 +2847,12 @@
         <item quantity="other">\u2068%1$s\u2069 صف يحتاج إلى اختيارك</item>
     </plurals>
     <plurals name="sms_clears">
-        <item quantity="zero">لا يُمسح غيرها</item>
-        <item quantity="one">تُمسح رسالة أخرى</item>
-        <item quantity="two">تُمسح رسالتان أخريان</item>
-        <item quantity="few">تُمسح \u2068%1$s\u2069 رسائل أخرى</item>
-        <item quantity="many">تُمسح \u2068%1$s\u2069 رسالة أخرى</item>
-        <item quantity="other">تُمسح \u2068%1$s\u2069 رسالة أخرى</item>
+        <item quantity="zero">لا رسائل أخرى</item>
+        <item quantity="one">لن تُضاف رسالة أخرى</item>
+        <item quantity="two">لن تُضاف رسالتان أخريان</item>
+        <item quantity="few">لن تُضاف \u2068%1$s\u2069 رسائل أخرى</item>
+        <item quantity="many">لن تُضاف \u2068%1$s\u2069 رسالة أخرى</item>
+        <item quantity="other">لن تُضاف \u2068%1$s\u2069 رسالة أخرى</item>
     </plurals>
     <plurals name="sms_matches">
         <item quantity="zero">لا تُطابَق أي معاملة</item>
@@ -2857,21 +2880,21 @@
         <item quantity="other">إضافة \u2068%1$s\u2069 معاملة</item>
     </plurals>
     <plurals name="sms_clear">
-        <item quantity="zero">لا شيء للمسح</item>
-        <item quantity="one">مسح رسالة واحدة</item>
-        <item quantity="two">مسح رسالتين</item>
-        <item quantity="few">مسح \u2068%1$s\u2069 رسائل</item>
-        <item quantity="many">مسح \u2068%1$s\u2069 رسالة</item>
-        <item quantity="other">مسح \u2068%1$s\u2069 رسالة</item>
+        <item quantity="zero">لا شيء للتجاوز</item>
+        <item quantity="one">تجاوز رسالة واحدة</item>
+        <item quantity="two">تجاوز رسالتين</item>
+        <item quantity="few">تجاوز \u2068%1$s\u2069 رسائل</item>
+        <item quantity="many">تجاوز \u2068%1$s\u2069 رسالة</item>
+        <item quantity="other">تجاوز \u2068%1$s\u2069 رسالة</item>
     </plurals>
     <string name="sms_nothing">لا شيء للإضافة بعد</string>
     <plurals name="sms_clear_title">
-        <item quantity="zero">لا رسائل للمسح</item>
-        <item quantity="one">مسح رسالة واحدة؟</item>
-        <item quantity="two">مسح رسالتين؟</item>
-        <item quantity="few">مسح \u2068%1$s\u2069 رسائل؟</item>
-        <item quantity="many">مسح \u2068%1$s\u2069 رسالة؟</item>
-        <item quantity="other">مسح \u2068%1$s\u2069 رسالة؟</item>
+        <item quantity="zero">لا رسائل للتجاوز</item>
+        <item quantity="one">تجاوز رسالة واحدة؟</item>
+        <item quantity="two">تجاوز رسالتين؟</item>
+        <item quantity="few">تجاوز \u2068%1$s\u2069 رسائل؟</item>
+        <item quantity="many">تجاوز \u2068%1$s\u2069 رسالة؟</item>
+        <item quantity="other">تجاوز \u2068%1$s\u2069 رسالة؟</item>
     </plurals>
     <plurals name="sms_clear_detail">
         <item quantity="zero">لا رسائل تُمسح.</item>

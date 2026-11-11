@@ -61,6 +61,14 @@ In the order to deal with them:
    internal, blocks every change to the app, including the store listing, until you create a release
    that includes the declaration or removes the permission. Review can take up to several weeks, and
    the release stays pending until then.
+   The bundle also declares a foreground service since 11 November 2026
+   (`FOREGROUND_SERVICE_DATA_SYNC`, for `SmsReadingService`), which Play asks about under App
+   content, Foreground service permissions. Choose Data sync, and say: "When the person taps to
+   have their bank messages read, UrBudget sends the messages from the senders they chose to the
+   AI provider they connected, a request at a time, which can take several minutes. The service
+   keeps that going if they leave the app, shows a notification that opens Bank messages, and
+   ends when the reading does. It never starts by itself." Play wants a short video of it: start
+   a reading, leave the app, and show the notification. Not yet tried on a device.
 6. **Give the reviewer what bank texts need:** a working assistant and a test text on the phone. See
    [App access](#app-access).
 7. **Run the closed test.** At least 12 testers, opted in for 14 days in a row, before you can apply
@@ -281,8 +289,8 @@ Texts from chosen senders are sent to the AI provider the person connected, only
 3. From another phone, send this device: Purchase of 12.50 at City Market with card ending 1234. Balance 840.00.
 4. Open More, then Bank messages. Read the notice, tap Allow SMS access, and allow Android's prompt.
 5. In Senders, tap Show 1 phone number and tick that number. Under Collect, choose Everything on this phone, then tap Save.
-6. Tap Read them with OpenAI, read the sending notice, and tap Allow.
-7. When reading ends, tap Review. Make any choice it asks for, then tap Add 1 transaction.
+6. Tap Read them with OpenAI, read the sending notice, and tap Send to OpenAI.
+7. When reading ends, the review opens. Make any choice it asks for, then tap Add 1 transaction.
 To decline, deny Android's prompt: the rest of the app keeps working.
 ```
 

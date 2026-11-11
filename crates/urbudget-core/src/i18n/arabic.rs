@@ -84,6 +84,7 @@ pub(super) const MESSAGES: &[(&str, &str)] = &[
     ("Give the amount in the budget's currency.", "اذكر المبلغ بعملة الميزانية."),
     ("Check the card and account references.", "راجع أرقام البطاقات والحسابات."),
     ("Copy card and account references exactly from the message.", "انسخ أرقام البطاقات والحسابات من الرسالة كما هي."),
+    ("Copy the amounts from the message: the written amount, and the amount in the budget's currency, are numbers the message gives.", "انسخ المبالغ من الرسالة: المبلغ المكتوب والمبلغ بعملة الميزانية رقمان تذكرهما الرسالة."),
     ("Name the other account only for a transfer.", "اذكر الحساب الآخر للتحويل فقط."),
     ("Write a balance as a plain number, or leave it out.", "اكتب الرصيد رقمًا بسيطًا، أو اتركه."),
     ("Write the credit left as a plain number, or leave it out.", "اكتب الحد المتبقي رقمًا بسيطًا، أو اتركه."),

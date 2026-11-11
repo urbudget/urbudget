@@ -151,17 +151,17 @@ class SmsImportUiTest {
         assertEquals(0, analyses)
         compose.onNodeWithTag("sms-prepare").performClick()
         waitFor("sms-consent")
-        compose.onNodeWithText(context.getString(R.string.sms_send_confirm)).performClick()
-        waitFor("sms-review")
+        // The button names where it sends.
+        compose.onNodeWithTag("sms-consent-allow").assertTextEquals(context.getString(R.string.sms_send_confirm, "Anthropic")).performClick()
+        // A reading asked for with a tap opens its review when it's done.
+        waitFor("sms-review-page")
         assertEquals(1, analyses)
         assertEquals(before, vm.state.value.budget!!.getJSONArray("transactions").length())
         assertTrue(smsConsented(inbox.state(identity!!, "consent"), connection))
-        compose.onNodeWithTag("sms-needs").assertTextEquals(context.resources.getQuantityString(R.plurals.sms_to_review, 1, "1"))
         // Later keeps the review and the message.
-        compose.onNodeWithTag("sms-review").performClick()
-        waitFor("sms-review-page")
         compose.onNodeWithText(context.getString(R.string.sms_later_action)).performClick()
         waitFor("sms-review")
+        compose.onNodeWithTag("sms-needs").assertTextEquals(context.resources.getQuantityString(R.plurals.sms_to_review, 1, "1"))
         compose.runOnIdle { assertEquals(1, inbox.pendingCount(identity!!)) }
         assertNotNull(inbox.state(identity!!, "draft"))
         compose.onNodeWithTag("sms-review").performClick()
@@ -447,7 +447,8 @@ class SmsImportUiTest {
         waitFor("sms-needs")
         compose.onNodeWithTag("sms-needs").assertTextEquals(context.resources.getQuantityString(R.plurals.sms_to_review, 2, "2"))
         // New messages only, from now: the old text leaves the review and the inbox; the other stays read.
-        compose.onNodeWithText(context.getString(R.string.sms_collect)).performClick()
+        // Its row says what waits, and since when; where collecting starts is in its dialog.
+        compose.onNodeWithText(context.getString(R.string.sms_collecting)).performClick()
         compose.onNodeWithTag("choice-open:${context.getString(R.string.sms_history)}").performClick()
         compose.onNodeWithText(context.getString(R.string.sms_new_only)).performClick()
         compose.waitUntil(10_000) { compose.onAllNodesWithText(context.resources.getQuantityString(R.plurals.sms_size_takes_out, 1, "1")).fetchSemanticsNodes().isNotEmpty() }

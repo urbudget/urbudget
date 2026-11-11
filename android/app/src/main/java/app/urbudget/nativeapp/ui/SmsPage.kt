@@ -11,6 +11,13 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.atomic.AtomicReference
+
+/**
+ * Writes the review's edits in the storage lane, outside any page's scope: a tick made just before
+ * the page closes is still saved.
+ */
+private val smsDraftWrites = CoroutineScope(SupervisorJob() + smsStorageLane)
 
 /** What's stored for a budget's bank messages, read in one go and shown as one. */
 internal data class SmsStored(
@@ -34,7 +41,7 @@ internal data class SmsStored(
 }
 
 /** Texts to read, into [base] when they join the review that's open. */
-internal data class SmsPrepare(val messages: List<BankSms>, val note: String, val connection: JSONObject, val base: SmsBatch?)
+internal data class SmsPrepare(val messages: List<BankSms>, val note: String, val connection: JSONObject, val base: SmsBatch?, val open: Boolean = false)
 
 /**
  * What the page is doing besides reading, which [SmsReadings] owns: loading what's stored, saving a
@@ -85,19 +92,42 @@ internal class SmsPage(private val context: Context, val identity: String, priva
     private var budget: JSONObject? = null
     private var sorting: Job? = null
     @Volatile private var reloadQueued = false
+    /** The review as last edited, waiting to be written: a run of ticks is one write, of the latest. */
+    private val draft = AtomicReference<SmsBatch?>(null)
+    /** Changes under way that replace the review from storage: an edit to the one still shown is dropped. */
+    private var restoring = 0
+    /**
+     * A reading the user asked for with a tap opens its review when it's done: asked for when it's
+     * sent ([openWhenRead]), and due once a reading has ended ([opening]), so nothing else that
+     * sorts the review opens it.
+     */
+    private var openWhenRead = false
+    private var opening = false
 
     /** Reads what's stored, then follows readings: one that ends, here or in the background, leaves its review saved. */
     suspend fun start() {
         commit(SmsStage.Loading)
         var seen = SmsReadings.finished.value
-        SmsReadings.finished.collect { if (it != seen) { seen = it; commit(SmsStage.Idle, restore = true) } }
+        SmsReadings.finished.collect { if (it != seen) { seen = it; opening = openWhenRead; openWhenRead = false; commit(SmsStage.Idle, restore = true) } }
     }
 
     /** Permissions as Android has them now (after a prompt, or back from settings), then what's stored. */
     fun permissions() {
+        val was = allowed
         allowed = SmsReader.canRead(context); receiving = SmsReader.canReceive(context)
+        // Allowed since it was last said to be off: that's no longer so.
+        if (allowed && !was) error = null
         reload()
     }
+
+    /** After something failed: what's stored again, and what's waiting read as on a first visit. */
+    fun retry() {
+        error = null; started = false
+        reload()
+    }
+
+    /** Stops the reading under way, keeping what it has read; its review waits for a tap. */
+    fun stop() { openWhenRead = false; opening = false; SmsReadings.stop() }
 
     /** What's stored, again: the phone's texts may have changed. Requests while one waits are one. */
     fun reload() {
@@ -120,20 +150,29 @@ internal class SmsPage(private val context: Context, val identity: String, priva
      * Runs [change] on storage, then reads everything back and shows it at once. [restore] takes the
      * review from storage too (a change wrote it); otherwise the open one stays as the user left it.
      */
-    private fun commit(stage: SmsStage, restore: Boolean = false, change: () -> Unit = {}): Job = scope.launch {
-        lane.withLock {
-            if (stage != SmsStage.Idle) this@SmsPage.stage = stage
+    private fun commit(stage: SmsStage, restore: Boolean = false, change: () -> Unit = {}): Job {
+        if (restore) restoring++
+        return scope.launch {
             try {
-                val keep = if (restore) null else batch
-                val (next, review) = withContext(smsStorageLane) { change(); read(keep) }
-                stored = next
-                if (restore || batch == null) { batch = review; resort() }
-                connection = runCatching { analyzer.status() }.getOrNull()
-            } catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { error = failure.message }
-            finally { this@SmsPage.stage = SmsStage.Idle; loaded = true }
+                lane.withLock {
+                    if (stage != SmsStage.Idle) this@SmsPage.stage = stage
+                    try {
+                        val keep = if (restore) null else batch
+                        // The review's last edit is written first: the change may read the review from storage.
+                        val (next, review) = withContext(smsStorageLane) { writeDraft(); change(); read(keep) }
+                        stored = next
+                        if (restore || batch == null) { batch = review; resort() }
+                        connection = try { analyzer.status() } catch (cancel: CancellationException) { throw cancel } catch (_: Exception) { null }
+                    } catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { error = failure.message }
+                    finally { this@SmsPage.stage = SmsStage.Idle; loaded = true }
+                }
+            } finally { if (restore) restoring-- }
+            readWaiting()
         }
-        readWaiting()
     }
+
+    /** In the storage lane: the review as last edited, if an edit still waits to be written. */
+    private fun writeDraft() { draft.getAndSet(null)?.let { inbox.saveState(identity, "draft", it.saved()) } }
 
     /** Everything stored for the budget, and the review: [keep], or the saved one when there's none. */
     private fun read(keep: SmsBatch?): Pair<SmsStored, SmsBatch?> {
@@ -154,26 +193,32 @@ internal class SmsPage(private val context: Context, val identity: String, priva
         val current = connection ?: return
         if (started || !allowed || busy || lane.isLocked || SmsReadings.state.value != null || !current.optBoolean("ready") ||
             !smsConsented(stored.consent, current) || waiting.isEmpty()) return
-        send(SmsPrepare(waiting, "", current, batch))
+        send(SmsPrepare(waiting, "", current, batch), open = false)
     }
 
-    private fun send(request: SmsPrepare) {
+    /** Starts the reading; with [open], its review opens when it's done and something needs the user. */
+    private fun send(request: SmsPrepare, open: Boolean) {
         // A visit reads by itself once: what this reading leaves waiting is the user's to read.
         started = true
+        openWhenRead = open
         error = null; reviewing = false; sorted = null; sorting?.cancel()
         SmsReadings.start(context, analyzer, identity, request.connection, request.messages, request.note, request.base,
-            still = { SmsReader.canRead(context) && vm.state.value.budgetIdentity == identity }, failed = { error = it })
+            still = { SmsReader.canRead(context) && vm.state.value.budgetIdentity == identity }, failed = { error = it; openWhenRead = false; opening = false })
     }
 
-    /** Reads [chosen], into [base] when given; the first time for this assistant, the sending notice asks. */
-    fun prepare(chosen: List<BankSms>, note: String = "", base: SmsBatch? = null) {
+    /**
+     * Reads [chosen], into [base] when given; the first time for this assistant, the sending notice
+     * asks. Asked for with a tap ([open]), its review opens when it's done.
+     */
+    fun prepare(chosen: List<BankSms>, note: String = "", base: SmsBatch? = null, open: Boolean = true) {
         scope.launch {
             try {
                 // Asked fresh: the assistant's connection may have changed since the page opened.
                 val current = analyzer.status().also { connection = it }
                 check(current.optBoolean("ready")) { context.getString(R.string.sms_connect_assistant) }
-                val request = SmsPrepare(chosen, note, current, base)
-                if (smsConsented(stored.consent, current)) send(request) else asking = request
+                error = null
+                val request = SmsPrepare(chosen, note, current, base, open)
+                if (smsConsented(stored.consent, current)) send(request, open) else asking = request
             } catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { error = failure.message }
         }
     }
@@ -184,7 +229,7 @@ internal class SmsPage(private val context: Context, val identity: String, priva
         val saved = smsConsent(request.connection)
         stored = stored.copy(consent = saved)
         save("consent", saved)
-        send(request)
+        send(request, request.open)
     }
 
     fun revoke() {
@@ -202,11 +247,19 @@ internal class SmsPage(private val context: Context, val identity: String, priva
         scope.launch { try { withContext(smsStorageLane) { inbox.saveState(identity, name, value) } } catch (failure: Exception) { error = failure.message } }
     }
 
-    /** Changes the open review as it is now; a row drawn before the last change can't undo it. */
+    /**
+     * Changes the open review as it is now; a row drawn before the last change can't undo it. It's
+     * shown at once and written in the storage lane, where a run of ticks is one write of the latest:
+     * a review can hold a phone's whole history, too much to write out on every tick as it's made.
+     */
     fun edit(change: (SmsBatch) -> SmsBatch) {
+        // The review is being replaced from storage (it was just settled, or a reading added to it):
+        // an edit to the one still shown would be lost, or write it back over what replaced it.
+        if (restoring > 0) return
         val next = change(batch ?: return)
         batch = next
-        save("draft", next.saved())
+        draft.set(next)
+        smsDraftWrites.launch { try { writeDraft() } catch (failure: Exception) { error = failure.message } }
     }
 
     fun cards(value: JSONArray) {
@@ -232,7 +285,10 @@ internal class SmsPage(private val context: Context, val identity: String, priva
     }
 
     /** Dismisses waiting texts; an open review stays as it is. */
-    fun dismiss(ids: List<String>) = commit(SmsStage.Saving) { inbox.finish(identity, ids, endReview = false, outcomes = smsPlainOutcomes(ids, SmsOutcome.Dismissed)) }
+    fun dismiss(ids: List<String>): Job {
+        error = null
+        return commit(SmsStage.Saving) { inbox.finish(identity, ids, endReview = false, outcomes = smsPlainOutcomes(ids, SmsOutcome.Dismissed)) }
+    }
 
     /** Clears the open review's texts without adding anything: left waiting, they'd only be read again. */
     fun discard() { batch?.let { b -> b.messages.map { it.id }.let { ids -> finish(ids, outcomes = smsPlainOutcomes(ids, SmsOutcome.Discarded)) } } }
@@ -247,9 +303,10 @@ internal class SmsPage(private val context: Context, val identity: String, priva
             commit(SmsStage.Idle).join()
             if (SmsReadings.state.value != null) return@launch
             val open = batch
+            // The card was applied in the chat: the page shows what the reading found, and the review waits for a tap.
             when {
-                note.isNotBlank() && open != null -> prepare(open.messages + waiting, note)
-                waiting.isNotEmpty() -> prepare(waiting, note, base = open)
+                note.isNotBlank() && open != null -> prepare(open.messages + waiting, note, open = false)
+                waiting.isNotEmpty() -> prepare(waiting, note, base = open, open = false)
             }
         }
     }
@@ -259,7 +316,7 @@ internal class SmsPage(private val context: Context, val identity: String, priva
      * what's waiting; an earlier one brings older texts in, which this visit reads by itself.
      */
     fun collectFrom(from: Long) {
-        started = false; sorted = null
+        started = false; sorted = null; error = null
         commit(SmsStage.Saving, restore = true) {
             val kept = SmsBatch.restore(inbox.state(identity, "draft")) { ids -> inbox.waiting(identity, ids) }?.from(from)
             inbox.saveState(identity, "draft", kept?.saved())
@@ -269,7 +326,8 @@ internal class SmsPage(private val context: Context, val identity: String, priva
 
     /** The senders to collect from; the open review keeps what's read from the senders that stay. */
     fun senders(chosen: Set<String>, since: Long): Job {
-        sorted = null
+        // Whatever failed before isn't this save's: the picker closes when this one works.
+        sorted = null; error = null
         return commit(SmsStage.Saving, restore = true) {
             val kept = SmsBatch.restore(inbox.state(identity, "draft")) { ids -> inbox.waiting(identity, ids) }?.fromSenders(chosen.map(::smsSenderKey).toSet())
             inbox.configure(identity, chosen, since)
@@ -278,10 +336,10 @@ internal class SmsPage(private val context: Context, val identity: String, priva
     }
 
     /** Forgets the learned formats and payees: the assistant reads every format in full, and learns them again. */
-    fun forgetTemplates() = commit(SmsStage.Saving) { inbox.forgetTemplates(identity) }
+    fun forgetTemplates(): Job { error = null; return commit(SmsStage.Saving) { inbox.forgetTemplates(identity) } }
 
     /** Forgets one format: its texts are read in full again, and it's learned again. */
-    fun forgetTemplate(id: String) = commit(SmsStage.Saving) { inbox.forgetTemplate(identity, id) }
+    fun forgetTemplate(id: String): Job { error = null; return commit(SmsStage.Saving) { inbox.forgetTemplate(identity, id) } }
 
     /**
      * The user changed [fields] of a row before adding it. A changed date or amount counts against
@@ -301,7 +359,7 @@ internal class SmsPage(private val context: Context, val identity: String, priva
     }
 
     /** Stop and clear: the budget's texts, review, cards, senders and permissions. */
-    fun clear() { sorted = null; commit(SmsStage.Saving, restore = true) { inbox.clear(identity) } }
+    fun clear() { sorted = null; error = null; commit(SmsStage.Saving, restore = true) { inbox.clear(identity) } }
 
     /**
      * Sorts the open review by what it needs. When nothing does, it's settled without a question:
@@ -320,7 +378,15 @@ internal class SmsPage(private val context: Context, val identity: String, priva
                 val resolved = current.resolved(items)
                 val known = smsKnown(vm.smsPreview(budget, current, resolved), items, budget)
                 val result = smsSort(current, items, known)
-                if (result.needs > 0 || batch !== current) { if (batch === current) sorted = result; return@launch }
+                if (result.needs > 0 || batch !== current) {
+                    if (batch === current) {
+                        sorted = result
+                        // The reading the user asked for is done and something needs them: its review opens.
+                        if (opening) { opening = false; reviewing = true }
+                    }
+                    return@launch
+                }
+                opening = false
                 settle(current, items, resolved, known, result)
             } catch (cancel: CancellationException) { throw cancel } catch (failure: Exception) { error = failure.message }
         }
@@ -332,8 +398,11 @@ internal class SmsPage(private val context: Context, val identity: String, priva
         val summary = JSONObject().put("known", matching.size).put("skipped", JSONObject(result.skipped.groupingBy { it.skip.ifBlank { "unclear" } }.eachCount()))
         val handled = items.flatMap { item -> item.sources.map { it.id } }
         val outcomes = smsOutcomes(items, matching, current.dismissed)
-        if (matching.isEmpty()) finish(handled, summary, outcomes = outcomes)
-        else vm.runCommand("smsBatchApply", current.params(resolved).put("decisions", smsDecisions(matching))) { finish(handled, summary, outcomes = outcomes) }
+        if (matching.isEmpty()) { finish(handled, summary, outcomes = outcomes); return }
+        val failures = vm.operationFailureEpoch
+        vm.runCommand("smsBatchApply", current.params(resolved).put("decisions", smsDecisions(matching))) { finish(handled, summary, outcomes = outcomes) }
+        // Said by the count of failures, not by the message: the same one twice changes nothing to see.
+        vm.afterPending { if (vm.operationFailureEpoch != failures) failed(vm.state.value.error ?: context.getString(R.string.model_action_not_saved)) }
     }
 
     /** A budget command failed: settling stops, and says why. */
