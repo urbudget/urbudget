@@ -22,9 +22,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -36,7 +39,11 @@ import app.urbudget.nativeapp.R
 import app.urbudget.nativeapp.traced
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import app.urbudget.nativeapp.NativeServices
+import app.urbudget.nativeapp.isSampleBudget
+import app.urbudget.nativeapp.sampleExit
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -129,6 +136,7 @@ internal fun BudgetScreen(budget: JSONObject, summary: JSONObject?, month: Strin
     }
     val (assignedWidth, availableWidth) = widths
     val current = YearMonth.now().toString()
+    val sample = remember(budget) { isSampleBudget(budget) }
     // On a large screen an open category docks beside the budget rather than floating over it, so the
     // row tapped stays in view and another can be tapped straight away. Beside a hinge the budget keeps
     // to its side all along. The budget stays at one place in the layout, so it keeps its scroll.
@@ -214,6 +222,9 @@ internal fun BudgetScreen(budget: JSONObject, summary: JSONObject?, month: Strin
             if (row >= 0) budgetList.animateScrollToItem((budgetList.layoutInfo.totalItemsCount - tableRows.size + row).coerceAtLeast(0))
         }
         LazyColumn(Modifier.fillMaxSize().then(if (wide) Modifier.padding(horizontal = 10.dp) else Modifier).testTag("budget-list"), state = budgetList, contentPadding = PaddingValues(top = room, bottom = DockRoom)) {
+            if (sample) item(key = "sample", contentType = "notice") {
+                SampleBanner(budget, vm, Modifier.padding(horizontal = cardInset).padding(top = 4.dp, bottom = 8.dp))
+            }
             if (month != current) item(key = "today", contentType = "today") {
                 Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.Center) {
                     FilterPill(stringResource(R.string.month_back_to, shortMonthLabel(current)), false, { onMonth(current) }, Icons.Outlined.Today)
@@ -395,6 +406,69 @@ private fun OverspentCard(count: Int, modifier: Modifier = Modifier, cover: (() 
             Icon(Icons.Outlined.AutoAwesome, null, Modifier.size(18.dp), tint = ur.accent)
             Spacer(Modifier.width(8.dp))
             Text(stringResource(R.string.assistant_cover), color = ur.accent, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+/**
+ * Over a sample budget, as the desktop's banner: back to your own budget, deleting the sample on the
+ * way if you like. With no budget of your own yet, both create one first.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SampleBanner(budget: JSONObject, vm: BudgetViewModel, modifier: Modifier = Modifier) {
+    val scope = rememberCoroutineScope()
+    var library by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+    var working by remember { mutableStateOf(false) }
+    // The sample's library id while a budget of your own is made, and whether to delete it once that opens.
+    var creating by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    var name by remember { mutableStateOf("My budget") }
+    var currency by remember { mutableStateOf(budget.text("currency")) }
+    fun listBudgets() = (NativeServices.call("list_budgets") as JSONArray).let { list -> (0 until list.length()).mapNotNull(list::optJSONObject) }
+    LaunchedEffect(Unit) { runCatching { withContext(Dispatchers.IO) { listBudgets() } }.onSuccess { library = it } }
+    // Opens the budget to go back to and deletes the sample once it's closed; with none, starts one.
+    fun leave(delete: Boolean) {
+        if (working) return
+        working = true
+        scope.launch {
+            runCatching { withContext(Dispatchers.IO) { listBudgets() } }.onSuccess { list ->
+                library = list
+                val sample = list.firstOrNull { it.optBoolean("current") }?.text("id")
+                val target = sampleExit(budget, list)
+                if (sample != null && target != null) {
+                    vm.service("open_budget", JSONObject().put("id", target.text("id")), onError = { working = false; vm.notifyError(it) }) {
+                        if (delete) vm.service("delete_budget", JSONObject().put("id", sample))
+                    }
+                    return@onSuccess
+                }
+                if (sample != null) creating = sample to delete
+                working = false
+            }.onFailure { working = false; vm.notifyError(it.message ?: "Could not load budgets.") }
+        }
+    }
+    Column(modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(ur.accentSoft).padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row {
+            Icon(Icons.Outlined.AutoAwesome, null, Modifier.size(20.dp), tint = ur.accent)
+            Text(buildAnnotatedString {
+                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("This is a sample budget.") }
+                append(" Try anything here; your own budget is separate.")
+            }, Modifier.padding(start = 10.dp), color = ur.text, style = MaterialTheme.typography.bodyMedium)
+        }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            PrimaryButton(if (sampleExit(budget, library) != null) "Go to my budget" else "Create my budget", { leave(false) }, enabled = !working)
+            SecondaryButton("Delete sample", { leave(true) }, enabled = !working)
+        }
+    }
+    creating?.let { (sample, delete) ->
+        val currencies = remember { currencyChoices(budget.text("currency")) }
+        FormDialog("Create my budget", { creating = null }, "Create", enabled = name.isNotBlank() && currency.isNotBlank(), onConfirm = {
+            vm.createBudget(name, currency) { if (delete) vm.service("delete_budget", JSONObject().put("id", sample)) }
+            creating = null
+        }) {
+            Field(name, { name = it }, "Budget name")
+            Choice("Currency", currency, currencies, { currency = it })
+            Text("Next, add the accounts your money is in.${if (delete) " The sample budget is deleted once yours opens." else ""}",
+                color = ur.muted, style = MaterialTheme.typography.bodySmall)
         }
     }
 }

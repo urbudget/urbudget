@@ -194,6 +194,8 @@ class BudgetRepository(
         val params = JSONObject().put("name", name.trim()).put("currency", currency.uppercase()).put("month", month)
         val value = call(if (sample) "sampleBudget" else "defaultBudget", null, params) as? JSONObject
             ?: error(Words[R.string.model_invalid_budget])
+        // Marked as the desktop marks its sample, so Budget offers the way back out of it.
+        if (sample) value.put("sample", JSONObject())
         persist(value, retainPrevious = true, createNew = true, localOnly = localOnly)
     }
 
