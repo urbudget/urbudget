@@ -4,8 +4,10 @@ Prepared 5 November 2026 for Android 1.0.0, package `app.urbudget`. It replaces 
 which still sold a trial and a lifetime license.
 
 Google verified the developer's identity on 4 November 2026. The app was created in Play Console on
-5 November 2026 (app ID 4974677345566386693, free, category Finance) with this listing, and nothing
-has been sent to Google for review. No build has been uploaded.
+5 November 2026 (app ID 4974677345566386693, free, category Finance) with this listing. On
+12 November 2026 the first bundle, 1.0.0 (version code 1000000, signed on GitHub from `2ac1634` in
+[Android release run 43207103396](https://github.com/urbudget/urbudget/actions/runs/43207103396)),
+was uploaded to the closed test as a draft release. Nothing has been sent to Google for review.
 
 | Play Console task | State on 5 November 2026 |
 | --- | --- |
@@ -16,7 +18,10 @@ has been sent to Google for review. No build has been uploaded.
 | Data safety | Saved, with all 11 data types answered |
 | Sign in details | Saved by the owner, with the sharing switch for Google's test devices left on |
 | Target audience | Saved: 18 and over |
-| Closed test | Unlocked: needs countries, testers and a release. Send app for review stays disabled until then |
+| Closed test | Closed testing - Alpha, set up on 12 November 2026: all 178 countries, the "UrBudget Android testers" email list, feedback to `support@urbudget.app`, and draft release 1.0.0 with the bundle above. Play found the R8 mapping inside the bundle; it warns that native debug symbols weren't uploaded |
+| SMS declaration | Saved on 12 November 2026: SMS-based money management, the reviewer steps (shortened to Play's 500 characters from [the steps below](#sms-permission-declaration)), no video |
+| Foreground service | **Not saved.** Play takes Network processing, Other, only with a video link. It's what stops the draft release going to review |
+| Sign in details | Has the review account only. No assistant key yet, so a reviewer can't read bank texts |
 
 Managed publishing is off, so anything Google approves publishes straight away. Turn it on under
 Publishing overview before sending a release if launch day should be a manual choice.
@@ -72,7 +77,10 @@ In the order to deal with them:
 6. **Give the reviewer what bank texts need:** a working assistant and a test text on the phone. See
    [App access](#app-access).
 7. **Run the closed test.** At least 12 testers, opted in for 14 days in a row, before you can apply
-   for production. Google's review of that application usually takes 7 days or less.
+   for production. Google's review of that application usually takes 7 days or less. People join
+   from the home page's Android section; the admin page's Health tab copies their addresses for the
+   "UrBudget Android testers" list. Once the test is published, each opts in at
+   `https://play.google.com/apps/testing/app.urbudget` with the Google account they gave.
 8. **Decide on trader status.** See [Other forms](#other-forms).
 
 Also to do before release, from [MOBILE.md](../MOBILE.md#android-launch-configuration): create the
