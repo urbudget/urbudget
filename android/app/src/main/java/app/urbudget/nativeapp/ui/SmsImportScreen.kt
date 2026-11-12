@@ -214,6 +214,18 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
     }
     // Reading in the background works without notifications; with them, it says when something needs the user.
     val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { page.auto(true) }
+    // A reading started here goes on in a service when the app is left, and the service's notification is the way
+    // back; Android shows it only with permission to notify. Asked once, as the first reading starts. The reading
+    // doesn't wait for the answer: a yes starts the service again, which shows the notification of the reading under way.
+    val readingNotice = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted && SmsReadings.state.value != null) SmsReadingService.start(context)
+    }
+    LaunchedEffect(reading != null) {
+        if (reading != null && SmsReadingService.shouldAsk(context)) {
+            SmsReadingService.asked(context)
+            readingNotice.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
     DisposableEffect(lifecycle, context) {
         val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) page.permissions() }
         lifecycle.lifecycle.addObserver(observer)
@@ -231,7 +243,9 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
     LaunchedEffect(stored.messages) { selected = selected.intersect(stored.messages.mapTo(HashSet()) { it.id }) }
     LaunchedEffect(batch == null) { if (batch == null) discarding = false }
     val reviewBatch = batch?.takeIf { page.reviewing && page.allowed && reading == null }
-    DisposableEffect(selecting, reviewBatch != null) { setDockHidden(selecting || reviewBatch != null); onDispose { setDockHidden(false) } }
+    // Before SMS access the page is its disclosure, and the dock steps aside: nothing floats over Allow and Not now.
+    val disclosing = !page.allowed
+    DisposableEffect(selecting, reviewBatch != null, disclosing) { setDockHidden(selecting || reviewBatch != null || disclosing); onDispose { setDockHidden(false) } }
     androidx.activity.compose.BackHandler(selecting) { selecting = false; selected = emptySet() }
     val connection = page.connection
     val ready = page.ready
@@ -244,7 +258,8 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
         saveCards = page::cards, finish = { ids, rest, outcomes -> page.finish(ids, rest = rest, outcomes = outcomes) }, again = { note -> page.prepare(reviewBatch.messages, note) }, discard = { discarding = true },
         edited = page::edited, accuracy = stored.templates.accuracy)
     else Box(Modifier.fillMaxSize()) {
-        LazyColumn(Modifier.fillMaxSize().testTag("sms-inbox"), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 8.dp, bottom = if (selecting) 120.dp else DockRoom),
+        LazyColumn(Modifier.fillMaxSize().testTag("sms-inbox"), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 8.dp,
+            bottom = when { selecting -> 120.dp; disclosing -> 48.dp; else -> DockRoom }),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             // The assistant reads every text, so without one the page can do nothing: said first, before SMS access is asked for,
             // with the way there.
@@ -259,7 +274,9 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
                     Text(stringResource(R.string.sms_intro_title), style = MaterialTheme.typography.titleMedium, color = ur.text)
                     Text(stringResource(R.string.sms_intro), style = MaterialTheme.typography.bodyMedium, color = ur.text2)
                     Notice(stringResource(R.string.sms_disclosure), tone = "info")
-                    PrimaryButton(stringResource(R.string.sms_allow), { permission.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS)) }, Modifier.fillMaxWidth())
+                    // The answers come after the whole disclosure, so it's passed on the way to them.
+                    PrimaryButton(stringResource(R.string.sms_allow), { permission.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS)) },
+                        Modifier.fillMaxWidth().testTag("sms-allow"))
                     // A plain no beside Allow: the page closes and nothing is asked.
                     TextButton(decline, Modifier.align(Alignment.CenterHorizontally)) { Text(stringResource(R.string.sms_not_now), color = ur.accent) }
                     TextButton({ context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))) },
