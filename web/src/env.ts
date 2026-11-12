@@ -24,6 +24,11 @@ export interface Env {
   PLAY_REVIEW_EMAIL?: string;
   /** SHA-256 of `review:<lowercase email>:<random access code>`; keep as a Worker secret. */
   PLAY_REVIEW_CODE_HASH?: string;
+  /**
+   * More store review accounts, as a Worker secret: a JSON object of lowercase email to SHA-256 of
+   * `review:<email>:<code>`. The PLAY_REVIEW_* pair is App Review's; Google Play's reviewer has its own here.
+   */
+  REVIEW_ACCOUNTS?: string;
   /** "1" in local development: sign-in responses include the code, and emails are only logged. */
   DEV_LOGIN_CODES?: string;
   /** Enables first-time sync v2 setup/migration only. Absent in production until approved. */

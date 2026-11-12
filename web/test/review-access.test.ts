@@ -39,3 +39,22 @@ it("rate-limits review credential attempts", async () => {
   for (let i = 0; i < 20; i++) expect((await call("verify", { email, code: "wrong", client: "desktop" })).status).toBe(400);
   expect((await call("verify", { email, code, client: "desktop" })).status).toBe(429);
 });
+it("lets a second reviewer's account in from REVIEW_ACCOUNTS, each with only its own code", async () => {
+  const play = "play-review@example.com";
+  const playCode = "only-a-second-fixture-not-a-live-credential-987654321";
+  env.REVIEW_ACCOUNTS = JSON.stringify({ [play.toUpperCase()]: await sha256(`review:${play}:${playCode}`) });
+  expect(await (await call("start", { email: play })).json()).toEqual({ ok: true, reviewAccess: true });
+  expect((await call("verify", { email: play, code: playCode, client: "desktop" })).status).toBe(200);
+  expect((await call("verify", { email, code, client: "desktop" })).status).toBe(200);
+  expect((await call("verify", { email: play, code, client: "desktop" })).status).toBe(400);
+  expect((await call("verify", { email, code: playCode, client: "desktop" })).status).toBe(400);
+  expect((await call("verify", { email: play, code: playCode, client: "web" })).status).toBe(400);
+});
+it("enables no extra review account from a malformed REVIEW_ACCOUNTS, and keeps the first", async () => {
+  for (const setting of ["not json", "[]", JSON.stringify({ "play-review@example.com": "not-a-hash" })]) {
+    env.REVIEW_ACCOUNTS = setting;
+    const start = await (await call("start", { email: "play-review@example.com" })).json() as { reviewAccess?: boolean };
+    expect(start.reviewAccess).toBeUndefined();
+    expect((await call("verify", { email, code, client: "desktop" })).status).toBe(200);
+  }
+});
