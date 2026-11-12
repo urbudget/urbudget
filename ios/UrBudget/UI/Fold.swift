@@ -152,7 +152,12 @@ struct FoldReader: ViewModifier {
             .onChange(of: fold.posture, initial: true) { _, posture in FoldOrientation.follow(posture) }
     }
 
+    // The hinge and the fold's region are in the iOS 27.1 SDK (Xcode 27.1, Swift 6.4). An older
+    // Xcode has neither, and builds an app that knows only its window's size: every other
+    // iPhone and iPad is the same, and an iPhone Duo is a phone folded and a wide window open.
+    // A build for the store is made with Xcode 27.1 or later.
     @ViewBuilder private var reader: some View {
+        #if compiler(>=6.4) && !URBUDGET_NO_FOLD_SDK
         if #available(iOS 27.1, *) {
             GeometryReader { proxy in
                 // Read again whenever this is laid out or the hinge moves (which makes this view
@@ -165,13 +170,22 @@ struct FoldReader: ViewModifier {
             .onPreferenceChange(FoldProbeKey.self) { probe = $0 }
             .onHingeChange { _, context in posture = HingePosture(context.hinge) }
         } else {
-            GeometryReader { proxy in Color.clear.preference(key: FoldProbeKey.self, value: FoldProbe(window: proxy.size)) }
-                .ignoresSafeArea()
-                .onPreferenceChange(FoldProbeKey.self) { probe = $0 }
+            windowReader
         }
+        #else
+        windowReader
+        #endif
+    }
+
+    /// Without the hinge's reports: the window's size alone.
+    private var windowReader: some View {
+        GeometryReader { proxy in Color.clear.preference(key: FoldProbeKey.self, value: FoldProbe(window: proxy.size)) }
+            .ignoresSafeArea()
+            .onPreferenceChange(FoldProbeKey.self) { probe = $0 }
     }
 }
 
+#if compiler(>=6.4) && !URBUDGET_NO_FOLD_SDK
 @available(iOS 27.1, *)
 extension HingePosture {
     init(_ hinge: DeviceHinge?) {
@@ -184,6 +198,7 @@ extension HingePosture {
         }
     }
 }
+#endif
 
 /// An iPhone stays upright, as the app always has. Unfolded, a Duo turns with the hand, so it can
 /// stand half open on a table with the fold running across. The app delegate asks this which
