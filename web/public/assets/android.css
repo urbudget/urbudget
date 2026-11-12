@@ -1,0 +1,122 @@
+/* The Android test: its section on the home page and its own page, /android/. */
+
+.droid-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 var(--space-4);
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--brand-line);
+  border-radius: 999px;
+  background: var(--brand-softer);
+  color: var(--brand-text);
+  font-size: var(--step--1);
+  font-weight: 650;
+}
+.droid-grid {
+  display: grid;
+  gap: var(--space-7);
+  align-items: center;
+}
+@media (min-width: 900px) {
+  .droid-grid {
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
+    gap: clamp(2.5rem, 5vw, 5rem);
+  }
+}
+.droid-copy h1,
+.droid-copy h2 {
+  font-size: clamp(2rem, 1.5rem + 2vw, 3.1rem);
+}
+.droid-copy .lead {
+  margin-top: var(--space-4);
+}
+.droid-copy > .muted {
+  margin-top: var(--space-4);
+  color: var(--text-3);
+  font-size: var(--step--1);
+}
+.droid-form {
+  margin-top: var(--space-6);
+  max-width: 34rem;
+}
+.droid-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.droid-row .input {
+  flex: 1 1 15rem;
+  width: auto;
+}
+.droid-row .btn {
+  flex: none;
+  min-height: 48px;
+}
+@media (max-width: 480px) {
+  .droid-row .btn {
+    flex: 1 1 100%;
+  }
+}
+.droid-status:empty {
+  display: none;
+}
+.droid-status {
+  margin-top: var(--space-3);
+  font-size: var(--step--1);
+  font-weight: 600;
+}
+.droid-status.is-error {
+  color: var(--danger);
+}
+.droid-status.is-success {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--success-line);
+  border-radius: var(--radius);
+  background: var(--success-bg);
+  color: var(--success);
+}
+/* The phone: the Play listing's screen in a slim bezel, the same glass the desktop shots have. */
+.droid-phone {
+  justify-self: center;
+  width: min(100%, 330px);
+  margin: 0;
+  padding: 9px;
+  border: 1px solid var(--bezel-edge);
+  border-radius: 46px;
+  background: var(--bezel-glass);
+  box-shadow: var(--bezel-shadow);
+}
+.droid-phone img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 36px;
+}
+
+/* The same ticks as the home page's, for the page that doesn't load home.css. */
+.droid .ticks {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-5) 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-2);
+}
+.droid .ticks li {
+  position: relative;
+  padding-left: 1.75rem;
+}
+.droid .ticks li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.42em;
+  width: 0.95rem;
+  height: 0.95rem;
+  border-radius: 50%;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 8.3l2.2 2.2 4.8-5' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+      center / 100% no-repeat,
+    var(--brand);
+}
