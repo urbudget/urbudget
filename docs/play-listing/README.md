@@ -19,8 +19,8 @@ was uploaded to the closed test as a draft release. Nothing has been sent to Goo
 | Sign in details | Saved by the owner, with the sharing switch for Google's test devices left on |
 | Target audience | Saved: 18 and over |
 | Closed test | Closed testing - Alpha, set up on 12 November 2026: all 178 countries, the "UrBudget Android testers" email list, feedback to `support@urbudget.app`, and draft release 1.0.0 with the bundle above. Play found the R8 mapping inside the bundle; it warns that native debug symbols weren't uploaded |
-| SMS declaration | Saved on 12 November 2026: SMS-based money management, the reviewer steps (shortened to Play's 500 characters from [the steps below](#sms-permission-declaration)), no video |
-| Foreground service | **Not saved.** Play takes Network processing, Other, only with a video link. It's what stops the draft release going to review |
+| SMS declaration | Saved on 12 November 2026: SMS-based money management, the reviewer steps (shortened to Play's 500 characters from [the steps below](#sms-permission-declaration)), and the [walkthrough video](#the-videos) |
+| Foreground service | Saved on 12 November 2026: Network processing, Other, with the [service video](#the-videos). The draft release has no errors left, only Play's warning that native debug symbols weren't uploaded. It's saved in Publishing overview, which offers to submit 15 changes for review. Nothing has been submitted |
 | Sign in details | Has the review account only. No assistant key yet, so a reviewer can't read bank texts |
 
 Managed publishing is off, so anything Google approves publishes straight away. Turn it on under
@@ -95,6 +95,34 @@ Also to do before release, from [MOBILE.md](../MOBILE.md#android-launch-configur
 - **YNAB's personal access token.** YNAB says these tokens are for the account owner and shouldn't
   be shared, and that OAuth is the only option for apps other people use. The listing only mentions
   export files. The app still offers the token, so ask YNAB or move to OAuth before a Play release.
+
+## The videos
+
+Recorded on 12 November 2026 on a Galaxy Z Fold (cover screen) with the 1.0.0 bundle uploaded to the
+closed test, installed from it with bundletool and the debug key. The sample budget, assistant
+connected with a ChatGPT plan, and made-up bank texts the phone sent to its own number: Android
+hides texts that `adb` writes into the SMS store from every app, so they have to arrive as real SMS.
+The phone number, the phone's real senders, its home screen and other notifications are blurred, and
+a text-recognition pass over every 0.1 s of both videos found none of them readable. Both are in the
+developer account's Google Drive, shared with anyone who has the link:
+
+- [SMS permission walkthrough](https://drive.google.com/file/d/1t096WVFuideQfhXCD2Ab_PhkEssEBziy/view?usp=sharing),
+  2:03: opening the app, the disclosure, declining and carrying on, the disclosure again, allowing,
+  Android's prompt, choosing the sender, the sending notice naming ChatGPT, the review and adding.
+- [Foreground service](https://drive.google.com/file/d/1qtx2mzY21KDw_kBZgk2gUqFogeQE6NTs/view?usp=sharing),
+  0:27: starting a reading, leaving the app, the notification, and it going when the reading ends.
+
+What the recording found:
+
+- **The reading's notification needs notification permission, which a fresh install doesn't ask
+  for.** `SmsReadingService` runs without it, but its notification isn't shown, and the app asks for
+  `POST_NOTIFICATIONS` only when "Read new texts as they arrive" is turned on. The service video was
+  recorded after allowing notifications. A reviewer following the steps on a fresh install won't see
+  the notification the declaration describes.
+- **On the Fold's cover screen, the disclosure's Allow SMS access button starts under the floating tab
+  bar**, with Not now half covered, until the page is scrolled.
+- A reading of a few texts in a format the assistant already learned ends in seconds, so the
+  notification is gone almost at once; new formats keep it up longer.
 
 ## Store listing
 
