@@ -240,6 +240,15 @@
     <!-- Health -->
     <section id="panel-health" class="tab-panel" role="tabpanel" aria-labelledby="tab-health" tabindex="0" hidden>
       <section class="panel">
+        <h2 class="h3">Android testers</h2>
+        <p class="muted small">Addresses people left on the home page to test the Android app before it's on Google Play. Paste them into Play Console's closed test (Test and release, Closed testing, Testers, the UrBudget Android testers list), then send them the opt-in link. Delete them all once the app is on Google Play.</p>
+        <div class="form-row">
+          <button id="android-testers-copy" class="btn btn-sm" type="button" disabled>Copy addresses</button>
+        </div>
+        <div class="table-wrap"><table class="data-table" id="android-testers"><thead><tr><th>Email</th><th>Signed up</th><th><span class="visually-hidden">Remove</span></th></tr></thead><tbody></tbody></table></div>
+        <p id="android-testers-status" class="small" role="status"></p>
+      </section>
+      <section class="panel">
         <h2 class="h3">Assistant reports</h2>
         <p class="muted small">Text people explicitly submitted for review, with no account or conversation attached. Review harmful or inappropriate replies and remove reports when finished. Daily cleanup deletes reports older than 90 days.</p>
         <div id="assistant-reports" class="assistant-reports"></div>

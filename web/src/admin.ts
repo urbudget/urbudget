@@ -55,6 +55,27 @@ admin.delete("/assistant-reports/:id", async (c) => {
   return c.json({ ok: true });
 });
 
+/** Android test sign-ups, all of them: Play's closed test takes the addresses as one list. */
+admin.get("/android-testers", async (c) => {
+  const testers = await c.env.DB.prepare(
+    "SELECT email, created_at AS createdAt FROM android_testers ORDER BY created_at DESC, email",
+  ).all<{ email: string; createdAt: string }>();
+  return c.json({ testers: testers.results });
+});
+
+admin.delete("/android-testers/:email", async (c) => {
+  const email = c.req.param("email").trim().toLowerCase();
+  const tester = await c.env.DB.prepare("SELECT email FROM android_testers WHERE email = ?1").bind(email).first();
+  if (!tester) throw new ApiError(404, "not_found", "That address is already gone.");
+  await c.env.DB.batch([
+    c.env.DB.prepare("DELETE FROM android_testers WHERE email = ?1").bind(email),
+    // Who removed one and when, not whose address it was.
+    c.env.DB.prepare("INSERT INTO admin_log (at, admin, action, detail) VALUES (?1, ?2, ?3, '')")
+      .bind(now(), c.get("admin"), "delete_android_tester"),
+  ]);
+  return c.json({ ok: true });
+});
+
 /* ---------- Overview ---------- */
 
 /** In SQL: the Monday on or before a YYYY-MM-DD day. */

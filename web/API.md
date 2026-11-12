@@ -92,6 +92,14 @@ day. Only the submitted text, optional reason, random reference and received tim
 no account, attachments or other conversation context is collected. Daily cleanup deletes
 reports older than 90 days. A deployment must apply migration 0007 before accepting reports.
 
+## Android test sign-up
+
+`POST /android-testers` requires no account and accepts only `{ email }` as JSON. The address is
+trimmed and lowercased; a repeat is accepted without a second row, so the answer (201
+`{ ok: true }`) never says whether it was already there. Nothing is emailed. Limits are five
+requests per hour per daily IP hash, plus 2,000 globally per day. A deployment must apply
+migration 0013 before the home page's Android form works.
+
 ## Admin (behind Cloudflare Access)
 
 For the page at `/admin/`. Every request needs the `Cf-Access-Jwt-Assertion` header Cloudflare Access adds, signed for
@@ -111,6 +119,8 @@ the site's own origin (403 `bad_origin`). Each change is written to the admin lo
 | `GET /admin/health` | | `{ activity, emails, countingSince, lastCleanup, problems, webhooks, webhookTypes, settings }`: daily counts of sign-ins, emails, checkouts, sync uploads and account deletions (`[{ name, detail, last7, last30 }]`, see `migrations/0006_events.sql`), emails sent today and this month against Resend's limits, when the daily clean-up last ran, failed emails and webhooks and rate limits hit (90 days), recent webhooks, and which secrets are set |
 | `GET /admin/assistant-reports?offset=0` | | `{ reports: [{ id, createdAt, reply, reason }], hasMore }`, 50 reports per page, newest first |
 | `DELETE /admin/assistant-reports/:id` | | `{ ok: true }`. Deletes the report and records only its ID in the admin action log |
+| `GET /admin/android-testers` | | `{ testers: [{ email, createdAt }] }`, every Android test sign-up, newest first |
+| `DELETE /admin/android-testers/:email` | | `{ ok: true }`. Removes the address and records only that one was removed in the admin action log |
 
 Older days also count license activations (`activation`) and license checkouts (`checkout` with
 detail `license`) from before UrBudget became free; nothing counts them now.

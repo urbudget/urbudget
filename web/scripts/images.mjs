@@ -245,10 +245,41 @@ async function stampScreenshotSizes() {
   }
 }
 
+/**
+ * The home page's Android section: the phone's screen from the Play listing's Bank messages
+ * screenshot (docs/play-listing/graphics), without its caption, with the screen's own round
+ * corners cut out. Its region and radius are in that 1440×2560 image's pixels.
+ */
+const PHONE = {
+  name: "phone-bank-messages",
+  src: resolve(root, "..", "docs", "play-listing", "graphics", "2-bank-messages.png"),
+  region: { left: 268, top: 568, width: 904, height: 1935 },
+  radius: 88,
+  widths: [360, 720],
+};
+
+async function phoneShots() {
+  const { region, radius } = PHONE;
+  const mask = Buffer.from(
+    `<svg width="${region.width}" height="${region.height}"><rect width="${region.width}" height="${region.height}" rx="${radius}" ry="${radius}"/></svg>`,
+  );
+  const screen = await sharp(PHONE.src).extract(region).ensureAlpha()
+    .composite([{ input: mask, blend: "dest-in" }]).png().toBuffer();
+  for (const width of PHONE.widths) {
+    const file = join(out, `${PHONE.name}-${width}.webp`);
+    const size = await writeWebp(sharp(screen).resize({ width, kernel: "lanczos3" }), file);
+    console.log(`${PHONE.name}-${width}.webp  ${width}×${Math.round((region.height * width) / region.width)}  ${kb(size)}`);
+  }
+}
+
 await mkdir(out, { recursive: true });
-await icons();
-await screenshots();
-await ogImage();
+// `node scripts/images.mjs phone` remakes only the phone pictures, without the desktop screenshots.
+if (process.argv[2] !== "phone") {
+  await icons();
+  await screenshots();
+  await ogImage();
+}
+await phoneShots();
 await stampScreenshotSizes();
 await stampImageVersions();
 console.log(`WebP screenshots in total: ${kb(total)}`);

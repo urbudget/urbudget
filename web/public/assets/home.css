@@ -1228,7 +1228,8 @@ g.is-hot > .rw-hit {
 .ai-head {
   max-width: 760px;
 }
-.ai-kicker {
+.ai-kicker,
+.droid-kicker {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
@@ -2547,4 +2548,86 @@ g.is-hot > .rw-hit {
   .ai-think {
     animation: none !important;
   }
+}
+
+/* ---------- Android: the Play test and the list to join it ---------- */
+
+.droid-grid {
+  display: grid;
+  gap: var(--space-7);
+  align-items: center;
+}
+@media (min-width: 900px) {
+  .droid-grid {
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
+    gap: clamp(2.5rem, 5vw, 5rem);
+  }
+}
+.droid-copy h2 {
+  font-size: clamp(2rem, 1.5rem + 2vw, 3.1rem);
+}
+.droid-copy .lead {
+  margin-top: var(--space-4);
+}
+.droid-copy > .muted {
+  margin-top: var(--space-4);
+  color: var(--text-3);
+  font-size: var(--step--1);
+}
+.droid-form {
+  margin-top: var(--space-6);
+  max-width: 34rem;
+}
+.droid-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.droid-row .input {
+  flex: 1 1 15rem;
+  width: auto;
+}
+.droid-row .btn {
+  flex: none;
+  min-height: 48px;
+}
+@media (max-width: 480px) {
+  .droid-row .btn {
+    flex: 1 1 100%;
+  }
+}
+.droid-status:empty {
+  display: none;
+}
+.droid-status {
+  margin-top: var(--space-3);
+  font-size: var(--step--1);
+  font-weight: 600;
+}
+.droid-status.is-error {
+  color: var(--danger);
+}
+.droid-status.is-success {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--success-line);
+  border-radius: var(--radius);
+  background: var(--success-bg);
+  color: var(--success);
+}
+/* The phone: the Play listing's screen in a slim bezel, the same glass the desktop shots have. */
+.droid-phone {
+  justify-self: center;
+  width: min(100%, 330px);
+  margin: 0;
+  padding: 9px;
+  border: 1px solid var(--bezel-edge);
+  border-radius: 46px;
+  background: var(--bezel-glass);
+  box-shadow: var(--bezel-shadow);
+}
+.droid-phone img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 36px;
 }

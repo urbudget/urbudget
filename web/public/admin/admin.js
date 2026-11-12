@@ -1372,7 +1372,41 @@ async function loadAssistantReports(offset = reportOffset) {
 $("assistant-reports-newer").addEventListener("click", () => loadAssistantReports(Math.max(0, reportOffset - 50)));
 $("assistant-reports-older").addEventListener("click", () => loadAssistantReports(reportOffset + 50));
 
+let androidTesters = [];
+
+async function loadAndroidTesters() {
+  setStatus($("android-testers-status"), "");
+  try {
+    androidTesters = (await api("/admin/android-testers")).testers;
+  } catch (error) {
+    setStatus($("android-testers-status"), error.message, "error");
+    return;
+  }
+  $("android-testers-copy").disabled = !androidTesters.length;
+  $("android-testers-copy").textContent = androidTesters.length ? `Copy ${plural(androidTesters.length, "address", "addresses")}` : "Copy addresses";
+  fillTable($("android-testers"), androidTesters.map((tester) => {
+    const remove = h("button", { class: "btn btn-sm", type: "button", onclick: async () => {
+      if (!window.confirm(`Remove ${tester.email} from the Android testers? This cannot be undone.`)) return;
+      remove.disabled = true;
+      try {
+        await api(`/admin/android-testers/${encodeURIComponent(tester.email)}`, { method: "DELETE" });
+        loaded.delete("log");
+        await loadAndroidTesters();
+      } catch (error) {
+        setStatus($("android-testers-status"), error.message, "error");
+        remove.disabled = false;
+      }
+    } }, "Remove");
+    return h("tr", {}, h("td", {}, tester.email), h("td", {}, when(tester.createdAt)), h("td", { class: "num" }, remove));
+  }), "No one has signed up yet.");
+}
+
+// Play Console's email list takes addresses separated by commas.
+$("android-testers-copy").addEventListener("click", (event) =>
+  copyText(androidTesters.map((tester) => tester.email).join(", "), event.currentTarget));
+
 loaders.health = async () => {
+  await loadAndroidTesters();
   await loadAssistantReports();
   const data = await api("/admin/health");
   const mail = data.emails;
@@ -1437,7 +1471,7 @@ loaders.health = async () => {
 
 /* ---------- Log ---------- */
 
-const ACTIONS = { delete_assistant_report: "Deleted assistant report" };
+const ACTIONS = { delete_assistant_report: "Deleted assistant report", delete_android_tester: "Removed an Android tester" };
 
 loaders.log = async () => {
   const { entries } = await api("/admin/log");

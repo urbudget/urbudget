@@ -4,8 +4,11 @@ Prepared 5 November 2026 for Android 1.0.0, package `app.urbudget`. It replaces 
 which still sold a trial and a lifetime license.
 
 Google verified the developer's identity on 4 November 2026. The app was created in Play Console on
-5 November 2026 (app ID 4974677345566386693, free, category Finance) with this listing, and nothing
-has been sent to Google for review. No build has been uploaded.
+5 November 2026 (app ID 4974677345566386693, free, category Finance) with this listing. On
+12 November 2026 the first bundle, 1.0.0 (version code 1000000, signed on GitHub from `2ac1634` in
+[Android release run 43207103396](https://github.com/urbudget/urbudget/actions/runs/43207103396)),
+was uploaded to the closed test as a draft release, and replaced the same day by 1.0.1. Everything was
+sent to Google for review on 12 November 2026.
 
 | Play Console task | State on 5 November 2026 |
 | --- | --- |
@@ -16,7 +19,10 @@ has been sent to Google for review. No build has been uploaded.
 | Data safety | Saved, with all 11 data types answered |
 | Sign in details | Saved by the owner, with the sharing switch for Google's test devices left on |
 | Target audience | Saved: 18 and over |
-| Closed test | Unlocked: needs countries, testers and a release. Send app for review stays disabled until then |
+| Closed test | Closed testing - Alpha, set up on 12 November 2026: all 178 countries, the "UrBudget Android testers" email list, feedback to `support@urbudget.app`, and release 1.0.1 (version code 1000001, from [#26](https://github.com/urbudget/urbudget/pull/26)), which superseded the first draft, 1.0.0. No errors; Play warns that native debug symbols weren't uploaded. Sent for review on 12 November 2026 with the other 14 changes waiting in Publishing overview (store listing, content rating, target audience, privacy policy, ads, data safety, health and the app category) |
+| SMS declaration | Saved on 12 November 2026: SMS-based money management, the reviewer steps (shortened to Play's 500 characters from [the steps below](#sms-permission-declaration)), and the [walkthrough video](#the-videos) |
+| Foreground service | Saved on 12 November 2026: Network processing, Other, with the [service video](#the-videos). The draft release has no errors left, only Play's warning that native debug symbols weren't uploaded. It's saved in Publishing overview, which offers to submit 15 changes for review. Nothing has been submitted |
+| Sign in details | Ready on 12 November 2026. "Review account (Google Play)" is `play-review@urbudget.app`, Google Play's own review account with complimentary Sync ([#27](https://github.com/urbudget/urbudget/pull/27)); its code is in Password and its sync passphrase in the instructions. "Assistant for Bank messages" carries a capped OpenAI key at the end of its instructions, since Password takes only 100 characters. The App Store keeps `review@urbudget.app` |
 
 Managed publishing is off, so anything Google approves publishes straight away. Turn it on under
 Publishing overview before sending a release if launch day should be a manual choice.
@@ -72,7 +78,10 @@ In the order to deal with them:
 6. **Give the reviewer what bank texts need:** a working assistant and a test text on the phone. See
    [App access](#app-access).
 7. **Run the closed test.** At least 12 testers, opted in for 14 days in a row, before you can apply
-   for production. Google's review of that application usually takes 7 days or less.
+   for production. Google's review of that application usually takes 7 days or less. People join
+   from the home page's Android section; the admin page's Health tab copies their addresses for the
+   "UrBudget Android testers" list. Once the test is published, each opts in at
+   `https://play.google.com/apps/testing/app.urbudget` with the Google account they gave.
 8. **Decide on trader status.** See [Other forms](#other-forms).
 
 Also to do before release, from [MOBILE.md](../MOBILE.md#android-launch-configuration): create the
@@ -87,6 +96,36 @@ Also to do before release, from [MOBILE.md](../MOBILE.md#android-launch-configur
 - **YNAB's personal access token.** YNAB says these tokens are for the account owner and shouldn't
   be shared, and that OAuth is the only option for apps other people use. The listing only mentions
   export files. The app still offers the token, so ask YNAB or move to OAuth before a Play release.
+
+## The videos
+
+Recorded on 12 November 2026 on a Galaxy Z Fold (cover screen) with the 1.0.0 bundle uploaded to the
+closed test, installed from it with bundletool and the debug key. The sample budget, assistant
+connected with a ChatGPT plan, and made-up bank texts the phone sent to its own number: Android
+hides texts that `adb` writes into the SMS store from every app, so they have to arrive as real SMS.
+The phone number, the phone's real senders, its home screen and other notifications are blurred, and
+a text-recognition pass over every 0.1 s of both videos found none of them readable. Both are in the
+developer account's Google Drive, shared with anyone who has the link:
+
+- [SMS permission walkthrough](https://drive.google.com/file/d/1t096WVFuideQfhXCD2Ab_PhkEssEBziy/view?usp=sharing),
+  2:03: opening the app, the disclosure, declining and carrying on, the disclosure again, allowing,
+  Android's prompt, choosing the sender, the sending notice naming ChatGPT, the review and adding.
+- [Foreground service](https://drive.google.com/file/d/1qtx2mzY21KDw_kBZgk2gUqFogeQE6NTs/view?usp=sharing),
+  0:27: starting a reading, leaving the app, the notification, and it going when the reading ends.
+
+What the recording found, both fixed in 1.0.1 ([#26](https://github.com/urbudget/urbudget/pull/26)):
+
+- **The reading's notification needed notification permission, which a fresh install didn't ask
+  for.** `SmsReadingService` ran without it, but its notification wasn't shown, because the app asked for
+  `POST_NOTIFICATIONS` only when "Read new texts as they arrive" was turned on. The service video was
+  recorded after allowing notifications by hand. 1.0.1 asks once as the first reading starts, and was
+  tried on the Fold with a fresh install: the prompt came, the notification showed, and it went when the
+  reading ended.
+- **On the Fold's cover screen, the disclosure's Allow SMS access button started under the floating tab
+  bar**, with Not now half covered, until the page was scrolled. In 1.0.1 the tab bar steps aside while
+  the disclosure shows, and the buttons stay after the whole disclosure.
+- A reading of a few texts in a format the assistant already learned ends in seconds, so the
+  notification is gone almost at once; new formats keep it up longer.
 
 ## Store listing
 
