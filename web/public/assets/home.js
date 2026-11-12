@@ -3,7 +3,6 @@
 // is in home.css.
 
 import { assistantDemo } from "./ai-demo.js";
-import { api } from "./api.js";
 import { showOnce } from "./ghost.js";
 import { reports } from "./reports.js";
 
@@ -193,45 +192,7 @@ function cipher() {
   observer.observe(root);
 }
 
-/* ---------- Joining the Android test ---------- */
-
-function androidSignup() {
-  const form = document.getElementById("android-form");
-  if (!form) return;
-  const input = form.querySelector("#android-email");
-  const button = form.querySelector("#android-submit");
-  const status = form.querySelector("#android-status");
-  const say = (message, kind) => {
-    status.textContent = message;
-    status.classList.toggle("is-error", kind === "error");
-    status.classList.toggle("is-success", kind === "success");
-  };
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const email = input.value.trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      say("Enter the email address of your Google account.", "error");
-      input.setAttribute("aria-invalid", "true");
-      input.focus();
-      return;
-    }
-    input.removeAttribute("aria-invalid");
-    button.disabled = true;
-    say("");
-    try {
-      await api("/android-testers", { method: "POST", body: { email } });
-      say(`You're on the list. When Google has approved the test, we'll send the link to ${email}.`, "success");
-      input.value = "";
-    } catch (error) {
-      say(error.message, "error");
-    } finally {
-      button.disabled = false;
-    }
-  });
-}
-
 downloadLabel();
-androidSignup();
 demo();
 tour();
 reports();

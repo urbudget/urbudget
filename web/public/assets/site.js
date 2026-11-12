@@ -286,11 +286,30 @@ function countVisit() {
   }
 }
 
+/**
+ * On an Android device the Windows and Mac installers are no use, and the Android app is in testing:
+ * the header's Download button, and any labelled download button (the home page's), lead to the test.
+ */
+function androidVisitors() {
+  if (!/android/i.test(navigator.userAgent)) return;
+  for (const link of document.querySelectorAll("a.header-download")) {
+    link.href = "/android/";
+    link.textContent = "Android test";
+  }
+  for (const label of document.querySelectorAll("[data-download-label]")) {
+    const link = label.closest("a");
+    if (!link) continue;
+    link.href = "/android/";
+    label.textContent = "Join the Android test";
+  }
+}
+
 // A page that loads this file under two addresses (site.js?v=2 in its HTML, site.js from an
 // older cached page script) gets two copies of it; only the first wires up the page.
 if (!globalThis.urbudgetSiteReady) {
   globalThis.urbudgetSiteReady = true;
   header();
+  androidVisitors();
   themeToggle();
   navGroups();
   tabs();
