@@ -52,6 +52,8 @@ class SmsImportUiTest {
     private fun fixture(tag: String, empty: Boolean = false, rows: (JSONObject) -> List<JSONObject> = { emptyList() }): BudgetViewModel {
         instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.READ_SMS)
         instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.RECEIVE_SMS)
+        // Allowed already, so a reading's start doesn't put Android's question to notify over the page under test.
+        if (android.os.Build.VERSION.SDK_INT >= 33) instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
         lateinit var vm: BudgetViewModel
         instrumentation.runOnMainSync { vm = BudgetViewModel(context.applicationContext as Application); store.put(tag, vm) }
         val name = "SMS $tag ${UUID.randomUUID()}"

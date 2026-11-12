@@ -105,6 +105,8 @@ intents and Print / Save as PDF.
 
 **More → Bank messages** (also **Settings & data → Imports → Bank messages**) turns the
 texts a bank sends to this phone into transactions. It is opt-in: after the disclosure
+(Allow SMS access and Not now come after the whole of it, and the tab bar steps aside so
+nothing floats over them)
 and Android's permission prompts, choose the senders your bank texts from (up to 50).
 The picker lists names and short codes first, by how many messages each has sent (SMS
 and MMS together), already chosen ones first; a numeric short code shows its latest
@@ -170,7 +172,11 @@ for leave the review a tap away.
 Readings continue when the page closes, and when the app is left: a reading started from the
 page runs under a foreground service (`SmsReadingService`, type `dataSync`, with a quiet
 notification that opens the page) for as long as it lasts, since Android pauses an app that's
-out of sight within seconds and the request under way would time out and be sent again. A
+out of sight within seconds and the request under way would time out and be sent again. Android
+shows that notification only with permission to notify, so the page asks for `POST_NOTIFICATIONS`
+once, as the first reading starts; the reading doesn't wait for the answer, and a yes shows the
+notification of the reading under way. Without it the service still runs, and Android lists the
+app among its active ones. A
 request that fails after running 45 seconds or more (it ran out of time, or its answer never
 passed the check) keeps what's been read and tries its texts again half as many at a time, down
 to 15 read in full; one that fails at once (no connection, signed out) says so. Texts that
@@ -178,7 +184,7 @@ arrive while a review is open are read into it. **Read new texts as they arrive*
 background (`SmsWorker`) for the open budget soon after a text arrives: texts that are
 only codes and alerts leave without a word, and anything about money waits in the
 review, counted in a notification that opens the page (`POST_NOTIFICATIONS` is asked
-when it's turned on). The waiting texts themselves are folded below; **Choose** reads or
+when it's turned on and not allowed yet). The waiting texts themselves are folded below; **Choose** reads or
 dismisses a selection. Provider retention settings apply.
 
 The analysis session (`assistant/sms.rs`) has only `payee_history` and
@@ -389,7 +395,7 @@ it settles (added, unticked, held, not a transaction, dismissed), erasing its te
 keeping a local fingerprint; messages still waiting on a choice stay.
 
 The manifest requests `READ_SMS` and `RECEIVE_SMS`, not default-SMS status or
-permission to send/change messages, `POST_NOTIFICATIONS` for background reading, and
+permission to send/change messages, `POST_NOTIFICATIONS` for a reading's notifications, and
 `FOREGROUND_SERVICE_DATA_SYNC` for the service that keeps a reading going. **Before distributing this build through
 Google Play**, declare that foreground service (data sync: sending the bank messages the user
 chose to their assistant, started by them from Bank messages), and complete its SMS permissions declaration under the

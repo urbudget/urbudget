@@ -76,10 +76,23 @@ class SmsReadingService : Service() {
         private const val START_WAIT = 10_000L
         private const val END_WAIT = 1_500L
 
-        /** Called as a reading starts from the page, while the app is in front, as Android requires. */
+        /**
+         * Called as a reading starts from the page, while the app is in front, as Android requires. Called again
+         * during a reading, it shows the notification anew: after permission to notify, the first one wasn't shown.
+         */
         fun start(context: Context) {
             runCatching { ContextCompat.startForegroundService(context, Intent(context, SmsReadingService::class.java)) }
         }
+
+        private const val ASKED = "readingNoticeAsked"
+        private fun preferences(context: Context) = context.getSharedPreferences("native-preferences", Context.MODE_PRIVATE)
+
+        /** Whether the page asks for permission to notify as a reading starts: once, and only while it isn't given. */
+        fun shouldAsk(context: Context): Boolean = smsAskToNotify(Build.VERSION.SDK_INT,
+            Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED,
+            preferences(context).getBoolean(ASKED, false))
+
+        fun asked(context: Context) = preferences(context).edit().putBoolean(ASKED, true).apply()
 
         private fun notification(context: Context): android.app.Notification {
             if (Build.VERSION.SDK_INT >= 26) context.getSystemService(NotificationManager::class.java).createNotificationChannel(
@@ -98,3 +111,9 @@ class SmsReadingService : Service() {
         }
     }
 }
+
+/**
+ * Whether to ask for permission to notify as a reading starts from the page: Android asks for it from 13
+ * (API 33), the reading's notification isn't shown without it, and the page asks once, never again after.
+ */
+internal fun smsAskToNotify(sdk: Int, allowed: Boolean, asked: Boolean): Boolean = sdk >= 33 && !allowed && !asked
