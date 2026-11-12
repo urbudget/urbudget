@@ -21,7 +21,7 @@ was uploaded to the closed test as a draft release. Nothing has been sent to Goo
 | Closed test | Closed testing - Alpha, set up on 12 November 2026: all 178 countries, the "UrBudget Android testers" email list, feedback to `support@urbudget.app`, and draft release 1.0.0 with the bundle above. Play found the R8 mapping inside the bundle; it warns that native debug symbols weren't uploaded |
 | SMS declaration | Saved on 12 November 2026: SMS-based money management, the reviewer steps (shortened to Play's 500 characters from [the steps below](#sms-permission-declaration)), and the [walkthrough video](#the-videos) |
 | Foreground service | Saved on 12 November 2026: Network processing, Other, with the [service video](#the-videos). The draft release has no errors left, only Play's warning that native debug symbols weren't uploaded. It's saved in Publishing overview, which offers to submit 15 changes for review. Nothing has been submitted |
-| Sign in details | Has the review account only. No assistant key yet, so a reviewer can't read bank texts |
+| Sign in details | **Not ready.** The review account's instructions still hold the draft's "[ADD PASSPHRASE]" and "[ADD KEY]", and its password (the review access code) is empty. The owner is adding the code and passphrase, and a second entry, "Assistant for Bank messages", with a capped OpenAI key, since the key doesn't fit in the first entry's 500 characters |
 
 Managed publishing is off, so anything Google approves publishes straight away. Turn it on under
 Publishing overview before sending a release if launch day should be a manual choice.
@@ -112,15 +112,17 @@ developer account's Google Drive, shared with anyone who has the link:
 - [Foreground service](https://drive.google.com/file/d/1qtx2mzY21KDw_kBZgk2gUqFogeQE6NTs/view?usp=sharing),
   0:27: starting a reading, leaving the app, the notification, and it going when the reading ends.
 
-What the recording found:
+What the recording found, both fixed in 1.0.1 ([#26](https://github.com/urbudget/urbudget/pull/26)):
 
-- **The reading's notification needs notification permission, which a fresh install doesn't ask
-  for.** `SmsReadingService` runs without it, but its notification isn't shown, and the app asks for
-  `POST_NOTIFICATIONS` only when "Read new texts as they arrive" is turned on. The service video was
-  recorded after allowing notifications. A reviewer following the steps on a fresh install won't see
-  the notification the declaration describes.
-- **On the Fold's cover screen, the disclosure's Allow SMS access button starts under the floating tab
-  bar**, with Not now half covered, until the page is scrolled.
+- **The reading's notification needed notification permission, which a fresh install didn't ask
+  for.** `SmsReadingService` ran without it, but its notification wasn't shown, because the app asked for
+  `POST_NOTIFICATIONS` only when "Read new texts as they arrive" was turned on. The service video was
+  recorded after allowing notifications by hand. 1.0.1 asks once as the first reading starts, and was
+  tried on the Fold with a fresh install: the prompt came, the notification showed, and it went when the
+  reading ended.
+- **On the Fold's cover screen, the disclosure's Allow SMS access button started under the floating tab
+  bar**, with Not now half covered, until the page was scrolled. In 1.0.1 the tab bar steps aside while
+  the disclosure shows, and the buttons stay after the whole disclosure.
 - A reading of a few texts in a format the assistant already learned ends in seconds, so the
   notification is gone almost at once; new formats keep it up longer.
 
