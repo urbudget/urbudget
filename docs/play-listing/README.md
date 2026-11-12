@@ -18,10 +18,10 @@ was uploaded to the closed test as a draft release. Nothing has been sent to Goo
 | Data safety | Saved, with all 11 data types answered |
 | Sign in details | Saved by the owner, with the sharing switch for Google's test devices left on |
 | Target audience | Saved: 18 and over |
-| Closed test | Closed testing - Alpha, set up on 12 November 2026: all 178 countries, the "UrBudget Android testers" email list, feedback to `support@urbudget.app`, and draft release 1.0.0 with the bundle above. Play found the R8 mapping inside the bundle; it warns that native debug symbols weren't uploaded |
+| Closed test | Closed testing - Alpha, set up on 12 November 2026: all 178 countries, the "UrBudget Android testers" email list, feedback to `support@urbudget.app`, and release 1.0.1 (version code 1000001, from [#26](https://github.com/urbudget/urbudget/pull/26)), which superseded the first draft, 1.0.0. No errors; Play warns that native debug symbols weren't uploaded. Not yet sent for review |
 | SMS declaration | Saved on 12 November 2026: SMS-based money management, the reviewer steps (shortened to Play's 500 characters from [the steps below](#sms-permission-declaration)), and the [walkthrough video](#the-videos) |
 | Foreground service | Saved on 12 November 2026: Network processing, Other, with the [service video](#the-videos). The draft release has no errors left, only Play's warning that native debug symbols weren't uploaded. It's saved in Publishing overview, which offers to submit 15 changes for review. Nothing has been submitted |
-| Sign in details | **Not ready.** The review account's instructions still hold the draft's "[ADD PASSPHRASE]" and "[ADD KEY]", and its password (the review access code) is empty. The owner is adding the code and passphrase, and a second entry, "Assistant for Bank messages", with a capped OpenAI key, since the key doesn't fit in the first entry's 500 characters |
+| Sign in details | Ready on 12 November 2026. "Review account (Google Play)" is `play-review@urbudget.app`, Google Play's own review account with complimentary Sync ([#27](https://github.com/urbudget/urbudget/pull/27)); its code is in Password and its sync passphrase in the instructions. "Assistant for Bank messages" carries a capped OpenAI key at the end of its instructions, since Password takes only 100 characters. The App Store keeps `review@urbudget.app` |
 
 Managed publishing is off, so anything Google approves publishes straight away. Turn it on under
 Publishing overview before sending a release if launch day should be a manual choice.
