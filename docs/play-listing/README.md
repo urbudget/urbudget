@@ -7,7 +7,8 @@ Google verified the developer's identity on 4 November 2026. The app was created
 5 November 2026 (app ID 4974677345566386693, free, category Finance) with this listing. On
 12 November 2026 the first bundle, 1.0.0 (version code 1000000, signed on GitHub from `2ac1634` in
 [Android release run 43207103396](https://github.com/urbudget/urbudget/actions/runs/43207103396)),
-was uploaded to the closed test as a draft release. Nothing has been sent to Google for review.
+was uploaded to the closed test as a draft release, and replaced the same day by 1.0.1. Everything was
+sent to Google for review on 12 November 2026.
 
 | Play Console task | State on 5 November 2026 |
 | --- | --- |
@@ -18,7 +19,7 @@ was uploaded to the closed test as a draft release. Nothing has been sent to Goo
 | Data safety | Saved, with all 11 data types answered |
 | Sign in details | Saved by the owner, with the sharing switch for Google's test devices left on |
 | Target audience | Saved: 18 and over |
-| Closed test | Closed testing - Alpha, set up on 12 November 2026: all 178 countries, the "UrBudget Android testers" email list, feedback to `support@urbudget.app`, and release 1.0.1 (version code 1000001, from [#26](https://github.com/urbudget/urbudget/pull/26)), which superseded the first draft, 1.0.0. No errors; Play warns that native debug symbols weren't uploaded. Not yet sent for review |
+| Closed test | Closed testing - Alpha, set up on 12 November 2026: all 178 countries, the "UrBudget Android testers" email list, feedback to `support@urbudget.app`, and release 1.0.1 (version code 1000001, from [#26](https://github.com/urbudget/urbudget/pull/26)), which superseded the first draft, 1.0.0. No errors; Play warns that native debug symbols weren't uploaded. Sent for review on 12 November 2026 with the other 14 changes waiting in Publishing overview (store listing, content rating, target audience, privacy policy, ads, data safety, health and the app category) |
 | SMS declaration | Saved on 12 November 2026: SMS-based money management, the reviewer steps (shortened to Play's 500 characters from [the steps below](#sms-permission-declaration)), and the [walkthrough video](#the-videos) |
 | Foreground service | Saved on 12 November 2026: Network processing, Other, with the [service video](#the-videos). The draft release has no errors left, only Play's warning that native debug symbols weren't uploaded. It's saved in Publishing overview, which offers to submit 15 changes for review. Nothing has been submitted |
 | Sign in details | Ready on 12 November 2026. "Review account (Google Play)" is `play-review@urbudget.app`, Google Play's own review account with complimentary Sync ([#27](https://github.com/urbudget/urbudget/pull/27)); its code is in Password and its sync passphrase in the instructions. "Assistant for Bank messages" carries a capped OpenAI key at the end of its instructions, since Password takes only 100 characters. The App Store keeps `review@urbudget.app` |
