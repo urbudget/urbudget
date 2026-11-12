@@ -147,6 +147,7 @@
           </div>
           <p class="hero2-price"><span class="price-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M8 3v4M16 3v4M3.5 10h17M9 15l2 2 4-4"/></svg></span><span>Free, with nothing locked. Sync is optional, at <b data-price="sync">$3</b> a month.</span></p>
           <p class="hero2-switch">Coming from YNAB? <a href="#ynab">Bring your budget over in one click</a></p>
+          <p class="hero2-switch">On Android? <a href="#android">Join the test on Google Play</a></p>
         </div>
 
         <div class="demo" data-demo role="group" aria-labelledby="demo-title" aria-describedby="demo-hint">
@@ -591,6 +592,38 @@
       </div>
     </section>
 
+    <!-- Android: Google Play's closed test, and the list to join it. Addresses go to
+         /api/v1/android-testers and are added to the test in Play Console by hand. -->
+    <section class="section droid" id="android" aria-labelledby="android-title">
+      <div class="container droid-grid">
+        <div class="droid-copy" data-rise>
+          <p class="droid-kicker"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg>Android, in testing</p>
+          <h2 id="android-title">UrBudget is coming to Android.</h2>
+          <p class="lead">Before a new app can go on Google Play, Google has people test it for 14 days. Leave the email address of the Google account on your Android phone, and we'll send you the link to install the test version from Google Play. It's free, like the rest of UrBudget.</p>
+          <ul class="ticks">
+            <li><b>The whole budget on your phone.</b> Envelopes and targets, transactions, scheduled bills, the twelve reports and the loan planner.</li>
+            <li><b>Your bank's texts, ready to add.</b> If your bank texts you when money moves, the AI assistant you connect turns those texts into transactions for you to review.</li>
+            <li><b>The same budget as your computer.</b> Sync keeps them in step, encrypted with your passphrase.</li>
+          </ul>
+          <form class="droid-form" id="android-form" novalidate>
+            <div class="field">
+              <label for="android-email">Your Google account's email</label>
+              <div class="droid-row">
+                <input id="android-email" name="email" class="input" type="email" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false" placeholder="you@gmail.com" aria-describedby="android-hint" required>
+                <button class="btn btn-primary" id="android-submit" type="submit">Join the test</button>
+              </div>
+              <p class="hint" id="android-hint">Use the address you sign in to Google Play with. Google only lets that account in.</p>
+            </div>
+            <p class="droid-status" id="android-status" role="status"></p>
+          </form>
+          <p class="muted">We use the address only to invite you to the test and to tell you when UrBudget is on Google Play, and then delete it. To be taken off sooner, write to <a href="mailto:support@urbudget.app">support@urbudget.app</a>. See the <a href="/privacy/#android-test">privacy policy</a>.</p>
+        </div>
+        <figure class="droid-phone" data-rise>
+          <img src="/img/phone-bank-messages-360.webp?v=22cbadea" srcset="/img/phone-bank-messages-360.webp?v=22cbadea 360w, /img/phone-bank-messages-720.webp?v=5ce550a0 720w" sizes="(min-width: 900px) 330px, 72vw" width="360" height="771" loading="lazy" decoding="async" alt="UrBudget on Android: bank texts turned into transactions, each ticked, with the balances after adding them.">
+        </figure>
+      </div>
+    </section>
+
     <section class="section faq-section" id="faq" aria-labelledby="faq-title">
       <div class="container faq-grid">
         <div class="faq-side" data-rise>
@@ -625,7 +658,7 @@
           <details>
             <summary>Which systems does it run on?</summary>
             <div class="answer">
-              <p>Windows 10 and 11 (64-bit) and macOS 12 or later. There's no phone or web version.</p>
+              <p>Windows 10 and 11 (64-bit) and macOS 12 or later. The Android app is in testing on Google Play: <a href="#android">join the test</a>. There's no web version.</p>
             </div>
           </details>
           <details>
