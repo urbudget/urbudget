@@ -26,8 +26,26 @@ const CODE_ATTEMPTS = 5;
 const LIFETIME = { web: 30 * DAY, desktop: 365 * DAY, link: 5 * 60 };
 
 const codeHash = (email: string, code: string) => sha256(`login:${email}:${code}`);
-const reviewAccount = (env: Env, email: string) =>
-  /^[a-f0-9]{64}$/.test(env.PLAY_REVIEW_CODE_HASH ?? "") && env.PLAY_REVIEW_EMAIL?.trim().toLowerCase() === email;
+/**
+ * The access-code hash of a store reviewer's account, or null for every other address. The first is
+ * `PLAY_REVIEW_EMAIL` with `PLAY_REVIEW_CODE_HASH` (named before there was more than one; it's App
+ * Review's); `REVIEW_ACCOUNTS` adds more, as a JSON object of email to hash. A malformed entry or
+ * setting enables nothing.
+ */
+function reviewHash(env: Env, email: string): string | null {
+  const hashes = new Map<string, string>();
+  const add = (address: unknown, hash: unknown) => {
+    if (typeof address === "string" && typeof hash === "string" && /^[a-f0-9]{64}$/.test(hash)) hashes.set(address.trim().toLowerCase(), hash);
+  };
+  add(env.PLAY_REVIEW_EMAIL, env.PLAY_REVIEW_CODE_HASH);
+  try {
+    const more: unknown = JSON.parse(env.REVIEW_ACCOUNTS ?? "{}");
+    if (more && typeof more === "object" && !Array.isArray(more)) for (const [address, hash] of Object.entries(more)) add(address, hash);
+  } catch {
+    // Not JSON: no extra review accounts.
+  }
+  return hashes.get(email) ?? null;
+}
 
 /** The account for `email`, created on first sign-in. */
 export async function userFor(db: D1Database, email: string): Promise<User> {
@@ -139,7 +157,7 @@ auth.post("/start", async (c) => {
   const email = normalizeEmail(body.email);
   await rateLimit(c.env.DB, `code:ip:${c.req.header("CF-Connecting-IP") ?? "local"}`, 20, 3600);
   // Explicitly configured review identity only. Ordinary customers always use email OTP.
-  if (reviewAccount(c.env, email)) return c.json({ ok: true, reviewAccess: true });
+  if (reviewHash(c.env, email)) return c.json({ ok: true, reviewAccess: true });
   await rateLimit(c.env.DB, `code:email:${email}`, 5, 3600);
   const code = String(randomBelow(1_000_000)).padStart(6, "0");
   await c.env.DB.prepare(
@@ -164,11 +182,12 @@ auth.post("/verify", async (c) => {
   const code = typeof body.code === "string" ? body.code.replace(/\s/g, "") : "";
   const client = body.client === "desktop" ? "desktop" : "web";
   const deviceName = typeof body.deviceName === "string" ? body.deviceName.slice(0, 80) : null;
-  if (reviewAccount(c.env, email)) {
+  const reviewCode = reviewHash(c.env, email);
+  if (reviewCode) {
     await rateLimit(c.env.DB, `review:ip:${c.req.header("CF-Connecting-IP") ?? "local"}`, 20, 3600);
     await rateLimit(c.env.DB, `review:email:${email}`, 60, 3600);
     if (client !== "desktop" || !/^[A-Za-z0-9_-]{24,128}$/.test(code) ||
-        !sameString(c.env.PLAY_REVIEW_CODE_HASH!, await sha256(`review:${email}:${code}`)))
+        !sameString(reviewCode, await sha256(`review:${email}:${code}`)))
       throw new ApiError(400, "invalid_code", "The review access code is not correct.");
     const user = await userFor(c.env.DB, email);
     const token = await createSession(c.env.DB, user.id, "desktop", deviceName);

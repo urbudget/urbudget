@@ -96,9 +96,12 @@ Primary setup references: [Google Play notifications](https://developer.android.
 [authenticated Pub/Sub push](https://docs.cloud.google.com/pubsub/docs/authenticate-push-subscriptions),
 and [subscription lifecycle](https://developer.android.com/google/play/billing/lifecycle/subscriptions).
 
-For App Store and Play review, optionally configure a dedicated account containing synthetic data only. (The setting names say Play, but the same account works for both stores' reviewers, because the apps sign in the same way. The iOS code field shows a number pad, so use an all-digit code: 24 or more digits pass the format check below.)
-Set `PLAY_REVIEW_EMAIL` to that account's lowercase email and `PLAY_REVIEW_CODE_HASH` to
-SHA-256 of `review:<lowercase email>:<random access code>`. Generate a high-entropy code of
+For App Store and Play review, optionally configure dedicated accounts containing synthetic data only. The iOS code field shows a number pad, so use an all-digit code: 24 or more digits pass the format check below.
+Set `PLAY_REVIEW_EMAIL` to an account's lowercase email and `PLAY_REVIEW_CODE_HASH` to
+SHA-256 of `review:<lowercase email>:<random access code>`. Despite its name, that pair is App
+Review's (`review@urbudget.app`). More accounts go in the `REVIEW_ACCOUNTS` secret, a JSON object
+of lowercase email to the same kind of hash; Google Play's reviewer has its own there
+(`play-review@urbudget.app`), so the two stores' reviewers don't share a sync passphrase or data. Generate a high-entropy code of
 24–128 characters using letters, digits, `_` or `-`. Store the hash as a Worker secret, and
 put the actual code and review instructions only in Play Console's private App access details
 or an approved private credential store. Never use a customer's account, commit the code,
