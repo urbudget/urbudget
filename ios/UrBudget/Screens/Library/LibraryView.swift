@@ -40,20 +40,7 @@ struct LibraryView: View {
         List {
             budgetsSection(busy: busy)
             if budgets.contains(where: LibraryTrash.holds) { trashSection(busy: busy) }
-            if !drafts.isEmpty {
-                Section("Unfinished edits") {
-                    Text("Review these saved fields and re-enter the changes you want to keep.")
-                    ForEach(Array(drafts.enumerated()), id: \.offset) { _, draft in
-                        Text(draft["draft"].serialized()).font(.caption).textSelection(.enabled)
-                        Button("Discard these edits", role: .destructive) {
-                            run {
-                                _ = try await store.service("editor_discard", ["budgetId": draft["budgetId"], "id": draft["editorId"], "epoch": draft["epoch"]])
-                                drafts.removeAll { $0 == draft }
-                            }
-                        }
-                    }
-                }
-            }
+            if !drafts.isEmpty { draftsSection }
             freshStartSection(busy: busy)
             if let recovery { recoverySection(recovery, busy: busy) }
             backupSettingsSection(busy: busy)
@@ -132,6 +119,27 @@ struct LibraryView: View {
     }
 
     // MARK: Sections
+
+    /// Edits a form was closed on before they were saved, to read and discard. (A section of its
+    /// own, and its request a constant of its own: in the list's body the older Swift compiler
+    /// that CI builds with gave up type-checking it.)
+    private var draftsSection: some View {
+        Section("Unfinished edits") {
+            Text("Review these saved fields and re-enter the changes you want to keep.")
+            ForEach(Array(drafts.enumerated()), id: \.offset) { _, draft in
+                Text(draft["draft"].serialized()).font(.caption).textSelection(.enabled)
+                Button("Discard these edits", role: .destructive) { discard(draft) }
+            }
+        }
+    }
+
+    private func discard(_ draft: JSON) {
+        let request: JSON = ["budgetId": draft["budgetId"], "id": draft["editorId"], "epoch": draft["epoch"]]
+        run {
+            _ = try await store.service("editor_discard", request)
+            drafts.removeAll { $0 == draft }
+        }
+    }
 
     private func budgetsSection(busy: Bool) -> some View {
         Section {
