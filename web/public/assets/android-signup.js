@@ -1,16 +1,21 @@
-// The Android test's steps, on the home page and /android/: open the testers group on Google Groups
-// (the closed test's tester list in Play Console) and tap Join group there, then become a tester on
-// Google Play. Once the group is opened, its step shows as done and Google Play becomes the button
-// to press. Without this script both links still work.
+// The Android test's joining card, on the home page and /android/: open the testers group on Google
+// Groups (the closed test's tester list in Play Console), tap Join group there, then become a tester
+// on Google Play. Once the group is opened, step 1 shows as done, step 2 becomes the current one and
+// Google Play becomes the primary button. Without this script both links still work.
 
-for (const steps of document.querySelectorAll(".join-steps")) {
-  const group = steps.querySelector('[data-join="group"]');
-  const play = steps.querySelector('[data-join="play"]');
+for (const card of document.querySelectorAll(".join")) {
+  const group = card.querySelector('[data-join="group"]');
+  const play = card.querySelector('[data-join="play"]');
   group?.addEventListener("click", () => {
     const step = group.closest(".join-step");
-    step?.classList.add("is-done");
-    const num = step?.querySelector(".join-num");
+    if (!step || step.classList.contains("is-done")) return;
+    step.classList.replace("is-current", "is-done");
+    step.classList.add("is-done");
+    const num = step.querySelector(".join-num");
     if (num) num.textContent = "✓";
+    const title = step.querySelector(".join-title");
+    if (title) title.insertAdjacentHTML("beforeend", '<span class="visually-hidden"> (done)</span>');
+    step.nextElementSibling?.classList.add("is-current");
     group.classList.remove("btn-primary");
     play?.classList.add("btn-primary");
   });

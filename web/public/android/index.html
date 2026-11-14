@@ -108,58 +108,66 @@
   </header>
 
   <main id="main">
-    <!-- Joining first: the public Google Group urbudget-testers is the closed test's tester list in
+    <!-- Joining first. The public Google Group urbudget-testers is the closed test's tester list in
          Play Console, so joining it lets that Google account in; then Google Play's opt-in link.
-         Google Groups opens on "You don't have permission" for anyone not yet in the group, with
-         its Join group button small at the top, so step 2 says so and shows where it is.
-         The same steps are on the home page. -->
-    <section class="section droid droid-page" aria-labelledby="page-title">
+         Google Groups opens on "You don't have permission to access this content" for anyone not
+         yet in the group, with its Join group button small at the top, so step 2 shows that page.
+         The same card is on the home page. -->
+    <section class="droid droid-page" aria-labelledby="page-title">
       <div class="container droid-grid">
         <div class="droid-copy">
           <p class="droid-kicker"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg>Android, in testing</p>
           <h1 id="page-title">UrBudget for Android</h1>
-          <ol class="join-steps">
-            <li class="join-step">
-              <span class="join-num" aria-hidden="true">1</span>
-              <div class="join-text">
-                <p class="join-title">Open the testers group</p>
-                <p>It opens on Google Groups.</p>
-              </div>
-              <a class="btn btn-primary btn-lg" href="https://groups.google.com/g/urbudget-testers" target="_blank" rel="noopener" data-join="group">Open the group</a>
-            </li>
-            <li class="join-step join-step-info">
-              <span class="join-num" aria-hidden="true">2</span>
-              <div class="join-text">
-                <p class="join-title">Tap Join group, at the top</p>
-                <p>It's next to the group's name. Until you join, Google says you don't have permission to see the group. That's expected.</p>
-                <div class="join-peek" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="m12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/></svg><span class="join-peek-name">UrBudget Android testers</span><span class="join-peek-btn">Join group</span></div>
-              </div>
-            </li>
-            <li class="join-step">
-              <span class="join-num" aria-hidden="true">3</span>
-              <div class="join-text">
-                <p class="join-title">Install it from Google Play</p>
-                <p>Tap <b>Become a tester</b>, then <b>Download it on Google Play</b>.</p>
-              </div>
-              <a class="btn btn-lg" href="https://play.google.com/apps/testing/app.urbudget" target="_blank" rel="noopener" data-join="play">Get it on Google Play</a>
-            </li>
-          </ol>
-          <p class="muted">Use the same Google account for both: the one signed in to Google Play on your phone.</p>
+          <div class="join">
+            <p class="join-account"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/></svg>Use the Google account that's on your Android phone.</p>
+            <ol class="join-steps">
+              <li class="join-step is-current">
+                <span class="join-num" aria-hidden="true">1</span>
+                <div class="join-body">
+                  <p class="join-title">Open the testers group</p>
+                  <p>It opens on Google Groups, in a new tab.</p>
+                  <a class="btn btn-primary" href="https://groups.google.com/g/urbudget-testers" target="_blank" rel="noopener" data-join="group">Open the group<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></a>
+                </div>
+              </li>
+              <li class="join-step">
+                <span class="join-num" aria-hidden="true">2</span>
+                <div class="join-body">
+                  <p class="join-title">Tap Join group</p>
+                  <p>Google first says you don't have permission. That's normal: <b>Join&nbsp;group</b> is at the top, next to the group's name.</p>
+                  <div class="join-shot" aria-hidden="true">
+                    <div class="join-shot-head">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="m12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/></svg>
+                      <span class="join-shot-name">UrBudget Android testers</span>
+                      <span class="join-shot-btn">Join group<svg class="join-shot-tap" viewBox="0 0 24 24"><path d="M6 3.5 18.5 12l-5.6 1.2 3.1 6-2.3 1.2-3.1-6-4.6 3.6z" fill="currentColor" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg></span>
+                    </div>
+                    <p class="join-shot-msg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/></svg>You don't have permission to access this content</p>
+                  </div>
+                </div>
+              </li>
+              <li class="join-step">
+                <span class="join-num" aria-hidden="true">3</span>
+                <div class="join-body">
+                  <p class="join-title">Install it from Google Play</p>
+                  <p>Tap <b>Become a tester</b>, then <b>Download it on Google Play</b>.</p>
+                  <a class="btn" href="https://play.google.com/apps/testing/app.urbudget" target="_blank" rel="noopener" data-join="play">Get it on Google Play<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></a>
+                </div>
+              </li>
+            </ol>
+          </div>
         </div>
         <figure class="droid-phone">
-          <img src="/img/phone-bank-messages-360.webp?v=22cbadea" srcset="/img/phone-bank-messages-360.webp?v=22cbadea 360w, /img/phone-bank-messages-720.webp?v=5ce550a0 720w" sizes="(min-width: 900px) 330px, 72vw" width="360" height="771" decoding="async" alt="UrBudget on Android: bank texts turned into transactions, each ticked, with the balances after adding them.">
+          <img src="/img/phone-bank-messages-360.webp?v=22cbadea" srcset="/img/phone-bank-messages-360.webp?v=22cbadea 360w, /img/phone-bank-messages-720.webp?v=5ce550a0 720w" sizes="(min-width: 900px) 290px, 72vw" width="360" height="771" decoding="async" alt="UrBudget on Android: bank texts turned into transactions, each ticked, with the balances after adding them.">
         </figure>
       </div>
     </section>
+
     <div class="container page-body">
       <article class="guide">
-        <h2 id="how">How joining works</h2>
-        <ol class="steps">
-          <li><b>Join the testers group.</b> Open it on Google Groups, signed in with the Google account on your phone, and tap <strong>Join group</strong> next to its name. Until you join, Google says you don't have permission to see the group; that's expected. The group is UrBudget's list of testers on Google Play, and it sends no email.</li>
-          <li><b>Become a tester.</b> Open <a href="https://play.google.com/apps/testing/app.urbudget">the Google Play link</a> with the same account and tap <strong>Become a tester</strong>.</li>
-          <li><b>Install UrBudget from Google Play.</b> It updates through Google Play like any other app.</li>
-          <li><b>Keep it for 14 days.</b> Google lets a new app go public only after 12 testers have stayed in its test for 14 days in a row, so keep it installed and open it now and then. If something is broken or confusing, write to <a href="mailto:support@urbudget.app">support@urbudget.app</a>.</li>
-        </ol>
+        <h2 id="after">Once it's installed</h2>
+        <ul>
+          <li><b>Keep it for 14 days.</b> Google lets a new app go public only after 12 testers have stayed in its test for 14 days in a row. Keep it installed and open it now and then.</li>
+          <li><b>Tell us what's wrong.</b> If something is broken or confusing, write to <a href="mailto:support@urbudget.app">support@urbudget.app</a>.</li>
+        </ul>
 
         <h2 id="features">What's in the Android app</h2>
         <ul>
@@ -170,16 +178,38 @@
         </ul>
 
         <h2 id="questions">Questions</h2>
-        <h3>Does it cost anything?</h3>
-        <p>No. UrBudget is free on Android, as it is on Windows and Mac. The only paid part is optional device sync, at <span data-price="sync">$3</span> a month.</p>
-        <h3>Which phones does it run on?</h3>
-        <p>Android 8.0 or later, on phones and tablets, foldables included.</p>
-        <h3>Google Play says the app isn't available</h3>
-        <p>Google Play shows the test only to Google accounts in the testers group. Check that you joined the group with the account that's signed in to Google Play, wait a few minutes, then open <a href="https://play.google.com/apps/testing/app.urbudget">the Google Play link</a> again.</p>
-        <h3>Will the group send me email?</h3>
-        <p>No. Only UrBudget can post to it, and doesn't. Other testers can't see who's in it.</p>
-        <h3>Can I leave the test?</h3>
-        <p>Yes. Open <a href="https://play.google.com/apps/testing/app.urbudget">the Google Play link</a> and choose <strong>Leave the program</strong>, then uninstall the app. You can leave the group on Google Groups too.</p>
+        <div class="faq">
+          <details>
+            <summary>Google Play says the app isn't available</summary>
+            <div class="answer">
+              <p>Google Play shows the test only to Google accounts in the testers group. Check that you joined the group with the account that's signed in to Google Play, wait a few minutes, then open <a href="https://play.google.com/apps/testing/app.urbudget">the Google Play link</a> again.</p>
+            </div>
+          </details>
+          <details>
+            <summary>Does it cost anything?</summary>
+            <div class="answer">
+              <p>No. UrBudget is free on Android, as it is on Windows and Mac. The only paid part is optional device sync, at <span data-price="sync">$3</span> a month.</p>
+            </div>
+          </details>
+          <details>
+            <summary>Which phones does it run on?</summary>
+            <div class="answer">
+              <p>Android 8.0 or later, on phones and tablets, foldables included.</p>
+            </div>
+          </details>
+          <details>
+            <summary>Will the group send me email?</summary>
+            <div class="answer">
+              <p>No. It's only how Google Play knows you're a tester. Only UrBudget can post to it, and doesn't, and other testers can't see who's in it.</p>
+            </div>
+          </details>
+          <details>
+            <summary>Can I leave the test?</summary>
+            <div class="answer">
+              <p>Yes. Open <a href="https://play.google.com/apps/testing/app.urbudget">the Google Play link</a>, choose <strong>Leave the program</strong>, then uninstall the app. You can leave the group on Google Groups too.</p>
+            </div>
+          </details>
+        </div>
 
         <div class="guide-cta">
           <h2>Budget on your computer meanwhile</h2>
