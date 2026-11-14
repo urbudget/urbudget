@@ -28,17 +28,10 @@
 .droid-copy h2 {
   font-size: clamp(2rem, 1.5rem + 2vw, 3.1rem);
 }
-.droid-copy .lead {
-  margin-top: var(--space-4);
-}
-.droid-copy > .muted {
-  margin-top: var(--space-4);
-  color: var(--text-3);
-  font-size: var(--step--1);
-}
-/* /android/ starts close under the header, its text at the top beside a smaller phone. */
+
+/* /android/ starts close under the header, its card at the top beside a smaller phone. */
 .droid-page {
-  padding-block: clamp(1.5rem, 1rem + 2vw, 3rem) var(--space-5);
+  padding-block: clamp(1.5rem, 1rem + 2vw, 3rem) var(--space-6);
 }
 .droid-page .droid-grid {
   align-items: start;
@@ -47,98 +40,187 @@
   width: min(100%, 290px);
 }
 
-/* Joining: numbered cards, each with at most one button (android-signup.js moves the primary
-   style to Google Play once the group is open). */
+/* Joining: one card, the account to use at its top, then three steps joined by a line. Step 1 is
+   the current one; android-signup.js marks it done once the group is opened, moves "current" to
+   step 2 and makes Google Play the primary button. */
+.join {
+  max-width: 34rem;
+  margin-top: var(--space-6);
+  padding: var(--space-5) var(--space-5) var(--space-6);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+}
+.join-account {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-5);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: var(--step--1);
+}
+.join-account svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--brand-text);
+}
 .join-steps {
-  display: grid;
-  gap: var(--space-3);
-  max-width: 40rem;
-  margin: var(--space-6) 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 .join-step {
+  position: relative;
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-4) var(--space-5);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
+  grid-template-columns: 32px minmax(0, 1fr);
+  column-gap: var(--space-4);
+  padding-bottom: var(--space-6);
+}
+.join-step:last-child {
+  padding-bottom: 0;
+}
+.join-step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  top: 40px;
+  bottom: 8px;
+  left: 15.5px;
+  width: 1px;
+  background: var(--border-strong);
 }
 .join-num {
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--brand-line);
   border-radius: 50%;
-  background: var(--brand-soft);
+  background: var(--brand-softer);
   color: var(--brand-text);
+  font-size: var(--step--1);
   font-weight: 700;
 }
+.join-step.is-current .join-num {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: var(--on-brand);
+}
 .join-step.is-done .join-num {
+  border-color: var(--success-line);
   background: var(--success-bg);
   color: var(--success);
 }
-.join-text p {
-  margin: 0;
+.join-body {
+  min-width: 0;
+  padding-top: 4px;
+}
+.join-body p {
+  margin: var(--space-1) 0 0;
   color: var(--text-2);
   font-size: var(--step--1);
+  line-height: 1.5;
 }
-.join-text .join-title {
-  margin-bottom: var(--space-1);
+.join-body .join-title {
+  margin: 0;
   color: var(--text);
   font-size: var(--step-0);
   font-weight: 650;
+  line-height: 1.3;
 }
-/* The step for Google's own page: no button here, and a sketch of where Join group is. */
-.join-step-info {
-  align-items: start;
+.join-body .btn {
+  min-width: 14rem;
+  margin-top: var(--space-4);
 }
-.join-peek {
+.join-more {
+  margin: var(--space-4) 0 0;
+  font-size: var(--step--1);
+}
+
+/* Step 2's picture of Google Groups as someone outside the group sees it: the group's name with
+   Join group beside it, ringed and tapped, over the permission message. Light, like Google's
+   page, in either theme. */
+.join-shot {
+  margin-top: var(--space-3);
+  padding: 12px 14px 14px;
+  border: 1px solid #dadce0;
+  border-radius: var(--radius);
+  background: #ffffff;
+  color: #3c4043;
+  font-size: 13px;
+  line-height: 1.3;
+}
+.join-shot-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2) var(--space-3);
-  width: fit-content;
-  max-width: 100%;
-  margin-top: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--bg-soft);
-  color: var(--text-2);
-  font-size: var(--step--1);
+  gap: 8px 10px;
 }
-.join-peek svg {
+.join-shot-head > svg {
   flex: none;
-  color: var(--text-3);
+  width: 16px;
+  height: 16px;
+  color: #5f6368;
 }
-.join-peek-btn {
-  padding: 0.3rem 0.75rem;
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  background: var(--surface);
-  box-shadow: 0 0 0 3px var(--brand-line);
+.join-shot-name {
+  color: #202124;
+  font-size: 15px;
+}
+.join-shot-btn {
+  position: relative;
+  padding: 5px 12px;
+  border: 1px solid #dadce0;
+  border-radius: 4px;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px #ffffff, 0 0 0 5px var(--brand);
   color: #1a73e8;
   font-weight: 600;
   white-space: nowrap;
 }
-:root[data-theme="dark"] .join-peek-btn {
-  color: #8ab4f8;
+.join-shot-tap {
+  position: absolute;
+  right: -12px;
+  bottom: -14px;
+  width: 20px;
+  height: 20px;
+  color: #202124;
 }
-/* On a phone the button goes under its step, full width. */
+.join-body .join-shot-msg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 16px 0 0;
+  color: #5f6368;
+  font-size: 12px;
+  text-align: center;
+}
+.join-shot-msg svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: #9aa0a6;
+}
+:root[data-theme="dark"] .join-shot {
+  border-color: var(--border-strong);
+}
+
 @media (max-width: 600px) {
-  .join-step {
-    grid-template-columns: auto 1fr;
+  .join {
+    padding: var(--space-4) var(--space-4) var(--space-5);
   }
-  .join-step .btn {
-    grid-column: 1 / -1;
+  .join-step {
+    column-gap: var(--space-3);
+  }
+  .join-body .btn {
     width: 100%;
+    min-width: 0;
   }
 }
+
 /* The phone: the Play listing's screen in a slim bezel, the same glass the desktop shots have. */
 .droid-phone {
   justify-self: center;
