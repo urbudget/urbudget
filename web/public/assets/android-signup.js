@@ -1,40 +1,17 @@
-// The Android test sign-up, on the home page and /android/: the email of a Google account to add
-// to Google Play's closed test. Without this script the form does nothing, and the page still reads.
-import { api } from "./api.js";
+// The Android test's two steps, on the home page and /android/: join the testers group on Google
+// Groups (the closed test's tester list in Play Console), then become a tester on Google Play.
+// Once the group is opened, its step shows as done and Google Play becomes the button to press.
+// Without this script both links still work.
 
-function androidSignup() {
-  const form = document.getElementById("android-form");
-  if (!form) return;
-  const input = form.querySelector("#android-email");
-  const button = form.querySelector("#android-submit");
-  const status = form.querySelector("#android-status");
-  const say = (message, kind) => {
-    status.textContent = message;
-    status.classList.toggle("is-error", kind === "error");
-    status.classList.toggle("is-success", kind === "success");
-  };
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const email = input.value.trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      say("Enter the email address of your Google account.", "error");
-      input.setAttribute("aria-invalid", "true");
-      input.focus();
-      return;
-    }
-    input.removeAttribute("aria-invalid");
-    button.disabled = true;
-    say("");
-    try {
-      await api("/android-testers", { method: "POST", body: { email } });
-      say(`You're on the list. When Google has approved the test, we'll send the link to ${email}.`, "success");
-      input.value = "";
-    } catch (error) {
-      say(error.message, "error");
-    } finally {
-      button.disabled = false;
-    }
+for (const steps of document.querySelectorAll(".join-steps")) {
+  const group = steps.querySelector('[data-join="group"]');
+  const play = steps.querySelector('[data-join="play"]');
+  group?.addEventListener("click", () => {
+    const step = group.closest(".join-step");
+    step?.classList.add("is-done");
+    const num = step?.querySelector(".join-num");
+    if (num) num.textContent = "✓";
+    group.classList.remove("btn-primary");
+    play?.classList.add("btn-primary");
   });
 }
-
-androidSignup();

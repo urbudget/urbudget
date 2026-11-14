@@ -36,45 +36,61 @@
   color: var(--text-3);
   font-size: var(--step--1);
 }
-.droid-form {
-  margin-top: var(--space-6);
-  max-width: 34rem;
+/* Joining: two numbered cards, each with its one button (android-signup.js moves the primary
+   style to Google Play once the group is open). */
+.join-steps {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 40rem;
+  margin: var(--space-6) 0 0;
+  padding: 0;
+  list-style: none;
 }
-.droid-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
+.join-step {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
 }
-.droid-row .input {
-  flex: 1 1 15rem;
-  width: auto;
+.join-num {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--brand-soft);
+  color: var(--brand-text);
+  font-weight: 700;
 }
-.droid-row .btn {
-  flex: none;
-  min-height: 48px;
-}
-@media (max-width: 480px) {
-  .droid-row .btn {
-    flex: 1 1 100%;
-  }
-}
-.droid-status:empty {
-  display: none;
-}
-.droid-status {
-  margin-top: var(--space-3);
-  font-size: var(--step--1);
-  font-weight: 600;
-}
-.droid-status.is-error {
-  color: var(--danger);
-}
-.droid-status.is-success {
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--success-line);
-  border-radius: var(--radius);
+.join-step.is-done .join-num {
   background: var(--success-bg);
   color: var(--success);
+}
+.join-text p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--step--1);
+}
+.join-text .join-title {
+  margin-bottom: var(--space-1);
+  color: var(--text);
+  font-size: var(--step-0);
+  font-weight: 650;
+}
+/* On a phone the button goes under its step, full width. */
+@media (max-width: 600px) {
+  .join-step {
+    grid-template-columns: auto 1fr;
+  }
+  .join-step .btn {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
 }
 /* The phone: the Play listing's screen in a slim bezel, the same glass the desktop shots have. */
 .droid-phone {

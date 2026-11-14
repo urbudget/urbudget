@@ -595,31 +595,38 @@
       </div>
     </section>
 
-    <!-- Android: Google Play's closed test, and the list to join it. Addresses go to
-         /api/v1/android-testers and are added to the test in Play Console by hand. -->
+    <!-- Android: Google Play's closed test and the two steps to join it, the same as /android/:
+         the public Google Group urbudget-testers (the test's tester list), then Play's opt-in link. -->
     <section class="section droid" id="android" aria-labelledby="android-title">
       <div class="container droid-grid">
         <div class="droid-copy" data-rise>
           <p class="droid-kicker"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg>Android, in testing</p>
           <h2 id="android-title">UrBudget is coming to Android.</h2>
-          <p class="lead">Before a new app can go on Google Play, Google has people test it for 14 days. Leave the email address of the Google account on your Android phone, and we'll send you the link to install the test version from Google Play. It's free, like the rest of UrBudget.</p>
+          <p class="lead">Before a new app can go on Google Play, Google has people test it for 14 days. Joining the test is free, like the rest of UrBudget, and takes two taps.</p>
           <ul class="ticks">
             <li><b>The whole budget on your phone.</b> Envelopes and targets, transactions, scheduled bills, the twelve reports and the loan planner.</li>
             <li><b>Your bank's texts, ready to add.</b> If your bank texts you when money moves, the AI assistant you connect turns those texts into transactions for you to review.</li>
             <li><b>The same budget as your computer.</b> Sync keeps them in step, encrypted with your passphrase.</li>
           </ul>
-          <form class="droid-form" id="android-form" novalidate>
-            <div class="field">
-              <label for="android-email">Your Google account's email</label>
-              <div class="droid-row">
-                <input id="android-email" name="email" class="input" type="email" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false" placeholder="you@gmail.com" aria-describedby="android-hint" required>
-                <button class="btn btn-primary" id="android-submit" type="submit">Join the test</button>
+          <ol class="join-steps">
+            <li class="join-step">
+              <span class="join-num" aria-hidden="true">1</span>
+              <div class="join-text">
+                <p class="join-title">Join the testers group</p>
+                <p>On Google Groups, tap <b>Join group</b>.</p>
               </div>
-              <p class="hint" id="android-hint">Use the address you sign in to Google Play with. Google only lets that account in.</p>
-            </div>
-            <p class="droid-status" id="android-status" role="status"></p>
-          </form>
-          <p class="muted">We use the address only to invite you to the test and to tell you when UrBudget is on Google Play, and then delete it. To be taken off sooner, write to <a href="mailto:support@urbudget.app">support@urbudget.app</a>. See the <a href="/privacy/#android-test">privacy policy</a>.</p>
+              <a class="btn btn-primary" href="https://groups.google.com/g/urbudget-testers" target="_blank" rel="noopener" data-join="group">Join the group</a>
+            </li>
+            <li class="join-step">
+              <span class="join-num" aria-hidden="true">2</span>
+              <div class="join-text">
+                <p class="join-title">Install it from Google Play</p>
+                <p>Tap <b>Become a tester</b>, then <b>Download it on Google Play</b>.</p>
+              </div>
+              <a class="btn" href="https://play.google.com/apps/testing/app.urbudget" target="_blank" rel="noopener" data-join="play">Get it on Google Play</a>
+            </li>
+          </ol>
+          <p class="muted">Use the same Google account for both: the one signed in to Google Play on your phone. <a href="/android/">How the test works</a></p>
         </div>
         <figure class="droid-phone" data-rise>
           <img src="/img/phone-bank-messages-360.webp?v=22cbadea" srcset="/img/phone-bank-messages-360.webp?v=22cbadea 360w, /img/phone-bank-messages-720.webp?v=5ce550a0 720w" sizes="(min-width: 900px) 330px, 72vw" width="360" height="771" loading="lazy" decoding="async" alt="UrBudget on Android: bank texts turned into transactions, each ticked, with the balances after adding them.">

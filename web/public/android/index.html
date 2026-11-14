@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>UrBudget for Android: join the test on Google Play</title>
-  <meta name="description" content="UrBudget is coming to Android. Leave the email of your Google account to test the app on Google Play before it's released. It's free.">
+  <meta name="description" content="UrBudget is coming to Android. Join its test on Google Play in two taps: join the testers group, then install the app. It's free.">
   <link rel="canonical" href="https://urbudget.app/android/">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#fbfaf7">
@@ -108,26 +108,34 @@
   </header>
 
   <main id="main">
-    <!-- The sign-up first: addresses go to /api/v1/android-testers and are added to Google Play's
-         closed test by hand (admin page). The same form is on the home page. -->
+    <!-- Joining first: the public Google Group urbudget-testers is the closed test's tester list in
+         Play Console, so joining it lets that Google account in; then Google Play's opt-in link.
+         The same two steps are on the home page. -->
     <section class="section droid droid-page" aria-labelledby="page-title">
       <div class="container droid-grid">
         <div class="droid-copy">
           <p class="droid-kicker"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg>Android, in testing</p>
           <h1 id="page-title">UrBudget for Android</h1>
-          <p class="lead">Your envelope budget, on your phone. Before a new app can go on Google Play, Google has people test it for 14 days. Leave the email address of the Google account on your Android phone, and we'll send you the link to install the test version from Google Play. It's free, like the rest of UrBudget.</p>
-          <form class="droid-form" id="android-form" novalidate>
-            <div class="field">
-              <label for="android-email">Your Google account's email</label>
-              <div class="droid-row">
-                <input id="android-email" name="email" class="input" type="email" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false" placeholder="you@gmail.com" aria-describedby="android-hint" required>
-                <button class="btn btn-primary" id="android-submit" type="submit">Join the test</button>
+          <p class="lead">Your envelope budget, on your phone. Before a new app can go on Google Play, Google has people test it for 14 days. Joining the test is free and takes two taps.</p>
+          <ol class="join-steps">
+            <li class="join-step">
+              <span class="join-num" aria-hidden="true">1</span>
+              <div class="join-text">
+                <p class="join-title">Join the testers group</p>
+                <p>On Google Groups, tap <b>Join group</b>.</p>
               </div>
-              <p class="hint" id="android-hint">Use the address you sign in to Google Play with. Google only lets that account in.</p>
-            </div>
-            <p class="droid-status" id="android-status" role="status"></p>
-          </form>
-          <p class="muted">We use the address only to invite you to the test and to tell you when UrBudget is on Google Play, and then delete it. To be taken off sooner, write to <a href="mailto:support@urbudget.app">support@urbudget.app</a>. See the <a href="/privacy/#android-test">privacy policy</a>.</p>
+              <a class="btn btn-primary btn-lg" href="https://groups.google.com/g/urbudget-testers" target="_blank" rel="noopener" data-join="group">Join the group</a>
+            </li>
+            <li class="join-step">
+              <span class="join-num" aria-hidden="true">2</span>
+              <div class="join-text">
+                <p class="join-title">Install it from Google Play</p>
+                <p>Tap <b>Become a tester</b>, then <b>Download it on Google Play</b>.</p>
+              </div>
+              <a class="btn btn-lg" href="https://play.google.com/apps/testing/app.urbudget" target="_blank" rel="noopener" data-join="play">Get it on Google Play</a>
+            </li>
+          </ol>
+          <p class="muted">Use the same Google account for both: the one signed in to Google Play on your phone.</p>
         </div>
         <figure class="droid-phone">
           <img src="/img/phone-bank-messages-360.webp?v=22cbadea" srcset="/img/phone-bank-messages-360.webp?v=22cbadea 360w, /img/phone-bank-messages-720.webp?v=5ce550a0 720w" sizes="(min-width: 900px) 330px, 72vw" width="360" height="771" decoding="async" alt="UrBudget on Android: bank texts turned into transactions, each ticked, with the balances after adding them.">
@@ -138,10 +146,10 @@
       <article class="guide">
         <h2 id="how">How joining works</h2>
         <ol class="steps">
-          <li><b>Leave your Google account's email above.</b> Use the one you sign in to Google Play with on your phone.</li>
-          <li><b>We add you to the test.</b> Your address goes on UrBudget's list of testers on Google Play. Nothing is sent to you yet.</li>
-          <li><b>We email you a link.</b> Once Google has approved the test, open the link on your phone, signed in to that Google account, and tap <strong>Become a tester</strong>.</li>
+          <li><b>Join the testers group.</b> On Google Groups, tap <strong>Join group</strong>, signed in with the Google account on your phone. The group is UrBudget's list of testers on Google Play, and it sends no email.</li>
+          <li><b>Become a tester.</b> Open <a href="https://play.google.com/apps/testing/app.urbudget">the Google Play link</a> with the same account and tap <strong>Become a tester</strong>.</li>
           <li><b>Install UrBudget from Google Play.</b> It updates through Google Play like any other app.</li>
+          <li><b>Keep it for 14 days.</b> Google lets a new app go public only after 12 testers have stayed in its test for 14 days in a row, so keep it installed and open it now and then. If something is broken or confusing, write to <a href="mailto:support@urbudget.app">support@urbudget.app</a>.</li>
         </ol>
 
         <h2 id="features">What's in the Android app</h2>
@@ -157,8 +165,14 @@
         <p>No. UrBudget is free on Android, as it is on Windows and Mac. The only paid part is optional device sync, at <span data-price="sync">$3</span> a month.</p>
         <h3>Which phones does it run on?</h3>
         <p>Android 8.0 or later, on phones and tablets, foldables included.</p>
+        <h3>Google Play says the app isn't available</h3>
+        <p>Google Play shows the test only to Google accounts in the testers group. Check that you joined the group with the account that's signed in to Google Play, wait a few minutes, then open <a href="https://play.google.com/apps/testing/app.urbudget">the Google Play link</a> again.</p>
+        <h3>Will the group send me email?</h3>
+        <p>No. Only UrBudget can post to it, and doesn't. Other testers can't see who's in it.</p>
+        <h3>I left my email here before. Do I need to do anything?</h3>
+        <p>Yes, please join with the two steps above: the test now lets in the testers group's members, not a list of addresses. We delete the address you left once UrBudget is on Google Play, or sooner if you write to <a href="mailto:support@urbudget.app">support@urbudget.app</a>.</p>
         <h3>Can I leave the test?</h3>
-        <p>Yes. Open the same link and leave the program, or uninstall the app. To have your address taken off our list, write to <a href="mailto:support@urbudget.app">support@urbudget.app</a>.</p>
+        <p>Yes. Open <a href="https://play.google.com/apps/testing/app.urbudget">the Google Play link</a> and choose <strong>Leave the program</strong>, then uninstall the app. You can leave the group on Google Groups too.</p>
 
         <div class="guide-cta">
           <h2>Budget on your computer meanwhile</h2>

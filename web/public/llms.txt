@@ -9,6 +9,7 @@ UrBudget isn't affiliated with YNAB or any other product named here. It has no p
 - [Home](https://urbudget.app/): features, privacy, pricing and FAQ
 - [Pricing](https://urbudget.app/pricing/): the app is free, with nothing locked; optional $3 a month device sync; SimpleFIN and AI provider charges are separate
 - [Download](https://urbudget.app/download/): the Microsoft Store for Windows (or the Windows installer), and the macOS installer
+- [Android test](https://urbudget.app/android/): UrBudget for Android is in a closed test on Google Play that anyone can join, in two steps
 - [Source code](https://github.com/urbudget/urbudget): UrBudget's code on GitHub, under the AGPL-3.0
 
 - [SimpleFIN bank sync](https://urbudget.app/bank-sync/): supported US and Canadian banks, separate provider cost, setup, review, privacy and troubleshooting
