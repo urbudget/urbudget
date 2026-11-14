@@ -3,7 +3,6 @@ import { Hono } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { adminFor } from "./access";
 import { admin } from "./admin";
-import { androidTesters } from "./android-testers";
 import { assistantReports } from "./assistant-reports";
 import { auth, requireUser } from "./auth";
 import type { AppEnv, Env } from "./env";
@@ -126,7 +125,6 @@ api.route("/visits", visits);
 api.route("/usage", usage);
 api.route("/admin", admin);
 api.route("/assistant-reports", assistantReports);
-api.route("/android-testers", androidTesters);
 
 export const app = new Hono<AppEnv>();
 
