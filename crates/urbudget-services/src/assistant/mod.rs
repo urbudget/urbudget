@@ -1,6 +1,7 @@
 //! The budget assistant: a chat panel that reads the budget through tools and proposes changes
-//! the user applies. It signs in with ChatGPT (the user's plan pays) or uses an OpenAI or
-//! Anthropic API key. Conversations and attachments stay in the budget's folder.
+//! the user applies. It signs in with ChatGPT (the user's plan pays), uses an OpenAI or
+//! Anthropic API key, or a model the user runs on their own server. Conversations and
+//! attachments stay in the budget's folder.
 mod agent;
 mod phone;
 mod sms;
@@ -13,6 +14,7 @@ pub mod guide;
 pub use auth::open_browser;
 pub mod history;
 pub mod llm;
+mod local;
 pub mod mcp;
 mod openai;
 pub mod prompt;
@@ -112,6 +114,8 @@ pub struct Settings {
     /// The service the user was last told their messages go to (the notice before a first
     /// message). Another service asks again.
     pub told_about: Option<Provider>,
+    /// Where the user's own model server answers (`local::addresses`), once it has; empty before.
+    pub local_address: String,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -125,6 +129,7 @@ impl Default for Settings {
             account: None,
             plan_notice_seen: false,
             told_about: None,
+            local_address: String::new(),
         }
     }
 }
@@ -133,6 +138,7 @@ fn provider_name(p: Provider) -> &'static str {
         Provider::Chatgpt => "chatgpt",
         Provider::Openai => "openai",
         Provider::Anthropic => "anthropic",
+        Provider::Local => "local",
     }
 }
 fn secret_service(p: Provider) -> &'static str {
@@ -140,6 +146,8 @@ fn secret_service(p: Provider) -> &'static str {
         Provider::Chatgpt => "com.localbudget.desktop.assistant.chatgpt",
         Provider::Openai => "com.localbudget.desktop.assistant.openai-key",
         Provider::Anthropic => "com.localbudget.desktop.assistant.anthropic-key",
+        // Nothing is kept under it: a local server takes no key.
+        Provider::Local => "com.localbudget.desktop.assistant.local",
     }
 }
 
@@ -273,15 +281,22 @@ impl Assistant {
         lock(&self.memory).remove(secret_service(p));
     }
 
-    /// The bearer token or key for the chosen service, refreshing the ChatGPT sign-in if needed.
+    /// The bearer token or key for the chosen service, refreshing the ChatGPT sign-in if needed,
+    /// or the address of the user's own model server.
     pub async fn credentials(&self) -> Result<Credentials, Failure> {
         let settings = self.settings();
         let provider = settings.provider;
+        if provider == Provider::Local {
+            if settings.local_address.is_empty() {
+                return Err(Failure::new(FailureKind::SignIn, t!("Add your model server's address in Settings to use the assistant.")));
+            }
+            return Ok(Credentials { provider, secret: String::new(), address: settings.local_address });
+        }
         if provider != Provider::Chatgpt {
             let secret = self.secret(provider).ok_or_else(|| {
                 Failure::new(FailureKind::SignIn, t!("Add your API key in Settings to use the assistant."))
             })?;
-            return Ok(Credentials { provider, secret });
+            return Ok(Credentials { provider, secret, address: String::new() });
         }
         let signed_out = || Failure::new(FailureKind::SignIn, t!("Sign in with ChatGPT to use the assistant."));
         let client_id = settings.client_id.clone().ok_or_else(signed_out)?;
@@ -313,7 +328,7 @@ impl Assistant {
                 t!("UrBudget wasn't allowed to use your ChatGPT plan. Sign in again and allow it."),
             ));
         }
-        Ok(Credentials { provider, secret: t.access.clone() })
+        Ok(Credentials { provider, secret: t.access.clone(), address: String::new() })
     }
 
     async fn model_list(&self, refresh: bool) -> Result<Vec<llm::Model>, Failure> {
@@ -437,6 +452,8 @@ pub struct StatusView {
     notice_due: bool,
     has_openai_key: bool,
     has_anthropic_key: bool,
+    /// The user's own model server, once it answered; empty before.
+    local_address: String,
     /// Where secrets are kept, or None when they last only until the app closes.
     storage: Option<&'static str>,
     signing_in: bool,
@@ -450,6 +467,7 @@ fn status(a: &Assistant) -> StatusView {
     let progress = lock(&a.sign_in_progress).clone();
     let ready = match s.provider {
         Provider::Chatgpt => s.client_id.is_some() && a.secret(Provider::Chatgpt).is_some(),
+        Provider::Local => !s.local_address.is_empty(),
         p => a.secret(p).is_some(),
     };
     let exe = std::env::current_exe().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
@@ -464,6 +482,7 @@ fn status(a: &Assistant) -> StatusView {
         notice_due: s.told_about != Some(s.provider),
         has_openai_key: a.secret(Provider::Openai).is_some(),
         has_anthropic_key: a.secret(Provider::Anthropic).is_some(),
+        local_address: s.local_address.clone(),
         storage: vault::STORE,
         signing_in: lock(&a.signing_in).is_some(),
         sign_in_phase: progress.phase,
@@ -624,12 +643,16 @@ pub fn assistant_settings(assistant: &Assistant, change: SettingsChange) -> Resu
     Ok(status(&assistant))
 }
 
+/// Saves an API key, or for a local server its address, once it lists models.
 pub async fn assistant_set_key(assistant: &Assistant, provider: Provider, key: String) -> Result<StatusView, String> {
+    if provider == Provider::Local {
+        return set_local_address(assistant, &key).await;
+    }
     let key = key.trim().to_owned();
     if provider == Provider::Chatgpt || key.len() < 20 || key.len() > 400 || key.chars().any(char::is_whitespace) {
         return Err(t!("Paste the whole API key."));
     }
-    let credentials = Credentials { provider, secret: key.clone() };
+    let credentials = Credentials { provider, secret: key.clone(), address: String::new() };
     // A key that can list models works.
     let list = llm::models(&assistant.http, &credentials).await.map_err(|f| f.message)?;
     assistant.keep_secret(provider, &key);
@@ -637,10 +660,48 @@ pub async fn assistant_set_key(assistant: &Assistant, provider: Provider, key: S
     assistant.update(|s| s.provider = provider)?;
     Ok(status(&assistant))
 }
+/// The address of the user's own model server, tried as typed and with `/v1`: the first that
+/// lists models is kept, and the service switched to it.
+async fn set_local_address(assistant: &Assistant, typed: &str) -> Result<StatusView, String> {
+    let mut problem: Option<Failure> = None;
+    for address in local::addresses(typed)? {
+        let credentials = Credentials { provider: Provider::Local, secret: String::new(), address: address.clone() };
+        match llm::models(&assistant.http, &credentials).await {
+            Ok(list) => {
+                lock(&assistant.sms_jobs).clear();
+                lock(&assistant.models).insert(Provider::Local, list);
+                assistant.update(|s| {
+                    // Another server needn't have the model chosen on the last one.
+                    if s.local_address != address {
+                        s.models.remove(provider_name(Provider::Local));
+                    }
+                    s.local_address = address;
+                    s.provider = Provider::Local;
+                })?;
+                return Ok(status(assistant));
+            }
+            // Nothing answers at that host, so another path on it won't either.
+            Err(f) if f.kind == FailureKind::Busy => return Err(f.message),
+            // "Not a model server" at one address says less than what another address says.
+            Err(f) => {
+                if problem.as_ref().is_none_or(|p| p.kind == FailureKind::Other && f.kind != FailureKind::Other) {
+                    problem = Some(f);
+                }
+            }
+        }
+    }
+    Err(problem.map(|f| f.message).unwrap_or_default())
+}
+
 pub fn assistant_forget_key(assistant: &Assistant, provider: Provider) -> Result<StatusView, String> {
     lock(&assistant.sms_jobs).clear();
-    assistant.forget_secret(provider);
     lock(&assistant.models).remove(&provider);
+    // Forgetting the server's address leaves the service as it is, to type another.
+    if provider == Provider::Local {
+        assistant.update(|s| s.local_address.clear())?;
+        return Ok(status(assistant));
+    }
+    assistant.forget_secret(provider);
     if assistant.settings().provider == provider {
         assistant.update(|s| s.provider = Provider::Chatgpt)?;
     }

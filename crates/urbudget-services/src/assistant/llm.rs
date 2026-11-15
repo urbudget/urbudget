@@ -4,7 +4,7 @@ use crate::t;
 use super::attachments::{self, Files, Kind};
 use super::history::Item;
 use super::tools::Spec;
-use super::{anthropic, openai};
+use super::{anthropic, local, openai};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -18,12 +18,17 @@ pub enum Provider {
     Openai,
     /// Claude models with the user's own Anthropic API key.
     Anthropic,
+    /// A model the user runs on their own computer or network, through a server that speaks
+    /// OpenAI's chat completions (Ollama, LM Studio, llama.cpp and the like). No key.
+    Local,
 }
 
-/// What a request is sent with: the service and its bearer token or key.
+/// What a request is sent with: the service, its bearer token or key, and for a local server
+/// its address (empty otherwise).
 pub struct Credentials {
     pub provider: Provider,
     pub secret: String,
+    pub address: String,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -155,6 +160,7 @@ pub async fn respond(
     match credentials.provider {
         Provider::Chatgpt | Provider::Openai => openai::respond(client, credentials, request, on_delta).await,
         Provider::Anthropic => anthropic::respond(client, credentials, request, on_delta).await,
+        Provider::Local => local::respond(client, credentials, request, on_delta).await,
     }
 }
 
@@ -169,6 +175,7 @@ pub async fn models(client: &reqwest::Client, credentials: &Credentials) -> Resu
     match credentials.provider {
         Provider::Chatgpt | Provider::Openai => openai::models(client, credentials).await,
         Provider::Anthropic => anthropic::models(client, credentials).await,
+        Provider::Local => local::models(client, credentials).await,
     }
 }
 

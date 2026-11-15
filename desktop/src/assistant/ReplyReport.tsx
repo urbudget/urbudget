@@ -29,7 +29,7 @@ export function reportDetails({
   tools?: string[];
   language: string;
 }) {
-  const service = provider === "chatgpt" ? "ChatGPT" : provider === "openai" ? "OpenAI" : "Anthropic";
+  const service = provider === "chatgpt" ? "ChatGPT" : provider === "openai" ? "OpenAI" : provider === "local" ? "Local model" : "Anthropic";
   return [
     `App: UrBudget desktop${version ? ` ${version}` : ""}`,
     `Service: ${service}`,

@@ -5,10 +5,11 @@ import type { Patch } from "../patch";
 import type { Budget } from "../types";
 import { t } from "../i18n";
 
-export type Provider = "chatgpt" | "openai" | "anthropic";
+/** `local` is a model the user runs on their own server (Ollama, LM Studio and the like). */
+export type Provider = "chatgpt" | "openai" | "anthropic" | "local";
 export type Status = {
   provider: Provider;
-  /** Signed in, or a key is saved, for the chosen service. */
+  /** Signed in, or a key is saved, or the local server answered, for the chosen service. */
   ready: boolean;
   account?: { sub: string; email: string; name: string } | null;
   model?: string | null;
@@ -19,6 +20,8 @@ export type Status = {
   noticeDue: boolean;
   hasOpenaiKey: boolean;
   hasAnthropicKey: boolean;
+  /** The user's own model server, once it answered; empty before. */
+  localAddress?: string;
   /** Where secrets are kept; null when they only last until the app closes. */
   storage: string | null;
   signingIn: boolean;
@@ -199,7 +202,9 @@ export const assistant = {
   /** `told` says the user read the notice of what gets sent, for the service in use. */
   settings: (change: Partial<{ provider: Provider; model: string; shareMemos: boolean; keepHistory: boolean; planNoticeSeen: boolean; told: boolean }>) =>
     noted(invoke<Status>("assistant_settings", { change })),
+  /** Saves an API key, or for `local` the server's address; either must list models first. */
   setKey: (provider: Provider, key: string) => noted(invoke<Status>("assistant_set_key", { provider, key })),
+  /** Forgets the key, or for `local` the server's address (the service stays as it is). */
   forgetKey: (provider: Provider) => noted(invoke<Status>("assistant_forget_key", { provider })),
   /**
    * Hears every status the app is given, so a change made in Settings (another service, say)

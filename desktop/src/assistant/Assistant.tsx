@@ -460,7 +460,18 @@ function Steps({ steps }: { steps: Step[] }) {
 const fileIcon = (a: Attachment) =>
   a.kind === "image" ? <Image size={13} aria-hidden /> : a.kind === "sheet" || a.kind === "csv" ? <FileSpreadsheet size={13} aria-hidden /> : <FileText size={13} aria-hidden />;
 const planLabel = (s: Status) =>
-  s.provider === "chatgpt" ? t("Using ChatGPT plan") : s.provider === "openai" ? t("Using your OpenAI key") : t("Using your Anthropic key");
+  s.provider === "chatgpt"
+    ? t("Using ChatGPT plan")
+    : s.provider === "openai"
+      ? t("Using your OpenAI key")
+      : s.provider === "local"
+        ? t("Using your own model")
+        : t("Using your Anthropic key");
+/** What the panel says when the chosen service still needs a key, or (for a local model) its server's address. */
+const missingSetup = (s: Status) =>
+  s.provider === "local"
+    ? t("The assistant is set to use a model you run yourself. Add its server's address in Settings.")
+    : t("The assistant is set to use your own {provider} API key. Add it in Settings.", { provider: s.provider === "openai" ? "OpenAI" : "Anthropic" });
 
 /**
  * The latest change still waiting to be applied, whose rows the page highlights. A thing the
@@ -485,8 +496,8 @@ function SignIn({ status, onStatus, onOpenSettings }: { status: Status; onStatus
         <span className="assistant-badge">
           <MessageSquareText size={20} aria-hidden />
         </span>
-        <h3>{t("Add your API key")}</h3>
-        <p>{t("The assistant is set to use your own {provider} API key. Add it in Settings.", { provider: status.provider === "openai" ? "OpenAI" : "Anthropic" })}</p>
+        <h3>{status.provider === "local" ? t("Connect your model server") : t("Add your API key")}</h3>
+        <p>{missingSetup(status)}</p>
         <button className="primary" onClick={onOpenSettings}>
           {t("Open settings")}
         </button>
@@ -597,9 +608,13 @@ function SentNotice({
       >
         <h3 id="assistant-sent-title">{t("What gets sent")}</h3>
         <p>
-          {t("Your messages, what's on screen, the files you attach, and the budget details the assistant looks up to answer you go to {provider}. Its terms and privacy policy govern how it processes and retains them.", {
-            provider: status.provider === "anthropic" ? "Anthropic" : "OpenAI",
-          })}
+          {status.provider === "local"
+            ? t("Your messages, what's on screen, the files you attach, and the budget details the assistant looks up to answer you go to your model server at {address}. UrBudget doesn't send them anywhere else.", {
+                address: status.localAddress ?? "",
+              })
+            : t("Your messages, what's on screen, the files you attach, and the budget details the assistant looks up to answer you go to {provider}. Its terms and privacy policy govern how it processes and retains them.", {
+                provider: status.provider === "anthropic" ? "Anthropic" : "OpenAI",
+              })}
         </p>
         <p>{t("Your budget file, conversation history and sign-in are kept on this computer. Nothing in the budget changes until you apply a change yourself.")}</p>
         <label className="setting-row toggle">
@@ -1801,11 +1816,7 @@ export function AssistantPanel({
                   </>
                 ) : (
                   <>
-                    <span>
-                      {t("The assistant is set to use your own {provider} API key. Add it in Settings.", {
-                        provider: status.provider === "openai" ? "OpenAI" : "Anthropic",
-                      })}
-                    </span>
+                    <span>{missingSetup(status)}</span>
                     <button className="primary small" onClick={onOpenSettings}>
                       {t("Open settings")}
                     </button>
