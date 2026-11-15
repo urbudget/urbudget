@@ -4,6 +4,18 @@ Notable changes to UrBudget, organized using [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [1.0.12] - 2026-11-15
+
+This update makes the assistant far more capable, lets it run on a model you host yourself, and makes Microsoft Store updates sturdier.
+
+- The assistant can propose many more kinds of change, each a card you apply and can undo: transfers, splits, another date or account, categories and groups, targets, scheduled transactions, and deleting transactions you selected. Cards keep up with your budget and move with Undo and Redo.
+- New: the assistant can use a model you run yourself with Ollama, LM Studio or a similar server. Choose Your own model in Settings › Assistant. Nothing goes to an AI company and no key is needed.
+- The assistant keeps notes for each budget, asks with buttons when it needs you to choose, shows figures on cards and suggests what to do next. Conversations can be renamed, searched and continued.
+- Before your first message to a service, the assistant says what gets sent and to whom.
+- Credit card accounts can carry a credit limit and show the credit left.
+- Reports remember what you've hidden and say so, and each bank-import line says what it will do.
+- Microsoft Store updates show their progress, and a stalled one says so instead of staying on Downloading.
+
 ### Added
 
 - On the desktop, the assistant can use a model you run yourself: choose Your own model in Settings › Assistant and type the address of Ollama, LM Studio, llama.cpp's server or another server that speaks OpenAI's chat completions API. Nothing goes to an AI company, and no key is needed. The model has to be able to use tools, and needs a context of at least 32K tokens. Images are sent to models that can read them; PDFs aren't sent.
@@ -18,6 +30,7 @@ Notable changes to UrBudget, organized using [Keep a Changelog](https://keepacha
 - A reply has a thumbs up and a thumbs down, kept with the conversation on your device. A report about a reply can include a line of details (which tools the reply used, the service and model, the app's version, the language): it's shown in the form, to change or remove before it's sent.
 - Before the first message to a service, and again after you change service, the assistant says what gets sent and to whom, with the switch for sharing memos, on the three apps.
 - A line above the message field says what goes with the message (the page and month, an account or category, selected transactions, the file being imported), and each part can be taken off. A sent message shows what went with it.
+- A credit card account can carry its credit limit, set in the account form, and then shows the credit left: the limit plus the balance, negative once you're past it.
 - On Android, Ask the assistant on a selection in the register and on a category. On the phones, Categorize with the assistant after a bank import and Cover with the assistant on an overspent month, as the desktop has.
 
 ### Changed
@@ -34,6 +47,12 @@ Notable changes to UrBudget, organized using [Keep a Changelog](https://keepacha
 - A message can be 20,000 characters, counted as characters whatever the language.
 - With a Claude key, a conversation's instructions and tools stay as they began, and its requests are cached, which costs less. Not yet tried against Claude.
 - "Save as PDF" reads Print or save as PDF, and the plan notice says UrBudget.
+- Reports remember, for each budget on this computer, which accounts and categories you've left out, and a line under the filters names them, each with a way back in. The donut's total fits inside it, and the weekday chart says what its bars count.
+- Each bank-import line says what it will do: match a transaction already in the budget, add it as a new one or as a transfer, or skip it. A line that may already be imported, or looks like a transfer, asks you to choose, and a renamed payee shows the bank's name beside yours.
+- Microsoft Store updates show their progress, and at 100% say Windows is still finishing. A download that stops moving for two minutes is cancelled with a message, Open Microsoft Store stays available, and your budget is saved and stays locked until Windows has finished installing.
+- The title bar shows the UrBudget wordmark beside the logo.
+- The page your browser shows after signing in with ChatGPT has UrBudget's look, light or dark.
+- Arabic had a reviewed pass over grammar and glossary terms, with one wording across the apps.
 
 ### Fixed
 
@@ -265,7 +284,9 @@ Also
 - Quick Assign's Underfunded now funds "maintain a balance" targets.
 - Notifications are easier to read in dark mode.
 
-[Unreleased]: https://github.com/urbudget/urbudget/compare/desktop-v1.0.10...HEAD
+[Unreleased]: https://github.com/urbudget/urbudget/compare/desktop-v1.0.12...HEAD
+[1.0.12]: https://github.com/urbudget/urbudget/releases/tag/desktop-v1.0.12
+[1.0.11]: https://github.com/urbudget/urbudget/releases/tag/desktop-v1.0.11
 [1.0.10]: https://github.com/urbudget/urbudget/releases/tag/desktop-v1.0.10
 [1.0.9]: https://github.com/urbudget/urbudget/releases/tag/desktop-v1.0.9
 [1.0.8]: https://github.com/urbudget/urbudget/releases/tag/desktop-v1.0.8

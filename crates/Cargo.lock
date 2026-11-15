@@ -1760,7 +1760,7 @@ checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
 name = "urbudget-android"
-version = "1.0.11"
+version = "1.0.12"
 dependencies = [
  "jni",
  "rusqlite",
@@ -1773,7 +1773,7 @@ dependencies = [
 
 [[package]]
 name = "urbudget-core"
-version = "1.0.11"
+version = "1.0.12"
 dependencies = [
  "base64 0.22.1",
  "calamine",
@@ -1793,7 +1793,7 @@ dependencies = [
 
 [[package]]
 name = "urbudget-ios"
-version = "1.0.11"
+version = "1.0.12"
 dependencies = [
  "serde",
  "serde_json",
@@ -1804,7 +1804,7 @@ dependencies = [
 
 [[package]]
 name = "urbudget-services"
-version = "1.0.11"
+version = "1.0.12"
 dependencies = [
  "argon2",
  "base64 0.22.1",
