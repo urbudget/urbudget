@@ -21,6 +21,8 @@ vi.mock("./api", async (importOriginal) => {
       signIn: vi.fn(),
       cancelSignIn: vi.fn(),
       settings: vi.fn(),
+      setKey: vi.fn(),
+      forgetKey: vi.fn(),
       thread: vi.fn(),
       threads: vi.fn(async () => []),
       send: vi.fn(),
@@ -624,6 +626,57 @@ it("asks again for a service chosen in Settings while the panel is open", async 
   fireEvent.keyDown(box, { key: "Enter" });
   expect(screen.getByRole("dialog", { name: "What gets sent" }).textContent).toContain("go to Anthropic.");
   expect(assistant.send).not.toHaveBeenCalled();
+});
+
+it("says messages go to the user's own model server, and asks for its address until it has one", async () => {
+  vi.mocked(assistant.status).mockResolvedValue(ready);
+  panel();
+  const box = await messageBox();
+  const local: Status = { ...ready, provider: "local", account: null, localAddress: "http://localhost:11434/v1", noticeDue: true };
+  act(() => tell(local));
+  expect(screen.getByText("Using your own model")).toBeTruthy();
+  fireEvent.change(box, { target: { value: "Hi" } });
+  fireEvent.keyDown(box, { key: "Enter" });
+  const notice = screen.getByRole("dialog", { name: "What gets sent" }).textContent;
+  expect(notice).toContain("go to your model server at http://localhost:11434/v1. UrBudget doesn't send them anywhere else.");
+  expect(notice).not.toContain("OpenAI");
+  expect(assistant.send).not.toHaveBeenCalled();
+  // Without an address there is nothing to send to, and Settings is where to add it.
+  act(() => tell({ ...local, ready: false, localAddress: "", noticeDue: false }));
+  expect(await screen.findByText("The assistant is set to use a model you run yourself. Add its server's address in Settings.")).toBeTruthy();
+});
+
+it("connects a model the user runs themselves by its server's address", async () => {
+  const local: Status = { ...ready, provider: "local", ready: false, account: null, localAddress: "" };
+  const connected: Status = { ...local, ready: true, localAddress: "http://localhost:11434/v1" };
+  vi.mocked(assistant.status).mockResolvedValue(local);
+  vi.mocked(assistant.models).mockResolvedValue([{ id: "qwen3:32b", name: "qwen3:32b" }]);
+  vi.mocked(assistant.setKey).mockResolvedValue(connected);
+  vi.mocked(assistant.forgetKey).mockResolvedValue(local);
+  render(
+    <ToastProvider>
+      <AssistantSettings />
+    </ToastProvider>,
+  );
+  const field = (await screen.findByLabelText("Server address", {}, { timeout: 5000 })) as HTMLInputElement;
+  expect(field.placeholder).toBe("http://localhost:11434/v1");
+  // No key, no ChatGPT sign-in and no plan usage to manage.
+  expect(screen.queryByLabelText("API key")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Continue with ChatGPT" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Manage usage" })).toBeNull();
+  const connect = screen.getByRole("button", { name: "Connect" }) as HTMLButtonElement;
+  expect(connect.disabled).toBe(true);
+  // What was typed goes to the core as it is; the core finds where the server answers.
+  fireEvent.change(field, { target: { value: "localhost:11434" } });
+  fireEvent.click(connect);
+  await waitFor(() => expect(assistant.setKey).toHaveBeenCalledWith("local", "localhost:11434"));
+  expect(await screen.findByText("Connected to http://localhost:11434/v1.")).toBeTruthy();
+  expect(await screen.findByRole("option", { name: "qwen3:32b" })).toBeTruthy();
+  expect(screen.getByText("The list comes from your server.")).toBeTruthy();
+  // Changing it starts from the address in use.
+  fireEvent.click(screen.getByRole("button", { name: "Change address" }));
+  await waitFor(() => expect(assistant.forgetKey).toHaveBeenCalledWith("local"));
+  expect(((await screen.findByLabelText("Server address")) as HTMLInputElement).value).toBe("http://localhost:11434/v1");
 });
 
 it("shows the plan's notice first, and what gets sent once that is read", async () => {

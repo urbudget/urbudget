@@ -12,7 +12,10 @@ const SERVICES: [Provider, string][] = [
   ["chatgpt", msg("ChatGPT plan (sign in)")],
   ["openai", msg("OpenAI API key")],
   ["anthropic", msg("Anthropic API key (Claude)")],
+  ["local", msg("Your own model (Ollama, LM Studio…)")],
 ];
+/** Ollama's address, as an example of what to type. */
+const LOCAL_EXAMPLE = "http://localhost:11434/v1";
 /** The most a note holds; the core cuts a longer one short. */
 const NOTE = 200;
 
@@ -102,6 +105,7 @@ export function AssistantSettings({
   const [status, setStatus] = useState<Status | null>(null);
   const [models, setModels] = useState<Model[]>([]);
   const [key, setKey] = useState("");
+  const [address, setAddress] = useState("");
   const [busy, setBusy] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const fail = (e: unknown) => toast({ message: errorText(e), tone: "error" });
@@ -132,7 +136,8 @@ export function AssistantSettings({
         <LoaderCircle size={16} className="spin" />
       </section>
     );
-  const keyed = status.provider !== "chatgpt";
+  const local = status.provider === "local";
+  const keyed = status.provider === "openai" || status.provider === "anthropic";
   const hasKey = status.provider === "openai" ? status.hasOpenaiKey : status.hasAnthropicKey;
   const config = JSON.stringify(status.mcp.config, null, 2);
   return (
@@ -146,7 +151,11 @@ export function AssistantSettings({
           <div className="setting-row">
             <span>
               <strong>{t("Service")}</strong>
-              <small>{t("Your ChatGPT Plus or Pro plan, or your own API key, pays for the assistant.")}</small>
+              <small>
+                {local
+                  ? t("A model you run yourself, on this computer or your network. Nothing goes to an AI company.")
+                  : t("Your ChatGPT Plus or Pro plan, or your own API key, pays for the assistant.")}
+              </small>
             </span>
             <select
               aria-label={t("Service")}
@@ -162,7 +171,51 @@ export function AssistantSettings({
             </select>
           </div>
 
-          {!keyed ? (
+          {local ? (
+            <div className="setting-row">
+              <span>
+                <strong>{t("Server address")}</strong>
+                <small>
+                  {status.ready
+                    ? t("Connected to {address}.", { address: status.localAddress ?? "" })
+                    : t("Where Ollama, LM Studio or a similar server answers. Choose a model that can use tools, with a context of at least 32K tokens.")}
+                </small>
+              </span>
+              {status.ready ? (
+                <button
+                  className="secondary"
+                  disabled={!!busy}
+                  onClick={() => {
+                    setAddress(status.localAddress ?? "");
+                    void run("forget", () => assistant.forgetKey("local"));
+                  }}
+                >
+                  {t("Change address")}
+                </button>
+              ) : (
+                <form
+                  className="assistant-key"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void run("key", () => assistant.setKey("local", address));
+                  }}
+                >
+                  <input
+                    aria-label={t("Server address")}
+                    placeholder={LOCAL_EXAMPLE}
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                    autoComplete="off"
+                    spellCheck={false}
+                    dir="ltr"
+                  />
+                  <button className="primary" disabled={!address.trim() || !!busy}>
+                    {busy === "key" ? <LoaderCircle size={14} className="spin" /> : null} {t("Connect")}
+                  </button>
+                </form>
+              )}
+            </div>
+          ) : !keyed ? (
             <div className="setting-row">
               <span>
                 <strong>{t("ChatGPT account")}</strong>
@@ -244,7 +297,15 @@ export function AssistantSettings({
           <div className="setting-row">
             <span>
               <strong>{t("Model")}</strong>
-              <small>{status.ready ? t("The list comes from your account.") : t("Sign in or add a key to choose.")}</small>
+              <small>
+                {local
+                  ? status.ready
+                    ? t("The list comes from your server.")
+                    : t("Connect to your server to choose.")
+                  : status.ready
+                    ? t("The list comes from your account.")
+                    : t("Sign in or add a key to choose.")}
+              </small>
             </span>
             <select
               aria-label={t("Model")}
@@ -316,7 +377,7 @@ export function AssistantSettings({
               </button>
             )}
           </div>
-          {!keyed && (
+          {status.provider === "chatgpt" && (
             <div className="setting-row">
               <span>
                 <strong>{t("Usage")}</strong>
