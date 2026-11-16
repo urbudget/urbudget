@@ -4,6 +4,19 @@ Notable changes to UrBudget, organized using [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [1.0.13] - 2026-11-16
+
+This update adds a Linux version. Nothing else changes on Windows and macOS.
+
+- New: UrBudget for Linux, as an AppImage and as a .deb for Debian and Ubuntu, on 64-bit Intel and AMD computers.
+- The Linux version is new. If something doesn't work on your system, write to support@urbudget.app.
+
+### Added
+
+- UrBudget runs on Linux, on 64-bit Intel and AMD computers: an AppImage that runs without installing, and a .deb for Ubuntu 22.04, Debian 12 and later.
+- On Linux, sign-ins, YNAB tokens and bank sync connections are sealed under a key kept in the system keyring (GNOME Keyring, KWallet, KeePassXC). Where no keyring is running they aren't remembered: a sign-in lasts until UrBudget closes, a YNAB token is pasted each time, and bank sync isn't offered.
+- The AppImage updates itself like the Windows and macOS apps. A copy installed from the .deb downloads its updates and installs them when you choose Restart to update, which asks for your password.
+
 ## [1.0.12] - 2026-11-15
 
 This update makes the assistant far more capable, lets it run on a model you host yourself, and makes Microsoft Store updates sturdier.
