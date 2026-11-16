@@ -112,10 +112,19 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev gnome-keyring
       - run: npm ci
       - name: Test the native budget engine and storage
         run: npm test
+      # The other tests keep the secrets' key in a plain file. This one keeps it in a real
+      # keyring, started unlocked on a session bus of its own. The pause lets the keyring take
+      # its name on the bus: asked sooner, the bus starts a second, locked one.
+      - name: Keep the secrets' key in a Linux keyring
+        if: runner.os == 'Linux'
+        run: |
+          dbus-run-session -- bash -c 'echo -n test | gnome-keyring-daemon --unlock --components=secrets > /dev/null \
+            && sleep 1 \
+            && cargo test --locked --manifest-path ../crates/Cargo.toml -p urbudget-services --features keyring -- --ignored keyring'
       # Tauri runs the TypeScript/Vite build before compiling the native app.
       # Debug reuses cargo test's dependencies instead of compiling a second release
       # profile. Optimized, signed installers are still built by release.yml.

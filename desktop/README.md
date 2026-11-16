@@ -75,7 +75,7 @@ original three-column assignment table remains compatible with existing database
 - Loan amortization, extra-payment comparison, payoff-date planning and local payment recording with monthly interest/fees charged once.
 - Autosave, visible save state, external database change detection, explicit fetch, atomic recovery drafts, SQLite backups, and full local JSON export/import.
 - Import from YNAB's own export files (no token or connection) or from its API, validated local import, and Plan/Register CSV export in YNAB's format.
-- OS-appropriate behavior: the YNAB token can be remembered with the app's other secrets, sealed under a key the system keeps (Keychain on macOS/iOS, DPAPI on Windows, Android Keystore on Android; unsupported systems require pasting each time), shortcuts are shown as ⌘/⌥/⇧ on macOS and Ctrl/Alt/Shift elsewhere, and Windows gets the app's own title bar.
+- OS-appropriate behavior: the YNAB token can be remembered with the app's other secrets, sealed under a key the system keeps (Keychain on macOS/iOS, DPAPI on Windows, Android Keystore on Android, the system keyring on Linux; a system with none requires pasting each time), shortcuts are shown as ⌘/⌥/⇧ on macOS and Ctrl/Alt/Shift elsewhere, and Windows gets the app's own title bar.
 
 ## YNAB migration
 
@@ -133,6 +133,7 @@ Tokens and keys kept between launches (the account's session, the sync key, the 
 - macOS and iOS: one Keychain item, `com.localbudget.desktop.secrets-key` (labelled UrBudget). The Keychain asks per item and per app signature, so the Developer ID build reads it without asking, and a build signed any other way asks at most once.
 - Windows: `secrets.key` beside it, sealed with DPAPI for the Windows user. Nothing appears in Credential Manager.
 - Android: sealed by `SecretStore.kt` under a key in the Android Keystore ([mobile guide](../docs/MOBILE.md#data-and-secrets)).
+- Linux (not released; built and tested in CI): one item labelled UrBudget in the default keyring of the system's Secret Service (GNOME Keyring, KWallet, KeePassXC), with the attribute `service` = `com.localbudget.desktop.secrets-key`. A locked keyring asks for its password. Where no keyring is running, or it has no default collection, secrets aren't kept: a sign-in lasts until the app closes, a YNAB token is pasted each time, and bank sync isn't offered. The app asks once per launch whether a keyring is there.
 - Debug builds on a computer: `secrets-dev.bin` with a plain `secrets-dev.key`, so a rebuilt app never touches the Keychain or the installed app's secrets. Sign in to them separately.
 
 Earlier versions kept each secret as its own Keychain item or Credential Manager entry. Each moves into the file the first time it's read, and the old entry is deleted; on a Mac, an entry made by a differently signed copy can ask once. An existing encrypted file is preserved and blocks writes whenever its key is missing, unavailable or invalid, or its contents cannot be read or authenticated. Reads retry after a failure, allowing access to recover without restarting. Concurrent app copies serialize migration, credential changes and legacy cleanup with an OS file lock.

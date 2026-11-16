@@ -532,6 +532,7 @@ pub(super) const MESSAGES: &[(&str, &str)] = &[
     ("Keychain", "سلسلة المفاتيح"),
     ("Windows encrypted storage", "التخزين المشفَّر في Windows"),
     ("Android Keystore", "مخزن مفاتيح Android"),
+    ("System keyring", "حلقة مفاتيح النظام"),
     ("The system", "النظام"),
     ("{store} couldn't save this.", "تعذّر حفظ هذا في {store}."),
     ("{store} couldn't remove it.", "تعذّرت إزالته من {store}."),

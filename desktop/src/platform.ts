@@ -17,7 +17,9 @@ const TOKEN_STORES: Partial<Record<Os, string>> = {
   // Translated where it's shown; Keychain is Apple's name for it.
   windows: msg("Windows encrypted storage"),
 };
-/** What protects a remembered YNAB token (see vault.rs), or null where it can't be kept. */
+/** Linux's store. It's there only where a keyring is running, which the app says (`api.secretStore`). */
+export const KEYRING = msg("System keyring");
+/** What protects a remembered YNAB token (see vault.rs), or null where it can't be kept or, on Linux, isn't known yet. */
 export const tokenStoreFor = (system: Os) => TOKEN_STORES[system] ?? null;
 export const tokenStore = tokenStoreFor(os);
 

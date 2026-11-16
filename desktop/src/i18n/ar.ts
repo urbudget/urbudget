@@ -520,6 +520,7 @@ export const ar: Catalog = {
   "Water": "المياه",
   "When a category's Available turns red, click the amount and move money over from a category that has some left. Changing the plan is part of the plan.": "عندما يصبح المتاح في فئة ما باللون الأحمر، انقر المبلغ وانقل إليها المال من فئة بقي فيها شيء. تغيير الخطة جزء من الخطة.",
   "Windows encrypted storage": "التخزين المشفَّر في Windows",
+  "System keyring": "حلقة مفاتيح النظام",
   "Yes": "نعم",
   "You have version {version}.": "لديك الإصدار {version}.",
   "You made another edit while the database was being fetched. Your edit has been kept; fetch again when ready.": "أجريت تعديلًا آخر أثناء جلب قاعدة البيانات. احتُفظ بتعديلك؛ اجلبها مجددًا عندما تكون مستعدًا.",

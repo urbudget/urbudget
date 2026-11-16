@@ -2,7 +2,7 @@
 //! person chooses Remember. Several can be kept (one per YNAB account, say), each named by the
 //! plans it reads. The window only ever sees those names and each token's last four characters;
 //! the tokens themselves stay here. Where secrets can't be kept, a token is pasted for each import.
-use crate::vault::{self, STORE};
+use crate::vault::{self, store};
 use crate::{i18n::tr, t};
 use serde::{Deserialize, Serialize};
 
@@ -74,7 +74,7 @@ fn listed(saved: &[Saved]) -> Vec<SavedToken> {
 }
 
 fn load() -> Result<Vec<Saved>, String> {
-    STORE.ok_or_else(unsupported)?;
+    store().ok_or_else(unsupported)?;
     let mut saved: Vec<Saved> = match vault::read(SERVICE) {
         Some(json) => serde_json::from_str(&json).map_err(|_| t!("The YNAB tokens saved in {store} can't be read.", store = vault::store_name()))?,
         None => vec![],
@@ -87,7 +87,7 @@ fn load() -> Result<Vec<Saved>, String> {
     Ok(saved)
 }
 fn keep(saved: &[Saved]) -> Result<(), String> {
-    STORE.ok_or_else(unsupported)?;
+    store().ok_or_else(unsupported)?;
     if saved.is_empty() {
         return vault::delete(SERVICE).map(|_| ());
     }
@@ -127,7 +127,7 @@ pub fn save(token: &str, label: &str) -> Result<String, String> {
     Ok(id)
 }
 pub fn ynab_tokens() -> Result<Vec<SavedToken>, String> {
-    if STORE.is_none() {
+    if store().is_none() {
         return Ok(vec![]);
     }
     Ok(listed(&load()?))

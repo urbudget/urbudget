@@ -630,6 +630,7 @@ pub fn run() {
             ynab_capture::accept_ynab_import,
             credentials::ynab_tokens,
             credentials::forget_ynab_token,
+            credentials::secret_store,
             simplefin::simplefin_status,
             simplefin::simplefin_connect,
             simplefin::simplefin_accounts,

@@ -483,7 +483,7 @@ fn status(a: &Assistant) -> StatusView {
         has_openai_key: a.secret(Provider::Openai).is_some(),
         has_anthropic_key: a.secret(Provider::Anthropic).is_some(),
         local_address: s.local_address.clone(),
-        storage: vault::STORE,
+        storage: vault::store(),
         signing_in: lock(&a.signing_in).is_some(),
         sign_in_phase: progress.phase,
         sign_in_error: progress.error,

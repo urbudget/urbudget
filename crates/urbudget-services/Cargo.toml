@@ -5,6 +5,11 @@ description = "Host-neutral local storage, cloud, bank and assistant services sh
 edition = "2021"
 license = "AGPL-3.0-or-later"
 
+[features]
+# On Linux, keep the secrets' key in the system keyring (vault.rs). The desktop app turns it on;
+# the phone adapters' tests, which also build on Linux, don't link D-Bus.
+keyring = ["dep:dbus-secret-service"]
+
 [dependencies]
 urbudget-core = { path = "../urbudget-core" }
 serde = { version = "1", features = ["derive"] }
@@ -31,6 +36,10 @@ security-framework = "3"
 jni = "0.21"
 ndk-context = "0.1"
 libc = "0.2"
+
+# The Secret Service (GNOME Keyring, KWallet), over the D-Bus library the desktop window already links.
+[target.'cfg(target_os = "linux")'.dependencies]
+dbus-secret-service = { version = "4.1", features = ["crypto-rust"], optional = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Credentials", "Win32_Security_Cryptography", "Win32_Storage_Packaging_Appx", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }

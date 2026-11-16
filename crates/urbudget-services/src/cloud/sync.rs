@@ -375,7 +375,7 @@ impl Engine {
         .map_err(error)
     }
     fn key(&self) -> Option<crypto::Key> {
-        if vault::STORE.is_some() {
+        if vault::store().is_some() {
             vault::read(&service(KEY_SERVICE))
                 .and_then(|k| URL_SAFE_NO_PAD.decode(k).ok())
                 .and_then(|k| k.try_into().ok())
@@ -385,7 +385,7 @@ impl Engine {
     }
     fn set_key(&self, key: Option<crypto::Key>) -> Result<(), String> {
         match key {
-            Some(key) if vault::STORE.is_some() => vault::save(&service(KEY_SERVICE), &URL_SAFE_NO_PAD.encode(key)),
+            Some(key) if vault::store().is_some() => vault::save(&service(KEY_SERVICE), &URL_SAFE_NO_PAD.encode(key)),
             other => {
                 vault::delete(&service(KEY_SERVICE))?;
                 *self.memory_key.lock().unwrap_or_else(|e| e.into_inner()) = other;
