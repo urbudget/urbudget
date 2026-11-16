@@ -6,7 +6,7 @@ deploys it ([deploy.yml](.github/workflows/deploy.yml), see the [website guide](
 
 | App | Version is in | Tag | Workflow | Where it goes |
 | --- | --- | --- | --- | --- |
-| Desktop (Windows, macOS) | `desktop/` (package, lockfile, Tauri and Cargo files) and the shared crates | `desktop-v1.2.3` | [release.yml](.github/workflows/release.yml) makes a draft GitHub release with the installers | Publishing the draft puts them on urbudget.app ([publish.yml](.github/workflows/publish.yml)) and sends the Store package to the Microsoft Store ([store.yml](.github/workflows/store.yml)) |
+| Desktop (Windows, macOS, Linux) | `desktop/` (package, lockfile, Tauri and Cargo files) and the shared crates | `desktop-v1.2.3` | [release.yml](.github/workflows/release.yml) makes a draft GitHub release with the installers | Publishing the draft puts them on urbudget.app ([publish.yml](.github/workflows/publish.yml)) and sends the Store package to the Microsoft Store ([store.yml](.github/workflows/store.yml)) |
 | Android | `android/app/build.gradle.kts` | `android-v1.2.3` | [android-release.yml](.github/workflows/android-release.yml) builds the signed App Bundle and sends it to Play | Play's internal track (or the `PLAY_TRACK` variable's), then promote it in Play Console. The very first bundle is uploaded by hand from the run's artifacts |
 | iOS | `ios/project.yml` and the Xcode project | `ios-v1.2.3` | [ios-release.yml](.github/workflows/ios-release.yml) uploads the build to App Store Connect | TestFlight, then submit it for review in App Store Connect |
 
@@ -31,6 +31,10 @@ Actions tab on `main` with the version already in the source.
 - **The shared crates follow desktop.** `crates/` is built into every app but released with
   none of them on its own; its version moves with desktop's (the script does both), and it's the
   version the engine reports to urbudget.app.
+- **Linux** is built with every desktop release (an AppImage and a `.deb`) but isn't on the download
+  page yet. Publishing a draft that has them puts them on urbudget.app, where Linux copies update
+  from them; delete the Linux files from the draft first to hold them back
+  ([desktop/README.md › Releases](desktop/README.md#releases)).
 - **Desktop:** write the release's notes from [CHANGELOG.md](desktop/CHANGELOG.md) into the draft
   before publishing; they show on the download page and in the app's update notice. Desktop
   releases up to 1.0.7 are tagged `v1.0.7` and so on; those tags stay as they are.

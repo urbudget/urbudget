@@ -656,6 +656,7 @@ pub fn run() {
             reveal_path,
             updates::restart_app,
             updates::update_channel,
+            updates::update_asks_password,
             updates::check_store_update,
             updates::install_store_update,
             updates::download_store_update,

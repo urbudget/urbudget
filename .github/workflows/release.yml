@@ -1,6 +1,6 @@
 # Builds UrBudget's installers on GitHub's machines and attaches them to a draft release:
 # a signed, notarized macOS .dmg (Apple Silicon and Intel in one app), the Windows installer,
-# and the Microsoft Store package (.msix).
+# the Microsoft Store package (.msix), and for Linux an AppImage and a .deb (64-bit Intel/AMD).
 # Run it from the Actions tab (Release → Run workflow) or by pushing a tag such as desktop-v1.0.8
 # for the version in desktop/ (`node scripts/versions.mjs desktop 1.0.8` sets it; RELEASING.md).
 # Android and iOS have their own tags and workflows. Desktop's earlier releases are tagged v1.0.7.
@@ -65,6 +65,11 @@ jobs:
           - platform: windows-latest
             args: ""
             rust-targets: ""
+          # The oldest Ubuntu GitHub offers: an AppImage runs on systems as new as the one it was
+          # built on, or newer.
+          - platform: ubuntu-22.04
+            args: ""
+            rust-targets: ""
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
@@ -88,6 +93,13 @@ jobs:
         with:
           workspaces: desktop/src-tauri -> target
 
+      # WebKitGTK and the other libraries Tauri links against on Linux (as in app.yml).
+      - name: Install the Linux build libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev
+
       - name: Install dependencies
         working-directory: desktop
         run: npm ci
@@ -96,7 +108,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # macOS: the bundler imports the certificate into a temporary keychain, signs the app,
-          # then sends it to Apple for notarization. Unused on Windows.
+          # then sends it to Apple for notarization. Unused on Windows and Linux.
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}

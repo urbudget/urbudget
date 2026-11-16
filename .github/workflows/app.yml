@@ -1,7 +1,8 @@
 # Validates the desktop app: shared UI checks run once; native desktop changes also build it.
 # Pushes and pull requests build on Windows and Linux, not macOS: a macOS minute costs ten Linux
 # ones. Run workflow adds macOS, and every release builds macOS anyway (release.yml).
-# Linux has no installer yet: its build here only shows that the app still compiles and its tests pass.
+# Linux's AppImage and .deb are made only for a release (release.yml): its build here shows that the
+# app still compiles and its tests pass.
 # The phone apps in android/ and ios/ have their own workflows (android-native.yml, ios-native.yml).
 name: App validation
 

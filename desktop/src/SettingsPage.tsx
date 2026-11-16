@@ -392,7 +392,7 @@ export function SettingsPage({
             <p className="help">{t("These apply on this computer, to every budget.")}</p>
             <div className="setting-list">
               {desktop && <UpdateSetting updates={updates} version={version} onInstall={onInstallUpdate} />}
-              {desktop && (
+              {desktop && !updates.asksPassword && (
                 <Toggle
                   pref="autoUpdate"
                   title={t("Install updates by themselves")}

@@ -65,7 +65,9 @@ export function UpdateSetting({
   onInstall: () => void;
 }) {
   const { available, phase } = updates;
-  const [automatic] = usePref("autoUpdate");
+  const [byItself] = usePref("autoUpdate");
+  // A copy whose installer asks for a password installs only when the person chooses.
+  const automatic = byItself && !updates.asksPassword;
   const store = updates.channel === "microsoftStore";
   return (
     <div className="setting-row update-setting">

@@ -68,6 +68,15 @@ fn packaged() -> Result<bool, String> {
     Ok(false)
 }
 
+/// A Linux copy installed from the .deb updates through the system's package installer, which
+/// asks for an administrator's password. Its updates wait for the person to install them, so
+/// that nothing asks while nobody is there. An AppImage replaces its own file and never asks.
+#[tauri::command]
+pub fn update_asks_password() -> bool {
+    use tauri::utils::{config::BundleType, platform::bundle_type};
+    cfg!(target_os = "linux") && matches!(bundle_type(), Some(BundleType::Deb | BundleType::Rpm))
+}
+
 /// Counts this copy as in use on urbudget.app, with nothing that identifies it, at most once a day
 /// (urbudget_services::usage). The window asks only while the Privacy & data switch is on. Debug
 /// builds count only on a local server (URBUDGET_API), never on urbudget.app.

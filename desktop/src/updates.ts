@@ -13,6 +13,7 @@ import { check, type Update } from "@tauri-apps/plugin-updater";
 import { desktop } from "./bridge";
 import { errorText } from "./format";
 import { msg, t } from "./i18n";
+import { os } from "./platform";
 import { getPref } from "./prefs";
 
 const FIRST_CHECK = 8_000;
@@ -52,6 +53,9 @@ export type UpdateState = {
   /** `ready`, and it may install by itself: it isn't one already tried that way from this
    * version without changing it, lately. */
   automatic: boolean;
+  /** Installing asks for an administrator's password (a Linux copy installed from the .deb), so
+   * this copy's updates always wait for the person and never install by themselves. */
+  asksPassword: boolean;
   channel: UpdateChannel | null;
   error: string | null;
 };
@@ -89,6 +93,7 @@ export function useUpdates() {
     installStatus: null,
     current: false,
     automatic: false,
+    asksPassword: false,
     channel: null,
     error: null,
   });
@@ -99,6 +104,8 @@ export function useUpdates() {
   const lastCheck = useRef(0);
   const channel = useRef<UpdateChannel | null>(null);
   const channelRequest = useRef<Promise<UpdateChannel> | null>(null);
+  /** Installing asks for a password (`UpdateState.asksPassword`). */
+  const asksPassword = useRef(false);
   const storeUpdate = useRef(false);
   /** Windows has the Store update downloaded and installs it without asking. */
   const silentStore = useRef(false);
@@ -131,9 +138,9 @@ export function useUpdates() {
   /** What the waiting update is called, for remembering an automatic attempt at it. */
   const target = () => found.current?.version ?? (storeUpdate.current ? "store" : null);
   /** Whether the waiting update may install by itself: not when it already did from this version
-   * lately, and this version is still running. */
+   * lately, and this version is still running. Never when installing asks for a password. */
   const allowed = () => {
-    if (!running.current) return false;
+    if (!running.current || asksPassword.current) return false;
     const attempt = lastAttempt();
     return !(attempt && attempt.from === running.current && attempt.to === target() && Date.now() - attempt.at < RETRY_AFTER);
   };
@@ -152,13 +159,16 @@ export function useUpdates() {
     if (channel.current) return channel.current;
     if (!channelRequest.current) {
       channelRequest.current = invoke<UpdateChannel>("update_channel")
-        .then((value) => {
+        .then(async (value) => {
           if (!["direct", "microsoftStore", "development"].includes(value))
             throw new Error(
               t("Couldn't identify this app's update channel. Try checking again."),
             );
+          // Only a Linux package installs through the system. Not knowing counts as asking.
+          if (value === "direct" && os === "linux")
+            asksPassword.current = await invoke<boolean>("update_asks_password").catch(() => true);
           channel.current = value;
-          setState((s) => ({ ...s, channel: value }));
+          setState((s) => ({ ...s, channel: value, asksPassword: asksPassword.current }));
           return value;
         })
         .finally(() => {
