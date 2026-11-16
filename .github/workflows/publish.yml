@@ -44,12 +44,13 @@ jobs:
         working-directory: web
         run: npm ci
 
-      # With each installer, the update package installed copies fetch (on Windows the installer
-      # itself; on macOS the .app.tar.gz) and its signature.
+      # With each installer, the update package installed copies fetch (on Windows and Linux the
+      # installer itself; on macOS the .app.tar.gz) and its signature.
       - name: Download the installers
         run: >-
           gh release download "$TAG" --dir installers
-          --pattern '*.dmg' --pattern '*-setup.exe' --pattern '*.app.tar.gz' --pattern '*.sig'
+          --pattern '*.dmg' --pattern '*-setup.exe' --pattern '*.app.tar.gz'
+          --pattern '*.AppImage' --pattern '*.deb' --pattern '*.sig'
 
       - name: Publish to urbudget.app
         working-directory: web
@@ -60,7 +61,11 @@ jobs:
           args=()
           exe=$(ls ../installers/*-setup.exe 2>/dev/null | head -1)
           dmg=$(ls ../installers/*.dmg 2>/dev/null | head -1)
+          appimage=$(ls ../installers/*.AppImage 2>/dev/null | head -1)
+          deb=$(ls ../installers/*.deb 2>/dev/null | head -1)
           [ -n "$exe" ] && args+=(--windows "$exe")
           [ -n "$dmg" ] && args+=(--macos "$dmg")
+          [ -n "$appimage" ] && args+=(--linux "$appimage")
+          [ -n "$deb" ] && args+=(--linux-deb "$deb")
           notes=$(gh release view "$TAG" --json body --jq .body)
           node scripts/publish-release.mjs "${args[@]}" --notes "$notes"

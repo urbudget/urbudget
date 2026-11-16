@@ -136,6 +136,8 @@ export const api = {
   /** YNAB tokens kept on this device, most recently used first. */
   ynabTokens: () => invoke<SavedYnabToken[]>("ynab_tokens"),
   forgetToken: (id: string) => invoke<void>("forget_ynab_token", { id }),
+  /** What protects saved secrets on this computer, or null where they aren't kept (Linux with no keyring). */
+  secretStore: () => invoke<string | null>("secret_store"),
   library: () => invoke<LibrarySnapshot>("library_snapshot"),
   listBudgets: async () => (await invoke<LibrarySnapshot>("library_snapshot")).entries,
   libraryAction: async (action: "trash" | "restore" | "evict" | "recover" | "review_deletion", id: string) => {

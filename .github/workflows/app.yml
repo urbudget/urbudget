@@ -1,6 +1,8 @@
 # Validates the desktop app: shared UI checks run once; native desktop changes also build it.
-# Pushes and pull requests build on Windows only, since a macOS minute costs ten Linux ones;
-# Run workflow adds macOS, and every release builds macOS anyway (release.yml).
+# Pushes and pull requests build on Windows and Linux, not macOS: a macOS minute costs ten Linux
+# ones. Run workflow adds macOS, and every release builds macOS anyway (release.yml).
+# Linux's AppImage and .deb are made only for a release (release.yml): its build here shows that the
+# app still compiles and its tests pass.
 # The phone apps in android/ and ios/ have their own workflows (android-native.yml, ios-native.yml).
 name: App validation
 
@@ -89,7 +91,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ github.event_name == 'workflow_dispatch' && fromJSON('["windows-latest", "macos-latest"]') || fromJSON('["windows-latest"]') }}
+        os: ${{ github.event_name == 'workflow_dispatch' && fromJSON('["windows-latest", "ubuntu-latest", "macos-latest"]') || fromJSON('["windows-latest", "ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -106,9 +108,24 @@ jobs:
         with:
           workspaces: desktop/src-tauri -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # WebKitGTK and the other libraries Tauri links against on Linux.
+      - name: Install the Linux build libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev gnome-keyring
       - run: npm ci
       - name: Test the native budget engine and storage
         run: npm test
+      # The other tests keep the secrets' key in a plain file. This one keeps it in a real
+      # keyring, started unlocked on a session bus of its own. The pause lets the keyring take
+      # its name on the bus: asked sooner, the bus starts a second, locked one.
+      - name: Keep the secrets' key in a Linux keyring
+        if: runner.os == 'Linux'
+        run: |
+          dbus-run-session -- bash -c 'echo -n test | gnome-keyring-daemon --unlock --components=secrets > /dev/null \
+            && sleep 1 \
+            && cargo test --locked --manifest-path ../crates/Cargo.toml -p urbudget-services --features keyring -- --ignored keyring'
       # Tauri runs the TypeScript/Vite build before compiling the native app.
       # Debug reuses cargo test's dependencies instead of compiling a second release
       # profile. Optimized, signed installers are still built by release.yml.

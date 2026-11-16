@@ -203,7 +203,7 @@ fn read_key(cloud: &Cloud, account: &str, generation: &str) -> Option<crypto::Ke
         })
 }
 fn store_key(cloud: &Cloud, account: &str, generation: &str, key: crypto::Key) -> Result<()> {
-    if super::vault::STORE.is_some() {
+    if super::vault::store().is_some() {
         super::vault::save(&key_service(account, generation), &BASE64.encode(key))?;
     }
     cloud
@@ -839,7 +839,7 @@ pub async fn try_setup(
             "kind":if reset {"keyReset"} else if created {"keySetup"} else {"migrateProtocol"},
             "keyGeneration":bootstrap["keyGeneration"],"catalogEpoch":bootstrap["catalogEpoch"],"expectedProtocol":bootstrap["protocol"]});
         if created || reset {
-            if super::vault::STORE.is_none() {
+            if super::vault::store().is_none() {
                 return Err("A secure credential store is required to safely create or reset the sync passphrase on this device.".into());
             }
             let salt: [u8; crypto::SALT_LEN] = crypto::random()?;

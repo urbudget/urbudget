@@ -61,6 +61,9 @@ impl Server {
                         let replies = replies.clone();
                         let requests = requests.clone();
                         clients.push(thread::spawn(move || {
+                            // On Windows an accepted socket is non-blocking like its listener: a read
+                            // before the request arrived would end the connection without a reply.
+                            stream.set_nonblocking(false).unwrap();
                             stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
                             stream.set_write_timeout(Some(Duration::from_secs(2))).unwrap();
                             let mut request = Vec::new();

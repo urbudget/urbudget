@@ -187,7 +187,7 @@ impl Cloud {
         Ok(token)
     }
     fn stored_token(&self) -> Option<String> {
-        if vault::STORE.is_some() {
+        if vault::store().is_some() {
             vault::read(&service(ACCOUNT_SERVICE))
         } else {
             self.memory_token.lock().unwrap_or_else(|e| e.into_inner()).clone()
@@ -237,7 +237,7 @@ impl Cloud {
           // another process's newly installed key while signing out or changing accounts.
           if forget_sync { v2::forget_keys(self,previous_account.as_deref())?;self.sync.forget()?; }
           match token {
-            Some(token) if vault::STORE.is_some() => vault::save(&service(ACCOUNT_SERVICE), token)?,
+            Some(token) if vault::store().is_some() => vault::save(&service(ACCOUNT_SERVICE), token)?,
             Some(token) => *self.memory_token.lock().unwrap_or_else(|e| e.into_inner()) = Some(token.to_owned()),
             None => {
                 vault::delete(&service(ACCOUNT_SERVICE))?;
@@ -373,7 +373,7 @@ impl Cloud {
         if let Some(catalog) = catalog { v2::decorate_status(self, catalog, &mut sync); }
         Status {
             email,
-            credential_store: vault::STORE,
+            credential_store: vault::store(),
             sync,
             site: site(),
         }

@@ -7,6 +7,8 @@
 //!   item read once per launch asks at most once, and a Developer ID build doesn't ask at all.
 //! - Windows: `secrets.key` beside it, sealed with DPAPI for this Windows user.
 //! - Android: sealed under a key in the Android Keystore (keystore.rs).
+//! - Linux (the desktop app): one item in the system keyring, where one is running. Where none
+//!   is, secrets aren't kept (`store()` is None) and a sign-in lasts until the app closes.
 //! - Debug builds on a computer: `secrets-dev.bin`, with its key in a plain file beside it, so a
 //!   rebuilt app never asks for the Keychain and never takes the installed app's secrets.
 //!
@@ -20,22 +22,37 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 /// What protects the secrets, as the window names it, or None where they can't be kept.
-pub const STORE: Option<&str> = if cfg!(any(target_os = "macos", target_os = "ios")) {
-    Some("Keychain")
-} else if cfg!(windows) {
-    Some("Windows encrypted storage")
-} else if cfg!(target_os = "android") {
-    Some("Android Keystore")
-} else {
+pub fn store() -> Option<&'static str> {
+    if cfg!(any(target_os = "macos", target_os = "ios")) {
+        Some("Keychain")
+    } else if cfg!(windows) {
+        Some("Windows encrypted storage")
+    } else if cfg!(target_os = "android") {
+        Some("Android Keystore")
+    } else {
+        keyring()
+    }
+}
+/// Linux has a keyring only where one is running, so this asks, once: a sign-in must not move
+/// between the keyring and memory while the app runs.
+#[cfg(all(target_os = "linux", feature = "keyring"))]
+fn keyring() -> Option<&'static str> {
+    static AVAILABLE: OnceLock<bool> = OnceLock::new();
+    // Debug builds and tests keep a plain key file, which is always there.
+    (cfg!(any(test, debug_assertions)) || *AVAILABLE.get_or_init(system::available)).then_some("System keyring")
+}
+#[cfg(not(all(target_os = "linux", feature = "keyring")))]
+fn keyring() -> Option<&'static str> {
     None
-};
-/// `STORE` as a message names it, in the app's language ("The system" where there is none).
-/// The services' status fields keep `STORE` itself.
+}
+/// `store()` as a message names it, in the app's language ("The system" where there is none).
+/// The services' status fields keep `store()` itself.
 pub fn store_name() -> &'static str {
-    match STORE {
+    match store() {
         Some("Keychain") => tr("Keychain"),
         Some("Windows encrypted storage") => tr("Windows encrypted storage"),
         Some("Android Keystore") => tr("Android Keystore"),
+        Some("System keyring") => tr("System keyring"),
         Some(other) => other,
         None => tr("The system"),
     }
@@ -43,9 +60,9 @@ pub fn store_name() -> &'static str {
 const AAD: &[u8] = b"urbudget:secrets";
 
 // Debug builds on a computer, and tests, keep their own file with a plain key (`plain`).
-#[cfg(any(test, all(debug_assertions, any(target_os = "macos", windows))))]
+#[cfg(any(test, all(debug_assertions, any(target_os = "macos", windows, all(target_os = "linux", feature = "keyring")))))]
 use plain as keeper;
-#[cfg(not(any(test, all(debug_assertions, any(target_os = "macos", windows)))))]
+#[cfg(not(any(test, all(debug_assertions, any(target_os = "macos", windows, all(target_os = "linux", feature = "keyring"))))))]
 use system as keeper;
 
 static VAULT: OnceLock<Vault> = OnceLock::new();
@@ -311,7 +328,7 @@ fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 }
 
 /// A key in a plain file beside the secrets.
-#[cfg(any(test, all(debug_assertions, any(target_os = "macos", windows))))]
+#[cfg(any(test, all(debug_assertions, any(target_os = "macos", windows, all(target_os = "linux", feature = "keyring")))))]
 mod plain {
     use super::Key;
     use std::path::Path;
@@ -557,7 +574,99 @@ mod system {
     }
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "android", windows)))]
+/// The key is one item in the default keyring of the system's Secret Service (GNOME Keyring,
+/// KWallet, KeePassXC), base64 text as those expect. A locked keyring asks for its password.
+#[cfg(all(target_os = "linux", feature = "keyring"))]
+#[cfg_attr(debug_assertions, allow(dead_code))]
+mod system {
+    use super::Key;
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    use dbus_secret_service::{EncryptionType, SecretService};
+    use std::collections::HashMap;
+    use std::path::Path;
+
+    pub const FILE: &str = "secrets.bin";
+    const KEY_SERVICE: &str = "com.localbudget.desktop.secrets-key";
+    const ACCOUNT: &str = "local-budget";
+
+    fn connect() -> Result<SecretService, ()> {
+        // The key crosses the session bus encrypted where the keyring can do that.
+        SecretService::connect(EncryptionType::Dh)
+            .or_else(|_| SecretService::connect(EncryptionType::Plain))
+            .map_err(|_| ())
+    }
+    /// Whether a keyring is running and has a default collection to keep the key in. Asks the
+    /// person nothing: a locked keyring counts.
+    pub fn available() -> bool {
+        connect().is_ok_and(|keyring| keyring.get_default_collection().is_ok())
+    }
+    fn attributes(service: &str) -> HashMap<&str, &str> {
+        HashMap::from([("service", service), ("account", ACCOUNT)])
+    }
+    fn read(service: &str) -> Result<Option<Key>, ()> {
+        let keyring = connect()?;
+        let collection = keyring.get_default_collection().map_err(|_| ())?;
+        // Asks for the keyring's password when it's locked. Declined, the key stays unread
+        // rather than missing, so nothing is written over the secrets it protects.
+        collection.ensure_unlocked().map_err(|_| ())?;
+        let Some(item) = collection.search_items(attributes(service)).map_err(|_| ())?.into_iter().next() else {
+            return Ok(None);
+        };
+        let text = item.get_secret().map_err(|_| ())?;
+        STANDARD.decode(text).map_err(|_| ())?.try_into().map(Some).map_err(|_| ())
+    }
+    /// Replaces the item when there is one.
+    fn write(service: &str, key: &Key) -> Result<(), ()> {
+        let keyring = connect()?;
+        let collection = keyring.get_default_collection().map_err(|_| ())?;
+        collection.ensure_unlocked().map_err(|_| ())?;
+        collection
+            .create_item("UrBudget", attributes(service), STANDARD.encode(key).as_bytes(), true, "text/plain")
+            .map(|_| ())
+            .map_err(|_| ())
+    }
+
+    pub fn load_key(_: &Path) -> Result<Option<Key>, ()> {
+        read(KEY_SERVICE)
+    }
+    pub fn store_key(_: &Path, key: &Key) -> Result<(), ()> {
+        write(KEY_SERVICE, key)
+    }
+    // No version for Linux kept each secret as its own item.
+    pub fn legacy_read(_: &str) -> Result<Option<Vec<u8>>, ()> {
+        Ok(None)
+    }
+    pub fn legacy_delete(_: &str) -> bool {
+        false
+    }
+
+    #[cfg(test)]
+    mod tests {
+        /// Needs a running, unlocked keyring, which app.yml starts: `cargo test --features keyring
+        /// -- --ignored keyring`.
+        #[test]
+        #[ignore = "needs a running, unlocked Secret Service"]
+        fn the_key_is_kept_in_the_keyring_and_read_back() {
+            // A throwaway item, so the app's own key is never touched.
+            let service = format!("com.localbudget.desktop.vault-test-{}", std::process::id());
+            assert!(super::available());
+            assert_eq!(super::read(&service), Ok(None));
+            super::write(&service, &[7; 32]).unwrap();
+            assert_eq!(super::read(&service), Ok(Some([7; 32])));
+            // Saving again replaces the item instead of adding a second one.
+            super::write(&service, &[9; 32]).unwrap();
+            assert_eq!(super::read(&service), Ok(Some([9; 32])));
+            let keyring = super::connect().unwrap();
+            let collection = keyring.get_default_collection().unwrap();
+            let items = collection.search_items(super::attributes(&service)).unwrap();
+            assert_eq!(items.len(), 1);
+            items[0].delete().unwrap();
+            assert_eq!(super::read(&service), Ok(None));
+        }
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "android", windows, all(target_os = "linux", feature = "keyring"))))]
 #[allow(dead_code)]
 mod system {
     use super::Key;

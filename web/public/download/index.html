@@ -137,6 +137,10 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
               Download for macOS
             </a>
+            <a class="btn btn-lg dl-btn-quiet" href="/download/linux" data-os="linux" hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+              Download for Linux
+            </a>
           </div>
           <p class="dl-release" id="dl-release"></p>
           <p class="dl-hint" id="dl-hint">For Windows 10 and 11, and macOS 12 or later. <a href="#downloads">All downloads</a></p>
@@ -193,6 +197,25 @@
             </div>
             <a class="btn" href="/download/macos" data-pick="macos">Download for macOS</a>
           </li>
+          <!-- Linux shows once a release has it (download.js): until then these stay hidden. -->
+          <li class="dl-item" data-os="linux" data-linux hidden>
+            <span class="dl-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/></svg></span>
+            <div class="dl-body">
+              <h3>Linux AppImage <span class="badge badge-brand dl-here">For this computer</span></h3>
+              <p>One file that runs without installing. It updates itself from inside the app.</p>
+              <p class="dl-meta"><span>64-bit Intel or AMD, a distribution from 2022 or later</span> <span class="dl-meta-file" id="meta-linux">.AppImage</span> <span id="size-linux" hidden></span></p>
+            </div>
+            <a class="btn" href="/download/linux" data-pick="linux">Download the AppImage</a>
+          </li>
+          <li class="dl-item" data-os="linux" data-linux hidden>
+            <span class="dl-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/></svg></span>
+            <div class="dl-body">
+              <h3>Debian and Ubuntu package</h3>
+              <p>Installs UrBudget like your other apps. It asks for your password to install each update.</p>
+              <p class="dl-meta"><span>Ubuntu 22.04 or Debian 12 and later, 64-bit Intel or AMD</span> <span class="dl-meta-file" id="meta-linux-deb">.deb</span> <span id="size-linux-deb" hidden></span></p>
+            </div>
+            <a class="btn" href="/download/linux-deb">Download the .deb</a>
+          </li>
         </ul>
       </div>
     </section>
@@ -229,6 +252,24 @@
               <li>Open <span class="dl-file" data-file="macos">the .dmg file</span> you downloaded.</li>
               <li>Drag UrBudget into <b>Applications</b>.</li>
               <li>Open it from Applications. When macOS asks about an app downloaded from the internet, choose <b>Open</b>.</li>
+            </ol>
+          </article>
+          <article class="dl-steps" data-os="linux" data-linux hidden>
+            <p class="dl-for">Linux</p>
+            <h3>With the AppImage</h3>
+            <ol>
+              <li>Let <span class="dl-file" data-file="linux">the .AppImage file</span> run as a program: in your file manager, open its <b>Properties</b> and allow it. In a terminal: <code class="dl-command">chmod +x ~/Downloads/<span data-file="linux">UrBudget_amd64.AppImage</span></code></li>
+              <li>Open it. Nothing is installed: the app is that one file.</li>
+              <li>Keep the file where you'll find it again. It updates itself in place.</li>
+            </ol>
+          </article>
+          <article class="dl-steps" data-os="linux" data-linux hidden>
+            <p class="dl-for">Linux</p>
+            <h3>With the .deb</h3>
+            <ol>
+              <li>Open <span class="dl-file" data-file="linux-deb">the .deb file</span> you downloaded and choose <b>Install</b>. In a terminal: <code class="dl-command">sudo apt install ~/Downloads/<span data-file="linux-deb">UrBudget_amd64.deb</span></code></li>
+              <li>Enter your password when your computer asks.</li>
+              <li>Open UrBudget from your applications.</li>
             </ol>
           </article>
         </div>
@@ -308,13 +349,13 @@
           <details>
             <summary>Is there a version for phones, tablets or Linux?</summary>
             <div class="answer">
-              <p>An Android app for phones and tablets is in testing on Google Play: <a href="/android/">join the test</a>. Otherwise UrBudget is a desktop app for Windows 10 and 11 and for macOS 12 Monterey or later. There's no Linux or web version.</p>
+              <p>An Android app for phones and tablets is in testing on Google Play: <a href="/android/">join the test</a>. Otherwise UrBudget is a desktop app for Windows 10 and 11 and for macOS 12 Monterey or later. <span data-no-linux>There's no Linux or web version.</span><span data-linux hidden>There's a Linux version too, for 64-bit Intel and AMD computers. There's no web version.</span></p>
             </div>
           </details>
           <details>
             <summary>How can I check a download?</summary>
             <div class="answer">
-              <p>Compare its SHA-256 checksum with the one below. On Windows, in PowerShell: <code class="dl-command">Get-FileHash "$env:USERPROFILE\Downloads\<span data-file="windows">UrBudget_x64-setup.exe</span>"</code> On a Mac, in Terminal: <code class="dl-command">shasum -a 256 ~/Downloads/<span data-file="macos">UrBudget_universal.dmg</span></code></p>
+              <p>Compare its SHA-256 checksum with the one below. On Windows, in PowerShell: <code class="dl-command">Get-FileHash "$env:USERPROFILE\Downloads\<span data-file="windows">UrBudget_x64-setup.exe</span>"</code> On a Mac, in Terminal: <code class="dl-command">shasum -a 256 ~/Downloads/<span data-file="macos">UrBudget_universal.dmg</span></code><span data-linux hidden> On Linux, in a terminal: <code class="dl-command">sha256sum ~/Downloads/<span data-file="linux">UrBudget_amd64.AppImage</span></code></span></p>
               <dl class="dl-sums" id="checksums">
                 <div><dt>Checksums</dt><dd>They appear here when this page can reach urbudget.app.</dd></div>
               </dl>

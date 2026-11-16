@@ -413,6 +413,46 @@ describe("downloads", () => {
     expect((await update("windows/x86_64/latest")).status).toBe(400);
   });
 
+  it("gives a Linux copy the package of its own kind", async () => {
+    const pkg = { version: "1.1.0", date: "2026-11-02T09:30:00.000Z", notes: "", signature: "dW50cnVzdGVk" };
+    await env.RELEASES.put(
+      "latest.json",
+      JSON.stringify({
+        version: "1.1.0",
+        date: "2026-11-02",
+        notes: "",
+        platforms: {
+          linux: { file: "UrBudget_1.1.0_amd64.AppImage", size: 5, sha256: "abc" },
+          "linux-deb": { file: "UrBudget_1.1.0_amd64.deb", size: 5, sha256: "def" },
+        },
+        updates: {
+          "windows-x86_64": { ...pkg, file: "UrBudget_1.1.0_x64-setup.exe" },
+          "linux-x86_64-appimage": { ...pkg, file: "UrBudget_1.1.0_amd64.AppImage" },
+          "linux-x86_64-deb": { ...pkg, file: "UrBudget_1.1.0_amd64.deb" },
+        },
+      }),
+    );
+    expect((await call("/download/linux")).headers.get("Location")).toBe("/releases/UrBudget_1.1.0_amd64.AppImage");
+    expect((await call("/download/linux-deb")).headers.get("Location")).toBe("/releases/UrBudget_1.1.0_amd64.deb");
+    expect(env.DB.sqlite.prepare("SELECT platform, SUM(count) AS n FROM download_counts GROUP BY platform").all()).toEqual([{ platform: "linux", n: 2 }]);
+    const latest = (await (await call("/api/v1/releases/latest")).json()) as { platforms: Record<string, unknown> };
+    expect(latest.platforms["linux-deb"]).toMatchObject({ url: "http://localhost/releases/UrBudget_1.1.0_amd64.deb" });
+
+    const offered = async (path: string) => {
+      const response = await call(`/api/v1/releases/update/${path}`);
+      return response.status === 200 ? ((await response.json()) as { url: string }).url : response.status;
+    };
+    expect(await offered("linux/x86_64/1.0.0?bundle=appimage")).toBe("http://localhost/releases/UrBudget_1.1.0_amd64.AppImage");
+    expect(await offered("linux/x86_64/1.0.0?bundle=deb")).toBe("http://localhost/releases/UrBudget_1.1.0_amd64.deb");
+    // Built from source, or a kind of package this site doesn't publish: nothing to update with.
+    for (const query of ["", "?bundle=unknown", "?bundle=rpm", "?bundle=deb/.."]) {
+      expect(await offered(`linux/x86_64/1.0.0${query}`), query).toBe(204);
+    }
+    expect(await offered("linux/aarch64/1.0.0?bundle=deb")).toBe(204);
+    // A system with one package is offered it whatever kind its copy names.
+    expect(await offered("windows/x86_64/1.0.0?bundle=nsis")).toBe("http://localhost/releases/UrBudget_1.1.0_x64-setup.exe");
+  });
+
   it("orders versions the way the updater does", () => {
     const sorted = ["0.9.9", "1.0.0-alpha", "1.0.0-alpha.1", "1.0.0-alpha.beta", "1.0.0-beta.2", "1.0.0-beta.11", "1.0.0-rc.1", "1.0.0", "1.0.1", "1.10.0", "2.0.0"];
     for (let i = 1; i < sorted.length; i++) {

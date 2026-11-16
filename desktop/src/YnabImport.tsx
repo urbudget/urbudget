@@ -5,7 +5,7 @@ import { api } from "./bridge";
 import { errorText, formatDate, money, monthName } from "./format";
 import { Modal } from "./forms";
 import type { ImportDifference, ImportResult, SavedYnabToken, YnabImportRequest, YnabPlan } from "./types";
-import { tokenStore as systemStore } from "./platform";
+import { KEYRING, os, tokenStore as systemStore } from "./platform";
 import { ltr, msg, msgc, t, tc, tn } from "./i18n";
 import "./import.css";
 
@@ -76,7 +76,7 @@ export function YnabImport({
   onAsk,
   planId: initialPlan,
   blank = false,
-  tokenStore = systemStore,
+  tokenStore: givenStore,
   listPlans = api.ynabPlans,
   listTokens = api.ynabTokens,
   forgetToken = api.forgetToken,
@@ -101,6 +101,13 @@ export function YnabImport({
   listTokens?: () => Promise<SavedYnabToken[]>;
   forgetToken?: (id: string) => Promise<void>;
 }) {
+  // Linux has a keyring only where one is running, so the app is asked; other systems always have theirs.
+  const [keyring, setKeyring] = useState<string | null>(null);
+  useEffect(() => {
+    if (givenStore !== undefined || os !== "linux") return;
+    void api.secretStore().then((store) => setKeyring(store ? KEYRING : null), () => undefined);
+  }, [givenStore]);
+  const tokenStore = givenStore !== undefined ? givenStore : (systemStore ?? keyring);
   const [tokens, setTokens] = useState<SavedYnabToken[]>([]);
   // The saved token in use, or null to paste one.
   const [savedId, setSavedId] = useState<string | null>(null);
@@ -140,9 +147,9 @@ export function YnabImport({
     void loadTokens().then((found) => {
       if (found?.length && !choseToken.current) setSavedId((id) => id ?? found[0].id);
     });
-    // Only once: later loads come from what the form does.
+    // Only once, and again when Linux's keyring answers: later loads come from what the form does.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [tokenStore]);
   // Lists the token's plans shortly after it's pasted (at once for a saved one), so the plan is
   // picked by name. Keeps the linked plan, or the one already picked, when the token reads it.
   useEffect(() => {

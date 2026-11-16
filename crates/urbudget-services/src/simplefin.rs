@@ -653,7 +653,7 @@ impl SimpleFin {
     fn status(&self) -> Status {
         let (accounts, messages) = self.listing.lock().map(|l| l.clone()).unwrap_or_default();
         Status {
-            store: vault::STORE,
+            store: vault::store(),
             connected: vault::read(&service()).is_some(),
             accounts,
             messages,
@@ -688,7 +688,7 @@ fn access() -> Result<Access, String> {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
-    /// What protects the connection (`vault::STORE`), or None where bank sync isn't offered.
+    /// What protects the connection (`vault::store()`), or None where bank sync isn't offered.
     pub store: Option<&'static str>,
     pub connected: bool,
     pub accounts: Vec<Listed>,
@@ -719,7 +719,7 @@ async fn list(state: &SimpleFin, access: &Access) -> Result<Status, String> {
 }
 /// Claims a setup token, keeps the Access URL in the credential store, and lists the accounts.
 pub async fn simplefin_connect(state: &SimpleFin, token: String) -> Result<Status, String> {
-    vault::STORE.ok_or_else(|| t!("Bank sync needs a system credential store, which this computer doesn't have."))?;
+    vault::store().ok_or_else(|| t!("Bank sync needs a system credential store, which this computer doesn't have."))?;
     let url = claim_url(&token)?;
     let access = claim(&http()?, url).await?;
     vault::save(&service(), &access).map_err(|_| {
