@@ -93,12 +93,13 @@ jobs:
         with:
           workspaces: desktop/src-tauri -> target
 
-      # WebKitGTK and the other libraries Tauri links against on Linux (as in app.yml).
+      # WebKitGTK and the other libraries Tauri links against on Linux (as in app.yml), and the
+      # tools its AppImage bundler calls.
       - name: Install the Linux build libraries
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev file xdg-utils
 
       - name: Install dependencies
         working-directory: desktop
