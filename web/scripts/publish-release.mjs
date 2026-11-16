@@ -2,13 +2,15 @@
 // installed copies fetch to the R2 bucket, then points latest.json at them. Build first
 // (`npm run tauri -- build` in desktop/ on each system, which signs the update packages).
 //
-//   node scripts/publish-release.mjs [--windows <setup.exe>] [--macos <app.dmg>] [--notes "…"] [--local]
-//                                    [--version <x.y.z>]
+//   node scripts/publish-release.mjs [--windows <setup.exe>] [--macos <app.dmg>] [--linux <app.AppImage>]
+//                                    [--linux-deb <app.deb>] [--notes "…"] [--local] [--version <x.y.z>]
 //
 // Without paths it looks for this version's installers in desktop/src-tauri/target/release/bundle
-// (nsis/*.exe on Windows, dmg/*.dmg on macOS). On Windows the installer is also the update package;
-// on macOS the package is the *.app.tar.gz beside the dmg (as downloaded from a GitHub release by
-// .github/workflows/publish.yml) or in the build's macos/ folder. Each package's `.sig` must verify against
+// (nsis/*.exe on Windows, dmg/*.dmg on macOS, appimage/*.AppImage and deb/*.deb on Linux). On Windows
+// and Linux the installer is also the update package; on macOS the package is the *.app.tar.gz
+// beside the dmg (as downloaded from a GitHub release by .github/workflows/publish.yml) or in the
+// build's macos/ folder. A Linux copy updates with a package of its own kind: one that came as an
+// AppImage gets the AppImage, one installed from the .deb gets the .deb. Each package's `.sig` must verify against
 // the updater key in tauri.conf.json and name this version, or nothing is uploaded. A platform with
 // no file keeps the installer and update it had.
 // --local writes to the `wrangler dev` bucket instead of the real one. Needs `npx wrangler login`.
@@ -46,12 +48,16 @@ const find = (folder, extension) => {
 const files = {
   windows: option("windows") ?? find("nsis", ".exe"),
   macos: option("macos") ?? find("dmg", ".dmg"),
+  linux: option("linux") ?? find("appimage", ".AppImage"),
+  "linux-deb": option("linux-deb") ?? find("deb", ".deb"),
 };
-if (!files.windows && !files.macos) fail(`No installers for ${version}. Build them, or pass --windows / --macos paths.`);
+if (!Object.values(files).some(Boolean))
+  fail(`No installers for ${version}. Build them, or pass --windows / --macos / --linux / --linux-deb paths.`);
 
 // The processor in an installer's name, and Tauri's names for the ones it runs on.
-const ARCHES = { x64: ["x86_64"], arm64: ["aarch64"], aarch64: ["aarch64"], x86: ["i686"], universal: ["aarch64", "x86_64"] };
-const TARGETS = { windows: "windows", macos: "darwin" };
+const ARCHES = { x64: ["x86_64"], amd64: ["x86_64"], arm64: ["aarch64"], aarch64: ["aarch64"], x86: ["i686"], universal: ["aarch64", "x86_64"] };
+// What installed copies ask for: Tauri's name for the system and, on Linux, for the package.
+const TARGETS = { windows: ["windows", ""], macos: ["darwin", ""], linux: ["linux", "-appimage"], "linux-deb": ["linux", "-deb"] };
 
 /**
  * Checks a minisign signature, as Tauri writes it, against the updater public key. Returns the
@@ -81,8 +87,8 @@ for (const [platform, path] of Object.entries(files)) {
   if (!path) continue;
   // Spaces become dots, so the file's URL needs no escaping.
   const name = basename(path).replace(/\s+/g, ".");
-  const label = name.match(/_(x64|arm64|aarch64|x86|universal)(?:-setup)?\.(?:exe|dmg)$/)?.[1];
-  if (!label) fail(`Can't tell which processor ${name} is for: its name should end like _x64-setup.exe or _aarch64.dmg.`);
+  const label = name.match(/_(x64|amd64|arm64|aarch64|x86|universal)(?:-setup)?\.(?:exe|dmg|AppImage|deb)$/)?.[1];
+  if (!label) fail(`Can't tell which processor ${name} is for: its name should end like _x64-setup.exe, _aarch64.dmg or _amd64.AppImage.`);
   let pkg = path;
   if (platform === "macos") {
     const near = [dirname(path), join(dirname(path), "..", "macos")].flatMap((dir) =>
@@ -98,7 +104,7 @@ for (const [platform, path] of Object.entries(files)) {
   const signed = signedVersion(readFileSync(pkg), signature);
   if (signed === null) fail(`${basename(pkg)}.sig doesn't verify with the updater key in desktop/src-tauri/tauri.conf.json.`);
   if (signed !== version) fail(`${basename(pkg)} is signed for ${signed ? `version ${signed}` : "no version"}, not ${version}. Build it again.`);
-  const update = platform === "windows" ? name : `UrBudget_${version}_${label}.app.tar.gz`;
+  const update = platform === "macos" ? `UrBudget_${version}_${label}.app.tar.gz` : name;
   publish.push({ platform, path, name, pkg, update, signature, arches: ARCHES[label] });
 }
 
@@ -138,7 +144,8 @@ for (const { platform, path, name, pkg, update, signature, arches } of publish) 
     console.log(`Uploading ${platform} update: ${update} (${(statSync(pkg).size / 1e6).toFixed(1)} MB)`);
     upload(update, pkg);
   }
-  for (const arch of arches) updates[`${TARGETS[platform]}-${arch}`] = { version, date, notes, file: update, signature };
+  const [target, kind] = TARGETS[platform];
+  for (const arch of arches) updates[`${target}-${arch}${kind}`] = { version, date, notes, file: update, signature };
 }
 
 const latest = {

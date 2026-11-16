@@ -10,7 +10,8 @@ export interface Release {
   notes: string;
   platforms: Partial<Record<Platform, { file: string; size: number; sha256: string }>>;
   /** What installed copies update to, by Tauri target and architecture ("windows-x86_64",
-   * "darwin-aarch64"). Each keeps its own version: a system not published again stays put. */
+   * "darwin-aarch64"), and on Linux by package too ("linux-x86_64-appimage", "linux-x86_64-deb").
+   * Each keeps its own version: a system not published again stays put. */
   updates?: Record<string, Package>;
 }
 /** A package the app's updater installs, and the contents of its `.sig` file. */
@@ -22,8 +23,9 @@ export interface Package {
   file: string;
   signature: string;
 }
-type Platform = "windows" | "macos";
-const PLATFORMS: Platform[] = ["windows", "macos"];
+/** Linux has two installers: `linux` is the AppImage, `linux-deb` the Debian and Ubuntu package. */
+type Platform = "windows" | "macos" | "linux" | "linux-deb";
+const PLATFORMS: Platform[] = ["windows", "macos", "linux", "linux-deb"];
 
 async function latest(env: Env): Promise<Release | null> {
   const object = await env.RELEASES.get("latest.json");
@@ -76,7 +78,9 @@ export function compareVersions(a: string, b: string): number {
 /**
  * The app's updater (tauri-plugin-updater) asks here, as
  * `/update/{{target}}/{{arch}}/{{current_version}}`: 204 when that version is the newest for its
- * system, otherwise the newer version with its notes, package URL and signature.
+ * system, otherwise the newer version with its notes, package URL and signature. Linux copies add
+ * `?bundle={{bundle_type}}` (appimage or deb): each updates with a package of its own kind, and a
+ * copy that came from neither is offered nothing.
  */
 const LAUNCH_PLATFORMS = new Set(["windows", "darwin", "linux"]);
 const LAUNCH_ARCHES = new Set(["x86_64", "aarch64", "i686", "armv7"]);
@@ -104,7 +108,9 @@ releases.get("/update/:target/:arch/:current", async (c) => {
       await counted;
     }
   }
-  const update = (await latest(c.env))?.updates?.[`${target}-${arch}`];
+  const updates = (await latest(c.env))?.updates;
+  const bundle = c.req.query("bundle") ?? "";
+  const update = (/^[a-z]{1,16}$/.test(bundle) ? updates?.[`${target}-${arch}-${bundle}`] : undefined) ?? updates?.[`${target}-${arch}`];
   c.header("Cache-Control", "public, max-age=300");
   if (!update || compareVersions(update.version, current) <= 0) return c.body(null, 204);
   const origin = c.env.APP_URL.replace(/\/+$/, "");
@@ -180,7 +186,7 @@ export const STORE_ID = "9PMQMBZJG06R";
 export const STORE_URL = `https://apps.microsoft.com/detail/${STORE_ID}`;
 
 /** Counts a click on a download button. Bots and the team are counted, but apart. */
-async function countClick(c: Context<AppEnv>, platform: Platform, version: string, ref: string | null) {
+async function countClick(c: Context<AppEnv>, platform: "windows" | "macos" | "linux", version: string, ref: string | null) {
   const referer = c.req.header("Referer");
   const kind = downloadKind({ agent: c.req.header("User-Agent"), referer, fetchSite: c.req.header("Sec-Fetch-Site"), cookie: c.req.header("Cookie") });
   // A link's tag says more than the page it was clicked on, so it wins: `ref:hn`.
@@ -194,7 +200,10 @@ async function countClick(c: Context<AppEnv>, platform: Platform, version: strin
   }
 }
 
-/** `/download/windows` and `/download/macos` (the newest installer for that system) and `/download/store`, counted. */
+/**
+ * `/download/windows`, `/download/macos`, `/download/linux` and `/download/linux-deb` (the newest
+ * installer for that system) and `/download/store`, counted.
+ */
 export const downloads = new Hono<AppEnv>();
 
 /**
@@ -209,13 +218,13 @@ downloads.get("/store", async (c) => {
   return c.redirect(STORE_URL, 302);
 });
 
-downloads.get("/:platform{windows|macos}", async (c) => {
+downloads.get("/:platform{windows|macos|linux-deb|linux}", async (c) => {
   const platform = c.req.param("platform") as Platform;
   const release = await latest(c.env);
   const file = release?.platforms[platform];
   const ref = normalizeRef(c.req.query("ref"));
-  // HEAD requests are link checkers, not downloads.
-  if (release && file && c.req.method === "GET") await countClick(c, platform, release.version, ref);
+  // HEAD requests are link checkers, not downloads. Both Linux installers count as Linux.
+  if (release && file && c.req.method === "GET") await countClick(c, platform === "linux-deb" ? "linux" : platform, release.version, ref);
   c.header("Cache-Control", "no-store");
   if (!file) return c.redirect(`/download/?unavailable=${platform}${ref ? `&ref=${ref}` : ""}`, 302);
   return c.redirect(`/releases/${encodeURIComponent(file.file)}`, 302);

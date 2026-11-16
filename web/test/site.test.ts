@@ -20,7 +20,7 @@ const htmlFiles = readdirSync(pub, { recursive: true })
   .filter((f) => f.endsWith(".html"));
 
 // Paths the Worker answers itself (wrangler.jsonc run_worker_first), not files in public/.
-const WORKER_PATHS = [/^\/download\/(windows|macos|store)$/, /^\/releases\//, /^\/api\//, /^\/admin\/?$/];
+const WORKER_PATHS = [/^\/download\/(windows|macos|linux|linux-deb|store)$/, /^\/releases\//, /^\/api\//, /^\/admin\/?$/];
 
 const meta = (html: string, attr: string, name: string) =>
   html.match(new RegExp(`<meta ${attr}="${name}" content="([^"]*)"`))?.[1];
