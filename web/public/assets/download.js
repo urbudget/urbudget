@@ -1,7 +1,8 @@
 // /download/: puts the download for this computer first, fills in the newest release from
 // GET /api/v1/releases/latest (version, file names, sizes, checksums and what's new), and explains
-// ?unavailable=windows|macos (where the Worker sends people when that installer isn't published
-// yet). Every link works without any of this.
+// ?unavailable=windows|macos|linux (where the Worker sends people when that installer isn't
+// published yet). Linux's downloads and steps are in the page but hidden: they show once the
+// newest release has a Linux installer. Every other link works without any of this.
 
 import { api } from "./api.js";
 import { formatBytes, formatDate, params } from "./site.js?v=2";
@@ -9,9 +10,12 @@ import { noteSections } from "./release-notes.js";
 
 const $ = (id) => document.getElementById(id);
 const NAMES = { windows: "Windows", macos: "macOS" };
+/** Every installer a release can have, by its name in the API; Linux has two. */
+const FILES = { ...NAMES, linux: "Linux", "linux-deb": "Linux" };
 const HINTS = {
   windows: ["Installs and updates through the Store.", "Installer and Mac app"],
   macos: ["For Apple silicon and Intel, macOS 12 or later.", "Windows downloads"],
+  linux: ["An AppImage for 64-bit Intel and AMD computers.", "The .deb and other systems"],
 };
 
 function detectOS() {
@@ -60,18 +64,25 @@ function osNote(os) {
     note.textContent =
       "UrBudget is a desktop app for Windows and macOS; there's no phone or tablet version. Open this page on your computer to download it.";
   } else if (os === "linux") {
-    note.textContent = "UrBudget runs on Windows and macOS. There isn't a Linux version.";
+    note.textContent = "UrBudget runs on Windows and macOS. The Linux version isn't published yet.";
   } else {
     return;
   }
   note.hidden = false;
 }
 
+/** Shows Linux's downloads, steps and answers, and on a Linux computer puts them first. */
+function offerLinux() {
+  for (const el of document.querySelectorAll("[data-linux]")) el.hidden = false;
+  for (const el of document.querySelectorAll("[data-no-linux]")) el.hidden = true;
+  if (os === "linux") recommend("linux");
+}
+
 function unavailable() {
   const platform = params.get("unavailable");
-  if (!NAMES[platform]) return null;
+  if (!FILES[platform]) return null;
   $("unavailable-text").textContent =
-    `The ${NAMES[platform]} version isn't published yet. Please check back soon. If you have questions, write to support@urbudget.app.`;
+    `The ${FILES[platform]} version isn't published yet. Please check back soon. If you have questions, write to support@urbudget.app.`;
   $("unavailable-notice").hidden = false;
   return platform;
 }
@@ -123,8 +134,11 @@ async function release() {
     const day = date.replace(`, ${new Date().getFullYear()}`, "");
     $("dl-release").textContent = `Version ${latest.version}${day ? `, updated ${day}` : ""}`;
     $("release-line").textContent = `Direct installers are version ${latest.version}. Microsoft Store updates follow Store certification and may arrive later.`;
+    // On a Linux computer, the note that there's no Linux version waits for this answer.
+    if (latest.platforms?.linux) offerLinux();
+    else if (os === "linux") osNote(os);
     const sums = [];
-    for (const key of Object.keys(NAMES)) {
+    for (const key of Object.keys(FILES)) {
       const p = latest.platforms?.[key];
       const meta = $(`meta-${key}`);
       if (!p) {
@@ -135,7 +149,7 @@ async function release() {
       const size = formatBytes(p.size);
       if (size) Object.assign($(`size-${key}`), { textContent: size, hidden: false });
       if (p.file) for (const name of document.querySelectorAll(`[data-file="${key}"]`)) name.textContent = p.file;
-      if (p.sha256) sums.push([p.file || NAMES[key], p.sha256]);
+      if (p.sha256) sums.push([p.file || FILES[key], p.sha256]);
     }
     if (sums.length) {
       $("checksums").replaceChildren(
@@ -151,12 +165,13 @@ async function release() {
     showNotes(latest, date);
   } catch {
     // Static text distinguishes direct releases from Store certification.
+    if (os === "linux") osNote(os);
   }
 }
 
 const os = detectOS();
 const missing = unavailable();
 if (NAMES[os]) recommend(os);
-else if (missing) recommend(missing);
-osNote(os);
+else if (NAMES[missing]) recommend(missing);
+if (os !== "linux") osNote(os);
 void release();

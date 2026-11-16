@@ -31,9 +31,9 @@ Actions tab on `main` with the version already in the source.
 - **The shared crates follow desktop.** `crates/` is built into every app but released with
   none of them on its own; its version moves with desktop's (the script does both), and it's the
   version the engine reports to urbudget.app.
-- **Linux** is built with every desktop release (an AppImage and a `.deb`) but isn't on the download
-  page yet. Publishing a draft that has them puts them on urbudget.app, where Linux copies update
-  from them; delete the Linux files from the draft first to hold them back
+- **Linux** is built with every desktop release (an AppImage and a `.deb`). Publishing a draft that
+  has them puts them on urbudget.app, where Linux copies update from them, and the download page
+  starts offering Linux; delete the Linux files from the draft first to hold them back
   ([desktop/README.md › Releases](desktop/README.md#releases)).
 - **Desktop:** write the release's notes from [CHANGELOG.md](desktop/CHANGELOG.md) into the draft
   before publishing; they show on the download page and in the app's update notice. Desktop
