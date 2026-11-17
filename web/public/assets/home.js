@@ -16,12 +16,12 @@ const money = (n, cents = true) =>
     maximumFractionDigits: cents ? 2 : 0,
   });
 
-/* ---------- "Download for Windows" / "Download for Mac" ---------- */
+/* ---------- "Download for Windows" / "Download for Mac" / "Download for Linux" ---------- */
 
 function downloadLabel() {
   const platform = navigator.userAgentData?.platform || navigator.platform || "";
   const phone = /iphone|ipad|android/i.test(navigator.userAgent);
-  const label = phone ? "" : /mac/i.test(platform) ? "Download for Mac" : /win/i.test(platform) ? "Download for Windows" : "";
+  const label = phone ? "" : /mac/i.test(platform) ? "Download for Mac" : /win/i.test(platform) ? "Download for Windows" : /linux/i.test(platform) ? "Download for Linux" : "";
   if (!label) return;
   for (const link of document.querySelectorAll("[data-download-label]")) link.textContent = label;
 }

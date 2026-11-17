@@ -5,6 +5,7 @@ Disallow: /api/
 # Installer downloads redirect to the newest release file; they aren't pages.
 Disallow: /download/windows
 Disallow: /download/macos
+Disallow: /download/linux
 Disallow: /download/store
 Disallow: /releases/
 

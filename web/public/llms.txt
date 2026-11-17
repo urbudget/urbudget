@@ -1,6 +1,6 @@
 # UrBudget
 
-> UrBudget is an envelope (zero-based) budgeting app for Windows 10 and 11 and macOS 12 or later. The budget is a file on the user's own computer: it works offline, needs no account, and needs no bank connection. It has optional SimpleFIN bank sync (desktop 1.0.4 and later) for supported US and Canadian institutions, with a subscription paid separately to SimpleFIN. Users press Sync and review transactions before saving; it is not continuous background bank sync. It's free, with every feature and nothing locked, and it's open source under the AGPL-3.0. Optional end-to-end encrypted sync between computers is $3 a month; that's the only paid part. It imports a YNAB budget in one click with a YNAB personal access token, including targets, notes and scheduled transactions, and checks every month against YNAB's totals.
+> UrBudget is an envelope (zero-based) budgeting app for Windows 10 and 11, macOS 12 or later, and Linux (64-bit Intel and AMD, as an AppImage or a .deb). The budget is a file on the user's own computer: it works offline, needs no account, and needs no bank connection. It has optional SimpleFIN bank sync (desktop 1.0.4 and later) for supported US and Canadian institutions, with a subscription paid separately to SimpleFIN. Users press Sync and review transactions before saving; it is not continuous background bank sync. It's free, with every feature and nothing locked, and it's open source under the AGPL-3.0. Optional end-to-end encrypted sync between computers is $3 a month; that's the only paid part. It imports a YNAB budget in one click with a YNAB personal access token, including targets, notes and scheduled transactions, and checks every month against YNAB's totals.
 
 UrBudget isn't affiliated with YNAB or any other product named here. It has no publicly available phone or web version and no shared budgets for several people. CSV, OFX, QFX and QIF file import works without a bank connection. It cannot open original YNAB 4 budget files, but can import per-account register CSV transactions without categories or historical budgets. Its interface is in English; any currency works.
 
@@ -8,7 +8,7 @@ UrBudget isn't affiliated with YNAB or any other product named here. It has no p
 
 - [Home](https://urbudget.app/): features, privacy, pricing and FAQ
 - [Pricing](https://urbudget.app/pricing/): the app is free, with nothing locked; optional $3 a month device sync; SimpleFIN and AI provider charges are separate
-- [Download](https://urbudget.app/download/): the Microsoft Store for Windows (or the Windows installer), and the macOS installer
+- [Download](https://urbudget.app/download/): the Microsoft Store for Windows (or the Windows installer), the macOS installer, and the Linux AppImage and .deb
 - [Android test](https://urbudget.app/android/): UrBudget for Android is in a closed test on Google Play that anyone can join: the testers group on Google Groups, then Google Play
 - [Source code](https://github.com/urbudget/urbudget): UrBudget's code on GitHub, under the AGPL-3.0
 
@@ -34,7 +34,7 @@ UrBudget isn't affiliated with YNAB or any other product named here. It has no p
 - [UrBudget vs Goodbudget](https://urbudget.app/vs/goodbudget/): a desktop Goodbudget alternative, compared on price, free-plan limits, bank sync and sharing
 - [UrBudget vs EveryDollar](https://urbudget.app/vs/everydollar/): Ramsey's zero-based app compared on price, file import, rollover and sharing
 - [UrBudget vs Monarch Money](https://urbudget.app/vs/monarch/): a bank-synced tracker compared with an envelope budget kept on your computer
-- [UrBudget vs Copilot Money](https://urbudget.app/vs/copilot/): an Apple-only tracker for US banks compared with an envelope budget for Windows and Mac
+- [UrBudget vs Copilot Money](https://urbudget.app/vs/copilot/): an Apple-only tracker for US banks compared with an envelope budget for Windows, Mac and Linux
 - [UrBudget vs Moneydance](https://urbudget.app/vs/moneydance/): a Quicken-style finance manager compared with an envelope budget
 - [UrBudget vs Quicken](https://urbudget.app/vs/quicken/): Quicken Classic's yearly plans, what still works after you stop paying (the Data Access Guarantee), and a free envelope budget
 - [How much does Quicken cost?](https://urbudget.app/vs/quicken/price/): Quicken Classic Starter, Deluxe, Premier and Business & Personal, and Quicken Simplifi: first-year offers against renewal prices, how auto-renewal works, what Classic still does without a subscription (the Data Access Guarantee), and 1, 3 and 5-year totals against UrBudget, which is free. Prices checked October 17, 2026.

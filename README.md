@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://urbudget.app">urbudget.app</a> ·
-  <a href="https://urbudget.app/download/">Download for Windows and Mac</a> ·
+  <a href="https://urbudget.app/download/">Download for Windows, Mac and Linux</a> ·
   <a href="docs/README.md">Docs</a>
 </p>
 
@@ -22,7 +22,7 @@ its own interface.
 
 | Folder | What it is |
 | --- | --- |
-| [`desktop/`](desktop/README.md) | The Windows and macOS app: Tauri, with a React window |
+| [`desktop/`](desktop/README.md) | The Windows, macOS and Linux app: Tauri, with a React window |
 | [`ios/`](ios/README.md) | The iPhone and iPad app: SwiftUI, an Xcode project |
 | [`android/`](android/README.md) | The Android app: Kotlin and Jetpack Compose, a Gradle project |
 | [`crates/`](crates/) | The shared Rust engine. [`urbudget-core`](crates/urbudget-core/) does the accounting, SQLite storage, imports, reports and sync merges; [`urbudget-services`](crates/urbudget-services/) the account, encrypted sync, sealed vault, bank and YNAB connections and the assistant. [`urbudget-ios`](crates/urbudget-ios/) and [`urbudget-android`](crates/urbudget-android/) let the phone apps call them |

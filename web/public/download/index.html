@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Download UrBudget for Windows and macOS</title>
-  <meta name="description" content="Download UrBudget, the envelope budgeting app, for Windows 10 and 11 or macOS 12 and later. Free and open source, with no account or card.">
+  <title>Download UrBudget for Windows, macOS and Linux</title>
+  <meta name="description" content="Download UrBudget, the envelope budgeting app, for Windows 10 and 11, macOS 12 and later, or Linux. Free and open source, with no account or card.">
   <link rel="canonical" href="https://urbudget.app/download/">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#fbfaf7">
@@ -15,17 +15,17 @@
   <link rel="manifest" href="/site.webmanifest">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="UrBudget">
-  <meta property="og:title" content="Download UrBudget for Windows and macOS">
-  <meta property="og:description" content="Download UrBudget for Windows 10 and 11 or macOS. Free and open source.">
+  <meta property="og:title" content="Download UrBudget for Windows, macOS and Linux">
+  <meta property="og:description" content="Download UrBudget for Windows, macOS or Linux. Free and open source.">
   <meta property="og:url" content="https://urbudget.app/download/">
-  <meta property="og:image" content="https://urbudget.app/img/og.png?v=5d5426e5">
+  <meta property="og:image" content="https://urbudget.app/img/og.png?v=6cd8632b">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="UrBudget: Your budget, on your computer. Envelope budgeting for Windows and macOS.">
+  <meta property="og:image:alt" content="UrBudget: Your budget, on your computer. Envelope budgeting for Windows, macOS and Linux.">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Download UrBudget for Windows and macOS">
-  <meta name="twitter:description" content="Download UrBudget for Windows 10 and 11 or macOS. Free and open source.">
-  <meta name="twitter:image" content="https://urbudget.app/img/og.png?v=5d5426e5">
+  <meta name="twitter:title" content="Download UrBudget for Windows, macOS and Linux">
+  <meta name="twitter:description" content="Download UrBudget for Windows, macOS or Linux. Free and open source.">
+  <meta name="twitter:image" content="https://urbudget.app/img/og.png?v=6cd8632b">
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -43,7 +43,7 @@
         "name": "UrBudget",
         "url": "https://urbudget.app/",
         "applicationCategory": "FinanceApplication",
-        "operatingSystem": "Windows 10, Windows 11, macOS 12 or later",
+        "operatingSystem": "Windows 10, Windows 11, macOS 12 or later, Linux",
         "downloadUrl": "https://urbudget.app/download/",
         "installUrl": "https://apps.microsoft.com/detail/9PMQMBZJG06R",
         "offers": {
@@ -143,7 +143,7 @@
             </a>
           </div>
           <p class="dl-release" id="dl-release"></p>
-          <p class="dl-hint" id="dl-hint">For Windows 10 and 11, and macOS 12 or later. <a href="#downloads">All downloads</a></p>
+          <p class="dl-hint" id="dl-hint">For Windows 10 and 11, macOS 12 or later, and Linux. <a href="#downloads">All downloads</a></p>
           <ul class="dl-ticks">
             <li><span><b>Free</b>, with nothing locked</span></li>
             <li>Future updates included</li>
@@ -329,7 +329,7 @@
           <details id="data">
             <summary>Where are my budgets stored?</summary>
             <div class="answer">
-              <p>In <code>%APPDATA%\com.localbudget.desktop</code> on Windows and <code>~/Library/Application Support/com.localbudget.desktop</code> on macOS. Each budget is its own SQLite file, with its backups next to it.</p>
+              <p>In <code>%APPDATA%\com.localbudget.desktop</code> on Windows and <code>~/Library/Application Support/com.localbudget.desktop</code> on macOS<span data-linux hidden>, and <code>~/.local/share/com.localbudget.desktop</code> on Linux</span>. Each budget is its own SQLite file, with its backups next to it.</p>
               <p>The Microsoft Store version uses that folder too if the installer already made it. Otherwise Windows gives it a private one, <code>%LOCALAPPDATA%\Packages\urbudget.UrBudget_s1gzxw095tb8a\LocalCache\Roaming\com.localbudget.desktop</code>, which the installer version can't see.</p>
             </div>
           </details>
