@@ -352,6 +352,12 @@
               <p>An Android app for phones and tablets is in testing on Google Play: <a href="/android/">join the test</a>. Otherwise UrBudget is a desktop app for Windows 10 and 11 and for macOS 12 Monterey or later. <span data-no-linux>There's no Linux or web version.</span><span data-linux hidden>There's a Linux version too, for 64-bit Intel and AMD computers. There's no web version.</span></p>
             </div>
           </details>
+          <details data-linux hidden>
+            <summary>What if the AppImage doesn't open?</summary>
+            <div class="answer">
+              <p>It draws with your computer's own graphics libraries. Almost every Linux desktop has them already, but a minimal one can lack them. On Debian, Ubuntu and their relatives, install them and open the file again: <code class="dl-command">sudo apt install libegl1 libgbm1 libgles2</code> Or use the .deb instead, which brings what it needs.</p>
+            </div>
+          </details>
           <details>
             <summary>How can I check a download?</summary>
             <div class="answer">
