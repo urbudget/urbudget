@@ -1,14 +1,36 @@
 # Release status
 
-Reviewed 15 November 2026 for desktop, the website and the Microsoft Store; 12 November 2026 for Android; 29 October 2026 for iOS. Update this page after a release or a verified account milestone.
+Reviewed 17 November 2026 for desktop, the website and the Microsoft Store; 12 November 2026 for Android; 29 October 2026 for iOS. Update this page after a release or a verified account milestone.
 
 | Platform | Status |
 | --- | --- |
-| Desktop | Published [desktop-v1.0.12](https://github.com/urbudget/urbudget/releases/tag/desktop-v1.0.12) on 15 November 2026. Windows and universal macOS installers are live on urbudget.app, with signed updates offered to 1.0.10 and 1.0.11. The release run's updater tests, builds, notarization and installed Windows smoke checks passed. The Store updater's two-version package-flight check was **not** run before publishing (see below). Production v2 activation remains disabled. |
-| Website | [Desktop 1.0.12 publication](https://github.com/urbudget/urbudget/actions/runs/43738144183) updated the downloads and signed update feeds on 15 November 2026. The site has run this repository's `web/` since 22 October: the app is free, and Sync is the only paid part at $3 a month. |
-| Microsoft Store | Desktop **1.0.12 is published and fully available** in the [Microsoft Store](https://apps.microsoft.com/detail/9PMQMBZJG06R). The [read-only status check](https://github.com/urbudget/urbudget/actions/runs/43741602802) at 17:32 UTC (20:32 Riyadh) on 15 November confirms submission `1152921505702410339` is `Published`, is the last-published submission, and contains uploaded package `1.0.12.0` with full rollout, about 35 minutes after it was committed. Store copies on 1.0.11 are offered the update. |
+| Desktop | Published [desktop-v1.0.13](https://github.com/urbudget/urbudget/releases/tag/desktop-v1.0.13) on 17 November 2026, the first release with a Linux version. Windows, universal macOS and Linux (AppImage and `.deb`, x86_64) installers are live on urbudget.app, with signed updates offered to 1.0.12. The release run's updater tests, builds, notarization and installed Windows smoke checks passed. The two-version updater checks were **not** run before publishing, and the Linux version has not been run on a real desktop (see below). Production v2 activation remains disabled. |
+| Website | [Desktop 1.0.13 publication](https://github.com/urbudget/urbudget/actions/runs/44070622381) updated the downloads and signed update feeds on 17 November 2026, and the download page now offers Linux. The site has run this repository's `web/` since 22 October: the app is free, and Sync is the only paid part at $3 a month. |
+| Microsoft Store | Desktop **1.0.13 is in certification**, not yet published: the [submission run](https://github.com/urbudget/urbudget/actions/runs/44070622403) committed submission `1152921505702428155` at 11:08 UTC (14:08 Riyadh) on 17 November 2026. Until it's published the [Microsoft Store](https://apps.microsoft.com/detail/9PMQMBZJG06R) has 1.0.12, published on 15 November as submission `1152921505702410339`. To check, run **Microsoft Store status** with the new submission ID and package version `1.0.13.0`. |
 | Android | Source version 1.0.1 (version code 1000001), package `app.urbudget`. On 12 November 2026 the [signed 1.0.1 bundle](https://github.com/urbudget/urbudget/actions/runs/43288911078) from `8a55c50` became the release on Play's closed test, superseding the 1.0.0 draft. Its SMS and foreground service declarations are saved with videos recorded on a Galaxy Z Fold, Sign in details are filled with a review account of its own and a capped assistant key, and the release has no errors. It was sent to Google for review that day, with the store listing and app content; Managed publishing is off, so the closed test goes to its testers as soon as it's approved. See [the Play listing notes](play-listing/README.md). |
 | iOS | Native app source version `1.0.0`, bundle `app.urbudget`. The App Store Connect app record (6825535486) exists, and its listing, price (free), availability, age rating (4+) and privacy answers are filled in. Version 1.0.0 (build 1, from `ios-v1.0.0`) was submitted to App Review on 22 October 2026 as "UrBudget: Envelope Planner", set to **manual release**. Its privacy answers are published, and its screenshots (iPhone and iPad) and review account (`review@urbudget.app`, with complimentary Sync) are set up. It's not on the Mac App Store, by choice: Mac users get the desktop app. |
+
+## Desktop 1.0.13
+
+Published on 17 November 2026 from `b925c50f55d089eb17e49ad93cab84fc4cb51723`, tagged `desktop-v1.0.13`. [PR #34](https://github.com/urbudget/urbudget/pull/34) added the Linux version: the CI build, the secrets' key in the system keyring, the AppImage and `.deb` packages, their updates and the download page. Nothing else changes on Windows and macOS.
+
+The [release run](https://github.com/urbudget/urbudget/actions/runs/43954547343) passed: updater regressions, the Windows, universal macOS (notarized) and Linux builds, and the installed Windows smoke checks. It was the Linux leg's first run on GitHub. App validation, Native Android, Native iOS and Sync protocol validation passed on the release commit.
+
+Before publishing, from the draft's own files:
+
+- The publish script accepted all four installers: their update signatures verify against the app's public key and name 1.0.13.
+- In clean containers with a virtual display, the `.deb` installed with apt and opened on Ubuntu 22.04, Ubuntu 24.04 and Debian 12. The AppImage opened on Ubuntu 24.04, and on Ubuntu 22.04 once `libegl1`, `libgbm1` and `libgles2` were installed: it uses the system's graphics libraries, which a desktop has and a bare container doesn't. The download page's FAQ says what to do if it doesn't open.
+- On a build of the branch (not the released files), an unused 1.0.12 AppImage replaced itself with 1.0.13 from a local copy of the site, and a 1.0.12 `.deb` copy downloaded the update and waited for the person.
+
+After the [website publication](https://github.com/urbudget/urbudget/actions/runs/44070622381):
+
+- Windows, macOS and both Linux download links redirect to the 1.0.13 installers. The served Windows installer (8,424,040 bytes), macOS disk image (24,040,124 bytes), AppImage (90,540,536 bytes) and `.deb` (13,230,734 bytes) match GitHub's SHA-256 digests.
+- Windows x64 and macOS Apple silicon and Intel clients on 1.0.12 are offered 1.0.13 with the release's own update signatures and notes. A Linux client on an earlier version is offered the package of its own kind (AppImage or `.deb`). 1.0.13 clients receive HTTP 204.
+- The download page shows the Linux downloads, their install steps and the Linux answers in its FAQ.
+
+**Known gaps:** the Linux version has never been run on a real Linux desktop, only in containers: the keyring's unlock prompt, KWallet and KeePassXC, the `.deb` update's password prompt, a real graphics driver and Arabic are untried. The [two-version Store flight and standalone upgrade checks](../desktop/README.md#verifying-an-updater-change) were not run, though this release touched the updater's code (a `.deb` copy waits for the person; Windows and macOS take the same path as before); publishing went ahead by the owner's decision. 1.0.12's own Store updater is first exercised by this release: watch for Store copies on 1.0.12 failing to install 1.0.13, whose external recovery is updating through Microsoft Store's Library. There is no arm64 Linux build, and the rest of the site (the home page, titles, comparison pages) still names only Windows and macOS.
+
+The [Microsoft Store submission run](https://github.com/urbudget/urbudget/actions/runs/44070622403) committed submission `1152921505702428155` at 11:08 UTC, which entered certification with no errors. That only means Microsoft accepted it for processing: 1.0.13 is not in the Store until a **Microsoft Store status** run with that submission ID and `1.0.13.0` shows it Published, last-published and fully rolled out. The Store change is the same Windows app as 1.0.12; Linux is not in the Store.
 
 ## Desktop 1.0.12
 
