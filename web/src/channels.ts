@@ -45,9 +45,10 @@ interface GitHubRelease {
 }
 
 /** The system an installer on GitHub is for, by its name; null for signatures, update packages and the Store's package. */
-export function installerPlatform(name: string): "windows" | "macos" | null {
+export function installerPlatform(name: string): "windows" | "macos" | "linux" | null {
   if (/\.(exe|msi)$/i.test(name)) return "windows";
   if (/\.dmg$/i.test(name)) return "macos";
+  if (/\.(AppImage|deb)$/i.test(name)) return "linux";
   return null;
 }
 
@@ -131,7 +132,7 @@ export async function githubDaily(db: D1Database, first: string) {
     .bind(first)
     .all<{ day: string; asset: string; n: number }>();
   const since = await db.prepare("SELECT MIN(day) AS day FROM github_downloads").first<{ day: string | null }>();
-  const daily: { day: string; platform: "windows" | "macos"; n: number }[] = [];
+  const daily: { day: string; platform: "windows" | "macos" | "linux"; n: number }[] = [];
   for (const row of rows.results) {
     const platform = installerPlatform(row.asset);
     if (platform) daily.push({ day: row.day, platform, n: row.n });

@@ -112,9 +112,11 @@ async function channelSeries(env: Env, days: string[]) {
   const series = {
     websiteWindows: perDay(days, website.results.filter((r) => !r.store && r.platform === "windows")),
     websiteMacos: perDay(days, website.results.filter((r) => !r.store && r.platform === "macos")),
+    websiteLinux: perDay(days, website.results.filter((r) => !r.store && r.platform === "linux")),
     storeClicks: perDay(days, website.results.filter((r) => r.store)),
     githubWindows: perDay(days, github.daily.filter((r) => r.platform === "windows")),
     githubMacos: perDay(days, github.daily.filter((r) => r.platform === "macos")),
+    githubLinux: perDay(days, github.daily.filter((r) => r.platform === "linux")),
     storeAcquisitions: perDay(days, store.results.filter((r) => r.kind === "acquisitions")),
     storeInstalls: perDay(days, store.results.filter((r) => r.kind === "installs")),
     opensDirect: perDay(days, opens.results.filter((r) => r.channel === "direct")),
@@ -123,8 +125,8 @@ async function channelSeries(env: Env, days: string[]) {
   // The Store's downloads are its acquisitions once Partner Center has answered. Until then, clicks
   // on the site's Store button stand in, which miss everyone who found UrBudget in the Store itself.
   const partnerCenter = storeConfigured(env) && Boolean(status.store?.okAt);
-  const websiteAll = add(series.websiteWindows, series.websiteMacos);
-  const githubAll = add(series.githubWindows, series.githubMacos);
+  const websiteAll = add(series.websiteWindows, series.websiteMacos, series.websiteLinux);
+  const githubAll = add(series.githubWindows, series.githubMacos, series.githubLinux);
   const storeAll = partnerCenter ? series.storeAcquisitions : series.storeClicks;
   return {
     ...series,
@@ -134,6 +136,7 @@ async function channelSeries(env: Env, days: string[]) {
     total: add(websiteAll, storeAll),
     windows: add(series.websiteWindows, storeAll),
     macos: series.websiteMacos,
+    linux: series.websiteLinux,
     opens: add(series.opensDirect, series.opensStore),
     partnerCenter,
     githubSince: github.since,
@@ -169,6 +172,7 @@ async function activeSeries(db: D1Database, days: string[], weekStarts: string[]
       store: inWeek(start, (r) => r.channel === "store"),
       windows: inWeek(start, (r) => r.platform === "windows"),
       macos: inWeek(start, (r) => r.platform === "macos"),
+      linux: inWeek(start, (r) => r.platform === "linux"),
     })),
     since: since?.day ?? null,
   };
@@ -328,6 +332,7 @@ admin.get("/overview", async (c) => {
       storeSource: channels.partnerCenter ? "partner-center" : "clicks",
       windows: last30(channels.windows),
       macos: last30(channels.macos),
+      linux: last30(channels.linux),
       team: sum(downloads.results, (r) => r.n, (r) => r.kind === "team"),
       bots: sum(downloads.results, (r) => r.n, (r) => r.kind === "bot"),
     },
@@ -530,9 +535,9 @@ admin.get("/downloads", async (c) => {
   return c.json({
     days,
     // People's clicks on urbudget.app: its installers, and its button to the Microsoft Store.
-    website: { windows: channels.websiteWindows, macos: channels.websiteMacos, store: channels.storeClicks },
+    website: { windows: channels.websiteWindows, macos: channels.websiteMacos, linux: channels.websiteLinux, store: channels.storeClicks },
     // Unfiltered GitHub file downloads, including release/QA/automation; excluded from user totals.
-    github: { ...github, includesAutomation: true, excludedFromUserTotals: true, windows: channels.githubWindows, macos: channels.githubMacos, since: channels.githubSince, fetched: channels.status.github ?? null },
+    github: { ...github, includesAutomation: true, excludedFromUserTotals: true, windows: channels.githubWindows, macos: channels.githubMacos, linux: channels.githubLinux, since: channels.githubSince, fetched: channels.status.github ?? null },
     // Partner Center's numbers. Until it has answered, the site's Store button stands in for the Store.
     store: {
       configured: storeConfigured(c.env),
@@ -634,6 +639,7 @@ admin.get("/usage", async (c) => {
     launches: {
       windows: perDay(days, launches.results.filter((r) => r.platform === "windows")),
       macos: perDay(days, launches.results.filter((r) => r.platform === "darwin")),
+      linux: perDay(days, launches.results.filter((r) => r.platform === "linux")),
       versions: launchVersions.results,
     },
   });

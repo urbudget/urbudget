@@ -50,7 +50,7 @@ interface Usage {
   since: string | null;
   daily: { direct: number[]; store: number[] };
   opens: { direct: number[]; store: number[] };
-  weeks: { start: string; active: number; direct: number; store: number; windows: number; macos: number; opens: number }[];
+  weeks: { start: string; active: number; direct: number; store: number; windows: number; macos: number; linux: number; opens: number }[];
   months: { month: string; active: number }[];
   cohorts: { week: string; opens: number; back: number[] }[];
   versions: { version: string; platform: string; channel: string; thisWeek: number; lastWeek: number }[];
@@ -62,20 +62,23 @@ describe("copies in use", () => {
     const first = await report({ ...copy, first: true, day: true, week: true, month: true, cohort: thisMonday() });
     expect(first.status).toBe(204);
     await report({ ...copy, channel: "store", day: true, week: true, month: false, cohort: "" });
+    // A Linux copy counts like any other.
+    await report({ ...copy, platform: "linux", version: "1.0.13", day: true, week: true, month: false, cohort: "" }, { ...APP, "User-Agent": "UrBudget/1.0.13" });
     // Nothing new: nothing counted.
     expect((await report({ ...copy, day: false, week: false, month: false })).status).toBe(204);
 
     const u = await read<Usage>(call("/api/v1/admin/usage"));
     expect(u.since).toBe(today());
-    expect([u.daily.direct.at(-1), u.daily.store.at(-1)]).toEqual([1, 1]);
+    expect([u.daily.direct.at(-1), u.daily.store.at(-1)]).toEqual([2, 1]);
     expect([u.opens.direct.at(-1), u.opens.store.at(-1)]).toEqual([1, 0]);
-    expect(u.weeks[0]).toEqual({ start: thisMonday(), active: 2, direct: 1, store: 1, windows: 2, macos: 0, opens: 1 });
+    expect(u.weeks[0]).toEqual({ start: thisMonday(), active: 3, direct: 2, store: 1, windows: 2, macos: 0, linux: 1, opens: 1 });
     expect(u.months).toEqual([{ month: today().slice(0, 7), active: 1 }]);
     expect(u.cohorts).toEqual([{ week: thisMonday(), opens: 1, back: [] }]);
     expect(u.versions).toEqual(
       expect.arrayContaining([
         { version: "1.0.9", platform: "windows", channel: "direct", thisWeek: 1, lastWeek: 0 },
         { version: "1.0.9", platform: "windows", channel: "store", thisWeek: 1, lastWeek: 0 },
+        { version: "1.0.13", platform: "linux", channel: "direct", thisWeek: 1, lastWeek: 0 },
       ]),
     );
 
@@ -85,7 +88,7 @@ describe("copies in use", () => {
     expect(JSON.stringify(env.DB.sqlite.prepare("SELECT * FROM rate_limits").all())).not.toContain("203.0.113.7");
 
     const overview = await read<{ usage: { opens30: number; thisWeek: number }; funnel: { opens: number } }>(call("/api/v1/admin/overview"));
-    expect(overview.usage).toMatchObject({ opens30: 1, thisWeek: 2 });
+    expect(overview.usage).toMatchObject({ opens30: 1, thisWeek: 3 });
     expect(overview.funnel.opens).toBe(1);
   });
 
@@ -141,7 +144,9 @@ describe("downloads from every channel", () => {
     expect(installerPlatform("UrBudget_1.0.8_x64-setup.exe")).toBe("windows");
     expect(installerPlatform("UrBudget_1.0.8_x64_en-US.msi")).toBe("windows");
     expect(installerPlatform("UrBudget_1.0.8_universal.dmg")).toBe("macos");
-    for (const other of ["UrBudget_1.0.8_x64-setup.exe.sig", "UrBudget_1.0.8_x64.msix", "UrBudget_universal.app.tar.gz", "latest.json"])
+    expect(installerPlatform("UrBudget_1.0.13_amd64.AppImage")).toBe("linux");
+    expect(installerPlatform("UrBudget_1.0.13_amd64.deb")).toBe("linux");
+    for (const other of ["UrBudget_1.0.8_x64-setup.exe.sig", "UrBudget_1.0.13_amd64.AppImage.sig", "UrBudget_1.0.8_x64.msix", "UrBudget_universal.app.tar.gz", "latest.json"])
       expect(installerPlatform(other)).toBeNull();
   });
 
@@ -211,6 +216,10 @@ describe("downloads from every channel", () => {
     click.run(today(), "windows", "1.0.11", "person", 2);
     click.run(today(), "macos", "1.0.11", "person", 3);
     click.run(today(), "windows", "Microsoft Store", "person", 4);
+    click.run(today(), "linux", "1.0.13", "person", 1);
+    // A Linux installer's raw GitHub count stays out too.
+    snapshot.run(daysAgo(1), "linux", "UrBudget_1.0.13_amd64.AppImage", 0);
+    snapshot.run(today(), "linux", "UrBudget_1.0.13_amd64.AppImage", 40);
     click.run(today(), "windows", "1.0.11", "bot", 91);
     click.run(today(), "windows", "1.0.11", "team", 37);
     click.run(daysAgo(35), "windows", "1.0.10", "person", 2);
@@ -220,25 +229,28 @@ describe("downloads from every channel", () => {
       env.DB.sqlite.prepare("INSERT INTO store_counts (day, kind, count) VALUES (?, 'acquisitions', 6)").run(today());
     }
     const storeCount = partnerCenter ? 6 : 4;
-    const userTotal = 5 + storeCount;
+    const userTotal = 6 + storeCount;
     const d = await read<{
       total: number[];
-      github: { windows: number[]; includesAutomation: boolean; excludedFromUserTotals: boolean };
+      website: { linux: number[] };
+      github: { windows: number[]; linux: number[]; includesAutomation: boolean; excludedFromUserTotals: boolean };
       others: { bots: { last30: number }; team: { last30: number } };
     }>(call("/api/v1/admin/downloads"));
     expect(d.total.at(-1)).toBe(userTotal);
     expect(d.total.reduce((a, b) => a + b, 0)).toBe(userTotal + 2);
     expect(d.github.windows.reduce((a, b) => a + b, 0)).toBe(250);
+    expect(d.github.linux.at(-1)).toBe(40);
+    expect(d.website.linux.at(-1)).toBe(1);
     expect(d.github).toMatchObject({ includesAutomation: true, excludedFromUserTotals: true });
     expect(d.others).toMatchObject({ bots: { last30: 91 }, team: { last30: 37 } });
     const o = await read<{
-      downloads: { last30: number; github: number; windows: number; macos: number };
+      downloads: { last30: number; github: number; windows: number; macos: number; linux: number };
       previous30: { downloads: number };
       funnel: { downloads: number };
       daily: { downloads: number[] };
       weeks: { downloads: number }[];
     }>(call("/api/v1/admin/overview"));
-    expect(o.downloads).toMatchObject({ last30: userTotal, github: 200, windows: 2 + storeCount, macos: 3 });
+    expect(o.downloads).toMatchObject({ last30: userTotal, github: 240, windows: 2 + storeCount, macos: 3, linux: 1 });
     expect(o.previous30.downloads).toBe(2);
     expect(o.funnel.downloads).toBe(userTotal);
     expect(o.daily.downloads.reduce((a, b) => a + b, 0)).toBe(userTotal + 2);

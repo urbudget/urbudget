@@ -816,8 +816,8 @@ function fetchedItem(name, fetched, waiting, fine) {
 
 loaders.downloads = async () => {
   const d = await api("/admin/downloads");
-  const website = add(d.website.windows, d.website.macos);
-  const github = add(d.github.windows, d.github.macos);
+  const website = add(d.website.windows, d.website.macos, d.website.linux);
+  const github = add(d.github.windows, d.github.macos, d.github.linux);
   const store = d.store.partnerCenter ? d.store.acquisitions : d.website.store;
   const opens = add(d.opens.direct, d.opens.store);
   const total30 = lastDaysOf(d.total, 30);
@@ -831,7 +831,7 @@ loaders.downloads = async () => {
     {
       label: "urbudget.app, 30 days",
       value: num(lastDaysOf(website, 30)),
-      sub: `Windows ${num(lastDaysOf(d.website.windows, 30))} · macOS ${num(lastDaysOf(d.website.macos, 30))} · ${num(lastDaysOf(d.website.store, 30))} sent to the Store`,
+      sub: `Windows ${num(lastDaysOf(d.website.windows, 30))} · macOS ${num(lastDaysOf(d.website.macos, 30))} · Linux ${num(lastDaysOf(d.website.linux, 30))} · ${num(lastDaysOf(d.website.store, 30))} sent to the Store`,
     },
     {
       label: "GitHub installer downloads, 30 days",
@@ -947,9 +947,11 @@ loaders.downloads = async () => {
     [
       row("urbudget.app", "Windows installer clicks", d.website.windows),
       row("urbudget.app", "macOS installer clicks", d.website.macos),
+      row("urbudget.app", "Linux installer clicks", d.website.linux),
       row("urbudget.app", "Clicks through to the Microsoft Store", d.website.store),
       row("GitHub (unfiltered)", "Windows installer files, including release/QA/automation", d.github.windows),
       row("GitHub (unfiltered)", "macOS installer files, including release/QA/automation", d.github.macos),
+      row("GitHub (unfiltered)", "Linux installer files, including release/QA/automation", d.github.linux),
       d.store.configured ? row("Microsoft Store", "Acquisitions, from Partner Center", d.store.acquisitions) : null,
       d.store.configured ? row("Microsoft Store", "Installs, from Partner Center", d.store.installs) : null,
       row("The app", "First opens of copies from urbudget.app or GitHub", d.opens.direct),
@@ -984,7 +986,7 @@ loaders.downloads = async () => {
         "tr",
         {},
         h("td", {}, r.version),
-        h("td", {}, r.platform === "macos" ? "macOS" : "Windows"),
+        h("td", {}, PLATFORM[r.platform] || r.platform),
         h("td", { class: "num" }, num(r.n)),
         h("td", {}, dateOnly(r.last)),
       ),
@@ -1058,7 +1060,7 @@ loaders.usage = async () => {
     {
       label: "In use last week",
       value: num(lastWeek?.active),
-      sub: `Windows ${num(lastWeek?.windows)} · macOS ${num(lastWeek?.macos)} · Store ${num(lastWeek?.store)}`,
+      sub: `Windows ${num(lastWeek?.windows)} · macOS ${num(lastWeek?.macos)} · Linux ${num(lastWeek?.linux)} · Store ${num(lastWeek?.store)}`,
       trend: [lastWeek?.active ?? 0, weekBefore?.active ?? 0],
       than: "the week before",
     },
@@ -1121,6 +1123,7 @@ loaders.usage = async () => {
         h("td", { class: "num" }, h("b", {}, num(week.active))),
         h("td", { class: "num" }, num(week.windows)),
         h("td", { class: "num" }, num(week.macos)),
+        h("td", { class: "num" }, num(week.linux)),
         h("td", { class: "num" }, num(week.direct)),
         h("td", { class: "num" }, num(week.store)),
         h("td", { class: "num" }, num(week.opens)),
@@ -1152,6 +1155,7 @@ loaders.usage = async () => {
     series: [
       { name: "Windows", values: u.launches.windows, color: "var(--series-1)" },
       { name: "macOS", values: u.launches.macos, color: "var(--series-2)" },
+      { name: "Linux", values: u.launches.linux, color: "var(--series-3)" },
     ],
     empty: "No update checks yet. Copies from 1.0.2 on are counted.",
   });

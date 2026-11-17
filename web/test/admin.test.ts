@@ -227,6 +227,34 @@ describe("admin numbers", () => {
     expect(overview.downloads).toMatchObject({ last30: 3, windows: 3, bots: 2, team: 0 });
   });
 
+  it("counts both Linux installers as Linux downloads, in the totals", async () => {
+    await env.RELEASES.put(
+      "latest.json",
+      JSON.stringify({
+        version: "1.0.13",
+        date: "2026-11-17",
+        notes: "",
+        platforms: {
+          linux: { file: "UrBudget_1.0.13_amd64.AppImage", size: 5, sha256: "abc" },
+          "linux-deb": { file: "UrBudget_1.0.13_amd64.deb", size: 5, sha256: "def" },
+        },
+      }),
+    );
+    const page = { "User-Agent": browser.replace("Windows NT 10.0; Win64; x64", "X11; Linux x86_64"), Referer: "http://localhost/download/" };
+    await call("/download/linux", { headers: page });
+    await call("/download/linux-deb", { headers: page });
+
+    const d = await read<{ website: { windows: number[]; linux: number[] }; total: number[]; versions: { version: string; platform: string; n: number }[] }>(
+      call("/api/v1/admin/downloads"),
+    );
+    expect(d.website.linux.at(-1)).toBe(2);
+    expect(d.website.windows.at(-1)).toBe(0);
+    expect(d.total.at(-1)).toBe(2);
+    expect(d.versions).toEqual([expect.objectContaining({ version: "1.0.13", platform: "linux", n: 2 })]);
+    const overview = await read<{ downloads: { last30: number; website: number; linux: number; windows: number } }>(call("/api/v1/admin/overview"));
+    expect(overview.downloads).toMatchObject({ last30: 2, website: 2, linux: 2, windows: 0 });
+  });
+
   it("counts people apart from bots, AI agents' browsers and the team", async () => {
     await publish();
     const page = { Referer: "http://localhost/download/" };
@@ -322,23 +350,25 @@ describe("admin numbers", () => {
   });
 
   it("counts app launches from update checks, per day, system and version", async () => {
-    for (const path of ["windows/x86_64/1.0.2", "windows/x86_64/1.0.2", "darwin/aarch64/1.0.2", "darwin/x86_64/1.0.3"])
+    for (const path of ["windows/x86_64/1.0.2", "windows/x86_64/1.0.2", "darwin/aarch64/1.0.2", "darwin/x86_64/1.0.3", "linux/x86_64/1.0.13?bundle=appimage", "linux/x86_64/1.0.13?bundle=deb", "linux/x86_64/1.0.13"])
       expect([200, 204]).toContain((await call(`/api/v1/releases/update/${path}`)).status);
     // Not launches: a HEAD, a system or chip the app isn't built for, and a version that isn't one.
     await call("/api/v1/releases/update/windows/x86_64/1.0.2", { method: "HEAD" });
     await call("/api/v1/releases/update/amiga/m68k/1.0.2");
     expect((await call("/api/v1/releases/update/windows/x86_64/latest")).status).toBe(400);
 
-    const { launches } = await read<{ launches: { windows: number[]; macos: number[]; versions: { version: string; platform: string; n: number }[] } }>(
+    const { launches } = await read<{ launches: { windows: number[]; macos: number[]; linux: number[]; versions: { version: string; platform: string; n: number }[] } }>(
       call("/api/v1/admin/usage"),
     );
     expect(launches.windows.at(-1)).toBe(2);
     expect(launches.macos.at(-1)).toBe(2);
+    expect(launches.linux.at(-1)).toBe(3);
     expect(launches.versions).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ version: "1.0.2", platform: "windows", n: 2 }),
         expect.objectContaining({ version: "1.0.2", platform: "darwin", n: 1 }),
         expect.objectContaining({ version: "1.0.3", platform: "darwin", n: 1 }),
+        expect.objectContaining({ version: "1.0.13", platform: "linux", n: 3 }),
       ]),
     );
   });
