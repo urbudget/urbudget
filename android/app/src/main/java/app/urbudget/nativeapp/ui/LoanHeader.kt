@@ -12,7 +12,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ShowChart
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -127,7 +126,7 @@ internal fun LoanHeader(account: JSONObject, budget: JSONObject, balance: Long, 
         payoffText(owed, plan), plan.projection?.let { money(it.optLong("totalInterest"), currency) } ?: if (owed > 0) "—" else money(0, currency), modifier) {
         if (owed > 0 && !archived) PrimaryButton(stringResource(R.string.loan_record_payment), { actions.record(account) }, Modifier.fillMaxWidth(), icon = Icons.Outlined.Payments)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (owed > 0) SecondaryButton(stringResource(R.string.loan_planner), { actions.plan(account) }, Modifier.weight(1f), icon = Icons.AutoMirrored.Outlined.ShowChart)
+            if (owed > 0) SecondaryButton(stringResource(R.string.loan_planner), { actions.plan(account) }, Modifier.weight(1f), icon = RisingChart)
             SecondaryButton(stringResource(R.string.loan_details), { actions.details(account) }, Modifier.weight(1f), icon = Icons.Outlined.Edit)
         }
         Text(plan.error ?: stringResource(charges), style = MaterialTheme.typography.bodySmall, color = if (plan.error != null) ur.warning else ur.muted)

@@ -80,6 +80,39 @@ private struct ReportLinkRow<Label: View>: View {
     }
 }
 
+/// A list's rows: a list of nine or more shows six until the rest are asked for (`ReportMath.folds`):
+/// "Show all N" opens it, and "Show fewer" folds it again.
+private struct ReportFold<Row: Identifiable, Content: View>: View {
+    var rows: [Row]
+    @ViewBuilder var content: (Row) -> Content
+    @State private var open = false
+
+    var body: some View {
+        let count = rows.count
+        ForEach(ReportMath.folded(rows, open: open)) { row in content(row) }
+        if ReportMath.folds(count) {
+            Button(open ? String(localized: "Show fewer") : String(localized: "Show all \(count)", locale: .app)) {
+                withAnimation(.snappy) { open.toggle() }
+            }
+            .font(.subheadline.weight(.semibold))
+        }
+    }
+}
+
+/// A report's rows, folded at six; its totals, and a sentence about them, stay in view under
+/// them. With `link`, a row opens what's behind it.
+private struct ReportFigureList: View {
+    var rows: [ReportFigureRow]
+    var link: ((ReportFigureRow) -> ReportNav?)? = nil
+
+    var body: some View {
+        ReportFold(rows: rows.filter { !ReportMath.staysInView($0.style) }) { row in
+            ReportLinkRow(value: link.flatMap { $0(row) }) { ReportFigureRowView(row: row) }
+        }
+        ForEach(rows.filter { ReportMath.staysInView($0.style) }) { ReportFigureRowView(row: $0) }
+    }
+}
+
 /// Lays out a report's body as list sections.
 struct ReportBodyView: View {
     var report: ReportBody
@@ -101,6 +134,9 @@ struct ReportBodyView: View {
         case .balance(let model): ReportBalanceSheetBody(model: model)
         case .balances(let model): ReportBalancesBody(model: model, actions: actions)
         case .age(let model): ReportAgeBody(model: model)
+        case .performance(let model): ReportPerformanceBody(model: model)
+        case .allocation(let model): ReportAllocationBody(model: model)
+        case .investmentIncome(let model): ReportInvestmentIncomeBody(model: model)
         }
     }
 }
@@ -127,7 +163,7 @@ private struct ReportCategoryBody: View {
                             },
                             openLabel: model.group != nil ? String(localized: "See transactions") : String(localized: "See categories"))
                 .padding(.vertical, 8)
-                ForEach(model.rows) { row in
+                ReportFold(rows: model.rows) { row in
                     ReportLinkRow(value: link(row.key)) {
                         ReportBarRowView(row: row, picked: picked.map { $0 == row.key || ($0 == "__other" && others.contains(row.key)) })
                     }
@@ -143,7 +179,7 @@ private struct ReportCategoryBody: View {
                 if changes.rows.isEmpty {
                     Text("Spending matched the average.").foregroundStyle(Color.secondary)
                 } else {
-                    ForEach(changes.rows) { ReportDivergingRowView(row: $0) }
+                    ReportFold(rows: changes.rows) { ReportDivergingRowView(row: $0) }
                 }
             } header: {
                 ReportSectionHeader(title: changes.title, aside: changes.aside)
@@ -205,7 +241,7 @@ private struct ReportPayeeBody: View {
             if rows.isEmpty {
                 ContentUnavailableView.search(text: query)
             }
-            ForEach(rows) { payee in
+            ReportFold(rows: rows) { payee in
                 NavigationLink(value: actions.drill(ReportDrillTarget(title: payee.label, dimension: "payee", key: payee.name))) {
                     HStack(spacing: 10) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -287,7 +323,7 @@ private struct ReportOverTimeBody: View {
             ReportSectionHeader(title: String(localized: "Spending by month"))
         }
         Section {
-            ForEach(model.rows) { ReportFigureRowView(row: $0) }
+            ReportFigureList(rows: model.rows)
         } header: {
             ReportSectionHeader(title: String(localized: "Month by month"))
         }
@@ -359,16 +395,51 @@ private struct ReportCalendarBody: View {
         }
         Section {
             if model.biggest.isEmpty { Text("No spending in these months.").foregroundStyle(Color.secondary) }
-            ForEach(model.biggest) { row in
-                ReportLinkRow(value: row.drill.map(actions.drill)) { ReportFigureRowView(row: row) }
-            }
+            ReportFigureList(rows: model.biggest, link: { $0.drill.map(actions.drill) })
         } header: {
             ReportSectionHeader(title: String(localized: "Biggest days"))
         }
     }
 }
 
-/// Rows split into sections, a group's categories under a disclosure.
+/// A table section's rows, a group's categories under a disclosure. With `folds`, six of them
+/// show until the rest are asked for, and the section's totals stay in view under them.
+private struct ReportTableRows: View {
+    var rows: [ReportFigureRow]
+    var children: [String: [ReportFigureRow]]
+    var folds: Bool
+
+    var body: some View {
+        if folds {
+            ReportFold(rows: rows.filter { !ReportMath.staysInView($0.style) }) { row in line(row) }
+            ForEach(rows.filter { ReportMath.staysInView($0.style) }) { row in line(row) }
+        } else {
+            // A statement stays open, but a list inside it (a section's holdings) folds as lists do.
+            ForEach(ReportMath.foldRuns(rows)) { run in
+                if run.folds {
+                    ReportFold(rows: run.rows) { row in line(row) }
+                } else {
+                    ForEach(run.rows) { row in line(row) }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private func line(_ row: ReportFigureRow) -> some View {
+        if let expand = row.expand, let kids = children[expand], !kids.isEmpty {
+            DisclosureGroup {
+                ForEach(kids) { ReportFigureRowView(row: $0) }
+            } label: {
+                ReportFigureRowView(row: row)
+            }
+        } else {
+            ReportFigureRowView(row: row)
+        }
+    }
+}
+
+/// Rows split into sections, a group's categories under a disclosure. A statement stays open;
+/// with `folds`, each section folds at six rows.
 private struct ReportTableSections: View {
     var key: String
     var rows: [ReportFigureRow]
@@ -376,22 +447,13 @@ private struct ReportTableSections: View {
     var header: String? = nil
     var aside: String? = nil
     var footer: String? = nil
+    var folds = false
 
     var body: some View {
         let sections = reportRowSections(rows, key: key)
         ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
             Section {
-                ForEach(section.rows) { row in
-                    if let expand = row.expand, let kids = children[expand], !kids.isEmpty {
-                        DisclosureGroup {
-                            ForEach(kids) { ReportFigureRowView(row: $0) }
-                        } label: {
-                            ReportFigureRowView(row: row)
-                        }
-                    } else {
-                        ReportFigureRowView(row: row)
-                    }
-                }
+                ReportTableRows(rows: section.rows, children: children, folds: folds)
             } header: {
                 if index == 0, let header {
                     VStack(alignment: .leading, spacing: 8) {
@@ -434,9 +496,9 @@ private struct ReportIncomeExpenseBody: View {
             ReportSectionHeader(title: String(localized: "Cumulative budget surplus"), aside: String(localized: "Surplus added up"))
         }
         ReportTableSections(key: "table", rows: model.table, children: model.children, header: String(localized: "Income and spending"),
-                            aside: String(localized: "Open a group to see its categories"))
+                            aside: String(localized: "Open a group to see its categories"), folds: true)
         Section {
-            ForEach(model.months) { ReportFigureRowView(row: $0) }
+            ReportFigureList(rows: model.months)
         } header: {
             ReportSectionHeader(title: String(localized: "By month"), aside: String(localized: "Budget surplus each month"))
         }
@@ -462,7 +524,7 @@ private struct ReportIncomeBody: View {
                         .padding(.vertical, 8)
                         .onChange(of: model.slices) { picked = nil }
                 }
-                ForEach(model.bars) { row in ReportBarRowView(row: row, picked: picked.map { $0 == row.key }) }
+                ReportFold(rows: model.bars) { row in ReportBarRowView(row: row, picked: picked.map { $0 == row.key }) }
             }
         } header: {
             ReportSectionHeader(title: String(localized: "Where your income comes from"))
@@ -481,9 +543,7 @@ private struct ReportIncomeBody: View {
         }
         Section {
             if model.sources.isEmpty { Text("No income sources in these months.").foregroundStyle(Color.secondary) }
-            ForEach(model.sources) { row in
-                ReportLinkRow(value: row.drill.map(actions.drill)) { ReportFigureRowView(row: row) }
-            }
+            ReportFigureList(rows: model.sources, link: { $0.drill.map(actions.drill) })
         } header: {
             ReportSectionHeader(title: String(localized: "Sources"))
         } footer: {
@@ -513,7 +573,7 @@ private struct ReportCashFlowBody: View {
             ReportSectionHeader(title: String(localized: "Running total"), aside: String(localized: "Net flow added up"))
         }
         Section {
-            ForEach(model.months) { ReportFigureRowView(row: $0) }
+            ReportFigureList(rows: model.months)
         } header: {
             ReportSectionHeader(title: String(localized: "By month"), aside: String(localized: "Net flow each month"))
         }
@@ -542,7 +602,7 @@ private struct ReportNetWorthBody: View {
             ReportSectionHeader(title: String(localized: "Change each month"))
         }
         Section {
-            ForEach(model.accounts) { ReportFigureRowView(row: $0) }
+            ReportFigureList(rows: model.accounts)
         } header: {
             ReportSectionHeader(title: String(localized: "By account"), aside: model.dates)
         }
@@ -562,7 +622,7 @@ private struct ReportBalanceSheetBody: View {
     private func side(_ title: String, total: String, rows: [ReportBarRow], empty: String, color: Int) -> some View {
         Section {
             if rows.isEmpty { Text(empty).foregroundStyle(Color.secondary) }
-            ForEach(rows) { ReportBarRowView(row: $0, defaultColor: color) }
+            ReportFold(rows: rows) { ReportBarRowView(row: $0, defaultColor: color) }
         } header: {
             HStack(alignment: .firstTextBaseline) {
                 ReportSectionHeader(title: title)
@@ -597,7 +657,7 @@ private struct ReportBalancesBody: View {
             ReportSectionHeader(title: String(localized: "Balances at the end of each month"))
         }
         Section {
-            ForEach(model.rows) { ReportFigureRowView(row: $0) }
+            ReportFigureList(rows: model.rows)
         } header: {
             ReportSectionHeader(title: String(localized: "All accounts"))
         } footer: {
@@ -640,9 +700,166 @@ private struct ReportAgeBody: View {
             Text("How long money sits in your cash accounts before you spend it: the average age of the last ten cash outflows, first in, first out, to the nearest day. Until there are ten, the missing ones count as zero days. It is an estimate when opening balances have no known dates.")
         }
         Section {
-            ForEach(model.rows) { ReportFigureRowView(row: $0) }
+            ReportFigureList(rows: model.rows)
         } header: {
             ReportSectionHeader(title: String(localized: "By month"))
+        }
+    }
+}
+
+/// Notes under a report's figures, a paragraph each.
+private struct ReportNotes: View {
+    var notes: [String]
+
+    var body: some View {
+        if !notes.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(Array(notes.enumerated()), id: \.offset) { _, note in Text(note) }
+            }
+        }
+    }
+}
+
+/// How the investments did: their value by account under a line of the money put in (the gap is
+/// the gain), each month's gain, then each account, whose row unfolds to its figures and the way
+/// to its own page.
+private struct ReportPerformanceBody: View {
+    var model: ReportPerformanceModel
+
+    var body: some View {
+        ReportTilesSection(tiles: model.tiles)
+        Section {
+            VStack(alignment: .leading, spacing: 10) {
+                ReportColumnChart(model: model.value, legend: model.valueLegend)
+            }
+            .padding(.vertical, 6)
+        } header: {
+            ReportSectionHeader(title: String(localized: "Value"))
+        }
+        Section {
+            ReportColumnChart(model: model.gain, height: 200).padding(.vertical, 6)
+        } header: {
+            ReportSectionHeader(title: String(localized: "Gain each month"))
+        } footer: {
+            if let note = model.gainNote { Text(note) }
+        }
+        Section {
+            ReportFold(rows: model.accounts) { row in
+                DisclosureGroup {
+                    ForEach(model.details[row.key] ?? []) { ReportFigureRowView(row: $0) }
+                    NavigationLink(value: ReportNav.holdings(row.key)) {
+                        Text("Performance and holdings").foregroundStyle(Color.urAccent).padding(.leading, 14)
+                    }
+                } label: {
+                    ReportFigureRowView(row: row)
+                }
+            }
+        } header: {
+            ReportSectionHeader(title: String(localized: "By account"), aside: model.dates)
+        } footer: {
+            ReportNotes(notes: model.notes)
+        }
+    }
+}
+
+/// What the investments are in today: a ring by kind, by account or by currency over its ranked
+/// list, then the largest holdings.
+private struct ReportAllocationBody: View {
+    var model: ReportAllocationModel
+    /// How the ring splits the holdings: "kind", "account" or "currency".
+    @State private var by = "kind"
+    /// The slice picked on the ring; its row is marked with it.
+    @State private var picked: String?
+
+    var body: some View {
+        let ring = by == "account" ? model.byAccount : by == "currency" ? model.byCurrency : model.byKind
+        let title = by == "account" ? String(localized: "By account") : by == "currency" ? String(localized: "By currency") : String(localized: "By kind")
+        // A row in the "Other" slice is picked with it.
+        let others = Set(ring.rows.filter { $0.color == ReportColors.other }.map(\.key))
+        ReportTilesSection(tiles: model.tiles)
+        Section {
+            Picker("Show", selection: $by) {
+                Text("By kind").tag("kind")
+                Text("By account").tag("account")
+                Text("By currency").tag("currency")
+            }
+            .pickerStyle(.segmented)
+            if ring.slices.count > 1 {
+                ReportDonut(slices: ring.slices, centerValue: model.total, centerLabel: String(localized: "Value"), picked: picked, onPick: { picked = $0 })
+                    .padding(.vertical, 8)
+            }
+            ReportFold(rows: ring.rows) { row in
+                ReportBarRowView(row: row, picked: picked.map { $0 == row.key || ($0 == "__other" && others.contains(row.key)) })
+            }
+        } header: {
+            ReportSectionHeader(title: title, aside: model.asOf)
+        } footer: {
+            Text("Today's holdings. What was held on past days isn't kept.")
+        }
+        if !model.holdings.isEmpty {
+            Section {
+                ReportFigureList(rows: model.holdings)
+            } header: {
+                ReportSectionHeader(title: String(localized: "Largest holdings"))
+            } footer: {
+                ReportNotes(notes: model.notes)
+            }
+        }
+        // Another way of splitting, or new figures, starts with nothing picked.
+        EmptyView().onChange(of: by) { picked = nil }
+        EmptyView().onChange(of: model.byKind) { picked = nil }
+    }
+}
+
+/// What the investments earned and were charged: by month as columns either side of the line,
+/// each kind of income and cost, each account where several report, what each holding paid,
+/// then each month.
+private struct ReportInvestmentIncomeBody: View {
+    var model: ReportInvestmentIncomeModel
+
+    var body: some View {
+        if model.reporting {
+            ReportTilesSection(tiles: model.tiles)
+            if let chart = model.chart {
+                Section {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ReportColumnChart(model: chart, legend: model.legend)
+                    }
+                    .padding(.vertical, 6)
+                } header: {
+                    ReportSectionHeader(title: String(localized: "By month"))
+                }
+            }
+            Section {
+                ReportFigureList(rows: model.lines)
+            } header: {
+                ReportSectionHeader(title: String(localized: "Income and costs"))
+            } footer: {
+                if let note = model.note { Text(note) }
+            }
+            if !model.accounts.isEmpty {
+                Section {
+                    ReportFigureList(rows: model.accounts)
+                } header: {
+                    ReportSectionHeader(title: String(localized: "By account"))
+                }
+            }
+            if !model.holdings.isEmpty {
+                Section {
+                    ReportFigureList(rows: model.holdings)
+                } header: {
+                    ReportSectionHeader(title: String(localized: "By holding"), aside: String(localized: "Dividends"))
+                }
+            }
+            Section {
+                ReportFigureList(rows: model.months)
+            } header: {
+                ReportSectionHeader(title: String(localized: "Month by month"))
+            }
+        } else {
+            Section {
+                ContentUnavailableView("No income", systemImage: "banknote", description: Text(model.note ?? ""))
+            }
         }
     }
 }
@@ -705,7 +922,7 @@ struct ReportForecastBody: View {
                     ContentUnavailableView("Nothing coming up", systemImage: "calendar.badge.clock",
                                            description: Text("Nothing is scheduled or entered for later dates. Schedule your income and bills to make this forecast more exact."))
                 }
-                ForEach(model.rows) { row in
+                ReportFold(rows: model.rows) { row in
                     HStack(spacing: 10) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(row.title).lineLimit(1)

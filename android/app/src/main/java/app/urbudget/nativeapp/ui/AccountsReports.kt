@@ -7,7 +7,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ShowChart
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -42,7 +41,7 @@ internal fun iconForType(type: String, kind: String): ImageVector = when (type) 
     "mortgage", "property" -> Icons.Outlined.House
     "autoLoan", "vehicle" -> Icons.Outlined.DirectionsCar
     "studentLoan" -> Icons.Outlined.School
-    "investment", "retirement" -> Icons.AutoMirrored.Outlined.ShowChart
+    "investment", "retirement" -> RisingChart
     "receivable", "personalLoan" -> Icons.Outlined.VolunteerActivism
     "medicalDebt" -> Icons.Outlined.LocalHospital
     "otherDebt" -> Icons.Outlined.Receipt
@@ -188,15 +187,15 @@ private fun AccountRow(line: AccountLine, modifier: Modifier, divider: Boolean, 
                         color = when { outside -> ur.muted; line.balance < 0 -> ur.negative; else -> ur.text })
                 }
             })
-        DropdownMenu(menu, { menu = false }, shape = RoundedCornerShape(16.dp), containerColor = ur.surface) {
-            DropdownMenuItem(text = { Text(stringResource(R.string.account_edit)) }, leadingIcon = { Icon(Icons.Outlined.Edit, null) }, onClick = { menu = false; edit() })
-            DropdownMenuItem(text = { Text(stringResource(R.string.reconcile_action)) }, leadingIcon = { Icon(Icons.Outlined.Lock, null) }, enabled = !line.archived, onClick = { menu = false; reconcile() })
-            if (loan != null) DropdownMenuItem(text = { Text(stringResource(R.string.account_loan_details)) }, leadingIcon = { Icon(Icons.Outlined.Calculate, null) }, onClick = { menu = false; loan() })
-            HorizontalDivider(color = ur.border)
-            DropdownMenuItem(text = { Text(stringResource(R.string.common_move_up)) }, leadingIcon = { Icon(Icons.Outlined.ArrowUpward, null) }, enabled = moveUp != null, onClick = { menu = false; moveUp?.invoke() })
-            DropdownMenuItem(text = { Text(stringResource(R.string.common_move_down)) }, leadingIcon = { Icon(Icons.Outlined.ArrowDownward, null) }, enabled = moveDown != null, onClick = { menu = false; moveDown?.invoke() })
-            HorizontalDivider(color = ur.border)
-            DropdownMenuItem(text = { Text(if (line.archived) stringResource(R.string.account_reopen) else stringResource(R.string.account_close)) },
+        UrMenu(menu, { menu = false }) {
+            UrMenuItem(text = { Text(stringResource(R.string.account_edit)) }, leadingIcon = { Icon(Icons.Outlined.Edit, null) }, onClick = { menu = false; edit() })
+            UrMenuItem(text = { Text(stringResource(R.string.reconcile_action)) }, leadingIcon = { Icon(Icons.Outlined.Lock, null) }, enabled = !line.archived, onClick = { menu = false; reconcile() })
+            if (loan != null) UrMenuItem(text = { Text(stringResource(R.string.account_loan_details)) }, leadingIcon = { Icon(Icons.Outlined.Calculate, null) }, onClick = { menu = false; loan() })
+            MenuDivider()
+            UrMenuItem(text = { Text(stringResource(R.string.common_move_up)) }, leadingIcon = { Icon(Icons.Outlined.ArrowUpward, null) }, enabled = moveUp != null, onClick = { menu = false; moveUp?.invoke() })
+            UrMenuItem(text = { Text(stringResource(R.string.common_move_down)) }, leadingIcon = { Icon(Icons.Outlined.ArrowDownward, null) }, enabled = moveDown != null, onClick = { menu = false; moveDown?.invoke() })
+            MenuDivider()
+            UrMenuItem(text = { Text(if (line.archived) stringResource(R.string.account_reopen) else stringResource(R.string.account_close)) },
                 leadingIcon = { Icon(if (line.archived) Icons.Outlined.Unarchive else Icons.Outlined.Archive, null) }, onClick = { menu = false; toggleClosed() })
         }
     }

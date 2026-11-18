@@ -166,6 +166,8 @@ export function ImportReview({
   onImport,
   choices: given,
   onChoices,
+  others,
+  plainLabel,
 }: {
   budget: Budget;
   rows: BankRow[];
@@ -182,6 +184,15 @@ export function ImportReview({
   /** The choices, kept by whoever shows the review when they must outlast it (a page that leaves it and comes back). */
   choices?: ReviewChoices;
   onChoices?: (next: ReviewChoices) => void;
+  /**
+   * Accounts a row can be added as a transfer with, the likeliest first: for rows that say
+   * money moved without saying where from (a broker's deposits), when nothing in the budget
+   * is their other side yet. One with `since` is offered only for rows on or after that day:
+   * before its history starts, its opening balance already counts the money.
+   */
+  others?: { id: string; name: string; since?: string }[];
+  /** What adding a row with no other account is called, when not "Add as a new transaction". */
+  plainLabel?: string;
 }) {
   // Rows checked again (bank sync does when the budget changes) keep the choices made so far.
   const [own, setOwn] = useState<ReviewChoices>({ picked: {} });
@@ -189,11 +200,16 @@ export function ImportReview({
   const keep = onChoices ?? setOwn;
   const choices = kept.picked;
   const setChoices = (picked: Record<string, string>) => keep({ ...kept, picked });
+  // The accounts a row can be a transfer with: none for a row that names its other side.
+  const offered = (r: BankRow) =>
+    r.duplicate || r.transferAccountId ? [] : (others ?? []).filter((a) => a.since === undefined || a.since <= r.date);
   // Kept choices are checked against the rows as they are now, as any other.
   const choice = (r: BankRow) => {
     if (r.duplicate) return r.idless && choices[r.id] === "separate" ? "separate" : "skip";
     const selected = choices[r.id];
     if (selected?.startsWith("match:") && !r.candidates.includes(selected.slice(6))) return "review";
+    // An account chosen for it that it can no longer be a transfer with.
+    if (selected?.startsWith("transfer:") && !offered(r).some((a) => a.id === selected.slice(9))) return defaultChoice(r);
     return selected ?? defaultChoice(r);
   };
   const review = useRef<HTMLDivElement>(null);
@@ -225,7 +241,7 @@ export function ImportReview({
     return chosen && !list.includes(chosen) ? [...list, chosen] : list;
   };
   const transfer = (r: BankRow, c: string) => c !== "skip" && c !== "review" &&
-    (!!r.transferAccountId || c.startsWith("match:") && !!r.transferCandidates?.includes(c.slice(6)));
+    (!!r.transferAccountId || c.startsWith("transfer:") || c.startsWith("match:") && !!r.transferCandidates?.includes(c.slice(6)));
   const importing = rows.filter((r) => choice(r) !== "skip").length;
   const transfers = rows.filter((r) => transfer(r, choice(r))).length;
   // Every row still to decide, the same way.
@@ -247,6 +263,7 @@ export function ImportReview({
         const importId = (separate[row.id] ??= `bank:manual:${crypto.randomUUID()}`);
         return { row: { ...row, importId }, action: "new", matchId: null };
       }
+      if (c.startsWith("transfer:")) return { row: { ...row, transferAccountId: c.slice(9) }, action: "new", matchId: null };
       return { row, action: c.startsWith("match:") ? "match" : c, matchId: c.startsWith("match:") ? c.slice(6) : null };
     });
     if (Object.keys(separate).length !== Object.keys(kept.separate ?? {}).length) keep({ ...kept, separate });
@@ -341,7 +358,13 @@ export function ImportReview({
                               : t("Choose a match or add it") }] : []),
                           r.duplicate
                             ? { id: "separate", label: t("Add as a separate transaction") }
-                            : { id: "new", label: transferLabel ? t("Add as a transfer") : t("Add as a new transaction") },
+                            : { id: "new", label: transferLabel ? t("Add as a transfer") : (plainLabel ?? t("Add as a new transaction")) },
+                          ...offered(r).map((a): Option => ({
+                            id: `transfer:${a.id}`,
+                            label: r.amount > 0
+                              ? t("Add as a transfer from {account}", { account: a.name })
+                              : t("Add as a transfer to {account}", { account: a.name }),
+                          })),
                           { id: "skip", label: r.duplicate ? t("Already imported — skip") : t("Skip") },
                           ...(r.duplicate ? [] : listed(r)).map((id): Option => {
                             const detail = r.candidateDetails?.find((c) => c.id === id);
@@ -349,6 +372,9 @@ export function ImportReview({
                             const part = detail && tx?.splits[detail.splitIndex];
                             const other = r.transferCandidates?.includes(id) && tx && accountNames.get(tx.accountId);
                             const memo = part?.memo || tx?.memo;
+                            // The budget keeps its own figure for money that came in another currency.
+                            const has = Math.abs(part?.amount ?? tx?.amount ?? r.amount);
+                            const differs = !!r.near && has !== Math.abs(r.amount) && t("{amount} in your budget", { amount: money(has) });
                             const values = { date: tx ? formatDate(tx.date) : "", payee: tx?.payee || t("Transfer") };
                             const label = other
                               ? r.amount > 0
@@ -358,7 +384,7 @@ export function ImportReview({
                             return {
                               id: `match:${id}`,
                               label: label + (detail ? ` · ${t("Split {number}", { number: detail.splitIndex + 1 })}` : ""),
-                              description: [r.previouslyMatchedCandidates?.includes(id) && t("Previously imported"), memo].filter(Boolean).join(" · "),
+                              description: [r.previouslyMatchedCandidates?.includes(id) && t("Previously imported"), differs, memo].filter(Boolean).join(" · "),
                             };
                           }),
                         ]}

@@ -261,7 +261,7 @@ nav,
   white-space: nowrap;
 }
 /* A page's own controls just after its title (HeaderSlot in ui/headerSlot.tsx), such as the
-   report groups. They can shrink, and a row of tabs then scrolls. */
+   reports' tabs. They can shrink, and a row of tabs then scrolls. */
 .header-slot {
   display: flex;
   align-items: center;

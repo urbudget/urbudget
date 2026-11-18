@@ -420,6 +420,9 @@ fn fields<T: Record>(
         let chosen = match three(bv.as_ref(), Some(&lv), Some(&rv)) {
             Some(v) => v.cloned().unwrap_or_default(),
             None if QUIET.contains(&unit[0].as_str()) => lv,
+            // A broker account's starting value and market changes are worked out from its
+            // holdings (investments.rs), and are worked out again once everything has merged.
+            None if kind.name == "transaction" && l.get("investment").is_some_and(|v| v == "start" || v == "change" || v == "moved") => lv,
             // No one edits when a transaction was added. Two times (a scheduled transaction both
             // sides entered) settle on the earlier, the same on every device.
             None if unit[0] == "createdAt" => {
@@ -891,6 +894,69 @@ fn dedupe_payees(list: &mut Value, b: Option<&Value>, l: Option<&Value>) {
     }
 }
 
+/// What brokers report each account holds (`investments`), one entry per account. Nobody edits
+/// them, so when both sides brought an account's in, the later statement's stays and no one is
+/// asked, with the month snapshots only the other side had; an account one side unlinked while
+/// the other synced it stays linked. `None` when it isn't a list of entries with account ids.
+fn holdings(b: Option<&Value>, l: Option<&Value>, r: Option<&Value>) -> Option<Value> {
+    fn entries(v: Option<&Value>) -> Option<Vec<(String, &Value)>> {
+        match v {
+            None => Some(vec![]),
+            Some(v) => v
+                .as_array()?
+                .iter()
+                .map(|x| Some((x.get("accountId")?.as_str()?.to_owned(), x)))
+                .collect(),
+        }
+    }
+    fn get<'v>(list: &[(String, &'v Value)], id: &str) -> Option<&'v Value> {
+        list.iter().find(|(k, _)| k == id).map(|(_, v)| *v)
+    }
+    let (bl, ll, rl) = (entries(b)?, entries(l)?, entries(r)?);
+    let when = |v: &Value| {
+        let text = |k: &str| v.get(k).and_then(Value::as_str).unwrap_or_default().to_owned();
+        (text("asOf"), text("syncedAt"))
+    };
+    // What an account was made of in a month is kept once and can't be brought in again, so
+    // the entry that stays also keeps the months only the other side has.
+    fn with_months(mut kept: Value, sides: [Option<&Value>; 2]) -> Value {
+        let months = |v: &Value| v.get("snapshots").and_then(Value::as_array).cloned().unwrap_or_default();
+        let month = |s: &Value| s.get("month").and_then(Value::as_str).map(str::to_owned);
+        let mut all = months(&kept);
+        let had = all.len();
+        for other in sides.into_iter().flatten() {
+            for snapshot in months(other) {
+                if month(&snapshot).is_some_and(|m| !all.iter().any(|s| month(s).as_ref() == Some(&m))) {
+                    all.push(snapshot);
+                }
+            }
+        }
+        if all.len() > had {
+            all.sort_by_key(|s| month(s));
+            kept["snapshots"] = Value::Array(all);
+        }
+        kept
+    }
+    let mut seen = HashSet::new();
+    let merged: Vec<Value> = ll
+        .iter()
+        .chain(rl.iter())
+        .filter(|(id, _)| seen.insert(id.clone()))
+        .filter_map(|(id, _)| {
+            let (base, local, remote) = (get(&bl, id), get(&ll, id), get(&rl, id));
+            let kept = match three(base, local, remote) {
+                Some(pick) => pick.cloned(),
+                None => match (local, remote) {
+                    (Some(l), Some(r)) => Some(if when(r) > when(l) { r } else { l }.clone()),
+                    (l, r) => l.or(r).cloned(),
+                },
+            };
+            kept.map(|entry| with_months(entry, [local, remote]))
+        })
+        .collect();
+    Some(Value::Array(merged))
+}
+
 /// A list of ids (the category or group order): ids either side added are kept, ids either side
 /// removed stay removed. `None` when it isn't a list of ids.
 fn id_list(b: Option<&Value>, l: Option<&Value>, r: Option<&Value>) -> Option<Value> {
@@ -980,6 +1046,7 @@ fn extras(
                     "payeeRules" => keyed(cx, &PAYEE_RULE, "id", has_base, b, l, r)?,
                     "ynabMonths" => keyed(cx, &MONTH_NOTE, "month", has_base, b, l, r)?,
                     "loans" => keyed(cx, &LOAN, "accountId", has_base, b, l, r)?,
+                    "investments" => holdings(b, l, r),
                     "categoryOrder" | "groupOrder" => id_list(b, l, r),
                     _ => None,
                 };
@@ -1306,6 +1373,11 @@ fn merge_inner(
         extra,
     };
     restore(&mut cx, &mut budget, local, remote);
+    // A broker account's balance follows the holdings that won and the deposits both sides
+    // entered, whichever side wrote its market changes last.
+    for held in crate::investments::read(&budget) {
+        crate::investments::revalue(&mut budget, &held.account_id)?;
+    }
     // Preserve the chosen representation exactly on one-sided updates after reference repair.
     // Regrouping assignment order or adding an empty history is not a user edit to echo-upload.
     if cx.conflicts.is_empty() && cx.notes.is_empty() {
@@ -1504,6 +1576,76 @@ mod tests {
             assert!(!merged.categories.iter().any(|c| c.id == "linked"));
             assert!(!merged.accounts.iter().any(|a| a.id == "loan"));
         }
+    }
+
+    #[test]
+    fn broker_holdings_take_the_later_statement_without_asking() {
+        use crate::flex::Dec;
+        let mut b = base();
+        b.currency = "USD".into();
+        b.accounts.push(Account {
+            id: "broker".into(),
+            name: "Broker".into(),
+            kind: AccountKind::Tracking,
+            opening_balance: 0,
+            ..b.accounts[0].clone()
+        });
+        let statement = crate::flex::parse(crate::flex::tests::SAMPLE).unwrap().accounts.remove(0);
+        let synced = crate::investments::apply(b, "broker", &statement, None).unwrap();
+        // One device brings in a later day; the other, the same days with a figure restated.
+        let mut later = statement.clone();
+        later.values.push(("2026-11-16".into(), Dec::parse("28000").unwrap()));
+        let mut restated = statement.clone();
+        restated.values.last_mut().unwrap().1 = Dec::parse("27100").unwrap();
+        let ahead = crate::investments::apply(synced.clone(), "broker", &later, None).unwrap();
+        let behind = crate::investments::apply(synced.clone(), "broker", &restated, None).unwrap();
+        let november = |b: &Budget| b.transactions.iter().find(|t| t.id == "investment-change:broker:2026-11").unwrap().amount;
+        assert_ne!(november(&ahead), november(&behind));
+        for (local, remote) in [(&ahead, &behind), (&behind, &ahead)] {
+            let merged = merge(Some(&synced), local, remote, &Choices::new()).unwrap();
+            assert!(merged.conflicts.is_empty(), "{:?}", merged.conflicts);
+            let held = crate::investments::find(&merged.budget, "broker").unwrap();
+            assert_eq!((held.as_of.as_str(), held.total), ("2026-11-16", 2_800_000));
+            let balance: i64 = merged.budget.transactions.iter().filter(|t| t.account_id == "broker").map(|t| t.amount).sum();
+            assert_eq!(balance, 2_800_000);
+            crate::domain::validate(&merged.budget).unwrap();
+        }
+        // Unlinked on one device while the other synced: it stays linked, and nobody is asked.
+        let mut unlinked = synced.clone();
+        crate::investments::unlink(&mut unlinked, "broker");
+        let merged = merge(Some(&synced), &unlinked, &ahead, &Choices::new()).unwrap();
+        assert!(merged.conflicts.is_empty(), "{:?}", merged.conflicts);
+        assert!(crate::investments::find(&merged.budget, "broker").is_some());
+    }
+
+    #[test]
+    fn the_holdings_that_stay_keep_the_months_only_the_other_side_kept() {
+        use crate::investments::{find, record, Snapshot};
+        let mut b = base();
+        b.accounts.push(Account {
+            id: "broker".into(),
+            name: "Broker".into(),
+            kind: AccountKind::Tracking,
+            opening_balance: 0,
+            ..b.accounts[0].clone()
+        });
+        let value = |day: &str, total: &str| Snapshot { source: "manual".into(), as_of: day.into(), total: total.into(), ..Snapshot::default() };
+        let synced = record(b, "broker", value("2026-11-13", "1000")).unwrap();
+        // One device brings in December's value; the other fills in October's.
+        let ahead = record(synced.clone(), "broker", value("2026-12-05", "1100")).unwrap();
+        let behind = record(synced.clone(), "broker", value("2026-10-30", "900")).unwrap();
+        for (local, remote) in [(&ahead, &behind), (&behind, &ahead)] {
+            let merged = merge(Some(&synced), local, remote, &Choices::new()).unwrap();
+            assert!(merged.conflicts.is_empty(), "{:?}", merged.conflicts);
+            // December's holdings stay, with what the account was made of in all three months.
+            let held = find(&merged.budget, "broker").unwrap();
+            assert_eq!((held.as_of.as_str(), held.total), ("2026-12-05", 110_000));
+            assert_eq!(held.snapshots.iter().map(|s| (s.month.as_str(), s.total)).collect::<Vec<_>>(), vec![("2026-10", 90_000), ("2026-11", 100_000), ("2026-12", 110_000)]);
+            crate::domain::validate(&merged.budget).unwrap();
+        }
+        // With nothing new on the other side, the entry is the one that changed, as it is.
+        let merged = merge(Some(&synced), &synced, &ahead, &Choices::new()).unwrap();
+        assert_eq!(merged.budget.extra["investments"], ahead.extra["investments"]);
     }
 
     #[test]

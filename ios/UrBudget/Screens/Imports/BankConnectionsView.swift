@@ -469,6 +469,13 @@ struct BankConnectionsView: View {
         notice = nil
         run {
             try await sync(refresh: true)
+            // What a brokerage sends of its holdings goes in with the sync, with nothing to review; the
+            // download is then checked again against the budget that has them. If that can't be saved
+            // now, the bank's rows are still reviewed, and the next sync brings the holdings.
+            if download?.rows("reviews").contains(where: { $0.long("holdings") > 0 }) == true,
+               (try? await store.service("simplefin_holdings", changesBudget: true)) != nil {
+                try await sync(refresh: false)
+            }
             guard let download else { return }
             let through = download.text("through")
             // Accounts with nothing new are recorded as checked through the download, one import each

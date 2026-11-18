@@ -547,13 +547,16 @@ it("goes to the month and the categories an assistant's card names, marked on th
   }
 }, 30000);
 
-it("puts the report groups in the page header, after its title", async () => {
+it("puts the reports in the page header, after its title, and opens on the overview", async () => {
+  sessionStorage.clear();
   render(<App />);
   fireEvent.click(screen.getByRole("button", { name: "Reports" }));
-  const groups = await screen.findByRole("tablist", { name: "Report group" });
-  expect(groups.closest(".app-header")?.querySelector("h1")?.textContent).toBe("Reports");
-  expect(within(groups).getByRole("tab", { name: "Spending" }).getAttribute("aria-selected")).toBe("true");
-  // The group's reports are tabs over the report, not a second sidebar.
-  expect(screen.getByRole("tablist", { name: "Spending reports" }).closest(".app-header")).toBeNull();
+  const reports = await screen.findByRole("tablist", { name: "Reports" });
+  expect(reports.closest(".app-header")?.querySelector("h1")?.textContent).toBe("Reports");
+  expect(within(reports).getByRole("tab", { name: "Overview" }).getAttribute("aria-selected")).toBe("true");
+  // A report's views are a switch under its title, not more tabs in the header or a second sidebar.
+  fireEvent.click(within(reports).getByRole("tab", { name: "Spending" }));
+  expect(screen.getByRole("tablist", { name: "View" }).closest(".app-header")).toBeNull();
   expect(screen.queryByRole("navigation", { name: "Reports" })).toBeNull();
+  sessionStorage.clear();
 });

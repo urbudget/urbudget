@@ -13,6 +13,13 @@ export type Month = {
   assets: number;
   debt: number;
   netWorth: number;
+  /** What markets changed the investment accounts by that month: their generated Market change lines. */
+  market?: number;
+  /**
+   * Money moved into investment accounts less what came back out of them. It counts as neither
+   * spending nor income; it is here instead.
+   */
+  invested?: number;
   /** Money into budget accounts from outside them. */
   inflow?: number;
   /** Money out of budget accounts, as a positive amount. */
@@ -33,6 +40,11 @@ export type ReportData = {
   days?: Record<string, number>;
   income: number;
   spending: number;
+  /**
+   * Money moved into investment accounts less what came back out of them. It counts as neither
+   * spending nor income; it is here instead.
+   */
+  invested?: number;
   ageOfMoney: number | null;
   ageOfMoneyByMonth: Record<string, number | null>;
   /** Balances just before the range starts. */
@@ -132,16 +144,22 @@ export function SectionRow({ title, columns }: { title: string; columns: number 
   );
 }
 
-/** Fixed widths for a report table: a label column, value columns sharing one width, and spare room. */
-export function useReportColumns(id: string, values: number, label = 170) {
+/** The room a column heading needs to read in full: small capitals, spaced, with the cell's padding. */
+export const headingWidth = (text: string) => Math.ceil(textWidth(text.toUpperCase(), 11, 600) + text.length * 0.44 + 26);
+
+/**
+ * Fixed widths for a report table: a label column, value columns sharing one width, and spare
+ * room. `value` is the least a value column is wide, for headings longer than the amounts.
+ */
+export function useReportColumns(id: string, values: number, label = 170, value = 112) {
   const group = useRef<HTMLTableColElement>(null);
-  const [contentWidth, setContentWidth] = useState(112);
+  const [contentWidth, setContentWidth] = useState(value);
   useLayoutEffect(() => {
     const table = group.current?.parentElement;
     if (!table) return;
     // Scan strings, not cell geometry. Body and footer may use different font sizes, so
     // measure their longest values separately using the actual responsive font and padding.
-    let next = 112;
+    let next = value;
     for (const section of ["tbody", "tfoot"]) {
       let longest = "";
       let widest: Element | undefined;

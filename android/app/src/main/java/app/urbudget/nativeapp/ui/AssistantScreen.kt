@@ -536,10 +536,10 @@ internal fun AssistantScreen(vm: BudgetViewModel, controller: AssistantControlle
             Box(Modifier.padding(bottom = 4.dp)) {
                 var adding by remember { mutableStateOf(false) }
                 IconButton({ adding = true }, enabled = !state.running) { Icon(Icons.Outlined.AddCircleOutline, stringResource(R.string.assistant_add_to_message), tint = ur.text) }
-                DropdownMenu(adding, { adding = false }, containerColor = ur.surface) {
-                    DropdownMenuItem(text = { Text(stringResource(R.string.assistant_attach)) }, onClick = { adding = false; attach.launch(arrayOf("*/*")) },
+                UrMenu(adding, { adding = false }) {
+                    UrMenuItem(text = { Text(stringResource(R.string.assistant_attach)) }, onClick = { adding = false; attach.launch(arrayOf("*/*")) },
                         leadingIcon = { Icon(Icons.Outlined.AttachFile, null) }, enabled = state.attachments.size < 5 && "attach" !in state.busy)
-                    DropdownMenuItem(text = { Text(stringResource(R.string.assistant_select_transactions)) }, onClick = { adding = false; contextPicker = true },
+                    UrMenuItem(text = { Text(stringResource(R.string.assistant_select_transactions)) }, onClick = { adding = false; contextPicker = true },
                         leadingIcon = { Icon(Icons.Outlined.Checklist, null) })
                 }
             }
@@ -816,7 +816,7 @@ internal fun AssistantProposalCard(proposal: JSONObject, currency: String, busy:
         // Fixes for a bank file being imported: the import applies them, each only to a line that hasn't changed.
         ProposalAction.ApplyToImport -> if (partial != null) stringResource(R.string.assistant_fix_apply_some, "${partial.chosen}", "${partial.total}") else stringResource(R.string.assistant_fix_apply)
         ProposalAction.ApplyBankTexts -> stringResource(when (proposal.optJSONObject("bankTexts")?.optString("action")) {
-            "read" -> R.string.bank_texts_apply_read; "add" -> R.string.bank_texts_apply_add
+            "read" -> R.string.bank_texts_apply_read; "add" -> R.string.bank_texts_apply_add; "enter" -> R.string.bank_texts_apply_enter
             "remember" -> R.string.bank_texts_apply_remember; else -> R.string.bank_texts_apply_limit
         })
         ProposalAction.AskChanges -> stringResource(R.string.assistant_ask_changes)
@@ -1001,8 +1001,8 @@ private fun CardMenu(enabled: Boolean, modifier: Modifier = Modifier, remove: ()
         IconButton({ open = true }, Modifier.testTag("assistant-card-menu"), enabled = enabled) {
             Icon(Icons.Outlined.MoreHoriz, stringResource(R.string.common_more_actions), tint = ur.muted)
         }
-        DropdownMenu(open, { open = false }, containerColor = ur.surface) {
-            DropdownMenuItem(text = { Text(stringResource(R.string.common_remove)) }, onClick = { open = false; remove() }, leadingIcon = { Icon(Icons.Outlined.DeleteOutline, null) })
+        UrMenu(open, { open = false }) {
+            UrMenuItem(text = { Text(stringResource(R.string.common_remove)) }, onClick = { open = false; remove() }, leadingIcon = { Icon(Icons.Outlined.DeleteOutline, null) })
         }
     }
 }

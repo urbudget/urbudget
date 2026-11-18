@@ -89,30 +89,30 @@ internal fun LibraryScreen(budget: JSONObject?, vm: BudgetViewModel, importFile:
                 onClick = { if (current) dialog = "settings" else if (!state.busy && !missing && !trashed && !recovery) vm.service("library_open", JSONObject().put("id", entry.text("id"))) },
                 onLongClick = { menu = true }, chevron = !current,
                 trailing = if (current) ({ TagChip(stringResource(R.string.library_open_chip), fill = ur.accentSoft, color = ur.accent) }) else null, divider = divider)
-            DropdownMenu(menu, { menu = false }, shape = RoundedCornerShape(16.dp), containerColor = ur.surface) {
-                DropdownMenuItem(text = { Text(stringResource(R.string.common_open)) }, leadingIcon = { Icon(Icons.Outlined.FolderOpen, null) }, enabled = !state.busy && !missing && !trashed && !recovery,
+            UrMenu(menu, { menu = false }) {
+                UrMenuItem(text = { Text(stringResource(R.string.common_open)) }, leadingIcon = { Icon(Icons.Outlined.FolderOpen, null) }, enabled = !state.busy && !missing && !trashed && !recovery,
                     onClick = { menu = false; vm.service("library_open", JSONObject().put("id", entry.text("id"))) })
-                if (!missing && !remote) DropdownMenuItem(text = { Text(stringResource(R.string.library_unfinished_edits)) }, onClick = {
+                if (!missing && !remote) UrMenuItem(text = { Text(stringResource(R.string.library_unfinished_edits)) }, onClick = {
                     menu = false; vm.service("editor_recovery", JSONObject().put("budgetId", entry.text("id"))) { drafts = (it as? JSONArray)?.objects().orEmpty() }
                 })
-                if (deletionConflict) DropdownMenuItem(text = { Text(stringResource(R.string.library_review_newer)) }, enabled = !state.busy, onClick = {
+                if (deletionConflict) UrMenuItem(text = { Text(stringResource(R.string.library_review_newer)) }, enabled = !state.busy, onClick = {
                     menu = false; vm.service("library_review_deletion", JSONObject().put("id", entry.text("id"))) { revision++ }
                 })
-                if (entry.text("lifecycle") == "trashed" && !deletionConflict) DropdownMenuItem(text = { Text(stringResource(R.string.common_restore)) }, onClick = {
+                if (entry.text("lifecycle") == "trashed" && !deletionConflict) UrMenuItem(text = { Text(stringResource(R.string.common_restore)) }, onClick = {
                     menu = false; vm.service("library_restore", JSONObject().put("id", entry.text("id"))) { revision++ }
                 })
-                if (account && !trashed && !remote && !entry.optBoolean("pending")) DropdownMenuItem(text = { Text(stringResource(R.string.library_remove_download)) }, onClick = {
+                if (account && !trashed && !remote && !entry.optBoolean("pending")) UrMenuItem(text = { Text(stringResource(R.string.library_remove_download)) }, onClick = {
                     menu = false; vm.service("library_evict", JSONObject().put("id", entry.text("id"))) { revision++ }
                 })
-                if (entry.text("lifecycle") == "recovery" || (trashed && !missing && !remote)) DropdownMenuItem(text = { Text(stringResource(R.string.library_recover_copy)) }, onClick = {
+                if (entry.text("lifecycle") == "recovery" || (trashed && !missing && !remote)) UrMenuItem(text = { Text(stringResource(R.string.library_recover_copy)) }, onClick = {
                     menu = false; vm.service("library_recover", JSONObject().put("id", entry.text("id"))) { revision++ }
                 })
-                if (syncStatus?.optJSONObject("sync")?.optInt("protocol") == 2 && !account && !trashed) DropdownMenuItem(text = { Text(stringResource(R.string.library_add_account)) }, onClick = {
+                if (syncStatus?.optJSONObject("sync")?.optInt("protocol") == 2 && !account && !trashed) UrMenuItem(text = { Text(stringResource(R.string.library_add_account)) }, onClick = {
                     menu = false; vm.service("sync_enable", JSONObject().put("enabled", true).put("ids", JSONArray().put(entry.text("id")))) { revision++ }
                 })
-                if (!trashed && !recovery) DropdownMenuItem(text = { Text(stringResource(R.string.library_move_trash), color = ur.negative) }, leadingIcon = { Icon(Icons.Outlined.DeleteOutline, null, tint = ur.negative) },
+                if (!trashed && !recovery) UrMenuItem(text = { Text(stringResource(R.string.library_move_trash), color = ur.negative) }, leadingIcon = { Icon(Icons.Outlined.DeleteOutline, null, tint = ur.negative) },
                     enabled = !state.busy, onClick = { menu = false; selected = entry; dialog = "delete" })
-                if (deviceTrash(entry)) DropdownMenuItem(text = { Text(stringResource(R.string.library_delete_forever), color = ur.negative) }, leadingIcon = { Icon(Icons.Outlined.DeleteForever, null, tint = ur.negative) },
+                if (deviceTrash(entry)) UrMenuItem(text = { Text(stringResource(R.string.library_delete_forever), color = ur.negative) }, leadingIcon = { Icon(Icons.Outlined.DeleteForever, null, tint = ur.negative) },
                     enabled = !state.busy, onClick = { menu = false; selected = entry; dialog = "purge" })
             }
         }

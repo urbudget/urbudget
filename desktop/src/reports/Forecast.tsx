@@ -17,9 +17,62 @@ type Event = {
   peerId: string | null;
   categoryId: string | null;
   scheduleId: string | null;
+  /** Money moved to or from an investment account: not spending, as in Reports. */
+  invested?: boolean;
 };
 type ForecastData = { balances: Record<string, number>; events: Event[]; recentSpending: number };
 const ROW = 37;
+
+/** The forecast's figures for these accounts from `start` through `through`, read again when any of them changes. */
+export function useForecast(budget: Budget, accounts: Set<string>, start: string, through: string) {
+  const [result, setResult] = useState<{ budget: Budget; key: string; attempt: number; data?: ForecastData; error?: string } | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const accountKey = JSON.stringify([...accounts].sort());
+  const key = JSON.stringify([start, through, accountKey]);
+  const matches = result?.budget === budget && result.key === key && result.attempt === attempt;
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+    read<ForecastData>(budget, "forecast", { today: start, through, accountIds: JSON.parse(accountKey) }, controller.signal)
+      .then((d) => {
+        if (cancelled) return;
+        setResult({ budget, key, attempt, data: d });
+      })
+      .catch((e) => !cancelled && setResult({ budget, key, attempt, error: errorText(e) }));
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [budget, start, through, accountKey, key, attempt]);
+  return { data: matches ? result.data : undefined, error: matches ? result.error : undefined, retry: () => setAttempt((n) => n + 1) };
+}
+
+/**
+ * What the figures say of the chosen accounts over `months` months: where they stand today, what
+ * is known to be coming, the everyday spending that suggests, and the balance day by day from
+ * the known transactions alone.
+ */
+export function projection(data: ForecastData, accounts: Set<string>, start: string, through: string, months: number) {
+  const ids = new Set(Object.keys(data.balances).filter((id) => !accounts.size || accounts.has(id)));
+  // Moves between two of the chosen accounts don't change their total.
+  const events = data.events.filter((e) => ids.has(e.accountId) && !(e.peerId && ids.has(e.peerId)));
+  const opening = sum([...ids].map((id) => data.balances[id] ?? 0));
+  const scheduledSpending =
+    sum(events.filter((e) => e.scheduleId && e.categoryId && e.amount < 0 && !e.invested).map((e) => -e.amount)) / months;
+  const suggested = Math.max(0, Math.round(data.recentSpending - scheduledSpending));
+  const days: string[] = [];
+  for (let d = start; d <= through; d = shiftDate(d, 1)) days.push(d);
+  const byDay = new Map<string, number>();
+  for (const e of events) byDay.set(e.date, (byDay.get(e.date) ?? 0) + e.amount);
+  let known = opening;
+  const knownLine = days.map((d) => (known += byDay.get(d) ?? 0));
+  let running = opening;
+  const balances = events.map((e) => (running += e.amount));
+  return { ids, events, opening, suggested, scheduledSpending, days, knownLine, balances };
+}
+/** The balance each day once `monthly` of everyday spending is spread evenly over the days. */
+export const forecastLine = (view: { knownLine: number[] }, monthly: number) =>
+  view.knownLine.map((v, i) => Math.round(v - ((monthly * 12) / 365) * i));
 
 /**
  * Where the money in budget accounts is heading: today's balance, every transaction already
@@ -38,50 +91,13 @@ export function Forecast({
   const [everyday, setEveryday] = useState<number | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
   const [focused, setFocused] = useState(false);
-  const [result, setResult] = useState<{ budget: Budget; key: string; attempt: number; data?: ForecastData; error?: string } | null>(null);
-  const [attempt, setAttempt] = useState(0);
   const start = today();
   const through = shiftDate(start, 0, Number(ahead));
-  const accountKey = JSON.stringify([...accounts].sort());
-  const key = JSON.stringify([start, through, accountKey]);
-  const matches = result?.budget === budget && result.key === key && result.attempt === attempt;
-  const data = matches ? result.data : undefined;
-  const error = matches ? result.error : undefined;
-  useEffect(() => {
-    let cancelled = false;
-    const controller = new AbortController();
-    read<ForecastData>(budget, "forecast", { today: start, through, accountIds: JSON.parse(accountKey) }, controller.signal)
-      .then((d) => {
-        if (cancelled) return;
-        setResult({ budget, key, attempt, data: d });
-      })
-      .catch((e) => !cancelled && setResult({ budget, key, attempt, error: errorText(e) }));
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [budget, start, through, accountKey, key, attempt]);
-
-  const view = useMemo(() => {
-    if (!data) return null;
-    const ids = new Set(Object.keys(data.balances).filter((id) => !accounts.size || accounts.has(id)));
-    // Moves between two of the chosen accounts don't change their total.
-    const events = data.events.filter((e) => ids.has(e.accountId) && !(e.peerId && ids.has(e.peerId)));
-    const opening = sum([...ids].map((id) => data.balances[id] ?? 0));
-    const months = Number(ahead);
-    const scheduledSpending =
-      sum(events.filter((e) => e.scheduleId && e.categoryId && e.amount < 0).map((e) => -e.amount)) / months;
-    const suggested = Math.max(0, Math.round(data.recentSpending - scheduledSpending));
-    const days: string[] = [];
-    for (let d = start; d <= through; d = shiftDate(d, 1)) days.push(d);
-    const byDay = new Map<string, number>();
-    for (const e of events) byDay.set(e.date, (byDay.get(e.date) ?? 0) + e.amount);
-    let known = opening;
-    const knownLine = days.map((d) => (known += byDay.get(d) ?? 0));
-    let running = opening;
-    const balances = events.map((e) => (running += e.amount));
-    return { ids, events, opening, suggested, scheduledSpending, days, knownLine, balances };
-  }, [data, accounts, ahead, start, through]);
+  const { data, error, retry } = useForecast(budget, accounts, start, through);
+  const view = useMemo(
+    () => (data ? projection(data, accounts, start, through, Number(ahead)) : null),
+    [data, accounts, ahead, start, through],
+  );
 
   const scroller = useRef<HTMLDivElement>(null);
   const rows = useVirtualRows(scroller, view?.events.length ?? 0, ROW);
@@ -98,14 +114,13 @@ export function Forecast({
     return (
       <div className="report-body">
         <Panel title={t("Balance ahead")} aside={rangeControl}>
-          {error ? <p className="form-error" role="alert">{error} <button className="link-button" onClick={() => setAttempt((n) => n + 1)}>{t("Retry forecast")}</button></p>
+          {error ? <p className="form-error" role="alert">{error} <button className="link-button" onClick={retry}>{t("Retry forecast")}</button></p>
             : <div className="empty-state compact"><LoaderCircle className="spin" /></div>}
         </Panel>
       </div>
     );
   const monthly = everyday ?? view.suggested;
-  const perDay = (monthly * 12) / 365;
-  const forecast = view.knownLine.map((v, i) => Math.round(v - perDay * i));
+  const forecast = forecastLine(view, monthly);
   const low = forecast.reduce((m, v, i) => (v < forecast[m] ? i : m), 0);
   const end = forecast[forecast.length - 1];
   const name = (id: string) => budget.accounts.find((a) => a.id === id)?.name ?? "";

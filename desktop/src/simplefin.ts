@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { change, read, type BankRow } from "./bridge";
 import type { ImportChoice } from "./BankImport";
+import { apply, type Patch } from "./patch";
 import type { Budget } from "./types";
 
 /** An account at SimpleFIN Bridge, for choosing which budget account it fills. */
@@ -34,6 +35,8 @@ export type AccountReview = {
   balanceDate: string | null;
   /** Why this account can't be reviewed. */
   error: string | null;
+  /** How many holdings the bank sent for an investment account: with any, `holdings` brings them in. */
+  holdings?: number;
 };
 export type Synced = {
   reviews: AccountReview[];
@@ -62,4 +65,12 @@ export const simplefin = {
   /** Imports the reviewed rows into `account` and records it as synced through `through`. */
   import: (budget: Budget, account: string, choices: ImportChoice[], through: string) =>
     change(budget, "simplefin_import", { account, choices, through }),
+  /**
+   * Brings what the linked investment accounts hold into the budget, from the last download. A
+   * download that says what the last one did gives `budget` itself back, so nothing is saved.
+   */
+  holdings: async (budget: Budget) => {
+    const patch = await read<Patch>(budget, "simplefin_holdings");
+    return Object.values(patch).every((part) => part == null) ? budget : apply(budget, patch);
+  },
 };

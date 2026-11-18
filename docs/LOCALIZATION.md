@@ -198,6 +198,13 @@ Use these everywhere. If a term you need isn't here, choose one, use it consiste
 | sample budget; starter categories | ميزانية تجريبية؛ فئات جاهزة | |
 | calculation; calculate | الاحتساب؛ احتساب | never حساب, which is an account |
 | conflict | تعارض | |
+| holding; holdings (investments) | حيازة؛ الحيازات | what an investment account holds |
+| statement (a broker's) | كشف الحساب | «الكشف» after the first mention |
+| deposit; withdrawal | إيداع؛ سحب | deposits: إيداعات, withdrawals: سحوبات |
+| gain (on investments) | الربح | |
+| exchange rate | سعر الصرف | |
+| token (a service's access token) | الرمز | setup token: رمز الإعداد |
+| Interactive Brokers, Client Portal, Flex Query, Flex Web Service | as written | the names Interactive Brokers shows, in Latin letters |
 | recovery draft | مسودة الاستعادة | |
 | cloud copy | النسخة السحابية | |
 | sync states | في السحابة، هذا الجهاز فقط، بحاجة إلى مراجعة، متزامنة، رُفعت، نُزّلت، دُمجت | |

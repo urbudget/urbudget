@@ -157,7 +157,8 @@ fun UrBudgetTheme(content: @Composable () -> Unit) {
         // Text takes the theme's colour even where no Surface sets one (the shell draws its own pages).
         val typography = if (LocalLayoutDirection.current == LayoutDirection.Rtl) UrTypeRtl else UrType
         MaterialTheme(colorScheme = remember(colors) { scheme(colors) }, typography = typography, shapes = UrShapes) {
-            CompositionLocalProvider(LocalContentColor provides colors.text, content = content)
+            // A press is a soft rounded wash rather than a ripple to square edges (Press.kt).
+            CompositionLocalProvider(LocalContentColor provides colors.text, androidx.compose.foundation.LocalIndication provides SoftPress, content = content)
         }
     }
 }

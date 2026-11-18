@@ -227,10 +227,9 @@ internal fun Choice(label: String, selected: String, choices: List<Pair<String, 
             }
             Icon(Icons.Outlined.UnfoldMore, null, tint = ur.muted)
         }
-        DropdownMenu(expanded && choices.size <= 20, { expanded = false }, modifier = Modifier.heightIn(max = 360.dp),
-            shape = RoundedCornerShape(14.dp), containerColor = ur.surface) {
+        UrMenu(expanded && choices.size <= 20, { expanded = false }, modifier = Modifier.heightIn(max = 360.dp)) {
             choices.forEach { (id, name) ->
-                DropdownMenuItem(text = { Text(Money.own(name), fontWeight = if (id == selected) FontWeight.SemiBold else FontWeight.Normal) },
+                UrMenuItem(text = { Text(Money.own(name), fontWeight = if (id == selected) FontWeight.SemiBold else FontWeight.Normal) },
                     trailingIcon = if (id == selected) ({ Icon(Icons.Outlined.Check, null, tint = ur.accent) }) else null,
                     onClick = { onChange(id); expanded = false })
             }

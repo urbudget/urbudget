@@ -85,11 +85,13 @@ object NativeServices {
     /** `call`, when the parameters are already text. */
     fun callText(method: String, params: String): Any? = traced("service:$method") {
         check(ready) { Words[R.string.error_services_starting] }
-        val changesReadContext = method in setOf("account_verify", "account_sign_out", "account_delete", "simplefin_connect", "simplefin_disconnect", "billing_verify")
+        val changesReadContext = method in setOf("account_verify", "account_sign_out", "account_delete", "simplefin_connect", "simplefin_disconnect", "billing_verify",
+            // Each changes the statement Interactive Brokers' status and review read from.
+            "ibkr_connect", "ibkr_fetch", "ibkr_file", "ibkr_disconnect")
         if (changesReadContext) readEpoch.incrementAndGet()
         try {
             val result = decode(NativeBridge.service("{\"version\":1,\"method\":${JSONObject.quote(method)},\"params\":$params}"))
-            if (method in setOf("create_budget", "library_trash", "library_restore", "library_recover", "sync_enable", "sync_setup", "save_budget", "edit_budget", "native_apply_patch", "assistant_apply_commit", "assistant_undo_commit", "simplefin_import", "accept_ynab_import", "resolve_ynab", "undo_budget", "redo_budget", "restore_backup_file", "restore_budget", "apply_due_schedules")) runCatching { notifySaved() } // It's committed: a failure here must not read as a refusal.
+            if (method in setOf("create_budget", "library_trash", "library_restore", "library_recover", "sync_enable", "sync_setup", "save_budget", "edit_budget", "native_apply_patch", "assistant_apply_commit", "assistant_undo_commit", "simplefin_import", "simplefin_holdings", "ibkr_apply", "ibkr_import", "accept_ynab_import", "resolve_ynab", "undo_budget", "redo_budget", "restore_backup_file", "restore_budget", "apply_due_schedules")) runCatching { notifySaved() } // It's committed: a failure here must not read as a refusal.
             if (method in setOf("sync_now", "sync_resolve") && result is JSONObject) syncCompletedSource.tryEmit(result)
             if (method in setOf("account_verify", "account_sign_out", "account_delete", "sync_setup", "sync_enable", "sync_reset", "sync_lock")) refreshSyncStatus()
             result

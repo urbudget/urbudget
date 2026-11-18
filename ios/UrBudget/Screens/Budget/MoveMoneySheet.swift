@@ -2,8 +2,18 @@ import SwiftUI
 
 private enum MoveEnd: Hashable { case from, to }
 
+/// What covering an overspending of `overspent` takes from a source that has `has`: all of it when
+/// the source has enough, otherwise everything the source has. With nothing to give (or no source
+/// chosen yet) it's the whole overspending, so the amount still says what's needed.
+func coverAmount(_ overspent: Int64, has: Int64?) -> Int64 {
+    if let has, has > 0, has < overspent { return has }
+    return overspent
+}
+
 /// Moving money, as a sheet: from one category (or Unassigned) to another, the amount on the keypad.
-/// Covering overspending opens with the overspent amount, taken from Unassigned when it has money.
+/// Covering overspending takes from Unassigned when it has money, and opens with as much of the
+/// overspending as the source can give (`coverAmount`); choosing another source sets the amount
+/// again, until one has been typed.
 struct MoveMoneySheet: View {
     @Environment(BudgetStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -18,6 +28,10 @@ struct MoveMoneySheet: View {
     @State private var title = String(localized: "Move money")
     @State private var started = false
     @State private var saving = false
+    /// The overspending this sheet covers, or 0 when it isn't covering one.
+    @State private var overspent: Int64 = 0
+    /// The amount the sheet last put in: while it's still there, a new source puts in its own.
+    @State private var suggested: Int64?
 
     private func available(_ id: String) -> Int64 {
         if id == Unassigned { return store.summary?.long("readyToAssign") ?? 0 }
@@ -89,6 +103,19 @@ struct MoveMoneySheet: View {
         .sheetDetents([.large])
         .retainingEditorDraft("moveMoney", values: ["from": .string(from), "to": .string(to), "amountExpression": .string(pad.text), "month": .string(store.month)])
         .onAppear(perform: start)
+        .onChange(of: from) { _, source in
+            guard overspent > 0, pad.cents == suggested else { return }
+            let next = covered(source)
+            if next != pad.cents {
+                pad.set(next)
+                suggested = next
+            }
+        }
+    }
+
+    /// What covering takes from `source`, as much of the overspending as it can give.
+    private func covered(_ source: String) -> Int64 {
+        coverAmount(overspent, has: source.isEmpty ? nil : available(source))
     }
 
     private func start() {
@@ -96,10 +123,15 @@ struct MoveMoneySheet: View {
         started = true
         let start = available(request.category)
         let rta = store.summary?.long("readyToAssign") ?? 0
-        if request.direction == "to" { from = request.category }
-        else if start < 0 && rta > 0 && request.category != Unassigned { from = Unassigned }
+        let source = request.direction == "to" ? request.category : start < 0 && rta > 0 && request.category != Unassigned ? Unassigned : ""
+        from = source
         if request.direction == "from" { to = request.category }
-        pad = PadState(start < 0 ? -start : max(0, start))
+        // Covering this category's overspending: the amount is what the source can give of it.
+        let over: Int64 = start < 0 && request.direction != "to" && request.category != Unassigned ? -start : 0
+        overspent = over
+        let opening = over > 0 ? coverAmount(over, has: source.isEmpty ? nil : available(source)) : start < 0 ? -start : max(0, start)
+        pad = PadState(opening)
+        suggested = opening
         if request.category == Unassigned && start >= 0 { title = String(localized: "Assign money") }
         else if start < 0 && request.category != Unassigned { title = String(localized: "Cover overspending") }
     }

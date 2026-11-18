@@ -476,10 +476,10 @@ private fun SampleBanner(budget: JSONObject, vm: BudgetViewModel, modifier: Modi
 @Composable
 private fun ViewsMenu(open: Boolean, close: () -> Unit, filter: String, setFilter: (String) -> Unit, counts: Map<String, Int>, showHidden: Boolean,
                       setHidden: (Boolean) -> Unit, allCollapsed: Boolean, toggleAll: () -> Unit, addCategory: () -> Unit, addGroup: () -> Unit, planMonth: () -> Unit) {
-    DropdownMenu(open, close, shape = RoundedCornerShape(16.dp), containerColor = ur.surface) {
+    UrMenu(open, close) {
         BudgetViews.forEach { (id, label) ->
             val count = counts[id] ?: 0
-            DropdownMenuItem(text = { Text(stringResource(label), fontWeight = if (id == filter) FontWeight.SemiBold else FontWeight.Normal) },
+            UrMenuItem(text = { Text(stringResource(label), fontWeight = if (id == filter) FontWeight.SemiBold else FontWeight.Normal) },
                 enabled = id == "all" || count > 0,
                 trailingIcon = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -489,14 +489,14 @@ private fun ViewsMenu(open: Boolean, close: () -> Unit, filter: String, setFilte
                 },
                 onClick = { setFilter(id); close() })
         }
-        HorizontalDivider(color = ur.border)
-        DropdownMenuItem(text = { Text(stringResource(R.string.budget_show_hidden)) }, leadingIcon = { Icon(if (showHidden) Icons.Outlined.Visibility else Icons.Outlined.VisibilityOff, null) },
+        MenuDivider()
+        UrMenuItem(text = { Text(stringResource(R.string.budget_show_hidden)) }, leadingIcon = { Icon(if (showHidden) Icons.Outlined.Visibility else Icons.Outlined.VisibilityOff, null) },
             trailingIcon = if (showHidden) ({ Icon(Icons.Outlined.Check, null, tint = ur.accent) }) else null, onClick = { setHidden(!showHidden); close() })
-        DropdownMenuItem(text = { Text(if (allCollapsed) stringResource(R.string.common_expand_all) else stringResource(R.string.common_collapse_all)) }, leadingIcon = { Icon(if (allCollapsed) Icons.Outlined.UnfoldMore else Icons.Outlined.UnfoldLess, null) },
+        UrMenuItem(text = { Text(if (allCollapsed) stringResource(R.string.common_expand_all) else stringResource(R.string.common_collapse_all)) }, leadingIcon = { Icon(if (allCollapsed) Icons.Outlined.UnfoldMore else Icons.Outlined.UnfoldLess, null) },
             onClick = { toggleAll(); close() })
-        DropdownMenuItem(text = { Text(stringResource(R.string.category_new)) }, leadingIcon = { Icon(Icons.Outlined.Add, null) }, onClick = { addCategory(); close() })
-        DropdownMenuItem(text = { Text(stringResource(R.string.group_new)) }, leadingIcon = { Icon(Icons.Outlined.CreateNewFolder, null) }, onClick = { addGroup(); close() })
-        DropdownMenuItem(text = { Text(stringResource(R.string.month_note_income)) }, leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Notes, null) }, onClick = { planMonth(); close() })
+        UrMenuItem(text = { Text(stringResource(R.string.category_new)) }, leadingIcon = { Icon(Icons.Outlined.Add, null) }, onClick = { addCategory(); close() })
+        UrMenuItem(text = { Text(stringResource(R.string.group_new)) }, leadingIcon = { Icon(Icons.Outlined.CreateNewFolder, null) }, onClick = { addGroup(); close() })
+        UrMenuItem(text = { Text(stringResource(R.string.month_note_income)) }, leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Notes, null) }, onClick = { planMonth(); close() })
     }
 }
 
@@ -516,16 +516,16 @@ private fun GroupBand(name: String, open: Boolean, rows: List<CategoryRowModel>,
                     maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 20.sp)
                 if (menu != null) Box {
                     IconButton({ menuOpen = true }, Modifier.size(36.dp)) { Icon(Icons.Outlined.MoreHoriz, stringResource(R.string.group_actions_for, name), Modifier.size(18.dp), tint = ur.muted) }
-                    DropdownMenu(menuOpen, { menuOpen = false }, shape = RoundedCornerShape(16.dp), containerColor = ur.surface) {
-                        DropdownMenuItem(text = { Text(stringResource(R.string.category_add)) }, leadingIcon = { Icon(Icons.Outlined.Add, null) }, onClick = { menu("add"); menuOpen = false })
-                        DropdownMenuItem(text = { Text(stringResource(R.string.group_rename)) }, leadingIcon = { Icon(Icons.Outlined.Edit, null) }, onClick = { menu("rename"); menuOpen = false })
+                    UrMenu(menuOpen, { menuOpen = false }) {
+                        UrMenuItem(text = { Text(stringResource(R.string.category_add)) }, leadingIcon = { Icon(Icons.Outlined.Add, null) }, onClick = { menu("add"); menuOpen = false })
+                        UrMenuItem(text = { Text(stringResource(R.string.group_rename)) }, leadingIcon = { Icon(Icons.Outlined.Edit, null) }, onClick = { menu("rename"); menuOpen = false })
                         if (rows.isNotEmpty()) {
-                            DropdownMenuItem(text = { Text(stringResource(R.string.common_move_up)) }, leadingIcon = { Icon(Icons.Outlined.ArrowUpward, null) }, onClick = { menu("up"); menuOpen = false })
-                            DropdownMenuItem(text = { Text(stringResource(R.string.common_move_down)) }, leadingIcon = { Icon(Icons.Outlined.ArrowDownward, null) }, onClick = { menu("down"); menuOpen = false })
-                            DropdownMenuItem(text = { Text(stringResource(R.string.group_hide_all)) }, leadingIcon = { Icon(Icons.Outlined.VisibilityOff, null) }, onClick = { menu("hide"); menuOpen = false })
+                            UrMenuItem(text = { Text(stringResource(R.string.common_move_up)) }, leadingIcon = { Icon(Icons.Outlined.ArrowUpward, null) }, onClick = { menu("up"); menuOpen = false })
+                            UrMenuItem(text = { Text(stringResource(R.string.common_move_down)) }, leadingIcon = { Icon(Icons.Outlined.ArrowDownward, null) }, onClick = { menu("down"); menuOpen = false })
+                            UrMenuItem(text = { Text(stringResource(R.string.group_hide_all)) }, leadingIcon = { Icon(Icons.Outlined.VisibilityOff, null) }, onClick = { menu("hide"); menuOpen = false })
                         }
-                        HorizontalDivider(color = ur.border)
-                        DropdownMenuItem(text = { Text(stringResource(R.string.group_delete_menu), color = ur.negative) }, leadingIcon = { Icon(Icons.Outlined.DeleteOutline, null, tint = ur.negative) },
+                        MenuDivider()
+                        UrMenuItem(text = { Text(stringResource(R.string.group_delete_menu), color = ur.negative) }, leadingIcon = { Icon(Icons.Outlined.DeleteOutline, null, tint = ur.negative) },
                             onClick = { menu("delete"); menuOpen = false })
                     }
                 }
@@ -550,7 +550,7 @@ private fun CategoryLine(row: CategoryRowModel, assignedWidth: Dp, availableWidt
     // Settings can hide what targets still need; overspending always shows.
     val detail = if (row.needs && !LocalPreferences.current.showNeeded) null else row.detail
     // The category docked beside the budget is tinted, as the open transaction is beside the register.
-    Column(Modifier.background(if (chosen) ur.accentSoft else ur.surface)) {
+    Column(Modifier.chosenWash(chosen, ur.accentSoft, ur.surface)) {
         Row(Modifier.fillMaxWidth().testTag("category:${row.id}").clickable(onClickLabel = stringResource(R.string.common_open_named, row.name), onClick = open).heightIn(min = 58.dp).padding(start = Gutter, end = Gutter, top = 9.dp, bottom = 9.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(end = 8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {

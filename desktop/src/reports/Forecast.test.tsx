@@ -6,7 +6,7 @@ import { demoBudget } from "../demo";
 const read = vi.hoisted(() => vi.fn());
 vi.mock("../bridge", () => ({ read, api: {} }));
 vi.mock("../charts/Charts", () => ({ Legend: () => null, LinesChart: () => null }));
-import { Forecast } from "./Forecast";
+import { Forecast, projection } from "./Forecast";
 
 afterEach(() => {
   cleanup();
@@ -58,4 +58,15 @@ it("keeps keyboard commits editable and cancels a later draft without changing t
   expect(input.value).toBe("1254.56");
   fireEvent.blur(input);
   expect(input.value).toBe("$1,254.56");
+});
+
+it("leaves a scheduled move into investments out of scheduled spending, but not out of the balance", () => {
+  const event = (payee: string, amount: number, extra: object = {}) => ({
+    date: "2026-10-25", amount, payee, accountId: "b1", peerId: null, categoryId: "c1", scheduleId: "s1", ...extra,
+  });
+  const data = { balances: { b1: 100000 }, recentSpending: 30000, events: [event("Rent", -3000), event("Broker", -60000, { invested: true })] };
+  const view = projection(data, new Set(), "2026-10-21", "2027-01-21", 3);
+  expect(view.scheduledSpending).toBe(1000);
+  expect(view.suggested).toBe(29000);
+  expect(view.balances).toEqual([97000, 37000]);
 });

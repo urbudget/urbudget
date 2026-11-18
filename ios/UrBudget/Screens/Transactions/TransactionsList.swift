@@ -185,6 +185,15 @@ struct TransactionsList: View {
     @State private var editingSchedule: IdentifiedJSON?
     @State private var jump: RegisterTarget?
     @State private var importing = false
+    /// An investment account's card opens the Interactive Brokers screen, or a review of its deposits.
+    @State private var connectingBroker = false
+    /// An investment account's page of performance and holdings, pushed over its register (HoldingsPage.swift).
+    @State private var holdingsOpen = false
+    @State private var deposits: DepositsRequest?
+    /// A positions file or a typed value being brought into an investment account (HoldingsSetup.swift).
+    @State private var holdingsSetup = HoldingsSetupState()
+    /// "Not now" was answered to the offer to set an investment account up.
+    @AppStorage(Investments.promptHiddenKey) private var brokerPromptHidden = false
     @State private var asking: AssistantRequest?
     /// On a wide window, where a transaction opens beside this list (the Transactions tab's pane).
     @Environment(\.editorPane) private var pane
@@ -463,6 +472,25 @@ struct TransactionsList: View {
                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 10, trailing: 16))
                 .listRowBackground(Color.groupedBackground)
             }
+            // What an investment account holds, as its broker reports it (Holdings.swift).
+            if let account, !selecting, let held = Investments.holdings(store.budget, account: target.account) {
+                Section {
+                    HoldingsCard(account: account, holdings: held, connect: { connectingBroker = true }, review: { deposits = $0 },
+                                 fromFile: { holdingsSetup.pick(account) }, typeValue: { holdingsSetup.sheet = .typed(account: account) }, open: { holdingsOpen = true })
+                }
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 10, trailing: 16))
+                .listRowBackground(Color.groupedBackground)
+            }
+            // An investment account nothing fills is asked about once; "Not now" puts the question away.
+            if let account, !selecting, !brokerPromptHidden, Investments.promptable(account, budget: store.budget) {
+                Section {
+                    BrokerPrompt(setUp: { holdingsSetup.choosing = account }, dismiss: { brokerPromptHidden = true })
+                }
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 10, trailing: 16))
+                .listRowBackground(Color.groupedBackground)
+            }
             if !from.isEmpty || !through.isEmpty || activeFilters > 0 {
                 Section {
                     HStack {
@@ -540,6 +568,12 @@ struct TransactionsList: View {
             store.foreground(force: true)
             await sync.syncAutomatically()
         }
+        .navigationDestination(isPresented: $connectingBroker) { InvestmentsView() }
+        .navigationDestination(isPresented: $holdingsOpen) {
+            if let account { HoldingsPageView(account: account) }
+        }
+        .sheet(item: $deposits) { request in DepositsReview(request: request) {} }
+        .holdingsSetup($holdingsSetup) { connectingBroker = true }
     }
 
     private var filterSummary: String {

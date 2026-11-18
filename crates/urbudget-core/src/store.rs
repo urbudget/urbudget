@@ -812,6 +812,8 @@ impl Store {
     ) -> Result<Patch> {
         let mut changes = self.read_draft(patch, |before| {
             let mut after = f(before.clone())?;
+            // A broker account's balance stays the broker's value whatever was just entered.
+            crate::investments::settle(&mut after);
             stamp_added(before, &mut after);
             Ok(Patch::diff(before, &after))
         })?;
@@ -964,6 +966,7 @@ impl Store {
         self.prepare_edit(expected_token)?;
         let cache = self.cache.as_ref().expect("cache loaded");
         let mut after = f(cache.draft.clone())?;
+        crate::investments::settle(&mut after);
         stamp_added(&cache.draft, &mut after);
         let checked = check(&after)?;
         Ok((self.commit_edit(expected_token, after, true)?, checked))

@@ -19,8 +19,9 @@ import { ToastProvider } from "../ui";
 import { reportTransactionIds } from "./TransactionsDialog";
 import { Forecast } from "./Forecast";
 
-beforeEach(() => configureFormat({ currency: "USD" }));
-afterEach(() => { cleanup(); localStorage.clear(); vi.clearAllMocks(); });
+// These tests start in Spending, by category, unless they say where.
+beforeEach(() => { configureFormat({ currency: "USD" }); sessionStorage.setItem("lb:reports:place", "categories"); });
+afterEach(() => { cleanup(); localStorage.clear(); sessionStorage.clear(); vi.clearAllMocks(); });
 const budget = (): Budget => ({ schemaVersion: 2, name: "Test", currency: "USD", assignments: [],
   accounts: ["checking", "savings"].map(id => ({ id, name: id, kind: "cash", archived: false, openingBalance: 1000000 })),
   categories: ["food", "travel"].map(id => ({ id, name: id, group: "Living", target: 0 })),
@@ -36,6 +37,7 @@ it("preserves the report's account scope through dialog-to-register navigation a
   const inspect = vi.fn();
   const view = render(<ToastProvider><Reports budget={b} budgetId="test" month="2026-10" onInspect={inspect} /></ToastProvider>);
   await screen.findByRole("button", { name: "Inspect Food" });
+  fireEvent.click(screen.getByRole("button", { name: /^Filters:/ }));
   fireEvent.click(screen.getByRole("button", { name: /Accounts: All accounts/ }));
   fireEvent.click(screen.getByRole("checkbox", { name: "savings" }));
   fireEvent.keyDown(document, { key: "Escape" });
@@ -95,6 +97,7 @@ it("hides old report figures and drilldowns when filters change, including after
   render(<ToastProvider><Reports budget={budget()} budgetId="test" month="2026-10" onInspect={vi.fn()} /></ToastProvider>);
   fireEvent.click(await screen.findByRole("button", { name: "Inspect Food" }));
   expect(screen.getByRole("dialog", { name: "Food" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: /^Filters:/ }));
   fireEvent.click(screen.getByRole("button", { name: /Accounts: All accounts/ }));
   fireEvent.click(screen.getByRole("checkbox", { name: "savings" }));
   fireEvent.keyDown(document, { key: "Escape" });
@@ -138,7 +141,7 @@ it("keeps forecast range controls available after failure and clears old errors 
 });
 
 it("offers expense filtering for income vs expense and keeps the income visible", async () => {
-  localStorage.setItem("lb:reports:view", "incomeExpense");
+  sessionStorage.setItem("lb:reports:place", "incomeExpense");
   const b = budget();
   read.mockImplementation(async (_budget, _command, { filter }) => ({
     months: [{ month: "2026-10", income: 100000, spending: 1000, netIncome: 99000, assets: 0, debt: 0,
@@ -148,6 +151,7 @@ it("offers expense filtering for income vs expense and keeps the income visible"
   }));
   render(<ToastProvider><Reports budget={b} budgetId="test" month="2026-10" onInspect={vi.fn()} /></ToastProvider>);
   await screen.findByText("Employer");
+  fireEvent.click(screen.getByRole("button", { name: /^Filters:/ }));
   fireEvent.click(screen.getByRole("button", { name: /Categories: All categories/ }));
   fireEvent.click(screen.getByRole("checkbox", { name: "travel" }));
   fireEvent.keyDown(document, { key: "Escape" });
@@ -182,6 +186,7 @@ it("remembers what each budget's reports leave out, shows it, and lets each item
   const first = render(<ToastProvider><Reports budget={b} budgetId="home" month="2026-10" onInspect={vi.fn()} /></ToastProvider>);
   await screen.findByRole("button", { name: "Inspect Food" });
   expect(screen.queryByText("Categories left out:")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /^Filters:/ }));
   fireEvent.click(screen.getByRole("button", { name: /Categories: All categories/ }));
   fireEvent.click(screen.getByRole("checkbox", { name: "travel" }));
   fireEvent.keyDown(document, { key: "Escape" });
@@ -212,7 +217,7 @@ it("remembers what each budget's reports leave out, shows it, and lets each item
 });
 
 it("names the few accounts still shown when most are left out, and not categories where they don't apply", async () => {
-  localStorage.setItem("lb:reports:view", "income");
+  sessionStorage.setItem("lb:reports:place", "sources");
   localStorage.setItem("lb:reports:hidden:home", JSON.stringify({ accounts: ["savings", "gone"], categories: ["travel"] }));
   read.mockResolvedValue({ months: [], categories: {}, incomeSources: {}, income: 0, spending: 0,
     ageOfMoney: null, ageOfMoneyByMonth: {} });
@@ -224,6 +229,7 @@ it("names the few accounts still shown when most are left out, and not categorie
   expect(screen.getByText("Accounts left out:").parentElement!.textContent).toContain("savings");
   // The income breakdown has no Categories filter, so nothing says categories are left out.
   expect(screen.queryByText("Categories left out:")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /^Filters:/ }));
   fireEvent.click(screen.getByRole("button", { name: /Accounts: 1 hidden/ }));
   fireEvent.click(screen.getByRole("checkbox", { name: "card" }));
   fireEvent.keyDown(document, { key: "Escape" });

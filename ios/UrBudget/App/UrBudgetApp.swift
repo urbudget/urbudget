@@ -68,6 +68,8 @@ struct RootView: View {
             } else {
                 // Every form, picker and report belongs to one library entry.
                 MainTabs().id(store.identity ?? "")
+                    // Its Interactive Brokers accounts sync by themselves once a day, where this device has the token.
+                    .task(id: Investments.filled(store.budget)) { await Investments.dailySync(store) }
             }
         }
         .alert("Couldn’t complete that", isPresented: Binding(get: { store.error != nil }, set: { if !$0 { store.error = nil } })) {

@@ -37,17 +37,17 @@ pub fn sniff(content: &str) -> Option<&'static str> {
 
 /// An element of an XML document, by its local name (namespace prefixes dropped).
 #[derive(Default, Debug)]
-struct Node {
-    name: String,
-    attrs: Vec<(String, String)>,
-    text: String,
-    children: Vec<Node>,
+pub(crate) struct Node {
+    pub(crate) name: String,
+    pub(crate) attrs: Vec<(String, String)>,
+    pub(crate) text: String,
+    pub(crate) children: Vec<Node>,
 }
 impl Node {
-    fn child(&self, name: &str) -> Option<&Node> {
+    pub(crate) fn child(&self, name: &str) -> Option<&Node> {
         self.children.iter().find(|c| c.name == name)
     }
-    fn all<'a>(&'a self, name: &'a str) -> impl Iterator<Item = &'a Node> + 'a {
+    pub(crate) fn all<'a>(&'a self, name: &'a str) -> impl Iterator<Item = &'a Node> + 'a {
         self.children.iter().filter(move |c| c.name == name)
     }
     /// The element at a path of child names.
@@ -57,7 +57,7 @@ impl Node {
     fn text_at(&self, path: &[&str]) -> Option<&str> {
         self.at(path).map(|n| n.text.trim()).filter(|t| !t.is_empty())
     }
-    fn attr(&self, name: &str) -> Option<&str> {
+    pub(crate) fn attr(&self, name: &str) -> Option<&str> {
         self.attrs.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
     }
     /// The text of this element and everything in it.
@@ -69,7 +69,7 @@ impl Node {
         out
     }
     /// Every element below with this name, at any depth.
-    fn find_all<'a>(&'a self, name: &str, out: &mut Vec<&'a Node>) {
+    pub(crate) fn find_all<'a>(&'a self, name: &str, out: &mut Vec<&'a Node>) {
         for c in &self.children {
             if c.name == name {
                 out.push(c);
@@ -127,7 +127,7 @@ fn local(name: &str) -> String {
 /// A forgiving reader for the XML banks write: elements, attributes, text and CDATA; comments,
 /// declarations and processing instructions are passed over, and unclosed elements close at the
 /// end.
-fn xml(s: &str) -> Result<Node, String> {
+pub(crate) fn xml(s: &str) -> Result<Node, String> {
     let mut stack = vec![Node::default()];
     let mut rest = s;
     while !rest.is_empty() {
@@ -564,6 +564,12 @@ fn ofx_lines(content: &str, currency: &str, o: &LineOptions) -> Parsed {
         })
         .collect();
     let source = choose(&mut sources, o, 0, currency);
+    // An investment statement lists trades and holdings this import doesn't read. Its cash rows
+    // alone would come in as a bank's and leave the account's balance wrong, so none do.
+    if lists.is_empty() && upper.contains("<INVSTMTRS>") {
+        let stop = t!("This file is an investment account's statement, with trades and holdings a bank import doesn't read. For Interactive Brokers, connect it in Settings › Import.");
+        return Parsed { sources, source, parts: vec![], batches: vec![], dates: None, signs: None, stop: Some(stop), order: "ymd".into() };
+    }
     let (mut parts, mut kinds, mut stop) = (vec![], vec![], None);
     for (k, account) in sources.iter().enumerate() {
         let (_, (start, end)) = bounds(k);
@@ -1367,6 +1373,19 @@ mod tests {
         assert_eq!((usd.source, statuses(&usd)), (1, want(&[("t1", "OtherAccount", false), ("t2", "ready", true)])));
         let eur = read("mt940", sta, "EUR");
         assert_eq!((eur.source, statuses(&eur)), (0, want(&[("t1", "ready", true), ("t2", "OtherAccount", false)])));
+    }
+
+    #[test]
+    fn an_investment_ofx_is_refused_rather_than_read_as_a_banks() {
+        let trades = "OFXHEADER:100
+<OFX><INVSTMTMSGSRSV1><INVSTMTTRNRS><INVSTMTRS><DTASOF>20261113<CURDEF>USD<INVACCTFROM><BROKERID>broker.example<ACCTID>U1</INVACCTFROM><INVTRANLIST><DTSTART>20261101<DTEND>20261113<BUYSTOCK><INVBUY><INVTRAN><FITID>1<DTTRADE>20261103</INVTRAN><UNITS>10<UNITPRICE>100<TOTAL>-1000</INVBUY><BUYTYPE>BUY</BUYSTOCK><INVBANKTRAN><STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261102<TRNAMT>1500.00<FITID>2<NAME>Deposit</STMTTRN><SUBACCTFUND>CASH</INVBANKTRAN></INVTRANLIST></INVSTMTRS></INVSTMTTRNRS></INVSTMTMSGSRSV1></OFX>";
+        // Its one cash row isn't brought in alone: the purchase beside it can't be.
+        let refused = transactions("ofx", trades, "USD", "ymd").unwrap_err();
+        assert!(refused.contains("investment account's statement"), "{refused}");
+        assert!(read("ofx", trades, "USD").lines.is_empty());
+        // A bank statement that happens to come with an investment one still reads.
+        let both = trades.replace("<OFX>", "<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>USD<BANKACCTFROM><ACCTID>9</BANKACCTFROM><BANKTRANLIST><STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261104<TRNAMT>-12.00<FITID>b1<NAME>Coffee</STMTTRN></BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1>");
+        assert!(transactions("ofx", &both, "USD", "ymd").unwrap().iter().any(|t| t.amount == -1200));
     }
 
     #[test]

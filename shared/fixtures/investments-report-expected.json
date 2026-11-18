@@ -1,0 +1,729 @@
+{
+  "accounts": [
+    {
+      "accountId": "broker",
+      "asOf": "2026-11-17",
+      "cash": [
+        {
+          "amount": "4000.00",
+          "currency": "USD",
+          "value": 400000
+        },
+        {
+          "amount": "1406.25",
+          "currency": "SAR",
+          "value": 37500
+        }
+      ],
+      "end": 5300000,
+      "endParts": {
+        "accrued": 12500,
+        "asOf": "2026-11-17",
+        "byKind": [
+          {
+            "key": "Stocks",
+            "value": 4100000
+          },
+          {
+            "key": "Bonds",
+            "value": 800000
+          },
+          {
+            "key": "Options",
+            "value": -50000
+          }
+        ],
+        "cash": 437500,
+        "month": "2026-11",
+        "rest": 0
+      },
+      "estimatedDays": 1,
+      "gain": 800000,
+      "joined": "2025-11-28",
+      "missing": [
+        "Transfers"
+      ],
+      "put": 400000,
+      "rate": 0.18085780688780903,
+      "realised": null,
+      "source": "ibkr",
+      "sourceAccount": "U1111111",
+      "sparse": false,
+      "start": 4100000,
+      "startParts": {
+        "accrued": 10000,
+        "asOf": "2025-12-31",
+        "byKind": [
+          {
+            "key": "Stocks",
+            "value": 3250000
+          },
+          {
+            "key": "Bonds",
+            "value": 500000
+          }
+        ],
+        "cash": 340000,
+        "month": "2025-12",
+        "rest": 0
+      }
+    },
+    {
+      "accountId": "pension",
+      "asOf": "2026-11-10",
+      "cash": [],
+      "end": 2300000,
+      "endParts": {
+        "accrued": 0,
+        "asOf": "2026-11-10",
+        "byKind": [],
+        "cash": 0,
+        "month": "2026-11",
+        "rest": 2300000
+      },
+      "estimatedDays": 0,
+      "gain": 100000,
+      "joined": "2025-12-31",
+      "missing": [],
+      "put": 200000,
+      "rate": 0.04687966557181249,
+      "realised": null,
+      "source": "manual",
+      "sourceAccount": "",
+      "sparse": true,
+      "start": 2000000,
+      "startParts": {
+        "accrued": 0,
+        "asOf": "2025-12-31",
+        "byKind": [],
+        "cash": 0,
+        "month": "2025-12",
+        "rest": 2000000
+      }
+    },
+    {
+      "accountId": "trading",
+      "asOf": "2026-11-17",
+      "cash": [
+        {
+          "amount": "1200.00",
+          "currency": "USD",
+          "value": 120000
+        }
+      ],
+      "end": 1250000,
+      "endParts": {
+        "accrued": 0,
+        "asOf": "2026-11-17",
+        "byKind": [
+          {
+            "key": "Stocks",
+            "value": 1130000
+          }
+        ],
+        "cash": 120000,
+        "month": "2026-11",
+        "rest": 0
+      },
+      "estimatedDays": 0,
+      "gain": 100000,
+      "joined": "2026-08-03",
+      "missing": [],
+      "put": 1150000,
+      "rate": 0.09805735430157261,
+      "realised": 17000,
+      "source": "ibkr",
+      "sourceAccount": "U2222222",
+      "sparse": false,
+      "start": 0,
+      "startParts": null
+    },
+    {
+      "accountId": "euro",
+      "asOf": "2026-10-30",
+      "cash": [
+        {
+          "amount": "250.00",
+          "currency": "EUR",
+          "value": 27500
+        }
+      ],
+      "end": 1527000,
+      "endParts": {
+        "accrued": 0,
+        "asOf": "2026-10-30",
+        "byKind": [
+          {
+            "key": "Funds",
+            "value": 1144000
+          },
+          {
+            "key": "Bonds",
+            "value": 335500
+          }
+        ],
+        "cash": 27500,
+        "month": "2026-11",
+        "rest": 20000
+      },
+      "estimatedDays": 0,
+      "gain": 22000,
+      "joined": "2026-02-27",
+      "missing": [],
+      "put": 1505000,
+      "rate": 0.015121123283443914,
+      "realised": null,
+      "source": "file",
+      "sourceAccount": "positions.csv",
+      "sparse": true,
+      "start": 0,
+      "startParts": null
+    }
+  ],
+  "allocation": {
+    "accrued": 12500,
+    "asOf": "2026-10-30",
+    "byAccount": [
+      {
+        "key": "broker",
+        "share": 0.5117311962923626,
+        "value": 5300000
+      },
+      {
+        "key": "pension",
+        "share": 0.22207202857970454,
+        "value": 2300000
+      },
+      {
+        "key": "euro",
+        "share": 0.1455054552476586,
+        "value": 1507000
+      },
+      {
+        "key": "trading",
+        "share": 0.1206913198802742,
+        "value": 1250000
+      }
+    ],
+    "byCurrency": [
+      {
+        "amount": "88125.00",
+        "key": "USD",
+        "share": 0.8508738051559331,
+        "value": 8812500
+      },
+      {
+        "amount": "13700.00",
+        "key": "EUR",
+        "share": 0.1455054552476586,
+        "value": 1507000
+      },
+      {
+        "amount": "1406.25",
+        "key": "SAR",
+        "share": 0.003620739596408226,
+        "value": 37500
+      }
+    ],
+    "byKind": [
+      {
+        "key": "Stocks",
+        "share": 0.5025463630248871,
+        "value": 5230000
+      },
+      {
+        "key": "Holdings",
+        "share": 0.22100509272604976,
+        "value": 2300000
+      },
+      {
+        "key": "Funds",
+        "share": 0.10992601133852214,
+        "value": 1144000
+      },
+      {
+        "key": "Bonds",
+        "share": 0.10910925338714327,
+        "value": 1135500
+      },
+      {
+        "key": "Cash",
+        "share": 0.05621216488901701,
+        "value": 585000
+      },
+      {
+        "key": "Accrued",
+        "share": 0.0012011146343807054,
+        "value": 12500
+      },
+      {
+        "key": "Options",
+        "share": 0.0,
+        "value": -50000
+      }
+    ],
+    "cash": 585000,
+    "cost": 5300000,
+    "count": 7,
+    "largestShare": 0.37474776592678005,
+    "topFiveShare": 0.6893437109637743,
+    "total": 10407000,
+    "unrealised": 1024000,
+    "unrealisedRate": 0.1932075471698113
+  },
+  "from": "2026-01",
+  "holdings": [
+    {
+      "accounts": [
+        "broker",
+        "trading"
+      ],
+      "amount": "39000.00",
+      "cost": 3350000,
+      "currency": "USD",
+      "gain": 550000,
+      "group": "Stocks",
+      "instrument": "ETF",
+      "key": "IE00BK5BQT80",
+      "name": "World fund",
+      "one": "Stock",
+      "rate": 0.16417910447761194,
+      "share": 0.37474776592678005,
+      "symbol": "VWRA",
+      "value": 3900000
+    },
+    {
+      "accounts": [
+        "euro"
+      ],
+      "amount": "10400.00",
+      "cost": 990000,
+      "currency": "EUR",
+      "gain": 154000,
+      "group": "Funds",
+      "instrument": "Fund",
+      "key": "EUNL EUR",
+      "name": "Core world fund",
+      "one": "Fund",
+      "rate": 0.15555555555555556,
+      "share": 0.10992601133852214,
+      "symbol": "EUNL",
+      "value": 1144000
+    },
+    {
+      "accounts": [
+        "broker"
+      ],
+      "amount": "9000.00",
+      "cost": 600000,
+      "currency": "USD",
+      "gain": 300000,
+      "group": "Stocks",
+      "instrument": "Stock",
+      "key": "US0378331005",
+      "name": "Apple",
+      "one": "Stock",
+      "rate": 0.5,
+      "share": 0.08648025367541078,
+      "symbol": "AAPL",
+      "value": 900000
+    },
+    {
+      "accounts": [
+        "broker"
+      ],
+      "amount": "8000.00",
+      "cost": null,
+      "currency": "USD",
+      "gain": null,
+      "group": "Bonds",
+      "instrument": "Government bond",
+      "key": "US91282CJZ59",
+      "name": "Treasury note",
+      "one": "Bond",
+      "rate": null,
+      "share": 0.07687133660036514,
+      "symbol": "T 4 02/15/34",
+      "value": 800000
+    },
+    {
+      "accounts": [
+        "trading"
+      ],
+      "amount": null,
+      "cost": 400000,
+      "currency": "USD",
+      "gain": 30000,
+      "group": "Stocks",
+      "instrument": "Stock",
+      "key": "US5949181045",
+      "name": "Microsoft",
+      "one": "Stock",
+      "rate": 0.075,
+      "share": 0.04131834342269626,
+      "symbol": "MSFT",
+      "value": 430000
+    },
+    {
+      "accounts": [
+        "euro"
+      ],
+      "amount": "3050.00",
+      "cost": null,
+      "currency": "EUR",
+      "gain": null,
+      "group": "Bonds",
+      "instrument": "Bond",
+      "key": "BUND EUR",
+      "name": "Federal bond 2034",
+      "one": "Bond",
+      "rate": null,
+      "share": 0.03223791678677813,
+      "symbol": "BUND",
+      "value": 335500
+    },
+    {
+      "accounts": [
+        "broker"
+      ],
+      "amount": "-500.00",
+      "cost": -40000,
+      "currency": "USD",
+      "gain": -10000,
+      "group": "Options",
+      "instrument": "Put option",
+      "key": "700123456",
+      "name": "SPY put",
+      "one": "Option",
+      "rate": -0.25,
+      "share": 0.0,
+      "symbol": "SPY 260116P00500000",
+      "value": -50000
+    }
+  ],
+  "income": {
+    "byAccount": [
+      {
+        "accountId": "broker",
+        "commissions": -2350,
+        "dividends": 8500,
+        "fees": -1000,
+        "interest": 800,
+        "other": 0,
+        "tax": -1275
+      },
+      {
+        "accountId": "trading",
+        "commissions": -420,
+        "dividends": 700,
+        "fees": 0,
+        "interest": 0,
+        "other": 0,
+        "tax": -105
+      }
+    ],
+    "byHolding": [
+      {
+        "dividends": 400,
+        "key": "IE00BK5BQT80",
+        "name": "World fund",
+        "symbol": "VWRA",
+        "tax": -60,
+        "value": 3900000,
+        "yield": 0.00010256410256410256
+      },
+      {
+        "dividends": 200,
+        "key": "US5949181045",
+        "name": "Microsoft",
+        "symbol": "MSFT",
+        "tax": -30,
+        "value": 430000,
+        "yield": 0.00046511627906976747
+      },
+      {
+        "dividends": 100,
+        "key": "US67066G1040",
+        "name": "Nvidia",
+        "symbol": "NVDA",
+        "tax": -15,
+        "value": null,
+        "yield": null
+      }
+    ],
+    "commissions": [
+      {
+        "accountId": "broker",
+        "amount": -2350,
+        "from": "2025-11-18",
+        "to": "2026-11-17"
+      }
+    ],
+    "dividends": 9200,
+    "fees": -1000,
+    "interest": 800,
+    "months": [
+      {
+        "commissions": null,
+        "dividends": 0,
+        "fees": 0,
+        "interest": 0,
+        "month": "2026-01",
+        "other": 0,
+        "tax": 0
+      },
+      {
+        "commissions": null,
+        "dividends": 0,
+        "fees": 0,
+        "interest": 0,
+        "month": "2026-02",
+        "other": 0,
+        "tax": 0
+      },
+      {
+        "commissions": null,
+        "dividends": 4000,
+        "fees": 0,
+        "interest": 0,
+        "month": "2026-03",
+        "other": 0,
+        "tax": -600
+      },
+      {
+        "commissions": null,
+        "dividends": 0,
+        "fees": 0,
+        "interest": 0,
+        "month": "2026-04",
+        "other": 0,
+        "tax": 0
+      },
+      {
+        "commissions": null,
+        "dividends": 0,
+        "fees": 0,
+        "interest": 0,
+        "month": "2026-05",
+        "other": 0,
+        "tax": 0
+      },
+      {
+        "commissions": null,
+        "dividends": 4500,
+        "fees": 0,
+        "interest": 0,
+        "month": "2026-06",
+        "other": 0,
+        "tax": -675
+      },
+      {
+        "commissions": null,
+        "dividends": 0,
+        "fees": 0,
+        "interest": 0,
+        "month": "2026-07",
+        "other": 0,
+        "tax": 0
+      },
+      {
+        "commissions": -120,
+        "dividends": 0,
+        "fees": 0,
+        "interest": 0,
+        "month": "2026-08",
+        "other": 0,
+        "tax": 0
+      },
+      {
+        "commissions": -60,
+        "dividends": 0,
+        "fees": -1000,
+        "interest": 800,
+        "month": "2026-09",
+        "other": 0,
+        "tax": 0
+      },
+      {
+        "commissions": -150,
+        "dividends": 700,
+        "fees": 0,
+        "interest": 0,
+        "month": "2026-10",
+        "other": 0,
+        "tax": -105
+      },
+      {
+        "commissions": -90,
+        "dividends": 0,
+        "fees": 0,
+        "interest": 0,
+        "month": "2026-11",
+        "other": 0,
+        "tax": 0
+      }
+    ],
+    "other": 0,
+    "reporting": [
+      "broker",
+      "trading"
+    ],
+    "silent": [
+      "pension",
+      "euro"
+    ],
+    "tax": -1380,
+    "yield": 0.0019345761519521632
+  },
+  "months": [
+    {
+      "byAccount": {
+        "broker": 4180000,
+        "pension": 2000000
+      },
+      "gain": 80000,
+      "month": "2026-01",
+      "put": 0,
+      "realised": null,
+      "value": 6180000
+    },
+    {
+      "byAccount": {
+        "broker": 4750000,
+        "euro": 1375000,
+        "pension": 2000000
+      },
+      "gain": 70000,
+      "month": "2026-02",
+      "put": 1875000,
+      "realised": null,
+      "value": 8125000
+    },
+    {
+      "byAccount": {
+        "broker": 4700000,
+        "euro": 1375000,
+        "pension": 2000000
+      },
+      "gain": -50000,
+      "month": "2026-03",
+      "put": 0,
+      "realised": null,
+      "value": 8075000
+    },
+    {
+      "byAccount": {
+        "broker": 4560000,
+        "euro": 1375000,
+        "pension": 2200000
+      },
+      "gain": 60000,
+      "month": "2026-04",
+      "put": 0,
+      "realised": null,
+      "value": 8135000
+    },
+    {
+      "byAccount": {
+        "broker": 4640000,
+        "euro": 1485000,
+        "pension": 2200000
+      },
+      "gain": 80000,
+      "month": "2026-05",
+      "put": 110000,
+      "realised": null,
+      "value": 8325000
+    },
+    {
+      "byAccount": {
+        "broker": 4700000,
+        "euro": 1485000,
+        "pension": 2150000
+      },
+      "gain": 10000,
+      "month": "2026-06",
+      "put": 0,
+      "realised": null,
+      "value": 8335000
+    },
+    {
+      "byAccount": {
+        "broker": 4820000,
+        "euro": 1485000,
+        "pension": 2150000
+      },
+      "gain": 120000,
+      "month": "2026-07",
+      "put": 0,
+      "realised": null,
+      "value": 8455000
+    },
+    {
+      "byAccount": {
+        "broker": 4790000,
+        "euro": 1485000,
+        "pension": 2150000,
+        "trading": 1030000
+      },
+      "gain": 0,
+      "month": "2026-08",
+      "put": 1000000,
+      "realised": 0,
+      "value": 9455000
+    },
+    {
+      "byAccount": {
+        "broker": 4950000,
+        "euro": 1485000,
+        "pension": 2150000,
+        "trading": 1010000
+      },
+      "gain": 40000,
+      "month": "2026-09",
+      "put": 100000,
+      "realised": -8000,
+      "value": 9595000
+    },
+    {
+      "byAccount": {
+        "broker": 5120000,
+        "euro": 1507000,
+        "pension": 2150000,
+        "trading": 1060000
+      },
+      "gain": 242000,
+      "month": "2026-10",
+      "put": 0,
+      "realised": 25000,
+      "value": 9837000
+    },
+    {
+      "byAccount": {
+        "broker": 5300000,
+        "euro": 1527000,
+        "pension": 2300000,
+        "trading": 1250000
+      },
+      "gain": 370000,
+      "month": "2026-11",
+      "put": 170000,
+      "realised": 0,
+      "value": 10377000
+    }
+  ],
+  "to": "2026-11",
+  "total": {
+    "days": 321,
+    "end": 10377000,
+    "gain": 1022000,
+    "put": 3255000,
+    "rate": 0.1263416935445049,
+    "realised": 17000,
+    "start": 6100000,
+    "yearly": null
+  },
+  "unfilled": [
+    "old"
+  ]
+}

@@ -3,7 +3,8 @@
    light aqua, yellow and magenta sit below 3:1, so every chart has a legend and a table.
    Series 1 keeps its own blue rather than --accent: the deeper UI blue would sit within
    ΔE 1 of series 7 for deuteranopes. */
-.reports-page {
+.reports-page,
+.holdings-view {
   --series-1: #2a78d6;
   --series-2: #eb6834;
   --series-3: #1baf7a;
@@ -17,7 +18,7 @@
   --diverging-negative: #e34948;
 }
 @media (prefers-color-scheme: dark) {
-  :root:where(:not([data-theme="light"])) .reports-page {
+  :root:where(:not([data-theme="light"])) :is(.reports-page, .holdings-view) {
     --series-1: #3987e5;
     --series-2: #d95926;
     --series-3: #199e70;
@@ -31,7 +32,7 @@
     --diverging-negative: #e66767;
   }
 }
-:root[data-theme="dark"] .reports-page {
+:root[data-theme="dark"] :is(.reports-page, .holdings-view) {
   --series-1: #3987e5;
   --series-2: #d95926;
   --series-3: #199e70;
@@ -45,8 +46,8 @@
   --diverging-negative: #e66767;
 }
 
-/* The group's reports as a row of tabs (Reports.tsx; the groups switch in the page header), the
-   chosen report under them, which scrolls on its own. */
+/* The overview and the reports are tabs in the page header (Reports.tsx); the one chosen is
+   under them, and scrolls on its own. */
 .page-scroll.fill > .reports-page {
   overflow: hidden;
   padding: 0;
@@ -57,54 +58,6 @@
   flex-direction: column;
   height: 100%;
   min-height: 0;
-}
-/* The hairline is the row's own (an inset shadow) rather than the tabs', so it runs the full
-   width when the tabs scroll and fade, and the selected tab's bar covers it. */
-.report-nav {
-  flex: none;
-  background: var(--bg);
-  box-shadow: inset 0 -1px 0 var(--border);
-}
-.tabs.report-tabs {
-  display: flex;
-  align-items: stretch;
-  gap: 2px;
-  height: 40px;
-  padding: 0 14px;
-  border-radius: 0;
-  background: none;
-  box-shadow: none;
-}
-.tabs.report-tabs button {
-  position: relative;
-  gap: 7px;
-  height: auto;
-  border-radius: 0;
-}
-.tabs.report-tabs button svg {
-  flex: none;
-  color: var(--muted);
-}
-.tabs.report-tabs button.selected {
-  background: none;
-  box-shadow: none;
-}
-.tabs.report-tabs button.selected svg {
-  color: var(--accent);
-}
-.tabs.report-tabs button.selected::after {
-  position: absolute;
-  inset-inline-end: 10px;
-  bottom: 0;
-  inset-inline-start: 10px;
-  height: 2px;
-  border-radius: 2px 2px 0 0;
-  background: var(--accent);
-  content: "";
-}
-/* Keyboard focus is drawn inside the tab: the row clips anything past its edges. */
-.tabs.report-tabs button:focus-visible {
-  outline-offset: -2px;
 }
 .report-main {
   display: flex;
@@ -153,6 +106,119 @@
   min-width: 0;
 }
 
+/* A report's views, as a switch under its title, and what the one chosen shows. */
+.report-view-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+.report-view-row > .tabs {
+  flex: none;
+}
+.report-blurb {
+  flex: 1 1 260px;
+  margin: 0;
+  color: var(--muted);
+}
+
+/* The overview: a card for each report, three across where there is room. The card's name is
+   the button; it covers the card, so anywhere on it opens the report. */
+.report-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+@container (max-width: 900px) {
+  .report-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@container (max-width: 560px) {
+  .report-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.report-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  transition: border-color 0.12s var(--ease);
+}
+.report-card:hover {
+  border-color: var(--border-strong);
+}
+.report-card:has(button:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.report-card h2 {
+  font-size: 14px;
+}
+.report-card h2 button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+.report-card h2 button::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  content: "";
+}
+.report-card h2 svg {
+  flex: none;
+  color: var(--accent);
+}
+.report-card p {
+  margin: 0;
+}
+.report-card .report-card-question {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.report-card .report-card-figure {
+  margin-top: 12px;
+  overflow: hidden;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.report-card-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+.report-card .spark {
+  margin-top: 12px;
+}
+/* One bar in two parts, the first from the start: what is owned, then what is owed. It stands
+   in the middle of the room a small chart takes, so the cards line up. */
+.split-bar {
+  display: flex;
+  gap: 2px;
+  height: 14px;
+  margin-block: 33px 21px;
+}
+.split-bar i {
+  min-width: 2px;
+  border-radius: 4px;
+}
+
 /* One filter row above everything it scopes */
 .report-filter-row {
   display: flex;
@@ -173,6 +239,29 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* The one control for what a report covers: its label says what is in force. */
+.report-filters .filter-summary {
+  max-width: 520px;
+}
+.report-filters > svg:first-child {
+  flex: none;
+  color: var(--muted);
+}
+/* What it opens: the months, the accounts and the categories, one under the other. */
+.report-filter-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 300px;
+  padding: 10px;
+}
+.report-filter-panel > button {
+  justify-content: flex-start;
+  width: 100%;
+}
+.report-filter-panel > .filter-button > svg:last-child {
+  margin-inline-start: auto;
 }
 .filter-popover-foot {
   margin: 0;
@@ -208,6 +297,13 @@
 }
 .report-left-out .link-button {
   font-size: inherit;
+}
+/* Money the figures leave out that can't be put back: said in words, after any chips. */
+.report-left-out-note {
+  color: var(--muted);
+}
+.report-left-out .link-button + .report-left-out-note {
+  margin-inline-start: 6px;
 }
 .filter-popover {
   width: 300px;
@@ -562,6 +658,34 @@
 .report-table .child-line td:first-child {
   padding-inline-start: 30px;
   color: var(--text-2);
+}
+/* A sentence across a table's columns: it wraps, where the cells around it never do. */
+.report-table .note-row td {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: normal;
+}
+.report-table.wide.scrolls .note-row td:first-child {
+  box-shadow: none;
+}
+/* What a report's figures rest on, under the chart or table they belong to. */
+.report-note {
+  margin: 10px 0 0;
+}
+.report-note + .report-note {
+  margin-top: 4px;
+}
+/* What a row is, under its name: a holding's kind, symbol and own-currency amount. */
+.report-table .sub-line {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+}
+.report-table .fold-line .link-button {
+  padding: 0;
+  font-size: 12.5px;
 }
 .report-table .group-line .link-button {
   padding: 0;

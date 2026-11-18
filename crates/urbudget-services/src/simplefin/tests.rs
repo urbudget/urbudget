@@ -48,6 +48,48 @@ fn demo() -> AccountSet {
 }
 
 #[test]
+fn a_brokerage_accounts_holdings_come_in_with_its_sync() {
+    let mut b = budget();
+    b.accounts.push(serde_json::from_value(json!({ "id": "broker", "name": "Brokerage", "kind": "tracking", "openingBalance": 0, "archived": false, "accountType": "investment" })).unwrap());
+    let b = linked(linked(b, "broker", json!({"id":"ACT-invest","since":"2026-10-01"})), "cash", json!({"id":"ACT-checking","since":"2026-10-01"}));
+    let fetched = at("2026-10-18T12:00:00Z");
+    let mut set = demo();
+    set.accounts.push(serde_json::from_value(json!({
+        "id": "ACT-invest", "name": "Brokerage", "conn_id": "CON-1", "currency": "USD", "balance": "12420.00", "balance-date": at("2026-10-17T21:00:00Z"), "transactions": [],
+        "holdings": [
+            // One security in two lots: a per-share cost on one, the whole position's on the other.
+            {"id": "h1", "symbol": "VTI", "description": "Vanguard Total Stock Market", "shares": "10", "market_value": "2500.00", "cost_basis": "200.00", "purchase_price": "200.00", "currency": "USD"},
+            {"id": "h2", "symbol": "VTI", "description": "Vanguard Total Stock Market", "shares": "30", "market_value": "7500.00", "cost_basis": "6600.00", "currency": "USD"},
+            // No cost at all, and one this can't read a value for.
+            {"id": "h3", "symbol": "", "description": "Target 2050 Fund", "shares": 4.5, "market_value": 1800, "currency": "USD"},
+            {"id": "h4", "symbol": "ODD", "description": "Odd lot", "shares": "1", "market_value": "n/a"}
+        ]
+    })).unwrap());
+    let snapshot = holdings_of(set.accounts.last().unwrap(), fetched, &utc()).unwrap();
+    assert_eq!((snapshot.source.as_str(), snapshot.source_account.as_str(), snapshot.as_of.as_str(), snapshot.currency.as_str(), snapshot.total.as_str()), ("simplefin", "ACT-invest", "2026-10-17", "USD", "12420"));
+    assert_eq!(snapshot.positions.iter().map(|p| (p.symbol.as_str(), p.quantity.as_str(), p.price.as_str(), p.value.as_str(), p.cost.as_str())).collect::<Vec<_>>(), vec![
+        ("VTI", "40", "250", "10000", "8600"),
+        ("", "4.5", "400", "1800", ""),
+    ]);
+    // A bank account sends none, and the review says how many its brokerage did.
+    assert!(holdings_of(&set.accounts[0], fetched, &utc()).is_none());
+    let counts: Vec<(String, usize)> = reviews(&b, &set, fetched, &utc()).into_iter().map(|r| (r.account_id, r.holdings)).collect();
+    assert!(counts.contains(&("broker".to_string(), 4)) && counts.contains(&("cash".to_string(), 0)));
+    // In the budget, the account follows the bank's balance, and what the holdings don't make up of it is cash.
+    let after = with_holdings(b.clone(), &set, fetched, &utc());
+    let held = investments::find(&after, "broker").unwrap();
+    assert_eq!((held.source.as_str(), held.total, held.positions.len(), held.cash[0].value), ("simplefin", 1_242_000, 2, 62_000));
+    assert_eq!((held.positions[0].cost, held.positions[0].gain, held.positions[1].gain), (Some(860_000), Some(140_000), None));
+    let balance: i64 = after.transactions.iter().filter(|t| t.account_id == "broker").map(|t| t.amount).sum();
+    assert_eq!(balance, 1_242_000);
+    // The same download again changes nothing, and an account in another currency is left alone until its rate is known.
+    assert_eq!(with_holdings(after.clone(), &set, fetched, &utc()), after);
+    let mut euros = b.clone();
+    euros.currency = "EUR".into();
+    assert!(investments::find(&with_holdings(euros, &set, fetched, &utc()), "broker").is_none());
+}
+
+#[test]
 fn compact_native_reviews_preserve_desktop_rows_timestamps_and_account_metadata() {
     let b = linked(budget(), "cash", json!({"id":"ACT-checking","since":"2026-10-01"}));
     let set = demo();

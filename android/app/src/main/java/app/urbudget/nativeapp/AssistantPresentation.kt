@@ -100,6 +100,8 @@ internal fun assistantPageName(page: String): Int? = when (page) {
     "settings" -> R.string.page_settings
     "bankMessages" -> R.string.sms_title
     "bankConnections" -> R.string.page_banks
+    "Investments" -> R.string.page_investments
+    "Interactive Brokers" -> R.string.page_ibkr
     "import" -> R.string.import_bank_file
     "Account & sync" -> R.string.page_account_sync
     "Budget library" -> R.string.page_library

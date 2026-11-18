@@ -1123,7 +1123,7 @@ const NEUTRAL: &[&str] = &["不计收支", "中性交易"];
 
 /// A header's name without case, accents, spaces or punctuation ("Trans. Date" → "transdate",
 /// "Libellé" → "libelle"), and the currency it names in brackets at the end ("Amount (USD)").
-fn header(s: &str) -> (String, Option<String>) {
+pub(crate) fn header(s: &str) -> (String, Option<String>) {
     match s.trim().strip_suffix(')').and_then(|s| s.rsplit_once('(')) {
         Some((name, c)) if c.len() == 3 && c.bytes().all(|b| b.is_ascii_uppercase()) => (plain(name), Some(c.into())),
         _ => (plain(s), None),
@@ -1707,11 +1707,11 @@ fn first_lines(content: &str) -> Vec<(usize, &str)> {
 }
 /// The separators a line could use, tabs first: a semicolon file's amounts have commas in them.
 const SEPARATORS: [u8; 4] = [b'\t', b';', b'|', b','];
-fn separators(line: &str) -> impl Iterator<Item = u8> + '_ {
+pub(crate) fn separators(line: &str) -> impl Iterator<Item = u8> + '_ {
     let any = SEPARATORS.into_iter().any(|d| line.contains(d as char));
     SEPARATORS.into_iter().filter(move |&d| !any && d == b',' || line.contains(d as char))
 }
-fn fields(line: &str, separator: u8) -> Vec<String> {
+pub(crate) fn fields(line: &str, separator: u8) -> Vec<String> {
     csv::ReaderBuilder::new()
         .delimiter(separator)
         .trim(csv::Trim::All)

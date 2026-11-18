@@ -9,10 +9,12 @@
 //! one request brings every account (a long first sync takes one per 45 days). The transactions
 //! go to the same review as a bank file: nothing reaches the budget until the user imports it,
 //! and one that comes again is recognised by its SimpleFIN id.
+use crate::flex::Dec;
+use crate::investments;
 use crate::t;
 use crate::{
     bank_import::{self, BankTransaction, Row},
-    domain::{stamp, Account, Budget},
+    domain::{stamp, Account, AccountKind, Budget},
     patch::Patch,
     vault, Database,
 };
@@ -110,6 +112,26 @@ struct SfAccount {
     balance_date: i64,
     #[serde(default)]
     transactions: Vec<SfTransaction>,
+    /// What a brokerage account holds. The Bridge sends these beside the balance; they aren't
+    /// in the published protocol, so every field is optional and read as text.
+    #[serde(default)]
+    holdings: Vec<SfHolding>,
+}
+#[derive(Clone, Default, Deserialize)]
+#[serde(default)]
+struct SfHolding {
+    #[serde(deserialize_with = "text")]
+    symbol: String,
+    #[serde(deserialize_with = "text")]
+    description: String,
+    #[serde(deserialize_with = "text")]
+    shares: String,
+    #[serde(deserialize_with = "text")]
+    market_value: String,
+    #[serde(deserialize_with = "text")]
+    cost_basis: String,
+    #[serde(deserialize_with = "text")]
+    currency: String,
 }
 #[derive(Clone, Deserialize)]
 struct SfTransaction {
@@ -419,6 +441,81 @@ fn messages(set: &AccountSet) -> Vec<String> {
     out
 }
 
+/// What a holding cost in all. SimpleFIN calls its cost basis a per-share figure, yet several
+/// brokers send the whole position's there: of the two readings, the one that puts the cost
+/// nearer what the holding is worth now is taken.
+fn whole_cost(basis: Dec, shares: Dec, value: Dec) -> Dec {
+    let number = |d: Dec| d.text().parse::<f64>().unwrap_or(0.0);
+    let (worth, each) = (number(value), number(basis.times(shares)));
+    let far = |cost: f64| if cost > 0.0 && worth > 0.0 { (cost / worth).ln().abs() } else { f64::MAX };
+    if far(each) < far(number(basis)) { basis.times(shares) } else { basis }
+}
+/// What a SimpleFIN account holds, as a snapshot for `investments::record`: its holdings with
+/// a broker's several lots of one security added up, and its balance as the account's whole
+/// value, so what the balance counts beyond the holdings is cash. None for an account that
+/// sends no holdings.
+fn holdings_of<Tz: TimeZone>(sf: &SfAccount, fetched: i64, tz: &Tz) -> Option<investments::Snapshot> {
+    // (symbol, name, currency, shares, value, cost when every lot has one)
+    let mut merged: Vec<(String, String, String, Dec, Dec, Option<Dec>)> = vec![];
+    for h in &sf.holdings {
+        let (symbol, name) = (clean(&h.symbol), clean(&h.description));
+        let Some(value) = Dec::parse(&h.market_value) else { continue };
+        if symbol.is_empty() && name.is_empty() {
+            continue;
+        }
+        let shares = Dec::parse(&h.shares).unwrap_or(Dec::ZERO);
+        let cost = Dec::parse(&h.cost_basis).filter(|c| !c.is_zero()).map(|basis| whole_cost(basis, shares, value));
+        match merged.iter_mut().find(|m| if symbol.is_empty() { m.1 == name } else { m.0 == symbol }) {
+            Some(m) => {
+                m.3 = m.3.plus(shares);
+                m.4 = m.4.plus(value);
+                m.5 = m.5.zip(cost).map(|(a, b)| a.plus(b));
+            }
+            None => merged.push((symbol, name, clean(&h.currency).to_ascii_uppercase(), shares, value, cost)),
+        }
+    }
+    if merged.is_empty() {
+        return None;
+    }
+    let positions = merged
+        .into_iter()
+        .map(|(symbol, name, currency, shares, value, cost)| investments::Position {
+            symbol,
+            name,
+            kind: String::new(),
+            currency: if is_code(&currency) { currency } else { String::new() },
+            quantity: if shares.is_zero() { String::new() } else { shares.text() },
+            price: if shares.is_zero() { String::new() } else { value.over(shares).map(|p| format!("{:.4}", p.text().parse::<f64>().unwrap_or(0.0)).trim_end_matches('0').trim_end_matches('.').to_string()).unwrap_or_default() },
+            value: value.text(),
+            cost: cost.map(Dec::text).unwrap_or_default(),
+        })
+        .collect();
+    Some(investments::Snapshot {
+        source: "simplefin".into(),
+        source_account: sf.id.clone(),
+        as_of: day(if sf.balance_date > 0 { sf.balance_date } else { fetched }, tz).to_string(),
+        currency: if is_code(sf.currency.trim()) { sf.currency.trim().to_ascii_uppercase() } else { String::new() },
+        rate: String::new(),
+        positions,
+        cash: String::new(),
+        total: Dec::parse(&sf.balance).map(Dec::text).unwrap_or_default(),
+    })
+}
+/// The budget with what each linked investment account holds, from the download: a tracking
+/// account whose SimpleFIN account sends holdings follows them, as an Interactive Brokers
+/// account follows its statement. One that can't take them (Interactive Brokers fills it, or
+/// it's in a currency no rate was given for) is left as it was.
+fn with_holdings<Tz: TimeZone>(mut b: Budget, set: &AccountSet, fetched: i64, tz: &Tz) -> Budget {
+    let linked: Vec<(String, String)> = b.accounts.iter().filter(|a| !a.archived && a.kind == AccountKind::Tracking).filter_map(|a| Some((a.id.clone(), link(a)?.id))).collect();
+    for (account, id) in linked {
+        let Some(snapshot) = set.accounts.iter().find(|s| s.id == id).and_then(|sf| holdings_of(sf, fetched, tz)) else { continue };
+        if let Ok(next) = investments::record(b.clone(), &account, snapshot) {
+            b = next;
+        }
+    }
+    b
+}
+
 /// A SimpleFIN account, for choosing which budget account it fills.
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -469,6 +566,13 @@ pub struct AccountReview<R = Row> {
     pub balance_date: Option<String>,
     /// Why this account can't be reviewed.
     pub error: Option<String>,
+    /// How many holdings the bank sent for it: more than none, and `simplefin_holdings` has
+    /// something to bring in.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub holdings: usize,
+}
+fn is_zero(n: &usize) -> bool {
+    *n == 0
 }
 /// Review rows for one linked account: its transactions posted from `start` until the download
 /// at `fetched`, dated where the user is, in cents with deposits positive (a card's purchases
@@ -595,6 +699,7 @@ fn reviews_with<Tz: TimeZone, R>(
                 balance: sf.and_then(|s| cents(&s.balance)).map(|n| if l.flip_signs { -n } else { n }),
                 balance_date: sf.filter(|s| s.balance_date > 0).map(|s| day(s.balance_date, tz).to_string()),
                 error,
+                holdings: if a.kind == AccountKind::Tracking { sf.map_or(0, |s| s.holdings.len()) } else { 0 },
             }
         })
         .collect()
@@ -817,6 +922,16 @@ fn mark_synced(mut b: Budget, account: &str, through: &str) -> Result<Budget, St
     link.insert("lastSync".into(), json!(through));
     Ok(b)
 }
+/// Brings what the linked investment accounts hold into the budget, from the last download:
+/// the holdings and value a brokerage sends with its balance (see `with_holdings`). Nothing
+/// changes when no download is at hand or none of them sends holdings.
+pub fn simplefin_holdings(db: &Database, state: &SimpleFin, patch: Option<Patch>) -> Result<Patch, String> {
+    let last = state.last.lock().map_err(|_| t!("Bank sync stopped. Try again."))?;
+    db.change(patch, |b| Ok(match last.as_ref() {
+        Some(last) => with_holdings(b, &last.set, last.at, &Local),
+        None => b,
+    }))
+}
 /// Opens SimpleFIN Bridge's page for making a setup token.
 pub fn simplefin_open() -> Result<(), String> {
     crate::host::open_browser(CREATE)
@@ -832,6 +947,7 @@ pub async fn dispatch(method: &str, p: Value, db: &Database, state: &SimpleFin) 
         "simplefin_disconnect" => encode(simplefin_disconnect(state)?),
         "simplefin_open" => { simplefin_open()?; Ok(Value::Null) },
         "simplefin_sync" => serde_json::to_value(simplefin_sync(db, state, None, p["refresh"].as_bool().unwrap_or(true)).await?).map_err(|e| e.to_string()),
+        "simplefin_holdings" => serde_json::to_value(simplefin_holdings(db, state, None)?).map_err(|e| e.to_string()),
         "simplefin_import" => {
             let choices = serde_json::from_value(p["choices"].clone()).map_err(|e| format!("Invalid bank import choices: {e}"))?;
             let patch = simplefin_import(db, None, p["account"].as_str().unwrap_or_default().into(), choices, p["through"].as_str().unwrap_or_default().into())?;

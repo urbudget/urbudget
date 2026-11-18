@@ -164,7 +164,7 @@ class BudgetViewModel internal constructor(application: Application, private val
 
     fun service(method: String, params: JSONObject = JSONObject(), onError: (String) -> Unit = { notifyError(it) }, callback: (Any?) -> Unit = {}): Job {
         val shown = state.value
-        val guard = if (method in setOf("simplefin_import", "sync_ynab", "accept_ynab_import", "resolve_ynab", "assistant_apply") && shown.budget != null) BudgetEditGuard.whole(shown.budget, shown.budgetIdentity) else null
+        val guard = if (method in setOf("simplefin_import", "simplefin_holdings", "ibkr_apply", "ibkr_import", "sync_ynab", "accept_ynab_import", "resolve_ynab", "assistant_apply") && shown.budget != null) BudgetEditGuard.whole(shown.budget, shown.budgetIdentity) else null
         val independent = NativeServicePolicy.independent(method)
         suspend fun perform(active: () -> Boolean, canInvoke: () -> Boolean = active) {
             var invoked = false

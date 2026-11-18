@@ -52,10 +52,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import app.urbudget.nativeapp.AccountChip
 import app.urbudget.nativeapp.Money
 import app.urbudget.nativeapp.R
 import app.urbudget.nativeapp.AgeView
+import app.urbudget.nativeapp.AllocationView
+import app.urbudget.nativeapp.InvestIncomeView
+import app.urbudget.nativeapp.PerformanceView
+import app.urbudget.nativeapp.ReportNote
 import app.urbudget.nativeapp.BalanceSheetView
 import app.urbudget.nativeapp.BalancesView
 import app.urbudget.nativeapp.CalendarView
@@ -84,6 +89,9 @@ import app.urbudget.nativeapp.Tone
 import app.urbudget.nativeapp.customRange
 import app.urbudget.nativeapp.filterIsOn
 import app.urbudget.nativeapp.filterToggle
+import app.urbudget.nativeapp.foldRows
+import app.urbudget.nativeapp.shownRows
+import app.urbudget.nativeapp.folds
 import app.urbudget.nativeapp.rangeFor
 import java.time.YearMonth
 
@@ -99,6 +107,12 @@ internal class ReportActions(
     val toggleChart: (String) -> Unit,
     val toggleExpand: (String) -> Unit,
     val showAllPayees: () -> Unit,
+    /** What the allocation's ring is by: kind, account or currency. */
+    val setBy: (String) -> Unit = {},
+    /** Opens an account's Holdings page. */
+    val openHoldings: ((String) -> Unit)? = null,
+    /** Offers the ways to keep an account up to date; with no account, the Investments page. */
+    val setUpHoldings: ((String) -> Unit)? = null,
 )
 
 /**
@@ -152,22 +166,49 @@ internal fun LazyListScope.panel(key: String, content: @Composable ColumnScope.(
     }
 }
 
-/** A card of rows, each its own lazy item, between an optional head and foot. */
+/** Whether a long list is opened out, and the way to open and close it. */
+internal class Fold(val open: Boolean, val toggle: () -> Unit)
+
+/** The lists of a view that are opened out, each by its card's key. */
+internal class Folds(private val expanded: Set<String>, private val toggle: (String) -> Unit) {
+    fun of(key: String) = Fold("fold:$key" in expanded) { toggle("fold:$key") }
+}
+
+/**
+ * A card of rows, each its own lazy item, between an optional head and foot. With a [fold], a list
+ * longer than six rows shows six, and the rest behind "Show all": a view leads with its figures
+ * and charts, and a long list waits to be asked for.
+ */
 internal fun <T> LazyListScope.card(
-    key: String, rows: List<T>, rowKey: (T) -> Any, rowType: String,
+    key: String, rows: List<T>, rowKey: (T) -> Any, rowType: String, fold: Fold? = null,
     head: (@Composable ColumnScope.() -> Unit)? = null, foot: (@Composable ColumnScope.() -> Unit)? = null,
     row: @Composable (T, Boolean) -> Unit,
 ) {
     val hasFoot = foot != null
+    val folding = fold != null && folds(rows.size)
+    val shown = if (fold != null) foldRows(rows, fold.open) else rows
     if (head != null) item(key = "$key:head", contentType = "$rowType:head") {
         CardPart(top = true, bottom = rows.isEmpty() && !hasFoot) { Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp), content = head) }
     }
-    itemsIndexed(rows, key = { _, r -> "$key:${rowKey(r)}" }, contentType = { _, _ -> rowType }) { i, r ->
-        CardPart(top = head == null && i == 0, bottom = !hasFoot && i == rows.lastIndex) { row(r, i < rows.lastIndex) }
+    itemsIndexed(shown, key = { _, r -> "$key:${rowKey(r)}" }, contentType = { _, _ -> rowType }) { i, r ->
+        CardPart(top = head == null && i == 0, bottom = !hasFoot && !folding && i == shown.lastIndex) { row(r, i < shown.lastIndex || folding) }
+    }
+    if (folding && fold != null) item(key = "$key:fold", contentType = "fold") {
+        CardPart(top = false, bottom = !hasFoot) {
+            FoldText(if (fold.open) stringResource(R.string.ibkr_show_fewer) else stringResource(R.string.show_all_count, Money.count(rows.size.toLong())), fold.toggle)
+            if (hasFoot) Hairline(start = 16.dp)
+        }
     }
     if (foot != null) item(key = "$key:foot", contentType = "$rowType:foot") {
         CardPart(top = head == null && rows.isEmpty(), bottom = true) { Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp), content = foot) }
     }
+}
+
+/** What opens a folded list out, or folds it again. */
+@Composable
+private fun FoldText(text: String, toggle: () -> Unit) {
+    Text(text, Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = toggle).padding(horizontal = 16.dp, vertical = 14.dp),
+        color = ur.accent, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
 }
 
 /** The headline figures, two to a row. */
@@ -190,6 +231,13 @@ internal fun FigureRowView(row: FigureRow, onClick: (() -> Unit)?, divider: Bool
     if (row.style == RowStyle.Section) {
         Text(row.title, Modifier.fillMaxWidth().background(ur.surface2).padding(horizontal = 16.dp, vertical = 8.dp),
             color = ur.muted, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+        return
+    }
+    if (row.style == RowStyle.Note) {
+        Column {
+            HelpText(row.title, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp))
+            if (divider) Hairline(start = 16.dp)
+        }
         return
     }
     val strong = row.style == RowStyle.Total || row.style == RowStyle.Net || row.style == RowStyle.Group
@@ -218,25 +266,29 @@ internal fun FigureRowView(row: FigureRow, onClick: (() -> Unit)?, divider: Bool
 /** Lays out a report's body as lazy items. */
 internal fun LazyListScope.reportBody(view: ReportView, actions: ReportActions, expanded: Set<String>, payeeQuery: String, onPayeeQuery: (String) -> Unit, payees: List<PayeeRow>,
                                        pick: ChartPick) {
+    val folds = Folds(expanded, actions.toggleExpand)
     when (view) {
-        is CategoryView -> categoryBody(view, actions, pick)
-        is PayeeView -> payeeBody(view, actions, payeeQuery, onPayeeQuery, payees, pick)
-        is OverTimeView -> overTimeBody(view, actions)
-        is CalendarView -> calendarBody(view, actions)
-        is IncomeExpenseView -> incomeExpenseBody(view, actions, expanded)
-        is IncomeView -> incomeBody(view, actions, pick)
-        is CashFlowView -> cashFlowBody(view)
-        is NetWorthView -> netWorthBody(view)
-        is BalanceSheetView -> balanceSheetBody(view)
-        is BalancesView -> balancesBody(view, actions)
-        is AgeView -> ageBody(view)
+        is CategoryView -> categoryBody(view, actions, pick, folds)
+        is PayeeView -> payeeBody(view, actions, payeeQuery, onPayeeQuery, payees, pick, folds)
+        is OverTimeView -> overTimeBody(view, actions, folds)
+        is CalendarView -> calendarBody(view, actions, folds)
+        is IncomeExpenseView -> incomeExpenseBody(view, actions, expanded, folds)
+        is IncomeView -> incomeBody(view, actions, pick, folds)
+        is CashFlowView -> cashFlowBody(view, folds)
+        is NetWorthView -> netWorthBody(view, folds)
+        is BalanceSheetView -> balanceSheetBody(view, folds)
+        is BalancesView -> balancesBody(view, actions, folds)
+        is AgeView -> ageBody(view, folds)
+        is PerformanceView -> performanceBody(view, actions, folds)
+        is AllocationView -> allocationBody(view, actions, pick, folds)
+        is InvestIncomeView -> investIncomeBody(view, actions, folds)
     }
 }
 
 /** Where the "All payees" card starts within a payee report's body, for the jump to it. */
 internal fun payeeListOffset(view: PayeeView) = tileRowCount(view.tiles) + 1
 
-private fun LazyListScope.categoryBody(v: CategoryView, a: ReportActions, pick: ChartPick) {
+private fun LazyListScope.categoryBody(v: CategoryView, a: ReportActions, pick: ChartPick, folds: Folds) {
     tileRows("categories", v.tiles)
     val open: (String) -> Unit = { key ->
         if (key != "__other") {
@@ -247,7 +299,7 @@ private fun LazyListScope.categoryBody(v: CategoryView, a: ReportActions, pick: 
     // A row in the "Other" slice is picked with it.
     val otherKeys = v.rows.filter { it.color == ReportColors.OTHER }.map { it.key }.toSet()
     fun pickedRow(key: String): Boolean? = pick.key?.let { it == key || (it == "__other" && key in otherKeys) }
-    card("categories:list", v.rows, { it.key }, "bar", head = {
+    card("categories:list", v.rows, { it.key }, "bar", fold = folds.of("categories:list"), head = {
         if (v.group != null) Row(verticalAlignment = Alignment.CenterVertically) {
             Row(Modifier.clip(RoundedCornerShape(8.dp)).clickable { a.setGroup(null) }.padding(end = 6.dp, top = 2.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.AutoMirrored.Outlined.KeyboardArrowLeft, null, Modifier.size(20.dp), tint = ur.accent)
@@ -263,7 +315,7 @@ private fun LazyListScope.categoryBody(v: CategoryView, a: ReportActions, pick: 
         if (divider) Hairline(start = 16.dp)
     }
     v.changes?.let { c ->
-        card("categories:changes", c.rows, { it.key }, "diverging", head = {
+        card("categories:changes", c.rows, { it.key }, "diverging", fold = folds.of("categories:changes"), head = {
             PanelTitle(c.title, c.aside)
             if (c.rows.isEmpty()) EmptyText(stringResource(R.string.reports_matched_average))
         }, foot = if (c.rows.isEmpty()) null else ({ ChartLegend(c.legend) })) { row, divider ->
@@ -273,7 +325,7 @@ private fun LazyListScope.categoryBody(v: CategoryView, a: ReportActions, pick: 
     }
 }
 
-private fun LazyListScope.payeeBody(v: PayeeView, a: ReportActions, query: String, onQuery: (String) -> Unit, payees: List<PayeeRow>, pick: ChartPick) {
+private fun LazyListScope.payeeBody(v: PayeeView, a: ReportActions, query: String, onQuery: (String) -> Unit, payees: List<PayeeRow>, pick: ChartPick, folds: Folds) {
     tileRows("payees", v.tiles)
     panel("payees:map") {
         PanelTitle(v.title, v.aside)
@@ -290,7 +342,8 @@ private fun LazyListScope.payeeBody(v: PayeeView, a: ReportActions, query: Strin
                 color = ur.accent, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
         }
     }
-    card("payees:all", payees, { it.key }, "payee", head = {
+    // A search lists everything it finds; the whole list folds.
+    card("payees:all", payees, { it.key }, "payee", fold = if (query.isBlank()) folds.of("payees:all") else null, head = {
         PanelTitle(stringResource(R.string.reports_all_payees))
         SearchField(query, onQuery, stringResource(R.string.reports_find_payee))
         if (payees.isEmpty()) EmptyText(stringResource(R.string.reports_no_payees_match))
@@ -310,9 +363,9 @@ private fun LazyListScope.payeeBody(v: PayeeView, a: ReportActions, query: Strin
     }
 }
 
-private fun LazyListScope.overTimeBody(v: OverTimeView, a: ReportActions) {
+private fun LazyListScope.overTimeBody(v: OverTimeView, a: ReportActions, folds: Folds) {
     tileRows("trends", v.tiles)
-    card("trends:months", v.rows, { it.key }, "month", head = {
+    card("trends:months", v.rows, { it.key }, "month", fold = folds.of("trends:months"), head = {
         PanelTitle(stringResource(R.string.report_chart_spending_by_month))
         Segmented(listOf("groups" to stringResource(R.string.reports_by_group), "total" to stringResource(R.string.report_total)), if (v.byGroup) "groups" else "total", { a.setByGroup(it == "groups") })
         ColumnChart(v.chart, v.legend)
@@ -358,7 +411,7 @@ private fun HeatPanel(heat: HeatModel, drill: (DrillTarget) -> Unit) {
     }
 }
 
-private fun LazyListScope.calendarBody(v: CalendarView, a: ReportActions) {
+private fun LazyListScope.calendarBody(v: CalendarView, a: ReportActions, folds: Folds) {
     tileRows("calendar", v.tiles)
     panel("calendar:heat") {
         PanelTitle(stringResource(R.string.reports_spending_by_day))
@@ -368,13 +421,13 @@ private fun LazyListScope.calendarBody(v: CalendarView, a: ReportActions) {
         PanelTitle(stringResource(R.string.reports_by_weekday), stringResource(R.string.reports_average_spent))
         ColumnChart(v.weekdays, height = 200.dp)
     }
-    card("calendar:biggest", v.biggest, { it.key }, "day", head = {
+    card("calendar:biggest", v.biggest, { it.key }, "day", fold = folds.of("calendar:biggest"), head = {
         PanelTitle(stringResource(R.string.reports_biggest_days))
         if (v.biggest.isEmpty()) EmptyText(stringResource(R.string.reports_no_spending))
     }) { row, divider -> FigureRowView(row, row.drill?.let { t -> { a.drill(t) } }, divider) }
 }
 
-private fun LazyListScope.incomeExpenseBody(v: IncomeExpenseView, a: ReportActions, expanded: Set<String>) {
+private fun LazyListScope.incomeExpenseBody(v: IncomeExpenseView, a: ReportActions, expanded: Set<String>, folds: Folds) {
     tileRows("incomeExpense", v.tiles)
     item(key = "incomeExpense:help", contentType = "help") { HelpText(v.help, Modifier.padding(top = 12.dp, start = 4.dp, end = 4.dp)) }
     panel("incomeExpense:chart") {
@@ -390,15 +443,15 @@ private fun LazyListScope.incomeExpenseBody(v: IncomeExpenseView, a: ReportActio
         LinesChart(v.cumulative, height = 200.dp)
     }
     val rows = v.table.flatMap { r -> if (r.expand != null && r.expand in expanded) listOf(r) + v.children[r.expand].orEmpty() else listOf(r) }
-    card("incomeExpense:table", rows, { it.key }, "figure", head = { PanelTitle(stringResource(R.string.reports_income_and_spending), stringResource(R.string.reports_select_group)) }) { row, divider ->
+    card("incomeExpense:table", rows, { it.key }, "figure", fold = folds.of("incomeExpense:table"), head = { PanelTitle(stringResource(R.string.reports_income_and_spending), stringResource(R.string.reports_select_group)) }) { row, divider ->
         FigureRowView(row, row.expand?.let { g -> { a.toggleExpand(g) } }, divider, expanded = row.expand in expanded)
     }
-    card("incomeExpense:months", v.months, { it.key }, "figure", head = { PanelTitle(stringResource(R.string.reports_by_month), stringResource(R.string.reports_surplus_each_month)) }) { row, divider -> FigureRowView(row, null, divider) }
+    card("incomeExpense:months", v.months, { it.key }, "figure", fold = folds.of("incomeExpense:months"), head = { PanelTitle(stringResource(R.string.reports_by_month), stringResource(R.string.reports_surplus_each_month)) }) { row, divider -> FigureRowView(row, null, divider) }
 }
 
-private fun LazyListScope.incomeBody(v: IncomeView, a: ReportActions, pick: ChartPick) {
+private fun LazyListScope.incomeBody(v: IncomeView, a: ReportActions, pick: ChartPick, folds: Folds) {
     tileRows("income", v.tiles)
-    card("income:bars", v.bars, { it.key }, "bar", head = {
+    card("income:bars", v.bars, { it.key }, "bar", fold = folds.of("income:bars"), head = {
         PanelTitle(stringResource(R.string.reports_income_from))
         // One source is the whole of it: its row says so, without a full ring.
         if (v.slices.size > 1) Donut(v.slices, v.centerValue, stringResource(R.string.reports_positive_sources), pick.key, { pick.key = it }, null, Modifier.align(Alignment.CenterHorizontally))
@@ -413,12 +466,12 @@ private fun LazyListScope.incomeBody(v: IncomeView, a: ReportActions, pick: Char
             ColumnChart(chart, v.legend)
         }
     }
-    card("income:sources", v.sources, { it.key }, "figure", head = { PanelTitle(stringResource(R.string.reports_sources)) }, foot = v.sourcesHelp?.let { help -> { HelpText(help) } }) { row, divider ->
+    card("income:sources", v.sources, { it.key }, "figure", fold = folds.of("income:sources"), head = { PanelTitle(stringResource(R.string.reports_sources)) }, foot = v.sourcesHelp?.let { help -> { HelpText(help) } }) { row, divider ->
         FigureRowView(row, row.drill?.let { t -> { a.drill(t) } }, divider)
     }
 }
 
-private fun LazyListScope.cashFlowBody(v: CashFlowView) {
+private fun LazyListScope.cashFlowBody(v: CashFlowView, folds: Folds) {
     tileRows("cashflow", v.tiles)
     panel("cashflow:chart") {
         PanelTitle(stringResource(R.string.reports_money_in_out_by_month))
@@ -429,10 +482,10 @@ private fun LazyListScope.cashFlowBody(v: CashFlowView) {
         PanelTitle(stringResource(R.string.report_running_total), stringResource(R.string.reports_net_flow_added_up))
         LinesChart(v.running, height = 200.dp)
     }
-    card("cashflow:months", v.months, { it.key }, "figure", head = { PanelTitle(stringResource(R.string.reports_by_month), stringResource(R.string.reports_net_flow_each_month)) }) { row, divider -> FigureRowView(row, null, divider) }
+    card("cashflow:months", v.months, { it.key }, "figure", fold = folds.of("cashflow:months"), head = { PanelTitle(stringResource(R.string.reports_by_month), stringResource(R.string.reports_net_flow_each_month)) }) { row, divider -> FigureRowView(row, null, divider) }
 }
 
-private fun LazyListScope.netWorthBody(v: NetWorthView) {
+private fun LazyListScope.netWorthBody(v: NetWorthView, folds: Folds) {
     tileRows("networth", v.tiles)
     panel("networth:chart") {
         PanelTitle(stringResource(R.string.reports_assets_debts_net_worth))
@@ -442,12 +495,12 @@ private fun LazyListScope.netWorthBody(v: NetWorthView) {
         PanelTitle(stringResource(R.string.reports_change_each_month))
         ColumnChart(v.change, v.changeLegend, height = 200.dp)
     }
-    card("networth:accounts", v.accounts, { it.key }, "figure", head = { PanelTitle(stringResource(R.string.reports_by_account), v.dates) }) { row, divider -> FigureRowView(row, null, divider) }
+    card("networth:accounts", v.accounts, { it.key }, "figure", fold = folds.of("networth:accounts"), head = { PanelTitle(stringResource(R.string.reports_by_account), v.dates) }) { row, divider -> FigureRowView(row, null, divider) }
 }
 
-private fun LazyListScope.balanceSheetBody(v: BalanceSheetView) {
+private fun LazyListScope.balanceSheetBody(v: BalanceSheetView, folds: Folds) {
     tileRows("balance", v.tiles)
-    card("balance:own", v.own, { it.key }, "bar", head = {
+    card("balance:own", v.own, { it.key }, "bar", fold = folds.of("balance:own"), head = {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f)) { PanelTitle(stringResource(R.string.reports_what_you_own)) }
             Text(v.ownTotal, color = ur.text, style = MaterialTheme.typography.titleMedium.merge(Tabular))
@@ -457,7 +510,7 @@ private fun LazyListScope.balanceSheetBody(v: BalanceSheetView) {
         BarRowView(row, 0, null)
         if (divider) Hairline(start = 16.dp)
     }
-    card("balance:owe", v.owe, { it.key }, "bar", head = {
+    card("balance:owe", v.owe, { it.key }, "bar", fold = folds.of("balance:owe"), head = {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f)) { PanelTitle(stringResource(R.string.reports_what_you_owe)) }
             Text(v.oweTotal, color = ur.text, style = MaterialTheme.typography.titleMedium.merge(Tabular))
@@ -467,8 +520,16 @@ private fun LazyListScope.balanceSheetBody(v: BalanceSheetView) {
         BarRowView(row, 1, null)
         if (divider) Hairline(start = 16.dp)
     }
-    card("balance:statement", v.statement, { it.key }, "figure", head = { PanelTitle(stringResource(R.string.reports_statement), v.statementAside); HelpText(v.dates) },
-        foot = { HelpText(v.help) }) { row, divider -> FigureRowView(row, null, divider && row.style != RowStyle.Section) }
+    // The statement stays open, but a section of many holdings shows six until it's opened out.
+    val statement = shownRows(v.statement) { folds.of(it).open }
+    card("balance:statement", statement, { it.key }, "figure", head = { PanelTitle(stringResource(R.string.reports_statement), v.statementAside); HelpText(v.dates) },
+        foot = { HelpText(v.help) }) { row, divider ->
+        val fold = row.expand?.takeIf { row.style == RowStyle.More }?.let(folds::of)
+        if (fold != null) Column {
+            FoldText(if (fold.open) stringResource(R.string.ibkr_show_fewer) else row.title, fold.toggle)
+            if (divider) Hairline(start = 16.dp)
+        } else FigureRowView(row, null, divider && row.style != RowStyle.Section)
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -492,7 +553,7 @@ private fun AccountChips(chips: List<AccountChip>, toggle: (String) -> Unit) {
     }
 }
 
-private fun LazyListScope.balancesBody(v: BalancesView, a: ReportActions) {
+private fun LazyListScope.balancesBody(v: BalancesView, a: ReportActions, folds: Folds) {
     tileRows("balances", v.tiles)
     panel("balances:chart") {
         PanelTitle(stringResource(R.string.reports_balances_month_end))
@@ -502,18 +563,85 @@ private fun LazyListScope.balancesBody(v: BalancesView, a: ReportActions) {
             ChartLegend(v.legend)
         } else EmptyText(stringResource(R.string.reports_choose_accounts))
     }
-    card("balances:accounts", v.rows, { it.key }, "figure", head = { PanelTitle(stringResource(R.string.reports_all_accounts)) }, foot = { HelpText(stringResource(R.string.reports_balances_help)) }) { row, divider ->
+    card("balances:accounts", v.rows, { it.key }, "figure", fold = folds.of("balances:accounts"), head = { PanelTitle(stringResource(R.string.reports_all_accounts)) }, foot = { HelpText(stringResource(R.string.reports_balances_help)) }) { row, divider ->
         FigureRowView(row, null, divider)
     }
 }
 
-private fun LazyListScope.ageBody(v: AgeView) {
+private fun LazyListScope.ageBody(v: AgeView, folds: Folds) {
     tileRows("age", v.tiles)
-    card("age:months", v.rows, { it.key }, "figure", head = {
+    card("age:months", v.rows, { it.key }, "figure", fold = folds.of("age:months"), head = {
         PanelTitle(stringResource(R.string.reports_cash_age_month_end))
         LinesChart(v.chart)
         HelpText(stringResource(R.string.reports_cash_age_help))
     }) { row, divider -> FigureRowView(row, null, divider) }
+}
+
+/** The notes under an investment report, each a notice of its own; one about accounts nothing fills offers the way to set one up. */
+private fun LazyListScope.reportNotes(key: String, notes: List<ReportNote>, a: ReportActions) {
+    items(notes, key = { "$key:note:${it.key}" }, contentType = { "note" }) { note ->
+        val setUp = note.setUp?.let { account -> a.setUpHoldings?.let { open -> { open(account) } } }
+        Notice(note.text, Modifier.padding(top = 12.dp), tone = "info", action = if (setUp != null) stringResource(R.string.holdings_set_up) else null, onAction = setUp)
+    }
+}
+
+private fun LazyListScope.performanceBody(v: PerformanceView, a: ReportActions, folds: Folds) {
+    tileRows("performance", v.tiles)
+    panel("performance:value") {
+        PanelTitle(stringResource(R.string.ibkr_value))
+        ColumnChart(v.value, v.valueLegend)
+    }
+    v.gains?.let { chart ->
+        panel("performance:gains") {
+            PanelTitle(stringResource(R.string.reports_gain_each_month))
+            ColumnChart(chart, height = 200.dp)
+        }
+    }
+    card("performance:accounts", v.accounts, { it.key }, "holding", fold = folds.of("performance:accounts"), head = { PanelTitle(stringResource(R.string.reports_by_account)) }) { row, divider ->
+        HoldingRow(row, divider, grow = false, Modifier, onClick = live(row.open?.let { account -> a.openHoldings?.let { open -> { open(account) } } }))
+    }
+    reportNotes("performance", v.notes, a)
+}
+
+private fun LazyListScope.allocationBody(v: AllocationView, a: ReportActions, pick: ChartPick, folds: Folds) {
+    tileRows("allocation", v.tiles)
+    card("allocation:parts", v.bars, { it.key }, "bar", fold = folds.of("allocation:parts"), head = {
+        PanelTitle(stringResource(R.string.ibkr_holdings_title), v.asOf)
+        Segmented(listOf("kind" to stringResource(R.string.reports_by_kind), "account" to stringResource(R.string.reports_by_account),
+            "currency" to stringResource(R.string.reports_by_currency)), v.by, a.setBy)
+        // One part is the whole of it: its row says so, without a full ring.
+        if (v.slices.size > 1) Donut(v.slices, v.centerValue, v.centerLabel, pick.key, { pick.key = it }, null, Modifier.align(Alignment.CenterHorizontally))
+    }, foot = { HelpText(stringResource(R.string.reports_todays_holdings)) }) { row, divider ->
+        BarRowView(row, 0, if (v.slices.size > 1) live { pick.key = if (pick.key == row.key) null else row.key } else null, pick.key?.let { it == row.key })
+        if (divider) Hairline(start = 16.dp)
+    }
+    if (v.holdings.isNotEmpty()) card("allocation:holdings", v.holdings, { it.key }, "holding", fold = folds.of("allocation:holdings"), head = {
+        PanelTitle(stringResource(R.string.reports_largest_holdings), v.holdingsAside)
+        v.onCost?.let { HelpText(it) }
+    }) { row, divider -> HoldingRow(row, divider, grow = false, Modifier) }
+    if (v.prices.isNotEmpty()) card("allocation:prices", v.prices, { it.key }, "figure", fold = folds.of("allocation:prices"), head = { PanelTitle(stringResource(R.string.holdings_prices_from)) }) { row, divider ->
+        FigureRowView(row, null, divider)
+    }
+    reportNotes("allocation", v.notes, a)
+}
+
+private fun LazyListScope.investIncomeBody(v: InvestIncomeView, a: ReportActions, folds: Folds) {
+    tileRows("investIncome", v.tiles)
+    v.chart?.let { chart ->
+        panel("investIncome:months") {
+            PanelTitle(stringResource(R.string.reports_by_month))
+            ColumnChart(chart, v.legend)
+        }
+    }
+    if (v.lines.isNotEmpty()) card("investIncome:lines", v.lines, { it.key }, "figure", head = { PanelTitle(stringResource(R.string.report_total), v.dates) }) { row, divider ->
+        FigureRowView(row, null, divider)
+    }
+    if (v.accounts.isNotEmpty()) card("investIncome:accounts", v.accounts, { it.key }, "figure", fold = folds.of("investIncome:accounts"), head = { PanelTitle(stringResource(R.string.reports_by_account)) }) { row, divider ->
+        FigureRowView(row, null, divider)
+    }
+    if (v.holdings.isNotEmpty()) card("investIncome:holdings", v.holdings, { it.key }, "figure", fold = folds.of("investIncome:holdings"),
+        head = { PanelTitle(stringResource(R.string.reports_by_holding)) }) { row, divider -> FigureRowView(row, null, divider) }
+    reportNotes("investIncome", v.notes, a)
 }
 
 @Composable
@@ -536,6 +664,7 @@ private fun ForecastRowView(row: ForecastRow, divider: Boolean) {
 /** The forecast's body: what's known ahead, the line with everyday spending, and what's coming up. */
 internal fun LazyListScope.forecastBody(
     v: ForecastView?, ahead: Int, setAhead: (Int) -> Unit, error: String?, retry: () -> Unit, editEveryday: () -> Unit, useSuggested: () -> Unit,
+    eventsOpen: Boolean, toggleEvents: () -> Unit,
 ) {
     if (v != null) tileRows("forecast", v.tiles)
     panel("forecast:chart") {
@@ -562,7 +691,7 @@ internal fun LazyListScope.forecastBody(
             else -> LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 24.dp), color = ur.accent)
         }
     }
-    if (v != null) card("forecast:events", v.rows, { it.key }, "event", head = {
+    if (v != null) card("forecast:events", v.rows, { it.key }, "event", fold = Fold(eventsOpen, toggleEvents), head = {
         PanelTitle(stringResource(R.string.reports_coming_up), v.count)
         if (v.rows.isEmpty()) {
             EmptyText(stringResource(R.string.reports_nothing_ahead))

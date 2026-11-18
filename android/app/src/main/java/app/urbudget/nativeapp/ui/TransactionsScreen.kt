@@ -52,6 +52,7 @@ import app.urbudget.nativeapp.AccountTypes
 import app.urbudget.nativeapp.EditorCheckpoint
 import app.urbudget.nativeapp.BudgetEditGuard
 import app.urbudget.nativeapp.BudgetViewModel
+import app.urbudget.nativeapp.Investments
 import app.urbudget.nativeapp.Money
 import app.urbudget.nativeapp.PayeeInfo
 import app.urbudget.nativeapp.traced
@@ -215,6 +216,10 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
     val account = remember(budget, accountFilter) { if (accountFilter.isBlank()) null else budget.row("accounts", accountFilter) }
     val accountBalance = remember(summary, account) { account?.let { a -> summary?.rows("accounts")?.firstOrNull { it.text("id") == accountFilter }?.optLong("balance") ?: a.optLong("openingBalance") } ?: 0L }
     // A debt, or any account with loan details, shows where the loan stands.
+    val holdingsShown = remember(budget, accountFilter) { accountFilter.isNotEmpty() && Investments.of(budget, accountFilter) != null }
+    // An investment account no broker fills is asked about once; "Not now" puts the question away.
+    val brokerAsked = LocalPreferences.current.ibkrPromptHidden
+    val brokerPrompt = remember(budget, account, brokerAsked) { account != null && !brokerAsked && Investments.promptable(account, budget) }
     val loanShown = remember(budget, account, accountBalance) { account != null && AccountTypes.hasLoan(account, accountBalance, budget.rows("loans").map { it.text("accountId") }.toSet()) }
     val categories = remember(budget) { budget.rows("categories").associate { it.text("id") to it.text("name") } }
     val language = languageKey()
@@ -350,6 +355,13 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
                 if (account != null && summary != null && loanShown) item(key = "loan", contentType = "loan") {
                     LoanHeader(account, budget, accountBalance, vm, Modifier.padding(horizontal = cardInset).padding(bottom = 14.dp))
                 }
+                // What an investment account holds, as its broker reports it (InvestmentsScreen.kt).
+                if (account != null && holdingsShown) item(key = "holdings", contentType = "holdings") {
+                    HoldingsCard(account, budget, vm, Modifier.padding(horizontal = cardInset).padding(bottom = 14.dp))
+                }
+                if (brokerPrompt && !selecting) item(key = "broker-prompt", contentType = "holdings") {
+                    IbkrPrompt(accountFilter, Modifier.padding(horizontal = cardInset).padding(bottom = 14.dp))
+                }
                 if (toApprove > 0 && status != "approval" && !selecting) item(key = "approve", contentType = "notice") {
                     Notice(countText(R.plurals.transactions_to_approve, toApprove), Modifier.padding(horizontal = cardInset).padding(bottom = 12.dp),
                         tone = "info", action = stringResource(R.string.common_review), onAction = { status = "approval"; searching = true }, icon = Icons.Outlined.NewReleases)
@@ -480,9 +492,9 @@ internal fun Band(text: String, trailing: String? = null, open: Boolean? = null,
 @Composable
 private fun TransactionLine(line: TxLine, selecting: Boolean, selected: Boolean, open: () -> Unit, select: () -> Unit, toggleCleared: () -> Unit,
                             approve: () -> Unit, jump: () -> Unit) {
-    Column(Modifier.background(if (selected) ur.accentSoft else ur.surface).then(if (line.future) Modifier.alpha(.6f) else Modifier)) {
+    Column(Modifier.chosenWash(selected, ur.accentSoft, ur.surface).then(if (line.future) Modifier.alpha(.6f) else Modifier)) {
         Row(Modifier.fillMaxWidth().testTag("tx:${line.id}").combinedClickable(onClick = open, onLongClick = select, onClickLabel = if (selecting) stringResource(R.string.selection_select) else stringResource(R.string.transaction_edit))
-            .padding(start = if (selecting) 8.dp else Gutter, end = 10.dp, top = 9.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            .padding(start = if (selecting) 12.dp else Gutter, end = 10.dp, top = 9.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             if (selecting) Box(Modifier.padding(end = 10.dp).size(24.dp).clip(CircleShape).background(if (selected) ur.accent else Color.Transparent)
                 .border(1.5.dp, if (selected) ur.accent else ur.borderStrong, CircleShape), contentAlignment = Alignment.Center) {
                 if (selected) Icon(Icons.Outlined.Check, null, Modifier.size(15.dp), tint = ur.surface)
@@ -569,11 +581,11 @@ private fun ScheduleLine(schedule: JSONObject, budget: JSONObject, categories: M
             }
             Box {
                 IconButton({ menu = true }, Modifier.size(36.dp)) { Icon(Icons.Outlined.MoreHoriz, stringResource(R.string.schedule_actions), Modifier.size(18.dp), tint = ur.muted) }
-                DropdownMenu(menu, { menu = false }, shape = RoundedCornerShape(16.dp), containerColor = ur.surface) {
-                    DropdownMenuItem(text = { Text(stringResource(R.string.common_edit)) }, leadingIcon = { Icon(Icons.Outlined.Edit, null) }, onClick = { edit(); menu = false })
-                    DropdownMenuItem(text = { Text(if (paused) stringResource(R.string.schedule_resume) else stringResource(R.string.schedule_pause)) }, leadingIcon = { Icon(if (paused) Icons.Outlined.PlayArrow else Icons.Outlined.Pause, null) },
+                UrMenu(menu, { menu = false }) {
+                    UrMenuItem(text = { Text(stringResource(R.string.common_edit)) }, leadingIcon = { Icon(Icons.Outlined.Edit, null) }, onClick = { edit(); menu = false })
+                    UrMenuItem(text = { Text(if (paused) stringResource(R.string.schedule_resume) else stringResource(R.string.schedule_pause)) }, leadingIcon = { Icon(if (paused) Icons.Outlined.PlayArrow else Icons.Outlined.Pause, null) },
                         onClick = { withCurrentBudget(budget, vm) { vm.upsert("schedules", schedule.copyJson().put("paused", !paused)) }; menu = false })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.common_delete), color = ur.negative) }, leadingIcon = { Icon(Icons.Outlined.DeleteOutline, null, tint = ur.negative) },
+                    UrMenuItem(text = { Text(stringResource(R.string.common_delete), color = ur.negative) }, leadingIcon = { Icon(Icons.Outlined.DeleteOutline, null, tint = ur.negative) },
                         onClick = { withCurrentBudget(budget, vm) { vm.remove("schedules", schedule.text("id")) }; menu = false })
                 }
             }
@@ -626,9 +638,9 @@ private fun SelectionDock(approve: (() -> Unit)?, category: () -> Unit, cleared:
         Action(stringResource(R.string.status_cleared), Icons.Outlined.CheckCircle, onClick = cleared)
         Box(Modifier.weight(1f)) {
             Row { Action(stringResource(R.string.flag_label), Icons.Outlined.Flag) { flagMenu = true } }
-            DropdownMenu(flagMenu, { flagMenu = false }, shape = RoundedCornerShape(16.dp), containerColor = ur.surface) {
-                DropdownMenuItem(text = { Text(stringResource(R.string.flag_none)) }, leadingIcon = { Icon(Icons.Outlined.OutlinedFlag, null) }, onClick = { flag(""); flagMenu = false })
-                flags.forEach { (id, name) -> DropdownMenuItem(text = { Text(Money.own(name)) }, leadingIcon = { FlagDot(id, size = 14.dp) }, onClick = { flag(id); flagMenu = false }) }
+            UrMenu(flagMenu, { flagMenu = false }) {
+                UrMenuItem(text = { Text(stringResource(R.string.flag_none)) }, leadingIcon = { Icon(Icons.Outlined.OutlinedFlag, null) }, onClick = { flag(""); flagMenu = false })
+                flags.forEach { (id, name) -> UrMenuItem(text = { Text(Money.own(name)) }, leadingIcon = { FlagDot(id, size = 14.dp) }, onClick = { flag(id); flagMenu = false }) }
             }
         }
         Action(stringResource(R.string.common_delete), Icons.Outlined.DeleteOutline, ur.negative, delete)
@@ -855,9 +867,9 @@ internal fun TransactionDialog(original: JSONObject?, budget: JSONObject, initia
                         FormRow(Icons.Outlined.Repeat, stringResource(R.string.schedule_repeat), if (repeat == "never") never else repeatChoices.firstOrNull { it.first == repeat }?.second, "") {
                             keypad = false; repeatMenu = true
                         }
-                        DropdownMenu(repeatMenu, { repeatMenu = false }, shape = RoundedCornerShape(16.dp), containerColor = ur.surface) {
+                        UrMenu(repeatMenu, { repeatMenu = false }) {
                             repeatChoices.forEach { (id, name) ->
-                                DropdownMenuItem(text = { Text(if (id == "never") never else name) },
+                                UrMenuItem(text = { Text(if (id == "never") never else name) },
                                     trailingIcon = if (id == repeat) ({ Icon(Icons.Outlined.Check, null, tint = ur.accent) }) else null,
                                     onClick = { repeat = id; repeatMenu = false })
                             }
@@ -888,9 +900,9 @@ internal fun TransactionDialog(original: JSONObject?, budget: JSONObject, initia
                     Box {
                         FormRow(Icons.Outlined.Flag, stringResource(R.string.flag_label), flags.firstOrNull { it.first == flag }?.second, stringResource(R.string.flag_none),
                             leading = if (flag.isNotBlank()) ({ FlagDot(flag, size = 16.dp) }) else null) { flagMenu = true }
-                        DropdownMenu(flagMenu, { flagMenu = false }, shape = RoundedCornerShape(16.dp), containerColor = ur.surface) {
-                            DropdownMenuItem(text = { Text(stringResource(R.string.flag_none)) }, leadingIcon = { Icon(Icons.Outlined.OutlinedFlag, null) }, onClick = { flag = ""; flagMenu = false })
-                            flags.forEach { (id, name) -> DropdownMenuItem(text = { Text(Money.own(name)) }, leadingIcon = { FlagDot(id, size = 14.dp) }, onClick = { flag = id; flagMenu = false }) }
+                        UrMenu(flagMenu, { flagMenu = false }) {
+                            UrMenuItem(text = { Text(stringResource(R.string.flag_none)) }, leadingIcon = { Icon(Icons.Outlined.OutlinedFlag, null) }, onClick = { flag = ""; flagMenu = false })
+                            flags.forEach { (id, name) -> UrMenuItem(text = { Text(Money.own(name)) }, leadingIcon = { FlagDot(id, size = 14.dp) }, onClick = { flag = id; flagMenu = false }) }
                         }
                     }
                     if (!approved) Hairline(start = 52.dp)

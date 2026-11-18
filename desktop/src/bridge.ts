@@ -10,7 +10,9 @@ import type {
   Summary,
   ImportResult,
   LoanTerms,
+  HoldingsPage,
   LoanProjection,
+  Portfolio,
   Transaction,
   SavedYnabToken,
   YnabImportRequest,
@@ -277,6 +279,15 @@ export const api = {
     read<Report>(budget, "calculate_reports", { filter }, signal),
   exportReports: (budget: Budget, filter: ReportFilter) =>
     read<string | null>(budget, "export_reports", { filter }),
+  /** An investment account's page: how it did, what it holds, earned and was charged. Null for one no source fills. */
+  investmentPage: (budget: Budget, accountId: string, signal?: AbortSignal) =>
+    read<HoldingsPage | null>(budget, "investment_page", { accountId }, signal),
+  /** The investment accounts together over the filter's months and accounts; its categories don't apply. */
+  investmentsReport: (budget: Budget, filter: ReportFilter, signal?: AbortSignal) =>
+    read<Portfolio>(budget, "investments_report", { filter }, signal),
+  /** Saves the investments report as CSV: its months, today's holdings, and the income by month. */
+  exportInvestments: (budget: Budget, filter: ReportFilter) =>
+    read<string | null>(budget, "export_investments", { filter }),
   previewSchedules: (
     budget: Budget,
     through: string,
@@ -356,6 +367,10 @@ export type Report = {
     assets: number;
     debt: number;
     netWorth: number;
+    /** What markets changed the investment accounts by that month. */
+    market?: number;
+    /** Money moved into investment accounts less what came back: neither spending nor income. */
+    invested?: number;
     categories: Record<string, number>;
     incomeSources: Record<string, number>;
     accounts: Record<string, number>;
@@ -364,6 +379,7 @@ export type Report = {
   incomeSources: Record<string, number>;
   income: number;
   spending: number;
+  invested?: number;
   ageOfMoney: number | null;
 };
 
@@ -399,6 +415,8 @@ export type BankRow = {
   batch?: string;
   /** The purchase it may be a refund of; imported, it takes that purchase's category when it has none. */
   refundOf?: RefundOf;
+  /** How far from `amount` the same money may be recorded elsewhere: a broker's deposit in another currency. */
+  near?: number;
 };
 export type RefundOf = {
   id: string;

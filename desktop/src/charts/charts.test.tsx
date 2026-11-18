@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { compactMoney, heatLevels, niceTicks, squarify } from "./scale";
-import { ColumnChart, Donut } from "./Charts";
+import { compactMoney, compactMoneyBy, heatLevels, niceTicks, spanTicks, squarify } from "./scale";
+import { ColumnChart, Donut, LinesChart } from "./Charts";
 import { money, shiftDate } from "../format";
 import { today } from "../types";
 
@@ -17,6 +17,9 @@ import { demoBudget } from "../demo";
 afterEach(cleanup);
 beforeEach(() => {
   localStorage.clear();
+  // These tests start where Reports used to: in Spending, by category.
+  sessionStorage.clear();
+  sessionStorage.setItem("lb:reports:place", "categories");
   mocked.read.mockReset();
 });
 
@@ -199,7 +202,7 @@ it("opens a payee's transactions from the payee treemap", async () => {
   );
   const onInspect = vi.fn();
   render(<Reports budget={demoBudget()} budgetId="test" month="2026-10" onInspect={onInspect} />);
-  fireEvent.click(screen.getByRole("tab", { name: "By payee" }));
+  fireEvent.click(screen.getByRole("tab", { name: "Payee" }));
   const map = await screen.findByRole("list", { name: "Spending by payee" });
   const [first] = within(map).getAllByRole("listitem");
   expect(first.getAttribute("aria-label")).toContain("Lulu");
@@ -257,7 +260,6 @@ it("forecasts from today's balance, known money and everyday spending", async ()
       : reportData(),
   );
   render(<Reports budget={b} budgetId="test" month="2026-10" onInspect={vi.fn()} />);
-  fireEvent.click(screen.getByRole("tab", { name: "Wealth" }));
   fireEvent.click(screen.getByRole("tab", { name: "Forecast" }));
   await screen.findByText("Landlord");
   expect(mocked.read).toHaveBeenCalledWith(expect.anything(), "forecast", expect.objectContaining({ today: today() }), expect.any(AbortSignal));
@@ -302,16 +304,16 @@ it("opens every report without errors", async () => {
         }),
   );
   render(<Reports budget={b} budgetId="test" month="2026-10" onInspect={vi.fn()} />);
-  const groups = within(screen.getByRole("tablist", { name: "Report group" })).getAllByRole("tab");
-  expect(groups.map((g) => g.textContent)).toEqual(["Spending", "Income", "Wealth"]);
+  const reports = within(screen.getByRole("tablist", { name: "Reports" })).getAllByRole("tab");
+  expect(reports.map((r) => r.textContent)).toEqual(["Overview", "Spending", "Income", "Net worth", "Balance sheet", "Forecast"]);
   let opened = 0;
-  for (const group of groups) {
-    fireEvent.click(group);
-    const tabs = within(screen.getByRole("tablist", { name: `${group.textContent} reports` })).getAllByRole("tab");
-    for (const tab of tabs) {
-      fireEvent.click(tab);
-      // A tab's short name ("By payee") ends the heading's full one ("Spending by payee").
-      await screen.findByRole("heading", { level: 1, name: new RegExp(`${tab.textContent}$`, "i") });
+  for (const report of reports.slice(1)) {
+    fireEvent.click(report);
+    // The page is headed by the report's name; its views are a switch under that.
+    await screen.findByRole("heading", { level: 1, name: report.textContent! });
+    const views = screen.queryByRole("tablist", { name: "View" });
+    for (const view of views ? within(views).getAllByRole("tab") : [null]) {
+      if (view) fireEvent.click(view);
       await waitFor(() => expect(document.querySelector(".report-tiles")).toBeTruthy());
       opened++;
     }
@@ -319,24 +321,24 @@ it("opens every report without errors", async () => {
   expect(opened).toBe(12);
 });
 
-it("reopens the last report in each group", () => {
+it("reopens the last view in each report", () => {
   mocked.read.mockResolvedValue(reportData());
   const { unmount } = render(<Reports budget={demoBudget()} budgetId="test" month="2026-10" onInspect={vi.fn()} />);
   const tab = (name: string) => screen.getByRole("tab", { name });
   fireEvent.click(tab("Over time"));
-  fireEvent.click(tab("Wealth"));
-  // A group not opened before starts on its first report.
-  expect(tab("Net worth").getAttribute("aria-selected")).toBe("true");
-  fireEvent.click(tab("Balance sheet"));
+  fireEvent.click(tab("Income"));
+  // A report not opened before starts on its first view.
+  expect(tab("Vs. spending").getAttribute("aria-selected")).toBe("true");
+  fireEvent.click(tab("In and out"));
   fireEvent.click(tab("Spending"));
   expect(tab("Over time").getAttribute("aria-selected")).toBe("true");
-  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Spending over time");
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Spending");
   // And the next visit remembers the same.
   unmount();
   render(<Reports budget={demoBudget()} budgetId="test" month="2026-10" onInspect={vi.fn()} />);
   expect(tab("Over time").getAttribute("aria-selected")).toBe("true");
-  fireEvent.click(tab("Wealth"));
-  expect(tab("Balance sheet").getAttribute("aria-selected")).toBe("true");
+  fireEvent.click(tab("Income"));
+  expect(tab("In and out").getAttribute("aria-selected")).toBe("true");
 });
 
 it("puts an overdrawn account with what you owe and a card in credit with what you own", async () => {
@@ -344,7 +346,7 @@ it("puts an overdrawn account with what you owe and a card in credit with what y
   mocked.read.mockResolvedValue(
     reportData({ months: [{ ...MONTH, month: "2026-10", accounts }], openingAccounts: accounts }),
   );
-  localStorage.setItem("lb:reports:view", "balance");
+  sessionStorage.setItem("lb:reports:place", "balance");
   render(<Reports budget={demoBudget()} budgetId="test" month="2026-10" onInspect={vi.fn()} />);
   const owe = await screen.findByRole("list", { name: "Liabilities by type" });
   expect(owe.textContent).toContain("Overdrawn accounts");
@@ -372,7 +374,7 @@ it("maps the top payees and points to the rest in the table", async () => {
     Array.from({ length: 30 }, (_, i) => [`Payee ${i + 1}`, { amount: i < 10 ? 10_000 : 100, count: 1 }]),
   );
   mocked.read.mockResolvedValue(reportData({ payees, spending: 102_000 }));
-  localStorage.setItem("lb:reports:view", "payees");
+  sessionStorage.setItem("lb:reports:place", "payees");
   render(<Reports budget={demoBudget()} budgetId="test" month="2026-10" onInspect={vi.fn()} />);
   const map = await screen.findByRole("list", { name: "Spending by payee" });
   // Only the ten payees big enough to read get tiles; no tile stands for the rest.
@@ -389,4 +391,50 @@ it("maps the top payees and points to the rest in the table", async () => {
   fireEvent.scroll(screen.getByRole("region", { name: "Payee spending rows" }), { target: { scrollTop: 30 * 36 } });
   fireEvent.click(within(table).getByRole("button", { name: "Payee 30" }));
   expect(screen.getByRole("dialog", { name: "Payee 30" })).toBeTruthy();
+});
+
+it("fits an axis to values far from zero, and labels its steps so they differ", () => {
+  // 1.78M to 1.83M: from zero the line would be flat, so the axis starts just under it.
+  const ticks = spanTicks(178_000_000, 183_000_000);
+  expect(ticks[0]).toBeLessThanOrEqual(178_000_000);
+  expect(ticks[0]).toBeGreaterThan(170_000_000);
+  expect(ticks[ticks.length - 1]).toBeGreaterThanOrEqual(183_000_000);
+  const label = compactMoneyBy(ticks[1] - ticks[0]);
+  expect(new Set(ticks.map(label)).size).toBe(ticks.length);
+  expect(label(180_000_000)).toBe("1.8M");
+  expect(label(182_000_000)).toBe("1.82M");
+  expect(compactMoneyBy(250_000)(1_250_000)).toBe("12.5K");
+  // Zero stays on the axis when it is near, or when the values reach it.
+  expect(spanTicks(40_000, 100_000)[0]).toBe(0);
+  expect(spanTicks(0, 250_000_000)[0]).toBe(0);
+  expect(spanTicks(-5_000, 100_000).includes(0)).toBe(true);
+});
+
+it("draws a line in its second colour under zero, and survives losing the point it shows", () => {
+  const chart = (keys: string[], values: number[]) => (
+    <LinesChart
+      keys={keys}
+      series={[{ key: "gain", label: "Gain", color: "green", below: "red", values }]}
+      label="Gain by day"
+      format={(v) => String(v)}
+      wash="fade"
+      ends={false}
+      title={(day) => day}
+      more={(i) => [{ label: "Value", value: String(1000 + values[i]) }]}
+    />
+  );
+  const days = ["2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05"];
+  const { container, rerender } = render(chart(days, [-50, 20, 80, 120]));
+  const strokes = [...container.querySelectorAll("path[fill=none]")].map((path) => [path.getAttribute("stroke"), path.getAttribute("clip-path")]);
+  expect(strokes).toEqual([
+    ["green", expect.stringMatching(/-over\)$/)],
+    ["red", expect.stringMatching(/-under\)$/)],
+  ]);
+  // The ends aren't labelled; the tooltip lists the line and what was added to it.
+  expect(container.querySelector(".chart-end-label")).toBeNull();
+  fireEvent.focus(screen.getByRole("img", { name: "Gain by day" }));
+  expect(screen.getByRole("status").textContent).toBe("2026-11-05120Gain1120Value");
+  // Given fewer points than the one it was showing, it shows none rather than fail.
+  rerender(chart(days.slice(0, 2), [-50, 20]));
+  expect(screen.queryByRole("status")).toBeNull();
 });

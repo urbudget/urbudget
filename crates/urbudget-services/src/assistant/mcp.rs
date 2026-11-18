@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 const PROTOCOL: &str = "2025-06-18";
 /// Tools that only read. Proposals need the app's review, and attachments need its panel.
-const READ_ONLY: &[&str] = &["get_month", "find_transactions", "payee_history", "get_report", "get_forecast", "get_setup", "project_loan"];
+const READ_ONLY: &[&str] = &["get_month", "find_transactions", "payee_history", "get_report", "get_forecast", "get_setup", "get_holdings", "get_investments_report", "project_loan"];
 
 /// Where the app keeps its data: the same folder Tauri chooses for `com.localbudget.desktop`.
 fn data_dir() -> Option<PathBuf> {
@@ -134,7 +134,7 @@ mod tests {
         assert_eq!(init["result"]["protocolVersion"], "2025-03-26");
         let listed = handle(&json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" })).unwrap();
         let names: Vec<&str> = listed["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
-        assert!(names.contains(&"get_month"));
+        assert!(names.contains(&"get_month") && names.contains(&"get_investments_report"));
         assert!(!names.iter().any(|n| n.starts_with("propose")));
         assert!(handle(&json!({ "jsonrpc": "2.0", "method": "notifications/initialized" })).is_none());
         let refused = handle(&json!({ "jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": { "name": "propose_budget_moves" } })).unwrap();

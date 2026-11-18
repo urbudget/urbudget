@@ -274,6 +274,25 @@ internal class SmsInbox private constructor(private val context: Context) : SQLi
         return waiting
     }
 
+    /**
+     * Texts a card of the assistant's entered into the budget, finished here as a review's are
+     * ([finish]): whether they were waiting, finished before, or never collected (from before the
+     * day collecting starts). They're done, so they aren't read again, and [handledThrough] counts
+     * them. An open review is left to the caller.
+     */
+    fun enter(budget: String, texts: List<BankSms>, outcomes: Map<String, JSONObject>) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            texts.forEach { text ->
+                insert(db, budget, text)
+                db.update("messages", ContentValues().apply { put("done", 1); put("body", ""); outcomes[text.id]?.let { put("outcome", it.toString()) } },
+                    "budget=? AND id=?", arrayOf(budget, text.id))
+            }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+
     /** When the first and last waiting texts came, or null when none wait. */
     fun waitingRange(budget: String): Pair<Long, Long>? = readableDatabase.rawQuery("SELECT MIN(received), MAX(received) FROM messages WHERE budget=? AND done=0", arrayOf(budget))
         .use { if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) to it.getLong(1) else null }

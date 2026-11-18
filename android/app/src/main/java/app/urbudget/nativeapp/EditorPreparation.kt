@@ -27,8 +27,12 @@ internal data class BankReviewRow(
     /** Money in that may be a refund of a purchase: what it's of ("Refund of Shop · 23.99 on 7 Oct 2026 · Shopping"). */
     val refund: String? = null,
 ) {
-    /** The row's decision, given the choices made so far. */
-    fun decision(chosen: String?): String = if (locked) "skip" else chosen ?: initial
+    /** The row's decision, given the choices made so far. An account chosen for it that it can no longer be a transfer with is forgotten. */
+    fun decision(chosen: String?): String = when {
+        locked -> "skip"
+        chosen != null && chosen.startsWith("transfer:") && options.none { it.first == chosen } -> initial
+        else -> chosen ?: initial
+    }
 }
 
 /** How many rows a review imports or matches, and how many still need a choice. */
@@ -163,9 +167,15 @@ private class CandidateOptions(val matches: List<Pair<String, String>>, val cand
     val possible by lazy { listOf("review" to Words[R.string.bank_option_possible], "new" to Words[R.string.bank_option_add_new], "skip" to Words[R.string.bank_option_skip]) + matches }
 }
 
-/** Candidates are a shared pool on Android; do not expand them once per bank row. */
+/**
+ * Candidates are a shared pool on Android; do not expand them once per bank row. `others` are
+ * accounts a row can be added as a transfer with, for rows that say money moved without saying
+ * where from (a broker's deposits): each row is offered those whose history reaches back to its
+ * day. `plain` is what adding such a row with no other account is called.
+ */
 internal suspend fun prepareBankReview(
-    rows: List<JSONObject>, budget: JSONObject, allowIdlessDuplicate: Boolean, candidateSets: JSONArray? = null
+    rows: List<JSONObject>, budget: JSONObject, allowIdlessDuplicate: Boolean, candidateSets: JSONArray? = null,
+    others: List<OtherAccount> = emptyList(), plain: String? = null,
 ): List<BankReviewRow> {
     val context = currentCoroutineContext()
     context.ensureActive()
@@ -210,15 +220,25 @@ internal suspend fun prepareBankReview(
         val idless = row.optBoolean("idless")
         // An already-imported row can only be added again when it has no bank ID and that's allowed.
         val separate = duplicate && allowIdlessDuplicate && idless
-        val options = when {
+        val target = row.editorText("transferAccountId")
+        val listed = when {
             separate -> alreadyImported
             duplicate -> emptyList()
             possible -> set.possible
             else -> set.choose
         }
+        // After adding it plainly, each account it could be a transfer with; a row that already names its other account is only added as that transfer.
+        val options = if (duplicate || plain == null && others.isEmpty()) listed else listed.flatMap { option ->
+            when {
+                option.first != "new" -> listOf(option)
+                target.isNotBlank() -> listOf("new" to Words[R.string.bank_option_add_transfer])
+                else -> listOf("new" to (plain ?: option.second)) + others.filter { it.reaches(row.editorText("date")) }.map { (id, name) ->
+                    "transfer:$id" to Words[if (row.optLong("amount") > 0) R.string.bank_option_transfer_from else R.string.bank_option_transfer_to, name]
+                }
+            }
+        }
         val manual = "bank:manual:${UUID.randomUUID()}"
         val rename = row.editorText("rename").takeIf { it.isNotBlank() && it != row.editorText("payee") }
-        val target = row.editorText("transferAccountId")
         val payee = if (target.isNotBlank()) Words[R.string.transfer_to_account, accountNames[target] ?: target] else (rename ?: row.editorText("payee")).ifBlank { noPayee }
         val initial = defaultBankChoice(duplicate, possible, set.candidates, set.previouslyMatched, set.transfer.takeUnless { set.transferSure })
         BankReviewRow(smallBankRow(row), options, initial, manual, set.previouslyMatched,
@@ -274,7 +294,10 @@ internal suspend fun bankReviewChoices(rows: List<BankReviewRow>, overrides: Map
         if (allowIdlessDuplicate && decision == "new" && source.optBoolean("idless") && (source.optBoolean("duplicate") || source.optBoolean("possibleDuplicate"))) row.put("importId", prepared.manualImportId)
         val matchId = if (decision.startsWith("match:")) decision.removePrefix("match:") else null
         if (matchId != null && matchId in prepared.previouslyMatched) row.put("previouslyMatchedCandidates", JSONArray().put(matchId))
-        choices.put(JSONObject().put("row", row).put("action", if (matchId != null) "match" else decision)
+        // Added as a transfer with the account chosen for it.
+        val other = if (decision.startsWith("transfer:")) decision.removePrefix("transfer:") else null
+        if (other != null) row.put("transferAccountId", other)
+        choices.put(JSONObject().put("row", row).put("action", if (matchId != null) "match" else if (other != null) "new" else decision)
             .put("matchId", matchId ?: JSONObject.NULL))
     }
     return choices

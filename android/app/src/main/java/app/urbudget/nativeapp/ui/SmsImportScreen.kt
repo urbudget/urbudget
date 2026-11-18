@@ -190,6 +190,7 @@ private fun SmsHome(budget: JSONObject, vm: BudgetViewModel, identity: String, a
     // What the assistant's cards asked of Bank messages: a reading to start, or stored changes to read again.
     LaunchedEffect(page) { BankTextsAssistant.reads.collect { read -> if (read != null) { BankTextsAssistant.reads.value = null; page.assistantRead(read.note) } } }
     LaunchedEffect(page) { var seen = BankTextsAssistant.changed.value; BankTextsAssistant.changed.collect { if (it != seen) { seen = it; page.reload() } } }
+    LaunchedEffect(page) { var seen = BankTextsAssistant.entered.value; BankTextsAssistant.entered.collect { if (it != seen) { seen = it; page.entered() } } }
     val readings by SmsReadings.state.collectAsState()
     val vmState by vm.state.collectAsState()
     val reading = readings?.takeIf { it.budget == identity }

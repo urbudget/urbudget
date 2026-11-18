@@ -35,8 +35,12 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.BlurEffect
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.layer.CompositingStrategy
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
@@ -84,8 +88,13 @@ internal fun PageList(modifier: Modifier = Modifier, state: LazyListState = reme
  * list has scrolled. Nothing, on a page with no glass top.
  */
 @Composable
-internal fun glassRoom(list: LazyListState): Dp =
-    glassRoom(list) { list.firstVisibleItemScrollOffset + if (list.firstVisibleItemIndex > 0) 1_000_000 else 0 }
+internal fun glassRoom(list: LazyListState): Dp = glassRoom(list) { scrolled(list) }
+
+/** The same for two lists side by side under one top: it turns to glass once either has scrolled under it. */
+@Composable
+internal fun glassRoom(first: LazyListState, second: LazyListState): Dp = glassRoom(first to second) { maxOf(scrolled(first), scrolled(second)) }
+
+private fun scrolled(list: LazyListState) = list.firstVisibleItemScrollOffset + if (list.firstVisibleItemIndex > 0) 1_000_000 else 0
 
 /** The same for a column that scrolls as a whole. */
 @Composable
@@ -109,7 +118,9 @@ private fun glassRoom(key: Any, scroll: () -> Int): Dp {
  *
  * The content is drawn into a layer of its own; the top draws that layer again behind itself,
  * blurred and tinted with the page's colour. Before Android 12 nothing can blur, so the tint is all
- * but solid.
+ * but solid. On a phone the glass runs from edge to edge and ends in a hairline. On a large screen
+ * it starts beside the rail, where a line would stop in mid-air, so it thins out over its last
+ * stretch instead and the content goes from blurred to sharp with no edge drawn at all.
  */
 @Composable
 internal fun GlassTop(modifier: Modifier = Modifier, padded: Boolean = false, bar: Dp = 64.dp, tint: Color = ur.bg,
@@ -119,11 +130,14 @@ internal fun GlassTop(modifier: Modifier = Modifier, padded: Boolean = false, ba
     page.guess = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + bar
     val under = rememberGraphicsLayer()
     val frost = rememberGraphicsLayer()
+    val faded = rememberGraphicsLayer()
     val scrolled by remember(page) { derivedStateOf { page.scroll() > 0 } }
     val amount by animateFloatAsState(if (scrolled) 1f else 0f, tween(180), label = "glass")
     val edge = ur.border
     val blurs = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val radius = with(density) { 18.dp.toPx() }
+    val soft = wideWindow()
+    val feather = with(density) { 20.dp.toPx() }
     Box(modifier) {
         Box(Modifier.fillMaxSize().then(if (padded) Modifier.padding(top = page.room) else Modifier).drawWithContent {
             under.record { this@drawWithContent.drawContent() }
@@ -132,19 +146,33 @@ internal fun GlassTop(modifier: Modifier = Modifier, padded: Boolean = false, ba
         // The empty pointer input keeps a tap on the top's own gaps from reaching what is under it.
         Column(Modifier.fillMaxWidth().onSizeChanged { page.measured = with(density) { it.height.toDp() } }.pointerInput(Unit) {}.drawWithContent {
             if (amount > 0f) {
-                if (blurs) {
-                    page.scroll()
-                    frost.renderEffect = BlurEffect(radius, radius, TileMode.Clamp)
-                    frost.clip = true
-                    frost.alpha = amount
-                    // Over the page's own colour: words that stand straight on the page blur into it, rather than
-                    // showing sharp through a blur that has nothing solid in it.
-                    frost.record { drawRect(tint); drawLayer(under) }
-                    drawLayer(frost)
+                val glass: DrawScope.() -> Unit = {
+                    if (blurs) {
+                        page.scroll()
+                        frost.renderEffect = BlurEffect(radius, radius, TileMode.Clamp)
+                        frost.clip = true
+                        frost.alpha = amount
+                        // Over the page's own colour: words that stand straight on the page blur into it, rather than
+                        // showing sharp through a blur that has nothing solid in it.
+                        frost.record { drawRect(tint); drawLayer(under) }
+                        drawLayer(frost)
+                    }
+                    drawRect(tint, alpha = amount * if (blurs) .72f else .96f)
                 }
-                drawRect(tint, alpha = amount * if (blurs) .72f else .96f)
-                val line = 1.dp.toPx()
-                drawLine(edge, Offset(0f, size.height - line / 2), Offset(size.width, size.height - line / 2), line, alpha = amount)
+                if (soft) {
+                    // Drawn apart and then masked: solid down to the last stretch, then fading to nothing.
+                    faded.compositingStrategy = CompositingStrategy.Offscreen
+                    faded.record {
+                        glass()
+                        val from = ((size.height - feather) / size.height).coerceIn(0f, 1f)
+                        drawRect(Brush.verticalGradient(0f to Color.Black, from to Color.Black, 1f to Color.Transparent), blendMode = BlendMode.DstIn)
+                    }
+                    drawLayer(faded)
+                } else {
+                    glass()
+                    val line = 1.dp.toPx()
+                    drawLine(edge, Offset(0f, size.height - line / 2), Offset(size.width, size.height - line / 2), line, alpha = amount)
+                }
             }
             drawContent()
         }) { CompositionLocalProvider(LocalGlassBar provides true) { top() } }

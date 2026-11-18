@@ -44,6 +44,66 @@ it("shows an explicit transfer destination and keeps its account ID when importi
   expect(onImport.mock.lastCall![0]).toEqual([{ row, action: "new", matchId: null }]);
 });
 
+it("adds a row as a transfer with the account chosen for it, when the review offers accounts", () => {
+  const onImport = vi.fn();
+  const row = { id: "bank:deposit", date: "2026-10-05", payee: "Interactive Brokers", memo: "1000 USD", amount: 375000, near: 11250, duplicate: false, candidates: [] };
+  const others = [{ id: "savings", name: "Savings" }, { id: "checking", name: "Checking" }];
+  const view = render(
+    <ImportReview budget={demoBudget()} rows={[row]} busy={false} icon={null} others={others} plainLabel="Add with no other account" onCancel={() => {}} onImport={onImport} />,
+  );
+  // Nothing is assumed about where it came from: it's added on its own unless an account is chosen.
+  expect(actionInput().value).toBe("Add with no other account");
+  chooseAction(1, "Add as a transfer from Savings");
+  expect(screen.getByText(/1 transfer between your accounts/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Import 1 transaction" }));
+  expect(onImport.mock.lastCall![0]).toEqual([{ row: { ...row, transferAccountId: "savings" }, action: "new", matchId: null }]);
+  // Money out goes to the account; a row that names its other side offers no others.
+  view.rerender(
+    <ImportReview budget={demoBudget()} rows={[{ ...row, id: "bank:out", amount: -375000 }]} busy={false} icon={null} others={others} onCancel={() => {}} onImport={onImport} />,
+  );
+  fireEvent.click(actionInput(1));
+  expect(screen.getByRole("option", { name: "Add as a transfer to Savings" })).toBeTruthy();
+  cleanup();
+  render(
+    <ImportReview budget={demoBudget()} rows={[{ ...row, id: "bank:pair", transferAccountId: "checking" }]} busy={false} icon={null} others={others} onCancel={() => {}} onImport={onImport} />,
+  );
+  expect(actionInput(1).value).toBe("Add as a transfer");
+  fireEvent.click(actionInput(1));
+  expect(screen.queryByRole("option", { name: /^Add as a transfer (from|to) / })).toBeNull();
+});
+
+it("offers an account with a history only from the day it starts, and drops a choice it no longer offers", () => {
+  const onImport = vi.fn();
+  const row = { id: "bank:deposit", date: "2026-10-05", payee: "Interactive Brokers", memo: "", amount: 375000, duplicate: false, candidates: [] };
+  const others = [{ id: "savings", name: "Savings", since: "2026-10-20" }, { id: "checking", name: "Checking", since: "2026-09-01" }];
+  // Savings was chosen for it once; its history now starts after the deposit, so it isn't offered.
+  render(
+    <ImportReview
+      budget={demoBudget()}
+      rows={[row, { ...row, id: "bank:later", date: "2026-10-20" }]}
+      busy={false}
+      icon={null}
+      others={others}
+      plainLabel="Add with no other account"
+      choices={{ picked: { "bank:deposit": "transfer:savings" } }}
+      onChoices={() => {}}
+      onCancel={() => {}}
+      onImport={onImport}
+    />,
+  );
+  expect(actionInput(1).value).toBe("Add with no other account");
+  fireEvent.click(actionInput(1));
+  expect(screen.queryByRole("option", { name: "Add as a transfer from Savings" })).toBeNull();
+  expect(screen.getByRole("option", { name: "Add as a transfer from Checking" })).toBeTruthy();
+  fireEvent.keyDown(document, { key: "Escape" });
+  // On the day it starts, it is.
+  fireEvent.click(actionInput(2));
+  expect(screen.getByRole("option", { name: "Add as a transfer from Savings" })).toBeTruthy();
+  fireEvent.keyDown(document, { key: "Escape" });
+  fireEvent.click(screen.getByRole("button", { name: "Import 2 transactions" }));
+  expect(onImport.mock.lastCall![0][0]).toEqual({ row, action: "new", matchId: null });
+});
+
 it("lets an identical ID-less receipt be imported separately with a stable retry identity", () => {
   const onImport = vi.fn();
   const row = { id: "bank:known", date: "2026-10-03", payee: "Shop", memo: "Second receipt", amount: -500, duplicate: true, idless: true, candidates: ["manual"] };

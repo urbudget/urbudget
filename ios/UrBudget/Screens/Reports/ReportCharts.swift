@@ -212,6 +212,32 @@ struct ReportReadoutView: View {
     }
 }
 
+/// The picked point's figures in a small tag at the chart's top, for a chart with no readout over
+/// it (a page whose own figures say the latest): on the side away from the point, so it stays in view.
+struct ReportBubble: View {
+    var title: String
+    var rows: [ReportReadout]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.caption2).foregroundStyle(Color.secondary).lineLimit(1)
+            ForEach(Array(rows.prefix(2).enumerated()), id: \.offset) { _, row in
+                HStack(spacing: 5) {
+                    if let color = row.color { ReportLegendKey(color: ReportPalette.color(color), line: row.line, dashed: row.dashed) }
+                    Text(row.value).font(.caption.weight(.semibold)).monospacedDigit().lineLimit(1)
+                }
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(6)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .transition(.opacity)
+    }
+}
+
 /// The currency over a money axis, when amounts show one.
 private struct ReportUnitLabel: ViewModifier {
     var unit: String?
@@ -228,14 +254,19 @@ private struct ReportUnitLabel: ViewModifier {
 enum ReportAxis {
     /// X labels that never crowd, at an even step (every month, every 2nd, 3rd…) counted back from
     /// the last one, so the latest always shows. Each needs `spacing` points; the year shows in full
-    /// on the first label and where it changes ("Dec 2025", "Feb", "Apr").
+    /// on the first label and where it changes ("Dec 2025", "Feb", "Apr"). The step counts labels,
+    /// not points: a chart by the day marks only each month's first day, and every other mark is
+    /// every other month, however many days lie between.
     static func xLabels(_ ticks: [ReportXTick?], keys: [String], band: CGFloat, spacing: CGFloat) -> [String: String] {
-        guard let last = ticks.lastIndex(where: { $0 != nil }) else { return [:] }
-        let step = max(1, Int((spacing / max(band, 0.01)).rounded(.up)))
+        let marked = ticks.indices.filter { ticks[$0] != nil && $0 < keys.count }
+        guard !marked.isEmpty else { return [:] }
+        // The nearest two marks decide how many marks a label must skip to have its room.
+        let gap = zip(marked, marked.dropFirst()).map { $1 - $0 }.min() ?? 1
+        let step = max(1, Int((spacing / max(band * CGFloat(gap), 0.01)).rounded(.up)))
         var out: [String: String] = [:]
         var lastYear: Int?
-        for (index, tick) in ticks.enumerated() {
-            guard let tick, index < keys.count, (last - index) % step == 0 else { continue }
+        for (order, index) in marked.enumerated() {
+            guard let tick = ticks[index], (marked.count - 1 - order) % step == 0 else { continue }
             out[keys[index]] = lastYear == nil || lastYear != tick.year ? tick.long : tick.short
             lastYear = tick.year
         }
@@ -291,15 +322,19 @@ struct ReportColumnChart: View {
     private var full: ReportColumnModel
     private var legend: [ReportLegendItem]?
     private var height: CGFloat
+    /// Without it the figures over the chart are left out, for a page whose own figures say them:
+    /// a picked column still says its figures in a bubble.
+    private var readout: Bool
     @State private var selected: Int?
     @State private var hidden: Set<String> = []
     @ScaledMetric(relativeTo: .caption2) private var labelSpacing: CGFloat = 52
     @Environment(\.layoutDirection) private var direction
 
-    init(model: ReportColumnModel, legend: [ReportLegendItem]? = nil, height: CGFloat = 220) {
+    init(model: ReportColumnModel, legend: [ReportLegendItem]? = nil, height: CGFloat = 220, readout: Bool = true) {
         full = model
         self.legend = legend
         self.height = height
+        self.readout = readout
     }
 
     private var model: ReportColumnModel { full.without(hidden) }
@@ -309,9 +344,14 @@ struct ReportColumnChart: View {
         let count = model.keys.count
         let shown = selected.flatMap { $0 < count ? $0 : nil } ?? model.opening
         VStack(alignment: .leading, spacing: 8) {
-            if shown >= 0 && shown < model.readouts.count { ReportReadoutView(title: model.titles[shown], rows: model.readouts[shown]) }
+            if readout, shown >= 0 && shown < model.readouts.count { ReportReadoutView(title: model.titles[shown], rows: model.readouts[shown]) }
             // Months run left to right in every language, so a tap's column is counted from the left.
             GeometryReader { geometry in plot(width: geometry.size.width) }
+                .overlay(alignment: (selected ?? 0) < count / 2 ? .topTrailing : .topLeading) {
+                    if !readout, let selected, selected < count, selected < model.readouts.count {
+                        ReportBubble(title: model.titles[selected], rows: model.readouts[selected])
+                    }
+                }
                 .environment(\.layoutDirection, .leftToRight)
                 .frame(height: height)
             if let legend, !legend.isEmpty {
@@ -483,14 +523,17 @@ struct ReportLinesChart: View {
     private var full: ReportLinesModel
     private var legend: [ReportLegendItem]?
     private var height: CGFloat
+    /// As ReportColumnChart's: without it, a picked point says its figures in a bubble.
+    private var readout: Bool
     @State private var selected: Int?
     @State private var hidden: Set<String> = []
     @ScaledMetric(relativeTo: .caption2) private var labelSpacing: CGFloat = 52
 
-    init(model: ReportLinesModel, legend: [ReportLegendItem]? = nil, height: CGFloat = 220) {
+    init(model: ReportLinesModel, legend: [ReportLegendItem]? = nil, height: CGFloat = 220, readout: Bool = true) {
         full = model
         self.legend = legend
         self.height = height
+        self.readout = readout
     }
 
     private var model: ReportLinesModel { full.without(hidden) }
@@ -500,9 +543,14 @@ struct ReportLinesChart: View {
         let count = model.keys.count
         let shown = selected.flatMap { $0 < count ? $0 : nil } ?? model.opening
         VStack(alignment: .leading, spacing: 8) {
-            if shown >= 0 && shown < model.readouts.count { ReportReadoutView(title: model.titles[shown], rows: model.readouts[shown]) }
+            if readout, shown >= 0 && shown < model.readouts.count { ReportReadoutView(title: model.titles[shown], rows: model.readouts[shown]) }
             // Time runs left to right in every language, so a tap's point is counted from the left.
             GeometryReader { geometry in plot(width: geometry.size.width) }
+                .overlay(alignment: (selected ?? 0) < count / 2 ? .topTrailing : .topLeading) {
+                    if !readout, let selected, selected < count, selected < model.readouts.count {
+                        ReportBubble(title: model.titles[selected], rows: model.readouts[selected])
+                    }
+                }
                 .environment(\.layoutDirection, .leftToRight)
                 .frame(height: height)
             if let legend, !legend.isEmpty {
@@ -635,11 +683,13 @@ struct ReportDonut: View {
     var onOpen: ((String) -> Void)? = nil
     /// What opening a slice shows: "See transactions", "See categories".
     var openLabel: String = String(localized: "See transactions")
+    /// The largest the ring grows: a report's own, or smaller beside a key of its parts.
+    var largest: CGFloat = 280
     @ScaledMetric(relativeTo: .body) private var size: CGFloat = 200
 
     var body: some View {
         let shown = slices.filter { $0.value > 0 }
-        let side = min(size, 280)
+        let side = min(size, largest)
         let total = shown.map(\.value).reportSum
         let chosen = shown.first { $0.key == picked }
         let opens = chosen.map { canOpen($0.key) } ?? false
@@ -748,6 +798,9 @@ struct ReportBarRowView: View {
                 }
             }
             .font(.subheadline)
+            if let note = row.note {
+                Text(note).font(.footnote).monospacedDigit().foregroundStyle(Color.secondary).lineLimit(1)
+            }
             GeometryReader { geometry in
                 RoundedRectangle(cornerRadius: 3, style: .continuous)
                     .fill(ReportPalette.color(row.color ?? defaultColor))
@@ -759,7 +812,7 @@ struct ReportBarRowView: View {
         .opacity(picked == false ? 0.45 : 1)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(row.label)
-        .accessibilityValue([row.valueText, row.detail].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityValue([row.valueText, row.note, row.detail].compactMap { $0 }.joined(separator: ", "))
         .accessibilityAddTraits(picked == true ? .isSelected : [])
     }
 }
@@ -1097,7 +1150,7 @@ struct ReportMiniBars: View {
     }
 }
 
-/// The month's spending as one bar, split by category in the list's colours.
+/// One bar split into its parts, each in its own colour: what is owned beside what is owed, on the overview.
 struct ReportSegmentBar: View {
     var rows: [ReportSpendRow]
 
@@ -1168,20 +1221,25 @@ struct ReportFigureRowView: View {
 
     var body: some View {
         let strong = row.style == .total || row.style == .net || row.style == .group
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(row.title).fontWeight(strong ? .semibold : .regular).foregroundStyle(row.style == .muted ? .secondary : .primary).lineLimit(2)
-                if let subtitle = row.subtitle {
-                    Text(subtitle).font(.footnote).monospacedDigit().foregroundStyle(Color.secondary).lineLimit(3)
+        if row.style == .note {
+            // A sentence under the figures, at its full length.
+            Text(row.title).font(.footnote).foregroundStyle(Color.secondary).fixedSize(horizontal: false, vertical: true)
+        } else {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(row.title).fontWeight(strong ? .semibold : .regular).foregroundStyle(row.style == .muted ? .secondary : .primary).lineLimit(2)
+                    if let subtitle = row.subtitle {
+                        Text(subtitle).font(.footnote).monospacedDigit().foregroundStyle(Color.secondary).lineLimit(3)
+                    }
+                }
+                Spacer(minLength: 8)
+                if !row.value.isEmpty {
+                    Text(row.value).fontWeight(strong ? .bold : .medium).monospacedDigit().lineLimit(1)
+                        .foregroundStyle(row.tone == .negative ? Color.urNegative : row.tone == .positive ? Color.urPositive : Color.primary)
                 }
             }
-            Spacer(minLength: 8)
-            if !row.value.isEmpty {
-                Text(row.value).fontWeight(strong ? .bold : .medium).monospacedDigit().lineLimit(1)
-                    .foregroundStyle(row.tone == .negative ? Color.urNegative : row.tone == .positive ? Color.urPositive : Color.primary)
-            }
+            .padding(.leading, row.style == .child ? 14 : 0)
+            .accessibilityElement(children: .combine)
         }
-        .padding(.leading, row.style == .child ? 14 : 0)
-        .accessibilityElement(children: .combine)
     }
 }

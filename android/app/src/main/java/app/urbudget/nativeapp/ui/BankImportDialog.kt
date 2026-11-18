@@ -122,7 +122,7 @@ internal suspend fun BudgetViewModel.ask(method: String, params: JSONObject, any
 }
 
 /** A chosen file's name, and its text unless it's a PDF; a workbook at `sheet` when it has one by that name. */
-private suspend fun openStatement(context: Context, uri: Uri, sheet: String?): Pair<String, DecodedStatement?> = withContext(Dispatchers.IO) {
+internal suspend fun openStatement(context: Context, uri: Uri, sheet: String?): Pair<String, DecodedStatement?> = withContext(Dispatchers.IO) {
     val name = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
         if (it.moveToFirst()) it.getString(0) else null
     } ?: context.getString(R.string.bank_statement_file)

@@ -76,6 +76,18 @@ pub struct Row {
     /// purchase's category when it has none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub refund_of: Option<RefundOf>,
+    /// How far from `amount`, in cents, the same money may be recorded elsewhere (see
+    /// `review_near`); 0 when only the exact amount is the same money.
+    #[serde(default, skip_serializing_if = "exact")]
+    pub near: i64,
+}
+fn exact(near: &i64) -> bool {
+    *near == 0
+}
+/// Whether `amount` could be the row's money: the row's amount, or for a row whose amount is
+/// another currency's worth, one within `near` of it going the same way.
+fn same(amount: i64, r: &Row) -> bool {
+    amount == r.amount || (r.near > 0 && (amount - r.amount).abs() <= r.near && amount.signum() == r.amount.signum())
 }
 /// A purchase a row of money in may be a refund of.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -541,6 +553,9 @@ struct Matches {
     /// amount such a row has and their day, and where each is.
     transfers: HashMap<i64, BTreeMap<NaiveDate, Vec<String>>>,
     transfer_targets: HashMap<String, usize>,
+    /// Those among `transfers` that have a category (see `filed`): offered only when the bank's
+    /// text agrees.
+    filed: HashSet<String>,
 }
 /// How many days apart banks book the two sides of money moved between your own accounts.
 const TRANSFER_DAYS: i64 = 5;
@@ -561,6 +576,17 @@ fn loose(b: &Budget, t: &Transaction, account: &str) -> bool {
             _ => false,
         }
 }
+/// Whether a transaction in a budget account, already given a category, could be the other side
+/// of money moved into or out of an account a broker fills: a payee rule may have filed the
+/// bank's side under "Investments" before the broker's side arrived. Joined, it keeps its category.
+fn filed(b: &Budget, t: &Transaction, account: &str) -> bool {
+    t.account_id != account
+        && t.transfer_account_id.is_none()
+        && !ledger::starting_balance(t)
+        && b.accounts.iter().any(|a| a.id == t.account_id && a.on_budget())
+        && matches!(t.splits.as_slice(), [s] if ledger::transfer(s).is_none()
+            && s.category_id.as_deref().is_some_and(|id| !workflows::placeholder(b, id)))
+}
 impl Matches {
     fn new(b: &Budget, account: &str) -> Self {
         let mut out = Self {
@@ -569,9 +595,14 @@ impl Matches {
             previously_matched: HashSet::new(),
             transfers: HashMap::new(),
             transfer_targets: HashMap::new(),
+            filed: HashSet::new(),
         };
+        let broker = crate::investments::find(b, account).is_some();
         let mut reserved: HashSet<String> = b.transactions.iter().map(|t| t.id.clone()).collect();
         for (i, t) in b.transactions.iter().enumerate() {
+            // A broker account's own lines (its market changes, the money not in the budget yet)
+            // are rewritten on every sync: no row is ever one of them.
+            if crate::investments::generated(t) { continue }
             let Ok(day) = NaiveDate::parse_from_str(&t.date, "%Y-%m-%d") else { continue };
             let side_matched = t.extra.get("bankImportMatches").and_then(|v| v.get(account)).is_some();
             let mut add = |id: String, amount: i64, split: Option<usize>, matched: bool| {
@@ -601,41 +632,55 @@ impl Matches {
                     }
                     add(id, -part.amount, Some(j), matched);
                 }
-                if loose(b, t, account) {
+                let loose = loose(b, t, account);
+                if loose || (broker && filed(b, t, account)) {
                     out.transfers.entry(-t.amount).or_default().entry(day).or_default().push(t.id.clone());
                     out.transfer_targets.insert(t.id.clone(), i);
+                    if !loose {
+                        out.filed.insert(t.id.clone());
+                    }
                 }
             }
         }
         out
+    }
+    /// The days of one amount, or of every amount within `near` of it going the same way, each
+    /// with how far off it is.
+    fn around<'a>(index: &'a HashMap<i64, BTreeMap<NaiveDate, Vec<String>>>, amount: i64, near: i64) -> Vec<(i64, &'a BTreeMap<NaiveDate, Vec<String>>)> {
+        if near <= 0 {
+            return index.get(&amount).map(|days| (0, days)).into_iter().collect();
+        }
+        let mut found: Vec<(i64, &BTreeMap<NaiveDate, Vec<String>>)> = index.iter()
+            .filter(|(a, _)| (**a - amount).abs() <= near && a.signum() == amount.signum())
+            .map(|(a, days)| ((*a - amount).abs(), days))
+            .collect();
+        found.sort_by_key(|(off, _)| *off);
+        found
     }
     /// The transactions elsewhere a row could be the other side of, nearest first, and how many
     /// days apart.
-    fn transfers(&self, amount: i64, day: NaiveDate) -> Vec<(i64, &String)> {
-        let mut out = vec![];
-        let Some(days) = self.transfers.get(&amount) else { return out };
-        for apart in 0..=TRANSFER_DAYS {
-            let around = [day - chrono::Duration::days(apart), day + chrono::Duration::days(apart)];
-            for d in &around[..if apart == 0 { 1 } else { 2 }] {
-                for id in days.get(d).into_iter().flatten() {
-                    if out.len() == TRANSFER_CHOICES {
-                        return out;
-                    }
-                    out.push((apart, id));
-                }
+    fn transfers(&self, amount: i64, near: i64, day: NaiveDate) -> Vec<(i64, &String)> {
+        let window = day - chrono::Duration::days(TRANSFER_DAYS)..=day + chrono::Duration::days(TRANSFER_DAYS);
+        let mut out: Vec<(i64, i64, &String)> = vec![];
+        for (off, days) in Self::around(&self.transfers, amount, near) {
+            for (d, ids) in days.range(window.clone()) {
+                out.extend(ids.iter().map(|id| ((*d - day).num_days().abs(), off, id)));
             }
         }
-        out
+        // Nearest in days first, the earlier day before the later, then the nearest amount.
+        out.sort_by_key(|(apart, off, _)| (*apart, *off));
+        out.truncate(TRANSFER_CHOICES);
+        out.into_iter().map(|(apart, _, id)| (apart, id)).collect()
     }
     /// Whether a transaction here that no bank row has been yet could be this row.
-    fn unmatched(&self, amount: i64, day: NaiveDate) -> bool {
-        self.days.get(&amount).into_iter()
-            .flat_map(|days| days.range(day - chrono::Duration::days(10)..=day + chrono::Duration::days(10)))
+    fn unmatched(&self, amount: i64, near: i64, day: NaiveDate) -> bool {
+        Self::around(&self.days, amount, near).into_iter()
+            .flat_map(|(_, days)| days.range(day - chrono::Duration::days(10)..=day + chrono::Duration::days(10)))
             .any(|(_, ids)| ids.iter().any(|id| !self.previously_matched.contains(id)))
     }
-    fn candidates(&self, amount: i64, day: NaiveDate) -> Vec<String> {
-        let mut ids: Vec<String> = self.days.get(&amount).into_iter()
-            .flat_map(|days| days.range(day - chrono::Duration::days(10)..=day + chrono::Duration::days(10)))
+    fn candidates(&self, amount: i64, near: i64, day: NaiveDate) -> Vec<String> {
+        let mut ids: Vec<String> = Self::around(&self.days, amount, near).into_iter()
+            .flat_map(|(_, days)| days.range(day - chrono::Duration::days(10)..=day + chrono::Duration::days(10)))
             .flat_map(|(_, ids)| ids.iter().cloned()).collect();
         ids.sort();
         ids
@@ -655,7 +700,7 @@ impl Matches {
     /// The row's choices: transactions here it could be, and the one elsewhere it was offered as
     /// the other side of a transfer when none here could be it but an earlier bank row.
     fn candidate_set(&self, b: &Budget, account: &str, row: &Row, day: NaiveDate, transfer: Option<(&String, bool)>) -> CandidateSet {
-        let mut candidates = self.candidates(row.amount, day);
+        let mut candidates = self.candidates(row.amount, row.near, day);
         candidates.retain(|id| self.target_matches(b, account, id, row.transfer_account_id.as_deref()));
         let transfer = transfer.filter(|_| candidates.iter().all(|c| self.previously_matched.contains(c)));
         let transfer_candidates: Vec<String> = transfer.map(|(id, _)| id.clone()).into_iter().collect();
@@ -690,12 +735,19 @@ struct Clues {
     /// The wording each account's side of a transfer had, and the accounts it went to or came from.
     seen: HashMap<(String, String), HashSet<String>>,
 }
+/// What a bank calls Interactive Brokers in its text, whatever the account it fills is named here.
+const BROKER: [&str; 3] = ["interactive", "brokers", "ibkr"];
 impl Clues {
     fn new(b: &Budget) -> Self {
+        let brokers: HashSet<String> = crate::investments::read(b).into_iter().filter(|h| h.source == "ibkr").map(|h| h.account_id).collect();
         let names = b.accounts.iter().map(|a| {
-            let words = words(&a.name).into_iter()
-                .filter(|w| w.chars().count() >= 3 && !COMMON.contains(&w.as_str()) && !w.chars().all(|c| c.is_ascii_digit()));
-            (a.id.clone(), words.collect())
+            let mut words: Vec<String> = words(&a.name).into_iter()
+                .filter(|w| w.chars().count() >= 3 && !COMMON.contains(&w.as_str()) && !w.chars().all(|c| c.is_ascii_digit()))
+                .collect();
+            if brokers.contains(&a.id) {
+                words.extend(BROKER.iter().filter(|w| !words.iter().any(|have| have == *w)).map(|w| (*w).to_owned()).collect::<Vec<_>>());
+            }
+            (a.id.clone(), words)
         }).collect();
         let mut seen: HashMap<(String, String), HashSet<String>> = HashMap::new();
         for t in &b.transactions {
@@ -714,25 +766,34 @@ impl Clues {
     /// What one side's bank text (payee and memo) says: the accounts it names, and its payee's
     /// wording.
     fn read(&self, payee: &str, memo: &str) -> Said {
-        let words: HashSet<String> = words(payee).into_iter().chain(words(memo)).collect();
-        let named = self.names.iter().filter(|(_, name)| name.iter().any(|w| words.contains(w))).map(|(id, _)| id.clone()).collect();
-        Said { named, wording: wording(payee) }
+        Said { words: words(payee).into_iter().chain(words(memo)).collect(), wording: wording(payee) }
+    }
+    /// The accounts a text in account `own` names besides its own. A word of its own account's
+    /// name says nothing about another: "Chase" in a Chase account's text doesn't name Chase
+    /// Savings, nor does "Interactive Brokers" in one broker account's row name the other.
+    fn named<'a>(&'a self, said: &Said, own: &str) -> Vec<&'a str> {
+        let mine = self.names.iter().find(|(id, _)| id == own).map(|(_, name)| name.as_slice()).unwrap_or_default();
+        self.names.iter()
+            .filter(|(id, name)| id != own && name.iter().any(|w| said.words.contains(w) && !mine.contains(w)))
+            .map(|(id, _)| id.as_str())
+            .collect()
     }
     /// How much a row in account `b` and a transaction in account `a` look like the two sides of
     /// one move: None when either text names another of your accounts and not this one, else one
     /// point for each text that names the other's account and each that had this wording in an
     /// earlier transfer between them.
     fn fit(&self, b: &str, row: &Said, a: &str, theirs: &Said) -> Option<u8> {
-        let elsewhere = |said: &Said, own: &str, wanted: &str| !said.named.contains(wanted) && said.named.iter().any(|n| n != own);
-        if elsewhere(row, b, a) || elsewhere(theirs, a, b) {
+        let (row_names, their_names) = (self.named(row, b), self.named(theirs, a));
+        let elsewhere = |named: &[&str], wanted: &str| !named.contains(&wanted) && !named.is_empty();
+        if elsewhere(&row_names, a) || elsewhere(&their_names, b) {
             return None;
         }
         let seen = |account: &str, said: &Said, to: &str| self.seen.get(&(account.to_owned(), said.wording.clone())).is_some_and(|s| s.contains(to));
-        Some([row.named.contains(a), theirs.named.contains(b), seen(b, row, a), seen(a, theirs, b)].into_iter().filter(|&x| x).count() as u8)
+        Some([row_names.contains(&a), their_names.contains(&b), seen(b, row, a), seen(a, theirs, b)].into_iter().filter(|&x| x).count() as u8)
     }
 }
 struct Said {
-    named: HashSet<String>,
+    words: HashSet<String>,
     wording: String,
 }
 /// How many times the same two wordings, between the same two accounts, have to pair up in one
@@ -756,20 +817,22 @@ fn transfer_offers<'a>(b: &Budget, account: &str, matches: &'a Matches, rows: &[
     let mut recurring: HashMap<(String, String, &str), HashSet<usize>> = HashMap::new();
     for (i, (r, day)) in rows.iter().enumerate() {
         let unmatched = if r.transfer_account_id.is_some() {
-            matches.candidates(r.amount, *day).iter().any(|id| !matches.previously_matched.contains(id)
+            matches.candidates(r.amount, r.near, *day).iter().any(|id| !matches.previously_matched.contains(id)
                 && matches.target_matches(b, account, id, r.transfer_account_id.as_deref()))
-        } else { matches.unmatched(r.amount, *day) };
+        } else { matches.unmatched(r.amount, r.near, *day) };
         if r.duplicate || r.possible_duplicate || unmatched {
             continue;
         }
         let row = clues.read(&r.payee, &r.memo);
-        for (apart, id) in matches.transfers(r.amount, *day) {
+        for (apart, id) in matches.transfers(r.amount, r.near, *day) {
             let t = &b.transactions[matches.transfer_targets[id]];
             if r.transfer_account_id.as_deref().is_some_and(|target| t.account_id != target) { continue }
             let theirs = said.entry(id).or_insert_with(|| {
                 clues.read(t.extra.get("importedPayee").and_then(Value::as_str).unwrap_or(&t.payee), &t.memo)
             });
             let Some(agrees) = r.transfer_account_id.as_ref().map(|_| 1).or_else(|| clues.fit(account, &row, &t.account_id, theirs)) else { continue };
+            // One already given a category is the other side only when the text says so.
+            if agrees == 0 && matches.filed.contains(id) { continue }
             if agrees == 0 && !row.wording.is_empty() && !theirs.wording.is_empty() {
                 let trio = (row.wording.clone(), theirs.wording.clone(), t.account_id.as_str());
                 recurring.entry(trio.clone()).or_default().insert(i);
@@ -863,8 +926,16 @@ pub(crate) fn bank_id_of(account: &str, signature: &str) -> String {
 }
 
 pub fn review(b: &Budget, account: &str, raw: Vec<BankTransaction>) -> Result<Vec<Row>, String> {
+    review_near(b, account, raw.into_iter().map(|t| (t, 0)).collect())
+}
+/// `review` for rows that each say how far from their amount the same money may be recorded
+/// elsewhere, in cents: a broker's deposit made in another currency is worth what the broker's
+/// rate says, which is seldom to the cent what the bank took. Such a row's matches are the
+/// transactions within that of it, and a match keeps the amount the budget already has.
+pub fn review_near(b: &Budget, account: &str, raw: Vec<(BankTransaction, i64)>) -> Result<Vec<Row>, String> {
+    let (raw, near): (Vec<BankTransaction>, Vec<i64>) = raw.into_iter().unzip();
     let mut rows = Vec::with_capacity(raw.len());
-    review_each(b, account, identified(raw), |mut row, matches, day, transfer| {
+    review_each(b, account, identified(raw), &near, |mut row, matches, day, transfer| {
         let choices = matches.candidate_set(b, account, &row, day, transfer);
         row.candidates = choices.candidates;
         row.previously_matched_candidates = choices.previously_matched_candidates;
@@ -879,13 +950,21 @@ pub fn review(b: &Budget, account: &str, raw: Vec<BankTransaction>) -> Result<Ve
 pub fn review_compact(b: &Budget, account: &str, raw: Vec<BankTransaction>) -> Result<CompactReview, String> {
     review_identified(b, account, identified(raw))
 }
+/// `review_near` as the phones read it.
+pub fn review_compact_near(b: &Budget, account: &str, raw: Vec<(BankTransaction, i64)>) -> Result<CompactReview, String> {
+    let (raw, near): (Vec<BankTransaction>, Vec<i64>) = raw.into_iter().unzip();
+    compact(b, account, identified(raw), &near)
+}
 /// A compact review of rows already known (see `Identity`).
 pub(crate) fn review_identified(b: &Budget, account: &str, raw: Vec<(BankTransaction, Identity)>) -> Result<CompactReview, String> {
+    compact(b, account, raw, &[])
+}
+fn compact(b: &Budget, account: &str, raw: Vec<(BankTransaction, Identity)>, near: &[i64]) -> Result<CompactReview, String> {
     let mut review = CompactReview { items: Vec::with_capacity(raw.len()), candidate_sets: vec![] };
     let mut windows = HashMap::new();
     let mut buckets: HashMap<u64, Vec<usize>> = HashMap::new();
-    review_each(b, account, raw, |row, matches, day, transfer| {
-        let candidate_set = *windows.entry((row.amount, day, row.transfer_account_id.clone(), transfer.map(|(id, sure)| (id.clone(), sure)))).or_insert_with(|| {
+    review_each(b, account, raw, near, |row, matches, day, transfer| {
+        let candidate_set = *windows.entry((row.amount, row.near, day, row.transfer_account_id.clone(), transfer.map(|(id, sure)| (id.clone(), sure)))).or_insert_with(|| {
             let choices = matches.candidate_set(b, account, &row, day, transfer);
             let mut hash = DefaultHasher::new();
             choices.hash(&mut hash);
@@ -910,6 +989,8 @@ fn review_each(
     b: &Budget,
     account: &str,
     raw: Vec<(BankTransaction, Identity)>,
+    // Each row's `Row::near`, in order; rows past its end have none.
+    near: &[i64],
     mut emit: impl FnMut(Row, &Matches, NaiveDate, Option<(&String, bool)>),
 ) -> Result<(), String> {
     // File previews and bank-sync snapshots share this boundary. Validate before the
@@ -933,7 +1014,7 @@ fn review_each(
         .collect();
     let matches = Matches::new(b, account);
     let mut rows = Vec::with_capacity(raw.len());
-    for (BankTransaction { date, payee, memo, amount, transfer_account_id, .. }, who) in raw {
+    for (index, (BankTransaction { date, payee, memo, amount, transfer_account_id, .. }, who)) in raw.into_iter().enumerate() {
         if let Some(target) = &transfer_account_id { validate_transfer(b, account, target)?; }
         let Identity { signature, legacy, group, idless, aliases, batch } = who;
         let legacy = legacy.map(|l| bank_id(account, &l));
@@ -970,6 +1051,7 @@ fn review_each(
             aliases,
             batch,
             refund_of: None,
+            near: near.get(index).copied().unwrap_or(0).clamp(0, amount.abs()),
         };
         let t = new_transaction(b, account, &row);
         row.rename = Some(t.payee).filter(|p| row.transfer_account_id.is_none() && *p != row.payee);
@@ -1029,7 +1111,7 @@ fn refund_offers(b: &Budget, account: &str, matches: &Matches, rows: &[(Row, Nai
         Purchase { id: &r.id, date: *day, payee, name: bank_csv::plain(payee), wording: wording(&r.payee), amount: r.amount, category: category(b, r.category_id.as_deref()) }
     }));
     rows.iter().zip(offers).map(|((r, day), offer)| {
-        if r.amount <= 0 || r.transfer_account_id.is_some() || r.duplicate || r.possible_duplicate || offer.is_some() || !matches.candidates(r.amount, *day).is_empty() {
+        if r.amount <= 0 || r.transfer_account_id.is_some() || r.duplicate || r.possible_duplicate || offer.is_some() || !matches.candidates(r.amount, r.near, *day).is_empty() {
             return None;
         }
         let (name, said) = (bank_csv::plain(r.rename.as_deref().unwrap_or(&r.payee)), wording(&r.payee));
@@ -1168,7 +1250,7 @@ pub fn apply(mut b: Budget, account: &str, choices: Vec<Choice>) -> Result<Budge
             }
             if let Some(split) = split {
                 let part = &mut t.splits[split];
-                if ledger::transfer(part) != Some(account) || -part.amount != r.amount {
+                if ledger::transfer(part) != Some(account) || !same(-part.amount, &r) {
                     return Err(t!("Matching account or amount changed. Preview again."));
                 }
                 if ledger::status(part) != Cleared::Reconciled {
@@ -1176,7 +1258,7 @@ pub fn apply(mut b: Budget, account: &str, choices: Vec<Choice>) -> Result<Budge
                 }
                 part.extra.entry("bankImportIds").or_insert(json!([]))
                     .as_array_mut().ok_or_else(|| t!("Invalid bank identifiers"))?.push(json!(r.id));
-            } else if t.account_id == account && t.amount == r.amount {
+            } else if t.account_id == account && same(t.amount, &r) {
                 if t.status != Cleared::Reconciled {
                     t.status = Cleared::Cleared
                 }
@@ -1188,11 +1270,11 @@ pub fn apply(mut b: Budget, account: &str, choices: Vec<Choice>) -> Result<Budge
                         if target_same_side { t.splits.clear(); }
                     }
                 }
-            } else if t.transfer_account_id.as_deref() == Some(account) && -t.amount == r.amount {
+            } else if t.transfer_account_id.as_deref() == Some(account) && same(-t.amount, &r) {
                 if t.transfer_status != Some(Cleared::Reconciled) {
                     t.transfer_status = Some(Cleared::Cleared)
                 }
-            } else if matches.transfer_targets.contains_key(id) && -t.amount == r.amount && apart <= TRANSFER_DAYS {
+            } else if matches.transfer_targets.contains_key(id) && same(-t.amount, &r) && apart <= TRANSFER_DAYS {
                 // Its other side, from money moved between your own accounts: they become one
                 // transfer, so the move isn't counted as spending or income. Between budget
                 // accounts it needs no category; across the budget's edge it keeps its own.
@@ -1478,6 +1560,29 @@ mod tests {
         validate(&b).unwrap();
         b
     }
+    #[test]
+    fn a_word_of_a_texts_own_accounts_name_names_no_other_account() {
+        let account = |id: &str, name: &str| Account { id: id.into(), name: name.into(), ..sample().accounts[0].clone() };
+        let mut b = sample();
+        b.accounts = vec![account("everyday", "Chase Everyday"), account("savings", "Chase Savings"), account("amex", "Amex Gold"),
+            account("ib1", "Interactive Brokers …4567"), account("ib2", "Interactive Brokers …8901")];
+        let clues = Clues::new(&b);
+        let none = clues.read("", "");
+        // The bank's own name in its text says nothing of the user's other account at that bank,
+        // so a card payment can still be paired with the card.
+        assert_eq!(clues.fit("everyday", &clues.read("CHASE CARD PAYMENT", ""), "amex", &none), Some(0));
+        assert_eq!(clues.fit("everyday", &clues.read("CHASE PAYMENT AMEX", ""), "amex", &none), Some(1));
+        // A word that is only the other account's still names it.
+        assert_eq!(clues.fit("everyday", &clues.read("CHASE TRANSFER TO SAVINGS", ""), "amex", &none), None);
+        assert_eq!(clues.fit("everyday", &clues.read("CHASE TRANSFER TO SAVINGS", ""), "savings", &none), Some(1));
+        // Two broker accounts named alike: one's own row doesn't point at the other, and the
+        // bank's text names either.
+        let row = clues.read("Interactive Brokers", "CASH RECEIPTS / ELECTRONIC FUND TRANSFERS");
+        assert_eq!(clues.fit("ib1", &row, "everyday", &none), Some(0));
+        assert_eq!(clues.fit("ib1", &row, "everyday", &clues.read("INTERACTIVE BROKERS LLC", "")), Some(1));
+        assert_eq!(clues.fit("ib2", &row, "everyday", &clues.read("INTERACTIVE BROKERS LLC", "")), Some(1));
+    }
+
     fn incoming(fit: &str, amount: i64) -> BankTransaction {
         BankTransaction { fit: fit.into(), date: "2026-10-15".into(), payee: "Transfer".into(), memo: String::new(), amount, transfer_account_id: None }
     }

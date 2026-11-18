@@ -337,14 +337,20 @@ private fun DrawScope.drawAxes(frame: Frame, ticks: List<Double>, axis: AxisLabe
 
 /**
  * X labels that never crowd, at an even step (every month, every 2nd, 3rd...) counted back from the
- * last month, so the latest always shows. The year shows in full on the first label and where it
- * changes ("Dec 2025", "Feb", "Apr"). The picked month's label is always drawn, in bold; labels it
- * would cover step aside, and the step itself doesn't change while picking.
+ * last month, so the latest always shows. The step counts labels, not points: a chart by the day
+ * marks only a month's first day, and every other mark is every other month. The year shows in full
+ * on the first label and where it changes ("Dec 2025", "Feb", "Apr"). The picked month's label is
+ * always drawn, in bold; labels it would cover step aside, and the step itself doesn't change while picking.
  */
 private fun Density.xLabels(ticks: List<XTick?>, x: (Int) -> Float, measurer: TextMeasurer, palette: ReportPalette, picked: Int): List<Pair<Float, TextLayoutResult>> {
     val gap = 8.dp.toPx()
     val last = ticks.indexOfLast { it != null }
     if (last < 0) return emptyList()
+    // Each mark's place among the marks, counted back from the last one.
+    val back = IntArray(ticks.size).also { order ->
+        var n = 0
+        for (i in last downTo 0) if (ticks[i] != null) order[i] = n++
+    }
     // Labels every [step] months; null when two would touch and [strict].
     fun place(step: Int, picked: Int, strict: Boolean): List<Pair<Float, TextLayoutResult>>? {
         val out = ArrayList<Pair<Float, TextLayoutResult>>()
@@ -360,7 +366,7 @@ private fun Density.xLabels(ticks: List<XTick?>, x: (Int) -> Float, measurer: Te
         ticks.forEachIndexed { i, tick ->
             if (tick == null) return@forEachIndexed
             if (i == picked) { lastRight = (pickedRight ?: 0f) - gap; lastYear = tick.year; return@forEachIndexed }
-            if ((last - i) % step != 0) return@forEachIndexed
+            if (back[i] % step != 0) return@forEachIndexed
             val layout = measurer.measure(if (lastYear == null || lastYear != tick.year) tick.long else tick.short, palette.axis)
             val left = x(i) - layout.size.width / 2f
             val right = x(i) + layout.size.width / 2f
@@ -501,10 +507,11 @@ private fun toggled(hidden: Set<String>, label: String, legend: List<LegendItem>
 /**
  * Columns by month (or any keys): one series, stacked series (positives up, negatives down) or
  * grouped series side by side, with an optional overlay line and average rule. With a [legend], its
- * names hide and show their series and the scale follows.
+ * names hide and show their series and the scale follows. Without [readout] the figures over the
+ * chart are left out, for a page whose own figures say them: a picked month still has its bubble.
  */
 @Composable
-internal fun ColumnChart(model: ColumnModel, legend: List<LegendItem> = emptyList(), modifier: Modifier = Modifier, height: Dp = 220.dp) {
+internal fun ColumnChart(model: ColumnModel, legend: List<LegendItem> = emptyList(), modifier: Modifier = Modifier, height: Dp = 220.dp, readout: Boolean = true) {
     val palette = reportPalette()
     val measurer = rememberTextMeasurer()
     var hidden by remember(model.label) { mutableStateOf(emptySet<String>()) }
@@ -518,7 +525,7 @@ internal fun ColumnChart(model: ColumnModel, legend: List<LegendItem> = emptyLis
     val haptics = LocalHapticFeedback.current
     var width by remember { mutableIntStateOf(0) }
     Column(modifier.fillMaxWidth()) {
-        if (shown >= 0) ChartReadout(m.titles[shown], m.readouts[shown], unit = m.unit)
+        if (readout && shown >= 0) ChartReadout(m.titles[shown], m.readouts[shown], unit = m.unit)
         // Months run left to right in either language, as the chart is drawn.
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Box(Modifier.fillMaxWidth().height(height).onSizeChanged { width = it.width }.semantics { contentDescription = m.label }
@@ -594,7 +601,10 @@ internal fun ColumnChart(model: ColumnModel, legend: List<LegendItem> = emptyLis
                 onDrawBehind {
                     drawAxes(frame, m.ticks, axis, palette)
                     if (picked >= 0) {
-                        drawRect(palette.hover, Offset(x(picked) - band / 2, frame.top), Size(band, frame.bottom - frame.top))
+                        // The picked month's column of the plot, washed with rounded ends as a press is.
+                        val inset = minOf(2.dp.toPx(), band * .08f)
+                        drawRoundRect(palette.hover, Offset(x(picked) - band / 2 + inset, frame.top - 4.dp.toPx()), Size(band - inset * 2, frame.bottom - frame.top + 8.dp.toPx()),
+                            CornerRadius(minOf(8.dp.toPx(), band / 2)))
                         drawLine(palette.colors.borderStrong, Offset(x(picked), 0f), Offset(x(picked), frame.top), 1f)
                     }
                     bars.forEach { b ->
@@ -639,9 +649,9 @@ internal fun ColumnChart(model: ColumnModel, legend: List<LegendItem> = emptyLis
     }
 }
 
-/** Lines over months or days on one axis that includes zero; a single line gets a 10% wash. */
+/** Lines over months or days on one axis that includes zero; a single line gets a 10% wash. [readout] as ColumnChart's. */
 @Composable
-internal fun LinesChart(model: LinesModel, legend: List<LegendItem> = emptyList(), modifier: Modifier = Modifier, height: Dp = 220.dp) {
+internal fun LinesChart(model: LinesModel, legend: List<LegendItem> = emptyList(), modifier: Modifier = Modifier, height: Dp = 220.dp, readout: Boolean = true) {
     val palette = reportPalette()
     val measurer = rememberTextMeasurer()
     var hidden by remember(model.label) { mutableStateOf(emptySet<String>()) }
@@ -660,7 +670,7 @@ internal fun LinesChart(model: LinesModel, legend: List<LegendItem> = emptyList(
         return if (count <= 1) 0 else ((x - left) / max(step, 1f)).roundToInt().coerceIn(0, count - 1)
     }
     Column(modifier.fillMaxWidth()) {
-        if (shown >= 0) ChartReadout(m.titles[shown], m.readouts[shown], unit = m.unit)
+        if (readout && shown >= 0) ChartReadout(m.titles[shown], m.readouts[shown], unit = m.unit)
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Box(Modifier.fillMaxWidth().height(height).onSizeChanged { width = it.width }.semantics { contentDescription = m.label }
             .pointerInput(count, axis.width) { detectTapGestures { o -> val i = at(o.x, size.width); selected = if (i == selected) -1 else i.also { haptics.tick() } } }
@@ -800,17 +810,52 @@ internal fun Donut(slices: List<SliceModel>, centerValue: String, centerLabel: S
                 }
             }
         }, contentAlignment = Alignment.Center) {
-        val slice = shown.getOrNull(chosen)
-        // The total, or the picked slice, shrinks to fit inside the ring.
-        Column(Modifier.widthIn(max = size * 0.52f), horizontalAlignment = Alignment.CenterHorizontally) {
-            BasicText(slice?.valueText?.ifEmpty { null } ?: centerValue, style = Tabular.merge(TextStyle(color = ur.text, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)),
-                maxLines = 1, autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = 17.sp, stepSize = 0.5.sp))
-            Text(slice?.let { Money.own(it.label) } ?: centerLabel, color = if (slice != null) ur.text2 else ur.muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center)
-            if (slice != null && slice.share.isNotEmpty()) Text(slice.share, color = ur.muted, fontSize = 12.sp, maxLines = 1, style = Tabular)
-            if (slice != null && onOpen != null && slice.key != "__other") Text(openLabel, Modifier.padding(top = 2.dp), color = ur.accent, fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+        DonutMiddle(shown.getOrNull(chosen), centerValue, centerLabel, size, onOpen != null, openLabel)
+    }
+}
+
+/**
+ * What the ring's middle says: the total, or the picked slice. Each line is kept to the width of
+ * the hole at its own height (the circle narrows above and below its middle), so nothing reaches
+ * the ring: the figure shrinks to fit, a name is cut short. A picked slice's share sits beside its
+ * name to save a line; a small ring, too small for an amount, says the picked slice's share instead.
+ */
+@Composable
+private fun DonutMiddle(slice: SliceModel?, centerValue: String, centerLabel: String, size: Dp, opens: Boolean, openLabel: String) {
+    val density = LocalDensity.current
+    val small = size < 160.dp
+    val figure = when {
+        slice == null -> centerValue
+        small -> slice.share.ifEmpty { slice.valueText }
+        else -> slice.valueText.ifEmpty { centerValue }
+    }
+    val share = if (slice != null && !small) slice.share else ""
+    val link = slice != null && opens && slice.key != "__other"
+    // The hole's radius, less a little air, and each line's height at the reader's text size.
+    val hole = (size / 2 - 8.dp) * 0.62f - 5.dp
+    val big = with(density) { 22.sp.toDp() }
+    val line = with(density) { 16.sp.toDp() }
+    val heights = listOfNotNull(big, line, if (link) line + 2.dp else null)
+    val widths = run {
+        var top = -heights.fold(0.dp) { sum, h -> sum + h } / 2
+        heights.map { h ->
+            val far = maxOf(abs(top.value), abs((top + h).value))
+            top += h
+            val r = hole.value
+            if (far >= r) 0.dp else (2 * kotlin.math.sqrt(r * r - far * far)).dp
         }
+    }
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        BasicText(figure, Modifier.widthIn(max = widths[0]), style = Tabular.merge(TextStyle(color = ur.text, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)),
+            maxLines = 1, autoSize = TextAutoSize.StepBased(minFontSize = 9.sp, maxFontSize = 17.sp, stepSize = 0.5.sp))
+        Row(Modifier.widthIn(max = widths[1]), verticalAlignment = Alignment.CenterVertically) {
+            Text(slice?.let { Money.own(it.label) } ?: centerLabel, Modifier.weight(1f, fill = false), color = if (slice != null) ur.text2 else ur.muted, fontSize = 12.sp,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+            if (share.isNotEmpty()) Text(" · $share", color = ur.muted, fontSize = 12.sp, maxLines = 1, style = Tabular)
+        }
+        if (link) BasicText(openLabel, Modifier.padding(top = 2.dp).widthIn(max = widths[2]),
+            style = TextStyle(color = ur.accent, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center), maxLines = 1,
+            autoSize = TextAutoSize.StepBased(minFontSize = 9.sp, maxFontSize = 12.sp, stepSize = 0.5.sp))
     }
 }
 
@@ -821,7 +866,7 @@ internal fun Donut(slices: List<SliceModel>, centerValue: String, centerLabel: S
 @Composable
 internal fun BarRowView(row: BarRowModel, defaultColor: Int, onClick: (() -> Unit)?, picked: Boolean? = null) {
     val palette = reportPalette()
-    Column(Modifier.fillMaxWidth().background(if (picked == true) ur.surface2 else Color.Transparent)
+    Column(Modifier.fillMaxWidth().chosenWash(picked == true, ur.surface2, Color.Transparent)
         .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).padding(horizontal = 16.dp, vertical = 9.dp),
         verticalArrangement = Arrangement.spacedBy(5.dp)) {
         val fade = if (picked == false) .45f else 1f
@@ -832,6 +877,7 @@ internal fun BarRowView(row: BarRowModel, defaultColor: Int, onClick: (() -> Uni
             row.detail?.let { Text(it, Modifier.widthIn(min = 52.dp), color = ur.muted.copy(alpha = fade), style = MaterialTheme.typography.bodySmall.merge(Tabular), textAlign = TextAlign.End, maxLines = 1) }
             if (picked == true && onClick != null) Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, stringResource(R.string.chart_see_transactions), Modifier.padding(start = 2.dp).size(18.dp), tint = ur.accent)
         }
+        row.note?.let { Text(it, Modifier.padding(start = if (row.color != null) 18.dp else 0.dp), color = ur.muted.copy(alpha = fade), style = MaterialTheme.typography.bodySmall.merge(Tabular), maxLines = 1) }
         Box(Modifier.fillMaxWidth().height(10.dp)) {
             if (row.fraction > 0f) Box(Modifier.fillMaxHeight().fillMaxWidth(row.fraction.coerceIn(0f, 1f))
                 .clip(RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp)).background(palette.color(row.color ?: defaultColor).copy(alpha = fade)))
@@ -1029,7 +1075,7 @@ internal fun MiniBars(model: MiniBarsModel, modifier: Modifier = Modifier, selec
     Column(modifier.fillMaxWidth()) {
     // Months run left to right in either language, so each label stays under its columns.
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-    Column(Modifier.fillMaxWidth().height(if (labelled) 150.dp else 136.dp).padding(top = 6.dp)) {
+    Column(Modifier.fillMaxWidth().height(if (labelled) 104.dp else 90.dp).padding(top = 6.dp)) {
         Box(Modifier.fillMaxWidth().weight(1f).semantics { contentDescription = description }
             .then(if (onSelect == null) Modifier else Modifier
                 .pointerInput(n) {

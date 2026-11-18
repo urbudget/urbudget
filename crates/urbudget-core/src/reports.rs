@@ -20,10 +20,16 @@ pub struct Month {
     pub month: String,
     pub income: i64,
     pub spending: i64,
+    /// Money the budget accounts moved into investment accounts, less what came back out of
+    /// them (`investments::invested_accounts`). It is neither spending nor income here.
+    pub invested: i64,
     pub net_income: i64,
     pub assets: i64,
     pub debt: i64,
     pub net_worth: i64,
+    /// What markets did to net worth in the month: the market changes written for investment
+    /// accounts (`investments`) that count in it. The rest of its change is everything else.
+    pub market: i64,
     /// Money into budget accounts from outside them (income, refunds, transfers from tracking).
     pub inflow: i64,
     /// Money out of budget accounts (spending, transfers to tracking), as a positive amount.
@@ -56,6 +62,8 @@ pub struct Report {
     pub days: BTreeMap<String, i64>,
     pub income: i64,
     pub spending: i64,
+    /// Money moved into investment accounts, less what came back out, over the range.
+    pub invested: i64,
     /// Distinct saved transactions with selected expense parts (including refunds).
     pub transaction_count: usize,
     pub age_of_money: Option<i64>,
@@ -102,8 +110,8 @@ pub fn details(b: &Budget, f: &Filter, dimension: &str, key: &str) -> Result<Vec
 pub fn calculate(b: &Budget, f: &Filter) -> Result<Report, String> {
     calculate_with(b, f, |_, _, _, _, _, _| {})
 }
-fn calculate_with(b: &Budget, f: &Filter, mut contribution: impl FnMut(&Transaction, &str, &str, &Split, &str, i64)) -> Result<Report, String> {
-    validate(b)?;
+/// The first day of a filter's first and last months, once both are months and in order.
+fn span(f: &Filter) -> Result<(NaiveDate, NaiveDate), String> {
     let date = |s: &str| -> Result<NaiveDate, &str> {
         if s.len() != 7 { return Err(tr("Choose valid months.")); }
         let date = NaiveDate::parse_from_str(&format!("{s}-01"), "%Y-%m-%d")
@@ -111,11 +119,25 @@ fn calculate_with(b: &Budget, f: &Filter, mut contribution: impl FnMut(&Transact
         if date.format("%Y-%m").to_string() != s { return Err(tr("Choose valid months.")); }
         Ok(date)
     };
-    let mut current = date(&f.from)?;
-    let end = date(&f.to)?;
-    if current > end || (end - current).num_days() > 366 * 100 {
+    let (from, to) = (date(&f.from)?, date(&f.to)?);
+    if from > to || (to - from).num_days() > 366 * 100 {
         return Err(t!("Choose a range of up to 100 years."));
     }
+    Ok((from, to))
+}
+/// Every month of a filter's range, in order, refused as a report of it would be.
+pub(crate) fn months_in(f: &Filter) -> Result<Vec<String>, String> {
+    let (mut current, end) = span(f)?;
+    let mut months = vec![];
+    while current <= end {
+        months.push(current.format("%Y-%m").to_string());
+        current = current.checked_add_months(Months::new(1)).ok_or_else(|| t!("Invalid date"))?;
+    }
+    Ok(months)
+}
+fn calculate_with(b: &Budget, f: &Filter, mut contribution: impl FnMut(&Transaction, &str, &str, &Split, &str, i64)) -> Result<Report, String> {
+    validate(b)?;
+    let (mut current, end) = span(f)?;
     let selected: HashSet<_> = f.account_ids.iter().map(String::as_str).collect();
     let cats: HashSet<_> = f.category_ids.iter().map(String::as_str).collect();
     let include = |id: &str| selected.is_empty() || selected.contains(id);
@@ -126,6 +148,7 @@ fn calculate_with(b: &Budget, f: &Filter, mut contribution: impl FnMut(&Transact
     let accounts: HashMap<_, _> = b.accounts.iter().map(|a| (a.id.as_str(), a)).collect();
     let payment_categories: HashSet<_> = b.categories.iter().filter(|c| c.payment_account().is_some())
         .map(|c| c.id.as_str()).collect();
+    let investment_accounts = crate::investments::invested_accounts(b);
     let mut entries = ledger::transactions(b);
     // Share the chronological ledger with cash aging, and visit each entry only once
     // for period totals and running balances instead of rescanning history each month.
@@ -140,6 +163,7 @@ fn calculate_with(b: &Budget, f: &Filter, mut contribution: impl FnMut(&Transact
     let mut days = BTreeMap::new();
     let mut income = 0;
     let mut spending = 0;
+    let mut invested = 0;
     let mut opening_accounts: BTreeMap<_, _> = b
         .accounts
         .iter()
@@ -164,10 +188,12 @@ fn calculate_with(b: &Budget, f: &Filter, mut contribution: impl FnMut(&Transact
             month: month.clone(),
             income: 0,
             spending: 0,
+            invested: 0,
             net_income: 0,
             assets: 0,
             debt: 0,
             net_worth: 0,
+            market: 0,
             inflow: 0,
             outflow: 0,
             categories: BTreeMap::new(),
@@ -177,6 +203,9 @@ fn calculate_with(b: &Budget, f: &Filter, mut contribution: impl FnMut(&Transact
         while let Some(t) = pending.next_if(|t| t.date[..7] <= month[..]) {
             if let Some(n) = balances.get_mut(&t.account_id) {
                 *n += t.amount;
+                if crate::investments::market_change(t) && accounts[t.account_id.as_str()].in_net_worth() {
+                    row.market += t.amount;
+                }
             }
             if let Some(other) = t.transfer_account_id.as_ref() {
                 if let Some(n) = balances.get_mut(other) {
@@ -185,15 +214,20 @@ fn calculate_with(b: &Budget, f: &Filter, mut contribution: impl FnMut(&Transact
             }
             let a = accounts[t.account_id.as_str()];
             let mut direction = 1;
+            // Money moved between the budget and an investment account: in neither spending
+            // nor income, but in `invested`.
+            let mut investing = false;
             let budget_id = if let Some(peer) = t.transfer_account_id.as_ref() {
                 let other = accounts[peer.as_str()];
                 if a.on_budget() == other.on_budget() {
                     continue;
                 }
                 if a.on_budget() {
+                    investing = investment_accounts.contains(peer.as_str());
                     &t.account_id
                 } else {
                     direction = -1;
+                    investing = investment_accounts.contains(t.account_id.as_str());
                     peer
                 }
             } else {
@@ -230,6 +264,11 @@ fn calculate_with(b: &Budget, f: &Filter, mut contribution: impl FnMut(&Transact
                 let amount = part.amount * direction;
                 let payee_name = ledger::split_payee(t, part);
                 let category = match ledger::classify(t, part, amount) {
+                    // Taken out of investments to be assigned: whatever the category filter, as income would be.
+                    ledger::Flow::Income if investing => {
+                        row.invested -= amount;
+                        continue;
+                    }
                     ledger::Flow::Income => {
                         row.income += amount;
                         *row.income_sources.entry(payee_name.to_owned()).or_default() += amount;
@@ -241,6 +280,11 @@ fn calculate_with(b: &Budget, f: &Filter, mut contribution: impl FnMut(&Transact
                 };
                 if !cats.is_empty() && !cats.contains(category) { continue; }
                 if payment_categories.contains(category) { continue; }
+                // Filtered by category as spending is, and kept out of it, its drill-downs and its counts.
+                if investing {
+                    row.invested -= amount;
+                    continue;
+                }
                 contribution(t, ledger::saved_id(t), budget_id, part, category, -amount);
                 *row.categories.entry(category.to_owned()).or_default() -= amount;
                 row.spending -= amount;
@@ -275,6 +319,7 @@ fn calculate_with(b: &Budget, f: &Filter, mut contribution: impl FnMut(&Transact
         }
         income += row.income;
         spending += row.spending;
+        invested += row.invested;
         months.push(row);
         current = current
             .checked_add_months(Months::new(1))
@@ -298,6 +343,7 @@ fn calculate_with(b: &Budget, f: &Filter, mut contribution: impl FnMut(&Transact
         days,
         income,
         spending,
+        invested,
         transaction_count: spending_transactions.len(),
         age_of_money,
         opening_accounts,
@@ -317,6 +363,10 @@ pub struct ForecastEvent {
     pub category_id: Option<String>,
     /// The schedule it comes from; none for a transaction already entered for a later date.
     pub schedule_id: Option<String>,
+    /// Money moved to or from an investment account (`investments::invested_accounts`): Reports
+    /// counts it as neither spending nor income, so scheduled spending leaves it out too.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub invested: bool,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -368,6 +418,7 @@ pub fn forecast_for_accounts(b: &Budget, today: &str, through: &str, account_ids
     }
     let accounts: HashMap<_, _> = b.accounts.iter().map(|a| (a.id.as_str(), a)).collect();
     let on_budget = |id: &str| accounts.get(id).is_some_and(|a| a.on_budget());
+    let investing = crate::investments::invested_accounts(b);
     let mut balances: BTreeMap<String, i64> = b
         .accounts
         .iter()
@@ -413,6 +464,7 @@ pub fn forecast_for_accounts(b: &Budget, today: &str, through: &str, account_ids
                     peer_id: peer.filter(|p| on_budget(p)).cloned(),
                     category_id: category.clone(),
                     schedule_id: schedule.map(String::from),
+                    invested: peer.is_some_and(|p| investing.contains(p.as_str())),
                 });
             }
             Ok(())
@@ -596,6 +648,7 @@ pub fn csv(budget: &Budget, report: &Report) -> Result<String, String> {
         "Month",
         "Income",
         "Spending",
+        "Invested",
         "Net income",
         "Assets",
         "Debt",
@@ -615,6 +668,7 @@ pub fn csv(budget: &Budget, report: &Report) -> Result<String, String> {
             m.month.clone(),
             money(m.income),
             money(m.spending),
+            money(m.invested),
             money(m.net_income),
             money(m.assets),
             money(m.debt),
@@ -883,6 +937,121 @@ mod tests {
         let intentional = calculate(&b, &october(&[])).unwrap();
         assert_eq!((intentional.income, intentional.spending), (-5000, 0));
         assert_eq!(crate::domain::calculate(&b, "2026-10").unwrap().income, -5000);
+    }
+    /// October with money moved between the budget and accounts off it: into one typed as an
+    /// investment (with a category), into one with valued holdings but no type (with none),
+    /// into a plain tracking account, back out of the investment one to be assigned, and a
+    /// split whose second part goes into a retirement account; then into an other asset, into
+    /// one YNAB typed as an other asset, and into a property. Beside them, a card purchase.
+    fn investing() -> Budget {
+        let mut b = sample();
+        b.categories.push(Category { extra: Default::default(), id: "saving".into(), name: "Saving".into(), group: "Goals".into(), target: 0 });
+        let off = |id: &str, kind: Option<&str>| Account {
+            extra: kind.map(|kind| serde_json::Map::from_iter([("accountType".to_string(), serde_json::json!(kind))])).unwrap_or_default(),
+            id: id.into(),
+            name: id.into(),
+            kind: AccountKind::Tracking,
+            opening_balance: 0,
+            archived: false,
+        };
+        let mut imported = off("imported", None);
+        imported.extra.insert("source".into(), serde_json::json!({"id": "ynab-account", "type": "otherAsset", "on_budget": false}));
+        b.accounts.extend([off("broker", Some("investment")), off("fund", None), off("house", None), off("pension", Some("retirement"))]);
+        b.accounts.extend([off("asset", Some("otherAsset")), imported, off("flat", Some("property"))]);
+        b.extra.insert("investments".into(), serde_json::json!([{
+            "accountId": "fund", "source": "manual", "sourceAccount": "", "asOf": "2026-10-01", "currency": "USD", "rate": "1",
+            "total": 10_000, "positions": [], "cash": [], "values": [["2026-10-01", 10_000]], "syncedAt": ""
+        }]));
+        let moved = |id: &str, date: &str, from: &str, to: &str, payee: &str, amount: i64, category: Option<&str>| {
+            let mut t = purchase();
+            t.id = id.into();
+            t.date = date.into();
+            t.account_id = from.into();
+            t.payee = payee.into();
+            t.amount = amount;
+            t.transfer_account_id = Some(to.into());
+            t.transfer_status = Some(Cleared::Cleared);
+            t.splits[0].amount = amount;
+            t.splits[0].category_id = category.map(Into::into);
+            t
+        };
+        b.transactions.push(purchase());
+        b.transactions.push(moved("to-broker", "2026-10-05", "cash", "broker", "Broker", -20_000, Some("saving")));
+        b.transactions.push(moved("to-fund", "2026-10-06", "cash", "fund", "Fund", -10_000, None));
+        b.transactions.push(moved("to-house", "2026-10-07", "cash", "house", "House", -5_000, Some("saving")));
+        // Recorded in the broker account: 30.00 left it for the budget, to be assigned.
+        let mut back = moved("from-broker", "2026-10-08", "broker", "cash", "Broker", -3_000, None);
+        back.splits[0].extra.insert("unassigned".into(), serde_json::json!(true));
+        b.transactions.push(back);
+        let mut split = purchase();
+        split.id = "split".into();
+        split.date = "2026-10-09".into();
+        split.account_id = "cash".into();
+        split.payee = "Payday moves".into();
+        split.amount = -12_000;
+        split.splits = serde_json::from_value(serde_json::json!([
+            {"categoryId": "food", "amount": -4_000},
+            {"categoryId": null, "amount": -8_000, "transferAccountId": "pension", "transferStatus": "cleared", "unassigned": true}
+        ])).unwrap();
+        b.transactions.push(split);
+        b.transactions.push(moved("to-asset", "2026-10-10", "cash", "asset", "Asset", -2_000, Some("saving")));
+        b.transactions.push(moved("to-imported", "2026-10-11", "cash", "imported", "Imported", -1_000, Some("saving")));
+        b.transactions.push(moved("to-flat", "2026-10-12", "cash", "flat", "Flat", -6_000, Some("saving")));
+        validate(&b).unwrap();
+        b
+    }
+    #[test]
+    fn money_moved_into_investment_accounts_is_neither_spending_nor_income_but_invested() {
+        let b = investing();
+        let r = calculate(&b, &october(&[])).unwrap();
+        // Spending is the card purchase, the moves into the plain tracking account and the
+        // property, and the split's ordinary part; nothing came in as income.
+        assert_eq!((r.spending, r.income, r.transaction_count), (20_000, 0, 4));
+        assert_eq!(r.categories, BTreeMap::from([("food".to_string(), 9_000), ("saving".to_string(), 11_000)]));
+        assert!(r.income_sources.is_empty());
+        // In: 200.00, 100.00, the split's 80.00, and 20.00 and 10.00 into other assets; back out: 30.00.
+        assert_eq!((r.invested, r.months[0].invested), (38_000, 38_000));
+        assert!(["Broker", "Fund", "Asset", "Imported"].iter().all(|p| !r.payees.contains_key(*p)));
+        assert_eq!((r.payees["House"].amount, r.payees["Flat"].amount), (5_000, 6_000));
+        assert!(!r.days.contains_key("2026-10-05") && !r.days.contains_key("2026-10-06") && r.days["2026-10-09"] == 4_000);
+        assert_eq!(r.payees["Payday moves"].amount, 4_000);
+        // The money still left and reached the budget accounts.
+        assert_eq!((r.months[0].outflow, r.months[0].inflow), (61_000, 3_000));
+        // Drill-downs list only what the totals count.
+        let saving = details(&b, &october(&[]), "category", "saving").unwrap();
+        assert_eq!(saving.iter().map(|c| (c.transaction_id.as_str(), c.amount)).collect::<Vec<_>>(), vec![("to-house", 5_000), ("to-flat", 6_000)]);
+        assert!(details(&b, &october(&[]), "category", ledger::UNCATEGORIZED_CATEGORY).unwrap().is_empty());
+        assert!(details(&b, &october(&[]), "payee", "Broker").unwrap().is_empty());
+        assert!(details(&b, &october(&[]), "day", "2026-10-05").unwrap().is_empty());
+        // The category filter applies to it as to spending; money taken out to be assigned, and
+        // the split's part with no category, count whatever the filter, as income does.
+        let filtered = |cats: &[&str]| calculate(&b, &october(cats)).unwrap();
+        let saving = filtered(&["saving"]);
+        assert_eq!((saving.spending, saving.invested, saving.months[0].outflow), (11_000, 28_000, 34_000));
+        let food = filtered(&["food"]);
+        assert_eq!((food.spending, food.invested), (9_000, 5_000));
+        let unknown = filtered(&[ledger::UNCATEGORIZED_CATEGORY]);
+        assert_eq!((unknown.spending, unknown.invested), (0, 15_000));
+        // The budget itself is as it was: the category still has the move into investments.
+        let month = crate::domain::calculate(&b, "2026-10").unwrap();
+        assert_eq!(month.categories.iter().find(|c| c.id == "saving").map(|c| c.activity), Some(-34_000));
+        // Holdings never valued don't make an account an investment, and neither does a type on a budget account.
+        let mut unvalued = b.clone();
+        unvalued.extra["investments"][0]["values"] = serde_json::json!([]);
+        let r = calculate(&unvalued, &october(&[])).unwrap();
+        assert_eq!((r.spending, r.invested, r.categories.get(ledger::UNCATEGORIZED_CATEGORY).copied()), (30_000, 28_000, Some(10_000)));
+        let mut typed_cash = sample();
+        typed_cash.accounts[0].extra.insert("accountType".into(), serde_json::json!("investment"));
+        assert!(crate::investments::invested_accounts(&typed_cash).is_empty());
+        assert_eq!(crate::investments::invested_accounts(&b), HashSet::from(["broker", "fund", "pension", "asset", "imported"]));
+        // A type of its own wins over the imported one; one the apps don't know counts as none.
+        let mut retyped = b.clone();
+        retyped.accounts.iter_mut().find(|a| a.id == "imported").unwrap().extra.insert("accountType".into(), serde_json::json!("vehicle"));
+        retyped.accounts.iter_mut().find(|a| a.id == "flat").unwrap().extra.insert("accountType".into(), serde_json::json!("somethingNew"));
+        assert_eq!(crate::investments::invested_accounts(&retyped), HashSet::from(["broker", "fund", "pension", "asset"]));
+        // In the CSV beside spending.
+        let file = csv(&b, &calculate(&b, &october(&[])).unwrap()).unwrap();
+        assert_eq!(file.lines().take(2).collect::<Vec<_>>(), ["Month,Income,Spending,Invested,Net income,Assets,Debt,Net worth", "2026-10,0.00,200.00,380.00,-200.00,960.00,150.00,810.00"]);
     }
     #[test]
     fn reports_count_card_purchase_once_and_use_month_end_balances() {
@@ -1332,5 +1501,18 @@ mod tests {
         assert_eq!(forecast(&b,"2026-10-20","2026-12-31").unwrap().recent_spending,5000);
         assert_eq!(forecast_for_accounts(&b,"2026-10-20","2026-12-31",&["savings".into()]).unwrap().recent_spending,0);
         assert_eq!(forecast_for_accounts(&b,"2026-10-20","2026-12-31",&["cash".into()]).unwrap().recent_spending,5000);
+    }
+    #[test]
+    fn forecast_marks_money_moved_to_or_from_investment_accounts() {
+        // Seen from the last day of September, October's moves are all still ahead.
+        let f = forecast(&investing(), "2026-09-30", "2026-10-31").unwrap();
+        let marked = |payee: &str| f.events.iter().filter(|e| e.payee == payee).map(|e| e.invested).collect::<Vec<_>>();
+        assert_eq!(marked("Broker"), vec![true, true], "money in and back out of the investment account");
+        assert_eq!(marked("Fund"), vec![true], "an account with holdings but no type");
+        assert_eq!(marked("House"), vec![false], "a plain tracking account is still spending");
+        assert_eq!(marked("Flat"), vec![false], "property is still spending");
+        let json = serde_json::to_value(&f.events).unwrap();
+        assert!(json.as_array().unwrap().iter().any(|e| e["invested"] == true));
+        assert!(json.as_array().unwrap().iter().filter(|e| e["payee"] == "House").all(|e| e.get("invested").is_none()), "false is left out of the wire");
     }
 }

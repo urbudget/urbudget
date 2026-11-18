@@ -109,17 +109,26 @@ struct Notice: View {
         }
     }
 
+    /// The longest action, in characters, that sits beside the text ("Review", "Set up"); a longer
+    /// one goes under it, as on Android, so the words keep the card's width.
+    private static let besideLength = 16
+
     var body: some View {
-        // What it says and its main action on one line; a second action has the line under them,
-        // as on Android, so the words keep their room on a narrow screen.
+        // What it says and its main action on one line; a long action, and a second action, have
+        // lines under them, so the words keep their room on a narrow screen.
+        let below = (action?.count ?? 0) > Self.besideLength
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center, spacing: 10) {
+            HStack(alignment: below ? .top : .center, spacing: 10) {
                 Image(systemName: icon).foregroundStyle(ink).font(.body.weight(.semibold))
                 Text(text).font(.subheadline.weight(secondary == nil ? .regular : .semibold)).foregroundStyle(Color.primary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                if let action, let onAction {
+                if !below, let action, let onAction {
                     Button(action, action: onAction).font(.subheadline.weight(.bold)).foregroundStyle(ink).buttonStyle(.borderless)
                 }
+            }
+            if below, let action, let onAction {
+                Button(action, action: onAction).font(.subheadline.weight(.bold)).foregroundStyle(ink).buttonStyle(.borderless)
+                    .padding(.leading, 30)
             }
             if let secondary {
                 Button(action: secondary.action) {

@@ -3,6 +3,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { ArrowDownLeft, Check, Database, Download, FileUp, FolderOpen, RefreshCw, RotateCcw } from "lucide-react";
 import { api, desktop } from "./bridge";
 import { BankSyncSettings } from "./BankSync";
+import { InvestmentsSettings } from "./Investments";
 import { YnabImport } from "./YnabImport";
 import { YnabFileImport } from "./YnabFileImport";
 import { YnabScreenAudit } from "./YnabScreenAudit";
@@ -529,6 +530,7 @@ export function SettingsPage({
       {tab === "import" && (
         <>
           <BankSyncSettings budget={budget} edit={edit} onSync={onBankSync} />
+          {transform && <InvestmentsSettings budget={budget} transform={transform} />}
           <YnabFileImport budget={budget} openBudget={openBudget} />
           <YnabImport
             budgetId={budgetId}

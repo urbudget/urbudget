@@ -24,6 +24,58 @@ class EditorPreparationTest {
         assertEquals("new", row.initial)
     }
 
+    @Test fun aRowThatDoesntSayWhereItsMoneyCameFromCanBeAddedAsATransferWithAnAccount() = runTest {
+        val budget = JSONObject("""{"currency":"SAR","accounts":[{"id":"bank","name":"Everyday"},{"id":"other","name":"Long term 2"}],"transactions":[]}""")
+        val accounts = listOf(OtherAccount("bank", "Everyday", "2026-01-01"), OtherAccount("other", "Long term 2", "2026-01-01"))
+        val rows = listOf(
+            JSONObject("""{"id":"ibkr:1","date":"2026-10-05","payee":"Interactive Brokers","memo":"","amount":100000,"candidates":[]}"""),
+            JSONObject("""{"id":"ibkr:2","date":"2026-10-09","payee":"Interactive Brokers","memo":"","amount":-50000,"transferAccountId":"other","candidates":[]}"""),
+            JSONObject("""{"id":"ibkr:3","date":"2026-10-01","payee":"Interactive Brokers","memo":"","amount":7000,"duplicate":true,"candidates":[]}"""),
+            JSONObject("""{"id":"ibkr:4","date":"2026-10-12","payee":"Interactive Brokers","memo":"","amount":-2000,"candidates":[]}"""))
+        val prepared = prepareBankReview(rows, budget, false, others = accounts, plain = "Add with no other account")
+        // Nothing goes into another account on a guess: adding it plainly stays the default.
+        assertEquals(listOf("new", "new", "skip", "new"), prepared.map { it.initial })
+        assertEquals(listOf("review" to "Choose a match or add it", "new" to "Add with no other account", "transfer:bank" to "Add as a transfer from Everyday",
+            "transfer:other" to "Add as a transfer from Long term 2", "skip" to "Skip"), prepared[0].options)
+        assertEquals("transfer:bank" to "Add as a transfer to Everyday", prepared[3].options[2])
+        // The broker named the second row's other account: it's added as that transfer, and no other.
+        assertEquals(listOf("review" to "Choose a match or add it", "new" to "Add as a transfer", "skip" to "Skip"), prepared[1].options)
+        assertTrue(prepared[2].options.isEmpty())
+        val chosen = mapOf(0 to "transfer:bank", 1 to "transfer:bank", 2 to "transfer:bank")
+        val sent = bankReviewChoices(prepared, chosen, false)
+        assertEquals(listOf("new", "new", "skip", "new"), (0..3).map { sent.getJSONObject(it).getString("action") })
+        assertEquals("bank", sent.getJSONObject(0).getJSONObject("row").getString("transferAccountId"))
+        assertTrue(sent.getJSONObject(0).isNull("matchId"))
+        // An account a row doesn't offer is not taken for it.
+        assertEquals("other", sent.getJSONObject(1).getJSONObject("row").getString("transferAccountId"))
+        assertFalse(sent.getJSONObject(3).getJSONObject("row").has("transferAccountId"))
+        assertEquals(3 to 0, bankReviewCounts(prepared, chosen))
+        // A bank's review, with no accounts to choose from, is as it was.
+        assertEquals(listOf("review" to "Choose a match or add it", "new" to "Add as a new transaction", "skip" to "Skip"), prepareBankReview(rows.take(1), budget, false).single().options)
+    }
+
+    @Test fun aDepositIsOfferedOnlyTheAccountsWhoseHistoryReachesBackToIt() = runTest {
+        val budget = JSONObject("""{"currency":"SAR","accounts":[{"id":"broker","name":"Broker"},{"id":"bank","name":"Bank"},{"id":"card","name":"Card"},{"id":"new","name":"New"}],"transactions":[]}""")
+        val others = listOf(OtherAccount("bank", "Bank", "2026-02-01"), OtherAccount("card", "Card", "2026-06-15"), OtherAccount("new", "New", null))
+        val rows = listOf(
+            JSONObject("""{"id":"ibkr:1","date":"2026-01-20","payee":"Interactive Brokers","memo":"","amount":100000,"candidates":[]}"""),
+            JSONObject("""{"id":"ibkr:2","date":"2026-04-02","payee":"Interactive Brokers","memo":"","amount":50000,"candidates":[]}"""),
+            JSONObject("""{"id":"ibkr:3","date":"2026-07-01","payee":"Interactive Brokers","memo":"","amount":-20000,"candidates":[]}"""))
+        val prepared = prepareBankReview(rows, budget, false, others = others, plain = "Add with no other account")
+        fun offered(i: Int) = prepared[i].options.map { it.first }.filter { it.startsWith("transfer:") }
+        // Before an account's first transaction it isn't offered; on or after it, it is; an account with none never is.
+        assertEquals(listOf(emptyList(), listOf("transfer:bank"), listOf("transfer:bank", "transfer:card")), (0..2).map(::offered))
+        // Nothing starts on an account, and one chosen for a row that doesn't offer it is forgotten, not sent.
+        assertEquals(listOf("new", "new", "new"), prepared.map { it.initial })
+        assertEquals("new", prepared[0].decision("transfer:bank"))
+        assertEquals("transfer:bank", prepared[1].decision("transfer:bank"))
+        assertEquals("new", prepared[2].decision("transfer:new"))
+        val sent = bankReviewChoices(prepared, mapOf(0 to "transfer:bank", 1 to "transfer:bank", 2 to "transfer:new"), false)
+        assertEquals(listOf(false, true, false), (0..2).map { sent.getJSONObject(it).getJSONObject("row").has("transferAccountId") })
+        // A bank's own review, with no accounts to choose from, offers none, as before.
+        assertTrue(prepareBankReview(rows, budget, false).all { row -> row.options.none { it.first.startsWith("transfer:") } })
+    }
+
     @Test fun bankReviewKeepsTransferLegIdsAndConservativeMatchDefaults() = runTest {
         val budget = JSONObject("""{"transactions":[{"id":"transfer","date":"2026-10-01","payee":"Savings"},{"id":"empty","date":"2026-10-02","payee":null}]}""")
         val rows = listOf(

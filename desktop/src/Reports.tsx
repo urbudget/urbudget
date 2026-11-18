@@ -1,19 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  ArrowLeftRight,
-  CalendarDays,
-  ChartColumnStacked,
-  ChartLine,
   ChartPie,
+  ChartSpline,
   ChevronDown,
   Download,
   EyeOff,
-  HandCoins,
-  Hourglass,
   Landmark,
   LoaderCircle,
   Scale,
-  Store,
+  SlidersHorizontal,
   Telescope,
   TrendingUp,
   X,
@@ -29,153 +24,257 @@ import {
   HeaderSlot,
   Popover,
   Tabs,
+  describeRange,
   rangeFor,
   useToast,
   type DateRange,
 } from "./ui";
 import { today, type Budget } from "./types";
 import type { RegisterFilter } from "./Register";
-import { OTHER, SERIES, firstDay, lastDay, type Figure, type ReportData, type Scope } from "./reports/shared";
+import { OTHER, SERIES, firstDay, fmt, lastDay, type Figure, type ReportData, type Scope } from "./reports/shared";
 import { TransactionsDialog, type LineQuery } from "./reports/TransactionsDialog";
 import { ByCategory, ByPayee, OverTime, SpendingCalendar } from "./reports/Spending";
 import { CashFlow, IncomeBreakdown, IncomeExpense } from "./reports/Income";
 import { AgeOfMoney, BalanceSheet, Balances, NetWorth } from "./reports/Wealth";
 import { Forecast } from "./reports/Forecast";
+import { Investing, type InvestmentsReport } from "./reports/Investing";
+import { Overview } from "./reports/Overview";
+import { holdingAccounts } from "./reports/portfolio";
 import { chosen, useHidden } from "./reports/filters";
 import { msg, t, tn, tnc, useLanguage } from "./i18n";
 import "./reports.css";
 
-type ReportId =
+// Six reports, each answering one question. A report's views are the report bodies that answer
+// it in different ways; the switch under its title chooses among them.
+
+/** A report body: one of a report's views. */
+type ViewId =
   | "categories"
   | "payees"
   | "trends"
   | "calendar"
   | "incomeExpense"
-  | "income"
+  | "sources"
   | "cashflow"
   | "networth"
-  | "balance"
   | "balances"
+  | "balance"
+  | "performance"
+  | "allocation"
+  | "earnings"
   | "forecast"
   | "age";
-type ReportInfo = {
-  id: ReportId;
-  /** The report's full name, its page heading. */
+export type ReportKey = "spending" | "income" | "networth" | "balance" | "investments" | "forecast";
+/** Where Reports is: on the overview, or in a report. */
+type Place = "overview" | ReportKey;
+type ViewInfo = {
+  id: ViewId;
+  /** Its name on the report's switch. */
   label: string;
-  /** Its tab's name, where the group (Spending) already says the rest; else the label. */
-  short?: string;
-  icon: LucideIcon;
   blurb: string;
   /** The Categories filter applies. */
   categories?: boolean;
+  /** It reads its own figures, so the shared report isn't asked for. */
+  own?: boolean;
+  /** It has no months to choose: it looks ahead from today, or at today alone. */
+  dateless?: boolean;
 };
-// Group names are also keys (remembered views); names, tabs and blurbs are translated when shown.
-const REPORTS: { group: string; items: ReportInfo[] }[] = [
+type ReportInfo = {
+  id: ReportKey;
+  /** The report's name: its tab, its card and its page heading. */
+  label: string;
+  /** The question it answers, under its name. */
+  question: string;
+  icon: LucideIcon;
+  /** The first is the one it opens on. */
+  views: ViewInfo[];
+};
+// Names, questions and blurbs are translated when shown.
+const REPORTS: ReportInfo[] = [
   {
-    group: msg("Spending"),
-    items: [
+    id: "spending",
+    label: msg("Spending"),
+    question: msg("Where did my money go?"),
+    icon: ChartPie,
+    views: [
       {
         id: "categories",
-        label: msg("Spending by category"),
-        short: msg("By category"),
-        icon: ChartPie,
+        label: msg("Category"),
         blurb: msg("Where your money went, by group and category, and how last month compares."),
         categories: true,
       },
-      {
-        id: "payees",
-        label: msg("Spending by payee"),
-        short: msg("By payee"),
-        icon: Store,
-        blurb: msg("Who you pay most, and how often."),
-        categories: true,
-      },
-      {
-        id: "trends",
-        label: msg("Spending over time"),
-        short: msg("Over time"),
-        icon: ChartColumnStacked,
-        blurb: msg("Spending month by month, by group or in total."),
-        categories: true,
-      },
+      { id: "payees", label: msg("Payee"), blurb: msg("Who you pay most, and how often."), categories: true },
+      { id: "trends", label: msg("Over time"), blurb: msg("Spending month by month, by group or in total."), categories: true },
       {
         id: "calendar",
-        label: msg("Spending calendar"),
-        short: msg("Calendar"),
-        icon: CalendarDays,
+        label: msg("Calendar"),
         blurb: msg("Spending day by day: busy days, quiet days and weekdays."),
         categories: true,
       },
     ],
   },
   {
-    group: msg("Income"),
-    items: [
+    id: "income",
+    label: msg("Income"),
+    question: msg("Am I spending less than I earn?"),
+    icon: Scale,
+    views: [
       {
         id: "incomeExpense",
-        label: msg("Income vs. expense"),
-        icon: Scale,
+        label: msg("Vs. spending"),
         blurb: msg("Income, spending and the surplus left in your budget."),
         categories: true,
       },
-      {
-        id: "income",
-        label: msg("Income breakdown"),
-        icon: HandCoins,
-        blurb: msg("Where your income comes from, and how steady it is."),
-      },
+      { id: "sources", label: msg("Sources"), blurb: msg("Where your income comes from, and how steady it is.") },
       {
         id: "cashflow",
-        label: msg("Money in and out"),
-        icon: ArrowLeftRight,
+        label: msg("In and out"),
         blurb: msg("Account movements across your budget boundary, including credit purchases."),
         categories: true,
       },
     ],
   },
   {
-    group: msg("Wealth"),
-    items: [
+    id: "networth",
+    label: msg("Net worth"),
+    question: msg("What am I worth, and why did it change?"),
+    icon: TrendingUp,
+    views: [
+      { id: "networth", label: msg("Over time"), blurb: msg("What you own minus what you owe, month by month.") },
+      { id: "balances", label: msg("By account"), blurb: msg("Each account's balance at the end of every month.") },
+    ],
+  },
+  {
+    id: "balance",
+    label: msg("Balance sheet"),
+    question: msg("What do I own and owe?"),
+    icon: Landmark,
+    views: [{ id: "balance", label: msg("Balance sheet"), blurb: msg("Assets and liabilities by type, with the ratios that matter.") }],
+  },
+  {
+    id: "investments",
+    label: msg("Investments"),
+    question: msg("How are my investments doing?"),
+    icon: ChartSpline,
+    views: [
       {
-        id: "networth",
-        label: msg("Net worth"),
-        icon: TrendingUp,
-        blurb: msg("What you own minus what you owe, month by month."),
+        id: "performance",
+        label: msg("Performance"),
+        blurb: msg("How your investments did: their value, what you put in, and what they gained."),
+        own: true,
       },
       {
-        id: "balance",
-        label: msg("Balance sheet"),
-        icon: Landmark,
-        blurb: msg("Assets and liabilities by type, with the ratios that matter."),
+        id: "allocation",
+        label: msg("Allocation"),
+        blurb: msg("What your investments are in today, across all your accounts."),
+        own: true,
+        dateless: true,
       },
       {
-        id: "balances",
-        label: msg("Balance over time"),
-        icon: ChartLine,
-        blurb: msg("Each account's balance at the end of every month."),
-      },
-      {
-        id: "forecast",
-        label: msg("Forecast"),
-        icon: Telescope,
-        blurb: msg("Where your cash and card balances are heading, from what's scheduled."),
-      },
-      {
-        id: "age",
-        label: msg("Cash age"),
-        icon: Hourglass,
-        blurb: msg("How long money waits in your accounts before you spend it."),
+        id: "earnings",
+        label: msg("Income and costs"),
+        blurb: msg("Dividends and interest earned, and the tax and fees paid."),
+        own: true,
       },
     ],
   },
+  {
+    id: "forecast",
+    label: msg("Forecast"),
+    question: msg("What's coming up?"),
+    icon: Telescope,
+    views: [
+      {
+        id: "forecast",
+        label: msg("Balances"),
+        blurb: msg("Where your cash and card balances are heading, from what's scheduled."),
+        own: true,
+        dateless: true,
+      },
+      { id: "age", label: msg("Cash age"), blurb: msg("How long money waits in your accounts before you spend it.") },
+    ],
+  },
 ];
-const ALL = REPORTS.flatMap((g) => g.items);
-const groupOfReport = (id: ReportId) => REPORTS.find((g) => g.items.some((r) => r.id === id))!;
-const VIEW_KEY = "lb:reports:view";
-/** The last report opened in each group, so going back to a group reopens it. */
-const GROUP_VIEWS_KEY = "lb:reports:groupViews";
+/** Where the person was in Reports, as a view's id or "overview", for as long as the app runs. */
+const PLACE_KEY = "lb:reports:place";
+/** The view last used in each report. */
+const VIEWS_KEY = "lb:reports:views";
+// Before reports had views, each view was a report of its own: the last one opened and the last
+// in each group were remembered by their ids, which are the views' ids but for the income sources.
+const OLD_VIEW_KEY = "lb:reports:view",
+  OLD_GROUP_VIEWS_KEY = "lb:reports:groupViews";
+const OLD_IDS: Record<string, ViewId> = { income: "sources" };
+type Views = Partial<Record<ReportKey, ViewId>>;
+
+/**
+ * The report an id names, and the view when it names one: a report's own id, a view's, or with
+ * `old` the id of a report from before reports had views.
+ */
+export function placeOf(id: unknown, old = false): { report: ReportKey; view?: ViewId } | null {
+  if (typeof id !== "string") return null;
+  const report = old ? undefined : REPORTS.find((r) => r.id === id);
+  if (report) return { report: report.id };
+  const view = (old && OLD_IDS[id]) || id;
+  const owner = REPORTS.find((r) => r.views.some((v) => v.id === view));
+  return owner ? { report: owner.id, view: view as ViewId } : null;
+}
+
+/** The remembered view of each report; the first time, from what was remembered before reports had views. */
+function loadViews(): Views {
+  const views: Views = {};
+  const keep = (ids: unknown[], old: boolean) => {
+    for (const id of ids) {
+      const at = placeOf(id, old);
+      if (at?.view) views[at.report] = at.view;
+    }
+  };
+  try {
+    const saved = localStorage.getItem(VIEWS_KEY);
+    if (saved) keep(Object.values(JSON.parse(saved) ?? {}), false);
+    else {
+      keep([...Object.values(JSON.parse(localStorage.getItem(OLD_GROUP_VIEWS_KEY) ?? "{}") ?? {}), localStorage.getItem(OLD_VIEW_KEY)], true);
+      localStorage.setItem(VIEWS_KEY, JSON.stringify(views));
+      localStorage.removeItem(OLD_VIEW_KEY);
+      localStorage.removeItem(OLD_GROUP_VIEWS_KEY);
+    }
+  } catch {
+    // No storage, or nothing that reads: every report opens on its first view.
+  }
+  return views;
+}
 
 type FilterGroup = { name: string; items: { id: string; label: string }[] };
+
+/**
+ * The one control for what the reports cover. Its label says what is in force ("Last 12 months ·
+ * All accounts"), and it opens the range and the account and category filters to change them.
+ */
+function Filters({ label, narrowed, children }: { label: string; narrowed: boolean; children: ReactNode }) {
+  const button = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        ref={button}
+        className={`secondary filter-button report-filters${narrowed ? " active" : ""}`}
+        aria-expanded={open}
+        aria-label={`${t("Filters")}: ${label}`}
+        onClick={() => setOpen(!open)}
+      >
+        <SlidersHorizontal size={15} aria-hidden /> <span className="filter-summary">{label}</span> <ChevronDown size={14} />
+      </button>
+      <Popover open={open} onClose={() => setOpen(false)} anchor={button} label={t("Filters")} className="report-filter-panel">
+        {children}
+      </Popover>
+    </>
+  );
+}
+/** What a filter shows, in a few words: all of it, the one thing, or how many. */
+function shown(groups: FilterGroup[], hidden: Set<string>, all: string, count: (n: number) => string) {
+  const items = groups.flatMap((g) => g.items);
+  const on = items.filter((i) => !hidden.has(i.id));
+  return on.length === items.length ? all : on.length === 1 ? on[0].label : count(on.length);
+}
 
 /**
  * A filter button with a searchable, grouped checklist of what reports show. It changes what is
@@ -292,15 +391,24 @@ function LeftOut({
   groups,
   hidden,
   onChange,
+  note,
 }: {
   kind: "accounts" | "categories";
   groups: FilterGroup[];
   hidden: Set<string>;
   onChange: (hidden: Set<string>) => void;
+  /** Something else the figures leave out, said in words: it can't be put back. */
+  note?: ReactNode;
 }) {
   const all = groups.flatMap((g) => g.items);
   const off = all.filter((i) => hidden.has(i.id));
-  if (!off.length) return null;
+  if (!off.length)
+    return note ? (
+      <div className="report-left-out">
+        <EyeOff size={14} aria-hidden />
+        <span className="report-left-out-note">{note}</span>
+      </div>
+    ) : null;
   const on = all.filter((i) => !hidden.has(i.id));
   const showAll = () => onChange(new Set([...hidden].filter((id) => !all.some((i) => i.id === id))));
   // Name the smaller side: what is left out, or the few still shown.
@@ -341,6 +449,7 @@ function LeftOut({
       <button className="link-button" onClick={showAll}>
         {accounts ? t("Show all accounts") : t("Show all categories")}
       </button>
+      {note && <span className="report-left-out-note">{note}</span>}
     </div>
   );
 }
@@ -350,6 +459,7 @@ export function Reports({
   budgetId,
   month,
   onInspect,
+  onOpenAccount,
 }: {
   budget: Budget;
   /** Keys what the reports leave out, which each budget remembers. */
@@ -357,6 +467,8 @@ export function Reports({
   month: string;
   /** Opens the register on these transactions. */
   onInspect: (filter: RegisterFilter) => void;
+  /** Opens an account's own page: its Holdings view, for one with holdings. */
+  onOpenAccount?: (accountId: string) => void;
 }) {
   const toast = useToast();
   const language = useLanguage();
@@ -370,39 +482,39 @@ export function Reports({
       : { preset: "custom", from: shiftMonth(month, -11), to: month },
   );
   const [hidden, setHidden] = useHidden(budgetId);
-  const [view, setView] = useState<ReportId>(() => {
+  // The Investments report is there once an account has holdings.
+  const held = useMemo(() => new Set(holdingAccounts(budget).map((a) => a.id)), [budget.accounts, budget.investments]);
+  const reports = held.size ? REPORTS : REPORTS.filter((r) => r.id !== "investments");
+  // Reports opens on the overview when the app starts, and afterwards where the person was.
+  const [at, setAt] = useState<{ place: Place; views: Views }>(() => {
+    const views = loadViews();
     try {
-      const saved = localStorage.getItem(VIEW_KEY);
-      if (ALL.some((r) => r.id === saved)) return saved as ReportId;
+      const was = placeOf(sessionStorage.getItem(PLACE_KEY));
+      if (was) return { place: was.report, views: was.view ? { ...views, [was.report]: was.view } : views };
     } catch {
-      // No storage: start on the first report.
+      // No storage: the overview.
     }
-    return "categories";
+    return { place: "overview", views };
   });
-  const [groupViews, setGroupViews] = useState<Record<string, string>>(() => {
+  // A report remembered from a budget with holdings isn't there in one without.
+  const report = reports.find((r) => r.id === at.place) ?? null;
+  const view = report && (report.views.find((v) => v.id === at.views[report.id]) ?? report.views[0]);
+  const go = (place: Place, to?: ViewId) => {
+    const views = to && place !== "overview" ? { ...at.views, [place]: to } : at.views;
+    setAt({ place, views });
     try {
-      return { ...JSON.parse(localStorage.getItem(GROUP_VIEWS_KEY) ?? "{}"), [groupOfReport(view).group]: view };
-    } catch {
-      return { [groupOfReport(view).group]: view };
-    }
-  });
-  const choose = (id: ReportId) => {
-    const views = { ...groupViews, [groupOfReport(id).group]: id };
-    setView(id);
-    setGroupViews(views);
-    try {
-      localStorage.setItem(VIEW_KEY, id);
-      localStorage.setItem(GROUP_VIEWS_KEY, JSON.stringify(views));
+      const opened = REPORTS.find((r) => r.id === place);
+      sessionStorage.setItem(PLACE_KEY, opened ? (views[opened.id] ?? opened.views[0].id) : "overview");
+      localStorage.setItem(VIEWS_KEY, JSON.stringify(views));
     } catch {
       // Remembered for this visit only.
     }
   };
-  const group = groupOfReport(view);
-  const chooseGroup = (name: string) => {
-    const items = REPORTS.find((g) => g.group === name)!.items;
-    choose(items.find((r) => r.id === groupViews[name])?.id ?? items[0].id);
-  };
-  const info = ALL.find((r) => r.id === view)!;
+  const investing = report?.id === "investments";
+  const forecasting = view?.id === "forecast";
+  // The overview's first cards are of spending by category too, over its own six months.
+  const byCategory = !view || !!view.categories;
+  const own = !!view?.own;
   const [result, setResult] = useState<{ budget: Budget; key: string; attempt: number; report?: ReportData; error?: string } | null>(null);
   const [attempt, setAttempt] = useState(0);
 
@@ -423,7 +535,9 @@ export function Reports({
     { name: msg("Tracking"), items: budget.accounts.filter((a) => !a.archived && a.kind === "tracking") },
     { name: msg("Closed"), items: budget.accounts.filter((a) => a.archived) },
   ]
-    .filter((g) => g.items.length && (view !== "forecast" || g.name === "Budget"))
+    // The forecast is of budget accounts, and the investment views of accounts with holdings.
+    .map((g) => ({ ...g, items: g.items.filter((a) => !investing || held.has(a.id)) }))
+    .filter((g) => g.items.length && (!forecasting || g.name === "Budget"))
     .map((g) => ({ name: t(g.name), items: g.items.map((a) => ({ id: a.id, label: a.name })) }));
   const categoryGroups: FilterGroup[] = spendingGroups.map((g) => ({
     name: g,
@@ -435,25 +549,27 @@ export function Reports({
   // accounts and categories are dropped when the choice next changes.
   const accounts = chosen(hidden.accounts, accountGroups.flatMap((g) => g.items.map((i) => i.id)));
   const categoryIds = categoryGroups.flatMap((g) => g.items.map((i) => i.id));
-  const categories = info.categories ? chosen(hidden.categories, categoryIds) : new Set<string>();
+  const categories = byCategory ? chosen(hidden.categories, categoryIds) : new Set<string>();
   const hideAccounts = (next: Set<string>) =>
     setHidden({ accounts: new Set([...next].filter((id) => budget.accounts.some((a) => a.id === id))) });
   const hideCategories = (next: Set<string>) => setHidden({ categories: new Set([...next].filter((id) => categoryIds.includes(id))) });
 
-  // Reports that don't split by category ignore the Categories filter.
+  // The overview covers the last six months; a view, the months chosen. Views that don't split
+  // by category ignore the Categories filter.
+  const thisMonth = today().slice(0, 7);
   const filter: ReportFilter = {
-    from: range.from || earliest,
-    to: range.to || today().slice(0, 7),
+    from: view ? range.from || earliest : shiftMonth(thisMonth, -5),
+    to: view ? range.to || thisMonth : thisMonth,
     accountIds: [...accounts],
-    categoryIds: info.categories ? [...categories] : [],
+    categoryIds: byCategory ? [...categories] : [],
   };
   const key = JSON.stringify(filter);
   const matches = result?.budget === budget && result.key === key && result.attempt === attempt;
-  const report = matches ? result.report ?? null : null;
+  const data = matches ? result.report ?? null : null;
   const error = matches ? result.error : undefined;
-  const loading = !report && !error;
+  const loading = !data && !error;
   useEffect(() => {
-    if (view === "forecast") return;
+    if (own) return;
     let cancelled = false;
     const controller = new AbortController();
     // A report belongs to its exact snapshot and filters; new labels must never describe old figures.
@@ -467,7 +583,7 @@ export function Reports({
       cancelled = true;
       controller.abort();
     };
-  }, [budget, key, view === "forecast", attempt]);
+  }, [budget, key, own, attempt]);
 
   const colorOf = (group: string) => {
     const i = spendingGroups.indexOf(group);
@@ -477,9 +593,9 @@ export function Reports({
     onInspect({ ...f, from: f.from ?? firstDay(filter.from), to: f.to ?? lastDay(filter.to) });
   // The figure whose transactions are listed in a dialog, and the query that finds them.
   const [selection, setSelection] = useState<{ budget: Budget; key: string; figure: Figure } | null>(null);
-  const figure = report && view !== "forecast" && selection?.budget === budget && selection.key === key ? selection.figure : null;
+  const figure = data && view && !own && selection?.budget === budget && selection.key === key ? selection.figure : null;
   const setFigure = (figure: Figure | null) => setSelection(figure ? { budget, key, figure } : null);
-  const chosenCategories = info.categories && categories.size ? new Set([...categories].filter(Boolean)) : undefined;
+  const chosenCategories = byCategory && categories.size ? new Set([...categories].filter(Boolean)) : undefined;
   const lineQuery: LineQuery | null = figure && {
     from: figure.from ?? firstDay(filter.from),
     to: figure.to ?? lastDay(filter.to),
@@ -492,20 +608,20 @@ export function Reports({
   const exportCsv = async () => {
     const fail = (e: unknown) => toast({ message: errorText(e), tone: "error" });
     try {
-      const path = await api.exportReports(budget, filter);
+      const path = await (investing ? api.exportInvestments : api.exportReports)(budget, filter);
       if (path) toast({ message: t("Report exported."), action: { label: t("Show in folder"), onClick: () => void api.reveal(path).catch(fail) } });
     } catch (e) {
       fail(e);
     }
   };
 
-  const scope: Scope | null = report && {
-    data: report,
+  const scope: Scope | null = data && {
+    data,
     budget,
     from: filter.from,
     to: filter.to,
     accounts,
-    someCategories: info.categories ? categories.size > 0 : false,
+    someCategories: byCategory ? categories.size > 0 : false,
     groupOf,
     nameOf,
     spendingGroups,
@@ -514,7 +630,7 @@ export function Reports({
     show: setFigure,
   };
   const body = (s: Scope) => {
-    switch (view) {
+    switch (view?.id) {
       case "categories":
         return <ByCategory scope={s} />;
       case "payees":
@@ -525,7 +641,7 @@ export function Reports({
         return <SpendingCalendar scope={s} />;
       case "incomeExpense":
         return <IncomeExpense scope={s} />;
-      case "income":
+      case "sources":
         return <IncomeBreakdown scope={s} />;
       case "cashflow":
         return <CashFlow scope={s} />;
@@ -541,85 +657,122 @@ export function Reports({
         return null;
     }
   };
+  // What is in force, for the filter's label: the months where the view has any, the accounts,
+  // and the categories once some are left out.
+  const narrowedAccounts = accountGroups.some((g) => g.items.some((i) => hidden.accounts.has(i.id)));
+  const narrowedCategories = byCategory && categoryGroups.some((g) => g.items.some((i) => hidden.categories.has(i.id)));
+  const inForce = [
+    view && !view.dateless ? describeRange(range, "month") : "",
+    shown(accountGroups, hidden.accounts, forecasting ? t("All budget accounts") : t("All accounts"), (n) => tn(n, "{count} accounts", "{count} accounts")),
+    narrowedCategories ? shown(categoryGroups, hidden.categories, "", (n) => tn(n, "{count} categories", "{count} categories")) : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  // Money moved into or out of investment accounts is neither spending nor income: the reports
+  // on those say how much of it they leave out.
+  const invested = data && (report?.id === "spending" || report?.id === "income") ? (data.invested ?? 0) : 0;
+  const investedNote =
+    invested > 0
+      ? t("{amount} moved into investments isn't counted here.", { amount: fmt(invested) })
+      : invested < 0
+        ? t("{amount} taken out of investments isn't counted here.", { amount: fmt(-invested) })
+        : undefined;
+  const leftOut = (
+    <>
+      <LeftOut kind="accounts" groups={accountGroups} hidden={hidden.accounts} onChange={hideAccounts} note={investedNote} />
+      {byCategory && <LeftOut kind="categories" groups={categoryGroups} hidden={hidden.categories} onChange={hideCategories} />}
+      {error && !own && <p className="form-error" role="alert">{error} <button className="link-button" onClick={() => setAttempt((n) => n + 1)}>{t("Retry report")}</button></p>}
+    </>
+  );
 
   return (
     <div className="page reports-page">
       <div className="reports-layout">
-        {/* The groups switch in the page header, and the group's reports are tabs over the report. */}
+        {/* The overview and the reports are one row of tabs in the page header. */}
         <HeaderSlot>
-          <Tabs
-            label={t("Report group")}
-            tabs={REPORTS.map((g) => ({ id: g.group, label: t(g.group) }))}
-            value={group.group}
-            onChange={chooseGroup}
+          <Tabs<Place>
+            label={t("Reports")}
+            tabs={[{ id: "overview", label: t("Overview") }, ...reports.map((r) => ({ id: r.id, label: t(r.label) }))]}
+            value={report?.id ?? "overview"}
+            onChange={(place) => go(place)}
           />
         </HeaderSlot>
-        <div className="report-nav">
-          <Tabs
-            key={group.group}
-            className="report-tabs"
-            label={t("{group} reports", { group: t(group.group) })}
-            tabs={group.items.map((r) => ({
-              id: r.id,
-              label: (
-                <>
-                  <r.icon size={15} aria-hidden />
-                  {t(r.short ?? r.label)}
-                </>
-              ),
-            }))}
-            value={view}
-            onChange={choose}
-          />
-        </div>
+        {!report || !view ? (
+          <div className="report-main">
+            {leftOut}
+            <Overview
+              cards={reports}
+              budget={budget}
+              data={data}
+              from={filter.from}
+              to={filter.to}
+              accounts={accounts}
+              hidden={hidden.accounts}
+              open={(id) => go(id)}
+            />
+          </div>
+        ) : (
         <div className="report-main">
           <header className="report-head">
-            <h1>{t(info.label)}</h1>
-            <p>{t(info.blurb)}</p>
+            <h1>{t(report.label)}</h1>
+            <p>{t(report.question)}</p>
           </header>
+          {/* The report's views, and what the one chosen shows. */}
+          <div className="report-view-row">
+            {report.views.length > 1 && (
+              <Tabs<ViewId>
+                key={report.id}
+                label={t("View")}
+                tabs={report.views.map((v) => ({ id: v.id, label: t(v.label) }))}
+                value={view.id}
+                onChange={(id) => go(report.id, id)}
+              />
+            )}
+            <p className="report-blurb">{t(view.blurb)}</p>
+          </div>
           <div className="report-filter-row">
-            {view !== "forecast" && (
-              <DateRangePicker
-                value={range}
-                onChange={setRange}
-                granularity="month"
-                earliest={earliest}
-                label={t("Months")}
-              />
-            )}
-            <MultiFilter
-              label={t("Accounts")}
-              allLabel={view === "forecast" ? t("All budget accounts") : t("All accounts")}
-              searchLabel={t("Search accounts")}
-              countLabel={(n) => tn(n, "{count} accounts", "{count} accounts")}
-              hiddenLabel={(n) => tnc("accounts", n, "{count} hidden", "{count} hidden")}
-              groups={accountGroups}
-              hidden={hidden.accounts}
-              onChange={hideAccounts}
-            />
-            {info.categories && (
+            <Filters label={inForce} narrowed={narrowedAccounts || narrowedCategories}>
+              {!view.dateless && (
+                <DateRangePicker
+                  value={range}
+                  onChange={setRange}
+                  granularity="month"
+                  earliest={earliest}
+                  label={t("Months")}
+                />
+              )}
               <MultiFilter
-                label={t("Categories")}
-                allLabel={t("All categories")}
-                searchLabel={t("Search categories")}
-                countLabel={(n) => tn(n, "{count} categories", "{count} categories")}
-                hiddenLabel={(n) => tnc("categories", n, "{count} hidden", "{count} hidden")}
-                groups={categoryGroups}
-                hidden={hidden.categories}
-                onChange={hideCategories}
+                label={t("Accounts")}
+                allLabel={forecasting ? t("All budget accounts") : t("All accounts")}
+                searchLabel={t("Search accounts")}
+                countLabel={(n) => tn(n, "{count} accounts", "{count} accounts")}
+                hiddenLabel={(n) => tnc("accounts", n, "{count} hidden", "{count} hidden")}
+                groups={accountGroups}
+                hidden={hidden.accounts}
+                onChange={hideAccounts}
               />
-            )}
-            {loading && view !== "forecast" && <LoaderCircle size={16} className="spin muted" aria-label={t("Updating")} />}
+              {view.categories && (
+                <MultiFilter
+                  label={t("Categories")}
+                  allLabel={t("All categories")}
+                  searchLabel={t("Search categories")}
+                  countLabel={(n) => tn(n, "{count} categories", "{count} categories")}
+                  hiddenLabel={(n) => tnc("categories", n, "{count} hidden", "{count} hidden")}
+                  groups={categoryGroups}
+                  hidden={hidden.categories}
+                  onChange={hideCategories}
+                />
+              )}
+            </Filters>
+            {loading && !own && <LoaderCircle size={16} className="spin muted" aria-label={t("Updating")} />}
             <span className="spacer" />
-            {view !== "forecast" && (
+            {!forecasting && (
               <button className="secondary export-button" onClick={() => void exportCsv()}>
                 <Download size={15} /> {t("Export CSV")}
               </button>
             )}
           </div>
-          <LeftOut kind="accounts" groups={accountGroups} hidden={hidden.accounts} onChange={hideAccounts} />
-          {info.categories && <LeftOut kind="categories" groups={categoryGroups} hidden={hidden.categories} onChange={hideCategories} />}
-          {error && view !== "forecast" && <p className="form-error" role="alert">{error} <button className="link-button" onClick={() => setAttempt((n) => n + 1)}>{t("Retry report")}</button></p>}
+          {leftOut}
           {figure && lineQuery && (
           <TransactionsDialog
             budget={budget}
@@ -632,15 +785,22 @@ export function Reports({
             }}
           />
         )}
-        {view === "forecast" ? (
+        {forecasting ? (
             <Forecast budget={budget} accounts={accounts} inspect={inspect} />
+          ) : investing ? (
+            <Investing
+              report={view.id as InvestmentsReport}
+              budget={budget}
+              filter={{ from: filter.from, to: filter.to, accountIds: filter.accountIds }}
+              onOpenAccount={onOpenAccount}
+            />
           ) : !scope ? (error ? null : (
             <div className="empty-state compact">
               <LoaderCircle className="spin" />
             </div>
           )) : (
-            <div className={`report-body${loading ? " loading" : ""}`} key={view}>
-              {!!scope.data.categories[UNCATEGORIZED_CATEGORY] && info.categories && (
+            <div className={`report-body${loading ? " loading" : ""}`} key={view.id}>
+              {!!scope.data.categories[UNCATEGORIZED_CATEGORY] && view.categories && (
                 <p className="notice">
                   {t("{amount} of spending still needs a category. It is included in these totals.", {
                     amount: money(scope.data.categories[UNCATEGORIZED_CATEGORY], { symbol: true }),
@@ -652,6 +812,7 @@ export function Reports({
             </div>
           )}
         </div>
+        )}
       </div>
     </div>
   );

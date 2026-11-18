@@ -147,7 +147,8 @@ export function rangeFor(
   };
 }
 
-const describe = (r: DateRange, granularity: "day" | "month") => {
+/** A range in words: its preset's name, or its two ends. */
+export const describeRange = (r: DateRange, granularity: "day" | "month") => {
   if (r.preset !== "custom") return t(presetLabels[r.preset]);
   const show = (v: string) => (!v ? "…" : granularity === "month" ? monthName(v, "short") : formatDate(v));
   return `${show(r.from)} – ${show(r.to)}`;
@@ -178,7 +179,7 @@ export function DateRangePicker({
       <button
         ref={button}
         className="secondary range-button"
-        aria-label={`${label}: ${describe(value, granularity)}`}
+        aria-label={`${label}: ${describeRange(value, granularity)}`}
         aria-expanded={open}
         onClick={() => {
           setFrom(value.from);
@@ -186,7 +187,7 @@ export function DateRangePicker({
           setOpen(!open);
         }}
       >
-        <CalendarDays size={15} /> {describe(value, granularity)}
+        <CalendarDays size={15} /> {describeRange(value, granularity)}
       </button>
       <Popover open={open} onClose={() => setOpen(false)} anchor={button} label={label} className="range-popover">
         <div className="range-presets" role="listbox" aria-label={t("Presets")}>

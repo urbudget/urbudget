@@ -5,6 +5,8 @@ mod cloud;
 mod library;
 mod credentials;
 mod save;
+mod holdings;
+mod ibkr;
 mod simplefin;
 mod updates;
 mod vault;
@@ -342,6 +344,36 @@ fn export_reports(
     let data = db.read(patch, |b| reports::csv(b, &reports::calculate(b, &filter)?))?;
     save::file(&window, &save::dated("Reports", "csv"), save::Kind::Csv, data.as_bytes())
 }
+/// An investment account's page: how it did over each period, what it holds, earned and was
+/// charged (`investment_stats::page`). None for an account no source fills.
+#[tauri::command(async)]
+fn investment_page(
+    db: State<'_, Database>,
+    patch: Option<Patch>,
+    account_id: String,
+) -> Result<Option<urbudget_core::investment_stats::Page>, String> {
+    db.read(patch, |b| Ok(urbudget_core::investment_stats::page(b, &account_id)))
+}
+/// The investment accounts together over the filter's months, for the Investments reports.
+#[tauri::command(async)]
+fn investments_report(
+    db: State<'_, Database>,
+    patch: Option<Patch>,
+    filter: reports::Filter,
+) -> Result<urbudget_core::investment_stats::Portfolio, String> {
+    db.read(patch, |b| urbudget_core::investment_stats::portfolio(b, &filter))
+}
+/// Saves the investments report as CSV where you choose and returns the path (`None` when cancelled).
+#[tauri::command(async)]
+fn export_investments(
+    window: WebviewWindow,
+    db: State<'_, Database>,
+    patch: Option<Patch>,
+    filter: reports::Filter,
+) -> Result<Option<String>, String> {
+    let data = db.read(patch, |b| urbudget_core::investment_stats::csv(b, &urbudget_core::investment_stats::portfolio(b, &filter)?))?;
+    save::file(&window, &save::dated("Investments", "csv"), save::Kind::Csv, data.as_bytes())
+}
 
 #[tauri::command(async)]
 fn preview_bank_file(
@@ -576,6 +608,7 @@ pub fn run() {
             app.manage(save::Saved::default());
             app.manage(cloud::Cloud::new(&directory));
             app.manage(simplefin::SimpleFin::new(&directory));
+            app.manage(ibkr::Ibkr::new());
             assistant::manage(app, directory);
             Ok(())
         })
@@ -608,6 +641,9 @@ pub fn run() {
             calculate_reports,
             forecast,
             export_reports,
+            investment_page,
+            investments_report,
+            export_investments,
             export_transactions,
             write_export,
             load_budget,
@@ -637,7 +673,19 @@ pub fn run() {
             simplefin::simplefin_disconnect,
             simplefin::simplefin_sync,
             simplefin::simplefin_import,
+            simplefin::simplefin_holdings,
+            holdings::holdings_file,
+            holdings::holdings_record,
             simplefin::simplefin_open,
+            ibkr::ibkr_status,
+            ibkr::ibkr_connect,
+            ibkr::ibkr_fetch,
+            ibkr::ibkr_file,
+            ibkr::ibkr_disconnect,
+            ibkr::ibkr_apply,
+            ibkr::ibkr_review,
+            ibkr::ibkr_import,
+            ibkr::ibkr_open,
             run_schedules,
             preview_schedules,
             project_loan,

@@ -34,8 +34,13 @@ struct BankReviewRow: Identifiable, Sendable {
     /// Money in that may be a refund of a purchase: what it's of ("Refund of Shop · 23.99 on 7 Oct 2026 · Shopping").
     var refund: String?
 
-    /// The row's decision, given the choices made so far.
-    func decision(_ chosen: String?) -> String { locked ? "skip" : chosen ?? initial }
+    /// The row's decision, given the choices made so far. An account chosen for it that it can
+    /// no longer be a transfer with is forgotten.
+    func decision(_ chosen: String?) -> String {
+        if locked { return "skip" }
+        if let chosen, chosen.hasPrefix("transfer:"), !options.contains(where: { $0.id == chosen }) { return initial }
+        return chosen ?? initial
+    }
 }
 
 /// The review's figures: rows already imported, rows a payee rule renamed, and what a note should say.
@@ -113,9 +118,23 @@ enum BankReview {
         var transferSure: Bool
     }
 
+    /// The accounts a row dated `date` can be added as a transfer with: those whose history reaches
+    /// back to that day, a transaction on it or before. One with no transactions, or whose first is
+    /// later, has that money in its opening balance already, and a transfer would take it out twice.
+    static func offered(_ others: [(id: String, name: String, since: String?)], on date: String) -> [(id: String, name: String, since: String?)] {
+        others.filter { account in
+            guard let since = account.since else { return false }
+            return date.isEmpty || since <= date
+        }
+    }
+
     /// Review rows for the engine's items. Candidates come as a shared pool (`candidateSets`), or
-    /// on each row; neither is expanded once per row.
-    static func prepare(rows: [JSON], budget: JSON, allowIdlessDuplicate: Bool, candidateSets: [JSON]? = nil) throws -> [BankReviewRow] {
+    /// on each row; neither is expanded once per row. `others` are accounts a row can be added as
+    /// a transfer with, for rows that say money moved without saying where from (a broker's
+    /// deposits), each offered only from its first transaction's date (`offered`); `plain` is what
+    /// adding such a row with no other account is called.
+    static func prepare(rows: [JSON], budget: JSON, allowIdlessDuplicate: Bool, candidateSets: [JSON]? = nil,
+                        others: [(id: String, name: String, since: String?)] = [], plain: String? = nil) throws -> [BankReviewRow] {
         let currency = budget.text("currency").isEmpty ? "SAR" : budget.text("currency")
         var transactions: [String: JSON] = [:]
         for transaction in budget.rows("transactions") { transactions[transaction.text("id")] = transaction }
@@ -172,16 +191,37 @@ enum BankReview {
             let idless = row.flag("idless")
             // An already-imported row can only be added again when it has no bank ID and that's allowed.
             let separate = duplicate && allowIdlessDuplicate && idless
-            let options = separate ? alreadyImported : duplicate ? [] : possible ? set.possible : set.choose
+            let listed = separate ? alreadyImported : duplicate ? [] : possible ? set.possible : set.choose
+            let target = row.text("transferAccountId")
+            let amount = row.long("amount")
+            var options = listed
+            if !duplicate && (plain != nil || !others.isEmpty) {
+                // After adding it plainly, each account it could be a transfer with; a row that
+                // already names its other account is only added as that transfer.
+                options = []
+                for option in listed {
+                    if option.id != "new" {
+                        options.append(option)
+                    } else if !target.isEmpty {
+                        options.append(BankReviewOption(id: "new", label: String(localized: "Add as a transfer")))
+                    } else {
+                        options.append(BankReviewOption(id: "new", label: plain ?? option.label))
+                        for account in offered(others, on: row.text("date")) {
+                            let name = account.name
+                            options.append(BankReviewOption(
+                                id: "transfer:\(account.id)",
+                                label: amount > 0 ? String(localized: "Add as a transfer from \(name)") : String(localized: "Add as a transfer to \(name)")))
+                        }
+                    }
+                }
+            }
             let bankPayee = row.text("payee")
             let renamed = row.text("rename")
             let rename: String? = !renamed.trimmingCharacters(in: .whitespaces).isEmpty && renamed != bankPayee ? renamed : nil
-            let target = row.text("transferAccountId")
             let other = accountNames[target] ?? target
             let shownPayee = target.isEmpty ? (rename ?? bankPayee) : String(localized: "Transfer: \(other)")
             let date = Money.date(row.text("date"))
             let memo = row.text("memo")
-            let amount = row.long("amount")
             prepared.append(BankReviewRow(
                 id: "\(index):\(row.text("id"))", source: small(row), options: options,
                 initial: defaultChoice(duplicate: duplicate, possibleDuplicate: possible, candidates: set.candidates, previouslyMatched: set.previouslyMatched,
@@ -247,7 +287,11 @@ enum BankReview {
             }
             let matchId: String? = decision.hasPrefix("match:") ? String(decision.dropFirst("match:".count)) : nil
             if let matchId, prepared.previouslyMatched.contains(matchId) { row["previouslyMatchedCandidates"] = [.string(matchId)] }
-            choices.append(["row": row, "action": .string(matchId == nil ? decision : "match"), "matchId": matchId.map(JSON.string) ?? .null])
+            // Added as a transfer with the account chosen for it.
+            let other: String? = decision.hasPrefix("transfer:") ? String(decision.dropFirst("transfer:".count)) : nil
+            if let other { row["transferAccountId"] = .string(other) }
+            let action = matchId != nil ? "match" : other != nil ? "new" : decision
+            choices.append(["row": row, "action": .string(action), "matchId": matchId.map(JSON.string) ?? .null])
         }
         return .array(choices)
     }
@@ -328,7 +372,7 @@ struct BankReviewItem: View {
         case "review": return "questionmark.circle"
         case "new": return "plus.circle"
         case "skip": return "forward"
-        default: return "link"
+        default: return choice.hasPrefix("transfer:") ? "arrow.left.arrow.right" : "link"
         }
     }
 }

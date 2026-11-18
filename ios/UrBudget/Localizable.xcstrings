@@ -28300,6 +28300,3055 @@
           }
         }
       }
+    },
+    "Interactive Brokers" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Interactive Brokers"
+          }
+        }
+      }
+    },
+    "What your investments hold and what they're worth" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ما تحتويه استثماراتك وقيمتها"
+          }
+        }
+      }
+    },
+    "See what your Interactive Brokers account holds and what it's worth, as part of your net worth. UrBudget reads your statements straight from Interactive Brokers with a token that can only read. It can't trade or move money." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اعرف ما يحتويه حسابك في Interactive Brokers وقيمته، ضمن صافي ثروتك. يقرأ UrBudget كشوف حسابك مباشرةً من Interactive Brokers برمز للقراءة فقط، فلا يستطيع التداول ولا نقل المال."
+          }
+        }
+      }
+    },
+    "These accounts were filled from Interactive Brokers, but this device has no token for it. Connect here to sync them, or bring in a statement file." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مُلئت هذه الحسابات من Interactive Brokers، لكن لا يوجد رمز له على هذا الجهاز. اربط هنا لمزامنتها، أو استورد ملف كشف حساب."
+          }
+        }
+      }
+    },
+    "Connected. Interactive Brokers makes each day's statement overnight, so a sync brings holdings and prices as of the last close." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تم الربط. يُعدّ Interactive Brokers كشف كل يوم خلال الليل، لذا تجلب المزامنة الحيازات والأسعار كما كانت عند آخر إغلاق."
+          }
+        }
+      }
+    },
+    "From a statement file. Connect with a token to update without choosing a file each time." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "من ملف كشف حساب. اربط برمز للتحديث دون اختيار ملف في كل مرة."
+          }
+        }
+      }
+    },
+    "Query ID" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "معرّف الاستعلام"
+          }
+        }
+      }
+    },
+    "Token" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الرمز"
+          }
+        }
+      }
+    },
+    "Connecting…" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ الاتصال…"
+          }
+        }
+      }
+    },
+    "Interactive Brokers is preparing your statement. This can take a minute." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يجهّز Interactive Brokers كشف حسابك. قد يستغرق ذلك دقيقة."
+          }
+        }
+      }
+    },
+    "UrBudget keeps the token in %@, never in the budget file." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يحفظ UrBudget الرمز في ⁨%@⁩، وليس في ملف الميزانية أبدًا."
+          }
+        }
+      }
+    },
+    "This device has no credential store to keep a token in. You can still bring in a statement file." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يتوفر على هذا الجهاز مخزن بيانات اعتماد لحفظ الرمز. ما زال بإمكانك استيراد ملف كشف حساب."
+          }
+        }
+      }
+    },
+    "Interactive Brokers' guide" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "دليل Interactive Brokers"
+          }
+        }
+      }
+    },
+    "Use a statement file" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استخدام ملف كشف حساب"
+          }
+        }
+      }
+    },
+    "Choose a statement file smaller than 32 MB." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اختر ملف كشف حساب أصغر من 32 ميغابايت."
+          }
+        }
+      }
+    },
+    "Start over" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البدء من جديد"
+          }
+        }
+      }
+    },
+    "Remove connection" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إزالة الاتصال"
+          }
+        }
+      }
+    },
+    "Remove the connection?" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هل تريد إزالة الاتصال؟"
+          }
+        }
+      }
+    },
+    "UrBudget forgets the token on this device. Your accounts keep what they hold and stop updating. To switch the token off, do that in Client Portal too." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ينسى UrBudget الرمز على هذا الجهاز. تحتفظ حساباتك بحيازاتها ويتوقف تحديثها. ولإيقاف الرمز نفسه، أوقفه في Client Portal أيضًا."
+          }
+        }
+      }
+    },
+    "The account keeps its transactions and its balance. It stops following Interactive Brokers." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يحتفظ الحساب بمعاملاته ورصيده، ويتوقف عن متابعة Interactive Brokers."
+          }
+        }
+      }
+    },
+    "%lld holdings" : {
+      "localizations" : {
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "لا حيازات"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "حيازة واحدة"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "حيازتان"
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld حيازات"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld حيازة"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld حيازة"
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld holding"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld holdings"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Goes into" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يُضاف إلى"
+          }
+        }
+      }
+    },
+    "A new investment account" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حساب استثمار جديد"
+          }
+        }
+      }
+    },
+    "Don't add" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عدم الإضافة"
+          }
+        }
+      }
+    },
+    "Exchange rate" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سعر الصرف"
+          }
+        }
+      }
+    },
+    "1 %@ in %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 ⁨%1$@⁩ بعملة ⁨%2$@⁩"
+          }
+        }
+      }
+    },
+    "The statement has no exchange rate for this budget's currency, so UrBudget uses the one you give for every day. Change it here when it moves." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يتضمن الكشف سعر صرف لعملة هذه الميزانية، لذا يستخدم UrBudget السعر الذي تُدخله لكل الأيام. غيِّره هنا عندما يتغيّر."
+          }
+        }
+      }
+    },
+    "Your Flex Query leaves out %@. UrBudget shows what it can; tick them in Client Portal for the whole picture." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استعلام Flex لديك لا يتضمن ⁨%@⁩. يعرض UrBudget ما يستطيع؛ حدِّدها في Client Portal لتكتمل الصورة."
+          }
+        }
+      }
+    },
+    "Adding…" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ الإضافة…"
+          }
+        }
+      }
+    },
+    "Add to my budget" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إضافة إلى ميزانيتي"
+          }
+        }
+      }
+    },
+    "Added %lld accounts from Interactive Brokers." : {
+      "localizations" : {
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "لم يُضف أي حساب من Interactive Brokers."
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "أُضيف حساب واحد من Interactive Brokers."
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "أُضيف حسابان من Interactive Brokers."
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "أُضيفت %lld حسابات من Interactive Brokers."
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "أُضيف %lld حسابًا من Interactive Brokers."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "أُضيف %lld حساب من Interactive Brokers."
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Added %lld account from Interactive Brokers."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Added %lld accounts from Interactive Brokers."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Your Interactive Brokers accounts are up to date." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حساباتك في Interactive Brokers محدَّثة."
+          }
+        }
+      }
+    },
+    "Review %lld deposits" : {
+      "localizations" : {
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "لا إيداعات للمراجعة"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "مراجعة إيداع واحد"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "مراجعة إيداعين"
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "مراجعة %lld إيداعات"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "مراجعة %lld إيداعًا"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "مراجعة %lld إيداع"
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Review %lld deposit"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Review %lld deposits"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Deposits and transfers" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإيداعات والتحويلات"
+          }
+        }
+      }
+    },
+    "Money you moved into or out of Interactive Brokers. Each one is matched to the transfer already in your budget, joined to its other side in the account it came from, or added as a transfer from the account you choose. Either way it counts as money you put in, not as a gain." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أموال نقلتها إلى Interactive Brokers أو منه. تُطابَق كل حركة مع التحويل الموجود في ميزانيتك، أو تُضم إلى طرفها الآخر في الحساب الذي جاءت منه، أو تُضاف كتحويل من الحساب الذي تختاره. وفي كل الأحوال تُحتسب مالًا أودعته لا ربحًا."
+          }
+        }
+      }
+    },
+    "Add with no other account" : {
+      "comment" : "A deposit the broker lists, added without naming the account it came from.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أضفها بلا حساب آخر"
+          }
+        }
+      }
+    },
+    "Add as a transfer" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إضافة كتحويل"
+          }
+        }
+      }
+    },
+    "Add as a transfer from %@" : {
+      "comment" : "\"Add as a transfer from Everyday\": money that came into this account is added as a transfer from that one.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أضفها كتحويل من ⁨%@⁩"
+          }
+        }
+      }
+    },
+    "Add as a transfer to %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أضفها كتحويل إلى ⁨%@⁩"
+          }
+        }
+      }
+    },
+    "%lld deposits are in your budget." : {
+      "localizations" : {
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "لم يُضف أي إيداع إلى ميزانيتك."
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "أُضيف إيداع واحد إلى ميزانيتك."
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "أُضيف إيداعان إلى ميزانيتك."
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "أُضيفت %lld إيداعات إلى ميزانيتك."
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "أُضيف %lld إيداعًا إلى ميزانيتك."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "أُضيف %lld إيداع إلى ميزانيتك."
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld deposit is in your budget."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld deposits are in your budget."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Holdings" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الحيازات"
+          }
+        }
+      }
+    },
+    "Value" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "القيمة"
+          }
+        }
+      }
+    },
+    "Gain since %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الربح منذ ⁨%@⁩"
+          }
+        }
+      }
+    },
+    "Prices from %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الأسعار بتاريخ ⁨%@⁩"
+          }
+        }
+      }
+    },
+    "These prices are a few days old." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مضى على هذه الأسعار بضعة أيام."
+          }
+        }
+      }
+    },
+    "Connect on this device" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الربط على هذا الجهاز"
+          }
+        }
+      }
+    },
+    "Show %lld more holdings" : {
+      "localizations" : {
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "لا حيازات أخرى"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "عرض حيازة أخرى"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "عرض حيازتين أخريين"
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "عرض %lld حيازات أخرى"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "عرض %lld حيازة أخرى"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "عرض %lld حيازة أخرى"
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Show %lld more holding"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Show %lld more holdings"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Accrued" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المستحق"
+          }
+        }
+      }
+    },
+    "Dividends and interest earned but not yet paid" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "توزيعات أرباح وفوائد مكتسبة لم تُدفع بعد"
+          }
+        }
+      }
+    },
+    "From Interactive Brokers account %@. Each month's change in value is added to the register as Market change." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "من حساب Interactive Brokers رقم ⁨%@⁩. يُضاف تغيّر القيمة في كل شهر إلى السجل باسم Market change."
+          }
+        }
+      }
+    },
+    "The balance is %@ away from Interactive Brokers' value. A sync brings them back together." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يختلف الرصيد عن قيمة Interactive Brokers بمقدار ⁨%@⁩. تعيد المزامنة تطابقهما."
+          }
+        }
+      }
+    },
+    "This account needs an exchange rate. Give it in More › Investments › Interactive Brokers." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يحتاج هذا الحساب إلى سعر صرف. أدخله من «المزيد» ثم «الاستثمارات» ثم Interactive Brokers."
+          }
+        }
+      }
+    },
+    "%@ is up to date." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الحساب ⁨%@⁩ محدَّث."
+          }
+        }
+      }
+    },
+    "Add another login" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إضافة تسجيل دخول آخر"
+          }
+        }
+      }
+    },
+    "For a second login at Interactive Brokers, sign in to Client Portal with it and make a query and a token there too. Both logins then sync together." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لتسجيل دخول ثانٍ لدى Interactive Brokers، سجّل الدخول به إلى Client Portal وأنشئ هناك استعلامًا ورمزًا أيضًا. بعدها يُزامَن التسجيلان معًا."
+          }
+        }
+      }
+    },
+    "Query %@: %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الاستعلام ⁨%1$@⁩: ⁨%2$@⁩"
+          }
+        }
+      }
+    },
+    "Performance and holdings" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الأداء والحيازات"
+          }
+        }
+      }
+    },
+    "1M" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "شهر"
+          }
+        }
+      }
+    },
+    "3M" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3 أشهر"
+          }
+        }
+      }
+    },
+    "YTD" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هذا العام"
+          }
+        }
+      }
+    },
+    "1Y" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سنة"
+          }
+        }
+      }
+    },
+    "Period" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الفترة"
+          }
+        }
+      }
+    },
+    "Gain over 1 month" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الربح خلال شهر"
+          }
+        }
+      }
+    },
+    "Gain over 3 months" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الربح خلال 3 أشهر"
+          }
+        }
+      }
+    },
+    "Gain this year" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الربح هذه السنة"
+          }
+        }
+      }
+    },
+    "Gain over 1 year" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الربح خلال سنة"
+          }
+        }
+      }
+    },
+    "Gain" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الربح"
+          }
+        }
+      }
+    },
+    "Loss" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الخسارة"
+          }
+        }
+      }
+    },
+    "Return" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "العائد"
+          }
+        }
+      }
+    },
+    "Holding" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الحيازة"
+          }
+        }
+      }
+    },
+    "Value before gains" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "القيمة قبل الأرباح"
+          }
+        }
+      }
+    },
+    "The account's value from %@ to %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قيمة الحساب من ⁨%1$@⁩ إلى ⁨%2$@⁩"
+          }
+        }
+      }
+    },
+    "The account's gain from %@ to %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ربح الحساب من ⁨%1$@⁩ إلى ⁨%2$@⁩"
+          }
+        }
+      }
+    },
+    "The account's gain in each month" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ربح الحساب في كل شهر"
+          }
+        }
+      }
+    },
+    "Change on %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التغيّر في ⁨%@⁩"
+          }
+        }
+      }
+    },
+    "Money put in" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المال المودَع"
+          }
+        }
+      }
+    },
+    "Since %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "منذ ⁨%@⁩"
+          }
+        }
+      }
+    },
+    "Best day" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أفضل يوم"
+          }
+        }
+      }
+    },
+    "Worst day" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أسوأ يوم"
+          }
+        }
+      }
+    },
+    "Largest drop" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أكبر تراجع"
+          }
+        }
+      }
+    },
+    "Days up" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أيام الارتفاع"
+          }
+        }
+      }
+    },
+    "What it holds" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ما يحتويه"
+          }
+        }
+      }
+    },
+    "What the account is made of, by kind" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مكوّنات الحساب بحسب النوع"
+          }
+        }
+      }
+    },
+    "Gain on what you hold" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الربح على ما تملكه"
+          }
+        }
+      }
+    },
+    "%@ on a cost of %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⁨%1$@⁩ على تكلفة ⁨%2$@⁩"
+          }
+        }
+      }
+    },
+    "%@ of the account" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⁨%@⁩ من الحساب"
+          }
+        }
+      }
+    },
+    "Largest holding" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أكبر حيازة"
+          }
+        }
+      }
+    },
+    "Best performer" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الأفضل أداءً"
+          }
+        }
+      }
+    },
+    "Worst performer" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الأضعف أداءً"
+          }
+        }
+      }
+    },
+    "Stocks" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الأسهم"
+          }
+        }
+      }
+    },
+    "Funds" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الصناديق"
+          }
+        }
+      }
+    },
+    "Bonds" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "السندات"
+          }
+        }
+      }
+    },
+    "Options" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عقود الخيارات"
+          }
+        }
+      }
+    },
+    "Futures" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "العقود الآجلة"
+          }
+        }
+      }
+    },
+    "Currencies" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "العملات"
+          }
+        }
+      }
+    },
+    "Crypto" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "العملات المشفّرة"
+          }
+        }
+      }
+    },
+    "Commodities" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "السلع"
+          }
+        }
+      }
+    },
+    "CFDs" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عقود الفروقات"
+          }
+        }
+      }
+    },
+    "Other holdings" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حيازات أخرى"
+          }
+        }
+      }
+    },
+    "Stock" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سهم"
+          }
+        }
+      }
+    },
+    "Fund" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "صندوق"
+          }
+        }
+      }
+    },
+    "Bond" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سند"
+          }
+        }
+      }
+    },
+    "Option" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عقد خيار"
+          }
+        }
+      }
+    },
+    "Future" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عقد آجل"
+          }
+        }
+      }
+    },
+    "Commodity" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سلعة"
+          }
+        }
+      }
+    },
+    "CFD" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عقد فروقات"
+          }
+        }
+      }
+    },
+    "Income and costs" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الدخل والتكاليف"
+          }
+        }
+      }
+    },
+    "Dividends and interest" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التوزيعات والفوائد"
+          }
+        }
+      }
+    },
+    "Fees, tax and commissions" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الرسوم والضريبة والعمولات"
+          }
+        }
+      }
+    },
+    "Dividends" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التوزيعات"
+          }
+        }
+      }
+    },
+    "Tax withheld" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الضريبة المقتطعة"
+          }
+        }
+      }
+    },
+    "Market data, advisers and other charges apart from trades" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بيانات السوق والمستشارون ورسوم أخرى غير رسوم الصفقات"
+          }
+        }
+      }
+    },
+    "Commissions on trades" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عمولات الصفقات"
+          }
+        }
+      }
+    },
+    "All of these are already in the gain above. Dividends, interest, tax and fees arrive as cash; a trade's commission is part of what the trade cost." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "كل هذه محتسبة أصلًا في الربح أعلاه. تصل التوزيعات والفوائد والضريبة والرسوم نقدًا؛ أما عمولة الصفقة فجزء من تكلفتها."
+          }
+        }
+      }
+    },
+    "Your Flex Query leaves some sections out, so parts of this page are missing:" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استعلام Flex لديك لا يتضمن بعض الأقسام، لذا تنقص أجزاء من هذه الصفحة:"
+          }
+        }
+      }
+    },
+    "Net Asset Value (NAV) in Base: without it the value is only known on the days you sync, so the chart and the gains start from there." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⁨Net Asset Value (NAV) in Base⁩: بدونه لا تُعرف القيمة إلا في أيام المزامنة، فيبدأ الرسم البياني والأرباح من هناك."
+          }
+        }
+      }
+    },
+    "Open Positions: without it the holdings aren't listed." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⁨Open Positions⁩: بدونه لا تُعرض الحيازات."
+          }
+        }
+      }
+    },
+    "Cash Transactions: without it deposits, dividends, interest and fees aren't known, and money you put in can be counted as a gain." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⁨Cash Transactions⁩: بدونه لا تُعرف الإيداعات ولا توزيعات الأرباح ولا الفوائد ولا الرسوم، وقد يُحتسب المال الذي أودعته ربحًا."
+          }
+        }
+      }
+    },
+    "Cash Report: without it cash and the commissions on trades aren't shown." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⁨Cash Report⁩: بدونه لا يظهر النقد ولا عمولات التداول."
+          }
+        }
+      }
+    },
+    "Transfers: without it money moved in from another account is only estimated, from jumps in the value." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⁨Transfers⁩: بدونه يُقدَّر المال المحوَّل من حساب آخر تقديرًا فقط، من القفزات في القيمة."
+          }
+        }
+      }
+    },
+    "The days counted as money moved" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الأيام التي احتُسبت مالًا منقولًا"
+          }
+        }
+      }
+    },
+    "%lld of %lld days" : {
+      "comment" : "\"3 of 5 days\": the days an account ended up, among the days it moved.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⁨%1$lld⁩ من %2$#@days@"
+          },
+          "substitutions" : {
+            "days" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "zero" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg يوم"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "يوم واحد"
+                    }
+                  },
+                  "two" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "يومين"
+                    }
+                  },
+                  "few" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg أيام"
+                    }
+                  },
+                  "many" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg يومًا"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg يوم"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld of %2$#@days@"
+          },
+          "substitutions" : {
+            "days" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg day"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg days"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "On %lld days the value jumped with no deposit or transfer listed, so those changes are counted as money moved, not as gains. Add the Transfers section to your Flex Query for exact figures." : {
+      "localizations" : {
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "لم تقفز القيمة في أي يوم."
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "في يوم واحد قفزت القيمة دون إيداع أو تحويل مذكور، فاحتُسب ذلك التغيّر مالًا منقولًا لا ربحًا. أضف قسم Transfers إلى استعلام Flex للحصول على أرقام دقيقة."
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "في يومين قفزت القيمة دون إيداع أو تحويل مذكور، فاحتُسب ذلك التغيّر مالًا منقولًا لا ربحًا. أضف قسم Transfers إلى استعلام Flex للحصول على أرقام دقيقة."
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "في %lld أيام قفزت القيمة دون إيداع أو تحويل مذكور، فاحتُسبت تلك التغيّرات مالًا منقولًا لا أرباحًا. أضف قسم Transfers إلى استعلام Flex للحصول على أرقام دقيقة."
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "في %lld يومًا قفزت القيمة دون إيداع أو تحويل مذكور، فاحتُسبت تلك التغيّرات مالًا منقولًا لا أرباحًا. أضف قسم Transfers إلى استعلام Flex للحصول على أرقام دقيقة."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "في %lld يوم قفزت القيمة دون إيداع أو تحويل مذكور، فاحتُسبت تلك التغيّرات مالًا منقولًا لا أرباحًا. أضف قسم Transfers إلى استعلام Flex للحصول على أرقام دقيقة."
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "On %lld day the value jumped with no deposit or transfer listed, so that change is counted as money moved, not as a gain. Add the Transfers section to your Flex Query for exact figures."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "On %lld days the value jumped with no deposit or transfer listed, so those changes are counted as money moved, not as gains. Add the Transfers section to your Flex Query for exact figures."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Make a Flex Query" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أنشئ استعلام Flex"
+          }
+        }
+      }
+    },
+    "In Client Portal, open Performance & Reports › Flex Queries and add an Activity Flex Query. If the page offers Configure Query with AI, paste this request and save what it builds:" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "في Client Portal، افتح Performance & Reports ثم Flex Queries وأضف استعلامًا من نوع Activity Flex Query. إن عرضت الصفحة خيار Configure Query with AI، فالصق هذا الطلب واحفظ ما يُنشئه:"
+          }
+        }
+      }
+    },
+    "Copied" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تم النسخ"
+          }
+        }
+      }
+    },
+    "Or set it up by hand" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أو أعِدّه يدويًا"
+          }
+        }
+      }
+    },
+    "Make a token" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أنشئ رمزًا"
+          }
+        }
+      }
+    },
+    "Paste both here" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الصقهما هنا"
+          }
+        }
+      }
+    },
+    "How it works" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "كيف يعمل"
+          }
+        }
+      }
+    },
+    "The token can only read statements. It can't trade or move money, and it stays on this device." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الرمز للقراءة فقط: لا يستطيع التداول ولا نقل المال، ويبقى على هذا الجهاز."
+          }
+        }
+      }
+    },
+    "A sync asks Interactive Brokers for your query's statement. It makes each day's statement overnight, so prices are as of the last close." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تطلب المزامنة من Interactive Brokers كشف استعلامك. ويُعدّ كشف كل يوم خلال الليل، لذا تكون الأسعار كما كانت عند آخر إغلاق."
+          }
+        }
+      }
+    },
+    "UrBudget syncs when you tap Sync, and once a day when it opens." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يزامن UrBudget عندما تضغط «المزامنة»، ومرة واحدة في اليوم عند فتحه."
+          }
+        }
+      }
+    },
+    "The account's balance follows Interactive Brokers' value, so your net worth and reports include it. Each month's change is added to the account as Market change." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يتبع رصيد الحساب القيمة لدى Interactive Brokers، فيدخل ضمن صافي ثروتك وتقاريرك. ويُضاف تغيّر كل شهر إلى الحساب باسم Market change."
+          }
+        }
+      }
+    },
+    "Sync once a day when UrBudget opens" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المزامنة مرة واحدة في اليوم عند فتح UrBudget"
+          }
+        }
+      }
+    },
+    "Interactive Brokers: prices from %@." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⁨Interactive Brokers⁩: الأسعار بتاريخ ⁨%@⁩."
+          }
+        }
+      }
+    },
+    "Logins" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تسجيلات الدخول"
+          }
+        }
+      }
+    },
+    "Query %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الاستعلام ⁨%@⁩"
+          }
+        }
+      }
+    },
+    "Remove login" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إزالة تسجيل الدخول"
+          }
+        }
+      }
+    },
+    "Remove this login?" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إزالة تسجيل الدخول هذا؟"
+          }
+        }
+      }
+    },
+    "UrBudget forgets its token on this device. Its accounts keep what they hold and stop updating. To switch the token off, do that in Client Portal too." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سينسى UrBudget رمزه على هذا الجهاز. تحتفظ حساباته بما فيها وتتوقف عن التحديث. ولإيقاف الرمز نفسه، افعل ذلك في Client Portal أيضًا."
+          }
+        }
+      }
+    },
+    "Connect with a token" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الربط برمز"
+          }
+        }
+      }
+    },
+    "From your bank connection, as of %@. Each month's change in value is listed under Transactions as Market change." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "من اتصالك البنكي، بتاريخ ⁨%@⁩. يظهر تغيّر القيمة في كل شهر ضمن المعاملات باسم Market change."
+          }
+        }
+      }
+    },
+    "From a positions file, with prices from %@. Each month's change in value is listed under Transactions as Market change." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "من ملف حيازات، بأسعار تاريخ ⁨%@⁩. يظهر تغيّر القيمة في كل شهر ضمن المعاملات باسم Market change."
+          }
+        }
+      }
+    },
+    "From the value you typed for %@. Each month's change in value is listed under Transactions as Market change." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "من القيمة التي أدخلتها لتاريخ ⁨%@⁩. يظهر تغيّر القيمة في كل شهر ضمن المعاملات باسم Market change."
+          }
+        }
+      }
+    },
+    "See what your investment accounts hold and how they're doing. Each one is kept up to date its own way: by Interactive Brokers, by your bank connection, or from a positions file you bring in." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اطّلع على ما تحتويه حساباتك الاستثمارية وعلى أدائها. يُحدَّث كل حساب بطريقته: عبر Interactive Brokers، أو عبر اتصالك البنكي، أو من ملف حيازات تُحضره."
+          }
+        }
+      }
+    },
+    "Bank connection" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الاتصال البنكي"
+          }
+        }
+      }
+    },
+    "Positions file" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ملف الحيازات"
+          }
+        }
+      }
+    },
+    "Value you type in" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قيمة تُدخلها بنفسك"
+          }
+        }
+      }
+    },
+    "Nothing yet" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا شيء بعد"
+          }
+        }
+      }
+    },
+    "An investment account you add under Accounts shows here." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يظهر هنا الحساب الاستثماري الذي تضيفه ضمن «الحسابات»."
+          }
+        }
+      }
+    },
+    "Holdings, prices, deposits and income, with a read-only token" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الحيازات والأسعار والإيداعات والدخل، برمز للقراءة فقط"
+          }
+        }
+      }
+    },
+    "How an account is kept up to date" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "كيف يُحدَّث الحساب"
+          }
+        }
+      }
+    },
+    "Interactive Brokers syncs holdings, prices, deposits and income with a read-only token. Open Interactive Brokers on this page to set it up." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يزامن Interactive Brokers الحيازات والأسعار والإيداعات والدخل برمز للقراءة فقط. افتح Interactive Brokers في هذه الصفحة لإعداده."
+          }
+        }
+      }
+    },
+    "A bank connection brings an investment account's holdings with each bank sync, when its bank sends them. Link the account under Bank connections." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يجلب الاتصال البنكي حيازات الحساب الاستثماري مع كل مزامنة، إن أرسلها بنكه. اربط الحساب ضمن «ربط البنوك»."
+          }
+        }
+      }
+    },
+    "A positions file is what your broker lets you download: a CSV, a spreadsheet, or an OFX or QFX statement. The assistant can read other layouts." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ملف الحيازات هو ما يتيح لك وسيطك تنزيله: ملف CSV أو جدول بيانات أو كشف OFX أو QFX. ويستطيع المساعد قراءة تنسيقات أخرى."
+          }
+        }
+      }
+    },
+    "For a broker with nothing to download, you can type the account's value yourself. Turn that on at the bottom of this page." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إن كان وسيطك لا يتيح تنزيل شيء، يمكنك إدخال قيمة الحساب بنفسك. فعِّل ذلك في أسفل هذه الصفحة."
+          }
+        }
+      }
+    },
+    "Let me type an account's value myself" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أريد إدخال قيمة الحساب بنفسي"
+          }
+        }
+      }
+    },
+    "Advanced: for a broker with nothing to download" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متقدم: لوسيط لا يتيح تنزيل شيء"
+          }
+        }
+      }
+    },
+    "Type its value" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إدخال قيمته"
+          }
+        }
+      }
+    },
+    "Update from a file" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تحديث من ملف"
+          }
+        }
+      }
+    },
+    "Update value" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تحديث القيمة"
+          }
+        }
+      }
+    },
+    "Unlinking stops the account following this value. Its transactions stay." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إلغاء الربط يوقف متابعة الحساب لهذه القيمة. وتبقى معاملاته."
+          }
+        }
+      }
+    },
+    "Ask the assistant to read it" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اطلب من المساعد قراءته"
+          }
+        }
+      }
+    },
+    "The assistant can read other layouts: it looks at the file and proposes what the account holds for you to check." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يستطيع المساعد قراءة تنسيقات أخرى: يطّلع على الملف ويقترح ما يحتويه الحساب لتراجعه."
+          }
+        }
+      }
+    },
+    "Save holdings" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حفظ الحيازات"
+          }
+        }
+      }
+    },
+    "%@ of it is cash." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "منها ⁨%@⁩ نقدًا."
+          }
+        }
+      }
+    },
+    "cost %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التكلفة ⁨%@⁩"
+          }
+        }
+      }
+    },
+    "Prices from" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الأسعار بتاريخ"
+          }
+        }
+      }
+    },
+    "UrBudget can't read a PDF here." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يستطيع UrBudget قراءة ملف PDF هنا."
+          }
+        }
+      }
+    },
+    "The account's balance becomes this value. From here on, what it changes by beyond the money you put in or take out is recorded as Market change." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يصبح رصيد الحساب هذه القيمة. ومن الآن فصاعدًا يُسجَّل ما يتغيّر به غير المال الذي تودعه أو تسحبه باسم Market change."
+          }
+        }
+      }
+    },
+    "Read what %@ holds from the attached file and record it." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اقرأ ما يحتويه ⁨%@⁩ من الملف المرفق وسجّله."
+          }
+        }
+      }
+    },
+    "Type what the account is worth on a day, as your broker shows it. Do it again whenever you like: once a month is plenty." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أدخل قيمة الحساب في يوم ما كما يعرضها وسيطك. كرّر ذلك متى شئت: مرة في الشهر تكفي."
+          }
+        }
+      }
+    },
+    "On" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "في تاريخ"
+          }
+        }
+      }
+    },
+    "Last value: %@ on %@. An earlier day adds to its history." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "آخر قيمة: ⁨%1$@⁩ في ⁨%2$@⁩. إدخال يوم سابق يضيف إلى سجلّه."
+          }
+        }
+      }
+    },
+    "Value of %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قيمة ⁨%@⁩"
+          }
+        }
+      }
+    },
+    "Save value" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حفظ القيمة"
+          }
+        }
+      }
+    },
+    "See what this account holds and how it's doing" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اطّلع على ما يحتويه هذا الحساب وعلى أدائه"
+          }
+        }
+      }
+    },
+    "Connect Interactive Brokers, or bring in the positions file your broker lets you download." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اربط Interactive Brokers، أو أحضِر ملف الحيازات الذي يتيح لك وسيطك تنزيله."
+          }
+        }
+      }
+    },
+    "Set up" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإعداد"
+          }
+        }
+      }
+    },
+    "%lld rows had no value UrBudget could read and are left out." : {
+      "localizations" : {
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "لا صفوف متروكة."
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "صف واحد لم يستطع UrBudget قراءة قيمته فتُرك."
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "صفّان لم يستطع UrBudget قراءة قيمتهما فتُركا."
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld صفوف لم يستطع UrBudget قراءة قيمها فتُركت."
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld صفًّا لم يستطع UrBudget قراءة قيمها فتُركت."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld صف لم يستطع UrBudget قراءة قيمها فتُركت."
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld row had no value UrBudget could read and is left out."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld rows had no value UrBudget could read and are left out."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Performance" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الأداء"
+          }
+        }
+      }
+    },
+    "How your investments did: their value, what you put in, and what they gained." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أداء استثماراتك: قيمتها وما أودعته فيها وما ربحته."
+          }
+        }
+      }
+    },
+    "Allocation" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التوزيع"
+          }
+        }
+      }
+    },
+    "What your investments are in today, across all your accounts." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فيمَ تتوزع استثماراتك اليوم في جميع حساباتك."
+          }
+        }
+      }
+    },
+    "Dividends and interest earned, and the tax and fees paid." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الأرباح الموزعة والفوائد المكتسبة، والضرائب والرسوم المدفوعة."
+          }
+        }
+      }
+    },
+    "Markets" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الأسواق"
+          }
+        }
+      }
+    },
+    "Everything else" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "كل ما عدا ذلك"
+          }
+        }
+      }
+    },
+    "From markets" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "من الأسواق"
+          }
+        }
+      }
+    },
+    "%@ of the change" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أي ⁨%@⁩ من التغيّر"
+          }
+        }
+      }
+    },
+    "Value now" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "القيمة الآن"
+          }
+        }
+      }
+    },
+    "%@ a year" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بمعدل ⁨%@⁩ سنويًا"
+          }
+        }
+      }
+    },
+    "Gain each month" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الربح كل شهر"
+          }
+        }
+      }
+    },
+    "By kind" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حسب النوع"
+          }
+        }
+      }
+    },
+    "By currency" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حسب العملة"
+          }
+        }
+      }
+    },
+    "Kept up to date by" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يُحدَّث عبر"
+          }
+        }
+      }
+    },
+    "Start" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البداية"
+          }
+        }
+      }
+    },
+    "End" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "النهاية"
+          }
+        }
+      }
+    },
+    "Put in" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المودَع"
+          }
+        }
+      }
+    },
+    "Top five holdings" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أكبر خمس حيازات"
+          }
+        }
+      }
+    },
+    "Largest holdings" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أكبر الحيازات"
+          }
+        }
+      }
+    },
+    "reports.share" : {
+      "comment" : "A holding's part of everything held, before its percentage.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الحصة"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Share"
+          }
+        }
+      }
+    },
+    "Unrealised gain" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الربح غير المحقق"
+          }
+        }
+      }
+    },
+    "Return on cost" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "العائد على التكلفة"
+          }
+        }
+      }
+    },
+    "Today's holdings. What was held on past days isn't kept." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حيازات اليوم. لا يُحتفظ بما كان في الحسابات في أيام سابقة."
+          }
+        }
+      }
+    },
+    "Net" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الصافي"
+          }
+        }
+      }
+    },
+    "Yield" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "نسبة العائد"
+          }
+        }
+      }
+    },
+    "Income over the average value" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الدخل مقسومًا على متوسط القيمة"
+          }
+        }
+      }
+    },
+    "Valued only when updated, so a gain shows in the month of the next update: %@." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تُقيَّم عند التحديث فقط، لذا يظهر الربح في شهر التحديث التالي: ⁨%@⁩."
+          }
+        }
+      }
+    },
+    "Not counted here, because nothing keeps them up to date: %@." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "غير محتسبة هنا لأن لا شيء يحدّثها: ⁨%@⁩."
+          }
+        }
+      }
+    },
+    "No income or costs reported: %@." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا بيانات عن الدخل أو التكاليف: ⁨%@⁩."
+          }
+        }
+      }
+    },
+    "Other investments" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استثمارات أخرى"
+          }
+        }
+      }
+    },
+    "Cash at %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "نقد لدى ⁨%@⁩"
+          }
+        }
+      }
+    },
+    "Accrued income at %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "دخل مستحق لدى ⁨%@⁩"
+          }
+        }
+      }
+    },
+    "Since prices from %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "منذ أسعار ⁨%@⁩"
+          }
+        }
+      }
+    },
+    "Start and change not shown by type, because what was held then isn't kept: %@." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البداية والتغيّر لا يظهران حسب النوع لأن ما كان في الحساب حينها لا يُحتفظ به: ⁨%@⁩."
+          }
+        }
+      }
+    },
+    "Not broken down, because what was held then isn't kept: %@." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "غير مفصّلة لأن ما كان في الحساب حينها لا يُحتفظ به: ⁨%@⁩."
+          }
+        }
+      }
+    },
+    "Investments changed by %@: %@ put in, %@ from markets." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تغيّرت الاستثمارات بمقدار ⁨%1$@⁩: ⁨%2$@⁩ مودَعة و⁨%3$@⁩ من الأسواق."
+          }
+        }
+      }
+    },
+    "Realised %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المحقق ⁨%@⁩"
+          }
+        }
+      }
+    },
+    "By holding" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حسب الحيازة"
+          }
+        }
+      }
+    },
+    "Trades: without it realised gains and commissions on trades aren't shown by month." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trades: بدونه لا تظهر الأرباح المحققة ولا عمولات الصفقات شهريًا."
+          }
+        }
+      }
+    },
+    "Where did my money go?" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أين ذهب مالي؟"
+          }
+        }
+      }
+    },
+    "Am I spending less than I earn?" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هل أنفق أقل مما أكسب؟"
+          }
+        }
+      }
+    },
+    "What am I worth, and why did it change?" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "كم صافي ثروتي، ولماذا تغيّر؟"
+          }
+        }
+      }
+    },
+    "What do I own and owe?" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ماذا أملك وبماذا أدين؟"
+          }
+        }
+      }
+    },
+    "How are my investments doing?" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "كيف حال استثماراتي؟"
+          }
+        }
+      }
+    },
+    "What's coming up?" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ما القادم؟"
+          }
+        }
+      }
+    },
+    "Over time" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عبر الزمن"
+          }
+        }
+      }
+    },
+    "Calendar" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التقويم"
+          }
+        }
+      }
+    },
+    "Vs. spending" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مقابل الإنفاق"
+          }
+        }
+      }
+    },
+    "In and out" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الداخل والخارج"
+          }
+        }
+      }
+    },
+    "Balances" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الأرصدة"
+          }
+        }
+      }
+    },
+    "Lowest balance ahead" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أدنى رصيد قادم"
+          }
+        }
+      }
+    },
+    "%@ moved into investments isn't counted here." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يُحتسب هنا ⁨%@⁩ نُقلت إلى الاستثمارات."
+          }
+        }
+      }
+    },
+    "%@ taken out of investments isn't counted here." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يُحتسب هنا ⁨%@⁩ سُحبت من الاستثمارات."
+          }
+        }
+      }
+    },
+    "ETF" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "صندوق متداول"
+          }
+        }
+      }
+    },
+    "Exchange-traded note" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ورقة دين متداولة"
+          }
+        }
+      }
+    },
+    "REIT" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "صندوق ريت"
+          }
+        }
+      }
+    },
+    "Depositary receipt" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إيصال إيداع"
+          }
+        }
+      }
+    },
+    "Preferred share" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سهم ممتاز"
+          }
+        }
+      }
+    },
+    "instrument.right" : {
+      "comment" : "A holding that is a right to buy new shares.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حق اكتتاب"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Right"
+          }
+        }
+      }
+    },
+    "Closed-end fund" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "صندوق مغلق"
+          }
+        }
+      }
+    },
+    "Treasury bill" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إذن خزانة"
+          }
+        }
+      }
+    },
+    "Government bond" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سند حكومي"
+          }
+        }
+      }
+    },
+    "Corporate bond" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سند شركات"
+          }
+        }
+      }
+    },
+    "Call option" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "خيار شراء"
+          }
+        }
+      }
+    },
+    "Put option" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "خيار بيع"
+          }
+        }
+      }
+    },
+    "Give the query a name, such as UrBudget." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سمِّ الاستعلام، مثلًا UrBudget."
+          }
+        }
+      }
+    },
+    "Under Sections, tick each of these and choose Select All in it:" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تحت Sections، حدِّد كلًّا من هذه واختر فيه Select All:"
+          }
+        }
+      }
+    },
+    "Open Positions, choosing Summary" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⁦Open Positions⁩، مع اختيار Summary"
+          }
+        }
+      }
+    },
+    "Trades, choosing Executions" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⁦Trades⁩، مع اختيار Executions"
+          }
+        }
+      }
+    },
+    "Under Delivery Configuration, set Format to XML and Period to Last 365 Calendar Days." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تحت Delivery Configuration، اجعل Format على XML وPeriod على Last 365 Calendar Days."
+          }
+        }
+      }
+    },
+    "Under General Configuration, set Include Currency Rates to Yes." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تحت General Configuration، اجعل Include Currency Rates على Yes."
+          }
+        }
+      }
+    },
+    "Save it with Continue, then Create." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "احفظه بالضغط على Continue ثم Create."
+          }
+        }
+      }
+    },
+    "On the same page, open Flex Web Service Configuration and turn the service on." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "في الصفحة نفسها، افتح Flex Web Service Configuration وفعِّل الخدمة."
+          }
+        }
+      }
+    },
+    "Generate a token. Choose one year so it lasts, and leave the IP address restriction empty." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أنشئ رمزًا. اختر مدة سنة واحدة ليبقى صالحًا، واترك تقييد عنوان IP فارغًا."
+          }
+        }
+      }
+    },
+    "Query ID: on the Flex Queries page, the info (i) icon beside your query opens a box with the Query ID at the top." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "معرّف الاستعلام: في صفحة Flex Queries، تفتح أيقونة المعلومات (i) بجانب استعلامك مربعًا في أعلاه معرّف الاستعلام."
+          }
+        }
+      }
+    },
+    "Token: the one you just generated." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الرمز: الذي أنشأته للتو."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

@@ -2,8 +2,8 @@ import { createContext, useContext, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 /**
- * The page header has two slots for a page's own controls: one just after its title (the report
- * groups), and one beside undo and redo (the register's import and export). App provides the
+ * The page header has two slots for a page's own controls: one just after its title (the
+ * reports' tabs), and one beside undo and redo (the register's import and export). App provides the
  * slots' elements, and a page portals into them. Undefined when there is no header around the
  * page at all, as when a test renders a page on its own.
  */

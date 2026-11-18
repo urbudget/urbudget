@@ -97,7 +97,7 @@ internal fun BankConnectionsScreen(budget: JSONObject, vm: BudgetViewModel) {
     }
     fun downloadActivity() {
         skipped = emptySet(); imported = emptySet(); first = null; reviewing = false
-        sync(true) { result ->
+        fun settle(result: JSONObject) {
             requests.track(scope.launch {
                 val through = result.text("through")
                 val current = vm.state.value.budget
@@ -107,6 +107,16 @@ internal fun BankConnectionsScreen(budget: JSONObject, vm: BudgetViewModel) {
                 }
                 if (quiet.isEmpty()) reviewing = true else markChecked(quiet, through)
             })
+        }
+        sync(true) { result ->
+            if (result.rows("reviews").none { it.optInt("holdings") > 0 }) settle(result)
+            else {
+                // What a brokerage sends of its holdings goes in with the sync, with nothing to review; the
+                // download is then checked again against the budget that has them. If that can't be saved
+                // now, the bank's rows are still reviewed, and the next sync brings the holdings.
+                loading = true
+                requests.track(vm.service("simplefin_holdings", onError = { loading = false; settle(result) }) { sync(false) { settle(it) } })
+            }
         }
     }
     LaunchedEffect(Unit) { call("simplefin_status") }

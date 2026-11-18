@@ -6,8 +6,19 @@ import { AppliedChangeError } from "./useBudget";
 import { t } from "./i18n";
 
 /**
+ * What covering an overspending of `overspent` takes from a source that has `has` (both in cents):
+ * all of it when the source has enough, otherwise everything the source has. With nothing to give
+ * (or no source chosen) it's the whole overspending, so the amount still says what's needed.
+ */
+export function coverAmount(overspent: number, has: number | null | undefined): number {
+  return has != null && has > 0 && has < overspent ? has : overspent;
+}
+
+/**
  * Move funds into or out of a category (or assign unassigned money).
- * `source` is a category id or READY_TO_ASSIGN; `available` is its balance.
+ * `source` is a category id or READY_TO_ASSIGN; `available` is its balance. Covering an overspent
+ * category opens with as much of the overspending as the place it's taken from can give
+ * (coverAmount), and choosing another place sets the amount again, until one has been typed.
  */
 export function MoveMoneyPopover({
   budget,
@@ -31,13 +42,22 @@ export function MoveMoneyPopover({
   onClose: () => void;
 }) {
   const fromReady = source === READY_TO_ASSIGN;
+  const withReady = new Map(balances).set(READY_TO_ASSIGN, readyToAssign);
+  // Covering this category's overspending: the amount is what the place it comes from can give of it.
+  const overspent = available < 0 && !fromReady ? -available : 0;
+  const covered = (from: string | null) => coverAmount(overspent, from == null ? null : withReady.get(from) ?? 0);
   const [direction, setDirection] = useState<"out" | "in">(available < 0 ? "in" : "out");
   const [other, setOther] = useState<string | null>(available < 0 ? READY_TO_ASSIGN : null);
-  const [amount, setAmount] = useState(editableAmount(Math.abs(available)));
+  const [amount, setAmount] = useState(() => editableAmount(overspent > 0 ? covered(available < 0 ? READY_TO_ASSIGN : null) : Math.abs(available)));
+  // Until an amount is typed, a new place to take from puts in what it can give.
+  const [typed, setTyped] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [retrySave, setRetrySave] = useState<(() => Promise<void>) | null>(null);
-  const withReady = new Map(balances).set(READY_TO_ASSIGN, readyToAssign);
+  const choose = (id: string | null) => {
+    setOther(id);
+    if (overspent > 0 && direction === "in" && !typed) setAmount(editableAmount(covered(id)));
+  };
   const title = fromReady
     ? t("Assign money")
     : available < 0 && direction === "in"
@@ -90,7 +110,7 @@ export function MoveMoneyPopover({
             inputMode="decimal"
             value={amount}
             onFocus={(e) => e.currentTarget.select()}
-            onChange={(e) => setAmount(e.target.value)}
+            onChange={(e) => { setAmount(e.target.value); setTyped(true); }}
           />
         </label>
         <label>
@@ -98,7 +118,7 @@ export function MoveMoneyPopover({
           <CategoryPicker
             budget={budget}
             value={other}
-            onChange={setOther}
+            onChange={choose}
             available={withReady}
             readyToAssign={fromReady ? false : t("Unassigned ({amount})", { amount: money(readyToAssign) })}
             exclude={fromReady ? undefined : source}

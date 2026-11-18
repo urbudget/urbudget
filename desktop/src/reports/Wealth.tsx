@@ -1,9 +1,14 @@
 import { useState } from "react";
+import { LoaderCircle } from "lucide-react";
 import { BarList, ColumnChart, Legend, LineChart, LinesChart } from "../charts/Charts";
 import { formatDate, money, monthName } from "../format";
-import { accountType, inNetWorth, isLiability, sectionOf } from "../accounts";
-import type { Account } from "../types";
-import { ltr, msg, t, tn } from "../i18n";
+import { cashByCurrency, holdingLine as aboutHolding } from "../holdings";
+import { inNetWorth } from "../accounts";
+import { today, type Account, type Portfolio } from "../types";
+import { list, ltr, t, tn } from "../i18n";
+import { textWidth } from "../ui/columns";
+import { ASSET_SECTIONS, DEBT_SECTIONS, LIQUID, balanceSheet, heldLines, sectionTotal, type HeldLine, type SheetLine } from "./balanceSheet";
+import { holdingAccounts, usePortfolio } from "./portfolio";
 import {
   Panel,
   ReportTable,
@@ -19,13 +24,26 @@ import {
   useReportColumns,
   type ReportData,
   type Scope,
+  type Tile,
 } from "./shared";
 
 /** Net worth before the range starts, from the balances just before it. */
-function openingNetWorth(data: ReportData, accounts: Account[]) {
+export function openingNetWorth(data: ReportData, accounts: Account[]) {
   const opening = data.openingAccounts;
   if (!opening) return data.months[0].netWorth;
   return sum(accounts.filter((a) => inNetWorth(a) && a.id in opening).map((a) => opening[a.id]));
+}
+
+/**
+ * Each month's change in net worth, and where it came from: what markets did to the investment
+ * accounts, and everything else (saving, debt paid down, revalued assets). The two add up to the change.
+ */
+export function netWorthChanges(data: ReportData, opening: number) {
+  return data.months.map((m, i) => {
+    const change = m.netWorth - (i ? data.months[i - 1].netWorth : opening);
+    const market = m.market ?? 0;
+    return { change, market, rest: change - market };
+  });
 }
 
 export function NetWorth({ scope }: { scope: Scope }) {
@@ -38,9 +56,20 @@ export function NetWorth({ scope }: { scope: Scope }) {
     budget.accounts.filter((a) => !accounts.size || accounts.has(a.id)),
   );
   const change = last.netWorth - opening;
-  const monthly = data.months.map((m, i) => m.netWorth - (i ? data.months[i - 1].netWorth : opening));
+  const changes = netWorthChanges(data, opening);
+  const monthly = changes.map((c) => c.change);
+  // Only a budget whose investments moved has two sources to tell apart.
+  const split = changes.some((c) => c.market !== 0);
+  const fromMarkets = sum(changes.map((c) => c.market));
   const shownAccounts = budget.accounts.filter((a) => !accounts.size || accounts.has(a.id));
   const table = useReportColumns("networth", 3);
+  const marketTile: Tile = {
+    label: t("From markets"),
+    value: signed(fromMarkets),
+    tone: fromMarkets < 0 ? "negative" : fromMarkets > 0 ? "positive" : undefined,
+    // A share only where markets and the whole change went the same way.
+    note: fromMarkets * change > 0 ? t("{share} of the change", { share: share(Math.abs(fromMarkets), Math.abs(change)) }) : undefined,
+  };
   return (
     <>
       <Tiles
@@ -58,6 +87,7 @@ export function NetWorth({ scope }: { scope: Scope }) {
             value: fmt(last.debt),
             note: last.assets > 0 ? t("{share} of assets", { share: share(last.debt, last.assets) }) : undefined,
           },
+          ...(split ? [marketTile] : []),
         ]}
       />
       <Panel title={t("Assets, debts and net worth")}>
@@ -80,32 +110,55 @@ export function NetWorth({ scope }: { scope: Scope }) {
         />
       </Panel>
       <Panel title={t("Change each month")}>
-        <ColumnChart
-          months={months}
-          series={[
-            {
-              key: "up",
-              label: t("Grew"),
-              color: "var(--diverging-positive)",
-              values: monthly.map((v) => Math.max(0, v)),
-            },
-            {
-              key: "down",
-              label: t("Shrank"),
-              color: "var(--diverging-negative)",
-              values: monthly.map((v) => Math.min(0, v)),
-            },
-          ]}
-          label={t("How much net worth grew or shrank each month")}
-          format={fmt}
-          height={200}
-        />
-        <Legend
-          items={[
-            { label: t("Grew"), color: "var(--diverging-positive)" },
-            { label: t("Shrank"), color: "var(--diverging-negative)" },
-          ]}
-        />
+        {split ? (
+          <>
+            <ColumnChart
+              months={months}
+              series={[
+                { key: "markets", label: t("Markets"), color: SERIES(6), values: changes.map((c) => c.market) },
+                { key: "rest", label: t("Everything else"), color: SERIES(0), values: changes.map((c) => c.rest) },
+              ]}
+              label={t("How much net worth grew or shrank each month")}
+              format={fmt}
+              height={200}
+            />
+            <Legend
+              items={[
+                { label: t("Markets"), color: SERIES(6) },
+                { label: t("Everything else"), color: SERIES(0) },
+              ]}
+            />
+          </>
+        ) : (
+          <>
+            <ColumnChart
+              months={months}
+              series={[
+                {
+                  key: "up",
+                  label: t("Grew"),
+                  color: "var(--diverging-positive)",
+                  values: monthly.map((v) => Math.max(0, v)),
+                },
+                {
+                  key: "down",
+                  label: t("Shrank"),
+                  color: "var(--diverging-negative)",
+                  values: monthly.map((v) => Math.min(0, v)),
+                },
+              ]}
+              label={t("How much net worth grew or shrank each month")}
+              format={fmt}
+              height={200}
+            />
+            <Legend
+              items={[
+                { label: t("Grew"), color: "var(--diverging-positive)" },
+                { label: t("Shrank"), color: "var(--diverging-negative)" },
+              ]}
+            />
+          </>
+        )}
       </Panel>
       <Panel title={t("By account")}>
         <ReportTable>
@@ -161,111 +214,160 @@ export function NetWorth({ scope }: { scope: Scope }) {
   );
 }
 
-// The last section on each side holds accounts on the other side of zero from their type.
-// Section names are keys (accounts.ts's sectionOf gives the same English); they're translated when shown.
-const IN_CREDIT = msg("Accounts in credit"),
-  OVERDRAWN = msg("Overdrawn accounts");
-const ASSET_SECTIONS = [
-  msg("Cash and bank"),
-  msg("Investments"),
-  msg("Property"),
-  msg("Vehicles"),
-  msg("Receivables"),
-  msg("Other assets"),
-  IN_CREDIT,
-];
-const DEBT_SECTIONS = [msg("Credit cards"), msg("Lines of credit"), msg("Mortgages"), msg("Loans"), msg("Other debts"), OVERDRAWN];
-/** Sections whose money can be spent straight away. */
-const LIQUID = new Set(["Cash and bank"]);
-
 /**
- * What you own and owe at the start and end of the range, grouped by account type, with the
- * ratios that matter. Debts are shown as amounts owed. Accounts left out of net worth are listed
- * apart, not in the totals.
+ * What you own and owe at the start and end of the range, with the ratios that matter: assets by
+ * what the money is in, debts by account type and shown as amounts owed. An account with holdings
+ * is spread over the kinds it holds, its cash and its accrued income, read with the report.
+ * Accounts left out of net worth are listed apart, not in the totals.
  */
 export function BalanceSheet({ scope }: { scope: Scope }) {
+  const { budget, accounts } = scope;
+  const holds = holdingAccounts(budget).length > 0;
+  const portfolio = usePortfolio(budget, { from: scope.from, to: scope.to, accountIds: [...accounts] }, holds);
+  if (holds && !portfolio.data && !portfolio.error)
+    return (
+      <div className="empty-state compact">
+        <LoaderCircle className="spin" />
+      </div>
+    );
+  return (
+    <>
+      {portfolio.error && (
+        <p className="form-error" role="alert">
+          {portfolio.error}{" "}
+          <button className="link-button" onClick={portfolio.retry}>
+            {t("Retry report")}
+          </button>
+        </p>
+      )}
+      <BalanceStatement scope={scope} portfolio={portfolio.data ?? null} />
+    </>
+  );
+}
+
+/** The balance sheet itself; without a `portfolio` every account is one row. */
+/** A section lists this many holdings or more folded, with only the first few shown. */
+const FOLD_AT = 9,
+  FOLDED = 6;
+
+export function BalanceStatement({ scope, portfolio }: { scope: Scope; portfolio: Portfolio | null }) {
   const { data, budget, accounts } = scope;
-  const table = useReportColumns("balance", 4);
   const first = data.months[0],
     last = data.months[data.months.length - 1];
-  const opening = data.openingAccounts ?? {};
-  const lines = budget.accounts
-    .filter((a) => (!accounts.size || accounts.has(a.id)) && a.id in last.accounts)
-    .map((a) => {
-      const end = last.accounts[a.id] ?? 0,
-        start = opening[a.id] ?? 0;
-      const type = accountType(a, end);
-      // The balance decides the side, as it does for net worth: an overdrawn bank account is a
-      // debt and a loan in credit is an asset. Debts read as what's owed; assets as what's held.
-      const debt = end === 0 ? isLiability(type) : end < 0;
-      const section = debt === isLiability(type) ? sectionOf(type) : debt ? OVERDRAWN : IN_CREDIT;
-      const sign = debt ? -1 : 1;
-      return { a, section, debt, start: start * sign, end: end * sign };
-    })
-    .filter((l) => l.start || l.end || !l.a.archived);
-  type Line = (typeof lines)[number];
-  const counted = lines.filter((l) => inNetWorth(l.a));
-  const apart = lines.filter((l) => !inNetWorth(l.a));
-  const total = (ls: Line[], key: "start" | "end") => ls.reduce((n, l) => n + l[key], 0);
-  const assets = counted.filter((l) => !l.debt),
-    debts = counted.filter((l) => l.debt);
-  const totals = { assets: total(assets, "end"), debts: total(debts, "end") };
-  const net = { start: total(assets, "start") - total(debts, "start"), end: totals.assets - totals.debts };
-  const liquid = total(
-    assets.filter((l) => LIQUID.has(l.section)),
-    "end",
+  const sheet = balanceSheet(data, budget.accounts, accounts, portfolio);
+  // A range that ends this month ends with what is held today: the holdings themselves are
+  // listed in their sections, and cash at a broker by currency. Earlier ranges keep the accounts.
+  const now = last.month === today().slice(0, 7);
+  const held = now && portfolio ? heldLines(sheet, portfolio) : new Map<string, HeldLine[]>();
+  const [unfolded, setUnfolded] = useState<Set<string>>(() => new Set());
+  const accountName = (id: string) => budget.accounts.find((a) => a.id === id)?.name ?? "";
+  // Which account holds it is said only where there is more than one to tell apart.
+  const several = (portfolio?.accounts.length ?? 0) > 1;
+  const holdingTitle = (r: HeldLine) => r.holding.name || r.holding.symbol;
+  const holdingLine = (r: HeldLine) =>
+    [...aboutHolding(r.holding, budget.currency), several ? list(r.holding.accounts.map(accountName)) : ""].filter(Boolean).join(" · ");
+  const cashOf = new Map((portfolio?.accounts ?? []).map((a) => [a.accountId, a.cash]));
+  const subLine = (l: SheetLine) => (now && l.part === "cash" ? cashByCurrency(cashOf.get(l.a.id), budget.currency) : null);
+  // What a row is called: an account, or the part of an investment account it is.
+  const rowName = (l: SheetLine) =>
+    l.part === "cash"
+      ? t("Cash at {name}", { name: l.a.name })
+      : l.part === "accrued"
+        ? t("Accrued income at {name}", { name: l.a.name })
+        : l.part === "rest"
+          ? t("Since prices from {date}", { date: formatDate(l.asOf!) })
+          : l.a.name;
+  const about = (l: SheetLine) => `${l.part === "rest" ? ` · ${l.a.name}` : ""}${l.a.archived ? ` · ${t("closed")}` : ""}`;
+  // The first column starts wide enough for its longest row, indent and padding included, so
+  // two accounts' rows of one kind can be told apart; it can still be dragged to any width.
+  const longest = Math.max(
+    0,
+    ...[...sheet.assets, ...sheet.debts].map((l) => textWidth(rowName(l) + about(l), 13)),
+    ...[...held.values()].flat().map((r) => textWidth(holdingTitle(r), 13)),
   );
+  const table = useReportColumns("balance", 4, Math.min(380, Math.max(170, Math.ceil(longest) + 56)));
+  const totals = { assets: sheet.totals.assets.end, debts: sheet.totals.debts.end };
+  const net = { start: sheet.totals.assets.start - sheet.totals.debts.start, end: totals.assets - totals.debts };
+  const inSection = (ls: SheetLine[], section: string) => ls.filter((l) => l.section === section);
+  const liquid = sectionTotal(inSection(sheet.assets, LIQUID)).end;
   const monthlySpending = data.spending / Math.max(1, data.months.length);
-  const sections = (order: string[], ls: Line[]) =>
+  const sections = (order: string[], ls: SheetLine[]) =>
     order
-      .map((section) => ({
-        key: section,
-        label: t(section),
-        value: total(
-          ls.filter((l) => l.section === section),
-          "end",
-        ),
-      }))
+      .map((section) => ({ key: section, label: t(section), value: sectionTotal(inSection(ls, section)).end }))
       .filter((s) => s.value > 0);
-  const row = (label: string, start: number, end: number, of: number | null, className = "") => (
-    <tr className={className}>
-      <td>{label}</td>
-      <td className="num">{money(start)}</td>
+  // A start that isn't known, and the change from it, are left empty: the row's share says what it is.
+  const amount = (v: number | null) => (v === null ? "" : money(v));
+  const cells = (start: number | null, end: number, of: number | null) => (
+    <>
+      <td className="num">{amount(start)}</td>
       <td className="num">{money(end)}</td>
-      <td className={`num ${end - start < 0 ? "negative" : ""}`}>{money(end - start)}</td>
+      <td className={`num ${start !== null && end - start < 0 ? "negative" : ""}`}>{amount(start === null ? null : end - start)}</td>
       <td className="num">{of === null ? "" : share(end, of)}</td>
       <td aria-hidden />
+    </>
+  );
+  const row = (label: string, start: number, end: number, className: string) => (
+    <tr className={className}>
+      <td>{label}</td>
+      {cells(start, end, null)}
     </tr>
   );
-  const part = (title: string, order: string[], ls: Line[], totalLabel: string, of: number) => (
+  const part = (title: string, order: string[], ls: SheetLine[], totalLabel: string, sums: { start: number; end: number }) => (
     <>
       <SectionRow title={title} columns={6} />
       {order
         .filter((section) => ls.some((l) => l.section === section))
         .map((section) => {
-          const inSection = ls.filter((l) => l.section === section);
+          const lines = inSection(ls, section);
+          const total = sectionTotal(lines);
+          // Today's holdings stand in for the accounts' lines of their kind; the rest stay.
+          const holdings = held.get(section) ?? [];
+          const folds = holdings.length >= FOLD_AT;
+          const open = !folds || unfolded.has(section);
+          const toggle = () =>
+            setUnfolded((was) => {
+              const next = new Set(was);
+              if (next.has(section)) next.delete(section);
+              else next.add(section);
+              return next;
+            });
           return [
             <tr key={section} className="group-line">
               <td>{t(section)}</td>
-              <td className="num">{money(total(inSection, "start"))}</td>
-              <td className="num">{money(total(inSection, "end"))}</td>
-              <td className="num">{money(total(inSection, "end") - total(inSection, "start"))}</td>
-              <td className="num">{share(total(inSection, "end"), of)}</td>
-              <td aria-hidden />
+              {cells(total.start, total.end, sums.end)}
             </tr>,
-            ...inSection.map((l) => (
-              <tr key={l.a.id} className="child-line">
-                <td>
-                  {l.a.name}
-                  {l.a.archived && <span className="muted">{` · ${t("closed")}`}</span>}
+            ...(open ? holdings : holdings.slice(0, FOLDED)).map((r) => (
+              <tr key={r.key} className="child-line">
+                <td title={[holdingTitle(r), holdingLine(r)].filter(Boolean).join(" · ")}>
+                  {holdingTitle(r)}
+                  {holdingLine(r) && <small className="sub-line">{holdingLine(r)}</small>}
                 </td>
-                <td className="num">{money(l.start)}</td>
-                <td className="num">{money(l.end)}</td>
-                <td className={`num ${l.end - l.start < 0 ? "negative" : ""}`}>{money(l.end - l.start)}</td>
-                <td className="num">{share(l.end, of)}</td>
-                <td aria-hidden />
+                {cells(null, r.holding.value, sums.end)}
               </tr>
             )),
+            ...(folds
+              ? [
+                  <tr key={`${section}:fold`} className="child-line fold-line">
+                    <td colSpan={6}>
+                      <button className="link-button" onClick={toggle}>
+                        {open ? t("Show fewer") : t("Show all {count}", { count: holdings.length })}
+                      </button>
+                    </td>
+                  </tr>,
+                ]
+              : []),
+            ...lines
+              .filter((l) => !holdings.length || l.part !== "kind")
+              .map((l) => (
+                <tr key={l.key} className="child-line">
+                  <td title={rowName(l) + about(l)}>
+                    {rowName(l)}
+                    {about(l) && <span className="muted">{about(l)}</span>}
+                    {subLine(l) && <small className="sub-line">{subLine(l)}</small>}
+                  </td>
+                  {cells(l.start, l.end, sums.end)}
+                </tr>
+              )),
           ];
         })}
       {!ls.length && (
@@ -275,9 +377,10 @@ export function BalanceSheet({ scope }: { scope: Scope }) {
           </td>
         </tr>
       )}
-      {row(totalLabel, total(ls, "start"), total(ls, "end"), null, "total-row")}
+      {row(totalLabel, sums.start, sums.end, "total-row")}
     </>
   );
+  const named = (some: Account[]) => list(some.map((a) => a.name));
   return (
     <>
       <Tiles
@@ -314,7 +417,7 @@ export function BalanceSheet({ scope }: { scope: Scope }) {
         <Panel title={t("What you own")} aside={<strong>{fmt(totals.assets)}</strong>}>
           {totals.assets > 0 ? (
             <BarList
-              rows={sections(ASSET_SECTIONS, assets).map((s) => ({ ...s, detail: share(s.value, totals.assets) }))}
+              rows={sections(ASSET_SECTIONS, sheet.assets).map((s) => ({ ...s, detail: share(s.value, totals.assets) }))}
               color={SERIES(0)}
               format={fmt}
               label={t("Assets by type")}
@@ -326,7 +429,7 @@ export function BalanceSheet({ scope }: { scope: Scope }) {
         <Panel title={t("What you owe")} aside={<strong>{fmt(totals.debts)}</strong>}>
           {totals.debts > 0 ? (
             <BarList
-              rows={sections(DEBT_SECTIONS, debts).map((s) => ({ ...s, detail: share(s.value, totals.debts) }))}
+              rows={sections(DEBT_SECTIONS, sheet.debts).map((s) => ({ ...s, detail: share(s.value, totals.debts) }))}
               color={SERIES(1)}
               format={fmt}
               label={t("Liabilities by type")}
@@ -364,13 +467,24 @@ export function BalanceSheet({ scope }: { scope: Scope }) {
               </tr>
             </thead>
             <tbody>
-              {part(t("Assets"), ASSET_SECTIONS, assets, t("Total assets"), totals.assets)}
-              {part(t("Liabilities (owed)"), DEBT_SECTIONS, debts, t("Total liabilities"), totals.debts)}
-              {row(t("Net worth"), net.start, net.end, null, "net-row")}
-              {apart.length > 0 && (
+              {part(t("Assets"), ASSET_SECTIONS, sheet.assets, t("Total assets"), sheet.totals.assets)}
+              {sheet.investments && (
+                <tr className="note-row">
+                  <td colSpan={6}>
+                    {t("Investments changed by {change}: {put} put in, {gain} from markets.", {
+                      change: signed(sheet.investments.change),
+                      put: signed(sheet.investments.put),
+                      gain: signed(sheet.investments.gain),
+                    })}
+                  </td>
+                </tr>
+              )}
+              {part(t("Liabilities (owed)"), DEBT_SECTIONS, sheet.debts, t("Total liabilities"), sheet.totals.debts)}
+              {row(t("Net worth"), net.start, net.end, "net-row")}
+              {sheet.apart.length > 0 && (
                 <>
                   <SectionRow title={t("Not counted in net worth")} columns={6} />
-                  {apart.map((l) => (
+                  {sheet.apart.map((l) => (
                     <tr key={l.a.id} className="child-line">
                       <td>
                         {l.a.name} <span className="muted">· {t(l.section).toLowerCase()}</span>
@@ -392,9 +506,19 @@ export function BalanceSheet({ scope }: { scope: Scope }) {
             start: monthName(first.month),
             end: monthName(last.month),
           })}
-          {lines.some((l) => l.section === OVERDRAWN || l.section === IN_CREDIT) &&
+          {sheet.crossed &&
             ` ${t("Accounts below zero count as owed and loans or cards above zero as owned, whatever their type.")}`}
         </p>
+        {sheet.startUnknown.length > 0 && (
+          <p className="help">
+            {t("Start and change not shown by type, because what was held then isn't kept: {names}.", { names: named(sheet.startUnknown) })}
+          </p>
+        )}
+        {sheet.unsplit.length > 0 && (
+          <p className="help">
+            {t("Not broken down, because what was held then isn't kept: {names}.", { names: named(sheet.unsplit) })}
+          </p>
+        )}
       </Panel>
     </>
   );

@@ -26,6 +26,93 @@ final class BankReviewTests: XCTestCase {
         XCTAssertEqual(BankReview.choices(rows, [:], allowIdlessDuplicate: true)[0]["row"].text("transferAccountId"), "savings")
     }
 
+    func testARowThatDoesntSayWhereItsMoneyCameFromCanBeAddedAsATransferWithAnAccount() throws {
+        let budget = try JSON.parse(#"""
+        {"currency":"SAR","accounts":[{"id":"cash","name":"Cash"},{"id":"broker","name":"Broker"},{"id":"old","name":"Old","archived":true},{"id":"bank","name":"Everyday"}],
+         "transactions":[{"id":"1","date":"2026-09-01","accountId":"bank","transferAccountId":"broker"},{"id":"2","accountId":"old","transferAccountId":"broker"},{"id":"3","accountId":"broker","transferAccountId":null},
+                         {"id":"4","date":"2026-09-20","accountId":"cash","transferAccountId":null}]}
+        """#)
+        // The accounts it has moved money with come first; itself and closed ones are left out.
+        let others = Investments.others(budget, account: "broker")
+        XCTAssertEqual(others.map(\.id), ["bank", "cash"])
+        let rows = [
+            try JSON.parse(#"{"id":"ibkr:1","date":"2026-10-05","payee":"Interactive Brokers","memo":"","amount":100000,"candidates":[]}"#),
+            try JSON.parse(#"{"id":"ibkr:2","date":"2026-10-09","payee":"Interactive Brokers","memo":"","amount":-50000,"transferAccountId":"cash","candidates":[]}"#),
+            try JSON.parse(#"{"id":"ibkr:3","date":"2026-10-01","payee":"Interactive Brokers","memo":"","amount":7000,"duplicate":true,"candidates":[]}"#),
+            try JSON.parse(#"{"id":"ibkr:4","date":"2026-10-12","payee":"Interactive Brokers","memo":"","amount":-2000,"candidates":[]}"#),
+        ]
+        let prepared = try BankReview.prepare(rows: rows, budget: budget, allowIdlessDuplicate: false, others: others, plain: "Add with no other account")
+        // Nothing goes into another account on a guess: adding it plainly stays the default.
+        XCTAssertEqual(prepared.map(\.initial), ["new", "new", "skip", "new"])
+        XCTAssertEqual(prepared[0].options.map(\.id), ["review", "new", "transfer:bank", "transfer:cash", "skip"])
+        XCTAssertEqual(Array(prepared[0].options.map(\.label)[1...2]), ["Add with no other account", "Add as a transfer from Everyday"])
+        XCTAssertEqual(prepared[3].options[2].label, "Add as a transfer to Everyday")
+        // The broker named the second row's other account: it's added as that transfer, and no other.
+        XCTAssertEqual(prepared[1].options.map(\.id), ["review", "new", "skip"])
+        XCTAssertEqual(prepared[1].options[1].label, "Add as a transfer")
+        XCTAssertTrue(prepared[2].options.isEmpty)
+        let chosen = [0: "transfer:bank", 1: "transfer:bank", 2: "transfer:bank"]
+        let sent = BankReview.choices(prepared, chosen, allowIdlessDuplicate: false).array
+        XCTAssertEqual(sent.map { $0.text("action") }, ["new", "new", "skip", "new"])
+        XCTAssertEqual(sent[0]["row"].text("transferAccountId"), "bank")
+        XCTAssertTrue(sent[0]["matchId"].isNull)
+        // An account a row doesn't offer is not taken for it.
+        XCTAssertEqual(sent[1]["row"].text("transferAccountId"), "cash")
+        XCTAssertFalse(sent[3]["row"].has("transferAccountId"))
+        XCTAssertEqual(BankReview.counts(prepared, chosen).importing, 3)
+        // A bank's review, with no accounts to choose from, is as it was.
+        XCTAssertEqual(try BankReview.prepare(rows: [rows[0]], budget: budget, allowIdlessDuplicate: false)[0].options.map(\.label),
+                       ["Choose a match or add it", "Add as a new transaction", "Skip"])
+    }
+
+    /// A deposit is offered as a transfer only with accounts whose history reaches back to its date:
+    /// one added later with its balance, or with no transactions, already holds that money in its
+    /// opening balance, and a transfer would take it out twice.
+    func testADepositIsOfferedOnlyWithAccountsThatExistedThen() throws {
+        let budget = try JSON.parse(#"""
+        {"currency":"SAR","accounts":[{"id":"broker","name":"Broker"},{"id":"bank","name":"Everyday"},{"id":"new","name":"New bank"},{"id":"empty","name":"Empty"},
+                                      {"id":"card","name":"Card"}],
+         "transactions":[{"id":"1","date":"2026-08-01","accountId":"bank","transferAccountId":null},
+                         {"id":"2","date":"2026-11-15","accountId":"new","transferAccountId":null},
+                         {"id":"3","date":"2026-09-10","accountId":"bank","transferAccountId":null,"splits":[{"amount":-100,"transferAccountId":"card"}]},
+                         {"id":"4","date":"2026-07-01","accountId":"broker","transferAccountId":"bank"},
+                         {"id":"5","accountId":"empty","transferAccountId":null}]}
+        """#)
+        // Each account carries its first transaction's date; either side of a transfer, a split's included, counts.
+        let others = Investments.others(budget, account: "broker")
+        XCTAssertEqual(others.map { $0.id }, ["bank", "new", "empty", "card"])
+        XCTAssertEqual(others.map { $0.since }, ["2026-07-01", "2026-11-15", nil, "2026-09-10"])
+        func offered(_ date: String) -> [String] { BankReview.offered(others, on: date).map { $0.id } }
+        XCTAssertEqual(offered("2026-10-05"), ["bank", "card"])
+        // A transaction on the day itself is history enough.
+        XCTAssertEqual(offered("2026-09-10"), ["bank", "card"])
+        XCTAssertEqual(offered("2026-09-09"), ["bank"])
+        XCTAssertEqual(offered("2026-06-30"), [])
+        XCTAssertEqual(offered("2026-11-16"), ["bank", "new", "card"])
+        // A row with no date is offered every account with any history.
+        XCTAssertEqual(offered(""), ["bank", "new", "card"])
+
+        let rows = [
+            try JSON.parse(#"{"id":"ibkr:1","date":"2026-10-05","payee":"Interactive Brokers","memo":"","amount":100000,"candidates":[]}"#),
+            try JSON.parse(#"{"id":"ibkr:2","date":"2026-06-30","payee":"Interactive Brokers","memo":"","amount":-5000,"candidates":[]}"#),
+            try JSON.parse(#"{"id":"ibkr:3","date":"2026-11-16","payee":"Interactive Brokers","memo":"","amount":2000,"candidates":[]}"#),
+        ]
+        let prepared = try BankReview.prepare(rows: rows, budget: budget, allowIdlessDuplicate: false, others: others, plain: "Add with no other account")
+        XCTAssertEqual(prepared[0].options.map(\.id), ["review", "new", "transfer:bank", "transfer:card", "skip"])
+        // Before any account's history began, it can only be added plainly.
+        XCTAssertEqual(prepared[1].options.map(\.id), ["review", "new", "skip"])
+        XCTAssertEqual(prepared[2].options.map(\.id), ["review", "new", "transfer:bank", "transfer:new", "transfer:card", "skip"])
+        // Nothing starts on a hidden account, and an account chosen for a row that doesn't offer it isn't taken.
+        XCTAssertEqual(prepared.map(\.initial), ["new", "new", "new"])
+        let chosen = [0: "transfer:new", 1: "transfer:bank", 2: "transfer:new"]
+        XCTAssertEqual(prepared.indices.map { prepared[$0].decision(chosen[$0]) }, ["new", "new", "transfer:new"])
+        let sent = BankReview.choices(prepared, chosen, allowIdlessDuplicate: false).array
+        XCTAssertFalse(sent[0]["row"].has("transferAccountId"))
+        XCTAssertFalse(sent[1]["row"].has("transferAccountId"))
+        XCTAssertEqual(sent[2]["row"].text("transferAccountId"), "new")
+        XCTAssertEqual(BankReview.choices(prepared, [0: "transfer:card"], allowIdlessDuplicate: false).array[0]["row"].text("transferAccountId"), "card")
+    }
+
     func testASingleCleanMatchIsImportedAndClearedByDefault() throws {
         let budget = try JSON.parse(#"{"currency":"SAR","transactions":[{"id":"t1","date":"2026-10-01","payee":"Shop","memo":"Weekly","amount":-500,"splits":[{"amount":-500,"memo":""}]}]}"#)
         let rows = [try JSON.parse(#"{"id":"bank-1","date":"2026-10-02","payee":"SHOP 123","rename":"Shop","memo":"Card","amount":-500,"candidates":["t1"]}"#)]
@@ -338,5 +425,315 @@ final class BankStatementTests: XCTestCase {
         let second = try NativeCore.engine("bankImportPreview", budget: changed, params: params(["session": again, "problemsOnly": true]))
         XCTAssertTrue(second["review"].rows("items").allSatisfy { $0.flag("duplicate") })
         XCTAssertEqual(BankStatement(second["statement"]).lines.map(\.reason), ["imported"])
+    }
+}
+
+/// Investment accounts a broker fills (Holdings.swift), as the desktop's Investments.test.tsx
+/// checks them: the gain is the market changes added up, the broker's text is shown as written,
+/// and nothing the app edits drops the holdings.
+final class InvestmentsTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        Money.configure(budget: ["currency": "SAR", "dateFormat": "iso"])
+    }
+
+    private func sample() throws -> JSON {
+        try JSON.parse(#"""
+        {"schemaVersion":2,"name":"Test","currency":"SAR",
+         "accounts":[
+          {"id":"cash","name":"Checking","kind":"cash","openingBalance":0,"archived":false},
+          {"id":"broker","name":"Brokerage","kind":"tracking","accountType":"investment","openingBalance":0,"archived":false},
+          {"id":"pension","name":"Pension","kind":"tracking","accountType":"retirement","openingBalance":0,"archived":false},
+          {"id":"loan","name":"Car loan","kind":"tracking","accountType":"autoLoan","openingBalance":-100,"archived":false},
+          {"id":"old","name":"Old fund","kind":"tracking","accountType":"investment","openingBalance":0,"archived":true}],
+         "categories":[],"assignments":[],
+         "transactions":[
+          {"id":"investment-start:broker","date":"2026-09-30","accountId":"broker","payee":"Starting value","amount":2422000,"investment":"start"},
+          {"id":"investment-change:broker:2026-10","date":"2026-10-30","accountId":"broker","payee":"Market change","amount":128000,"investment":"change"},
+          {"id":"investment-change:broker:2026-11","date":"2026-11-13","accountId":"broker","payee":"Market change","amount":-8000,"investment":"change"},
+          {"id":"d1","date":"2026-10-05","accountId":"broker","payee":"Interactive Brokers","amount":100000}],
+         "investments":[{"accountId":"broker","source":"ibkr","sourceAccount":"U1234567","asOf":"2026-11-13","currency":"USD","rate":"3.75","total":2642000,
+           "positions":[{"symbol":"VWRA","name":"VANG FTSE AW USDA","kind":"STK","currency":"USD","quantity":"120.5","price":"141.9087137","value":1710000,"cost":1500000,"gain":210000}],
+           "cash":[{"currency":"USD","amount":"820","value":82000}],"other":1250,
+           "values":[["2026-09-30",2422000],["2026-10-30",2550000],["2026-11-13",2642000]],"syncedAt":"2026-11-14T06:00:00.000Z"}]}
+        """#)
+    }
+
+    func testTheGainIsTheMarketChangesAndPricesAgeAfterFourDays() throws {
+        let budget = try sample()
+        let held = try XCTUnwrap(Investments.holdings(budget, account: "broker"))
+        XCTAssertNil(Investments.holdings(budget, account: "cash"))
+        XCTAssertNil(Investments.holdings(budget, account: ""))
+        XCTAssertNil(Investments.holdings(nil, account: "broker"))
+        // The starting value and a deposit aren't gains; the two months' changes are.
+        XCTAssertEqual(Investments.gain(budget, account: "broker"), 120_000)
+        XCTAssertNil(Investments.gain(budget, account: "pension"))
+        XCTAssertEqual(Investments.trackedSince(held), "2026-09-30")
+        XCTAssertNil(Investments.trackedSince(["values": []]))
+        XCTAssertFalse(Investments.stale(held, today: "2026-11-16"))
+        XCTAssertFalse(Investments.stale(held, today: "2026-11-17"))
+        XCTAssertTrue(Investments.stale(held, today: "2026-11-18"))
+    }
+
+    /// The page the engine gives for the fixture of its own tests (investment_stats.rs), cut to what's read here.
+    private func holdingsPage() throws -> JSON {
+        try JSON.parse(#"""
+        {"days":["2025-12-31","2026-09-30","2026-10-30","2026-11-12","2026-11-13"],
+         "values":[2000000,2422000,2550000,2690000,2701250],
+         "gains":[0,422000,450000,550000,556250],
+         "periods":[{"period":"1m","first":1,"from":"2026-09-30","to":"2026-11-13","gain":134250,"rate":0.0534},
+                    {"period":"all","first":0,"from":"2025-12-31","to":"2026-11-13","gain":556250,"rate":null}]}
+        """#)
+    }
+
+    func testAnInvestmentPagesFiguresArePickedApartForTheScreen() throws {
+        XCTAssertEqual([0.633, 0.004, 0, 1].map { HoldingsPage.percent($0) }, ["63%", "<1%", "0%", "100%"])
+        XCTAssertEqual([0.0552, -0.1, 0, -0.0001].map { HoldingsPage.percent($0, signed: true) }, ["+5.5%", "-10.0%", "0.0%", "0.0%"])
+        // Income and costs are small beside the account: to a tenth, and never "0.0%" for something.
+        XCTAssertEqual([0.0031, -0.0005, 0.0003, 0, -0.12].map { HoldingsPage.tenths($0) }, ["0.3%", "0.1%", "<0.1%", "0.0%", "12.0%"])
+        // A period's days come out of the whole run, with its gains starting at nothing.
+        let page = try holdingsPage()
+        let month = HoldingsPage.series(page, try XCTUnwrap(HoldingsPage.period(page, "1m")))
+        XCTAssertEqual(month.days, ["2026-09-30", "2026-10-30", "2026-11-12", "2026-11-13"])
+        XCTAssertEqual(month.values, [2_422_000, 2_550_000, 2_690_000, 2_701_250])
+        XCTAssertEqual(month.gains, [0, 28_000, 128_000, 134_250])
+        XCTAssertEqual(HoldingsPage.series(page, try XCTUnwrap(HoldingsPage.period(page, "all"))).days.count, 5)
+        XCTAssertNil(HoldingsPage.period(page, "3m"))
+        // What it would be worth with no gain: the value less the gain so far; nothing where more was taken out than put in.
+        XCTAssertEqual(HoldingsPage.before(month), [2_422_000, 2_522_000, 2_562_000, 2_567_000])
+        XCTAssertEqual(HoldingsPage.before(HoldingsPage.Series(days: ["a", "b"], values: [1000, 200], gains: [0, 900])), [1000, nil])
+        // A rate the engine leaves out is none, not zero.
+        XCTAssertNil(HoldingsPage.number(try XCTUnwrap(HoldingsPage.period(page, "all")), "rate"))
+        XCTAssertEqual(try XCTUnwrap(HoldingsPage.number(try XCTUnwrap(HoldingsPage.period(page, "1m")), "rate")), 0.0534, accuracy: 1e-12)
+    }
+
+    func testTheChartsDatesAndAxisFitWhatItDraws() {
+        XCTAssertEqual(HoldingsPage.epochDay("1970-01-01"), 0)
+        XCTAssertEqual(HoldingsPage.epochDay("2026-11-02"), 20_759)
+        // Under a month: the first day of each new week (weeks turn on Monday).
+        XCTAssertEqual(HoldingsPage.ticks(["2026-11-02", "2026-11-03", "2026-11-06", "2026-11-09", "2026-11-10", "2026-11-16"]), [nil, nil, nil, .day, nil, .day])
+        // Over four months: the first valued day of each month, the year where it turns.
+        XCTAssertEqual(HoldingsPage.ticks(["2025-10-31", "2025-11-28", "2025-12-31", "2026-01-30", "2026-02-27", "2026-02-28"]), [nil, .month, .month, .year, .month, nil])
+        XCTAssertTrue(HoldingsPage.ticks([]).isEmpty)
+        // The value's axis fits it and doesn't go down to zero, which would flatten the line.
+        XCTAssertEqual(HoldingsPage.fittedTicks(2_422_000, 2_701_250), [2_400_000, 2_500_000, 2_600_000, 2_700_000, 2_800_000])
+        XCTAssertEqual(HoldingsPage.fittedTicks(0, 101_000), [0, 50_000, 100_000, 150_000])
+        XCTAssertEqual(HoldingsPage.fittedTicks(5, 5), ReportMath.niceTicks(5, 5))
+    }
+
+    func testHoldingsAreOrderedAndWrittenForTheirRows() throws {
+        let rows = [
+            try JSON.parse(#"{"symbol":"VWRA","name":"Fund","value":1710000,"gain":210000,"rate":0.14}"#),
+            try JSON.parse(#"{"symbol":"2222","name":"oil","value":288000,"gain":-32000,"rate":-0.1}"#),
+            try JSON.parse(#"{"symbol":"T","name":"Note","value":492500,"gain":null,"rate":null}"#),
+        ]
+        func order(_ key: String) -> [String] { HoldingsPage.sorted(rows, by: key).map { $0.text("symbol") } }
+        XCTAssertEqual(order("value"), ["VWRA", "T", "2222"])
+        // One the broker gives no cost for has no gain or return, and comes last.
+        XCTAssertEqual(order("gain"), ["VWRA", "2222", "T"])
+        XCTAssertEqual(order("rate"), ["VWRA", "2222", "T"])
+        XCTAssertEqual(order("name"), ["VWRA", "T", "2222"])
+        // A bond's name is its symbol, and an option's code only spells its name out again.
+        XCTAssertEqual(HoldingsPage.line(try JSON.parse(#"{"symbol":"T 4 1/4","name":"T 4 1/4","quantity":"5000","price":"98.5","currency":"USD"}"#)), "5,000 × 98.5 USD")
+        XCTAssertEqual(HoldingsPage.line(try JSON.parse(#"{"symbol":"AAPL  261218C00250000","name":"AAPL 18DEC26 250 C","quantity":"1","price":"2.5","currency":"USD"}"#)), "1 × 2.5 USD")
+        // The order is given as each holding's place, which its row keeps as its id in any order.
+        XCTAssertEqual(HoldingsPage.order(rows, by: "value"), [0, 2, 1])
+        // A tile carries a symbol's first word, or a name's when there's no symbol.
+        XCTAssertEqual(HoldingsPage.mark(symbol: "SPY 18DEC26 710 P", name: "SPY 18DEC26 710 P"), "SPY")
+        XCTAssertEqual(HoldingsPage.mark(symbol: "ARCC 5 1/4 04/12/31", name: "ARCC 5 1/4 04/12/31"), "ARCC")
+        XCTAssertEqual(HoldingsPage.mark(symbol: "GBLATL 3 1/8", name: "x"), "GBLATL")
+        XCTAssertEqual(HoldingsPage.mark(symbol: " ", name: "vanguard fund"), "VANGUA")
+        XCTAssertEqual(HoldingsPage.mark(symbol: "BRK.B", name: "Berkshire"), "BRK")
+    }
+
+    func testADayChartsDatesStepByTheirMarksNotByTheirDays() {
+        // A year by the day marks each month's first day: every other mark is every other month,
+        // counted back from the last, wherever the days fall.
+        var ticks: [ReportXTick?] = []
+        var keys: [String] = []
+        for month in 1...12 {
+            for day in 1...30 {
+                keys.append(String(format: "2026-%02d-%02d", month, day))
+                ticks.append(day == 1 ? ReportMath.plainTick("M\(month)") : nil)
+            }
+        }
+        let roomy = ReportAxis.xLabels(ticks, keys: keys, band: 2, spacing: 52)
+        XCTAssertEqual(roomy.count, 12)
+        let tight = ReportAxis.xLabels(ticks, keys: keys, band: 1, spacing: 52)
+        XCTAssertEqual(Set(tight.keys), Set(stride(from: 2, through: 12, by: 2).map { String(format: "2026-%02d-01", $0) }))
+        // A chart by the month is as it was: a label for each month that has room.
+        let months = (1...12).map { String(format: "2026-%02d", $0) }
+        XCTAssertEqual(ReportAxis.xLabels(months.map { ReportMath.plainTick($0) }, keys: months, band: 30, spacing: 52).count, 6)
+    }
+
+    func testTheDailySyncThePromptAndALoginsNameAreReadFromTheBudget() throws {
+        let budget = try sample()
+        XCTAssertTrue(Investments.filled(budget))
+        XCTAssertFalse(Investments.filled(nil))
+        XCTAssertFalse(Investments.filled(["investments": []]))
+        // Once a day for a budget Interactive Brokers fills: not when turned off, and not twice in a day, even after a failure.
+        XCTAssertTrue(Investments.dailyDue(filled: true, on: true, triedOn: "2026-11-16", today: "2026-11-17"))
+        XCTAssertTrue(Investments.dailyDue(filled: true, on: true, triedOn: "", today: "2026-11-17"))
+        XCTAssertFalse(Investments.dailyDue(filled: true, on: true, triedOn: "2026-11-17", today: "2026-11-17"))
+        XCTAssertFalse(Investments.dailyDue(filled: true, on: false, triedOn: "", today: "2026-11-17"))
+        XCTAssertFalse(Investments.dailyDue(filled: false, on: true, triedOn: "", today: "2026-11-17"))
+        XCTAssertEqual(Investments.newestPrices(budget), Investments.holdings(budget, account: "broker")?.text("asOf"))
+        XCTAssertEqual(Investments.newestPrices(nil), "")
+        // Only an open investment account no broker fills is asked about.
+        let open = try JSON.parse(#"{"id":"brokerage","name":"Brokerage","kind":"tracking","accountType":"investment"}"#)
+        XCTAssertTrue(Investments.promptable(open, budget: budget))
+        XCTAssertFalse(Investments.promptable(try JSON.parse(#"{"id":"broker","kind":"tracking","accountType":"investment"}"#), budget: budget))
+        XCTAssertFalse(Investments.promptable(try JSON.parse(#"{"id":"old","kind":"tracking","accountType":"investment","archived":true}"#), budget: budget))
+        XCTAssertFalse(Investments.promptable(try JSON.parse(#"{"id":"pension","kind":"tracking","accountType":"retirement"}"#), budget: budget))
+        XCTAssertFalse(Investments.promptable(try JSON.parse(#"{"id":"cash","kind":"cash","accountType":"checking"}"#), budget: budget))
+        // A login is called by the accounts it brings: an alias from the statement at hand, else the id.
+        let accounts = [try JSON.parse(#"{"id":"U1234567","alias":"Long term"}"#), try JSON.parse(#"{"id":"U7654321","alias":""}"#)]
+        XCTAssertEqual(Investments.loginName(try JSON.parse(#"{"query":"987654","accounts":["U1234567","U7654321","U9999999"]}"#), accounts: accounts),
+                       "Long term, U7654321, U9999999")
+        XCTAssertNil(Investments.loginName(try JSON.parse(#"{"query":"111222","accounts":[]}"#), accounts: accounts))
+        XCTAssertLessThanOrEqual(Investments.flexRequest.count, 200)
+    }
+
+    func testThePageListsWhatCanHoldInvestmentsAndAFileOrATypedValueGoesToTheEngineAsRead() throws {
+        var budget = try sample()
+        var accounts = budget["accounts"].array
+        accounts.append(try JSON.parse(#"{"id":"untyped","name":"Other","kind":"tracking","openingBalance":0,"archived":false}"#))
+        accounts.append(try JSON.parse(#"{"id":"savings","name":"Savings","kind":"cash","accountType":"savings","openingBalance":0,"archived":false}"#))
+        budget["accounts"] = .array(accounts)
+        // A cash account something fills is listed too, so it can be unlinked.
+        var held = budget["investments"].array
+        held.append(try JSON.parse(#"{"accountId":"savings","source":"manual","asOf":"2026-11-13","total":500000,"positions":[],"cash":[],"values":[["2026-11-13",500000]]}"#))
+        budget["investments"] = .array(held)
+        XCTAssertEqual(Investments.rows(budget).map { $0.text("id") }, ["broker", "pension", "untyped", "savings"])
+        XCTAssertEqual(Investments.rows(nil).count, 0)
+        XCTAssertEqual(Investments.sourceName(held[0]), "Interactive Brokers")
+        XCTAssertEqual(["simplefin", "file", "manual"].map { Investments.sourceName(["source": .string($0)]) }, ["Bank connection", "Positions file", "Value you type in"])
+
+        let read = try JSON.parse(#"""
+        {"format":"csv","asOf":"2026-11-14","currency":"USD","cash":"820.5","value":"20820.5","skipped":0,
+         "positions":[{"symbol":"VWRA","name":"Vanguard FTSE All-World","kind":"FUND","currency":"USD","quantity":"120.5","price":"165.975","value":"20000","cost":"18000"}]}
+        """#)
+        // In the budget's own currency no rate goes along, whatever was typed for one.
+        let same = Investments.fileSnapshot(read, fileName: "positions.csv", asOf: "2026-11-14", currency: " usd ", budgetCurrency: "USD", rate: "3.75")
+        XCTAssertEqual(["source", "sourceAccount", "asOf", "currency", "rate", "cash"].map { same.text($0) }, ["file", "positions.csv", "2026-11-14", "", "", "820.5"])
+        XCTAssertEqual(same["positions"].array.first?.text("value"), "20000")
+        // In another, the currency goes with what one unit of it is worth.
+        let other = Investments.fileSnapshot(read, fileName: "positions.csv", asOf: "2026-11-14", currency: "usd", budgetCurrency: "SAR", rate: "3.75")
+        XCTAssertEqual([other.text("currency"), other.text("rate")], ["USD", "3.75"])
+        XCTAssertEqual(Investments.foreign("usd", budgetCurrency: "SAR"), "USD")
+        XCTAssertNil(Investments.foreign("", budgetCurrency: "SAR"))
+        // The rate given before is offered again for the same currency only.
+        let before = try JSON.parse(#"{"currency":"USD","manualRate":"3.75"}"#)
+        XCTAssertEqual(Investments.rememberedRate(before, code: "USD"), "3.75")
+        XCTAssertEqual(Investments.rememberedRate(before, code: "EUR"), "")
+        XCTAssertEqual(Investments.rememberedRate(nil, code: "USD"), "")
+
+        let typed = Investments.typedSnapshot(cents: 3_100_050, asOf: "2026-11-17")
+        XCTAssertEqual(["source", "asOf", "total"].map { typed.text($0) }, ["manual", "2026-11-17", "31000.50"])
+        XCTAssertEqual(Investments.cents("20820.5"), 2_082_050)
+        XCTAssertEqual(Investments.cents(""), 0)
+        XCTAssertEqual(Investments.decimal(5), "0.05")
+        XCTAssertEqual(Investments.decimal(-1_250), "-12.50")
+    }
+
+    func testQuantitiesAndPricesAreTheBrokersTextTrimmedForReading() throws {
+        XCTAssertEqual(Investments.plain("141.9087137"), "141.9087")
+        XCTAssertEqual(Investments.plain("120.5"), "120.5")
+        XCTAssertEqual(Investments.plain("1234567"), "1,234,567")
+        XCTAssertEqual(Investments.plain("820", places: 2), "820")
+        XCTAssertEqual(Investments.plain("-0.126", places: 2), "-0.13")
+        XCTAssertEqual(Investments.plain("-0.001", places: 2), "0")
+        XCTAssertEqual(Investments.plain("n/a"), "n/a")
+        XCTAssertEqual(Investments.plain(""), "")
+        let held = try XCTUnwrap(Investments.holdings(try sample(), account: "broker"))
+        XCTAssertEqual(HoldingsPage.line(held.rows("positions")[0]), "VWRA · 120.5 × 141.9087 USD")
+        XCTAssertEqual(Investments.cashLine(held.rows("cash")[0]), "820 USD")
+        XCTAssertEqual(Investments.signed(120_000, "SAR"), "+1,200.00 SAR")
+        XCTAssertEqual(Investments.signed(-8_000, "SAR"), "-80.00 SAR")
+        XCTAssertEqual(Investments.signed(0, "SAR"), "0.00 SAR")
+        // A budget that writes numbers the European way reads them that way here too.
+        Money.configure(budget: ["currency": "EUR", "numberFormat": ["decimal": ",", "group": "."]])
+        XCTAssertEqual(Investments.plain("1234.5"), "1.234,5")
+    }
+
+    func testAnExchangeRateReadsHoweverItWasTyped() {
+        XCTAssertEqual(Investments.rate("3.75"), "3.75")
+        XCTAssertEqual(Investments.rate(" 150,5 "), "150.5")
+        XCTAssertEqual(Investments.rate("٣٫٧٥"), "3.75")
+        for bad in ["", "0", "0.0", "-1", "abc", "1e5", "1.2.3"] { XCTAssertNil(Investments.rate(bad), bad) }
+        XCTAssertNil(Investments.rate(nil))
+    }
+
+    func testAStatementsAccountsGoWhereTheyAreToldAndNewOnesByDefault() throws {
+        let budget = try sample()
+        // The broker's own account is filled already, a loan isn't an investment, and a closed account takes nothing.
+        let targets = Investments.targets(budget)
+        XCTAssertEqual(targets.map { $0.text("id") }, ["pension"])
+        let accounts = try JSON.parse(#"""
+        [{"id":"U1","alias":"","accountId":"broker","needsRate":null,"rows":[{"id":"a","duplicate":false},{"id":"b","duplicate":true}]},
+         {"id":"U2","alias":"Long term","accountId":null,"needsRate":["USD","JPY"],"rows":[]},
+         {"id":"U3","alias":"","accountId":null,"needsRate":null,"rows":[]}]
+        """#).array
+        XCTAssertEqual(Investments.fresh(accounts[0]), 1)
+        XCTAssertEqual(Investments.fresh(nil), 0)
+        XCTAssertNil(Investments.needsRate(accounts[0]))
+        XCTAssertEqual(Investments.needsRate(accounts[1])?.from, "USD")
+        XCTAssertEqual(Investments.needsRate(accounts[1])?.to, "JPY")
+        XCTAssertEqual(Investments.adding(accounts, into: [:], targets: targets).map { $0.text("id") }, ["U2", "U3"])
+        // The one in another currency waits for its rate, unless it's left out.
+        XCTAssertFalse(Investments.ready(accounts, into: [:], rates: [:], targets: targets))
+        XCTAssertTrue(Investments.ready(accounts, into: ["U2": ""], rates: [:], targets: targets))
+        XCTAssertTrue(Investments.ready(accounts, into: [:], rates: ["U2": "150,5"], targets: targets))
+        var ids = ["n1", "n2"].makeIterator()
+        let links = Investments.links(accounts, into: ["U3": "pension"], rates: ["U2": "150,5"], targets: targets) { ids.next() ?? "none" }
+        XCTAssertEqual(links, [["source": "U2", "account": "n1", "create": true, "rate": "150.5"],
+                               ["source": "U3", "account": "pension", "create": false]])
+        XCTAssertEqual(Investments.links(accounts, into: ["U2": "", "U3": ""], rates: [:], targets: targets), [])
+        // A choice naming an account that has since gone falls back to a new one.
+        XCTAssertEqual(Investments.target(accounts[2], into: ["U3": "gone"], targets: targets), Investments.newAccount)
+        // A linked account that was waiting for its rate is told it.
+        let waiting = try JSON.parse(#"[{"id":"U9","accountId":"broker","needsRate":["USD","JPY"],"rows":[]}]"#).array
+        XCTAssertEqual(Investments.links(waiting, into: [:], rates: ["U9": "150"], targets: targets), [["source": "U9", "account": "broker", "rate": "150"]])
+        XCTAssertEqual(Investments.links(waiting, into: [:], rates: [:], targets: targets), [])
+    }
+
+    /// The holdings are an extra the app doesn't model: an edit elsewhere must send none of it,
+    /// and unlinking is the one edit that takes an entry out.
+    func testEditsKeepTheHoldingsAndUnlinkingTakesOneOut() throws {
+        let budget = try sample()
+        var renamed = budget
+        var accounts = renamed["accounts"].array
+        accounts[0]["name"] = "Everyday"
+        renamed["accounts"] = .array(accounts)
+        let patch = BudgetPatch.diff(from: budget, to: renamed)
+        XCTAssertFalse(patch.has("extras"))
+        XCTAssertFalse(patch.has("transactions"))
+        let after = BudgetPatch.apply(patch, to: budget)
+        XCTAssertEqual(after["investments"], budget["investments"])
+        XCTAssertEqual(after.rows("transactions").count { $0.text("investment") == "change" }, 2)
+
+        var unlinked = budget
+        Investments.unlink(&unlinked, account: "broker")
+        XCTAssertFalse(unlinked.has("investments"))
+        // Its history stays, so its balance does.
+        XCTAssertEqual(unlinked["transactions"], budget["transactions"])
+        let removal = BudgetPatch.diff(from: budget, to: unlinked)
+        XCTAssertEqual(removal["extras"]["delete"].array.map(\.string), ["investments"])
+        XCTAssertNil(Investments.holdings(BudgetPatch.apply(removal, to: budget), account: "broker"))
+
+        // With another account filled too, the list is sent without the one unlinked.
+        var two = budget
+        var list = two["investments"].array
+        var second = list[0]
+        second["accountId"] = "pension"
+        list.append(second)
+        two["investments"] = .array(list)
+        var one = two
+        Investments.unlink(&one, account: "broker")
+        XCTAssertEqual(one.rows("investments").map { $0.text("accountId") }, ["pension"])
+        XCTAssertEqual(BudgetPatch.diff(from: two, to: one)["extras"]["set"]["investments"], one["investments"])
+        // What a sync on another device brought arrives as a patch and is kept whole.
+        let arrived = BudgetPatch.apply(["extras": ["set": ["investments": two["investments"]], "delete": []]], to: unlinked)
+        XCTAssertEqual(arrived["investments"], two["investments"])
     }
 }

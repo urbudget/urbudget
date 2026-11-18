@@ -97,6 +97,8 @@ internal val morePages = listOf(
     MorePage("Scheduled", R.string.page_scheduled, R.string.page_scheduled_detail, Icons.Outlined.EventRepeat),
     MorePage("Payees & rules", R.string.page_payees, R.string.page_payees_detail, Icons.Outlined.People),
     MorePage("Bank connections", R.string.page_banks, R.string.page_banks_detail, Icons.Outlined.AccountBalance),
+    // Interactive Brokers' own connection is a page under it.
+    MorePage("Investments", R.string.page_investments, R.string.page_ibkr_detail, Icons.Outlined.PieChart),
     MorePage("Bank messages", R.string.sms_title, R.string.sms_detail, Icons.Outlined.Sms),
     MorePage("Account & sync", R.string.page_account_sync, R.string.page_account_sync_detail, Icons.Outlined.CloudSync),
     MorePage("Budget library", R.string.page_library, R.string.page_library_detail, Icons.Outlined.FolderOpen),
@@ -181,6 +183,11 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     var rangeFrom by rememberSaveable { mutableStateOf("") }
     var rangeThrough by rememberSaveable { mutableStateOf("") }
     var rangeSearch by rememberSaveable { mutableStateOf("") }
+    // An investment account's page of performance and holdings, open in its register's place. Held
+    // here rather than by the account's card, so folding or unfolding (which lays the register out
+    // anew) keeps it open.
+    var holdingsFor by rememberSaveable { mutableStateOf("") }
+    val holdingsOpen = tab == 1 && holdingsFor.isNotEmpty() && holdingsFor == accountFilter && categoryFilter.isEmpty()
     var dockHidden by remember { mutableStateOf(false) }
     var addExpanded by remember { mutableStateOf(true) }
     var fileError by remember { mutableStateOf<String?>(null) }
@@ -215,7 +222,7 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     val pageStart = if (rail) railStartInset() + RailRoom else 0.dp
     val hingeRoom = hinge?.let { it.start - pageStart }?.takeIf { it >= 280.dp }
     val split = wide && (hingeRoom != null || (rail && room >= SplitWidth))
-    val formBeside = split && tab == 1 && morePage.isEmpty()
+    val formBeside = split && tab == 1 && morePage.isEmpty() && !holdingsOpen
     // Elsewhere on a large screen the form floats at the side, over the page, rather than taking the screen.
     val formAtSide = appWindow >= MediumWidth && !formBeside
     val paneForm = remember { PaneForm() }
@@ -404,9 +411,12 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     // A bank import the assistant covers on a phone isn't drawn, so it has no Back of its own and
     // Back would leave the app: it closes the assistant instead, back to the import.
     val assistantOverImport = assistant && !assistantBeside && editor == "bankImport"
+    // Leaving the account (or the register) leaves its holdings page too: it doesn't open again by itself.
+    LaunchedEffect(holdingsOpen) { if (!holdingsOpen) holdingsFor = "" }
     BackHandler((editor == null && (assistant || appBack)) || assistantOverImport) {
         when {
             assistant && (!assistantBeside || !appBack) -> assistant = false
+            holdingsOpen -> holdingsFor = ""
             morePage.isNotEmpty() -> closePage()
             tab == 1 && returnTab >= 0 -> closeRegister()
             tab == 1 && accountFilter.isNotEmpty() -> { accountFilter = ""; tab = 2 }
@@ -486,7 +496,14 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
             Unit
         }
     }
-    CompositionLocalProvider(LocalToast provides toast, LocalLoanActions provides loanActions, LocalSplitList provides splitList, LocalAssistantAsk provides askAssistant,
+    // An investment account's card opens where this device connects to its broker (InvestmentsScreen.kt).
+    // A positions file or a typed value keeps one up to date too: their sheets are held here (HoldingsSetup.kt).
+    val holdingsSetup = rememberHoldingsSetup()
+    val investmentActions = remember(holdingsSetup) { InvestmentActions(connection = { openPage("Interactive Brokers") }, setup = holdingsSetup, holdings = { holdingsFor = it }) }
+    // Its accounts sync by themselves once a day when the app opens, where this device has the token.
+    DailyIbkrSync(budget, vm, toast)
+    CompositionLocalProvider(LocalToast provides toast, LocalLoanActions provides loanActions, LocalInvestmentActions provides investmentActions,
+        LocalSplitList provides splitList, LocalAssistantAsk provides askAssistant,
         LocalImportSaid provides importSaid) {
     Box(Modifier.fillMaxSize().background(ur.bg).nestedScroll(scrollWatcher)) {
     // The app's own screen: the whole window, or its start side while the assistant shares it. Under the
@@ -528,6 +545,8 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
                     when (morePage) {
                         "Account & sync" -> CloudScreen(vm)
                         "Bank connections" -> BankConnectionsScreen(budget, vm)
+                        "Investments" -> InvestmentsPage(budget) { openChildPage("Interactive Brokers") }
+                        "Interactive Brokers" -> IbkrScreen(budget, vm)
                         "Bank messages" -> SmsImportScreen(budget, vm, setDockHidden = { dockHidden = it }, decline = ::closePage)
                         "Budget library" -> LibraryScreen(budget, vm, importFile, exportFile)
                         else -> MoreScreen(morePage, ::openChildPage, budget, vm, importFile, exportFile,
@@ -535,7 +554,24 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
                     }
                 }
             } }
-            else -> pageStates.SaveableStateProvider(if (tab == 1) "register:$accountFilter|$categoryFilter|$rangeFrom|$rangeThrough|$rangeSearch" else "tab:$tab") { when (tab) {
+            // An investment account's page in its register's place (HoldingsScreen.kt): it comes in from the
+            // end over the register and goes back the same way, and the register keeps its own place meanwhile.
+            else -> {
+                val holdingsId = accountFilter.takeIf { holdingsOpen && budget.row("accounts", it) != null }
+                if (holdingsOpen && holdingsId == null) LaunchedEffect(Unit) { holdingsFor = "" }
+                val ltr = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Ltr
+                AnimatedContent(holdingsId, Modifier.fillMaxSize(), transitionSpec = {
+                    // Opening moves on toward the end side, closing back toward the start.
+                    val way = (if (targetState != null) 1 else -1) * (if (ltr) 1 else -1)
+                    val glide = tween<androidx.compose.ui.unit.IntOffset>(320, easing = androidx.compose.animation.core.FastOutSlowInEasing)
+                    (slideInHorizontally(glide) { it * way / 6 } + fadeIn(tween(220, delayMillis = 40))) togetherWith
+                        (slideOutHorizontally(glide) { -it * way / 12 } + fadeOut(tween(160)))
+                }, label = "holdings page") { openId ->
+                val account = openId?.let { budget.row("accounts", it) }
+                if (account != null) pageStates.SaveableStateProvider("holdings:$openId") {
+                    HoldingsScreen(account, budget, vm, onBack = { holdingsFor = "" }, bar = common)
+                }
+            else pageStates.SaveableStateProvider(if (tab == 1) "register:$accountFilter|$categoryFilter|$rangeFrom|$rangeThrough|$rangeSearch" else "tab:$tab") { when (tab) {
                 0 -> BudgetScreen(budget, state.summary, state.month, vm::selectMonth, vm, common,
                     onTransactions = { target -> openRegister(target, 0) },
                     onPayCard = { card -> openEditor("cardPayment", JSONObject().put("id", card)) }, showing = showing)
@@ -556,8 +592,13 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
                     edit = { openEditor("account", it) }, reconcile = { openEditor("reconcile", it) }, add = { openEditor("account") },
                     vm = vm, bar = common)
                 else -> ReportsScreen(budget, state.reports, state.summary, state.month, vm::selectMonth, vm, common,
-                    openRegister = { target -> openRegister(target, 3) }) { openEditor("transaction", it) }
+                    openRegister = { target -> openRegister(target, 3) },
+                    // An account's Holdings page stands in its register's place, so Back from it returns here by way of the register.
+                    openHoldings = { account -> openRegister(RegisterTarget(account = account), 3); holdingsFor = account },
+                    setUpHoldings = { account -> if (account.isEmpty()) openPage("Investments") else holdingsSetup.choose(account) }) { openEditor("transaction", it) }
             } }
+            }
+            }
         }
         // The form beside the register, over the pane the register leaves for it. It's here, not in the
         // register, so a change of the register's filter can't reset what's being typed.
@@ -569,7 +610,7 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
         // of whatever is open on the other.
         val dockSide = if (hingeRoom != null) Modifier.width(hingeRoom) else Modifier.fillMaxWidth()
         if (budget != null) {
-            val showAdd = tab in 0..2 && morePage.isEmpty() && !dockHidden && !state.loading && !formOpenBeside && !railAdd
+            val showAdd = tab in 0..2 && morePage.isEmpty() && !dockHidden && !state.loading && !formOpenBeside && !railAdd && !holdingsOpen
             Box(Modifier.align(Alignment.BottomStart).then(dockSide), contentAlignment = Alignment.BottomEnd) {
                 AnimatedVisibility(showAdd, Modifier.navigationBarsPadding().padding(end = 16.dp, bottom = if (rail) 16.dp else 92.dp),
                     enter = fadeIn() + scaleIn(initialScale = .8f), exit = fadeOut() + scaleOut(targetScale = .8f)) {
@@ -660,6 +701,10 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     ProvideAppSide(appWidth) {
     if (drawer && budget != null) MoreDrawer(budget, { drawer = false }, ::openPage, { openEditor("bankImport"); drawer = false },
         { openEditor("ynabImport"); drawer = false })
+    // A positions file being looked over, or a value being typed, for an investment account. A file
+    // the app can't read goes to the assistant, attached to its next message with what to do with it.
+    if (budget != null) HoldingsSetupDialogs(holdingsSetup, budget, vm, broker = { openPage("Interactive Brokers") },
+        ask = { uri, request -> assistantController.handOver(request); assistantController.attach(context, uri); assistant = true })
     if (budget != null) when (editor) {
         // Over the screen, unless it opened beside the register (above).
         "transaction" -> if (!formBeside) transactionForm(budget, state.summary, if (formAtSide) FormHost.Side else FormHost.Screen)
@@ -797,7 +842,7 @@ private fun OverflowMenu(vm: BudgetViewModel, sync: Int?, openSync: () -> Unit, 
     val alert = sync == R.string.sync_status_paused || sync == R.string.sync_status_attention
     Box {
         RoundIconButton(Icons.Outlined.MoreHoriz, stringResource(R.string.common_more_actions), { open = true }, dot = alert)
-        DropdownMenu(open, { open = false }, shape = RoundedCornerShape(16.dp), containerColor = ur.surface) {
+        UrMenu(open, { open = false }) {
             if (sync != null) {
                 val icon = when (sync) {
                     R.string.sync_status_synced -> Icons.Outlined.CloudDone
@@ -806,17 +851,17 @@ private fun OverflowMenu(vm: BudgetViewModel, sync: Int?, openSync: () -> Unit, 
                     R.string.sync_status_offline, R.string.sync_status_paused -> Icons.Outlined.CloudOff
                     else -> Icons.Outlined.SyncProblem
                 }
-                DropdownMenuItem(text = { Text(stringResource(sync)) }, leadingIcon = { Icon(icon, null, tint = if (alert) ur.warning else LocalContentColor.current) },
+                UrMenuItem(text = { Text(stringResource(sync)) }, leadingIcon = { Icon(icon, null, tint = if (alert) ur.warning else LocalContentColor.current) },
                     onClick = { openSync(); open = false })
-                HorizontalDivider(color = ur.border)
+                MenuDivider()
             }
-            DropdownMenuItem(text = { Text(stringResource(R.string.common_undo)) }, leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Undo, null) }, enabled = undoAvailable && !busy,
+            UrMenuItem(text = { Text(stringResource(R.string.common_undo)) }, leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Undo, null) }, enabled = undoAvailable && !busy,
                 onClick = { vm.undo(); open = false })
-            DropdownMenuItem(text = { Text(stringResource(R.string.common_redo)) }, leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Redo, null) }, enabled = redoAvailable && !busy,
+            UrMenuItem(text = { Text(stringResource(R.string.common_redo)) }, leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Redo, null) }, enabled = redoAvailable && !busy,
                 onClick = { vm.redo(); open = false })
-            HorizontalDivider(color = ur.border)
-            DropdownMenuItem(text = { Text("Budgets") }, leadingIcon = { Icon(Icons.Outlined.FolderOpen, null) }, onClick = { library(); open = false })
-            DropdownMenuItem(text = { Text(stringResource(R.string.page_settings)) }, leadingIcon = { Icon(Icons.Outlined.Settings, null) }, onClick = { settings(); open = false })
+            MenuDivider()
+            UrMenuItem(text = { Text("Budgets") }, leadingIcon = { Icon(Icons.Outlined.FolderOpen, null) }, onClick = { library(); open = false })
+            UrMenuItem(text = { Text(stringResource(R.string.page_settings)) }, leadingIcon = { Icon(Icons.Outlined.Settings, null) }, onClick = { settings(); open = false })
         }
     }
 }

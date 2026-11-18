@@ -136,6 +136,12 @@ internal class SmsPage(private val context: Context, val identity: String, priva
         commit(SmsStage.Idle) { reloadQueued = false }
     }
 
+    /**
+     * A card of the assistant's entered texts into the budget and finished them in storage, the
+     * open review's among them: what's stored and the review are taken from there again.
+     */
+    fun entered(): Job { sorted = null; return commit(SmsStage.Idle, restore = true) }
+
     /** The budget as it is now: the review is checked against it. */
     fun budget(value: JSONObject) {
         if (value === budget) return

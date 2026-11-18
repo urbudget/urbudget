@@ -160,14 +160,14 @@ private fun ScheduleRow(line: ScheduleItem, modifier: Modifier, divider: Boolean
             onClick = edit, onLongClick = { menu = true }, chevron = false, divider = divider, trailing = {
                 Box {
                     IconButton({ menu = true }, Modifier.size(36.dp)) { Icon(Icons.Outlined.MoreHoriz, stringResource(R.string.common_actions_for, line.title), Modifier.size(20.dp), tint = ur.muted) }
-                    DropdownMenu(menu, { menu = false }, shape = RoundedCornerShape(16.dp), containerColor = ur.surface) {
-                        DropdownMenuItem(text = { Text(stringResource(R.string.schedule_enter_now)) }, leadingIcon = { Icon(Icons.AutoMirrored.Outlined.KeyboardReturn, null) }, onClick = { menu = false; enter() })
-                        DropdownMenuItem(text = { Text(if (line.once) stringResource(R.string.schedule_skip_once) else stringResource(R.string.schedule_skip_date, line.date)) }, leadingIcon = { Icon(Icons.Outlined.SkipNext, null) }, onClick = { menu = false; skip() })
-                        DropdownMenuItem(text = { Text(if (line.paused) stringResource(R.string.schedule_resume) else stringResource(R.string.schedule_pause)) }, leadingIcon = { Icon(if (line.paused) Icons.Outlined.PlayArrow else Icons.Outlined.Pause, null) },
+                    UrMenu(menu, { menu = false }) {
+                        UrMenuItem(text = { Text(stringResource(R.string.schedule_enter_now)) }, leadingIcon = { Icon(Icons.AutoMirrored.Outlined.KeyboardReturn, null) }, onClick = { menu = false; enter() })
+                        UrMenuItem(text = { Text(if (line.once) stringResource(R.string.schedule_skip_once) else stringResource(R.string.schedule_skip_date, line.date)) }, leadingIcon = { Icon(Icons.Outlined.SkipNext, null) }, onClick = { menu = false; skip() })
+                        UrMenuItem(text = { Text(if (line.paused) stringResource(R.string.schedule_resume) else stringResource(R.string.schedule_pause)) }, leadingIcon = { Icon(if (line.paused) Icons.Outlined.PlayArrow else Icons.Outlined.Pause, null) },
                             onClick = { menu = false; pause() })
-                        DropdownMenuItem(text = { Text(stringResource(R.string.common_edit)) }, leadingIcon = { Icon(Icons.Outlined.Edit, null) }, onClick = { menu = false; edit() })
-                        HorizontalDivider(color = ur.border)
-                        DropdownMenuItem(text = { Text(stringResource(R.string.common_delete), color = ur.negative) }, leadingIcon = { Icon(Icons.Outlined.DeleteOutline, null, tint = ur.negative) },
+                        UrMenuItem(text = { Text(stringResource(R.string.common_edit)) }, leadingIcon = { Icon(Icons.Outlined.Edit, null) }, onClick = { menu = false; edit() })
+                        MenuDivider()
+                        UrMenuItem(text = { Text(stringResource(R.string.common_delete), color = ur.negative) }, leadingIcon = { Icon(Icons.Outlined.DeleteOutline, null, tint = ur.negative) },
                             onClick = { menu = false; delete() })
                     }
                 }

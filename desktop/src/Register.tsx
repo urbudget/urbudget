@@ -15,7 +15,7 @@ import { ArrowDown, ArrowLeftRight, ArrowUp, CalendarClock, CheckCheck, ChevronD
 import { transferView, type TransferView } from "./transfers";
 import { api } from "./bridge";
 import { errorText, formatDate, money, tone } from "./format";
-import { Menu, startEdge, usePinned, useToast, type MenuItem } from "./ui";
+import { Menu, Tabs, startEdge, usePinned, useToast, type MenuItem } from "./ui";
 import { useLearnPayee } from "./useLearnPayee";
 import { useCategoryCreator } from "./NewCategory";
 import { textWidth, useColumns } from "./ui/columns";
@@ -24,6 +24,7 @@ import { byAdded } from "./order";
 import { getPref, usePref } from "./prefs";
 import { frequencies } from "./Planning";
 import { LoanHeader } from "./LoanHeader";
+import { HoldingsHeader, holdingsOf } from "./Investments";
 import { creditLeft } from "./accounts";
 import { reportTransactionIds, type LineQuery } from "./reports/TransactionsDialog";
 import { BulkBar, RegisterToolbar, anyFilter, emptyFilters, type Filters } from "./RegisterToolbar";
@@ -362,15 +363,24 @@ export function TransactionsPage({
   const balance = summary?.balance ?? netWorth;
   // A card with a limit: what's left to spend, from its working balance.
   const left = account && creditLeft(account, summary?.balance ?? account.openingBalance);
-  return (
-    <div className="register-page">
-      <Register
-        budget={budget}
-        accountId={accountId}
-        onImport={account && !account.archived ? () => onImport(account) : undefined}
-        onSync={account?.simplefin && !account.archived ? () => onSync(account) : undefined}
-        lead={
-          <>
+  // An account a broker fills opens on what it holds, in a view of its own that scrolls; its
+  // transactions are a tab away. Coming here for particular transactions opens on them.
+  const held = !!account && !!holdingsOf(budget, account.id);
+  const [view, setView] = useState<"holdings" | "transactions">(register.initialFilter ? "transactions" : "holdings");
+  useEffect(() => setView(register.initialFilter ? "transactions" : "holdings"), [accountId, register.initialFilter]);
+  const views = held && (
+    <Tabs<"holdings" | "transactions">
+      label={t("View")}
+      value={view}
+      onChange={setView}
+      tabs={[
+        { id: "holdings", label: t("Holdings") },
+        { id: "transactions", label: t("Transactions") },
+      ]}
+      className="account-views"
+    />
+  );
+  const balances = (
             <div className="register-summary">
               <div className="stat">
                 <span>{account ? t("Working balance") : t("Net worth")}</span>
@@ -418,8 +428,32 @@ export function TransactionsPage({
                 </>
               )}
             </div>
+  );
+  if (held && account && view === "holdings")
+    return (
+      <div className="register-page">
+        {/* Not in the register's pinned header, which stays put: this scrolls as one page. */}
+        <div className="holdings-page">
+          {balances}
+          <HoldingsHeader budget={budget} account={account} balance={summary?.balance ?? account.openingBalance} views={views} />
+        </div>
+      </div>
+    );
+  return (
+    <div className="register-page">
+      <Register
+        budget={budget}
+        accountId={accountId}
+        onImport={account && !account.archived ? () => onImport(account) : undefined}
+        onSync={account?.simplefin && !account.archived ? () => onSync(account) : undefined}
+        lead={
+          <>
+            {balances}
+            {views}
             {/* A loan's figures and payoff planner (LoanHeader.tsx), or a debt's prompt to add them. */}
             {account && <LoanHeader budget={budget} account={account} balance={summary?.balance ?? account.openingBalance} />}
+            {/* An investment account nothing fills yet is offered the connection (Investments.tsx). */}
+            {account && !held && <HoldingsHeader budget={budget} account={account} balance={summary?.balance ?? account.openingBalance} />}
           </>
         }
         {...register}

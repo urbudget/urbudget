@@ -351,11 +351,13 @@ export function BankSync({
         const quiet = s.reviews.filter(
           (r) => nothingNew(r) && budget.accounts.find((a) => a.id === r.accountId)?.simplefin?.lastSync !== s.through,
         );
-        if (quiet.length)
+        // What a brokerage sends of its holdings goes in with the sync, with nothing to review.
+        const held = s.reviews.some((r) => r.holdings);
+        if (quiet.length || held)
           await commit(async (b) => {
             let next = b;
             for (const r of quiet) next = await simplefin.import(next, r.accountId, [], s.through);
-            return next;
+            return held ? simplefin.holdings(next) : next;
           });
         else {
           setSynced(s);

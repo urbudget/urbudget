@@ -289,3 +289,18 @@ final class LoanPaymentTests: XCTestCase {
         XCTAssertTrue(BudgetPatch.same(try XCTUnwrap(snapshot.budget), try XCTUnwrap(before.budget)))
     }
 }
+
+/// Covering an overspent category takes what the source can give of the overspending.
+final class CoverAmountTests: XCTestCase {
+    func testASourceGivesAllOfTheOverspendingOrAllItHas() {
+        // Enough: all of the overspending.
+        XCTAssertEqual(coverAmount(12_000, has: 50_000), 12_000)
+        XCTAssertEqual(coverAmount(12_000, has: 12_000), 12_000)
+        // Short of it: everything the source has.
+        XCTAssertEqual(coverAmount(12_000, has: 5_000), 5_000)
+        // Nothing to give, or no source yet: the amount still says what's needed.
+        XCTAssertEqual(coverAmount(12_000, has: 0), 12_000)
+        XCTAssertEqual(coverAmount(12_000, has: -3_000), 12_000)
+        XCTAssertEqual(coverAmount(12_000, has: nil), 12_000)
+    }
+}

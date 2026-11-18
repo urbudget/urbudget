@@ -37,11 +37,11 @@ class SharedServiceReadsTest {
     }
 
     @Test fun onlyIndependentReadsJoinAndBudgetCommitsKeepTheirOrderedPath() {
-        for (read in listOf("simplefin_status", "simplefin_accounts", "simplefin_sync", "ynab_tokens", "ynab_plans", "account_overview")) {
+        for (read in listOf("simplefin_status", "simplefin_accounts", "simplefin_sync", "ynab_tokens", "ynab_plans", "account_overview", "ibkr_status", "ibkr_review_compact")) {
             assertTrue(read, NativeServicePolicy.independent(read))
             assertTrue(read, NativeServicePolicy.coalesce(read))
         }
-        for (commit in listOf("simplefin_import", "accept_ynab_import", "resolve_ynab", "native_apply_patch", "edit_budget", "open_budget", "restore_backup_file")) {
+        for (commit in listOf("simplefin_import", "ibkr_apply", "ibkr_import", "accept_ynab_import", "resolve_ynab", "native_apply_patch", "edit_budget", "open_budget", "restore_backup_file")) {
             assertFalse(commit, NativeServicePolicy.independent(commit))
             assertFalse(commit, NativeServicePolicy.coalesce(commit))
         }
@@ -49,10 +49,15 @@ class SharedServiceReadsTest {
         assertTrue(NativeServicePolicy.budgetResult("sync_ynab"))
         assertFalse(NativeServicePolicy.coalesce("sync_ynab"))
         assertFalse(NativeServicePolicy.coalesce("simplefin_connect"))
-        for (budgetRead in listOf("simplefin_sync", "native_budget_status", "database_status", "list_backups", "backup_retention")) {
+        // Interactive Brokers' token and downloads keep off the edit queue, and each fetch is its own.
+        for (broker in listOf("ibkr_connect", "ibkr_fetch", "ibkr_file", "ibkr_disconnect", "ibkr_open")) {
+            assertTrue(broker, NativeServicePolicy.independent(broker))
+            assertFalse(broker, NativeServicePolicy.coalesce(broker))
+        }
+        for (budgetRead in listOf("simplefin_sync", "ibkr_review_compact", "native_budget_status", "database_status", "list_backups", "backup_retention")) {
             assertTrue(budgetRead, NativeServicePolicy.budgetRead(budgetRead))
         }
-        for (globalRead in listOf("cloud_status", "account_overview", "list_budgets", "simplefin_accounts", "ynab_tokens")) {
+        for (globalRead in listOf("cloud_status", "account_overview", "list_budgets", "simplefin_accounts", "ynab_tokens", "ibkr_status")) {
             assertFalse(globalRead, NativeServicePolicy.budgetRead(globalRead))
         }
     }

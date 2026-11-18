@@ -26,4 +26,19 @@ class NativePreferences(context: Context) {
     var startPage: String
         get() = preferences.getString("startPage", "budget") ?: "budget"
         set(value) { preferences.edit().putString("startPage", value).apply() }
+    /** Sync with Interactive Brokers once a day when the app opens, and the day it last tried. */
+    var ibkrDaily: Boolean
+        get() = preferences.getBoolean("ibkrDaily", true)
+        set(value) { preferences.edit().putBoolean("ibkrDaily", value).apply() }
+    var ibkrDailyAt: String
+        get() = preferences.getString("ibkrDailyAt", "") ?: ""
+        set(value) { preferences.edit().putString("ibkrDailyAt", value).apply() }
+    /** "Not now" was answered to the offer to set an investment account up. */
+    var ibkrPromptHidden: Boolean
+        get() = preferences.getBoolean("ibkrPromptHidden", false)
+        set(value) { preferences.edit().putBoolean("ibkrPromptHidden", value).apply() }
+    /** Advanced: an investment account's value can be typed in, for a broker with nothing to download. */
+    var typedValues: Boolean
+        get() = preferences.getBoolean("typedValues", false)
+        set(value) { preferences.edit().putBoolean("typedValues", value).apply() }
 }

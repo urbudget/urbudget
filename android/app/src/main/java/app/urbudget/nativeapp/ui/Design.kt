@@ -6,6 +6,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.selection.selectable
+import kotlin.math.roundToInt
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -17,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.ShowChart
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,6 +32,9 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.VectorGroup
+import androidx.compose.ui.graphics.vector.VectorNode
+import androidx.compose.ui.graphics.vector.VectorPath
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.paneTitle
@@ -53,6 +59,29 @@ internal val DockRoom = 168.dp
 /** The window's height, for sizing sheets and pickers. */
 @Composable
 internal fun screenHeight(): Dp = windowHeight()
+
+/**
+ * A line rising to the right, in either language. The app's charts run left to right in Arabic
+ * too, so the auto-mirrored icon read there as a line falling (net worth, an investment account).
+ */
+internal val RisingChart: ImageVector by lazy { Icons.AutoMirrored.Outlined.ShowChart.unmirrored() }
+
+/** The same icon, drawn the same way whatever the layout direction. */
+private fun ImageVector.unmirrored(): ImageVector =
+    ImageVector.Builder(name, defaultWidth, defaultHeight, viewportWidth, viewportHeight, tintColor, tintBlendMode, autoMirror = false)
+        .apply { root.forEach { addNode(it) } }.build()
+
+private fun ImageVector.Builder.addNode(node: VectorNode) {
+    when (node) {
+        is VectorPath -> addPath(node.pathData, node.pathFillType, node.name, node.fill, node.fillAlpha, node.stroke, node.strokeAlpha,
+            node.strokeLineWidth, node.strokeLineCap, node.strokeLineJoin, node.strokeLineMiter, node.trimPathStart, node.trimPathEnd, node.trimPathOffset)
+        is VectorGroup -> {
+            addGroup(node.name, node.rotation, node.pivotX, node.pivotY, node.scaleX, node.scaleY, node.translationX, node.translationY, node.clipPathData)
+            node.forEach { addNode(it) }
+            clearGroup()
+        }
+    }
+}
 
 /**
  * Shows a short message above the tab bar; with `undo`, it offers Undo for the last change, as the
@@ -456,16 +485,60 @@ internal fun CheckRow(text: String, checked: Boolean, onChange: (Boolean) -> Uni
     }
 }
 
+/**
+ * The app's menus: a card raised off the page rather than one more card on it. On the dark theme,
+ * where a shadow barely shows, it's a step lighter than the cards with a light edge; on the light
+ * theme it's white over a clear shadow with a hairline. Its items are washed inside its edges
+ * (UrMenuItem), and a divider between groups stops short of them (MenuDivider).
+ */
+@Composable
+internal fun UrMenu(expanded: Boolean, onDismissRequest: () -> Unit, modifier: Modifier = Modifier,
+                    offset: androidx.compose.ui.unit.DpOffset = androidx.compose.ui.unit.DpOffset(0.dp, 4.dp), content: @Composable ColumnScope.() -> Unit) {
+    DropdownMenu(expanded, onDismissRequest, modifier.widthIn(min = 196.dp), offset = offset, shape = RoundedCornerShape(18.dp),
+        containerColor = if (ur.dark) Color(0xFF252A3C) else ur.surface, tonalElevation = 0.dp, shadowElevation = if (ur.dark) 18.dp else 14.dp,
+        border = BorderStroke(1.dp, if (ur.dark) Color(0xFF363C55) else ur.border)) {
+        Column(Modifier.padding(vertical = 2.dp), content = content)
+    }
+}
+
+/** A menu's item, its press washed in a rounded shape inside the menu's edges. */
+@Composable
+internal fun UrMenuItem(text: @Composable () -> Unit, onClick: () -> Unit, modifier: Modifier = Modifier, leadingIcon: (@Composable () -> Unit)? = null,
+                        trailingIcon: (@Composable () -> Unit)? = null, enabled: Boolean = true, colors: MenuItemColors = MenuDefaults.itemColors()) {
+    DropdownMenuItem(text, onClick, modifier.padding(horizontal = 6.dp).clip(RoundedCornerShape(12.dp)), leadingIcon, trailingIcon, enabled, colors,
+        contentPadding = PaddingValues(horizontal = 12.dp))
+}
+
+/** A line between a menu's groups, inset as its items are. */
+@Composable
+internal fun MenuDivider() {
+    HorizontalDivider(Modifier.padding(horizontal = 14.dp, vertical = 4.dp), color = if (ur.dark) Color(0xFF363C55) else ur.border)
+}
+
 /** The desktop's segmented tabs: a grey track with the chosen option raised. */
 @Composable
 internal fun Segmented(options: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit, modifier: Modifier = Modifier) {
-    Row(modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (ur.dark) Color(0xFF0A0C15) else Color(0xFFE4E4EA)).padding(3.dp)) {
-        options.forEach { (id, label) ->
-            val chosen = id == selected
-            Box(Modifier.weight(1f).height(36.dp).clip(RoundedCornerShape(9.dp))
-                .then(if (chosen) Modifier.background(if (ur.dark) Color(0xFF2A2F47) else Color.White) else Modifier)
-                .clickable(role = Role.Tab) { onSelect(id) }, contentAlignment = Alignment.Center) {
-                Text(label, fontWeight = if (chosen) FontWeight.Bold else FontWeight.Medium, color = if (chosen) ur.text else ur.text2, fontSize = 15.sp, maxLines = 1)
+    // The chosen segment's thumb slides to the next one rather than jumping, with a light tick under the finger.
+    val index = options.indexOfFirst { it.first == selected }
+    val at by androidx.compose.animation.core.animateFloatAsState(maxOf(index, 0).toFloat(),
+        androidx.compose.animation.core.spring(dampingRatio = .86f, stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow), label = "segment")
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    BoxWithConstraints(modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (ur.dark) Color(0xFF0A0C15) else Color(0xFFE4E4EA)).padding(3.dp)) {
+        val each = maxWidth / maxOf(options.size, 1)
+        if (index >= 0) Box(Modifier.offset { androidx.compose.ui.unit.IntOffset((each.toPx() * at).roundToInt(), 0) }.width(each).height(36.dp)
+            .clip(RoundedCornerShape(9.dp)).background(if (ur.dark) Color(0xFF2A2F47) else Color.White))
+        Row(Modifier.fillMaxWidth()) {
+            options.forEach { (id, label) ->
+                val chosen = id == selected
+                val ink by androidx.compose.animation.animateColorAsState(if (chosen) ur.text else ur.text2, label = "segment ink")
+                Box(Modifier.weight(1f).height(36.dp).clip(RoundedCornerShape(9.dp))
+                    .selectable(chosen, role = Role.Tab) { if (!chosen) { haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.SegmentTick); onSelect(id) } },
+                    contentAlignment = Alignment.Center) {
+                    // A long name among four options (the reports' groups on a narrow phone) shrinks to fit rather than be cut off.
+                    androidx.compose.foundation.text.BasicText(label, Modifier.padding(horizontal = 4.dp),
+                        style = androidx.compose.material3.LocalTextStyle.current.merge(androidx.compose.ui.text.TextStyle(color = ink, fontWeight = if (chosen) FontWeight.Bold else FontWeight.Medium)),
+                        maxLines = 1, autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = 11.sp, maxFontSize = 15.sp, stepSize = .5.sp))
+                }
             }
         }
     }
@@ -555,20 +628,33 @@ internal fun Figure(label: String, value: String, modifier: Modifier = Modifier,
     }
 }
 
-/** A notice card: amber for attention, red for a problem. */
+/**
+ * A notice card: amber for attention, red for a problem. A short action sits beside the text; a
+ * longer one goes under it, so the text keeps the card's width rather than a narrow column.
+ */
 @Composable
 internal fun Notice(text: String, modifier: Modifier = Modifier, tone: String = "attention", action: String? = null, onAction: (() -> Unit)? = null,
                     icon: ImageVector = Icons.Outlined.Info) {
     val fill = when (tone) { "negative" -> ur.negativeSoft; "positive" -> ur.positiveSoft; "info" -> ur.accentSoft; else -> ur.warningSoft }
     val ink = when (tone) { "negative" -> ur.negative; "positive" -> ur.positive; "info" -> ur.accent; else -> ur.warning }
-    Row(modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(fill).padding(start = 14.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, null, Modifier.size(20.dp), tint = ink)
+    val shown = action?.takeIf { onAction != null }
+    val below = shown != null && shown.length > NoticeActionBeside
+    Row(modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(fill).padding(start = 14.dp, end = 8.dp, top = 10.dp, bottom = if (below) 4.dp else 10.dp),
+        verticalAlignment = if (below) Alignment.Top else Alignment.CenterVertically) {
+        Icon(icon, null, Modifier.padding(top = if (below) 4.dp else 0.dp).size(20.dp), tint = ink)
         Spacer(Modifier.width(10.dp))
-        Text(text, Modifier.weight(1f).padding(vertical = 4.dp), style = MaterialTheme.typography.bodyMedium, color = ur.text)
-        if (action != null && onAction != null) TextButton(onAction) { Text(action, color = ink, fontWeight = FontWeight.Bold) }
+        Column(Modifier.weight(1f)) {
+            Text(text, Modifier.padding(vertical = 4.dp), style = MaterialTheme.typography.bodyMedium, color = ur.text)
+            if (below && onAction != null) TextButton(onAction, contentPadding = PaddingValues(horizontal = 0.dp, vertical = 8.dp)) {
+                Text(shown!!, color = ink, fontWeight = FontWeight.Bold)
+            }
+        }
+        if (!below && shown != null && onAction != null) TextButton(onAction) { Text(shown, color = ink, fontWeight = FontWeight.Bold) }
     }
 }
+
+/** The longest action, in characters, that sits beside a notice's text ("Review", "Set up"). */
+private const val NoticeActionBeside = 16
 
 /**
  * A screen of its own over the app (adding or editing a transaction takes the whole screen). It is a

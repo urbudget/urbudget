@@ -85,6 +85,11 @@ pub enum Source {
     Spending { from: String, to: String, account_ids: Vec<String>, category_ids: Vec<String> },
     #[serde(rename_all = "camelCase")]
     Months { from: String, to: String, account_ids: Vec<String> },
+    /// The investment accounts by month, and what they hold today (`investment_stats::portfolio`).
+    #[serde(rename_all = "camelCase")]
+    Investments { from: String, to: String, account_ids: Vec<String> },
+    #[serde(rename_all = "camelCase")]
+    Holdings { account_ids: Vec<String> },
 }
 impl Source {
     fn name(&self) -> &'static str {
@@ -94,6 +99,8 @@ impl Source {
             Source::Budget { .. } => "budget",
             Source::Spending { .. } => "spending",
             Source::Months { .. } => "months",
+            Source::Investments { .. } => "investments",
+            Source::Holdings { .. } => "holdings",
         }
     }
 }
@@ -190,8 +197,16 @@ fn source_from(s: &Value, names: &Names, month: &str) -> Result<Source, String> 
             let (from, to) = range(s, month)?;
             Ok(Source::Months { from, to, account_ids: accounts()? })
         }
-        "" => Err("Give the sheet a type: transactions, budget, spending, months or table.".into()),
-        other => Err(format!("There is no sheet type \"{other}\". Use transactions, budget, spending, months or table.")),
+        "investments" | "holdings" if crate::investments::read(names.budget).is_empty() => {
+            Err("No investment account has holdings, so there is nothing for this sheet. Use get_holdings to see what there is.".into())
+        }
+        "investments" => {
+            let (from, to) = range(s, month)?;
+            Ok(Source::Investments { from, to, account_ids: accounts()? })
+        }
+        "holdings" => Ok(Source::Holdings { account_ids: accounts()? }),
+        "" => Err("Give the sheet a type: transactions, budget, spending, months, investments, holdings or table.".into()),
+        other => Err(format!("There is no sheet type \"{other}\". Use transactions, budget, spending, months, investments, holdings or table.")),
     }
 }
 
@@ -341,6 +356,8 @@ pub fn fill(sheet: &Sheet, b: &Budget) -> Result<Grid, String> {
         Source::Budget { month } => budget(month, b)?,
         Source::Spending { from, to, account_ids, category_ids } => spending(from, to, account_ids, category_ids, b)?,
         Source::Months { from, to, account_ids } => months(from, to, account_ids, b)?,
+        Source::Investments { from, to, account_ids } => investments(from, to, account_ids, b)?,
+        Source::Holdings { account_ids } => holdings(account_ids, b)?,
     };
     Ok(Grid { name: sheet.name.clone(), columns, rows, total })
 }
@@ -554,13 +571,14 @@ fn spending(from: &str, to: &str, account_ids: &[String], category_ids: &[String
     Ok((columns, rows, true))
 }
 
-/// Income, spending and net worth for each month.
+/// Income, spending, money moved into investments and net worth for each month.
 fn months(from: &str, to: &str, account_ids: &[String], b: &Budget) -> Result<Rows, String> {
     let r = report(from, to, account_ids, &[], b)?;
     let columns = vec![
         col("Month", Kind::Month, false),
         col("Income", Kind::Money, true),
         col("Spending", Kind::Money, true),
+        col("Invested", Kind::Money, true),
         col("Net income", Kind::Money, true),
         col("Net worth", Kind::Money, false),
     ];
@@ -573,8 +591,75 @@ fn months(from: &str, to: &str, account_ids: &[String], b: &Budget) -> Result<Ro
                 Cell::Month(m.month.clone()),
                 Cell::Money(m.income),
                 Cell::Money(m.spending),
+                Cell::Money(m.invested),
                 Cell::Money(m.net_income),
                 Cell::Money(m.net_worth),
+            ]
+        })
+        .collect();
+    Ok((columns, rows, true))
+}
+
+fn portfolio(from: &str, to: &str, account_ids: &[String], b: &Budget) -> Result<urbudget_core::investment_stats::Portfolio, String> {
+    urbudget_core::investment_stats::portfolio(b, &reports::Filter { from: from.into(), to: to.into(), account_ids: account_ids.to_vec(), category_ids: vec![] })
+}
+
+/// The investment accounts' value, money put in and gain for each month, then each account's value.
+fn investments(from: &str, to: &str, account_ids: &[String], b: &Budget) -> Result<Rows, String> {
+    let r = portfolio(from, to, account_ids, b)?;
+    let names = Names::new(b);
+    let mut columns = vec![
+        col("Month", Kind::Month, false),
+        col("Value", Kind::Money, false),
+        col("Money put in", Kind::Money, true),
+        col("Gain", Kind::Money, true),
+    ];
+    columns.extend(r.accounts.iter().map(|a| col(&names.account(&a.account_id), Kind::Money, false)));
+    let rows = r
+        .months
+        .iter()
+        .map(|m| {
+            let mut row = vec![Cell::Month(m.month.clone()), Cell::Money(m.value), Cell::Money(m.put), Cell::Money(m.gain)];
+            // Empty until the account is tracked.
+            row.extend(r.accounts.iter().map(|a| m.by_account.get(&a.account_id).map_or(Cell::Empty, |value| Cell::Money(*value))));
+            row
+        })
+        .collect();
+    Ok((columns, rows, true))
+}
+
+/// What the investment accounts hold today, largest first, one held in two accounts counted once.
+fn holdings(account_ids: &[String], b: &Budget) -> Result<Rows, String> {
+    // The holdings are today's whatever the months; any one month reads them.
+    let month = chrono::Utc::now().format("%Y-%m").to_string();
+    let r = portfolio(&month, &month, account_ids, b)?;
+    let names = Names::new(b);
+    let columns = vec![
+        col("Holding", Kind::Text, false),
+        col("Symbol", Kind::Text, false),
+        col("Kind", Kind::Text, false),
+        col("Currency", Kind::Text, false),
+        col("Value", Kind::Money, true),
+        col("Cost", Kind::Money, true),
+        col("Unrealised gain", Kind::Money, true),
+        col("Share", Kind::Percent, false),
+        col("Accounts", Kind::Text, false),
+    ];
+    let money = |amount: Option<i64>| amount.map_or(Cell::Empty, Cell::Money);
+    let rows = r
+        .holdings
+        .iter()
+        .map(|h| {
+            vec![
+                Cell::Text(h.name.clone()),
+                text_cell(h.symbol.clone()),
+                Cell::Text(h.group.to_owned()),
+                text_cell(h.currency.clone()),
+                Cell::Money(h.value),
+                money(h.cost),
+                money(h.gain),
+                Cell::Percent(h.share),
+                Cell::Text(h.accounts.iter().map(|id| names.account(id)).collect::<Vec<_>>().join(", ")),
             ]
         })
         .collect();
@@ -650,6 +735,8 @@ fn describe(source: &Source, names: &Names) -> (String, fn(usize) -> String) {
         Source::Budget { month } => (t!("Budget for {month}", month = month_label(month)), categories_badge),
         Source::Spending { from, to, .. } => (t!("Spending by category, {range}", range = range_label(from, to)), categories_badge),
         Source::Months { from, to, .. } => (t!("Income and spending, {range}", range = range_label(from, to)), months_badge),
+        Source::Investments { from, to, .. } => (t!("Investments by month, {range}", range = range_label(from, to)), months_badge),
+        Source::Holdings { .. } => (t!("What your investments hold today"), rows_badge),
     }
 }
 

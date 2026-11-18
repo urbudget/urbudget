@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The pages More leads to.
 enum MoreRoute: Hashable {
-    case library, sync, schedules, loans, payees, banks, settings, assistantSettings
+    case library, sync, schedules, loans, payees, banks, brokers, settings, assistantSettings
 }
 
 /// More: the budget and its library, then everything the tabs don't cover, as Android's More drawer
@@ -45,6 +45,7 @@ struct MoreView: View {
                 case .loans: LoanPlannerView()
                 case .payees: PayeesView()
                 case .banks: BankConnectionsView()
+                case .brokers: InvestmentsHomeView()
                 case .settings: SettingsView()
                 case .assistantSettings: AssistantSettingsView()
                 }
@@ -120,6 +121,12 @@ struct MoreView: View {
                 MoreRow(title: String(localized: "Bank connections"), detail: String(localized: "Link accounts and review downloads"),
                         symbol: "building.columns", tint: .urAccent)
             }
+            // What the investment accounts hold and are worth: from Interactive Brokers' own statements,
+            // a bank connection, a positions file or a typed value (HoldingsSetup.swift).
+            NavigationLink(value: MoreRoute.brokers) {
+                MoreRow(title: String(localized: "Investments"), detail: String(localized: "What your investments hold and what they're worth"),
+                        symbol: "chart.line.uptrend.xyaxis", tint: .urAccent)
+            }
             Button { sheet = .bankImport } label: {
                 MoreRow(title: String(localized: "Import bank file"), detail: String(localized: "CSV, Excel, OFX, QIF and more, reviewed first"),
                         symbol: "doc.badge.arrow.up", tint: .urAccent)
@@ -155,6 +162,7 @@ struct MoreView: View {
         case "loans": path = [.loans]
         case "payees": path = [.payees]
         case "banks": path = [.banks]
+        case "brokers": path = [.brokers]
         case "settings": path = [.settings]
         case "assistantSettings": path = [.assistantSettings]
         case "assistant": if !AppActions.shared.openBeside(nil) { sheet = .assistant }
@@ -202,7 +210,7 @@ struct MoreRow: View {
 
 /// Where a debug build opens at launch: `-tab accounts`, `-open sync`. Release builds ignore it.
 enum LaunchRoute {
-    static let morePages: Set<String> = ["library", "sync", "schedules", "loans", "payees", "banks", "settings",
+    static let morePages: Set<String> = ["library", "sync", "schedules", "loans", "payees", "banks", "brokers", "settings",
                                          "assistantSettings", "assistant", "bankImport", "ynab"]
     static let accountPages: Set<String> = ["register", "networth", "loanRegister", "cardRegister"]
     static var initialTab: AppTab {

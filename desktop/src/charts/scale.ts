@@ -15,6 +15,21 @@ export function niceTicks(min: number, max: number, count = 5): number[] {
   return ticks;
 }
 
+/**
+ * Round tick values fitted to [min, max] without reaching down to 0, for a line whose changes
+ * would be flattened by an axis from zero (an account worth 1.8M that moves by 20K). Zero is
+ * still included when it is near: when starting there would less than double the axis.
+ */
+export function spanTicks(min: number, max: number, count = 4): number[] {
+  if (!(min > 0) || min === max || min < max - min) return niceTicks(min, max);
+  const raw = (max - min) / count;
+  const power = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * power).find((s) => raw <= s) ?? 10 * power;
+  const ticks: number[] = [];
+  for (let v = Math.floor(min / step) * step; v < max + step; v += step) ticks.push(Math.round(v * 1e6) / 1e6);
+  return ticks;
+}
+
 /** Maps a domain onto a pixel range. */
 export const linear = ([d0, d1]: [number, number], [r0, r1]: [number, number]) => (v: number) =>
   d1 === d0 ? r0 : r0 + ((v - d0) / (d1 - d0)) * (r1 - r0);
@@ -28,6 +43,23 @@ export function compactMoney(cents: number) {
   if (abs >= 1e6) return `${fixed(v / 1e6, abs >= 1e7 ? 0 : 1)}M`;
   if (abs >= 1e3) return `${fixed(v / 1e3, abs >= 1e4 ? 0 : 1)}K`;
   return fixed(v, 0);
+}
+
+/**
+ * Axis labels for amounts in cents that are `step` apart, with as many decimals as it takes to
+ * tell neighbours apart: 1.8M, 1.82M, 1.84M where `compactMoney` would write 1.8M three times.
+ */
+export function compactMoneyBy(step: number) {
+  return (cents: number) => {
+    const v = cents / 100,
+      abs = Math.abs(v);
+    const [unit, suffix] = abs >= 1e6 ? [1e6, "M"] : abs >= 1e3 ? [1e3, "K"] : [1, ""];
+    // As many decimals as the step itself needs in this unit: 0.02M takes two, 2.5K one.
+    const apart = Math.abs(step) / 100 / unit;
+    const digits = [0, 1, 2].find((d) => Math.abs(apart * 10 ** d - Math.round(apart * 10 ** d)) < 1e-6 && Math.round(apart * 10 ** d) > 0) ?? 3;
+    const text = (v / unit).toFixed(digits);
+    return `${(digits ? text.replace(/0+$/, "").replace(/\.$/, "") : text).replace(".", activeFormat().number.decimal)}${suffix}`;
+  };
 }
 
 /** "Oct" for each month; "Oct 26" when the year changes or on the first label. Arabic has no short month names. */

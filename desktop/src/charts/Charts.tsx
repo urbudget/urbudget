@@ -1,5 +1,5 @@
-import { useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { compactMoney, heatLevels, linear, monthTick, niceTicks, squarify } from "./scale";
+import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { compactMoney, compactMoneyBy, heatLevels, linear, monthTick, niceTicks, spanTicks, squarify } from "./scale";
 import { activeFormat, monthName } from "../format";
 import { list, ltr, monthNames, rtlRun, t, weekdayNames } from "../i18n";
 import { textWidth } from "../ui/columns";
@@ -103,6 +103,7 @@ function Axes({
   x,
   tick,
   axisFormat = compactMoney,
+  money = axisFormat === compactMoney,
 }: {
   ticks: number[];
   y: (v: number) => number;
@@ -111,10 +112,12 @@ function Axes({
   x: (i: number) => number;
   tick?: Tick;
   axisFormat?: (v: number) => string;
+  /** The axis counts money, so the currency is named over it. */
+  money?: boolean;
 }) {
   return (
     <g className="chart-axes" aria-hidden>
-      {axisFormat === compactMoney && activeFormat().number.symbol !== "none" && (
+      {money && activeFormat().number.symbol !== "none" && (
         <text x={PAD.left - 8} y={10} textAnchor="end">{activeFormat().currency}</text>
       )}
       {ticks.map((t) => (
@@ -152,6 +155,7 @@ export function ColumnChart({
   tick,
   title = monthTitle,
   footer,
+  total = true,
 }: {
   months: string[];
   series: Series[];
@@ -166,6 +170,8 @@ export function ColumnChart({
   tick?: Tick;
   title?: (key: string) => string;
   footer?: ReactNode;
+  /** False leaves the Total row out of the tooltip, where the series never share a month. */
+  total?: boolean;
 }) {
   const [ref, width, room] = useWidth();
   const height = fill ? Math.max(least, room) : least;
@@ -226,7 +232,7 @@ export function ColumnChart({
   const lastLine = line ? line.values.reduce<number>((last, v, i) => (v === null ? last : i), -1) : -1;
   const rows = (i: number): TooltipRow[] => [
     ...series.filter((s) => s.values[i]).map((s) => ({ label: s.label, value: format(s.values[i]), color: s.color })),
-    ...(series.length > 1 && !grouped ? [{ label: t("Total"), value: format(series.reduce((n, s) => n + (s.values[i] ?? 0), 0)) }] : []),
+    ...(total && series.length > 1 && !grouped ? [{ label: t("Total"), value: format(series.reduce((n, s) => n + (s.values[i] ?? 0), 0)) }] : []),
     ...(line && line.values[i] !== null ? [{ label: line.label, value: format(line.values[i]!), color: line.color, line: true }] : []),
   ];
   return (
@@ -276,7 +282,70 @@ export function ColumnChart({
   );
 }
 
-export type LineSeries = { key: string; label: string; color: string; values: (number | null)[]; dashed?: boolean };
+/**
+ * A small picture of how something went, for a card: columns (side by side for two series) or
+ * lines, drawn like the full charts' marks with no axes, labels or tooltips. The figures it
+ * stands for are in the card's text, so it is hidden from screen readers.
+ */
+export function Spark({
+  series,
+  kind,
+  height = 56,
+}: {
+  series: { color: string; values: number[] }[];
+  kind: "columns" | "lines";
+  height?: number;
+}) {
+  const [ref, width] = useWidth(240);
+  const count = Math.max(0, ...series.map((s) => s.values.length));
+  const all = series.flatMap((s) => s.values);
+  // Columns stand on zero; a line is fitted to its values, so a small change still shows.
+  const low = kind === "columns" ? Math.min(0, ...all) : Math.min(...all),
+    high = kind === "columns" ? Math.max(0, ...all) : Math.max(...all);
+  const y = linear([low, high === low ? low + 1 : high], [height - 5, 5]);
+  const band = width / Math.max(1, count);
+  const each = Math.max(2, Math.min(14, (band * 0.7 - (series.length - 1) * GAP) / Math.max(1, series.length)));
+  const group = series.length * each + (series.length - 1) * GAP;
+  const x = (i: number) => (kind === "columns" ? band * (i + 0.5) : count < 2 ? width / 2 : 5 + ((width - 10) * i) / (count - 1));
+  return (
+    <div className="chart spark" ref={ref} aria-hidden>
+      <svg width={width} height={height}>
+        {count > 0 &&
+          series.map((s, k) =>
+            kind === "columns" ? (
+              s.values.map((v, i) => {
+                const size = Math.abs(y(v) - y(0));
+                const left = x(i) - group / 2 + k * (each + GAP);
+                return <path key={`${k}-${i}`} fill={s.color} d={v > 0 ? barPath(left, y(v), each, size, true, true) : barPath(left, y(0), each, size, false, true)} />;
+              })
+            ) : (
+              <g key={k}>
+                <path
+                  d={s.values.map((v, i) => `${i ? "L" : "M"}${x(i)},${y(v)}`).join("")}
+                  fill="none"
+                  stroke={s.color}
+                  strokeWidth={2}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                />
+                {s.values.length > 0 && <circle cx={x(s.values.length - 1)} cy={y(s.values[s.values.length - 1])} r={3} fill={s.color} className="chart-dot" />}
+              </g>
+            ),
+          )}
+      </svg>
+    </div>
+  );
+}
+
+export type LineSeries = {
+  key: string;
+  label: string;
+  color: string;
+  values: (number | null)[];
+  dashed?: boolean;
+  /** The colour of the line where it runs under zero, when that differs (a loss beside a gain). */
+  below?: string;
+};
 
 /**
  * Lines over months (or days): 2px lines on one axis that includes zero, a crosshair tooltip
@@ -293,6 +362,9 @@ export function LinesChart({
   tick,
   title = monthTitle,
   wash = series.length === 1,
+  zero = true,
+  ends: labelEnds = true,
+  more,
 }: {
   keys: string[];
   series: LineSeries[];
@@ -302,15 +374,30 @@ export function LinesChart({
   height?: number;
   tick?: Tick;
   title?: (key: string) => string;
-  /** A 10% fill under a single line. */
-  wash?: boolean;
+  /** A 10% fill under a single line; "fade" fills under every solid line, fading away from it. */
+  wash?: boolean | "fade";
+  /** False fits the axis to the values (see `spanTicks`) instead of starting it at zero. */
+  zero?: boolean;
+  /** False leaves the lines' ends unlabelled, where the figure is already beside the chart. */
+  ends?: boolean;
+  /** More rows for a point's tooltip, under the series' own. */
+  more?: (i: number) => TooltipRow[];
 }) {
   const [ref, width] = useWidth();
-  const [hover, setHover] = useState<number | null>(null);
+  const [pointed, setHover] = useState<number | null>(null);
+  // The point under the pointer, unless the chart has since been given fewer points than that
+  // (another period chosen, or new figures, while it was pointed at).
+  const hover = pointed !== null && pointed < keys.length ? pointed : null;
+  const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
   const plot = { w: Math.max(10, width - PAD.left - PAD.right), h: height - PAD.top - PAD.bottom };
   const known = series.flatMap((s) => s.values.filter((v): v is number => v !== null));
-  const ticks = niceTicks(Math.min(0, ...known), Math.max(1, ...known));
+  const ticks = zero || !known.length ? niceTicks(Math.min(0, ...known), Math.max(1, ...known)) : spanTicks(Math.min(...known), Math.max(...known));
   const y = linear([ticks[0], ticks[ticks.length - 1]], [PAD.top + plot.h, PAD.top]);
+  // Where the washes stand: on zero, or on the axis's nearest edge when zero is off it.
+  const base = y(Math.min(Math.max(0, ticks[0]), ticks[ticks.length - 1]));
+  const colourAt = (s: LineSeries, v: number) => (s.below && v < 0 ? s.below : s.color);
+  // Labels a step apart need the decimals to differ by: 1.8M and 1.82M, not 1.8M twice.
+  const fitted = !zero && axisFormat === compactMoney && ticks.length > 1;
   const step = plot.w / Math.max(1, keys.length - 1);
   const x = (i: number) => PAD.left + (keys.length === 1 ? plot.w / 2 : step * i);
   const lastOf = (s: LineSeries) => s.values.reduce<number>((n, v, i) => (v === null ? n : i), -1);
@@ -324,7 +411,8 @@ export function LinesChart({
   const rows = (i: number): TooltipRow[] =>
     series
       .filter((s) => s.values[i] !== null && s.values[i] !== undefined)
-      .map((s) => ({ label: s.label, value: format(s.values[i]!), color: s.color, line: true }));
+      .map((s): TooltipRow => ({ label: s.label, value: format(s.values[i]!), color: colourAt(s, s.values[i]!), line: true }))
+      .concat(more?.(i) ?? []);
   const keyStep = (e: KeyboardEvent) => {
     const last = keys.length - 1;
     const moves: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1 };
@@ -353,8 +441,39 @@ export function LinesChart({
         }}
         onPointerLeave={() => setHover(null)}
       >
-        <Axes ticks={ticks} y={y} width={width} keys={keys} x={x} tick={tick} axisFormat={axisFormat} />
-        {series.map((s) => {
+        <Axes
+          ticks={ticks}
+          y={y}
+          width={width}
+          keys={keys}
+          x={x}
+          tick={tick}
+          axisFormat={fitted ? compactMoneyBy(ticks[1] - ticks[0]) : axisFormat}
+          money={axisFormat === compactMoney}
+        />
+        <defs>
+          {/* The plot above the washes' base and under it, for a line that changes colour there. */}
+          <clipPath id={`${uid}-over`}>
+            <rect x={0} y={0} width={width} height={Math.max(0, base)} />
+          </clipPath>
+          <clipPath id={`${uid}-under`}>
+            <rect x={0} y={base} width={width} height={Math.max(0, height - base)} />
+          </clipPath>
+          {wash === "fade" &&
+            series.map((s, n) => (
+              <g key={s.key}>
+                <linearGradient id={`${uid}-${n}-over`} gradientUnits="userSpaceOnUse" x1={0} x2={0} y1={PAD.top} y2={base}>
+                  <stop offset={0} style={{ stopColor: s.color, stopOpacity: 0.26 }} />
+                  <stop offset={1} style={{ stopColor: s.color, stopOpacity: 0.02 }} />
+                </linearGradient>
+                <linearGradient id={`${uid}-${n}-under`} gradientUnits="userSpaceOnUse" x1={0} x2={0} y1={base} y2={PAD.top + plot.h}>
+                  <stop offset={0} style={{ stopColor: s.below ?? s.color, stopOpacity: 0.02 }} />
+                  <stop offset={1} style={{ stopColor: s.below ?? s.color, stopOpacity: 0.26 }} />
+                </linearGradient>
+              </g>
+            ))}
+        </defs>
+        {series.map((s, n) => {
           const segments: { i: number; v: number }[][] = [];
           s.values.forEach((v, i) => {
             if (v === null) return;
@@ -363,18 +482,36 @@ export function LinesChart({
           });
           return segments.map((seg, k) => {
             const d = seg.map((p, j) => `${j ? "L" : "M"}${x(p.i)},${y(p.v)}`).join("");
+            const area = `${d}L${x(seg[seg.length - 1].i)},${base}L${x(seg[0].i)},${base}Z`;
+            const line = (stroke: string, clip?: string) => (
+              <path
+                d={d}
+                fill="none"
+                stroke={stroke}
+                strokeWidth={2}
+                strokeLinejoin="round"
+                strokeLinecap="round"
+                strokeDasharray={s.dashed ? "6 4" : undefined}
+                clipPath={clip && `url(#${uid}-${clip})`}
+              />
+            );
             return (
               <g key={`${s.key}-${k}`}>
-                {wash && <path d={`${d}L${x(seg[seg.length - 1].i)},${y(0)}L${x(seg[0].i)},${y(0)}Z`} fill={s.color} opacity={0.1} />}
-                <path
-                  d={d}
-                  fill="none"
-                  stroke={s.color}
-                  strokeWidth={2}
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                  strokeDasharray={s.dashed ? "6 4" : undefined}
-                />
+                {wash === true && <path d={area} fill={s.color} opacity={0.1} />}
+                {wash === "fade" && !s.dashed && (
+                  <>
+                    <path d={area} fill={`url(#${uid}-${n}-over)`} clipPath={`url(#${uid}-over)`} />
+                    <path d={area} fill={`url(#${uid}-${n}-under)`} clipPath={`url(#${uid}-under)`} />
+                  </>
+                )}
+                {s.below ? (
+                  <>
+                    {line(s.color, "over")}
+                    {line(s.below, "under")}
+                  </>
+                ) : (
+                  line(s.color)
+                )}
               </g>
             );
           });
@@ -383,13 +520,13 @@ export function LinesChart({
         {hover !== null &&
           series.map((s) =>
             s.values[hover] === null || s.values[hover] === undefined ? null : (
-              <circle key={s.key} cx={x(hover)} cy={y(s.values[hover]!)} r={4} fill={s.color} className="chart-dot" />
+              <circle key={s.key} cx={x(hover)} cy={y(s.values[hover]!)} r={4} fill={colourAt(s, s.values[hover]!)} className="chart-dot" />
             ),
           )}
         {ends.map((e) => (
           <g key={e.s.key}>
-            <circle cx={x(e.i)} cy={y(e.s.values[e.i]!)} r={4} fill={e.s.color} className="chart-dot" />
-            {series.length <= 4 && (
+            <circle cx={x(e.i)} cy={y(e.s.values[e.i]!)} r={4} fill={colourAt(e.s, e.s.values[e.i]!)} className="chart-dot" />
+            {labelEnds && series.length <= 4 && (
               <text className="chart-end-label" x={x(e.i) - 8} y={e.y} textAnchor="end">
                 {format(e.s.values[e.i]!)}
               </text>

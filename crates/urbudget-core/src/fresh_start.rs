@@ -36,6 +36,9 @@ pub fn create(source: &Budget, name: &str, as_of: &str) -> Result<Budget, String
     for field in ["numberFormat", "dateFormat", "categoryOrder", "groupOrder", "payeeRules", "payees", "loans", "smsImportedMessageIds"] {
         if let Some(v) = source.extra.get(field) { next.extra.insert(field.into(), v.clone()); }
     }
+    if let Some(held) = source.extra.get(crate::investments::KEY) {
+        next.extra.insert(crate::investments::KEY.into(), crate::investments::after_fresh_start(held, as_of));
+    }
     if let Some(schedules) = source.extra.get("schedules").and_then(Value::as_array) {
         next.extra.insert("schedules".into(), Value::Array(schedules.iter().filter(|s| s["nextDate"].is_string()).cloned().collect()));
     }

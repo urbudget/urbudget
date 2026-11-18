@@ -51,7 +51,8 @@ final class LocalizationTests: XCTestCase {
         let arabic = try XCTUnwrap(NSDictionary(contentsOf: try XCTUnwrap(try bundle("ar").url(forResource: "Localizable", withExtension: "stringsdict"))))
         let english = try XCTUnwrap(NSDictionary(contentsOf: try XCTUnwrap(try bundle("en").url(forResource: "Localizable", withExtension: "stringsdict"))))
         let keys = ["%lld transactions", "transactions.inSentence", "Updated %lld transactions.", "%lld budgets need review",
-                    "Removed %lld backups", "Remove %lld older backups?", "%lld days", "%lld months", "%lld years", "%lld rows"]
+                    "Removed %lld backups", "Remove %lld older backups?", "%lld days", "%lld months", "%lld years", "%lld rows",
+                    "%lld holdings", "Review %lld deposits"]
         for key in keys {
             let forms = try XCTUnwrap(pluralForms(arabic[key]), "No Arabic plural for \(key)")
             XCTAssertEqual(Set(forms), ["zero", "one", "two", "few", "many", "other"], key)

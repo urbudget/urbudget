@@ -9,7 +9,7 @@ use super::{money, new_id};
 use crate::domain::*;
 use crate::i18n::{comma, list_separator};
 use crate::patch::Patch;
-use crate::{bank_import, engine, ledger, loans, t, workflows};
+use crate::{bank_import, engine, investments, ledger, loans, t, workflows};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::cmp::Ordering;
@@ -204,6 +204,31 @@ pub enum Change {
     Schedules { ops: Vec<ScheduleOp> },
     /// Transactions the user attached to their message, deleted.
     Delete { ids: Vec<String> },
+    /// Money moved into or out of an investment account, as its broker listed it
+    /// (`investments::pending`), brought into the budget.
+    Deposits { account: String, picks: Vec<Pick> },
+    /// What an investment account holds on a day, read from a file the user gave or told in
+    /// words (`investments::record`).
+    Holdings { account: String, snapshot: investments::Snapshot },
+}
+
+/// What to do with one row of an investment account's review.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Pick {
+    /// The row's id.
+    pub row: String,
+    /// The transaction already in the budget that is this money, by its id among the row's
+    /// choices: it's matched, or joined to the account as a transfer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub matching: Option<String>,
+    /// The account the money came from or went to, for a row added as a transfer with it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub other: Option<String>,
+}
+/// An investment account's review rows that are still to bring in, as the budget has them now.
+fn waiting(b: &Budget, account: &str) -> Result<Vec<bank_import::Row>, String> {
+    Ok(bank_import::review_near(b, account, investments::pending(b, account))?.into_iter().filter(|r| !r.duplicate).collect())
 }
 
 /// Where the notes the assistant keeps are, in the budget's extras: a list of sentences.
@@ -563,6 +588,8 @@ impl Change {
             Change::Categories { .. } => "categories",
             Change::Schedules { .. } => "schedules",
             Change::Delete { .. } => "delete",
+            Change::Deposits { .. } => "transactions",
+            Change::Holdings { .. } => "transactions",
         }
     }
     /// The budget after the change, or why it can't be made.
@@ -846,6 +873,23 @@ impl Change {
                 }
                 b.transactions.retain(|t| !ids.contains(&t.id));
             }
+            Change::Deposits { account, picks } => {
+                let rows = waiting(&b, account)?;
+                let mut choices = vec![];
+                for p in picks {
+                    // One brought in since (in the app's own review, say) is simply done.
+                    let Some(row) = rows.iter().find(|r| r.id == p.row) else { continue };
+                    let mut row = row.clone();
+                    if row.transfer_account_id.is_none() && p.matching.is_none() {
+                        row.transfer_account_id = p.other.clone();
+                    }
+                    choices.push(bank_import::Choice { row, action: if p.matching.is_some() { "match" } else { "new" }.into(), match_id: p.matching.clone() });
+                }
+                b = investments::import(b, account, choices)?;
+            }
+            Change::Holdings { account, snapshot } => {
+                b = investments::record(b, account, snapshot.clone())?;
+            }
             Change::Notes { add, remove } => {
                 let mut kept = notes(&b);
                 kept.retain(|n| !remove.contains(n));
@@ -857,6 +901,8 @@ impl Change {
                 keep_notes(&mut b, kept)?;
             }
         }
+        // A broker account's balance stays the broker's value whatever was added to it.
+        investments::settle(&mut b);
         validate(&b)?;
         Ok(b)
     }
@@ -1154,6 +1200,8 @@ impl Change {
             Change::Categories { ops } => ops.is_empty(),
             Change::Schedules { ops } => ops.is_empty(),
             Change::Delete { ids } => ids.is_empty(),
+            Change::Deposits { picks, .. } => picks.is_empty(),
+            Change::Holdings { snapshot, .. } => snapshot.positions.is_empty() && snapshot.total.trim().is_empty() && snapshot.cash.trim().is_empty(),
         }
     }
     /// One new transaction, shown by its splits.
@@ -1164,7 +1212,7 @@ impl Change {
         }
     }
     /// The change as the user chose on its card (`full`, the card of all of it).
-    fn revised(&self, r: &Revision, full: &Card) -> Result<Change, String> {
+    pub(super) fn revised(&self, r: &Revision, full: &Card) -> Result<Change, String> {
         let label = |key: &str| full.rows.iter().find(|row| row.key.as_deref() == Some(key)).map_or_else(String::new, |row| row.label.clone());
         Ok(match self {
             Change::Moves { month, moves } => {
@@ -1320,6 +1368,16 @@ impl Change {
             }
             Change::Schedules { ops } => Change::Schedules { ops: ops.iter().enumerate().filter(|(i, _)| !r.skips(&format!("h:{i}"))).map(|(_, op)| op.clone()).collect() },
             Change::Delete { ids } => Change::Delete { ids: ids.iter().filter(|id| !r.skips(&format!("t:{id}"))).cloned().collect() },
+            Change::Deposits { account, picks } => Change::Deposits { account: account.clone(), picks: picks.iter().filter(|p| !r.skips(&format!("d:{}", p.row))).cloned().collect() },
+            Change::Holdings { account, snapshot } => {
+                let mut kept = snapshot.clone();
+                kept.positions.retain(|p| !r.skips(&holding_key(&crate::flex::clean(&p.symbol), &crate::flex::clean(&p.name))));
+                // With a holding left out, the account's whole value is no longer the one given.
+                if kept.positions.len() != snapshot.positions.len() {
+                    kept.total = String::new();
+                }
+                Change::Holdings { account: account.clone(), snapshot: kept }
+            }
         })
     }
 }
@@ -1770,6 +1828,79 @@ fn card_as(change: &Change, before: &Budget, after: &Budget, single: Option<bool
                 ..Card::default()
             })
         }
+        Change::Deposits { account, picks } => {
+            let was = Names::new(before);
+            let waiting = waiting(before, account)?;
+            let mut rows = vec![];
+            let mut touched = vec![];
+            for p in picks {
+                let Some(row) = waiting.iter().find(|r| r.id == p.row) else { continue };
+                // What it becomes: the transaction it's matched to, a transfer with another
+                // account, or an entry with no other side.
+                let found = p.matching.as_ref().and_then(|id| {
+                    let own = row.candidate_details.iter().find(|c| c.id == *id).map_or(id.as_str(), |c| c.transaction_id.as_str());
+                    before.transactions.iter().find(|t| t.id == own)
+                });
+                let other = row.transfer_account_id.as_ref().or(p.other.as_ref());
+                let detail = match (found, other) {
+                    (Some(t), _) if t.account_id != *account && t.transfer_account_id.as_deref() != Some(account.as_str()) => {
+                        t!("Joins {payee} on {date} in {account} as a transfer", payee = t.payee, date = short_date(&t.date), account = was.account(&t.account_id))
+                    }
+                    (Some(t), _) => t!("Already in the budget on {date}: matched", date = short_date(&t.date)),
+                    (None, Some(other)) if row.amount < 0 => t!("Transfer to {account}", account = was.account(other)),
+                    (None, Some(other)) => t!("Transfer from {account}", account = was.account(other)),
+                    (None, None) => t!("Added with no other account"),
+                };
+                touched.push(found.map_or_else(|| row.id.clone(), |t| t.id.clone()));
+                rows.push(Row {
+                    label: format!("{} · {}", if row.memo.is_empty() { row.payee.as_str() } else { row.memo.as_str() }, short_date(&row.date)),
+                    detail: Some(detail),
+                    amount: Some(row.amount),
+                    // The budget keeps its own figure for a match made in another currency.
+                    badge: found.filter(|t| t.amount.abs() != row.amount.abs()).map(|t| t!("{amount} in the budget", amount = money(t.amount.abs()))),
+                    key: Some(format!("d:{}", row.id)),
+                    ..Row::default()
+                });
+            }
+            Ok(Card {
+                kicker: t!("Proposal · {account}", account = names.account(account)),
+                rows,
+                note: Some(t!("Money you moved, as Interactive Brokers listed it. In the budget it counts as money put in or taken out, not as a gain or a loss.")),
+                highlight: Highlight { transactions: touched, ..Highlight::default() },
+                ..Card::default()
+            })
+        }
+        Change::Holdings { account, snapshot } => {
+            // As the budget would keep them: in its own currency, a broker's cash worked out.
+            let after = investments::record(before.clone(), account, snapshot.clone())?;
+            let held = investments::find(&after, account).ok_or_else(|| t!("Account not found."))?;
+            let listed = snapshot.as_of == held.as_of;
+            let mut rows: Vec<Row> = vec![];
+            if listed {
+                for p in &held.positions {
+                    let figures = if p.quantity.is_empty() || p.price.is_empty() { String::new() } else { format!("{} × {}", p.quantity, p.price) };
+                    let named = if p.name.is_empty() { "" } else { p.symbol.as_str() };
+                    let detail = [named, figures.as_str()].into_iter().filter(|part| !part.is_empty()).collect::<Vec<_>>().join(" · ");
+                    rows.push(Row {
+                        label: if p.name.is_empty() { p.symbol.clone() } else { p.name.clone() },
+                        detail: (!detail.is_empty()).then_some(detail),
+                        amount: Some(p.value),
+                        badge: p.cost.map(|cost| t!("cost {amount}", amount = money(cost))),
+                        key: Some(holding_key(&p.symbol, &p.name)),
+                        ..Row::default()
+                    });
+                }
+                rows.extend(held.cash.iter().map(|c| Row { label: t!("Cash"), amount: Some(c.value), ..Row::default() }));
+            }
+            let value = held.values.iter().find(|(day, _)| *day == snapshot.as_of).map_or(held.total, |(_, value)| *value);
+            Ok(Card {
+                kicker: t!("Proposal · {account}", account = names.account(account)),
+                rows,
+                total: Some(Row { label: t!("Value on {date}", date = short_date(&snapshot.as_of)), amount: Some(value), ..Row::default() }),
+                note: Some(t!("The account's balance follows this value. What it changes by beyond the money you put in or take out is recorded as Market change.")),
+                ..Card::default()
+            })
+        }
         Change::Notes { add, remove } => {
             let row = |(i, note): (usize, &String), sign: char, badge: String| Row { label: note.clone(), badge: Some(badge), key: Some(format!("n:{sign}{i}")), ..Row::default() };
             let mut rows: Vec<Row> = add.iter().enumerate().map(|n| row(n, '+', t!("remember"))).collect();
@@ -1819,6 +1950,10 @@ fn flag_label(color: &str) -> String {
 fn capitalize(s: &str) -> String {
     let mut c = s.chars();
     c.next().map_or(String::new(), |f| f.to_uppercase().collect::<String>() + c.as_str())
+}
+/// What a holding's row on a card is known by: its symbol, or its name when it has none.
+fn holding_key(symbol: &str, name: &str) -> String {
+    format!("p:{}", if symbol.is_empty() { name } else { symbol })
 }
 fn short_date(date: &str) -> String {
     chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").map_or_else(|_| date.to_owned(), crate::i18n::day_month)

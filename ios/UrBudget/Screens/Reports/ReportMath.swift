@@ -350,7 +350,8 @@ enum ReportMath {
             ReportMonth(month: m.text("month"), income: m.long("income"), spending: m.long("spending"), netIncome: m.long("netIncome"),
                         assets: m.long("assets"), debt: m.long("debt"), netWorth: m.long("netWorth"), inflow: m.long("inflow"),
                         outflow: m.long("outflow"), categories: ReportAmounts(json: m["categories"]),
-                        incomeSources: ReportAmounts(json: m["incomeSources"]), accounts: ReportAmounts(json: m["accounts"]))
+                        incomeSources: ReportAmounts(json: m["incomeSources"]), accounts: ReportAmounts(json: m["accounts"]),
+                        market: m.long("market"), invested: m.long("invested"))
         }
         let payees = json["payees"].object.filter { $0.value.isObject }.sorted { $0.key < $1.key }
             .map { ReportPayeeSpend(name: $0.key, amount: $0.value.long("amount"), count: $0.value.long("count"),
@@ -363,7 +364,98 @@ enum ReportMath {
                           transactionCount: json.has("transactionCount") ? json.long("transactionCount") : nil,
                           ageOfMoney: json["ageOfMoney"].isNull ? nil : json.long("ageOfMoney"),
                           openingAccounts: json["openingAccounts"].isObject ? ReportAmounts(json: json["openingAccounts"]) : nil,
-                          ageOfMoneyByMonth: ages)
+                          ageOfMoneyByMonth: ages, invested: json.long("invested"))
+    }
+
+    // MARK: The engine's investments report
+
+    /// An amount the engine may leave out.
+    private static func optionalAmount(_ json: JSON, _ key: String) -> Int64? {
+        json[key].isNull ? nil : json.long(key)
+    }
+
+    /// A rate or share the engine may leave out.
+    private static func optionalNumber(_ json: JSON, _ key: String) -> Double? {
+        switch json[key] {
+        case .double(let value): return value.isFinite ? value : nil
+        case .int(let value): return Double(value)
+        default: return nil
+        }
+    }
+
+    /// A figure in its own currency, as the decimal text the engine writes it, or nil where it isn't known.
+    private static func optionalDecimal(_ json: JSON, _ key: String) -> String? {
+        let text = json.text(key)
+        return text.isEmpty ? nil : text
+    }
+
+    private static func parseShares(_ rows: [JSON]) -> [PortfolioPart] {
+        rows.map { PortfolioPart(key: $0.text("key"), value: $0.long("value"), share: optionalNumber($0, "share") ?? 0, amount: optionalDecimal($0, "amount")) }
+    }
+
+    /// An account's cash today, by currency.
+    private static func parseCash(_ rows: [JSON]) -> [PortfolioCash] {
+        rows.map { PortfolioCash(currency: $0.text("currency"), amount: optionalDecimal($0, "amount"), value: $0.long("value")) }
+    }
+
+    /// What an account's balance was in at a month's end, or nil where that isn't kept.
+    private static func parseParts(_ json: JSON) -> PortfolioParts? {
+        guard json.isObject else { return nil }
+        return PortfolioParts(month: json.text("month"), asOf: json.text("asOf"), byKind: parseShares(json.rows("byKind")),
+                              cash: json.long("cash"), accrued: json.long("accrued"), rest: json.long("rest"))
+    }
+
+    /// The engine's `investmentsReport`: the accounts with holdings over a range, and what they hold today.
+    static func parsePortfolio(_ json: JSON) -> Portfolio {
+        let sum = json["total"]
+        let total = PortfolioTotal(start: sum.long("start"), end: sum.long("end"), put: sum.long("put"), gain: sum.long("gain"),
+                                   rate: optionalNumber(sum, "rate"), yearly: optionalNumber(sum, "yearly"), days: Int(sum.long("days")),
+                                   realised: optionalAmount(sum, "realised"))
+        let months = json.rows("months").map { m in
+            PortfolioMonth(month: m.text("month"), value: m.long("value"), gain: m.long("gain"), put: m.long("put"),
+                           byAccount: ReportAmounts(json: m["byAccount"]), realised: optionalAmount(m, "realised"))
+        }
+        let accounts = json.rows("accounts").map { a in
+            PortfolioAccount(accountId: a.text("accountId"), source: a.text("source"), sourceAccount: a.text("sourceAccount"), asOf: a.text("asOf"),
+                             joined: a.text("joined"), start: a.long("start"), end: a.long("end"), put: a.long("put"), gain: a.long("gain"),
+                             rate: optionalNumber(a, "rate"), estimatedDays: Int(a.long("estimatedDays")), missing: a["missing"].array.map(\.string),
+                             sparse: a.flag("sparse"), startParts: parseParts(a["startParts"]), endParts: parseParts(a["endParts"]),
+                             realised: optionalAmount(a, "realised"), cash: parseCash(a.rows("cash")))
+        }
+        let held = json["allocation"]
+        let allocation = PortfolioAllocation(
+            asOf: held.text("asOf"), total: held.long("total"), count: Int(held.long("count")), cash: held.long("cash"), accrued: held.long("accrued"),
+            cost: optionalAmount(held, "cost"), unrealised: optionalAmount(held, "unrealised"), unrealisedRate: optionalNumber(held, "unrealisedRate"),
+            largestShare: optionalNumber(held, "largestShare"), topFiveShare: optionalNumber(held, "topFiveShare"),
+            byKind: parseShares(held.rows("byKind")), byAccount: parseShares(held.rows("byAccount")), byCurrency: parseShares(held.rows("byCurrency")))
+        let holdings = json.rows("holdings").map { h in
+            PortfolioHolding(key: h.text("key"), symbol: h.text("symbol"), name: h.text("name"), group: h.text("group"), one: h.text("one"),
+                             currency: h.text("currency"), value: h.long("value"), cost: optionalAmount(h, "cost"), gain: optionalAmount(h, "gain"),
+                             rate: optionalNumber(h, "rate"), share: optionalNumber(h, "share") ?? 0, accounts: h["accounts"].array.map(\.string),
+                             instrument: h.text("instrument"), amount: optionalDecimal(h, "amount"))
+        }
+        let paid = json["income"]
+        let incomeMonths = paid.rows("months").map { m in
+            PortfolioIncomeMonth(month: m.text("month"), dividends: m.long("dividends"), interest: m.long("interest"), tax: m.long("tax"),
+                                 fees: m.long("fees"), other: m.long("other"), commissions: optionalAmount(m, "commissions"))
+        }
+        let commissions = paid.rows("commissions").map { c in
+            PortfolioCommission(accountId: c.text("accountId"), from: c.text("from"), to: c.text("to"), amount: c.long("amount"))
+        }
+        let incomeAccounts = paid.rows("byAccount").map { a in
+            PortfolioIncomeAccount(accountId: a.text("accountId"), dividends: a.long("dividends"), interest: a.long("interest"), tax: a.long("tax"),
+                                   fees: a.long("fees"), other: a.long("other"), commissions: optionalAmount(a, "commissions"))
+        }
+        let incomeHoldings = paid.rows("byHolding").map { h in
+            PortfolioIncomeHolding(key: h.text("key"), symbol: h.text("symbol"), name: h.text("name"), dividends: h.long("dividends"), tax: h.long("tax"),
+                                   value: optionalAmount(h, "value"), yieldRate: optionalNumber(h, "yield"))
+        }
+        let income = PortfolioIncome(
+            months: incomeMonths, byAccount: incomeAccounts, byHolding: incomeHoldings, dividends: paid.long("dividends"), interest: paid.long("interest"), tax: paid.long("tax"), fees: paid.long("fees"),
+            other: paid.long("other"), yieldRate: optionalNumber(paid, "yield"), commissions: commissions,
+            reporting: paid["reporting"].array.map(\.string), silent: paid["silent"].array.map(\.string))
+        return Portfolio(from: json.text("from"), to: json.text("to"), total: total, months: months, accounts: accounts, allocation: allocation,
+                         holdings: holdings, income: income, unfilled: json["unfilled"].array.map(\.string))
     }
 
     // MARK: The budget, as reports read it
@@ -371,7 +463,8 @@ enum ReportMath {
     /// The balance sheet's sections, named in the app's language; a section's name is also its key.
     enum SheetSection {
         static let cash = String(localized: "Cash and bank")
-        static let investments = String(localized: "Investments")
+        /// Holdings no source gave a kind for, and an investment account nothing breaks down.
+        static let otherInvestments = String(localized: "Other investments")
         static let property = String(localized: "reports.section.property", defaultValue: "Property", comment: "Balance sheet section: houses and land.")
         static let vehicles = String(localized: "Vehicles")
         static let receivables = String(localized: "Receivables")
@@ -387,13 +480,21 @@ enum ReportMath {
 
     private static let sections: [String: String] = [
         "checking": SheetSection.cash, "savings": SheetSection.cash, "cash": SheetSection.cash,
-        "investment": SheetSection.investments, "retirement": SheetSection.investments, "property": SheetSection.property,
+        "investment": SheetSection.otherInvestments, "retirement": SheetSection.otherInvestments, "property": SheetSection.property,
         "vehicle": SheetSection.vehicles, "receivable": SheetSection.receivables, "otherAsset": SheetSection.otherAssets,
         "creditCard": SheetSection.creditCards, "lineOfCredit": SheetSection.linesOfCredit, "mortgage": SheetSection.mortgages,
         "autoLoan": SheetSection.loans, "studentLoan": SheetSection.loans, "personalLoan": SheetSection.loans,
         "medicalDebt": SheetSection.otherDebts, "otherDebt": SheetSection.otherDebts,
     ]
     private static let liabilities: Set<String> = ["creditCard", "lineOfCredit", "mortgage", "autoLoan", "studentLoan", "personalLoan", "medicalDebt", "otherDebt"]
+
+    /// The kinds of holding with a section of their own on the balance sheet, as the engine names them, in the statement's order.
+    static let sheetKinds = ["Stocks", "Funds", "Bonds", "Options", "Futures", "Currencies", "Crypto", "Commodities", "CFDs"]
+
+    /// The section a kind of holding goes under: its own, or Other investments where a source gave no kind.
+    static func sectionOf(kind: String) -> String {
+        sheetKinds.contains(kind) ? HoldingsPage.kindName(kind) : SheetSection.otherInvestments
+    }
 
     static func isLiability(_ type: String) -> Bool { liabilities.contains(type) }
     static func sectionOf(_ type: String) -> String { sections[type] ?? (isLiability(type) ? SheetSection.otherDebts : SheetSection.otherAssets) }
@@ -450,8 +551,10 @@ enum ReportMath {
             let date = transaction.text("date")
             if !date.isEmpty && date < earliest { earliest = date }
         }
-        return ReportBudget(currency: budget.text("currency"), accounts: accounts, categories: categories, groupOf: groupOf, nameOf: nameOf,
-                            spendingGroups: spending, earliestMonth: String(earliest.prefix(7)))
+        var context = ReportBudget(currency: budget.text("currency"), accounts: accounts, categories: categories, groupOf: groupOf, nameOf: nameOf,
+                                   spendingGroups: spending, earliestMonth: String(earliest.prefix(7)))
+        context.held = Set(budget.rows(Investments.key).map { $0.text("accountId") })
+        return context
     }
 
     // MARK: Ranges and filters
@@ -505,6 +608,39 @@ enum ReportMath {
         }
     }
 
+    /// What a report's one filter chip says is in force: "Last 12 months · All accounts", with the
+    /// categories when they're narrowed, and without the months for a view that takes none.
+    static func filterLabel(range: String?, accounts: String, categories: String?) -> String {
+        [range, accounts, categories].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /// How many rows a report's list shows before the rest fold behind "Show all".
+    static let foldAt = 6
+
+    /// Whether a list is long enough to fold: nine rows or more, so the fold hides at least three
+    /// ("Show all 7" over one hidden row is more to read than the row).
+    static func folds(_ count: Int) -> Bool { count >= foldAt + 3 }
+
+    /// A list's rows as a report first shows them: all of a short list, else the first six until it's opened.
+    static func folded<Row>(_ rows: [Row], open: Bool) -> [Row] {
+        open || !folds(rows.count) ? rows : Array(rows.prefix(foldAt))
+    }
+
+    /// The line under the filter chip in Spending and Income when money moved into or out of
+    /// investment accounts in the range: it counts as neither, so the line says how much is left out.
+    /// Nil when nothing moved.
+    static func investedNote(_ invested: Int64, currency: String) -> String? {
+        guard invested != 0 else { return nil }
+        let amount = Money.format(Int64(clamping: invested.magnitude), currency: currency)
+        return invested > 0 ? String(localized: "\(amount) moved into investments isn't counted here.")
+            : String(localized: "\(amount) taken out of investments isn't counted here.")
+    }
+
+    /// Rows that stay in view under a folded list: its totals, and a sentence about them.
+    static func staysInView(_ style: ReportRowStyle) -> Bool {
+        style == .total || style == .net || style == .note
+    }
+
     static func filterToggle(_ groups: [ReportFilterGroup], _ selected: Set<String>, _ ids: [String], on: Bool) -> Set<String> {
         let all = groups.flatMap(\.items).map(\.id)
         var next = Set(selected.isEmpty ? all : all.filter { selected.contains($0) })
@@ -525,6 +661,22 @@ enum ReportMath {
         ]
         return groups.filter { !$0.accounts.isEmpty && (!budgetOnly || $0.budget) }
             .map { ReportFilterGroup(name: $0.name, items: $0.accounts.map { ReportFilterItem(id: $0.id, label: $0.name) }) }
+    }
+
+    /// The investments reports' accounts filter: only accounts with holdings, the open ones then the closed.
+    static func holdingsFilterGroups(_ ctx: ReportBudget) -> [ReportFilterGroup] {
+        let held = ctx.accounts.filter { ctx.held.contains($0.id) }
+        let groups: [(name: String, accounts: [ReportAccount])] = [
+            (String(localized: "Investments"), held.filter { !$0.archived }),
+            (String(localized: "Closed"), held.filter(\.archived)),
+        ]
+        return groups.filter { !$0.accounts.isEmpty }
+            .map { ReportFilterGroup(name: $0.name, items: $0.accounts.map { ReportFilterItem(id: $0.id, label: $0.name) }) }
+    }
+
+    /// Names in a sentence: "Broker, Pension".
+    static func nameList(_ names: [String]) -> String {
+        names.joined(separator: AppLanguage.isRightToLeft ? "، " : ", ")
     }
 
     /// The categories filter: categories that can hold spending, by group, "Needs a category" last.
@@ -647,6 +799,201 @@ struct ReportMonth: Sendable {
     var categories: ReportAmounts
     var incomeSources: ReportAmounts
     var accounts: ReportAmounts
+    /// The month's market changes in the accounts counted: what investments gained or lost by themselves.
+    var market: Int64 = 0
+    /// Money moved from budget accounts into investment accounts less what came back, left out of spending and income.
+    var invested: Int64 = 0
+}
+
+/// A part of the holdings: a kind, an account or a currency, with its share of what they're worth.
+struct PortfolioPart: Equatable, Sendable {
+    var key: String
+    var value: Int64
+    var share: Double
+    /// For a currency: what is held in it, in that currency, as the engine writes the decimal; nil where any of it isn't known.
+    var amount: String? = nil
+}
+
+/// An account's cash in one currency: the amount in that currency, and its value in the budget's.
+struct PortfolioCash: Equatable, Sendable {
+    var currency: String
+    var amount: String?
+    var value: Int64
+}
+
+/// What an account's balance was in at a month's end: its holdings by kind, cash, income still to
+/// be paid, and what the balance has moved since the prices. Together they are the balance.
+struct PortfolioParts: Equatable, Sendable {
+    var month: String
+    var asOf: String
+    var byKind: [PortfolioPart]
+    var cash: Int64
+    var accrued: Int64
+    var rest: Int64
+}
+
+/// How the accounts did over the range, together.
+struct PortfolioTotal: Equatable, Sendable {
+    var start: Int64
+    var end: Int64
+    var put: Int64
+    var gain: Int64
+    var rate: Double?
+    /// The yearly rate, for a range over twelve months.
+    var yearly: Double?
+    var days: Int
+    /// The gains realised by trades in the range; nil where no account has its trades on record.
+    var realised: Int64?
+}
+
+struct PortfolioMonth: Equatable, Sendable {
+    var month: String
+    var value: Int64
+    var gain: Int64
+    var put: Int64
+    /// Each account's value at the month's end, from the month it joins.
+    var byAccount: ReportAmounts
+    var realised: Int64?
+}
+
+/// One account with holdings over the range.
+struct PortfolioAccount: Equatable, Sendable {
+    var accountId: String
+    /// "ibkr", "simplefin", "file" or "manual".
+    var source: String
+    var sourceAccount: String
+    var asOf: String
+    /// The first day it was valued.
+    var joined: String
+    var start: Int64
+    var end: Int64
+    var put: Int64
+    var gain: Int64
+    var rate: Double?
+    var estimatedDays: Int
+    var missing: [String]
+    /// Valued only when it's updated, so a gain lands in the month of the next update.
+    var sparse: Bool
+    /// What its balance was in just before the range and at its end, where that is known.
+    var startParts: PortfolioParts?
+    var endParts: PortfolioParts?
+    var realised: Int64?
+    /// Its cash today, by currency; empty for an account nothing keeps holdings for, or from an engine that doesn't say.
+    var cash: [PortfolioCash] = []
+}
+
+/// Today's holdings across the accounts.
+struct PortfolioAllocation: Equatable, Sendable {
+    var asOf: String
+    var total: Int64
+    var count: Int
+    var cash: Int64
+    var accrued: Int64
+    var cost: Int64?
+    var unrealised: Int64?
+    var unrealisedRate: Double?
+    var largestShare: Double?
+    var topFiveShare: Double?
+    var byKind: [PortfolioPart]
+    var byAccount: [PortfolioPart]
+    var byCurrency: [PortfolioPart]
+}
+
+/// A holding, merged across the accounts that have it.
+struct PortfolioHolding: Equatable, Sendable {
+    var key: String
+    var symbol: String
+    var name: String
+    var group: String
+    var one: String
+    var currency: String
+    var value: Int64
+    var cost: Int64?
+    var gain: Int64?
+    var rate: Double?
+    var share: Double
+    var accounts: [String]
+    /// What it is, as the engine names it in English ("ETF", "Call option", "Stock"); empty from an engine that doesn't say.
+    var instrument: String = ""
+    /// What it is worth in its own currency, as the engine writes the decimal; nil where that isn't known.
+    var amount: String? = nil
+}
+
+struct PortfolioIncomeMonth: Equatable, Sendable {
+    var month: String
+    var dividends: Int64
+    var interest: Int64
+    var tax: Int64
+    var fees: Int64
+    var other: Int64
+    /// The month's commissions on trades; nil where they aren't known by the month.
+    var commissions: Int64?
+}
+
+/// What one account earned and was charged over the range.
+struct PortfolioIncomeAccount: Equatable, Sendable {
+    var accountId: String
+    var dividends: Int64
+    var interest: Int64
+    var tax: Int64
+    var fees: Int64
+    var other: Int64
+    /// The commissions on its trades in the range: by the month where known, else its statement's total, else nil.
+    var commissions: Int64?
+}
+
+/// The dividends a holding paid over the range, and the tax withheld from them.
+struct PortfolioIncomeHolding: Equatable, Sendable {
+    var key: String
+    var symbol: String
+    var name: String
+    var dividends: Int64
+    var tax: Int64
+    /// What it is worth today, where it's still held, and the dividends over that (the engine's `yield`).
+    var value: Int64?
+    var yieldRate: Double?
+}
+
+/// The commissions on an account's trades over its statement, for an account whose trades aren't known by the month.
+struct PortfolioCommission: Equatable, Sendable {
+    var accountId: String
+    var from: String
+    var to: String
+    var amount: Int64
+}
+
+/// What the accounts earned and were charged over the range.
+struct PortfolioIncome: Equatable, Sendable {
+    var months: [PortfolioIncomeMonth]
+    /// Each account with income on record, in the order of `reporting`; together they are the totals.
+    var byAccount: [PortfolioIncomeAccount]
+    /// Dividends by holding, largest first.
+    var byHolding: [PortfolioIncomeHolding]
+    var dividends: Int64
+    var interest: Int64
+    var tax: Int64
+    var fees: Int64
+    var other: Int64
+    /// Dividends and interest over the average value of the accounts that report them (the engine's `yield`).
+    var yieldRate: Double?
+    var commissions: [PortfolioCommission]
+    /// The accounts with income on record, and the ones without.
+    var reporting: [String]
+    var silent: [String]
+}
+
+/// The engine's `investmentsReport` (crates/urbudget-core investment_stats.rs).
+struct Portfolio: Equatable, Sendable {
+    var from: String
+    var to: String
+    var total: PortfolioTotal
+    var months: [PortfolioMonth]
+    var accounts: [PortfolioAccount]
+    var allocation: PortfolioAllocation
+    var holdings: [PortfolioHolding]
+    var income: PortfolioIncome
+    /// Open investment accounts nothing keeps holdings for.
+    var unfilled: [String]
 }
 
 struct ReportPayeeSpend: Equatable, Sendable {
@@ -670,6 +1017,9 @@ struct ReportData: Sendable {
     var ageOfMoney: Int64?
     var openingAccounts: ReportAmounts?
     var ageOfMoneyByMonth: [String: Int64?]
+    /// The range's money moved into investment accounts less what came back: positive when more went in.
+    /// It counts as neither spending nor income.
+    var invested: Int64 = 0
 }
 
 struct ReportAccount: Equatable, Sendable {
@@ -710,6 +1060,8 @@ struct ReportBudget: Sendable {
     var accountsById: [String: ReportAccount]
     /// The currency over a money axis, unless amounts are shown without one.
     var axisUnit: String?
+    /// The accounts something keeps holdings for.
+    var held: Set<String> = []
 
     init(currency: String, accounts: [ReportAccount], categories: [ReportCategory], groupOf: [String: String], nameOf: [String: String],
          spendingGroups: [String], earliestMonth: String) {

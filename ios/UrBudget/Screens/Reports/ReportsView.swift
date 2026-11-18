@@ -2,69 +2,129 @@ import SwiftUI
 import Observation
 import UniformTypeIdentifiers
 
-/// A report: its page name, its group, its symbol, what it shows, and whether the Categories filter applies.
+/// A view of a report: one of the report bodies, by the id it has always had, with its label on
+/// the report's switch, the report it is a view of, what it shows, and whether the Categories
+/// filter applies.
 struct ReportInfo: Identifiable, Hashable {
     var id: String
     var label: String
-    /// "Spending", "Income" or "Wealth": an identifier; `groupName` is what people see.
-    var group: String
-    var icon: String
+    /// The report it is a view of: a `ReportTopic` id.
+    var report: String
     var blurb: String
     var categories = false
 
+    /// Every view, each report's in the order of its switch: a report opens on its first.
     static let all: [ReportInfo] = [
-        ReportInfo(id: "categories", label: String(localized: "Spending by category"), group: "Spending", icon: "chart.pie",
+        ReportInfo(id: "categories", label: String(localized: "Category"), report: "spending",
                    blurb: String(localized: "Where your money went, by group and category, and how last month compares."), categories: true),
-        ReportInfo(id: "payees", label: String(localized: "Spending by payee"), group: "Spending", icon: "storefront",
+        ReportInfo(id: "payees", label: String(localized: "Payee"), report: "spending",
                    blurb: String(localized: "Who you pay most, and how often."), categories: true),
-        ReportInfo(id: "trends", label: String(localized: "Spending over time"), group: "Spending", icon: "chart.bar",
+        ReportInfo(id: "trends", label: String(localized: "Over time"), report: "spending",
                    blurb: String(localized: "Spending month by month, by group or in total."), categories: true),
-        ReportInfo(id: "calendar", label: String(localized: "Spending calendar"), group: "Spending", icon: "calendar",
+        ReportInfo(id: "calendar", label: String(localized: "Calendar"), report: "spending",
                    blurb: String(localized: "Spending day by day: busy days, quiet days and weekdays."), categories: true),
-        ReportInfo(id: "incomeExpense", label: String(localized: "Income vs. expense"), group: "Income", icon: "arrow.left.arrow.right",
+        ReportInfo(id: "incomeExpense", label: String(localized: "Vs. spending"), report: "income",
                    blurb: String(localized: "Income, spending and the surplus left in your budget."), categories: true),
-        ReportInfo(id: "income", label: String(localized: "Income breakdown"), group: "Income", icon: "banknote",
+        ReportInfo(id: "income", label: String(localized: "Sources"), report: "income",
                    blurb: String(localized: "Where your income comes from, and how steady it is.")),
-        ReportInfo(id: "cashflow", label: String(localized: "Money in and out"), group: "Income", icon: "arrow.up.arrow.down",
+        ReportInfo(id: "cashflow", label: String(localized: "In and out"), report: "income",
                    blurb: String(localized: "Account movements across your budget boundary, including credit purchases."), categories: true),
-        ReportInfo(id: "networth", label: String(localized: "Net worth"), group: "Wealth", icon: "chart.line.uptrend.xyaxis",
+        ReportInfo(id: "networth", label: String(localized: "Over time"), report: "networth",
                    blurb: String(localized: "What you own minus what you owe, month by month.")),
-        ReportInfo(id: "balance", label: String(localized: "Balance sheet"), group: "Wealth", icon: "building.columns",
-                   blurb: String(localized: "Assets and liabilities by type, with the ratios that matter.")),
-        ReportInfo(id: "balances", label: String(localized: "Balance over time"), group: "Wealth", icon: "chart.xyaxis.line",
+        ReportInfo(id: "balances", label: String(localized: "By account"), report: "networth",
                    blurb: String(localized: "Each account's balance at the end of every month.")),
-        ReportInfo(id: "forecast", label: String(localized: "Forecast"), group: "Wealth", icon: "chart.line.flattrend.xyaxis",
+        ReportInfo(id: "balance", label: String(localized: "Balance sheet"), report: "balance",
+                   blurb: String(localized: "Assets and liabilities by type, with the ratios that matter.")),
+        ReportInfo(id: "performance", label: String(localized: "Performance"), report: ReportTopic.investments,
+                   blurb: String(localized: "How your investments did: their value, what you put in, and what they gained.")),
+        ReportInfo(id: "allocation", label: String(localized: "Allocation"), report: ReportTopic.investments,
+                   blurb: String(localized: "What your investments are in today, across all your accounts.")),
+        ReportInfo(id: "investmentIncome", label: String(localized: "Income and costs"), report: ReportTopic.investments,
+                   blurb: String(localized: "Dividends and interest earned, and the tax and fees paid.")),
+        ReportInfo(id: "forecast", label: String(localized: "Balances"), report: "forecast",
                    blurb: String(localized: "Where your cash and card balances are heading, from what's scheduled.")),
-        ReportInfo(id: "age", label: String(localized: "Cash age"), group: "Wealth", icon: "hourglass",
+        ReportInfo(id: "age", label: String(localized: "Cash age"), report: "forecast",
                    blurb: String(localized: "How long money waits in your accounts before you spend it.")),
     ]
-    static let groups = ["Spending", "Income", "Wealth"]
 
     static func find(_ id: String) -> ReportInfo { all.first { $0.id == id } ?? all[0] }
 
-    /// A group's name, as the title menu lists it.
-    static func groupName(_ group: String) -> String {
-        switch group {
-        case "Spending": return String(localized: "Spending")
-        case "Income": return String(localized: "Income")
-        default: return String(localized: "Wealth")
-        }
-    }
-
-    /// A group's heading in the list of reports.
-    static func groupHeader(_ group: String) -> String {
-        switch group {
-        case "Spending": return String(localized: "Spending reports")
-        case "Income": return String(localized: "Income reports")
-        default: return String(localized: "Wealth reports")
-        }
+    /// Whether any account of the budget has holdings: the Investments report is about them.
+    static func hasHoldings(_ budget: JSON?) -> Bool {
+        !(budget?.rows(Investments.key).isEmpty ?? true)
     }
 }
 
-/// Where the reports' navigation goes: a report (or one group of Spending by category), or the transactions behind a figure.
+/// One of the six reports: its name, the question it answers, its symbol, and the views inside
+/// it. Investments is listed only once an account has holdings.
+struct ReportTopic: Identifiable, Hashable {
+    var id: String
+    var label: String
+    var question: String
+    var icon: String
+
+    static let investments = "investments"
+    static let all: [ReportTopic] = [
+        ReportTopic(id: "spending", label: String(localized: "Spending"), question: String(localized: "Where did my money go?"), icon: "chart.pie"),
+        ReportTopic(id: "income", label: String(localized: "Income"), question: String(localized: "Am I spending less than I earn?"),
+                    icon: "arrow.left.arrow.right"),
+        ReportTopic(id: "networth", label: String(localized: "Net worth"), question: String(localized: "What am I worth, and why did it change?"),
+                    icon: "chart.line.uptrend.xyaxis"),
+        ReportTopic(id: "balance", label: String(localized: "Balance sheet"), question: String(localized: "What do I own and owe?"),
+                    icon: "building.columns"),
+        ReportTopic(id: investments, label: String(localized: "Investments"), question: String(localized: "How are my investments doing?"), icon: "percent"),
+        ReportTopic(id: "forecast", label: String(localized: "Forecast"), question: String(localized: "What's coming up?"),
+                    icon: "chart.line.flattrend.xyaxis"),
+    ]
+
+    static func find(_ id: String) -> ReportTopic { all.first { $0.id == id } ?? all[0] }
+
+    /// The reports to list: Investments only when there are holdings.
+    static func shown(holdings: Bool) -> [ReportTopic] {
+        holdings ? all : all.filter { $0.id != investments }
+    }
+
+    /// Its views, in the order of its switch.
+    var views: [ReportInfo] { ReportInfo.all.filter { $0.report == id } }
+
+    /// Spending and Income leave out money moved into or out of investment accounts, and say so under their filter chip.
+    var leavesOutInvested: Bool { id == "spending" || id == "income" }
+
+    /// The view a report opens on: the one last used in it this session, else its first.
+    static func view(of report: String, remembered: [String: String] = [:]) -> String {
+        let views = find(report).views
+        if let last = remembered[report], views.contains(where: { $0.id == last }) { return last }
+        return views.first?.id ?? ReportInfo.all[0].id
+    }
+
+    /// Where an id leads. There were once fifteen reports, each called by what is now a view's
+    /// id: such an id is still that view, in its report. A report's own id is the view it opens on.
+    static func resolve(_ id: String, remembered: [String: String] = [:]) -> String {
+        if ReportInfo.all.contains(where: { $0.id == id }) { return id }
+        return view(of: id, remembered: remembered)
+    }
+}
+
+/// Where the reports' navigation goes: a report at one of its views, by the view's id (or one
+/// group of Spending by category), the transactions behind a figure, or an account's Holdings page.
 enum ReportNav: Hashable {
     case report(String, group: String?)
     case drill(ReportDrillRequest)
+    case holdings(String)
+}
+
+/// An account's Holdings page, opened from the Performance report.
+private struct ReportHoldingsPage: View {
+    @Environment(BudgetStore.self) private var store
+    var accountId: String
+
+    var body: some View {
+        if let account = store.budget?.row("accounts", id: accountId) {
+            HoldingsPageView(account: account)
+        } else {
+            Color.groupedBackground.ignoresSafeArea()
+        }
+    }
 }
 
 /// The transactions behind a report figure, in the range and filters of the report it came from.
@@ -88,6 +148,8 @@ final class ReportFilters {
     var range: ReportRange?
     var accounts: Set<String> = []
     var categories: Set<String> = []
+    /// The view last used in each report this session, by the report's id.
+    var views: [String: String] = [:]
 }
 
 /// Reads a budget for reports once per snapshot, from whichever task asks first.
@@ -103,9 +165,10 @@ final class ReportBudgetCache: @unchecked Sendable {
     }
 }
 
-/// Reports: cards for this month's spending, income against spending, net worth and cash age over
-/// six months, then every report by group, as YNAB's phone app and Android show them. A report has
-/// its range and filters, charts and tables worked out by the shared engine, and opens the
+/// Reports: an overview of six cards, one for each report (Spending, Income, Net worth, Balance
+/// sheet, Investments once an account has holdings, Forecast), each with its question, a figure
+/// and a small chart over six months. A card opens its report, which has a switch between its
+/// views, one filter chip, charts and tables worked out by the shared engine, and opens the
 /// transactions behind a figure.
 struct ReportsView: View {
     @Environment(BudgetStore.self) private var store
@@ -117,8 +180,8 @@ struct ReportsView: View {
 
     init() {}
 
-    /// On a wide window the list of reports stays at the side and the Overview, or the report
-    /// chosen, is beside it; Back from a report returns to the Overview.
+    /// On a wide window the list of the six reports stays at the side and the Overview, or the
+    /// report chosen, is beside it; Back from a report returns to the Overview.
     var body: some View {
         // By the window's width, or by a fold: the list ends where it runs and the report takes the far side.
         let split = WideLayout.split(.reports, span: span, fold: fold)
@@ -126,7 +189,9 @@ struct ReportsView: View {
         HStack(spacing: 0) {
             if let split {
                 NavigationStack {
-                    ReportsIndex(open: shown) { id in path = id.map { [.report($0, group: nil)] } ?? [] }
+                    ReportsIndex(open: shown) { id in
+                        path = id.map { [.report(ReportTopic.view(of: $0, remembered: filters.views), group: nil)] } ?? []
+                    }
                         .startPaneContent()
                         .navigationTitle("Reports")
                         .barTitle()
@@ -138,7 +203,7 @@ struct ReportsView: View {
                 if split.hinge { FoldGap(width: split.gap) } else { Divider().ignoresSafeArea() }
             }
             NavigationStack(path: $path) {
-                ReportsOverview(cache: cache, listsReports: !wide)
+                ReportsOverview(cache: cache, filters: filters)
                     .navigationTitle(wide ? Text("Overview") : Text("Reports"))
                     .barTitle()
                     .toolbar {
@@ -154,6 +219,8 @@ struct ReportsView: View {
                                 .id(nav)
                         case .drill(let request):
                             ReportDrillView(request: request, cache: cache)
+                        case .holdings(let account):
+                            ReportHoldingsPage(accountId: account)
                         }
                     }
             }
@@ -170,25 +237,22 @@ struct ReportsView: View {
 
     /// The report the pane is on (whatever was opened from it since), or nil on the Overview.
     private var shown: String? {
-        if case .report(let id, _)? = path.first { return id }
+        if case .report(let id, _)? = path.first { return ReportInfo.find(ReportTopic.resolve(id)).report }
         return nil
     }
 }
 
-/// The reports' list on a wide window: the Overview, then every report by group, the open one marked.
+/// The reports' list on a wide window: the Overview, then the six reports, the open one marked.
 private struct ReportsIndex: View {
+    @Environment(BudgetStore.self) private var store
     var open: String?
     var choose: (String?) -> Void
 
     var body: some View {
         List {
             Section { row(nil, String(localized: "Overview"), "square.grid.2x2") }
-            ForEach(ReportInfo.groups, id: \.self) { group in
-                Section {
-                    ForEach(ReportInfo.all.filter { $0.group == group }) { report in row(report.id, report.label, report.icon) }
-                } header: {
-                    Text(ReportInfo.groupHeader(group))
-                }
+            Section {
+                ForEach(ReportTopic.shown(holdings: ReportInfo.hasHoldings(store.budget))) { report in row(report.id, report.label, report.icon) }
             }
         }
         .groupedList()
@@ -236,6 +300,8 @@ private struct PushedReport: View {
                 ReportPage(id: id, group: group, filters: filters, cache: cache) { next = $0 }
             case .drill(let request):
                 ReportDrillView(request: request, cache: cache)
+            case .holdings(let account):
+                ReportHoldingsPage(accountId: account)
             }
         }
         .navigationDestination(item: $next) { PushedReport(nav: $0, filters: filters, cache: cache) }
@@ -250,19 +316,20 @@ private struct ReportOverviewKey: Hashable {
     var attempt: Int
 }
 
+/// The Reports tab's first page: the month the cards end at, then a card for each report with its
+/// question, its headline figure and a small chart. A card's heading opens its report at the view
+/// it was last on.
 private struct ReportsOverview: View {
     @Environment(BudgetStore.self) private var store
     var cache: ReportBudgetCache
-    /// Every report by group under the cards; beside the reports' own list, the list is left to it.
-    var listsReports = true
+    /// The view each report was last on this session.
+    var filters: ReportFilters
     @State private var attempt = 0
     @State private var result: ReportScoped<ReportOverviewKey, ReportOverviewModel?>?
     @State private var failure: ReportScoped<ReportOverviewKey, String>?
     @State private var pickingMonth = false
-    /// The month under a finger on each card's small chart, or -1.
-    @State private var pickedIncome = -1
-    @State private var pickedNetWorth = -1
-    @State private var pickedAge = -1
+    /// The month under a finger on each card's small chart, by the card's report.
+    @State private var picked: [String: Int] = [:]
 
     var body: some View {
         let key = ReportOverviewKey(version: store.version, month: store.month, attempt: attempt)
@@ -277,14 +344,17 @@ private struct ReportsOverview: View {
                 }
             } else if let result {
                 if let model = result.value {
-                    Group { cards(model) }
-                        .disabled(!current)
-                        .opacity(current ? 1 : 0.55)
+                    Group {
+                        ForEach(model.cards) { card in
+                            Section { cardRows(card) }
+                        }
+                    }
+                    .disabled(!current)
+                    .opacity(current ? 1 : 0.55)
                 }
             } else {
                 Section { ProgressView().frame(maxWidth: .infinity).padding(.vertical, 32) }
             }
-            if listsReports { allReports }
         }
         .groupedList()
         .tightTop()
@@ -307,21 +377,42 @@ private struct ReportsOverview: View {
         let budget = store.budget
         let version = store.version
         guard budget != nil, version == key.version, result?.scope != key else { return }
-        let filter: JSON = ["from": .string(Dates.addMonths(key.month, -5)), "to": .string(key.month), "accountIds": [], "categoryIds": []]
+        let from = Dates.addMonths(key.month, -5)
+        let today = Dates.today
+        let filter: JSON = ["from": .string(from), "to": .string(key.month), "accountIds": [], "categoryIds": []]
         do {
             let json = try await store.query("reports", filter)
+            // The holdings' figures for the same months, and the forecast the Forecast report reads:
+            // a card whose figures can't be had is left out.
+            var portfolio: JSON?
+            if ReportInfo.hasHoldings(budget) { portfolio = await investments(from: from, to: key.month) }
+            let held = portfolio
+            let ahead = await forecast(from: today)
             let cache = cache
-            let model = await Task.detached(priority: .userInitiated) {
-                ReportMath.overviewModel(ReportMath.parseReport(json), cache.get(version: version, budget: budget))
+            let model = await Task.detached(priority: .userInitiated) { () -> ReportOverviewModel? in
+                let ctx = cache.get(version: version, budget: budget)
+                return ReportMath.overviewModel(ReportMath.parseReport(json), ctx, portfolio: held.map { ReportMath.parsePortfolio($0) },
+                                                forecast: ahead.map { ReportMath.parseForecast($0) }, today: today)
             }.value
             guard !Task.isCancelled else { return }
             result = ReportScoped(scope: key, value: model)
             // New figures start with no month picked.
-            (pickedIncome, pickedNetWorth, pickedAge) = (-1, -1, -1)
+            picked = [:]
         } catch {
             guard !Task.isCancelled else { return }
             failure = ReportScoped(scope: key, value: BudgetStore.readable(error))
         }
+    }
+
+    /// The engine's investments report for the cards' months, or nil when it can't be had.
+    private func investments(from: String, to: String) async -> JSON? {
+        try? await store.query("investmentsReport", ["from": .string(from), "to": .string(to), "accountIds": []])
+    }
+
+    /// The budget accounts' forecast for the six months ahead, as the Forecast report reads it, or nil when it can't be had.
+    private func forecast(from today: String) async -> JSON? {
+        try? await store.query("forecast", ["today": .string(today), "through": .string(ReportMath.addMonths(day: today, ReportMath.overviewMonthsAhead)),
+                                            "accountIds": []])
     }
 
     private var monthSection: some View {
@@ -353,15 +444,7 @@ private struct ReportsOverview: View {
         }
     }
 
-    private func header(_ title: LocalizedStringKey, icon: String, id: String) -> some View {
-        NavigationLink(value: ReportNav.report(id, group: nil)) {
-            Label(title, systemImage: icon).font(.headline).foregroundStyle(Color.urAccent)
-        }
-        .accessibilityHint("Opens the full report")
-        .listRowSeparator(.hidden)
-    }
-
-    /// A month picked on the income card's small chart: its name, then each series' figure.
+    /// A month picked on a small chart of two series: its name, then each series' figure.
     private func pickedMonth(_ bars: ReportMiniBarsModel, _ index: Int) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             monthCaption(bars, index)
@@ -388,134 +471,56 @@ private struct ReportsOverview: View {
             .foregroundStyle(negative ? Color.urNegative : Color.primary)
     }
 
-    @ViewBuilder private func spendRow(_ row: ReportSpendRow, month: String, dot: Bool) -> some View {
-        let content = HStack(spacing: 10) {
-            if dot {
-                RoundedRectangle(cornerRadius: 3).fill(ReportPalette.color(row.color)).frame(width: 6, height: 18).accessibilityHidden(true)
-            }
-            Text(row.label).lineLimit(1)
-            Spacer(minLength: 8)
-            Text(row.valueText).monospacedDigit().lineLimit(1)
-        }
-        .accessibilityElement(children: .combine)
-        // The rows read as one short table, close together and without lines or arrows between
-        // them, as on Android; a tap still opens the category's transactions.
-        Group {
-            if row.key.hasPrefix("__") && row.key != ReportMath.uncategorized {
-                content
-            } else {
-                content.background {
-                    NavigationLink(value: ReportNav.drill(ReportDrillRequest(from: month, to: month, accounts: [], categories: [],
-                                                                             target: ReportDrillTarget(title: row.label, dimension: "category", key: row.key)))) {
-                        EmptyView()
-                    }
-                    .opacity(0)
-                }
-                .accessibilityAddTraits(.isButton)
+    /// A card: the report's name and question, which open the report, then its headline and small chart.
+    @ViewBuilder private func cardRows(_ card: ReportOverviewCard) -> some View {
+        let report = ReportTopic.find(card.id)
+        let at = picked[card.id] ?? -1
+        NavigationLink(value: ReportNav.report(ReportTopic.view(of: card.id, remembered: filters.views), group: nil)) {
+            VStack(alignment: .leading, spacing: 3) {
+                Label(report.label, systemImage: report.icon).font(.headline).foregroundStyle(Color.urAccent)
+                Text(report.question).font(.subheadline).foregroundStyle(Color.secondary)
             }
         }
+        .accessibilityHint("Opens the full report")
         .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+        VStack(alignment: .leading, spacing: 8) {
+            headline(card, at: at)
+            smallChart(card, at: at)
+        }
+        .padding(.vertical, 4)
     }
 
-    @ViewBuilder private func cards(_ model: ReportOverviewModel) -> some View {
-        Section {
-            header("Spending breakdown", icon: "chart.pie", id: "categories")
-            VStack(alignment: .leading, spacing: 4) {
-                Text(model.monthName).font(.subheadline).foregroundStyle(Color.secondary)
-                bigFigure(model.spendingText, negative: false)
-                if !model.rows.isEmpty {
-                    ReportSegmentBar(rows: model.rows).padding(.vertical, 6)
-                } else if model.nothingSpent {
-                    Text("Nothing spent yet this month.").font(.headline)
-                }
+    /// The card's figure and its note; a month picked on its small chart takes their place.
+    @ViewBuilder private func headline(_ card: ReportOverviewCard, at: Int) -> some View {
+        if let bars = card.bars, bars.labels.indices.contains(at) {
+            if bars.series.count > 1 {
+                pickedMonth(bars, at)
+            } else if let series = bars.series.first, series.values.indices.contains(at), series.texts.indices.contains(at) {
+                bigFigure(series.texts[at], negative: series.values[at] < 0)
+                monthCaption(bars, at)
             }
-            .padding(.vertical, 4)
-            .accessibilityElement(children: .combine)
-            .listRowSeparator(.hidden)
-            if !model.rows.isEmpty {
-                HStack {
-                    Text("Top categories")
-                    Spacer()
-                    Text("Spent")
-                }
-                .font(.footnote)
-                .foregroundStyle(Color.secondary)
-                .accessibilityHidden(true)
-                .listRowSeparator(.hidden)
-                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 2, trailing: 16))
-                ForEach(model.rows) { spendRow($0, month: model.month, dot: true) }
-                // The table's last row keeps a little room from the card's edge.
-                Color.clear.frame(height: 4).listRowSeparator(.hidden).listRowInsets(EdgeInsets()).accessibilityHidden(true)
+        } else {
+            bigFigure(card.figure, negative: card.negative)
+            if let note = card.note {
+                Text(note).font(.subheadline)
+                    .foregroundStyle(card.noteTone == .none ? Color.secondary : HoldingsPage.color(card.noteTone))
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            if let lead = model.refundLead {
-                Text(lead).font(.subheadline)
-                ForEach(model.refunds) { spendRow($0, month: model.month, dot: false) }
-            }
-        }
-        Section {
-            header("Income vs. spending", icon: "arrow.left.arrow.right", id: "incomeExpense")
-            VStack(alignment: .leading, spacing: 10) {
-                // A month picked on the small chart takes the headline's place.
-                if model.incomeBars.labels.indices.contains(pickedIncome) {
-                    pickedMonth(model.incomeBars, pickedIncome)
-                } else {
-                    Text(model.incomeLead).font(.title3.weight(.semibold))
-                }
-                ReportMiniBars(model: model.incomeBars, selected: pickedIncome) { pickedIncome = $0 }
-                ReportLegendView(items: [ReportLegendItem(label: String(localized: "Income"), color: ReportColors.positive),
-                                         ReportLegendItem(label: String(localized: "Spending"), color: 0)])
-            }
-            .padding(.vertical, 4)
-        }
-        Section {
-            header("Net worth", icon: "chart.line.uptrend.xyaxis", id: "networth")
-            VStack(alignment: .leading, spacing: 8) {
-                if let series = model.netWorthBars.series.first, series.values.indices.contains(pickedNetWorth) {
-                    bigFigure(series.texts[pickedNetWorth], negative: series.values[pickedNetWorth] < 0)
-                    monthCaption(model.netWorthBars, pickedNetWorth)
-                } else {
-                    bigFigure(model.netWorthText, negative: model.netWorthNegative)
-                    ValueRow(title: String(localized: "Assets"), value: model.assetsText)
-                    ValueRow(title: String(localized: "Debts"), value: model.debtsText, color: model.debtsNegative ? .urNegative : .primary)
-                }
-                ReportMiniBars(model: model.netWorthBars, selected: pickedNetWorth) { pickedNetWorth = $0 }
-            }
-            .padding(.vertical, 4)
-        }
-        Section {
-            header("Cash age", icon: "hourglass", id: "age")
-            VStack(alignment: .leading, spacing: 8) {
-                if let series = model.ageBars.series.first, series.values.indices.contains(pickedAge) {
-                    bigFigure(series.texts[pickedAge], negative: false)
-                    monthCaption(model.ageBars, pickedAge)
-                } else {
-                    bigFigure(model.ageText, negative: false)
-                }
-                ReportMiniBars(model: model.ageBars, selected: pickedAge) { pickedAge = $0 }
-            }
-            .padding(.vertical, 4)
         }
     }
 
-    private var allReports: some View {
-        ForEach(ReportInfo.groups, id: \.self) { group in
-            Section {
-                ForEach(ReportInfo.all.filter { $0.group == group }) { report in
-                    NavigationLink(value: ReportNav.report(report.id, group: nil)) {
-                        Label {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(report.label)
-                                Text(report.blurb).font(.footnote).foregroundStyle(Color.secondary)
-                            }
-                        } icon: {
-                            Image(systemName: report.icon).foregroundStyle(Color.urAccent)
-                        }
-                    }
-                }
-            } header: {
-                Text(ReportInfo.groupHeader(group))
+    /// The card's small chart: columns by month, one bar split into its parts, or a line ahead.
+    @ViewBuilder private func smallChart(_ card: ReportOverviewCard, at: Int) -> some View {
+        if let bars = card.bars {
+            ReportMiniBars(model: bars, selected: at) { picked[card.id] = $0 }
+            if bars.series.count > 1 {
+                ReportLegendView(items: bars.series.map { ReportLegendItem(label: $0.label, color: $0.color) })
             }
+        } else if let parts = card.parts {
+            ReportSegmentBar(rows: parts)
+            ReportLegendView(items: parts.map { ReportLegendItem(label: "\($0.label) \($0.valueText)", color: $0.color) })
+        } else if let line = card.line {
+            ReportLinesChart(model: line, height: 130, readout: false)
         }
     }
 }
@@ -531,6 +536,8 @@ private struct ReportKey: Hashable, Sendable {
     var attempt: Int
 
     var filter: JSON { ["from": .string(from), "to": .string(to), "accountIds": JSON(accounts), "categoryIds": JSON(categories)] }
+    /// The same months and accounts, as the engine's investments report takes them.
+    var portfolioFilter: JSON { ["from": .string(from), "to": .string(to), "accountIds": JSON(accounts)] }
 }
 
 private struct ReportViewKey: Hashable {
@@ -582,22 +589,21 @@ private struct ReportChip: View {
     }
 }
 
-/// The page title opens the other reports, as Android's group and chips do.
+/// The page title opens the other reports.
 private struct ReportTitleMenu: ViewModifier {
     var enabled: Bool
+    /// The report the page is on.
     var current: String
+    /// Whether an account has holdings: Investments is listed only then.
+    var holdings: Bool
     var choose: (String) -> Void
 
     func body(content: Content) -> some View {
         if enabled {
             content.toolbarTitleMenu {
-                ForEach(ReportInfo.groups, id: \.self) { group in
-                    Section(ReportInfo.groupName(group)) {
-                        ForEach(ReportInfo.all.filter { $0.group == group }) { report in
-                            Button { choose(report.id) } label: {
-                                Label(report.label, systemImage: report.id == current ? "checkmark" : report.icon)
-                            }
-                        }
+                ForEach(ReportTopic.shown(holdings: holdings)) { report in
+                    Button { choose(report.id) } label: {
+                        Label(report.label, systemImage: report.id == current ? "checkmark" : report.icon)
                     }
                 }
             }
@@ -620,17 +626,22 @@ private struct ReportSearch: ViewModifier {
     }
 }
 
-/// One report: its filters, its figures for exactly those filters and this snapshot, and the way
-/// to the transactions behind them. While new figures load, the last ones stay on screen, dimmed.
+/// One report, at one of its views: the switch between its views, its filters behind one chip,
+/// its figures for exactly those filters and this snapshot, and the way to the transactions
+/// behind them. While new figures load, the last ones stay on screen, dimmed.
+/// The Investments reports read the engine's investments report in place of the reports' figures,
+/// as the forecast reads its own; the balance sheet reads both when the budget has holdings.
 private struct ReportPage: View {
     @Environment(BudgetStore.self) private var store
     var group: String?
     var filters: ReportFilters
     var cache: ReportBudgetCache
-    /// Beside the reports' list: the title menu's choice replaces this report, where on a phone it changes in place.
+    /// Beside the reports' list: the title menu's choice of another report replaces this page (by
+    /// the view that report opens on), where on a phone it changes in place.
     var switchTo: ((String) -> Void)?
     var navigate: (ReportNav) -> Void
 
+    /// The view shown: the id of one of the report bodies.
     @State private var id: String
     @State private var attempt = 0
     @State private var context: ReportBudget?
@@ -645,9 +656,11 @@ private struct ReportPage: View {
     @State private var forecastData: ReportScoped<ReportForecastKey, ReportForecastData>?
     @State private var forecastFailure: ReportScoped<ReportForecastKey, String>?
     @State private var forecastShown: ReportScoped<ReportForecastViewKey, ReportForecastModel>?
-    @State private var choosingRange = false
-    @State private var choosingAccounts = false
-    @State private var choosingCategories = false
+    @State private var portfolio: ReportScoped<ReportKey, Portfolio>?
+    @State private var portfolioFailure: ReportScoped<ReportKey, String>?
+    @State private var choosingFilters = false
+    /// Export CSV was chosen in the filters' sheet: the file is asked for once the sheet has closed.
+    @State private var exportAsked = false
     @State private var editingEveryday = false
     @State private var exportFile: TextFile?
     @State private var exportName = "urbudget-report.csv"
@@ -656,7 +669,7 @@ private struct ReportPage: View {
 
     init(id: String, group: String?, filters: ReportFilters, cache: ReportBudgetCache, switchTo: ((String) -> Void)? = nil,
          navigate: @escaping (ReportNav) -> Void) {
-        _id = State(initialValue: id)
+        _id = State(initialValue: ReportTopic.resolve(id))
         self.group = group
         self.filters = filters
         self.cache = cache
@@ -665,7 +678,16 @@ private struct ReportPage: View {
     }
 
     private var info: ReportInfo { ReportInfo.find(id) }
+    /// The report this view belongs to.
+    private var topic: ReportTopic { ReportTopic.find(info.report) }
     private var isForecast: Bool { id == "forecast" }
+    private var isInvestments: Bool { info.report == ReportTopic.investments }
+    /// Allocation is today's holdings and the forecast runs from today: neither takes a range of months.
+    private var takesRange: Bool { !isForecast && id != "allocation" }
+    private var hasHoldings: Bool { ReportInfo.hasHoldings(store.budget) }
+    /// The Investments reports are made of the engine's investments report, and the balance sheet
+    /// groups what is owned with it.
+    private var wantsPortfolio: Bool { isInvestments || (id == "balance" && hasHoldings) }
     private var range: ReportRange { filters.range ?? ReportMath.defaultRange(month: store.month, today: Dates.currentMonth) }
     private var options: ReportOptions { ReportOptions(group: group, byGroup: byGroup, chartAccounts: chartAccounts) }
 
@@ -687,8 +709,50 @@ private struct ReportPage: View {
         ReportForecastKey(version: store.version, today: Dates.today, months: ahead, accounts: filters.accounts.sorted(), attempt: attempt)
     }
 
-    private var accountGroups: [ReportFilterGroup] { context.map { ReportMath.accountFilterGroups($0, budgetOnly: isForecast) } ?? [] }
+    /// The accounts to choose from: only those with holdings for the Investments reports.
+    private var accountGroups: [ReportFilterGroup] {
+        guard let context else { return [] }
+        return isInvestments ? ReportMath.holdingsFilterGroups(context) : ReportMath.accountFilterGroups(context, budgetOnly: isForecast)
+    }
+
+    /// Why this report's figures couldn't be had, for exactly these filters.
+    private func problem(_ key: ReportKey) -> String? {
+        isInvestments ? portfolioFailure?.forScope(key) : failure?.forScope(key)
+    }
+
+    /// Whether everything this report is built from has arrived for these filters. The balance
+    /// sheet goes ahead without the investments report when that can't be had.
+    private func figuresReady(_ key: ReportKey) -> Bool {
+        let held = portfolio?.scope == key
+        if isInvestments { return held }
+        if wantsPortfolio { return data?.scope == key && (held || portfolioFailure?.scope == key) }
+        return data?.scope == key
+    }
     private var categoryGroups: [ReportFilterGroup] { context.map(ReportMath.categoryFilterGroups) ?? [] }
+
+    /// The accounts in force, in words: all of them, one's name, or how many.
+    private var accountLabel: String {
+        ReportMath.filterSummary(accountGroups, filters.accounts,
+                                 allLabel: isForecast ? String(localized: "All budget accounts") : String(localized: "All accounts"),
+                                 several: { String(localized: "\($0) accounts", locale: .app) })
+    }
+
+    private var categoryLabel: String {
+        ReportMath.filterSummary(categoryGroups, filters.categories, allLabel: String(localized: "All categories"),
+                                 several: { String(localized: "\($0) categories", locale: .app) })
+    }
+
+    /// Another report, from the title menu: at the view it was last on.
+    private func open(_ report: String) {
+        let view = ReportTopic.view(of: report, remembered: filters.views)
+        if let switchTo { switchTo(view) } else { id = view }
+    }
+
+    private func exportIfAsked() {
+        guard exportAsked else { return }
+        exportAsked = false
+        export(currentKey())
+    }
 
     var body: some View {
         let key = currentKey()
@@ -697,34 +761,32 @@ private struct ReportPage: View {
         ScrollViewReader { proxy in
             content(key: key, viewKey: viewKey, proxy: proxy)
         }
-        .navigationTitle(group ?? info.label)
+        .navigationTitle(group ?? topic.label)
         .inlineTitle()
-        .modifier(ReportTitleMenu(enabled: group == nil, current: id) { next in if let switchTo { switchTo(next) } else { id = next } })
+        .modifier(ReportTitleMenu(enabled: group == nil, current: topic.id, holdings: hasHoldings) { next in open(next) })
         .toolbar { toolbar(key: key, viewKey: viewKey) }
         .task(id: store.version) { await loadContext() }
-        .task(id: ReportTaskKey(key: key, active: !isForecast)) { await loadData(key) }
-        .task(id: ReportTaskKey(key: viewKey, active: data?.scope == key)) { await buildView(viewKey) }
+        .task(id: ReportTaskKey(key: key, active: !isForecast && !isInvestments)) { await loadData(key) }
+        .task(id: ReportTaskKey(key: key, active: wantsPortfolio)) { await loadPortfolio(key) }
+        .task(id: ReportTaskKey(key: viewKey, active: figuresReady(key))) { await buildView(viewKey) }
         .task(id: ReportTaskKey(key: forecastKey, active: isForecast)) { await loadForecast(forecastKey) }
         .task(id: ReportTaskKey(key: forecastViewKey, active: isForecast && forecastData?.scope == forecastKey)) { await buildForecast(forecastViewKey) }
         .onChange(of: id) {
-            // A report's own choices start afresh when another report opens, as the desktop's do.
+            // A view's own choices start afresh when another opens, as the desktop's do.
             byGroup = true
             chartAccounts = nil
             payeeQuery = ""
             ahead = 6
             everyday = nil
             exportError = nil
+            // The report opens on this view the next time, this session.
+            if group == nil { filters.views[info.report] = id }
         }
-        .sheet(isPresented: $choosingRange) {
-            ReportRangeSheet(range: range, earliest: context?.earliestMonth ?? Dates.currentMonth) { filters.range = $0 }
-        }
-        .sheet(isPresented: $choosingAccounts) {
-            ReportFilterSheet(title: String(localized: "Accounts"), groups: accountGroups,
-                              selected: Binding(get: { filters.accounts }, set: { filters.accounts = $0 }))
-        }
-        .sheet(isPresented: $choosingCategories) {
-            ReportFilterSheet(title: String(localized: "Categories"), groups: categoryGroups,
-                              selected: Binding(get: { filters.categories }, set: { filters.categories = $0 }))
+        .onAppear { if group == nil { filters.views[info.report] = id } }
+        .sheet(isPresented: $choosingFilters, onDismiss: exportIfAsked) {
+            ReportFiltersSheet(filters: filters, range: takesRange ? range : nil, earliest: context?.earliestMonth ?? Dates.currentMonth,
+                               accountGroups: accountGroups, accountLabel: accountLabel, categoryGroups: info.categories ? categoryGroups : nil,
+                               categoryLabel: categoryLabel, export: isForecast ? nil : { exportAsked = true })
         }
         .sheet(isPresented: $editingEveryday) {
             ReportEverydaySheet(current: forecastShown?.value.everyday ?? 0) { everyday = $0 }
@@ -737,7 +799,7 @@ private struct ReportPage: View {
     @ViewBuilder private func content(key: ReportKey, viewKey: ReportViewKey, proxy: ScrollViewProxy) -> some View {
         let report: ReportBody? = (shown?.value ?? nil).flatMap { $0.id == id ? $0 : nil }
         let stale = report != nil && shown?.scope.data != key
-        let failed = failure?.forScope(key)
+        let failed = problem(key)
         List {
             filterSection
             notice(key)
@@ -774,67 +836,55 @@ private struct ReportPage: View {
     @ToolbarContentBuilder private func toolbar(key: ReportKey, viewKey: ReportViewKey) -> some ToolbarContent {
         let ready = shown?.scope.data == key && shown?.scope.id == id
         let forecastReady = forecastShown?.scope.data == forecastKey
-        let loading = isForecast ? forecastFailure?.forScope(forecastKey) == nil && !forecastReady : failure?.forScope(key) == nil && !ready
+        let loading = isForecast ? forecastFailure?.forScope(forecastKey) == nil && !forecastReady : problem(key) == nil && !ready
         ToolbarItemGroup(placement: .trailingBar) {
             if loading { ProgressView().accessibilityLabel("Calculating") }
-            if !isForecast {
-                Button { export(key) } label: { Image(systemName: "square.and.arrow.up") }
-                    .accessibilityLabel("Export CSV")
-            }
             BudgetActionsMenu()
         }
     }
 
+    /// The switch between the report's views, then the one filter chip, which says what is in
+    /// force and opens the filters and the export.
     private var filterSection: some View {
-        let accountLabel = ReportMath.filterSummary(accountGroups, filters.accounts,
-                                                    allLabel: isForecast ? String(localized: "All budget accounts") : String(localized: "All accounts"),
-                                                    several: { String(localized: "\($0) accounts", locale: .app) })
-        let categoryLabel = ReportMath.filterSummary(categoryGroups, filters.categories, allLabel: String(localized: "All categories"),
-                                                     several: { String(localized: "\($0) categories", locale: .app) })
+        let views = topic.views
+        let narrowed = info.categories && !filters.categories.isEmpty
+        let label = ReportMath.filterLabel(range: takesRange ? ReportMath.describeRange(range) : nil, accounts: accountLabel,
+                                           categories: narrowed ? categoryLabel : nil)
+        // What moved into or out of investments in these exact filters' figures, which Spending and Income leave out.
+        let invested: Int64 = topic.leavesOutInvested ? (data?.forScope(currentKey())?.invested ?? 0) : 0
+        let investedNote = ReportMath.investedNote(invested, currency: store.currency)
         return Section {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    if !isForecast { rangeMenu }
-                    Button { choosingAccounts = true } label: {
-                        ReportChip(title: String(localized: "Accounts"), text: accountLabel, icon: "wallet.pass", active: !filters.accounts.isEmpty)
-                    }
-                    .buttonStyle(.plain)
-                    if info.categories {
-                        Button { choosingCategories = true } label: {
-                            ReportChip(title: String(localized: "Categories"), text: categoryLabel, icon: "square.grid.2x2", active: !filters.categories.isEmpty)
-                        }
-                        .buttonStyle(.plain)
-                    }
+            if group == nil && views.count > 1 {
+                Picker("View", selection: $id) {
+                    ForEach(views) { view in Text(view.label).tag(view.id) }
                 }
-                .padding(.vertical, 2)
+                .pickerStyle(.segmented)
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
             }
+            Button { choosingFilters = true } label: {
+                ReportChip(title: String(localized: "Filters"), text: label, icon: "line.3.horizontal.decrease.circle",
+                           active: !filters.accounts.isEmpty || narrowed)
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 2)
             .listRowInsets(EdgeInsets())
             .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            if let investedNote {
+                Text(investedNote)
+                    .font(.footnote)
+                    .foregroundStyle(Color.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 2, trailing: 4))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
         } footer: {
             Text(info.blurb)
         }
-    }
-
-    private var rangeMenu: some View {
-        let current = range
-        let earliest = context?.earliestMonth ?? Dates.currentMonth
-        return Menu {
-            ForEach(ReportRangePreset.allCases.filter { $0 != .custom }, id: \.self) { preset in
-                Button {
-                    filters.range = ReportMath.rangeFor(preset, today: Dates.currentMonth, earliest: earliest)
-                } label: {
-                    if current.preset == preset { Label(preset.label, systemImage: "checkmark") } else { Text(preset.label) }
-                }
-            }
-            Divider()
-            Button { choosingRange = true } label: {
-                Label("Custom range…", systemImage: current.preset == .custom ? "checkmark" : "calendar")
-            }
-        } label: {
-            ReportChip(title: String(localized: "Months"), text: ReportMath.describeRange(current), icon: "calendar", active: false)
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
     }
 
     /// "12.00 of spending still needs a category…", for the notice above a report.
@@ -889,14 +939,18 @@ private struct ReportPage: View {
     }
 
     /// The engine writes the CSV for these exact filters, then the system asks where to save it.
+    /// The Investments reports have a CSV of their own.
     private func export(_ key: ReportKey) {
         exportError = nil
+        let investments = isInvestments
+        let method = investments ? "investmentsCsv" : "reportCsv"
+        let params = investments ? key.portfolioFilter : key.filter
         Task {
             do {
-                let csv = try await store.query("reportCsv", key.filter)
+                let csv = try await store.query(method, params)
                 guard key == currentKey() else { return }
                 exportFile = TextFile(data: Data(csv.string.utf8))
-                exportName = "urbudget-report-\(key.from)-\(key.to).csv"
+                exportName = investments ? "urbudget-investments-\(key.from)-\(key.to).csv" : "urbudget-report-\(key.from)-\(key.to).csv"
                 exporting = true
             } catch {
                 if key == currentKey() { exportError = BudgetStore.readable(error) }
@@ -914,7 +968,7 @@ private struct ReportPage: View {
 
     /// A report belongs to its exact snapshot and filters; new labels must never describe old figures.
     private func loadData(_ key: ReportKey) async {
-        guard !isForecast, data?.scope != key, key.version == store.version, store.budget != nil else { return }
+        guard !isForecast, !isInvestments, data?.scope != key, key.version == store.version, store.budget != nil else { return }
         // Filters ticked in quick succession ask the engine once, for the last of them.
         if data != nil {
             try? await Task.sleep(for: .milliseconds(150))
@@ -931,12 +985,43 @@ private struct ReportPage: View {
         }
     }
 
+    /// The engine's investments report for these exact filters, as the forecast has its own figures.
+    private func loadPortfolio(_ key: ReportKey) async {
+        guard wantsPortfolio, portfolio?.scope != key, key.version == store.version, store.budget != nil else { return }
+        // Filters ticked in quick succession ask the engine once, for the last of them.
+        if portfolio != nil {
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled else { return }
+        }
+        do {
+            let json = try await store.query("investmentsReport", key.portfolioFilter)
+            let parsed = await Task.detached(priority: .userInitiated) { ReportMath.parsePortfolio(json) }.value
+            guard !Task.isCancelled else { return }
+            portfolio = ReportScoped(scope: key, value: parsed)
+        } catch {
+            guard !Task.isCancelled else { return }
+            portfolioFailure = ReportScoped(scope: key, value: BudgetStore.readable(error))
+        }
+    }
+
     private func buildView(_ viewKey: ReportViewKey) async {
-        guard let figures = data?.forScope(viewKey.data), shown?.scope != viewKey, viewKey.data.version == store.version else { return }
+        guard shown?.scope != viewKey, viewKey.data.version == store.version else { return }
         let budget = store.budget
         let cache = cache
+        let held = portfolio?.forScope(viewKey.data)
+        // An Investments report is made of the investments report alone.
+        if ReportInfo.find(viewKey.id).report == ReportTopic.investments {
+            guard let held else { return }
+            let built = await Task.detached(priority: .userInitiated) {
+                ReportMath.investmentsView(viewKey.id, held, cache.get(version: viewKey.data.version, budget: budget), today: viewKey.scope.today)
+            }.value
+            guard !Task.isCancelled else { return }
+            shown = ReportScoped(scope: viewKey, value: built)
+            return
+        }
+        guard let figures = data?.forScope(viewKey.data) else { return }
         let built = await Task.detached(priority: .userInitiated) {
-            ReportMath.reportView(viewKey.id, figures, cache.get(version: viewKey.data.version, budget: budget), viewKey.scope, viewKey.options)
+            ReportMath.reportView(viewKey.id, figures, cache.get(version: viewKey.data.version, budget: budget), viewKey.scope, viewKey.options, portfolio: held)
         }.value
         guard !Task.isCancelled else { return }
         shown = ReportScoped(scope: viewKey, value: built)
@@ -972,7 +1057,105 @@ private struct ReportPage: View {
 
 // MARK: Sheets
 
-/// A custom range of whole months; the presets are in the range menu.
+/// What a report is filtered by, a row each: the months (where the view takes any), the accounts
+/// and, where they apply, the categories, each opening the choices it always had; then Export CSV.
+private struct ReportFiltersSheet: View {
+    var filters: ReportFilters
+    /// The months in force, or nil for a view that takes none.
+    var range: ReportRange?
+    var earliest: String
+    var accountGroups: [ReportFilterGroup]
+    var accountLabel: String
+    /// The categories to choose from, or nil where they don't apply.
+    var categoryGroups: [ReportFilterGroup]?
+    var categoryLabel: String
+    /// Asks for the CSV, which is made once this sheet has closed; nil for a view with none.
+    var export: (() -> Void)?
+    @Environment(\.dismiss) private var dismiss
+    @State private var choosingRange = false
+    @State private var choosingAccounts = false
+    @State private var choosingCategories = false
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    if let range { rangeRow(range) }
+                    Button { choosingAccounts = true } label: {
+                        row(String(localized: "Accounts"), accountLabel, "wallet.pass")
+                    }
+                    if categoryGroups != nil {
+                        Button { choosingCategories = true } label: {
+                            row(String(localized: "Categories"), categoryLabel, "square.grid.2x2")
+                        }
+                    }
+                }
+                if let export {
+                    Section {
+                        Button {
+                            export()
+                            dismiss()
+                        } label: {
+                            Label("Export CSV", systemImage: "square.and.arrow.up")
+                        }
+                    }
+                }
+            }
+            .groupedList()
+            .navigationTitle("Filters")
+            .inlineTitle()
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
+        }
+        .sheetDetents([.medium])
+        .sheet(isPresented: $choosingRange) {
+            ReportRangeSheet(range: range ?? ReportMath.customRange(from: earliest, to: Dates.currentMonth), earliest: earliest) { filters.range = $0 }
+        }
+        .sheet(isPresented: $choosingAccounts) {
+            ReportFilterSheet(title: String(localized: "Accounts"), groups: accountGroups,
+                              selected: Binding(get: { filters.accounts }, set: { filters.accounts = $0 }))
+        }
+        .sheet(isPresented: $choosingCategories) {
+            ReportFilterSheet(title: String(localized: "Categories"), groups: categoryGroups ?? [],
+                              selected: Binding(get: { filters.categories }, set: { filters.categories = $0 }))
+        }
+    }
+
+    /// The months: the presets in a menu, and the custom range's own sheet.
+    private func rangeRow(_ current: ReportRange) -> some View {
+        Menu {
+            ForEach(ReportRangePreset.allCases.filter { $0 != .custom }, id: \.self) { preset in
+                Button {
+                    filters.range = ReportMath.rangeFor(preset, today: Dates.currentMonth, earliest: earliest)
+                } label: {
+                    if current.preset == preset { Label(preset.label, systemImage: "checkmark") } else { Text(preset.label) }
+                }
+            }
+            Divider()
+            Button { choosingRange = true } label: {
+                Label("Custom range…", systemImage: current.preset == .custom ? "checkmark" : "calendar")
+            }
+        } label: {
+            row(String(localized: "Months"), ReportMath.describeRange(current), "calendar")
+        }
+    }
+
+    /// A filter's row: what it is, and what is chosen.
+    private func row(_ title: String, _ value: String, _ icon: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon).foregroundStyle(Color.urAccent).frame(width: 24)
+            Text(title).foregroundStyle(Color.primary)
+            Spacer(minLength: 8)
+            Text(value).foregroundStyle(Color.secondary).lineLimit(1)
+            Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(Color.urTertiary)
+        }
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// A custom range of whole months; the presets are in the filters' sheet.
 private struct ReportRangeSheet: View {
     var onApply: (ReportRange) -> Void
     @Environment(\.dismiss) private var dismiss

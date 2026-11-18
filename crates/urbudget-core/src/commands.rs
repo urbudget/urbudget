@@ -102,6 +102,7 @@ pub fn changes_budget(method: &str) -> bool {
             | "loanRecord"
             | "applyLoanPayments"
             | "bankApply"
+            | "holdingsRecord"
             | "smsBatchApply"
     )
 }
@@ -170,6 +171,11 @@ pub fn apply(mut budget: Budget, method: &str, p: &Value) -> Result<Outcome, Str
                 bank_csv::remember(&mut budget, &account, settings)?;
             }
         }
+        // What an investment account holds on a day, from a file, a bank connection or a value
+        // typed in (`investments::record`).
+        "holdingsRecord" => {
+            budget = crate::investments::record(budget, &required::<String>(p, "accountId")?, required(p, "snapshot")?)?;
+        }
         "smsBatchApply" => {
             budget = sms_import::apply_batch(budget, &required::<Vec<_>>(p, "messages")?, &required(p, "analysis")?, required(p, "decisions")?)?;
         }
@@ -216,6 +222,20 @@ pub fn read(budget: &Budget, method: &str, p: &Value) -> Result<Value, String> {
             optional(p, "limitToAvailable")?.unwrap_or(true),
         )?),
         "schedules" => encode(schedules::read(budget)?),
+        // An investment account's page (see `investment_stats`); null for an account no broker fills.
+        // A positions file as a snapshot to look over before it's recorded (`positions_file`).
+        "holdingsFile" => encode(crate::positions_file::read(&required::<String>(p, "content")?)?),
+        "investmentPage" => encode(crate::investment_stats::page(budget, &required::<String>(p, "accountId")?)),
+        // The investment accounts together over a range of months, for Reports (`investment_stats::portfolio`),
+        // and the same as a CSV file. The filter is the reports' own.
+        "investmentsReport" => encode(crate::investment_stats::portfolio(
+            budget,
+            &serde_json::from_value(p.clone()).map_err(|error| format!("Invalid report filter: {error}"))?,
+        )?),
+        "investmentsCsv" => {
+            let filter = serde_json::from_value(p.clone()).map_err(|error| format!("Invalid report filter: {error}"))?;
+            encode(crate::investment_stats::csv(budget, &crate::investment_stats::portfolio(budget, &filter)?)?)
+        }
         "loanTerms" => encode(loans::source_terms(
             budget,
             &required::<String>(p, "accountId")?,

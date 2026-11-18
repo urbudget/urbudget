@@ -168,7 +168,7 @@ class ReportMathTest {
         val report = data(listOf(month("2026-10", spending = 2000, accounts = last)), opening = opening)
         val lines = balanceSheetLines(report, ctx, emptySet())
         assertEquals(listOf("a1" to "Cash and bank", "a2" to "Overdrawn accounts", "a3" to "Credit cards", "a4" to "Accounts in credit",
-            "a5" to "Investments", "a7" to "Other assets"), lines.map { it.account.id to it.section })
+            "a5" to "Other investments", "a7" to "Other assets"), lines.map { it.account.id to it.section })
         assertEquals(SheetLine(lines[1].account, "Overdrawn accounts", true, -100, 200), lines[1])
         val view = balanceSheetView(report, ctx, emptySet())
         assertEquals(listOf("53.00", "17.00", "36.00", "32.1%", "50.00"), view.tiles.map { it.value })
@@ -177,8 +177,20 @@ class ReportMathTest {
         assertEquals(listOf("Cash and bank", "Accounts in credit"), view.own.map { it.label })
         assertEquals(listOf("94.3%", "5.7%"), view.own.map { it.detail })
         assertEquals(listOf("Credit cards", "Overdrawn accounts"), view.owe.map { it.label })
-        assertTrue(view.statement.any { it.title == "Invest · investments" })
+        assertTrue(view.statement.any { it.title == "Invest · other investments" })
         assertTrue(view.help.endsWith("whatever their type."))
+    }
+
+    @Test fun aScheduledMoveIntoInvestmentsIsNotScheduledSpending() {
+        val data = parseForecast(JSONObject("""{"balances":{"b1":100000},"recentSpending":30000,"events":[
+            {"date":"2026-10-22","amount":-3000,"payee":"Rent","accountId":"b1","categoryId":"c1","scheduleId":"s1"},
+            {"date":"2026-10-25","amount":-60000,"payee":"Broker","accountId":"b1","categoryId":"c9","scheduleId":"s9","invested":true}]}"""))
+        assertEquals(listOf(false, true), data.events.map { it.invested })
+        val plan = forecastPlan(data, emptySet(), 3, today, today.plusMonths(3))
+        assertEquals(1000.0, plan.scheduledSpending, 0.0)
+        assertEquals(29000L, plan.suggested)
+        // It still moves the balance.
+        assertEquals(listOf(97000L, 37000L), plan.balances)
     }
 
     @Test fun forecastDropsTransfersInsideTheChosenAccounts() {
@@ -354,6 +366,27 @@ class ReportMathTest {
         assertEquals(mapOf("2026-09" to 12L, "2026-10" to null), report.ageOfMoneyByMonth)
         assertEquals(3L, report.transactionCount)
         assertNull(report.openingAccounts)
+        // An engine from before money moved into investments was left out says nothing of it: none.
+        assertEquals(0L, report.invested)
+        assertEquals(0L, report.months.single().invested)
+        val invested = parseReport(json.put("invested", 250000).put("months", JSONArray()
+            .put(JSONObject().put("month", "2026-09").put("invested", 300000)).put(JSONObject().put("month", "2026-10").put("invested", -50000))))
+        assertEquals(250000L, invested.invested)
+        assertEquals(listOf(300000L, -50000L), invested.months.map { it.invested })
+    }
+
+    @Test fun spendingAndIncomeSayWhatMovedIntoInvestments() {
+        val spending = listOf("categories", "payees", "trends", "calendar")
+        val income = listOf("incomeExpense", "income", "cashflow")
+        // Every view of the two reports says it, in the sentence for the way the money went.
+        (spending + income).forEach { view ->
+            assertEquals(view, "2,500.00 moved into investments isn't counted here.", investedNote(view, 250000, "USD"))
+            assertEquals(view, "500.00 taken out of investments isn't counted here.", investedNote(view, -50000, "USD"))
+            assertNull(view, investedNote(view, 0, "USD"))
+        }
+        // The other reports' views count no spending or income to leave it out of.
+        (ReportPlaces.flatMap { it.views } - (spending + income).toSet()).forEach { view -> assertNull(view, investedNote(view, 250000, "USD")) }
+        assertNull(investedNote("unknown", 250000, "USD"))
     }
 
     /** The store writes `unassigned` from `source` on every read, so a copy without `source` answers the same. */
@@ -409,35 +442,104 @@ class ReportMathTest {
         assertEquals("t3", details.records.keys.single())
     }
 
-    @Test fun overviewCardsReadLikeThePhonesReports() {
-        val ctx = parseReportBudget(budget(listOf(Triple("c1", "Groceries", "Food"), Triple("c2", "Fuel", "Car"), Triple("c3", "Gifts", "Fun"))), today)
-        val model = overviewModel(data(listOf(
-            month("2026-09", income = 100, spending = 100),
-            month("2026-10", income = 100, spending = 9000, categories = mapOf("c1" to 5000L, "c2" to 3000L, "c3" to -1000L, UNCATEGORIZED_BUCKET to 2000L),
-                assets = 1000, debt = 500),
-        ), age = 1), ctx)!!
-        assertEquals("October 2026", model.monthName)
-        assertEquals(listOf("Groceries", "Fuel", NEEDS_CATEGORY), model.rows.map { it.label })
-        assertEquals(listOf(0, 1, 2), model.rows.map { it.color })
-        assertEquals("Includes 10.00 in net refunds. The bar shows categories with net spending.", model.refundLead)
-        assertEquals(listOf("Gifts" to "-10.00"), model.refunds.map { it.label to it.valueText })
-        assertEquals("On average, you're spending more than you make.", model.incomeLead)
-        assertEquals("-5.00", model.debtsText)
-        assertTrue(model.debtsNegative)
-        assertEquals("1 day", model.ageText)
-        // The small charts carry each month's figures, for a finger to read.
-        assertEquals(listOf("1.00", "1.00"), model.incomeBars.texts[0])
-        assertEquals(listOf("1.00", "90.00"), model.incomeBars.texts[1])
-        assertEquals("5.00", model.netWorthBars.texts[0][1])
-        assertEquals("5", model.netWorthBars.short[0][1])
-        assertEquals(2, model.ageBars.titles.size)
+    @Test fun theOverviewHasACardForEachReport() {
+        val ctx = parseReportBudget(budget(listOf(Triple("c1", "Groceries", "Food"))), today)
+        val report = data(listOf(
+            month("2026-09", income = 100, spending = 100, assets = 700, debt = 300),
+            month("2026-10", income = 100, spending = 9000, assets = 1000, debt = 500),
+        ))
+        val forecast = ForecastData(mapOf("b1" to 100000L), listOf(
+            ForecastEvent("2026-11-05", -150000, "Rent", "b1", null, "c1", "s1"), ForecastEvent("2026-12-01", 200000, "Salary", "b1", null, null, "s2")), 0)
+        val model = overviewModel(report, ctx, forecast = forecast, today = today)!!
+        // Five cards without holdings, in the reports' order; each opens its report.
+        assertEquals(listOf("spending", "income", "networth", "balance", "forecast"), model.cards.map { it.report })
+        assertTrue(model.cards.all { card -> ReportPlaces.any { it.id == card.report } })
+        val (spending, income, worth, sheet, ahead) = model.cards
+        // Spending: this month's, with the monthly average as its note, over spending by month.
+        assertEquals("90.00" to "October 2026 · Monthly average 45.50", spending.figure to spending.note)
+        assertEquals(listOf("1.00", "90.00"), spending.bars!!.texts[0])
+        // Income: income less spending over the months, against the two month by month.
+        assertEquals(listOf("-89.00", Tone.Negative, "On average, you're spending more than you make."), listOf(income.figure, income.tone, income.note))
+        assertEquals(listOf("Income", "Spending"), income.bars!!.series.map { it.label })
+        assertEquals(listOf("1.00", "90.00"), income.bars!!.texts[1])
+        // Net worth now, with its change over the months as the note.
+        assertEquals("5.00" to "+1.00 in this period", worth.figure to worth.note)
+        assertEquals("5", worth.bars!!.short[0][1])
+        // The Balance sheet: what is owned, with what is owed as the note and beside it in one bar.
+        assertEquals("10.00" to "Total assets · Total liabilities 5.00", sheet.figure to sheet.note)
+        assertEquals(listOf("Assets" to 1000L, "Debts" to 500L), sheet.split.map { it.label to it.weight })
+        assertNull(sheet.bars)
+        // The forecast: the lowest the balance gets ahead and when, over the balance at each month's end.
+        assertEquals(listOf("-500.00", Tone.Negative, "Lowest balance ahead · 2026-11-05"), listOf(ahead.figure, ahead.tone, ahead.note))
+        assertEquals(listOf("1,000.00", "-500.00", "1,500.00"), ahead.bars!!.texts[0].take(3))
+        assertEquals(7, ahead.bars!!.labels.size)
+        assertEquals("2026-10-31", ahead.bars!!.titles[0])
+        // Today is the lowest point when nothing ahead takes the balance lower; with no forecast read there is no card for it.
+        assertEquals("Lowest balance ahead · today", forecastCard(ForecastData(mapOf("b1" to 100L), emptyList(), 0), ctx, today)!!.note)
+        assertEquals(listOf("spending", "income", "networth", "balance"), overviewModel(report, ctx)!!.cards.map { it.report })
+        assertNull(overviewModel(data(emptyList()), ctx))
         assertEquals("Nothing earned or spent in these months.", incomeLead(listOf(month("2026-10"))))
         assertEquals("On average, you're spending about what you make.", incomeLead(listOf(month("2026-10", income = 1000, spending = 990))))
         assertEquals("On average, you're spending less than you make.", incomeLead(listOf(month("2026-10", income = 1000, spending = 500))))
-        val many = overviewModel(data(listOf(month("2026-10", categories = (1..7).associate { "x$it" to it * 100L }))), ctx)!!
-        assertEquals(listOf("Unassigned", "Unassigned", "Unassigned", "Unassigned", "Unassigned", "All others"), many.rows.map { it.label })
-        assertEquals("3.00", many.rows.last().valueText)
-        assertEquals(ReportColors.OTHER, many.rows.last().color)
+    }
+
+    @Test fun sixReportsHoldTheReportsThereWereAsViews() {
+        assertEquals(listOf("spending", "income", "networth", "balance", "investments", "forecast"), ReportPlaces.map { it.id })
+        assertEquals(listOf(4, 3, 2, 1, 3, 2), ReportPlaces.map { it.views.size })
+        assertEquals(15, ReportPlaces.flatMap { it.views }.toSet().size)
+        // Investments is there only with holdings.
+        assertEquals(listOf("spending", "income", "networth", "balance", "forecast"), shownReports(false).map { it.id })
+        assertEquals(ReportPlaces, shownReports(true))
+        // A report opens on its first view, and afterwards on the one it was last on.
+        assertEquals(listOf("categories", "incomeExpense", "networth", "balance", "performance", "forecast"), ReportPlaces.map { viewToOpen(it.id, "") })
+        val saved = rememberView(rememberView(rememberView("", "payees"), "cashflow"), "calendar")
+        assertEquals("spending=calendar|income=cashflow", saved)
+        assertEquals(listOf("calendar", "cashflow", "networth"), listOf("spending", "income", "networth").map { viewToOpen(it, saved) })
+        // A view of another report, or what was remembered by the groups there were, is not taken.
+        assertEquals("networth", viewToOpen("networth", "networth=age"))
+        assertEquals("categories", viewToOpen("spending", "Spending=payees|Wealth=balances"))
+        assertNull(viewToOpen("nothing", saved))
+        assertEquals(saved, rememberView(saved, "nothing"))
+        // The Categories filter applies where spending splits by category, and a range everywhere but the forecast and today's holdings.
+        assertEquals(setOf("categories", "payees", "trends", "calendar", "incomeExpense", "cashflow"), ReportPlaces.flatMap { it.views }.filter(::categoriesApply).toSet())
+        assertEquals(setOf("forecast", "allocation"), ReportPlaces.flatMap { it.views }.filterNot(::rangeApplies).toSet())
+    }
+
+    @Test fun anOldReportsIdOpensItsReportAtThatView() {
+        // The fifteen ids a saved place or a link may still name.
+        val old = mapOf(
+            "categories" to "spending", "payees" to "spending", "trends" to "spending", "calendar" to "spending",
+            "incomeExpense" to "income", "income" to "income", "cashflow" to "income",
+            "networth" to "networth", "balances" to "networth", "balance" to "balance",
+            "performance" to "investments", "allocation" to "investments", "investIncome" to "investments",
+            "forecast" to "forecast", "age" to "forecast")
+        old.forEach { (id, report) -> assertEquals(id, report to id, reportPlace(id)) }
+        // "income" was the income sources, and still opens them; the report's other ids open it at its first view.
+        assertEquals("income" to "income", reportPlace("income"))
+        assertEquals("spending" to "categories", reportPlace("spending"))
+        assertEquals("investments" to "performance", reportPlace("investments"))
+        assertNull(reportPlace("wealth"))
+        assertEquals("forecast", reportOfView("age")?.id)
+    }
+
+    @Test fun theFilterLineSaysWhatIsInForce() {
+        assertEquals("Last 12 months · All accounts", filterLine("Last 12 months", "All accounts", null))
+        // Categories join it only when they're narrowed.
+        assertEquals("Last 12 months · 2 accounts · 3 categories",
+            filterLine("Last 12 months", Words.count(R.plurals.filter_accounts, 2), Words.count(R.plurals.filter_categories, 3)))
+        // A view with no range leaves it out.
+        assertEquals("All budget accounts", filterLine(null, "All budget accounts", null))
+        assertEquals("Checking", filterLine(null, "Checking", null))
+    }
+
+    @Test fun aLongListFoldsAtSixWhenThatHidesAtLeastThreeRows() {
+        assertEquals(6, FOLD_ROWS)
+        assertTrue(!folds(6) && !folds(8) && folds(9))
+        assertEquals((1..6).toList(), foldRows((1..6).toList(), open = false))
+        assertEquals((1..8).toList(), foldRows((1..8).toList(), open = false))
+        assertEquals((1..6).toList(), foldRows((1..9).toList(), open = false))
+        assertEquals((1..9).toList(), foldRows((1..9).toList(), open = true))
+        assertEquals(emptyList<Int>(), foldRows(emptyList<Int>(), open = false))
     }
 
     @Test fun chartAccountsTakeTheFirstFreeSlot() {

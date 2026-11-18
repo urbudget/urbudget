@@ -1,0 +1,1175 @@
+{
+  "budget": {
+    "accounts": [
+      {
+        "archived": false,
+        "id": "checking",
+        "kind": "cash",
+        "name": "Everyday",
+        "openingBalance": 6000000
+      },
+      {
+        "accountType": "investment",
+        "archived": false,
+        "id": "broker",
+        "kind": "tracking",
+        "name": "Long term",
+        "openingBalance": 0
+      },
+      {
+        "accountType": "retirement",
+        "archived": false,
+        "id": "pension",
+        "kind": "tracking",
+        "name": "Pension",
+        "openingBalance": 0
+      },
+      {
+        "accountType": "investment",
+        "archived": false,
+        "id": "trading",
+        "kind": "tracking",
+        "name": "Trading",
+        "openingBalance": 0
+      },
+      {
+        "accountType": "investment",
+        "archived": false,
+        "id": "euro",
+        "kind": "tracking",
+        "name": "Euro funds",
+        "openingBalance": 0
+      },
+      {
+        "accountType": "retirement",
+        "archived": false,
+        "id": "old",
+        "kind": "tracking",
+        "name": "Old workplace plan",
+        "openingBalance": 800000
+      }
+    ],
+    "assignments": [],
+    "categories": [
+      {
+        "group": "Living",
+        "id": "food",
+        "name": "Food",
+        "target": 0
+      }
+    ],
+    "currency": "USD",
+    "fixtureNotice": "Synthetic data only; no real account or person.",
+    "investments": [
+      {
+        "accountId": "pension",
+        "asOf": "2026-11-10",
+        "cash": [],
+        "currency": "USD",
+        "other": 0,
+        "positions": [],
+        "rate": "1",
+        "snapshots": [
+          {
+            "asOf": "2025-12-31",
+            "byKind": {},
+            "cash": 0,
+            "cost": null,
+            "month": "2025-12",
+            "other": 0,
+            "total": 2000000,
+            "unrealised": null
+          },
+          {
+            "asOf": "2026-06-30",
+            "byKind": {},
+            "cash": 0,
+            "cost": null,
+            "month": "2026-06",
+            "other": 0,
+            "total": 2150000,
+            "unrealised": null
+          },
+          {
+            "asOf": "2026-11-10",
+            "byKind": {},
+            "cash": 0,
+            "cost": null,
+            "month": "2026-11",
+            "other": 0,
+            "total": 2300000,
+            "unrealised": null
+          }
+        ],
+        "source": "manual",
+        "sourceAccount": "",
+        "syncedAt": "2026-11-18T05:00:00.000Z",
+        "total": 2300000,
+        "values": [
+          [
+            "2025-12-31",
+            2000000
+          ],
+          [
+            "2026-06-30",
+            2150000
+          ],
+          [
+            "2026-11-10",
+            2300000
+          ]
+        ]
+      },
+      {
+        "accountId": "euro",
+        "asOf": "2026-10-30",
+        "cash": [
+          {
+            "amount": "250",
+            "currency": "EUR",
+            "value": 27500
+          }
+        ],
+        "currency": "EUR",
+        "manualRate": "1.1",
+        "other": 0,
+        "positions": [
+          {
+            "amount": "10400",
+            "cost": 990000,
+            "currency": "EUR",
+            "gain": 154000,
+            "kind": "FUND",
+            "name": "Core world fund",
+            "price": "1",
+            "quantity": "100",
+            "symbol": "EUNL",
+            "value": 1144000
+          },
+          {
+            "amount": "3050",
+            "cost": null,
+            "currency": "EUR",
+            "gain": null,
+            "kind": "BOND",
+            "name": "Federal bond 2034",
+            "price": "1",
+            "quantity": "100",
+            "symbol": "BUND",
+            "value": 335500
+          }
+        ],
+        "rate": "1.1",
+        "snapshots": [
+          {
+            "asOf": "2026-02-27",
+            "byKind": {
+              "Bonds": 330000,
+              "Funds": 990000
+            },
+            "cash": 55000,
+            "cost": 880000,
+            "month": "2026-02",
+            "other": 0,
+            "total": 1375000,
+            "unrealised": 110000
+          },
+          {
+            "asOf": "2026-10-30",
+            "byKind": {
+              "Bonds": 335500,
+              "Funds": 1144000
+            },
+            "cash": 27500,
+            "cost": 990000,
+            "month": "2026-10",
+            "other": 0,
+            "total": 1507000,
+            "unrealised": 154000
+          }
+        ],
+        "source": "file",
+        "sourceAccount": "positions.csv",
+        "syncedAt": "2026-11-18T05:00:00.000Z",
+        "total": 1507000,
+        "values": [
+          [
+            "2026-02-27",
+            1375000
+          ],
+          [
+            "2026-10-30",
+            1507000
+          ]
+        ]
+      },
+      {
+        "accountId": "broker",
+        "asOf": "2026-11-17",
+        "cash": [
+          {
+            "amount": "4000",
+            "currency": "USD",
+            "value": 400000
+          },
+          {
+            "amount": "1406.25",
+            "currency": "SAR",
+            "value": 37500
+          }
+        ],
+        "commissions": {
+          "amount": -2350,
+          "from": "2025-11-18",
+          "to": "2026-11-17"
+        },
+        "currency": "USD",
+        "estimated": [
+          "2026-09-08"
+        ],
+        "flows": [
+          [
+            "2026-02-10",
+            500000
+          ],
+          [
+            "2026-04-15",
+            -200000
+          ],
+          [
+            "2026-09-08",
+            100000
+          ]
+        ],
+        "income": [
+          {
+            "dividends": 3000,
+            "fees": 0,
+            "interest": 0,
+            "month": "2025-12",
+            "other": 0,
+            "tax": 0
+          },
+          {
+            "dividends": 4000,
+            "fees": 0,
+            "interest": 0,
+            "month": "2026-03",
+            "other": 0,
+            "tax": -600
+          },
+          {
+            "dividends": 4500,
+            "fees": 0,
+            "interest": 0,
+            "month": "2026-06",
+            "other": 0,
+            "tax": -675
+          },
+          {
+            "dividends": 0,
+            "fees": -1000,
+            "interest": 800,
+            "month": "2026-09",
+            "other": 0,
+            "tax": 0
+          }
+        ],
+        "missing": [
+          "Transfers"
+        ],
+        "other": 12500,
+        "positions": [
+          {
+            "amount": "32000.00",
+            "cost": 2700000,
+            "currency": "USD",
+            "gain": 500000,
+            "isin": "IE00BK5BQT80",
+            "kind": "STK",
+            "name": "World fund",
+            "price": "1",
+            "quantity": "1",
+            "subKind": "ETF",
+            "symbol": "VWRA",
+            "value": 3200000
+          },
+          {
+            "amount": "9000.00",
+            "cost": 600000,
+            "currency": "USD",
+            "gain": 300000,
+            "isin": "US0378331005",
+            "kind": "STK",
+            "name": "Apple",
+            "price": "1",
+            "quantity": "1",
+            "subKind": "COMMON",
+            "symbol": "AAPL",
+            "value": 900000
+          },
+          {
+            "amount": "8000.00",
+            "cost": null,
+            "currency": "USD",
+            "gain": null,
+            "isin": "US91282CJZ59",
+            "kind": "BOND",
+            "name": "Treasury note",
+            "price": "1",
+            "quantity": "1",
+            "subKind": "US-T GOVT",
+            "symbol": "T 4 02/15/34",
+            "value": 800000
+          },
+          {
+            "amount": "-500.00",
+            "conid": "700123456",
+            "cost": -40000,
+            "currency": "USD",
+            "gain": -10000,
+            "kind": "OPT",
+            "name": "SPY put",
+            "price": "1",
+            "putCall": "P",
+            "quantity": "1",
+            "symbol": "SPY 260116P00500000",
+            "value": -50000
+          }
+        ],
+        "rate": "1",
+        "snapshots": [
+          {
+            "asOf": "2025-12-31",
+            "byKind": {
+              "Bonds": 500000,
+              "Stocks": 3250000
+            },
+            "cash": 340000,
+            "cost": 2900000,
+            "month": "2025-12",
+            "other": 10000,
+            "total": 4100000,
+            "unrealised": 350000
+          },
+          {
+            "asOf": "2026-11-17",
+            "byKind": {
+              "Bonds": 800000,
+              "Options": -50000,
+              "Stocks": 4100000
+            },
+            "cash": 437500,
+            "cost": 3260000,
+            "month": "2026-11",
+            "other": 12500,
+            "total": 5300000,
+            "unrealised": 790000
+          }
+        ],
+        "source": "ibkr",
+        "sourceAccount": "U1111111",
+        "syncedAt": "2026-11-18T05:00:00.000Z",
+        "total": 5300000,
+        "values": [
+          [
+            "2025-11-28",
+            4000000
+          ],
+          [
+            "2025-12-31",
+            4100000
+          ],
+          [
+            "2026-01-30",
+            4180000
+          ],
+          [
+            "2026-02-27",
+            4750000
+          ],
+          [
+            "2026-03-31",
+            4700000
+          ],
+          [
+            "2026-04-30",
+            4560000
+          ],
+          [
+            "2026-05-29",
+            4640000
+          ],
+          [
+            "2026-06-30",
+            4700000
+          ],
+          [
+            "2026-07-31",
+            4820000
+          ],
+          [
+            "2026-08-31",
+            4790000
+          ],
+          [
+            "2026-09-30",
+            4950000
+          ],
+          [
+            "2026-10-30",
+            5120000
+          ],
+          [
+            "2026-11-16",
+            5280000
+          ],
+          [
+            "2026-11-17",
+            5300000
+          ]
+        ]
+      },
+      {
+        "accountId": "trading",
+        "asOf": "2026-11-17",
+        "cash": [
+          {
+            "amount": "1200",
+            "currency": "USD",
+            "value": 120000
+          }
+        ],
+        "commissions": {
+          "amount": -420,
+          "from": "2026-08-03",
+          "to": "2026-11-17"
+        },
+        "currency": "USD",
+        "flows": [
+          [
+            "2026-08-03",
+            1000000
+          ],
+          [
+            "2026-11-03",
+            150000
+          ]
+        ],
+        "income": [
+          {
+            "dividends": 700,
+            "fees": 0,
+            "interest": 0,
+            "month": "2026-10",
+            "other": 0,
+            "tax": -105
+          }
+        ],
+        "incomeBy": [
+          {
+            "dividends": 400,
+            "key": "IE00BK5BQT80",
+            "month": "2026-10",
+            "name": "World fund",
+            "symbol": "VWRA",
+            "tax": -60
+          },
+          {
+            "dividends": 200,
+            "key": "US5949181045",
+            "month": "2026-10",
+            "name": "Microsoft",
+            "symbol": "MSFT",
+            "tax": -30
+          },
+          {
+            "dividends": 100,
+            "key": "US67066G1040",
+            "month": "2026-10",
+            "name": "Nvidia",
+            "symbol": "NVDA",
+            "tax": -15
+          }
+        ],
+        "other": 0,
+        "positions": [
+          {
+            "amount": "7000.00",
+            "cost": 650000,
+            "currency": "USD",
+            "gain": 50000,
+            "isin": "IE00BK5BQT80",
+            "kind": "STK",
+            "name": "World fund",
+            "price": "1",
+            "quantity": "1",
+            "subKind": "ETF",
+            "symbol": "VWRA",
+            "value": 700000
+          },
+          {
+            "cost": 400000,
+            "currency": "USD",
+            "gain": 30000,
+            "isin": "US5949181045",
+            "kind": "STK",
+            "name": "Microsoft",
+            "price": "1",
+            "quantity": "1",
+            "symbol": "MSFT",
+            "value": 430000
+          }
+        ],
+        "rate": "1",
+        "source": "ibkr",
+        "sourceAccount": "U2222222",
+        "syncedAt": "2026-11-18T05:00:00.000Z",
+        "total": 1250000,
+        "trades": [
+          {
+            "commissions": -120,
+            "count": 2,
+            "month": "2026-08",
+            "realised": 0
+          },
+          {
+            "commissions": -60,
+            "count": 1,
+            "month": "2026-09",
+            "realised": -8000
+          },
+          {
+            "commissions": -150,
+            "count": 3,
+            "month": "2026-10",
+            "realised": 25000
+          },
+          {
+            "commissions": -90,
+            "count": 1,
+            "month": "2026-11",
+            "realised": 0
+          }
+        ],
+        "values": [
+          [
+            "2026-08-03",
+            1000000
+          ],
+          [
+            "2026-08-31",
+            1030000
+          ],
+          [
+            "2026-09-30",
+            1010000
+          ],
+          [
+            "2026-10-30",
+            1060000
+          ],
+          [
+            "2026-11-17",
+            1250000
+          ]
+        ]
+      }
+    ],
+    "name": "Investments fixture",
+    "schemaVersion": 2,
+    "transactions": [
+      {
+        "accountId": "checking",
+        "amount": -500000,
+        "date": "2026-02-10",
+        "id": "to-broker",
+        "memo": "",
+        "payee": "",
+        "splits": [
+          {
+            "amount": -500000,
+            "categoryId": null,
+            "unassigned": true
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": "broker",
+        "transferStatus": "cleared"
+      },
+      {
+        "accountId": "broker",
+        "amount": -200000,
+        "date": "2026-04-15",
+        "id": "broker-to-pension",
+        "memo": "",
+        "payee": "",
+        "splits": [
+          {
+            "amount": -200000,
+            "categoryId": null,
+            "unassigned": true
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": "pension",
+        "transferStatus": "cleared"
+      },
+      {
+        "accountId": "checking",
+        "amount": -110000,
+        "date": "2026-05-05",
+        "id": "to-euro",
+        "memo": "",
+        "payee": "",
+        "splits": [
+          {
+            "amount": -110000,
+            "categoryId": null,
+            "unassigned": true
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": "euro",
+        "transferStatus": "cleared"
+      },
+      {
+        "accountId": "checking",
+        "amount": -1000000,
+        "date": "2026-08-03",
+        "id": "to-trading",
+        "memo": "",
+        "payee": "",
+        "splits": [
+          {
+            "amount": -1000000,
+            "categoryId": null,
+            "unassigned": true
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": "trading",
+        "transferStatus": "cleared"
+      },
+      {
+        "accountId": "checking",
+        "amount": -30000,
+        "date": "2026-10-12",
+        "id": "groceries",
+        "memo": "",
+        "payee": "Grocer",
+        "splits": [
+          {
+            "amount": -30000,
+            "categoryId": "food"
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": null,
+        "transferStatus": null
+      },
+      {
+        "accountId": "checking",
+        "amount": -150000,
+        "date": "2026-11-03",
+        "id": "more-to-trading",
+        "memo": "",
+        "payee": "",
+        "splits": [
+          {
+            "amount": -150000,
+            "categoryId": null,
+            "unassigned": true
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": "trading",
+        "transferStatus": "cleared"
+      },
+      {
+        "accountId": "checking",
+        "amount": -20000,
+        "date": "2026-11-05",
+        "id": "more-to-euro",
+        "memo": "",
+        "payee": "",
+        "splits": [
+          {
+            "amount": -20000,
+            "categoryId": null,
+            "unassigned": true
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": "euro",
+        "transferStatus": "cleared"
+      },
+      {
+        "accountId": "pension",
+        "amount": 2000000,
+        "createdAt": "2026-11-18T05:00:00.000Z",
+        "date": "2025-12-31",
+        "id": "investment-start:pension",
+        "investment": "start",
+        "memo": "Value when tracking began",
+        "payee": "Starting value",
+        "splits": [
+          {
+            "amount": 2000000,
+            "categoryId": null,
+            "unassigned": true
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": null,
+        "transferStatus": null
+      },
+      {
+        "accountId": "pension",
+        "amount": -50000,
+        "createdAt": "2026-11-18T05:00:00.000Z",
+        "date": "2026-06-30",
+        "id": "investment-change:pension:2026-06",
+        "investment": "change",
+        "memo": "Change in value in 2026-06 beyond money put in or taken out",
+        "payee": "Market change",
+        "splits": [
+          {
+            "amount": -50000,
+            "categoryId": null,
+            "unassigned": true
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": null,
+        "transferStatus": null
+      },
+      {
+        "accountId": "pension",
+        "amount": 150000,
+        "createdAt": "2026-11-18T05:00:00.000Z",
+        "date": "2026-11-10",
+        "id": "investment-change:pension:2026-11",
+        "investment": "change",
+        "memo": "Change in value in 2026-11 beyond money put in or taken out",
+        "payee": "Market change",
+        "splits": [
+          {
+            "amount": 150000,
+            "categoryId": null,
+            "unassigned": true
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": null,
+        "transferStatus": null
+      },
+      {
+        "accountId": "euro",
+        "amount": 1375000,
+        "createdAt": "2026-11-18T05:00:00.000Z",
+        "date": "2026-02-27",
+        "id": "investment-start:euro",
+        "investment": "start",
+        "memo": "Value when tracking began",
+        "payee": "Starting value",
+        "splits": [
+          {
+            "amount": 1375000,
+            "categoryId": null,
+            "unassigned": true
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": null,
+        "transferStatus": null
+      },
+      {
+        "accountId": "euro",
+        "amount": 22000,
+        "createdAt": "2026-11-18T05:00:00.000Z",
+        "date": "2026-10-30",
+        "id": "investment-change:euro:2026-10",
+        "investment": "change",
+        "memo": "Change in value in 2026-10 beyond money put in or taken out",
+        "payee": "Market change",
+        "splits": [
+          {
+            "amount": 22000,
+            "categoryId": null,
+            "unassigned": true
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": null,
+        "transferStatus": null
+      },
+      {
+        "accountId": "broker",
+        "amount": 4000000,
+        "createdAt": "2026-11-18T05:00:00.000Z",
+        "date": "2025-11-28",
+        "id": "investment-start:broker",
+        "investment": "start",
+        "memo": "Value when tracking began",
+        "payee": "Starting value",
+        "splits": [
+          {
+            "amount": 4000000,
+            "categoryId": null,
+            "unassigned": true
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": null,
+        "transferStatus": null
+      },
+      {
+        "accountId": "broker",
+        "amount": 100000,
+        "createdAt": "2026-11-18T05:00:00.000Z",
+        "date": "2025-12-31",
+        "id": "investment-change:broker:2025-12",
+        "investment": "change",
+        "memo": "Change in value in 2025-12 beyond money put in or taken out",
+        "payee": "Market change",
+        "splits": [
+          {
+            "amount": 100000,
+            "categoryId": null,
+            "unassigned": true
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": null,
+        "transferStatus": null
+      },
+      {
+        "accountId": "broker",
+        "amount": 80000,
+        "createdAt": "2026-11-18T05:00:00.000Z",
+        "date": "2026-01-30",
+        "id": "investment-change:broker:2026-01",
+        "investment": "change",
+        "memo": "Change in value in 2026-01 beyond money put in or taken out",
+        "payee": "Market change",
+        "splits": [
+          {
+            "amount": 80000,
+            "categoryId": null,
+            "unassigned": true
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": null,
+        "transferStatus": null
+      },
+      {
+        "accountId": "broker",
+        "amount": 70000,
+        "createdAt": "2026-11-18T05:00:00.000Z",
+        "date": "2026-02-27",
+        "id": "investment-change:broker:2026-02",
+        "investment": "change",
+        "memo": "Change in value in 2026-02 beyond money put in or taken out",
+        "payee": "Market change",
+        "splits": [
+          {
+            "amount": 70000,
+            "categoryId": null,
+            "unassigned": true
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": null,
+        "transferStatus": null
+      },
+      {
+        "accountId": "broker",
+        "amount": -50000,
+        "createdAt": "2026-11-18T05:00:00.000Z",
+        "date": "2026-03-31",
+        "id": "investment-change:broker:2026-03",
+        "investment": "change",
+        "memo": "Change in value in 2026-03 beyond money put in or taken out",
+        "payee": "Market change",
+        "splits": [
+          {
+            "amount": -50000,
+            "categoryId": null,
+            "unassigned": true
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": null,
+        "transferStatus": null
+      },
+      {
+        "accountId": "broker",
+        "amount": 60000,
+        "createdAt": "2026-11-18T05:00:00.000Z",
+        "date": "2026-04-30",
+        "id": "investment-change:broker:2026-04",
+        "investment": "change",
+        "memo": "Change in value in 2026-04 beyond money put in or taken out",
+        "payee": "Market change",
+        "splits": [
+          {
+            "amount": 60000,
+            "categoryId": null,
+            "unassigned": true
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": null,
+        "transferStatus": null
+      },
+      {
+        "accountId": "broker",
+        "amount": 80000,
+        "createdAt": "2026-11-18T05:00:00.000Z",
+        "date": "2026-05-29",
+        "id": "investment-change:broker:2026-05",
+        "investment": "change",
+        "memo": "Change in value in 2026-05 beyond money put in or taken out",
+        "payee": "Market change",
+        "splits": [
+          {
+            "amount": 80000,
+            "categoryId": null,
+            "unassigned": true
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": null,
+        "transferStatus": null
+      },
+      {
+        "accountId": "broker",
+        "amount": 60000,
+        "createdAt": "2026-11-18T05:00:00.000Z",
+        "date": "2026-06-30",
+        "id": "investment-change:broker:2026-06",
+        "investment": "change",
+        "memo": "Change in value in 2026-06 beyond money put in or taken out",
+        "payee": "Market change",
+        "splits": [
+          {
+            "amount": 60000,
+            "categoryId": null,
+            "unassigned": true
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": null,
+        "transferStatus": null
+      },
+      {
+        "accountId": "broker",
+        "amount": 120000,
+        "createdAt": "2026-11-18T05:00:00.000Z",
+        "date": "2026-07-31",
+        "id": "investment-change:broker:2026-07",
+        "investment": "change",
+        "memo": "Change in value in 2026-07 beyond money put in or taken out",
+        "payee": "Market change",
+        "splits": [
+          {
+            "amount": 120000,
+            "categoryId": null,
+            "unassigned": true
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": null,
+        "transferStatus": null
+      },
+      {
+        "accountId": "broker",
+        "amount": -30000,
+        "createdAt": "2026-11-18T05:00:00.000Z",
+        "date": "2026-08-31",
+        "id": "investment-change:broker:2026-08",
+        "investment": "change",
+        "memo": "Change in value in 2026-08 beyond money put in or taken out",
+        "payee": "Market change",
+        "splits": [
+          {
+            "amount": -30000,
+            "categoryId": null,
+            "unassigned": true
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": null,
+        "transferStatus": null
+      },
+      {
+        "accountId": "broker",
+        "amount": 60000,
+        "createdAt": "2026-11-18T05:00:00.000Z",
+        "date": "2026-09-30",
+        "id": "investment-change:broker:2026-09",
+        "investment": "change",
+        "memo": "Change in value in 2026-09 beyond money put in or taken out",
+        "payee": "Market change",
+        "splits": [
+          {
+            "amount": 60000,
+            "categoryId": null,
+            "unassigned": true
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": null,
+        "transferStatus": null
+      },
+      {
+        "accountId": "broker",
+        "amount": 100000,
+        "createdAt": "2026-11-18T05:00:00.000Z",
+        "date": "2026-09-30",
+        "id": "investment-moved:broker:2026-09",
+        "investment": "moved",
+        "memo": "What the broker counted as money moved in 2026-09 beyond what the budget has: deposits, withdrawals and transfers not reviewed yet, and differences in exchange rates",
+        "payee": "Money moved in or out",
+        "splits": [
+          {
+            "amount": 100000,
+            "categoryId": null,
+            "unassigned": true
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": null,
+        "transferStatus": null
+      },
+      {
+        "accountId": "broker",
+        "amount": 170000,
+        "createdAt": "2026-11-18T05:00:00.000Z",
+        "date": "2026-10-30",
+        "id": "investment-change:broker:2026-10",
+        "investment": "change",
+        "memo": "Change in value in 2026-10 beyond money put in or taken out",
+        "payee": "Market change",
+        "splits": [
+          {
+            "amount": 170000,
+            "categoryId": null,
+            "unassigned": true
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": null,
+        "transferStatus": null
+      },
+      {
+        "accountId": "broker",
+        "amount": 180000,
+        "createdAt": "2026-11-18T05:00:00.000Z",
+        "date": "2026-11-17",
+        "id": "investment-change:broker:2026-11",
+        "investment": "change",
+        "memo": "Change in value in 2026-11 beyond money put in or taken out",
+        "payee": "Market change",
+        "splits": [
+          {
+            "amount": 180000,
+            "categoryId": null,
+            "unassigned": true
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": null,
+        "transferStatus": null
+      },
+      {
+        "accountId": "trading",
+        "amount": 30000,
+        "createdAt": "2026-11-18T05:00:00.000Z",
+        "date": "2026-08-31",
+        "id": "investment-change:trading:2026-08",
+        "investment": "change",
+        "memo": "Change in value in 2026-08 beyond money put in or taken out",
+        "payee": "Market change",
+        "splits": [
+          {
+            "amount": 30000,
+            "categoryId": null,
+            "unassigned": true
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": null,
+        "transferStatus": null
+      },
+      {
+        "accountId": "trading",
+        "amount": -20000,
+        "createdAt": "2026-11-18T05:00:00.000Z",
+        "date": "2026-09-30",
+        "id": "investment-change:trading:2026-09",
+        "investment": "change",
+        "memo": "Change in value in 2026-09 beyond money put in or taken out",
+        "payee": "Market change",
+        "splits": [
+          {
+            "amount": -20000,
+            "categoryId": null,
+            "unassigned": true
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": null,
+        "transferStatus": null
+      },
+      {
+        "accountId": "trading",
+        "amount": 50000,
+        "createdAt": "2026-11-18T05:00:00.000Z",
+        "date": "2026-10-30",
+        "id": "investment-change:trading:2026-10",
+        "investment": "change",
+        "memo": "Change in value in 2026-10 beyond money put in or taken out",
+        "payee": "Market change",
+        "splits": [
+          {
+            "amount": 50000,
+            "categoryId": null,
+            "unassigned": true
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": null,
+        "transferStatus": null
+      },
+      {
+        "accountId": "trading",
+        "amount": 40000,
+        "createdAt": "2026-11-18T05:00:00.000Z",
+        "date": "2026-11-17",
+        "id": "investment-change:trading:2026-11",
+        "investment": "change",
+        "memo": "Change in value in 2026-11 beyond money put in or taken out",
+        "payee": "Market change",
+        "splits": [
+          {
+            "amount": 40000,
+            "categoryId": null,
+            "unassigned": true
+          }
+        ],
+        "status": "cleared",
+        "transferAccountId": null,
+        "transferStatus": null
+      }
+    ]
+  },
+  "filter": {
+    "accountIds": [],
+    "from": "2026-01",
+    "to": "2026-11"
+  },
+  "fixtureNotice": "Synthetic data only; no real account or person. The engine's investmentsReport for this budget and filter is investments-report-expected.json."
+}

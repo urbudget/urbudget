@@ -238,9 +238,9 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
                 SectionTitle(stringResource(R.string.sms_review_title), countText(R.plurals.sms_message_count, batch.messages.size)) {
                     Box {
                         IconButton({ menu = true }, enabled = !saving) { Icon(Icons.Outlined.MoreHoriz, stringResource(R.string.common_more_actions), tint = ur.text) }
-                        DropdownMenu(menu, { menu = false }, shape = RoundedCornerShape(14.dp), containerColor = ur.surface) {
-                            DropdownMenuItem(text = { Text(stringResource(R.string.sms_prepare_again)) }, onClick = { menu = false; noting = true })
-                            DropdownMenuItem(text = { Text(stringResource(R.string.sms_discard_review), color = ur.negative) }, onClick = { menu = false; discard() })
+                        UrMenu(menu, { menu = false }) {
+                            UrMenuItem(text = { Text(stringResource(R.string.sms_prepare_again)) }, onClick = { menu = false; noting = true })
+                            UrMenuItem(text = { Text(stringResource(R.string.sms_discard_review), color = ur.negative) }, onClick = { menu = false; discard() })
                         }
                     }
                 }
@@ -950,7 +950,7 @@ internal fun smsEdited(batch: SmsBatch, item: SmsItem, record: JSONObject, budge
     }.let { edited -> edited.copy(dismissed = edited.dismissed - item.index, ticked = edited.ticked + (item.index to true)) }
 }
 
-private suspend fun BudgetViewModel.smsQuery(method: String, params: JSONObject): JSONObject = suspendCancellableCoroutine { waiting ->
+internal suspend fun BudgetViewModel.smsQuery(method: String, params: JSONObject): JSONObject = suspendCancellableCoroutine { waiting ->
     val job = query(method, params, onError = { if (waiting.isActive) waiting.resumeWithException(IllegalStateException(it)) }) { if (waiting.isActive) waiting.resume(it) }
     waiting.invokeOnCancellation { job.cancel() }
 }

@@ -19,6 +19,7 @@ import { AssistantBoundary, AssistantPanel, useAssistantWidth, type Request as A
 import { assistant, type Card, type Proposal } from "./assistant/api";
 import { hasUnsent } from "./assistant/composer";
 import { LoanActionsContext, hasLoan, loanTerms, type LoanActions } from "./Planning";
+import { InvestmentActionsContext, useDailyIbkrSync, type InvestmentActions } from "./Investments";
 import { LoanPlanner } from "./LoanPlanner";
 import { LoanPaymentForm } from "./LoanPayment";
 import { ATTACH_LIMIT, categorizeText, fixImportText, importHelpText, type Uncategorized } from "./BankImport";
@@ -207,6 +208,8 @@ export default function App() {
       (!!dialog && !["confirm", "newBudget", "manageBudgets", "planner"].includes(dialog.type)),
   );
   const { budget, summary: currentSummary, edit, sync, metadata, budgetId } = model;
+  // The budget's Interactive Brokers accounts sync once a day, shortly after the app opens.
+  useDailyIbkrSync(budget, model.transform);
   const summary = currentSummary ?? model.displaySummary;
   // What the window shows of a save in progress: nothing for a quick one (most take ~50 ms), so
   // adding a transaction doesn't flash a dialog, a spinner and greyed-out buttons.
@@ -563,6 +566,8 @@ export default function App() {
     },
     details: (a) => setDialog({ type: "account", account: a, focusLoan: true }),
   };
+  // An investment account's header syncs it and opens where its connection is set up.
+  const investmentActions: InvestmentActions = { transform: model.transform, settings: () => openSettings("import"), ask: (request) => ask(request) };
   const dialogLoan = dialog && (dialog.type === "planner" || dialog.type === "loanPayment") ? loanTerms(budget, dialog.account.id) : undefined;
 
   /** The import in progress, when it's the one a card's fixes are for. */
@@ -773,6 +778,7 @@ export default function App() {
   return (
     <HeaderSlotElements.Provider value={headerSlots}>
     <LoanActionsContext.Provider value={loanActions}>
+    <InvestmentActionsContext.Provider value={investmentActions}>
     <div
       className={`app-shell${assistantOpen ? " with-assistant" : ""}${customTitleBar ? " has-titlebar" : ""}`}
       style={{ "--sidebar-width": `${layout.width}px`, "--assistant-width": `${assistantWidth.width}px` } as CSSProperties}
@@ -953,6 +959,7 @@ export default function App() {
                 setRegisterFilter(filter);
                 setPage("transactions");
               }}
+              onOpenAccount={navigateAccount}
             />
           )}
           {page === "payees" && <Payees budgetId={budgetId} budget={budget} edit={edit} transform={model.transform} undo={model.undo} />}
@@ -1313,6 +1320,7 @@ export default function App() {
         </Modal>
       )}
     </div>
+    </InvestmentActionsContext.Provider>
     </LoanActionsContext.Provider>
     </HeaderSlotElements.Provider>
   );

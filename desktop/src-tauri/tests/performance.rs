@@ -134,18 +134,20 @@ fn synthetic_engine_and_report_performance() {
     // cash outflows, netting each parent's splits/refunds instead of counting its legs.
     // The original report hashes remain in reports/engine-stages-20261020/
     // stage3-native-performance.json; all twelve matched throughout Stage 3.
+    // The six report fingerprints were recorded again when each month gained `market`
+    // (what markets did to net worth).
     let expected: BTreeMap<String, String> = serde_json::from_value(json!({
-        "long-history/filtered-reports":"14c538df035b265a55450d041458281c8548343eeaad9a47d598886dace296f7",
+        "long-history/filtered-reports":"9188bd4b04a47760512d945b67c6dfa52898802f7953b9e3817bc3237a3121cb",
         "long-history/history":"c40bdc57f23a6090ef5c34809db5d06198659dbc2b498e18d478178cacec63b8",
-        "long-history/reports":"aafc7f7367fb5d02fa6a042c542385b8ec9bef3b107891dd02f13c8788a709cc",
+        "long-history/reports":"dfab6ffa500f5bd6fc8cb112dbad79b4d606e65e352704ca9355b45f9310f819",
         "long-history/selected":"4d65c651a0e0146bf537befcbabd391fc9b25df9eb971c7ab4707cb0903f22bd",
-        "representative/filtered-reports":"e36d98940fd70f89104864fba8980904797bb70376b54bbdfad527b2683a1d19",
+        "representative/filtered-reports":"0abd449f333761b9d4c1b547ad623beb8491e97731fef162b9ce2b01d6096004",
         "representative/history":"d7c020c7f7eb28b8832e8a87b979946b8518c8b61e04d727ce676e7f096a658b",
-        "representative/reports":"46b6d66485bc0748308a5f9dca1e8ed9336cef5a8287bdb88acb269a76a12c83",
+        "representative/reports":"e61c3cc87b4f7b203010f53d8876439353ae160bf2a50f6fc47e7e64728d1316",
         "representative/selected":"46d79f4f78db53bb61b263a014b0ec3cfba18591739b2fdec8a22322f3162ba1",
-        "schedule-heavy/filtered-reports":"42daee36315a5b65bc02841ca0571a1e6bc161679439565eaddece6729072069",
+        "schedule-heavy/filtered-reports":"d673d82b84c83aa949f45cfd17f5f2d05e53e8e6aa898c5a1ed203395e483b98",
         "schedule-heavy/history":"9c488f8faf4bfc7d66cc0e113403a95e46f89b2db2a0e12e9e8ebd5be4a536a8",
-        "schedule-heavy/reports":"723771c94c0f1d036bd75651b8f1bf95d54a6de777725f830031343600708cfb",
+        "schedule-heavy/reports":"5b14b547a6d9eece5ee9c59077ccac66814eb9b8038e7add1008674f75e0231e",
         "schedule-heavy/selected":"a426d193d91c5a5c1fb9e6e56c89e5e15d3ba62088584e14416a044c51f47216"
     })).unwrap();
     assert_eq!(hashes, expected, "synthetic accounting outputs changed");

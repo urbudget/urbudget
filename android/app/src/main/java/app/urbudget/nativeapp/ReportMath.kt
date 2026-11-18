@@ -176,6 +176,10 @@ fun <T> squarify(items: List<T>, value: (T) -> Double, width: Double, height: Do
 data class ReportMonth(
     val month: String, val income: Long, val spending: Long, val netIncome: Long, val assets: Long, val debt: Long, val netWorth: Long,
     val inflow: Long, val outflow: Long, val categories: Map<String, Long>, val incomeSources: Map<String, Long>, val accounts: Map<String, Long>,
+    /** What markets did to net worth this month: the investment accounts' market changes added up. */
+    val market: Long = 0,
+    /** Money moved into investment accounts this month less what came back, left out of spending and income. */
+    val invested: Long = 0,
 )
 
 @Immutable
@@ -195,6 +199,8 @@ data class ReportData(
     val ageOfMoney: Long?,
     val openingAccounts: Map<String, Long>?,
     val ageOfMoneyByMonth: Map<String, Long?>,
+    /** Money moved into investment accounts over the range less what came back, left out of spending and income. */
+    val invested: Long = 0,
 )
 
 private fun JSONObject.str(key: String) = if (isNull(key)) "" else optString(key, "")
@@ -213,7 +219,7 @@ fun parseReport(json: JSONObject): ReportData {
     val months = json.list("months").map { m ->
         ReportMonth(m.str("month"), m.optLong("income"), m.optLong("spending"), m.optLong("netIncome"), m.optLong("assets"), m.optLong("debt"),
             m.optLong("netWorth"), m.optLong("inflow"), m.optLong("outflow"), m.optJSONObject("categories").amounts(),
-            m.optJSONObject("incomeSources").amounts(), m.optJSONObject("accounts").amounts())
+            m.optJSONObject("incomeSources").amounts(), m.optJSONObject("accounts").amounts(), m.optLong("market"), m.optLong("invested"))
     }
     val payees = json.optJSONObject("payees")?.let { o ->
         val names = TreeMap<String, JSONObject>()
@@ -227,14 +233,28 @@ fun parseReport(json: JSONObject): ReportData {
         json.optJSONObject("days").amounts(), json.optLong("income"), json.optLong("spending"),
         if (json.has("transactionCount")) json.optLong("transactionCount") else null,
         if (json.isNull("ageOfMoney")) null else json.optLong("ageOfMoney"),
-        json.optJSONObject("openingAccounts")?.amounts(), ages)
+        json.optJSONObject("openingAccounts")?.amounts(), ages, json.optLong("invested"))
+}
+
+/**
+ * The line under Spending's and Income's filter when money moved into or out of investment
+ * accounts over the range: it counts as neither spending nor income, and this says how much was
+ * left out. None for the other reports, or when nothing moved.
+ */
+fun investedNote(view: String, invested: Long, currency: String): String? {
+    if (invested == 0L || reportOfView(view)?.id !in setOf("spending", "income")) return null
+    return Words[if (invested > 0) R.string.report_invested_in else R.string.report_invested_out, Money.format(abs(invested), currency)]
 }
 
 // ---------- The budget, as reports read it ----------
 
+/** Where an investment account goes whole when nothing says what it holds, with the holdings no source gave a kind for. */
+private const val OTHER_INVESTMENTS = "Other investments"
+/** The kinds of holding with a balance sheet section of their own, by the engine's names for them. */
+private val KindSections = listOf("Stocks", "Funds", "Bonds", "Options", "Futures", "Currencies", "Crypto", "Commodities", "CFDs")
 private val Sections = mapOf(
     "checking" to "Cash and bank", "savings" to "Cash and bank", "cash" to "Cash and bank",
-    "investment" to "Investments", "retirement" to "Investments", "property" to "Property", "vehicle" to "Vehicles",
+    "investment" to OTHER_INVESTMENTS, "retirement" to OTHER_INVESTMENTS, "property" to "Property", "vehicle" to "Vehicles",
     "receivable" to "Receivables", "otherAsset" to "Other assets", "creditCard" to "Credit cards", "lineOfCredit" to "Lines of credit",
     "mortgage" to "Mortgages", "autoLoan" to "Loans", "studentLoan" to "Loans", "personalLoan" to "Loans",
     "medicalDebt" to "Other debts", "otherDebt" to "Other debts",
@@ -247,7 +267,8 @@ fun sectionOf(type: String) = Sections[type] ?: if (isLiability(type)) "Other de
 /** A balance sheet section's name in the interface's language. */
 fun sectionLabel(section: String): String = when (section) {
     "Cash and bank" -> Words[R.string.section_cash_bank]
-    "Investments" -> Words[R.string.section_investments]
+    in KindSections -> HoldingsPage.kindName(section)
+    OTHER_INVESTMENTS -> Words[R.string.section_other_investments]
     "Property" -> Words[R.string.section_property]
     "Vehicles" -> Words[R.string.section_vehicles]
     "Receivables" -> Words[R.string.section_receivables]
@@ -297,6 +318,8 @@ class ReportBudget(
     /** Groups that can hold spending, in budget order, "Needs a category" last. */
     val spendingGroups: List<String>,
     val earliestMonth: String,
+    /** The accounts something fills with holdings. */
+    val holdings: Set<String> = emptySet(),
 ) {
     val accountsById: Map<String, ReportAccount> = accounts.associateBy { it.id }
     /** The spending-without-a-category group's name, in the language these reports were built in. */
@@ -342,8 +365,84 @@ fun parseReportBudget(budget: JSONObject, today: LocalDate): ReportBudget {
     budget.optJSONArray("transactions")?.let { a ->
         for (i in 0 until a.length()) { val date = a.optJSONObject(i)?.str("date").orEmpty(); if (date.isNotEmpty() && date < earliest) earliest = date }
     }
-    return ReportBudget(budget.str("currency"), accounts, categories, groupOf, nameOf, spending.toList(), earliest.take(7))
+    return ReportBudget(budget.str("currency"), accounts, categories, groupOf, nameOf, spending.toList(), earliest.take(7), holdingAccountIds(budget))
 }
+
+
+/** The budget's accounts that something fills with holdings (its `investments` entries). */
+fun holdingAccountIds(budget: JSONObject): Set<String> {
+    val filled = budget.list("investments").mapTo(HashSet()) { it.str("accountId") }
+    return budget.list("accounts").map { it.str("id") }.filterTo(LinkedHashSet()) { it.isNotEmpty() && it in filled }
+}
+
+// ---------- The six reports ----------
+
+/**
+ * One of the six reports, over the views it switches between: the reports there were before, by
+ * their ids, the one it opens on first. A report with one view has no switch.
+ */
+@Immutable data class ReportPlace(val id: String, val views: List<String>)
+
+/** The report about the accounts with holdings: there only once an account has some. */
+const val INVESTMENTS_REPORT = "investments"
+
+val ReportPlaces = listOf(
+    ReportPlace("spending", listOf("categories", "payees", "trends", "calendar")),
+    ReportPlace("income", listOf("incomeExpense", "income", "cashflow")),
+    ReportPlace("networth", listOf("networth", "balances")),
+    ReportPlace("balance", listOf("balance")),
+    ReportPlace(INVESTMENTS_REPORT, listOf("performance", "allocation", "investIncome")),
+    ReportPlace("forecast", listOf("forecast", "age")),
+)
+
+/** The reports there is something to show for: Investments only once an account has holdings. */
+fun shownReports(holdings: Boolean): List<ReportPlace> = ReportPlaces.filter { it.id != INVESTMENTS_REPORT || holdings }
+
+/** The report a view belongs to. */
+fun reportOfView(view: String): ReportPlace? = ReportPlaces.firstOrNull { view in it.views }
+
+/**
+ * Where an id opens, as a report and its view. A view's id is one of the reports there were, as a
+ * place saved before or a link still names it: it opens its report at that view ("income" was the
+ * income sources, and still means them). A report's own id opens it at its first view.
+ */
+fun reportPlace(id: String): Pair<String, String>? =
+    reportOfView(id)?.let { it.id to id } ?: ReportPlaces.firstOrNull { it.id == id }?.let { it.id to it.views.first() }
+
+/** The view each report was last on ("spending=payees|income=cashflow"), with [view] as its report's. */
+fun rememberView(saved: String, view: String): String {
+    val report = reportOfView(view) ?: return saved
+    return (lastViews(saved) + (report.id to view)).entries.joinToString("|") { "${it.key}=${it.value}" }
+}
+private fun lastViews(saved: String): Map<String, String> =
+    saved.split('|').mapNotNull { part -> part.split('=').takeIf { it.size == 2 }?.let { it[0] to it[1] } }.toMap()
+
+/** The view a report opens on: the one it was last on, else its first. */
+fun viewToOpen(report: String, saved: String): String? {
+    val place = ReportPlaces.firstOrNull { it.id == report } ?: return null
+    return lastViews(saved)[report]?.takeIf { it in place.views } ?: place.views.first()
+}
+
+private val CategoryViews = setOf("categories", "payees", "trends", "calendar", "incomeExpense", "cashflow")
+/** Whether a view splits spending by category, so the Categories filter applies to it. */
+fun categoriesApply(view: String): Boolean = view in CategoryViews
+/** Whether a view covers a range of months: the forecast looks ahead from today, and the allocation is today's holdings. */
+fun rangeApplies(view: String): Boolean = view != "forecast" && view != "allocation"
+
+/**
+ * The filter's one line, saying what is in force: the range (for a view that has one), the
+ * accounts, and the categories only where they are narrowed ("Last 12 months · All accounts · 3 categories").
+ */
+fun filterLine(range: String?, accounts: String, categories: String?): String = Money.joined(listOfNotNull(range, accounts, categories))
+
+/** The rows a list shows before the rest fold away behind "Show all". */
+const val FOLD_ROWS = 6
+/** The fewest rows a fold hides: "Show all 7" over one hidden row is more to read than the row. */
+const val FOLD_HIDES = 3
+/** Whether a list is long enough to fold: nine rows or more, so the fold hides at least three. */
+fun folds(count: Int): Boolean = count >= FOLD_ROWS + FOLD_HIDES
+/** A list's rows as shown: the first six of a long one until it is opened out. */
+fun <T> foldRows(rows: List<T>, open: Boolean): List<T> = if (open || !folds(rows.size)) rows else rows.take(FOLD_ROWS)
 
 // ---------- Ranges and filters ----------
 
@@ -408,13 +507,19 @@ fun filterToggle(groups: List<FilterGroup>, selected: Set<String>, ids: List<Str
     return when { next.size == all.size -> emptySet(); next.isEmpty() -> setOf(""); else -> next }
 }
 
-/** The accounts filter: budget, tracking and closed accounts (only budget accounts for the forecast). */
-fun accountFilterGroups(ctx: ReportBudget, budgetOnly: Boolean): List<FilterGroup> = listOf(
-    Triple("budget", R.string.report_accounts_budget, ctx.accounts.filter { !it.archived && it.kind != "tracking" }),
-    Triple("tracking", R.string.report_accounts_tracking, ctx.accounts.filter { !it.archived && it.kind == "tracking" }),
-    Triple("closed", R.string.report_accounts_closed, ctx.accounts.filter { it.archived }),
-).filter { it.third.isNotEmpty() && (!budgetOnly || it.first == "budget") }
-    .map { (_, name, items) -> FilterGroup(Words[name], items.map { FilterItem(it.id, it.name) }) }
+/**
+ * The accounts filter: budget, tracking and closed accounts (only budget accounts for the forecast,
+ * only accounts with holdings for the investment reports).
+ */
+fun accountFilterGroups(ctx: ReportBudget, budgetOnly: Boolean, holdingsOnly: Boolean = false): List<FilterGroup> {
+    val accounts = if (holdingsOnly) ctx.accounts.filter { it.id in ctx.holdings } else ctx.accounts
+    return listOf(
+        Triple("budget", R.string.report_accounts_budget, accounts.filter { !it.archived && it.kind != "tracking" }),
+        Triple("tracking", R.string.report_accounts_tracking, accounts.filter { !it.archived && it.kind == "tracking" }),
+        Triple("closed", R.string.report_accounts_closed, accounts.filter { it.archived }),
+    ).filter { it.third.isNotEmpty() && (!budgetOnly || it.first == "budget") }
+        .map { (_, name, items) -> FilterGroup(Words[name], items.map { FilterItem(it.id, it.name) }) }
+}
 
 /** The categories filter: categories that can hold spending, by group, "Needs a category" last. */
 fun categoryFilterGroups(ctx: ReportBudget): List<FilterGroup> = ctx.spendingGroups.map { g ->
@@ -560,7 +665,10 @@ data class MiniBarsModel(
 }
 
 @Immutable data class SliceModel(val key: String, val label: String, val value: Long, val color: Int, val valueText: String = "", val share: String = "")
-@Immutable data class BarRowModel(val key: String, val label: String, val valueText: String, val detail: String?, val color: Int?, val fraction: Float, val drill: Boolean = false)
+/** A ranked bar: its name, figure and share; [note] is a line under the name (a currency's own amount). */
+@Immutable
+data class BarRowModel(val key: String, val label: String, val valueText: String, val detail: String?, val color: Int?, val fraction: Float, val drill: Boolean = false,
+                       val note: String? = null)
 @Immutable data class DivRowModel(val key: String, val label: String, val valueText: String, val detail: String, val fraction: Float, val color: Int)
 @Immutable data class TreemapItem(
     val key: String, val label: String, val value: Long, val valueText: String, val detail: String, val more: String, val level: Int,
@@ -571,14 +679,20 @@ data class MiniBarsModel(
 /** What a report figure's transactions are: a category, payee, day or income source over a range. */
 @Immutable data class DrillTarget(val title: String, val dimension: String, val key: String, val from: String? = null, val to: String? = null)
 
-enum class RowStyle { Plain, Section, Group, Child, Total, Net, Muted }
+/** How a row of a report's list reads; a Note is a sentence of small print between the rows, More the "Show all" of the rows folded above it. */
+enum class RowStyle { Plain, Section, Group, Child, Total, Net, Muted, Note, More }
 
 /** A row of a report's list: a month, an account, a source. */
 @Immutable
 data class FigureRow(
     val key: String, val title: String, val value: String = "", val subtitle: String? = null, val tone: Tone = Tone.None,
     val style: RowStyle = RowStyle.Plain, val drill: DrillTarget? = null, val expand: String? = null,
+    /** The fold the row is hidden behind until it's opened out; a More row's [expand] names the fold it opens. */
+    val fold: String? = null,
 )
+
+/** A list's rows as shown: those folded away only once their fold is open. */
+fun shownRows(rows: List<FigureRow>, open: (String) -> Boolean): List<FigureRow> = rows.filter { row -> row.fold?.let(open) ?: true }
 
 // ---------- Report views ----------
 
@@ -1053,7 +1167,13 @@ fun netWorthView(data: ReportData, ctx: ReportBudget, accounts: Set<String>): Ne
         FigureRow(a.id, accountTitle(a, outsideNetWorth = true), ctx.money(end - start),
             Words[R.string.change_from_to, ctx.money(start), ctx.money(end)], if (end - start < 0) Tone.Negative else Tone.None)
     } + FigureRow("__networth", netWorth, ctx.money(change), Words[R.string.change_from_to, ctx.money(opening), ctx.money(last.netWorth)], style = RowStyle.Total)
-    return NetWorthView(listOf(
+    // With investments, each month's change is what markets did and everything else (saving, debt paid down).
+    val split = data.months.any { it.market != 0L }
+    val markets = data.months.sumOf { it.market }
+    val marketsName = Words[R.string.report_markets]
+    val restName = Words[R.string.report_everything_else]
+    val signedMoney: (Double) -> String = { ctx.signed(Math.round(it)) }
+    return NetWorthView(listOfNotNull(
         Tile(netWorth, ctx.money(last.netWorth), Words[R.string.report_end_of, reportMonthName(last.month)]),
         Tile(Words[R.string.report_change], ctx.signed(change),
             if (opening > 0) Words[R.string.report_since_began_percent, reportMonthName(first.month), signedPercent(change.toDouble() / opening * 100, 1)]
@@ -1061,18 +1181,30 @@ fun netWorthView(data: ReportData, ctx: ReportBudget, accounts: Set<String>): Ne
             if (change < 0) Tone.Negative else Tone.Positive),
         Tile(assets, ctx.money(last.assets)),
         Tile(debts, ctx.money(last.debt), if (last.assets > 0) Words[R.string.report_of_assets, share(last.debt, last.assets)] else null),
+        // A share only where markets and the change went the same way: "-40% of the change" says nothing.
+        if (split) Tile(Words[R.string.report_from_markets], ctx.signed(markets),
+            if (change != 0L && markets.toDouble() / change >= 0) Words[R.string.report_share_of_change, Money.ltr("${fixed(markets.toDouble() / change * 100, 0)}%")] else null,
+            if (markets < 0) Tone.Negative else Tone.Positive) else null,
     ), columnModel(Words[R.string.report_chart_net_worth], keys, listOf(
         ColumnSeries("assets", assets, 0, data.months.map { it.assets.toDouble() }),
         ColumnSeries("debts", debts, 1, data.months.map { -it.debt.toDouble() }),
     ), fmt, moneyAxis, ctx.axisUnit, line = LineOverlay(netWorth, ReportColors.LINE, data.months.map { it.netWorth.toDouble() })),
         listOf(LegendItem(assets, 0), LegendItem(debts, 1), LegendItem(netWorth, ReportColors.LINE, line = true)),
-        columnModel(Words[R.string.report_chart_net_worth_change], keys, listOf(
+        if (split) columnModel(Words[R.string.report_chart_net_worth_change], keys, listOf(
+            ColumnSeries("markets", marketsName, MARKETS_COLOR, data.months.map { it.market.toDouble() }),
+            ColumnSeries("rest", restName, 0, data.months.mapIndexed { i, m -> (monthly[i] - m.market).toDouble() }),
+        ), signedMoney, moneyAxis, ctx.axisUnit)
+        else columnModel(Words[R.string.report_chart_net_worth_change], keys, listOf(
             ColumnSeries("up", grew, ReportColors.DIVERGING_POSITIVE, monthly.map { max(0L, it).toDouble() }),
             ColumnSeries("down", shrank, ReportColors.DIVERGING_NEGATIVE, monthly.map { min(0L, it).toDouble() }),
         ), fmt, moneyAxis, ctx.axisUnit),
-        listOf(LegendItem(grew, ReportColors.DIVERGING_POSITIVE), LegendItem(shrank, ReportColors.DIVERGING_NEGATIVE)),
+        if (split) listOf(LegendItem(marketsName, MARKETS_COLOR), LegendItem(restName, 0))
+        else listOf(LegendItem(grew, ReportColors.DIVERGING_POSITIVE), LegendItem(shrank, ReportColors.DIVERGING_NEGATIVE)),
         Words[R.string.report_balances_on, startDate, endDate], rows)
 }
+
+/** Markets' series beside "Everything else" in blue: amber, a pair that reads apart without relying on red and green. */
+private const val MARKETS_COLOR = 3
 
 /** An account's name in a report row, marked when it's closed (and, where it matters, left out of net worth). */
 private fun accountTitle(account: ReportAccount, outsideNetWorth: Boolean = false): String {
@@ -1084,7 +1216,8 @@ private fun accountTitle(account: ReportAccount, outsideNetWorth: Boolean = fals
 
 private const val IN_CREDIT = "Accounts in credit"
 private const val OVERDRAWN = "Overdrawn accounts"
-private val AssetSections = listOf("Cash and bank", "Investments", "Property", "Vehicles", "Receivables", "Other assets", IN_CREDIT)
+/** What is owned, by what the money is in: cash, each kind of holding, then the things owned outright. */
+private val AssetSections = listOf("Cash and bank") + KindSections + listOf(OTHER_INVESTMENTS, "Property", "Vehicles", "Receivables", "Other assets", IN_CREDIT)
 private val DebtSections = listOf("Credit cards", "Lines of credit", "Mortgages", "Loans", "Other debts", OVERDRAWN)
 private val Liquid = setOf("Cash and bank")
 
@@ -1106,7 +1239,85 @@ fun balanceSheetLines(data: ReportData, ctx: ReportBudget, accounts: Set<String>
     }.filter { it.start != 0L || it.end != 0L || !it.account.archived }
 }
 
-fun balanceSheetView(data: ReportData, ctx: ReportBudget, accounts: Set<String>): BalanceSheetView {
+/**
+ * A line of the statement: an account whole, or one part of what an investment account holds (its
+ * cash, a kind of holding, income still to be paid, what its balance has moved since its prices).
+ * No [start] where what the account held then isn't kept.
+ */
+@Immutable
+data class SheetPart(
+    val key: String, val account: ReportAccount, val section: String, val title: String, val start: Long?, val end: Long,
+    /** An account's holdings of one kind, which the holdings themselves can stand in for. */
+    val held: Boolean = false,
+)
+
+/** The assets by what the money is in, with the accounts whose start isn't known by type and those that can't be broken down. */
+@Immutable data class SheetAssets(val parts: List<SheetPart>, val startUnknown: List<ReportAccount>, val whole: List<ReportAccount>)
+
+/** Account names in a sentence, each in its own direction. */
+private fun accountNames(accounts: List<ReportAccount>): String = accounts.joinToString(Words[R.string.list_separator]) { Money.own(it.name) }
+
+/**
+ * The asset side regrouped by what the money is in. An account with holdings is split into its
+ * cash, its kinds of holding and its income still to be paid, from the [portfolio]'s split of its
+ * balance at each end of the range; what its ledger balance holds beyond that is its last line, so
+ * its lines always add up to the account. Every other account stays whole in its type's section.
+ */
+fun sheetAssets(lines: List<SheetLine>, portfolio: Portfolio?): SheetAssets {
+    val held = portfolio?.accounts.orEmpty().associateBy { it.accountId }
+    val parts = ArrayList<SheetPart>()
+    val startUnknown = ArrayList<ReportAccount>()
+    val whole = ArrayList<ReportAccount>()
+    fun amounts(split: AccountParts?, balance: Long): Map<String, Long> {
+        val out = LinkedHashMap<String, Long>()
+        if (split != null) {
+            out["cash"] = split.cash
+            split.byKind.forEach { kind -> val key = if (kind.key in KindSections) kind.key else OTHER_INVESTMENTS; out[key] = (out[key] ?: 0L) + kind.value }
+            out["accrued"] = split.accrued
+        }
+        out["rest"] = balance - out.values.sum()
+        return out
+    }
+    for (line in lines) {
+        val account = line.account
+        val name = accountTitle(account)
+        val own = held[account.id]
+        val end = own?.endParts
+        if (own == null || end == null) {
+            // Nothing says what it held on the range's last day: it goes whole, an investment account under Other investments.
+            if (own != null) whole.add(account)
+            parts.add(SheetPart("a:${account.id}", account, if (own != null) OTHER_INVESTMENTS else line.section, name, line.start, line.end))
+            continue
+        }
+        // An account that held nothing when the range began has nothing to split there.
+        val startKnown = own.startParts != null || line.start == 0L
+        val atEnd = amounts(end, line.end)
+        val atStart = if (startKnown) amounts(own.startParts, line.start) else emptyMap()
+        // Nothing says what's in it (a value typed in, say): it is one line, whole, at both ends.
+        if (listOf(atEnd, atStart).all { split -> split.all { (key, amount) -> key == "rest" || amount == 0L } }) {
+            parts.add(SheetPart("a:${account.id}", account, OTHER_INVESTMENTS, name, line.start, line.end))
+            continue
+        }
+        if (!startKnown) startUnknown.add(account)
+        // What's left over is the move since the prices' day, unless nothing at the end says what's in the account at all.
+        val bare = atEnd.all { (key, amount) -> key == "rest" || amount == 0L }
+        for (key in listOf("cash") + KindSections + listOf(OTHER_INVESTMENTS, "accrued", "rest")) {
+            val amount = atEnd[key] ?: 0L
+            val began = atStart[key] ?: 0L
+            if (amount == 0L && began == 0L) continue
+            val (section, title) = when (key) {
+                "cash" -> "Cash and bank" to Words[R.string.report_cash_at, Money.own(name)]
+                "accrued" -> "Receivables" to Words[R.string.report_accrued_at, Money.own(name)]
+                "rest" -> OTHER_INVESTMENTS to (if (bare) name else Money.joined(listOf(name, Words[R.string.report_since_prices, Money.date(end.asOf.ifEmpty { own.asOf })])))
+                else -> key to name
+            }
+            parts.add(SheetPart("a:${account.id}:$key", account, section, title, if (startKnown) began else null, amount, held = key !in setOf("cash", "accrued", "rest")))
+        }
+    }
+    return SheetAssets(parts, startUnknown, whole)
+}
+
+fun balanceSheetView(data: ReportData, ctx: ReportBudget, accounts: Set<String>, portfolio: Portfolio? = null, today: LocalDate = LocalDate.now()): BalanceSheetView {
     val first = data.months.first()
     val last = data.months.last()
     val lines = balanceSheetLines(data, ctx, accounts)
@@ -1114,39 +1325,89 @@ fun balanceSheetView(data: ReportData, ctx: ReportBudget, accounts: Set<String>)
     val apart = lines.filter { !it.account.inNetWorth }
     val assets = counted.filter { !it.debt }
     val debts = counted.filter { it.debt }
+    // The totals come from the accounts, so splitting one never moves them.
     val totalAssets = assets.sumOf { it.end }
     val totalDebts = debts.sumOf { it.end }
     val netStart = assets.sumOf { it.start } - debts.sumOf { it.start }
     val netEnd = totalAssets - totalDebts
-    val liquid = assets.filter { it.section in Liquid }.sumOf { it.end }
+    val owned = sheetAssets(assets, portfolio)
+    val owed = debts.map { SheetPart("a:${it.account.id}", it.account, it.section, accountTitle(it.account), it.start, it.end) }
+    val liquid = owned.parts.filter { it.section in Liquid }.sumOf { it.end }
     val monthlySpending = data.spending.toDouble() / max(1, data.months.size)
     // The list's own colour fills every bar (series-1 for what you own, series-2 for what you owe).
-    fun sections(order: List<String>, ls: List<SheetLine>, of: Long): List<BarRowModel> {
-        val rows = order.map { s -> Triple(s, sectionLabel(s), ls.filter { it.section == s }.sumOf { it.end }) }.filter { it.third > 0 }
+    fun sections(order: List<String>, parts: List<SheetPart>, of: Long): List<BarRowModel> {
+        val rows = order.map { s -> Triple(s, sectionLabel(s), parts.filter { it.section == s }.sumOf { it.end }) }.filter { it.third > 0 }
         return barRows(rows, { null }, of, ctx, drill = false)
     }
-    fun subtitle(start: Long, end: Long, of: Long?) =
-        if (of != null) Words[R.string.report_sheet_subtitle_share, ctx.money(start), ctx.money(end - start), share(end, of)]
-        else Words[R.string.report_sheet_subtitle, ctx.money(start), ctx.money(end - start)]
+    // A line whose start isn't known says only its share of what's owned.
+    fun subtitle(start: Long?, end: Long, of: Long?): String {
+        if (start == null && of != null) return Words[R.string.report_of_assets, share(end, of)]
+        val from = start?.let { ctx.money(it) } ?: "—"
+        val change = start?.let { ctx.money(end - it) } ?: "—"
+        return if (of != null) Words[R.string.report_sheet_subtitle_share, from, change, share(end, of)] else Words[R.string.report_sheet_subtitle, from, change]
+    }
+    // Ending this month, what's held is today's: each investment section lists the holdings themselves, merged across the accounts.
+    val current = portfolio != null && last.month >= YearMonth.from(today).toString()
+    val heldParts = owned.parts.filter { it.held }
+    val splitAccounts = heldParts.mapTo(HashSet()) { it.account.id }
+    val holdingsIn: Map<String, List<MergedHolding>> = if (!current || portfolio == null) emptyMap() else portfolio.holdings
+        .filter { h -> h.accounts.isNotEmpty() && h.accounts.all { it in splitAccounts } }
+        .groupBy { if (it.group in KindSections) it.group else OTHER_INVESTMENTS }
+        // Only where they add up to what the accounts hold of that kind, so a section's lines always come to its figure.
+        .filter { (section, list) -> list.sumOf { it.value } == heldParts.filter { it.section == section }.sumOf { it.end } }
+    val several = (portfolio?.accounts?.size ?: 0) >= 2
+    fun holdingRow(section: String, i: Int, h: MergedHolding, fold: String?): FigureRow {
+        val title = h.name.ifEmpty { h.symbol }
+        // The section already says a holding of no known kind is among Other investments.
+        val what = if (h.group in KindSections) h.instrument.ifEmpty { h.one }.ifEmpty { null }?.let(HoldingsPage::instrumentName) else null
+        val line = Money.joined(listOfNotNull(what, HoldingsPage.shownSymbol(h.symbol, title)?.let { Money.ltr(it) },
+            HoldingsPage.ownAmount(h.amount, h.currency, ctx.currency), if (several) accountNames(h.accounts, ctx).ifEmpty { null } else null))
+        return FigureRow("held:$section:$i:${h.key}", title, ctx.money(h.value), line.ifEmpty { null }, style = RowStyle.Child, fold = fold)
+    }
+    // Cash at a broker in more than the budget's currency says how much of each it is.
+    val cashOf = if (!current || portfolio == null) emptyMap() else portfolio.accounts.associate { it.accountId to it.cash }
+    fun partSubtitle(p: SheetPart, of: Long): String {
+        val cash = if (p.key.endsWith(":cash")) cashOf[p.account.id].orEmpty() else emptyList()
+        val currencies = if (cash.none { !it.currency.trim().equals(ctx.currency, ignoreCase = true) }) null
+            else Money.joined(cash.mapNotNull { c -> c.amount?.let { HoldingsPage.amountIn(it, c.currency) } }).ifEmpty { null }
+        return listOfNotNull(currencies, subtitle(p.start, p.end, of)).joinToString("\n")
+    }
+    // How the investments changed, in a sentence: the accounts' change on this statement, less what markets did, is what was put in.
+    val invested = assets.mapNotNull { line -> portfolio?.accounts?.firstOrNull { it.accountId == line.account.id }?.let { line to it } }
+    val notes = buildList {
+        if (invested.isNotEmpty()) {
+            val change = invested.sumOf { (line, _) -> line.end - line.start }
+            val gain = invested.sumOf { (_, own) -> own.gain }
+            add(Words[R.string.report_investments_changed, ctx.signed(change), ctx.signed(change - gain), ctx.signed(gain)])
+        }
+        if (owned.startUnknown.isNotEmpty()) add(Words[R.string.report_sheet_start_unknown, accountNames(owned.startUnknown)])
+        if (owned.whole.isNotEmpty()) add(Words[R.string.report_sheet_unsplit, accountNames(owned.whole)])
+    }
     val netWorth = Words[R.string.net_worth]
     val statement = buildList {
-        fun part(key: String, title: String, order: List<String>, ls: List<SheetLine>, totalLabel: String, of: Long) {
+        fun part(key: String, title: String, order: List<String>, parts: List<SheetPart>, totalLabel: String, start: Long, end: Long, notes: List<String> = emptyList()) {
             add(FigureRow("h:$key", title, style = RowStyle.Section))
-            order.filter { s -> ls.any { it.section == s } }.forEach { s ->
-                val inSection = ls.filter { it.section == s }
-                val start = inSection.sumOf { it.start }
-                val end = inSection.sumOf { it.end }
-                add(FigureRow("s:$key:$s", sectionLabel(s), ctx.money(end), subtitle(start, end, of), style = RowStyle.Group))
-                inSection.forEach { l ->
-                    add(FigureRow("a:${l.account.id}", accountTitle(l.account), ctx.money(l.end),
-                        subtitle(l.start, l.end, of), style = RowStyle.Child))
+            order.filter { s -> parts.any { it.section == s } }.forEach { s ->
+                val inSection = parts.filter { it.section == s }
+                // A section with a line whose start isn't known has no start of its own to show.
+                val sectionStart = if (inSection.any { it.start == null }) null else inSection.sumOf { it.start ?: 0L }
+                val sectionEnd = inSection.sumOf { it.end }
+                add(FigureRow("s:$key:$s", sectionLabel(s), ctx.money(sectionEnd), subtitle(sectionStart, sectionEnd, end), style = RowStyle.Group))
+                // The holdings stand in for the accounts' lines of their kind; nine or more fold to six.
+                val holdings = holdingsIn[s]
+                if (holdings != null) {
+                    val fold = "sheet:$s".takeIf { folds(holdings.size) }
+                    holdings.forEachIndexed { i, h -> add(holdingRow(s, i, h, if (fold != null && i >= FOLD_ROWS) fold else null)) }
+                    if (fold != null) add(FigureRow("more:$s", Words[R.string.show_all_count, Money.count(holdings.size.toLong())], style = RowStyle.More, expand = fold))
                 }
+                inSection.filter { holdings == null || !it.held }.forEach { p -> add(FigureRow(p.key, p.title, ctx.money(p.end), partSubtitle(p, end), style = RowStyle.Child)) }
             }
-            if (ls.isEmpty()) add(FigureRow("n:$key", Words[R.string.filter_none], style = RowStyle.Muted))
-            add(FigureRow("t:$key", totalLabel, ctx.money(ls.sumOf { it.end }), subtitle(ls.sumOf { it.start }, ls.sumOf { it.end }, null), style = RowStyle.Total))
+            if (parts.isEmpty()) add(FigureRow("n:$key", Words[R.string.filter_none], style = RowStyle.Muted))
+            add(FigureRow("t:$key", totalLabel, ctx.money(end), subtitle(start, end, null), style = RowStyle.Total))
+            notes.forEachIndexed { i, text -> add(FigureRow("note:$key:$i", text, style = RowStyle.Note)) }
         }
-        part("Assets", Words[R.string.report_assets], AssetSections, assets, Words[R.string.report_total_assets], totalAssets)
-        part("Liabilities", Words[R.string.report_liabilities_owed], DebtSections, debts, Words[R.string.report_total_liabilities], totalDebts)
+        part("Assets", Words[R.string.report_assets], AssetSections, owned.parts, Words[R.string.report_total_assets], assets.sumOf { it.start }, totalAssets, notes)
+        part("Liabilities", Words[R.string.report_liabilities_owed], DebtSections, owed, Words[R.string.report_total_liabilities], debts.sumOf { it.start }, totalDebts)
         add(FigureRow("__net", netWorth, ctx.money(netEnd), subtitle(netStart, netEnd, null), if (netEnd < 0) Tone.Negative else Tone.None, RowStyle.Net))
         if (apart.isNotEmpty()) {
             add(FigureRow("h:apart", Words[R.string.report_not_counted], style = RowStyle.Section))
@@ -1161,8 +1422,8 @@ fun balanceSheetView(data: ReportData, ctx: ReportBudget, accounts: Set<String>)
             Words[if (totalDebts > totalAssets) R.string.report_owe_more_than_own else R.string.report_owned_is_owed]),
         Tile(Words[R.string.report_cash_on_hand], ctx.money(liquid),
             if (monthlySpending > 0) Words[R.string.report_months_of_spending, fixed(liquid / monthlySpending, 1)] else Words[R.string.report_in_cash_accounts]),
-    ), ctx.money(totalAssets), if (totalAssets > 0) sections(AssetSections, assets, totalAssets) else emptyList(),
-        ctx.money(totalDebts), if (totalDebts > 0) sections(DebtSections, debts, totalDebts) else emptyList(),
+    ), ctx.money(totalAssets), if (totalAssets > 0) sections(AssetSections, owned.parts, totalAssets) else emptyList(),
+        ctx.money(totalDebts), if (totalDebts > 0) sections(DebtSections, owed, totalDebts) else emptyList(),
         Words[R.string.report_net_worth_on, Money.date(lastDay(last.month)), ctx.money(netEnd)],
         Words[R.string.report_balances_on, Money.date(firstDay(first.month)), Money.date(lastDay(last.month))], statement,
         Words[R.string.report_sheet_help, reportMonthName(first.month), reportMonthName(last.month)] +
@@ -1235,8 +1496,378 @@ fun ageView(data: ReportData): AgeView {
         keys.mapIndexed { i, m -> FigureRow(m, reportMonthName(m, short = true), values[i]?.toString() ?: "—") })
 }
 
-/** Builds a report's body. Forecast has its own data and builder. */
-fun reportView(id: String, data: ReportData, ctx: ReportBudget, scope: ReportScope, options: ReportOptions): ReportView? {
+// ---------- Investments ----------
+// The engine's `investmentsReport` (investment_stats.rs `portfolio`): every account with holdings
+// together, over the report's range. Nothing is worked out again here; the figures are only laid out.
+
+/** The whole portfolio over the range. A rate that can't be known is null; [yearly] is there for ranges over a year. */
+@Immutable
+data class PortfolioTotal(
+    val start: Long, val end: Long, val put: Long, val gain: Long, val rate: Double?, val yearly: Double?, val days: Long,
+    /** Gains taken by selling in the range, where a statement lists its trades; none where no account's does. */
+    val realised: Long? = null,
+)
+
+/** A month of the range: the accounts' value at its end, what markets did and what was put in, and each account's value. */
+@Immutable data class PortfolioMonth(val month: String, val value: Long, val gain: Long, val put: Long, val byAccount: Map<String, Long>, val realised: Long? = null)
+
+@Immutable data class KindAmount(val key: String, val value: Long)
+
+/** An account's balance on a day, split by what it was in: its lines add up to its ledger balance that day. */
+@Immutable data class AccountParts(val month: String, val asOf: String, val byKind: List<KindAmount>, val cash: Long, val accrued: Long, val rest: Long)
+
+@Immutable
+data class PortfolioAccount(
+    val accountId: String, val source: String, val sourceAccount: String, val asOf: String, val joined: String,
+    val start: Long, val end: Long, val put: Long, val gain: Long, val rate: Double?, val estimatedDays: Int, val missing: List<String>,
+    /** Valued only when it's updated (every source but Interactive Brokers), so a gain lands in the month of the next update. */
+    val sparse: Boolean,
+    /** The split of its balance just before the range and at its end; none where what it held then isn't kept. */
+    val startParts: AccountParts?, val endParts: AccountParts?,
+    val realised: Long? = null,
+    /** Today's cash by currency. */
+    val cash: List<CashAmount> = emptyList(),
+)
+
+/** A part of a whole with its share of the positive parts' total. */
+/** A part of a whole with its share of the positive parts' total; [amount] is a currency's own amount, where every part of it is known. */
+@Immutable data class SharePart(val key: String, val value: Long, val share: Double, val amount: String? = null)
+
+/** An account's cash in one currency: its own amount, and its value in the budget's. */
+@Immutable data class CashAmount(val currency: String, val amount: String?, val value: Long)
+
+/** Today's holdings across the accounts, whatever the range. */
+@Immutable
+data class Allocation(
+    val asOf: String, val total: Long, val count: Int, val cash: Long, val accrued: Long, val cost: Long?, val unrealised: Long?, val unrealisedRate: Double?,
+    val largestShare: Double?, val topFiveShare: Double?, val byKind: List<SharePart>, val byAccount: List<SharePart>, val byCurrency: List<SharePart>,
+)
+
+/** One holding, merged across the accounts that hold it. */
+@Immutable
+data class MergedHolding(
+    val key: String, val symbol: String, val name: String, val group: String, val one: String, val currency: String, val value: Long,
+    val cost: Long?, val gain: Long?, val rate: Double?, val share: Double?, val accounts: List<String>,
+    /** What it is ("ETF", "Put option"), and what it's worth in its own currency; empty and none until the next sync names them. */
+    val instrument: String = "", val amount: String? = null,
+)
+
+/** A month's income and costs; [commissions] on trades only where a statement lists its trades by month. */
+@Immutable data class IncomeMonth(val month: String, val dividends: Long, val interest: Long, val tax: Long, val fees: Long, val other: Long, val commissions: Long? = null)
+/** The dividends one holding paid in the range and the tax withheld from them; [value] is what it's worth today, where still held. */
+@Immutable data class HoldingIncome(val key: String, val symbol: String, val name: String, val dividends: Long, val tax: Long, val value: Long?, val yield: Double?)
+@Immutable data class Commission(val accountId: String, val from: String, val to: String, val amount: Long)
+/**
+ * One account's income and costs over the range, as the totals have them. [commissions] are its
+ * trades' in the range: by month where its statement lists them, else the statement's one figure, else none.
+ */
+@Immutable
+data class AccountIncome(val accountId: String, val dividends: Long, val interest: Long, val tax: Long, val fees: Long, val other: Long, val commissions: Long? = null)
+
+/** What the accounts earned and were charged: received is positive, paid is negative. */
+@Immutable
+data class PortfolioIncome(
+    val months: List<IncomeMonth>, val dividends: Long, val interest: Long, val tax: Long, val fees: Long, val other: Long, val yield: Double?,
+    val commissions: List<Commission>, val reporting: List<String>, val silent: List<String>,
+    /** The totals by account: one row for each account that reports income, adding up to them. */
+    val byAccount: List<AccountIncome> = emptyList(),
+    /** Dividends by holding, largest first, where a statement names the holding that paid. */
+    val byHolding: List<HoldingIncome> = emptyList(),
+)
+
+@Immutable
+data class Portfolio(
+    val from: String, val to: String, val total: PortfolioTotal, val months: List<PortfolioMonth>, val accounts: List<PortfolioAccount>,
+    val allocation: Allocation, val holdings: List<MergedHolding>, val income: PortfolioIncome,
+    /** Open investment accounts nothing fills: they have a balance, and no known gain. */
+    val unfilled: List<String>,
+)
+
+private fun JSONObject.amount(key: String): Long? = if (isNull(key)) null else optLong(key)
+private fun JSONObject.fraction(key: String): Double? = if (isNull(key)) null else optDouble(key).takeIf { !it.isNaN() }
+/** A decimal the engine writes as text ("61476.00"), or none. */
+private fun JSONObject.decimal(key: String): String? = if (isNull(key)) null else optString(key).trim().ifEmpty { null }
+private fun JSONObject.strings(key: String): List<String> = optJSONArray(key)?.let { a -> (0 until a.length()).map { a.optString(it) } }.orEmpty()
+
+fun parsePortfolio(json: JSONObject): Portfolio {
+    fun parts(o: JSONObject?) = o?.let { AccountParts(it.str("month"), it.str("asOf"), it.list("byKind").map { k -> KindAmount(k.str("key"), k.optLong("value")) },
+        it.optLong("cash"), it.optLong("accrued"), it.optLong("rest")) }
+    fun shares(o: JSONObject, key: String) = o.list(key).map { SharePart(it.str("key"), it.optLong("value"), it.fraction("share") ?: 0.0, it.decimal("amount")) }
+    val total = json.optJSONObject("total") ?: JSONObject()
+    val allocation = json.optJSONObject("allocation") ?: JSONObject()
+    val income = json.optJSONObject("income") ?: JSONObject()
+    return Portfolio(
+        json.str("from"), json.str("to"),
+        PortfolioTotal(total.optLong("start"), total.optLong("end"), total.optLong("put"), total.optLong("gain"), total.fraction("rate"), total.fraction("yearly"), total.optLong("days"), total.amount("realised")),
+        json.list("months").map { PortfolioMonth(it.str("month"), it.optLong("value"), it.optLong("gain"), it.optLong("put"), it.optJSONObject("byAccount").amounts(), it.amount("realised")) },
+        json.list("accounts").map { a ->
+            PortfolioAccount(a.str("accountId"), a.str("source"), a.str("sourceAccount"), a.str("asOf"), a.str("joined"), a.optLong("start"), a.optLong("end"), a.optLong("put"),
+                a.optLong("gain"), a.fraction("rate"), a.optInt("estimatedDays"), a.strings("missing"), a.optBoolean("sparse"),
+                parts(a.optJSONObject("startParts")), parts(a.optJSONObject("endParts")), a.amount("realised"),
+                a.list("cash").map { CashAmount(it.str("currency"), it.decimal("amount"), it.optLong("value")) })
+        },
+        Allocation(allocation.str("asOf"), allocation.optLong("total"), allocation.optInt("count"), allocation.optLong("cash"), allocation.optLong("accrued"),
+            allocation.amount("cost"), allocation.amount("unrealised"), allocation.fraction("unrealisedRate"), allocation.fraction("largestShare"), allocation.fraction("topFiveShare"),
+            shares(allocation, "byKind"), shares(allocation, "byAccount"), shares(allocation, "byCurrency")),
+        json.list("holdings").map { h ->
+            MergedHolding(h.str("key"), h.str("symbol"), h.str("name"), h.str("group"), h.str("one"), h.str("currency"), h.optLong("value"),
+                h.amount("cost"), h.amount("gain"), h.fraction("rate"), h.fraction("share"), h.strings("accounts"), h.str("instrument").trim(), h.decimal("amount"))
+        },
+        PortfolioIncome(income.list("months").map { IncomeMonth(it.str("month"), it.optLong("dividends"), it.optLong("interest"), it.optLong("tax"), it.optLong("fees"), it.optLong("other"), it.amount("commissions")) },
+            income.optLong("dividends"), income.optLong("interest"), income.optLong("tax"), income.optLong("fees"), income.optLong("other"), income.fraction("yield"),
+            income.list("commissions").map { Commission(it.str("accountId"), it.str("from"), it.str("to"), it.optLong("amount")) },
+            income.strings("reporting"), income.strings("silent"),
+            income.list("byAccount").map { AccountIncome(it.str("accountId"), it.optLong("dividends"), it.optLong("interest"), it.optLong("tax"), it.optLong("fees"), it.optLong("other"), it.amount("commissions")) },
+            income.list("byHolding").map { HoldingIncome(it.str("key"), it.str("symbol"), it.str("name"), it.optLong("dividends"), it.optLong("tax"), it.amount("value"), it.fraction("yield")) }),
+        json.strings("unfilled"),
+    )
+}
+
+/**
+ * One holding, or one account, as a row: a tile in its colour with a few letters, its name over a
+ * line of its own, its value over its gain and return, and a bar of its share. [open] is the
+ * account whose Holdings page the row opens.
+ */
+@Immutable
+data class HoldingRowModel(
+    val key: String, val name: String, val line: String?, val value: String, val gain: String?, val rate: String?, val sign: Long,
+    val share: String?, val bar: Float, val color: Int, val mark: String?, val open: String? = null,
+)
+
+/** A note under a report. [setUp] offers the way to keep an account up to date: its id, or empty for the Investments page. */
+@Immutable data class ReportNote(val key: String, val text: String, val setUp: String? = null)
+
+@Immutable
+data class PerformanceView(
+    val tiles: List<Tile>, val value: ColumnModel, val valueLegend: List<LegendItem>, val gains: ColumnModel?, val accounts: List<HoldingRowModel>, val notes: List<ReportNote>,
+) : ReportView { override val id get() = "performance" }
+
+@Immutable
+data class AllocationView(
+    val tiles: List<Tile>, val asOf: String, val by: String, val slices: List<SliceModel>, val centerValue: String, val centerLabel: String, val bars: List<BarRowModel>,
+    val holdingsAside: String, val onCost: String?, val holdings: List<HoldingRowModel>, val prices: List<FigureRow>, val notes: List<ReportNote>,
+) : ReportView { override val id get() = "allocation" }
+
+@Immutable
+data class InvestIncomeView(
+    val tiles: List<Tile>, val chart: ColumnModel?, val legend: List<LegendItem>, val dates: String, val lines: List<FigureRow>, val notes: List<ReportNote>,
+    /** Each account's part of the totals, when more than one reports income: its row, then its commissions. */
+    val accounts: List<FigureRow> = emptyList(),
+    /** The dividends each holding paid, largest first, with the tax withheld from them. */
+    val holdings: List<FigureRow> = emptyList(),
+) : ReportView { override val id get() = "investIncome" }
+
+private fun toned(amount: Long) = if (amount > 0) Tone.Positive else if (amount < 0) Tone.Negative else Tone.None
+
+/** A share or a return as the Holdings page writes it, left to right in an Arabic line too ("<1%" has no letter to say so). */
+private fun percentText(share: Double, signed: Boolean = false): String =
+    HoldingsPage.percent(share, signed).let { Money.ltr(if (it.startsWith("<")) "‎$it" else it) }
+
+private fun accountNames(ids: List<String>, ctx: ReportBudget): String = ids.joinToString(Words[R.string.list_separator]) { Money.own(ctx.accountName(it)) }
+
+/** Each part's colour by its place in the list, largest first: eight colours, then the grey of "Other". */
+private fun partColor(index: Int) = if (index in 0..7) index else ReportColors.OTHER
+
+/**
+ * How the investments did over the range: their value month by month under the money put in, each
+ * month's gain, and each account's own figures. Nothing when no account with holdings is chosen.
+ */
+fun performanceView(p: Portfolio, ctx: ReportBudget, today: LocalDate): PerformanceView? {
+    if (p.accounts.isEmpty() || p.months.isEmpty()) return null
+    val keys = p.months.map { it.month }
+    val fmt: (Double) -> String = { ctx.money(it) }
+    // The six largest accounts keep a colour each, in the budget's order; the rest share "Other".
+    val largest = p.accounts.sortedByDescending { it.end }.take(6).mapTo(HashSet()) { it.accountId }
+    val shown = p.accounts.filter { it.accountId in largest }
+    val colors = shown.mapIndexed { i, a -> a.accountId to i }.toMap()
+    val others = p.accounts.filter { it.accountId !in largest }
+    val series = shown.map { a -> ColumnSeries(a.accountId, ctx.accountName(a.accountId), colors[a.accountId] ?: 0, p.months.map { (it.byAccount[a.accountId] ?: 0L).toDouble() }) } +
+        (if (others.isEmpty()) emptyList() else listOf(ColumnSeries("__other", Words[R.string.report_other], ReportColors.OTHER,
+            p.months.map { m -> others.sumOf { m.byAccount[it.accountId] ?: 0L }.toDouble() })))
+    // What was there to begin with plus what was added since: the gap up to the columns is the gain.
+    val putIn = Words[R.string.ibkr_money_put_in]
+    var put = p.total.start
+    val line = LineOverlay(putIn, ReportColors.LINE, p.months.map { put += it.put; put.toDouble() })
+    val value = columnModel(Words[R.string.ibkr_value], keys, series, fmt, moneyAxis, ctx.axisUnit, line = line)
+    val gains = if (p.months.size < 2) null else columnModel(Words[R.string.reports_gain_each_month], keys, listOf(
+        ColumnSeries("gain", Words[R.string.ibkr_gain], ReportColors.POSITIVE, p.months.map { max(0L, it.gain).toDouble() }),
+        ColumnSeries("loss", Words[R.string.ibkr_loss], ReportColors.NEGATIVE, p.months.map { min(0L, it.gain).toDouble() }),
+        // A month is a gain or a loss, never both: their total would only say it twice.
+    ), { ctx.signed(Math.round(it)) }, moneyAxis, ctx.axisUnit).let { model -> model.copy(readouts = model.readouts.map { row -> row.filter { it.color != null } }) }
+    val current = p.to >= YearMonth.from(today).toString()
+    val stale = p.accounts.filter { current && Investments.stale(it.asOf, today) }
+    val tiles = listOf(
+        if (current) Tile(Words[R.string.report_value_now], ctx.money(p.total.end), p.allocation.asOf.takeIf { it.isNotEmpty() }?.let { Words[R.string.ibkr_prices_from_date, Money.date(it)] })
+        else Tile(Words[R.string.ibkr_value], ctx.money(p.total.end), Words[R.string.report_end_of, reportMonthName(p.to)]),
+        // Where a statement lists its trades, the gain's note says how much of it was taken by selling.
+        Tile(Words[R.string.ibkr_gain], ctx.signed(p.total.gain),
+            p.total.realised?.let { Words[R.string.report_realised, ctx.signed(it)] } ?: Words.count(R.plurals.report_over_months, p.months.size.toLong()), toned(p.total.gain)),
+        Tile(Words[R.string.ibkr_return], p.total.rate?.let { percentText(it, true) } ?: "—", p.total.yearly?.let { Words[R.string.report_rate_a_year, percentText(it, true)] },
+            p.total.rate?.let { toned(Math.round(it * 1e6)) } ?: Tone.None),
+        Tile(putIn, ctx.signed(p.total.put)),
+    )
+    val rows = p.accounts.map { a ->
+        val name = ctx.accountName(a.accountId)
+        HoldingRowModel(a.accountId, name,
+            Money.joined(listOfNotNull(Investments.sourceName(a.source), "${Words[R.string.report_start]} ${ctx.money(a.start)}", "${Words[R.string.report_put_in]} ${ctx.signed(a.put)}",
+                if (a in stale) Words[R.string.ibkr_prices_from_date, Money.date(a.asOf)] else null)),
+            ctx.money(a.end), ctx.signed(a.gain), a.rate?.let { percentText(it, true) }, a.gain, null, 0f, colors[a.accountId] ?: ReportColors.OTHER,
+            HoldingsPage.mark("", name), open = a.accountId)
+    }
+    val lacking = p.accounts.flatMap { it.missing }.distinct().mapNotNull(HoldingsPage::lackName)
+    val estimated = p.accounts.sumOf { it.estimatedDays }
+    val sparse = p.accounts.filter { it.sparse }.map { it.accountId }
+    val notes = listOfNotNull(
+        if (lacking.isNotEmpty()) ReportNote("lacking", (listOf(Words[R.string.ibkr_lacking]) + lacking.map { "• $it" }).joinToString("\n")) else null,
+        if (estimated > 0) ReportNote("estimated", Words.count(R.plurals.ibkr_estimated_days, estimated.toLong())) else null,
+        if (stale.isNotEmpty()) ReportNote("stale", Words[R.string.ibkr_stale]) else null,
+        if (sparse.isNotEmpty()) ReportNote("sparse", Words[R.string.report_sparse_note, accountNames(sparse, ctx)]) else null,
+        if (p.unfilled.isNotEmpty()) ReportNote("unfilled", Words[R.string.report_unfilled_note, accountNames(p.unfilled, ctx)], setUp = p.unfilled.singleOrNull().orEmpty()) else null,
+    )
+    return PerformanceView(tiles, value, series.map { LegendItem(it.label, it.color) } + LegendItem(putIn, ReportColors.LINE, line = true), gains, rows, notes)
+}
+
+/**
+ * What the investments are in today, across the accounts: a ring by kind, account or currency
+ * ([by]), and the holdings merged across accounts, largest first. Nothing when nothing is held.
+ */
+fun allocationView(p: Portfolio, ctx: ReportBudget, by: String, today: LocalDate): AllocationView? {
+    val all = p.allocation
+    if (p.accounts.isEmpty() || (all.total == 0L && p.holdings.isEmpty())) return null
+    fun part(key: String, value: Long) = SharePart(key, value, if (all.total > 0) value.toDouble() / all.total else 0.0)
+    // What no source gave a kind for is "Other investments" here, as on the Balance sheet.
+    fun kindOf(key: String) = if (key == "Holdings" || key == "Other holdings") OTHER_INVESTMENTS else key
+    // Cash and income still to be paid are kinds too, as on an account's own page.
+    val kinds = (all.byKind + listOfNotNull(
+        if (all.cash != 0L && all.byKind.none { it.key == "Cash" }) part("Cash", all.cash) else null,
+        if (all.accrued != 0L && all.byKind.none { it.key == "Accrued" }) part("Accrued", all.accrued) else null,
+    )).groupBy { kindOf(it.key) }.map { (key, same) -> SharePart(key, same.sumOf { it.value }, same.sumOf { it.share }) }.sortedByDescending { it.value }
+    val kindOrder = kinds.map { it.key }
+    val (parts, label) = when (by) {
+        "account" -> all.byAccount to { key: String -> ctx.accountName(key) }
+        "currency" -> all.byCurrency to { key: String -> Money.ltr(key) }
+        else -> kinds to { key: String -> if (key == OTHER_INVESTMENTS) sectionLabel(key) else HoldingsPage.kindName(key) }
+    }
+    val slices = parts.mapIndexedNotNull { i, part ->
+        if (part.value > 0) SliceModel(part.key, label(part.key), part.value, partColor(i), ctx.money(part.value), percentText(max(0.0, part.share))) else null
+    }
+    val most = max(1L, parts.maxOfOrNull { it.value } ?: 1L)
+    val bars = parts.mapIndexed { i, part ->
+        // A part below zero (money borrowed, an option sold) is listed, and is no share of the whole.
+        BarRowModel(part.key, label(part.key), ctx.money(part.value), if (part.value > 0) percentText(part.share) else "—", partColor(i), (max(0L, part.value).toDouble() / most).toFloat(),
+            // A currency other than the budget's says how much of it there is.
+            note = if (by == "currency") HoldingsPage.ownAmount(part.amount, part.key, ctx.currency) else null)
+    }
+    val cash = kinds.firstOrNull { it.key == "Cash" }?.value ?: all.cash
+    val first = p.holdings.firstOrNull()
+    val tiles = listOf(
+        Tile(Words[R.string.ibkr_holdings_title], Money.count(all.count.toLong()), ctx.money(all.total)),
+        Tile(Words[R.string.ibkr_largest_holding], all.largestShare?.let { percentText(it) } ?: "—", first?.let { Money.own(it.name) }),
+        Tile(Words[R.string.report_top_five_holdings], all.topFiveShare?.let { percentText(it) } ?: "—"),
+        Tile(Words[R.string.ibkr_cash], if (all.total > 0) percentText(max(0.0, cash.toDouble() / all.total)) else "—", ctx.money(cash)),
+    )
+    val several = p.accounts.size > 1
+    val largest = max(1L, p.holdings.maxOfOrNull { it.value } ?: 1L)
+    val holdings = p.holdings.mapIndexed { i, h ->
+        val symbol = HoldingsPage.shownSymbol(h.symbol, h.name)
+        // What it is, its symbol and what it's worth in its own currency, then which accounts hold it.
+        val what = if (kindOf(h.group) == OTHER_INVESTMENTS) sectionLabel(OTHER_INVESTMENTS) else h.instrument.ifEmpty { h.one }.ifEmpty { null }?.let(HoldingsPage::instrumentName)
+        HoldingRowModel("$i:${h.key}", h.name,
+            Money.joined(listOfNotNull(what, symbol?.let { Money.ltr(it) }, HoldingsPage.ownAmount(h.amount, h.currency, ctx.currency),
+                if (several) accountNames(h.accounts, ctx).ifEmpty { null } else null)).ifEmpty { null },
+            // A holding below zero (an option sold) is listed, and is no share of the whole.
+            ctx.money(h.value), h.gain?.let { ctx.signed(it) }, h.rate?.let { percentText(it, true) }, h.gain ?: 0L, if (h.value > 0) h.share?.let { percentText(it) } else null,
+            if (h.value > 0) (h.value.toFloat() / largest).coerceIn(0.02f, 1f) else 0f, partColor(kindOrder.indexOf(kindOf(h.group)).let { if (it < 0) 8 else it }),
+            HoldingsPage.mark(h.symbol, h.name))
+    }
+    val onCost = all.unrealised?.let { gain ->
+        Money.joined(listOfNotNull("${Words[R.string.report_unrealised_gain]} ${ctx.signed(gain)}",
+            all.unrealisedRate?.let { "${Words[R.string.report_return_on_cost]} ${percentText(it, true)}" }))
+    }
+    // Each account's prices have their own day; the report is dated by the oldest.
+    val stale = p.accounts.filter { Investments.stale(it.asOf, today) }
+    val prices = if (p.accounts.map { it.asOf }.distinct().size < 2) emptyList() else p.accounts.map { a ->
+        FigureRow(a.accountId, ctx.accountName(a.accountId), Money.date(a.asOf), if (a in stale) Words[R.string.ibkr_stale] else null)
+    }
+    return AllocationView(tiles, Words[R.string.ibkr_prices_from_date, Money.date(all.asOf)], by, slices, ctx.money(all.total), Words[R.string.ibkr_value], bars,
+        Words.count(R.plurals.ibkr_holdings, p.holdings.size.toLong()), onCost, holdings, prices,
+        if (stale.isNotEmpty() && prices.isEmpty()) listOf(ReportNote("stale", Words[R.string.ibkr_stale])) else emptyList())
+}
+
+/**
+ * What the investments earned and cost over the range: dividends and interest against tax, fees
+ * and commissions, month by month. Accounts whose source reports none of it are named.
+ */
+fun investIncomeView(p: Portfolio, ctx: ReportBudget): InvestIncomeView? {
+    if (p.accounts.isEmpty()) return null
+    val paid = p.income
+    val silent = if (paid.silent.isEmpty()) emptyList() else listOf(ReportNote("silent", Words[R.string.report_silent_note, accountNames(paid.silent, ctx)]))
+    val dates = if (p.from == p.to) reportMonthName(p.from, short = true) else Words[R.string.date_range, reportMonthName(p.from, short = true), reportMonthName(p.to, short = true)]
+    if (paid.reporting.isEmpty()) return InvestIncomeView(emptyList(), null, emptyList(), dates, emptyList(), silent)
+    // Commissions come by month where a statement lists its trades, and as one figure a statement for the accounts still listed.
+    val byMonth = paid.months.any { it.commissions != null }
+    val commissions = paid.months.sumOf { it.commissions ?: 0L } + paid.commissions.sumOf { it.amount }
+    val income = paid.dividends + paid.interest
+    val costs = paid.tax + paid.fees + commissions
+    val net = income + costs + paid.other
+    val tiles = listOf(
+        Tile(Words[R.string.ibkr_dividends_interest], ctx.signed(income), tone = toned(income)),
+        Tile(Words[R.string.ibkr_fees_tax_commissions], ctx.signed(costs), tone = if (costs < 0) Tone.Negative else Tone.None),
+        Tile(Words[R.string.report_net], ctx.signed(net), tone = toned(net)),
+        Tile(Words[R.string.report_yield], paid.yield?.let { Money.ltr(HoldingsPage.percent(it, true).removePrefix("+")) } ?: "—", Words[R.string.report_yield_note]),
+    )
+    // What arrived goes up and what was paid goes down, each kind in a colour of its own.
+    data class Kind(val name: String, val color: Int, val of: (IncomeMonth) -> Long)
+    val kinds = listOf(
+        Kind(Words[R.string.ibkr_dividends], 0) { it.dividends }, Kind(Words[R.string.ibkr_interest], 2) { it.interest },
+        Kind(Words[R.string.ibkr_tax_withheld], 1) { it.tax }, Kind(Words[R.string.ibkr_fees], 3) { it.fees }, Kind(Words[R.string.ibkr_commissions], 4) { it.commissions ?: 0L },
+        Kind(Words[R.string.ibkr_one_other], ReportColors.OTHER) { it.other },
+    )
+    val series = kinds.mapIndexed { i, kind -> ColumnSeries("k$i", kind.name, kind.color, paid.months.map { kind.of(it).toDouble() }) }.filter { s -> s.values.any { it != 0.0 } }
+    val chart = if (series.isEmpty()) null else columnModel(Words[R.string.ibkr_income_costs], paid.months.map { it.month }, series, { ctx.signed(Math.round(it)) }, moneyAxis, ctx.axisUnit)
+    val several = paid.reporting.size > 1
+    // A statement gives its commissions as one figure, over its own dates.
+    fun commissionRow(key: String, c: Commission, account: Boolean, style: RowStyle = RowStyle.Plain) = FigureRow(key, Words[R.string.ibkr_commissions], ctx.signed(c.amount),
+        Money.joined(listOfNotNull(if (account) ctx.accountName(c.accountId).ifEmpty { null } else null, Words[R.string.ibkr_from_to, Money.date(c.from), Money.date(c.to)])),
+        toned(c.amount), style)
+    val charged = paid.commissions.filter { it.amount != 0L }
+    // With more than one account reporting, each has a row of its own under the totals, its commissions with it.
+    val split = several && paid.byAccount.isNotEmpty()
+    val accounts = if (!split) emptyList() else paid.byAccount.flatMap { a ->
+        val own = charged.filter { it.accountId == a.accountId }
+        val earned = a.dividends + a.interest
+        // Its commissions as the engine gives them for the account, so the rows add up to the net; an engine that doesn't leaves its statement's figure.
+        val cost = a.tax + a.fees + (a.commissions ?: own.sumOf { it.amount })
+        listOf(FigureRow("a:${a.accountId}", ctx.accountName(a.accountId), ctx.signed(earned + cost + a.other),
+            Money.joined(listOf("${Words[R.string.ibkr_dividends_interest]} ${ctx.signed(earned)}", "${Words[R.string.ibkr_fees_tax_commissions]} ${ctx.signed(cost)}")),
+            toned(earned + cost + a.other))) + own.mapIndexed { i, c -> commissionRow("c:${a.accountId}:$i", c, account = false, style = RowStyle.Child) }
+    }
+    val lines = listOf(
+        Triple("dividends", Words[R.string.ibkr_dividends], paid.dividends), Triple("interest", Words[R.string.ibkr_interest], paid.interest),
+        Triple("tax", Words[R.string.ibkr_tax_withheld], paid.tax), Triple("fees", Words[R.string.ibkr_fees], paid.fees), Triple("other", Words[R.string.ibkr_one_other], paid.other),
+    ).filter { it.third != 0L }.map { (key, name, amount) ->
+        FigureRow(key, name, ctx.signed(amount), if (key == "fees") Words[R.string.ibkr_fees_note] else null, toned(amount))
+    } + (if (split || byMonth) listOfNotNull(if (commissions != 0L) FigureRow("commissions", Words[R.string.ibkr_commissions], ctx.signed(commissions), tone = toned(commissions)) else null)
+        else charged.mapIndexed { i, c -> commissionRow("commissions:$i", c, account = several) }) +
+        FigureRow("__net", Words[R.string.report_net], ctx.signed(net), tone = toned(net), style = RowStyle.Total)
+    val holdings = paid.byHolding.mapIndexed { i, h ->
+        FigureRow("$i:${h.key}", h.name.ifEmpty { h.symbol }, ctx.signed(h.dividends),
+            Money.joined(listOfNotNull(h.symbol.takeIf { it.isNotEmpty() && it != h.name }?.let { Money.ltr(it) },
+                if (h.tax != 0L) "${Words[R.string.ibkr_tax_withheld]} ${ctx.signed(h.tax)}" else null)).ifEmpty { null }, toned(h.dividends))
+    }
+    return InvestIncomeView(tiles, chart, series.map { LegendItem(it.label, it.color) }, dates, lines, silent, accounts, holdings)
+}
+
+/** Builds an investment report's body from the portfolio. */
+fun investmentsView(id: String, p: Portfolio, ctx: ReportBudget, scope: ReportScope, options: ReportOptions): ReportView? = when (id) {
+    "performance" -> performanceView(p, ctx, scope.today)
+    "allocation" -> allocationView(p, ctx, options.by, scope.today)
+    "investIncome" -> investIncomeView(p, ctx)
+    else -> null
+}
+
+/** Builds a report's body. Forecast has its own data and builder, and so do the investment reports ([investmentsView]). */
+fun reportView(id: String, data: ReportData, ctx: ReportBudget, scope: ReportScope, options: ReportOptions, portfolio: Portfolio? = null): ReportView? {
     if (data.months.isEmpty()) return null
     return when (id) {
         "categories" -> categoryView(data, ctx, options.group, scope.today)
@@ -1247,27 +1878,63 @@ fun reportView(id: String, data: ReportData, ctx: ReportBudget, scope: ReportSco
         "income" -> incomeView(data, ctx)
         "cashflow" -> cashFlowView(data, ctx)
         "networth" -> netWorthView(data, ctx, scope.accounts)
-        "balance" -> balanceSheetView(data, ctx, scope.accounts)
+        "balance" -> balanceSheetView(data, ctx, scope.accounts, portfolio, scope.today)
         "balances" -> balancesView(data, ctx, scope.accounts, options.chartAccounts)
         "age" -> ageView(data)
         else -> null
     }
 }
 
-/** A report's own choices: the group drilled into, by group or total, the accounts on the chart. */
+/** A report's own choices: the group drilled into, by group or total, the accounts on the chart, what the allocation's ring is by. */
 @Immutable
-data class ReportOptions(val group: String? = null, val byGroup: Boolean = true, val chartAccounts: Map<String, Int>? = null)
+data class ReportOptions(val group: String? = null, val byGroup: Boolean = true, val chartAccounts: Map<String, Int>? = null, val by: String = "kind")
 
-// ---------- Overview (the phone's Reports tab) ----------
+// ---------- Overview (the six cards Reports opens on) ----------
 
+/** A part of a bar split by what it's made of: its name, its figure, its colour and its weight in the bar. */
 @Immutable data class SpendRow(val key: String, val label: String, val valueText: String, val color: Int, val weight: Long)
 
+/**
+ * A report's card on the overview: one headline figure with a short note, over a small chart of
+ * months ([bars]) or one bar split in two ([split]). [report] is the report the card opens.
+ */
 @Immutable
-data class OverviewModel(
-    val monthName: String, val spendingText: String, val rows: List<SpendRow>, val nothingSpent: Boolean, val refundLead: String?, val refunds: List<SpendRow>,
-    val incomeLead: String, val incomeBars: MiniBarsModel, val netWorthText: String, val netWorthNegative: Boolean, val assetsText: String, val debtsText: String,
-    val debtsNegative: Boolean, val netWorthBars: MiniBarsModel, val ageText: String, val ageBars: MiniBarsModel,
-)
+data class OverviewCard(val report: String, val figure: String, val tone: Tone, val note: String, val bars: MiniBarsModel? = null, val split: List<SpendRow> = emptyList())
+
+/** The overview's cards, in the reports' order: Investments only with holdings, the forecast only when it could be read. */
+@Immutable data class OverviewModel(val cards: List<OverviewCard>)
+
+/** The Investments card: what they're worth now, their gain over the months shown, and their value each month. */
+fun investmentsCard(p: Portfolio, ctx: ReportBudget): OverviewCard? {
+    if (p.accounts.isEmpty() || p.months.isEmpty()) return null
+    val keys = p.months.map { it.month }
+    val partial = partialIndex(keys, YearMonth.now().toString())
+    val values = p.months.map { it.value }
+    return OverviewCard(INVESTMENTS_REPORT, ctx.money(p.total.end), Tone.None,
+        Money.joined(listOfNotNull("${Words[R.string.ibkr_gain]} ${ctx.signed(p.total.gain)}", p.total.rate?.let { percentText(it, true) })),
+        MiniBarsModel(keys.map(::monthAbbrev), listOf(MiniSeries(Words[R.string.ibkr_value], 0, values)),
+            keys.mapIndexed { i, m -> if (i == partial) soFar(reportMonthName(m)) else reportMonthName(m) },
+            listOf(values.map { ctx.money(it) }), listOf(values.map { compactMoney(it.toDouble()) }), partial))
+}
+
+/**
+ * The Forecast card, from the forecast the report reads: the lowest the budget accounts' balance
+ * gets in the months ahead and when, over the balance at the end of each of those months.
+ */
+fun forecastCard(data: ForecastData, ctx: ReportBudget, today: LocalDate, months: Int = 6): OverviewCard? {
+    if (data.balances.isEmpty()) return null
+    val plan = forecastPlan(data, emptySet(), months, today, today.plusMonths(months.toLong()))
+    val line = forecastLine(plan.knownLine, plan.suggested)
+    if (line.isEmpty()) return null
+    var low = 0
+    line.forEachIndexed { i, v -> if (v < line[low]) low = i }
+    val ends = plan.days.indices.filter { i -> i == plan.days.lastIndex || plan.days[i + 1].take(7) != plan.days[i].take(7) }
+    val values = ends.map { line[it] }
+    return OverviewCard("forecast", ctx.money(line[low]), if (line[low] < 0) Tone.Negative else Tone.None,
+        Money.joined(listOf(Words[R.string.report_lowest_ahead], if (low == 0) Words[R.string.report_today_lower] else Money.date(plan.days[low]))),
+        MiniBarsModel(ends.map { monthAbbrev(plan.days[it]) }, listOf(MiniSeries(Words[R.string.report_forecast], 0, values)), ends.map { Money.date(plan.days[it]) },
+            listOf(values.map { ctx.money(it) }), listOf(values.map { compactMoney(it.toDouble()) })))
+}
 
 /** The income card's sentence, from the months with any income or spending. */
 fun incomeLead(months: List<ReportMonth>): String {
@@ -1282,44 +1949,47 @@ fun incomeLead(months: List<ReportMonth>): String {
     }
 }
 
-fun overviewModel(data: ReportData, ctx: ReportBudget): OverviewModel? {
-    val last = data.months.lastOrNull() ?: return null
-    val top = 5
-    val ranked = last.categories.entries.filter { it.value > 0 }.sortedByDescending { it.value }
-    val refunds = last.categories.entries.filter { it.value < 0 }.sortedBy { it.value }
-    val refundTotal = refunds.sumOf { it.value }
-    val refundRows = refunds.take(top).map { SpendRow(it.key, ctx.nameOf[it.key] ?: it.key, ctx.money(it.value), ReportColors.OTHER, -it.value) }.toMutableList()
-    val otherRefunds = refunds.drop(top).sumOf { it.value }
-    if (otherRefunds != 0L) refundRows.add(SpendRow("__refunds", Words[R.string.report_other_refund_categories], ctx.money(otherRefunds), ReportColors.OTHER, -otherRefunds))
-    val unassigned = Words[R.string.category_unassigned]
-    val rows = ranked.take(top).mapIndexed { i, e -> SpendRow(e.key, ctx.nameOf[e.key] ?: unassigned, ctx.money(e.value), i, e.value) }.toMutableList()
-    val rest = ranked.drop(top).sumOf { it.value }
-    if (rest > 0) rows.add(SpendRow("__rest", Words[R.string.report_all_others], ctx.money(rest), ReportColors.OTHER, rest))
-    val labels = data.months.map { monthAbbrev(it.month) }
-    val partial = partialIndex(data.months.map { it.month }, YearMonth.now().toString())
-    val titles = data.months.mapIndexed { i, m -> if (i == partial) soFar(reportMonthName(m.month)) else reportMonthName(m.month) }
+/**
+ * The overview, over the months of [data] (six, ending at the budget's month): a card for each
+ * report with its headline figure, a short note and a small chart.
+ */
+fun overviewModel(data: ReportData, ctx: ReportBudget, portfolio: Portfolio? = null, forecast: ForecastData? = null, today: LocalDate = LocalDate.now()): OverviewModel? {
+    val months = data.months
+    val last = months.lastOrNull() ?: return null
+    val labels = months.map { monthAbbrev(it.month) }
+    val partial = partialIndex(months.map { it.month }, YearMonth.now().toString())
+    val titles = months.mapIndexed { i, m -> if (i == partial) soFar(reportMonthName(m.month)) else reportMonthName(m.month) }
     fun money(values: List<Long>) = values.map { ctx.money(it) }
-    fun short(values: List<Long>) = values.map { compactMoney(it.toDouble()) }
-    val ages = data.months.map { data.ageOfMoneyByMonth[it.month] }
-    return OverviewModel(
-        reportMonthName(last.month), ctx.money(last.spending), rows, ranked.isEmpty() && refunds.isEmpty(),
-        if (refunds.isNotEmpty()) Words[R.string.report_refund_lead, ctx.money(-refundTotal)] + (if (ranked.isNotEmpty()) " " + Words[R.string.report_refund_lead_bar] else "") else null,
-        refundRows, incomeLead(data.months),
-        MiniBarsModel(labels, listOf(MiniSeries(Words[R.string.report_income], ReportColors.POSITIVE, data.months.map { it.income }), MiniSeries(Words[R.string.report_spending], 0, data.months.map { it.spending })),
-            titles, listOf(money(data.months.map { it.income }), money(data.months.map { it.spending })), emptyList(), partial),
-        ctx.money(last.netWorth), last.netWorth < 0, ctx.money(last.assets), ctx.money(-last.debt), last.debt != 0L,
-        MiniBarsModel(labels, listOf(MiniSeries(Words[R.string.net_worth], 0, data.months.map { it.netWorth })), titles,
-            listOf(money(data.months.map { it.netWorth })), listOf(short(data.months.map { it.netWorth })), partial),
-        daysText(data.ageOfMoney),
-        MiniBarsModel(labels, listOf(MiniSeries(Words[R.string.report_cash_age], ReportColors.POSITIVE, ages.map { it ?: 0L })), titles,
-            listOf(ages.map(::daysText)), listOf(ages.map { it?.toString() ?: "" }), partial),
-    )
+    fun bars(name: String, values: List<Long>) =
+        MiniBarsModel(labels, listOf(MiniSeries(name, 0, values)), titles, listOf(money(values)), listOf(values.map { compactMoney(it.toDouble()) }), partial)
+    val spending = months.map { it.spending }
+    val kept = months.sumOf { it.income - it.spending }
+    val change = last.netWorth - openingNetWorth(data, ctx.accounts)
+    return OverviewModel(listOfNotNull(
+        OverviewCard("spending", ctx.money(last.spending), Tone.None,
+            Money.joined(listOf(reportMonthName(last.month), "${Words[R.string.report_monthly_average]} ${ctx.money(roundDiv(spending.sum(), months.size))}")),
+            bars(Words[R.string.report_spending], spending)),
+        OverviewCard("income", ctx.signed(kept), if (kept < 0) Tone.Negative else Tone.None, incomeLead(months),
+            MiniBarsModel(labels, listOf(MiniSeries(Words[R.string.report_income], ReportColors.POSITIVE, months.map { it.income }), MiniSeries(Words[R.string.report_spending], 0, spending)),
+                titles, listOf(money(months.map { it.income }), money(spending)), emptyList(), partial)),
+        OverviewCard("networth", ctx.money(last.netWorth), if (last.netWorth < 0) Tone.Negative else Tone.None, Words[R.string.report_in_this_period, ctx.signed(change)],
+            bars(Words[R.string.net_worth], months.map { it.netWorth })),
+        // What is owned, with what is owed beside it in one bar.
+        OverviewCard("balance", ctx.money(last.assets), Tone.None,
+            Money.joined(listOf(Words[R.string.report_total_assets], "${Words[R.string.report_total_liabilities]} ${ctx.money(last.debt)}")),
+            split = listOfNotNull(if (last.assets > 0) SpendRow("assets", Words[R.string.report_assets], ctx.money(last.assets), 0, last.assets) else null,
+                if (last.debt > 0) SpendRow("debts", Words[R.string.report_debts], ctx.money(last.debt), 1, last.debt) else null)),
+        portfolio?.let { investmentsCard(it, ctx) },
+        forecast?.let { forecastCard(it, ctx, today) },
+    ))
 }
 
 // ---------- Forecast ----------
 
 @Immutable
-data class ForecastEvent(val date: String, val amount: Long, val payee: String, val accountId: String, val peerId: String?, val categoryId: String?, val scheduleId: String?)
+/** [invested]: money moved to or from an investment account, which Reports doesn't count as spending. */
+data class ForecastEvent(val date: String, val amount: Long, val payee: String, val accountId: String, val peerId: String?, val categoryId: String?, val scheduleId: String?,
+    val invested: Boolean = false)
 
 @Immutable data class ForecastData(val balances: Map<String, Long>, val events: List<ForecastEvent>, val recentSpending: Long)
 
@@ -1327,7 +1997,7 @@ fun parseForecast(json: JSONObject): ForecastData = ForecastData(
     json.optJSONObject("balances").amounts(),
     json.list("events").map { e ->
         ForecastEvent(e.str("date"), e.optLong("amount"), e.str("payee"), e.str("accountId"), e.str("peerId").ifEmpty { null },
-            e.str("categoryId").ifEmpty { null }, e.str("scheduleId").ifEmpty { null })
+            e.str("categoryId").ifEmpty { null }, e.str("scheduleId").ifEmpty { null }, e.optBoolean("invested"))
     },
     json.optLong("recentSpending"),
 )
@@ -1344,7 +2014,7 @@ fun forecastPlan(data: ForecastData, accounts: Set<String>, months: Int, start: 
     // Moves between two of the chosen accounts don't change their total.
     val events = data.events.filter { it.accountId in ids && !(it.peerId != null && it.peerId in ids) }
     val opening = ids.sumOf { data.balances[it] ?: 0L }
-    val scheduled = events.filter { it.scheduleId != null && it.categoryId != null && it.amount < 0 }.sumOf { -it.amount }.toDouble() / months
+    val scheduled = events.filter { it.scheduleId != null && it.categoryId != null && it.amount < 0 && !it.invested }.sumOf { -it.amount }.toDouble() / months
     val suggested = max(0L, Math.round(data.recentSpending - scheduled))
     val days = ArrayList<String>()
     var d = start

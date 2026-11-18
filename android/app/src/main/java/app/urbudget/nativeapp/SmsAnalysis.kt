@@ -471,6 +471,9 @@ internal data class SmsBatch(val messages: List<BankSms>, val analysis: JSONObje
         return only(analysis.rows("items").withIndex().filter { (_, item) -> sourceIds(item).all { sender[it] in keys } }.map { it.index })
     }
 
+    /** The review without the items read from any of these texts: they were settled elsewhere (a card entered them). Null when none are left. */
+    fun without(ids: Set<String>): SmsBatch? = only(analysis.rows("items").withIndex().filter { (_, item) -> sourceIds(item).none { it in ids } }.map { it.index })
+
     private fun sourceIds(item: JSONObject): List<String> = item.optJSONArray("sourceIds")?.let { a -> (0 until a.length()).map { a.getString(it) } }.orEmpty()
 
     /** The analysis with every account the review resolved, for the core's preview and import. */

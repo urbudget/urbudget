@@ -222,6 +222,8 @@ class AssistantPresentationTest {
     @Test fun aPagesKeyNamesThePageAsTheAppDoes() {
         assertEquals(listOf("Budget", "Transactions", "Accounts", "Reports", "Scheduled", "Payees & rules", "Settings & data", "Bank messages", "Bank connections", "Import bank file"),
             listOf("budget", "transactions", "accounts", "reports", "scheduled", "payees", "settings", "bankMessages", "bankConnections", "import").map { Words[assistantPageName(it)!!] })
+        // A More page known by its own name, such as the broker connection.
+        assertEquals("Interactive Brokers", Words[assistantPageName("Interactive Brokers")!!])
         assertNull(assistantPageName("somewhereNew"))
         assertEquals(listOf(true, true, false, false), listOf("budget", "reports", "transactions", "import").map(::assistantPageShowsMonth))
     }

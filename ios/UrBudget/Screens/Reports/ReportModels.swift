@@ -47,6 +47,8 @@ struct ReportBarRow: Identifiable, Hashable, Sendable {
     var color: Int?
     var fraction: Double
     var drill = false
+    /// A line under its name: a currency's own amount.
+    var note: String? = nil
     var id: String { key }
 }
 
@@ -82,7 +84,8 @@ struct ReportDrillTarget: Hashable, Sendable {
     var to: String? = nil
 }
 
-enum ReportRowStyle: Hashable, Sendable { case plain, section, group, child, total, net, muted }
+/// How a row of a report's list is set; `note` is a sentence under the figures, at its full length.
+enum ReportRowStyle: Hashable, Sendable { case plain, section, group, child, total, net, muted, note }
 
 /// A row of a report's list: a month, an account, a source.
 struct ReportFigureRow: Identifiable, Hashable, Sendable {
@@ -94,7 +97,16 @@ struct ReportFigureRow: Identifiable, Hashable, Sendable {
     var style: ReportRowStyle = .plain
     var drill: ReportDrillTarget? = nil
     var expand: String? = nil
+    /// Rows next to each other with the same `fold` are one list inside a table: nine or more show six until the rest are asked for.
+    var fold: String? = nil
     var id: String { key }
+}
+
+/// A run of a table's rows: one list that folds (`ReportFigureRow.fold`), or rows that don't.
+struct ReportRowRun: Identifiable, Hashable, Sendable {
+    var id: String
+    var rows: [ReportFigureRow]
+    var folds: Bool
 }
 
 struct ReportChanges: Hashable, Sendable {
@@ -244,7 +256,61 @@ struct ReportAgeModel: Hashable, Sendable {
     var rows: [ReportFigureRow]
 }
 
-/// A report's body, ready to lay out. Forecast has its own data and model.
+/// How the accounts with holdings did over the range, together and one by one.
+struct ReportPerformanceModel: Hashable, Sendable {
+    var tiles: [ReportTile]
+    /// Each month's value by account, under a line of the money put in.
+    var value: ReportColumnModel
+    var valueLegend: [ReportLegendItem]
+    var gain: ReportColumnModel
+    /// The accounts whose gains land in the month they're next updated.
+    var gainNote: String?
+    var dates: String
+    var accounts: [ReportFigureRow]
+    /// Under each account's row: how it's kept up to date, then its start, money put in, gain and end.
+    var details: [String: [ReportFigureRow]]
+    var notes: [String]
+}
+
+/// The holdings split one way (by kind, by account or by currency): the ring's slices and the ranked list under it.
+struct ReportAllocationRing: Hashable, Sendable {
+    var slices: [ReportSlice]
+    var rows: [ReportBarRow]
+}
+
+/// What the accounts hold today, together.
+struct ReportAllocationModel: Hashable, Sendable {
+    var tiles: [ReportTile]
+    var total: String
+    /// "Prices from 2026-11-17": the oldest prices among the accounts.
+    var asOf: String?
+    var byKind: ReportAllocationRing
+    var byAccount: ReportAllocationRing
+    var byCurrency: ReportAllocationRing
+    /// The holdings, merged across accounts, largest first.
+    var holdings: [ReportFigureRow]
+    var notes: [String]
+}
+
+/// What the accounts earned and were charged over the range.
+struct ReportInvestmentIncomeModel: Hashable, Sendable {
+    var tiles: [ReportTile]
+    /// Whether any account has income on record.
+    var reporting: Bool
+    var chart: ReportColumnModel?
+    var legend: [ReportLegendItem]
+    var months: [ReportFigureRow]
+    var lines: [ReportFigureRow]
+    /// Each account's net, with what it earned and the tax, fees and commissions it was charged; empty unless several accounts report income.
+    var accounts: [ReportFigureRow]
+    /// The dividends each holding paid, largest first.
+    var holdings: [ReportFigureRow]
+    /// The accounts that report no income or costs.
+    var note: String?
+}
+
+/// A report's body, ready to lay out. Forecast has its own data and model; the Investments reports
+/// are built from the engine's investments report (`ReportMath.investmentsView`).
 enum ReportBody: Hashable, Sendable {
     case categories(ReportCategoryModel)
     case payees(ReportPayeeModel)
@@ -257,6 +323,9 @@ enum ReportBody: Hashable, Sendable {
     case balance(ReportBalanceSheetModel)
     case balances(ReportBalancesModel)
     case age(ReportAgeModel)
+    case performance(ReportPerformanceModel)
+    case allocation(ReportAllocationModel)
+    case investmentIncome(ReportInvestmentIncomeModel)
 
     var id: String {
         switch self {
@@ -271,6 +340,9 @@ enum ReportBody: Hashable, Sendable {
         case .balance: return "balance"
         case .balances: return "balances"
         case .age: return "age"
+        case .performance: return "performance"
+        case .allocation: return "allocation"
+        case .investmentIncome: return "investmentIncome"
         }
     }
 }
@@ -302,6 +374,32 @@ struct ReportSheetLine: Equatable, Sendable {
     var end: Int64
 }
 
+/// A line of the statement: an account, or the part of one that is in a section. Its start is nil
+/// where what the account held then isn't kept.
+struct ReportSheetPart: Equatable, Sendable {
+    var key: String
+    var title: String
+    var section: String
+    var start: Int64?
+    var end: Int64
+    /// A line under the title: a holding's instrument, symbol and own-currency amount, or the cash at a broker by currency.
+    var line: String? = nil
+    /// An account's holdings of one kind, which today's holdings themselves can stand in for.
+    var kind = false
+}
+
+/// What is owned by what the money is in, and the accounts the notes under the statement name.
+struct ReportSheetSplit: Equatable, Sendable {
+    var parts: [ReportSheetPart]
+    /// Accounts broken down at the end, whose start isn't kept.
+    var noStart: [String]
+    /// Accounts with holdings that can't be broken down at the range's end.
+    var whole: [String]
+    /// Today's holdings, by the section they stand in for that section's account lines of their kinds.
+    var holdings: [String: [ReportSheetPart]] = [:]
+}
+
+/// A part of a bar split in parts: its name, its amount, its colour and its weight in the bar.
 struct ReportSpendRow: Identifiable, Hashable, Sendable {
     var key: String
     var label: String
@@ -311,24 +409,22 @@ struct ReportSpendRow: Identifiable, Hashable, Sendable {
     var id: String { key }
 }
 
+/// A card of the Reports overview: a report (by its id), its headline figure with a short note,
+/// and its small chart: columns by month, one bar split in parts, or a line ahead.
+struct ReportOverviewCard: Identifiable, Hashable, Sendable {
+    var id: String
+    var figure: String
+    var negative = false
+    var note: String? = nil
+    var noteTone: ReportTone = .none
+    var bars: ReportMiniBarsModel? = nil
+    var parts: [ReportSpendRow]? = nil
+    var line: ReportLinesModel? = nil
+}
+
+/// The Reports overview: a card for each report, in the reports' order.
 struct ReportOverviewModel: Hashable, Sendable {
-    var month: String
-    var monthName: String
-    var spendingText: String
-    var rows: [ReportSpendRow]
-    var nothingSpent: Bool
-    var refundLead: String?
-    var refunds: [ReportSpendRow]
-    var incomeLead: String
-    var incomeBars: ReportMiniBarsModel
-    var netWorthText: String
-    var netWorthNegative: Bool
-    var assetsText: String
-    var debtsText: String
-    var debtsNegative: Bool
-    var netWorthBars: ReportMiniBarsModel
-    var ageText: String
-    var ageBars: ReportMiniBarsModel
+    var cards: [ReportOverviewCard]
 }
 
 struct ReportForecastEvent: Equatable, Sendable {
@@ -339,6 +435,8 @@ struct ReportForecastEvent: Equatable, Sendable {
     var peerId: String?
     var categoryId: String?
     var scheduleId: String?
+    /// Money moved to or from an investment account, which Reports doesn't count as spending.
+    var invested = false
 }
 
 struct ReportForecastData: Sendable {
@@ -952,31 +1050,60 @@ extension ReportMath {
         let lastName = monthName(last.month)
         let firstName = monthName(first.month)
         let debtShare = share(last.debt, last.assets)
-        return ReportNetWorthModel(tiles: [
+        var tiles = [
             ReportTile(label: netWorth, value: ctx.money(last.netWorth), note: String(localized: "end of \(lastName)")),
             ReportTile(label: String(localized: "Change"), value: ctx.signed(change), note: String(localized: "since \(firstName) began") + percent,
                        tone: change < 0 ? .negative : .positive),
             ReportTile(label: assets, value: ctx.money(last.assets)),
             ReportTile(label: debts, value: ctx.money(last.debt), note: last.assets > 0 ? String(localized: "\(debtShare) of assets") : nil),
-        ], chart: columnModel(label: String(localized: "Assets and debts by month with net worth"), keys: keys, series: [
+        ]
+        // Where a month has a market figure, each month's change is what markets did and everything
+        // else (saving, debt paid down, revalued assets): the two add up to the change.
+        let markets = data.months.map(\.market)
+        let others = zip(monthly, markets).map { $0 &- $1 }
+        let changeSeries: [ReportColumnSeries]
+        let changeLegend: [ReportLegendItem]
+        if markets.contains(where: { $0 != 0 }) {
+            let marketsLabel = String(localized: "Markets")
+            let othersLabel = String(localized: "Everything else")
+            let fromMarkets = markets.reportSum
+            var note: String?
+            if fromMarkets != 0 && change != 0 && (fromMarkets < 0) == (change < 0) {
+                let part = AppLanguage.leftToRight("\(fixed(Double(fromMarkets) / Double(change) * 100, 1))%")
+                note = String(localized: "\(part) of the change")
+            }
+            tiles.append(ReportTile(label: String(localized: "From markets"), value: ctx.signed(fromMarkets), note: note,
+                                    tone: fromMarkets > 0 ? .positive : fromMarkets < 0 ? .negative : .none))
+            changeSeries = [
+                ReportColumnSeries(key: "markets", label: marketsLabel, color: 3, values: markets.map { Double($0) }),
+                ReportColumnSeries(key: "others", label: othersLabel, color: 0, values: others.map { Double($0) }),
+            ]
+            changeLegend = [ReportLegendItem(label: marketsLabel, color: 3), ReportLegendItem(label: othersLabel, color: 0)]
+        } else {
+            changeSeries = [
+                ReportColumnSeries(key: "up", label: grew, color: ReportColors.divergingPositive, values: monthly.map { Double(Swift.max(0, $0)) }),
+                ReportColumnSeries(key: "down", label: shrank, color: ReportColors.divergingNegative, values: monthly.map { Double(Swift.min(0, $0)) }),
+            ]
+            changeLegend = [ReportLegendItem(label: grew, color: ReportColors.divergingPositive),
+                            ReportLegendItem(label: shrank, color: ReportColors.divergingNegative)]
+        }
+        return ReportNetWorthModel(tiles: tiles, chart: columnModel(label: String(localized: "Assets and debts by month with net worth"), keys: keys, series: [
             ReportColumnSeries(key: "assets", label: assets, color: 0, values: data.months.map { Double($0.assets) }),
             ReportColumnSeries(key: "debts", label: debts, color: 1, values: data.months.map { -Double($0.debt) }),
         ], format: format, axis: moneyAxis, unit: ctx.axisUnit, line: ReportLineOverlay(label: netWorth, color: ReportColors.line, values: data.months.map { Double($0.netWorth) })),
            legend: [ReportLegendItem(label: assets, color: 0), ReportLegendItem(label: debts, color: 1),
                     ReportLegendItem(label: netWorth, color: ReportColors.line, line: true)],
-           change: columnModel(label: String(localized: "How much net worth grew or shrank each month"), keys: keys, series: [
-            ReportColumnSeries(key: "up", label: grew, color: ReportColors.divergingPositive, values: monthly.map { Double(Swift.max(0, $0)) }),
-            ReportColumnSeries(key: "down", label: shrank, color: ReportColors.divergingNegative, values: monthly.map { Double(Swift.min(0, $0)) }),
-           ], format: format, axis: moneyAxis, unit: ctx.axisUnit),
-           changeLegend: [ReportLegendItem(label: grew, color: ReportColors.divergingPositive),
-                          ReportLegendItem(label: shrank, color: ReportColors.divergingNegative)],
+           change: columnModel(label: String(localized: "How much net worth grew or shrank each month"), keys: keys, series: changeSeries,
+                               format: format, axis: moneyAxis, unit: ctx.axisUnit),
+           changeLegend: changeLegend,
            dates: String(localized: "Balances on \(startDate) and \(endDate)"), accounts: rows)
     }
 
     private static let inCredit = SheetSection.inCredit
     private static let overdrawn = SheetSection.overdrawn
-    private static let assetSections = [SheetSection.cash, SheetSection.investments, SheetSection.property, SheetSection.vehicles,
-                                        SheetSection.receivables, SheetSection.otherAssets, inCredit]
+    /// What is owned, by what the money is in: cash, each kind of holding, then the other assets by account type.
+    private static let assetSections: [String] = [SheetSection.cash] + sheetKinds.map { HoldingsPage.kindName($0) }
+        + [SheetSection.otherInvestments, SheetSection.property, SheetSection.vehicles, SheetSection.receivables, SheetSection.otherAssets, inCredit]
     private static let debtSections = [SheetSection.creditCards, SheetSection.linesOfCredit, SheetSection.mortgages, SheetSection.loans,
                                        SheetSection.otherDebts, overdrawn]
     private static let liquid: Set<String> = [SheetSection.cash]
@@ -996,7 +1123,188 @@ extension ReportMath {
         }.filter { $0.start != 0 || $0.end != 0 || !$0.account.archived }
     }
 
-    static func balanceSheetView(_ data: ReportData, _ ctx: ReportBudget, accounts: Set<String>) -> ReportBalanceSheetModel {
+    /// What is owned, by what the money is in. An account with holdings gives a line to each section
+    /// it has something in (each kind it holds, its cash, the income still to be paid, and what its
+    /// balance has moved since the prices), and those lines add up to its balance, so the totals stay
+    /// the accounts' own. One that can't be broken down at the range's end stays whole under Other
+    /// investments. A line's start is known from a snapshot of that month, or because the account
+    /// held nothing then.
+    ///
+    /// When the range ends this month (`today`), what is held is today's: in each investment section
+    /// the accounts' lines give way to the holdings themselves, merged across accounts, where they
+    /// add up to the same; and the cash at a broker says what it is in, by currency, when any of it
+    /// isn't in the budget's currency.
+    static func balanceSheetParts(_ assets: [ReportSheetLine], portfolio: Portfolio?, today: Bool = false, currency: String = "") -> ReportSheetSplit {
+        var held: [String: PortfolioAccount] = [:]
+        for account in portfolio?.accounts ?? [] { held[account.accountId] = account }
+        let closed = " · " + String(localized: "closed")
+        // An account's parts by where they go; anything the parts leave of the balance joins what moved since the prices.
+        func amounts(_ parts: PortfolioParts, balance: Int64) -> ReportAmounts {
+            var out = ReportAmounts()
+            for kind in parts.byKind { out.add("k:" + sectionOf(kind: kind.key), kind.value) }
+            out.add("cash", parts.cash)
+            out.add("accrued", parts.accrued)
+            out.add("rest", parts.rest)
+            let apart = balance &- out.entries.map { $0.value }.reportSum
+            if apart != 0 { out.add("rest", apart) }
+            return out
+        }
+        // Parts that name no kind, no cash and no income to come: the whole balance is in their remainder.
+        func plain(_ parts: PortfolioParts) -> Bool {
+            parts.cash == 0 && parts.accrued == 0 && !parts.byKind.contains(where: { $0.value != 0 })
+        }
+        var split = ReportSheetSplit(parts: [], noStart: [], whole: [])
+        for line in assets {
+            let id = line.account.id
+            let name = line.account.name + (line.account.archived ? closed : "")
+            guard let account = held[id] else {
+                split.parts.append(ReportSheetPart(key: "a:\(id)", title: name, section: line.section, start: line.start, end: line.end))
+                continue
+            }
+            guard let endParts = account.endParts else {
+                split.whole.append(line.account.name)
+                split.parts.append(ReportSheetPart(key: "a:\(id)", title: name, section: SheetSection.otherInvestments, start: line.start, end: line.end))
+                continue
+            }
+            // An account whose value alone is known has nothing to break down: it is one line, with its own start.
+            let startsPlain = account.startParts.map { plain($0) } ?? true
+            if plain(endParts) && startsPlain {
+                split.parts.append(ReportSheetPart(key: "a:\(id)", title: name, section: SheetSection.otherInvestments, start: line.start, end: line.end))
+                continue
+            }
+            let ends = amounts(endParts, balance: line.end)
+            var starts: ReportAmounts?
+            if let startParts = account.startParts {
+                starts = amounts(startParts, balance: line.start)
+            } else if line.start == 0 {
+                starts = ReportAmounts()
+            }
+            var keys = ends.keys
+            for key in starts?.keys ?? [] where !keys.contains(key) { keys.append(key) }
+            let accountName = line.account.name
+            let pricesDate = Money.date(endParts.asOf)
+            var cashLine: String?
+            var added = 0
+            for key in keys {
+                let end = ends[key] ?? 0
+                let start: Int64? = starts.map { $0[key] ?? 0 }
+                if end == 0 && (start ?? 0) == 0 { continue }
+                let section: String
+                let title: String
+                switch key {
+                case "cash":
+                    section = SheetSection.cash
+                    title = String(localized: "Cash at \(accountName)")
+                    if today { cashLine = cashByCurrency(account.cash, currency: currency) }
+                case "accrued":
+                    section = SheetSection.receivables
+                    title = String(localized: "Accrued income at \(accountName)")
+                case "rest":
+                    section = SheetSection.otherInvestments
+                    title = name + " · " + String(localized: "Since prices from \(pricesDate)")
+                default:
+                    section = String(key.dropFirst(2))
+                    title = name
+                }
+                split.parts.append(ReportSheetPart(key: "a:\(id):\(key)", title: title, section: section, start: start, end: end,
+                                                   line: key == "cash" ? cashLine : nil, kind: key.hasPrefix("k:")))
+                added += 1
+            }
+            if added == 0 {
+                // An account with nothing in it at either end still has its line.
+                split.parts.append(ReportSheetPart(key: "a:\(id)", title: name, section: SheetSection.otherInvestments, start: line.start, end: line.end))
+            } else if starts == nil {
+                split.noStart.append(accountName)
+            }
+        }
+        if today, let portfolio { split.holdings = sheetHoldings(split.parts, portfolio, names: accountNames(assets), currency: currency) }
+        return split
+    }
+
+    /// Accounts' names, by id, as the statement writes them.
+    private static func accountNames(_ lines: [ReportSheetLine]) -> [String: String] {
+        var out: [String: String] = [:]
+        for line in lines { out[line.account.id] = line.account.name }
+        return out
+    }
+
+    /// The cash at a broker by currency ("796.50 USD · 1,500.00 SAR"), when any of it is in a
+    /// currency other than the budget's; nil otherwise.
+    static func cashByCurrency(_ cash: [PortfolioCash], currency: String) -> String? {
+        guard cash.contains(where: { $0.currency.uppercased() != currency.uppercased() }) else { return nil }
+        return cash.map { part in
+            part.amount.map { HoldingsPage.ownText($0, code: part.currency) } ?? Money.format(part.value, currency: currency)
+        }.joined(separator: " · ")
+    }
+
+    /// Today's holdings by the investment section they belong to, largest first, each under its
+    /// name with its instrument, symbol, own-currency amount and (with two accounts or more holding
+    /// investments) its accounts. A section has them only where every account holding them is
+    /// broken down there and they add up to that section's account lines of their kinds, so the
+    /// statement's figures don't move.
+    private static func sheetHoldings(_ parts: [ReportSheetPart], _ portfolio: Portfolio, names: [String: String], currency: String) -> [String: [ReportSheetPart]] {
+        var brokenDown = Set<String>()
+        for part in parts where part.kind {
+            // "a:<account>:k:<section>"
+            let pieces = part.key.components(separatedBy: ":")
+            if pieces.count > 1 { brokenDown.insert(pieces[1]) }
+        }
+        let several = Set(portfolio.holdings.flatMap { $0.accounts }).count > 1
+        var out: [String: [ReportSheetPart]] = [:]
+        for section in sheetKinds.map({ HoldingsPage.kindName($0) }) + [SheetSection.otherInvestments] {
+            let lines = parts.filter { $0.kind && $0.section == section }
+            if lines.isEmpty { continue }
+            let holdings = portfolio.holdings.filter { holding in
+                sectionOf(kind: holding.group) == section && !holding.accounts.isEmpty && holding.accounts.allSatisfy { brokenDown.contains($0) }
+            }
+            guard !holdings.isEmpty, holdings.map(\.value).reportSum == lines.map(\.end).reportSum else { continue }
+            out[section] = holdings.enumerated().map { index, holding -> ReportSheetPart in
+                let title = holding.name.isEmpty ? holding.symbol : holding.name
+                var said: [String] = []
+                // The section already says what a holding with no kind is.
+                if !unknownKind(holding.group), let what = instrumentText(holding) { said.append(what) }
+                if let symbol = shownSymbol(holding.symbol, title: title) { said.append(symbol) }
+                if let own = HoldingsPage.ownAmount(holding.amount, code: holding.currency, budget: currency) { said.append(own) }
+                if several { said.append(nameList(holding.accounts.map { names[$0] ?? $0 })) }
+                return ReportSheetPart(key: "h:\(index):\(holding.key)", title: title, section: section, start: nil, end: holding.value,
+                                       line: said.isEmpty ? nil : said.joined(separator: " · "))
+            }
+        }
+        return out
+    }
+
+    /// A holding's symbol where it adds to its title, as the Holdings page shows it: not the title
+    /// itself, and short enough to read (an option's code only spells its name out again at length).
+    static func shownSymbol(_ symbol: String, title: String) -> String? {
+        symbol.isEmpty || symbol == title || symbol.count > 12 ? nil : AppLanguage.leftToRight(symbol)
+    }
+
+    /// What a holding is: its instrument ("ETF"), else, from an older engine, its kind's singular;
+    /// a holding no source gave a kind for is one of the Other investments.
+    private static func instrumentText(_ holding: PortfolioHolding) -> String? {
+        if unknownKind(holding.group) { return SheetSection.otherInvestments }
+        if !holding.instrument.isEmpty { return HoldingsPage.instrumentName(holding.instrument) }
+        return holding.one.isEmpty ? nil : HoldingsPage.kindName(holding.one)
+    }
+
+    /// A table's rows in runs: each list that folds (rows next to each other with the same `fold`), and the rows between.
+    static func foldRuns(_ rows: [ReportFigureRow]) -> [ReportRowRun] {
+        var out: [ReportRowRun] = []
+        for row in rows {
+            if let last = out.last, last.rows.last?.fold == row.fold {
+                out[out.count - 1].rows.append(row)
+            } else {
+                out.append(ReportRowRun(id: row.key, rows: [row], folds: row.fold != nil))
+            }
+        }
+        return out
+    }
+
+    /// With the engine's investments report, what is owned is grouped by what the money is in
+    /// (`balanceSheetParts`); what is owed stays by account type, and the totals are the accounts' own.
+    /// When the range ends in the `current` month, the investment sections list today's holdings.
+    static func balanceSheetView(_ data: ReportData, _ ctx: ReportBudget, accounts: Set<String>, portfolio: Portfolio? = nil,
+                                 current: String? = Dates.currentMonth) -> ReportBalanceSheetModel {
         let first = data.months[0]
         let last = data.months[data.months.count - 1]
         let lines = balanceSheetLines(data, ctx, accounts: accounts)
@@ -1006,44 +1314,88 @@ extension ReportMath {
         let debts = counted.filter(\.debt)
         let totalAssets = assets.map(\.end).reportSum
         let totalDebts = debts.map(\.end).reportSum
-        let netStart = assets.map(\.start).reportSum &- debts.map(\.start).reportSum
+        let startAssets = assets.map(\.start).reportSum
+        let startDebts = debts.map(\.start).reportSum
+        let netStart = startAssets &- startDebts
         let netEnd = totalAssets &- totalDebts
-        let liquidTotal = assets.filter { liquid.contains($0.section) }.map(\.end).reportSum
+        let closed = " · " + String(localized: "closed")
+        let split = balanceSheetParts(assets, portfolio: portfolio, today: last.month == current, currency: ctx.currency)
+        let owned = split.parts
+        let owed = debts.map { line in
+            ReportSheetPart(key: "a:\(line.account.id)", title: line.account.name + (line.account.archived ? closed : ""), section: line.section,
+                            start: line.start, end: line.end)
+        }
+        // Cash on hand is the Cash and bank section, so it counts cash at brokers.
+        let liquidTotal = owned.filter { liquid.contains($0.section) }.map(\.end).reportSum
         let monthlySpending = Double(data.spending) / Double(Swift.max(1, data.months.count))
         // The list's own colour fills every bar (series-1 for what you own, series-2 for what you owe).
-        func sections(_ order: [String], _ list: [ReportSheetLine], of total: Int64) -> [ReportBarRow] {
+        func sections(_ order: [String], _ list: [ReportSheetPart], of total: Int64) -> [ReportBarRow] {
             let rows = order.map { s in (key: s, label: s, value: list.filter { $0.section == s }.map(\.end).reportSum) }.filter { $0.value > 0 }
             return barRows(rows, colors: { _ in nil }, total: total, ctx, drill: false)
         }
-        func subtitle(_ start: Int64, _ end: Int64, _ of: Int64?) -> String {
+        // A row whose start isn't known says only its share of what is owned.
+        func subtitle(_ start: Int64?, _ end: Int64, _ of: Int64?) -> String? {
+            guard let start else {
+                guard let of else { return nil }
+                let part = share(end, of)
+                return String(localized: "\(part) of assets")
+            }
             let from = ctx.money(start)
             let change = ctx.money(end &- start)
             return String(localized: "From \(from) · Change \(change)") + (of.map { " · \(share(end, $0))" } ?? "")
         }
-        let closed = " · " + String(localized: "closed")
+        // A line's own words over its figures: the cash at a broker by currency.
+        func lineSubtitle(_ line: ReportSheetPart, _ of: Int64) -> String? {
+            let figures = [line.line, subtitle(line.start, line.end, of)].compactMap { $0 }
+            return figures.isEmpty ? nil : figures.joined(separator: "\n")
+        }
+        // How the accounts with holdings changed, in one sentence under the assets.
+        var investmentsNote: String?
+        if let portfolio {
+            var gains: [String: Int64] = [:]
+            for account in portfolio.accounts { gains[account.accountId] = account.gain }
+            let invested = assets.filter { gains[$0.account.id] != nil }
+            if !invested.isEmpty {
+                let moved = invested.map { $0.end &- $0.start }.reportSum
+                let gained = invested.map { gains[$0.account.id] ?? 0 }.reportSum
+                let change = ctx.signed(moved)
+                let put = ctx.signed(moved &- gained)
+                let gain = ctx.signed(gained)
+                investmentsNote = String(localized: "Investments changed by \(change): \(put) put in, \(gain) from markets.")
+            }
+        }
         var statement: [ReportFigureRow] = []
-        func part(_ title: String, _ order: [String], _ list: [ReportSheetLine], _ totalLabel: String, _ total: Int64) {
+        func part(_ title: String, _ order: [String], _ list: [ReportSheetPart], _ totalLabel: String, start totalStart: Int64, end total: Int64, note: String?,
+                  held: [String: [ReportSheetPart]]) {
             statement.append(ReportFigureRow(key: "h:\(title)", title: title, style: .section))
             for section in order where list.contains(where: { $0.section == section }) {
                 let inSection = list.filter { $0.section == section }
-                let start = inSection.map(\.start).reportSum
+                // A section with a line whose start isn't known has no start of its own.
+                let known = inSection.compactMap { $0.start }
+                let start: Int64? = known.count == inSection.count ? known.reportSum : nil
                 let end = inSection.map(\.end).reportSum
                 statement.append(ReportFigureRow(key: "s:\(title):\(section)", title: section, value: ctx.money(end), subtitle: subtitle(start, end, total), style: .group))
-                for line in inSection {
-                    statement.append(ReportFigureRow(key: "a:\(line.account.id)", title: line.account.name + (line.account.archived ? closed : ""),
-                                                     value: ctx.money(line.end), subtitle: subtitle(line.start, line.end, total), style: .child))
+                // Today's holdings stand in for the accounts' lines of their kinds, and fold when there are many.
+                let holdings = held[section] ?? []
+                for line in holdings {
+                    statement.append(ReportFigureRow(key: line.key, title: line.title, value: ctx.money(line.end), subtitle: line.line, style: .child,
+                                                     fold: "fold:\(section)"))
+                }
+                for line in inSection where holdings.isEmpty || !line.kind {
+                    statement.append(ReportFigureRow(key: line.key, title: line.title, value: ctx.money(line.end), subtitle: lineSubtitle(line, total),
+                                                     style: .child))
                 }
             }
             if list.isEmpty { statement.append(ReportFigureRow(key: "n:\(title)", title: String(localized: "None"), style: .muted)) }
-            let start = list.map(\.start).reportSum
-            let end = list.map(\.end).reportSum
-            statement.append(ReportFigureRow(key: "t:\(title)", title: totalLabel, value: ctx.money(end), subtitle: subtitle(start, end, nil), style: .total))
+            statement.append(ReportFigureRow(key: "t:\(title)", title: totalLabel, value: ctx.money(total), subtitle: subtitle(totalStart, total, nil), style: .total))
+            if let note { statement.append(ReportFigureRow(key: "note:\(title)", title: note, style: .note)) }
         }
         let totalAssetsLabel = String(localized: "Total assets")
         let totalDebtsLabel = String(localized: "Total liabilities")
         let netWorth = String(localized: "Net worth")
-        part(String(localized: "Assets"), assetSections, assets, totalAssetsLabel, totalAssets)
-        part(String(localized: "Liabilities (owed)"), debtSections, debts, totalDebtsLabel, totalDebts)
+        part(String(localized: "Assets"), assetSections, owned, totalAssetsLabel, start: startAssets, end: totalAssets, note: investmentsNote,
+             held: split.holdings)
+        part(String(localized: "Liabilities (owed)"), debtSections, owed, totalDebtsLabel, start: startDebts, end: totalDebts, note: nil, held: [:])
         statement.append(ReportFigureRow(key: "__net", title: netWorth, value: ctx.money(netEnd), subtitle: subtitle(netStart, netEnd, nil),
                                          tone: netEnd < 0 ? .negative : .none, style: .net))
         if !apart.isEmpty {
@@ -1061,7 +1413,16 @@ extension ReportMath {
         let startDate = Money.date(firstDay(first.month))
         let firstName = monthName(first.month)
         let lastName = monthName(last.month)
-        let help = String(localized: "Balances at the start of \(firstName) and the end of \(lastName). Set an account's type, or leave it out of net worth, in its settings.")
+        var help = String(localized: "Balances at the start of \(firstName) and the end of \(lastName). Set an account's type, or leave it out of net worth, in its settings.")
+        if mixed { help += " " + String(localized: "Accounts below zero count as owed and loans or cards above zero as owned, whatever their type.") }
+        if !split.noStart.isEmpty {
+            let names = nameList(split.noStart)
+            help += " " + String(localized: "Start and change not shown by type, because what was held then isn't kept: \(names).")
+        }
+        if !split.whole.isEmpty {
+            let names = nameList(split.whole)
+            help += " " + String(localized: "Not broken down, because what was held then isn't kept: \(names).")
+        }
         return ReportBalanceSheetModel(tiles: [
             ReportTile(label: totalAssetsLabel, value: ctx.money(totalAssets)),
             ReportTile(label: totalDebtsLabel, value: ctx.money(totalDebts)),
@@ -1070,11 +1431,10 @@ extension ReportMath {
                        note: totalDebts > totalAssets ? String(localized: "you owe more than you own") : String(localized: "of what you own is owed")),
             ReportTile(label: String(localized: "Cash on hand"), value: ctx.money(liquidTotal),
                        note: monthlySpending > 0 ? String(localized: "\(months) months of spending") : String(localized: "in cash and bank accounts")),
-        ], ownTotal: ctx.money(totalAssets), own: totalAssets > 0 ? sections(assetSections, assets, of: totalAssets) : [],
-           oweTotal: ctx.money(totalDebts), owe: totalDebts > 0 ? sections(debtSections, debts, of: totalDebts) : [],
+        ], ownTotal: ctx.money(totalAssets), own: totalAssets > 0 ? sections(assetSections, owned, of: totalAssets) : [],
+           oweTotal: ctx.money(totalDebts), owe: totalDebts > 0 ? sections(debtSections, owed, of: totalDebts) : [],
            statementAside: String(localized: "Net worth on \(endDate): \(netText)"),
-           dates: String(localized: "Balances on \(startDate) and \(endDate)"), statement: statement,
-           help: help + (mixed ? " " + String(localized: "Accounts below zero count as owed and loans or cards above zero as owned, whatever their type.") : ""))
+           dates: String(localized: "Balances on \(startDate) and \(endDate)"), statement: statement, help: help)
     }
 
     /// Accounts that can be charted: chosen, with balances in the range, closed ones only if they held money.
@@ -1179,8 +1539,371 @@ extension ReportMath {
            rows: keys.enumerated().map { i, m in ReportFigureRow(key: m, title: monthName(m, short: true), value: values[i].map { "\($0)" } ?? "—") })
     }
 
-    /// Builds a report's body. Forecast has its own data and builder.
-    static func reportView(_ id: String, _ data: ReportData, _ ctx: ReportBudget, _ scope: ReportScope, _ options: ReportOptions) -> ReportBody? {
+    // MARK: Investments
+
+    /// A rate of return as "+3.4%", or a dash where there is none.
+    private static func rateText(_ rate: Double?) -> String {
+        rate.map { HoldingsPage.figure(HoldingsPage.percent($0, signed: true)) } ?? "—"
+    }
+
+    /// A share of the holdings as "63%".
+    private static func shareText(_ share: Double) -> String {
+        HoldingsPage.figure(HoldingsPage.percent(Swift.max(0, share)))
+    }
+
+    private static func rateTone(_ rate: Double?) -> ReportTone {
+        guard let rate else { return .none }
+        return rate > 0 ? .positive : rate < 0 ? .negative : .none
+    }
+
+    /// Whether a kind is one of the engine's two for a holding no source gave a kind: such holdings are called Other investments.
+    private static func unknownKind(_ key: String) -> Bool {
+        key == "Holdings" || key == "Other holdings"
+    }
+
+    /// An account's name, or its id when the budget no longer has it.
+    private static func accountLabel(_ ctx: ReportBudget, _ id: String) -> String {
+        let name = ctx.accountName(id)
+        return name.isEmpty ? id : name
+    }
+
+    /// How the accounts with holdings did over the range: their value against the money put in,
+    /// each month's gain, and each account.
+    static func performanceView(_ portfolio: Portfolio, _ ctx: ReportBudget, today: String) -> ReportPerformanceModel {
+        let keys = portfolio.months.map(\.month)
+        let total = portfolio.total
+        let format: (Double) -> String = { ctx.money(rounding: $0) }
+        let gainLabel = String(localized: "Gain")
+        let putLabel = String(localized: "Money put in")
+        let returnLabel = String(localized: "Return")
+        var yearly: String?
+        if let rate = total.yearly {
+            let text = rateText(rate)
+            yearly = String(localized: "\(text) a year")
+        }
+        // What trades realised of the gain, where the accounts' trades are on record.
+        var realised: String?
+        if let amount = total.realised {
+            let text = ctx.signed(amount)
+            realised = String(localized: "Realised \(text)")
+        }
+        let tiles = [
+            ReportTile(label: String(localized: "Value now"), value: ctx.money(total.end)),
+            ReportTile(label: gainLabel, value: ctx.signed(total.gain), note: realised, tone: HoldingsPage.tone(total.gain)),
+            ReportTile(label: returnLabel, value: rateText(total.rate), note: yearly, tone: rateTone(total.rate)),
+            ReportTile(label: putLabel, value: ctx.signed(total.put)),
+        ]
+        // The six largest accounts have a colour each; the rest share one.
+        let ranked = portfolio.accounts.reportSorted(descending: { $0.end })
+        let named = Array(ranked.prefix(6))
+        let rest = ranked.dropFirst(6).map(\.accountId)
+        var series = named.enumerated().map { index, account in
+            ReportColumnSeries(key: account.accountId, label: accountLabel(ctx, account.accountId), color: index,
+                               values: portfolio.months.map { Double($0.byAccount[account.accountId] ?? 0) })
+        }
+        if !rest.isEmpty {
+            series.append(ReportColumnSeries(key: "__other", label: String(localized: "Other"), color: ReportColors.other,
+                                             values: portfolio.months.map { month in Double(rest.map { month.byAccount[$0] ?? 0 }.reportSum) }))
+        }
+        // The money put in: the value at the start and everything added since. What stands above it is the gain.
+        var running = total.start
+        let putIn = portfolio.months.map { month -> Double? in
+            running = running &+ month.put
+            return Double(running)
+        }
+        let value = columnModel(label: String(localized: "Value"), keys: keys, series: series, format: format, axis: moneyAxis, unit: ctx.axisUnit,
+                                line: ReportLineOverlay(label: putLabel, color: ReportColors.line, values: putIn))
+        let valueLegend = series.map { ReportLegendItem(label: $0.label, color: $0.color) } + [ReportLegendItem(label: putLabel, color: ReportColors.line, line: true)]
+        let gains = portfolio.months.map { Double($0.gain) }
+        var monthly = columnModel(label: String(localized: "Gain each month"), keys: keys, series: [
+            ReportColumnSeries(key: "gain", label: gainLabel, color: ReportColors.positive, values: gains.map { Swift.max(0, $0) }),
+            ReportColumnSeries(key: "loss", label: String(localized: "Loss"), color: ReportColors.negative, values: gains.map { Swift.min(0, $0) }),
+        ], format: { ctx.signed(jround($0)) }, axis: moneyAxis, unit: ctx.axisUnit)
+        // A month is a gain or a loss, never both: their total would only say it twice.
+        monthly.readouts = monthly.readouts.map { row in row.filter { $0.color != nil } }
+        let sparse = portfolio.accounts.filter(\.sparse).map { accountLabel(ctx, $0.accountId) }
+        var gainNote: String?
+        if !sparse.isEmpty {
+            let names = nameList(sparse)
+            gainNote = String(localized: "Valued only when updated, so a gain shows in the month of the next update: \(names).")
+        }
+        var details: [String: [ReportFigureRow]] = [:]
+        var rows: [ReportFigureRow] = []
+        var notes: [String] = []
+        for account in portfolio.accounts {
+            let id = account.accountId
+            let name = accountLabel(ctx, id)
+            let gained = ctx.signed(account.gain)
+            let rate = rateText(account.rate)
+            let source = Investments.sourceName(["source": .string(account.source)])
+            rows.append(ReportFigureRow(key: id, title: name, value: ctx.money(account.end), subtitle: "\(gainLabel) \(gained) · \(returnLabel) \(rate)"))
+            details[id] = [
+                ReportFigureRow(key: "\(id):source", title: String(localized: "Kept up to date by"), value: source, style: .child),
+                ReportFigureRow(key: "\(id):start", title: String(localized: "Start"), value: ctx.money(account.start), style: .child),
+                ReportFigureRow(key: "\(id):put", title: String(localized: "Put in"), value: ctx.signed(account.put), style: .child),
+                ReportFigureRow(key: "\(id):gain", title: gainLabel, value: gained, tone: HoldingsPage.tone(account.gain), style: .child),
+                ReportFigureRow(key: "\(id):end", title: String(localized: "End"), value: ctx.money(account.end), style: .child),
+            ]
+            // What to know about this account's figures: old prices, days counted on an estimate, sections its statement lacks.
+            var said: [String] = []
+            if !account.asOf.isEmpty && account.asOf < Dates.addDays(today, -4) {
+                let date = Money.date(account.asOf)
+                said.append(String(localized: "Prices from \(date)") + " · " + String(localized: "These prices are a few days old."))
+            }
+            if account.estimatedDays > 0 {
+                let count = account.estimatedDays
+                said.append(String(localized: "On \(count) days the value jumped with no deposit or transfer listed, so those changes are counted as money moved, not as gains. Add the Transfers section to your Flex Query for exact figures.", locale: .app))
+            }
+            let lacking = account.missing.compactMap { HoldingsPage.lack($0) }
+            if !lacking.isEmpty {
+                said.append(String(localized: "Your Flex Query leaves some sections out, so parts of this page are missing:") + " " + lacking.joined(separator: " "))
+            }
+            if !said.isEmpty { notes.append(name + ": " + said.joined(separator: " ")) }
+        }
+        if !portfolio.unfilled.isEmpty {
+            let names = nameList(portfolio.unfilled.map { accountLabel(ctx, $0) })
+            notes.append(String(localized: "Not counted here, because nothing keeps them up to date: \(names).") + " "
+                         + String(localized: "Connect Interactive Brokers, or bring in the positions file your broker lets you download."))
+        }
+        let startDate = keys.first.map { Money.date(firstDay($0)) } ?? ""
+        let endDate = keys.last.map { Money.date(lastDay($0)) } ?? ""
+        return ReportPerformanceModel(tiles: tiles, value: value, valueLegend: valueLegend, gain: monthly, gainNote: gainNote,
+                                      dates: String(localized: "Balances on \(startDate) and \(endDate)"), accounts: rows, details: details, notes: notes)
+    }
+
+    /// What the accounts hold today, together: by kind, by account and by currency, then the
+    /// holdings themselves, merged across accounts.
+    static func allocationView(_ portfolio: Portfolio, _ ctx: ReportBudget, today: String) -> ReportAllocationModel {
+        let held = portfolio.allocation
+        // One way of splitting the holdings, largest first: the first seven parts have a colour each,
+        // and a part can say more under its name.
+        func ring(_ parts: [PortfolioPart], name: (String) -> String, note: (PortfolioPart) -> String?) -> ReportAllocationRing {
+            let ranked = parts.filter { $0.value != 0 }.reportSorted(descending: { $0.value })
+            let most = Swift.max(1, ranked.first?.value ?? 1)
+            var slices: [ReportSlice] = []
+            var rows: [ReportBarRow] = []
+            var others: Int64 = 0
+            for (index, part) in ranked.enumerated() {
+                let color = index <= 6 ? index : ReportColors.other
+                let label = name(part.key)
+                // A short option is listed but is not a share of what's held.
+                rows.append(ReportBarRow(key: part.key, label: label, valueText: ctx.money(part.value), detail: part.value > 0 ? shareText(part.share) : nil,
+                                         color: color, fraction: Double(Swift.max(0, part.value)) / Double(most), note: note(part)))
+                if part.value <= 0 { continue }
+                if color == ReportColors.other {
+                    others = others &+ part.value
+                } else {
+                    slices.append(ReportSlice(key: part.key, label: label, value: part.value, valueText: ctx.money(part.value), color: color))
+                }
+            }
+            if others > 0 {
+                slices.append(ReportSlice(key: "__other", label: String(localized: "Other"), value: others, valueText: ctx.money(others), color: ReportColors.other))
+            }
+            return ReportAllocationRing(slices: slices, rows: rows)
+        }
+        let cashShare = held.total > 0 && held.cash > 0 ? Double(held.cash) / Double(held.total) : 0
+        var tiles = [
+            ReportTile(label: String(localized: "Holdings"), value: "\(held.count)", note: ctx.money(held.total)),
+            ReportTile(label: String(localized: "Largest holding"), value: held.largestShare.map { shareText($0) } ?? "—", note: portfolio.holdings.first?.name),
+            ReportTile(label: String(localized: "Top five holdings"), value: held.topFiveShare.map { shareText($0) } ?? "—"),
+            ReportTile(label: String(localized: "Cash"), value: held.total > 0 ? shareText(cashShare) : "—", note: ctx.money(held.cash)),
+        ]
+        let unrealisedLabel = String(localized: "Unrealised gain")
+        let costLabel = String(localized: "Return on cost")
+        if let unrealised = held.unrealised {
+            let note = held.unrealisedRate.map { "\(costLabel) \(rateText($0))" }
+            tiles.append(ReportTile(label: unrealisedLabel, value: ctx.signed(unrealised), note: note, tone: HoldingsPage.tone(unrealised)))
+        }
+        let several = portfolio.accounts.count > 1
+        let shareLabel = String(localized: "reports.share", defaultValue: "Share", comment: "A holding's part of everything held, before its percentage.")
+        var rows: [ReportFigureRow] = []
+        for (index, holding) in portfolio.holdings.enumerated() {
+            var parts: [String] = []
+            // What it is, its symbol where it isn't the row's title, and its worth in its own currency.
+            let title = holding.name.isEmpty ? holding.symbol : holding.name
+            if let what = instrumentText(holding) { parts.append(what) }
+            if let symbol = shownSymbol(holding.symbol, title: title) { parts.append(symbol) }
+            if let own = HoldingsPage.ownAmount(holding.amount, code: holding.currency, budget: ctx.currency) { parts.append(own) }
+            if several { parts.append(nameList(holding.accounts.map { accountLabel(ctx, $0) })) }
+            if holding.value > 0 { parts.append("\(shareLabel) \(shareText(holding.share))") }
+            if let gain = holding.gain { parts.append("\(unrealisedLabel) \(ctx.signed(gain))") }
+            if let rate = holding.rate { parts.append("\(costLabel) \(rateText(rate))") }
+            rows.append(ReportFigureRow(key: "\(index):\(holding.key)", title: holding.name.isEmpty ? holding.symbol : holding.name, value: ctx.money(holding.value),
+                                        subtitle: parts.isEmpty ? nil : parts.joined(separator: " · ")))
+        }
+        // Each account's prices' date where there are several accounts, or where they're a few days old.
+        var notes: [String] = []
+        for account in portfolio.accounts where !account.asOf.isEmpty {
+            let stale = account.asOf < Dates.addDays(today, -4)
+            if !several && !stale { continue }
+            let date = Money.date(account.asOf)
+            let prices = String(localized: "Prices from \(date)")
+            notes.append(accountLabel(ctx, account.accountId) + ": " + prices + (stale ? " · " + String(localized: "These prices are a few days old.") : ""))
+        }
+        var asOf: String?
+        if !held.asOf.isEmpty {
+            let date = Money.date(held.asOf)
+            asOf = String(localized: "Prices from \(date)")
+        }
+        // Holdings no source gave a kind for are one part, Other investments, as on the balance sheet.
+        var kinds: [PortfolioPart] = []
+        for part in held.byKind {
+            if unknownKind(part.key), let at = kinds.firstIndex(where: { unknownKind($0.key) }) {
+                kinds[at].value = kinds[at].value &+ part.value
+                kinds[at].share += part.share
+            } else {
+                kinds.append(part)
+            }
+        }
+        return ReportAllocationModel(tiles: tiles, total: ctx.money(held.total), asOf: asOf,
+                                     byKind: ring(kinds, name: { unknownKind($0) ? SheetSection.otherInvestments : HoldingsPage.kindName($0) },
+                                                  note: { _ in nil }),
+                                     byAccount: ring(held.byAccount, name: { accountLabel(ctx, $0) }, note: { _ in nil }),
+                                     // A currency's own amount, where it isn't the budget's.
+                                     byCurrency: ring(held.byCurrency, name: { AppLanguage.leftToRight($0) },
+                                                      note: { HoldingsPage.ownAmount($0.amount, code: $0.key, budget: ctx.currency) }),
+                                     holdings: rows, notes: notes)
+    }
+
+    /// What the accounts earned and were charged over the range: by month, then line by line.
+    static func investmentIncomeView(_ portfolio: Portfolio, _ ctx: ReportBudget) -> ReportInvestmentIncomeModel {
+        let paid = portfolio.income
+        // Commissions on trades are known by the month for accounts with their trades on record, and
+        // as one figure a statement for the rest: together they are what trades cost.
+        let tradedByMonth = paid.months.contains(where: { $0.commissions != nil })
+        let monthlyCommissions = paid.months.map { $0.commissions ?? 0 }.reportSum
+        let commissions = monthlyCommissions &+ paid.commissions.map(\.amount).reportSum
+        let commissionsLabel = String(localized: "Commissions on trades")
+        let earned = paid.dividends &+ paid.interest
+        let costs = paid.tax &+ paid.fees &+ commissions
+        let net = earned &+ costs &+ paid.other
+        let dividends = String(localized: "Dividends")
+        let interest = String(localized: "Interest")
+        let tax = String(localized: "Tax withheld")
+        let fees = String(localized: "Fees")
+        let other = String(localized: "Other")
+        let netLabel = String(localized: "Net")
+        let yieldText = paid.yieldRate.map { HoldingsPage.figure(HoldingsPage.tenths($0)) } ?? "—"
+        let earnedLabel = String(localized: "Dividends and interest")
+        let costsLabel = String(localized: "Fees, tax and commissions")
+        let tiles = [
+            ReportTile(label: earnedLabel, value: ctx.signed(earned), tone: HoldingsPage.tone(earned)),
+            ReportTile(label: costsLabel, value: ctx.signed(costs), tone: costs < 0 ? .negative : .none),
+            ReportTile(label: netLabel, value: ctx.signed(net), tone: HoldingsPage.tone(net)),
+            ReportTile(label: String(localized: "Yield"), value: yieldText, note: String(localized: "Income over the average value")),
+        ]
+        // Dividends and interest stand above the line; tax, fees and the commissions known by the month hang below it.
+        let keys = paid.months.map(\.month)
+        struct Line { var key: String; var label: String; var color: Int; var values: [Int64] }
+        let lines = [
+            Line(key: "dividends", label: dividends, color: 0, values: paid.months.map(\.dividends)),
+            Line(key: "interest", label: interest, color: 2, values: paid.months.map(\.interest)),
+            Line(key: "tax", label: tax, color: 7, values: paid.months.map(\.tax)),
+            Line(key: "fees", label: fees, color: 3, values: paid.months.map(\.fees)),
+            Line(key: "commissions", label: commissionsLabel, color: 1, values: paid.months.map { $0.commissions ?? 0 }),
+            Line(key: "other", label: other, color: ReportColors.other, values: paid.months.map(\.other)),
+        ].filter { line in line.values.contains { $0 != 0 } }
+        let series = lines.map { line in ReportColumnSeries(key: line.key, label: line.label, color: line.color, values: line.values.map { Double($0) }) }
+        let chart = series.isEmpty ? nil : columnModel(label: String(localized: "Income and costs"), keys: keys, series: series,
+                                                       format: { ctx.signed(jround($0)) }, axis: moneyAxis, unit: ctx.axisUnit)
+        let months = paid.months.map { m -> ReportFigureRow in
+            let traded = m.commissions ?? 0
+            let total = m.dividends &+ m.interest &+ m.tax &+ m.fees &+ traded &+ m.other
+            let figures: [(label: String, amount: Int64)] = [(dividends, m.dividends), (interest, m.interest), (tax, m.tax), (fees, m.fees),
+                                                             (commissionsLabel, traded), (other, m.other)]
+            let parts = figures.filter { $0.amount != 0 }.map { "\($0.label) \(ctx.signed($0.amount))" }
+            return ReportFigureRow(key: m.month, title: monthName(m.month, short: true), value: ctx.signed(total),
+                                   subtitle: parts.isEmpty ? nil : parts.joined(separator: " · "), tone: total < 0 ? .negative : .none)
+        }
+        var rows: [ReportFigureRow] = []
+        let totals: [(key: String, label: String, amount: Int64)] = [
+            ("dividends", dividends, paid.dividends), ("interest", interest, paid.interest), ("tax", tax, paid.tax), ("fees", fees, paid.fees),
+            ("other", other, paid.other),
+        ]
+        for line in totals where line.amount != 0 {
+            rows.append(ReportFigureRow(key: line.key, title: line.label, value: ctx.signed(line.amount), tone: line.amount < 0 ? .negative : .none))
+        }
+        // The commissions known by the month, in the range.
+        if tradedByMonth && monthlyCommissions != 0 {
+            rows.append(ReportFigureRow(key: "commissions", title: commissionsLabel, value: ctx.signed(monthlyCommissions),
+                                        tone: monthlyCommissions < 0 ? .negative : .none))
+        }
+        // For an account whose trades aren't known by the month, its statement gives their commissions as one figure, over its own dates.
+        for (index, charge) in paid.commissions.enumerated() where charge.amount != 0 {
+            let start = Money.date(charge.from)
+            let end = Money.date(charge.to)
+            let span = String(localized: "\(start) to \(end)")
+            rows.append(ReportFigureRow(key: "commissions:\(index)", title: commissionsLabel, value: ctx.signed(charge.amount),
+                                        subtitle: accountLabel(ctx, charge.accountId) + " · " + span, tone: charge.amount < 0 ? .negative : .none))
+        }
+        rows.append(ReportFigureRow(key: "__net", title: netLabel, value: ctx.signed(net), tone: net < 0 ? .negative : .none, style: .total))
+        // With several accounts reporting, each one's part of the totals: what it earned, and the tax,
+        // fees and trade commissions it was charged, so the rows add up to the tiles.
+        var accounts: [ReportFigureRow] = []
+        if paid.byAccount.count > 1 {
+            for account in paid.byAccount {
+                let id = account.accountId
+                let accountEarned = account.dividends &+ account.interest
+                let accountCosts = account.tax &+ account.fees &+ (account.commissions ?? 0)
+                let accountNet = accountEarned &+ accountCosts &+ account.other
+                let earnedText = ctx.signed(accountEarned)
+                let costsText = ctx.signed(accountCosts)
+                accounts.append(ReportFigureRow(key: "account:\(id)", title: accountLabel(ctx, id), value: ctx.signed(accountNet),
+                                                subtitle: "\(earnedLabel) \(earnedText) · \(costsLabel) \(costsText)", tone: accountNet < 0 ? .negative : .none))
+            }
+        }
+        // What each holding paid, largest first: its symbol and the tax withheld under its name.
+        var holdings: [ReportFigureRow] = []
+        for (index, holding) in paid.byHolding.enumerated() {
+            var parts: [String] = []
+            if !holding.symbol.isEmpty && holding.symbol != holding.name { parts.append(AppLanguage.leftToRight(holding.symbol)) }
+            if holding.tax != 0 { parts.append("\(tax) \(ctx.signed(holding.tax))") }
+            holdings.append(ReportFigureRow(key: "\(index):\(holding.key)", title: holding.name.isEmpty ? holding.symbol : holding.name,
+                                            value: ctx.signed(holding.dividends), subtitle: parts.isEmpty ? nil : parts.joined(separator: " · ")))
+        }
+        var note: String?
+        if !paid.silent.isEmpty {
+            let names = nameList(paid.silent.map { accountLabel(ctx, $0) })
+            note = String(localized: "No income or costs reported: \(names).")
+        }
+        return ReportInvestmentIncomeModel(tiles: tiles, reporting: !paid.reporting.isEmpty, chart: chart,
+                                           legend: series.map { ReportLegendItem(label: $0.label, color: $0.color) }, months: months, lines: rows,
+                                           accounts: accounts, holdings: holdings, note: note)
+    }
+
+    /// Builds an Investments report's body from the engine's investments report; nil when no account with holdings is chosen.
+    static func investmentsView(_ id: String, _ portfolio: Portfolio, _ ctx: ReportBudget, today: String) -> ReportBody? {
+        guard !portfolio.accounts.isEmpty else { return nil }
+        switch id {
+        case "performance": return portfolio.months.isEmpty ? nil : .performance(performanceView(portfolio, ctx, today: today))
+        case "allocation": return .allocation(allocationView(portfolio, ctx, today: today))
+        case "investmentIncome": return .investmentIncome(investmentIncomeView(portfolio, ctx))
+        default: return nil
+        }
+    }
+
+    /// The overview's Investments card: what the holdings are worth, the gain over its months as
+    /// the note, and their value by month. Nil when no account has holdings in these months.
+    static func investmentsCard(_ portfolio: Portfolio, _ ctx: ReportBudget, current: String? = Dates.currentMonth) -> ReportOverviewCard? {
+        guard !portfolio.accounts.isEmpty, !portfolio.months.isEmpty else { return nil }
+        let keys = portfolio.months.map(\.month)
+        let partial = partialIndex(keys, current: current)
+        let values = portfolio.months.map(\.value)
+        let gain = ctx.signed(portfolio.total.gain)
+        let gainText = portfolio.total.rate.map { "\(gain) · \(rateText($0))" } ?? gain
+        let gainLabel = String(localized: "Gain")
+        let titles = keys.enumerated().map { $0.offset == partial ? soFar(monthName($0.element)) : monthName($0.element) }
+        let series = ReportMiniSeries(label: String(localized: "Value"), color: 0, values: values, texts: values.map { ctx.money($0) })
+        return ReportOverviewCard(id: "investments", figure: ctx.money(portfolio.total.end), negative: portfolio.total.end < 0,
+                                  note: "\(gainLabel) \(gainText)", noteTone: HoldingsPage.tone(portfolio.total.gain),
+                                  bars: ReportMiniBarsModel(labels: keys.map { monthAbbrev($0) }, series: [series], titles: titles,
+                                                            short: [values.map { compactMoney(Double($0)) }], partial: partial))
+    }
+
+    /// Builds a report's body. Forecast has its own data and builder, and the Investments reports
+    /// theirs (`investmentsView`); the balance sheet takes the investments report when the budget has holdings.
+    static func reportView(_ id: String, _ data: ReportData, _ ctx: ReportBudget, _ scope: ReportScope, _ options: ReportOptions,
+                           portfolio: Portfolio? = nil) -> ReportBody? {
         guard !data.months.isEmpty else { return nil }
         switch id {
         case "categories": return .categories(categoryView(data, ctx, group: options.group, today: scope.today))
@@ -1191,7 +1914,7 @@ extension ReportMath {
         case "income": return .income(incomeView(data, ctx))
         case "cashflow": return .cashflow(cashFlowView(data, ctx))
         case "networth": return .networth(netWorthView(data, ctx, accounts: scope.accounts))
-        case "balance": return .balance(balanceSheetView(data, ctx, accounts: scope.accounts))
+        case "balance": return .balance(balanceSheetView(data, ctx, accounts: scope.accounts, portfolio: portfolio, current: String(scope.today.prefix(7))))
         case "balances": return .balances(balancesView(data, ctx, accounts: scope.accounts, picked: options.chartAccounts))
         case "age": return .age(ageView(data))
         default: return nil
@@ -1211,55 +1934,83 @@ extension ReportMath {
             : String(localized: "On average, you're spending less than you make.")
     }
 
-    /// The Reports tab's cards: this month's spending, income against spending, net worth and cash age.
-    static func overviewModel(_ data: ReportData, _ ctx: ReportBudget, current: String? = Dates.currentMonth) -> ReportOverviewModel? {
+    /// How far ahead the overview's Forecast card looks, in months.
+    static let overviewMonthsAhead = 6
+
+    /// The overview's Forecast card: the lowest balance the budget accounts reach in the months
+    /// ahead and when, over the forecast's line, with the everyday spending the report suggests.
+    static func forecastCard(_ data: ReportForecastData, _ ctx: ReportBudget, today: String) -> ReportOverviewCard {
+        let months = overviewMonthsAhead
+        let plan = forecastPlan(data, accounts: [], months: months, start: today, through: addMonths(day: today, months))
+        let line = forecastLine(plan.knownLine, monthly: plan.suggested)
+        var low = 0
+        for (index, value) in line.enumerated() where value < line[low] { low = index }
+        let lowest = line.indices.contains(low) ? line[low] : plan.opening
+        let when = low == 0 ? String(localized: "today") : Money.date(plan.days[low])
+        let chart = forecastView(data, ctx, accounts: [], months: months, everyday: nil, start: today).chart
+        return ReportOverviewCard(id: "forecast", figure: ctx.money(lowest), negative: lowest < 0,
+                                  note: String(localized: "Lowest balance ahead") + " · " + when,
+                                  line: chart.without([String(localized: "Known transactions only")]))
+    }
+
+    /// The Reports overview: a card for each report over the months given (six, on the Reports
+    /// tab). Investments has its card when the investments report is given and has accounts, and
+    /// Forecast when the forecast is given.
+    static func overviewModel(_ data: ReportData, _ ctx: ReportBudget, current: String? = Dates.currentMonth, portfolio: Portfolio? = nil,
+                              forecast: ReportForecastData? = nil, today: String = Dates.today) -> ReportOverviewModel? {
         guard let last = data.months.last else { return nil }
-        let top = 5
-        let ranked = last.categories.entries.filter { $0.value > 0 }.reportSorted(descending: { $0.value })
-        let refunds = last.categories.entries.filter { $0.value < 0 }.reportSorted(ascending: { $0.value })
-        let refundTotal = refunds.map(\.value).reportSum
-        var refundRows = refunds.prefix(top).map {
-            ReportSpendRow(key: $0.key, label: ctx.nameOf[$0.key] ?? $0.key, valueText: ctx.money($0.value), color: ReportColors.other, weight: -$0.value)
-        }
-        let otherRefunds = refunds.dropFirst(top).map(\.value).reportSum
-        if otherRefunds != 0 {
-            refundRows.append(ReportSpendRow(key: "__refunds", label: String(localized: "Other refund categories"), valueText: ctx.money(otherRefunds),
-                                             color: ReportColors.other, weight: -otherRefunds))
-        }
-        let unassigned = String(localized: "Unassigned")
-        var rows = ranked.prefix(top).enumerated().map { i, entry in
-            ReportSpendRow(key: entry.key, label: ctx.nameOf[entry.key] ?? unassigned, valueText: ctx.money(entry.value), color: i, weight: entry.value)
-        }
-        let rest = ranked.dropFirst(top).map(\.value).reportSum
-        if rest > 0 {
-            rows.append(ReportSpendRow(key: "__rest", label: String(localized: "All others"), valueText: ctx.money(rest), color: ReportColors.other, weight: rest))
-        }
         let labels = data.months.map { monthAbbrev($0.month) }
         let partial = partialIndex(data.months.map(\.month), current: current)
         let titles = data.months.enumerated().map { $0.offset == partial ? soFar(monthName($0.element.month)) : monthName($0.element.month) }
         func mini(_ label: String, _ color: Int, _ values: [Int64], _ text: (Int64) -> String) -> ReportMiniSeries {
             ReportMiniSeries(label: label, color: color, values: values, texts: values.map(text))
         }
-        let ages = data.months.map { (data.ageOfMoneyByMonth[$0.month] ?? nil) ?? 0 }
-        let refundText = ctx.money(-refundTotal)
-        let refundLead = String(localized: "Includes \(refundText) in net refunds.")
-            + (ranked.isEmpty ? "" : " " + String(localized: "The bar shows categories with net spending."))
-        return ReportOverviewModel(
-            month: last.month, monthName: monthName(last.month), spendingText: ctx.money(last.spending), rows: rows,
-            nothingSpent: ranked.isEmpty && refunds.isEmpty,
-            refundLead: refunds.isEmpty ? nil : refundLead,
-            refunds: refundRows, incomeLead: incomeLead(data.months),
-            incomeBars: ReportMiniBarsModel(labels: labels, series: [
+        func short(_ values: [Int64]) -> [String] { values.map { compactMoney(Double($0)) } }
+        var cards: [ReportOverviewCard] = []
+
+        // Spending: this month's, with the monthly average, over spending by month.
+        let spent = data.months.map(\.spending)
+        let average = ctx.money(roundDiv(spent.reportSum, spent.count))
+        cards.append(ReportOverviewCard(
+            id: "spending", figure: ctx.money(last.spending), note: String(localized: "avg \(average) a month"),
+            bars: ReportMiniBarsModel(labels: labels, series: [mini(String(localized: "Spending"), 0, spent, ctx.money)], titles: titles,
+                                      short: [short(spent)], partial: partial)))
+
+        // Income: what was earned less what was spent over the months, over the two side by side.
+        let kept = data.months.map(\.income).reportSum &- spent.reportSum
+        cards.append(ReportOverviewCard(
+            id: "income", figure: ctx.signed(kept), negative: kept < 0, note: incomeLead(data.months),
+            bars: ReportMiniBarsModel(labels: labels, series: [
                 mini(String(localized: "Income"), ReportColors.positive, data.months.map(\.income), ctx.money),
-                mini(String(localized: "Spending"), 0, data.months.map(\.spending), ctx.money),
-            ], titles: titles, partial: partial),
-            netWorthText: ctx.money(last.netWorth), netWorthNegative: last.netWorth < 0, assetsText: ctx.money(last.assets),
-            debtsText: ctx.money(-last.debt), debtsNegative: last.debt != 0,
-            netWorthBars: ReportMiniBarsModel(labels: labels, series: [mini(String(localized: "Net worth"), 0, data.months.map(\.netWorth), ctx.money)],
-                                              titles: titles, short: [data.months.map { compactMoney(Double($0.netWorth)) }], partial: partial),
-            ageText: daysText(data.ageOfMoney),
-            ageBars: ReportMiniBarsModel(labels: labels, series: [mini(String(localized: "Cash age"), ReportColors.positive, ages, { daysText($0) })],
-                                         titles: titles, short: [data.months.map { (data.ageOfMoneyByMonth[$0.month] ?? nil).map { "\($0)" } ?? "" }], partial: partial))
+                mini(String(localized: "Spending"), 0, spent, ctx.money),
+            ], titles: titles, partial: partial)))
+
+        // Net worth: what it is now, with its change over the months, over net worth by month.
+        let worth = data.months.map(\.netWorth)
+        let change = last.netWorth &- openingNetWorth(data, ctx.accounts)
+        let changeText = ctx.signed(change)
+        cards.append(ReportOverviewCard(
+            id: "networth", figure: ctx.money(last.netWorth), negative: last.netWorth < 0, note: String(localized: "\(changeText) in this period"),
+            noteTone: change > 0 ? .positive : change < 0 ? .negative : .none,
+            bars: ReportMiniBarsModel(labels: labels, series: [mini(String(localized: "Net worth"), 0, worth, ctx.money)], titles: titles,
+                                      short: [short(worth)], partial: partial)))
+
+        // Balance sheet: what is owned, with what is owed, as one bar split between them.
+        let owed = ctx.money(last.debt)
+        let owedLabel = String(localized: "Total liabilities")
+        var parts: [ReportSpendRow] = []
+        if last.assets > 0 {
+            parts.append(ReportSpendRow(key: "assets", label: String(localized: "Assets"), valueText: ctx.money(last.assets), color: 0, weight: last.assets))
+        }
+        if last.debt > 0 {
+            parts.append(ReportSpendRow(key: "debts", label: String(localized: "Debts"), valueText: owed, color: 1, weight: last.debt))
+        }
+        cards.append(ReportOverviewCard(id: "balance", figure: ctx.money(last.assets), negative: last.assets < 0, note: "\(owedLabel) \(owed)",
+                                        parts: parts.isEmpty ? nil : parts))
+
+        if let portfolio, let held = investmentsCard(portfolio, ctx, current: current) { cards.append(held) }
+        if let forecast { cards.append(forecastCard(forecast, ctx, today: today)) }
+        return ReportOverviewModel(cards: cards)
     }
 
     // MARK: Forecast
@@ -1273,7 +2024,8 @@ extension ReportMath {
             balances: ReportAmounts(json: json["balances"]),
             events: json.rows("events").map { e in
                 ReportForecastEvent(date: e.text("date"), amount: e.long("amount"), payee: e.text("payee"), accountId: e.text("accountId"),
-                                    peerId: optional(e, "peerId"), categoryId: optional(e, "categoryId"), scheduleId: optional(e, "scheduleId"))
+                                    peerId: optional(e, "peerId"), categoryId: optional(e, "categoryId"), scheduleId: optional(e, "scheduleId"),
+                                    invested: e["invested"] == .bool(true))
             },
             recentSpending: json.long("recentSpending"))
     }
@@ -1284,7 +2036,7 @@ extension ReportMath {
         // Moves between two of the chosen accounts don't change their total.
         let events = data.events.filter { idSet.contains($0.accountId) && !($0.peerId.map(idSet.contains) ?? false) }
         let opening = ids.map { data.balances[$0] ?? 0 }.reportSum
-        let scheduled = Double(events.filter { $0.scheduleId != nil && $0.categoryId != nil && $0.amount < 0 }.map { -$0.amount }.reportSum) / Double(Swift.max(1, months))
+        let scheduled = Double(events.filter { $0.scheduleId != nil && $0.categoryId != nil && $0.amount < 0 && !$0.invested }.map { -$0.amount }.reportSum) / Double(Swift.max(1, months))
         let suggested = Swift.max(0, jround(Double(data.recentSpending) - scheduled))
         let days = days(from: start, through: through, limit: 2000)
         var byDay: [String: Int64] = [:]

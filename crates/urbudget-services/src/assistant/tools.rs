@@ -3,7 +3,7 @@
 //! here writes to the database.
 use super::attachments::{self, Files};
 use super::workbook;
-use super::proposals::{self, CategoryOp, Change, Edit, Move, NewTransaction, Proposal, Rename, Rule, ScheduleOp};
+use super::proposals::{self, CategoryOp, Change, Edit, Move, NewTransaction, Pick, Proposal, Rename, Rule, ScheduleOp};
 use super::{money, new_id, parse_money};
 use crate::domain::*;
 use crate::i18n::{comma, language, tr, Language};
@@ -106,7 +106,7 @@ fn listed() -> Vec<Spec> {
         },
         Spec {
             name: "get_report",
-            description: "Income and spending between two months: totals by month, by category and by payee, plus net worth.",
+            description: "Income and spending between two months: totals by month, by category and by payee; invested, the money moved into investment accounts (ones with holdings, or typed investment, retirement or other asset) less what came back out, which is neither spending nor income here; plus net worth and how much of each month's change in it came from markets (marketChange: what investment accounts gained or lost beyond money moved; the rest of the change is saving, debt paid and everything else).",
             parameters: object(
                 json!({
                     "from": { "type": "string", "description": MONTH },
@@ -150,6 +150,25 @@ fn listed() -> Vec<Spec> {
             proposes: false,
         },
         Spec {
+            name: "get_holdings",
+            description: "What the user's investment accounts hold, as their broker (Interactive Brokers) last reported it: each account's value, the day its prices are from, every holding with what it is (instrument: ETF, Stock, Government bond, Put option and so on), its quantity, price, value, what it is worth in its own currency (valueInItsCurrency, null when the source didn't say), cost and unrealised gain, cash by currency, the gain since tracking began (the account's market changes added up, which leaves out money put in or taken out), that gain month by month for the last twelve months, the money put in as the broker recorded it, what it earned and was charged month by month (dividends, interest, tax withheld and fees, negative when paid), and the commissions on trades over the statement's period. statementLeavesOut names the sections the user's Flex Query doesn't send: without Transfers, money moved in from another account is only estimated from jumps in the value, and without Trades there are no realised gains or commissions by month (get_investments_report); the user adds a section to the query at Interactive Brokers, then syncs. moneyMovedToReview lists the deposits, withdrawals and transfers the broker recorded that the budget doesn't have yet, each with the transactions already in the budget it could be (couldBe); propose_investment_deposits brings them in. Amounts are in the budget's currency unless a currency is named beside them. The figures are the broker's own as of the last close before the last sync; nothing is worked out here, so say whose figures they are and how old. You can't sync or connect: the user does, in the app (get_app_guide, topic investments). Describe and add up what they hold. Don't say what to buy, sell or keep.",
+            parameters: object(json!({ "accountId": { "type": "string", "description": "One account. Left out, every investment account a broker fills." } }), &[]),
+            proposes: false,
+        },
+        Spec {
+            name: "get_investments_report",
+            description: "How the user's investment accounts did together between two months, the figures Reports shows under Investments: the value at the start and end, the money put in, the gain and the return (the gain over the money at work, each deposit counted for the time it was there; a yearly rate too when the range is longer than a year), the same month by month and for each account, what they hold today by kind, account and currency (with what each currency's part is in that currency, amountInThatCurrency, null when not all of it is known), the 25 largest holdings with one held in two accounts counted once (each with what it is, instrument, and its value in its own currency, valueInItsCurrency, null unless every account gave it), and the dividends, interest, tax withheld and fees by month and by account with the yield. Where the broker's statements list the trades, it also gives what they realised (realisedGain, a part of the gain and not on top of it), the commissions by month, and the dividends by holding with today's value where still held; where they don't (an account's statementLeavesOut then names Trades, a section the user can add to the Flex Query), those are left out or null and tradeCommissions is one figure for each statement's period. Values are the accounts' balances at each month's end, as net worth has them, and the gain is their market changes, so money put in or taken out is never a gain. An account counts from the first day it was valued, and its value that day counts as money put in. One valued only when updated (a positions file or a typed value) shows its gain in the month of the next update. What they hold is today's whatever the range: what was held on past days isn't kept. Only Interactive Brokers reports income and costs. Amounts are in the budget's currency; returns and shares are percentages. get_holdings has one account's detail. Asked how the investments did, lead with the gain and the return over the range, then what moved them. Describe and add up what they hold. Don't say what to buy, sell or keep.",
+            parameters: object(
+                json!({
+                    "from": { "type": "string", "description": "First month, YYYY-MM. Defaults to eleven months before to." },
+                    "to": { "type": "string", "description": "Last month, YYYY-MM. Defaults to the month on screen." },
+                    "accountIds": id_list("Only these investment accounts. Empty for all of them.")
+                }),
+                &[],
+            ),
+            proposes: false,
+        },
+        Spec {
             name: "get_bank_texts",
             description: "Bank texts on this phone: the senders chosen in Bank messages and the day collecting starts, texts waiting to be read (not in the review yet), the open review as Bank messages shows it (to review, ready to add, may already be in the budget and asking add or match, needing an account or the other side, holds, already in the budget, not transactions), the last review, remembered cards, how many formats are learned, and for each account the latest balance the bank's texts gave beside the budget's at that moment (a card's from its credit left and limit). No texts. How it works: the user chooses the bank's senders in Bank messages, the app collects their texts, and they're read into a review there, where the user ticks what to add. A gap between the balance a text gives and the budget's at that moment usually comes from texts still waiting, holds left unticked in the review, transactions entered by hand on another day, or a text that was cleared, dismissed or skipped: search the days around it before guessing. A card's texts usually give its credit left. With the card's credit limit, what's owed and held is the limit less the credit left. Without a limit a text can't tell you what's owed: offer propose_bank_texts with action limit when the user gives the limit or a text states it, and don't work a limit out from the budget unless the user agrees it's right.",
             parameters: object(json!({}), &[]),
@@ -172,12 +191,31 @@ fn listed() -> Vec<Spec> {
         },
         Spec {
             name: "propose_bank_texts",
-            description: "A card the user confirms, for bank texts: read the waiting texts into the review (with an optional note for the reading, like \"Card 3358 is my savings card\"), add texts found with search_bank_texts to the review (by id, even from before the day collecting starts), remember which account a card's or account's digits are, or set a card's credit limit. Nothing is added to the budget here, and you can't add transactions from texts: the user confirms on the card, and transactions are added only from the review in Bank messages.",
+            description: "A card the user confirms, for bank texts: read the waiting texts into the review (with an optional note for the reading, like \"Card 3358 is my savings card\"), add texts found with search_bank_texts to the review (by id, even from before the day collecting starts), enter texts found with search_bank_texts straight into the budget as transactions, remember which account a card's or account's digits are, or set a card's credit limit. Nothing changes until the user confirms on the card. Use enter when the user asks you to add particular texts, a few at a time; for everything that's waiting, read is the way, since the review checks each text against the budget. With enter, give each transaction as its text says it: the amount is a number the text gives, and a text is entered once. Bank messages then counts those texts as handled, so they aren't read or offered again and its last text handled moves with them. A text the budget already has is left out, and one that is surely a transaction already there is matched to it, not added twice; the answer says which. When the answer names several transactions it could be, ask the user or give match.",
             parameters: object(
                 json!({
-                    "action": { "type": "string", "enum": ["read", "add", "remember", "limit"] },
+                    "action": { "type": "string", "enum": ["read", "add", "enter", "remember", "limit"] },
                     "note": { "type": "string", "description": "read: what the reading should do differently." },
                     "textIds": { "type": "array", "items": { "type": "string" }, "description": "add: ids from search_bank_texts." },
+                    "transactions": {
+                        "type": "array",
+                        "description": "enter: up to 20 transactions, one for each text.",
+                        "items": object(
+                            json!({
+                                "textIds": { "type": "array", "items": { "type": "string" }, "description": "The text it's read from, by its id from search_bank_texts; more than one only when they tell of one event." },
+                                "accountId": { "type": "string", "description": "The budget account the money moved in." },
+                                "date": { "type": "string", "description": "YYYY-MM-DD, as the text says." },
+                                "amount": { "type": "number", "description": "In the budget's currency, a number the text gives; negative for money out." },
+                                "kind": { "type": "string", "enum": ["expense", "income", "refund", "transfer"] },
+                                "payee": { "type": "string" },
+                                "categoryId": { "type": "string", "description": "A spending category; never for a transfer." },
+                                "transferAccountId": { "type": "string", "description": "transfer: the other budget account." },
+                                "memo": { "type": "string" },
+                                "match": { "type": "string", "description": "The id of the transaction already in the budget that this text is, or \"new\" to add it beside one like it." }
+                            }),
+                            &["textIds", "accountId", "date", "amount", "kind", "payee"],
+                        )
+                    },
                     "sender": { "type": "string", "description": "remember: the sender whose texts give the digits." },
                     "ref": { "type": "string", "description": "remember: the card or account digits as the texts give them." },
                     "accountId": { "type": "string", "description": "remember and limit: the budget account." },
@@ -322,6 +360,55 @@ fn listed() -> Vec<Spec> {
                     }
                 }),
                 &["accountId", "transactions"],
+            ),
+            proposes: true,
+        },
+        Spec {
+            name: "propose_holdings",
+            description: "Propose what an investment account holds on a day: for a brokerage, pension or fund account that Interactive Brokers doesn't fill, from a positions file the user attached (read it with read_attachment first), a statement they pasted, or figures they told you. Give every holding the file lists with its value, the cash it lists, and total when the file states the account's whole value; or total alone when the user only gives a value. Copy the figures exactly as the file has them, never estimate or look up a price, and leave out what the file doesn't say (cost, quantity, price). Values are in the file's currency: give currency when it isn't the budget's, with exchangeRate when the user has said it. The account's balance then follows this value, and what it changes by beyond the money put in or taken out is recorded as Market change. Not for an account Interactive Brokers fills.",
+            parameters: object(
+                json!({
+                    "accountId": { "type": "string", "description": "The investment account (a tracking account)." },
+                    "asOf": { "type": "string", "description": "The day the figures are from, YYYY-MM-DD: the file's own date, else the day the user says, else today." },
+                    "title": { "type": "string" },
+                    "holdings": {
+                        "type": "array",
+                        "items": object(json!({
+                            "symbol": { "type": "string" },
+                            "name": { "type": "string" },
+                            "kind": { "type": "string", "enum": ["stock", "fund", "bond", "option", "crypto", "other"] },
+                            "quantity": { "type": "number" },
+                            "price": { "type": "number" },
+                            "value": { "type": "number", "description": "What it's worth in all, in the file's currency." },
+                            "cost": { "type": "number", "description": "What it cost in all (not per share), when the file says." }
+                        }), &["value"])
+                    },
+                    "cash": { "type": "number", "description": "Cash not invested, when the file lists it." },
+                    "total": { "type": "number", "description": "The account's whole value, when the file states it or it's all the user gave." },
+                    "currency": { "type": "string", "description": "The ISO code the figures are in, when it isn't the budget's." },
+                    "exchangeRate": { "type": "number", "description": "What one unit of that currency is worth in the budget's, as the user gave it." }
+                }),
+                &["accountId", "asOf"],
+            ),
+            proposes: true,
+        },
+        Spec {
+            name: "propose_investment_deposits",
+            description: "Propose bringing into the budget money moved into or out of an investment account: the rows of get_holdings' moneyMovedToReview, which are the deposits, withdrawals and transfers its broker recorded that the budget doesn't have yet. Until then each stands in the account as Money moved in or out. For each row give one of: matchId, from the row's couldBe, when that transaction is this money (it's marked as the row, or joined to the investment account as one transfer, and keeps its own amount and category); transferAccountId, the user's account the money came from or went to, when nothing in the budget is it yet (this adds the transfer to that account as well, so give it only when the user said which account, and look with find_transactions around the row's date first, so that account doesn't get the money twice); or neither, to add it with no other account. A row with otherAccount is a transfer the broker itself says went to that account of the user's: leave transferAccountId out, and it's brought in once for both accounts. Use this for these rows, never propose_transactions: it marks them done, so the app's review stops offering them and the account's balance stays the broker's value. The account's gain doesn't change: the broker's figures already leave this money out.",
+            parameters: object(
+                json!({
+                    "accountId": { "type": "string", "description": "The investment account." },
+                    "title": { "type": "string" },
+                    "rows": {
+                        "type": "array",
+                        "items": object(json!({
+                            "rowId": { "type": "string", "description": "A rowId from moneyMovedToReview." },
+                            "matchId": { "type": "string", "description": "A matchId from the row's couldBe." },
+                            "transferAccountId": { "type": "string", "description": "The other account's id. Never a name." }
+                        }), &["rowId"])
+                    }
+                }),
+                &["accountId", "rows"],
             ),
             proposes: true,
         },
@@ -557,7 +644,7 @@ fn listed() -> Vec<Spec> {
         },
         Spec {
             name: "create_spreadsheet",
-            description: "Make an Excel spreadsheet the user can open or save, with one or more sheets. The app fills data sheets from the budget, so use them for any list or breakdown: transactions (every matching transaction, one row per split, oldest first; filters combine like find_transactions), budget (one month's categories: assigned, activity, available and target), spending (spending by category for each month in a range, with totals and the monthly average) and months (income, spending, net income and net worth by month). Use a table sheet only for a short summary you worked out from figures you looked up. Don't repeat the data in chat; say it's ready.",
+            description: "Make an Excel spreadsheet the user can open or save, with one or more sheets. The app fills data sheets from the budget, so use them for any list or breakdown: transactions (every matching transaction, one row per split, oldest first; filters combine like find_transactions), budget (one month's categories: assigned, activity, available and target), spending (spending by category for each month in a range, with totals and the monthly average), months (income, spending, money moved into investments, net income and net worth by month) and, when an investment account has holdings, investments (the investment accounts' value, money put in and gain by month, with each account's value) and holdings (what they hold today, one held in two accounts counted once). Use a table sheet only for a short summary you worked out from figures you looked up. Don't repeat the data in chat; say it's ready.",
             parameters: object(
                 json!({
                     "title": { "type": "string", "description": "Also the file name, like \"Groceries since June 2026\"." },
@@ -567,11 +654,11 @@ fn listed() -> Vec<Spec> {
                         "items": object(
                             json!({
                                 "name": { "type": "string", "description": "Sheet name, up to 31 characters." },
-                                "type": { "type": "string", "enum": ["transactions", "budget", "spending", "months", "table"] },
-                                "from": { "type": "string", "description": "transactions: first date, YYYY-MM-DD. spending and months: first month, YYYY-MM." },
-                                "to": { "type": "string", "description": "transactions: last date, YYYY-MM-DD. spending and months: last month, YYYY-MM." },
+                                "type": { "type": "string", "enum": ["transactions", "budget", "spending", "months", "investments", "holdings", "table"] },
+                                "from": { "type": "string", "description": "transactions: first date, YYYY-MM-DD. spending, months and investments: first month, YYYY-MM." },
+                                "to": { "type": "string", "description": "transactions: last date, YYYY-MM-DD. spending, months and investments: last month, YYYY-MM." },
                                 "month": { "type": "string", "description": "budget: the month, YYYY-MM. Defaults to the month on screen." },
-                                "accountIds": id_list("transactions, spending, months: only these accounts."),
+                                "accountIds": id_list("transactions, spending, months, investments, holdings: only these accounts."),
                                 "categoryIds": id_list("transactions, spending: only these categories."),
                                 "payee": { "type": "string", "description": "transactions: exact payee name, any case." },
                                 "text": { "type": "string", "description": "transactions: words to find in payee, memo or category." },
@@ -784,6 +871,8 @@ pub fn call(name: &str, args: &Value, ctx: &Context) -> Outcome {
         "get_forecast" => get_forecast(args, ctx),
         "get_setup" => get_setup(ctx),
         "get_bank_sync" => get_bank_sync(ctx),
+        "get_holdings" => get_holdings(args, ctx),
+        "get_investments_report" => get_investments_report(args, ctx),
         "get_app_guide" => read(super::guide::lookup(args, ctx.platform), tr("Looked at the app guide").to_owned()),
         "project_loan" => project_loan(args, ctx),
         "read_attachment" => read_attachment(args, ctx),
@@ -791,6 +880,8 @@ pub fn call(name: &str, args: &Value, ctx: &Context) -> Outcome {
         "propose_auto_assign" => propose_auto_assign(args, ctx),
         "propose_transaction_edits" => propose_transaction_edits(args, ctx),
         "propose_transactions" => propose_transactions(args, ctx),
+        "propose_investment_deposits" => propose_investment_deposits(args, ctx),
+        "propose_holdings" => propose_holdings(args, ctx),
         "propose_payee_changes" => propose_payee_changes(args, ctx),
         "propose_notes" => propose_notes(args, ctx),
         "propose_category_changes" => propose_category_changes(args, ctx),
@@ -830,10 +921,11 @@ pub fn working(name: &str) -> String {
         "get_month" => t!("Looking at the month"),
         "find_transactions" => t!("Looking up transactions"),
         "payee_history" => t!("Checking payees"),
-        "get_report" => t!("Adding up the numbers"),
+        "get_report" | "get_investments_report" => t!("Adding up the numbers"),
         "get_forecast" => t!("Looking ahead"),
         "get_setup" => t!("Looking at your accounts"),
         "get_bank_sync" => t!("Checking bank sync"),
+        "get_holdings" => t!("Looking at your holdings"),
         "get_app_guide" => t!("Looking up how UrBudget works"),
         "project_loan" => t!("Working out the loan"),
         "read_attachment" => t!("Reading the file"),
@@ -1120,12 +1212,15 @@ fn get_report(args: &Value, ctx: &Context) -> Result<Outcome, String> {
         "to": to,
         "income": money(r.income),
         "spending": money(r.spending),
+        "invested": money(r.invested),
         "months": r.months.iter().map(|m| json!({
             "month": m.month,
             "income": money(m.income),
             "spending": money(m.spending),
+            "invested": money(m.invested),
             "netIncome": money(m.net_income),
             "netWorth": money(m.net_worth),
+            "marketChange": money(m.market),
         })).collect::<Vec<_>>(),
         "spendingByCategory": categories.iter().take(40).map(|(id, amount)| json!({
             "categoryId": id,
@@ -1201,6 +1296,307 @@ fn get_forecast(args: &Value, ctx: &Context) -> Result<Outcome, String> {
         "averageMonthlySpending": money(f.recent_spending),
     });
     read(output, t!("Ran the forecast through {through}", through))
+}
+
+/// What each investment account holds, as its broker last reported it (investments.rs).
+fn get_holdings(args: &Value, ctx: &Context) -> Result<Outcome, String> {
+    const SHOWN: usize = 60;
+    const TO_REVIEW: usize = 40;
+    let b = ctx.budget;
+    let names = Names::new(b);
+    let only = arg(args, "accountId");
+    let accounts: Vec<Value> = crate::investments::read(b)
+        .into_iter()
+        .filter(|h| only.is_none_or(|id| id == h.account_id))
+        .filter_map(|h| {
+            let account = b.accounts.iter().find(|a| a.id == h.account_id)?;
+            let changes: Vec<i64> = b.transactions.iter()
+                .filter(|t| t.account_id == h.account_id && t.extra.get("investment").is_some_and(|v| v == "change"))
+                .map(|t| t.amount)
+                .collect();
+            let mut row = json!({
+                "accountId": h.account_id,
+                "account": account.name,
+                "keptUpToDateBy": kept_up_to_date_by(&h.source),
+                "brokerAccount": h.source_account,
+                "value": money(h.total),
+                "pricesFrom": h.as_of,
+                "lastSynced": h.synced_at,
+                "trackedSince": h.values.first().map(|(day, _)| day.clone()),
+                "gainSinceTracked": (!changes.is_empty()).then(|| money(changes.iter().sum())),
+                "holdings": h.positions.iter().take(SHOWN).map(|p| json!({
+                    "symbol": p.symbol, "name": p.name, "type": p.kind,
+                    "instrument": urbudget_core::investment_stats::instrument(&p.kind, &p.sub_kind, &p.put_call), "exchange": p.exchange,
+                    "quantity": p.quantity, "price": p.price, "priceCurrency": p.currency,
+                    "value": money(p.value), "valueInItsCurrency": in_its_currency(&p.amount, &p.currency),
+                    "cost": p.cost.map(money), "unrealisedGain": p.gain.map(money),
+                })).collect::<Vec<_>>(),
+                "cash": h.cash.iter().map(|c| json!({ "currency": c.currency, "amount": c.amount, "value": money(c.value) })).collect::<Vec<_>>(),
+            });
+            if h.positions.len() > SHOWN {
+                row["holdingsLeftOut"] = json!(h.positions.len() - SHOWN);
+            }
+            // Each month's market change, as the account's own transactions record it.
+            let mut months: Vec<(&str, i64)> = b.transactions.iter()
+                .filter(|t| t.account_id == h.account_id && t.extra.get("investment").is_some_and(|v| v == "change"))
+                .map(|t| (t.date.get(..7).unwrap_or(&t.date), t.amount))
+                .collect();
+            months.sort();
+            if !months.is_empty() {
+                row["gainByMonth"] = json!(months.iter().rev().take(12).map(|(month, gain)| json!({ "month": month, "gain": money(*gain) })).collect::<Vec<_>>());
+            }
+            if let Some(flows) = &h.flows {
+                // The broker's own record, so it holds whether or not the deposits are in the budget.
+                row["netMoneyPutInSinceTracked"] = json!(money(flows.iter().map(|(_, amount)| amount).sum()));
+                if !h.estimated.is_empty() {
+                    row["daysCountedAsMoneyMovedByEstimate"] = json!(h.estimated);
+                }
+            }
+            if !h.income.is_empty() {
+                row["earnedAndChargedByMonth"] = json!(h.income.iter().rev().take(12).map(|m| json!({
+                    "month": m.month, "dividends": money(m.dividends), "interest": money(m.interest),
+                    "taxWithheld": money(m.tax), "fees": money(m.fees), "other": money(m.other),
+                })).collect::<Vec<_>>());
+            }
+            if let Some(paid) = &h.commissions {
+                row["tradeCommissions"] = json!({ "from": paid.from, "to": paid.to, "amount": money(paid.amount) });
+            }
+            if h.other != 0 {
+                row["accruedNotYetPaid"] = json!(money(h.other));
+            }
+            if h.currency != b.currency {
+                row["brokerCurrency"] = json!(h.currency);
+                row["rateToBudgetCurrency"] = json!(h.rate);
+            }
+            if !h.missing.is_empty() {
+                row["statementLeavesOut"] = json!(h.missing);
+            }
+            let waiting = waiting_moves(b, &h.account_id);
+            if !waiting.is_empty() {
+                row["moneyMovedToReview"] = json!(waiting.iter().take(TO_REVIEW).map(|r| moved_row(b, &names, r)).collect::<Vec<_>>());
+                if waiting.len() > TO_REVIEW {
+                    row["moneyMovedToReviewLeftOut"] = json!(waiting.len() - TO_REVIEW);
+                }
+            }
+            Some(row)
+        })
+        .collect();
+    let mut output = json!({ "currency": b.currency, "accounts": accounts });
+    if accounts.is_empty() {
+        output["note"] = json!("No investment account is filled by a broker. The user can connect Interactive Brokers in the desktop app (get_app_guide, topic investments).");
+    }
+    read(output, t!("Looked at your holdings"))
+}
+
+/// An amount in a holding's own currency, with its code ("61476.00 USD"); None when unknown.
+fn in_its_currency(amount: &str, currency: &str) -> Option<String> {
+    let amount = urbudget_core::investment_stats::in_minor_units(amount, currency);
+    (!amount.is_empty()).then(|| if currency.is_empty() { amount } else { format!("{amount} {currency}") })
+}
+/// What fills an investment account, in words for the model.
+fn kept_up_to_date_by(source: &str) -> &'static str {
+    match source {
+        "ibkr" => "Interactive Brokers",
+        "simplefin" => "the bank connection (SimpleFIN)",
+        "file" => "a positions file the user brings in",
+        _ => "a value the user types in",
+    }
+}
+
+/// The investment accounts together over a range of months, as Reports has them
+/// (`investment_stats::portfolio`).
+fn get_investments_report(args: &Value, ctx: &Context) -> Result<Outcome, String> {
+    const HOLDINGS: usize = 25;
+    const MONTHS: usize = 60;
+    let b = ctx.budget;
+    let names = Names::new(b);
+    let to = month_arg(args, "to", ctx.month)?;
+    let year_before = chrono::NaiveDate::parse_from_str(&format!("{to}-01"), "%Y-%m-%d")
+        .ok()
+        .and_then(|d| d.checked_sub_months(chrono::Months::new(11)))
+        .map_or_else(|| to.clone(), |d| d.format("%Y-%m").to_string());
+    let from = month_arg(args, "from", &year_before)?;
+    let filter = reports::Filter { from: from.clone(), to: to.clone(), account_ids: strings(args, "accountIds"), category_ids: vec![] };
+    let r = urbudget_core::investment_stats::portfolio(b, &filter)?;
+    // A fraction as a percentage to two places.
+    let percent = |rate: f64| (rate * 10_000.0).round() / 100.0;
+    let parts = |list: &[urbudget_core::investment_stats::Part], name: &dyn Fn(&str) -> String| -> Vec<Value> {
+        list.iter()
+            .map(|p| {
+                let mut part = json!({ "name": name(&p.key), "value": money(p.value), "sharePercent": percent(p.share) });
+                // By currency: what it is in that currency.
+                if let Some(amount) = &p.amount {
+                    part["amountInThatCurrency"] = json!(amount.as_deref().and_then(|amount| in_its_currency(amount, &p.key)));
+                }
+                part
+            })
+            .collect()
+    };
+    let plain = |key: &str| key.to_owned();
+    let mut output = json!({
+        "currency": b.currency,
+        "from": from,
+        "to": to,
+        "total": {
+            "start": money(r.total.start),
+            "end": money(r.total.end),
+            "moneyPutIn": money(r.total.put),
+            "gain": money(r.total.gain),
+            "returnPercent": r.total.rate.map(percent),
+            "yearlyReturnPercent": r.total.yearly.map(percent),
+            "daysMeasured": r.total.days,
+            "realisedGain": r.total.realised.map(money),
+        },
+        "months": r.months.iter().rev().take(MONTHS).rev().map(|m| {
+            let mut row = json!({ "month": m.month, "value": money(m.value), "moneyPutIn": money(m.put), "gain": money(m.gain) });
+            if let Some(realised) = m.realised {
+                row["realisedGain"] = json!(money(realised));
+            }
+            row
+        }).collect::<Vec<_>>(),
+        "accounts": r.accounts.iter().map(|a| {
+            let mut row = json!({
+                "accountId": a.account_id,
+                "account": names.account(&a.account_id),
+                "keptUpToDateBy": kept_up_to_date_by(&a.source),
+                "pricesFrom": a.as_of,
+                "trackedSince": a.joined,
+                "start": money(a.start),
+                "end": money(a.end),
+                "moneyPutIn": money(a.put),
+                "gain": money(a.gain),
+                "returnPercent": a.rate.map(percent),
+            });
+            if let Some(realised) = a.realised {
+                row["realisedGain"] = json!(money(realised));
+            }
+            if a.sparse {
+                row["valuedOnlyWhenUpdated"] = json!(true);
+            }
+            if a.estimated_days > 0 {
+                row["daysCountedAsMoneyMovedByEstimate"] = json!(a.estimated_days);
+            }
+            if !a.missing.is_empty() {
+                row["statementLeavesOut"] = json!(a.missing);
+            }
+            row
+        }).collect::<Vec<_>>(),
+        "allocation": {
+            "pricesFrom": r.allocation.as_of,
+            "total": money(r.allocation.total),
+            "holdings": r.allocation.count,
+            "cash": money(r.allocation.cash),
+            "accruedNotYetPaid": money(r.allocation.accrued),
+            "cost": r.allocation.cost.map(money),
+            "unrealisedGain": r.allocation.unrealised.map(money),
+            "unrealisedReturnPercent": r.allocation.unrealised_rate.map(percent),
+            "largestHoldingSharePercent": r.allocation.largest_share.map(percent),
+            "topFiveSharePercent": r.allocation.top_five_share.map(percent),
+            "byKind": parts(&r.allocation.by_kind, &plain),
+            "byAccount": parts(&r.allocation.by_account, &|id| names.account(id)),
+            "byCurrency": parts(&r.allocation.by_currency, &plain),
+        },
+        "largestHoldings": r.holdings.iter().take(HOLDINGS).map(|h| json!({
+            "symbol": h.symbol, "name": h.name, "kind": h.group, "instrument": h.instrument, "priceCurrency": h.currency,
+            "value": money(h.value), "valueInItsCurrency": h.amount.as_deref().and_then(|amount| in_its_currency(amount, &h.currency)),
+            "cost": h.cost.map(money), "unrealisedGain": h.gain.map(money),
+            "returnOnCostPercent": h.rate.map(percent), "sharePercent": percent(h.share),
+            "accounts": h.accounts.iter().map(|id| names.account(id)).collect::<Vec<_>>(),
+        })).collect::<Vec<_>>(),
+        "income": {
+            "dividends": money(r.income.dividends),
+            "interest": money(r.income.interest),
+            "taxWithheld": money(r.income.tax),
+            "fees": money(r.income.fees),
+            "other": money(r.income.other),
+            "yieldPercent": r.income.yielded.map(percent),
+            "byMonth": r.income.months.iter().filter(|m| [m.dividends, m.interest, m.tax, m.fees, m.other, m.commissions.unwrap_or(0)].iter().any(|n| *n != 0)).map(|m| {
+                let mut row = json!({
+                    "month": m.month, "dividends": money(m.dividends), "interest": money(m.interest),
+                    "taxWithheld": money(m.tax), "fees": money(m.fees), "other": money(m.other),
+                });
+                if let Some(paid) = m.commissions {
+                    row["tradeCommissions"] = json!(money(paid));
+                }
+                row
+            }).collect::<Vec<_>>(),
+            "byHolding": r.income.by_holding.iter().take(HOLDINGS).map(|h| json!({
+                "symbol": h.symbol, "name": h.name, "dividends": money(h.dividends), "taxWithheld": money(h.tax),
+                "valueToday": h.value.map(money), "yieldPercent": h.yielded.map(percent),
+            })).collect::<Vec<_>>(),
+            "byAccount": r.income.by_account.iter().map(|a| json!({
+                "account": names.account(&a.account_id), "dividends": money(a.dividends), "interest": money(a.interest),
+                "taxWithheld": money(a.tax), "fees": money(a.fees), "other": money(a.other),
+                "tradeCommissions": a.commissions.map(money),
+            })).collect::<Vec<_>>(),
+            "tradeCommissions": r.income.commissions.iter().map(|c| json!({
+                "account": names.account(&c.account_id), "from": c.from, "to": c.to, "amount": money(c.amount),
+            })).collect::<Vec<_>>(),
+            "accountsThatReportNone": r.income.silent.iter().map(|id| names.account(id)).collect::<Vec<_>>(),
+        },
+    });
+    if r.months.len() > MONTHS {
+        output["earlierMonthsLeftOut"] = json!(r.months.len() - MONTHS);
+    }
+    if r.holdings.len() > HOLDINGS {
+        output["holdingsLeftOut"] = json!(r.holdings.len() - HOLDINGS);
+    }
+    if !r.unfilled.is_empty() {
+        output["investmentAccountsNothingKeepsUpToDate"] = json!(r.unfilled.iter().map(|id| names.account(id)).collect::<Vec<_>>());
+    }
+    if r.accounts.is_empty() {
+        output["note"] = json!("No investment account has holdings. The user can set one up in the app (get_app_guide, topic investments).");
+    }
+    let range = if from == to { month_label(&from) } else { t!("{from} to {to}", from = month_label(&from), to = month_label(&to)) };
+    read(output, t!("Ran an investments report: {range}", range))
+}
+
+/// The deposits, withdrawals and transfers an investment account's broker listed that the
+/// budget doesn't have yet, as its review has them.
+fn waiting_moves(b: &Budget, account: &str) -> Vec<crate::bank_import::Row> {
+    crate::bank_import::review_near(b, account, crate::investments::pending(b, account))
+        .map(|rows| rows.into_iter().filter(|r| !r.duplicate).collect())
+        .unwrap_or_default()
+}
+/// One of them for the model: what it is, and the transactions in the budget it could be.
+fn moved_row(b: &Budget, names: &Names, r: &crate::bank_import::Row) -> Value {
+    const CHOICES: usize = 5;
+    let mut out = json!({ "rowId": r.id, "date": r.date, "amount": money(r.amount), "what": r.memo });
+    if let Some(other) = &r.transfer_account_id {
+        out["otherAccount"] = json!({ "id": other, "name": names.account(other) });
+    }
+    if r.near > 0 {
+        out["bankAmountMayDifferBy"] = json!(money(r.near));
+    }
+    let could: Vec<Value> = r
+        .candidates
+        .iter()
+        .take(CHOICES)
+        .filter_map(|id| {
+            let own = r.candidate_details.iter().find(|c| c.id == *id).map_or(id.as_str(), |c| c.transaction_id.as_str());
+            let t = b.transactions.iter().find(|t| t.id == own)?;
+            let elsewhere = r.transfer_candidates.contains(id);
+            let mut c = json!({
+                "matchId": id,
+                "date": t.date,
+                "payee": if t.payee.is_empty() { "Transfer" } else { t.payee.as_str() },
+                "account": names.account(&t.account_id),
+                "amount": money(t.amount),
+                "is": if elsewhere { "the other side, in another account: matching joins the two as one transfer" } else { "already in the budget for this account: matching marks it as this row" },
+            });
+            if elsewhere {
+                c["bankTextNamesTheBroker"] = json!(r.transfer_sure);
+            }
+            if r.previously_matched_candidates.contains(id) {
+                c["alreadyMatchedToAnotherRow"] = json!(true);
+            }
+            Some(c)
+        })
+        .collect();
+    if !could.is_empty() {
+        out["couldBe"] = json!(could);
+    }
+    out
 }
 
 fn get_bank_sync(ctx: &Context) -> Result<Outcome, String> {
@@ -1721,6 +2117,109 @@ fn propose_transactions(args: &Value, ctx: &Context) -> Result<Outcome, String> 
         ctx,
         t!("Prepared {n|# new transaction|# new transactions}", n),
     )
+}
+
+fn propose_investment_deposits(args: &Value, ctx: &Context) -> Result<Outcome, String> {
+    let b = ctx.budget;
+    let names = Names::new(b);
+    let account = arg(args, "accountId").ok_or("Give the accountId.")?;
+    if crate::investments::find(b, account).is_none() {
+        return Err(format!("No broker fills the account {account}. Use get_holdings to find the investment accounts."));
+    }
+    let waiting = waiting_moves(b, account);
+    let list = args["rows"].as_array().filter(|l| !l.is_empty()).ok_or("Give at least one row.")?;
+    let mut picks: Vec<Pick> = vec![];
+    for r in list {
+        let id = r["rowId"].as_str().ok_or("Each row needs its rowId.")?;
+        let row = waiting.iter().find(|w| w.id == id).ok_or_else(|| format!("No row waiting to be reviewed has the id {id}. Use get_holdings: rows already in the budget aren't listed."))?;
+        if picks.iter().any(|p| p.row == id) {
+            return Err(format!("The row of {} is given twice. Give each row once.", row.date));
+        }
+        let matching = arg(r, "matchId");
+        let other = arg(r, "transferAccountId");
+        if let Some(m) = matching {
+            if other.is_some() {
+                return Err(format!("The row of {}: give matchId or transferAccountId, not both.", row.date));
+            }
+            if !row.candidates.iter().any(|c| c == m) {
+                return Err(format!("{m} isn't in the couldBe of the row of {}. Use a matchId get_holdings gives for it.", row.date));
+            }
+            if picks.iter().any(|p| p.matching.as_deref() == Some(m)) {
+                return Err("Two rows can't match the same transaction.".into());
+            }
+        }
+        if let Some(other) = other {
+            let there = names.accounts.get(other).ok_or_else(|| format!("No account has the id {other}. Use get_setup to find ids."))?;
+            if other == account {
+                return Err("A transfer needs two different accounts.".into());
+            }
+            if there.archived {
+                return Err(format!("{} is closed.", there.name));
+            }
+            if let Some(known) = row.transfer_account_id.as_deref().filter(|known| *known != other) {
+                return Err(format!("The broker says the row of {} moved between this account and {}. Leave transferAccountId out.", row.date, names.account(known)));
+            }
+        }
+        picks.push(Pick { row: id.to_owned(), matching: matching.map(str::to_owned), other: other.map(str::to_owned) });
+    }
+    let n = picks.len();
+    let default = t!("Bring {n|# deposit or transfer|# deposits and transfers} into {account}", n, account = names.account(account));
+    propose(Change::Deposits { account: account.to_owned(), picks }, title(args, default), ctx, t!("Prepared {n|# deposit|# deposits} for your budget", n))
+}
+
+/// A figure the model gives as a number or as text, as plain decimal text.
+fn figure(v: &Value) -> String {
+    match v {
+        Value::Number(n) => n.to_string(),
+        Value::String(s) => s.trim().to_string(),
+        _ => String::new(),
+    }
+}
+fn propose_holdings(args: &Value, ctx: &Context) -> Result<Outcome, String> {
+    let b = ctx.budget;
+    let names = Names::new(b);
+    let account = arg(args, "accountId").ok_or("Give the accountId.")?;
+    let there = names.accounts.get(account).ok_or_else(|| format!("No account has the id {account}. Use get_setup to find ids."))?;
+    let as_of = arg(args, "asOf").ok_or("Give asOf, the day the figures are from, as YYYY-MM-DD.")?;
+    let mut positions = vec![];
+    for h in args["holdings"].as_array().map(Vec::as_slice).unwrap_or_default() {
+        let text = |key: &str| h[key].as_str().unwrap_or_default().trim().to_string();
+        let (symbol, name) = (text("symbol"), text("name"));
+        if symbol.is_empty() && name.is_empty() {
+            return Err("Each holding needs a symbol or a name.".into());
+        }
+        let value = figure(&h["value"]);
+        if value.is_empty() {
+            return Err(format!("{} needs its value.", if name.is_empty() { &symbol } else { &name }));
+        }
+        let kind = match h["kind"].as_str() {
+            Some("stock") => "STK",
+            Some("fund") => "FUND",
+            Some("bond") => "BOND",
+            Some("option") => "OPT",
+            Some("crypto") => "CRYPTO",
+            _ => "",
+        };
+        positions.push(crate::investments::Position { symbol, name, kind: kind.into(), currency: String::new(), quantity: figure(&h["quantity"]), price: figure(&h["price"]), value, cost: figure(&h["cost"]) });
+    }
+    let (cash, total) = (figure(&args["cash"]), figure(&args["total"]));
+    let snapshot = crate::investments::Snapshot {
+        // A value alone is one the user gave; holdings come from something they showed.
+        source: if positions.is_empty() && cash.is_empty() { "manual" } else { "file" }.into(),
+        source_account: String::new(),
+        as_of: as_of.to_owned(),
+        currency: arg(args, "currency").unwrap_or_default().to_owned(),
+        rate: figure(&args["exchangeRate"]),
+        positions,
+        cash,
+        total,
+    };
+    // What the engine would refuse is said now, in its own words, so it can be put right.
+    crate::investments::record(b.clone(), account, snapshot.clone())?;
+    let n = snapshot.positions.len();
+    let default = t!("Update what {account} holds", account = there.name);
+    let done = if n == 0 { t!("Prepared a value for {account}", account = there.name) } else { t!("Prepared {n|# holding|# holdings} for {account}", n, account = there.name) };
+    propose(Change::Holdings { account: account.to_owned(), snapshot }, title(args, default), ctx, done)
 }
 
 fn propose_payee_changes(args: &Value, ctx: &Context) -> Result<Outcome, String> {
@@ -2812,6 +3311,195 @@ pub mod tests {
         let view = super::super::history::proposal_view(&shown);
         assert_eq!((view["made"].as_bool(), view["actions"].clone()), (Some(true), json!(["remove", "show"])));
         assert!(call("show_figures", &json!({ "title": "x", "rows": [] }), &ctx(&b, &files)).proposal.is_none());
+    }
+
+    #[test]
+    fn what_an_account_holds_is_proposed_from_a_files_figures_or_a_value_alone() {
+        let mut b = sample();
+        b.accounts.push(serde_json::from_value(json!({ "id": "pension", "name": "Pension", "kind": "tracking", "openingBalance": 0, "archived": false, "accountType": "investment" })).unwrap());
+        let files = Files::empty();
+        let propose = |args: Value| call("propose_holdings", &args, &ctx(&b, &files));
+        let p = propose(json!({ "accountId": "pension", "asOf": "2026-10-15", "holdings": [
+            { "symbol": "VWRA", "name": "World fund", "kind": "fund", "quantity": 120.5, "price": 141.91, "value": 17100, "cost": 15000 },
+            { "name": "Treasury note", "kind": "bond", "value": "4925.00" },
+        ], "cash": 820 })).proposal.unwrap();
+        assert_eq!((p.kind.as_str(), p.card.rows.len()), ("transactions", 3));
+        assert_eq!(p.card.rows.iter().map(|r| r.amount).collect::<Vec<_>>(), vec![Some(1_710_000), Some(492_500), Some(82_000)]);
+        assert_eq!(p.card.total.as_ref().and_then(|t| t.amount), Some(2_284_500));
+        assert!(p.card.rows[0].detail.as_ref().unwrap().contains("120.5 × 141.91") && p.card.rows[0].badge.is_some() && p.card.rows[1].badge.is_none());
+        let after = p.change.as_ref().unwrap().run(b.clone()).unwrap();
+        let held = crate::investments::find(&after, "pension").unwrap();
+        assert_eq!((held.source.as_str(), held.as_of.as_str(), held.total, held.positions[0].kind.as_str(), held.positions[0].gain), ("file", "2026-10-15", 2_284_500, "FUND", Some(210_000)));
+        // A holding left off the card isn't kept, and the account is worth what's left.
+        let fewer = p.change.as_ref().unwrap().revised(&proposals::Revision { skip: vec![p.card.rows[1].key.clone().unwrap()], ..Default::default() }, &p.card).unwrap();
+        assert_eq!(crate::investments::find(&fewer.run(b.clone()).unwrap(), "pension").unwrap().total, 1_792_000);
+        // A value alone is one the user gave.
+        let value = propose(json!({ "accountId": "pension", "asOf": "2026-10-15", "total": 30000 })).proposal.unwrap();
+        assert_eq!((value.card.rows.len(), value.card.total.as_ref().and_then(|t| t.amount)), (0, Some(3_000_000)));
+        assert_eq!(crate::investments::find(&value.change.as_ref().unwrap().run(b.clone()).unwrap(), "pension").unwrap().source, "manual");
+        // What the budget can't keep is said to the model, to put right: no value, a cash account, a currency with no rate.
+        for (args, says) in [
+            (json!({ "accountId": "pension", "asOf": "2026-10-15" }), "Give the account's value"),
+            (json!({ "accountId": "pension", "asOf": "2026-10-15", "holdings": [{ "symbol": "X" }] }), "needs its value"),
+            (json!({ "accountId": "checking", "asOf": "2026-10-15", "total": 5 }), "tracking account"),
+            (json!({ "accountId": "pension", "asOf": "2026-10-15", "total": 5, "currency": "JPY" }), "worth in"),
+            (json!({ "accountId": "nope", "asOf": "2026-10-15", "total": 5 }), "No account has the id"),
+        ] {
+            let outcome = propose(args);
+            assert!(outcome.proposal.is_none() && outcome.output.to_string().contains(says), "{says}: {}", outcome.output);
+        }
+        // get_holdings says how each account is kept up to date.
+        let held = call("get_holdings", &json!({}), &ctx(&after, &files)).output;
+        assert_eq!(held["accounts"][0]["keptUpToDateBy"], "a positions file the user brings in");
+    }
+
+    #[test]
+    fn money_moved_into_an_investment_account_is_reported_as_invested_not_spent() {
+        let mut b = sample();
+        let files = Files::empty();
+        let before = call("get_report", &json!({ "from": "2026-10", "to": "2026-10" }), &ctx(&b, &files)).output;
+        b.accounts.push(serde_json::from_value(json!({ "id": "broker", "name": "Long term", "kind": "tracking", "openingBalance": 0, "archived": false, "accountType": "investment" })).unwrap());
+        b.transactions.push(serde_json::from_value(json!({ "id": "to-broker", "date": "2026-10-05", "accountId": "checking", "payee": "Broker", "memo": "", "amount": -50000, "status": "cleared",
+            "splits": [{ "categoryId": "dining", "amount": -50000 }], "transferAccountId": "broker", "transferStatus": "cleared" })).unwrap());
+        let r = call("get_report", &json!({ "from": "2026-10", "to": "2026-10" }), &ctx(&b, &files)).output;
+        // The spending is as it was, and the move is beside it.
+        assert_eq!((r["spending"].clone(), r["months"][0]["spending"].clone(), r["spendingByCategory"].clone()), (before["spending"].clone(), before["months"][0]["spending"].clone(), before["spendingByCategory"].clone()));
+        assert_eq!((r["invested"].as_str(), r["months"][0]["invested"].as_str(), before["invested"].as_str()), (Some("500.00"), Some("500.00"), Some("0.00")));
+        assert!(r["topPayees"].as_array().unwrap().iter().all(|p| p["payee"] != "Broker"));
+        // And in a spreadsheet's months sheet.
+        let made = call("create_spreadsheet", &json!({ "title": "October", "sheets": [{ "name": "Months", "type": "months", "from": "2026-10", "to": "2026-10" }] }), &ctx(&b, &files));
+        let sheet = workbook::fill(&made.proposal.unwrap().workbook.unwrap().sheets[0], &b).unwrap();
+        assert_eq!(sheet.columns.iter().map(|c| c.header.as_str()).collect::<Vec<_>>(), ["Month", "Income", "Spending", "Invested", "Net income", "Net worth"]);
+        assert_eq!(sheet.rows[0][3], workbook::Cell::Money(50_000));
+    }
+
+    #[test]
+    fn the_investments_report_is_read_with_net_worths_market_change_and_goes_into_a_spreadsheet() {
+        let mut b = sample();
+        b.currency = "USD".into();
+        b.accounts.push(serde_json::from_value(json!({ "id": "broker", "name": "Long term", "kind": "tracking", "openingBalance": 0, "archived": false, "accountType": "investment" })).unwrap());
+        let files = Files::empty();
+        // Before anything is held: the report says so, and its sheets are refused.
+        let empty = call("get_investments_report", &json!({}), &ctx(&b, &files)).output;
+        assert!(empty["accounts"].as_array().unwrap().is_empty() && empty["note"].as_str().unwrap().contains("No investment account has holdings"));
+        assert_eq!(empty["investmentAccountsNothingKeepsUpToDate"], json!(["Long term"]));
+        let sheets = json!({ "title": "Investments", "sheets": [{ "name": "By month", "type": "investments", "from": "2026-09", "to": "2026-11" }, { "name": "Held", "type": "holdings" }] });
+        let refused = call("create_spreadsheet", &sheets, &ctx(&b, &files));
+        assert!(refused.proposal.is_none() && refused.output["error"].as_str().unwrap().contains("No investment account has holdings"));
+
+        let statement = crate::flex::parse(urbudget_core::test_support::FLEX_SAMPLE).unwrap().accounts.remove(0);
+        let b = crate::investments::apply(b, "broker", &statement, None).unwrap();
+        // Net worth's months say what markets did.
+        let report = call("get_report", &json!({ "from": "2026-10", "to": "2026-11" }), &ctx(&b, &files)).output;
+        assert_eq!((report["months"][0]["marketChange"].as_str(), report["months"][1]["marketChange"].as_str()), (Some("280.00"), Some("1112.50")));
+        // The account joined at the end of September: its value then was put in, the rest is the gain.
+        let out = call("get_investments_report", &json!({ "from": "2026-09", "to": "2026-11" }), &ctx(&b, &files));
+        assert_eq!(out.step, "Ran an investments report: September 2026 to November 2026");
+        let r = out.output;
+        assert_eq!((r["total"]["start"].as_str(), r["total"]["end"].as_str(), r["total"]["gain"].as_str(), r["total"]["moneyPutIn"].as_str()), (Some("0.00"), Some("27012.50"), Some("1392.50"), Some("25620.00")));
+        assert!(r["total"]["returnPercent"].as_f64().is_some_and(|rate| rate > 5.0 && rate < 6.0) && r["total"]["yearlyReturnPercent"].is_null());
+        assert_eq!(r["months"].as_array().unwrap().iter().map(|m| m["gain"].as_str().unwrap()).collect::<Vec<_>>(), ["0.00", "280.00", "1112.50"]);
+        let account = &r["accounts"][0];
+        assert_eq!((account["account"].as_str(), account["keptUpToDateBy"].as_str(), account["trackedSince"].as_str(), account["gain"].as_str()), (Some("Long term"), Some("Interactive Brokers"), Some("2026-09-30"), Some("1392.50")));
+        assert!(account.get("valuedOnlyWhenUpdated").is_none());
+        assert_eq!((r["allocation"]["byKind"][0]["name"].as_str(), r["allocation"]["byAccount"][0]["name"].as_str(), r["allocation"]["holdings"].as_u64()), (Some("Stocks"), Some("Long term"), Some(3)));
+        let largest = &r["largestHoldings"][0];
+        assert_eq!((largest["symbol"].as_str(), largest["value"].as_str(), largest["accounts"][0].as_str(), largest["sharePercent"].as_f64()), (Some("VWRA"), Some("17100.00"), Some("Long term"), Some(63.3)));
+        // What it is, and what it and each currency's part are worth in their own currency.
+        assert_eq!((largest["instrument"].as_str(), largest["valueInItsCurrency"].as_str()), (Some("Stock"), Some("17100.00 USD")));
+        let saudi = r["largestHoldings"].as_array().unwrap().iter().find(|h| h["symbol"] == "2222").unwrap();
+        assert_eq!((saudi["value"].as_str(), saudi["valueInItsCurrency"].as_str()), (Some("2880.00"), Some("10800.00 SAR")));
+        let riyals = r["allocation"]["byCurrency"].as_array().unwrap().iter().find(|p| p["name"] == "SAR").unwrap();
+        assert_eq!(riyals["amountInThatCurrency"], "12300.00 SAR");
+        assert!(r["allocation"]["byKind"][0].get("amountInThatCurrency").is_none());
+        let holdings = call("get_holdings", &json!({}), &ctx(&b, &files)).output;
+        let first = &holdings["accounts"][0]["holdings"][0];
+        assert_eq!((first["instrument"].as_str(), first["valueInItsCurrency"].as_str()), (Some("Stock"), Some("17100.00 USD")));
+        assert_eq!((r["income"]["dividends"].as_str(), r["income"]["taxWithheld"].as_str(), r["income"]["byMonth"].as_array().map(Vec::len)), (Some("6.50"), Some("-0.98"), Some(2)));
+        assert_eq!(r["income"]["byAccount"], json!([{ "account": "Long term", "dividends": "6.50", "interest": "1.20", "taxWithheld": "-0.98", "fees": "-10.00", "other": "0.00", "tradeCommissions": "-3.50" }]));
+        // The sample's dividend names its holding; its statement lists no trades, so nothing is said of what they realised.
+        assert_eq!(r["income"]["byHolding"], json!([{ "symbol": "AAPL", "name": "APPLE INC", "dividends": "6.50", "taxWithheld": "-0.98", "valueToday": "5800.00", "yieldPercent": 0.11 }]));
+        assert!(r["total"]["realisedGain"].is_null() && r["months"][1].get("realisedGain").is_none() && account.get("realisedGain").is_none() && r["income"]["byMonth"][0].get("tradeCommissions").is_none());
+        // With the trades listed: what they realised, and the commissions by month in place of the statement's one figure.
+        let traded = crate::flex::parse(&urbudget_core::test_support::FLEX_SAMPLE.replace("<Transfers />", r#"<Trades>
+<Trade currency="USD" fxRateToBase="1" symbol="AAPL" tradeDate="20261008" ibCommission="-2.5" fifoPnlRealized="498.75" levelOfDetail="EXECUTION" transactionID="1" />
+</Trades>
+<Transfers />"#)).unwrap().accounts.remove(0);
+        let with_trades = crate::investments::apply(b.clone(), "broker", &traded, None).unwrap();
+        let t = call("get_investments_report", &json!({ "from": "2026-09", "to": "2026-11" }), &ctx(&with_trades, &files)).output;
+        assert_eq!((t["total"]["realisedGain"].as_str(), t["months"][1]["realisedGain"].as_str(), t["accounts"][0]["realisedGain"].as_str()), (Some("498.75"), Some("498.75"), Some("498.75")));
+        assert_eq!((t["income"]["byMonth"][0]["tradeCommissions"].as_str(), t["income"]["tradeCommissions"].as_array().map(Vec::len)), (Some("-2.50"), Some(0)));
+        assert_eq!(t["income"]["byAccount"][0]["tradeCommissions"], "-2.50");
+        assert!(r["income"]["tradeCommissions"][0]["amount"] == "-3.50" && r.get("note").is_none() && r.get("investmentAccountsNothingKeepsUpToDate").is_none());
+        // Left to itself it covers the twelve months to the one on screen.
+        let year = call("get_investments_report", &json!({}), &ctx(&b, &files)).output;
+        assert_eq!((year["from"].as_str(), year["to"].as_str(), year["months"].as_array().map(Vec::len)), (Some("2025-11"), Some("2026-10"), Some(12)));
+        assert!(call("get_investments_report", &json!({ "from": "October" }), &ctx(&b, &files)).output["error"].is_string());
+
+        // The two sheets are filled from the same report.
+        let made = call("create_spreadsheet", &sheets, &ctx(&b, &files));
+        let p = made.proposal.expect("a spreadsheet card");
+        assert_eq!(p.card.rows.iter().map(|r| r.badge.as_deref().unwrap()).collect::<Vec<_>>(), ["3 months", "3 rows"]);
+        assert_eq!(made.output["summary"]["sheets"][1]["type"], "holdings");
+        let doc = p.workbook.as_ref().unwrap();
+        let by_month = workbook::fill(&doc.sheets[0], &b).unwrap();
+        assert_eq!(by_month.columns.iter().map(|c| c.header.as_str()).collect::<Vec<_>>(), ["Month", "Value", "Money put in", "Gain", "Long term"]);
+        assert_eq!(by_month.rows[2], vec![workbook::Cell::Month("2026-11".into()), workbook::Cell::Money(2_701_250), workbook::Cell::Money(40_000), workbook::Cell::Money(111_250), workbook::Cell::Money(2_701_250)]);
+        let held = workbook::fill(&doc.sheets[1], &b).unwrap();
+        assert_eq!((&held.rows[0][1], &held.rows[0][4], &held.rows[0][8]), (&workbook::Cell::Text("VWRA".into()), &workbook::Cell::Money(1_710_000), &workbook::Cell::Text("Long term".into())));
+    }
+
+    #[test]
+    fn money_moved_at_the_broker_is_shown_with_what_it_could_be_and_brought_in() {
+        let mut b = sample();
+        b.accounts.push(serde_json::from_value(json!({ "id": "broker", "name": "Long term", "kind": "tracking", "openingBalance": 0, "archived": false, "accountType": "investment" })).unwrap());
+        // The bank's side of the dollar deposit, as its file left it: 3,765.00 for 1,000 dollars.
+        b.transactions.push(serde_json::from_value(json!({ "id": "wire", "date": "2026-10-06", "accountId": "checking", "payee": "INTERACTIVE BROKERS LLC", "memo": "", "amount": -376500, "status": "cleared",
+            "splits": [{ "categoryId": null, "amount": -376500 }], "transferAccountId": null, "transferStatus": null })).unwrap());
+        let statement = crate::flex::parse(urbudget_core::test_support::FLEX_SAMPLE).unwrap().accounts.remove(0);
+        let b = crate::investments::apply(b, "broker", &statement, None).unwrap();
+        let total = crate::investments::find(&b, "broker").unwrap().total;
+        let balance = |b: &Budget| b.transactions.iter().map(|t| if t.account_id == "broker" { t.amount } else if t.transfer_account_id.as_deref() == Some("broker") { -t.amount } else { 0 }).sum::<i64>();
+        let files = Files::empty();
+        let held = call("get_holdings", &json!({}), &ctx(&b, &files)).output;
+        let rows = held["accounts"][0]["moneyMovedToReview"].as_array().unwrap().clone();
+        assert_eq!(rows.iter().map(|r| r["date"].as_str().unwrap()).collect::<Vec<_>>(), vec!["2026-10-05", "2026-11-02"]);
+        // The dollar deposit could be the bank's entry, a little off; the riyal one is nothing yet.
+        let could = &rows[0]["couldBe"][0];
+        assert_eq!((could["matchId"].as_str(), could["account"].as_str(), could["bankTextNamesTheBroker"].as_bool()), (Some("wire"), Some("Everyday"), Some(true)));
+        assert!(rows[0].get("bankAmountMayDifferBy").is_some() && rows[1].get("couldBe").is_none() && rows[1].get("bankAmountMayDifferBy").is_none());
+
+        let propose = |args: Value| call("propose_investment_deposits", &args, &ctx(&b, &files));
+        let p = propose(json!({ "accountId": "broker", "rows": [
+            { "rowId": rows[0]["rowId"], "matchId": "wire" },
+            { "rowId": rows[1]["rowId"], "transferAccountId": "checking" },
+        ] })).proposal.unwrap();
+        assert_eq!((p.kind.as_str(), p.card.rows.len(), p.card.rows[0].amount, p.card.rows[1].amount), ("transactions", 2, Some(375_000), Some(150_000)));
+        assert!(p.card.rows[0].detail.as_ref().unwrap().contains("Everyday") && p.card.rows[0].badge.is_some());
+        assert!(p.card.rows[1].detail.as_ref().unwrap().contains("Everyday"));
+        let after = p.change.as_ref().unwrap().run(b.clone()).unwrap();
+        let wire = after.transactions.iter().find(|t| t.id == "wire").unwrap();
+        assert_eq!((wire.transfer_account_id.as_deref(), wire.amount), (Some("broker"), -376_500));
+        assert!(after.transactions.iter().any(|t| t.account_id == "broker" && t.transfer_account_id.as_deref() == Some("checking") && t.amount == 150_000));
+        assert_eq!(balance(&after), total);
+        // Nothing is left to review, and proposing it again says so.
+        assert!(call("get_holdings", &json!({}), &ctx(&after, &files)).output["accounts"][0].get("moneyMovedToReview").is_none());
+        assert!(matches!(proposals::recheck(&p, &after), proposals::Recheck::Changed(q) if q.problem.is_some()));
+        // The user leaves one out on the card.
+        let key = p.card.rows[1].key.clone().unwrap();
+        let part = proposals::revise(&p, proposals::Revision { skip: vec![key], set: vec![] }, &b).unwrap();
+        assert!(matches!(part.change, Some(Change::Deposits { ref picks, .. }) if picks.len() == 1));
+
+        let refused = |args: Value| propose(args).output["error"].as_str().unwrap_or_default().to_owned();
+        assert!(refused(json!({ "accountId": "checking", "rows": [{ "rowId": rows[0]["rowId"] }] })).contains("No broker fills"));
+        assert!(refused(json!({ "accountId": "broker", "rows": [{ "rowId": "nope" }] })).contains("get_holdings"));
+        assert!(refused(json!({ "accountId": "broker", "rows": [{ "rowId": rows[1]["rowId"], "matchId": "wire" }] })).contains("couldBe"));
+        assert!(refused(json!({ "accountId": "broker", "rows": [{ "rowId": rows[0]["rowId"], "matchId": "wire", "transferAccountId": "checking" }] })).contains("not both"));
+        assert!(refused(json!({ "accountId": "broker", "rows": [{ "rowId": rows[1]["rowId"], "transferAccountId": "broker" }] })).contains("two different"));
+
+        // A transfer added the ordinary way still leaves the account at the broker's value.
+        let typed = call("propose_transactions", &json!({ "accountId": "broker", "transactions": [{ "date": "2026-11-02", "payee": "x", "amount": 1500, "transferAccountId": "checking" }] }), &ctx(&b, &files)).proposal.unwrap();
+        assert_eq!(balance(&typed.change.unwrap().run(b.clone()).unwrap()), total);
     }
 
     #[test]

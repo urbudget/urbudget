@@ -263,7 +263,7 @@ private fun CategoryMenu(payment: Boolean, hidden: Boolean, assistant: Boolean, 
     var expanded by remember { mutableStateOf(false) }
     Box {
         IconButton({ expanded = true }) { Icon(Icons.Outlined.MoreHoriz, stringResource(R.string.category_actions), tint = ur.text2) }
-        DropdownMenu(expanded, { expanded = false }, shape = RoundedCornerShape(16.dp), containerColor = ur.surface) {
+        UrMenu(expanded, { expanded = false }) {
             val items = buildList {
                 if (!payment) add(Triple("details", R.string.category_details, Icons.Outlined.Edit))
                 add(Triple("organize", R.string.category_organize, Icons.Outlined.SwapVert))
@@ -272,10 +272,10 @@ private fun CategoryMenu(payment: Boolean, hidden: Boolean, assistant: Boolean, 
                 add(if (hidden) Triple("show", R.string.category_show, Icons.Outlined.Visibility) else Triple("hide", R.string.category_hide, Icons.Outlined.VisibilityOff))
                 if (assistant) add(Triple("ask", R.string.assistant_ask_assistant, Icons.AutoMirrored.Outlined.Chat))
             }
-            items.forEach { (id, label, icon) -> DropdownMenuItem(text = { Text(stringResource(label)) }, leadingIcon = { Icon(icon, null) }, onClick = { open(id); expanded = false }) }
+            items.forEach { (id, label, icon) -> UrMenuItem(text = { Text(stringResource(label)) }, leadingIcon = { Icon(icon, null) }, onClick = { open(id); expanded = false }) }
             if (!payment) {
                 HorizontalDivider(color = ur.border)
-                DropdownMenuItem(text = { Text(stringResource(R.string.category_delete), color = ur.negative) }, leadingIcon = { Icon(Icons.Outlined.DeleteOutline, null, tint = ur.negative) },
+                UrMenuItem(text = { Text(stringResource(R.string.category_delete), color = ur.negative) }, leadingIcon = { Icon(Icons.Outlined.DeleteOutline, null, tint = ur.negative) },
                     onClick = { open("delete"); expanded = false })
             }
         }
@@ -520,8 +520,17 @@ internal fun MonthField(month: String, onChange: (String) -> Unit, label: String
 }
 
 /**
+ * What covering an overspending of [overspent] takes from a source that has [has]: all of it when
+ * the source has enough, otherwise everything the source has. With nothing to give (or no source
+ * chosen yet) it's the whole overspending, so the amount still says what's needed.
+ */
+internal fun coverAmount(overspent: Long, has: Long?): Long = if (has != null && has in 1 until overspent) has else overspent
+
+/**
  * Moving money, as a sheet: from one category (or Unassigned) to another, the amount on the keypad.
- * Covering overspending opens with the overspent amount, taken from Unassigned when it has money.
+ * Covering overspending takes from Unassigned when it has money, and opens with as much of the
+ * overspending as the source can give (coverAmount); choosing another source sets the amount again,
+ * until one has been typed.
  */
 @Composable
 internal fun MoveMoneySheet(request: MoveRequest, budget: JSONObject, summary: JSONObject?, month: String, vm: BudgetViewModel, close: () -> Unit) {
@@ -538,7 +547,15 @@ internal fun MoveMoneySheet(request: MoveRequest, budget: JSONObject, summary: J
     val rta = summary?.optLong("readyToAssign") ?: 0
     var from by remember { mutableStateOf(when { request.direction == "to" -> request.category; start < 0 && rta > 0 && request.category != Unassigned -> Unassigned; else -> "" }) }
     var to by remember { mutableStateOf(if (request.direction == "from") request.category else "") }
-    val pad = rememberPad(if (start < 0) -start else maxOf(0, start))
+    // Covering this category's overspending: the amount is what the source can give of it.
+    val overspent = if (start < 0 && request.direction != "to" && request.category != Unassigned) -start else 0L
+    fun covered(source: String) = coverAmount(overspent, source.takeIf { it.isNotBlank() }?.let(::available))
+    val pad = rememberPad(if (overspent > 0) covered(from) else if (start < 0) -start else maxOf(0, start))
+    // The amount the sheet last put in: while it's still there, a new source puts in its own.
+    var suggested by remember { mutableStateOf(pad.cents) }
+    LaunchedEffect(from) {
+        if (overspent > 0 && pad.cents == suggested) covered(from).let { if (it != pad.cents) { pad.set(it); suggested = it } }
+    }
     var keypad by remember { mutableStateOf(false) }
     var picking by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }

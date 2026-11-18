@@ -1,6 +1,6 @@
 //! Native host command router. SQLite and the service state live for the process lifetime so
 //! sync, bank imports and assistant edits all observe the same saved revision and draft.
-use crate::{assistant, budgets, cloud, commands, domain, engine, fresh_start, host, simplefin, store::Store, t, vault, ynab_capture, Database, Library};
+use crate::{assistant, budgets, cloud, commands, domain, engine, fresh_start, host, ibkr, simplefin, store::Store, t, vault, ynab_capture, Database, Library};
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -19,6 +19,7 @@ pub struct Runtime {
     pub cloud: cloud::Cloud,
     pub assistant: assistant::Assistant,
     pub simplefin: simplefin::SimpleFin,
+    pub ibkr: ibkr::Ibkr,
     pub pending_import: ynab_capture::PendingImport,
     pub data_dir: PathBuf,
     history: Mutex<HashMap<String, History>>,
@@ -169,6 +170,11 @@ mod tests {
         });
         let refused = call(&runtime, "simplefin_import", json!({"account":"cash","through":"2026-10-21","choices":[],"expectedToken":initial["token"]})).unwrap_err();
         assert!(refused.contains("CONFLICT"), "bank imports must retain the reviewed revision");
+        let refused = call(&runtime, "simplefin_holdings", json!({"expectedToken":initial["token"]})).unwrap_err();
+        assert!(refused.contains("CONFLICT"), "a brokerage's holdings go into the budget that was reviewed");
+        // With no download at hand there are no holdings to bring in, and nothing is saved.
+        let before = runtime.load().unwrap();
+        assert_eq!(call(&runtime, "simplefin_holdings", json!({})).unwrap()["token"], before["token"]);
     }
 
     #[test]
@@ -843,7 +849,7 @@ impl Runtime {
         Ok(Self {
             db: Database::new(store), library: Library(Mutex::new(library)),
             cloud: cloud::Cloud::new(data_dir), assistant: assistant::Assistant::new(data_dir.to_path_buf()),
-            simplefin: simplefin::SimpleFin::new(data_dir), pending_import: ynab_capture::PendingImport::default(),
+            simplefin: simplefin::SimpleFin::new(data_dir), ibkr: ibkr::Ibkr::new(), pending_import: ynab_capture::PendingImport::default(),
             data_dir: data_dir.to_path_buf(),
             history: Mutex::default(),
             commands: tokio::sync::Mutex::new(()),
@@ -1089,13 +1095,14 @@ impl Runtime {
             "set_language" | "host_events" | "native_budget_status" | "query_budget" | "database_status" | "cloud_status" | "sync_status" | "assistant_stop" | "assistant_cancel_sign_in" | "assistant_status" | "assistant_thread" | "assistant_threads" |
             "assistant_sign_in" | "assistant_sign_out" | "assistant_foreground" | "assistant_settings" | "assistant_set_key" | "assistant_forget_key" | "assistant_models" | "assistant_report_reply" | "assistant_sms_poll" | "assistant_sms_cancel" | "assistant_sms_lanes" | "assistant_phone_reply" |
             "simplefin_status" | "simplefin_connect" | "simplefin_accounts" | "simplefin_disconnect" | "simplefin_open" | "simplefin_sync" |
+            "ibkr_status" | "ibkr_connect" | "ibkr_fetch" | "ibkr_file" | "ibkr_disconnect" | "ibkr_open" |
             "ynab_tokens" | "ynab_plans" | "forget_ynab_token" | "list_budgets" | "list_backups" | "backup_retention");
         let _command = if independent {
             None
         } else { Some(self.commands.lock().await) };
         // Credential changes and downloads stay ordered with one another, while a bank's
         // network timeout cannot hold the budget edit queue or block status polling.
-        let _bank = if matches!(method, "simplefin_connect" | "simplefin_accounts" | "simplefin_disconnect" | "simplefin_sync") {
+        let _bank = if matches!(method, "simplefin_connect" | "simplefin_accounts" | "simplefin_disconnect" | "simplefin_sync" | "ibkr_connect" | "ibkr_fetch" | "ibkr_disconnect") {
             Some(self.bank_commands.lock().await)
         } else { None };
         let text = |key: &str| field::<String>(&p, key);
@@ -1365,8 +1372,31 @@ impl Runtime {
                 }
                 Ok(result)
             }
+            // What the last download's brokerage accounts hold goes into the budget, saved like a
+            // bank import. A download with no holdings, or none that changed, saves nothing.
+            "simplefin_holdings" => {
+                let token = optional::<String>(&p, "expectedToken")?.unwrap_or(self.db.store()?.status()?.token);
+                if self.db.store()?.status()?.token != token { return Err(t!("CONFLICT: The budget changed. Refresh the bank review before importing.")); }
+                let patch = simplefin::simplefin_holdings(&self.db, &self.simplefin, None)?;
+                if patch.is_empty() { return self.load(); }
+                let budget = self.db.store()?.full_draft(Some(patch))?;
+                self.save(&budget, &token)?;
+                self.load()
+            }
             m if m.starts_with("assistant_") => assistant::dispatch(m, p, &self.db, &self.assistant, &self.simplefin, &self.cloud).await,
             m if m.starts_with("simplefin_") => simplefin::dispatch(m, p, &self.db, &self.simplefin).await,
+            // Bringing a statement in, or its deposits, changes the budget: saved like a bank import.
+            "ibkr_apply" | "ibkr_import" => {
+                let token = optional::<String>(&p, "expectedToken")?.unwrap_or(self.db.store()?.status()?.token);
+                if self.db.store()?.status()?.token != token { return Err(t!("CONFLICT: The budget changed. Sync with Interactive Brokers again.")); }
+                let patch: crate::patch::Patch = serde_json::from_value(ibkr::dispatch(method, p, &self.db, &self.ibkr).await?).map_err(|e| e.to_string())?;
+                // A sync that brought nothing new saves nothing.
+                if patch.is_empty() { return self.load(); }
+                let budget = self.db.store()?.full_draft(Some(patch))?;
+                self.save(&budget, &token)?;
+                self.load()
+            }
+            m if m.starts_with("ibkr_") => ibkr::dispatch(m, p, &self.db, &self.ibkr).await,
             "ynab_tokens" | "forget_ynab_token" | "ynab_plans" | "sync_ynab" | "accept_ynab_import" | "resolve_ynab" => ynab_capture::dispatch(method, p, &self.db, &self.pending_import).await,
             _ => Err(format!("Unknown native service command: {method}")),
         }

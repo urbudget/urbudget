@@ -214,6 +214,15 @@ export const shiftMonth =(month: string, delta: number) => {
   d.setMonth(d.getMonth() + delta);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 };
+/** A share as a whole percent ("63%"), a sliver as "<1%"; signed for a rate of return ("+5.4%"). */
+export const percent = (share: number, signed = false) => {
+  if (signed) {
+    const tenths = Math.round(share * 1000) / 10;
+    return `${tenths > 0 ? "+" : ""}${tenths.toFixed(1)}%`;
+  }
+  const whole = Math.round(share * 100);
+  return share > 0 && whole === 0 ? "<1%" : `${whole}%`;
+};
 /** CSS class for a signed amount. */
 export const tone = (value: number) => (value < 0 ? "negative" : value > 0 ? "positive" : "zero");
 /** A thrown value as a sentence for people: no "Error:" or internal "CONFLICT:" prefixes. */

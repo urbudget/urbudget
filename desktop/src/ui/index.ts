@@ -6,6 +6,7 @@ export { CategoryPicker, PayeeInput, READY_TO_ASSIGN, transferPayee } from "./Pi
 export {
   DateRangePicker,
   MonthPicker,
+  describeRange,
   presetLabels,
   rangeFor,
   type DateRange,

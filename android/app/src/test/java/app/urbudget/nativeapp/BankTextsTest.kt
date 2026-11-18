@@ -202,4 +202,93 @@ class BankTextsTest {
         assertNull(smsBankCheck("plain", b, 0L, listOf(item(2, "plain", "-5.00", available = "100.00")), emptyList()) { true })
         assertNull(smsBankCheck("checking", b, 0L, listOf(item(3, "checking", "-5.00")), emptyList()) { true })
     }
+
+    private fun asked(text: BankSms, amount: Double, kind: String = "expense", account: String = "checking", payee: String = "Careem", match: String? = null, transfer: String? = null) =
+        BankTextEntry.asked(JSONObject().put("textIds", JSONArray().put(text.id)).put("accountId", account).put("date", text.receivedDate).put("amount", amount)
+            .put("kind", kind).put("payee", payee).put("match", match ?: JSONObject.NULL).put("transferAccountId", transfer ?: JSONObject.NULL))
+
+    @Test fun aCardEntersATransactionOnlyAsItsTextSaysIt() {
+        val ride = sms("Purchase SAR 45.00 at Careem\nCard 3358")
+        val pay = sms("Salary SAR 9,000.00 credited")
+        val moved = sms("Transfer of SAR 500.00 to card 4417")
+        val texts = listOf(ride, pay, moved).associateBy { it.id }
+        val b = budget()
+        // Money out is negative and money in positive, whichever way the assistant wrote it; a transfer keeps its sign.
+        val entries = listOf(asked(ride, 45.0), asked(pay, -9000.0, kind = "income", payee = "Employer"), asked(moved, -500.0, kind = "transfer", payee = "Visa", transfer = "card"))
+        assertEquals(listOf(-4_500L, 900_000L, -50_000L), entries.map { it.cents })
+        assertNull(bankTextEntriesProblem(entries, texts, b))
+        // An amount the text doesn't give was made up; a text is entered once, into an open account, and a transfer names its other account.
+        assertNotNull(bankTextEntriesProblem(listOf(asked(ride, 54.0)), texts, b))
+        assertNotNull(bankTextEntriesProblem(listOf(asked(ride, 45.0), asked(ride, 45.0)), texts, b))
+        assertNotNull(bankTextEntriesProblem(listOf(asked(ride, 45.0, account = "closed")), texts, b))
+        assertNotNull(bankTextEntriesProblem(listOf(asked(moved, -500.0, kind = "transfer")), texts, b))
+        assertNotNull(bankTextEntriesProblem(listOf(asked(ride, 45.0, transfer = "card")), texts, b))
+        assertNotNull(bankTextEntriesProblem(emptyList(), texts, b))
+        // The engine gets them as a review's reading: each text read once, its money as written, backed by its own first line.
+        val reading = bankTextsReading(entries, texts, "SAR")
+        assertEquals(listOf(ride, pay, moved), reading.messages)
+        val first = reading.analysis.getJSONArray("items").getJSONObject(0)
+        assertEquals("transaction", first.getString("disposition"))
+        assertEquals(ride.id, first.getJSONArray("sourceIds").getString(0))
+        assertEquals("Purchase SAR 45.00 at Careem", first.getJSONArray("evidence").getJSONObject(0).getString("quote"))
+        val t = first.getJSONObject("transaction")
+        assertEquals(listOf("-45.00", "45.00", "SAR", "checking"), listOf(t.getString("amount"), t.getString("writtenAmount"), t.getString("currency"), t.getString("accountId")))
+        assertTrue(t.isNull("transferAccountId") && t.isNull("categoryId") && t.isNull("accountRef"))
+        assertEquals("card", reading.analysis.getJSONArray("items").getJSONObject(2).getJSONObject("transaction").getString("transferAccountId"))
+        // A quote is cut inside its line, never through a character written as two.
+        assertTrue(ride.body.contains(bankTextQuote(ride.body)) && bankTextQuote("\n  \n Paid 5.00 \n").equals("Paid 5.00"))
+        assertEquals(79, bankTextQuote("a".repeat(79) + "😀 more").length)
+        // The card keeps what was asked, and reads it back the same.
+        val kept = entries[2].copy(match = "t9", categoryId = null)
+        assertEquals(kept, BankTextEntry.carded(JSONObject(kept.card().toString())))
+    }
+
+    @Test fun anEnteredTextIsAddedMatchedOrLeftOutByWhatTheBudgetHas() {
+        val ride = sms("Purchase SAR 45.00 at Careem")
+        val day = ride.receivedDate
+        fun saved(id: String, date: String) = JSONObject().put("id", id).put("date", date).put("payee", "Careem").put("amount", -4_500L).put("accountId", "checking")
+        val b = budget(saved("t1", day), saved("t2", "2026-01-01"))
+        fun row(vararg candidates: String, duplicate: Boolean = false, before: List<String> = emptyList()) = JSONObject().put("duplicate", duplicate)
+            .put("candidates", JSONArray(candidates.toList())).put("previouslyMatchedCandidates", JSONArray(before))
+        fun decide(entry: BankTextEntry, row: JSONObject) = bankTextsDecide(listOf(entry), mapOf(0 to row), b)
+        val plain = asked(ride, 45.0)
+        // Nothing it could be: added. The one transaction it could be, the same day: matched, as the review does unasked.
+        assertNull(decide(plain, row()).entries.single().match)
+        assertEquals("t1", decide(plain, row("t1")).entries.single().match)
+        // One on another day, one a text matched before, or several: the assistant says which, or that it's new.
+        assertTrue(runCatching { decide(plain, row("t2")) }.exceptionOrNull()!!.message!!.contains("t2 (2026-01-01, Careem, -45.00, Checking)"))
+        assertTrue(runCatching { decide(plain, row("t1", before = listOf("t1"))) }.isFailure)
+        assertTrue(runCatching { decide(plain, row("t1", "t2")) }.isFailure)
+        assertEquals("t2", decide(asked(ride, 45.0, match = "t2"), row("t1", "t2")).entries.single().match)
+        assertNull(decide(asked(ride, 45.0, match = "new"), row("t1", "t2")).entries.single().match)
+        assertTrue(runCatching { decide(asked(ride, 45.0, match = "t7"), row("t1")) }.isFailure)
+        // A split's part is offered by its own id, and named by the transaction it's part of.
+        val part = row("t1:1").put("candidateDetails", JSONArray().put(JSONObject().put("id", "t1:1").put("transactionId", "t1")))
+        assertEquals("t1:1", decide(asked(ride, 45.0, match = "t1"), part).entries.single().match)
+        // A text the budget already took in isn't entered again.
+        val there = decide(plain, row(duplicate = true))
+        assertEquals(emptyList<BankTextEntry>() to listOf(ride.id), there.entries to there.already)
+    }
+
+    @Test fun enteredTextsAreFinishedAndLeaveTheOpenReview() {
+        val ride = sms("Purchase SAR 45.00 at Careem")
+        val lunch = sms("Purchase SAR 30.00 at Diner")
+        val gone = sms("Purchase SAR 12.00 at Bakery")
+        val texts = listOf(ride, lunch, gone).associateBy { it.id }
+        val entries = listOf(asked(ride, 45.0), asked(lunch, 30.0, payee = "Diner"), asked(gone, 12.0, payee = "Bakery"))
+        // Added, matched to a transaction, or in the budget already: each text keeps what became of it, and when it came.
+        val outcomes = bankTextOutcomes(entries, texts, mapOf(0 to "new", 1 to "match:t4"), at = 5L)
+        assertEquals(listOf(SmsOutcome.Added, SmsOutcome.Matched, SmsOutcome.Matched), listOf(ride, lunch, gone).map { outcomes.getValue(it.id).getString("outcome") })
+        assertEquals("t4", outcomes.getValue(lunch.id).getString("transactionId"))
+        assertFalse(outcomes.getValue(ride.id).has("transactionId") || outcomes.getValue(gone.id).has("transactionId"))
+        assertEquals(listOf(ride.received, -4_500L, "checking"), outcomes.getValue(ride.id).let { listOf(it.getLong("received"), it.getLong("amount"), it.getString("accountId")) })
+        // The open review loses what it read from an entered text and keeps the rest, with its ticks.
+        fun read(text: BankSms) = JSONObject().put("sourceIds", JSONArray().put(text.id)).put("disposition", "transaction")
+        val review = SmsBatch(listOf(ride, lunch, gone), JSONObject().put("items", JSONArray(listOf(ride, lunch, gone).map(::read))), ticked = mapOf(2 to false))
+        val left = review.without(setOf(ride.id, lunch.id))!!
+        assertEquals(listOf(gone), left.messages)
+        assertEquals(mapOf(0 to false), left.ticked)
+        assertNull(review.without(texts.keys))
+        assertEquals(review.messages, review.without(setOf("sms:other"))!!.messages)
+    }
 }
