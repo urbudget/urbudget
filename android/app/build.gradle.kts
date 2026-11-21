@@ -9,10 +9,18 @@ val requestedAbis = providers.gradleProperty("androidAbis").orElse("arm64-v8a,x8
 require(requestedAbis.isNotEmpty() && requestedAbis.all { it in listOf("arm64-v8a", "x86_64") }) { "androidAbis supports arm64-v8a,x86_64." }
 val uploadValues = listOf("URBUDGET_ANDROID_KEYSTORE", "URBUDGET_ANDROID_KEY_ALIAS", "URBUDGET_ANDROID_STORE_PASSWORD", "URBUDGET_ANDROID_KEY_PASSWORD").map { System.getenv(it)?.takeIf(String::isNotBlank) }
 require(uploadValues.none { it != null } || uploadValues.all { it != null }) { "Set all four URBUDGET_ANDROID_* signing variables." }
+// The NDK the Rust engine is compiled with (buildRustEngine), which also strips it for packaging.
+val ndkHome = System.getenv("ANDROID_NDK_HOME")?.takeIf(String::isNotBlank) ?: System.getenv("NDK_HOME")?.takeIf(String::isNotBlank)
 
 android {
     namespace = "app.urbudget.nativeapp"
     compileSdk = 37
+    // Without an NDK AGP packages the engine unstripped and can't take its symbols out for Play.
+    // It only takes an NDK of the version it's told, so the version is that NDK's own.
+    ndkHome?.let { home ->
+        ndkPath = home
+        ndkVersion = file(home).resolve("source.properties").readLines().first { it.startsWith("Pkg.Revision") }.substringAfter('=').trim()
+    }
     defaultConfig {
         applicationId = "app.urbudget"
         minSdk = 26
@@ -39,6 +47,8 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // The engine ships stripped; its symbol table goes in the bundle, so Play shows native crashes with function names.
+            ndk { debugSymbolLevel = "SYMBOL_TABLE" }
         }
         create("preview") {
             // Device evaluation must use release optimizations. Keep the debug identity and
@@ -84,8 +94,7 @@ val buildRust = tasks.register("buildRustEngine") {
     inputs.property("rustDebug", rustDebug)
     outputs.dir(nativeOutputs)
     doLast {
-        val ndk = System.getenv("ANDROID_NDK_HOME") ?: System.getenv("NDK_HOME")
-            ?: throw GradleException("Set ANDROID_NDK_HOME or NDK_HOME to an installed Android NDK.")
+        val ndk = ndkHome ?: throw GradleException("Set ANDROID_NDK_HOME or NDK_HOME to an installed Android NDK.")
         val host = when {
             System.getProperty("os.name").startsWith("Windows") -> "windows-x86_64"
             System.getProperty("os.name").startsWith("Mac") -> "darwin-x86_64"
