@@ -149,7 +149,12 @@ How to tag and build a release, and the secrets each workflow needs, are in
 - The App ID `app.urbudget` in the Apple Developer account (the team that signs the desktop app).
 - An app record in App Store Connect, with privacy answers matching the optional account,
   purchases, sync, bank and assistant features. Encrypted sync is not a blanket "no data
-  collected" claim.
+  collected" claim. The anonymous usage counts (Count this copy as in use, in Settings & data →
+  Privacy & data; `crates/urbudget-services/src/usage.rs`) add one answer: **Usage Data → Product
+  Interaction**, collected, not linked to the user, not used for tracking, for Analytics. Set it
+  before the first version with the counts goes to App Review. They need no
+  `PrivacyInfo.xcprivacy` entry: they use no API Apple asks a reason for beyond the UserDefaults
+  the app's other settings already use.
 - An App Store Connect API key for builds from GitHub. Xcode's automatic signing then makes the
   distribution certificate and profile.
 - Screenshots for a 6.9" iPhone, and for a 13" iPad since the app runs on iPad.

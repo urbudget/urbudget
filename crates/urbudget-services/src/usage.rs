@@ -2,8 +2,11 @@
 //! back. A copy counts itself on urbudget.app at most once a day, saying only what's new since it
 //! was last counted: opened for the first time ever, or for the first time today, this week (Monday
 //! to Sunday, UTC) or this month. The days it was last counted stay in `usage.json`; nothing that
-//! identifies the copy, the computer or the person is sent, so the server only adds to daily totals
-//! (web/src/usage.ts). People can turn it off in Settings → Privacy & data.
+//! identifies the copy, the device or the person is sent, so the server only adds to daily totals
+//! (web/src/usage.ts). The desktop counts from its window (desktop/src/usage.ts); the phones open
+//! theirs in `runtime::Runtime::new` and ask with the `usage_report` command when they come to the
+//! front. People can turn it off in Settings (Privacy & data on the desktop; Settings & data on the
+//! phones), with Count this copy as in use.
 use chrono::{Datelike, Duration, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -109,8 +112,10 @@ impl Usage {
     }
 
     /// Counts this copy as in use on `site`, when anything is new since it was last counted.
-    /// `platform` is "windows" or "macos", and `channel` "direct" or "store". When the request
-    /// fails, nothing is marked counted, so the next call tries again.
+    /// `platform` and `channel` are one of the pairs web/src/usage.ts takes: "windows", "macos" or
+    /// "linux" from "direct" or "store"; "android" from "play" or "preview"; "ios" from "appstore"
+    /// or "testflight". When the request fails, nothing is marked counted, so the next call tries
+    /// again.
     pub async fn report(&self, site: &str, platform: &str, channel: &str, version: &str) -> Result<(), String> {
         self.report_on(site, platform, channel, version, Utc::now().date_naive()).await
     }

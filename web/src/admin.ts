@@ -27,6 +27,17 @@ function perDay(days: string[], rows: { day: string; n: number }[]) {
 /** Series of the same length added up, day by day. */
 const add = (...series: number[][]) => series[0].map((_, i) => series.reduce((n, values) => n + values[i], 0));
 
+/**
+ * Where copies of the app come from, as they report themselves (usage.ts): the desktop from
+ * urbudget.app or GitHub ("direct") or the Microsoft Store, Android from Google Play or a preview
+ * APK, iOS from the App Store or TestFlight.
+ */
+const USAGE_CHANNELS = ["direct", "store", "play", "preview", "appstore", "testflight"] as const;
+type UsageChannel = (typeof USAGE_CHANNELS)[number];
+/** One series per channel of `rows`, a number per day of `days`. */
+const perChannel = (days: string[], rows: { day: string; channel: string; n: number }[]) =>
+  Object.fromEntries(USAGE_CHANNELS.map((channel) => [channel, perDay(days, rows.filter((r) => r.channel === channel))])) as Record<UsageChannel, number[]>;
+
 const text = (value: unknown, max: number) => (typeof value === "string" ? value.trim().slice(0, max) : "");
 
 export const admin = new Hono<AppEnv>();
@@ -119,8 +130,8 @@ async function channelSeries(env: Env, days: string[]) {
     githubLinux: perDay(days, github.daily.filter((r) => r.platform === "linux")),
     storeAcquisitions: perDay(days, store.results.filter((r) => r.kind === "acquisitions")),
     storeInstalls: perDay(days, store.results.filter((r) => r.kind === "installs")),
-    opensDirect: perDay(days, opens.results.filter((r) => r.channel === "direct")),
-    opensStore: perDay(days, opens.results.filter((r) => r.channel === "store")),
+    // First opens by channel, the phones' included.
+    opensBy: perChannel(days, opens.results),
   };
   // The Store's downloads are its acquisitions once Partner Center has answered. Until then, clicks
   // on the site's Store button stand in, which miss everyone who found UrBudget in the Store itself.
@@ -137,7 +148,7 @@ async function channelSeries(env: Env, days: string[]) {
     windows: add(series.websiteWindows, storeAll),
     macos: series.websiteMacos,
     linux: series.websiteLinux,
-    opens: add(series.opensDirect, series.opensStore),
+    opens: add(...Object.values(series.opensBy)),
     partnerCenter,
     githubSince: github.since,
     status,
@@ -162,18 +173,21 @@ async function activeSeries(db: D1Database, days: string[], weekStarts: string[]
   ]);
   const inWeek = (start: string, where: (r: { channel: string; platform: string }) => boolean = () => true) =>
     weekly.results.filter((r) => r.week === start && where(r)).reduce((n, r) => n + r.n, 0);
+  const byChannel = perChannel(days, daily.results);
   return {
-    direct: perDay(days, daily.results.filter((r) => r.channel === "direct")),
-    store: perDay(days, daily.results.filter((r) => r.channel === "store")),
+    // Each channel's copies a day (`direct` and `store` are the desktop's), and all of them.
+    ...byChannel,
+    all: add(...Object.values(byChannel)),
     weeks: weekStarts.map((start) => ({
       start,
       active: inWeek(start),
-      direct: inWeek(start, (r) => r.channel === "direct"),
-      store: inWeek(start, (r) => r.channel === "store"),
+      ...Object.fromEntries(USAGE_CHANNELS.map((channel) => [channel, inWeek(start, (r) => r.channel === channel)])),
       windows: inWeek(start, (r) => r.platform === "windows"),
       macos: inWeek(start, (r) => r.platform === "macos"),
       linux: inWeek(start, (r) => r.platform === "linux"),
-    })),
+      android: inWeek(start, (r) => r.platform === "android"),
+      ios: inWeek(start, (r) => r.platform === "ios"),
+    })) as ({ start: string; active: number; windows: number; macos: number; linux: number; android: number; ios: number } & Record<UsageChannel, number>)[],
     since: since?.day ?? null,
   };
 }
@@ -277,7 +291,7 @@ admin.get("/overview", async (c) => {
     github: channels.github,
     store: channels.store,
     opens: channels.opens,
-    active: add(inUse.direct, inUse.store),
+    active: inUse.all,
   };
   const total = (values: number[], from: number, to?: number) => values.slice(from, to).reduce((a, b) => a + b, 0);
   /** Today and the 29 days before; and the 30 days before those. */
@@ -344,6 +358,19 @@ admin.get("/overview", async (c) => {
       lastWeek: inUse.weeks[1]?.active ?? 0,
       weekBefore: inUse.weeks[2]?.active ?? 0,
       yesterday: series.active.at(-2) ?? 0,
+      // First opens in the last 30 days, and copies used last week, by system.
+      bySystem: {
+        opens30: {
+          desktop: last30(add(channels.opensBy.direct, channels.opensBy.store)),
+          android: last30(add(channels.opensBy.play, channels.opensBy.preview)),
+          ios: last30(add(channels.opensBy.appstore, channels.opensBy.testflight)),
+        },
+        lastWeek: {
+          desktop: (inUse.weeks[1]?.windows ?? 0) + (inUse.weeks[1]?.macos ?? 0) + (inUse.weeks[1]?.linux ?? 0),
+          android: inUse.weeks[1]?.android ?? 0,
+          ios: inUse.weeks[1]?.ios ?? 0,
+        },
+      },
     },
     // People's page views, last 30 days.
     pageViews: { last30: last30(series.views), home: home?.n ?? 0 },
@@ -549,8 +576,9 @@ admin.get("/downloads", async (c) => {
     },
     // Filtered website clicks plus Store acquisitions (or button clicks), as on Overview.
     total: channels.total,
-    // Copies opened for the first time: the downloads that became a copy in use.
-    opens: { direct: channels.opensDirect, store: channels.opensStore },
+    // Copies opened for the first time: the downloads that became a copy in use. Every channel's,
+    // so Google Play's and the App Store's downloads can be set beside their own.
+    opens: channels.opensBy,
     versions: versions.results,
     sources: sources.results,
     // Not customers: browsers that opened this page, and bots.
@@ -618,11 +646,8 @@ admin.get("/usage", async (c) => {
     days,
     since: inUse.since,
     // Copies used each day, and copies opened for the first time, by where they came from.
-    daily: { direct: inUse.direct, store: inUse.store },
-    opens: {
-      direct: perDay(days, opens.results.filter((r) => r.channel === "direct")),
-      store: perDay(days, opens.results.filter((r) => r.channel === "store")),
-    },
+    daily: Object.fromEntries(USAGE_CHANNELS.map((channel) => [channel, inUse[channel]])),
+    opens: perChannel(days, opens.results),
     weeks: inUse.weeks.map((week) => ({ ...week, opens: opened.get(week.start) ?? 0 })),
     months: months.results.map((m) => ({ month: m.month, active: m.n })),
     // Newest first. `back[k]` is how many were used again k + 1 weeks after the week they were first

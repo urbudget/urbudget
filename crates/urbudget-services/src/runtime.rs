@@ -22,6 +22,8 @@ pub struct Runtime {
     pub ibkr: ibkr::Ibkr,
     pub pending_import: ynab_capture::PendingImport,
     pub data_dir: PathBuf,
+    /// The phones' anonymous usage counts (usage.rs); the desktop keeps its own in its window.
+    pub usage: crate::usage::Usage,
     history: Mutex<HashMap<String, History>>,
     commands: tokio::sync::Mutex<()>,
     bank_commands: tokio::sync::Mutex<()>,
@@ -821,6 +823,45 @@ mod tests {
         let exact = call(&runtime, "query_budget", json!({"method":"reconcile","params":reconcile_params(cleared),"expectedToken":token})).unwrap();
         assert!(exact["transactions"].as_array().unwrap().iter().all(|t| t["id"] != "adjustment"));
     }
+
+    fn usage_file(folder: &Path) -> Value {
+        serde_json::from_slice(&std::fs::read(folder.join("usage.json")).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn a_phone_with_no_library_yet_is_a_new_copy() {
+        // The library the runtime makes as it starts doesn't make it look used.
+        let folder = tempfile::tempdir().unwrap();
+        let runtime = Runtime::new(folder.path()).unwrap();
+        assert_eq!(usage_file(folder.path())["first"], true);
+        assert!(urbudget_core::budgets::kept_in(folder.path()), "the runtime made its library after counting");
+        drop(runtime);
+        // Started again before it was counted: still new.
+        Runtime::new(folder.path()).unwrap();
+        assert_eq!(usage_file(folder.path())["first"], true);
+
+        // A phone that had a budget before counting began is in use, not new.
+        let used = tempfile::tempdir().unwrap();
+        let (runtime, _) = budget_with_a_purchase(used.path());
+        drop(runtime);
+        std::fs::remove_file(used.path().join("usage.json")).unwrap();
+        Runtime::new(used.path()).unwrap();
+        assert_eq!(usage_file(used.path())["first"], false);
+        assert_eq!(usage_file(used.path())["cohort"], "");
+    }
+
+    #[test]
+    fn a_debug_build_never_counts_on_urbudget_app() {
+        // A debug build without a local server says nothing, and nothing is marked counted.
+        if std::env::var_os("URBUDGET_API").is_some() { return; }
+        assert_eq!(usage_site(), None);
+        let folder = tempfile::tempdir().unwrap();
+        let runtime = Runtime::new(folder.path()).unwrap();
+        let report = json!({"platform":"android","channel":"play","version":"1.0.3"});
+        assert_eq!(call(&runtime, "usage_report", report).unwrap(), Value::Null);
+        assert_eq!(usage_file(folder.path())["first"], true);
+        assert_eq!(usage_file(folder.path())["day"], "");
+    }
 }
 
 fn value<T: serde::Serialize>(v: T) -> Result<Value, String> { serde_json::to_value(v).map_err(|e| e.to_string()) }
@@ -830,6 +871,12 @@ fn field<T: DeserializeOwned>(p: &Value, key: &str) -> Result<T, String> {
 fn optional<T: DeserializeOwned>(p: &Value, key: &str) -> Result<Option<T>, String> {
     match p.get(key).filter(|v| !v.is_null()) { Some(v) => serde_json::from_value(v.clone()).map(Some).map_err(|e| format!("Invalid {key}: {e}")), None => Ok(None) }
 }
+/// Where usage counts go: urbudget.app, and from a debug build only a local server (URBUDGET_API),
+/// so tests, emulators and simulators never add to the real counts.
+fn usage_site() -> Option<String> {
+    if cfg!(debug_assertions) && std::env::var_os("URBUDGET_API").is_none() { return None; }
+    Some(cloud::site())
+}
 fn totals(b: &domain::Budget, month: &str, as_of: Option<&str>) -> Result<domain::Summary, String> {
     match as_of { Some(a) => engine::calculate_at(b, month, a), None => engine::calculate(b, month) }
 }
@@ -837,6 +884,8 @@ fn totals(b: &domain::Budget, month: &str, as_of: Option<&str>) -> Result<domain
 impl Runtime {
     pub fn new(data_dir: &Path) -> Result<Self, String> {
         std::fs::create_dir_all(data_dir).map_err(|e| e.to_string())?;
+        // Before the library is loaded, which makes one: a folder with none is a new copy.
+        let usage = crate::usage::Usage::open(data_dir);
         vault::init(data_dir);
         let mut library = budgets::Budgets::load(data_dir)?;
         crate::library_api::repair_local_catalog(&mut library)?;
@@ -851,6 +900,7 @@ impl Runtime {
             cloud: cloud::Cloud::new(data_dir), assistant: assistant::Assistant::new(data_dir.to_path_buf()),
             simplefin: simplefin::SimpleFin::new(data_dir), ibkr: ibkr::Ibkr::new(), pending_import: ynab_capture::PendingImport::default(),
             data_dir: data_dir.to_path_buf(),
+            usage,
             history: Mutex::default(),
             commands: tokio::sync::Mutex::new(()),
             bank_commands: tokio::sync::Mutex::new(()),
@@ -1096,7 +1146,7 @@ impl Runtime {
             "assistant_sign_in" | "assistant_sign_out" | "assistant_foreground" | "assistant_settings" | "assistant_set_key" | "assistant_forget_key" | "assistant_models" | "assistant_report_reply" | "assistant_sms_poll" | "assistant_sms_cancel" | "assistant_sms_lanes" | "assistant_phone_reply" |
             "simplefin_status" | "simplefin_connect" | "simplefin_accounts" | "simplefin_disconnect" | "simplefin_open" | "simplefin_sync" |
             "ibkr_status" | "ibkr_connect" | "ibkr_fetch" | "ibkr_file" | "ibkr_disconnect" | "ibkr_open" |
-            "ynab_tokens" | "ynab_plans" | "forget_ynab_token" | "list_budgets" | "list_backups" | "backup_retention");
+            "ynab_tokens" | "ynab_plans" | "forget_ynab_token" | "list_budgets" | "list_backups" | "backup_retention" | "usage_report");
         let _command = if independent {
             None
         } else { Some(self.commands.lock().await) };
@@ -1109,6 +1159,13 @@ impl Runtime {
         match method {
             // The language of the messages the services return from now on ("ar" or "en").
             "set_language" => { crate::i18n::set_language(&text("language")?); Ok(Value::Null) }
+            // Counts this copy as in use, at most once a day (usage.rs). The app asks only while its
+            // Count this copy as in use switch is on, with its `platform`, `channel` and `version`.
+            "usage_report" => {
+                let Some(site) = usage_site() else { return Ok(Value::Null) };
+                self.usage.report(&site, &text("platform")?, &text("channel")?, &text("version")?).await?;
+                Ok(Value::Null)
+            }
             "host_events" => value(host::drain()),
             "load_budget" => if p["light"].as_bool().unwrap_or(false) { self.load_light() } else { self.load() },
             "native_budget_status" => self.native_status(),

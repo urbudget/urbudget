@@ -238,11 +238,11 @@ private fun SettingsPage(navigate: (String) -> Unit, budget: JSONObject, vm: Bud
         item {
             ListCard {
                 ListRow(stringResource(R.string.page_library), subtitle = stringResource(R.string.page_library_detail), icon = Icons.Outlined.FolderOpen, onClick = { navigate("Budget library") }, divider = true)
-                ListRow(stringResource(R.string.page_account_sync), subtitle = stringResource(R.string.page_account_sync_detail), icon = Icons.Outlined.CloudSync, onClick = { navigate("Account & sync") }, divider = true)
-                ListRow(stringResource(R.string.settings_privacy), subtitle = stringResource(R.string.settings_privacy_detail), icon = Icons.Outlined.Shield,
-                    onClick = { vm.service("account_open", JSONObject().put("next", "/privacy/app/")) })
+                ListRow(stringResource(R.string.page_account_sync), subtitle = stringResource(R.string.page_account_sync_detail), icon = Icons.Outlined.CloudSync, onClick = { navigate("Account & sync") })
             }
         }
+        item { SectionTitle(stringResource(R.string.settings_privacy_data)) }
+        item { PrivacyCard(prefs) { vm.service("account_open", JSONObject().put("next", "/privacy/app/")) } }
         item {
             Text(stringResource(R.string.settings_footer, budget.text("name")),
                 Modifier.padding(top = 8.dp, start = 4.dp, end = 4.dp), style = MaterialTheme.typography.bodySmall, color = ur.muted)
@@ -250,6 +250,17 @@ private fun SettingsPage(navigate: (String) -> Unit, budget: JSONObject, vm: Bud
     }
     if (dialog == "budget") BudgetSettingsDialog(budget, vm) { dialog = "" }
     if (dialog == "flags") FlagNamesDialog(budget, vm) { dialog = "" }
+}
+
+/** As the desktop's Privacy & data: the switch for the anonymous usage counts (UsageCounts), then the policy. */
+@Composable
+internal fun PrivacyCard(prefs: UiPreferences, openPolicy: () -> Unit) {
+    ListCard {
+        // What it sends is read whole, not cut off after three lines.
+        SwitchRow(stringResource(R.string.settings_usage_counts), prefs.usageCounts, prefs::setUsageCounts, subtitle = stringResource(R.string.settings_usage_counts_detail), divider = true,
+            subtitleLines = Int.MAX_VALUE)
+        ListRow(stringResource(R.string.settings_privacy), subtitle = stringResource(R.string.settings_privacy_detail), icon = Icons.Outlined.Shield, onClick = openPolicy)
+    }
 }
 
 /**

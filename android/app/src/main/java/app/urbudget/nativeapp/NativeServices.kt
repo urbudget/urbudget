@@ -67,6 +67,16 @@ object NativeServices {
         runBlocking(languageLane) { sendLanguage() }
     }
 
+    /**
+     * Counts this copy as in use on urbudget.app when the day, week or month is new since it was last
+     * counted (UsageCounts). Waits for the network, so it runs on its own; offline, nothing is marked
+     * counted and the next time the app comes to the front tries again.
+     */
+    fun reportUsage(context: Context) {
+        val request = UsageCounts.request(NativePreferences(context)) ?: return
+        runCatching { call("usage_report", request) }
+    }
+
     /** Tells the engine the language the interface resolved to, now if it has started, else as it starts. */
     fun setLanguage(code: String) {
         if (language == code) return

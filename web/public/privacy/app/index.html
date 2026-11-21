@@ -15,7 +15,7 @@
   <main id="main" class="container page-body">
     <h1>UrBudget privacy policy</h1>
     <article class="legal">
-        <p class="updated">Last updated: November 14, 2026</p>
+        <p class="updated">Last updated: November 22, 2026</p>
 
         <div class="notice notice-info operator">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
@@ -25,7 +25,7 @@
         <h2>The short version</h2>
         <ul>
           <li>Your budgets live in a database on your own device. Optional Sync sends us encrypted copies we cannot read. Optional AI features send selected information directly to your chosen provider; reporting a reply sends us only the text you review and submit.</li>
-          <li>There are no analytics services, advertising or tracking tools on this website or in the app. We keep a few daily counts ourselves, described under Technical data, and they record nothing about who.</li>
+          <li>There are no third-party analytics services, advertising or tracking tools on this website or in the app. We keep a few daily counts ourselves, including how many copies of the app are in use, described under Technical data. They record nothing about who, and you can turn off the app's count in its Settings.</li>
           <li>We collect what we need to sign you in, deliver purchases, run Sync, review reports and answer your emails.</li>
           <li>Payments are processed by Polar for website purchases, by Google Play for purchases made through Google Play, and by Apple for purchases made through the App Store. We never receive your full card details.</li>
           <li>You can delete your account and everything synced to it in the app's Account &amp; sync settings.</li>
@@ -34,11 +34,13 @@
         <h2>Budgets on your device</h2>
         <p>UrBudget stores each budget in a SQLite database in the app's data folder on your computer or phone, along with local backups and assistant history. Exports go to the location you choose. You don't need an account to budget locally. Budget files reach our servers only if you enable Sync; a report can separately include budget information if you choose to leave it in the submitted text.</p>
         <p>Local budget files and assistant history are not separately encrypted by UrBudget. Your device's screen lock, storage encryption and account permissions protect them. Android's operating-system backup and device-transfer features may copy local budgets, settings and assistant history, depending on your device and backup settings. Exports may also be backed up or shared by the destination you choose. Android connection secrets are encrypted using Android Keystore and stored outside Android's automatic backup area.</p>
-        <p>The app contacts our servers only when it needs to:</p>
+        <p>The app contacts our servers only to:</p>
         <ul>
           <li><strong>Sign in and sync,</strong> if you turn on Sync (see below).</li>
           <li><strong>Verify a Google Play or App Store purchase,</strong> if you subscribe to Sync or restore it through Google Play or the App Store (see Purchases).</li>
           <li><strong>Submit an assistant report,</strong> only when you review its text and select Send report (see Assistant reports).</li>
+          <li><strong>Count itself as in use,</strong> once a day, with nothing that identifies you, unless you turn this off in the app's Settings (see Copies in use, under Technical data).</li>
+          <li><strong>Check for updates,</strong> on a computer, if the app was installed from this website or GitHub rather than the Microsoft Store (see Desktop update checks, under Technical data).</li>
         </ul>
         <p>Some optional features connect your device directly to other companies, under your own account with them. These requests do not pass through UrBudget's servers:</p>
         <ul>
@@ -75,8 +77,8 @@
         <ul>
           <li><strong>Page views:</strong> how many times each page of this site was viewed, and where visitors came from (the website that linked here, or the short tag a link carries, like ?ref=hn). The site's own script sends this when a page opens; it sets no cookie and sends nothing that identifies you.</li>
           <li><strong>Downloads:</strong> how many times each installer was downloaded, and which page of this site or which other website the download link was on, or a link's tag. We also note the download totals GitHub shows for the files on UrBudget's releases, and the acquisition and install totals Microsoft's Partner Center shows for UrBudget in the Microsoft Store.</li>
-          <li><strong>Desktop update checks:</strong> desktop copies installed outside the Microsoft Store ask urbudget.app for updates after starting and once a day while open. We count those requests per day, version and system. They carry the app's version and your system and processor type, nothing else. Store-distributed desktop copies and the Android app use their store's update mechanism.</li>
-          <li><strong>Desktop copies in use:</strong> once a day, a desktop copy of UrBudget tells urbudget.app that it was opened, and whether that's its first time ever or its first today, this week or this month, with the app's version, your system (such as Windows or macOS) and whether it was installed from the Microsoft Store. The first time a copy is used each week, it also sends the date of the week it was first opened, which it shares with every copy first opened that week, so we can see how many people come back. The app keeps the dates it last did this on your device; it sends no identifier, and we keep only the daily totals. You can turn this off in the app's Settings, under Privacy &amp; data, with Count this copy as in use.</li>
+          <li><strong>Desktop update checks:</strong> desktop copies installed outside the Microsoft Store ask urbudget.app for updates after starting and once a day while open. We count those requests per day, version and system. They carry the app's version and your system and processor type, nothing else. Store-distributed desktop copies and the Android and iOS apps use their store's update mechanism.</li>
+          <li id="copies-in-use"><strong>Copies in use:</strong> once a day, each copy of UrBudget, on a computer or a phone, tells urbudget.app that it was opened, and whether that's its first time ever or its first today, this week or this month, with the app's version, your system (Windows, macOS, Linux, Android or iOS) and where it was installed from: this website or GitHub, the Microsoft Store, Google Play, the App Store, or a test version (TestFlight, or a preview of the Android app). The first time a copy is used each week, it also sends the date of the week it was first opened, which it shares with every copy first opened that week, so we can see how many people come back. The app keeps the dates it last did this on your device; it sends no identifier, and we keep only the daily totals. You can turn this off in the app's Settings with Count this copy as in use: on a computer under Privacy &amp; data, and on a phone under Settings &amp; data, then Privacy &amp; data.</li>
           <li><strong>Account activity:</strong> how many sign-ins, sign-in emails, checkouts started, Sync uploads and account deletions happen each day, and of which kind (for example, website or app sign-in).</li>
         </ul>
         <p>Visits and downloads by crawlers, scripts and automated browsers are counted separately, so the totals reflect people.</p>
@@ -114,7 +116,7 @@
         </ul>
 
         <h2 id="your-choices">Your choices and rights</h2>
-        <p>You can delete your account in the app's Settings, under Account &amp; sync, using Delete account. You can also email <a href="mailto:support@urbudget.app">support@urbudget.app</a> to ask for a copy of your data, a correction or deletion, or to object to or restrict processing. To request deletion of an assistant report, include its reference because reports are not linked to your account. Depending on where you live, you may have further rights under laws such as the GDPR, the UK GDPR or the California Consumer Privacy Act, and the right to complain to your data protection authority. We'll answer within one month. To stop the desktop app's daily count of copies in use, turn off Count this copy as in use in its Settings, under Privacy &amp; data.</p>
+        <p>You can delete your account in the app's Settings, under Account &amp; sync, using Delete account. You can also email <a href="mailto:support@urbudget.app">support@urbudget.app</a> to ask for a copy of your data, a correction or deletion, or to object to or restrict processing. To request deletion of an assistant report, include its reference because reports are not linked to your account. Depending on where you live, you may have further rights under laws such as the GDPR, the UK GDPR or the California Consumer Privacy Act, and the right to complain to your data protection authority. We'll answer within one month. To stop the app's daily count of copies in use, turn off Count this copy as in use in its Settings, under Privacy &amp; data (on a phone, in Settings &amp; data).</p>
         <p>Deleting your account removes its sign-in sessions and synced budgets. It does not remove local files, exports or operating-system backups from your devices, or a report that has no account association. Purchase records may remain for the reasons above. Before deleting an account, we ask the payment provider to stop renewals of its known subscriptions; if this fails, deletion does not proceed. You can also manage or cancel a Google Play subscription in Google Play. We can't cancel an App Store subscription: only you can, in your Apple Account settings, and it keeps renewing until you do, so the app reminds you before you delete your account. You can delete local budgets in the app and manage backups through your operating system.</p>
 
         <h2>Security</h2>

@@ -13,6 +13,8 @@ struct SettingsView: View {
     @AppStorage("showNeeded") private var showNeeded = true
     @AppStorage("showUpcoming") private var showUpcoming = true
     @AppStorage("startPage") private var startPage = "budget"
+    /// Read by UsageCounts each time the app comes to the front.
+    @AppStorage(UsageCounts.key) private var usageCounts = true
     @State private var name = ""
     @State private var namingIdentity: String?
     @FocusState private var naming: Bool
@@ -55,6 +57,7 @@ struct SettingsView: View {
             backupsSection
             if store.budget != nil { exportSections }
             if let error { Section { FormErrorView(message: error) } }
+            privacySection
             aboutSection
         }
         .navigationTitle("Settings & data")
@@ -256,6 +259,21 @@ struct SettingsView: View {
             if from > through { FormErrorView(message: String(localized: "Choose a From month on or before the Through month.")) }
         } header: {
             Text("Report CSV")
+        }
+    }
+
+    /// The desktop's and Android's switch of the same name, for the anonymous usage counts.
+    private var privacySection: some View {
+        Section {
+            Toggle(isOn: $usageCounts) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Count this copy as in use")
+                    Text("Once a day, tells urbudget.app that a copy of UrBudget was opened, and whether that's its first time, or its first this week or month, with its version, system, where it was installed from and the week it was first opened. Nothing identifies you, this device or your budgets.")
+                        .font(.footnote).foregroundStyle(Color.secondary)
+                }
+            }
+        } header: {
+            Text("Privacy & data")
         }
     }
 
