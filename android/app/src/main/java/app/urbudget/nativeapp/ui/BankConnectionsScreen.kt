@@ -23,7 +23,6 @@ import app.urbudget.nativeapp.R
 import app.urbudget.nativeapp.ScopedResult
 import app.urbudget.nativeapp.Words
 import app.urbudget.nativeapp.bankReviewChoices
-import app.urbudget.nativeapp.bankReviewCounts
 import app.urbudget.nativeapp.prepareBankReview
 import app.urbudget.nativeapp.summarizeBankReview
 import kotlinx.coroutines.CancellationException
@@ -261,7 +260,7 @@ private fun BankConnectionReview(entry: SyncEntry, through: String, reviewedBudg
     val ready = prepared?.forScope(preparationKey)
     val rows = ready?.first
     val decisions = remember(review) { mutableStateMapOf<Int, String>() }
-    val counts by remember { derivedStateOf { bankReviewCounts(rows.orEmpty(), decisions) } }
+    val counts by rememberBankReviewCounts(rows, decisions)
     val (importing, undecided) = counts
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }

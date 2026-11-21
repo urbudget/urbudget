@@ -41,7 +41,6 @@ import app.urbudget.nativeapp.R
 import app.urbudget.nativeapp.ScopedResult
 import app.urbudget.nativeapp.Words
 import app.urbudget.nativeapp.bankReviewChoices
-import app.urbudget.nativeapp.bankReviewCounts
 import app.urbudget.nativeapp.prepareBankReview
 import app.urbudget.nativeapp.summarizeBankReview
 import kotlinx.coroutines.CancellationException
@@ -538,8 +537,7 @@ internal fun IbkrDepositsReview(review: JSONObject, accountName: String, reviewe
     val ready = prepared?.forScope(preparationKey)
     val rows = ready?.first
     val decisions = remember(review) { mutableStateMapOf<Int, String>() }
-    // Keyed by the rows: they arrive after the first composition, and the count must be of them.
-    val counts by remember(rows) { derivedStateOf { bankReviewCounts(rows.orEmpty(), decisions) } }
+    val counts by rememberBankReviewCounts(rows, decisions)
     val (importing, undecided) = counts
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }

@@ -11,6 +11,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -21,6 +24,7 @@ import app.urbudget.nativeapp.BankReviewRow
 import app.urbudget.nativeapp.BankReviewSummary
 import app.urbudget.nativeapp.R
 import app.urbudget.nativeapp.Words
+import app.urbudget.nativeapp.bankReviewCounts
 
 /** "12 rows · 3 already imported · 2 renamed by your payee rules" (BankImport.tsx's summary). */
 internal fun reviewCounts(summary: BankReviewSummary) = listOfNotNull(
@@ -29,6 +33,15 @@ internal fun reviewCounts(summary: BankReviewSummary) = listOfNotNull(
     if (summary.renamed > 0) Words.count(R.plurals.bank_renamed_count, summary.renamed.toLong()) else null,
     if (summary.refunds > 0) Words.count(R.plurals.bank_refunds_count, summary.refunds.toLong()) else null,
 ).joinToString(" · ")
+
+/**
+ * How many rows the review imports or matches and how many still need a choice, current as the
+ * rows arrive (they're prepared after the sheet opens) and as choices are made. Keyed on the
+ * rows: they're a plain value here, and an unkeyed `remember` would count the first ones for good.
+ */
+@Composable
+internal fun rememberBankReviewCounts(rows: List<BankReviewRow>?, decisions: Map<Int, String>): State<Pair<Int, Int>> =
+    remember(rows, decisions) { derivedStateOf { bankReviewCounts(rows.orEmpty(), decisions) } }
 
 /** What the review says before its rows: how matching works, files without bank IDs, and rows still to decide. */
 internal fun LazyListScope.bankReviewNotes(summary: BankReviewSummary, undecided: Int, matchingNote: Int = R.string.bank_matching_note) {
