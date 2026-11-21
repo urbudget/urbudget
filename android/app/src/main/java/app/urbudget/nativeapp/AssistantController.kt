@@ -27,6 +27,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.coroutines.CoroutineContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -140,6 +141,8 @@ class AssistantController(
     events: Flow<JSONObject> = NativeServices.events,
     /** The budget was saved by a call here (a card applied or undone, the notes): the app's sync hears of it. */
     private val saved: () -> Unit = { NativeServices.notifySaved() },
+    /** Where a conversation that was read is laid out: off the main thread. The tests lay it out where it was read, on their own clock. */
+    private val layout: CoroutineContext = Dispatchers.Default,
 ) : ViewModel() {
     private val mutable = MutableStateFlow(AssistantState())
     val state = mutable.asStateFlow()
@@ -314,7 +317,7 @@ class AssistantController(
         // A card changed while this was read: what was read may be from before it, so it's read once more.
         if (changes != cardChanges) reloads.trySend(id)
         val prior = presentation
-        val prepared = withContext(Dispatchers.Default) {
+        val prepared = withContext(layout) {
             assistantThreadPresentation(thread, prior).also { now ->
                 // The latest replies are laid out before they're shown, so one never takes the live text's place empty.
                 if (now !== prior) now.entries.filter { it.optString("kind") == "assistant" }.takeLast(2).forEach { warmAssistantMarkdown(it.optString("text")) }

@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.*
+import kotlin.coroutines.EmptyCoroutineContext
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -154,7 +155,7 @@ class AssistantControllerTest {
             events.emit(event("message", "You spent 1,240.00.")); runCurrent()
             advanceTimeBy(100)
             settle { reads > before }
-            repeat(20) { runCurrent(); Thread.sleep(5) }
+            runCurrent()
             assertEquals("You spent 1,240.00.", controller.state.value.streaming)
             // Read again with the reply in it, the two change places at once.
             entries += JSONObject().put("kind", "assistant").put("text", "You spent 1,240.00.").put("index", 1)
@@ -583,15 +584,19 @@ class AssistantControllerTest {
     private fun conversation(card: JSONObject) = JSONObject().put("id", "t1").put("title", "Dining out").put("running", false)
         .put("entries", JSONArray(listOf(JSONObject().put("kind", "user").put("text", "Cover Dining out"), JSONObject().put("kind", "proposal").put("proposal", JSONObject(card.toString())))))
 
-    /** Runs what's ready until [done]: a conversation that was read is compared on a worker thread, which takes a moment of real time. */
+    /**
+     * Runs what's ready, and the controller is then at [done]. A conversation that was read is laid
+     * out where it was read, so nothing runs off the test's clock: work on a real thread could
+     * finish after the test had reset Dispatchers.Main, and fail whichever test ran next.
+     */
     private fun TestScope.settle(done: () -> Boolean) {
-        repeat(600) { runCurrent(); if (done()) return; Thread.sleep(5) }
-        fail("The controller didn't get there.")
+        runCurrent()
+        assertTrue("The controller didn't get there.", done())
     }
 
     private fun controller(store: ViewModelStore, events: Flow<JSONObject> = emptyFlow(), saved: () -> Unit = {}, service: suspend (String, JSONObject) -> Any?): AssistantController =
         ViewModelProvider(store, object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
-            override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T = AssistantController(service, events, saved) as T
+            override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T = AssistantController(service, events, saved, layout = EmptyCoroutineContext) as T
         })[AssistantController::class.java]
 }
