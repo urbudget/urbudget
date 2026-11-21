@@ -748,7 +748,8 @@ final class ReportsTests: XCTestCase {
         XCTAssertNil(held.holdings[1].rate)
         XCTAssertEqual(held.income.yieldRate, 0.004)
         XCTAssertEqual(held.income.byAccount,
-                       [PortfolioIncomeAccount(accountId: "inv", dividends: 3_000, interest: 1_200, tax: -450, fees: -200, other: 0, commissions: -350)])        XCTAssertEqual(held.income.commissions, [PortfolioCommission(accountId: "inv", from: "2025-10-21", to: "2026-10-20", amount: -350)])
+                       [PortfolioIncomeAccount(accountId: "inv", dividends: 3_000, interest: 1_200, tax: -450, fees: -200, other: 0, commissions: -350)])
+        XCTAssertEqual(held.income.commissions, [PortfolioCommission(accountId: "inv", from: "2025-10-21", to: "2026-10-20", amount: -350)])
         XCTAssertEqual(held.income.silent, ["pen"])
         XCTAssertEqual(held.unfilled, ["old"])
         // An engine that doesn't know of trades says nothing of them; one that does names what they realised and cost.
