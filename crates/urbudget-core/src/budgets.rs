@@ -86,6 +86,13 @@ pub struct Budgets {
     current: String,
     local_leases: std::collections::HashMap<String, std::fs::File>,
 }
+/// Whether a library was ever kept in `data_dir`: its catalog since 1.0.11 (`library.sqlite3`),
+/// the one before (`budgets.json`) or the single budget from before that (`budget.sqlite3`).
+pub fn kept_in(data_dir: &Path) -> bool {
+    ["library.sqlite3", "budgets.json", "budget.sqlite3"]
+        .iter()
+        .any(|file| data_dir.join(file).exists())
+}
 fn try_local_lock(file: &std::fs::File) -> std::io::Result<bool> {
     #[cfg(not(target_os = "android"))]
     {
