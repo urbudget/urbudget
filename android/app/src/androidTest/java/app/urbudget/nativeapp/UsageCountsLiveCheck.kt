@@ -16,11 +16,11 @@ import java.time.ZoneOffset
 
 /**
  * This copy counting itself as in use on a local Worker (web/src/usage.ts), never on urbudget.app,
- * as it does when it comes to the front. Opt-in: a debug build with a debug engine
- * (-PrustDebug=true), `pm clear` first, the Worker from web/scripts/sync-v2-local.mjs, and
- * `-e usageQaOrigin http://10.0.2.2:8788`. Afterwards the Worker's app_usage has an android/preview
- * first open, day, week and month. The activity is opened because Android keeps the network from
- * an app with nothing on screen.
+ * as MainActivity does when it comes to the front. Opt-in: a debug build with a debug engine
+ * (-PrustDebug=true), `pm clear` first, the Worker from web/scripts/sync-v2-local.mjs,
+ * `adb reverse tcp:8788 tcp:8788` and `-e usageQaOrigin http://127.0.0.1:8788` (on a read-only
+ * emulator copy the app couldn't reach 10.0.2.2). Afterwards the Worker's app_usage has an
+ * android/preview first open, day, week and month.
  */
 @RunWith(AndroidJUnit4::class)
 class UsageCountsLiveCheck {
