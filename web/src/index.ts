@@ -14,7 +14,7 @@ import { googleNotifications } from "./billing/google-rtdn";
 import { downloads, files, releases, TEAM_COOKIE } from "./releases";
 import { visits } from "./visits";
 import { usage } from "./usage";
-import { fetchStore, snapshotGitHub } from "./channels";
+import { fetchAppStore, fetchPlay, fetchStore, snapshotGitHub } from "./channels";
 import { cleanupSyncObjects, sync, syncActive, syncUsage } from "./sync";
 import { syncV2 } from "./sync-v2";
 import { maintainSyncV2, reclaimObjects } from "./sync-v2/objects";
@@ -170,9 +170,9 @@ app.route("/releases", files);
 export default {
   fetch: app.fetch,
   /**
-   * Hourly: refresh older Play receipts, end lapsed App Store subscriptions, note GitHub's and the
-   * Microsoft Store's download numbers, and forget expired sessions, rate limits, problems and
-   * reports.
+   * Hourly: refresh older Play receipts, end lapsed App Store subscriptions, note download numbers
+   * from GitHub, the Microsoft Store, Google Play and the App Store, and forget expired sessions,
+   * rate limits, problems and reports.
    */
   async scheduled(_controller: ScheduledController, env: Env) {
     await refreshGooglePurchases(env);
@@ -180,7 +180,7 @@ export default {
     try { await maintainSyncV2(env); } catch (error) { console.error("[sync-v2-maintenance]", error); }
     await cleanupSyncObjects(env);
     // Numbers from elsewhere never hold up the clean-up; a failure is noted for the admin page.
-    await Promise.all([snapshotGitHub(env), fetchStore(env)].map((p) => p.catch((error) => console.error("[channels]", error))));
+    await Promise.all([snapshotGitHub(env), fetchStore(env), fetchPlay(env), fetchAppStore(env)].map((p) => p.catch((error) => console.error("[channels]", error))));
     const at = now();
     const dayAgo = new Date(Date.now() - 86_400_000).toISOString();
     await env.DB.batch([

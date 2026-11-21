@@ -56,13 +56,14 @@
       </section>
       <div class="chart-grid">
         <figure class="chart-card" id="chart-downloads"></figure>
+        <figure class="chart-card" id="chart-phones"></figure>
         <figure class="chart-card" id="chart-in-use"></figure>
         <figure class="chart-card" id="chart-checkouts"></figure>
         <figure class="chart-card" id="chart-signups"></figure>
       </div>
       <section class="panel" aria-labelledby="weeks-title">
         <h2 id="weeks-title" class="h3">Week by week</h2>
-        <p class="muted small">Monday to Sunday (UTC). Downloads include filtered website clicks and the Store; unfiltered GitHub activity is excluded. Link tags are the site's. <b>Copy</b> on a finished week gives its row for <code>marketing/weekly-log.md</code> with this page's downloads (top link tags) filled in; the other columns stay blank for you.</p>
+        <p class="muted small">Monday to Sunday (UTC). Downloads are the desktop app's: filtered website clicks and the Microsoft Store; unfiltered GitHub activity is excluded. Android and iOS are the phone apps' first-time installs from Google Play's and the App Store's own reports, kept apart; Play's last days fill in 3 to 7 days late. Link tags are the site's. <b>Copy</b> on a finished week gives its row for <code>marketing/weekly-log.md</code> with this page's downloads (top link tags) filled in; the other columns stay blank for you.</p>
         <div class="table-wrap">
           <table class="data-table" id="weeks-table">
             <thead>
@@ -71,6 +72,8 @@
                 <th scope="col" class="num">Page views</th>
                 <th scope="col" class="num">Downloads</th>
                 <th scope="col">Top link tags</th>
+                <th scope="col" class="num" title="First-time installs from Google Play">Android</th>
+                <th scope="col" class="num" title="First-time downloads from the App Store">iOS</th>
                 <th scope="col" class="num" title="Copies of the app opened for the first time">First opens</th>
                 <th scope="col" class="num" title="Copies of the app used that week">In use</th>
                 <th scope="col" class="num" title="Sync checkouts opened at Polar">Checkouts</th>
@@ -130,6 +133,7 @@
         <ul id="channel-status" class="settings-list status-list"></ul>
       </section>
       <figure class="chart-card chart-wide" id="chart-downloads-90"></figure>
+      <figure class="chart-card chart-wide" id="chart-phones-90"></figure>
       <section class="panel" aria-labelledby="opened-title">
         <h2 id="opened-title" class="h3">Downloads and first opens</h2>
         <p class="muted small">Last 30 days. First opens report installed copies, including copies from GitHub. GitHub cannot distinguish people from release, QA or automation downloads, so the combined website/GitHub download total and conversion rate are unavailable. Store counts and first opens are aggregate activity, not individually matched installs.</p>

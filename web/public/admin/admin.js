@@ -382,6 +382,7 @@ loaders.overview = async () => {
       sub: `${channelSplit(o.downloads)}${notPeople(o.downloads.bots, o.downloads.team)}`,
       trend: [o.downloads.last30, p.downloads],
     },
+    phonesTile(o.phones),
     {
       label: "First opens, 30 days",
       value: num(u.opens30),
@@ -442,7 +443,7 @@ loaders.overview = async () => {
   $("overview-attention").replaceChildren(...notes);
 
   funnel(o.funnel, o.countingSince, u.since);
-  weeks(o.weeks, o.countingSince);
+  weeks(o.weeks, o.countingSince, o.phones);
 
   const days = o.daily.days;
   const labels = days.map(shortDay);
@@ -454,6 +455,14 @@ loaders.overview = async () => {
     tips,
     series: channelSeries(o.daily),
     empty: "No downloads counted yet.",
+  });
+  columnChart($("chart-phones"), {
+    title: "Phone installs per day",
+    sub: PHONE_CHART_SUB,
+    labels,
+    tips,
+    series: phoneSeries(o.daily),
+    empty: phonesEmpty(o.phones),
   });
   columnChart($("chart-in-use"), {
     title: "Copies in use per day",
@@ -491,6 +500,57 @@ function channelSeries({ website, store }) {
     { name: "urbudget.app", values: website, color: "var(--series-1)" },
     { name: "Microsoft Store", values: store, color: "var(--series-3)" },
   ];
+}
+
+/* ---------- The phone apps ---------- */
+
+const PHONES = { android: "Android", ios: "iOS" };
+const PHONE_STORES = { android: "Google Play", ios: "App Store" };
+const PHONE_CHART_SUB =
+  "Last 90 days · first-time installs, from Google Play's and the App Store's own reports · not in the desktop downloads · Play's days land 3 to 7 days late, the App Store's a day late";
+
+/** The phone apps' first-time installs per day, one series each. */
+function phoneSeries({ android, ios }) {
+  return [
+    { name: "Android (Google Play)", values: android, color: "var(--series-3)" },
+    { name: "iOS (App Store)", values: ios, color: "var(--series-1)" },
+  ];
+}
+
+/** A phone store's state in a few words: "Android 12", or why there's no number. */
+function phoneState(platform, phone, count) {
+  const name = PHONES[platform];
+  if (!phone.configured) return `${name} not set up`;
+  if (!phone.fetched) return `${name} waiting for its first report`;
+  if (!phone.fetched.okAt) return `${name} not answering, see Downloads`;
+  return `${name} ${num(count)}`;
+}
+
+/** Overview's tile for the phone apps, kept apart from the desktop app's downloads. */
+function phonesTile(phones) {
+  const { android, ios } = phones;
+  const sub = `${phoneState("android", android, android.last30)} · ${phoneState("ios", ios, ios.last30)} · first-time installs from the stores, not in Downloads`;
+  if (!android.configured && !ios.configured) return { label: "Phone installs, 30 days", value: "Not set up", sub };
+  return {
+    label: "Phone installs, 30 days",
+    value: num(android.last30 + ios.last30),
+    sub,
+    trend: [android.last30 + ios.last30, android.previous30 + ios.previous30],
+  };
+}
+
+/** What the phone chart says when it has nothing to draw. */
+function phonesEmpty(phones) {
+  const missing = Object.keys(PHONES).filter((p) => !phones[p].configured).map((p) => PHONE_STORES[p]);
+  if (missing.length === 2) return "Google Play and the App Store aren't set up yet. Downloads, Where the numbers come from, says what each needs.";
+  return `No phone installs reported yet.${missing.length ? ` ${missing[0]} isn't set up yet.` : ""}`;
+}
+
+/** A week's phone installs for the weekly table, or a dash where the store isn't set up. */
+function phoneCell(n, phone, platform) {
+  return phone.configured
+    ? h("td", { class: "num" }, num(n))
+    : h("td", { class: "num" }, h("span", { class: "muted", title: `${PHONE_STORES[platform]} isn't set up` }, "—"));
 }
 
 /** The steps from a visit to a Sync checkout, each with its share of the step before. */
@@ -544,7 +604,7 @@ function weeklyLogRow(week) {
 const addDays = (day, n) => new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 
 /** The weeks, newest first. The first is this week so far, which isn't ready for the weekly log yet. */
-function weeks(rows, countingSince) {
+function weeks(rows, countingSince, phones) {
   const notCounted = () => h("span", { class: "muted", title: "Checkouts weren't counted yet" }, "—");
   fillTable(
     $("weeks-table"),
@@ -556,6 +616,8 @@ function weeks(rows, countingSince) {
         h("td", { class: "num" }, num(week.views)),
         h("td", { class: "num", title: channelSplit(week) }, num(week.downloads)),
         h("td", { class: "detail" }, week.tags.length ? tagList(week.tags, 5) : h("span", { class: "muted" }, "None")),
+        phoneCell(week.android, phones.android, "android"),
+        phoneCell(week.ios, phones.ios, "ios"),
         h("td", { class: "num" }, num(week.opens)),
         h("td", { class: "num" }, num(week.active)),
         h("td", { class: "num" }, countingSince && addDays(week.start, 6) >= countingSince ? num(week.checkouts) : notCounted()),
@@ -814,6 +876,24 @@ function fetchedItem(name, fetched, waiting, fine) {
   return statusItem("Fine", "success", h("b", {}, name), `: ${fine} Last answered ${when(fetched.okAt)}.`);
 }
 
+/** A phone store's tile on Downloads: its first-time installs, or that it isn't set up. */
+function phoneStoreTile(platform, phone, values, detail) {
+  const label = `${PHONE_STORES[platform]} (${PHONES[platform]}), 30 days`;
+  if (!phone.configured) return { label, value: "Not set up", sub: "Where the numbers come from says what it needs" };
+  if (!phone.fetched?.okAt) return { label, value: "—", sub: phone.fetched ? "Not answering yet: see Where the numbers come from" : "Waiting for the first report" };
+  return { label, value: num(lastDaysOf(values, 30)), sub: detail, trend: [lastDaysOf(values, 30), lastDaysOf(values, 30, true)] };
+}
+
+/** A phone store's rows in By channel, [what, values] each; one "Not set up" row when it isn't. */
+function phoneRows(platform, phone, rows) {
+  const channel = `${PHONE_STORES[platform]} (${PHONES[platform]})`;
+  if (!phone.configured)
+    return h("tr", {}, h("td", {}, channel), h("td", { class: "muted" }, "Not set up"), [7, 30, 90].map(() => h("td", { class: "num muted" }, "—")));
+  return rows.map(([what, values]) =>
+    h("tr", {}, h("td", {}, channel), h("td", {}, what), [7, 30, 90].map((n) => h("td", { class: "num" }, num(lastDaysOf(values, n))))),
+  );
+}
+
 loaders.downloads = async () => {
   const d = await api("/admin/downloads");
   const website = add(d.website.windows, d.website.macos, d.website.linux);
@@ -845,6 +925,18 @@ loaders.downloads = async () => {
         ? `Acquisitions, from Partner Center · ${num(lastDaysOf(d.store.installs, 30))} installs`
         : "Clicks on the site's Store button, until Partner Center is connected",
     },
+    phoneStoreTile(
+      "android",
+      d.android,
+      d.android.userInstalls,
+      `First-time installs by a person · ${num(lastDaysOf(d.android.deviceInstalls, 30))} device installs · the last days land 3 to 7 days late`,
+    ),
+    phoneStoreTile(
+      "ios",
+      d.ios,
+      d.ios.downloads,
+      `First-time downloads · ${num(lastDaysOf(d.ios.redownloads, 30))} re-downloads · ${num(lastDaysOf(d.ios.updates, 30))} updates`,
+    ),
     {
       label: "First opens, 30 days",
       value: num(lastDaysOf(opens, 30)),
@@ -888,6 +980,32 @@ loaders.downloads = async () => {
           h("b", {}, "Microsoft Store"),
           ": set the MSSTORE_TENANT_ID, MSSTORE_CLIENT_ID and MSSTORE_CLIENT_SECRET secrets (the Entra application the Store workflow uses, with the Manager role) for the Store's own acquisitions and installs. Until then, clicks on the site's Store button stand in, which miss everyone who finds UrBudget in the Store itself.",
         ),
+    d.android.configured
+      ? fetchedItem(
+          "Google Play (Android)",
+          d.android.fetched,
+          "the Worker reads Play Console's installs reports once a day.",
+          "first-time installs from Play Console's monthly installs reports, read daily for this month and last. Days land 3 to 7 days late, and testers' installs count too.",
+        )
+      : statusItem(
+          "Not set up",
+          "warn",
+          h("b", {}, "Google Play (Android)"),
+          ': set the PLAY_REPORTS_BUCKET secret to the Cloud Storage URI from Play Console (Download reports, Statistics), and give the GOOGLE_PLAY_SERVICE_ACCOUNT the "View app information and download bulk reports" permission for all apps.',
+        ),
+    d.ios.configured
+      ? fetchedItem(
+          "App Store (iOS)",
+          d.ios.fetched,
+          "the Worker asks App Store Connect once a day.",
+          "first-time downloads, re-downloads and updates from the App Store's daily sales summaries, fetched daily for the last 7 days. A day's report comes out the day after.",
+        )
+      : statusItem(
+          "Not set up",
+          "warn",
+          h("b", {}, "App Store (iOS)"),
+          ": set the ASC_ISSUER_ID, ASC_KEY_ID and ASC_PRIVATE_KEY secrets (a Team API key with the Sales and Reports role) and ASC_VENDOR_NUMBER (Payments and Financial Reports).",
+        ),
     sum(opens)
       ? statusItem("Counting", "success", h("b", {}, "The app"), ": copies count themselves once a day, with nothing that identifies them. First opens are copies installed and opened.")
       : statusItem(
@@ -905,6 +1023,15 @@ loaders.downloads = async () => {
     tips: d.days.map(dateOnly),
     series: channelSeries({ website, store }),
     empty: "No downloads counted yet.",
+  });
+
+  columnChart($("chart-phones-90"), {
+    title: "Phone installs per day",
+    sub: PHONE_CHART_SUB,
+    labels: d.days.map(shortDay),
+    tips: d.days.map(dateOnly),
+    series: phoneSeries({ android: d.android.userInstalls, ios: d.ios.downloads }),
+    empty: phonesEmpty(d),
   });
 
   columnChart($("chart-github-downloads"), {
@@ -962,6 +1089,22 @@ loaders.downloads = async () => {
         h("th", { scope: "row" }, "Website + Store"),
         h("td", {}, "User download total; GitHub excluded"),
         [7, 30, 90].map((n) => h("td", { class: "num" }, h("b", {}, num(lastDaysOf(d.total, n))))),
+      ),
+      ...[phoneRows("android", d.android, [
+        ["First-time installs by a person, from Play Console", d.android.userInstalls],
+        ["Device installs, from Play Console", d.android.deviceInstalls],
+      ])].flat(),
+      ...[phoneRows("ios", d.ios, [
+        ["First-time downloads, from App Store Connect", d.ios.downloads],
+        ["Re-downloads, from App Store Connect", d.ios.redownloads],
+        ["Updates, from App Store Connect", d.ios.updates],
+      ])].flat(),
+      !d.android.configured && !d.ios.configured ? null : h(
+        "tr",
+        {},
+        h("th", { scope: "row" }, "Google Play + App Store"),
+        h("td", {}, "Phone installs, first-time; apart from the desktop total"),
+        [7, 30, 90].map((n) => h("td", { class: "num" }, h("b", {}, num(lastDaysOf(d.android.userInstalls, n) + lastDaysOf(d.ios.downloads, n))))),
       ),
     ].filter(Boolean),
     "",
