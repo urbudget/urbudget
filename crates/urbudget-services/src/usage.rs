@@ -69,8 +69,8 @@ pub struct Usage {
 }
 
 impl Usage {
-    /// Reads what was last counted. Call it before anything else writes to `data_dir`: an empty or
-    /// missing folder is a copy opening for the first time, and one with budgets in it was in use
+    /// Reads what was last counted. Call it before the budget library is loaded: a folder with no
+    /// library in it is a copy opening for the first time, and one with a library was in use
     /// before counting began.
     pub fn open(data_dir: &Path) -> Self {
         Self::open_on(data_dir, Utc::now().date_naive())
@@ -82,7 +82,9 @@ impl Usage {
             // Unreadable: counted again as a copy in use, never as a new one.
             Ok(raw) => serde_json::from_slice(&raw).unwrap_or_default(),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                let fresh = std::fs::read_dir(data_dir).map_or(true, |mut entries| entries.next().is_none());
+                // Not "the folder is empty": on Linux the window's web view keeps its own files in
+                // this folder, and Tauri opens the window before the app's setup runs.
+                let fresh = !urbudget_core::budgets::kept_in(data_dir);
                 let state = State {
                     first: fresh,
                     cohort: if fresh { monday(today).to_string() } else { String::new() },
@@ -187,10 +189,24 @@ mod tests {
         let again = Usage::open_on(fresh.path(), day("2026-10-27"));
         assert!(again.state.try_lock().unwrap().first);
 
-        let used = tempfile::tempdir().unwrap();
-        std::fs::write(used.path().join("budgets.json"), "{}").unwrap();
-        let usage = Usage::open_on(used.path(), day("2026-10-22"));
-        assert_eq!(usage.state.try_lock().unwrap().clone(), State::default());
+        // Every library a copy in use before counting began could have.
+        for file in ["library.sqlite3", "budgets.json", "budget.sqlite3"] {
+            let used = tempfile::tempdir().unwrap();
+            std::fs::write(used.path().join(file), "{}").unwrap();
+            let usage = Usage::open_on(used.path(), day("2026-10-22"));
+            assert_eq!(usage.state.try_lock().unwrap().clone(), State::default(), "{file}");
+        }
+    }
+
+    #[test]
+    fn the_web_views_files_dont_make_a_new_copy_look_used() {
+        // What WebKitGTK had written to the folder by the time a fresh Linux copy's setup ran.
+        let linux = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(linux.path().join("storage")).unwrap();
+        std::fs::write(linux.path().join("hsts-storage.sqlite"), "").unwrap();
+        std::fs::write(linux.path().join("cookies"), "").unwrap();
+        let usage = Usage::open_on(linux.path(), day("2026-11-20"));
+        assert_eq!(usage.state.try_lock().unwrap().clone(), State { first: true, cohort: "2026-11-16".into(), ..State::default() });
     }
 
     /// A one-request server that answers `status` and hands back what it was sent.
