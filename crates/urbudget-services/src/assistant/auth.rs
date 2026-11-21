@@ -221,6 +221,27 @@ fn escape(text: &str) -> String {
     text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
+/// Reads the browser's request up to the end of its headers, for at most five seconds. One read
+/// isn't always all of it: a request can arrive in pieces, and answering a half-read one loses the
+/// rest of its query and closes on unread bytes, which resets the connection under the page.
+fn read_request(stream: &mut std::net::TcpStream) -> String {
+    let _ = stream.set_nonblocking(false);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut buf = [0u8; 8192];
+    let mut n = 0;
+    while n < buf.len() && !buf[..n].windows(4).any(|end| end == b"\r\n\r\n") {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() || stream.set_read_timeout(Some(left)).is_err() {
+            break;
+        }
+        match stream.read(&mut buf[n..]) {
+            Ok(0) | Err(_) => break,
+            Ok(read) => n += read,
+        }
+    }
+    String::from_utf8_lossy(&buf[..n]).into_owned()
+}
+
 /// Waits for the browser to come back to `/auth/callback`, then answers it with a short page.
 fn wait_for_callback(listener: TcpListener, state: &str, cancel: &AtomicBool, wait: Duration, return_link: Option<&str>) -> Result<Callback, String> {
     listener.set_nonblocking(true).map_err(|e| e.to_string())?;
@@ -242,11 +263,7 @@ fn wait_for_callback(listener: TcpListener, state: &str, cancel: &AtomicBool, wa
             }
             Err(e) => return Err(e.to_string()),
         };
-        let _ = stream.set_nonblocking(false);
-        let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
-        let mut buf = [0u8; 8192];
-        let n = stream.read(&mut buf).unwrap_or(0);
-        let request = String::from_utf8_lossy(&buf[..n]);
+        let request = read_request(&mut stream);
         let target = request.split_whitespace().nth(1).unwrap_or("/");
         let respond = |stream: &mut std::net::TcpStream, status: &str, outcome: Outcome, title: &str, text: &str| {
             // The browser page speaks the app's language; Arabic reads right to left.
@@ -561,6 +578,26 @@ mod tests {
         let empty = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let late = wait_for_callback(empty, "s3", &AtomicBool::new(false), Duration::ZERO, None);
         assert_eq!(late.err().as_deref(), Some("Sign-in timed out. Try again."));
+    }
+
+    #[test]
+    fn a_request_sent_in_pieces_is_read_whole_before_it_is_answered() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let browser = std::thread::spawn(move || {
+            let mut s = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+            s.write_all(b"GET /auth/callback?code=abc&state=s4").unwrap();
+            // Longer than the listener's wait between looks, so it is reading before the rest comes.
+            std::thread::sleep(Duration::from_millis(300));
+            s.write_all(b"&client_id=oaiapp_9 HTTP/1.1\r\nHost: x\r\n\r\n").unwrap();
+            let mut page = String::new();
+            // An answer sent before the request was read through would end in a reset here.
+            s.read_to_string(&mut page).unwrap();
+            page
+        });
+        let cb = wait_for_callback(listener, "s4", &AtomicBool::new(false), WAIT, None).unwrap();
+        assert_eq!(cb.client_id.as_deref(), Some("oaiapp_9"));
+        assert!(browser.join().unwrap().contains("Sign-in received"));
     }
 
     #[test]
