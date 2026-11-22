@@ -12,8 +12,12 @@ Reviewed 17 November 2026 for desktop, the website and the Microsoft Store; 12 N
 
 ## Sync v2 activation
 
-Switched on 22 November 2026 by setting `SYNC_V2_ENABLED` to `"1"` in `web/wrangler.jsonc`; the
-Deploy site run on that merge to `main` put it live. The server has had v2's routes and migration
+Switched on 22 November 2026 by setting `SYNC_V2_ENABLED` to `"1"` in `web/wrangler.jsonc`
+([PR #39](https://github.com/urbudget/urbudget/pull/39)). The [Deploy site run](https://github.com/urbudget/urbudget/actions/runs/45017310516)
+on its merge passed at 11:26 UTC: no migrations were due, and Worker version
+`76074f68-6105-4799-b4a7-3f6703883795` went live with the `SYNC_V2_ENABLED ("1")` binding. Signed
+out, `/api/v2/sync/bootstrap` answers 401 as it should; no account has been moved to v2 and
+watched since. The server has had v2's routes and migration
 `0012_sync_v2.sql` since 29 October. What it changes is in [SYNC_V2.md](../web/SYNC_V2.md#deployment-boundary):
 a v2 app given the passphrase creates or moves the account to v2, and nothing moves by itself.
 
