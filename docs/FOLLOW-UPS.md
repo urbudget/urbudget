@@ -255,14 +255,15 @@ Left, and what done looks like:
   or a transaction there opens as a sheet over the whole window, the assistant included.
 - Registers opened from Budget, Accounts or More open a transaction over the screen on a wide
   window; on a fold they open it on the far side.
-- CI builds with GitHub's current macOS image rather than a pinned Xcode, and on 11 November
-  that was Xcode 26.6 (the iOS 26.5 SDK), which has no hinge or fold region: the merge of this
-  work failed to compile there. The fold's reader is now compiled only by Swift 6.4 or later
-  (Xcode 27.1's), and an older Xcode builds an app that knows its window's size alone. So CI
-  doesn't compile or test the code that reads the fold, and **a store build has to be made with
-  Xcode 27.1 or later**, or the Duo gets no book or table layout. Xcode 27.0 isn't told apart
-  (the same Swift, an SDK without the hinge) and wouldn't build. Done looks like the workflow
-  pinning an Xcode that has the 27.1 SDK once GitHub's images carry one.
+- Native iOS (`ios-native.yml`) builds with GitHub's current macOS image, which on 22 November
+  still had Xcode 26.6 (the iOS 26.5 SDK), with no hinge or fold region. The fold's reader is
+  compiled only by Swift 6.4 or later (Xcode 27.1's), and an older Xcode builds an app that knows
+  its window's size alone, so that check keeps the older Xcode building but doesn't compile the
+  code that reads the fold. **A store build has to be made with Xcode 27.1 or later**, or the Duo
+  gets no book or table layout: since 22 November `ios-release.yml` runs on GitHub's `xcode-27`
+  image (a preview; 27.1 is its default, build 27A9275, the same as the Mac that made the Duo
+  work), selects Xcode 27.1 and stops if its Swift is older than 6.4. Not yet run: the first
+  release on it is 1.0.1. Left: `ios-native.yml` on that image too, once it's out of preview.
 
 ## iOS beside Android
 
