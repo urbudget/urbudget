@@ -33,10 +33,17 @@ export function playConfigured(env: Env): boolean {
   return Boolean(env.GOOGLE_PLAY_SERVICE_ACCOUNT);
 }
 
-async function accessToken(env: Env, signal?: AbortSignal): Promise<string> {
+const accessToken = (env: Env, signal?: AbortSignal) => serviceAccountToken(env, "https://www.googleapis.com/auth/androidpublisher", signal);
+
+/**
+ * An OAuth token for GOOGLE_PLAY_SERVICE_ACCOUNT with one scope, cached for most of its hour. Every
+ * failure is the same vague error, so nothing from a purchase's URL can reach a log.
+ */
+export async function serviceAccountToken(env: Env, scope: string, signal?: AbortSignal): Promise<string> {
   if (!playConfigured(env)) throw unavailable();
   const secret = env.GOOGLE_PLAY_SERVICE_ACCOUNT!;
-  const cached = tokens.get(secret);
+  const cacheKey = `${scope}\n${secret}`;
+  const cached = tokens.get(cacheKey);
   if (cached && cached.until > Date.now()) return cached.value;
   let credentials: { client_email: string; private_key: string };
   try { credentials = JSON.parse(secret); } catch { throw unavailable(); }
@@ -44,7 +51,7 @@ async function accessToken(env: Env, signal?: AbortSignal): Promise<string> {
       typeof credentials.private_key !== "string" || !credentials.private_key) throw unavailable();
   const seconds = Math.floor(Date.now() / 1000);
   const body = `${base64url(utf8(JSON.stringify({ alg: "RS256", typ: "JWT" })))}.${base64url(utf8(JSON.stringify({
-    iss: credentials.client_email, scope: "https://www.googleapis.com/auth/androidpublisher",
+    iss: credentials.client_email, scope,
     aud: "https://oauth2.googleapis.com/token", iat: seconds, exp: seconds + 3600,
   })))}`;
   const pem = credentials.private_key.replace(/-----[^-]+-----|\s/g, "");
@@ -61,7 +68,7 @@ async function accessToken(env: Env, signal?: AbortSignal): Promise<string> {
   if (!response.ok) throw unavailable();
   const answer = await safeJson(response) as { access_token?: string; expires_in?: number };
   if (!answer.access_token) throw unavailable();
-  tokens.set(secret, { value: answer.access_token, until: Date.now() + Math.min(3300, Math.max(0, (answer.expires_in ?? 3600) - 60)) * 1000 });
+  tokens.set(cacheKey, { value: answer.access_token, until: Date.now() + Math.min(3300, Math.max(0, (answer.expires_in ?? 3600) - 60)) * 1000 });
   return answer.access_token;
 }
 

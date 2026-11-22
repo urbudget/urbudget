@@ -63,4 +63,9 @@
   //   MSSTORE_TENANT_ID, MSSTORE_CLIENT_ID, MSSTORE_CLIENT_SECRET
   //                           optional: the Store workflow's Entra application, for the Microsoft
   //                           Store's acquisitions and installs on the admin page (README.md, Admin page)
+  //   PLAY_REPORTS_BUCKET     optional: Play Console's Cloud Storage URI for reports (gs://pubsite_prod_rev_…/),
+  //                           read with GOOGLE_PLAY_SERVICE_ACCOUNT for Android installs on the admin page
+  //   ASC_ISSUER_ID, ASC_KEY_ID, ASC_PRIVATE_KEY, ASC_VENDOR_NUMBER
+  //                           optional: an App Store Connect Team API key with the Sales and Reports role
+  //                           (not the CI key) and the vendor number, for iOS downloads on the admin page
 }

@@ -4,7 +4,7 @@
 import { Hono } from "hono";
 import { requireAdmin } from "./access";
 import { provider, SYNC_STATUSES } from "./billing";
-import { fetchStatus, githubDaily, githubReleases, storeConfigured } from "./channels";
+import { appStoreConfigured, fetchStatus, githubDaily, githubReleases, playReportsConfigured, storeConfigured, type Store } from "./channels";
 import type { AppEnv, Env } from "./env";
 import type { Release } from "./releases";
 import { ApiError, mondayOf, now } from "./util";
@@ -113,13 +113,17 @@ async function channelSeries(env: Env, days: string[]) {
       .bind(first)
       .all<{ day: string; platform: string; store: number; n: number }>(),
     githubDaily(db, first),
-    db.prepare("SELECT day, kind, count AS n FROM store_counts WHERE day >= ?1").bind(first).all<{ day: string; kind: string; n: number }>(),
+    db
+      .prepare("SELECT store, day, kind, count AS n FROM store_counts WHERE day >= ?1")
+      .bind(first)
+      .all<{ store: Store; day: string; kind: string; n: number }>(),
     db
       .prepare("SELECT day, channel, SUM(count) AS n FROM app_usage WHERE day >= ?1 AND kind = 'install' GROUP BY day, channel")
       .bind(first)
       .all<{ day: string; channel: string; n: number }>(),
     fetchStatus(db),
   ]);
+  const counted = (from: Store, kind: string) => store.results.filter((r) => r.store === from && r.kind === kind);
   const series = {
     websiteWindows: perDay(days, website.results.filter((r) => !r.store && r.platform === "windows")),
     websiteMacos: perDay(days, website.results.filter((r) => !r.store && r.platform === "macos")),
@@ -128,8 +132,14 @@ async function channelSeries(env: Env, days: string[]) {
     githubWindows: perDay(days, github.daily.filter((r) => r.platform === "windows")),
     githubMacos: perDay(days, github.daily.filter((r) => r.platform === "macos")),
     githubLinux: perDay(days, github.daily.filter((r) => r.platform === "linux")),
-    storeAcquisitions: perDay(days, store.results.filter((r) => r.kind === "acquisitions")),
-    storeInstalls: perDay(days, store.results.filter((r) => r.kind === "installs")),
+    storeAcquisitions: perDay(days, counted("microsoft", "acquisitions")),
+    storeInstalls: perDay(days, counted("microsoft", "installs")),
+    // The phone apps, from the stores' own reports. Never part of the desktop numbers below.
+    playUserInstalls: perDay(days, counted("play", "user_installs")),
+    playDeviceInstalls: perDay(days, counted("play", "device_installs")),
+    appStoreDownloads: perDay(days, counted("appstore", "downloads")),
+    appStoreRedownloads: perDay(days, counted("appstore", "redownloads")),
+    appStoreUpdates: perDay(days, counted("appstore", "updates")),
     // First opens by channel, the phones' included.
     opensBy: perChannel(days, opens.results),
   };
@@ -151,9 +161,18 @@ async function channelSeries(env: Env, days: string[]) {
     opens: add(...Object.values(series.opensBy)),
     partnerCenter,
     githubSince: github.since,
+    // First-time installs of the phone apps: Play's user installs, the App Store's first downloads.
+    android: series.playUserInstalls,
+    ios: series.appStoreDownloads,
     status,
   };
 }
+
+/** Whether a phone store is set up, and how its reports last answered. */
+const phoneStores = (env: Env, status: Awaited<ReturnType<typeof channelSeries>>["status"]) => ({
+  android: { configured: playReportsConfigured(env), fetched: status.play ?? null },
+  ios: { configured: appStoreConfigured(env), fetched: status.appstore ?? null },
+});
 
 /** Copies used each day, and each week of `weekStarts` (Mondays), as the app reports them. */
 async function activeSeries(db: D1Database, days: string[], weekStarts: string[]) {
@@ -292,11 +311,14 @@ admin.get("/overview", async (c) => {
     store: channels.store,
     opens: channels.opens,
     active: inUse.all,
+    android: channels.android,
+    ios: channels.ios,
   };
   const total = (values: number[], from: number, to?: number) => values.slice(from, to).reduce((a, b) => a + b, 0);
   /** Today and the 29 days before; and the 30 days before those. */
   const last30 = (values: number[]) => total(values, -30);
   const prev30 = (values: number[]) => total(values, -60, -30);
+  const phones = phoneStores(c.env, channels.status);
 
   const weekOfDay = days.map(mondayOf);
   const weeks = weekStarts.map((start, i) => {
@@ -312,6 +334,8 @@ admin.get("/overview", async (c) => {
         .filter((t) => t.week === start)
         .sort((a, b) => b.n - a.n || a.tag.localeCompare(b.tag))
         .map((t) => ({ tag: t.tag, n: t.n })),
+      android: inWeek(series.android),
+      ios: inWeek(series.ios),
       opens: inWeek(series.opens),
       active: inUse.weeks[i].active,
       checkouts: inWeek(series.checkouts),
@@ -349,6 +373,12 @@ admin.get("/overview", async (c) => {
       linux: last30(channels.linux),
       team: sum(downloads.results, (r) => r.n, (r) => r.kind === "team"),
       bots: sum(downloads.results, (r) => r.n, (r) => r.kind === "bot"),
+    },
+    // The phone apps' first-time installs from Google Play and the App Store, last 30 days and the 30
+    // before. Apart from `downloads`, which is the desktop app's.
+    phones: {
+      android: { ...phones.android, last30: last30(series.android), previous30: prev30(series.android) },
+      ios: { ...phones.ios, last30: last30(series.ios), previous30: prev30(series.ios) },
     },
     // Copies opened for the first time, and copies used (by week, newest first), as the app reports them.
     usage: {
@@ -553,12 +583,16 @@ admin.get("/downloads", async (c) => {
       .prepare("SELECT kind, day >= ?2 AS recent, SUM(count) AS n FROM download_counts WHERE day >= ?1 AND kind != 'person' GROUP BY kind, recent")
       .bind(first, days[days.length - 30])
       .all<{ kind: string; recent: number; n: number }>(),
-    db.prepare("SELECT MIN(day) AS day FROM store_counts").first<{ day: string | null }>(),
+    db
+      .prepare("SELECT store, MIN(day) AS day FROM store_counts GROUP BY store")
+      .all<{ store: Store; day: string }>()
+      .then((rows) => Object.fromEntries(rows.results.map((r) => [r.store, r.day])) as Partial<Record<Store, string>>),
     c.env.RELEASES.get("latest.json").then((o) => (o ? (o.json() as Promise<Release>) : null)),
     githubReleases(c.env),
   ]);
   const sum = <T>(rows: T[], pick: (row: T) => number, where: (row: T) => boolean = () => true) =>
     rows.filter(where).reduce((n, row) => n + pick(row), 0);
+  const phones = phoneStores(c.env, channels.status);
   return c.json({
     days,
     // People's clicks on urbudget.app: its installers, and its button to the Microsoft Store.
@@ -571,8 +605,24 @@ admin.get("/downloads", async (c) => {
       partnerCenter: channels.partnerCenter,
       acquisitions: channels.storeAcquisitions,
       installs: channels.storeInstalls,
-      since: storeSince?.day ?? null,
+      since: storeSince.microsoft ?? null,
       fetched: channels.status.store ?? null,
+    },
+    // The phone apps, from the stores' own reports; never in `total`. Android: Play Console's
+    // monthly installs reports ("Daily User Installs" are first-time installs by a person, on any
+    // device). iOS: the App Store's daily sales summaries (first-time downloads, re-downloads, updates).
+    android: {
+      ...phones.android,
+      userInstalls: channels.playUserInstalls,
+      deviceInstalls: channels.playDeviceInstalls,
+      since: storeSince.play ?? null,
+    },
+    ios: {
+      ...phones.ios,
+      downloads: channels.appStoreDownloads,
+      redownloads: channels.appStoreRedownloads,
+      updates: channels.appStoreUpdates,
+      since: storeSince.appstore ?? null,
     },
     // Filtered website clicks plus Store acquisitions (or button clicks), as on Overview.
     total: channels.total,
@@ -796,6 +846,8 @@ admin.get("/health", async (c) => {
       { name: "ACCESS_TEAM_DOMAIN / ACCESS_AUD", ok: Boolean(env.ACCESS_TEAM_DOMAIN && env.ACCESS_AUD) },
       { name: "GITHUB_TOKEN", ok: Boolean(env.GITHUB_TOKEN) },
       { name: "MSSTORE_TENANT_ID / MSSTORE_CLIENT_ID / MSSTORE_CLIENT_SECRET", ok: storeConfigured(env) },
+      { name: "PLAY_REPORTS_BUCKET", ok: Boolean(env.PLAY_REPORTS_BUCKET) },
+      { name: "ASC_ISSUER_ID / ASC_KEY_ID / ASC_PRIVATE_KEY / ASC_VENDOR_NUMBER", ok: appStoreConfigured(env) },
     ],
   });
 });

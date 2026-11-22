@@ -56,6 +56,20 @@ export interface Env {
   MSSTORE_TENANT_ID?: string;
   MSSTORE_CLIENT_ID?: string;
   MSSTORE_CLIENT_SECRET?: string;
+  /**
+   * Optional: Play Console's Cloud Storage URI for reports (`gs://pubsite_prod_rev_…/`), read with
+   * GOOGLE_PLAY_SERVICE_ACCOUNT for the Android app's installs on the admin page.
+   */
+  PLAY_REPORTS_BUCKET?: string;
+  /**
+   * Optional: an App Store Connect Team API key with the Sales and Reports role (not the CI key),
+   * and the account's vendor number, for the iOS app's downloads on the admin page.
+   */
+  ASC_ISSUER_ID?: string;
+  ASC_KEY_ID?: string;
+  /** The whole AuthKey_<id>.p8 file. */
+  ASC_PRIVATE_KEY?: string;
+  ASC_VENDOR_NUMBER?: string;
 }
 
 export interface User {
