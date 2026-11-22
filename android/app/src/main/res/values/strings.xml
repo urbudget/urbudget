@@ -1956,7 +1956,12 @@
     <string name="library_unfinished_edits">Recover unfinished edits</string>
     <string name="library_discard_edits">Discard these edits</string>
     <string name="library_keep_local">Keep this budget only on this device</string>
-    <string name="cloud_legacy_library">Automatic budget discovery is not enabled for this account yet. Existing budgets keep syncing; use the controls below to add or download budgets.</string>
+    <string name="cloud_move_title">A new sync is ready for this account</string>
+    <string name="cloud_move_detail">It finds every budget in your account on its own and recovers safely when an upload is interrupted. Your budgets and sync passphrase stay the same.</string>
+    <string name="cloud_move_action">Move to the new sync</string>
+    <string name="cloud_move_confirm_title">Move to the new sync?</string>
+    <string name="cloud_move_warning">After the move, every device that syncs with this account needs desktop 1.0.11 or later, Android 1.0.1 or later, or iPhone 1.0.1 or later. Older versions are told to update UrBudget before they sync again; the budgets on them stay.</string>
+    <string name="cloud_move_done">This account now uses the new sync.</string>
     <string name="library_available_online">Available online</string>
     <string name="library_review_newer">Review newer version</string>
     <string name="library_deletion_conflict">Newer changes need review before deletion</string>

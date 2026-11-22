@@ -20,6 +20,7 @@ struct AccountSyncView: View {
     @State private var removing: JSON?
     @State private var confirmSignOut = false
     @State private var deletingAccount = false
+    @State private var moving = false
     @FocusState private var typingCode: Bool
 
     private var status: JSON { sync.status ?? [:] }
@@ -36,6 +37,7 @@ struct AccountSyncView: View {
             if let error { FormErrorView(message: error) }
             accountSection
             if !signedIn.isEmpty {
+                if SyncMove.offered(status) { moveSection }
                 SyncSubscriptionSection(overview: overview, reload: loadOverview)
                 syncSection
                 budgetsSection
@@ -85,6 +87,14 @@ struct AccountSyncView: View {
             PassphraseSheet(request: request) { phrase in
                 _ = try await store.service(request.kind == .reset ? "sync_reset" : "sync_setup", ["passphrase": .string(phrase)])
                 run { try await sync.syncNow() }
+            }
+        }
+        .sheet(isPresented: $moving) {
+            // Re-read on every status refresh: a stale saved key turns into a passphrase request.
+            MoveSyncSheet(needsPassphrase: SyncMove.needsPassphrase(status)) { phrase in
+                _ = try await store.service("sync_upgrade", SyncMove.parameters(status, passphrase: phrase))
+                run { try await sync.syncNow() }
+                notice = String(localized: "This account now uses the new sync.")
             }
         }
         .sheet(item: $conflict) { entry in
@@ -193,6 +203,19 @@ struct AccountSyncView: View {
         }
     }
 
+    /// The account still syncs on protocol 1, and urbudget.app now moves it to the new sync.
+    @ViewBuilder private var moveSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("A new sync is ready for this account").fontWeight(.semibold)
+                Text("It finds every budget in your account on its own and recovers safely when an upload is interrupted. Your budgets and sync passphrase stay the same.")
+                    .font(.footnote).foregroundStyle(Color.secondary)
+            }
+            Button("Move to the new sync") { moving = true }
+                .disabled(busy)
+        }
+    }
+
     @ViewBuilder private var syncSection: some View {
         let report = sync.lastReport
         Section {
@@ -239,9 +262,6 @@ struct AccountSyncView: View {
         if !budgets.isEmpty {
             Section("Budgets") {
                 NavigationLink("Budget library") { LibraryView() }
-                if sync.status?["sync"]["protocol"].int != 2 {
-                    Text("Automatic budget discovery is not enabled for this account yet. Existing budgets keep syncing; use the controls below to add or download budgets.").font(.footnote).foregroundStyle(.secondary)
-                }
                 ForEach(budgets, id: \.idText) { entry in
                     let state = entry.text("state")
                     VStack(alignment: .leading, spacing: 8) {
@@ -339,6 +359,44 @@ struct AccountSyncView: View {
             do { try await action() } catch { self.error = BudgetStore.readable(error) }
             await sync.refreshStatus()
         }
+    }
+}
+
+/// Moving an account that still syncs on protocol 1 to the new sync (sync.rs `sync_upgrade`).
+enum SyncMove {
+    /// The signed-in account still syncs on protocol 1, and urbudget.app will move it.
+    static func offered(_ status: JSON) -> Bool {
+        !status.text("email").isEmpty && status["sync"]["protocol"].int != 2 && status["sync"].flag("upgradeAvailable")
+    }
+
+    /// Moving asks for the passphrase only when this device has no saved key that opens the account.
+    static func needsPassphrase(_ status: JSON) -> Bool {
+        status["sync"].flag("upgradeNeedsPassphrase")
+    }
+
+    /// `sync_upgrade`'s parameters: the passphrase only when it's needed.
+    static func parameters(_ status: JSON, passphrase: String) -> JSON {
+        needsPassphrase(status) ? ["passphrase": .string(passphrase)] : [:]
+    }
+}
+
+/// Moving is the person's choice: devices on older versions stop syncing until they're updated.
+private struct MoveSyncSheet: View {
+    var needsPassphrase: Bool
+    var submit: (String) async throws -> Void
+    @State private var phrase = ""
+
+    var body: some View {
+        FormSheet(title: String(localized: "Move to the new sync?"), confirm: String(localized: "Move"),
+                  enabled: !needsPassphrase || phrase.count >= 8) {
+            try await submit(phrase)
+        } content: {
+            Section {
+                Text("After the move, every device that syncs with this account needs desktop 1.0.11 or later, Android 1.0.1 or later, or iPhone 1.0.1 or later. Older versions are told to update UrBudget before they sync again; the budgets on them stay.")
+                if needsPassphrase { SecureField("Sync passphrase", text: $phrase).textContentType(.password) }
+            }
+        }
+        .sheetDetents([.medium, .large])
     }
 }
 

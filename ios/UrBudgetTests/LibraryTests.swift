@@ -2,6 +2,20 @@ import XCTest
 @testable import UrBudget
 
 final class LibraryTests: XCTestCase {
+    /// Account & sync offers the move to the new sync from sync.rs's status (`sync_upgrade`).
+    func testOnlyASignedInV1AccountTheServerWillMoveIsOffered() throws {
+        var status = try JSON.parse(#"{"email":"qa@example.test","sync":{"protocol":1,"unlocked":true,"upgradeAvailable":true,"upgradeNeedsPassphrase":false}}"#)
+        XCTAssertTrue(SyncMove.offered(status))
+        XCTAssertFalse(SyncMove.needsPassphrase(status))
+        XCTAssertEqual(SyncMove.parameters(status, passphrase: "typed"), [:], "the saved key moves it")
+        status = try JSON.parse(#"{"email":"qa@example.test","sync":{"protocol":1,"unlocked":false,"upgradeAvailable":true,"upgradeNeedsPassphrase":true}}"#)
+        XCTAssertEqual(SyncMove.parameters(status, passphrase: "typed passphrase"), ["passphrase": "typed passphrase"])
+        XCTAssertFalse(SyncMove.offered(try JSON.parse(#"{"email":"qa@example.test","sync":{"protocol":2,"upgradeAvailable":true}}"#)), "already moved")
+        XCTAssertFalse(SyncMove.offered(try JSON.parse(#"{"email":"qa@example.test","sync":{"protocol":1}}"#)), "an older engine or a server that refuses moves")
+        XCTAssertFalse(SyncMove.offered(try JSON.parse(#"{"email":null,"sync":{"protocol":1,"upgradeAvailable":true}}"#)))
+        XCTAssertFalse(SyncMove.offered([:]))
+    }
+
     func testNumberFormatResolvesAsMoneyReadsIt() {
         XCTAssertEqual(LibraryNumberFormat(budget: ["currency": "USD"]), LibraryNumberFormat(decimal: ".", group: ",", symbol: "before"))
         // A currency whose English symbol is its code goes after the amount.

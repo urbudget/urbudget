@@ -254,6 +254,74 @@ function Passphrase({ cloud: state, onDone }: { cloud: Cloud; onDone: (created: 
   );
 }
 
+/**
+ * An account that still syncs on protocol 1 while urbudget.app offers the new sync. Moving is the
+ * person's choice because devices on older versions stop syncing until they're updated.
+ */
+function MoveToNewSync({ cloud: state }: { cloud: Cloud }) {
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [passphrase, setPassphrase] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const needsPassphrase = state.status?.sync.upgradeNeedsPassphrase === true;
+  return (
+    <div className="plan-offer sync-move">
+      <div>
+        <strong>{t("A new sync is ready for this account")}</strong>
+        <small>{t("It finds every budget in your account on its own and recovers safely when an upload is interrupted. Your budgets and sync passphrase stay the same.")}</small>
+      </div>
+      <span className="sync-actions">
+        <button className="primary" onClick={() => { setPassphrase(""); setError(""); setOpen(true); }}>
+          {t("Move to the new sync")}
+        </button>
+      </span>
+      {open && (
+        <Modal title={t("Move to the new sync?")} close={() => { if (!busy) setOpen(false); }}>
+          <form
+            className="passphrase"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setBusy(true);
+              setError("");
+              try {
+                await cloud.syncUpgrade(needsPassphrase ? passphrase : undefined);
+                setOpen(false);
+                toast({ message: t("This account now uses the new sync."), tone: "success" });
+                await state.refresh();
+                void state.syncNow();
+              } catch (err) {
+                setError(errorText(err));
+                // A key from before a passphrase reset elsewhere turns this into a passphrase request.
+                await state.refresh().catch(() => null);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <p>{t("After the move, every device that syncs with this account needs desktop 1.0.11 or later, Android 1.0.1 or later, or iPhone 1.0.1 or later. Older versions are told to update UrBudget before they sync again; the budgets on them stay.")}</p>
+            {needsPassphrase && (
+              <label>
+                {t("Sync passphrase")}
+                <input type="password" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} autoComplete="current-password" minLength={8} required disabled={busy} autoFocus />
+              </label>
+            )}
+            {error && <p role="alert" className="notice error">{error}</p>}
+            <div className="modal-actions">
+              <button type="button" className="secondary" onClick={() => setOpen(false)} disabled={busy}>
+                {t("Cancel")}
+              </button>
+              <button className="primary" disabled={busy || (needsPassphrase && passphrase.length < 8)}>
+                {busy && <LoaderCircle size={14} className="spin" />} {t("Move to the new sync")}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 /** Settings › Account & sync. */
 export function SyncSettings({
   cloud: state,
@@ -480,7 +548,7 @@ export function SyncSettings({
       </section>
 
       <section className="panel sync-panel">
-        {status.email && status.sync.protocol !== 2 && <p className="help">{t("Automatic budget discovery is not enabled for this account yet. Existing budgets keep syncing; use the controls below to add or download budgets.")}</p>}
+        {status.email && status.sync.protocol !== 2 && status.sync.upgradeAvailable && <MoveToNewSync cloud={state} />}
         <div className="panel-title">
           <h2>
             <CloudIcon size={18} /> {t("Sync")}

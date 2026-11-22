@@ -27,3 +27,19 @@ internal fun syncCanReconcile(status: JSONObject): Boolean {
 /** v1 retains its foreground-only cadence; signed-out/private users need no persistent worker. */
 internal fun syncBackgroundEligible(status: JSONObject): Boolean = syncCanReconcile(status) &&
     status.optJSONObject("sync")?.let { it.optInt("protocol") == 2 && it.optBoolean("enabled") } == true
+
+/** A v1 account urbudget.app will move to the new sync (sync.rs `Status::upgrade_available`). */
+internal fun syncMoveOffered(status: JSONObject?): Boolean {
+    val signedIn = status ?: return false
+    val sync = signedIn.optJSONObject("sync") ?: return false
+    return !signedIn.isNull("email") && signedIn.optString("email").isNotBlank() &&
+        sync.optInt("protocol", 1) != 2 && sync.optBoolean("upgradeAvailable")
+}
+
+/** Moving asks for the passphrase only when this device has no saved key that opens the account. */
+internal fun syncMoveNeedsPassphrase(status: JSONObject?): Boolean =
+    status?.optJSONObject("sync")?.optBoolean("upgradeNeedsPassphrase") == true
+
+/** `sync_upgrade`'s parameters: the passphrase only when it's needed. */
+internal fun syncMoveParams(status: JSONObject?, passphrase: String): JSONObject =
+    JSONObject().also { if (syncMoveNeedsPassphrase(status)) it.put("passphrase", passphrase) }
