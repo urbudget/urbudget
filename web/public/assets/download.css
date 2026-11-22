@@ -214,10 +214,27 @@
   color: var(--text-2);
   font-size: var(--step--1);
 }
-/* The card's button sits at the bottom, so the cards' buttons line up. */
 .dl-item > .btn {
   width: 100%;
-  margin-top: auto;
+}
+/* The computers' cards share their rows (head, text, button, files), so their buttons line up
+   whatever each card's text and file names take. */
+#dl-list > .dl-item {
+  display: grid;
+  grid-row: span 4;
+  grid-template-rows: subgrid;
+  align-content: start;
+}
+#dl-list > .dl-item > .btn {
+  align-self: end;
+}
+.dl-alts {
+  display: grid;
+  align-content: start;
+  gap: 0.15rem;
+}
+.dl-alts > p {
+  margin: 0;
 }
 .dl-alt {
   color: var(--text-2);
@@ -226,12 +243,12 @@
 .dl-alt a {
   font-weight: 600;
 }
-.dl-alt .dl-meta {
+.dl-alt.dl-meta {
   color: var(--text-3);
 }
-.dl-alt a + .dl-meta::before {
-  content: "·";
-  margin-inline: 0.3em 0.35em;
+/* A link to another file starts a little apart from the file line above it. */
+.dl-alts > .dl-meta + .dl-alt:not(.dl-meta) {
+  margin-top: 0.5rem;
 }
 /* File · size: the line breaks between parts, never inside one. Only on the narrowest screens may
    a file name break. */
