@@ -268,13 +268,6 @@
   width: 1.05rem;
   height: 1.05rem;
 }
-/* The phone apps, under the price and in the same tile. */
-.hero2-phone {
-  margin-top: var(--space-3);
-}
-.hero2-phone a {
-  font-weight: 600;
-}
 /* The way in for people leaving YNAB, under the price. */
 .hero2-switch {
   margin-top: var(--space-2);
@@ -2556,126 +2549,170 @@ g.is-hot > .rw-hit {
   }
 }
 
-/* ---------- iPhone and iPad ---------- */
+/* ---------- News over the hero's title ---------- */
 
-/* A band, like the privacy section's, between pricing and the Android test. */
-.ios {
-  border-block: 1px solid var(--border);
-  background:
-    radial-gradient(60rem 30rem at 15% 40%, var(--brand-softer), transparent 70%),
-    var(--bg-soft);
-  overflow: clip;
-}
-.ios-grid {
-  display: grid;
-  gap: clamp(2.5rem, 2rem + 3vw, 4rem);
-  align-items: center;
-}
-/* On a phone the heading comes before the devices; side by side, the devices sit on the left. */
-.ios-copy {
-  order: -1;
-}
-@media (min-width: 960px) {
-  .ios-copy {
-    order: 0;
-  }
-  .ios-grid {
-    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
-    gap: clamp(3rem, 5vw, 5rem);
-  }
-}
-.ios-copy h2 {
-  font-size: clamp(2rem, 1.5rem + 2vw, 3.1rem);
-}
-.ios-copy .ticks {
-  margin-top: var(--space-5);
-}
-
-/* An iPad with an iPhone standing in front of its lower right corner. Sizes and radii follow the
-   figure's width (cqw), so the pair keeps its shape from a phone to a wide screen. */
-.ios-devices {
-  container-type: inline-size;
-  position: relative;
-  width: 100%;
-  max-width: 680px;
-  margin: 0 auto;
-  padding: 0 10% 13% 0;
-}
-.ios-ipad,
-.ios-iphone {
-  border: 1px solid var(--bezel-edge);
-  background: var(--bezel-glass);
-  box-shadow: var(--bezel-shadow);
-  backdrop-filter: blur(6px);
-}
-.ios-ipad {
-  padding: 1.6cqw;
-  border-radius: 4.4cqw;
-}
-.ios-ipad img {
-  width: 100%;
-  border-radius: 2.8cqw;
-}
-.ios-iphone {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  width: 29%;
-  padding: 1.1cqw;
-  border-radius: 5.6cqw;
-  box-shadow:
-    var(--bezel-shadow),
-    0 2.5cqw 6cqw -2cqw rgb(16 24 40 / 0.35);
-}
-.ios-iphone img {
-  width: 100%;
-  border-radius: 4.5cqw;
-}
-
-/* The button, and beside it a code to scan for someone reading this on a computer. */
-.ios-get {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-4);
-  margin-top: var(--space-6);
-}
-.ios-scan {
+.hero2-news {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: 0.55rem;
+  margin-bottom: var(--space-5);
+  padding: 0.3rem 0.8rem 0.3rem 0.3rem;
+  border: 1px solid var(--brand-line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
   color: var(--text-2);
   font-size: var(--step--1);
-  line-height: 1.35;
+  font-weight: 560;
+  text-decoration: none;
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.hero2-news:hover {
+  border-color: var(--brand);
+  color: var(--text);
   text-decoration: none;
 }
-.ios-scan:hover {
-  text-decoration: none;
+.hero2-news-tag {
+  padding: 0.12rem 0.55rem;
+  border-radius: 999px;
+  background: var(--brand);
+  color: #fff;
+  font-size: var(--step--2);
+  font-weight: 650;
+  letter-spacing: 0.02em;
 }
-.ios-scan:hover b {
+.hero2-news svg {
+  width: 0.95rem;
+  height: 0.95rem;
+  transition: transform 0.15s ease;
+}
+.hero2-news:hover svg {
+  transform: translateX(2px);
+}
+
+/* ---------- Last call: every platform ---------- */
+
+/* One row a platform: its icon, its name and what it runs on, and its button. */
+.finale-get {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-6) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.finale-get li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--brand) 14%, var(--border));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+:root[data-theme="dark"] .finale-get li {
+  border-color: rgb(255 255 255 / 0.1);
+  background: rgb(255 255 255 / 0.05);
+}
+.finale-get-icon {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 11px;
+  background: var(--brand-soft);
   color: var(--brand-text);
 }
-.ios-scan img {
-  flex: none;
-  width: 64px;
-  height: 64px;
-  padding: 3px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: #fff;
+:root[data-theme="dark"] .finale-get-icon {
+  background: rgb(255 255 255 / 0.08);
+  color: #d9d0ff;
 }
-.ios-scan b {
-  display: block;
-  color: var(--text);
+.finale-get-icon svg {
+  width: 1.3rem;
+  height: 1.3rem;
 }
-.ios-meta {
+.finale-get-name {
+  display: grid;
+  line-height: 1.3;
+}
+.finale-get-name b {
+  font-size: var(--step-0);
+}
+.finale-get-name span {
+  color: var(--finale-faint);
+  font-size: var(--step--2);
+}
+.finale-get .btn {
+  min-width: 9.5rem;
+}
+/* The phones' buttons: quiet on lavender, frosted on the night-violet card. */
+:root[data-theme="dark"] .finale-btn {
+  --btn-bg: rgb(255 255 255 / 0.06);
+  --btn-fg: #fff;
+  --btn-border: rgb(255 255 255 / 0.2);
+}
+:root[data-theme="dark"] .finale-btn:hover {
+  --btn-bg: rgb(255 255 255 / 0.12);
+  --btn-border: rgb(255 255 255 / 0.34);
+}
+.finale .finale-more {
   margin-top: var(--space-4);
-  color: var(--text-3);
   font-size: var(--step--1);
 }
-/* A code is no use on the phone that would scan it. */
-@media (max-width: 719px), (hover: none) and (pointer: coarse) {
-  .ios-scan {
-    display: none;
+.finale-more a {
+  color: var(--finale-muted);
+  font-weight: 560;
+}
+:root[data-theme="dark"] .finale-more a {
+  color: #d9d0ff;
+}
+@media (max-width: 480px) {
+  .finale-get li {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .finale-get .btn {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}
+
+/* The iPhone, standing in front of the computer's window. */
+.finale-phone {
+  position: absolute;
+  z-index: 2;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  width: 8.5rem;
+  margin: 0;
+  padding: 5px;
+  border: 1px solid var(--bezel-edge);
+  border-radius: 30px;
+  background: var(--bezel-glass);
+  box-shadow:
+    var(--finale-shot-shadow),
+    0 24px 48px -18px rgb(16 24 40 / 0.45);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+.finale-phone img {
+  width: 100%;
+  border-radius: 25px;
+}
+@media (min-width: 860px) {
+  .finale-copy {
+    max-width: min(31rem, 46%);
+  }
+  .finale-phone {
+    right: auto;
+    bottom: -3.5rem;
+    left: calc(51% - 3rem);
+    width: clamp(10rem, 13vw, 12.5rem);
+    border-radius: 36px;
+    padding: 6px;
+  }
+  .finale-phone img {
+    border-radius: 30px;
   }
 }

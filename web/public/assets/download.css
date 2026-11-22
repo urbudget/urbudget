@@ -81,35 +81,6 @@
 .dl-release + .dl-hint {
   margin-top: 0.15rem;
 }
-.dl-ticks {
-  display: grid;
-  gap: var(--space-2);
-  margin: var(--space-6) 0 0;
-  padding: 0;
-  list-style: none;
-  color: var(--text-2);
-  font-size: var(--step--1);
-}
-.dl-ticks li {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-}
-.dl-ticks li::before {
-  content: "";
-  flex: none;
-  width: 1.05rem;
-  height: 1.05rem;
-  border-radius: 50%;
-  background:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 8.3l2.2 2.2 4.8-5' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
-      center / 100% no-repeat,
-    var(--brand);
-}
-
-/* The app in its window, on a second sheet that peeks out underneath. */
-/* The app in a glass bezel (site.css) that runs on past the column and off the screen's right
-   edge, where the hero clips it, as in the home page's last card. */
 .dl-shot {
   /* From the column's right edge to the screen's. */
   --to-edge: calc((100vw - min(100vw - 2 * var(--gutter), var(--container))) / 2);
@@ -117,6 +88,88 @@
 }
 
 /* ---------- Sections ---------- */
+
+/* ---------- The hero's extras ---------- */
+
+/* The way to the phone apps, under the computer's button. */
+.dl-also {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+  padding: var(--space-2) var(--space-4) var(--space-2) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: var(--step--1);
+  text-decoration: none;
+  box-shadow: var(--shadow-sm);
+}
+.dl-also:hover {
+  border-color: var(--brand-line);
+  color: var(--text);
+  text-decoration: none;
+}
+.dl-also b {
+  color: var(--text);
+}
+.dl-also-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--brand-soft);
+  color: var(--brand-text);
+}
+.dl-also-icon svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+/* On the phone itself there's no code to scan: the link goes to the App Store (site.js). */
+@media (max-width: 719px), (hover: none) and (pointer: coarse) {
+  .dl-also-scan {
+    display: none;
+  }
+}
+
+/* The iPhone, in front of the computer's window. */
+.dl-shot {
+  position: relative;
+}
+.dl-phone {
+  position: absolute;
+  z-index: 1;
+  left: 0.75rem;
+  bottom: -1.75rem;
+  width: 7.5rem;
+  margin: 0;
+  padding: 4px;
+  border: 1px solid var(--bezel-edge);
+  border-radius: 26px;
+  background: var(--bezel-glass);
+  box-shadow: var(--bezel-shadow), 0 24px 48px -18px rgb(16 24 40 / 0.4);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+.dl-phone img {
+  width: 100%;
+  border-radius: 22px;
+}
+@media (min-width: 960px) {
+  .dl-phone {
+    left: -3rem;
+    bottom: -3rem;
+    width: clamp(9rem, 12vw, 11.5rem);
+    padding: 6px;
+    border-radius: 34px;
+  }
+  .dl-phone img {
+    border-radius: 28px;
+  }
+}
 
 .dl-section {
   padding-block: clamp(3rem, 2rem + 3vw, 5rem);
@@ -306,42 +359,8 @@
   white-space: nowrap;
 }
 
-/* The hero's code: for someone on a computer who wants the phone app. */
-.dl-scan {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-4);
-  max-width: 26rem;
-  margin-top: var(--space-6);
-  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  color: var(--text-2);
-  font-size: var(--step--1);
-  text-decoration: none;
-  box-shadow: var(--shadow-sm, 0 1px 2px rgb(16 24 40 / 0.06));
-}
-.dl-scan:hover {
-  border-color: var(--brand-line);
-  text-decoration: none;
-}
-.dl-scan img {
-  flex: none;
-  width: 84px;
-  height: 84px;
-  padding: 3px;
-  border-radius: 10px;
-  background: #fff;
-}
-.dl-scan b {
-  display: block;
-  color: var(--text);
-}
-
 /* A code is no use on the phone that would scan it. */
 @media (max-width: 719px), (hover: none) and (pointer: coarse) {
-  .dl-scan,
   .dl-qr {
     display: none;
   }
@@ -354,27 +373,18 @@
 
 .dl-steps-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
   gap: var(--space-5);
+  max-width: 56rem;
 }
-@media (min-width: 860px) {
-  .dl-steps-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
+.dl-steps-grid[hidden] {
+  display: none;
 }
 .dl-steps {
   padding: var(--space-5) var(--space-5) var(--space-6);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface);
-}
-.dl-for {
-  margin: 0 0 var(--space-1);
-  color: var(--text-3);
-  font-size: var(--step--2);
-  font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
 }
 .dl-steps h3 {
   font-size: var(--step-1);
@@ -473,39 +483,6 @@
 /* ---------- Free, with nothing locked ---------- */
 
 /* The questions follow with their own top padding. */
-.dl-trial-section {
-  padding-bottom: 0;
-}
-
-.dl-trial {
-  display: grid;
-  gap: var(--space-5);
-  padding: clamp(1.5rem, 1rem + 2vw, 2.5rem);
-  border: 1px solid var(--brand-line);
-  border-radius: var(--radius-xl);
-  background: var(--brand-softer);
-}
-@media (min-width: 860px) {
-  .dl-trial {
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: var(--space-7);
-  }
-}
-.dl-trial h2 {
-  font-size: var(--step-2);
-}
-.dl-trial p {
-  max-width: 62ch;
-  margin-top: var(--space-3);
-  color: var(--text-2);
-}
-.dl-trial .cta-row {
-  margin: 0;
-}
-
-/* ---------- Questions ---------- */
-
 .dl-sums {
   display: grid;
   gap: var(--space-3);

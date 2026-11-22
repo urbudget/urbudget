@@ -25,6 +25,8 @@ function downloadLabel() {
   const label = phone ? "" : /mac/i.test(platform) ? "Download for Mac" : /win/i.test(platform) ? "Download for Windows" : /linux/i.test(platform) ? "Download for Linux" : "";
   if (!label) return;
   for (const link of document.querySelectorAll("[data-download-label]")) link.textContent = label;
+  // The last section's computer row says which computer, and stays the computer's download on a phone.
+  for (const link of document.querySelectorAll("[data-computer-label]")) link.textContent = label;
 }
 
 /* ---------- The budget you can fill ---------- */
