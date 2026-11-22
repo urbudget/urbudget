@@ -1,7 +1,7 @@
 {
   "name": "UrBudget",
   "short_name": "UrBudget",
-  "description": "A private envelope budget for Windows, macOS and Linux.",
+  "description": "A private envelope budget for all your devices.",
   "start_url": "/",
   "scope": "/",
   "display": "browser",

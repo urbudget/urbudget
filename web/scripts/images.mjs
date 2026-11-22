@@ -125,9 +125,9 @@ async function ogImage() {
       <rect width="${W}" height="${H}" fill="#5b3bd6"/>
       <text x="72" y="234" font-family="${font}" font-size="64" font-weight="700" fill="#ffffff" letter-spacing="-1">UrBudget</text>
       <text x="72" y="312" font-family="${font}" font-size="42" font-weight="600" fill="#ffffff">Your budget,</text>
-      <text x="72" y="362" font-family="${font}" font-size="42" font-weight="600" fill="#ffffff">on your computer.</text>
-      <text x="72" y="416" font-family="${font}" font-size="25" fill="#e6defd">Envelope budgeting for</text>
-      <text x="72" y="450" font-family="${font}" font-size="25" fill="#e6defd">Windows, macOS and Linux.</text>
+      <text x="72" y="362" font-family="${font}" font-size="42" font-weight="600" fill="#ffffff">on your devices.</text>
+      <text x="72" y="416" font-family="${font}" font-size="25" fill="#e6defd">Zero-based envelope budgeting.</text>
+      <text x="72" y="450" font-family="${font}" font-size="25" fill="#e6defd">Free and open source.</text>
       <text x="72" y="592" font-family="${font}" font-size="22" font-weight="600" fill="#ffffff">urbudget.app</text>
     </svg>`);
 
