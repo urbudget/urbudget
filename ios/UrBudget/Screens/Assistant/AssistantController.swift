@@ -88,6 +88,9 @@ final class AssistantController {
     /// The notice that offers Undo, and the budget revision its change left. The notice offers
     /// it only while it's the one showing and the budget hasn't changed since.
     private(set) var undoNotice: (text: String, revision: String)?
+    /// The notice of an import whose new transactions still need a category, and the request
+    /// that hands them to the assistant ("Categorize with the assistant"), as on Android.
+    private(set) var categorizeNotice: (text: String, request: AssistantRequest)?
     /// Counts applied proposals and finished imports, for a success haptic.
     private(set) var successes = 0
 
@@ -518,9 +521,10 @@ final class AssistantController {
     /// Says that the assistant's import review imported a statement, as the app's own message
     /// does after a bank file's import: with Undo, while the import is still the budget's last
     /// change (`revision` is the budget's once it was saved).
-    func sayImported(_ text: String, revision: String) {
+    func sayImported(_ text: String, revision: String, categorize: AssistantRequest? = nil) {
         notice = text
         undoNotice = (text: text, revision: revision)
+        categorizeNotice = categorize.map { (text: text, request: $0) }
     }
 
     /// Shows no conversation. With `aside`, the open one's unsent message is set aside and a

@@ -11,6 +11,16 @@
         }
       }
     },
+    "Applying the last change" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ تطبيق التغيير الأخير"
+          }
+        }
+      }
+    },
     "Month total: %@ → %@" : {
       "localizations" : {
         "ar" : {
@@ -207,6 +217,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "إزالة التنزيل"
+          }
+        }
+      }
+    },
+    "The import changed while these fixes applied. Apply the card again." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تغيّر الاستيراد أثناء تطبيق هذه التصحيحات. طبّق البطاقة مرة أخرى."
           }
         }
       }

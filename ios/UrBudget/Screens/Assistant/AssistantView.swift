@@ -641,9 +641,10 @@ struct AssistantView: View {
     }
 
     /// Goes to what a card names, once the assistant has closed: its transactions in the
-    /// Transactions tab, or else the Budget tab on its month.
+    /// Transactions tab, or else the Budget tab on its month with its categories marked.
     private func show(_ highlight: JSON) {
-        let destination = AppActions.Destination(month: highlight.text("month"), transactions: highlight["transactions"].array.map(\.string))
+        let destination = AppActions.Destination(month: highlight.text("month"), transactions: highlight["transactions"].array.map(\.string),
+                                                 categories: highlight["categories"].array.map(\.string))
         if !beside { dismiss() }
         AppActions.shared.destination = destination
     }
@@ -758,16 +759,29 @@ struct AssistantView: View {
         if let notice = controller.notice {
             // An import's notice offers Undo while the import is still the budget's last change.
             let undo = controller.undoNotice?.text == notice && controller.undoNotice?.revision == store.revision
-            Notice(text: notice, tone: "info", icon: "info.circle.fill", action: undo ? String(localized: "Undo") : String(localized: "Dismiss")) {
-                if undo { store.undo() }
-                controller.dismissNotice()
-            }
+            Group { if let categorize = controller.categorizeNotice, categorize.text == notice {
+                // Its new transactions without a category go to a conversation of their own, as on Android.
+                Notice(text: notice, tone: "info", icon: "info.circle.fill", action: String(localized: "Categorize with the assistant"),
+                       secondary: undo ? Notice.Secondary(label: String(localized: "Undo"), symbol: "arrow.uturn.backward") {
+                           store.undo()
+                           controller.dismissNotice()
+                       } : nil) {
+                    controller.dismissNotice()
+                    controller.take(categorize.request)
+                }
+            } else {
+                Notice(text: notice, tone: "info", icon: "info.circle.fill", action: undo ? String(localized: "Undo") : String(localized: "Dismiss")) {
+                    if undo { store.undo() }
+                    controller.dismissNotice()
+                }
+            } }
             .padding(.horizontal, 16)
             .padding(.vertical, 6)
             .background(Color.groupedBackground)
             .transition(.move(edge: .top).combined(with: .opacity))
             .task(id: notice) {
-                try? await Task.sleep(for: .seconds(8))
+                // An offer to go on with the assistant stays longer to be read and taken.
+                try? await Task.sleep(for: .seconds(controller.categorizeNotice?.text == notice ? 15 : 8))
                 if controller.notice == notice { controller.dismissNotice() }
             }
         }

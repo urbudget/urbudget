@@ -15,16 +15,24 @@ final class AppActions {
     var pending: Action?
 
     /// Where a card of the assistant asks the app to go as its sheet closes: the Transactions
-    /// tab showing some transactions alone, or else the Budget tab on a month. Each is its own,
-    /// so asking for the same place again goes there again.
+    /// tab showing some transactions alone, or else the Budget tab on a month with the card's
+    /// categories marked. Each is its own, so asking for the same place again goes there again.
     struct Destination: Equatable {
         var id = UUID()
         var month = ""
         var transactions: [String] = []
+        var categories: [String] = []
     }
 
     /// The place waiting for the tabs to go to, cleared once they have.
     var destination: Destination?
+    /// Categories for the Budget tab to mark and bring into view ("Show in the budget"), taken
+    /// once: the tab clears it when it has.
+    struct Marking: Equatable {
+        var id = UUID()
+        var categories: Set<String>
+    }
+    var marking: Marking?
     /// A request for the assistant from a message over the tabs (an import's "Categorize with
     /// the assistant"): the tabs open the assistant with it, and clear it when it closes.
     var asking: AssistantRequest?

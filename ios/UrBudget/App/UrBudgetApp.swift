@@ -331,7 +331,7 @@ struct MainTabs: View {
     }
 
     /// Goes where a card of the assistant asked: the Transactions tab showing its transactions
-    /// alone, or else the Budget tab on its month.
+    /// alone, or else the Budget tab on its month, where its categories are marked.
     private func go(_ destination: AppActions.Destination?) {
         guard let destination else { return }
         AppActions.shared.destination = nil
@@ -341,6 +341,7 @@ struct MainTabs: View {
             tab = .transactions
         } else {
             if Dates.isMonth(destination.month) { store.selectMonth(destination.month) }
+            if !destination.categories.isEmpty { AppActions.shared.marking = .init(categories: Set(destination.categories)) }
             tab = .budget
         }
     }

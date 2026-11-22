@@ -13,13 +13,6 @@ too and left for later. Each is a code reading, not yet reproduced unless it say
 **Phones' bank import** (`ios/UrBudget/Screens/Imports/BankFileImportView.swift`,
 `android/app/src/main/java/app/urbudget/nativeapp/ui/BankImportDialog.kt` and `App.kt`):
 
-- iOS: a fix from the assistant and a change made by hand at the same moment: the later reply
-  wins and the other is lost without a word (`fix()`/`applyFix`). Keep the session each request
-  was made on and take a reply only if it's still current. On Android the two can't meet since
-  9 November 2026: Fix with the assistant waits for a change to apply, and the sheet is closed
-  while the assistant is open.
-- iOS: the line sheet's Done does nothing while an earlier change applies, and Import isn't
-  disabled while busy (`importRows`).
 - Android: the process being killed loses the import and its fixes. A rotation, the Fold opening
   or dark mode no longer remake the screen (the activity handles them in place), so the import and
   the review's choices stay; `BankImportHolder` still brings the import back after a change the
@@ -111,10 +104,8 @@ Added 10 November 2026. The review's plan, and what was built from it on
 - Desktop: discarding the last waiting card doesn't read the conversation again, so the
   buttons for what's waiting don't come back until the next reply. The line under the message
   field still names the service ("Using ChatGPT plan") after its sign-in has ended.
-- iPhone: Show in the budget doesn't mark the categories on the Budget tab; the notice after
-  an import reviewed in the assistant has no "Categorize with the assistant"; a long report
-  table's pieces scroll sideways apart (one shared scroll needs iOS 18's `ScrollPosition`, and
-  the app still runs on 17).
+- iPhone: a long report table's pieces scroll sideways apart (one shared scroll needs iOS 18's
+  `ScrollPosition`, and the app still runs on 17).
 - Deleting a category or a schedule stays in the app, on purpose. Deleting transactions is
   only for ones selected and sent with the message.
 

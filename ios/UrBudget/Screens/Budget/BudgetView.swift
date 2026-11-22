@@ -77,6 +77,9 @@ struct BudgetView: View {
     @State private var span = WindowSpan()
     /// The category open beside the budget on a wide window, where a phone shows it as a sheet.
     @State private var docked: DockedCategory?
+    /// Categories an assistant's card named ("Show in the budget"): marked until one is opened or
+    /// the tab is left.
+    @State private var marked: Set<String> = []
 
     private struct ModelKey: Equatable { var version: Int; var month: String; var ready: Bool }
 
@@ -102,6 +105,8 @@ struct BudgetView: View {
     /// Opens a category: beside the budget where there's room, else as a sheet. Everything else
     /// (Move money, Unassigned, the forms) is a sheet either way.
     private func show(_ request: BudgetSheet) {
+        // The marks are for finding the rows: once a category is opened they've done that.
+        switch request { case .category, .categoryPage: marked = []; default: break }
         guard wide else { sheet = request; return }
         switch request {
         case .category(let id, let assign):
@@ -272,7 +277,7 @@ struct BudgetView: View {
         let assignedWidth = max(68, figureWidth(model.widestAssigned, size: 14, bold: true) + 2)
         let availableWidth = max(80, figureWidth(model.widestAvailable, size: 14, bold: true) + 22)
         let current = Dates.currentMonth
-        return List {
+        return ScrollViewReader { proxy in List {
             Section {
                 if let budget = store.budget, StarterBudget.isSample(budget) { SampleBanner() }
                 if store.month != current {
@@ -402,6 +407,15 @@ struct BudgetView: View {
             }
             Color.clear.frame(height: 64).listRowSeparator(.hidden).listRowBackground(Color.clear)
         }
+        // "Show in the budget" on an assistant's card: its categories are marked, with whatever
+        // hid them out of the way (a view, a search, a folded group, Hidden), and the first of
+        // them comes into view. Each request is taken once.
+        .onChange(of: AppActions.shared.marking, initial: true) { _, marking in
+            guard let marking else { return }
+            AppActions.shared.marking = nil
+            mark(marking.categories, in: model, proxy: proxy)
+        }
+        .onDisappear { marked = [] }
         .listStyle(.plain)
         .pageGround()
         .shrinksAddButton($addCompact)
@@ -412,6 +426,7 @@ struct BudgetView: View {
         .refreshable {
             store.foreground(force: true)
             await sync.syncAutomatically()
+        }
         }
     }
 
@@ -424,9 +439,25 @@ struct BudgetView: View {
                      hide: { setHidden(row, !row.hidden) },
                      regroup: { sheet = .moveToGroup(row.id) },
                      page: { show(.categoryPage(row.id, $0)) })
-            // The category open beside the budget is marked in it.
-            .listRowBackground(wide && docked?.shown == row.id ? Color.urAccent.opacity(0.12) : nil)
+            // The category open beside the budget is marked in it, as are those an assistant's card showed.
+            .listRowBackground(wide && docked?.shown == row.id || marked.contains(row.id) ? Color.urAccent.opacity(0.12) : nil)
             .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
+    }
+
+    /// Marks the categories and brings the first of them, in the budget's order, into view.
+    private func mark(_ wanted: Set<String>, in model: BudgetModel, proxy: ScrollViewProxy) {
+        let groups = model.groups.filter { group in group.rows.contains { wanted.contains($0.id) } }
+        guard let first = groups.lazy.flatMap(\.rows).first(where: { wanted.contains($0.id) }) else { return }
+        filter = "all"
+        search = ""
+        if groups.contains(where: { $0.name == HiddenGroup }) { showHidden = true }
+        collapsed.subtract(groups.map(\.name))
+        marked = wanted
+        // A moment for the list to have the rows the view, a fold or Hidden may just have kept from it.
+        Task {
+            try? await Task.sleep(for: .milliseconds(150))
+            withAnimation { proxy.scrollTo(first.id, anchor: .center) }
+        }
     }
 
     /// The sentences about money assigned in later months, one after another.
