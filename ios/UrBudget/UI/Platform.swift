@@ -224,11 +224,13 @@ extension View {
     }
 
     /// Cards of rows on the grouped page, set as closely as Android's: sections a little apart,
-    /// and the first card just under the bar.
+    /// the first card just under the bar, and room after the last one so it doesn't run into the
+    /// tabs floating at the foot (compact section spacing leaves almost none).
     func groupedList() -> some View {
         #if os(iOS)
         // No scroll bar, as on Android. It's said here as well as on the window: a sheet doesn't take it from there.
-        listStyle(.insetGrouped).listSectionSpacing(.compact).contentMargins(.top, 8, for: .scrollContent).clearOfSideBar()
+        listStyle(.insetGrouped).listSectionSpacing(.compact).contentMargins(.top, 8, for: .scrollContent)
+            .contentMargins(.bottom, 20, for: .scrollContent).clearOfSideBar()
             .scrollIndicators(.hidden)
         #else
         listStyle(.inset)
