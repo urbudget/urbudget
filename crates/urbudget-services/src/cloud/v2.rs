@@ -396,6 +396,10 @@ pub(super) fn decorate_status(cloud: &Cloud, catalog: &budgets::Budgets, status:
             }
         } else if entry.availability == "remote" {
             "cloud_only"
+        } else if entry.status == "waiting" {
+            // The last pass held incoming changes behind an open editor or an unsaved draft.
+            // Nothing here is waiting to upload, but this copy is behind: not "synced".
+            "waiting"
         } else {
             "synced"
         };
@@ -579,10 +583,66 @@ fn save_bootstrap(library: &Library, account: &str, bootstrap: &Value) -> Result
     library.set_account_state(account, &state)
 }
 
+/// How a delivery reports that this library's installation identity was just replaced. A pass
+/// stops on it and starts over under the new identity.
+const INSTALLATION_REPLACED: &str = "INSTALLATION_REPLACED:";
+fn installation_replaced(error: &str) -> bool {
+    error.starts_with(INSTALLATION_REPLACED)
+}
+
+/// The server answered that this installation's sequence is behind the one it holds, or was
+/// used for something else: the data folder was restored from a backup or copied, and another
+/// run of it went on syncing under the same identity. No receipt for the slot's request can
+/// arrive any more, so waiting would stop this device uploading for good.
+///
+/// The request is dropped with the identity, never sent again under a new sequence: it may
+/// have been accepted from the other run and built on since. What it carried is still here, as
+/// the budget's unsynced changes or a pending lifecycle job, and goes again under the new
+/// identity through the checks every device's changes pass: the server's version and
+/// incarnation comparison, the merge against this copy's last synced base, a deletion's
+/// reviewed version. Returns false, changing nothing, when the slot has an answer to complete.
+fn replace_installation(transport: &Transport<'_>, db: Option<&Database>, library: &Library, account: &str) -> Result<bool> {
+    let Some(slot) = library.lock().pending_delivery(account)? else { return Ok(false); };
+    if slot.receipt.is_some() {
+        return Ok(false);
+    }
+    if let Some(local) = slot.local_budget_id.as_deref() {
+        // The budget's own record of the upload ends without moving its base: its changes stay
+        // unsynced. The same receipt every time, so a crash before the next step repeats it.
+        let receipt = json!({"sequence":slot.sequence,"digest":slot.digest,"operationId":slot.operation_id,"accountId":account,
+            "kind":slot.manifest["kind"],"outcome":"cancelled","code":"installation_replaced"});
+        let settle = |store: &mut Store| store.acknowledge_upload(&slot.operation_id, &slot.digest, None, &receipt);
+        let path = library.lock().database(local)?;
+        if path.exists() {
+            match db {
+                Some(db) => library_api::with_store(db, library, local, settle)?,
+                None => settle(&mut Store::open_budget(&path, local)?)?,
+            }
+        }
+    }
+    library.lock().replace_installation(account, &slot)?;
+    if slot.manifest.get("key").is_some() {
+        // A passphrase change that was never answered: its key was only for that request.
+        let pending = format!("pending-{}", slot.operation_id);
+        let _ = super::vault::delete(&key_service(account, &pending));
+        transport.cloud.v2_keys.lock().unwrap_or_else(|e| e.into_inner()).remove(&(account.into(), pending));
+    }
+    if let (Some(local), Some(db)) = (slot.local_budget_id.as_deref(), db) {
+        let _ = library_api::with_store(db, library, local, |s| s.forget_completed_upload(&slot.operation_id));
+    }
+    Ok(true)
+}
+
 /// Recover the one global delivery slot before making any other mutation. The operation's
 /// body and ciphertext are read from durable storage, never re-encrypted on a retry.
 async fn deliver(transport: &Transport<'_>, db: Option<&Database>, library: &Library, account: &str) -> Result<Option<Value>> {
-    let result = deliver_inner(transport, db, library, account).await;
+    let mut result = deliver_inner(transport, db, library, account).await;
+    if result.as_ref().is_err_and(|error| matches!(error.split(':').next(), Some("stale_sequence" | "sequence_reused"))) {
+        // If the slot can't be let go of safely, the server's own error stands.
+        if replace_installation(transport, db, library, account).unwrap_or(false) {
+            result = Err(format!("{INSTALLATION_REPLACED} {}", t!("This device's sync data was restored from a backup or copied from another device. It syncs under a new identity now, and changes not yet uploaded are kept.")));
+        }
+    }
     let mut catalog = library.lock();
     let mut state = catalog.account_state(account)?;
     match &result {
@@ -850,6 +910,17 @@ fn control_manifest(account: &str, installation: &str, operation: &str, bootstra
         "keyGeneration":bootstrap["keyGeneration"],"catalogEpoch":bootstrap["catalogEpoch"],"expectedProtocol":bootstrap["protocol"]})
 }
 
+/// Whether setting sync up, unlocking it or resetting it goes through protocol 2 here. Otherwise
+/// `setup` answers `None` and the caller's protocol-1 engine does it.
+///
+/// The server takes a v2 reset (`keyReset`) only from an account already on protocol 2, and
+/// answers `upgrade_required` on protocol 1. Moving there first proves the old passphrase, which
+/// someone resetting may not have. So an account still on protocol 1 resets through its own
+/// engine, with activation on or off, and moves over at its next unlock.
+fn set_up_on_v2(bootstrap: &Value, reset: bool) -> bool {
+    bootstrap["protocol"] == 2 || (!reset && bootstrap["activationEnabled"] == true)
+}
+
 /// What proves this device may hold the account's content key.
 #[derive(Clone, Copy)]
 enum Secret<'a> {
@@ -887,8 +958,20 @@ async fn setup(
     reset: bool,
 ) -> Result<Option<Value>> {
     let _operation = cloud.sync.operation().await?;
+    match setup_once(cloud, library, secret, reset).await {
+        // A restored data folder unlocks under its new identity in the same attempt.
+        Err(error) if installation_replaced(&error) => setup_once(cloud, library, secret, reset).await,
+        result => result,
+    }
+}
+async fn setup_once(
+    cloud: &Cloud,
+    library: &Library,
+    secret: Secret<'_>,
+    reset: bool,
+) -> Result<Option<Value>> {
     let Some((account, bootstrap)) = probe_bootstrap(cloud, library).await? else { return Ok(None); };
-    if bootstrap["protocol"] != 2 && bootstrap["activationEnabled"] != true { return Ok(None); }
+    if !set_up_on_v2(&bootstrap, reset) { return Ok(None); }
     let (account, transport, mut bootstrap) = connect_bootstrap(cloud, library, account, bootstrap).await?;
     if let Secret::Passphrase(passphrase) = secret {
         if passphrase.chars().count() < 8 {
@@ -990,6 +1073,24 @@ async fn setup(
     state["enabled"] = json!(true);
     library.set_account_state(&account, &state)?;
     Ok(Some(json!({"created":created,"protocol":2})))
+}
+
+#[cfg(test)]
+mod setup_route_tests {
+    use super::*;
+    #[test]
+    fn a_reset_on_an_account_still_on_protocol_1_stays_with_its_own_engine() {
+        let on = |protocol: u8, activation: bool| json!({"protocol":protocol,"activationEnabled":activation});
+        // The server answers a v2 reset on protocol 1 with upgrade_required, so it never goes there.
+        assert!(!set_up_on_v2(&on(1, true), true));
+        assert!(!set_up_on_v2(&on(1, false), true));
+        // Unlocking with activation on moves the account, as before.
+        assert!(set_up_on_v2(&on(1, true), false));
+        assert!(!set_up_on_v2(&on(1, false), false));
+        // An account on protocol 2 sets up, unlocks and resets there.
+        assert!(set_up_on_v2(&on(2, false), true));
+        assert!(set_up_on_v2(&on(2, true), false));
+    }
 }
 
 #[cfg(test)]
@@ -1641,14 +1742,18 @@ async fn process_budget(
         catalog.activate_binding(&entry.id, account, remote_id, &head.incarnation)?;
         return Ok(report_entry(entry, "downloaded", None));
     }
-    let (binding, dirty, unsafe_editor, open) =
+    // `drafts`: anything unsaved kept in this file, which another incarnation must not replace.
+    // `unsafe_editor`: what incoming changes to the same budget wait for, which leaves out a
+    // checkpoint whose process has died. That one is a draft to recover, not an open form, and
+    // waiting on it would hold this budget's sync in both directions until someone found it.
+    let (binding, dirty, drafts, unsafe_editor, open) =
         library_api::with_store(db, library, &entry.id, |s| {
+            let unsaved = s.has_unsaved_draft() || s.read_recovery()?.is_some();
             Ok((
                 s.sync_binding()?,
                 s.sync_dirty()?,
-                s.has_unsaved_draft()
-                    || s.read_recovery()?.is_some()
-                    || !s.editor_checkpoints()?.is_empty(),
+                unsaved || !s.editor_checkpoints()?.is_empty(),
+                unsaved || !s.live_editor_checkpoints()?.is_empty(),
                 entry.current,
             ))
         })?;
@@ -1662,7 +1767,7 @@ async fn process_budget(
         let mut catalog = library.lock();
         catalog.activate_binding(&entry.id, account, remote_id, &head.incarnation)?;
     }
-    if incarnation_changed && (dirty || unsafe_editor) {
+    if incarnation_changed && (dirty || drafts) {
         library_api::with_store(db, library, &entry.id, |s| s.set_sync_blocked(true))?;
         library.lock().quarantine_binding(
             &entry.id,
@@ -1703,10 +1808,14 @@ async fn process_budget(
     let mut upload = false;
     let mut review: Option<Value> = None;
     library_api::with_store(db, library, &entry.id, |store| {
-        if store.has_unsaved_draft()
-            || store.read_recovery()?.is_some()
-            || !store.editor_checkpoints()?.is_empty()
-        {
+        // Checked again under the store's lock, by the same rule as above: another incarnation
+        // waits for every draft, incoming changes only for editors that may still be open.
+        let held = if incarnation_changed {
+            store.editor_checkpoints()?
+        } else {
+            store.live_editor_checkpoints()?
+        };
+        if store.has_unsaved_draft() || store.read_recovery()?.is_some() || !held.is_empty() {
             return Err("Save or recover the local draft before receiving changes.".into());
         }
         let (mut local, status) = store.saved()?;
@@ -1867,9 +1976,28 @@ async fn drain_lifecycle(
         let Some(prior) = interrupted_deletion_review(library, entry, &head)? else { continue; };
         record_deletion_conflict(library, &prior, &head)?;
     }
+    // A delivery that failed inside the loop below is retried, and its job finished, at the top
+    // of a later pass. What that failed attempt reported no longer describes the job.
+    {
+        let mut catalog = library.lock();
+        let mut state = catalog.account_state(account)?;
+        if let Some(errors) = state["lifecycleErrors"].as_object_mut() {
+            let mut settled = vec![];
+            for operation in errors.keys() {
+                if catalog.job(operation)?.is_some_and(|job| job.state == "complete" && job.receipt.as_ref().is_some_and(|r|
+                    r["outcome"] == "accepted" || matches!(r["code"].as_str(), Some("conflict" | "deletion_conflict")))) {
+                    settled.push(operation.clone());
+                }
+            }
+            if !settled.is_empty() {
+                errors.retain(|operation, _| !settled.contains(operation));
+                catalog.set_account_state(account, &state)?;
+            }
+        }
+    }
     let jobs = library.lock().jobs()?;
-    // Only unsubmitted actions are coalesced. The allocated installation slot was repaired
-    // before this pass, so its unknown server outcome is never guessed or cancelled locally.
+    // Only unsubmitted actions are coalesced: a job whose request holds the installation's
+    // delivery slot is never finished or superseded here (see the loop below).
     let mut latest = BTreeMap::new();
     for job in &jobs {
         if job.payload["accountId"] == account
@@ -1885,6 +2013,14 @@ async fn drain_lifecycle(
             || !matches!(job.kind.as_str(), "trash" | "restore" | "purge")
         {
             continue;
+        }
+        // While a delivery is unsettled, because this pass couldn't reach the server for it or
+        // an action above just failed, the server's answer for it is unknown and no other
+        // sequence can be allocated. Every action waits for a later pass: finishing the slot's
+        // own job here (as superseded, or from what the catalog now shows) would record an
+        // outcome its real receipt then contradicts, and the slot could never complete.
+        if library.lock().pending_delivery(account)?.is_some() {
+            break;
         }
         let result: Result<()> = async {
         let local = job
@@ -2025,6 +2161,10 @@ async fn drain_lifecycle(
         accepted(&receipt)?;
         Ok(())
         }.await;
+        // Not this action's failure: it stays pending and goes again under the new identity.
+        if let Err(error) = &result {
+            if installation_replaced(error) { return Err(error.clone()); }
+        }
         let mut catalog = library.lock();
         let mut state = catalog.account_state(account)?;
         if !state["lifecycleErrors"].is_object() { state["lifecycleErrors"] = json!({}); }
@@ -2058,7 +2198,15 @@ pub async fn run(
         library_version: None,
     };
     let _operation = cloud.sync.operation().await?;
-    let result = run_inner(cloud, db, library, open_clean, &mut report).await;
+    let mut result = run_inner(cloud, db, library, open_clean, &mut report).await;
+    if result.as_ref().is_err_and(|error| installation_replaced(error)) {
+        // The new identity is in place and the old one's unanswered request is gone. The pass
+        // starts over once, so this wake still uploads what was waiting.
+        report.state = "ok";
+        report.message = None;
+        report.budgets.clear();
+        result = run_inner(cloud, db, library, open_clean, &mut report).await;
+    }
     if let Err(error) = result {
         report.state = if error.starts_with("OFFLINE:") {
             "offline"
@@ -2101,6 +2249,7 @@ async fn run_inner(
     // Receipt repair does not require a current content key or an active subscription.
     let repaired = match deliver(&transport, Some(db), library, &account).await {
         Ok(receipt) => receipt,
+        Err(error) if installation_replaced(&error) => return Err(error),
         Err(error) => { report.state = "attention"; report.message = Some(error); None }
     };
     if repaired.as_ref().is_some_and(|r| {
@@ -2156,13 +2305,17 @@ async fn run_inner(
                 library.lock().prepare_delivery(&account, &intent.operation_id, Some(&entry.id), &intent.manifest, &intent.payload, &intent.metadata, &intent.digest)?;
                 deliver(&transport, Some(db), library, &account).await
             }.await;
-            if let Err(error) = recovered { report.state = "attention"; report.message = Some(error); }
+            if let Err(error) = recovered {
+                if installation_replaced(&error) { return Err(error); }
+                report.state = "attention"; report.message = Some(error);
+            }
         }
     }
     // Trash/purge contain no financial plaintext and remain available with a locked key.
     // Unknown content outcomes above are settled before any lifecycle sequence is allocated;
     // restore alone waits for a key because it must authenticate and re-seal retained content.
     if let Err(error) = drain_lifecycle(&transport, db, library, &account, &bootstrap, key.as_ref()).await {
+        if installation_replaced(&error) { return Err(error); }
         report.state = "attention"; report.message = Some(error);
     }
     if key.is_none() {
@@ -2217,6 +2370,7 @@ async fn run_inner(
             .await
             {
                 Ok(outcome) => outcome,
+                Err(error) if installation_replaced(&error) => return Err(error),
                 Err(error) => {
                     report.state = "attention";
                     report_entry(
