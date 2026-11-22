@@ -221,6 +221,37 @@
   }
 }
 
+/* iPhone and iPad: the same section, its phone on the left so it and Android's alternate. */
+.droid-ios + .droid {
+  padding-top: 0;
+}
+@media (min-width: 900px) {
+  .droid-ios .droid-grid {
+    grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.25fr);
+  }
+  .droid-ios .droid-phone {
+    order: -1;
+  }
+}
+.store-cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-5);
+  margin-top: var(--space-6);
+}
+.store-meta {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--step--1);
+}
+.store-meta span:first-child {
+  color: var(--text);
+  font-weight: 600;
+}
+
 /* The phone: the Play listing's screen in a slim bezel, the same glass the desktop shots have. */
 .droid-phone {
   justify-self: center;

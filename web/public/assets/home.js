@@ -20,7 +20,8 @@ const money = (n, cents = true) =>
 
 function downloadLabel() {
   const platform = navigator.userAgentData?.platform || navigator.platform || "";
-  const phone = /iphone|ipad|android/i.test(navigator.userAgent);
+  // An iPad reports itself as a Mac; its touch screen gives it away (site.js sends it to the App Store).
+  const phone = /iphone|ipad|android/i.test(navigator.userAgent) || (/mac/i.test(platform) && navigator.maxTouchPoints > 1);
   const label = phone ? "" : /mac/i.test(platform) ? "Download for Mac" : /win/i.test(platform) ? "Download for Windows" : /linux/i.test(platform) ? "Download for Linux" : "";
   if (!label) return;
   for (const link of document.querySelectorAll("[data-download-label]")) link.textContent = label;

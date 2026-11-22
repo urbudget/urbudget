@@ -56,10 +56,10 @@
         "description": "Zero-based envelope budgeting for Windows, Mac and Linux that keeps your budget on your own computer, with no bank connection required. Imports a YNAB budget, including targets, notes and scheduled transactions, and checks every month against YNAB's totals.",
         "applicationCategory": "FinanceApplication",
         "applicationSubCategory": "Zero-based envelope budgeting",
-        "operatingSystem": "Windows 10, Windows 11, macOS 12 or later, Linux",
+        "operatingSystem": "Windows 10, Windows 11, macOS 12 or later, Linux, iOS 17 or later, iPadOS 17 or later",
         "downloadUrl": "https://urbudget.app/download/",
         "installUrl": "https://apps.microsoft.com/detail/9PMQMBZJG06R",
-        "sameAs": ["https://apps.microsoft.com/detail/9PMQMBZJG06R"],
+        "sameAs": ["https://apps.microsoft.com/detail/9PMQMBZJG06R", "https://apps.apple.com/app/id6825535486"],
         "image": "https://urbudget.app/img/og.png?v=6cd8632b",
         "screenshot": "https://urbudget.app/img/budget-light-1280.webp?v=3a5fb97e",
         "publisher": { "@id": "https://urbudget.app/#org" },
@@ -149,8 +149,8 @@
             <a class="btn btn-lg btn-quiet" href="#pricing">See pricing</a>
           </div>
           <p class="hero2-price"><span class="price-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M8 3v4M16 3v4M3.5 10h17M9 15l2 2 4-4"/></svg></span><span>Free, with nothing locked. Sync is optional, at <b data-price="sync">$3</b> a month.</span></p>
+          <p class="hero2-price hero2-phone"><span class="price-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="3"/><path d="M10.5 18.5h3"/></svg></span><span>Now on <a href="#iphone">iPhone and iPad</a>, and <a href="/android/">in testing on Android</a>.</span></p>
           <p class="hero2-switch">Coming from YNAB? <a href="#ynab">Bring your budget over in one click</a></p>
-          <p class="hero2-switch">On Android? <a href="/android/">Join the test on Google Play</a></p>
         </div>
 
         <div class="demo" data-demo role="group" aria-labelledby="demo-title" aria-describedby="demo-hint">
@@ -595,6 +595,29 @@
       </div>
     </section>
 
+    <!-- iPhone and iPad: the App Store app. The phone sits on the left here, so it and Android's
+         section below alternate. -->
+    <section class="section droid droid-ios" id="iphone" aria-labelledby="iphone-title">
+      <div class="container droid-grid">
+        <div class="droid-copy" data-rise>
+          <p class="droid-kicker"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg>iPhone and iPad</p>
+          <h2 id="iphone-title">UrBudget is on the App&nbsp;Store.</h2>
+          <ul class="ticks">
+            <li><b>The whole budget in your pocket.</b> Envelopes and targets, transactions, scheduled bills, the reports and the loan planner.</li>
+            <li><b>Made for iPad, too.</b> On the bigger screen, a category opens beside the budget and a transaction beside the register.</li>
+            <li><b>The same budget as your computer.</b> Sync keeps them in step, encrypted with your passphrase. Without it, the budget stays on your phone.</li>
+          </ul>
+          <div class="store-cta">
+            <a class="btn btn-primary btn-lg" href="https://apps.apple.com/app/id6825535486" data-store="app-store"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>Download on the App Store</a>
+            <p class="store-meta"><span>Free, with nothing locked</span><span>iOS and iPadOS 17 or later</span></p>
+          </div>
+        </div>
+        <figure class="droid-phone" data-rise>
+          <img src="/img/phone-ios-budget-360.webp?v=f522b93c" srcset="/img/phone-ios-budget-360.webp?v=f522b93c 360w, /img/phone-ios-budget-720.webp?v=e74600e2 720w" sizes="(min-width: 900px) 330px, 72vw" width="360" height="782" loading="lazy" decoding="async" alt="UrBudget on iPhone: the month's envelopes under Credit Card Payments, Bills and Everyday, each with what's assigned and available, and nothing left to assign.">
+        </figure>
+      </div>
+    </section>
+
     <!-- Android: Google Play's closed test and the steps to join it, the same as /android/: the
          public Google Group urbudget-testers (the test's tester list), where Google says "You don't
          have permission" until you tap its small Join group button, then Play's opt-in link. -->
@@ -686,7 +709,7 @@
           <details>
             <summary>Which systems does it run on?</summary>
             <div class="answer">
-              <p>Windows 10 and 11 (64-bit), macOS 12 or later, and Linux on 64-bit Intel and AMD computers. The Android app is in testing on Google Play: <a href="#android">join the test</a>. There's no web version.</p>
+              <p>Windows 10 and 11 (64-bit), macOS 12 or later, and Linux on 64-bit Intel and AMD computers. On iPhone and iPad (iOS and iPadOS 17 or later), it's free <a href="https://apps.apple.com/app/id6825535486">on the App Store</a>. The Android app is in testing on Google Play: <a href="#android">join the test</a>. There's no web version.</p>
             </div>
           </details>
           <details>
@@ -755,6 +778,7 @@
           <h2>Product</h2>
           <ul>
             <li><a href="/download/">Download</a></li>
+            <li><a href="https://apps.apple.com/app/id6825535486">iPhone and iPad</a></li>
             <li><a href="/android/">Android test</a></li>
             <li><a href="/pricing/">Pricing</a></li>
             <li><a href="https://github.com/urbudget/urbudget">Source code</a></li>

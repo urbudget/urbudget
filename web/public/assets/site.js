@@ -286,21 +286,33 @@ function countVisit() {
   }
 }
 
+export const APP_STORE = "https://apps.apple.com/app/id6825535486";
+
+/** An iPhone or iPad. iPadOS reports itself as a Mac, so a Mac with a touch screen is one too. */
+export const isApple = () =>
+  /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+  (/Mac/i.test(navigator.userAgentData?.platform || navigator.platform || "") && navigator.maxTouchPoints > 1);
+
 /**
- * On an Android device the Windows and Mac installers are no use, and the Android app is in testing:
- * the header's Download button, and any labelled download button (the home page's), lead to the test.
+ * On a phone or tablet the Windows and Mac installers are no use: the header's Download button,
+ * and any labelled download button (the home page's), lead to the App Store on an iPhone or iPad,
+ * and to the test on Android.
  */
-function androidVisitors() {
-  if (!/android/i.test(navigator.userAgent)) return;
+function phoneVisitors() {
+  const apple = isApple();
+  if (!apple && !/android/i.test(navigator.userAgent)) return;
+  const [href, short, long] = apple
+    ? [APP_STORE, "App Store", "Download on the App Store"]
+    : ["/android/", "Android test", "Join the Android test"];
   for (const link of document.querySelectorAll("a.header-download")) {
-    link.href = "/android/";
-    link.textContent = "Android test";
+    link.href = href;
+    link.textContent = short;
   }
   for (const label of document.querySelectorAll("[data-download-label]")) {
     const link = label.closest("a");
     if (!link) continue;
-    link.href = "/android/";
-    label.textContent = "Join the Android test";
+    link.href = href;
+    label.textContent = long;
   }
 }
 
@@ -309,7 +321,7 @@ function androidVisitors() {
 if (!globalThis.urbudgetSiteReady) {
   globalThis.urbudgetSiteReady = true;
   header();
-  androidVisitors();
+  phoneVisitors();
   themeToggle();
   navGroups();
   tabs();

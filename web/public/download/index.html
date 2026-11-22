@@ -43,7 +43,7 @@
         "name": "UrBudget",
         "url": "https://urbudget.app/",
         "applicationCategory": "FinanceApplication",
-        "operatingSystem": "Windows 10, Windows 11, macOS 12 or later, Linux",
+        "operatingSystem": "Windows 10, Windows 11, macOS 12 or later, Linux, iOS 17 or later, iPadOS 17 or later",
         "downloadUrl": "https://urbudget.app/download/",
         "installUrl": "https://apps.microsoft.com/detail/9PMQMBZJG06R",
         "offers": {
@@ -141,6 +141,10 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
               Download for Linux
             </a>
+            <a class="btn btn-lg dl-btn-quiet" href="https://apps.apple.com/app/id6825535486" data-os="ios" hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg>
+              Download on the App Store
+            </a>
           </div>
           <p class="dl-release" id="dl-release"></p>
           <p class="dl-hint" id="dl-hint">For Windows 10 and 11, macOS 12 or later, and Linux. <a href="#downloads">All downloads</a></p>
@@ -196,6 +200,15 @@
               <p class="dl-meta"><span>macOS 12 Monterey or later</span> <span class="dl-meta-file" id="meta-macos">.dmg</span> <span id="size-macos" hidden></span></p>
             </div>
             <a class="btn" href="/download/macos" data-pick="macos">Download for macOS</a>
+          </li>
+          <li class="dl-item" data-os="ios">
+            <span class="dl-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg></span>
+            <div class="dl-body">
+              <h3>iPhone and iPad <span class="badge badge-brand dl-here">For this device</span></h3>
+              <p>From the App Store, which keeps it up to date. Sync keeps it in step with your computer.</p>
+              <p class="dl-meta"><span>iOS and iPadOS 17 or later</span> <span>Free</span></p>
+            </div>
+            <a class="btn" href="https://apps.apple.com/app/id6825535486" data-pick="ios">Get it on the App Store</a>
           </li>
           <!-- Linux shows once a release has it (download.js): until then these stay hidden. -->
           <li class="dl-item" data-os="linux" data-linux hidden>
@@ -349,7 +362,7 @@
           <details>
             <summary>Is there a version for phones, tablets or Linux?</summary>
             <div class="answer">
-              <p>An Android app for phones and tablets is in testing on Google Play: <a href="/android/">join the test</a>. Otherwise UrBudget is a desktop app for Windows 10 and 11 and for macOS 12 Monterey or later. <span data-no-linux>There's no Linux or web version.</span><span data-linux hidden>There's a Linux version too, for 64-bit Intel and AMD computers. There's no web version.</span></p>
+              <p>Yes. UrBudget for iPhone and iPad is free <a href="https://apps.apple.com/app/id6825535486">on the App Store</a>, for iOS and iPadOS 17 or later. An Android app for phones and tablets is in testing on Google Play: <a href="/android/">join the test</a>. On a computer, UrBudget runs on Windows 10 and 11 and on macOS 12 Monterey or later. <span data-no-linux>There's no Linux or web version.</span><span data-linux hidden>There's a Linux version too, for 64-bit Intel and AMD computers. There's no web version.</span></p>
             </div>
           </details>
           <details data-linux hidden>
@@ -385,6 +398,7 @@
           <h2>Product</h2>
           <ul>
             <li><a href="/download/">Download</a></li>
+            <li><a href="https://apps.apple.com/app/id6825535486">iPhone and iPad</a></li>
             <li><a href="/android/">Android test</a></li>
             <li><a href="/pricing/">Pricing</a></li>
             <li><a href="https://github.com/urbudget/urbudget">Source code</a></li>
