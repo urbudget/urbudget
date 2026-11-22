@@ -810,7 +810,7 @@ private enum LoanPaymentRoute: Hashable { case from, category }
 /// Recording a loan payment (LoanPayment.tsx): a transfer from a budget account to the loan,
 /// spending its payment category, with the saved loan details. The month's interest and fees go
 /// onto the loan with its first payment that month (loans.rs's record).
-private struct LoanPaymentSheet: View {
+struct LoanPaymentSheet: View {
     @Environment(BudgetStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     var account: JSON

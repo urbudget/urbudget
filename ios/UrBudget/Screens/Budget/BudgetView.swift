@@ -8,6 +8,8 @@ struct RegisterTarget: Hashable {
     var through = ""
     /// Only these transactions, when a card of the assistant asks to see the ones it names.
     var only: [String] = []
+    /// Words the register starts searching for: a report's payee.
+    var search = ""
 }
 
 /// A request to move money: the category it starts from, and whether money goes to or comes from another.

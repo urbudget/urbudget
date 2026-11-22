@@ -44,6 +44,10 @@ final class AppActions {
         var request: AssistantRequest?
     }
 
+    /// The More page open (by the key the assistant knows it by), for the assistant beside the
+    /// app to be told where it is; nil on More's own list.
+    var morePlace: String?
+
     /// The assistant beside the app, or nil while it's closed (or open as a sheet).
     var panel: Panel?
     /// Whether the window has room for the assistant beside the app, as the tabs measure it.

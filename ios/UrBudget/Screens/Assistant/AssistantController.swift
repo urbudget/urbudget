@@ -653,7 +653,10 @@ final class AssistantController {
     func take(_ request: AssistantRequest) {
         guard takenRequest != request.id else { return }
         takenRequest = request.id
-        if !entries.isEmpty || running { newChat() }
+        // A request that only says where it's asked from (a bar's Assistant button) keeps the open
+        // conversation, as Android's does; one that hands something over starts its own.
+        let handsOver = !request.text.isEmpty || !request.selected.isEmpty || !request.files.isEmpty || request.importing != nil
+        if handsOver && (!entries.isEmpty || running) { newChat() }
         if !request.selected.isEmpty {
             let capped = AssistantSelection.capped(request.selected)
             selected = capped.ids

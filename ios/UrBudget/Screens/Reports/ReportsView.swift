@@ -1309,7 +1309,8 @@ private struct ReportEverydaySheet: View {
 
 // MARK: The transactions behind a figure
 
-/// The transactions behind a report figure, newest first; one opens in the editor.
+/// The transactions behind a report figure, newest first; one opens in the editor, or all of
+/// them in the register.
 private struct ReportDrillView: View {
     @Environment(BudgetStore.self) private var store
     var request: ReportDrillRequest
@@ -1334,6 +1335,10 @@ private struct ReportDrillView: View {
                     VStack(alignment: .leading, spacing: 10) { figures(drill) }
                 }
                 .padding(.vertical, 4)
+                if let register = registerTarget {
+                    // By its destination: a report's stack has no path for registers of its own.
+                    NavigationLink { TransactionsList(target: register) } label: { Label("Open in register", systemImage: "list.bullet.rectangle") }
+                }
             }
             if let error {
                 Section { FormErrorView(message: error) }
@@ -1359,6 +1364,26 @@ private struct ReportDrillView: View {
         .inlineTitle()
         .cover(item: $editing) { TransactionEditor(request: $0) }
         .task(id: store.version) { await load() }
+    }
+
+    /// Where the register shows the figure's transactions (Android's registerTarget): its category
+    /// or payee over the report's months, or the day, in the one account the report is filtered
+    /// to. Income sources have no register filter.
+    private var registerTarget: RegisterTarget? {
+        let target = request.target
+        let from = target.from ?? ReportMath.firstDay(request.from)
+        let through = target.to ?? ReportMath.lastDay(request.to)
+        let account = request.accounts.count == 1 ? request.accounts[0] : ""
+        switch target.dimension {
+        case "category":
+            return RegisterTarget(category: target.key == ReportMath.uncategorized ? NeedsCategory : target.key, account: account, from: from, through: through)
+        case "payee":
+            return target.key.isEmpty ? nil : RegisterTarget(account: account, from: from, through: through, search: target.key)
+        case "day":
+            return RegisterTarget(account: account, from: from, through: through)
+        default:
+            return nil
+        }
     }
 
     @ViewBuilder private func figures(_ drill: ReportDrillModel?) -> some View {
