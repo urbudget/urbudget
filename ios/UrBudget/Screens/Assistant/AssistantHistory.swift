@@ -13,7 +13,7 @@ struct AssistantHistorySheet: View {
     var body: some View {
         let shown = AssistantHistory.matching(controller.threads, search)
         NavigationStack {
-            List {
+            AppList {
                 if let error = controller.error { FormErrorView(message: error) }
                 if controller.threads.isEmpty {
                     Text("No saved conversations yet").foregroundStyle(Color.secondary)
@@ -115,7 +115,7 @@ struct AssistantContextPicker: View {
         let query = search.trimmingCharacters(in: .whitespaces).lowercased()
         let shown = (rows ?? []).filter { query.isEmpty || $0.search.contains(query) }
         NavigationStack {
-            List {
+            AppList {
                 Section {
                     if rows == nil {
                         ProgressView().frame(maxWidth: .infinity)

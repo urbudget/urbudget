@@ -21,7 +21,7 @@ extension Color {
     /// The page behind grouped lists.
     static var groupedBackground: Color {
         #if canImport(UIKit)
-        Color(uiColor: .systemGroupedBackground)
+        Color(uiColor: .urGroupedBackground)
         #else
         Color(nsColor: .windowBackgroundColor)
         #endif
@@ -30,7 +30,7 @@ extension Color {
     /// A card or row on the grouped page.
     static var cardBackground: Color {
         #if canImport(UIKit)
-        Color(uiColor: .secondarySystemGroupedBackground)
+        Color(uiColor: .urCardBackground)
         #else
         Color(nsColor: .controlBackgroundColor)
         #endif
@@ -39,9 +39,18 @@ extension Color {
     /// A field or band one step in from a card.
     static var insetBackground: Color {
         #if canImport(UIKit)
-        Color(uiColor: .tertiarySystemGroupedBackground)
+        Color(uiColor: .urInsetBackground)
         #else
         Color(nsColor: .underPageBackgroundColor)
+        #endif
+    }
+
+    /// The line between a card's rows.
+    static var rowSeparator: Color {
+        #if canImport(UIKit)
+        Color(uiColor: .urRowSeparator)
+        #else
+        Color(nsColor: .separatorColor)
         #endif
     }
 }
@@ -51,6 +60,25 @@ extension UIColor {
     convenience init(hex: UInt32) {
         self.init(red: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255, blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
     }
+
+    /// iOS's own grouped colour in light; in dark, Android's navy (Theme.kt's `DarkUr`) rather
+    /// than iOS's black and charcoal. A sheet is a step lighter than the page, as on Android,
+    /// where a sheet is drawn on the cards' colour and its cards a step lighter again.
+    private static func navy(light: UIColor, page: UInt32, sheet: UInt32) -> UIColor {
+        UIColor { traits in
+            guard traits.userInterfaceStyle == .dark else { return light.resolvedColor(with: traits) }
+            return UIColor(hex: traits.userInterfaceLevel == .elevated ? sheet : page)
+        }
+    }
+
+    /// Android's `bg` on a page, `surface` on a sheet.
+    static let urGroupedBackground = navy(light: .systemGroupedBackground, page: 0x0C0E18, sheet: 0x171A28)
+    /// Android's `surface` on a page, `surface2` on a sheet (`cardFill()`).
+    static let urCardBackground = navy(light: .secondarySystemGroupedBackground, page: 0x171A28, sheet: 0x1D2133)
+    /// A step in from a card: Android's `surface2`, and its `zeroSoft` on a sheet.
+    static let urInsetBackground = navy(light: .tertiarySystemGroupedBackground, page: 0x1D2133, sheet: 0x252A3C)
+    /// Android's `border` between a page's rows, and a step stronger on a sheet's lighter cards.
+    static let urRowSeparator = navy(light: .separator, page: 0x272B3E, sheet: 0x2E3349)
 }
 #else
 extension NSColor {
@@ -235,6 +263,12 @@ extension View {
         #else
         listStyle(.inset)
         #endif
+    }
+
+    /// The app's page behind a list or form in place of iOS's own (navy in dark, as on Android).
+    /// `AppList` and `CompactForm` set it.
+    func appGround() -> some View {
+        scrollContentBackground(.hidden).background(Color.groupedBackground)
     }
 
     /// A screen of its own over the app (a full-screen cover on iPhone).

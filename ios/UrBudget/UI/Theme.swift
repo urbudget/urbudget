@@ -3,8 +3,9 @@ import SwiftUI
 import UIKit
 #endif
 
-/// UrBudget's colours (desktop/src/styles.css, as Android shows them) on iOS's own grouped
-/// backgrounds. The words and status colours stay UrBudget's; surfaces and type follow iOS.
+/// UrBudget's colours (desktop/src/styles.css, as Android shows them). In light the surfaces are
+/// iOS's own grouped greys and whites; in dark they're Android's navy (`Color.groupedBackground`
+/// and its neighbours in Platform.swift), not iOS's black. Type follows iOS.
 extension Color {
     static let urAccent = Color(light: 0x0068DA, dark: 0x5B93FF)
     static let urPositive = Color(light: 0x197A35, dark: 0x56C67F)
@@ -14,16 +15,16 @@ extension Color {
     static let urAttention = Color(light: 0xFFCC00, dark: 0xE2B44A)
     static let urOnAttention = Color(light: 0x1D1D1F, dark: 0x14161A)
     /// The grey of zero amounts and inactive chips.
-    static let urZero = Color(light: 0xE9E9EE, dark: 0x2E2E33)
+    static let urZero = Color(light: 0xE9E9EE, dark: 0x252A3C)
     /// Text on a solid status fill.
     static let urOnSolid = Color(light: 0xFFFFFF, dark: 0x0C0E18)
     /// A band across a plain list: a group in the budget, a day in the register.
-    static let urBand = Color(light: 0xF5F5F7, dark: 0x1C1C1E)
-    static let urHairline = Color(light: 0xD9D9DE, dark: 0x38383A)
+    static let urBand = Color(light: 0xF5F5F7, dark: 0x1D2133)
+    static let urHairline = Color(light: 0xD9D9DE, dark: 0x272B3E)
     static let urBrand = Color(light: 0x6D4AE8, dark: 0x6D4AE8)
-    /// Chevrons and other faint marks (the system's tertiary label). Fixed colours, unlike
-    /// `.primary`/`.secondary`/`.tertiary`, which iOS 26 tints inside buttons.
-    static let urTertiary = Color(light: 0xB4B4B9, dark: 0x5A5A5F)
+    /// Chevrons and other faint marks (the system's tertiary label, a navy one in dark). Fixed
+    /// colours, unlike `.primary`/`.secondary`/`.tertiary`, which iOS 26 tints inside buttons.
+    static let urTertiary = Color(light: 0xB4B4B9, dark: 0x565B72)
 
     static func flag(_ name: String) -> Color {
         switch name {

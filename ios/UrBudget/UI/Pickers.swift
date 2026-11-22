@@ -52,7 +52,7 @@ struct CategoryPicker: View {
 
     var body: some View {
         let currency = store.currency
-        List {
+        AppList {
             if search.isEmpty && (onSplit != nil || includeUnassigned || includeUncategorized) {
                 Section {
                     if let onSplit {
@@ -134,7 +134,7 @@ struct AccountPicker: View {
         var balances: [String: Int64] = [:]
         for row in store.summary?.rows("accounts") ?? [] { balances[row.text("id")] = row.long("balance") }
         let accounts = (store.budget?.rows("accounts") ?? []).filter { !$0.flag("archived") || $0.text("id") == selected }
-        return List(accounts, id: \.idText) { account in
+        return AppList(accounts, id: \.idText) { account in
             let id = account.text("id")
             Button { onPick(id) } label: {
                 HStack(spacing: 12) {
@@ -198,7 +198,7 @@ struct PayeePicker: View {
         let transfers = (store.budget?.rows("accounts") ?? []).filter {
             !$0.flag("archived") && $0.text("id") != account && (query.isEmpty || $0.text("name").localizedCaseInsensitiveContains(query))
         }
-        List {
+        AppList {
             if !query.isEmpty && !names.contains(where: { $0.caseInsensitiveCompare(query) == .orderedSame }) {
                 Button { choose(query, searching: $searching, picked: $picked, report: onPayee) } label: { Label("Add “\(query)”", systemImage: "plus.circle.fill") }
             }

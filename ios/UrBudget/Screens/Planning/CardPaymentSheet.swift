@@ -102,7 +102,7 @@ struct CardPaymentSheet: View {
                         Spacer()
                     }
                 }
-                .listRowBackground(keypad ? Color.urAccent.opacity(0.12) : nil)
+                .listRowBackground(keypad ? Color.urAccent.opacity(0.12) : Color.cardBackground)
                 .accessibilityAddTraits(choice == "other" ? .isSelected : [])
             }
             Section {
@@ -200,7 +200,7 @@ struct CardPaymentSheet: View {
     private var sourcePicker: some View {
         let currency = store.currency
         let balances = store.planningBalances
-        return List(sources, id: \.idText) { account in
+        return AppList(sources, id: \.idText) { account in
             let id = account.text("id")
             Button {
                 from = id

@@ -472,7 +472,7 @@ struct TransactionsList: View {
         let currency = store.currency
         let toApprove = index?.awaitingApproval(target.account) ?? 0
         let schedules = schedules
-        return List {
+        return AppList {
             if let account, !selecting {
                 Section {
                     AccountSummary(account: account, reconcile: { reconciling = account }, edit: { accountForm = AccountFormRequest(account: account) },
@@ -651,7 +651,7 @@ struct TransactionsList: View {
             }
             .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 8, trailing: 10))
             // Selected rows are marked, and so is the one open beside the list.
-            .listRowBackground(isSelected || (!selecting && pane?.openId == line.id) ? Color.urAccent.opacity(0.12) : nil)
+            .listRowBackground(isSelected || (!selecting && pane?.openId == line.id) ? Color.urAccent.opacity(0.12) : Color.cardBackground)
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
                 if line.cleared != "reconciled" && !selecting {
                     Button { toggleCleared(line) } label: {

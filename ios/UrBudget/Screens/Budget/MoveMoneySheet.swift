@@ -56,7 +56,7 @@ struct MoveMoneySheet: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 8)
                     }
-                    .listRowBackground(keypad ? Color.urAccent.opacity(0.12) : nil)
+                    .listRowBackground(keypad ? Color.urAccent.opacity(0.12) : Color.cardBackground)
                 }
                 Section {
                     NavigationLink(value: MoveEnd.from) { end("From", from, currency) }

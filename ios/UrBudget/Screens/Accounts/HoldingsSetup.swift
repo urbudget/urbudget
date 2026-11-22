@@ -198,7 +198,7 @@ struct InvestmentsHomeView: View {
 
     var body: some View {
         let rows = Investments.rows(store.budget)
-        List {
+        AppList {
             Section {
                 Text("See what your investment accounts hold and how they're doing. Each one is kept up to date its own way: by Interactive Brokers, by your bank connection, or from a positions file you bring in.")
                     .font(.subheadline).foregroundStyle(Color.secondary).listRowBackground(Color.clear)
@@ -311,7 +311,7 @@ struct PositionsFileSheet: View {
 
     var body: some View {
         NavigationStack {
-            List {
+            AppList {
                 Section {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(account.text("name")).font(.headline)
@@ -506,7 +506,7 @@ struct TypedValueSheet: View {
         let name = account.text("name")
         let known = Investments.holdings(store.budget, account: account.text("id"))
         NavigationStack {
-            List {
+            AppList {
                 Section {
                     Text("Type what the account is worth on a day, as your broker shows it. Do it again whenever you like: once a month is plenty.")
                         .font(.subheadline).foregroundStyle(Color.secondary).listRowBackground(Color.clear)
