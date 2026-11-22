@@ -261,7 +261,9 @@ struct TransactionsList: View {
         return AppLanguage.leftToRight(money(total, store.currency))
     }
 
-    var body: some View {
+    /// The list with its bar, search and selection dock; `body` adds the sheets. In two parts so an
+    /// older Xcode (CI's 26.6) type-checks each in reasonable time.
+    private var decorated: some View {
         list
             .navigationTitle(screenTitle)
             .barSubtitle(selectionTotal)
@@ -304,16 +306,15 @@ struct TransactionsList: View {
                 if !Task.isCancelled { query = search }
             }
             .task(id: LinesKey(version: store.version, filter: filter)) { await recompute() }
+    }
+
+    var body: some View {
+        decorated
             .cover(item: $editing) { TransactionEditor(request: $0) }
             .navigationDestination(item: $jump) { TransactionsList(target: $0) }
             .sheet(item: Binding(get: { paying.map { IdentifiedText(value: $0) } }, set: { paying = $0?.value })) { CardPaymentSheet(accountId: $0.value) }
             .sheet(item: Binding(get: { loanFor.map { IdentifiedText(value: $0) } }, set: { loanFor = $0?.value })) { LoanEditor(accountId: $0.value) }
-            .sheet(item: Binding(get: { recordingLoan.map { IdentifiedText(value: $0) } }, set: { recordingLoan = $0?.value })) { item in
-                if let budget = store.budget, let account = budget.row("accounts", id: item.value),
-                   let terms = budget.rows("loans").first(where: { $0.text("accountId") == item.value }) {
-                    LoanPaymentSheet(account: account, terms: terms)
-                }
-            }
+            .sheet(item: Binding(get: { recordingLoan.map { IdentifiedText(value: $0) } }, set: { recordingLoan = $0?.value })) { loanPayment($0.value) }
             .sheet(item: $editingSchedule) { ScheduleEditor(schedule: $0.value) }
             .sheet(isPresented: $importing) { BankFileImportView(account: target.account) }
             .assistant($asking)
@@ -711,6 +712,14 @@ struct TransactionsList: View {
 
     private func toggleCleared(_ line: TransactionLine) {
         bulk([line.id], "status", line.cleared == "cleared" ? "uncleared" : "cleared")
+    }
+
+    /// Recording a payment to a loan with saved details, from its register's loan card.
+    @ViewBuilder private func loanPayment(_ id: String) -> some View {
+        if let budget = store.budget, let account = budget.row("accounts", id: id),
+           let terms = budget.rows("loans").first(where: { $0.text("accountId") == id }) {
+            LoanPaymentSheet(account: account, terms: terms)
+        }
     }
 
     /// Opens the assistant about these transactions, saying where it's asked from: all
