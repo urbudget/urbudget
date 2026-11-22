@@ -27,6 +27,17 @@ iPhone from 1.0.1. Apps that don't: desktop 1.0.10 and earlier (offered an updat
 decision: an iPhone on 1.0.0 is told "Update UrBudget to continue syncing" once its account is
 on v2, and keeps its budgets on the phone.
 
+Moving an account whose devices are already unlocked on v1: until now it moved only when a v2 app
+was given the passphrase again, which an unlocked device never asks for. The engine now reports
+`upgradeAvailable` and offers "Move to the new sync" in Account & sync on desktop, Android and
+iPhone. The dialog warns that devices on older versions stop syncing until they're updated. An
+unlocked device moves without the passphrase, and the account's other v2 devices that were
+unlocked on v1 keep syncing unlocked
+([details](../web/SYNC_V2.md#deployment-boundary)). This isn't in a released app yet: it ships
+with the next desktop release, Android 1.0.2 and the first iPhone build made after it merges.
+Until then, the old "Automatic budget discovery is not enabled for this account yet" notice is
+still shown to v1 accounts, though the server has activation on.
+
 Not done before switching it on, from [the blocker review](reviews/2026-10-29-sync-v2-release-blockers.md#remaining-work-and-release-gates):
 a staging rehearsal of restore and rollback, production monitoring, and the physical-device checks
 (process termination, protected data, changing connectivity, background expiry, the largest

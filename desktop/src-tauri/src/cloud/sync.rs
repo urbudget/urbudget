@@ -26,6 +26,13 @@ pub async fn sync_setup(cloud: State<'_, Cloud>, library: State<'_, Library>, pa
     urbudget_services::cloud::sync::sync_setup(&cloud, &library, passphrase).await
 }
 
+/// Moves an account that still syncs on protocol 1 to the new sync; `passphrase` only when
+/// this computer has no saved key that opens the account (`Status::upgrade_needs_passphrase`).
+#[tauri::command(async)]
+pub async fn sync_upgrade(cloud: State<'_, Cloud>, library: State<'_, Library>, passphrase: Option<String>) -> Result<Value, String> {
+    urbudget_services::cloud::sync::sync_upgrade(&cloud, &library, passphrase).await
+}
+
 #[tauri::command(async)]
 pub async fn sync_reset(cloud: State<'_, Cloud>, library: State<'_, Library>, passphrase: String) -> Result<(), String> {
     urbudget_services::cloud::sync::sync_reset(&cloud, &library, passphrase).await

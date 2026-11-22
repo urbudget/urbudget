@@ -3070,7 +3070,12 @@ export const ar: Catalog = {
   "Stop syncing “{name}”?": "هل تريد إيقاف مزامنة «{name}»؟",
   "Stop syncing": "إيقاف المزامنة",
   "Sync this budget": "مزامنة هذه الميزانية",
-  "Automatic budget discovery is not enabled for this account yet. Existing budgets keep syncing; use the controls below to add or download budgets.": "اكتشاف الميزانيات تلقائيًا غير مفعّل لهذا الحساب بعد. تستمر مزامنة الميزانيات الحالية؛ استخدم الأزرار أدناه لإضافة الميزانيات أو تنزيلها.",
+  "A new sync is ready for this account": "مزامنة جديدة جاهزة لهذا الحساب",
+  "It finds every budget in your account on its own and recovers safely when an upload is interrupted. Your budgets and sync passphrase stay the same.": "تجد كل الميزانيات في حسابك تلقائيًا، وتستأنف عملها بأمان إذا انقطع الرفع. تبقى ميزانياتك وعبارة مرور المزامنة كما هي.",
+  "Move to the new sync": "الانتقال إلى المزامنة الجديدة",
+  "Move to the new sync?": "الانتقال إلى المزامنة الجديدة؟",
+  "After the move, every device that syncs with this account needs desktop 1.0.11 or later, Android 1.0.1 or later, or iPhone 1.0.1 or later. Older versions are told to update UrBudget before they sync again; the budgets on them stay.": "بعد الانتقال، يحتاج كل جهاز يزامن هذا الحساب إلى الإصدار 1.0.11 أو أحدث على سطح المكتب، أو 1.0.1 أو أحدث على Android، أو 1.0.1 أو أحدث على iPhone. يُطلب من الإصدارات الأقدم تحديث UrBudget قبل أن تزامن مرة أخرى، وتبقى الميزانيات المحفوظة عليها.",
+  "This account now uses the new sync.": "يستخدم هذا الحساب المزامنة الجديدة الآن.",
   // Investment accounts and the Interactive Brokers connection (Investments.tsx)
   "Deposits and transfers · {account}": "الإيداعات والتحويلات · {account}",
   "Money you moved into or out of Interactive Brokers. Each one is matched to the transfer already in your budget, joined to its other side in the account it came from, or added as a transfer from the account you choose. Either way it counts as money you put in, not as a gain.": "أموال نقلتها إلى Interactive Brokers أو منه. تُطابَق كل حركة مع التحويل الموجود في ميزانيتك، أو تُضم إلى طرفها الآخر في الحساب الذي جاءت منه، أو تُضاف كتحويل من الحساب الذي تختاره. وفي كل الأحوال تُحتسب مالًا أودعته لا ربحًا.",

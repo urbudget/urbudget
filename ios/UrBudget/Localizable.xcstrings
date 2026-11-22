@@ -151,12 +151,62 @@
         }
       }
     },
-    "Automatic budget discovery is not enabled for this account yet. Existing budgets keep syncing; use the controls below to add or download budgets." : {
+    "A new sync is ready for this account" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "اكتشاف الميزانيات تلقائيًا غير مفعّل لهذا الحساب بعد. تستمر مزامنة الميزانيات الحالية؛ استخدم الأزرار أدناه لإضافة الميزانيات أو تنزيلها."
+            "value" : "مزامنة جديدة جاهزة لهذا الحساب"
+          }
+        }
+      }
+    },
+    "It finds every budget in your account on its own and recovers safely when an upload is interrupted. Your budgets and sync passphrase stay the same." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تجد كل الميزانيات في حسابك تلقائيًا، وتستأنف عملها بأمان إذا انقطع الرفع. تبقى ميزانياتك وعبارة مرور المزامنة كما هي."
+          }
+        }
+      }
+    },
+    "Move to the new sync" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الانتقال إلى المزامنة الجديدة"
+          }
+        }
+      }
+    },
+    "Move to the new sync?" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الانتقال إلى المزامنة الجديدة؟"
+          }
+        }
+      }
+    },
+    "After the move, every device that syncs with this account needs desktop 1.0.11 or later, Android 1.0.1 or later, or iPhone 1.0.1 or later. Older versions are told to update UrBudget before they sync again; the budgets on them stay." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بعد الانتقال، يحتاج كل جهاز يزامن هذا الحساب إلى الإصدار 1.0.11 أو أحدث على سطح المكتب، أو 1.0.1 أو أحدث على Android، أو 1.0.1 أو أحدث على iPhone. يُطلب من الإصدارات الأقدم تحديث UrBudget قبل أن تزامن مرة أخرى، وتبقى الميزانيات المحفوظة عليها."
+          }
+        }
+      }
+    },
+    "This account now uses the new sync." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يستخدم هذا الحساب المزامنة الجديدة الآن."
           }
         }
       }

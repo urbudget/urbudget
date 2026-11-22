@@ -121,7 +121,13 @@ internal fun CloudScreen(vm: BudgetViewModel) {
     }
     PageList(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 4.dp, bottom = DockRoom), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text(stringResource(R.string.cloud_intro), Modifier.padding(horizontal = 4.dp), color = ur.muted, style = MaterialTheme.typography.bodyMedium) }
-        if (signedIn.isNotBlank() && sync?.optInt("protocol", 1) != 2) item { Text(stringResource(R.string.cloud_legacy_library), color = ur.muted) }
+        if (syncMoveOffered(status)) item {
+            CloudCard {
+                Text(stringResource(R.string.cloud_move_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = ur.text)
+                Text(stringResource(R.string.cloud_move_detail), color = ur.text2, style = MaterialTheme.typography.bodyMedium)
+                PrimaryButton(stringResource(R.string.cloud_move_action), { if (!busy) { phrase = ""; error = null; dialog = "move" } }, Modifier.fillMaxWidth(), enabled = !busy)
+            }
+        }
         if (busy) item { LinearProgressIndicator(Modifier.fillMaxWidth(), color = ur.accent) }
         error?.let { item { FormError(it) } }
         notice?.let { item { Notice(it, tone = "info") } }
@@ -216,6 +222,19 @@ internal fun CloudScreen(vm: BudgetViewModel) {
         else Text(stringResource(R.string.cloud_passphrase_safe))
         FilledField(phrase, { phrase = it }, label = { Text(stringResource(R.string.cloud_passphrase_field)) }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
         if (dialog != "unlock") FilledField(repeated, { repeated = it }, label = { Text(stringResource(R.string.cloud_passphrase_repeat)) }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
+    }
+    if (dialog == "move") {
+        // Moving is the person's choice: devices on older versions stop syncing until updated.
+        val needsPassphrase = syncMoveNeedsPassphrase(status)
+        FormDialog(stringResource(R.string.cloud_move_confirm_title), { dialog = ""; phrase = "" }, confirm = stringResource(R.string.cloud_move_action),
+            enabled = !busy && (!needsPassphrase || phrase.length >= 8), onConfirm = {
+            call("sync_upgrade", syncMoveParams(status, phrase)) { dialog = ""; phrase = ""; notice = context.getString(R.string.cloud_move_done); vm.service("sync_now") }
+        }) {
+            Text(stringResource(R.string.cloud_move_warning))
+            if (needsPassphrase) FilledField(phrase, { phrase = it }, label = { Text(stringResource(R.string.cloud_passphrase_field)) }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
+            // A saved key from before a passphrase reset elsewhere fails here; the status poll then asks for the passphrase.
+            error?.let { FormError(it) }
+        }
     }
     if (dialog == "deleteAccount") FormDialog(stringResource(R.string.cloud_delete_title), { dialog = "" }, stringResource(R.string.cloud_delete_confirm), enabled = !busy && confirmation.trim().equals(signedIn, ignoreCase = true), onConfirm = {
         call("account_delete", JSONObject().put("confirm", confirmation)) { dialog = "" }

@@ -2231,7 +2231,12 @@
     <string name="library_unfinished_edits">استعادة التعديلات غير المكتملة</string>
     <string name="library_discard_edits">تجاهل هذه التعديلات</string>
     <string name="library_keep_local">الاحتفاظ بهذه الميزانية على هذا الجهاز فقط</string>
-    <string name="cloud_legacy_library">اكتشاف الميزانيات تلقائيًا غير مفعّل لهذا الحساب بعد. تستمر مزامنة الميزانيات الحالية؛ استخدم الأزرار أدناه لإضافة الميزانيات أو تنزيلها.</string>
+    <string name="cloud_move_title">مزامنة جديدة جاهزة لهذا الحساب</string>
+    <string name="cloud_move_detail">تجد كل الميزانيات في حسابك تلقائيًا، وتستأنف عملها بأمان إذا انقطع الرفع. تبقى ميزانياتك وعبارة مرور المزامنة كما هي.</string>
+    <string name="cloud_move_action">الانتقال إلى المزامنة الجديدة</string>
+    <string name="cloud_move_confirm_title">الانتقال إلى المزامنة الجديدة؟</string>
+    <string name="cloud_move_warning">بعد الانتقال، يحتاج كل جهاز يزامن هذا الحساب إلى الإصدار 1.0.11 أو أحدث على سطح المكتب، أو 1.0.1 أو أحدث على Android، أو 1.0.1 أو أحدث على iPhone. يُطلب من الإصدارات الأقدم تحديث UrBudget قبل أن تزامن مرة أخرى، وتبقى الميزانيات المحفوظة عليها.</string>
+    <string name="cloud_move_done">يستخدم هذا الحساب المزامنة الجديدة الآن.</string>
     <string name="library_available_online">متاحة عبر الإنترنت</string>
     <string name="library_review_newer">مراجعة النسخة الأحدث</string>
     <string name="library_deletion_conflict">توجد تغييرات أحدث تحتاج إلى مراجعة قبل الحذف</string>

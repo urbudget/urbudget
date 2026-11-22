@@ -47,7 +47,13 @@ export type CloudStatus = {
   email: string | null;
   /** What protects saved secrets (Keychain, Windows encrypted storage), or null when they last until the app closes. */
   credentialStore: string | null;
-  sync: { unlocked: boolean; last: SyncReport | null; protocol?: number; enabled?: boolean };
+  sync: {
+    unlocked: boolean; last: SyncReport | null; protocol?: number; enabled?: boolean;
+    /** The account still syncs on protocol 1 and can move to the new sync (`syncUpgrade`). */
+    upgradeAvailable?: boolean;
+    /** Moving needs the passphrase: this computer has no saved key that opens the account. */
+    upgradeNeedsPassphrase?: boolean;
+  };
   site: string;
   library?: LibrarySnapshot;
 };
@@ -71,6 +77,8 @@ export const cloud = {
   syncHasKey: () => invoke<boolean>("sync_has_key"),
   syncSetup: (passphrase: string) => invoke<{ created: boolean }>("sync_setup", { passphrase }),
   syncReset: (passphrase: string) => invoke<void>("sync_reset", { passphrase }),
+  /** Moves the account to the new sync; the passphrase only when `upgradeNeedsPassphrase`. */
+  syncUpgrade: (passphrase?: string) => invoke<{ created: boolean; protocol: 2 }>("sync_upgrade", { passphrase: passphrase || null }),
   syncTrack: (ids: string[]) => invoke<void>("sync_track", { ids }),
   syncDownload: (id: string) => invoke<string>("sync_download", { id }),
   /** "merge" merges again with the answers in `choices`; "local" and "cloud" keep one whole version. */

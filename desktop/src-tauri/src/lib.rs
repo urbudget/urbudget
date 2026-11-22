@@ -722,6 +722,7 @@ pub fn run() {
             cloud::sync::sync_now,
             cloud::sync::sync_has_key,
             cloud::sync::sync_setup,
+            cloud::sync::sync_upgrade,
             cloud::sync::sync_reset,
             cloud::sync::sync_track,
             cloud::sync::sync_download,

@@ -13,11 +13,22 @@ Migration `0012_sync_v2.sql` is additive. Production has had it since 29 October
 activation has been on since 22 November 2026: `SYNC_V2_ENABLED` is `"1"` in `wrangler.jsonc`.
 With it on, a v2 app (desktop 1.0.11 and later, Android, iOS 1.0.1 and later) that sets up a
 new passphrase creates a v2 account (`keySetup`), and one that enters an existing account's
-passphrase moves that account to v2 (`migrateProtocol`). Nothing moves on its own: an account
-whose devices are already unlocked keeps syncing on v1 until a v2 app is next given the
-passphrase. Once an account is on v2, a v1 app (desktop 1.0.10 and earlier, iOS 1.0.0) gets
-HTTP 426 `sync_upgrade_required` ("Update UrBudget to continue syncing") and keeps its local
-budgets.
+passphrase moves that account to v2 (`migrateProtocol`). Nothing moves on its own. Once an
+account is on v2, a v1 app (desktop 1.0.10 and earlier, iOS 1.0.0) gets HTTP 426
+`sync_upgrade_required` ("Update UrBudget to continue syncing") and keeps its local budgets.
+
+An account whose devices are already unlocked on v1 is offered the move instead. This is in apps
+built after 22 November 2026, so desktop 1.0.13, Android 1.0.1 and iPhone 1.0.0 don't have it.
+Each sync saves the bootstrap, and sync status then reports `upgradeAvailable` for a signed-in
+protocol-1 account that has a passphrase while `activationEnabled` is true. Account & sync shows
+"Move to the new sync", warns that every device then needs desktop 1.0.11, Android 1.0.1 or
+iPhone 1.0.1 or later, and calls `sync_upgrade`. A device unlocked on v1 moves without the
+passphrase: `migrateProtocol` copies the v1 generation, salt and key check, so the v1 key saved
+on the device is the moved account's key. It is used only once it opens the account's key check;
+otherwise (a locked device, or a key from before a reset elsewhere) status reports
+`upgradeNeedsPassphrase` and the dialog asks for it. For the same reason, a v2 app that was
+unlocked on v1 stays unlocked after another device moves the account: its next sync adopts the
+saved key for the current generation after the same check.
 
 With the flag off, first-time key setup and account migration are disabled, and installation
 registration and new prepares are rejected for accounts that have not activated v2. Existing
@@ -145,7 +156,7 @@ node scripts/sync-v2-instances.mjs --legacy
 ```
 
 The instance suite needs the current
-`crates/target/debug/examples/sync_qa.exe` built from the Rust workspace. It runs
+`crates/target/debug/examples/sync_qa` (`sync_qa.exe` on Windows) built from the Rust workspace. It runs
 three separate processes/data folders behind fault proxies. Default stress is
 210 edits; `--rounds 300` performs 900 edits. It checks full budget equality,
 individual transaction preservation, editor recovery, explicit money conflicts,
@@ -161,6 +172,9 @@ unreadable-cache isolation, and downloading without changing the selected budget
 case. The rate-limit test advances only its disposable database window; production
 limits remain unchanged. `--legacy` exercises real native v1 encryption and ancestry migration,
 including old email-only session backfill, a Worker without v2 routes, v1 syncing with
-no open budget, and a stale legacy device returning after restore. Scheduler wakes are driven through `sync_now`; this
+no open budget, and a stale legacy device returning after restore. It also checks the move
+offer (`upgradeAvailable`, none while activation is refused), a locked device refused without
+the passphrase, a move with only the saved v1 key, one with the passphrase, and a device unlocked
+on v1 adopting its saved key after the account moved elsewhere. Scheduler wakes are driven through `sync_now`; this
 does not substitute for desktop/mobile background-lifecycle testing. Each run
 saves an inspectable trace under `crates/target/sync-v2-instances/`.

@@ -101,9 +101,9 @@ object NativeServices {
         if (changesReadContext) readEpoch.incrementAndGet()
         try {
             val result = decode(NativeBridge.service("{\"version\":1,\"method\":${JSONObject.quote(method)},\"params\":$params}"))
-            if (method in setOf("create_budget", "library_trash", "library_restore", "library_recover", "sync_enable", "sync_setup", "save_budget", "edit_budget", "native_apply_patch", "assistant_apply_commit", "assistant_undo_commit", "simplefin_import", "simplefin_holdings", "ibkr_apply", "ibkr_import", "accept_ynab_import", "resolve_ynab", "undo_budget", "redo_budget", "restore_backup_file", "restore_budget", "apply_due_schedules")) runCatching { notifySaved() } // It's committed: a failure here must not read as a refusal.
+            if (method in setOf("create_budget", "library_trash", "library_restore", "library_recover", "sync_enable", "sync_setup", "sync_upgrade", "save_budget", "edit_budget", "native_apply_patch", "assistant_apply_commit", "assistant_undo_commit", "simplefin_import", "simplefin_holdings", "ibkr_apply", "ibkr_import", "accept_ynab_import", "resolve_ynab", "undo_budget", "redo_budget", "restore_backup_file", "restore_budget", "apply_due_schedules")) runCatching { notifySaved() } // It's committed: a failure here must not read as a refusal.
             if (method in setOf("sync_now", "sync_resolve") && result is JSONObject) syncCompletedSource.tryEmit(result)
-            if (method in setOf("account_verify", "account_sign_out", "account_delete", "sync_setup", "sync_enable", "sync_reset", "sync_lock")) refreshSyncStatus()
+            if (method in setOf("account_verify", "account_sign_out", "account_delete", "sync_setup", "sync_upgrade", "sync_enable", "sync_reset", "sync_lock")) refreshSyncStatus()
             result
         } finally {
             // Reads started while a credential transition was in progress must not be joined

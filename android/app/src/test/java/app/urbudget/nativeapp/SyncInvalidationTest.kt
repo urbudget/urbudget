@@ -26,6 +26,22 @@ class SyncInvalidationTest {
         status.put("email", JSONObject.NULL)
         assertFalse(syncBackgroundEligible(status))
     }
+    @Test fun onlyASignedInV1AccountTheServerWillMoveIsOffered() {
+        val status = JSONObject("""{"email":"qa@example.test","sync":{"protocol":1,"unlocked":true,"upgradeAvailable":true,"upgradeNeedsPassphrase":false}}""")
+        assertTrue(syncMoveOffered(status))
+        assertFalse(syncMoveNeedsPassphrase(status))
+        assertFalse("the saved key moves it", syncMoveParams(status, "typed").has("passphrase"))
+        status.getJSONObject("sync").put("upgradeNeedsPassphrase", true)
+        assertEquals("typed passphrase", syncMoveParams(status, "typed passphrase").getString("passphrase"))
+        status.getJSONObject("sync").put("protocol", 2)
+        assertFalse("already moved", syncMoveOffered(status))
+        status.getJSONObject("sync").put("protocol", 1).remove("upgradeAvailable")
+        assertFalse("an older engine or a server that refuses moves", syncMoveOffered(status))
+        status.getJSONObject("sync").put("upgradeAvailable", true)
+        status.put("email", JSONObject.NULL)
+        assertFalse(syncMoveOffered(status))
+        assertFalse(syncMoveOffered(null))
+    }
     private fun library() = JSONObject("""{"activeId":"current","entries":[{"id":"former","path":"/former"},{"id":"current","path":"/current"}]}""")
     @Test fun targetedChangesDoNotRefreshAnUnrelatedSwitchedBudget() {
         val report = JSONObject("""{"openChanged":true,"changedBudgets":[{"id":"former","revision":"next"}]}""")

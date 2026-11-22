@@ -1,6 +1,7 @@
 //! Account-wide automatic snapshot sync. A durable installation delivery slot owns every
 //! request until a terminal server receipt has been acknowledged locally.
 use super::{crypto, Cloud, Session};
+use crate::t;
 use crate::{budgets, domain::Budget, library_api, store::Store, Database, Library};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as BASE64, Engine as _};
 use reqwest::Method;
@@ -237,6 +238,48 @@ pub(super) fn forget_keys(cloud: &Cloud, account: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+/// A protocol-1 account that has a passphrase, on a server that accepts moving it to protocol 2.
+/// With no key generation there is nothing to move: the first passphrase creates a v2 account.
+fn upgrade_offered(bootstrap: &Value) -> bool {
+    bootstrap["protocol"] == 1
+        && bootstrap["activationEnabled"] == true
+        && bootstrap["keyGeneration"].is_string()
+}
+
+/// `key` when it opens the account key check in `bootstrap`.
+///
+/// This is why a device that already syncs on protocol 1 moves without the passphrase. The
+/// Worker's `migrateProtocol` copies the v1 key generation, salt and key check into the v2
+/// account unchanged (`controlWrites` in web/src/sync-v2/repository.ts), and migrated content
+/// keeps its v1 encryption (`legacy-v1` payloads). The key a passphrase would derive for the
+/// moved account is therefore byte for byte the v1 key this device saved when the passphrase
+/// was entered here. The check rules out a stale key: after a passphrase reset elsewhere it no
+/// longer opens the account's check, and the person is asked for the passphrase instead.
+fn verified_key(key: Option<crypto::Key>, bootstrap: &Value) -> Option<crypto::Key> {
+    let check = BASE64.decode(bootstrap["check"].as_str()?).ok()?;
+    key.filter(|key| crypto::matches_check(key, &check))
+}
+
+/// `(upgrade_available, upgrade_needs_passphrase)` from a selected account's saved state. Reads
+/// this device's saved protocol-1 key only when a move is on offer.
+fn upgrade_status(state: &Value, signed_in: bool, saved: impl FnOnce() -> Option<crypto::Key>) -> (bool, bool) {
+    let bootstrap = &state["bootstrap"];
+    if !signed_in || state["protocol"] == 2 || !upgrade_offered(bootstrap) {
+        return (false, false);
+    }
+    (true, verified_key(saved(), bootstrap).is_none())
+}
+
+/// The current generation's key, adopting this device's verified protocol-1 key when the
+/// account was moved to v2 elsewhere (see `verified_key`), so it keeps syncing unlocked.
+fn current_key(cloud: &Cloud, account: &str, generation: &str, bootstrap: &Value) -> Option<crypto::Key> {
+    read_key(cloud, account, generation).or_else(|| {
+        let key = verified_key(cloud.sync.key(), bootstrap)?;
+        store_key(cloud, account, generation, key).ok()?;
+        Some(key)
+    })
+}
+
 pub fn is_active(cloud: &Cloud, library: &Library) -> bool {
     cloud
         .selected_account()
@@ -268,6 +311,8 @@ pub(super) fn decorate_status(cloud: &Cloud, catalog: &budgets::Budgets, status:
         return;
     };
     if state["protocol"] != 2 {
+        (status.upgrade_available, status.upgrade_needs_passphrase) =
+            upgrade_status(&state, cloud.token().is_some(), || cloud.sync.key());
         return;
     }
     status.protocol = 2;
@@ -770,24 +815,66 @@ fn completed_reset_retry(
     Ok(Some(json!({"created":false,"protocol":2})))
 }
 
+/// The control operation that creates, resets or moves the account key. A move carries no
+/// key details: the Worker keeps the protocol-1 generation, salt and check (`verified_key`).
+fn control_manifest(account: &str, installation: &str, operation: &str, bootstrap: &Value, created: bool, reset: bool) -> Value {
+    json!({"accountId":account,"installationId":installation,"operationId":operation,
+        "kind":if reset {"keyReset"} else if created {"keySetup"} else {"migrateProtocol"},
+        "keyGeneration":bootstrap["keyGeneration"],"catalogEpoch":bootstrap["catalogEpoch"],"expectedProtocol":bootstrap["protocol"]})
+}
+
+/// What proves this device may hold the account's content key.
+#[derive(Clone, Copy)]
+enum Secret<'a> {
+    /// Typed by the person: it creates, resets, or derives the current generation's key.
+    Passphrase(&'a str),
+    /// The protocol-1 key this device saved, used only once it opens the account's key check
+    /// (`verified_key`). It can move or unlock an existing account, never create or reset one.
+    Saved,
+}
+
+/// The person's answer when the saved key can't stand in for the passphrase.
+fn passphrase_needed() -> String {
+    t!("Enter your sync passphrase to move this account to the new sync.")
+}
+
 pub async fn try_setup(
     cloud: &Cloud,
     library: &Library,
     passphrase: &str,
     reset: bool,
 ) -> Result<Option<Value>> {
+    setup(cloud, library, Secret::Passphrase(passphrase), reset).await
+}
+
+/// Moves a protocol-1 account to protocol 2 with the key this device saved for protocol 1, or
+/// unlocks one another device already moved. `Ok(None)` when urbudget.app doesn't accept moves.
+pub async fn try_saved_key(cloud: &Cloud, library: &Library) -> Result<Option<Value>> {
+    setup(cloud, library, Secret::Saved, false).await
+}
+
+async fn setup(
+    cloud: &Cloud,
+    library: &Library,
+    secret: Secret<'_>,
+    reset: bool,
+) -> Result<Option<Value>> {
     let _operation = cloud.sync.operation().await?;
     let Some((account, bootstrap)) = probe_bootstrap(cloud, library).await? else { return Ok(None); };
     if bootstrap["protocol"] != 2 && bootstrap["activationEnabled"] != true { return Ok(None); }
     let (account, transport, mut bootstrap) = connect_bootstrap(cloud, library, account, bootstrap).await?;
-    if passphrase.chars().count() < 8 {
-        return Err("Use a passphrase of at least 8 characters.".into());
+    if let Secret::Passphrase(passphrase) = secret {
+        if passphrase.chars().count() < 8 {
+            return Err("Use a passphrase of at least 8 characters.".into());
+        }
     }
     save_bootstrap(library, &account, &bootstrap)?;
     // A pending key change owns its own salt and key check, including after process death.
     let pending = library.lock().pending_delivery(&account)?;
     if let Some(slot) = pending {
         let pending_key_verified = if let Some(salt) = slot.manifest["key"]["salt"].as_str() {
+            // Only its own passphrase can finish a key change: the saved key predates it.
+            let Secret::Passphrase(passphrase) = secret else { return Err(passphrase_needed()) };
             let salt = BASE64.decode(salt).map_err(|e| e.to_string())?;
             let key = crypto::derive(passphrase, &salt)?;
             let check = BASE64
@@ -820,14 +907,25 @@ pub async fn try_setup(
         save_bootstrap(library, &account, &bootstrap)?;
     }
     let created = bootstrap["keyGeneration"].is_null();
+    let passphrase = match secret {
+        Secret::Passphrase(passphrase) => passphrase,
+        Secret::Saved if created => {
+            return Err(t!("This account has no sync passphrase yet. Set up sync to choose one."))
+        }
+        Secret::Saved => "",
+    };
     if !created && !reset {
-        let salt = BASE64
-            .decode(string(&bootstrap, "salt")?)
-            .map_err(|e| e.to_string())?;
-        let key = crypto::derive(passphrase, &salt)?;
         let check = BASE64
             .decode(string(&bootstrap, "check")?)
             .map_err(|e| e.to_string())?;
+        let key = if let Secret::Saved = secret {
+            verified_key(cloud.sync.key(), &bootstrap).ok_or_else(passphrase_needed)?
+        } else {
+            let salt = BASE64
+                .decode(string(&bootstrap, "salt")?)
+                .map_err(|e| e.to_string())?;
+            crypto::derive(passphrase, &salt)?
+        };
         if !crypto::matches_check(&key, &check) {
             return Err("That isn't the sync passphrase for this account.".into());
         }
@@ -835,9 +933,7 @@ pub async fn try_setup(
     }
     if created || reset || bootstrap["protocol"] != 2 {
         let operation = budgets::new_id();
-        let mut manifest = json!({"accountId":account,"installationId":transport.installation,"operationId":operation,
-            "kind":if reset {"keyReset"} else if created {"keySetup"} else {"migrateProtocol"},
-            "keyGeneration":bootstrap["keyGeneration"],"catalogEpoch":bootstrap["catalogEpoch"],"expectedProtocol":bootstrap["protocol"]});
+        let mut manifest = control_manifest(&account, &transport.installation, &operation, &bootstrap, created, reset);
         if created || reset {
             if super::vault::store().is_none() {
                 return Err("A secure credential store is required to safely create or reset the sync passphrase on this device.".into());
@@ -867,6 +963,71 @@ pub async fn try_setup(
     state["enabled"] = json!(true);
     library.set_account_state(&account, &state)?;
     Ok(Some(json!({"created":created,"protocol":2})))
+}
+
+#[cfg(test)]
+mod upgrade_tests {
+    use super::*;
+
+    const KEY: crypto::Key = [7; 32];
+    fn bootstrap(protocol: u8, key: &crypto::Key) -> Value {
+        json!({"accountId":"account-a","protocol":protocol,"keyGeneration":"3","salt":BASE64.encode([1u8; 16]),
+            "check":BASE64.encode(crypto::key_check(key).unwrap()),"catalogEpoch":null,"activationEnabled":true})
+    }
+    fn state(bootstrap: Value) -> Value {
+        json!({"protocol":bootstrap["protocol"].clone(),"bootstrap":bootstrap})
+    }
+
+    #[test]
+    fn a_signed_in_v1_account_with_a_passphrase_is_offered_the_move() {
+        let v1 = state(bootstrap(1, &KEY));
+        assert_eq!(upgrade_status(&v1, true, || Some(KEY)), (true, false), "the saved key moves it");
+        assert_eq!(upgrade_status(&v1, true, || None), (true, true), "a locked device needs the passphrase");
+        assert_eq!(upgrade_status(&v1, true, || Some([8; 32])), (true, true), "a key from before a reset elsewhere is stale");
+    }
+
+    #[test]
+    fn no_move_is_offered_where_there_is_nothing_to_move_or_the_server_refuses_it() {
+        let never = || -> Option<crypto::Key> { panic!("the saved key is read only when a move is offered") };
+        assert_eq!(upgrade_status(&state(bootstrap(1, &KEY)), false, never), (false, false), "signed out");
+        let mut off = bootstrap(1, &KEY);
+        off["activationEnabled"] = json!(false);
+        assert_eq!(upgrade_status(&state(off), true, never), (false, false), "activation is off");
+        let mut no_key = bootstrap(1, &KEY);
+        no_key["keyGeneration"] = Value::Null;
+        assert_eq!(upgrade_status(&state(no_key), true, never), (false, false), "the first passphrase creates a v2 account");
+        assert_eq!(upgrade_status(&state(bootstrap(2, &KEY)), true, never), (false, false), "already moved");
+        let mut moved_here = state(bootstrap(1, &KEY));
+        moved_here["protocol"] = json!(2);
+        assert_eq!(upgrade_status(&moved_here, true, never), (false, false), "moved by this device before the next bootstrap");
+        assert_eq!(upgrade_status(&Value::Null, true, never), (false, false), "never synced since updating");
+        assert_eq!(upgrade_status(&json!({"protocol":1}), true, never), (false, false));
+    }
+
+    #[test]
+    fn only_a_key_that_opens_the_account_check_stands_in_for_the_passphrase() {
+        let moved = bootstrap(2, &KEY);
+        assert_eq!(verified_key(Some(KEY), &moved), Some(KEY), "migration kept the v1 check, so the v1 key opens v2");
+        assert_eq!(verified_key(Some([8; 32]), &moved), None);
+        assert_eq!(verified_key(None, &moved), None);
+        let mut unreadable = moved.clone();
+        unreadable["check"] = json!("not base64!");
+        assert_eq!(verified_key(Some(KEY), &unreadable), None);
+        unreadable["check"] = Value::Null;
+        assert_eq!(verified_key(Some(KEY), &unreadable), None);
+    }
+
+    #[test]
+    fn the_move_keeps_the_v1_key_details_on_the_server() {
+        let v1 = bootstrap(1, &KEY);
+        let manifest = control_manifest("account-a", "installation", "operation", &v1, false, false);
+        assert_eq!(manifest["kind"], "migrateProtocol");
+        assert_eq!(manifest["expectedProtocol"], 1);
+        assert_eq!(manifest["keyGeneration"], "3");
+        assert!(manifest.get("key").is_none(), "the Worker rejects key details on a move");
+        assert_eq!(control_manifest("a", "i", "o", &v1, true, false)["kind"], "keySetup");
+        assert_eq!(control_manifest("a", "i", "o", &v1, false, true)["kind"], "keyReset");
+    }
 }
 
 #[cfg(test)]
@@ -1923,7 +2084,7 @@ async fn run_inner(
         save_bootstrap(library, &account, &bootstrap)?;
     }
     let generation = string(&bootstrap, "keyGeneration")?;
-    let key = read_key(cloud, &account, &generation);
+    let key = current_key(cloud, &account, &generation, &bootstrap);
     let mut entry_errors = BTreeMap::new();
     adopt_legacy_bindings(&transport, db, library, &account, &bootstrap).await?;
     reconcile_catalog(&transport, library, &account, &bootstrap, key.as_ref()).await?;

@@ -18,7 +18,7 @@ if (process.env.URBUDGET_QA_URL) {
   assert.match(process.env.URBUDGET_QA_EMAIL ?? "", /^[A-Za-z0-9._+-]+@example\.test$/, "Use a synthetic @example.test account.");
 }
 const local = process.env.URBUDGET_QA_URL ? { url: process.env.URBUDGET_QA_URL, email: process.env.URBUDGET_QA_EMAIL, stop() {}, logs() { return ""; } } : await startLocal({ port: Number(process.env.SYNC_V2_QA_PORT ?? 8789) });
-const binary = resolve(web, "../crates/target/debug/examples/sync_qa.exe");
+const binary = resolve(web, `../crates/target/debug/examples/sync_qa${process.platform === "win32" ? ".exe" : ""}`);
 let passphrase = "correct horse battery staple";
 function positiveArgument(name, fallback) {
   const index = process.argv.indexOf(name); if (index < 0) return fallback;
@@ -114,7 +114,18 @@ try {
       assert.ok((await b.call("load_budget")).budget.transactions.some(t=>t.id==="legacy-no-open-budget"));
       await a.call("library_open",{id:a.id});
       await settle(); const oldIds = new Map(devices.map(d => [d, a.id]));
-      for (const d of [a, b]) { d.fault.legacy = false; await d.call("sync_setup", { passphrase }); await wake(d); }
+      // Activation reaches unlocked v1 devices on their next wake, and nothing moves on its own.
+      for (const d of [a, b]) {
+        d.fault.legacy = false; await wake(d); const sync = await d.call("sync_status");
+        assert.equal(sync.protocol, 1); assert.equal(sync.upgradeAvailable, true, JSON.stringify(sync)); assert.equal(sync.upgradeNeedsPassphrase, false);
+      }
+      assert.equal((await c.call("sync_status")).upgradeAvailable, false, "a server refusing activation offers no move");
+      await b.call("sync_lock"); assert.equal((await b.call("sync_status")).upgradeNeedsPassphrase, true);
+      await assert.rejects(b.call("sync_upgrade"), /passphrase/); assert.equal((await b.call("sync_status")).protocol, 1, "a refused move changes nothing");
+      // A's saved v1 key opens the account's key check, so its move needs no passphrase.
+      assert.deepEqual(await a.call("sync_upgrade"), { created: false, protocol: 2 }); await wake(a);
+      assert.deepEqual(await b.call("sync_upgrade", { passphrase }), { created: false, protocol: 2 }); await wake(b);
+      for (const d of [a, b]) { const sync = await d.call("sync_status"); assert.ok(sync.protocol === 2 && sync.unlocked && !sync.upgradeAvailable, JSON.stringify(sync)); }
       for (const d of [a, b]) { const list = await snapshot(d); const live=list.entries.filter(e=>e.lifecycle==="active"); assert.equal(live.length, 1, JSON.stringify(list)); assert.equal(live[0].id, oldIds.get(d)); assert.equal(live[0].remoteId, a.id); }
       a.remote = a.id;
       await edit(a, budget => budget.transactions.push(transaction("after-legacy-migration"))); await wake(a); await wake(b);
@@ -122,7 +133,8 @@ try {
       // Keep C's legacy ledger/base until the ID has been restored under a new incarnation.
       await edit(c, budget => budget.transactions.push(transaction("late-legacy-private-work")));
       await a.call("library_trash", { id: a.id }); await wake(a); await a.call("library_restore", { id: a.id }); await wake(a); await wake(b);
-      c.fault.legacy = false; await c.call("sync_setup", { passphrase }); await wake(c); await wake(c);
+      // C was unlocked on v1 and never moved it: it adopts its saved key instead of asking for the passphrase.
+      c.fault.legacy = false; await wake(c); assert.equal((await c.call("sync_status")).unlocked, true); await wake(c);
       const list = await snapshot(c), old = list.entries.find(e => e.id === oldIds.get(c)), current = list.entries.find(e => e.remoteId === a.remote);
       assert.equal(old.scope, "local"); assert.equal(old.accountId, null); assert.ok(current && current.id !== old.id, JSON.stringify(list));
       await c.call("library_open", { id: old.id }); assert.ok((await c.call("load_budget")).budget.transactions.some(t => t.id === "late-legacy-private-work"));

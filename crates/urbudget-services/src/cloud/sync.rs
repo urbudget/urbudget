@@ -125,6 +125,12 @@ pub struct Status {
     pub unlocked: bool,
     pub protocol: u8,
     pub enabled: bool,
+    /// The account still syncs on protocol 1, has a passphrase, and urbudget.app accepts moving
+    /// it to the new sync (`sync_upgrade`). From the bootstrap saved by the last sync.
+    pub upgrade_available: bool,
+    /// Moving needs the passphrase: this device has no saved key that opens the account's key
+    /// check. When false, `sync_upgrade` moves it with the key this device already has.
+    pub upgrade_needs_passphrase: bool,
     pub last: Option<Report>,
 }
 
@@ -374,7 +380,7 @@ impl Engine {
         })
         .map_err(error)
     }
-    fn key(&self) -> Option<crypto::Key> {
+    pub(super) fn key(&self) -> Option<crypto::Key> {
         if vault::store().is_some() {
             vault::read(&service(KEY_SERVICE))
                 .and_then(|k| URL_SAFE_NO_PAD.decode(k).ok())
@@ -410,6 +416,8 @@ impl Engine {
             unlocked: self.key().is_some(),
             protocol: 1,
             enabled: self.key().is_some(),
+            upgrade_available: false,
+            upgrade_needs_passphrase: false,
             last: self.last.lock().unwrap_or_else(|e| e.into_inner()).clone(),
         }
     }
@@ -769,6 +777,18 @@ pub async fn sync_setup(cloud: &Cloud, library: &Library, passphrase: String) ->
         }
         Err(f) => Err(f.message),
     }
+}
+
+/// Moves an account that still syncs on protocol 1 to the new sync (`Status::upgrade_available`).
+/// With no passphrase, this device's saved key moves it when it opens the account's key check;
+/// otherwise the passphrase is needed (`Status::upgrade_needs_passphrase`). Once moved, apps
+/// that only speak protocol 1 are told to update before they sync again.
+pub async fn sync_upgrade(cloud: &Cloud, library: &Library, passphrase: Option<String>) -> Result<Value, String> {
+    let moved = match passphrase.filter(|p| !p.is_empty()) {
+        Some(passphrase) => super::v2::try_setup(cloud, library, &passphrase, false).await?,
+        None => super::v2::try_saved_key(cloud, library).await?,
+    };
+    moved.ok_or_else(|| t!("The new sync isn't available for this account yet. Try again later."))
 }
 
 async fn create_key(cloud: &Cloud, passphrase: String, reset: bool) -> Result<(), String> {
