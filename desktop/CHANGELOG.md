@@ -4,8 +4,34 @@ Notable changes to UrBudget, organized using [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [1.0.14] - 2026-11-22
+
+This update brings Interactive Brokers holdings and new investment reports, and makes the new sync sturdier.
+
+- New: holdings from Interactive Brokers. Each broker account gets a Holdings page with its value, gain and return, what's held, its income and costs, and its trades and dividends.
+- Reports have an overview, and money moved into an investment account counts as investing, not spending.
+- An account still on the old sync can move to the new one in Settings › Account & sync. A computer that's already unlocked doesn't need the passphrase.
+- Sync fixes: a budget no longer splits in two when a second device moves to the new sync, and a copy restored from a backup can upload again.
+- Signing in to ChatGPT for the assistant no longer fails now and then.
+
+### Added
+
+- Interactive Brokers holdings, from a Flex query: a step-by-step guide shows where to find the Query ID. Each broker account's Holdings page shows its value, money put in, gain and return, what's held with its kind of instrument and currency, income and costs, and trades and dividends by holding. Sync keeps the account's month ends from the broker's values, as Starting value, Market change and Money moved lines; transfers the broker counts a few days later show as in transit.
+- Move to the new sync: when an account can move, Settings › Account & sync offers it. It says that every device needs desktop 1.0.11, Android 1.0.1 or iPhone 1.0.1 or later before moving, and asks for the passphrase only if this computer is locked. A computer that was unlocked on the old sync stays unlocked when another device moves the account.
+
+### Changed
+
+- Six reports with an overview and one filter line. Money moved into investment accounts counts as investing, not spending, in Spending, Income, the forecast and the assistant. The Balance sheet and Allocation show instruments and their own currencies.
+
 ### Fixed
 
+- After another device moved an account to the new sync and uploaded a change, a computer that moved later downloaded the budget beside its own copy: two budgets with one name, and the open one no longer syncing. It now links its copy to the account's budget and merges what it missed. A copy that still can't be linked says so instead of reading "Only on this computer".
+- Trashing or restoring a budget while an upload hadn't been answered could stop that computer's uploads for good, with "A lifecycle receipt changed." on every sync.
+- Resetting a forgotten sync passphrase failed on an account still on the old sync. It now resets there, and the account moves at its next unlock.
+- A data folder restored from a backup, or copied from another computer, could never upload again. It now registers as a new installation and syncs.
+- Changes from other devices could wait for good behind a budget left open in a copy of UrBudget that had closed, while the budget read "Synced". They now wait only for budgets open right now, and a budget held back reads "Waiting".
+- A deleted or skipped one-time scheduled transaction came back after a sync merge.
+- Signing in to ChatGPT for the assistant failed now and then ("didn't finish registering UrBudget", or "didn't match this attempt") when the browser's request arrived in pieces.
 - On Linux, a newly installed copy was counted as one already in use in the anonymous usage counts (Settings › Privacy & data), so it never showed as a new copy. A copy is now new until it has a budget library, whatever else is in its data folder.
 
 ## [1.0.13] - 2026-11-16
