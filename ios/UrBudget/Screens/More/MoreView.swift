@@ -3,6 +3,37 @@ import SwiftUI
 /// The pages More leads to.
 enum MoreRoute: Hashable {
     case library, sync, schedules, loans, payees, banks, brokers, settings, assistantSettings
+
+    /// The page as the assistant knows it (Android's names for them); nil for the assistant's own settings.
+    var place: String? {
+        switch self {
+        case .library: return "Budget library"
+        case .sync: return "Account & sync"
+        case .schedules: return "scheduled"
+        case .loans: return "loans"
+        case .payees: return "payees"
+        case .banks: return "bankConnections"
+        case .brokers: return "Investments"
+        case .settings: return "settings"
+        case .assistantSettings: return nil
+        }
+    }
+}
+
+private extension View {
+    /// A More page's bar has the Assistant button and the ⋯ menu, as every page's has on Android.
+    @ViewBuilder func morePageBar(_ place: String?) -> some View {
+        if let place {
+            toolbar {
+                ToolbarItemGroup(placement: .trailingBar) {
+                    AssistantBarButton(page: place)
+                    BudgetActionsMenu(place: place)
+                }
+            }
+        } else {
+            self
+        }
+    }
 }
 
 /// More: the budget and its library, then everything the tabs don't cover, as Android's More drawer
@@ -38,18 +69,25 @@ struct MoreView: View {
             .navigationTitle("More")
             .barTitle()
             .navigationDestination(for: MoreRoute.self) { route in
-                switch route {
-                case .library: LibraryView()
-                case .sync: AccountSyncView()
-                case .schedules: SchedulesView()
-                case .loans: LoanPlannerView()
-                case .payees: PayeesView()
-                case .banks: BankConnectionsView()
-                case .brokers: InvestmentsHomeView()
-                case .settings: SettingsView()
-                case .assistantSettings: AssistantSettingsView()
+                Group {
+                    switch route {
+                    case .library: LibraryView()
+                    case .sync: AccountSyncView()
+                    case .schedules: SchedulesView()
+                    case .loans: LoanPlannerView()
+                    case .payees: PayeesView()
+                    case .banks: BankConnectionsView()
+                    case .brokers: InvestmentsHomeView()
+                    case .settings: SettingsView()
+                    case .assistantSettings: AssistantSettingsView()
+                    }
                 }
+                .morePageBar(route.place)
             }
+            // The page open, for the assistant beside the app.
+            .onChange(of: path) { _, path in AppActions.shared.morePlace = path.last?.place }
+            .onAppear { AppActions.shared.morePlace = path.last?.place }
+            .onDisappear { AppActions.shared.morePlace = nil }
             .navigationDestination(for: RegisterTarget.self) { TransactionsList(target: $0) }
             .sheet(item: $sheet) { sheet in
                 switch sheet {

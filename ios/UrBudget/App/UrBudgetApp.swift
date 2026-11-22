@@ -270,7 +270,7 @@ struct MainTabs: View {
         case .transactions: return "transactions"
         case .accounts: return "accounts"
         case .reports: return "reports"
-        case .more: return "assistant"
+        case .more: return AppActions.shared.morePlace ?? "assistant"
         }
     }
 
@@ -331,7 +331,7 @@ struct MainTabs: View {
     }
 
     /// Goes where a card of the assistant asked: the Transactions tab showing its transactions
-    /// alone, or else the Budget tab on its month.
+    /// alone, or else the Budget tab on its month, where its categories are marked.
     private func go(_ destination: AppActions.Destination?) {
         guard let destination else { return }
         AppActions.shared.destination = nil
@@ -341,6 +341,7 @@ struct MainTabs: View {
             tab = .transactions
         } else {
             if Dates.isMonth(destination.month) { store.selectMonth(destination.month) }
+            if !destination.categories.isEmpty { AppActions.shared.marking = .init(categories: Set(destination.categories)) }
             tab = .budget
         }
     }
@@ -559,7 +560,13 @@ struct AssistantBarButton: View {
 struct BudgetActionsMenu: View {
     @Environment(BudgetStore.self) private var store
     @Environment(SyncCoordinator.self) private var sync
+    /// Where the menu is, for its Assistant: the page (by the key the assistant knows it by), and
+    /// the account or category a register shows.
+    var place = "assistant"
+    var account = ""
+    var category = ""
     @State private var page: Page?
+    @State private var asking: AssistantRequest?
 
     enum Page: String, Identifiable {
         case library, settings, sync, assistant
@@ -577,7 +584,10 @@ struct BudgetActionsMenu: View {
             Divider()
             Button { page = .library } label: { Label("Budgets", systemImage: "books.vertical") }
             // Also a button on the bar; here too, for a bar too crowded to show it (an iPad's, with its tabs).
-            Button { if !AppActions.shared.openBeside(nil) { page = .assistant } } label: { Label("Assistant", systemImage: "sparkles") }
+            Button {
+                let request = AssistantRequest(page: place, account: account, category: category)
+                if !AppActions.shared.openBeside(request) { asking = request; page = .assistant }
+            } label: { Label("Assistant", systemImage: "sparkles") }
             if sync.signedIn && sync.unlocked {
                 Button { Task { try? await sync.syncNow() } } label: { Label("Sync now", systemImage: "arrow.triangle.2.circlepath") }
                     .disabled(sync.syncing)
@@ -596,7 +606,7 @@ struct BudgetActionsMenu: View {
         .sheet(item: $page) { page in
             switch page {
             case .assistant:
-                AssistantView()
+                AssistantView(request: asking)
             case .library, .settings, .sync:
                 NavigationStack {
                     Group {

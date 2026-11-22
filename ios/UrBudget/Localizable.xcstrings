@@ -11,12 +11,72 @@
         }
       }
     },
+    "Add loan details" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إضافة تفاصيل القرض"
+          }
+        }
+      }
+    },
+    "Add the interest rate and monthly payment to see the payoff date and the interest left to pay." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أضف سعر الفائدة والدفعة الشهرية لترى تاريخ السداد والفائدة المتبقية."
+          }
+        }
+      }
+    },
+    "Applying the last change" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ تطبيق التغيير الأخير"
+          }
+        }
+      }
+    },
+    "Finishing sign-in with ChatGPT…" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ إكمال تسجيل الدخول عبر ChatGPT…"
+          }
+        }
+      }
+    },
     "Month total: %@ → %@" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "إجمالي الشهر: ⁨%1$@⁩ ← ⁨%2$@⁩"
+          }
+        }
+      }
+    },
+    "Open in register" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فتح في سجل المعاملات"
+          }
+        }
+      }
+    },
+    "Privacy & your data" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الخصوصية وبياناتك"
           }
         }
       }
@@ -47,6 +107,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "التغيّر: ⁨%@⁩"
+          }
+        }
+      }
+    },
+    "Return to UrBudget to finish signing in." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عُد إلى UrBudget لإكمال تسجيل الدخول."
           }
         }
       }
@@ -207,6 +277,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "إزالة التنزيل"
+          }
+        }
+      }
+    },
+    "Saving your sign-in…" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ حفظ تسجيل الدخول…"
+          }
+        }
+      }
+    },
+    "The import changed while these fixes applied. Apply the card again." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تغيّر الاستيراد أثناء تطبيق هذه التصحيحات. طبّق البطاقة مرة أخرى."
+          }
+        }
+      }
+    },
+    "What stays on this phone and what sync, bank links and the assistant share" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ما يبقى على هذا الهاتف، وما تشاركه المزامنة وربط البنوك والمساعد"
+          }
+        }
+      }
+    },
+    "When will it be paid off?" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متى سيُسدَّد؟"
           }
         }
       }

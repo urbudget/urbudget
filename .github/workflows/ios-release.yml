@@ -22,7 +22,10 @@ concurrency:
 
 jobs:
   upload:
-    runs-on: macos-latest
+    # Xcode 27.1 or later: an older one builds an app without the iPhone Duo's book and table
+    # layouts (docs/FOLLOW-UPS.md, iPhone Duo). GitHub's macos-latest still has 26.x; the xcode-27
+    # image (a preview) has 27.1 as its default.
+    runs-on: xcode-27
     timeout-minutes: 60
     environment: app-store
     env:
@@ -49,6 +52,15 @@ jobs:
             echo "::error::The app-store environment needs the APP_STORE_CONNECT_KEY_ID, APP_STORE_CONNECT_ISSUER_ID and APP_STORE_CONNECT_KEY secrets (RELEASING.md)."
             exit 1
           fi
+
+      - name: Use Xcode 27.1
+        run: |
+          set -euo pipefail
+          sudo xcode-select -s /Applications/Xcode_27.1.app
+          xcodebuild -version
+          # The fold's reader is compiled only by Swift 6.4 or later (Fold.swift).
+          xcrun swiftc --version 2>&1 | head -1 | grep -E 'Swift version (6\.([4-9]|[1-9][0-9])|[7-9])' \
+            || { echo "::error::This Xcode's Swift is older than 6.4, so the iPhone Duo layouts wouldn't be built."; exit 1; }
 
       - uses: dtolnay/rust-toolchain@stable
         with:

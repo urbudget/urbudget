@@ -261,6 +261,15 @@ struct SettingsView: View {
 
     private var aboutSection: some View {
         Section {
+            // The app's privacy page, as Settings has it on Android (Account & sync has it too).
+            Button {
+                Task {
+                    do { _ = try await store.service("account_open", ["next": "/privacy/app/"]) } catch { self.error = BudgetStore.readable(error) }
+                }
+            } label: {
+                rowLabel(String(localized: "Privacy & your data"),
+                         String(localized: "What stays on this phone and what sync, bank links and the assistant share"), "hand.raised")
+            }
             LabeledContent("Version", value: version)
         } footer: {
             if let budget = store.budget {
