@@ -9022,6 +9022,16 @@
         }
       }
     },
+    "Count this copy as in use" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إحصاء استخدام هذه النسخة"
+          }
+        }
+      }
+    },
     "Cover" : {
       "localizations" : {
         "ar" : {
@@ -16599,6 +16609,16 @@
         }
       }
     },
+    "Once a day, tells urbudget.app that a copy of UrBudget was opened, and whether that's its first time, or its first this week or month, with its version, system, where it was installed from and the week it was first opened. Nothing identifies you, this device or your budgets." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مرة واحدة في اليوم، يُبلغ urbudget.app بأن نسخة من UrBudget فُتحت، وبما إذا كانت هذه أول مرة تُفتح فيها، أو أول مرة هذا الأسبوع أو هذا الشهر، مع إصدارها ونظام التشغيل ومصدر تثبيتها والأسبوع الذي فُتحت فيه أول مرة. لا شيء من ذلك يدل عليك أو على هذا الجهاز أو على ميزانياتك."
+          }
+        }
+      }
+    },
     "Once by a date" : {
       "localizations" : {
         "ar" : {
@@ -18045,6 +18065,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "الخصوصية"
+          }
+        }
+      }
+    },
+    "Privacy & data" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الخصوصية والبيانات"
           }
         }
       }

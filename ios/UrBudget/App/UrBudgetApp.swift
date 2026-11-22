@@ -213,6 +213,42 @@ struct RootView: View {
         HostEvents.shared.start()
         sync.start()
         appStore.start()
+        // Counted as in use, at most once a day, each time the app comes to the front.
+        Task.detached(priority: .utility) { UsageCounts.report() }
+    }
+}
+
+/// Anonymous usage counts, as the desktop and Android keep them (crates/urbudget-services/src/usage.rs):
+/// the engine counts this copy as in use on urbudget.app when the day, week or month is new since it
+/// was last counted, saying only what's new, with the app's version and where it came from. Nothing
+/// identifies the copy, the device or the person. Settings & data → Privacy & data → Count this copy
+/// as in use turns it off. Debug builds' engine counts only on the local server URBUDGET_API names.
+enum UsageCounts {
+    /// The switch's UserDefaults key, on by default.
+    static let key = "usageCounts"
+
+    /// Where this copy came from: TestFlight, whose builds carry a sandbox receipt, or the App Store.
+    static func channel(receipt: URL?) -> String {
+        receipt?.lastPathComponent == "sandboxReceipt" ? "testflight" : "appstore"
+    }
+
+    /// What to ask the engine's `usage_report` with, or nil while the switch is off.
+    static func request(enabled: Bool, receipt: URL?, version: String) -> JSON? {
+        guard enabled else { return nil }
+        return ["platform": "ios", "channel": .string(channel(receipt: receipt)), "version": .string(version)]
+    }
+
+    /// Whether the switch is on.
+    static func enabled(_ defaults: UserDefaults = .standard) -> Bool {
+        defaults.object(forKey: key) as? Bool ?? true
+    }
+
+    /// Asks the engine to count this copy. Waits for the network, so call it off the main thread;
+    /// offline, nothing is marked counted and the next return to the app tries again.
+    static func report(_ defaults: UserDefaults = .standard) {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+        guard let request = request(enabled: enabled(defaults), receipt: Bundle.main.appStoreReceiptURL, version: version) else { return }
+        _ = try? NativeCore.service("usage_report", request)
     }
 }
 

@@ -286,3 +286,30 @@ final class SyncInvalidationTests: XCTestCase {
         XCTAssertFalse(syncBackgroundEligible(status))
     }
 }
+
+/// When the app asks the engine to count it as in use, and what it says it is (UsageCounts).
+final class UsageCountsTests: XCTestCase {
+    private let receipts = URL(fileURLWithPath: "/private/var/containers/Bundle/Application/Copy/UrBudget.app/StoreKit")
+
+    func testItSaysWhereItCameFromAndNothingWhileOff() {
+        let appStore = receipts.appendingPathComponent("receipt"), testFlight = receipts.appendingPathComponent("sandboxReceipt")
+        XCTAssertEqual(UsageCounts.request(enabled: true, receipt: appStore, version: "1.0.1"), ["platform": "ios", "channel": "appstore", "version": "1.0.1"])
+        XCTAssertEqual(UsageCounts.request(enabled: true, receipt: testFlight, version: "1.0.1")?["channel"], "testflight")
+        XCTAssertEqual(UsageCounts.request(enabled: true, receipt: nil, version: "1.0.1")?["channel"], "appstore")
+        XCTAssertNil(UsageCounts.request(enabled: false, receipt: appStore, version: "1.0.1"))
+        XCTAssertNil(UsageCounts.request(enabled: false, receipt: testFlight, version: "1.0.1"))
+    }
+
+    /// The switch in Settings & data keeps its choice under this key, and is on until it's turned off.
+    func testTheSwitchIsOnUntilItIsTurnedOff() throws {
+        let suite = "UsageCountsTests"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+        XCTAssertTrue(UsageCounts.enabled(defaults))
+        defaults.set(false, forKey: "usageCounts")
+        XCTAssertFalse(UsageCounts.enabled(defaults))
+        defaults.set(true, forKey: "usageCounts")
+        XCTAssertTrue(UsageCounts.enabled(defaults))
+    }
+}
