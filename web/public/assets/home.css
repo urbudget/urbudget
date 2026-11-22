@@ -2555,3 +2555,127 @@ g.is-hot > .rw-hit {
     animation: none !important;
   }
 }
+
+/* ---------- iPhone and iPad ---------- */
+
+/* A band, like the privacy section's, between pricing and the Android test. */
+.ios {
+  border-block: 1px solid var(--border);
+  background:
+    radial-gradient(60rem 30rem at 15% 40%, var(--brand-softer), transparent 70%),
+    var(--bg-soft);
+  overflow: clip;
+}
+.ios-grid {
+  display: grid;
+  gap: clamp(2.5rem, 2rem + 3vw, 4rem);
+  align-items: center;
+}
+/* On a phone the heading comes before the devices; side by side, the devices sit on the left. */
+.ios-copy {
+  order: -1;
+}
+@media (min-width: 960px) {
+  .ios-copy {
+    order: 0;
+  }
+  .ios-grid {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+    gap: clamp(3rem, 5vw, 5rem);
+  }
+}
+.ios-copy h2 {
+  font-size: clamp(2rem, 1.5rem + 2vw, 3.1rem);
+}
+.ios-copy .ticks {
+  margin-top: var(--space-5);
+}
+
+/* An iPad with an iPhone standing in front of its lower right corner. Sizes and radii follow the
+   figure's width (cqw), so the pair keeps its shape from a phone to a wide screen. */
+.ios-devices {
+  container-type: inline-size;
+  position: relative;
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 0 10% 13% 0;
+}
+.ios-ipad,
+.ios-iphone {
+  border: 1px solid var(--bezel-edge);
+  background: var(--bezel-glass);
+  box-shadow: var(--bezel-shadow);
+  backdrop-filter: blur(6px);
+}
+.ios-ipad {
+  padding: 1.6cqw;
+  border-radius: 4.4cqw;
+}
+.ios-ipad img {
+  width: 100%;
+  border-radius: 2.8cqw;
+}
+.ios-iphone {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 29%;
+  padding: 1.1cqw;
+  border-radius: 5.6cqw;
+  box-shadow:
+    var(--bezel-shadow),
+    0 2.5cqw 6cqw -2cqw rgb(16 24 40 / 0.35);
+}
+.ios-iphone img {
+  width: 100%;
+  border-radius: 4.5cqw;
+}
+
+/* The button, and beside it a code to scan for someone reading this on a computer. */
+.ios-get {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  margin-top: var(--space-6);
+}
+.ios-scan {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-2);
+  font-size: var(--step--1);
+  line-height: 1.35;
+  text-decoration: none;
+}
+.ios-scan:hover {
+  text-decoration: none;
+}
+.ios-scan:hover b {
+  color: var(--brand-text);
+}
+.ios-scan img {
+  flex: none;
+  width: 64px;
+  height: 64px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+}
+.ios-scan b {
+  display: block;
+  color: var(--text);
+}
+.ios-meta {
+  margin-top: var(--space-4);
+  color: var(--text-3);
+  font-size: var(--step--1);
+}
+/* A code is no use on the phone that would scan it. */
+@media (max-width: 719px), (hover: none) and (pointer: coarse) {
+  .ios-scan {
+    display: none;
+  }
+}

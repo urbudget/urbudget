@@ -595,26 +595,45 @@
       </div>
     </section>
 
-    <!-- iPhone and iPad: the App Store app. The phone sits on the left here, so it and Android's
-         section below alternate. -->
-    <section class="section droid droid-ios" id="iphone" aria-labelledby="iphone-title">
-      <div class="container droid-grid">
-        <div class="droid-copy" data-rise>
+    <!-- iPhone and iPad: the App Store app. The devices sit on the left, so they and Android's
+         phone below alternate. Each screen comes in both themes (theme-light / theme-dark). -->
+    <section class="section ios" id="iphone" aria-labelledby="iphone-title">
+      <div class="container ios-grid">
+        <figure class="ios-devices" data-rise>
+          <div class="ios-ipad">
+            <picture class="theme-light">
+              <img src="/img/ipad-budget-light-1280.webp?v=58fe5e9d" srcset="/img/ipad-budget-light-640.webp?v=98f44224 640w, /img/ipad-budget-light-1280.webp?v=58fe5e9d 1280w" sizes="(min-width: 1264px) 620px, (min-width: 960px) 50vw, 90vw" width="1280" height="960" loading="lazy" decoding="async" alt="UrBudget on iPad: the budget for November, envelopes under Credit Card Payments, Bills and Everyday with what is assigned and available, and the sidebar beside it.">
+            </picture>
+            <picture class="theme-dark">
+              <img src="/img/ipad-budget-dark-1280.webp?v=22a5f6ba" srcset="/img/ipad-budget-dark-640.webp?v=b7d38562 640w, /img/ipad-budget-dark-1280.webp?v=22a5f6ba 1280w" sizes="(min-width: 1264px) 620px, (min-width: 960px) 50vw, 90vw" width="1280" height="960" loading="lazy" decoding="async" alt="UrBudget on iPad: the budget for November, envelopes under Credit Card Payments, Bills and Everyday with what is assigned and available, and the sidebar beside it.">
+            </picture>
+          </div>
+          <div class="ios-iphone">
+            <picture class="theme-light">
+              <img src="/img/iphone-accounts-light-480.webp?v=9bfe12eb" srcset="/img/iphone-accounts-light-240.webp?v=9a2f386c 240w, /img/iphone-accounts-light-480.webp?v=9bfe12eb 480w" sizes="(min-width: 1264px) 190px, (min-width: 960px) 15vw, 28vw" width="480" height="1043" loading="lazy" decoding="async" alt="UrBudget on iPhone: accounts grouped into cash, credit and tracking, under a net worth of $21,599.20.">
+            </picture>
+            <picture class="theme-dark">
+              <img src="/img/iphone-accounts-dark-480.webp?v=a32791b5" srcset="/img/iphone-accounts-dark-240.webp?v=09fd5d6d 240w, /img/iphone-accounts-dark-480.webp?v=a32791b5 480w" sizes="(min-width: 1264px) 190px, (min-width: 960px) 15vw, 28vw" width="480" height="1043" loading="lazy" decoding="async" alt="UrBudget on iPhone: accounts grouped into cash, credit and tracking, under a net worth of $21,599.20.">
+            </picture>
+          </div>
+        </figure>
+        <div class="ios-copy" data-rise>
           <p class="droid-kicker"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg>iPhone and iPad</p>
           <h2 id="iphone-title">UrBudget is on the App&nbsp;Store.</h2>
           <ul class="ticks">
-            <li><b>The whole budget in your pocket.</b> Envelopes and targets, transactions, scheduled bills, the reports and the loan planner.</li>
-            <li><b>Made for iPad, too.</b> On the bigger screen, a category opens beside the budget and a transaction beside the register.</li>
-            <li><b>The same budget as your computer.</b> Sync keeps them in step, encrypted with your passphrase. Without it, the budget stays on your phone.</li>
+            <li><b>The whole budget, with you.</b> Envelopes and targets, transactions, scheduled bills, the reports and the loan planner.</li>
+            <li><b>Made for iPad, too.</b> A category opens beside the budget, and a transaction beside the register.</li>
+            <li><b>In step with your computer.</b> Sync keeps them the same, encrypted with your passphrase. Or keep the budget on your phone alone.</li>
           </ul>
-          <div class="store-cta">
-            <a class="btn btn-primary btn-lg" href="https://apps.apple.com/app/id6825535486" data-store="app-store"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>Download on the App Store</a>
-            <p class="store-meta"><span>Free, with nothing locked</span><span>iOS and iPadOS 17 or later</span></p>
+          <div class="ios-get">
+            <a class="btn btn-primary btn-lg" href="https://apps.apple.com/app/id6825535486">Download on the App Store</a>
+            <a class="ios-scan" href="https://apps.apple.com/app/id6825535486" aria-label="Get UrBudget on the App Store">
+              <img src="/img/qr-app-store.svg?v=e8458f53" width="37" height="37" alt="">
+              <span><b>Or scan it</b>with your iPhone</span>
+            </a>
           </div>
+          <p class="ios-meta">Free, with nothing locked · iOS and iPadOS 17 or later</p>
         </div>
-        <figure class="droid-phone" data-rise>
-          <img src="/img/phone-ios-budget-360.webp?v=f522b93c" srcset="/img/phone-ios-budget-360.webp?v=f522b93c 360w, /img/phone-ios-budget-720.webp?v=e74600e2 720w" sizes="(min-width: 900px) 330px, 72vw" width="360" height="782" loading="lazy" decoding="async" alt="UrBudget on iPhone: the month's envelopes under Credit Card Payments, Bills and Everyday, each with what's assigned and available, and nothing left to assign.">
-        </figure>
       </div>
     </section>
 

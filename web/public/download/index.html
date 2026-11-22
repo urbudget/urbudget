@@ -145,6 +145,10 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg>
               Download on the App Store
             </a>
+            <a class="btn btn-lg dl-btn-quiet" href="/android/" data-os="android" hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg>
+              Join the Android test
+            </a>
           </div>
           <p class="dl-release" id="dl-release"></p>
           <p class="dl-hint" id="dl-hint">For Windows 10 and 11, macOS 12 or later, and Linux. <a href="#downloads">All downloads</a></p>
@@ -153,6 +157,10 @@
             <li>Future updates included</li>
             <li>Your budgets stay on your computer</li>
           </ul>
+          <a class="dl-scan" href="#phones">
+            <img src="/img/qr-app-store.svg?v=e8458f53" width="37" height="37" alt="">
+            <span><b>On iPhone or iPad?</b> Scan with your phone's camera to get UrBudget from the App&nbsp;Store.</span>
+          </a>
         </div>
         <div class="dl-shot">
           <figure class="dl-window bezel">
@@ -171,65 +179,97 @@
       <div class="container">
         <div class="dl-head">
           <h2 id="downloads-title">All downloads</h2>
-          <p>It's the same app on Windows and on a Mac, free and open source. <span id="release-line">Direct installers get the latest published release. Microsoft Store updates follow Store certification and may arrive later.</span></p>
+          <p>The same app on every computer, free and open source, and on iPhone and iPad. <span id="release-line">Direct installers get the latest published release. Microsoft Store updates follow Store certification and may arrive later.</span></p>
         </div>
-        <ul class="dl-list" id="dl-list">
-          <li class="dl-item" data-os="windows">
-            <span class="dl-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8h14l-1 12H6z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg></span>
-            <div class="dl-body">
-              <h3>Microsoft Store <span class="badge badge-brand">Recommended for Windows</span></h3>
-              <p>The Store installs UrBudget and keeps it up to date.</p>
-              <p class="dl-meta"><span>Windows 10 or 11, 64-bit</span></p>
-            </div>
-            <a class="btn btn-primary" href="/download/store" data-pick="windows">Get it from the Store</a>
-          </li>
-          <li class="dl-item" data-os="windows">
-            <span class="dl-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/></svg></span>
-            <div class="dl-body">
-              <h3>Windows installer</h3>
-              <p>For computers without the Store. It updates itself from inside the app.</p>
-              <p class="dl-meta"><span>Windows 10 or 11, 64-bit</span> <span class="dl-meta-file" id="meta-windows">.exe</span> <span id="size-windows" hidden></span></p>
-            </div>
-            <a class="btn" href="/download/windows">Download the installer</a>
-          </li>
-          <li class="dl-item" data-os="macos">
-            <span class="dl-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4.5" width="16" height="11" rx="1.5"/><path d="M2 19.5h20"/></svg></span>
-            <div class="dl-body">
-              <h3>Mac app <span class="badge badge-brand dl-here">For this computer</span></h3>
-              <p>One app for Apple silicon and Intel Macs. It updates itself from inside the app.</p>
-              <p class="dl-meta"><span>macOS 12 Monterey or later</span> <span class="dl-meta-file" id="meta-macos">.dmg</span> <span id="size-macos" hidden></span></p>
-            </div>
-            <a class="btn" href="/download/macos" data-pick="macos">Download for macOS</a>
-          </li>
-          <li class="dl-item" data-os="ios">
-            <span class="dl-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg></span>
-            <div class="dl-body">
-              <h3>iPhone and iPad <span class="badge badge-brand dl-here">For this device</span></h3>
-              <p>From the App Store, which keeps it up to date. Sync keeps it in step with your computer.</p>
-              <p class="dl-meta"><span>iOS and iPadOS 17 or later</span> <span>Free</span></p>
-            </div>
-            <a class="btn" href="https://apps.apple.com/app/id6825535486" data-pick="ios">Get it on the App Store</a>
-          </li>
-          <!-- Linux shows once a release has it (download.js): until then these stay hidden. -->
-          <li class="dl-item" data-os="linux" data-linux hidden>
-            <span class="dl-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/></svg></span>
-            <div class="dl-body">
-              <h3>Linux AppImage <span class="badge badge-brand dl-here">For this computer</span></h3>
-              <p>One file that runs without installing. It updates itself from inside the app.</p>
-              <p class="dl-meta"><span>64-bit Intel or AMD, a distribution from 2022 or later</span> <span class="dl-meta-file" id="meta-linux">.AppImage</span> <span id="size-linux" hidden></span></p>
-            </div>
-            <a class="btn" href="/download/linux" data-pick="linux">Download the AppImage</a>
-          </li>
-          <li class="dl-item" data-os="linux" data-linux hidden>
-            <span class="dl-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/></svg></span>
-            <div class="dl-body">
-              <h3>Debian and Ubuntu package</h3>
-              <p>Installs UrBudget like your other apps. It asks for your password to install each update.</p>
-              <p class="dl-meta"><span>Ubuntu 22.04 or Debian 12 and later, 64-bit Intel or AMD</span> <span class="dl-meta-file" id="meta-linux-deb">.deb</span> <span id="size-linux-deb" hidden></span></p>
-            </div>
-            <a class="btn" href="/download/linux-deb">Download the .deb</a>
-          </li>
-        </ul>
+
+        <!-- download.js marks this computer's card, moves it first, and on a phone puts the phones first. -->
+        <div class="dl-group" id="computers" aria-labelledby="computers-title">
+          <h3 class="dl-group-title" id="computers-title">For your computer</h3>
+          <ul class="dl-cards" id="dl-list">
+            <li class="dl-item" data-os="windows">
+              <div class="dl-card-head">
+                <span class="dl-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12.5" rx="2"/><path d="M8.5 20.5h7M12 16.5v4"/></svg></span>
+                <div>
+                  <h4>Windows <span class="badge badge-brand dl-here">For this computer</span></h4>
+                  <p class="dl-req">Windows 10 or 11, 64-bit</p>
+                </div>
+              </div>
+              <p class="dl-desc">The Microsoft Store installs UrBudget and keeps it up to date.</p>
+              <a class="btn" href="/download/store" data-pick="windows">Get it from the Microsoft Store</a>
+              <p class="dl-alt"><a href="/download/windows">Or download the installer</a> <span class="dl-meta"><span class="dl-meta-file" id="meta-windows">.exe</span> <span id="size-windows" hidden></span></span></p>
+            </li>
+            <li class="dl-item" data-os="macos">
+              <div class="dl-card-head">
+                <span class="dl-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4.5" width="16" height="11" rx="1.5"/><path d="M2 19.5h20"/></svg></span>
+                <div>
+                  <h4>Mac <span class="badge badge-brand dl-here">For this computer</span></h4>
+                  <p class="dl-req">macOS 12 Monterey or later</p>
+                </div>
+              </div>
+              <p class="dl-desc">One app for Apple silicon and Intel Macs. It updates itself from inside the app.</p>
+              <a class="btn" href="/download/macos" data-pick="macos">Download for macOS</a>
+              <p class="dl-alt"><span class="dl-meta"><span class="dl-meta-file" id="meta-macos">.dmg</span> <span id="size-macos" hidden></span></span></p>
+            </li>
+            <!-- Linux shows once a release has it (download.js): until then it stays hidden. -->
+            <li class="dl-item" data-os="linux" data-linux hidden>
+              <div class="dl-card-head">
+                <span class="dl-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M12.5 15H17"/></svg></span>
+                <div>
+                  <h4>Linux <span class="badge badge-brand dl-here">For this computer</span></h4>
+                  <p class="dl-req">64-bit Intel or AMD, a distribution from 2022 or later</p>
+                </div>
+              </div>
+              <p class="dl-desc">The AppImage runs without installing and updates itself from inside the app.</p>
+              <a class="btn" href="/download/linux" data-pick="linux">Download the AppImage</a>
+              <p class="dl-alt"><span class="dl-meta"><span class="dl-meta-file" id="meta-linux">.AppImage</span> <span id="size-linux" hidden></span></span></p>
+              <p class="dl-alt"><a href="/download/linux-deb">Or the .deb for Ubuntu and Debian</a> <span class="dl-meta"><span class="dl-meta-file" id="meta-linux-deb">.deb</span> <span id="size-linux-deb" hidden></span></span></p>
+            </li>
+          </ul>
+        </div>
+
+        <div class="dl-group" id="phones" aria-labelledby="phones-title">
+          <h3 class="dl-group-title" id="phones-title">For your phone and tablet</h3>
+          <ul class="dl-cards dl-cards-phones">
+            <li class="dl-item" data-os="ios">
+              <div class="dl-card-head">
+                <span class="dl-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg></span>
+                <div>
+                  <h4>iPhone and iPad <span class="badge badge-brand dl-here">For this device</span></h4>
+                  <p class="dl-req">iOS and iPadOS 17 or later · Free</p>
+                </div>
+              </div>
+              <div class="dl-phone-body">
+                <div>
+                  <p class="dl-desc">From the App Store, which keeps it up to date. Sync keeps it in step with your computer.</p>
+                  <a class="btn" href="https://apps.apple.com/app/id6825535486" data-pick="ios">Get it on the App Store</a>
+                </div>
+                <figure class="dl-qr">
+                  <img src="/img/qr-app-store.svg?v=e8458f53" width="37" height="37" alt="QR code that opens UrBudget on the App Store">
+                  <figcaption>Scan with your iPhone</figcaption>
+                </figure>
+              </div>
+            </li>
+            <li class="dl-item" data-os="android">
+              <div class="dl-card-head">
+                <span class="dl-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg></span>
+                <div>
+                  <h4>Android <span class="badge badge-brand dl-here">For this device</span></h4>
+                  <p class="dl-req">Android 8.0 or later · In testing</p>
+                </div>
+              </div>
+              <div class="dl-phone-body">
+                <div>
+                  <p class="dl-desc">A closed test on Google Play that anyone can join, in two steps.</p>
+                  <a class="btn" href="/android/" data-pick="android">Join the Android test</a>
+                </div>
+                <figure class="dl-qr">
+                  <img src="/img/qr-android-test.svg?v=5e249bbf" width="37" height="37" alt="QR code that opens the Android test's page on urbudget.app">
+                  <figcaption>Scan with your Android phone</figcaption>
+                </figure>
+              </div>
+            </li>
+          </ul>
+        </div>
       </div>
     </section>
 

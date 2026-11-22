@@ -252,8 +252,9 @@ async function stampScreenshotSizes() {
  * (docs/play-listing/graphics), without its caption, with the screen's own round corners cut
  * out. Its region and radius are in that 1440×2560 image's pixels.
  *
- * iPhone: the App Store listing's budget screen as the Simulator captured it (a 1320×2868
- * iPhone, docs/app-store), whole; the bezel's CSS rounds its corners.
+ * iPhone and iPad: the Simulator's screens in light and dark (docs/app-store: the iPad's budget,
+ * from a 13" iPad, and the iPhone's accounts, from a 6.9" iPhone, the same showcase budget as the
+ * App Store's screenshots), whole; the devices' CSS rounds their corners.
  */
 const PHONES = [
   {
@@ -263,11 +264,18 @@ const PHONES = [
     radius: 88,
     widths: [360, 720],
   },
-  {
-    name: "phone-ios-budget",
-    src: resolve(root, "..", "docs", "app-store", "budget-iphone.png"),
-    widths: [360, 720],
-  },
+  ...["light", "dark"].flatMap((theme) => [
+    {
+      name: `ipad-budget-${theme}`,
+      src: resolve(root, "..", "docs", "app-store", `ipad-budget-${theme}.png`),
+      widths: [640, 1280],
+    },
+    {
+      name: `iphone-accounts-${theme}`,
+      src: resolve(root, "..", "docs", "app-store", `iphone-accounts-${theme}.png`),
+      widths: [240, 480],
+    },
+  ]),
 ];
 
 async function phoneShots() {

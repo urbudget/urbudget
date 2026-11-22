@@ -17,6 +17,7 @@ const HINTS = {
   macos: ["For Apple silicon and Intel, macOS 12 or later.", "Windows downloads"],
   linux: ["An AppImage for 64-bit Intel and AMD computers.", "The .deb and other systems"],
   ios: ["For iPhone and iPad, with iOS or iPadOS 17 or later.", "Downloads for your computer"],
+  android: ["For Android 8.0 or later, in a closed test on Google Play.", "Downloads for your computer"],
 };
 
 function detectOS() {
@@ -52,9 +53,8 @@ function recommend(os) {
     button.closest(".dl-item").classList.toggle("is-here", mine);
   }
   // Moved, not just restyled, so the order is the same for keyboards and screen readers.
-  const list = $("dl-list");
   const steps = $("dl-steps");
-  for (const el of [...list.querySelectorAll(`.dl-item[data-os="${os}"]`)].reverse()) list.prepend(el);
+  for (const el of [...document.querySelectorAll(`.dl-item[data-os="${os}"]`)].reverse()) el.parentElement.prepend(el);
   for (const el of [...steps.querySelectorAll(`.dl-steps[data-os="${os}"]`)].reverse()) steps.prepend(el);
 }
 
@@ -179,7 +179,9 @@ async function release() {
 
 const os = detectOS();
 const missing = unavailable();
-if (NAMES[os] || os === "ios") recommend(os);
+if (NAMES[os] || os === "ios" || os === "android") recommend(os);
 else if (NAMES[missing]) recommend(missing);
+// On a phone its own app comes first, and the computers' downloads after it.
+if (os === "ios" || os === "android") $("computers").before($("phones"));
 if (os !== "linux") osNote(os);
 void release();
