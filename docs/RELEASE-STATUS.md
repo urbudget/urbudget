@@ -1,14 +1,34 @@
 # Release status
 
-Reviewed 17 November 2026 for desktop, the website and the Microsoft Store; 12 November 2026 for Android; 29 October 2026 for iOS. Update this page after a release or a verified account milestone.
+Reviewed 17 November 2026 for desktop, the website and the Microsoft Store; 12 November 2026 for Android; 22 November 2026 for iOS and sync v2. Update this page after a release or a verified account milestone.
 
 | Platform | Status |
 | --- | --- |
-| Desktop | Published [desktop-v1.0.13](https://github.com/urbudget/urbudget/releases/tag/desktop-v1.0.13) on 17 November 2026, the first release with a Linux version. Windows, universal macOS and Linux (AppImage and `.deb`, x86_64) installers are live on urbudget.app, with signed updates offered to 1.0.12. The release run's updater tests, builds, notarization and installed Windows smoke checks passed. The two-version updater checks were **not** run before publishing, and the Linux version has not been run on a real desktop (see below). Production v2 activation remains disabled. |
+| Desktop | Published [desktop-v1.0.13](https://github.com/urbudget/urbudget/releases/tag/desktop-v1.0.13) on 17 November 2026, the first release with a Linux version. Windows, universal macOS and Linux (AppImage and `.deb`, x86_64) installers are live on urbudget.app, with signed updates offered to 1.0.12. The release run's updater tests, builds, notarization and installed Windows smoke checks passed. The two-version updater checks were **not** run before publishing, and the Linux version has not been run on a real desktop (see below). Sync v2 activation is on since 22 November 2026 ([below](#sync-v2-activation)). |
 | Website | [Desktop 1.0.13 publication](https://github.com/urbudget/urbudget/actions/runs/44070622381) updated the downloads and signed update feeds on 17 November 2026, and the download page now offers Linux. The site has run this repository's `web/` since 22 October: the app is free, and Sync is the only paid part at $3 a month. |
 | Microsoft Store | Desktop **1.0.13 is in certification**, not yet published: the [submission run](https://github.com/urbudget/urbudget/actions/runs/44070622403) committed submission `1152921505702428155` at 11:08 UTC (14:08 Riyadh) on 17 November 2026. Until it's published the [Microsoft Store](https://apps.microsoft.com/detail/9PMQMBZJG06R) has 1.0.12, published on 15 November as submission `1152921505702410339`. To check, run **Microsoft Store status** with the new submission ID and package version `1.0.13.0`. |
 | Android | Source version 1.0.1 (version code 1000001), package `app.urbudget`. On 12 November 2026 the [signed 1.0.1 bundle](https://github.com/urbudget/urbudget/actions/runs/43288911078) from `8a55c50` became the release on Play's closed test, superseding the 1.0.0 draft. Its SMS and foreground service declarations are saved with videos recorded on a Galaxy Z Fold, Sign in details are filled with a review account of its own and a capped assistant key, and the release has no errors. It was sent to Google for review that day, with the store listing and app content; Managed publishing is off, so the closed test goes to its testers as soon as it's approved. See [the Play listing notes](play-listing/README.md). |
-| iOS | Native app source version `1.0.0`, bundle `app.urbudget`. The App Store Connect app record (6825535486) exists, and its listing, price (free), availability, age rating (4+) and privacy answers are filled in. Version 1.0.0 (build 1, from `ios-v1.0.0`) was submitted to App Review on 22 October 2026 as "UrBudget: Envelope Planner", set to **manual release**. Its privacy answers are published, and its screenshots (iPhone and iPad) and review account (`review@urbudget.app`, with complimentary Sync) are set up. It's not on the Mac App Store, by choice: Mac users get the desktop app. |
+| iOS | Native app source version `1.0.0`, bundle `app.urbudget`. The App Store Connect app record (6825535486) exists, and its listing, price (free), availability, age rating (4+) and privacy answers are filled in. Version 1.0.0 (build 1, from `ios-v1.0.0`) was submitted to App Review on 22 October 2026 as "UrBudget: Envelope Planner" and, by 22 November 2026, approved and on the App Store. Its privacy answers are published, and its screenshots (iPhone and iPad) and review account (`review@urbudget.app`, with complimentary Sync) are set up. 1.0.0 predates sync v2 and the in-app Sync subscription: it syncs on v1 only, so it stops syncing for an account once that account moves to v2 (see [Sync v2 activation](#sync-v2-activation)). 1.0.1 brings both. It's not on the Mac App Store, by choice: Mac users get the desktop app. |
+
+## Sync v2 activation
+
+Switched on 22 November 2026 by setting `SYNC_V2_ENABLED` to `"1"` in `web/wrangler.jsonc`; the
+Deploy site run on that merge to `main` put it live. The server has had v2's routes and migration
+`0012_sync_v2.sql` since 29 October. What it changes is in [SYNC_V2.md](../web/SYNC_V2.md#deployment-boundary):
+a v2 app given the passphrase creates or moves the account to v2, and nothing moves by itself.
+
+Apps that speak v2: desktop 1.0.11 and later, Android 1.0.1 and later (Play's closed test),
+iPhone from 1.0.1. Apps that don't: desktop 1.0.10 and earlier (offered an update) and **iPhone
+1.0.0, the version on the App Store**. Activating before iPhone 1.0.1 is out was the owner's
+decision: an iPhone on 1.0.0 is told "Update UrBudget to continue syncing" once its account is
+on v2, and keeps its budgets on the phone.
+
+Not done before switching it on, from [the blocker review](reviews/2026-10-29-sync-v2-release-blockers.md#remaining-work-and-release-gates):
+a staging rehearsal of restore and rollback, production monitoring, and the physical-device checks
+(process termination, protected data, changing connectivity, background expiry, the largest
+budgets). Its presentation follow-ups (recovery shown as raw JSON, among others) are still open.
+To stop further moves, set `SYNC_V2_ENABLED` to `"0"` and deploy; to stop uploads during an
+incident, add `SYNC_V2_PUBLICATION_PAUSED: "1"`. Accounts already on v2 stay on v2.
 
 ## Desktop 1.0.13
 
