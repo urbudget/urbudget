@@ -89,7 +89,7 @@ struct AccountsView: View {
         let currency = store.currency
         let sections = store.budget.map { accountSections(budget: $0, summary: store.summary) } ?? []
         NavigationStack {
-            List {
+            AppList {
                 if let summary = store.summary {
                     Section {
                         // Opens the Net worth report, month by month.

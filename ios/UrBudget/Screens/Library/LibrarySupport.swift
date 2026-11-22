@@ -292,7 +292,7 @@ private struct LibraryCurrencyList: View {
         let matches = query.isEmpty ? all : all.filter {
             $0.code.localizedCaseInsensitiveContains(query) || $0.name.localizedCaseInsensitiveContains(query) || (!$0.symbol.isEmpty && $0.symbol == query)
         }
-        List {
+        AppList {
             if query.isEmpty {
                 Section("Suggested") {
                     ForEach(currencyChoices(selection).filter(LibraryCurrencies.valid), id: \.self) { row(LibraryCurrencies.entry($0)) }

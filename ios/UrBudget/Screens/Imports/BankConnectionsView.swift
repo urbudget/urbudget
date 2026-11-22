@@ -92,7 +92,7 @@ struct BankConnectionsView: View {
     }
 
     var body: some View {
-        List {
+        AppList {
             Section {
                 Text("SimpleFIN Bridge · Nothing is added until you review it.")
                     .font(.subheadline).foregroundStyle(Color.secondary)
@@ -714,7 +714,7 @@ private struct BankSyncReview: View {
 
     var body: some View {
         let counts = rows.map { BankReview.counts($0, decisions) } ?? (importing: 0, undecided: 0)
-        List {
+        AppList {
             headerSection
             if let notice {
                 Notice(text: notice, tone: "info").listRowInsets(EdgeInsets()).listRowBackground(Color.clear)

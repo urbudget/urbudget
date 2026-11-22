@@ -279,7 +279,7 @@ struct BudgetView: View {
         let assignedWidth = max(68, figureWidth(model.widestAssigned, size: 14, bold: true) + 2)
         let availableWidth = max(80, figureWidth(model.widestAvailable, size: 14, bold: true) + 22)
         let current = Dates.currentMonth
-        return ScrollViewReader { proxy in List {
+        return ScrollViewReader { proxy in AppList {
             Section {
                 if let budget = store.budget, StarterBudget.isSample(budget) { SampleBanner() }
                 if store.month != current {
@@ -442,7 +442,7 @@ struct BudgetView: View {
                      regroup: { sheet = .moveToGroup(row.id) },
                      page: { show(.categoryPage(row.id, $0)) })
             // The category open beside the budget is marked in it, as are those an assistant's card showed.
-            .listRowBackground(wide && docked?.shown == row.id || marked.contains(row.id) ? Color.urAccent.opacity(0.12) : nil)
+            .listRowBackground(wide && docked?.shown == row.id || marked.contains(row.id) ? Color.urAccent.opacity(0.12) : Color.cardBackground)
             .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
     }
 
@@ -885,7 +885,7 @@ private struct ReorderGroupsSheet: View {
 
     var body: some View {
         NavigationStack {
-            List {
+            AppList {
                 Section {
                     ForEach(groups, id: \.self) { Text($0) }
                         .onMove { groups.move(fromOffsets: $0, toOffset: $1) }

@@ -71,7 +71,7 @@ struct PayeesView: View {
 
     var body: some View {
         let rules = store.budget.map(ruleLines) ?? []
-        List {
+        AppList {
             Section {
                 Picker("Show", selection: $tab) {
                     Text(lines.map { String(localized: "Payees (\($0.count))", locale: .app) } ?? String(localized: "Payees")).tag("payees")
@@ -555,7 +555,7 @@ private struct PayeeNameList: View {
     var body: some View {
         let query = search.trimmingCharacters(in: .whitespaces)
         let shown = query.isEmpty ? names : names.filter { $0.localizedCaseInsensitiveContains(query) }
-        List {
+        AppList {
             ForEach(shown, id: \.self) { name in
                 Button { onPick(name) } label: {
                     HStack {

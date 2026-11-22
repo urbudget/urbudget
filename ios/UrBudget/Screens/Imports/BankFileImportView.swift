@@ -105,7 +105,7 @@ struct BankFileImportView: View {
                 } else if stage == .review, let preview = shownPreview {
                     review(preview)
                 } else if stage == .review {
-                    List {
+                    AppList {
                         HStack(spacing: 10) { ProgressView(); Text("Checking the lines against your budget…").foregroundStyle(Color.secondary) }
                         if let error { FormErrorView(message: error) }
                     }
@@ -251,7 +251,7 @@ struct BankFileImportView: View {
         let attention = shown.attentionLines
         let out = shown.leftOutLines
         let changed = shown.changedLines
-        return List {
+        return AppList {
             Section { heading(BankStatementText.counts(shown)) }
             if sheets.count > 1 || shown.sources.count > 1 || shown.format == "csv" || answeredDates(shown) != nil || answeredSigns(shown) != nil { Section {
                 if sheets.count > 1 {
@@ -457,7 +457,7 @@ struct BankFileImportView: View {
     private func review(_ preview: BankFilePreview) -> some View {
         let counts = BankReview.counts(preview.rows, decisions)
         let shown = statement ?? preview.statement
-        return List {
+        return AppList {
             Section { heading(BankReview.countsText(preview.summary)) }
             if shown.attention > 0 || shown.leftOutCount > 0 {
                 Notice(text: BankStatementText.notImported(shown), tone: "info", icon: "tablecells", action: String(localized: "Check the file")) { stage = .lines }

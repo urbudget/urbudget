@@ -37,7 +37,7 @@ struct LibraryView: View {
         let excess = LibraryBackup.excess(backups.count, keep: keep)
         let pruneTitle = String(localized: "Remove \(excess) older backups?", locale: .app)
         // One small function per section: Xcode 26's type checker gives up on the whole list at once.
-        List {
+        AppList {
             budgetsSection(busy: busy)
             if budgets.contains(where: LibraryTrash.holds) { trashSection(busy: busy) }
             if !drafts.isEmpty { draftsSection }

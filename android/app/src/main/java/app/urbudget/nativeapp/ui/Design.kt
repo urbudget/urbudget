@@ -436,13 +436,17 @@ internal fun Hairline(modifier: Modifier = Modifier, start: Dp = 0.dp) {
     HorizontalDivider(modifier.padding(start = start), thickness = 0.5.dp, color = ur.border)
 }
 
-/** A row of a card: an optional round icon, the title over a detail line, a value, and a chevron. */
+/**
+ * A row of a card: an optional round icon, the title over a detail line, a value, and a chevron.
+ * The detail stops at `subtitleLines` lines; one that must be read whole, such as what a privacy
+ * switch sends, can take more.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun ListRow(title: String, modifier: Modifier = Modifier, subtitle: String? = null, value: String? = null, valueColor: Color = ur.text,
                      icon: ImageVector? = null, iconTint: Color = ur.accent, iconFill: Color = ur.accentSoft, titleColor: Color = ur.text,
                      onClick: (() -> Unit)? = null, onLongClick: (() -> Unit)? = null, chevron: Boolean = onClick != null,
-                     divider: Boolean = false, trailing: (@Composable () -> Unit)? = null) {
+                     divider: Boolean = false, subtitleLines: Int = 3, trailing: (@Composable () -> Unit)? = null) {
     Column(modifier) {
         Row(Modifier.fillMaxWidth()
             .then(if (onClick != null || onLongClick != null) Modifier.combinedClickable(onClick = { onClick?.invoke() }, onLongClick = onLongClick) else Modifier)
@@ -456,7 +460,7 @@ internal fun ListRow(title: String, modifier: Modifier = Modifier, subtitle: Str
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 // A name the person gave (an account, a payee) keeps its own direction in Arabic.
                 Text(Money.own(title), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, color = titleColor, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = ur.muted, maxLines = 3, overflow = TextOverflow.Ellipsis) }
+                subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = ur.muted, maxLines = subtitleLines, overflow = TextOverflow.Ellipsis) }
             }
             if (value != null) Text(value, Modifier.padding(start = 10.dp), style = MaterialTheme.typography.bodyLarge.merge(Tabular), fontWeight = FontWeight.SemiBold, color = valueColor, maxLines = 1)
             trailing?.let { Box(Modifier.padding(start = 10.dp)) { it() } }
@@ -468,8 +472,9 @@ internal fun ListRow(title: String, modifier: Modifier = Modifier, subtitle: Str
 
 /** A row with a switch, for settings in a card. */
 @Composable
-internal fun SwitchRow(title: String, checked: Boolean, onChange: (Boolean) -> Unit, subtitle: String? = null, enabled: Boolean = true, divider: Boolean = false) {
-    ListRow(title, subtitle = subtitle, onClick = if (enabled) ({ onChange(!checked) }) else null, chevron = false, divider = divider) {
+internal fun SwitchRow(title: String, checked: Boolean, onChange: (Boolean) -> Unit, subtitle: String? = null, enabled: Boolean = true, divider: Boolean = false,
+                       subtitleLines: Int = 3) {
+    ListRow(title, subtitle = subtitle, onClick = if (enabled) ({ onChange(!checked) }) else null, chevron = false, divider = divider, subtitleLines = subtitleLines) {
         Switch(checked, onChange, enabled = enabled, colors = SwitchDefaults.colors(checkedTrackColor = ur.positive, checkedThumbColor = Color.White,
             uncheckedTrackColor = ur.zeroSoft, uncheckedBorderColor = ur.zeroSoft, uncheckedThumbColor = Color.White))
     }

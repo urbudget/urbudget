@@ -31,7 +31,7 @@ struct AssistantImportReview: View {
         let accountName = accounts.first { $0.text("id") == account }?.text("name") ?? ""
         let counts = BankReview.counts(rows ?? [], decisions)
         NavigationStack {
-            List {
+            AppList {
                 Section {
                     Picker("Into account", selection: $account) {
                         if account.isEmpty { Text("Choose an account").tag("") }

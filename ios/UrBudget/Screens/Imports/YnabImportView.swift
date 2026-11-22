@@ -836,7 +836,7 @@ private struct YnabTokenList: View {
     @State private var error: String?
 
     var body: some View {
-        List {
+        AppList {
             if tokens.isEmpty {
                 EmptyState(title: String(localized: "No saved tokens"), detail: String(localized: "Paste one and choose Remember on this device."), symbol: "key")
             } else {

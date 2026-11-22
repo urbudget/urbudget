@@ -16,7 +16,7 @@ sent to Google for review on 12 November 2026.
 | App category and contact details | Saved |
 | Store listing | Saved, with no AI label on the assets |
 | Content rating | Saved after agreeing to IARC's terms: 3+ in most regions, 14+ in Brazil |
-| Data safety | Saved, with all 11 data types answered |
+| Data safety | Saved, with all 11 data types answered. Before a build with the anonymous usage counts goes to any track, add App interactions as [Data safety](#data-safety) says |
 | Sign in details | Saved by the owner, with the sharing switch for Google's test devices left on |
 | Target audience | Saved: 18 and over |
 | Closed test | Closed testing - Alpha, set up on 12 November 2026: all 178 countries, the "UrBudget Android testers" email list, feedback to `support@urbudget.app`, and release 1.0.1 (version code 1000001, from [#26](https://github.com/urbudget/urbudget/pull/26)), which superseded the first draft, 1.0.0. No errors; Play warns that native debug symbols weren't uploaded. Sent for review on 12 November 2026 with the other 14 changes waiting in Publishing overview (store listing, content rating, target audience, privacy policy, ads, data safety, health and the app category) |
@@ -254,8 +254,10 @@ captures, though an AI wrote the captions and description and laid out the graph
 
 ## Data safety
 
-Based on an audit of the code at `36bbe39`. Sync's budget contents are end-to-end encrypted, so they
-don't count as collected. Account, purchase and assistant data do.
+Based on an audit of the code at `36bbe39`, plus the anonymous usage counts (Count this copy as in
+use, in Settings & data → Privacy & data), which the first build to include them needs in the form
+as App interactions. Sync's budget contents are end-to-end encrypted, so they don't count as
+collected. Account, purchase and assistant data do.
 
 **Your decision: is data sent to OpenAI and Anthropic "shared"?** They work under the user's own
 account, so they aren't your service providers. "No" would rest on Google's exception for sending
@@ -272,7 +274,8 @@ Form-level answers:
 | Can users ask for their data to be deleted? | Yes, in the app and at the deletion URL |
 | Ephemeral processing | No: the providers keep data for a time |
 
-Every collected type is optional. Each one's purpose is App functionality, plus any listed here.
+Every collected type is optional. Each one's purpose is App functionality, plus any listed here,
+except App interactions, whose only purpose is Analytics.
 
 | Data type | Collected | Shared | Also for | Why |
 | --- | --- | --- | --- | --- |
@@ -287,6 +290,7 @@ Every collected type is optional. Each one's purpose is App functionality, plus 
 | Files and docs | Yes | Yes | | PDFs and spreadsheets attached to a message |
 | Other user-generated content | Yes | Yes | | Budget, account and payee names, memos, report text |
 | Device or other IDs | Yes | Yes | | Sync's random installation ID to UrBudget, and a random ID to OpenAI at ChatGPT sign-in |
+| App interactions | Yes | No | Analytics only | Usage counts: once a day, that a copy was opened and whether that's its first time or its first this week or month, with the app's version, Google Play or a preview APK, and the week it was first opened. No identifier; UrBudget keeps daily totals. Optional: Count this copy as in use, on by default |
 | Everything else | No | No | | Includes name, address, phone, credit score, location, contacts, calendar, browsing and crash logs |
 
 Check before submitting:
@@ -294,8 +298,12 @@ Check before submitting:
 - **Diagnostics:** UrBudget's code sends none, but Google's Billing library bundles a log-upload
   component, and what it sends wasn't found. Check Billing's entry in the
   [Google Play SDK Index](https://developer.android.com/distribute/sdk-index).
-- **App interactions:** each assistant message names the page, month, account and category on
-  screen, and what happened to earlier proposals. If that counts, answer Collected Yes, Shared Yes.
+- **App interactions:** collected for the usage counts, as the table says. Each assistant message
+  also names the page, month, account and category on screen, and what happened to earlier
+  proposals. If that counts, answer Shared Yes as well and add App functionality to the purposes.
+- **Optional, for App interactions:** the counts are on until someone turns them off in Settings &
+  data → Privacy & data. Check that Play's help for "optional" covers a switch that's on by
+  default; if it only means opting in, answer Required instead. The app needn't change.
 - **Reports** partly serve to investigate harmful output, so Fraud prevention, security and
   compliance may also fit Other in-app messages.
 

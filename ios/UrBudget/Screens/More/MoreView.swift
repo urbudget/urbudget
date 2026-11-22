@@ -52,7 +52,7 @@ struct MoreView: View {
     var body: some View {
         NavigationStack(path: $path) {
             // One small function per section keeps the list quick to type-check.
-            List {
+            AppList {
                 budgetSection(store.budget ?? [:])
                 accountSection
                 planningSection

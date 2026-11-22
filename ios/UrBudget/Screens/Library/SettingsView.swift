@@ -13,6 +13,8 @@ struct SettingsView: View {
     @AppStorage("showNeeded") private var showNeeded = true
     @AppStorage("showUpcoming") private var showUpcoming = true
     @AppStorage("startPage") private var startPage = "budget"
+    /// Read by UsageCounts each time the app comes to the front.
+    @AppStorage(UsageCounts.key) private var usageCounts = true
     @State private var name = ""
     @State private var namingIdentity: String?
     @FocusState private var naming: Bool
@@ -55,6 +57,7 @@ struct SettingsView: View {
             backupsSection
             if store.budget != nil { exportSections }
             if let error { Section { FormErrorView(message: error) } }
+            privacySection
             aboutSection
         }
         .navigationTitle("Settings & data")
@@ -259,9 +262,10 @@ struct SettingsView: View {
         }
     }
 
-    private var aboutSection: some View {
+    /// The desktop's and Android's switch of the same name, for the anonymous usage counts, with the
+    /// app's privacy page, as Android's Privacy & data card has them.
+    private var privacySection: some View {
         Section {
-            // The app's privacy page, as Settings has it on Android (Account & sync has it too).
             Button {
                 Task {
                     do { _ = try await store.service("account_open", ["next": "/privacy/app/"]) } catch { self.error = BudgetStore.readable(error) }
@@ -269,6 +273,24 @@ struct SettingsView: View {
             } label: {
                 rowLabel(String(localized: "Privacy & your data"),
                          String(localized: "What stays on this phone and what sync, bank links and the assistant share"), "hand.raised")
+            }
+            Toggle(isOn: $usageCounts) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Count this copy as in use")
+                    Text("Once a day, tells urbudget.app that a copy of UrBudget was opened, and whether that's its first time, or its first this week or month, with its version, system, where it was installed from and the week it was first opened. Nothing identifies you, this device or your budgets.")
+                        .font(.footnote).foregroundStyle(Color.secondary)
+                }
+            }
+        } header: {
+            Text("Privacy & data")
+        }
+    }
+
+    private var aboutSection: some View {
+        Section {
+            // Straight to the App Store's review page; the system's own prompt comes by itself after real use (AppRating).
+            Link(destination: AppRating.writeReview) {
+                rowLabel(String(localized: "Rate UrBudget"), String(localized: "Write a review on the App Store"), "star")
             }
             LabeledContent("Version", value: version)
         } footer: {

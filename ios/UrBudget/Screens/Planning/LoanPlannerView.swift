@@ -48,7 +48,7 @@ struct LoanPlannerView: View {
         let currency = store.currency
         let month = String(Dates.today.prefix(7))
         let lines = store.budget.map { loanLines(budget: $0, balances: store.planningBalances, month: month) } ?? []
-        List {
+        AppList {
             if lines.isEmpty {
                 EmptyState(title: String(localized: "Make a payoff plan"),
                            detail: String(localized: "Add a tracking account of a loan type, such as Mortgage or Auto loan, with what you owe as a negative balance. Then add its rate and payment here."),
@@ -758,7 +758,7 @@ private struct LoanScheduleList: View {
     var body: some View {
         let years = Dictionary(grouping: rows.enumerated(), by: { String($0.element.text("date").prefix(4)) })
         let order = years.keys.sorted()
-        List {
+        AppList {
             if rows.isEmpty {
                 EmptyState(title: String(localized: "No payments"), detail: String(localized: "Nothing is owed, or the plan is still being worked out."),
                            symbol: "list.bullet.rectangle")
@@ -867,7 +867,7 @@ struct LoanPaymentSheet: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
                     }
-                    .listRowBackground(keypad ? Color.urAccent.opacity(0.12) : nil)
+                    .listRowBackground(keypad ? Color.urAccent.opacity(0.12) : Color.cardBackground)
                     .accessibilityLabel("Amount, \(money(pad.cents ?? 0, currency)). Edit amount")
                 }
                 Section {
@@ -940,7 +940,7 @@ struct LoanPaymentSheet: View {
         case .from:
             let currency = store.currency
             let balances = store.planningBalances
-            List(sources, id: \.idText) { source in
+            AppList(sources, id: \.idText) { source in
                 let id = source.text("id")
                 Button {
                     from = id

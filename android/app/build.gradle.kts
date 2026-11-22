@@ -9,6 +9,8 @@ val requestedAbis = providers.gradleProperty("androidAbis").orElse("arm64-v8a,x8
 require(requestedAbis.isNotEmpty() && requestedAbis.all { it in listOf("arm64-v8a", "x86_64") }) { "androidAbis supports arm64-v8a,x86_64." }
 val uploadValues = listOf("URBUDGET_ANDROID_KEYSTORE", "URBUDGET_ANDROID_KEY_ALIAS", "URBUDGET_ANDROID_STORE_PASSWORD", "URBUDGET_ANDROID_KEY_PASSWORD").map { System.getenv(it)?.takeIf(String::isNotBlank) }
 require(uploadValues.none { it != null } || uploadValues.all { it != null }) { "Set all four URBUDGET_ANDROID_* signing variables." }
+// Instrumentation-only development Rust build enables the loopback API override. Release always stays optimized.
+val rustDebug = providers.gradleProperty("rustDebug").orElse("false").map(String::toBoolean).get()
 // The NDK the Rust engine is compiled with (buildRustEngine), which also strips it for packaging.
 val ndkHome = System.getenv("ANDROID_NDK_HOME")?.takeIf(String::isNotBlank) ?: System.getenv("NDK_HOME")?.takeIf(String::isNotBlank)
 
@@ -30,6 +32,9 @@ android {
         versionName = "1.0.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += requestedAbis }
+        // Whether the engine is a debug build, which talks to URBUDGET_API's local server instead of
+        // urbudget.app. A debug app with a release engine never counts itself (UsageCounts).
+        buildConfigField("boolean", "RUST_DEBUG", rustDebug.toString())
     }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions {
@@ -75,8 +80,6 @@ kotlin { compilerOptions { jvmTarget.set(JvmTarget.JVM_17) } }
 val repositoryRoot = rootProject.projectDir.parentFile
 val rustManifest = repositoryRoot.resolve("crates/urbudget-android/Cargo.toml")
 val rustTarget = layout.buildDirectory.dir("rust-target")
-// Instrumentation-only development Rust build enables the loopback API override. Release always stays optimized.
-val rustDebug = providers.gradleProperty("rustDebug").orElse("false").map(String::toBoolean).get()
 // Inspect resolved tasks: aggregate names (assemble/build) and abbreviations can include release.
 // This runs even when buildRustEngine is up to date, before a QA library can be packaged.
 val rustAppProject = project

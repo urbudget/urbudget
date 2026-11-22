@@ -249,7 +249,7 @@ private struct ReportsIndex: View {
     var choose: (String?) -> Void
 
     var body: some View {
-        List {
+        AppList {
             Section { row(nil, String(localized: "Overview"), "square.grid.2x2") }
             Section {
                 ForEach(ReportTopic.shown(holdings: ReportInfo.hasHoldings(store.budget))) { report in row(report.id, report.label, report.icon) }
@@ -270,7 +270,7 @@ private struct ReportsIndex: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .listRowBackground(selected ? Color.urAccent.opacity(0.12) : nil)
+        .listRowBackground(selected ? Color.urAccent.opacity(0.12) : Color.cardBackground)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
@@ -335,7 +335,7 @@ private struct ReportsOverview: View {
         let key = ReportOverviewKey(version: store.version, month: store.month, attempt: attempt)
         let failed = failure?.forScope(key)
         let current = result?.scope == key
-        List {
+        AppList {
             monthSection
             if let failed {
                 Section {
@@ -800,7 +800,7 @@ private struct ReportPage: View {
         let report: ReportBody? = (shown?.value ?? nil).flatMap { $0.id == id ? $0 : nil }
         let stale = report != nil && shown?.scope.data != key
         let failed = problem(key)
-        List {
+        AppList {
             filterSection
             notice(key)
             if let failed, !isForecast {
@@ -1078,7 +1078,7 @@ private struct ReportFiltersSheet: View {
 
     var body: some View {
         NavigationStack {
-            List {
+            AppList {
                 Section {
                     if let range { rangeRow(range) }
                     Button { choosingAccounts = true } label: {
@@ -1208,7 +1208,7 @@ private struct ReportFilterSheet: View {
             ReportFilterGroup(name: group.name, items: group.items.filter { $0.label.localizedCaseInsensitiveContains(text) })
         }.filter { !$0.items.isEmpty }
         NavigationStack {
-            List {
+            AppList {
                 ForEach(shownGroups) { group in
                     let ids = group.items.map(\.id)
                     let every = ids.allSatisfy { ReportMath.filterIsOn(selected, $0) }
@@ -1327,7 +1327,7 @@ private struct ReportDrillView: View {
             query.isEmpty || $0.payee.localizedCaseInsensitiveContains(query) || $0.detail.localizedCaseInsensitiveContains(query)
                 || $0.amount.contains(query)
         }
-        List {
+        AppList {
             Section {
                 if let drill { Text(drill.range).font(.subheadline).foregroundStyle(Color.secondary) }
                 ViewThatFits(in: .horizontal) {
