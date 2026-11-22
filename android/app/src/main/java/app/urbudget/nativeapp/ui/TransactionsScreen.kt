@@ -699,16 +699,32 @@ private fun DatesSheet(from: String, through: String, set: (String, String) -> U
     }
 }
 
-private data class SplitDraft(val original: JSONObject, val category: String, val amount: String, val memo: String, val transfer: String = "", val payee: String = "", val transferStatus: String = "uncleared", val key: String = UUID.randomUUID().toString())
+/**
+ * A split line as it's edited. [auto] is a new last line the user hasn't typed an amount into: it
+ * takes what the others leave of the total ([balanced]).
+ */
+private data class SplitDraft(val original: JSONObject, val category: String, val amount: String, val memo: String, val transfer: String = "", val payee: String = "", val transferStatus: String = "uncleared",
+                              val auto: Boolean = false, val key: String = UUID.randomUUID().toString())
+
+/** The lines as a new split starts: the whole total in the category chosen so far, and a line for the rest. */
+private fun firstSplit(category: String, total: Long) = listOf(SplitDraft(JSONObject(), category, amountText(total), ""), SplitDraft(JSONObject(), "", amountText(0), "", auto = true))
+
+/** The lines with their last, while the user hasn't typed into it, holding what the others leave of [total] (none when they're over it). */
+private fun balanced(rows: List<SplitDraft>, total: Long): List<SplitDraft> {
+    val last = rows.lastOrNull()?.takeIf { it.auto } ?: return rows
+    val others = rows.dropLast(1).sumOf { runCatching { amountValue(it.amount) }.getOrDefault(0L) }
+    return rows.dropLast(1) + last.copy(amount = amountText(maxOf(0L, total - others)))
+}
 
 /**
  * Adding or editing a transaction takes the whole screen, as YNAB's app does: Outflow or Inflow, the
  * amount large on the keypad (digits fill in as cents and it does sums), then the payee, category,
- * account and date as rows of a card, and the rest in a second card.
+ * account and date as rows of a card, and the rest in a second card. Without [categorizeTransfers]
+ * a transfer takes no category even across the budget's edge: what a bank text's review can add.
  */
 @Composable
 internal fun TransactionDialog(original: JSONObject?, budget: JSONObject, initialAccount: String, vm: BudgetViewModel, close: () -> Unit, saveOverride: ((JSONObject) -> Unit)? = null, dialogTitle: String? = null, extraFields: (@Composable () -> Unit)? = null,
-                               summary: JSONObject? = null, host: FormHost? = null) {
+                               summary: JSONObject? = null, host: FormHost? = null, categorizeTransfers: Boolean = true) {
     val placed = host ?: if (wideWindow()) FormHost.SideWindow else FormHost.Screen
     val pane = (placed as? FormHost.Beside)?.pane
     val editorState by vm.state.collectAsStateWithLifecycle()
@@ -761,7 +777,7 @@ internal fun TransactionDialog(original: JSONObject?, budget: JSONObject, initia
     val repeatable = original == null && saveOverride == null
     // A transfer between two budget accounts (or two tracking ones) moves money without a category.
     val needsCategory = remember(budget, account, transfer) {
-        transfer.isBlank() || (budget.row("accounts", account)?.text("kind") == "tracking") != (budget.row("accounts", transfer)?.text("kind") == "tracking")
+        transfer.isBlank() || categorizeTransfers && (budget.row("accounts", account)?.text("kind") == "tracking") != (budget.row("accounts", transfer)?.text("kind") == "tracking")
     }
     val rawDraft = JSONObject().put("account", account).put("payee", payee).put("date", date).put("memo", memo)
         .put("amountExpression", pad.text).put("direction", direction).put("status", status).put("transfer", transfer)
@@ -876,9 +892,10 @@ internal fun TransactionDialog(original: JSONObject?, budget: JSONObject, initia
                         }
                     }
                 }
-                extraFields?.invoke()
+                // The split takes the category's place, under the fields it belongs with.
                 if (splitMode && needsCategory) SplitCard(splitRows, { splitRows = it }, pad.cents ?: 0L, currency, ::categoryName,
-                    pickCategory = { splitPicker = it }, unsplit = { splitMode = false; category = splitRows.firstOrNull()?.category ?: "" })
+                    pickCategory = { keypad = false; splitPicker = it }, unsplit = { splitMode = false; category = splitRows.firstOrNull()?.category ?: "" })
+                extraFields?.invoke()
                 ListCard {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.Top) {
                         Icon(Icons.AutoMirrored.Outlined.Notes, null, Modifier.size(22.dp), tint = ur.muted)
@@ -914,11 +931,8 @@ internal fun TransactionDialog(original: JSONObject?, budget: JSONObject, initia
                     if (!splitMode && needsCategory) {
                         Hairline(start = 52.dp)
                         FormRow(Icons.AutoMirrored.Outlined.CallSplit, stringResource(R.string.split_label), null, stringResource(R.string.split_between_categories), onClick = {
-                            splitMode = true
-                            if (splitRows.size < 2) {
-                                val total = pad.cents ?: 0L
-                                splitRows = listOf(SplitDraft(JSONObject(), category, amountText(total), ""), SplitDraft(JSONObject(), "", amountText(0), ""))
-                            }
+                            keypad = false; splitMode = true
+                            if (splitRows.size < 2) splitRows = firstSplit(category, pad.cents ?: 0L)
                         })
                     }
                 }
@@ -959,7 +973,7 @@ internal fun TransactionDialog(original: JSONObject?, budget: JSONObject, initia
         "category" -> CategoryPickerSheet(budget, summary, date.take(7), category, stringResource(R.string.category_label), includeUnassigned = true, includeUncategorized = true, includePayment = false,
             top = {
                 Row(Modifier.fillMaxWidth().clickable { picker = null; splitMode = true
-                    if (splitRows.size < 2) { val total = pad.cents ?: 0L; splitRows = listOf(SplitDraft(JSONObject(), category, amountText(total), ""), SplitDraft(JSONObject(), "", amountText(0), "")) }
+                    if (splitRows.size < 2) splitRows = firstSplit(category, pad.cents ?: 0L)
                 }.padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.AutoMirrored.Outlined.CallSplit, null, tint = ur.accent); Text(stringResource(R.string.split_between_categories), Modifier.padding(start = 12.dp), color = ur.accent, fontWeight = FontWeight.SemiBold)
                 }
@@ -1009,41 +1023,69 @@ private fun FormRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label
     }
 }
 
+/**
+ * The split being made: each line one row (its category, its share of the total and a way to take
+ * it out) with its memo under it, and how much is left to split. A new last line fills with
+ * what the others leave until it's typed into, so splitting in two is one amount typed. Taking
+ * out all but one line goes back to one category.
+ */
 @Composable
 private fun SplitCard(rows: List<SplitDraft>, update: (List<SplitDraft>) -> Unit, total: Long, currency: String, categoryName: (String) -> String?,
                       pickCategory: (Int) -> Unit, unsplit: () -> Unit) {
     val assigned = rows.sumOf { runCatching { amountValue(it.amount) }.getOrDefault(0L) }
     val left = total - assigned
-    ListCard {
-        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 6.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(R.string.split_label), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = ur.text)
-            Text(when { left == 0L -> stringResource(R.string.split_fully); (total < 0) == (left < 0) -> stringResource(R.string.split_left, money(abs(left), currency)); else -> stringResource(R.string.split_over, money(abs(left), currency)) },
-                color = if (left == 0L) ur.positive else ur.warning, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+    val latest by rememberUpdatedState(rows)
+    // A new total (the amount changed under the split) is taken up by the line that fills itself.
+    LaunchedEffect(total) { balanced(latest, total).takeIf { it != latest }?.let(update) }
+    fun change(index: Int, edit: (SplitDraft) -> SplitDraft) = update(balanced(rows.mapIndexed { i, row -> if (i == index) edit(row) else row }, total))
+    ListCard(Modifier.testTag("split-card")) {
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.AutoMirrored.Outlined.CallSplit, null, Modifier.size(22.dp), tint = ur.accent)
+            Text(stringResource(R.string.split_label), Modifier.weight(1f).padding(start = 14.dp), style = MaterialTheme.typography.titleMedium, color = ur.text)
             if (rows.size <= 1) TextButton(unsplit) { Text(stringResource(R.string.split_undo)) }
+            else TagChip(when { left == 0L -> stringResource(R.string.split_fully); left > 0 -> stringResource(R.string.split_left, money(left, currency)); else -> stringResource(R.string.split_over, money(-left, currency)) },
+                Modifier.testTag("split-left"), fill = if (left == 0L) ur.positiveSoft else ur.warningSoft, color = if (left == 0L) ur.positive else ur.warning,
+                icon = if (left == 0L) Icons.Outlined.Check else null)
         }
-        Text(stringResource(R.string.split_share_help), Modifier.padding(horizontal = 16.dp), color = ur.muted, style = MaterialTheme.typography.bodySmall)
         rows.forEachIndexed { index, part ->
-            CompositionLocalProvider(LocalFieldFill provides ur.surface) {
-            Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp).clip(RoundedCornerShape(14.dp)).background(ur.surface2).padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Row(Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).clickable { pickCategory(index) }.padding(vertical = 6.dp, horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (part.transfer.isNotBlank()) stringResource(R.string.transfer_label) else categoryName(part.category) ?: stringResource(R.string.category_choose), Modifier.weight(1f),
-                            color = if (part.category.isBlank() && part.transfer.isBlank()) ur.warning else ur.text, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(18.dp), tint = ur.muted)
+            key(part.key) {
+                CompositionLocalProvider(LocalFieldFill provides ur.surface) {
+                    Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp).clip(RoundedCornerShape(14.dp)).background(ur.surface2).padding(start = 4.dp, end = 2.dp, top = 6.dp, bottom = 2.dp)
+                        .testTag("split-line:$index")) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            val name = if (part.transfer.isNotBlank()) stringResource(R.string.transfer_label) else categoryName(part.category)
+                            Row(Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = stringResource(R.string.split_category)) { pickCategory(index) }
+                                .heightIn(min = 48.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(name ?: stringResource(R.string.category_choose), Modifier.weight(1f), color = if (name == null) ur.warning else ur.text,
+                                    fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(18.dp), tint = ur.muted)
+                            }
+                            Box(Modifier.width(124.dp).padding(start = 6.dp)) {
+                                Field(part.amount, { value -> change(index) { it.copy(amount = value, auto = false) } }, stringResource(R.string.amount_label), numeric = true, ltr = true,
+                                    modifier = Modifier.testTag("split-amount:$index"))
+                            }
+                            IconButton({
+                                val rest = rows.filterIndexed { i, _ -> i != index }
+                                // Down to one line, it's one category again; a transfer line stays to be undone by hand.
+                                if (rest.size == 1 && rest[0].transfer.isBlank()) { update(rest); unsplit() } else update(balanced(rest, total))
+                            }, Modifier.size(40.dp)) { Icon(Icons.Outlined.Close, stringResource(R.string.split_remove_line, "${index + 1}"), Modifier.size(18.dp), tint = ur.muted) }
+                        }
+                        Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.weight(1f).padding(vertical = 6.dp)) {
+                                if (part.memo.isEmpty()) Text(stringResource(R.string.memo_label), color = ur.muted, style = MaterialTheme.typography.bodyMedium)
+                                BasicTextField(part.memo, { value -> change(index) { it.copy(memo = value) } }, Modifier.fillMaxWidth().testTag("split-memo:$index"),
+                                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = ur.text2), cursorBrush = SolidColor(ur.accent), singleLine = true)
+                            }
+                            // What's left, put on a line that has nothing yet.
+                            if (left > 0 && runCatching { amountValue(part.amount) }.getOrDefault(0L) == 0L)
+                                SmallAction(stringResource(R.string.split_use_left, money(left, currency)), { change(index) { it.copy(amount = amountText(left), auto = false) } }, primary = true)
+                        }
                     }
-                    IconButton({ update(rows.filterIndexed { i, _ -> i != index }) }, Modifier.size(36.dp)) { Icon(Icons.Outlined.Close, stringResource(R.string.split_remove_line, "${index + 1}"), Modifier.size(18.dp), tint = ur.muted) }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(Modifier.weight(1f)) { Field(part.amount, { value -> update(rows.mapIndexed { i, row -> if (i == index) row.copy(amount = value) else row }) }, stringResource(R.string.amount_label), true) }
-                    Box(Modifier.weight(1.3f)) { Field(part.memo, { value -> update(rows.mapIndexed { i, row -> if (i == index) row.copy(memo = value) else row }) }, stringResource(R.string.memo_label)) }
-                }
-                if (left != 0L && runCatching { amountValue(part.amount) }.getOrDefault(0L) == 0L) TextButton({ update(rows.mapIndexed { i, row -> if (i == index) row.copy(amount = amountText(left)) else row }) }) {
-                    Text(stringResource(R.string.split_use_left, money(abs(left), currency)), color = ur.accent)
-                }
-            }
             }
         }
-        TextButton({ update(rows + SplitDraft(JSONObject(), "", amountText(0), "")) }, Modifier.padding(horizontal = 6.dp, vertical = 2.dp)) {
+        TextButton({ update(balanced(rows.map { it.copy(auto = false) } + SplitDraft(JSONObject(), "", amountText(0), "", auto = true), total)) },
+            Modifier.padding(horizontal = 6.dp, vertical = 2.dp).testTag("split-add")) {
             Icon(Icons.Outlined.Add, null, tint = ur.accent); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.split_add_line), color = ur.accent, fontWeight = FontWeight.SemiBold)
         }
     }

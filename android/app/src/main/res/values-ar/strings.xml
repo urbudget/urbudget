@@ -369,7 +369,6 @@
     <string name="split_left">متبقٍّ للتقسيم: \u2068%1$s\u2069</string>
     <string name="split_over">زيادة على الإجمالي: \u2068%1$s\u2069</string>
     <string name="split_undo">إلغاء التقسيم</string>
-    <string name="split_share_help">كل بند يمثّل حصته من الإجمالي.</string>
     <string name="split_remove_line">إزالة بند التقسيم \u2068%1$s\u2069</string>
     <string name="split_use_left">استخدام المتبقي \u2068%1$s\u2069</string>
     <string name="split_add_line">إضافة بند</string>
@@ -2895,7 +2894,6 @@
     <string name="sms_from_messages">من رسالة البنك</string>
     <string name="sms_amount_needed">أدخل المبلغ.</string>
     <string name="sms_payee_needed">اختر مستفيدًا.</string>
-    <string name="sms_no_splits">أضفها بفئة واحدة، ثم قسّمها من السجل.</string>
     <string name="bank_texts_step_status">اطّلعت على رسائل البنك</string>
     <plurals name="bank_texts_step_found">
         <item quantity="zero">بحثت في رسائل البنك: لا شيء</item>

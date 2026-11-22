@@ -1170,6 +1170,26 @@ fn new_transaction(b: &Budget, account: &str, r: &Row) -> Transaction {
     }
     t
 }
+/// The category imported spending waits in until the user files it: the budget's own
+/// "Uncategorized", or one made for it.
+pub(crate) fn uncategorized(b: &mut Budget) -> String {
+    let category = b
+        .categories
+        .iter()
+        .find(|c| c.name == "Uncategorized" || c.name == "Uncategorized Transactions")
+        .map(|c| c.id.clone())
+        .unwrap_or("local-uncategorized".into());
+    if !b.categories.iter().any(|c| c.id == category) {
+        b.categories.push(Category {
+            id: category.clone(),
+            name: "Uncategorized".into(),
+            group: "Needs review".into(),
+            target: 0,
+            extra: Default::default(),
+        });
+    }
+    category
+}
 pub fn apply(mut b: Budget, account: &str, choices: Vec<Choice>) -> Result<Budget, String> {
     validate(&b)?;
     if !b.accounts.iter().any(|a| a.id == account) {
@@ -1324,22 +1344,7 @@ pub fn apply(mut b: Budget, account: &str, choices: Vec<Choice>) -> Result<Budge
                 || t.amount > 0 && !on_budget(account) && t.transfer_account_id.as_deref().is_some_and(on_budget);
             if spending && t.splits.first().is_some_and(|s| s.category_id.is_none())
             {
-                let category = b
-                    .categories
-                    .iter()
-                    .find(|c| c.name == "Uncategorized" || c.name == "Uncategorized Transactions")
-                    .map(|c| c.id.clone())
-                    .unwrap_or("local-uncategorized".into());
-                if !b.categories.iter().any(|c| c.id == category) {
-                    b.categories.push(Category {
-                        id: category.clone(),
-                        name: "Uncategorized".into(),
-                        group: "Needs review".into(),
-                        target: 0,
-                        extra: Default::default(),
-                    });
-                }
-                t.splits[0].category_id = Some(category);
+                t.splits[0].category_id = Some(uncategorized(&mut b));
             }
             if let Some(refund) = r.refund_of.clone().filter(|_| t.amount > 0) {
                 refunds.push((t.id.clone(), refund));

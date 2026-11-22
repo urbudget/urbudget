@@ -288,7 +288,9 @@ class EngineEditUiTest {
         // The keyboard moves everything just as the next tap lands.
         androidx.test.espresso.Espresso.closeSoftKeyboard()
         compose.waitForIdle()
-        press(words(R.string.split_use_left, money(1_000, budget().text("currency"))))
+        // The new line takes what's left, untyped.
+        compose.onNodeWithTag("split-amount:1").assertTextContains(amountText(1_000))
+        compose.onNodeWithText(words(R.string.split_fully), useUnmergedTree = true).assertExists()
         press(words(R.string.category_choose))
         pick("Bills 1")
         compose.onNodeWithTag("tx-save").performClick()

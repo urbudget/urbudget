@@ -343,6 +343,21 @@ internal data class SmsItem(
     /** The other account was found from the budget's habits or the assistant's reading, not the text's digits: worth a look. */
     val otherGuessed: Boolean get() = otherSource == SmsAccountSource.Usual || otherSource == SmsAccountSource.Assistant
     val amount: Long? get() = transaction?.text("amount")?.let(::smsCents)
+    /** How the user split the amount between categories, line by line; empty when it's in one. */
+    val splits: List<JSONObject> get() = transaction?.let(::smsSplitLines).orEmpty()
+}
+
+/**
+ * The lines a row's amount is split into, as the user split it in the review: two or more that
+ * add up to it, for a purchase or income. Empty when it isn't split, or when the row changed since
+ * (another amount, or a transfer now) so that they no longer fit it.
+ */
+internal fun smsSplitLines(t: JSONObject): List<JSONObject> {
+    val lines = t.rows("splits")
+    val amount = smsCents(t.text("amount")) ?: return emptyList()
+    val cents = lines.map { smsCents(it.text("amount")) ?: return emptyList() }
+    val fits = lines.size >= 2 && t.text("kind") != "transfer" && t.text("transferAccountId").isBlank() && cents.sum() == amount
+    return if (fits) lines else emptyList()
 }
 
 /**
@@ -430,6 +445,9 @@ internal data class SmsBatch(val messages: List<BankSms>, val analysis: JSONObje
                     t.text("otherAccount").ifBlank { null }, account, smsCents(t.text("amount")), t.text("date"), item.text("template").ifBlank { null })
                     ?.let { (id, how) -> t.put("transferAccountId", id); other = how }
             }
+            // A split's lines hold its categories. One that no longer fits the row is dropped here,
+            // not sent on for the import to refuse.
+            if (smsSplitLines(t).isNotEmpty()) t.put("categoryId", JSONObject.NULL) else t.remove("splits")
             needs = when {
                 account.isBlank() -> "account"
                 t.isNull("amount") || t.text("amount").isBlank() -> "amount"

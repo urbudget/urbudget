@@ -763,7 +763,7 @@ pub fn fill(b: &Budget, c: &Compiled, m: &Message, reading: &Reading, names: Opt
                 written_amount: decimal(written, if reading.amount.is_some() { &currency } else { &b.currency }),
                 date: day, amount, currency: if reading.amount.is_some() { currency } else { b.currency.clone() }, payee,
                 memo: o.memo.clone().unwrap_or_default(), kind, account_ref: reading.reference.clone(), other_ref: reading.other.clone(),
-                other_account: None, category_id: category, account_id: None, transfer_account_id: None,
+                other_account: None, category_id: category, account_id: None, transfer_account_id: None, splits: vec![],
                 balance: reading.balance.as_deref().map(|n| decimal(n, &b.currency)),
                 available: reading.available.as_deref().map(|n| decimal(n, &b.currency)),
             }),
