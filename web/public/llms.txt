@@ -35,7 +35,7 @@ UrBudget isn't affiliated with YNAB or any other product named here. It has no w
 - [UrBudget vs Goodbudget](https://urbudget.app/vs/goodbudget/): a Goodbudget alternative for computers, iPhone and iPad, compared on price, free-plan limits, bank sync and sharing
 - [UrBudget vs EveryDollar](https://urbudget.app/vs/everydollar/): Ramsey's zero-based app compared on price, file import, rollover and sharing
 - [UrBudget vs Monarch Money](https://urbudget.app/vs/monarch/): a bank-synced tracker compared with an envelope budget kept on your computer
-- [UrBudget vs Copilot Money](https://urbudget.app/vs/copilot/): an Apple-only tracker for US banks compared with an envelope budget for Windows, Mac, Linux, iPhone and iPad
+- [UrBudget vs Copilot Money](https://urbudget.app/vs/copilot/): an Apple-only tracker for US banks compared with an envelope budget for all your devices
 - [UrBudget vs Moneydance](https://urbudget.app/vs/moneydance/): a Quicken-style finance manager compared with an envelope budget
 - [UrBudget vs Quicken](https://urbudget.app/vs/quicken/): Quicken Classic's yearly plans, what still works after you stop paying (the Data Access Guarantee), and a free envelope budget
 - [How much does Quicken cost?](https://urbudget.app/vs/quicken/price/): Quicken Classic Starter, Deluxe, Premier and Business & Personal, and Quicken Simplifi: first-year offers against renewal prices, how auto-renewal works, what Classic still does without a subscription (the Data Access Guarantee), and 1, 3 and 5-year totals against UrBudget, which is free. Prices checked October 17, 2026.
