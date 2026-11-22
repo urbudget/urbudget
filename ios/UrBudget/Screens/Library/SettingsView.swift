@@ -262,9 +262,18 @@ struct SettingsView: View {
         }
     }
 
-    /// The desktop's and Android's switch of the same name, for the anonymous usage counts.
+    /// The desktop's and Android's switch of the same name, for the anonymous usage counts, with the
+    /// app's privacy page, as Android's Privacy & data card has them.
     private var privacySection: some View {
         Section {
+            Button {
+                Task {
+                    do { _ = try await store.service("account_open", ["next": "/privacy/app/"]) } catch { self.error = BudgetStore.readable(error) }
+                }
+            } label: {
+                rowLabel(String(localized: "Privacy & your data"),
+                         String(localized: "What stays on this phone and what sync, bank links and the assistant share"), "hand.raised")
+            }
             Toggle(isOn: $usageCounts) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Count this copy as in use")
@@ -279,14 +288,9 @@ struct SettingsView: View {
 
     private var aboutSection: some View {
         Section {
-            // The app's privacy page, as Settings has it on Android (Account & sync has it too).
-            Button {
-                Task {
-                    do { _ = try await store.service("account_open", ["next": "/privacy/app/"]) } catch { self.error = BudgetStore.readable(error) }
-                }
-            } label: {
-                rowLabel(String(localized: "Privacy & your data"),
-                         String(localized: "What stays on this phone and what sync, bank links and the assistant share"), "hand.raised")
+            // Straight to the App Store's review page; the system's own prompt comes by itself after real use (AppRating).
+            Link(destination: AppRating.writeReview) {
+                rowLabel(String(localized: "Rate UrBudget"), String(localized: "Write a review on the App Store"), "star")
             }
             LabeledContent("Version", value: version)
         } footer: {

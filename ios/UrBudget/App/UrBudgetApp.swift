@@ -1,3 +1,4 @@
+import StoreKit
 import SwiftUI
 
 @main
@@ -47,6 +48,7 @@ struct RootView: View {
     @Environment(AppStoreSubscription.self) private var appStore
     @Environment(\.scenePhase) private var phase
     @Environment(\.undoManager) private var undoManager
+    @Environment(\.requestReview) private var requestReview
 
     private struct History: Equatable { var revision: String; var undo: Bool }
     @State private var showingLibrary = false
@@ -79,6 +81,7 @@ struct RootView: View {
         }
         .overlay(alignment: .bottom) { ToastView() }
         .onChange(of: History(revision: store.revision, undo: store.undoAvailable)) { _, _ in offerUndo() }
+        .onChange(of: AppRating.shared.due) { _, due in if due { askForRating() } }
         .onChange(of: phase) { _, phase in
             switch phase {
             case .active:
@@ -215,7 +218,72 @@ struct RootView: View {
         appStore.start()
         // Counted as in use, at most once a day, each time the app comes to the front.
         Task.detached(priority: .utility) { UsageCounts.report() }
+        AppRating.shared.opened()
     }
+
+    /// Asks for a rating with the system's own prompt once AppRating says it's time, a moment after
+    /// the form that was saved has closed.
+    private func askForRating() {
+        AppRating.shared.due = false
+        Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            requestReview()
+        }
+    }
+}
+
+/// When to ask for a rating, with the system's prompt (StoreKit's, through SwiftUI's requestReview):
+/// only once the app has really been used, on at least five different days with ten transactions
+/// saved and a week after it was first opened, once per version, and only as a saved transaction's
+/// form closes, never over something open. iOS shows the prompt at most three times a year and never
+/// where ratings are turned off, so asking may show nothing. No question of the app's own comes first:
+/// App Review doesn't allow one that sorts who gets asked.
+@MainActor @Observable
+final class AppRating {
+    static let shared = AppRating()
+
+    /// Set when it's time to ask; the root view asks and clears it.
+    var due = false
+
+    private let defaults: UserDefaults
+    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+
+    enum Key {
+        static let firstDay = "rating.firstDay", lastDay = "rating.lastDay", days = "rating.days"
+        static let saves = "rating.saves", askedVersion = "rating.askedVersion"
+    }
+
+    static let minimumDays = 5, minimumSaves = 10, minimumAge = 7
+
+    /// The app came to the front today.
+    func opened(today: String = Dates.today) {
+        if defaults.string(forKey: Key.firstDay) == nil { defaults.set(today, forKey: Key.firstDay) }
+        guard defaults.string(forKey: Key.lastDay) != today else { return }
+        defaults.set(today, forKey: Key.lastDay)
+        defaults.set(defaults.integer(forKey: Key.days) + 1, forKey: Key.days)
+    }
+
+    /// A transaction was saved by hand; `closing` when its form closes with it (not Save & add another).
+    func saved(closing: Bool, today: String = Dates.today, version: String = AppRating.version) {
+        let saves = defaults.integer(forKey: Key.saves) + 1
+        defaults.set(saves, forKey: Key.saves)
+        guard closing, Self.ready(days: defaults.integer(forKey: Key.days), saves: saves, firstDay: defaults.string(forKey: Key.firstDay),
+                                  today: today, askedVersion: defaults.string(forKey: Key.askedVersion), version: version) else { return }
+        defaults.set(version, forKey: Key.askedVersion)
+        due = true
+    }
+
+    /// Whether it's time to ask, from what's been kept.
+    nonisolated static func ready(days: Int, saves: Int, firstDay: String?, today: String, askedVersion: String?, version: String) -> Bool {
+        guard askedVersion != version, days >= minimumDays, saves >= minimumSaves,
+              let first = firstDay.flatMap(Dates.day), let now = Dates.day(today) else { return false }
+        return (Calendar(identifier: .gregorian).dateComponents([.day], from: first, to: now).day ?? 0) >= minimumAge
+    }
+
+    nonisolated static var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "" }
+
+    /// The App Store's page for writing a review of UrBudget.
+    static let writeReview = URL(string: "https://apps.apple.com/app/id6825535486?action=write-review")!
 }
 
 /// Anonymous usage counts, as the desktop and Android keep them (crates/urbudget-services/src/usage.rs):

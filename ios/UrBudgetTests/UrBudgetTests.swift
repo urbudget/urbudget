@@ -313,3 +313,40 @@ final class UsageCountsTests: XCTestCase {
         XCTAssertTrue(UsageCounts.enabled(defaults))
     }
 }
+
+/// When the app asks for a rating (AppRating): after real use, once per version, as a saved form closes.
+@MainActor
+final class AppRatingTests: XCTestCase {
+    func testItWaitsForRealUse() {
+        let ready = { (days: Int, saves: Int, first: String?, asked: String?) in
+            AppRating.ready(days: days, saves: saves, firstDay: first, today: "2026-12-01", askedVersion: asked, version: "1.0.1")
+        }
+        XCTAssertTrue(ready(5, 10, "2026-11-24", nil))
+        XCTAssertFalse(ready(4, 10, "2026-11-24", nil), "fewer than five days of use")
+        XCTAssertFalse(ready(5, 9, "2026-11-24", nil), "fewer than ten transactions saved")
+        XCTAssertFalse(ready(5, 10, "2026-11-25", nil), "first opened under a week ago")
+        XCTAssertFalse(ready(5, 10, nil, nil), "never opened")
+        XCTAssertFalse(ready(5, 10, "2026-11-24", "1.0.1"), "already asked in this version")
+        XCTAssertTrue(ready(5, 10, "2026-11-24", "1.0.0"), "asked in an earlier version")
+    }
+
+    func testItCountsDaysOnceEachAndAsksOnlyAsTheFormCloses() throws {
+        let suite = "AppRatingTests"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let rating = AppRating(defaults: defaults)
+        for day in ["2026-11-01", "2026-11-01", "2026-11-02", "2026-11-03", "2026-11-05", "2026-11-09"] { rating.opened(today: day) }
+        XCTAssertEqual(defaults.integer(forKey: AppRating.Key.days), 5)
+        XCTAssertEqual(defaults.string(forKey: AppRating.Key.firstDay), "2026-11-01")
+        for _ in 0..<9 { rating.saved(closing: true, today: "2026-11-09", version: "1.0.1") }
+        XCTAssertFalse(rating.due)
+        rating.saved(closing: false, today: "2026-11-09", version: "1.0.1")
+        XCTAssertFalse(rating.due, "Save & add another keeps the form open")
+        rating.saved(closing: true, today: "2026-11-09", version: "1.0.1")
+        XCTAssertTrue(rating.due)
+        rating.due = false
+        rating.saved(closing: true, today: "2026-11-10", version: "1.0.1")
+        XCTAssertFalse(rating.due, "once per version")
+    }
+}

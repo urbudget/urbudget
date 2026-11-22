@@ -81,6 +81,16 @@
         }
       }
     },
+    "Rate UrBudget" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قيّم UrBudget"
+          }
+        }
+      }
+    },
     "Ready to Assign change: %@" : {
       "localizations" : {
         "ar" : {
@@ -317,6 +327,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "متى سيُسدَّد؟"
+          }
+        }
+      }
+    },
+    "Write a review on the App Store" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اكتب مراجعة في App Store"
           }
         }
       }

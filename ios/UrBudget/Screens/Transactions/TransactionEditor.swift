@@ -544,6 +544,8 @@ struct TransactionEditor: View {
             } else {
                 let rules = budget.rows("payeeRules")
                 try await store.saveTransaction(record, original: original)
+                // A new transaction saved by hand counts toward asking for a rating, which waits for the form to close.
+                if original == nil { AppRating.shared.saved(closing: !another) }
                 // A bank payee renamed by hand: offer to name that bank text the same way from now on.
                 if let rule = BankNames.learn(original: original, payee: payee, transfer: !transfer.isEmpty, rules: rules) {
                     store.offerPayeeRule(rule)
