@@ -124,19 +124,29 @@ try {
       await assert.rejects(b.call("sync_upgrade"), /passphrase/); assert.equal((await b.call("sync_status")).protocol, 1, "a refused move changes nothing");
       // A's saved v1 key opens the account's key check, so its move needs no passphrase.
       assert.deepEqual(await a.call("sync_upgrade"), { created: false, protocol: 2 }); await wake(a);
-      assert.deepEqual(await b.call("sync_upgrade", { passphrase }), { created: false, protocol: 2 }); await wake(b);
+      const linked = async d => { const list = await snapshot(d); const live=list.entries.filter(e=>e.lifecycle==="active"); assert.equal(live.length, 1, JSON.stringify(list)); assert.equal(live[0].id, oldIds.get(d)); assert.equal(live[0].remoteId, a.id); };
+      await linked(a); a.remote = a.id;
+      // A rewrites the migrated head before B has moved, and B holds work it never synced.
+      await edit(a, budget => budget.transactions.push(transaction("after-legacy-migration"))); await wake(a);
+      await edit(b, budget => budget.transactions.push(transaction("late-device-unsynced-work")));
+      // B's copy links at the revision it last synced, however often the head was rewritten since,
+      // and merges what it missed instead of forking into a second budget.
+      assert.deepEqual(await b.call("sync_upgrade", { passphrase }), { created: false, protocol: 2 }); await wake(b); await wake(b);
       for (const d of [a, b]) { const sync = await d.call("sync_status"); assert.ok(sync.protocol === 2 && sync.unlocked && !sync.upgradeAvailable, JSON.stringify(sync)); }
-      for (const d of [a, b]) { const list = await snapshot(d); const live=list.entries.filter(e=>e.lifecycle==="active"); assert.equal(live.length, 1, JSON.stringify(list)); assert.equal(live[0].id, oldIds.get(d)); assert.equal(live[0].remoteId, a.id); }
-      a.remote = a.id;
-      await edit(a, budget => budget.transactions.push(transaction("after-legacy-migration"))); await wake(a); await wake(b);
-      assert.deepEqual((await a.call("load_budget")).budget, (await b.call("load_budget")).budget);
+      await linked(b); await wake(a);
+      const both = (await a.call("load_budget")).budget;
+      for (const id of ["after-legacy-migration", "late-device-unsynced-work"]) assert.equal(both.transactions.filter(t => t.id === id).length, 1, id);
+      assert.deepEqual(both, (await b.call("load_budget")).budget);
       // Keep C's legacy ledger/base until the ID has been restored under a new incarnation.
       await edit(c, budget => budget.transactions.push(transaction("late-legacy-private-work")));
       await a.call("library_trash", { id: a.id }); await wake(a); await a.call("library_restore", { id: a.id }); await wake(a); await wake(b);
       // C was unlocked on v1 and never moved it: it adopts its saved key instead of asking for the passphrase.
-      c.fault.legacy = false; await wake(c); assert.equal((await c.call("sync_status")).unlocked, true); await wake(c);
+      c.fault.legacy = false; await wake(c); assert.equal((await c.call("sync_status")).unlocked, true); const told = await wake(c);
       const list = await snapshot(c), old = list.entries.find(e => e.id === oldIds.get(c)), current = list.entries.find(e => e.remoteId === a.remote);
       assert.equal(old.scope, "local"); assert.equal(old.accountId, null); assert.ok(current && current.id !== old.id, JSON.stringify(list));
+      // A copy that can't be linked stays, and every pass says why on its row: never a silent fork.
+      assert.match(told.budgets.find(e => e.id === old.id)?.message ?? "", /Kept on this device only/, JSON.stringify(told));
+      assert.match((await c.call("cloud_status")).sync.last.budgets.find(e => e.id === old.id)?.message ?? "", /Kept on this device only/);
       await c.call("library_open", { id: old.id }); assert.ok((await c.call("load_budget")).budget.transactions.some(t => t.id === "late-legacy-private-work"));
       await c.call("library_open", { id: current.id }); assert.ok(!(await c.call("load_budget")).budget.transactions.some(t => t.id === "late-legacy-private-work"));
     });

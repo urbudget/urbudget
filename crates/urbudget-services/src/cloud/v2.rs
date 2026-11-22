@@ -70,6 +70,33 @@ pub struct Head {
     pub deleted_at: Option<String>,
     pub retained_until: Option<String>,
     pub device: String,
+    /// On a head the account's move to protocol 2 seeded: where it started. Absent from a
+    /// Worker older than this field.
+    #[serde(default)]
+    pub legacy: Option<LegacyOrigin>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LegacyOrigin {
+    pub incarnation: String,
+    pub revision: String,
+}
+/// The latest v1 revision this head's incarnation can continue, when that can be shown: the head
+/// still has the incarnation the move to protocol 2 gave it, however often it has been rewritten
+/// since. A restored budget has a new incarnation and continues nothing a v1 device knew.
+fn legacy_revision(head: &Head) -> Option<u64> {
+    match &head.legacy {
+        Some(origin) if origin.incarnation == head.incarnation => {
+            urbudget_core::sync_storage::decimal(&origin.revision).ok()
+        }
+        Some(_) => None,
+        // From a Worker that doesn't record origins, only a head nobody has rewritten says so.
+        None => head
+            .payload
+            .as_ref()
+            .filter(|p| p.format == "legacy-v1")
+            .and_then(|_| urbudget_core::sync_storage::decimal(&head.version).ok()),
+    }
 }
 
 struct Transport<'a> {
@@ -2168,11 +2195,12 @@ async fn run_inner(
     }
     let entries = library.lock().list_all();
     let lifecycle_errors = library.lock().account_state(&account)?["lifecycleErrors"].clone();
+    let account_budgets = account_budget_ids(library, &account, &bootstrap)?;
     for entry in entries {
         let mut outcome = if let Some(error) = entry_errors.remove(&entry.id) {
             report_entry(&entry,"error",Some(error))
         } else if entry.account_id.is_none() {
-            report_entry(&entry, "local_only", None)
+            report_entry(&entry, "local_only", unlinked_legacy_copy(&entry, &account_budgets))
         } else if entry.account_id.as_deref() != Some(&account) {
             report_entry(
                 &entry,
@@ -2221,6 +2249,13 @@ async fn run_inner(
 
 /// Legacy IDs may be associated only from the old device's explicit tracking ledger and a
 /// verified persisted base in the same key generation. Display names never establish ancestry.
+///
+/// A copy links while the account's head still continues its v1 history (`legacy_revision`),
+/// however often other devices have rewritten that head since the move. It links at the revision
+/// this device last synced, and the pass that follows merges what it missed against that base.
+/// A copy that can't be shown to continue the head (restored since, or this device's ledger is
+/// gone) is never merged by guesswork: it stays on this device, the account's budget arrives
+/// beside it, and every pass says so on its row (`unlinked_legacy_copy`).
 async fn adopt_legacy_bindings(
     transport: &Transport<'_>,
     db: &Database,
@@ -2238,74 +2273,64 @@ async fn adopt_legacy_bindings(
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Value::Null,
         Err(e) => return Err(e.to_string()),
     };
-    if ledger["generation"]
+    let tracked = (ledger["generation"]
         .as_u64()
         .map(|v| v.to_string())
         .as_deref()
-        == bootstrap["keyGeneration"].as_str()
-    {
-        if let Some(tracked) = ledger["budgets"].as_object() {
-            let snapshot = transport.catalog(bootstrap).await?;
-            let heads: Vec<Head> =
-                serde_json::from_value(snapshot["budgets"].clone()).map_err(|e| e.to_string())?;
-            let entries = library.lock().list_all();
-            for entry in entries
-                .into_iter()
-                .filter(|e| e.account_id.is_none() && !e.missing && e.lifecycle == "active")
-            {
-                let Some(track) = tracked.get(&entry.id) else {
-                    continue;
-                };
-                let Some(head) = heads.iter().find(|h| h.budget_id == entry.id) else {
-                    continue;
-                };
-                // A restored or rewritten v2 head cannot prove the legacy incarnation.
-                if head
-                    .payload
-                    .as_ref()
-                    .is_none_or(|p| p.format != "legacy-v1")
-                {
-                    continue;
+        == bootstrap["keyGeneration"].as_str())
+    .then(|| ledger["budgets"].as_object().cloned())
+    .flatten()
+    .unwrap_or_default();
+    let candidates: Vec<_> = library
+        .lock()
+        .list_all()
+        .into_iter()
+        .filter(|e| e.account_id.is_none() && !e.missing && e.lifecycle == "active")
+        .filter(|e| tracked.contains_key(&e.id))
+        .collect();
+    if !candidates.is_empty() {
+        let snapshot = transport.catalog(bootstrap).await?;
+        let heads: Vec<Head> =
+            serde_json::from_value(snapshot["budgets"].clone()).map_err(|e| e.to_string())?;
+        for entry in candidates {
+            let Some(head) = heads.iter().find(|h| h.budget_id == entry.id) else {
+                continue;
+            };
+            let Some(migrated) = legacy_revision(head) else {
+                continue;
+            };
+            let track = &tracked[&entry.id];
+            let tracked_version = track["revision"].as_u64().unwrap_or(0);
+            let ack = track["localRevision"].as_i64().unwrap_or(-1);
+            let binding = library_api::with_store(db, library, &entry.id, |store| {
+                if store.sync_binding()?.is_some() {
+                    return Ok(None);
                 }
-                let tracked_version = track["revision"].as_u64().unwrap_or(0);
-                let ack = track["localRevision"].as_i64().unwrap_or(-1);
-                let binding = library_api::with_store(db, library, &entry.id, |store| {
-                    if store.sync_binding()?.is_some() {
-                        return Ok(None);
-                    }
-                    let base = store.sync_base()?;
-                    let Some((version, base)) = base.filter(|(version, _)| {
-                        tracked_version > 0
-                            && *version >= tracked_version
-                            && *version <= head.version.parse::<u64>().unwrap_or(0)
-                    }) else {
-                        return Ok(None);
-                    };
-                    Ok(Some(Binding {
-                        identity: identity(account, bootstrap, head)?,
-                        remote_version: version.to_string(),
-                        acknowledged_local_revision: if version == tracked_version {
-                            ack
-                        } else {
-                            -1
-                        },
-                        base,
-                    }))
-                })?;
-                if let Some(binding) = binding {
-                    library_api::with_store(db, library, &entry.id, |s| s.bind_sync(&binding))?;
-                    library.lock().associate(
-                        &entry.id,
-                        account,
-                        &head.budget_id,
-                        &head.incarnation,
-                    )?;
-                } else {
-                    library.lock().set_entry_status(
-                        &entry.id,
-                        "Review this preserved legacy copy; cloud ancestry could not be verified.",
-                    )?;
-                }
+                let base = store.sync_base()?;
+                let Some((version, base)) = base.filter(|(version, _)| {
+                    tracked_version > 0 && *version >= tracked_version && *version <= migrated
+                }) else {
+                    return Ok(None);
+                };
+                Ok(Some(Binding {
+                    identity: identity(account, bootstrap, head)?,
+                    remote_version: version.to_string(),
+                    acknowledged_local_revision: if version == tracked_version {
+                        ack
+                    } else {
+                        -1
+                    },
+                    base,
+                }))
+            })?;
+            if let Some(binding) = binding {
+                library_api::with_store(db, library, &entry.id, |s| s.bind_sync(&binding))?;
+                library.lock().associate(
+                    &entry.id,
+                    account,
+                    &head.budget_id,
+                    &head.incarnation,
+                )?;
             }
         }
     }
@@ -2313,6 +2338,28 @@ async fn adopt_legacy_bindings(
     let mut state = catalog.account_state(account)?;
     state["legacyAdopted"] = json!(true);
     catalog.set_account_state(account, &state)
+}
+
+/// The account's budgets a copy on this device alone may be an unlinked v1 copy of. Protocol 1
+/// synced a budget under its local id, and protocol 2 gives every budget it creates a new one
+/// (`enroll_created`, `enable`), so a budget kept only here that has the id of one of these is
+/// this device's v1 copy of it, and the account's own budget is in the library beside it. That
+/// includes copies a device forked before linking could follow a rewritten head.
+fn account_budget_ids(library: &Library, account: &str, bootstrap: &Value) -> Result<std::collections::BTreeSet<String>> {
+    Ok(library
+        .lock()
+        .catalog_heads(account)?
+        .into_iter()
+        .filter(|h| h.state == "active" && bootstrap["keyGeneration"].as_str() == Some(h.key_generation.as_str()))
+        .map(|h| h.budget_id)
+        .collect())
+}
+/// What a budget kept only on this device says on its row when it is a v1 copy of one of the
+/// account's budgets that couldn't be linked to it (`adopt_legacy_bindings`).
+fn unlinked_legacy_copy(entry: &budgets::Listing, account_budgets: &std::collections::BTreeSet<String>) -> Option<String> {
+    (entry.account_id.is_none() && entry.lifecycle == "active" && account_budgets.contains(&entry.id)).then(|| {
+        t!("Kept on this device only. This copy's history couldn't be matched to the same budget in your account, which is in the library too. Compare the two and keep the one you want.")
+    })
 }
 
 /// Cancel a stale deletion and open its current incarnation for an explicit new decision.
@@ -2579,6 +2626,48 @@ mod deletion_review_tests {
     }
 
     #[test]
+    fn a_head_continues_its_v1_history_only_in_the_incarnation_the_move_gave_it() {
+        let head = |incarnation: &str, format: &str, legacy: Value| -> Head {
+            serde_json::from_value(json!({"budgetId":"remote","incarnation":incarnation,"version":"45","keyGeneration":"7","state":"active",
+                "payload":{"format":format,"sha256":null,"length":1,"meta":"","context":{}},"updatedSequence":"3","updatedAt":"","deletedAt":null,
+                "retainedUntil":null,"device":"","legacy":legacy})).unwrap()
+        };
+        let origin = json!({"incarnation":"seeded","revision":"42"});
+        // Rewritten by other devices since the account moved over: still the same history.
+        assert_eq!(legacy_revision(&head("seeded", "v2", origin.clone())), Some(42));
+        assert_eq!(legacy_revision(&head("seeded", "legacy-v1", origin.clone())), Some(42));
+        // Restored: a new incarnation, which a v1 device's history says nothing about.
+        assert_eq!(legacy_revision(&head("restored", "v2", origin)), None);
+        // Made on protocol 2.
+        assert_eq!(legacy_revision(&head("made-here", "v2", Value::Null)), None);
+        // A Worker from before heads recorded their origin: only an untouched head shows it.
+        let mut old: Value = serde_json::to_value(head("seeded", "legacy-v1", Value::Null)).unwrap();
+        old.as_object_mut().unwrap().remove("legacy");
+        assert_eq!(legacy_revision(&serde_json::from_value(old.clone()).unwrap()), Some(45));
+        old["payload"]["format"] = json!("v2");
+        assert_eq!(legacy_revision(&serde_json::from_value(old).unwrap()), None);
+    }
+    #[test]
+    fn a_budget_kept_here_with_an_account_budgets_id_says_it_wasnt_linked() {
+        let dir = tempfile::tempdir().unwrap();
+        let library = Library(std::sync::Mutex::new(budgets::Budgets::load(dir.path()).unwrap()));
+        let v1_copy = library.lock().create().unwrap();
+        let private = library.lock().create().unwrap();
+        for (budget, generation, state) in [(v1_copy.as_str(), "7", "active"), ("made-on-v2", "7", "active"), ("old-key", "6", "active"), ("gone", "7", "trashed")] {
+            library.lock().observe_catalog(&budgets::CatalogHead {
+                account_id:"account".into(), key_generation:generation.into(), catalog_epoch:"epoch".into(),
+                budget_id:budget.into(), incarnation:"seeded".into(), version:"43".into(), state:state.into(),
+                name:"Budget".into(), currency:"SAR".into(), metadata:json!({}),
+            }).unwrap();
+        }
+        let ids = account_budget_ids(&library, "account", &json!({"keyGeneration":"7"})).unwrap();
+        assert_eq!(ids.iter().map(String::as_str).collect::<Vec<_>>(), [v1_copy.as_str(), "made-on-v2"]);
+        let entries = library.lock().list_all();
+        let row = |id: &str| unlinked_legacy_copy(entries.iter().find(|e| e.id == id).unwrap(), &ids);
+        assert!(row(&v1_copy).is_some_and(|m| m.starts_with("Kept on this device only.")));
+        assert_eq!(row(&private), None);
+    }
+    #[test]
     fn remote_tombstones_and_restores_cannot_manufacture_local_delete_intent() {
         let dir = tempfile::tempdir().unwrap();
         let library = Library(std::sync::Mutex::new(budgets::Budgets::load(dir.path()).unwrap()));
@@ -2591,6 +2680,7 @@ mod deletion_review_tests {
         let mut head = Head {
             budget_id:"remote".into(), incarnation:"original".into(), version:"3".into(), key_generation:"1".into(),
             state:"active".into(), payload:None, updated_sequence:"3".into(),updated_at:now(),deleted_at:None,retained_until:None,device:"peer".into(),
+            legacy:None,
         };
         assert!(interrupted_deletion_review(&library,&entry,&head).unwrap().is_none(), "observed remote tombstones are not local delete intents");
         let job = budgets::LifecycleJob {

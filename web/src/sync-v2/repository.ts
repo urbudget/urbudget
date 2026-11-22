@@ -16,7 +16,8 @@ export function statement(db: D1Database, sql: string, values: Params = {}) {
 }
 export const headJson = (h = "h") => `json_object('budgetId',${h}.budget_id,'incarnation',${h}.incarnation,'version',${h}.version,
  'keyGeneration',${h}.key_generation,'state',${h}.state,'payload',json(${h}.payload),'updatedSequence',${h}.updated_sequence,
- 'updatedAt',${h}.updated_at,'deletedAt',${h}.deleted_at,'retainedUntil',${h}.retained_until,'device',${h}.device)`;
+ 'updatedAt',${h}.updated_at,'deletedAt',${h}.deleted_at,'retainedUntil',${h}.retained_until,'device',${h}.device,
+ 'legacy',json(${h}.legacy))`;
 export type Account = { user_id: string; protocol: number; key_generation: string | null; salt: string | null; key_check: string | null; catalog_epoch: string; catalog_sequence: string; min_cursor: string };
 export type Installation = { last_sequence: string; last_digest: string | null; receipt: string | null; status: string };
 export type Staging = { sequence: string; digest: string; manifest: string; object_key: string | null; expires_at: string; claim: string | null; decision: string | null };
@@ -212,7 +213,12 @@ function controlWrites(db: D1Database, m: Manifest, p: Params) {
         SELECT b.user_id,b.budget_id,lower(hex(randomblob(16))),CAST(b.revision AS TEXT),a.key_generation,'active',b.object_key,
           json_object('format','legacy-v1','sha256',NULL,'length',b.size,'meta',b.meta,'context',json_object('budgetId',b.budget_id)),
           b.size,'1',b.updated_at,b.device,$marker FROM sync_budgets b JOIN sync_accounts_v2 a ON a.user_id=b.user_id
-        WHERE b.user_id=$user AND ${readyClaim} AND ${appliedAccount}`, p));
+        WHERE b.user_id=$user AND ${readyClaim} AND ${appliedAccount}`, p),
+      // The incarnation is random per row, so the origin is read back from the row it went to.
+      // Nothing writes this column again: updates keep it, and a restore's new incarnation stops
+      // matching it (migrations/0016_sync_v2_legacy_origin.sql).
+      statement(db, `UPDATE sync_heads_v2 SET legacy=json_object('incarnation',incarnation,'revision',version)
+        WHERE user_id=$user AND applied_by=$marker AND ${readyClaim} AND ${appliedAccount}`, p));
   } else {
     statements.push(statement(db, `UPDATE sync_accounts_v2 SET protocol=2,key_generation=${m.kind === "keySetup" ? "'0'" : "CAST(CAST(key_generation AS INTEGER)+1 AS TEXT)"},
       salt=$salt,key_check=$check,catalog_epoch=$nextEpoch,catalog_sequence='1',min_cursor='0',updated_at=$at,applied_by=$marker,legacy_cleanup=1
