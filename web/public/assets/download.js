@@ -31,7 +31,7 @@ function detectOS() {
   return "unknown";
 }
 
-/** Shows only this computer's button in the hero, and puts its downloads and steps first. */
+/** Shows only this computer's button in the hero, puts its downloads first and opens its steps. */
 function recommend(os) {
   for (const button of document.querySelectorAll("#dl-actions [data-os]")) {
     const mine = button.dataset.os === os;
@@ -53,9 +53,9 @@ function recommend(os) {
     button.closest(".dl-item").classList.toggle("is-here", mine);
   }
   // Moved, not just restyled, so the order is the same for keyboards and screen readers.
-  const steps = $("dl-steps");
   for (const el of [...document.querySelectorAll(`.dl-item[data-os="${os}"]`)].reverse()) el.parentElement.prepend(el);
-  for (const el of [...steps.querySelectorAll(`.dl-steps[data-os="${os}"]`)].reverse()) steps.prepend(el);
+  // The installing steps open on this computer's tab (site.js wires the tabs).
+  document.querySelector(`#install [role="tab"][data-os="${os}"]`)?.click();
 }
 
 /** One run of text with a link in it, in one box so the notice's flex layout keeps it a sentence. */

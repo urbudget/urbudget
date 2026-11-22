@@ -308,6 +308,8 @@ function phoneVisitors() {
     link.href = href;
     link.textContent = short;
   }
+  // Links about the iPhone app go straight to the App Store on an iPhone or iPad.
+  if (apple) for (const link of document.querySelectorAll("a[data-app-store]")) link.href = APP_STORE;
   for (const label of document.querySelectorAll("[data-download-label]")) {
     const link = label.closest("a");
     if (!link) continue;

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>UrBudget: zero-based budgeting app for Windows, Mac and Linux</title>
-  <meta name="description" content="Zero-based envelope budgeting for Windows, Mac and Linux, kept in a file on your own computer. Import your YNAB budget in one click. Free and open source.">
+  <meta name="description" content="Zero-based envelope budgeting for Windows, Mac, Linux, iPhone and iPad, kept on your own devices. Import your YNAB budget in one click. Free and open source.">
   <link rel="canonical" href="https://urbudget.app/">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#fbfaf7">
@@ -16,7 +16,7 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="UrBudget">
   <meta property="og:title" content="UrBudget: zero-based budgeting app for Windows, Mac and Linux">
-  <meta property="og:description" content="Zero-based envelope budgeting for Windows, Mac and Linux, kept on your own computer. Bring your YNAB budget over in one click. Free and open source.">
+  <meta property="og:description" content="Zero-based envelope budgeting for Windows, Mac, Linux, iPhone and iPad, kept on your own devices. Bring your YNAB budget over in one click. Free and open source.">
   <meta property="og:url" content="https://urbudget.app/">
   <meta property="og:image" content="https://urbudget.app/img/og.png?v=6cd8632b">
   <meta property="og:image:width" content="1200">
@@ -24,7 +24,7 @@
   <meta property="og:image:alt" content="UrBudget: Your budget, on your computer. Envelope budgeting for Windows, macOS and Linux.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="UrBudget: zero-based budgeting app for Windows, Mac and Linux">
-  <meta name="twitter:description" content="Zero-based envelope budgeting for Windows, Mac and Linux, kept on your own computer. Bring your YNAB budget over in one click. Free and open source.">
+  <meta name="twitter:description" content="Zero-based envelope budgeting for Windows, Mac, Linux, iPhone and iPad, kept on your own devices. Bring your YNAB budget over in one click. Free and open source.">
   <meta name="twitter:image" content="https://urbudget.app/img/og.png?v=6cd8632b">
   <!-- For search engines: what UrBudget is, where it runs and what it costs. -->
   <script type="application/ld+json">
@@ -78,11 +78,9 @@
   <link rel="preload" href="/fonts/fraunces.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/assets/site.css?v=2">
   <link rel="stylesheet" href="/assets/home.css">
-  <link rel="stylesheet" href="/assets/android.css">
   <script type="module" src="/assets/site.js?v=2"></script>
   <script type="module" src="/assets/ref.js"></script>
   <script type="module" src="/assets/home.js"></script>
-  <script type="module" src="/assets/android-signup.js"></script>
 </head>
 <body class="home">
   <a class="skip-link" href="#main">Skip to content</a>
@@ -103,7 +101,6 @@
             <li><a href="/#features">Features</a></li>
             <li><a href="/pricing/">Pricing</a></li>
             <li><a href="/#faq">FAQ</a></li>
-            <li><a href="/android/">Android</a></li>
             <li class="nav-group">
               <button class="nav-group-button" type="button" aria-expanded="false" aria-controls="nav-compare">Compare<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
               <div class="nav-panel" id="nav-compare">
@@ -142,14 +139,14 @@
     <section class="hero2" aria-labelledby="hero-title">
       <div class="container hero2-grid">
         <div class="hero2-copy">
-          <h1 id="hero-title">Your budget, on your&nbsp;computer.</h1>
-          <p class="lead">UrBudget is a zero-based envelope budgeting app for Windows, macOS and Linux. You give every dollar you have a category, and the budget stays in a file on your own computer instead of on someone else's server.</p>
+          <a class="hero2-news" href="/download/#phones" data-app-store><span class="hero2-news-tag">New</span>UrBudget for iPhone and iPad<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+          <h1 id="hero-title">Your budget, on your&nbsp;devices.</h1>
+          <p class="lead">UrBudget is a zero-based envelope budgeting app for Windows, Mac, Linux, iPhone and iPad. You give every dollar you have a category, and the budget stays on your own devices instead of on someone else's server.</p>
           <div class="cta-row hero2-cta">
             <a class="btn btn-primary btn-lg" href="/download/" data-download-label>Download</a>
             <a class="btn btn-lg btn-quiet" href="#pricing">See pricing</a>
           </div>
           <p class="hero2-price"><span class="price-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M8 3v4M16 3v4M3.5 10h17M9 15l2 2 4-4"/></svg></span><span>Free, with nothing locked. Sync is optional, at <b data-price="sync">$3</b> a month.</span></p>
-          <p class="hero2-price hero2-phone"><span class="price-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="3"/><path d="M10.5 18.5h3"/></svg></span><span>Now on <a href="#iphone">iPhone and iPad</a>, and <a href="/android/">in testing on Android</a>.</span></p>
           <p class="hero2-switch">Coming from YNAB? <a href="#ynab">Bring your budget over in one click</a></p>
         </div>
 
@@ -595,105 +592,6 @@
       </div>
     </section>
 
-    <!-- iPhone and iPad: the App Store app. The devices sit on the left, so they and Android's
-         phone below alternate. Each screen comes in both themes (theme-light / theme-dark). -->
-    <section class="section ios" id="iphone" aria-labelledby="iphone-title">
-      <div class="container ios-grid">
-        <figure class="ios-devices" data-rise>
-          <div class="ios-ipad">
-            <picture class="theme-light">
-              <img src="/img/ipad-budget-light-1280.webp?v=58fe5e9d" srcset="/img/ipad-budget-light-640.webp?v=98f44224 640w, /img/ipad-budget-light-1280.webp?v=58fe5e9d 1280w" sizes="(min-width: 1264px) 620px, (min-width: 960px) 50vw, 90vw" width="1280" height="960" loading="lazy" decoding="async" alt="UrBudget on iPad: the budget for November, envelopes under Credit Card Payments, Bills and Everyday with what is assigned and available, and the sidebar beside it.">
-            </picture>
-            <picture class="theme-dark">
-              <img src="/img/ipad-budget-dark-1280.webp?v=22a5f6ba" srcset="/img/ipad-budget-dark-640.webp?v=b7d38562 640w, /img/ipad-budget-dark-1280.webp?v=22a5f6ba 1280w" sizes="(min-width: 1264px) 620px, (min-width: 960px) 50vw, 90vw" width="1280" height="960" loading="lazy" decoding="async" alt="UrBudget on iPad: the budget for November, envelopes under Credit Card Payments, Bills and Everyday with what is assigned and available, and the sidebar beside it.">
-            </picture>
-          </div>
-          <div class="ios-iphone">
-            <picture class="theme-light">
-              <img src="/img/iphone-accounts-light-480.webp?v=9bfe12eb" srcset="/img/iphone-accounts-light-240.webp?v=9a2f386c 240w, /img/iphone-accounts-light-480.webp?v=9bfe12eb 480w" sizes="(min-width: 1264px) 190px, (min-width: 960px) 15vw, 28vw" width="480" height="1043" loading="lazy" decoding="async" alt="UrBudget on iPhone: accounts grouped into cash, credit and tracking, under a net worth of $21,599.20.">
-            </picture>
-            <picture class="theme-dark">
-              <img src="/img/iphone-accounts-dark-480.webp?v=a32791b5" srcset="/img/iphone-accounts-dark-240.webp?v=09fd5d6d 240w, /img/iphone-accounts-dark-480.webp?v=a32791b5 480w" sizes="(min-width: 1264px) 190px, (min-width: 960px) 15vw, 28vw" width="480" height="1043" loading="lazy" decoding="async" alt="UrBudget on iPhone: accounts grouped into cash, credit and tracking, under a net worth of $21,599.20.">
-            </picture>
-          </div>
-        </figure>
-        <div class="ios-copy" data-rise>
-          <p class="droid-kicker"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg>iPhone and iPad</p>
-          <h2 id="iphone-title">UrBudget is on the App&nbsp;Store.</h2>
-          <ul class="ticks">
-            <li><b>The whole budget, with you.</b> Envelopes and targets, transactions, scheduled bills, the reports and the loan planner.</li>
-            <li><b>Made for iPad, too.</b> A category opens beside the budget, and a transaction beside the register.</li>
-            <li><b>In step with your computer.</b> Sync keeps them the same, encrypted with your passphrase. Or keep the budget on your phone alone.</li>
-          </ul>
-          <div class="ios-get">
-            <a class="btn btn-primary btn-lg" href="https://apps.apple.com/app/id6825535486">Download on the App Store</a>
-            <a class="ios-scan" href="https://apps.apple.com/app/id6825535486" aria-label="Get UrBudget on the App Store">
-              <img src="/img/qr-app-store.svg?v=e8458f53" width="37" height="37" alt="">
-              <span><b>Or scan it</b>with your iPhone</span>
-            </a>
-          </div>
-          <p class="ios-meta">Free, with nothing locked · iOS and iPadOS 17 or later</p>
-        </div>
-      </div>
-    </section>
-
-    <!-- Android: Google Play's closed test and the steps to join it, the same as /android/: the
-         public Google Group urbudget-testers (the test's tester list), where Google says "You don't
-         have permission" until you tap its small Join group button, then Play's opt-in link. -->
-    <section class="section droid" id="android" aria-labelledby="android-title">
-      <div class="container droid-grid">
-        <div class="droid-copy" data-rise>
-          <p class="droid-kicker"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg>Android, in testing</p>
-          <h2 id="android-title">UrBudget is coming to Android.</h2>
-          <ul class="ticks">
-            <li><b>The whole budget on your phone.</b> Envelopes and targets, transactions, scheduled bills, the twelve reports and the loan planner.</li>
-            <li><b>Your bank's texts, ready to add.</b> If your bank texts you when money moves, the AI assistant you connect turns those texts into transactions for you to review.</li>
-            <li><b>The same budget as your computer.</b> Sync keeps them in step, encrypted with your passphrase.</li>
-          </ul>
-          <div class="join">
-            <p class="join-account"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/></svg>Use the Google account that's on your Android phone.</p>
-            <ol class="join-steps">
-              <li class="join-step is-current">
-                <span class="join-num" aria-hidden="true">1</span>
-                <div class="join-body">
-                  <p class="join-title">Open the testers group</p>
-                  <p>It opens on Google Groups, in a new tab.</p>
-                  <a class="btn btn-primary" href="https://groups.google.com/g/urbudget-testers" target="_blank" rel="noopener" data-join="group">Open the group<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></a>
-                </div>
-              </li>
-              <li class="join-step">
-                <span class="join-num" aria-hidden="true">2</span>
-                <div class="join-body">
-                  <p class="join-title">Tap Join group</p>
-                  <p>Google first says you don't have permission. That's normal: <b>Join&nbsp;group</b> is at the top, next to the group's name.</p>
-                  <div class="join-shot" aria-hidden="true">
-                    <div class="join-shot-head">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="m12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/></svg>
-                      <span class="join-shot-name">UrBudget Android testers</span>
-                      <span class="join-shot-btn">Join group<svg class="join-shot-tap" viewBox="0 0 24 24"><path d="M6 3.5 18.5 12l-5.6 1.2 3.1 6-2.3 1.2-3.1-6-4.6 3.6z" fill="currentColor" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg></span>
-                    </div>
-                    <p class="join-shot-msg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/></svg>You don't have permission to access this content</p>
-                  </div>
-                </div>
-              </li>
-              <li class="join-step">
-                <span class="join-num" aria-hidden="true">3</span>
-                <div class="join-body">
-                  <p class="join-title">Install it from Google Play</p>
-                  <p>Tap <b>Become a tester</b>, then <b>Download it on Google Play</b>.</p>
-                  <a class="btn" href="https://play.google.com/apps/testing/app.urbudget" target="_blank" rel="noopener" data-join="play">Get it on Google Play<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></a>
-                </div>
-              </li>
-            </ol>
-          </div>
-          <p class="join-more"><a href="/android/#questions">Questions about the test</a></p>
-        </div>
-        <figure class="droid-phone" data-rise>
-          <img src="/img/phone-bank-messages-360.webp?v=22cbadea" srcset="/img/phone-bank-messages-360.webp?v=22cbadea 360w, /img/phone-bank-messages-720.webp?v=5ce550a0 720w" sizes="(min-width: 900px) 330px, 72vw" width="360" height="771" loading="lazy" decoding="async" alt="UrBudget on Android: bank texts turned into transactions, each ticked, with the balances after adding them.">
-        </figure>
-      </div>
-    </section>
-
     <section class="section faq-section" id="faq" aria-labelledby="faq-title">
       <div class="container faq-grid">
         <div class="faq-side" data-rise>
@@ -728,7 +626,7 @@
           <details>
             <summary>Which systems does it run on?</summary>
             <div class="answer">
-              <p>Windows 10 and 11 (64-bit), macOS 12 or later, and Linux on 64-bit Intel and AMD computers. On iPhone and iPad (iOS and iPadOS 17 or later), it's free <a href="https://apps.apple.com/app/id6825535486">on the App Store</a>. The Android app is in testing on Google Play: <a href="#android">join the test</a>. There's no web version.</p>
+              <p>Windows 10 and 11 (64-bit), macOS 12 or later, and Linux on 64-bit Intel and AMD computers. On iPhone and iPad (iOS and iPadOS 17 or later), it's free <a href="https://apps.apple.com/app/id6825535486">on the App Store</a>. The Android app is in testing on Google Play: <a href="/android/">join the test</a>. There's no web version.</p>
             </div>
           </details>
           <details>
@@ -754,29 +652,49 @@
     </section>
 
     <!-- Last call: a lavender card (night-violet in dark) with the app running off its edge. -->
-    <section class="finale" aria-labelledby="finale-title">
+    <section class="finale" id="get" aria-labelledby="finale-title">
       <div class="container">
         <div class="finale-card">
           <div class="finale-copy" data-rise>
             <h2 id="finale-title">Start this month's budget.</h2>
-            <p>It's free. No account and no card.</p>
-            <div class="cta-row">
-              <a class="btn btn-primary btn-lg" href="/download/"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></svg><span data-download-label>Download</span></a>
-            </div>
-            <ul class="finale-facts">
-              <li>Windows, macOS and Linux</li>
-              <li>Free and open source</li>
-              <li>Works offline</li>
+            <p>Free on every device you budget on. No account and no card.</p>
+            <!-- Every platform. home.js names this computer on the first button. -->
+            <ul class="finale-get">
+              <li>
+                <span class="finale-get-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12.5" rx="2"/><path d="M8.5 20.5h7M12 16.5v4"/></svg></span>
+                <span class="finale-get-name"><b>Windows, Mac and Linux</b><span>A free download</span></span>
+                <a class="btn btn-primary" href="/download/" data-computer-label>Download</a>
+              </li>
+              <li>
+                <span class="finale-get-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="2.5" width="15" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg></span>
+                <span class="finale-get-name"><b>iPhone and iPad</b><span>iOS and iPadOS 17 or later</span></span>
+                <a class="btn finale-btn" href="https://apps.apple.com/app/id6825535486">App Store</a>
+              </li>
+              <li>
+                <span class="finale-get-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg></span>
+                <span class="finale-get-name"><b>Android</b><span>In testing on Google Play</span></span>
+                <a class="btn finale-btn" href="/android/">Join the test</a>
+              </li>
             </ul>
+            <p class="finale-more"><a href="/download/">Every download, with QR codes for your phone</a></p>
           </div>
 
-          <!-- The app itself, running past the card's edge, in the card's color scheme. -->
+          <!-- The app on a computer, running past the card's edge, with the iPhone in front of it;
+               both in the page's color scheme. -->
           <figure class="finale-shot" aria-hidden="true">
             <picture class="theme-light">
               <img src="/img/budget-light-1280.webp?v=3a5fb97e" srcset="/img/budget-light-800.webp?v=1f1a2778 800w, /img/budget-light-1280.webp?v=3a5fb97e 1280w, /img/budget-light-2560.webp?v=bbb50df6 2560w" sizes="(min-width: 860px) 820px, 100vw" width="1280" height="800" loading="lazy" decoding="async" alt="">
             </picture>
             <picture class="theme-dark">
               <img src="/img/budget-dark-1280.webp?v=3de9ceb1" srcset="/img/budget-dark-800.webp?v=4b3a46cd 800w, /img/budget-dark-1280.webp?v=3de9ceb1 1280w, /img/budget-dark-2560.webp?v=10dfc446 2560w" sizes="(min-width: 860px) 820px, 100vw" width="1280" height="800" loading="lazy" decoding="async" alt="">
+            </picture>
+          </figure>
+          <figure class="finale-phone" aria-hidden="true">
+            <picture class="theme-light">
+              <img src="/img/iphone-accounts-light-480.webp?v=9bfe12eb" srcset="/img/iphone-accounts-light-240.webp?v=9a2f386c 240w, /img/iphone-accounts-light-480.webp?v=9bfe12eb 480w" sizes="(min-width: 860px) 200px, 140px" width="480" height="1043" loading="lazy" decoding="async" alt="">
+            </picture>
+            <picture class="theme-dark">
+              <img src="/img/iphone-accounts-dark-480.webp?v=a32791b5" srcset="/img/iphone-accounts-dark-240.webp?v=09fd5d6d 240w, /img/iphone-accounts-dark-480.webp?v=a32791b5 480w" sizes="(min-width: 860px) 200px, 140px" width="480" height="1043" loading="lazy" decoding="async" alt="">
             </picture>
           </figure>
         </div>

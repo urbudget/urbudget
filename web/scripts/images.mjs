@@ -246,15 +246,15 @@ async function stampScreenshotSizes() {
 }
 
 /**
- * The home page's phone sections, each a screen in a slim bezel.
+ * The phone pictures, each a screen in a slim bezel.
  *
  * Android: the phone's screen from the Play listing's Bank messages screenshot
  * (docs/play-listing/graphics), without its caption, with the screen's own round corners cut
  * out. Its region and radius are in that 1440×2560 image's pixels.
  *
- * iPhone and iPad: the Simulator's screens in light and dark (docs/app-store: the iPad's budget,
- * from a 13" iPad, and the iPhone's accounts, from a 6.9" iPhone, the same showcase budget as the
- * App Store's screenshots), whole; the devices' CSS rounds their corners.
+ * iPhone: the Simulator's accounts screen in light and dark (docs/app-store, a 6.9" iPhone, the
+ * same showcase budget as the App Store's screenshots), whole; the phone's CSS rounds its corners.
+ * It stands in front of the computer's window on the home page and the download page.
  */
 const PHONES = [
   {
@@ -264,18 +264,11 @@ const PHONES = [
     radius: 88,
     widths: [360, 720],
   },
-  ...["light", "dark"].flatMap((theme) => [
-    {
-      name: `ipad-budget-${theme}`,
-      src: resolve(root, "..", "docs", "app-store", `ipad-budget-${theme}.png`),
-      widths: [640, 1280],
-    },
-    {
-      name: `iphone-accounts-${theme}`,
-      src: resolve(root, "..", "docs", "app-store", `iphone-accounts-${theme}.png`),
-      widths: [240, 480],
-    },
-  ]),
+  ...["light", "dark"].map((theme) => ({
+    name: `iphone-accounts-${theme}`,
+    src: resolve(root, "..", "docs", "app-store", `iphone-accounts-${theme}.png`),
+    widths: [240, 480],
+  })),
 ];
 
 async function phoneShots() {
