@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { createInterface } from "node:readline";
-import { mkdir, writeFile, readFile } from "node:fs/promises";
+import { mkdir, writeFile, readFile, cp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { startLocal, web } from "./sync-v2-local.mjs";
 const pause = ms => new Promise(r => setTimeout(r, ms));
@@ -75,7 +75,8 @@ async function device(name) {
     const id = ++d.next; const timer = setTimeout(() => { d.pending.delete(id); reject(new Error(`${name}: ${method} timed out: ${d.stderr}`)); }, 45000);
     d.pending.set(id, { resolve, reject, timer, method }); d.child.stdin.write(JSON.stringify({ id, method, params }) + "\n");
   });
-  d.restart = async () => { const child = d.child; child.kill(); await new Promise(r => child.once("exit", r)); d.start(); };
+  d.halt = async () => { const child = d.child; child.kill(); await new Promise(r => child.once("exit", r)); };
+  d.restart = async () => { await d.halt(); d.start(); };
   d.stop = () => { d.child.kill(); fault.stop(); for (const p of d.pending.values()) clearTimeout(p.timer); };
   d.start(); devices.push(d); return d;
 }
@@ -139,6 +140,26 @@ try {
       assert.equal(old.scope, "local"); assert.equal(old.accountId, null); assert.ok(current && current.id !== old.id, JSON.stringify(list));
       await c.call("library_open", { id: old.id }); assert.ok((await c.call("load_budget")).budget.transactions.some(t => t.id === "late-legacy-private-work"));
       await c.call("library_open", { id: current.id }); assert.ok(!(await c.call("load_budget")).budget.transactions.some(t => t.id === "late-legacy-private-work"));
+    });
+    await test("an account still on protocol 1 can reset its passphrase while activation is on", async () => {
+      assert.ok(local.execute, "This scenario requires the isolated managed Worker");
+      const otherId = local.accountId + "_v1", otherEmail = "v1-" + local.email;
+      await local.execute(`INSERT INTO users(id,email,created_at) VALUES ('${otherId}','${otherEmail}','2026-01-01'); INSERT INTO subscriptions(id,user_id,customer_id,status,updated_at,event_at) VALUES ('comp:${otherId}','${otherId}','synthetic','active','2026-01-01','2026-01-01');`);
+      const d = await device("fourth"); await signIn(d, otherEmail);
+      const forgotten = "a passphrase nobody remembers", chosen = "the passphrase chosen at reset";
+      d.fault.legacy = true; await d.call("sync_setup", { passphrase: forgotten });
+      const id = await d.call("create_budget", { budget: { ...initial(), name: "Reset on protocol 1" } }); await d.call("library_open", { id });
+      await d.call("sync_track", { ids: [id] }); await wake(d);
+      // The server now offers protocol 2. Moving there proves the old passphrase, which is the
+      // one thing someone resetting doesn't have, so the reset goes through protocol 1.
+      d.fault.legacy = false; await d.call("sync_reset", { passphrase: chosen });
+      assert.equal((await d.call("sync_status")).protocol, 1); await wake(d);
+      await assert.rejects(d.call("sync_setup", { passphrase: forgotten }), /isn't the sync passphrase/);
+      // The next unlock moves the account, and the budget keeps its identity.
+      await d.call("sync_setup", { passphrase: chosen }); await wake(d); await wake(d);
+      assert.equal((await d.call("sync_status")).protocol, 2);
+      const live = (await snapshot(d)).entries.filter(e => e.lifecycle === "active");
+      assert.equal(live.length, 1, JSON.stringify(live)); assert.equal(live[0].id, id); assert.equal(live[0].accountId, otherId); assert.equal(live[0].remoteId, id);
     });
   } else {
   await test("setup empty account and discover automatically enrolled budget", async () => {
@@ -205,6 +226,27 @@ try {
     await wake(a); assert.equal(a.fault.dropped, 1); await a.restart(); await a.call("sync_setup", { passphrase }); await settle();
     assert.equal((await equalBudgets(a.remote)).transactions.filter(t => t.id === "offline-survivor").length, 1);
   });
+  await test("a data folder restored from a backup syncs under a new identity and keeps its edits", async () => {
+    await open(a, a.remote); await settle();
+    const backup = resolve(root, "desktop-backup");
+    await a.halt(); await cp(a.folder, backup, { recursive: true }); a.start(); await a.call("sync_setup", { passphrase });
+    // The device goes on syncing, so the server's sequence for its identity passes the backup's.
+    await edit(a, budget => budget.transactions.push(transaction("after-the-backup"))); await settle();
+    await a.halt(); await rm(a.folder, { recursive: true, force: true }); await cp(backup, a.folder, { recursive: true }); a.start();
+    await a.call("sync_setup", { passphrase });
+    const registrations = () => a.fault.requests.filter(r => r.method === "POST" && r.path.endsWith("/installations")).length, before = registrations();
+    await edit(a, budget => budget.transactions.push(transaction("after-the-restore")));
+    const report = await wake(a);
+    assert.ok(a.fault.requests.some(r => r.path.endsWith("/prepare") && r.status === 409), "the restored sequence must have been refused");
+    assert.equal(registrations(), before + 1, "the restored folder registers a new installation");
+    assert.equal(report.state, "ok", JSON.stringify(report));
+    await settle();
+    const budget = await equalBudgets(a.remote);
+    for (const id of ["after-the-backup", "after-the-restore"]) assert.equal(budget.transactions.filter(t => t.id === id).length, 1, id);
+    // It keeps uploading under the new identity.
+    await edit(a, budget => budget.transactions.push(transaction("second-after-the-restore"))); await settle();
+    assert.ok((await equalBudgets(a.remote)).transactions.some(t => t.id === "second-after-the-restore"));
+  });
   await test("eviction keeps discovery and restores download", async () => {
     const e = await entry(b, a.remote); await b.call("library_evict", { id: e.id }); assert.equal((await entry(b, a.remote)).missing, true);
     await open(b, a.remote); assert.equal((await entry(b, a.remote)).missing, false); await equalBudgets(a.remote);
@@ -270,7 +312,13 @@ try {
     await b.call("editor_checkpoint", { budgetId: id, id: "qa-raw-editor", epoch, target: { kind: "transaction", id: "unsaved" }, baseline: {}, values });
     await edit(a, budget => budget.transactions.push(transaction("incoming-while-editor"))); await wake(a);
     const report = await wake(b); assert.ok(report.budgets.some(e => e.id === id && e.state === "waiting"), JSON.stringify(report));
+    // This copy has nothing of its own to upload, but it is behind: its status can't say synced.
+    assert.equal((await b.call("cloud_status")).sync.last.budgets.find(e => e.id === id)?.state, "waiting");
     await b.restart(); await b.call("sync_setup", { passphrase });
+    // The process that had the form open is gone. Its draft stays to recover, and no longer
+    // holds this budget's sync in both directions until someone finds and discards it.
+    const after = await wake(b); assert.ok(!after.budgets.some(e => e.id === id && e.state === "waiting"), JSON.stringify(after));
+    assert.ok((await b.call("load_budget")).budget.transactions.some(t => t.id === "incoming-while-editor"));
     const recovered = await b.call("editor_recovery", { budgetId: id }); assert.deepEqual(recovered.find(e => e.editorId === "qa-raw-editor")?.draft, values);
     await b.call("editor_discard", { budgetId: id, id: "qa-raw-editor", epoch }); await settle(); await equalBudgets(a.remote);
   });
@@ -348,6 +396,25 @@ try {
     a.fault.offline = false; await settle();
     assert.equal((await entry(a, a.remote)).incarnation, before.incarnation);
     assert.ok((await equalBudgets(a.remote)).transactions.some(t => t.id === "offline-delete-undo"));
+  });
+  await test("a restore the server holds back waits for its own receipt when the person asks again", async () => {
+    const before = await entry(a, a.remote);
+    await a.call("library_trash", { id: before.id }); await settle();
+    // The server refuses the restore for now, as a publication pause does: its request keeps
+    // the installation's delivery slot, and its outcome is unknown.
+    a.fault.prepareError = "publication_paused";
+    await a.call("library_restore", { id: before.id });
+    assert.equal((await wake(a)).state, "attention");
+    // The row shows an error, so the person asks again. This pass must not finish the first
+    // request as superseded: when its real receipt arrives, the two would disagree for good.
+    await a.call("library_restore", { id: before.id }); await wake(a);
+    a.fault.prepareError = null; await settle();
+    assert.equal((await entry(a, a.remote)).lifecycle, "active");
+    const report = await wake(a); assert.equal(report.state, "ok", JSON.stringify(report));
+    assert.ok(!(await a.call("cloud_status")).sync.last.budgets.some(e => e.state === "error"));
+    // The installation still uploads.
+    await open(a, a.remote); await edit(a, budget => budget.transactions.push(transaction("after-a-held-restore"))); await settle();
+    assert.ok((await equalBudgets(a.remote)).transactions.some(t => t.id === "after-a-held-restore"));
   });
   await test("locked clients publish trash while content restoration waits for unlock", async () => {
     const before = await entry(a, a.remote);

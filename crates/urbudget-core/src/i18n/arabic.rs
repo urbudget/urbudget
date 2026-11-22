@@ -614,6 +614,8 @@ pub(super) const MESSAGES: &[(&str, &str)] = &[
     ("The local budget changed during the download. Review it and try again.", "تغيّرت الميزانية المحلية أثناء التنزيل. راجعها، ثم حاول مرة أخرى."),
     ("Could not read sync state: {e}", "تعذّرت قراءة حالة المزامنة: {e}"),
     ("This budget was encrypted with a different sync passphrase.", "شُفِّرت هذه الميزانية بعبارة مرور مزامنة مختلفة."),
+    ("This device's sync data was restored from a backup or copied from another device. It syncs under a new identity now, and changes not yet uploaded are kept.",
+     "استُعيدت بيانات المزامنة على هذا الجهاز من نسخة احتياطية أو نُسخت من جهاز آخر. يُزامن الآن بهوية جديدة، وتُحفظ التغييرات التي لم تُرفع بعد."),
     ("The synced budget couldn't be read: {e}", "تعذّرت قراءة الميزانية المتزامنة: {e}"),
     ("{problem} Choose which version to keep.", "{problem} اختر النسخة التي تريد الإبقاء عليها."),
     ("Budget", "ميزانية"),

@@ -90,6 +90,23 @@ acknowledged. Older sequences, gaps, reused digest mismatches, and retired IDs
 fail closed. Different devices changing the head cannot invalidate that last
 receipt. A restored filesystem clone must reconcile rather than reset the fence.
 
+The client does that by taking a new identity. On `stale_sequence` or `sequence_reused` for a
+request the server has not answered, the data folder was restored from a backup or copied, and
+another run of it went on syncing under the same identity. The client drops that request with
+the identity (`Budgets::replace_installation`), registers a new installation counting from 1,
+and runs the pass again. The request is never replayed under a new sequence, because the other
+run may have had it accepted and built on it. What it carried is still local, as unsynced
+budget changes or a pending lifecycle job, and goes again through the usual version checks and
+merge. This is narrower than quarantining the clone for review, on purpose: nothing local is
+lost and nothing is published without those checks.
+
+Lifecycle actions (trash, restore, purge) wait while a delivery is unsettled. The client never
+finishes or supersedes a job locally while the server's answer for the slot is unknown, so a
+real receipt can't arrive for a job already recorded with another outcome. An editor checkpoint
+holds incoming changes to its budget only while the process that wrote it runs; one left by a
+process that died stays as a draft to recover. Replacing a budget with another incarnation
+still waits for every draft, and a clean budget held back reads "waiting", not "synced".
+
 Budget manifests identify account/installation/operation, key generation/epoch,
 budget ID, expected version/incarnation, and optional new incarnation/payload.
 Create uses expectedVersion `"0"` and `newIncarnation`. Restore identifies the
@@ -166,6 +183,8 @@ empty-library restart. It also tests locked receipt recovery, expired entitlemen
 key reset during upload, offline deletion undo, concurrent restores and deletion
 CAS rejection followed by explicit review, private creation, account switching and durable
 rate-limit recovery. It also checks displayed-review replacement by background sync,
+a data folder restored from a backup (new identity, both runs' edits kept), a restore held back
+by the server and asked for again, an editor checkpoint left by a process that has restarted,
 unrelated downloads during blocked publication, safe cancellation of malformed candidates,
 unreadable-cache isolation, and downloading without changing the selected budget.
 `--large-transactions` changes the default 5,000-row large-budget
@@ -175,6 +194,7 @@ including old email-only session backfill, a Worker without v2 routes, v1 syncin
 no open budget, and a stale legacy device returning after restore. It also checks the move
 offer (`upgradeAvailable`, none while activation is refused), a locked device refused without
 the passphrase, a move with only the saved v1 key, one with the passphrase, and a device unlocked
-on v1 adopting its saved key after the account moved elsewhere. Scheduler wakes are driven through `sync_now`; this
+on v1 adopting its saved key after the account moved elsewhere, and a passphrase reset on an
+account still on protocol 1 while activation is on. Scheduler wakes are driven through `sync_now`; this
 does not substitute for desktop/mobile background-lifecycle testing. Each run
 saves an inspectable trace under `crates/target/sync-v2-instances/`.
