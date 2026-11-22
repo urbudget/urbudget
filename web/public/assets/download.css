@@ -139,55 +139,57 @@
 
 /* ---------- Every download ---------- */
 
-.dl-list {
-  display: flex;
-  flex-direction: column;
+/* Two groups of cards: computers, then phones and tablets. */
+.dl-group + .dl-group {
+  margin-top: var(--space-7);
+}
+.dl-group-title {
+  margin-bottom: var(--space-4);
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: var(--step--1);
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.dl-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+  gap: var(--space-4);
   margin: 0;
   padding: 0;
-  overflow: hidden;
   list-style: none;
+}
+.dl-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-sm, 0 1px 2px rgb(16 24 40 / 0.06));
 }
-.dl-item {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: var(--space-4);
-  align-items: start;
-  padding: var(--space-5);
+.dl-item[hidden] {
+  display: none;
 }
-.dl-item + .dl-item {
-  border-top: 1px solid var(--border);
-}
-.dl-item .btn {
-  grid-column: 1 / -1;
-  width: 100%;
-}
-@media (min-width: 720px) {
-  .dl-item {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    align-items: center;
-    gap: var(--space-5);
-    padding: var(--space-5) var(--space-6);
-  }
-  .dl-item .btn {
-    grid-column: auto;
-    width: auto;
-    min-width: 12rem;
-  }
-}
-/* The downloads for this computer. */
+/* The download for this computer or phone. */
 .dl-item.is-here {
-  background: var(--brand-softer);
-  box-shadow: inset 3px 0 0 var(--brand);
+  border-color: var(--brand-line);
+  background: linear-gradient(var(--brand-softer), var(--brand-softer)) padding-box, var(--surface);
+  box-shadow: 0 0 0 1px var(--brand-line), var(--shadow-md);
+}
+.dl-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
 }
 .dl-icon {
   display: grid;
+  flex: none;
   place-items: center;
-  width: 46px;
-  height: 46px;
+  width: 44px;
+  height: 44px;
   border-radius: 12px;
   background: var(--brand-soft);
   color: var(--brand-text);
@@ -196,26 +198,43 @@
   width: 22px;
   height: 22px;
 }
-.dl-body h3 {
+.dl-item h4 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2) var(--space-3);
+  gap: var(--space-1) var(--space-2);
   font-size: var(--step-1);
 }
-.dl-body p {
-  max-width: 62ch;
-  margin-top: var(--space-1);
-  color: var(--text-2);
-  font-size: var(--step--1);
-}
-.dl-body .dl-meta {
-  margin-top: var(--space-2);
+.dl-req {
+  margin-top: 0.15rem;
   color: var(--text-3);
   font-size: var(--step--2);
 }
-/* Requirements · file · size: the line breaks between parts, never inside one, and each dot stays
-   at the end of the line it follows. Only on the narrowest screens may a file name break. */
+.dl-desc {
+  color: var(--text-2);
+  font-size: var(--step--1);
+}
+/* The card's button sits at the bottom, so the cards' buttons line up. */
+.dl-item > .btn {
+  width: 100%;
+  margin-top: auto;
+}
+.dl-alt {
+  color: var(--text-2);
+  font-size: var(--step--2);
+}
+.dl-alt a {
+  font-weight: 600;
+}
+.dl-alt .dl-meta {
+  color: var(--text-3);
+}
+.dl-alt a + .dl-meta::before {
+  content: "·";
+  margin-inline: 0.3em 0.35em;
+}
+/* File · size: the line breaks between parts, never inside one. Only on the narrowest screens may
+   a file name break. */
 .dl-meta span {
   white-space: nowrap;
 }
@@ -230,20 +249,88 @@
     overflow-wrap: break-word;
   }
 }
-/* Small phones: the text gets the row's full width. */
-@media (max-width: 480px) {
-  .dl-item {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .dl-icon {
-    display: none;
-  }
-}
 .dl-here {
   display: none;
 }
 .dl-item.is-here .dl-here {
   display: inline-flex;
+}
+
+/* Phones: the text and button beside a code to scan with the phone. */
+.dl-phone-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-4);
+  align-items: end;
+  margin-top: auto;
+}
+.dl-phone-body .btn {
+  width: 100%;
+  margin-top: var(--space-3);
+}
+.dl-qr {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-1);
+  margin: 0;
+}
+/* Always black on white, in both themes: phone cameras read that best. */
+.dl-qr img {
+  width: 112px;
+  height: 112px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+}
+.dl-qr figcaption {
+  color: var(--text-3);
+  font-size: var(--step--2);
+  white-space: nowrap;
+}
+
+/* The hero's code: for someone on a computer who wants the phone app. */
+.dl-scan {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  max-width: 26rem;
+  margin-top: var(--space-6);
+  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: var(--step--1);
+  text-decoration: none;
+  box-shadow: var(--shadow-sm, 0 1px 2px rgb(16 24 40 / 0.06));
+}
+.dl-scan:hover {
+  border-color: var(--brand-line);
+  text-decoration: none;
+}
+.dl-scan img {
+  flex: none;
+  width: 84px;
+  height: 84px;
+  padding: 3px;
+  border-radius: 10px;
+  background: #fff;
+}
+.dl-scan b {
+  display: block;
+  color: var(--text);
+}
+
+/* A code is no use on the phone that would scan it. */
+@media (max-width: 719px), (hover: none) and (pointer: coarse) {
+  .dl-scan,
+  .dl-qr {
+    display: none;
+  }
+  .dl-phone-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* ---------- Installing ---------- */
