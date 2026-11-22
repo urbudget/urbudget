@@ -13,13 +13,6 @@ too and left for later. Each is a code reading, not yet reproduced unless it say
 **Phones' bank import** (`ios/UrBudget/Screens/Imports/BankFileImportView.swift`,
 `android/app/src/main/java/app/urbudget/nativeapp/ui/BankImportDialog.kt` and `App.kt`):
 
-- iOS: a fix from the assistant and a change made by hand at the same moment: the later reply
-  wins and the other is lost without a word (`fix()`/`applyFix`). Keep the session each request
-  was made on and take a reply only if it's still current. On Android the two can't meet since
-  9 November 2026: Fix with the assistant waits for a change to apply, and the sheet is closed
-  while the assistant is open.
-- iOS: the line sheet's Done does nothing while an earlier change applies, and Import isn't
-  disabled while busy (`importRows`).
 - Android: the process being killed loses the import and its fixes. A rotation, the Fold opening
   or dark mode no longer remake the screen (the activity handles them in place), so the import and
   the review's choices stay; `BankImportHolder` still brings the import back after a change the
@@ -111,10 +104,8 @@ Added 10 November 2026. The review's plan, and what was built from it on
 - Desktop: discarding the last waiting card doesn't read the conversation again, so the
   buttons for what's waiting don't come back until the next reply. The line under the message
   field still names the service ("Using ChatGPT plan") after its sign-in has ended.
-- iPhone: Show in the budget doesn't mark the categories on the Budget tab; the notice after
-  an import reviewed in the assistant has no "Categorize with the assistant"; a long report
-  table's pieces scroll sideways apart (one shared scroll needs iOS 18's `ScrollPosition`, and
-  the app still runs on 17).
+- iPhone: a long report table's pieces scroll sideways apart (one shared scroll needs iOS 18's
+  `ScrollPosition`, and the app still runs on 17).
 - Deleting a category or a schedule stays in the app, on purpose. Deleting transactions is
   only for ones selected and sent with the message.
 
@@ -264,14 +255,15 @@ Left, and what done looks like:
   or a transaction there opens as a sheet over the whole window, the assistant included.
 - Registers opened from Budget, Accounts or More open a transaction over the screen on a wide
   window; on a fold they open it on the far side.
-- CI builds with GitHub's current macOS image rather than a pinned Xcode, and on 11 November
-  that was Xcode 26.6 (the iOS 26.5 SDK), which has no hinge or fold region: the merge of this
-  work failed to compile there. The fold's reader is now compiled only by Swift 6.4 or later
-  (Xcode 27.1's), and an older Xcode builds an app that knows its window's size alone. So CI
-  doesn't compile or test the code that reads the fold, and **a store build has to be made with
-  Xcode 27.1 or later**, or the Duo gets no book or table layout. Xcode 27.0 isn't told apart
-  (the same Swift, an SDK without the hinge) and wouldn't build. Done looks like the workflow
-  pinning an Xcode that has the 27.1 SDK once GitHub's images carry one.
+- Native iOS (`ios-native.yml`) builds with GitHub's current macOS image, which on 22 November
+  still had Xcode 26.6 (the iOS 26.5 SDK), with no hinge or fold region. The fold's reader is
+  compiled only by Swift 6.4 or later (Xcode 27.1's), and an older Xcode builds an app that knows
+  its window's size alone, so that check keeps the older Xcode building but doesn't compile the
+  code that reads the fold. **A store build has to be made with Xcode 27.1 or later**, or the Duo
+  gets no book or table layout: since 22 November `ios-release.yml` runs on GitHub's `xcode-27`
+  image (a preview; 27.1 is its default, build 27A9275, the same as the Mac that made the Duo
+  work), selects Xcode 27.1 and stops if its Swift is older than 6.4. Not yet run: the first
+  release on it is 1.0.1. Left: `ios-native.yml` on that image too, once it's out of preview.
 
 ## iOS beside Android
 

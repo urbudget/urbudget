@@ -46,7 +46,11 @@
     // Who may use it is the ADMIN_EMAILS secret (below), not a var, so no address is in the repository.
     // Whose GitHub releases' download counts the admin page shows. The repository is public; the
     // optional GITHUB_TOKEN secret keeps GitHub's shared per-address rate limit out of the way.
-    "GITHUB_REPO": "urbudget/urbudget"
+    "GITHUB_REPO": "urbudget/urbudget",
+    // Sync v2 (SYNC_V2.md): a v2 app that sets or enters an account's sync passphrase moves the
+    // account to v2. "0" (or removing it) stops further moves; accounts already on v2 stay there.
+    // SYNC_V2_PUBLICATION_PAUSED: "1" pauses new uploads and key changes during an incident.
+    "SYNC_V2_ENABLED": "1"
   }
   // Secrets (npx wrangler secret put NAME, or wrangler secret bulk):
   //   POLAR_ACCESS_TOKEN      Polar organization access token

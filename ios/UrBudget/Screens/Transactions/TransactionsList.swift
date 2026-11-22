@@ -182,6 +182,8 @@ struct TransactionsList: View {
     @State private var scheduledOpen = UserDefaults.standard.object(forKey: "showUpcoming") as? Bool ?? true
     @State private var paying: String?
     @State private var loanFor: String?
+    /// A loan whose payment is being recorded, from its register's loan card.
+    @State private var recordingLoan: String?
     @State private var editingSchedule: IdentifiedJSON?
     @State private var jump: RegisterTarget?
     @State private var importing = false
@@ -207,6 +209,7 @@ struct TransactionsList: View {
         _from = State(initialValue: target.from)
         _through = State(initialValue: target.through)
         _only = State(initialValue: Set(target.only))
+        _search = State(initialValue: target.search)
     }
 
     private struct LinesKey: Equatable {
@@ -258,7 +261,9 @@ struct TransactionsList: View {
         return AppLanguage.leftToRight(money(total, store.currency))
     }
 
-    var body: some View {
+    /// The list with its bar, search and selection dock; `body` adds the sheets. In two parts so an
+    /// older Xcode (CI's 26.6) type-checks each in reasonable time.
+    private var decorated: some View {
         list
             .navigationTitle(screenTitle)
             .barSubtitle(selectionTotal)
@@ -301,10 +306,15 @@ struct TransactionsList: View {
                 if !Task.isCancelled { query = search }
             }
             .task(id: LinesKey(version: store.version, filter: filter)) { await recompute() }
+    }
+
+    var body: some View {
+        decorated
             .cover(item: $editing) { TransactionEditor(request: $0) }
             .navigationDestination(item: $jump) { TransactionsList(target: $0) }
             .sheet(item: Binding(get: { paying.map { IdentifiedText(value: $0) } }, set: { paying = $0?.value })) { CardPaymentSheet(accountId: $0.value) }
             .sheet(item: Binding(get: { loanFor.map { IdentifiedText(value: $0) } }, set: { loanFor = $0?.value })) { LoanEditor(accountId: $0.value) }
+            .sheet(item: Binding(get: { recordingLoan.map { IdentifiedText(value: $0) } }, set: { recordingLoan = $0?.value })) { loanPayment($0.value) }
             .sheet(item: $editingSchedule) { ScheduleEditor(schedule: $0.value) }
             .sheet(isPresented: $importing) { BankFileImportView(account: target.account) }
             .assistant($asking)
@@ -462,11 +472,12 @@ struct TransactionsList: View {
         let currency = store.currency
         let toApprove = index?.awaitingApproval(target.account) ?? 0
         let schedules = schedules
-        return List {
+        return AppList {
             if let account, !selecting {
                 Section {
                     AccountSummary(account: account, reconcile: { reconciling = account }, edit: { accountForm = AccountFormRequest(account: account) },
-                                   pay: { paying = account.text("id") }, loan: { loanFor = account.text("id") }, importFile: { importing = true })
+                                   pay: { paying = account.text("id") }, loan: { loanFor = account.text("id") },
+                                   record: { recordingLoan = account.text("id") }, importFile: { importing = true })
                 }
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 10, trailing: 16))
@@ -640,7 +651,7 @@ struct TransactionsList: View {
             }
             .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 8, trailing: 10))
             // Selected rows are marked, and so is the one open beside the list.
-            .listRowBackground(isSelected || (!selecting && pane?.openId == line.id) ? Color.urAccent.opacity(0.12) : nil)
+            .listRowBackground(isSelected || (!selecting && pane?.openId == line.id) ? Color.urAccent.opacity(0.12) : Color.cardBackground)
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
                 if line.cleared != "reconciled" && !selecting {
                     Button { toggleCleared(line) } label: {
@@ -703,6 +714,14 @@ struct TransactionsList: View {
         bulk([line.id], "status", line.cleared == "cleared" ? "uncleared" : "cleared")
     }
 
+    /// Recording a payment to a loan with saved details, from its register's loan card.
+    @ViewBuilder private func loanPayment(_ id: String) -> some View {
+        if let budget = store.budget, let account = budget.row("accounts", id: id),
+           let terms = budget.rows("loans").first(where: { $0.text("accountId") == id }) {
+            LoanPaymentSheet(account: account, terms: terms)
+        }
+    }
+
     /// Opens the assistant about these transactions, saying where it's asked from: all
     /// transactions, or an account's.
     private func ask(_ ids: [String]) {
@@ -727,7 +746,8 @@ struct TransactionsList: View {
                 filterMenu
                 // An account's or a category's own register keeps the bar's room for its name.
                 if target.account.isEmpty && target.category.isEmpty { AssistantBarButton(page: "transactions") }
-                BudgetActionsMenu()
+                // An account's or a category's register is still said to the assistant from the menu.
+                BudgetActionsMenu(place: target.account.isEmpty ? "transactions" : "accounts", account: target.account, category: target.category)
             }
         }
     }
@@ -1025,6 +1045,7 @@ private struct AccountSummary: View {
     var edit: () -> Void
     var pay: () -> Void
     var loan: () -> Void
+    var record: () -> Void
     var importFile: () -> Void
 
     var body: some View {
@@ -1056,8 +1077,7 @@ private struct AccountSummary: View {
                     .buttonStyle(.borderedProminent)
             }
             if hasLoan(balance) {
-                Button(action: loan) { Label("Loan details & payoff", systemImage: "percent").frame(maxWidth: .infinity) }
-                    .buttonStyle(.bordered)
+                RegisterLoanCard(account: account, balance: balance, details: loan, record: record)
             }
             HStack(spacing: 8) {
                 Button(action: reconcile) { action("Reconcile", "lock") }
@@ -1091,6 +1111,105 @@ private struct AccountSummary: View {
         let loans = Set(store.budget?.rows("loans").map { $0.text("accountId") } ?? [])
         let type = AccountTypes.infer(account, balance: balance)
         return loans.contains(account.text("id")) || account.text("kind") == "tracking" && AccountTypes.isLiability(type)
+    }
+}
+
+/// Where a loan stands, in its register's card (Android's LoanHeader): what's owed, the rate and
+/// payment, when it's paid off and the interest still to pay, with Record payment and its details
+/// and planner. A loan account without details asks for them instead.
+private struct RegisterLoanCard: View {
+    @Environment(BudgetStore.self) private var store
+    var account: JSON
+    var balance: Int64
+    var details: () -> Void
+    var record: () -> Void
+    @State private var projection: (key: String, value: JSON?)?
+
+    private var accountId: String { account.text("id") }
+    private var terms: JSON? { store.budget?.rows("loans").first { $0.text("accountId") == accountId } }
+    private var owed: Int64 { max(0, -balance) }
+    private var archived: Bool { account.flag("archived") }
+    private var type: String { AccountTypes.infer(account, balance: balance) }
+    /// What the projection is worked out from: a change to any of it asks again.
+    private var key: String { "\(owed)|\(terms.map { "\($0)" } ?? "")|\(store.version)" }
+
+    var body: some View {
+        if let terms {
+            facts(terms)
+        } else if account.text("kind") == "tracking" && LoanMath.isLoanType(type) && !archived {
+            prompt
+        }
+    }
+
+    private func facts(_ terms: JSON) -> some View {
+        let currency = store.currency
+        let month = String(Dates.today.prefix(7))
+        let plan = projection?.key == key ? projection?.value : nil
+        let payoff = owed == 0 ? String(localized: "Paid off") : plan.map { Dates.shortMonthLabel(String($0.text("payoffDate").prefix(7))) } ?? "—"
+        let interest = owed == 0 ? money(0, currency) : plan.map { money($0.long("totalInterest"), currency) } ?? "—"
+        return VStack(alignment: .leading, spacing: 12) {
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 12) {
+                GridRow {
+                    Figure(label: String(localized: "Owed"), value: money(owed, currency))
+                    Figure(label: String(localized: "Rate"), value: "\(LoanMath.rateText(LoanMath.rateIn(terms, month: month), decimal: Money.decimalMark()))%")
+                    Figure(label: String(localized: "Payment"), value: money(terms.long("monthlyPayment"), currency))
+                }
+                GridRow {
+                    Figure(label: String(localized: "Paid off"), value: payoff)
+                    Figure(label: String(localized: "Interest to pay"), value: interest).gridCellColumns(2)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+            if owed > 0 && !archived {
+                Button(action: record) { Label("Record payment", systemImage: "banknote").frame(maxWidth: .infinity) }
+                    .buttonStyle(.borderedProminent)
+            }
+            Button(action: details) { Label("Loan details & payoff", systemImage: "percent").frame(maxWidth: .infinity) }
+                .buttonStyle(.bordered)
+            if owed > 0 && !archived {
+                Text(charges(terms)).font(.footnote).foregroundStyle(Color.secondary)
+            }
+        }
+        .padding(14)
+        .background(Color.groupedBackground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .task(id: key) { await project(terms) }
+    }
+
+    /// What recording a payment adds to the loan.
+    private func charges(_ terms: JSON) -> String {
+        guard terms.long("monthlyFees") > 0 else { return String(localized: "Interest is added to the loan with the first payment each month.") }
+        return type == "mortgage" ? String(localized: "Interest and escrow are added to the loan with the first payment each month.")
+            : String(localized: "Interest and fees are added to the loan with the first payment each month.")
+    }
+
+    private var prompt: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "building.columns").foregroundStyle(Color.urAccent).font(.body.weight(.semibold))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("When will it be paid off?").font(.subheadline.weight(.semibold))
+                    Text("Add the interest rate and monthly payment to see the payoff date and the interest left to pay.")
+                        .font(.footnote).foregroundStyle(Color.secondary)
+                }
+            }
+            Button(action: details) { Label("Add loan details", systemImage: "plus").frame(maxWidth: .infinity) }
+                .buttonStyle(.bordered)
+        }
+        .padding(14)
+        .background(Color.groupedBackground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    /// When it's paid off at its payment, and the interest on the way, from the shared engine.
+    private func project(_ terms: JSON) async {
+        let key = key
+        guard owed > 0, let budget = store.budget else { projection = (key, nil); return }
+        let id = accountId
+        let today = Dates.today
+        let start = await Task.detached(priority: .utility) { LoanMath.nextPayment(budget, accountId: id, today: today) }.value
+        guard !Task.isCancelled else { return }
+        let value = try? await store.planningPure("loanProjection", ["balance": .int(owed), "terms": terms, "start": .string(start)])
+        if !Task.isCancelled { projection = (key, value) }
     }
 }
 

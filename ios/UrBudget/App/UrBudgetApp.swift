@@ -1,3 +1,4 @@
+import StoreKit
 import SwiftUI
 
 @main
@@ -47,6 +48,7 @@ struct RootView: View {
     @Environment(AppStoreSubscription.self) private var appStore
     @Environment(\.scenePhase) private var phase
     @Environment(\.undoManager) private var undoManager
+    @Environment(\.requestReview) private var requestReview
 
     private struct History: Equatable { var revision: String; var undo: Bool }
     @State private var showingLibrary = false
@@ -79,6 +81,7 @@ struct RootView: View {
         }
         .overlay(alignment: .bottom) { ToastView() }
         .onChange(of: History(revision: store.revision, undo: store.undoAvailable)) { _, _ in offerUndo() }
+        .onChange(of: AppRating.shared.due) { _, due in if due { askForRating() } }
         .onChange(of: phase) { _, phase in
             switch phase {
             case .active:
@@ -213,6 +216,107 @@ struct RootView: View {
         HostEvents.shared.start()
         sync.start()
         appStore.start()
+        // Counted as in use, at most once a day, each time the app comes to the front.
+        Task.detached(priority: .utility) { UsageCounts.report() }
+        AppRating.shared.opened()
+    }
+
+    /// Asks for a rating with the system's own prompt once AppRating says it's time, a moment after
+    /// the form that was saved has closed.
+    private func askForRating() {
+        AppRating.shared.due = false
+        Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            requestReview()
+        }
+    }
+}
+
+/// When to ask for a rating, with the system's prompt (StoreKit's, through SwiftUI's requestReview):
+/// only once the app has really been used, on at least five different days with ten transactions
+/// saved and a week after it was first opened, once per version, and only as a saved transaction's
+/// form closes, never over something open. iOS shows the prompt at most three times a year and never
+/// where ratings are turned off, so asking may show nothing. No question of the app's own comes first:
+/// App Review doesn't allow one that sorts who gets asked.
+@MainActor @Observable
+final class AppRating {
+    static let shared = AppRating()
+
+    /// Set when it's time to ask; the root view asks and clears it.
+    var due = false
+
+    private let defaults: UserDefaults
+    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+
+    enum Key {
+        static let firstDay = "rating.firstDay", lastDay = "rating.lastDay", days = "rating.days"
+        static let saves = "rating.saves", askedVersion = "rating.askedVersion"
+    }
+
+    static let minimumDays = 5, minimumSaves = 10, minimumAge = 7
+
+    /// The app came to the front today.
+    func opened(today: String = Dates.today) {
+        if defaults.string(forKey: Key.firstDay) == nil { defaults.set(today, forKey: Key.firstDay) }
+        guard defaults.string(forKey: Key.lastDay) != today else { return }
+        defaults.set(today, forKey: Key.lastDay)
+        defaults.set(defaults.integer(forKey: Key.days) + 1, forKey: Key.days)
+    }
+
+    /// A transaction was saved by hand; `closing` when its form closes with it (not Save & add another).
+    func saved(closing: Bool, today: String = Dates.today, version: String = AppRating.version) {
+        let saves = defaults.integer(forKey: Key.saves) + 1
+        defaults.set(saves, forKey: Key.saves)
+        guard closing, Self.ready(days: defaults.integer(forKey: Key.days), saves: saves, firstDay: defaults.string(forKey: Key.firstDay),
+                                  today: today, askedVersion: defaults.string(forKey: Key.askedVersion), version: version) else { return }
+        defaults.set(version, forKey: Key.askedVersion)
+        due = true
+    }
+
+    /// Whether it's time to ask, from what's been kept.
+    nonisolated static func ready(days: Int, saves: Int, firstDay: String?, today: String, askedVersion: String?, version: String) -> Bool {
+        guard askedVersion != version, days >= minimumDays, saves >= minimumSaves,
+              let first = firstDay.flatMap(Dates.day), let now = Dates.day(today) else { return false }
+        return (Calendar(identifier: .gregorian).dateComponents([.day], from: first, to: now).day ?? 0) >= minimumAge
+    }
+
+    nonisolated static var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "" }
+
+    /// The App Store's page for writing a review of UrBudget.
+    static let writeReview = URL(string: "https://apps.apple.com/app/id6825535486?action=write-review")!
+}
+
+/// Anonymous usage counts, as the desktop and Android keep them (crates/urbudget-services/src/usage.rs):
+/// the engine counts this copy as in use on urbudget.app when the day, week or month is new since it
+/// was last counted, saying only what's new, with the app's version and where it came from. Nothing
+/// identifies the copy, the device or the person. Settings & data → Privacy & data → Count this copy
+/// as in use turns it off. Debug builds' engine counts only on the local server URBUDGET_API names.
+enum UsageCounts {
+    /// The switch's UserDefaults key, on by default.
+    static let key = "usageCounts"
+
+    /// Where this copy came from: TestFlight, whose builds carry a sandbox receipt, or the App Store.
+    static func channel(receipt: URL?) -> String {
+        receipt?.lastPathComponent == "sandboxReceipt" ? "testflight" : "appstore"
+    }
+
+    /// What to ask the engine's `usage_report` with, or nil while the switch is off.
+    static func request(enabled: Bool, receipt: URL?, version: String) -> JSON? {
+        guard enabled else { return nil }
+        return ["platform": "ios", "channel": .string(channel(receipt: receipt)), "version": .string(version)]
+    }
+
+    /// Whether the switch is on.
+    static func enabled(_ defaults: UserDefaults = .standard) -> Bool {
+        defaults.object(forKey: key) as? Bool ?? true
+    }
+
+    /// Asks the engine to count this copy. Waits for the network, so call it off the main thread;
+    /// offline, nothing is marked counted and the next return to the app tries again.
+    static func report(_ defaults: UserDefaults = .standard) {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+        guard let request = request(enabled: enabled(defaults), receipt: Bundle.main.appStoreReceiptURL, version: version) else { return }
+        _ = try? NativeCore.service("usage_report", request)
     }
 }
 
@@ -270,7 +374,7 @@ struct MainTabs: View {
         case .transactions: return "transactions"
         case .accounts: return "accounts"
         case .reports: return "reports"
-        case .more: return "assistant"
+        case .more: return AppActions.shared.morePlace ?? "assistant"
         }
     }
 
@@ -331,7 +435,7 @@ struct MainTabs: View {
     }
 
     /// Goes where a card of the assistant asked: the Transactions tab showing its transactions
-    /// alone, or else the Budget tab on its month.
+    /// alone, or else the Budget tab on its month, where its categories are marked.
     private func go(_ destination: AppActions.Destination?) {
         guard let destination else { return }
         AppActions.shared.destination = nil
@@ -341,6 +445,7 @@ struct MainTabs: View {
             tab = .transactions
         } else {
             if Dates.isMonth(destination.month) { store.selectMonth(destination.month) }
+            if !destination.categories.isEmpty { AppActions.shared.marking = .init(categories: Set(destination.categories)) }
             tab = .budget
         }
     }
@@ -559,7 +664,13 @@ struct AssistantBarButton: View {
 struct BudgetActionsMenu: View {
     @Environment(BudgetStore.self) private var store
     @Environment(SyncCoordinator.self) private var sync
+    /// Where the menu is, for its Assistant: the page (by the key the assistant knows it by), and
+    /// the account or category a register shows.
+    var place = "assistant"
+    var account = ""
+    var category = ""
     @State private var page: Page?
+    @State private var asking: AssistantRequest?
 
     enum Page: String, Identifiable {
         case library, settings, sync, assistant
@@ -577,7 +688,10 @@ struct BudgetActionsMenu: View {
             Divider()
             Button { page = .library } label: { Label("Budgets", systemImage: "books.vertical") }
             // Also a button on the bar; here too, for a bar too crowded to show it (an iPad's, with its tabs).
-            Button { if !AppActions.shared.openBeside(nil) { page = .assistant } } label: { Label("Assistant", systemImage: "sparkles") }
+            Button {
+                let request = AssistantRequest(page: place, account: account, category: category)
+                if !AppActions.shared.openBeside(request) { asking = request; page = .assistant }
+            } label: { Label("Assistant", systemImage: "sparkles") }
             if sync.signedIn && sync.unlocked {
                 Button { Task { try? await sync.syncNow() } } label: { Label("Sync now", systemImage: "arrow.triangle.2.circlepath") }
                     .disabled(sync.syncing)
@@ -596,7 +710,7 @@ struct BudgetActionsMenu: View {
         .sheet(item: $page) { page in
             switch page {
             case .assistant:
-                AssistantView()
+                AssistantView(request: asking)
             case .library, .settings, .sync:
                 NavigationStack {
                     Group {

@@ -31,7 +31,7 @@ struct AssistantImportReview: View {
         let accountName = accounts.first { $0.text("id") == account }?.text("name") ?? ""
         let counts = BankReview.counts(rows ?? [], decisions)
         NavigationStack {
-            List {
+            AppList {
                 Section {
                     Picker("Into account", selection: $account) {
                         if account.isEmpty { Text("Choose an account").tag("") }
@@ -135,11 +135,18 @@ struct AssistantImportReview: View {
                 let choices = await Task.detached(priority: .userInitiated) {
                     BankReview.choices(rows, chosen, allowIdlessDuplicate: true)
                 }.value
+                let before = store.budget ?? [:]
                 // Refused when the budget changed since the rows were checked: nothing slips in between.
                 try await store.importsCommand("bankApply", ["accountId": .string(accountId), "choices": choices], since: revision, stale: stale)
+                // Those that came in with no category are offered to the assistant, as after a bank file's import.
+                let after = store.budget ?? [:]
+                let fresh = await Task.detached(priority: .userInitiated) { AssistantStart.uncategorized(before: before, after: after) }.value
+                let categorize = fresh.ids.isEmpty ? nil
+                    : AssistantRequest(page: "transactions", text: AssistantStart.categorize(fresh), selected: fresh.ids)
                 // Said in the assistant, which is still open over the app's own messages, with Undo.
                 AssistantController.shared.sayImported(
-                    String(localized: "Imported \(importing) transactions. They're waiting for your approval.", locale: .app), revision: store.revision)
+                    String(localized: "Imported \(importing) transactions. They're waiting for your approval.", locale: .app),
+                    revision: store.revision, categorize: categorize)
                 onImported()
                 dismiss()
             } catch {

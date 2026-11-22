@@ -22,6 +22,7 @@ internal class UiPreferences(private val store: NativePreferences?) {
     private var brokerPromptHidden by mutableStateOf(store?.ibkrPromptHidden ?: false)
     private var brokerDailyAt = store?.ibkrDailyAt ?: ""
     private var typed by mutableStateOf(store?.typedValues ?: false)
+    private var counted by mutableStateOf(store?.usageCounts ?: true)
 
     val newCleared get() = cleared
     val showNeeded get() = needed
@@ -38,6 +39,8 @@ internal class UiPreferences(private val store: NativePreferences?) {
     val ibkrPromptHidden get() = brokerPromptHidden
     /** Advanced: typing an investment account's value is offered. */
     val typedValues get() = typed
+    /** Count this copy as in use on urbudget.app, anonymously, once a day (UsageCounts). */
+    val usageCounts get() = counted
 
     fun setNewCleared(value: Boolean) { cleared = value; store?.newCleared = value }
     fun setShowNeeded(value: Boolean) { needed = value; store?.showNeeded = value }
@@ -47,6 +50,7 @@ internal class UiPreferences(private val store: NativePreferences?) {
     fun setIbkrDaily(value: Boolean) { brokerDaily = value; store?.ibkrDaily = value }
     fun setIbkrPromptHidden(value: Boolean) { brokerPromptHidden = value; store?.ibkrPromptHidden = value }
     fun setTypedValues(value: Boolean) { typed = value; store?.typedValues = value }
+    fun setUsageCounts(value: Boolean) { counted = value; store?.usageCounts = value }
 }
 
 internal val LocalPreferences = staticCompositionLocalOf { UiPreferences(null) }

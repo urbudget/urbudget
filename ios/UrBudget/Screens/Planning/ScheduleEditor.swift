@@ -94,7 +94,7 @@ struct ScheduleEditor: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
                     }
-                    .listRowBackground(keypad ? Color.urAccent.opacity(0.12) : nil)
+                    .listRowBackground(keypad ? Color.urAccent.opacity(0.12) : Color.cardBackground)
                     .accessibilityLabel("Amount, \(money(pad.cents ?? 0, currency)). Edit amount")
                 }
                 if accounts.isEmpty {

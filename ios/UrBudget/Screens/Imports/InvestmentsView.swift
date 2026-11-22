@@ -59,7 +59,7 @@ struct InvestmentsView: View {
     var body: some View {
         let targets = targets
         let adding = Investments.adding(accounts, into: into, targets: targets)
-        List {
+        AppList {
             if let error { FormErrorView(message: error) }
             if status == nil {
                 if busy {
@@ -632,7 +632,7 @@ struct DepositsReview: View {
     var body: some View {
         let counts = rows.map { BankReview.counts($0, decisions) } ?? (importing: 0, undecided: 0)
         NavigationStack {
-            List {
+            AppList {
                 Section {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(request.account.text("name")).font(.headline)

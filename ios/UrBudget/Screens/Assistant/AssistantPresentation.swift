@@ -305,6 +305,10 @@ struct AssistantWith: Equatable {
         case "settings": return String(localized: "Settings & data")
         case "import": return String(localized: "Import bank file")
         case "bankConnections": return String(localized: "Bank connections")
+        case "loans": return String(localized: "Loan planner")
+        case "Budget library": return String(localized: "Budget library")
+        case "Account & sync": return String(localized: "Account & sync")
+        case "Investments": return String(localized: "Investments")
         case "assistant": return String(localized: "Assistant")
         default: return nil
         }

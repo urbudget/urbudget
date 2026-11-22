@@ -5,7 +5,7 @@
 // newest release has a Linux installer. Every other link works without any of this.
 
 import { api } from "./api.js";
-import { formatBytes, formatDate, params } from "./site.js?v=2";
+import { APP_STORE, formatBytes, formatDate, isApple, params } from "./site.js?v=2";
 import { noteSections } from "./release-notes.js";
 
 const $ = (id) => document.getElementById(id);
@@ -16,14 +16,14 @@ const HINTS = {
   windows: ["Installs and updates through the Store.", "Installer and Mac app"],
   macos: ["For Apple silicon and Intel, macOS 12 or later.", "Windows downloads"],
   linux: ["An AppImage for 64-bit Intel and AMD computers.", "The .deb and other systems"],
+  ios: ["For iPhone and iPad, with iOS or iPadOS 17 or later.", "Downloads for your computer"],
 };
 
 function detectOS() {
   const ua = navigator.userAgent || "";
   const platform = navigator.userAgentData?.platform || navigator.platform || "";
-  if (/iPhone|iPad|iPod|Android/i.test(ua)) return "mobile";
-  // iPadOS reports itself as a Mac; a touch screen gives it away.
-  if (/Mac/i.test(platform) && navigator.maxTouchPoints > 1) return "mobile";
+  if (isApple()) return "ios";
+  if (/Android/i.test(ua)) return "android";
   if (/Win/i.test(platform) || /Windows NT/i.test(ua)) return "windows";
   if (/Mac/i.test(platform) || /Mac OS X|Macintosh/i.test(ua)) return "macos";
   if (/Linux|CrOS|X11/i.test(platform + ua)) return "linux";
@@ -58,11 +58,19 @@ function recommend(os) {
   for (const el of [...steps.querySelectorAll(`.dl-steps[data-os="${os}"]`)].reverse()) steps.prepend(el);
 }
 
+/** One run of text with a link in it, in one box so the notice's flex layout keeps it a sentence. */
+function sentence(before, text, href, after) {
+  const span = document.createElement("span");
+  span.append(before, Object.assign(document.createElement("a"), { href, textContent: text }), after);
+  return span;
+}
+
 function osNote(os) {
   const note = $("os-note");
-  if (os === "mobile") {
-    note.textContent =
-      "UrBudget is a desktop app for Windows and macOS; there's no phone or tablet version. Open this page on your computer to download it.";
+  if (os === "ios") {
+    note.replaceChildren(sentence("On an iPhone or iPad, UrBudget comes from the ", "App Store", APP_STORE, ". The rest of this page is for your computer."));
+  } else if (os === "android") {
+    note.replaceChildren(sentence("UrBudget for Android is in testing on Google Play: ", "join the test", "/android/", ". The rest of this page is for your computer."));
   } else if (os === "linux") {
     note.textContent = "UrBudget runs on Windows and macOS. The Linux version isn't published yet.";
   } else {
@@ -171,7 +179,7 @@ async function release() {
 
 const os = detectOS();
 const missing = unavailable();
-if (NAMES[os]) recommend(os);
+if (NAMES[os] || os === "ios") recommend(os);
 else if (NAMES[missing]) recommend(missing);
 if (os !== "linux") osNote(os);
 void release();

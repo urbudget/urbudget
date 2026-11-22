@@ -63,12 +63,18 @@ struct AccountFormRequest: Identifiable {
     var account: JSON?
 }
 
+/// Folded sections, remembered while the app runs per budget, as Android and the desktop keep them.
+@MainActor private enum AccountSectionMemory {
+    static var folded: [String: Set<String>] = [:]
+    static func get(_ budget: String?) -> Set<String> { budget.flatMap { folded[$0] } ?? ["closed"] }
+}
+
 /// Accounts: cash, credit, tracking and closed accounts, each kind a section with its total.
 /// A tap opens the account's transactions; a long press, its actions.
 struct AccountsView: View {
     @Environment(BudgetStore.self) private var store
     @Environment(SyncCoordinator.self) private var sync
-    @State private var folded: Set<String> = ["closed"]
+    @State private var folded: Set<String> = AccountSectionMemory.get(nil)
     @State private var form: AccountFormRequest?
     @State private var reconciling: JSON?
     @State private var paying: String?
@@ -83,7 +89,7 @@ struct AccountsView: View {
         let currency = store.currency
         let sections = store.budget.map { accountSections(budget: $0, summary: store.summary) } ?? []
         NavigationStack {
-            List {
+            AppList {
                 if let summary = store.summary {
                     Section {
                         // Opens the Net worth report, month by month.
@@ -170,6 +176,10 @@ struct AccountsView: View {
             .sheet(item: Binding(get: { paying.map { IdentifiedText(value: $0) } }, set: { paying = $0?.value })) { CardPaymentSheet(accountId: $0.value) }
             .sheet(item: Binding(get: { loanFor.map { IdentifiedText(value: $0) } }, set: { loanFor = $0?.value })) { LoanEditor(accountId: $0.value) }
             .sheet(item: Binding(get: { reconciling.map { IdentifiedJSON(value: $0) } }, set: { reconciling = $0?.value })) { ReconcileSheet(account: $0.value) }
+            // Folds kept per budget while the app runs: the page made again (a wider window, a budget
+            // opened and back) shows them as they were left.
+            .onChange(of: store.budgetKey, initial: true) { _, key in folded = AccountSectionMemory.get(key) }
+            .onChange(of: folded) { _, folds in if let key = store.budgetKey { AccountSectionMemory.folded[key] = folds } }
         }
     }
 

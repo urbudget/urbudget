@@ -46,11 +46,14 @@ const report = (body: Record<string, unknown>, headers: Record<string, string> =
   call("/api/v1/usage", { method: "POST", headers, body: JSON.stringify(body) });
 const copy = { platform: "windows", channel: "direct", version: "1.0.9" };
 
+type Channels = { direct: number[]; store: number[]; play: number[]; preview: number[]; appstore: number[]; testflight: number[] };
 interface Usage {
   since: string | null;
-  daily: { direct: number[]; store: number[] };
-  opens: { direct: number[]; store: number[] };
-  weeks: { start: string; active: number; direct: number; store: number; windows: number; macos: number; linux: number; opens: number }[];
+  daily: Channels;
+  opens: Channels;
+  weeks: ({ start: string; active: number; windows: number; macos: number; linux: number; android: number; ios: number; opens: number } & {
+    [channel in keyof Channels]: number;
+  })[];
   months: { month: string; active: number }[];
   cohorts: { week: string; opens: number; back: number[] }[];
   versions: { version: string; platform: string; channel: string; thisWeek: number; lastWeek: number }[];
@@ -71,7 +74,22 @@ describe("copies in use", () => {
     expect(u.since).toBe(today());
     expect([u.daily.direct.at(-1), u.daily.store.at(-1)]).toEqual([2, 1]);
     expect([u.opens.direct.at(-1), u.opens.store.at(-1)]).toEqual([1, 0]);
-    expect(u.weeks[0]).toEqual({ start: thisMonday(), active: 3, direct: 2, store: 1, windows: 2, macos: 0, linux: 1, opens: 1 });
+    expect(u.weeks[0]).toEqual({
+      start: thisMonday(),
+      active: 3,
+      direct: 2,
+      store: 1,
+      play: 0,
+      preview: 0,
+      appstore: 0,
+      testflight: 0,
+      windows: 2,
+      macos: 0,
+      linux: 1,
+      android: 0,
+      ios: 0,
+      opens: 1,
+    });
     expect(u.months).toEqual([{ month: today().slice(0, 7), active: 1 }]);
     expect(u.cohorts).toEqual([{ week: thisMonday(), opens: 1, back: [] }]);
     expect(u.versions).toEqual(
@@ -99,6 +117,12 @@ describe("copies in use", () => {
     for (const bad of [
       { ...copy, platform: "amiga", day: true },
       { ...copy, channel: "sideways", day: true },
+      // Each system only from its own places.
+      { ...copy, channel: "play", day: true },
+      { ...copy, platform: "android", channel: "store", day: true },
+      { ...copy, platform: "ios", channel: "play", day: true },
+      { ...copy, platform: "android", channel: "appstore", day: true },
+      { ...copy, platform: "toString", channel: "direct", day: true },
       { ...copy, version: "latest", day: true },
       { ...copy, day: "yes" },
       [copy],
@@ -119,6 +143,71 @@ describe("copies in use", () => {
     // Another address is counted.
     expect((await report({ ...copy, day: true }, { ...APP, "CF-Connecting-IP": "198.51.100.2" })).status).toBe(204);
     expect(env.DB.sqlite.prepare("SELECT count FROM app_usage").get()).toEqual({ count: 21 });
+  });
+
+  it("lets more phones than computers share an address, as a mobile carrier's customers do", async () => {
+    const phone = { platform: "android", channel: "play", version: "1.0.3", day: true };
+    // The desktop's allowance is used up, and phones from the same address are still counted.
+    for (let i = 0; i < 20; i++) await report({ ...copy, day: true });
+    expect((await report({ ...copy, day: true })).status).toBe(429);
+    for (let i = 0; i < 200; i++) expect((await report(phone)).status).toBe(204);
+    expect((await report(phone)).status).toBe(429);
+    expect(env.DB.sqlite.prepare("SELECT platform, count FROM app_usage ORDER BY platform").all()).toEqual([
+      { platform: "android", count: 200 },
+      { platform: "windows", count: 20 },
+    ]);
+  });
+
+  it("counts the phones, each from its own store or its test builds", async () => {
+    const phone = { first: true, day: true, week: true, month: true, cohort: thisMonday() };
+    const UA = (version: string) => ({ ...APP, "User-Agent": `UrBudget/${version}` });
+    await report({ platform: "android", channel: "play", version: "1.0.3", ...phone }, UA("1.0.3"));
+    await report({ platform: "android", channel: "play", version: "1.0.3", day: true, week: true, month: true, cohort: "" }, UA("1.0.3"));
+    await report({ platform: "android", channel: "preview", version: "1.0.3", ...phone }, UA("1.0.3"));
+    await report({ platform: "ios", channel: "appstore", version: "1.0.1", ...phone }, UA("1.0.1"));
+    await report({ platform: "ios", channel: "testflight", version: "1.0.1", day: true, week: true, month: true, cohort: "" }, UA("1.0.1"));
+    await report({ ...copy, day: true, week: true });
+
+    const u = await read<Usage>(call("/api/v1/admin/usage"));
+    expect(Object.fromEntries(Object.entries(u.daily).map(([channel, values]) => [channel, values.at(-1)]))).toEqual({
+      direct: 1,
+      store: 0,
+      play: 2,
+      preview: 1,
+      appstore: 1,
+      testflight: 1,
+    });
+    expect(Object.fromEntries(Object.entries(u.opens).map(([channel, values]) => [channel, values.at(-1)]))).toEqual({
+      direct: 0,
+      store: 0,
+      play: 1,
+      preview: 1,
+      appstore: 1,
+      testflight: 0,
+    });
+    expect(u.weeks[0]).toMatchObject({ active: 6, windows: 1, android: 3, ios: 2, play: 2, preview: 1, appstore: 1, testflight: 1, opens: 3 });
+    expect(u.cohorts).toEqual([{ week: thisMonday(), opens: 3, back: [] }]);
+    expect(u.versions).toEqual(
+      expect.arrayContaining([
+        { version: "1.0.3", platform: "android", channel: "play", thisWeek: 2, lastWeek: 0 },
+        { version: "1.0.1", platform: "ios", channel: "testflight", thisWeek: 1, lastWeek: 0 },
+      ]),
+    );
+
+    // The Overview counts them in with the desktop, and says how many of each.
+    const o = await read<{
+      usage: { opens30: number; thisWeek: number; bySystem: { opens30: Record<string, number>; lastWeek: Record<string, number> } };
+      daily: { active: number[] };
+      funnel: { opens: number };
+    }>(call("/api/v1/admin/overview"));
+    expect(o.usage).toMatchObject({ opens30: 3, thisWeek: 6 });
+    expect(o.usage.bySystem.opens30).toEqual({ desktop: 0, android: 2, ios: 1 });
+    expect(o.daily.active.at(-1)).toBe(6);
+    expect(o.funnel.opens).toBe(3);
+
+    // Downloads can set each store's downloads beside its own first opens.
+    const d = await read<{ opens: Channels }>(call("/api/v1/admin/downloads"));
+    expect([d.opens.play.at(-1), d.opens.preview.at(-1), d.opens.appstore.at(-1), d.opens.testflight.at(-1)]).toEqual([1, 1, 1, 0]);
   });
 
   it("follows each week's new copies through the weeks after", async () => {

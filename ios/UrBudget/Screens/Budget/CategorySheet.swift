@@ -189,7 +189,7 @@ struct CategorySheet: View {
         let moves = store.budget.map { categoryMoves($0, category: categoryId, month: month, assigned: assigned) } ?? []
         let colors = StatusColors(state.status)
         let (from, through) = Dates.monthBounds(month)
-        return List {
+        return AppList {
             Section {
                 VStack(spacing: 4) {
                     // Beside the budget the bar has no room for a title, so the name leads here.
@@ -233,7 +233,7 @@ struct CategorySheet: View {
                         }
                     }
                 }
-                .listRowBackground(editingAssigned ? Color.urAccent.opacity(0.12) : nil)
+                .listRowBackground(editingAssigned ? Color.urAccent.opacity(0.12) : Color.cardBackground)
                 // A card payment's activity is the card's own register for the month.
                 Button {
                     transactions(payment ? RegisterTarget(account: category.text("paymentAccountId"), from: from, through: through)
@@ -444,7 +444,7 @@ private struct MovesView: View {
     var body: some View {
         let assigned = store.summary?.rows("categories").first { $0.text("id") == categoryId }?.long("assigned") ?? 0
         let moves = store.budget.map { categoryMoves($0, category: categoryId, month: store.month, assigned: assigned) } ?? []
-        List {
+        AppList {
             if moves.isEmpty {
                 Text("No money moved for this category this month.").foregroundStyle(Color.secondary)
             } else {
@@ -560,7 +560,7 @@ private struct TargetEditor: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 6)
                 }
-                .listRowBackground(keypad ? Color.urAccent.opacity(0.12) : nil)
+                .listRowBackground(keypad ? Color.urAccent.opacity(0.12) : Color.cardBackground)
             }
             Section("Target") {
                 Picker("Target", selection: $behaviour) {

@@ -84,7 +84,7 @@ struct SchedulesView: View {
     var body: some View {
         let currency = store.currency
         let model = ScheduleListModel(budget: store.budget ?? [:], today: Dates.today)
-        List {
+        AppList {
             if model.isEmpty {
                 EmptyState(title: String(localized: "Nothing scheduled"),
                            detail: String(localized: "Add a transaction with a later date, or choose how often it repeats, and it waits here."),

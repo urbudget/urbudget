@@ -496,19 +496,16 @@ struct ReportColumnChart: View {
         .chartLegend(.hidden)
         .chartOverlay { proxy in
             GeometryReader { geometry in
-                Rectangle().fill(.clear).contentShape(Rectangle())
-                    .onTapGesture { location in
-                        let index = ReportAxis.index(at: location, proxy: proxy, geometry: geometry, count: model.keys.count)
-                        selected = index == nil || index == selected ? nil : index
-                    }
-                    // Dragging across reads each month in turn; an up-and-down drag still scrolls the page.
-                    .simultaneousGesture(DragGesture(minimumDistance: 10).onChanged { drag in
-                        guard abs(drag.translation.width) > abs(drag.translation.height),
-                              let index = ReportAxis.index(at: drag.location, proxy: proxy, geometry: geometry, count: model.keys.count) else { return }
-                        if index != selected { selected = index }
-                    })
-                    .sensoryFeedback(.selection, trigger: selected)
-                    .accessibilityHidden(true)
+                // A tap picks a month; dragging across reads each in turn; an up-and-down drag scrolls the page.
+                ChartTouch(onTap: { location in
+                    let index = ReportAxis.index(at: location, proxy: proxy, geometry: geometry, count: model.keys.count)
+                    selected = index == nil || index == selected ? nil : index
+                }, onScrub: { location in
+                    guard let index = ReportAxis.index(at: location, proxy: proxy, geometry: geometry, count: model.keys.count) else { return }
+                    if index != selected { selected = index }
+                })
+                .sensoryFeedback(.selection, trigger: selected)
+                .accessibilityHidden(true)
             }
         }
         .accessibilityLabel(model.label)
@@ -652,19 +649,16 @@ struct ReportLinesChart: View {
         .chartLegend(.hidden)
         .chartOverlay { proxy in
             GeometryReader { geometry in
-                Rectangle().fill(.clear).contentShape(Rectangle())
-                    .onTapGesture { location in
-                        let index = ReportAxis.index(at: location, proxy: proxy, geometry: geometry, count: model.keys.count)
-                        selected = index == nil || index == selected ? nil : index
-                    }
-                    // Dragging across reads each month in turn; an up-and-down drag still scrolls the page.
-                    .simultaneousGesture(DragGesture(minimumDistance: 10).onChanged { drag in
-                        guard abs(drag.translation.width) > abs(drag.translation.height),
-                              let index = ReportAxis.index(at: drag.location, proxy: proxy, geometry: geometry, count: model.keys.count) else { return }
-                        if index != selected { selected = index }
-                    })
-                    .sensoryFeedback(.selection, trigger: selected)
-                    .accessibilityHidden(true)
+                // A tap picks a month; dragging across reads each in turn; an up-and-down drag scrolls the page.
+                ChartTouch(onTap: { location in
+                    let index = ReportAxis.index(at: location, proxy: proxy, geometry: geometry, count: model.keys.count)
+                    selected = index == nil || index == selected ? nil : index
+                }, onScrub: { location in
+                    guard let index = ReportAxis.index(at: location, proxy: proxy, geometry: geometry, count: model.keys.count) else { return }
+                    if index != selected { selected = index }
+                })
+                .sensoryFeedback(.selection, trigger: selected)
+                .accessibilityHidden(true)
             }
         }
         .accessibilityLabel(model.label)
@@ -885,16 +879,23 @@ struct ReportMonthCalendar: View {
                 }
             }
             .accessibilityHidden(true)
-            if months.indices.contains(shown) { grid(months[shown], weekStart: weekStart) }
+            // Months side by side, a page each, as Android's HorizontalPager has them: a sideways swipe
+            // turns the month (towards the start of the line for the next, in either direction of
+            // writing) and an up-and-down drag is left to the report, which scrolls.
+            ScrollView(.horizontal) {
+                HStack(alignment: .top, spacing: 0) {
+                    ForEach(months.indices, id: \.self) { at in
+                        grid(months[at], weekStart: weekStart).containerRelativeFrame(.horizontal)
+                    }
+                }
+                .scrollTargetLayout()
+            }
+            .scrollTargetBehavior(.paging)
+            .scrollIndicators(.hidden)
+            .scrollPosition(id: $page)
         }
-        .gesture(DragGesture(minimumDistance: 24).onEnded { drag in
-            guard abs(drag.translation.width) > abs(drag.translation.height) * 1.5 else { return }
-            // A swipe towards the start of the line brings the next month, in either direction of writing.
-            let forward = (drag.translation.width < 0) != AppLanguage.isRightToLeft
-            let next = shown + (forward ? 1 : -1)
-            if months.indices.contains(next) { withAnimation(.easeInOut(duration: 0.2)) { page = next } }
-        })
-        .onChange(of: model.days) { page = nil }
+        .onAppear { if page == nil { page = months.count - 1 } }
+        .onChange(of: model.days) { page = ReportMonthCalendar.months(model).count - 1 }
         .onChange(of: selected) { _, index in
             // A day picked from elsewhere (the Biggest days list) brings its month.
             guard model.days.indices.contains(index), let at = months.firstIndex(of: String(model.days[index].prefix(7))) else { return }
@@ -975,6 +976,51 @@ struct ReportMonthCalendar: View {
         let count = Int(last.suffix(2)) ?? 30
         let lead = ((ReportMath.jsWeekday(first) - weekStart) % 7 + 7) % 7
         return Array(repeating: nil, count: lead) + (1...max(1, count)).map { String(format: "%@-%02d", month, $0) }
+    }
+}
+
+/// Touches on a chart as Android's take them (Charts.kt: detectTapGestures and
+/// detectHorizontalDragGestures): a tap picks, a sideways drag reads across, and a drag that starts
+/// up or down is left to the page, which scrolls. A SwiftUI DragGesture on a chart inside a scrolling
+/// page takes every drag that starts on it, sideways or not, so the page couldn't be scrolled from a
+/// chart. Positions are in the view's own space from its left edge; the charts lay out left to right.
+struct ChartTouch: UIViewRepresentable {
+    var onTap: (CGPoint) -> Void
+    var onScrub: ((CGPoint) -> Void)? = nil
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.backgroundColor = .clear
+        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tapped(_:)))
+        view.addGestureRecognizer(tap)
+        let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.panned(_:)))
+        pan.delegate = context.coordinator
+        view.addGestureRecognizer(pan)
+        return view
+    }
+
+    func updateUIView(_ view: UIView, context: Context) { context.coordinator.parent = self }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var parent: ChartTouch
+        init(_ parent: ChartTouch) { self.parent = parent }
+
+        @objc func tapped(_ tap: UITapGestureRecognizer) { parent.onTap(tap.location(in: tap.view)) }
+
+        @objc func panned(_ pan: UIPanGestureRecognizer) {
+            guard pan.state == .began || pan.state == .changed else { return }
+            parent.onScrub?(pan.location(in: pan.view))
+        }
+
+        /// Only a drag that starts more sideways than up or down is the chart's.
+        func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
+            guard let pan = recognizer as? UIPanGestureRecognizer else { return true }
+            guard parent.onScrub != nil else { return false }
+            let velocity = pan.velocity(in: pan.view)
+            return abs(velocity.x) > abs(velocity.y)
+        }
     }
 }
 
@@ -1090,18 +1136,15 @@ struct ReportMiniBars: View {
         .chartOverlay { proxy in
             GeometryReader { geometry in
                 if let onSelect {
-                    Rectangle().fill(.clear).contentShape(Rectangle())
-                        .onTapGesture { location in
-                            guard let index = ReportAxis.index(at: location, proxy: proxy, geometry: geometry, count: model.labels.count) else { return }
-                            onSelect(index == selected ? -1 : index)
-                        }
-                        // Dragging across reads each month in turn; an up-and-down drag still scrolls the page.
-                        .simultaneousGesture(DragGesture(minimumDistance: 10).onChanged { drag in
-                            guard abs(drag.translation.width) > abs(drag.translation.height),
-                                  let index = ReportAxis.index(at: drag.location, proxy: proxy, geometry: geometry, count: model.labels.count) else { return }
-                            if index != selected { onSelect(index) }
-                        })
-                        .accessibilityHidden(true)
+                    // A tap picks a month; dragging across reads each in turn; an up-and-down drag scrolls the page.
+                    ChartTouch(onTap: { location in
+                        guard let index = ReportAxis.index(at: location, proxy: proxy, geometry: geometry, count: model.labels.count) else { return }
+                        onSelect(index == selected ? -1 : index)
+                    }, onScrub: { location in
+                        guard let index = ReportAxis.index(at: location, proxy: proxy, geometry: geometry, count: model.labels.count) else { return }
+                        if index != selected { onSelect(index) }
+                    })
+                    .accessibilityHidden(true)
                 }
             }
         }

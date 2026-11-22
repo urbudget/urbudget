@@ -7,8 +7,19 @@ import type { AppEnv } from "./env";
 import { isVersion } from "./releases";
 import { ApiError, mondayOf, now, rateLimit, sha256 } from "./util";
 
-const PLATFORMS = new Set(["windows", "macos", "linux"]);
-const CHANNELS = new Set(["direct", "store"]);
+/**
+ * Where each system's copies come from. The desktop: urbudget.app or GitHub ("direct"), or the
+ * Microsoft Store. Android: Google Play, or a preview APK (the debug-signed app.urbudget.nativeapp).
+ * iOS: the App Store, or TestFlight.
+ */
+const CHANNELS: Record<string, string[]> = {
+  windows: ["direct", "store"],
+  macos: ["direct", "store"],
+  linux: ["direct", "store"],
+  android: ["play", "preview"],
+  ios: ["appstore", "testflight"],
+};
+const PHONES = new Set(["android", "ios"]);
 /** What a report can say is new, and the kind each is counted as. */
 const FLAGS = { first: "install", day: "day", week: "week", month: "month" } as const;
 
@@ -29,9 +40,9 @@ usage.post("/", async (c) => {
   const { platform, channel, version, cohort } = body;
   if (
     typeof platform !== "string" ||
-    !PLATFORMS.has(platform) ||
+    !Object.hasOwn(CHANNELS, platform) ||
     typeof channel !== "string" ||
-    !CHANNELS.has(channel) ||
+    !CHANNELS[platform].includes(channel) ||
     typeof version !== "string" ||
     !isVersion(version) ||
     Object.keys(FLAGS).some((flag) => body[flag] !== undefined && typeof body[flag] !== "boolean")
@@ -42,9 +53,11 @@ usage.post("/", async (c) => {
 
   const today = now().slice(0, 10);
   // A household or an office shares an address, but far more than this from one a day isn't copies
-  // in use. The address is hashed with the day, so the limit's row can't follow anyone.
-  const bucket = await sha256(`usage:${today}:${c.req.header("CF-Connecting-IP") ?? "local"}`);
-  await rateLimit(c.env.DB, `usage:${bucket}`, 20, 86_400);
+  // in use. Phones get their own, larger allowance: a mobile carrier puts many of its customers
+  // behind one address. The address is hashed with the day, so the limit's row can't follow anyone.
+  const phone = PHONES.has(platform);
+  const bucket = await sha256(`usage${phone ? "-phone" : ""}:${today}:${c.req.header("CF-Connecting-IP") ?? "local"}`);
+  await rateLimit(c.env.DB, `usage:${bucket}`, phone ? 200 : 20, 86_400);
   // Only a week's report carries the week the copy was first opened: a Monday, and not a future one.
   const week =
     typeof cohort === "string" && /^\d{4}-\d{2}-\d{2}$/.test(cohort) && mondayOf(cohort) === cohort && cohort <= today ? cohort : "";

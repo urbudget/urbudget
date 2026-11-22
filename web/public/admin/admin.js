@@ -386,13 +386,15 @@ loaders.overview = async () => {
     {
       label: "First opens, 30 days",
       value: num(u.opens30),
-      sub: u.since ? "Copies installed and opened, including GitHub installs" : "None counted yet: copies count themselves from the next desktop release",
+      sub: u.since
+        ? `Desktop ${num(u.bySystem.opens30.desktop)}, including GitHub installs · Android ${num(u.bySystem.opens30.android)} · iOS ${num(u.bySystem.opens30.ios)}`
+        : "None counted yet: copies count themselves from the next desktop release",
       trend: [u.opens30, p.opens],
     },
     {
       label: "In use last week",
       value: num(u.lastWeek),
-      sub: `${num(u.thisWeek)} this week so far · ${num(u.yesterday)} yesterday`,
+      sub: `Desktop ${num(u.bySystem.lastWeek.desktop)} · Android ${num(u.bySystem.lastWeek.android)} · iOS ${num(u.bySystem.lastWeek.ios)} · ${num(u.thisWeek)} this week so far · ${num(u.yesterday)} yesterday`,
       trend: [u.lastWeek, u.weekBefore],
       than: "the week before",
     },
@@ -1173,24 +1175,39 @@ loaders.downloads = async () => {
 
 /* ---------- Usage: copies of the app in use ---------- */
 
-const PLATFORM = { windows: "Windows", macos: "macOS", darwin: "macOS", linux: "Linux" };
-const CHANNEL = { direct: "urbudget.app or GitHub", store: "Microsoft Store" };
-/** Copies by where they were installed from; the Store in its color on every chart. */
-const usageSeries = ({ direct, store }) => [
+const PLATFORM = { windows: "Windows", macos: "macOS", darwin: "macOS", linux: "Linux", android: "Android", ios: "iOS" };
+const CHANNEL = {
+  direct: "urbudget.app or GitHub",
+  store: "Microsoft Store",
+  play: "Google Play",
+  preview: "Preview APK",
+  appstore: "App Store",
+  testflight: "TestFlight",
+};
+/**
+ * Copies by where they were installed from: the desktop's two, then each phone with its test
+ * builds (Android's preview APKs, iOS's TestFlight). The Store in its color on every chart, and
+ * Android's orange never beside iOS's yellow (admin.css).
+ */
+const usageSeries = ({ direct, store, play, preview, appstore, testflight }) => [
   { name: "urbudget.app or GitHub", values: direct, color: "var(--series-1)" },
+  { name: "Android", values: add(play, preview), color: "var(--series-2)" },
   { name: "Microsoft Store", values: store, color: "var(--series-3)" },
+  { name: "iOS", values: add(appstore, testflight), color: "var(--series-4)" },
 ];
+/** Every channel's series added up. */
+const allChannels = (byChannel) => add(...Object.values(byChannel));
 /** "October 2026" from YYYY-MM. */
 const monthName = (month) => new Date(`${month}-01T00:00:00Z`).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 
 loaders.usage = async () => {
   const u = await api("/admin/usage");
   $("usage-note").textContent = u.since
-    ? `Counted since ${dateOnly(u.since)}. Each copy says once a day only whether it's new today, this week or this month, with nothing that identifies it, so these are copies rather than people: someone with two computers is two. Copies from before the usage counts, and people who turned them off in Settings → Privacy & data, aren't in these numbers; the update checks below include the older copies.`
+    ? `Counted since ${dateOnly(u.since)}. Each copy says once a day only whether it's new today, this week or this month, with nothing that identifies it, so these are copies rather than people: someone with a computer and a phone is two. Copies from before the usage counts, and people who turned them off in Settings (Privacy & data on the desktop, Settings & data on the phones), aren't in these numbers; the update checks below include the older desktop copies. Android and iOS include their test builds: preview APKs and TestFlight.`
     : "No copy has counted itself yet. Copies count themselves from the next desktop release on, once a day, with nothing that identifies them; people can turn it off in Settings → Privacy & data. Until then, the update checks below are the only sign of use.";
   const [thisWeek, lastWeek, weekBefore] = u.weeks;
-  const daily = add(u.daily.direct, u.daily.store);
-  const opens = add(u.opens.direct, u.opens.store);
+  const daily = allChannels(u.daily);
+  const opens = allChannels(u.opens);
   const currentMonth = new Date().toISOString().slice(0, 7);
   const month = u.months.find((m) => m.month === currentMonth);
   const previousMonth = u.months.find((m) => m.month < currentMonth);
@@ -1203,7 +1220,7 @@ loaders.usage = async () => {
     {
       label: "In use last week",
       value: num(lastWeek?.active),
-      sub: `Windows ${num(lastWeek?.windows)} · macOS ${num(lastWeek?.macos)} · Linux ${num(lastWeek?.linux)} · Store ${num(lastWeek?.store)}`,
+      sub: `Windows ${num(lastWeek?.windows)} · macOS ${num(lastWeek?.macos)} · Linux ${num(lastWeek?.linux)} · Store ${num(lastWeek?.store)} · Android ${num(lastWeek?.android)} · iOS ${num(lastWeek?.ios)}`,
       trend: [lastWeek?.active ?? 0, weekBefore?.active ?? 0],
       than: "the week before",
     },
@@ -1251,7 +1268,7 @@ loaders.usage = async () => {
     sub: "Last 12 weeks, Monday to Sunday (UTC) · the last is this week so far",
     labels: oldestFirst.map((w) => shortDay(w.start)),
     tips: oldestFirst.map((w, i) => `Week of ${dateOnly(w.start)}${i === oldestFirst.length - 1 ? " (so far)" : ""}`),
-    series: usageSeries({ direct: oldestFirst.map((w) => w.direct), store: oldestFirst.map((w) => w.store) }),
+    series: usageSeries(Object.fromEntries(Object.keys(CHANNEL).map((channel) => [channel, oldestFirst.map((w) => w[channel])]))),
     empty: none,
   });
 
@@ -1269,6 +1286,8 @@ loaders.usage = async () => {
         h("td", { class: "num" }, num(week.linux)),
         h("td", { class: "num" }, num(week.direct)),
         h("td", { class: "num" }, num(week.store)),
+        h("td", { class: "num" }, num(week.android)),
+        h("td", { class: "num" }, num(week.ios)),
         h("td", { class: "num" }, num(week.opens)),
       ),
     ),

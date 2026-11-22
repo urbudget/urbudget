@@ -72,7 +72,7 @@ struct UnassignedSheet: View {
         let changes = Array(budget.rows("moneyMoves").filter { $0.text("month") == month }.reversed())
         let note = budget.rows("ynabMonths").first { $0.text("month").hasPrefix(month) }?.text("note") ?? ""
         return NavigationStack {
-            List {
+            AppList {
                 Section {
                     VStack(spacing: 4) {
                         Text(money(rta, currency)).font(.system(size: 32, weight: .heavy)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
@@ -254,7 +254,7 @@ struct GroupQuickAssignSheet: View {
     var body: some View {
         let ids = ids
         NavigationStack {
-            List {
+            AppList {
                 ForEach(quickAssignGroups, id: \.self) { section in
                     Section(quickAssignGroupName(section)) {
                         ForEach(quickAssignModes.filter { $0.group == section }) { mode in
@@ -306,7 +306,7 @@ private struct QuickAssignPreview: View {
         let assigns = rows.filter { $0.after > $0.before }.reduce(Int64(0)) { $0 + $1.after - $1.before }
         let returns = rows.filter { $0.after < $0.before }.reduce(Int64(0)) { $0 + $1.before - $1.after }
         let after = preview?["summary"]
-        return List {
+        return AppList {
             Section {
                 Text(explain(mode.id, month)).foregroundStyle(Color.secondary)
             } footer: {

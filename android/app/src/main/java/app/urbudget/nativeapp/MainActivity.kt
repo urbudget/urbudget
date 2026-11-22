@@ -91,6 +91,8 @@ class MainActivity : AppCompatActivity() {
                     model.refresh()
                     while (isActive) { syncIfReady(); delay(if (NativeServices.syncStatus.value?.optJSONObject("sync")?.optInt("protocol") == 2) 30_000 else 300_000) }
                 }
+                // Counted as in use, at most once a day, each time the app comes to the front.
+                launch(Dispatchers.IO) { runCatching { NativeServices.initialize(applicationContext); NativeServices.reportUsage(applicationContext) } }
                 launch(Dispatchers.IO) { NativeServices.saved.debounce { if (NativeServices.syncStatus.value?.optJSONObject("sync")?.optInt("protocol") == 2) 2_000L else 8_000L }.collect { syncIfReady() } }
                 // WorkManager can finish while the Activity is visible. Consume that exact report.
                 launch(Dispatchers.IO) { NativeServices.syncCompleted.collect { report -> runCatching { model.refreshAfterSync(report) } } }

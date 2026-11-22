@@ -349,19 +349,47 @@ extension View {
     func listBand(minHeight: CGFloat = 40) -> some View { modifier(ListBand(minHeight: minHeight)) }
 }
 
+/// The app's list: the app's page behind it and its cards under the rows (Android's navy in
+/// dark, where iOS has black and charcoal). A row that sets its own `listRowBackground` keeps it:
+/// what a row says of itself wins over this, said around all of them.
+struct AppList<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        List { content.appRows() }.appGround()
+    }
+}
+
+extension AppList {
+    /// A row for each of `data`, as `List(_:id:rowContent:)` has it.
+    init<Data: RandomAccessCollection, ID: Hashable, Row: View>(_ data: Data, id: KeyPath<Data.Element, ID>,
+                                                                 @ViewBuilder rowContent: @escaping (Data.Element) -> Row)
+    where Content == ForEach<Data, ID, Row> {
+        content = ForEach(data, id: id, content: rowContent)
+    }
+}
+
 /// A form set as closely as the app's lists (`groupedList`): sections a little apart, the first
-/// just under the bar.
+/// just under the bar. Its page and cards are the app's, as `AppList`'s are.
 struct CompactForm<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        Form { content }
+        Form { content.appRows() }
             #if os(iOS)
             .listSectionSpacing(.compact)
             .contentMargins(.top, 8, for: .scrollContent)
             .clearOfSideBar()
             #endif
             .scrollIndicators(.hidden)
+            .appGround()
+    }
+}
+
+private extension View {
+    /// Every row of a list on the app's card, with lines between them to match.
+    func appRows() -> some View {
+        listRowBackground(Color.cardBackground).listRowSeparatorTint(Color.rowSeparator)
     }
 }
 

@@ -4,6 +4,10 @@ Notable changes to UrBudget, organized using [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Fixed
+
+- On Linux, a newly installed copy was counted as one already in use in the anonymous usage counts (Settings › Privacy & data), so it never showed as a new copy. A copy is now new until it has a budget library, whatever else is in its data folder.
+
 ## [1.0.13] - 2026-11-16
 
 This update adds a Linux version. Nothing else changes on Windows and macOS.

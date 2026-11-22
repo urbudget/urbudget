@@ -90,7 +90,9 @@ struct BankFileImportView: View {
         guard let preview, session != nil, preview.request.sameImport(as: request) else { return nil }
         return preview
     }
-    private var busy: Bool { loading || saving || (session != nil && current == nil) }
+    /// A change being applied (by hand or from an assistant's card), an import saving, or the
+    /// lines not yet read for the import as it is: one change at a time, each on the one before.
+    private var busy: Bool { loading || saving || applyingFix || (session != nil && current == nil) }
     /// Most changes take a moment: the screen only looks busy (greyed, a spinner) for one that
     /// lasts, so a quick one doesn't flash it.
     @State private var slow = false
@@ -103,7 +105,7 @@ struct BankFileImportView: View {
                 } else if stage == .review, let preview = shownPreview {
                     review(preview)
                 } else if stage == .review {
-                    List {
+                    AppList {
                         HStack(spacing: 10) { ProgressView(); Text("Checking the lines against your budget…").foregroundStyle(Color.secondary) }
                         if let error { FormErrorView(message: error) }
                     }
@@ -125,7 +127,8 @@ struct BankFileImportView: View {
         .fileImporter(isPresented: $picking, allowedContentTypes: Self.types) { read($0) }
         .sheet(item: $asking) { AssistantView(request: $0) }
         .sheet(item: $fixing) { line in
-            LineFixSheet(line: line) { values in
+            // Done waits while an earlier change applies, rather than closing with nothing changed.
+            LineFixSheet(line: line, ready: !busy) { values in
                 fixing = nil
                 if let session, let fixes = BankFixes.fields(session, line, values) { fix(fixes) }
             }
@@ -171,12 +174,12 @@ struct BankFileImportView: View {
                 Button(counts.importing == 1 ? "Import 1" : "Import \(counts.importing)") { importRows() }
                     .fontWeight(.semibold)
                     // Checked against the budget as it was: checked again before anything imports.
-                    .disabled(counts.undecided > 0 || counts.importing == 0 || preview.revision != store.revision)
+                    .disabled(busy || counts.undecided > 0 || counts.importing == 0 || preview.revision != store.revision)
             } else if let current {
                 // Nothing goes on to the review on a guess the file leaves open.
                 Button("Continue") { stage = .review; runPreview() }
                     .fontWeight(.semibold)
-                    .disabled(!current.canContinue)
+                    .disabled(busy || !current.canContinue)
             }
         }
     }
@@ -248,7 +251,7 @@ struct BankFileImportView: View {
         let attention = shown.attentionLines
         let out = shown.leftOutLines
         let changed = shown.changedLines
-        return List {
+        return AppList {
             Section { heading(BankStatementText.counts(shown)) }
             if sheets.count > 1 || shown.sources.count > 1 || shown.format == "csv" || answeredDates(shown) != nil || answeredSigns(shown) != nil { Section {
                 if sheets.count > 1 {
@@ -454,7 +457,7 @@ struct BankFileImportView: View {
     private func review(_ preview: BankFilePreview) -> some View {
         let counts = BankReview.counts(preview.rows, decisions)
         let shown = statement ?? preview.statement
-        return List {
+        return AppList {
             Section { heading(BankReview.countsText(preview.summary)) }
             if shown.attention > 0 || shown.leftOutCount > 0 {
                 Notice(text: BankStatementText.notImported(shown), tone: "info", icon: "tablecells", action: String(localized: "Check the file")) { stage = .lines }
@@ -619,11 +622,14 @@ struct BankFileImportView: View {
         error = nil
         notice = nil
         let was = generation
+        let revision = session.long("revision")
         Task {
             do {
                 let applied = try await store.query("bankApplyFixes", ["accountId": .string(account), "content": .string(content), "session": session, "fixes": fixes])
                 // Another file chosen meanwhile is reading on its own: this change is for the one before.
                 guard generation == was else { return }
+                // Nor is it taken over a change made to this import meanwhile.
+                guard self.session?.long("revision") == revision else { loading = false; return }
                 self.session = applied["session"]
                 if let refused = applied.rows("results").first(where: { !$0.flag("applied") }) {
                     error = refused.text("problem").isEmpty ? String(localized: "That change no longer fits the file.") : refused.text("problem")
@@ -657,10 +663,11 @@ struct BankFileImportView: View {
     }
 
     /// Fixes the assistant proposed: applied to this import, each only where its line hasn't
-    /// changed. One card's fixes are applied at a time, so a second tap doesn't apply them twice.
+    /// changed. One card's fixes are applied at a time, so a second tap doesn't apply them twice,
+    /// and after a change made by hand that's still applying, so neither is lost to the other.
     private func applyFix(_ thread: String, _ proposal: JSON) {
         let fixes = proposal["fixes"]
-        guard !applyingFix, fixes.isObject, let session, let content else { return }
+        guard !applyingFix, fixes.isObject, session != nil, content != nil else { return }
         guard fixes["scope"].text("session") == sessionId else {
             AssistantController.shared.notice = String(localized: "These fixes are for another import.")
             return
@@ -669,9 +676,20 @@ struct BankFileImportView: View {
         applyingFix = true
         Task {
             defer { applyingFix = false }
+            // A change made by hand goes first; the card's fixes then apply to the import as it left it.
+            var waited = 0
+            while waited < 200, loading || saving || (self.session != nil && current == nil) {
+                try? await Task.sleep(for: .milliseconds(100))
+                waited += 1
+            }
+            guard sessionId == was, !saving, let session = self.session, let content = self.content else { return }
+            let revision = session.long("revision")
             do {
                 let applied = try await store.query("bankApplyFixes", ["accountId": .string(account), "content": .string(content), "session": session, "fixes": fixes])
-                guard sessionId == was else { return }
+                guard sessionId == was, self.session?.long("revision") == revision else {
+                    AssistantController.shared.notice = String(localized: "The import changed while these fixes applied. Apply the card again.")
+                    return
+                }
                 let outcome = BankStatementText.outcome(applied)
                 self.session = applied["session"]
                 assisted.formUnion(outcome.lines)
@@ -693,8 +711,8 @@ struct BankFileImportView: View {
     }
 
     private func importRows() {
-        // Only the review of this import, checked against the budget as it is.
-        guard let preview = shownPreview, preview.revision == store.revision else { return }
+        // Only the review of this import, checked against the budget as it is, and only once.
+        guard !busy, let preview = shownPreview, preview.revision == store.revision else { return }
         let selected = decisions
         let accountId = account
         let importing = BankReview.counts(preview.rows, selected).importing
@@ -732,6 +750,8 @@ struct BankFileImportView: View {
 /// A line's date, payee, memo and amount, to give what doesn't read; the file's own cells shown for reference.
 private struct LineFixSheet: View {
     var line: StatementLine
+    /// False while an earlier change to the import applies: Done waits for it.
+    var ready: Bool
     var save: ([String: String]) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var values: [String: String] = [:]
@@ -763,7 +783,13 @@ private struct LineFixSheet: View {
             .inlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { save(values) }.fontWeight(.semibold) }
+                ToolbarItem(placement: .confirmationAction) {
+                    if ready {
+                        Button("Done") { save(values) }.fontWeight(.semibold)
+                    } else {
+                        ProgressView().accessibilityLabel(Text("Applying the last change"))
+                    }
+                }
             }
         }
         .onAppear { for (id, _) in BankStatementText.fields { values[id] = line.fields[id] ?? "" } }

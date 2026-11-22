@@ -28,7 +28,10 @@ struct AssistantSettingsView: View {
             Section {
                 Text("Answers use your budget and the files you attach. Changes are proposed for your review. Your chosen provider processes the conversation.")
                     .font(.subheadline)
-                if let error = controller.error { FormErrorView(message: error) }
+                // A sign-in that failed says why until the next attempt, even after Settings is closed, as on Android.
+                if let error = status.flatMap({ $0.text("signInError").isEmpty ? nil : $0.text("signInError") }) ?? controller.error {
+                    FormErrorView(message: error)
+                }
             }
             Section("Provider") {
                 Picker("Provider", selection: Binding(get: { provider }, set: { value in
@@ -198,7 +201,7 @@ struct AssistantSettingsView: View {
             if signingIn {
                 HStack(spacing: 10) {
                     ProgressView()
-                    Text("Waiting for ChatGPT…").foregroundStyle(Color.secondary)
+                    Text(signInStage(status?.text("signInPhase") ?? "")).foregroundStyle(Color.secondary)
                 }
                 Button("Cancel sign-in", role: .cancel) { controller.cancelSignIn() }
             } else if ready {
@@ -217,6 +220,16 @@ struct AssistantSettingsView: View {
         Section {
             Button("Plan usage") { controller.openLink("usage") }
             Button("Connected apps") { controller.openLink("disconnect") }
+        }
+    }
+
+    /// Where a ChatGPT sign-in has got to, as the service reports it (auth.rs's progress).
+    private func signInStage(_ phase: String) -> String {
+        switch phase {
+        case "returning": return String(localized: "Return to UrBudget to finish signing in.")
+        case "exchanging", "validating": return String(localized: "Finishing sign-in with ChatGPT…")
+        case "saving": return String(localized: "Saving your sign-in…")
+        default: return String(localized: "Waiting for ChatGPT…")
         }
     }
 

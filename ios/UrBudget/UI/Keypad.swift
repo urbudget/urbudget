@@ -52,7 +52,8 @@ struct PadAmount: View {
     }
 }
 
-/// The keypad for amounts, styled like the system keyboard: digits, the four operators, =, ⌫ and Done.
+/// The keypad for amounts, styled like the system keyboard (in navy in dark, with the app's pages):
+/// digits, the four operators, =, ⌫ and Done.
 struct AmountKeypad: View {
     var pad: PadState
     var doneLabel = String(localized: "Done")
@@ -83,7 +84,7 @@ struct AmountKeypad: View {
         .environment(\.layoutDirection, .leftToRight)
         .padding(8)
         .fixedSize(horizontal: false, vertical: true)
-        .background(Color(light: 0xD1D3D9, dark: 0x2B2B2E))
+        .background(Color(light: 0xD1D3D9, dark: 0x1D2133))
         .sensoryFeedback(.selection, trigger: pad.text)
     }
 
@@ -132,8 +133,8 @@ struct KeyStyle: ButtonStyle {
         let fill: Color
         let ink: Color
         switch kind {
-        case .digit: fill = Color(light: 0xFFFFFF, dark: 0x6B6B70); ink = .primary
-        case .op: fill = Color(light: 0xABB0BA, dark: 0x464649); ink = .primary
+        case .digit: fill = Color(light: 0xFFFFFF, dark: 0x474D67); ink = .primary
+        case .op: fill = Color(light: 0xABB0BA, dark: 0x30354B); ink = .primary
         case .done: fill = .urAccent; ink = .white
         }
         return configuration.label

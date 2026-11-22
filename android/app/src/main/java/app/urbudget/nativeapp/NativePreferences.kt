@@ -41,4 +41,8 @@ class NativePreferences(context: Context) {
     var typedValues: Boolean
         get() = preferences.getBoolean("typedValues", false)
         set(value) { preferences.edit().putBoolean("typedValues", value).apply() }
+    /** Count this copy as in use on urbudget.app, anonymously, once a day (UsageCounts). */
+    var usageCounts: Boolean
+        get() = preferences.getBoolean("usageCounts", true)
+        set(value) { preferences.edit().putBoolean("usageCounts", value).apply() }
 }
