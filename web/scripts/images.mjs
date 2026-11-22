@@ -246,29 +246,47 @@ async function stampScreenshotSizes() {
 }
 
 /**
- * The home page's Android section: the phone's screen from the Play listing's Bank messages
- * screenshot (docs/play-listing/graphics), without its caption, with the screen's own round
- * corners cut out. Its region and radius are in that 1440×2560 image's pixels.
+ * The home page's phone sections, each a screen in a slim bezel.
+ *
+ * Android: the phone's screen from the Play listing's Bank messages screenshot
+ * (docs/play-listing/graphics), without its caption, with the screen's own round corners cut
+ * out. Its region and radius are in that 1440×2560 image's pixels.
+ *
+ * iPhone: the App Store listing's budget screen as the Simulator captured it (a 1320×2868
+ * iPhone, docs/app-store), whole; the bezel's CSS rounds its corners.
  */
-const PHONE = {
-  name: "phone-bank-messages",
-  src: resolve(root, "..", "docs", "play-listing", "graphics", "2-bank-messages.png"),
-  region: { left: 268, top: 568, width: 904, height: 1935 },
-  radius: 88,
-  widths: [360, 720],
-};
+const PHONES = [
+  {
+    name: "phone-bank-messages",
+    src: resolve(root, "..", "docs", "play-listing", "graphics", "2-bank-messages.png"),
+    region: { left: 268, top: 568, width: 904, height: 1935 },
+    radius: 88,
+    widths: [360, 720],
+  },
+  {
+    name: "phone-ios-budget",
+    src: resolve(root, "..", "docs", "app-store", "budget-iphone.png"),
+    widths: [360, 720],
+  },
+];
 
 async function phoneShots() {
-  const { region, radius } = PHONE;
-  const mask = Buffer.from(
-    `<svg width="${region.width}" height="${region.height}"><rect width="${region.width}" height="${region.height}" rx="${radius}" ry="${radius}"/></svg>`,
-  );
-  const screen = await sharp(PHONE.src).extract(region).ensureAlpha()
-    .composite([{ input: mask, blend: "dest-in" }]).png().toBuffer();
-  for (const width of PHONE.widths) {
-    const file = join(out, `${PHONE.name}-${width}.webp`);
-    const size = await writeWebp(sharp(screen).resize({ width, kernel: "lanczos3" }), file);
-    console.log(`${PHONE.name}-${width}.webp  ${width}×${Math.round((region.height * width) / region.width)}  ${kb(size)}`);
+  for (const phone of PHONES) {
+    const { region, radius } = phone;
+    let screen = await readFile(phone.src);
+    if (region) {
+      const mask = Buffer.from(
+        `<svg width="${region.width}" height="${region.height}"><rect width="${region.width}" height="${region.height}" rx="${radius}" ry="${radius}"/></svg>`,
+      );
+      screen = await sharp(screen).extract(region).ensureAlpha()
+        .composite([{ input: mask, blend: "dest-in" }]).png().toBuffer();
+    }
+    for (const width of phone.widths) {
+      const file = join(out, `${phone.name}-${width}.webp`);
+      const size = await writeWebp(sharp(screen).resize({ width, kernel: "lanczos3" }), file);
+      const { height } = await sharp(file).metadata();
+      console.log(`${phone.name}-${width}.webp  ${width}×${height}  ${kb(size)}`);
+    }
   }
 }
 
