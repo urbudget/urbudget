@@ -9,12 +9,19 @@ deletion, or recovery of already stored content.
 
 ## Deployment boundary
 
-Migration `0012_sync_v2.sql` is additive. `SYNC_V2_ENABLED` is absent from the
-production configuration, so first-time key setup and account migration are
-disabled. Installation registration and new prepares are also rejected for
-accounts that have not activated v2. Existing v2 accounts keep access when the
-activation flag is disabled. Production deployment, migrations, and account activation have not
-been performed by this implementation.
+Migration `0012_sync_v2.sql` is additive. Production has had it since 29 October 2026, and
+activation has been on since 22 November 2026: `SYNC_V2_ENABLED` is `"1"` in `wrangler.jsonc`.
+With it on, a v2 app (desktop 1.0.11 and later, Android, iOS 1.0.1 and later) that sets up a
+new passphrase creates a v2 account (`keySetup`), and one that enters an existing account's
+passphrase moves that account to v2 (`migrateProtocol`). Nothing moves on its own: an account
+whose devices are already unlocked keeps syncing on v1 until a v2 app is next given the
+passphrase. Once an account is on v2, a v1 app (desktop 1.0.10 and earlier, iOS 1.0.0) gets
+HTTP 426 `sync_upgrade_required` ("Update UrBudget to continue syncing") and keeps its local
+budgets.
+
+With the flag off, first-time key setup and account migration are disabled, and installation
+registration and new prepares are rejected for accounts that have not activated v2. Existing
+v2 accounts keep access when the flag is off.
 
 The deploy workflow first applies every migration to a disposable local database,
 after TypeScript and Worker tests pass, before its remote migration step.
