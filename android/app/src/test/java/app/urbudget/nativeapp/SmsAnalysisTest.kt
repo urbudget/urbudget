@@ -141,6 +141,50 @@ class SmsAnalysisTest {
         assertEquals("income", made.getJSONObject("transaction").getString("kind")); assertEquals("SAR", made.getJSONObject("transaction").getString("currency"))
         assertEquals(true, entered.ticked[1]); assertFalse(1 in entered.dismissed)
     }
+    @Test fun aSplitMadeInTheEditorIsKeptLineByLineAndComesBackToIt() {
+        val sms = message(body = "Visa 4417 SAR 12.34")
+        val batch = SmsBatch(listOf(sms), JSONObject().put("items", JSONArray().put(item(sms, purchase("4417").put("categoryId", "food")))))
+        val items = batch.items(SmsAccounts(accounts, JSONArray()))
+        val budget = JSONObject().put("currency", "SAR").put("accounts", JSONArray())
+        // As the transaction form saves a split: signed shares, Ready to Assign apart from no category, and a line left at nothing.
+        fun line(category: String?, cents: Long, memo: String = "", unassigned: Boolean = false) =
+            JSONObject().put("categoryId", category ?: JSONObject.NULL).put("amount", cents).put("memo", memo).put("unassigned", unassigned)
+        val record = smsEditable(items[0], "SAR").put("splits", JSONArray().put(line("food", -1000, "Lunch")).put(line(null, -234)).put(line("home", 0)))
+        val (fields, category) = smsChanged(items[0], record)
+        // Split, there's no one category to learn or count against the reading.
+        assertEquals(emptySet<String>() to "food", fields to category)
+        val edited = smsEdited(batch, items[0], record, budget)
+        val t = edited.analysis.getJSONArray("items").getJSONObject(0).getJSONObject("transaction")
+        assertTrue(t.isNull("categoryId"))
+        assertEquals(listOf(Triple("-10.00", "food", "Lunch"), Triple("-2.34", "", "")),
+            t.getJSONArray("splits").let { a -> (0 until a.length()).map { a.getJSONObject(it).let { l -> Triple(l.getString("amount"), l.optString("categoryId").takeUnless { l.isNull("categoryId") }.orEmpty(), l.getString("memo")) } } })
+        // The row shows it split, and the editor opens on the same lines.
+        val again = edited.items(SmsAccounts(accounts, JSONArray()))[0]
+        assertEquals(2, again.splits.size)
+        val reopened = smsEditable(again, "SAR").getJSONArray("splits")
+        assertEquals(listOf(-1000L, -234L), (0 until reopened.length()).map { reopened.getJSONObject(it).getLong("amount") })
+        assertEquals(listOf("food", null), (0 until reopened.length()).map { reopened.getJSONObject(it).let { l -> if (l.isNull("categoryId")) null else l.getString("categoryId") } })
+        // Back to one line, it's that line's category again.
+        val one = smsEditable(again, "SAR").put("splits", JSONArray().put(line("home", -1234)).put(line(null, 0)))
+        assertEquals(setOf("category") to "home", smsChanged(again, one))
+        val unsplit = smsEdited(edited, again, one, budget).analysis.getJSONArray("items").getJSONObject(0).getJSONObject("transaction")
+        assertFalse(unsplit.has("splits")); assertEquals("home", unsplit.getString("categoryId"))
+    }
+    @Test fun aSplitThatNoLongerFitsItsRowIsDroppedRatherThanSentOn() {
+        val sms = message(body = "Visa 4417 SAR 12.34")
+        fun reading(splits: JSONArray, change: (JSONObject) -> Unit = {}) = SmsBatch(listOf(sms), JSONObject().put("items", JSONArray()
+            .put(item(sms, purchase("4417").put("splits", splits).also(change))))).let { b -> b to b.items(SmsAccounts(accounts, JSONArray())) }
+        fun lines(vararg amounts: String) = JSONArray(amounts.map { JSONObject().put("amount", it).put("categoryId", JSONObject.NULL) })
+        val (fits, fitting) = reading(lines("-10.00", "-2.34")) { it.put("categoryId", "food") }
+        assertEquals(2, fitting[0].splits.size)
+        // A category beside the lines is the lines'.
+        assertTrue(fits.resolved(fitting).getJSONArray("items").getJSONObject(0).getJSONObject("transaction").isNull("categoryId"))
+        // Another amount since, or a transfer now: the lines go, and the import never sees them.
+        for ((batch, items) in listOf(reading(lines("-10.00", "-2.00")), reading(lines("-10.00", "-2.34")) { it.put("kind", "transfer").put("transferAccountId", "savings") }, reading(lines("-12.34")))) {
+            assertTrue(items[0].splits.isEmpty())
+            assertFalse(batch.resolved(items).getJSONArray("items").getJSONObject(0).getJSONObject("transaction").has("splits"))
+        }
+    }
     @Test fun sendingIsAllowedOncePerProviderAndModel() {
         val connection = JSONObject().put("provider", "anthropic").put("model", "claude-x")
         val saved = smsConsent(connection)
@@ -399,6 +443,11 @@ class SmsAnalysisTest {
         fun t(i: Int) = after.getJSONObject(i).getJSONObject("transaction")
         assertEquals(listOf("Blade and Fade", "Blade and Fade", "Barber X", "Noon", "SALON A"), (0..4).map { t(it).getString("payee") })
         assertEquals("personal", t(1).getString("categoryId")); assertTrue(t(2).isNull("categoryId"))
+        // A row the user split keeps its lines when another row's category changes.
+        val split = JSONArray().put(JSONObject().put("amount", "-10.00").put("categoryId", "food")).put(JSONObject().put("amount", "-2.34").put("categoryId", JSONObject.NULL))
+        val splitBatch = batch.edit(1) { it.getJSONObject("transaction").put("splits", split) }
+        val kept = smsSameName(smsEdited(splitBatch, items[0], record, budget), items[0], fields, "Blade and Fade", category).analysis.getJSONArray("items").getJSONObject(1).getJSONObject("transaction")
+        assertTrue(kept.isNull("categoryId")); assertEquals(2, kept.getJSONArray("splits").length()); assertEquals("Blade and Fade", kept.getString("payee"))
         assertEquals("Purchase at Blade and Fade", after.getJSONObject(1).getString("note"))
         assertEquals(listOf("date"), after.getJSONObject(1).getJSONArray("unsure").let { a -> (0 until a.length()).map(a::getString) })
         assertEquals(smsBankKey("SALON A"), smsBankKey("Salon-A  0533"))

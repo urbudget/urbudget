@@ -1,7 +1,7 @@
 //! SMS alerts use bank matching and stable import IDs, but are not proof of settlement.
 use crate::{
     bank_import,
-    domain::{Budget, Cleared},
+    domain::{Budget, Cleared, Split},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -62,6 +62,23 @@ pub struct Transaction {
     pub account_id: Option<String>,
     #[serde(default)]
     pub transfer_account_id: Option<String>,
+    /// The amount split between categories, as the user split it in the review: two or more
+    /// lines that add up to it, in place of [Self::category_id]. Never the model's reading.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub splits: Vec<SplitLine>,
+}
+/// One line of a split the user made in the review.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SplitLine {
+    /// Signed like the transaction's amount, as a plain decimal.
+    pub amount: String,
+    pub category_id: Option<String>,
+    #[serde(default)]
+    pub memo: String,
+    /// Ready to Assign, rather than no category yet.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unassigned: bool,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -334,14 +351,23 @@ fn transaction(
             "Copy card and account references exactly from the message."
         ));
     }
+    let spending = |id: &str| b.categories.iter().any(|c| c.id == id && c.payment_account().is_none());
     if let Some(category) = &t.category_id {
-        if t.kind == "transfer"
-            || !b
-                .categories
-                .iter()
-                .any(|c| c.id == *category && c.payment_account().is_none())
-        {
+        if t.kind == "transfer" || !spending(category) {
             return Err(crate::t!("Choose an existing spending category, never for a transfer."));
+        }
+    }
+    if !t.splits.is_empty() {
+        // Lines replace the one category, and a transfer has neither.
+        let Some(whole) = amount.filter(|_| t.kind != "transfer" && t.transfer_account_id.is_none() && t.category_id.is_none()) else {
+            return Err(crate::t!("Split only a purchase or income whose amount is known, with its categories in the lines."));
+        };
+        let lines = t.splits.iter().map(|line| cents(&line.amount)).collect::<Result<Vec<_>, _>>()?;
+        let filed = t.splits.iter().all(|line| {
+            line.memo.len() <= 2000 && !(line.unassigned && line.category_id.is_some()) && line.category_id.as_deref().map_or(true, spending)
+        });
+        if !(2..=100).contains(&lines.len()) || !filed || lines.iter().try_fold(0i64, |sum, c| sum.checked_add(*c)) != Some(whole) {
+            return Err(crate::t!("Give a split 2–100 lines that add up to the amount, each in a spending category or none."));
         }
     }
     if t.account_id.as_deref().is_some_and(|a| !active_account(b, a))
@@ -544,7 +570,25 @@ pub fn apply_batch(
         }
         if adding {
             let proposed = analysis.items[decision.index].transaction.as_ref().unwrap();
-            if let Some(category) = &proposed.category_id {
+            if !proposed.splits.is_empty() {
+                // The user's split, line for line. Spending left without a category waits in
+                // Uncategorized, as one that's not split does.
+                let on_budget = b.accounts.iter().any(|a| a.id == row.account_id && a.on_budget());
+                let mut lines = Vec::with_capacity(proposed.splits.len());
+                for line in &proposed.splits {
+                    let amount = cents(&line.amount)?;
+                    let waiting = on_budget && amount < 0 && line.category_id.is_none() && !line.unassigned;
+                    let mut extra = serde_json::Map::new();
+                    extra.insert("unassigned".into(), json!(line.unassigned));
+                    if !line.memo.is_empty() { extra.insert("memo".into(), json!(line.memo)); }
+                    lines.push(Split {
+                        category_id: if waiting { Some(bank_import::uncategorized(&mut b)) } else { line.category_id.clone() },
+                        amount,
+                        extra: extra.into(),
+                    });
+                }
+                b.transactions.iter_mut().find(|t| t.id == new_id).expect("new reviewed transaction").splits = lines;
+            } else if let Some(category) = &proposed.category_id {
                 let transaction = b
                     .transactions
                     .iter_mut()

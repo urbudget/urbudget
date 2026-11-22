@@ -182,6 +182,48 @@ class SmsImportUiTest {
         assertFalse(vm.state.value.budget!!.has("smsImportedMessageIds"))
     }
 
+    @Test fun aTextSplitInTheReviewIsAddedSplit() {
+        val vm = fixture("split")
+        val inbox = SmsInbox.get(context)
+        inbox.saveState(identity!!, "consent", smsConsent(connection))
+        val body = "Purchase USD 12.34 at Synthetic Shop card *1234 on 2026-10-24"
+        val sms = BankSms(smsId("SyntheticBank", 1000, body), "SyntheticBank", 1000, body)
+        inbox.capture(sms)
+        inbox.saveState(identity!!, "mappings", smsRememberCard(JSONArray(), "SyntheticBank", "*1234", "checking").toString())
+        val analysis = syntheticSmsAnalysis(sms, accountId = null, ref = "*1234")
+        analysis.getJSONArray("items").getJSONObject(0).getJSONObject("transaction").put("categoryId", "food")
+        inbox.saveState(identity!!, "draft", SmsBatch(listOf(sms), analysis).saved())
+        val before = vm.state.value.budget!!.getJSONArray("transactions").length()
+        show(vm, analyzer { analysis })
+        waitFor("sms-review")
+        compose.onNodeWithTag("sms-review").performClick()
+        waitFor("sms-row:0")
+        compose.onNodeWithText("Synthetic Shop").performClick()
+        waitFor("tx-save")
+        compose.onNodeWithText(context.getString(R.string.split_between_categories)).performScrollTo().performClick()
+        waitFor("split-amount:1")
+        // One amount typed: the other line takes the rest.
+        compose.onNodeWithTag("split-amount:0").performTextReplacement("10.00")
+        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        compose.waitForIdle()
+        compose.onNodeWithTag("split-amount:1").assertTextContains("2.34")
+        compose.onNodeWithText(context.getString(R.string.split_fully), useUnmergedTree = true).assertExists()
+        compose.onNodeWithText(context.getString(R.string.category_choose)).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("Utilities").fetchSemanticsNodes().isNotEmpty() }
+        compose.onAllNodesWithText("Utilities").onLast().performClick()
+        compose.onNodeWithTag("tx-save").performClick()
+        // The row shows its lines, and is added with them.
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("sms-split:0:1", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("sms-split:0:0", useUnmergedTree = true).onChild().assertTextContains("Groceries", substring = true)
+        compose.onNodeWithTag("sms-split:0:1", useUnmergedTree = true).onChild().assertTextContains("Utilities", substring = true)
+        compose.waitUntil(10_000) { runCatching { compose.onNodeWithTag("sms-add").assertIsEnabled() }.isSuccess }
+        compose.onNodeWithTag("sms-add").performClick()
+        compose.waitUntil(10_000) { vm.state.value.budget!!.getJSONArray("transactions").length() == before + 1 }
+        val added = vm.state.value.budget!!.getJSONArray("transactions").getJSONObject(before)
+        assertEquals(-1234L, added.getLong("amount"))
+        assertEquals(listOf(-1000L to "food", -234L to "utilities"), added.rows("splits").map { it.getLong("amount") to it.text("categoryId") })
+    }
+
     @Test fun oneCardChoiceAnswersEveryMessageWithoutAskingTheAssistantAgain() {
         val vm = fixture("card")
         val inbox = SmsInbox.get(context)

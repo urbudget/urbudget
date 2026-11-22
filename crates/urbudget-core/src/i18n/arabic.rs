@@ -89,6 +89,8 @@ pub(super) const MESSAGES: &[(&str, &str)] = &[
     ("Write a balance as a plain number, or leave it out.", "اكتب الرصيد رقمًا بسيطًا، أو اتركه."),
     ("Write the credit left as a plain number, or leave it out.", "اكتب الحد المتبقي رقمًا بسيطًا، أو اتركه."),
     ("Choose an existing spending category, never for a transfer.", "اختر فئة إنفاق موجودة، ولا تختر فئة لتحويل."),
+    ("Split only a purchase or income whose amount is known, with its categories in the lines.", "قسّم المشتريات أو الدخل فقط بعد معرفة المبلغ، وضع الفئات في البنود."),
+    ("Give a split 2–100 lines that add up to the amount, each in a spending category or none.", "اجعل للتقسيم من 2 إلى 100 بند مجموعها يساوي المبلغ، وكل بند في فئة إنفاق أو بلا فئة."),
     ("Choose open accounts, and a different one for a transfer.", "اختر حسابات مفتوحة، وحسابًا مختلفًا للتحويل."),
     ("Check the transaction direction: money out is negative.", "راجع اتجاه المعاملة: المبلغ الخارج سالب."),
     ("Choose the account and amount first.", "اختر الحساب والمبلغ أولًا."),

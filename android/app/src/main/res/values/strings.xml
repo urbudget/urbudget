@@ -360,7 +360,6 @@
     <string name="split_left">%1$s left to split</string>
     <string name="split_over">%1$s over the total</string>
     <string name="split_undo">Undo split</string>
-    <string name="split_share_help">Each line is its share of the total.</string>
     <string name="split_remove_line">Remove split line %1$s</string>
     <string name="split_use_left">Use the %1$s left</string>
     <string name="split_add_line">Add line</string>
@@ -2449,7 +2448,6 @@
     <string name="sms_from_messages">From the bank’s message</string>
     <string name="sms_amount_needed">Enter the amount.</string>
     <string name="sms_payee_needed">Choose a payee.</string>
-    <string name="sms_no_splits">Add it with one category, then split it in the register.</string>
     <!-- The assistant's bank-text tools (BankTextsAssistant): step lines, cards, and what it's told when it can't. -->
     <string name="bank_texts_step_status">Looked at bank messages</string>
     <plurals name="bank_texts_step_found">

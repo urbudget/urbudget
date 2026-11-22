@@ -548,6 +548,10 @@ fn expand(messages: &[Message], value: Value, review: &[(usize, sms_import::Item
             return Err("Every item names at least one text.".into());
         }
         let at = found.texts.iter().map(|&t| count(t)).collect::<Result<Vec<_>, _>>()?;
+        // Splitting money between categories is the user's, in the review.
+        if found.transaction.as_ref().is_some_and(|t| !t.splits.is_empty()) {
+            return Err(format!("Leave out splits for text {}: give one categoryId or none.", found.texts[0]));
+        }
         let evidence = if found.quote.trim().is_empty() {
             vec![]
         } else {
@@ -676,7 +680,7 @@ fn correct(m: &Message, read: &sms_import::Item, c: Correction) -> Result<(sms_i
             date: get("date").unwrap_or_else(|| m.received_date.clone()), amount: get("amount"), currency: need("currency")?,
             written_amount: need("writtenAmount")?, payee: need("payee")?, memo: get("memo").unwrap_or_default(), kind: need("kind")?,
             account_ref: get("accountRef"), other_ref: get("otherRef"), other_account: get("otherAccount"), category_id: get("categoryId"),
-            account_id: None, transfer_account_id: None, balance: get("balance"), available: get("available"),
+            account_id: None, transfer_account_id: None, balance: get("balance"), available: get("available"), splits: vec![],
         });
         changed.push("outcome".into());
     } else if let Some(t) = item.transaction.as_mut() {
@@ -1468,9 +1472,13 @@ mod tests {
         named["items"][1]["bankName"] = json!("Amazon S");
         assert_eq!(expand(&texts, named, &[], &[]).unwrap().analysis.items[0].raw.as_deref(), Some("Amazon S"));
         // Words the text doesn't hold are dropped, not sent back for the whole batch to be read again.
-        let mut made_up = reply;
+        let mut made_up = reply.clone();
         made_up["items"][1]["bankName"] = json!("AMAZON SA");
         assert_eq!(expand(&texts, made_up, &[], &[]).unwrap().analysis.items[0].raw, None);
+        // Splitting is the user's: a reading that splits the money is sent back.
+        let mut split = reply;
+        split["items"][1]["transaction"]["splits"] = json!([{"amount":"-60.00","categoryId":null},{"amount":"-5.97","categoryId":null}]);
+        assert!(expand(&texts, split, &[], &[]).unwrap_err().starts_with("Leave out splits for text 1"));
         // What the model reads: numbers, never the phone's ids.
         let shown = numbered(&texts).to_string();
         assert!(shown.starts_with(r#"[[1,"anb","2026-10-28 15:00","Online Purchase"#) && !shown.contains("sms:"));

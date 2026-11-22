@@ -13,6 +13,7 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.CallSplit
 import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.SwapHoriz
@@ -354,7 +355,7 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
             if (fields.isNotEmpty()) edited(item, fields, record.text("payee"), category)
             // Money to or from a person the user made a transfer: the bank's name for their own account at another bank.
             smsOwnName(item, record)?.let { name -> runCatching { saveCards(smsRememberCard(mappings, item.sender, name, record.text("transferAccountId"), SmsForOwn)) } }
-        }, extraFields = { SmsSources(item, item.template?.let { accuracy[it] }) })
+        }, extraFields = { SmsSources(item, item.template?.let { accuracy[it] }) }, categorizeTransfers = false)
     }
     if (noting) {
         var note by remember { mutableStateOf("") }
@@ -702,7 +703,10 @@ private fun SmsTransactionRow(item: SmsItem, names: SmsRowNames, row: BankReview
                     // Matched, the transaction keeps its own category and details: nothing here to check.
                     val matching = decision?.startsWith("match:") == true
                     val checkCategory = "category" in item.unsure
-                    if (t.text("kind") != "transfer" && !matching) TagChip(category ?: stringResource(R.string.sms_uncategorized),
+                    val lines = item.splits
+                    // Split, each line's category and share, the way the register shows a split.
+                    if (t.text("kind") != "transfer" && !matching && lines.isNotEmpty()) SmsSplitChips(item.index, lines, names)
+                    else if (t.text("kind") != "transfer" && !matching) TagChip(category ?: stringResource(R.string.sms_uncategorized),
                         fill = if (category == null) (if (checkCategory) ur.warningSoft else ur.zeroSoft) else ur.accentSoft, color = if (category == null) (if (checkCategory) ur.warning else ur.text2) else ur.accent)
                     if (item.disposition == "pending") TagChip(stringResource(R.string.sms_hold))
                     if (item.early && !matching) TagChip(stringResource(R.string.sms_before_start), fill = ur.warningSoft, color = ur.warning)
@@ -724,6 +728,25 @@ private fun SmsTransactionRow(item: SmsItem, names: SmsRowNames, row: BankReview
             }
         }
     }
+}
+
+/**
+ * A split row's lines as chips, as a category is shown: each line's category and its share
+ * ("Groceries 60.00"), the first marked as a split, three at most and how many more. A line with
+ * no category yet is in the plain colour, as an uncategorized row is.
+ */
+@Composable
+private fun SmsSplitChips(index: Int, lines: List<JSONObject>, names: SmsRowNames) {
+    val none = stringResource(R.string.sms_uncategorized)
+    val ready = stringResource(R.string.category_unassigned)
+    val shown = if (lines.size > 3) lines.take(2) else lines
+    shown.forEachIndexed { i, line ->
+        val category = if (line.optBoolean("unassigned")) ready else line.text("categoryId").ifBlank { null }?.let { names.categories[it] }
+        val share = money(kotlin.math.abs(smsCents(line.text("amount")) ?: 0L), names.currency)
+        TagChip("${category ?: none} $share", Modifier.testTag("sms-split:$index:$i"), fill = if (category == null) ur.zeroSoft else ur.accentSoft,
+            color = if (category == null) ur.text2 else ur.accent, icon = if (i == 0) Icons.AutoMirrored.Outlined.CallSplit else null)
+    }
+    if (lines.size > shown.size) TagChip("+" + Money.count((lines.size - shown.size).toLong()), fill = ur.zeroSoft, color = ur.text2)
 }
 
 /**
@@ -843,16 +866,22 @@ private fun SmsSources(item: SmsItem, accuracy: Int?) {
  */
 internal fun smsChanged(item: SmsItem, record: JSONObject): Pair<Set<String>, String?> {
     val t = item.transaction ?: return emptySet<String>() to null
-    val category = record.rows("splits").singleOrNull()?.takeUnless { it.optBoolean("unassigned") }?.text("categoryId")?.ifBlank { null }
+    val parts = smsParts(record)
+    // Split, the money has no one category to learn: the payee keeps the one it was read with.
+    val split = parts.size > 1
+    val category = if (split) t.text("categoryId").ifBlank { null } else parts.singleOrNull()?.takeUnless { it.optBoolean("unassigned") }?.text("categoryId")?.ifBlank { null }
     // A transfer has neither: there's no payee or category of it to learn.
     val transfer = record.text("transferAccountId").isNotBlank()
     return buildSet {
         if (record.text("date") != t.text("date")) add("date")
         if (record.optLong("amount") != item.amount) add("amount")
         if (!transfer && record.text("payee") != t.text("payee")) add("payee")
-        if (!transfer && category != t.text("categoryId").ifBlank { null }) add("category")
+        if (!transfer && !split && category != t.text("categoryId").ifBlank { null }) add("category")
     } to category
 }
+
+/** The editor's lines worth keeping: those with an amount, or its one line when none has. */
+private fun smsParts(record: JSONObject): List<JSONObject> = record.rows("splits").let { all -> all.filter { it.optLong("amount") != 0L }.ifEmpty { all.take(1) } }
 
 /**
  * A bank's name as it's compared with another: as payee rules read it, without the words that are
@@ -896,7 +925,8 @@ internal fun smsSameName(batch: SmsBatch, item: SmsItem, fields: Set<String>, pa
                 tx.put("payee", payee)
                 if (old.length >= 3 && json.text("note").contains(old)) json.put("note", json.text("note").replace(old, payee))
             }
-            if ("category" in fields && tx.text("categoryId") == before.text("categoryId")) tx.put("categoryId", category ?: JSONObject.NULL)
+            // One the user split keeps its lines.
+            if ("category" in fields && tx.text("categoryId") == before.text("categoryId") && smsSplitLines(tx).isEmpty()) tx.put("categoryId", category ?: JSONObject.NULL)
             json.optJSONArray("unsure")?.let { list -> json.put("unsure", JSONArray((0 until list.length()).map { list.getString(it) }.filter { it !in setOf("payee", "category") || it !in fields })) }
         }
     }
@@ -913,26 +943,36 @@ internal fun smsOwnName(item: SmsItem, record: JSONObject): String? {
     return (item.raw ?: t.text("payee")).trim().takeIf { it.isNotEmpty() && it.length <= 80 }
 }
 
-/** The transaction editor's record for an item: its date, accounts, payee, amount and category. */
+/** The transaction editor's record for an item: its date, accounts, payee, amount and category, or the lines it's split into. */
 internal fun smsEditable(item: SmsItem, currency: String): JSONObject {
     val t = item.transaction ?: JSONObject()
     val cents = item.amount ?: 0L
     val transfer = t.text("transferAccountId").ifBlank { null }
+    val lines = item.splits.map { line ->
+        JSONObject().put("categoryId", line.text("categoryId").ifBlank { null } ?: JSONObject.NULL).put("amount", smsCents(line.text("amount")) ?: 0L)
+            .put("memo", line.text("memo")).put("unassigned", line.optBoolean("unassigned"))
+    }.ifEmpty { listOf(JSONObject().put("categoryId", t.text("categoryId").ifBlank { null } ?: JSONObject.NULL).put("amount", cents).put("unassigned", false)) }
     return JSONObject().put("id", "sms-review").put("date", t.text("date").ifBlank { item.sources.first().receivedDate }).put("accountId", t.text("accountId"))
         .put("payee", t.text("payee")).put("memo", t.text("memo")).put("amount", cents).put("status", "uncleared").put("approved", true).put("flag", JSONObject.NULL)
         .put("transferAccountId", transfer ?: JSONObject.NULL).put("transferStatus", if (transfer != null) "uncleared" else JSONObject.NULL)
-        .put("splits", JSONArray().put(JSONObject().put("categoryId", t.text("categoryId").ifBlank { null } ?: JSONObject.NULL).put("amount", cents).put("unassigned", false)))
-        .put("currency", currency)
+        .put("splits", JSONArray(lines)).put("currency", currency)
 }
 
-/** The editor's record back into the item: the user's fields win, and the item becomes a transaction. */
+/**
+ * The editor's record back into the item: the user's fields win, and the item becomes a
+ * transaction. Split, its lines take the place of its one category; a line left at nothing is
+ * dropped, and a split left with one line is that line's category.
+ */
 internal fun smsEdited(batch: SmsBatch, item: SmsItem, record: JSONObject, budget: JSONObject): SmsBatch {
     val cents = record.optLong("amount")
     require(cents != 0L) { Words[R.string.sms_amount_needed] }
-    val parts = record.rows("splits")
-    require(parts.size == 1) { Words[R.string.sms_no_splits] }
+    val parts = smsParts(record)
     val transfer = record.text("transferAccountId")
-    val category = parts[0].takeUnless { it.optBoolean("unassigned") }?.text("categoryId").orEmpty()
+    val lines = parts.takeIf { it.size > 1 && transfer.isBlank() }?.map { part ->
+        JSONObject().put("amount", smsDecimal(part.optLong("amount"))).put("categoryId", part.text("categoryId").ifBlank { null } ?: JSONObject.NULL)
+            .put("memo", part.text("memo")).put("unassigned", part.optBoolean("unassigned"))
+    }
+    val category = parts[0].takeUnless { it.optBoolean("unassigned") || lines != null }?.text("categoryId").orEmpty()
     return batch.edit(item.index) { json ->
         val old = json.optJSONObject("transaction")
         val currency = budget.text("currency")
@@ -945,6 +985,7 @@ internal fun smsEdited(batch: SmsBatch, item: SmsItem, record: JSONObject, budge
         t.put("date", record.text("date")).put("amount", smsDecimal(cents)).put("payee", payee).put("memo", record.text("memo")).put("kind", kind)
             .put("accountId", record.text("accountId")).put("transferAccountId", transfer.ifBlank { null } ?: JSONObject.NULL)
             .put("categoryId", category.takeIf { it.isNotBlank() && transfer.isBlank() } ?: JSONObject.NULL)
+        if (lines != null) t.put("splits", JSONArray(lines)) else t.remove("splits")
         json.put("transaction", t).put("unsure", JSONArray())
         if (json.text("disposition") !in setOf("transaction", "pending")) json.put("disposition", "transaction").put("skip", JSONObject.NULL)
     }.let { edited -> edited.copy(dismissed = edited.dismissed - item.index, ticked = edited.ticked + (item.index to true)) }

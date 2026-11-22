@@ -449,3 +449,66 @@ fn an_added_text_keeps_the_banks_words_beside_the_users_payee() {
     let names = urbudget_core::workflows::BankNames::new(&saved);
     assert_eq!(names.get("SHOP 0412").map(|(p, _)| p), Some("Corner Shop"));
 }
+
+fn with_categories(ids: &[&str]) -> urbudget_core::domain::Budget {
+    let mut b = common::budget("SAR");
+    for id in ids {
+        b.categories.push(urbudget_core::domain::Category { id: id.to_string(), name: id.to_string(), group: "Spending".into(), target: 0, extra: Default::default() });
+    }
+    b
+}
+
+#[test]
+fn a_split_made_in_the_review_is_added_line_for_line() {
+    let b = with_categories(&["food", "home"]);
+    let mut v = value();
+    v["items"][0]["transaction"]["splits"] = json!([
+        {"amount":"-10.00","categoryId":"food","memo":"Lunch"},
+        {"amount":"-2.34","categoryId":null}
+    ]);
+    v["items"][1]["transaction"]["splits"] = json!([
+        {"amount":"3.00","categoryId":"home"},
+        {"amount":"0.50","categoryId":null,"unassigned":true}
+    ]);
+    let a = analysis(v);
+    // The review's own row says nothing of one category: the lines have them.
+    assert!(preview(&b, &messages(), &a).unwrap().iter().all(|r| r.row.category_id.is_none()));
+    let saved = apply_batch(b, &messages(), &a, decisions()).unwrap();
+    let lines = |t: &urbudget_core::domain::Transaction| t.splits.iter().map(|s| (s.category_id.clone(), s.amount, s.extra.get("memo").and_then(Value::as_str).map(String::from),
+        s.extra.get("unassigned").and_then(Value::as_bool))).collect::<Vec<_>>();
+    // Spending left without a category waits in Uncategorized, as when it isn't split.
+    assert_eq!(lines(&saved.transactions[0]), vec![
+        (Some("food".to_string()), -1000, Some("Lunch".to_string()), Some(false)),
+        (Some("local-uncategorized".to_string()), -234, None, Some(false)),
+    ]);
+    assert_eq!(lines(&saved.transactions[1]), vec![(Some("home".to_string()), 300, None, Some(false)), (None, 50, None, Some(true))]);
+    assert_eq!(saved.transactions[0].amount, -1234);
+}
+
+#[test]
+fn a_split_adds_up_to_a_known_amount_of_a_purchase_or_income() {
+    let b = with_categories(&["food", "home"]);
+    let good = json!([{"amount":"-10.00","categoryId":"food"},{"amount":"-2.34","categoryId":"home"}]);
+    let check = |change: &dyn Fn(&mut Value)| {
+        let mut v = value();
+        v["items"][0]["transaction"]["splits"] = good.clone();
+        change(&mut v["items"][0]["transaction"]);
+        serde_json::from_value::<Analysis>(v).is_ok_and(|a| validate_analysis(&b, &messages(), &a).is_ok())
+    };
+    assert!(check(&|_| {}));
+    let wrong: [(&str, &dyn Fn(&mut Value)); 10] = [
+        ("short of the amount", &|t| t["splits"][1]["amount"] = json!("-2.00")),
+        ("one line", &|t| t["splits"] = json!([{"amount":"-12.34","categoryId":"food"}])),
+        ("a zero line", &|t| t["splits"] = json!([{"amount":"-12.34","categoryId":"food"},{"amount":"0","categoryId":null}])),
+        ("a card payment line", &|t| t["splits"][1]["categoryId"] = json!("card-payment")),
+        ("an invented category", &|t| t["splits"][1]["categoryId"] = json!("invented")),
+        ("Ready to Assign with a category", &|t| t["splits"][1]["unassigned"] = json!(true)),
+        ("a category beside the lines", &|t| t["categoryId"] = json!("food")),
+        ("a transfer", &|t| { t["kind"] = json!("transfer"); t["transferAccountId"] = json!("card"); }),
+        ("an amount not known yet", &|t| { t["currency"] = json!("EUR"); t["amount"] = Value::Null; }),
+        ("an unknown field", &|t| t["splits"][0]["payee"] = json!("Someone")),
+    ];
+    for (what, change) in wrong {
+        assert!(!check(change), "{what}");
+    }
+}
