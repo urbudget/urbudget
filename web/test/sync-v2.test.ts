@@ -199,6 +199,31 @@ describe("sync v2 account controls and retention", () => {
     await expect(env.DB.prepare("INSERT INTO sync_budgets(user_id,budget_id,revision,object_key,size,updated_at) VALUES (?1,'resurrect',1,'bad',1,'2026-01-01')").bind(accountId).run()).rejects.toThrow("sync_upgrade_required");
     expect((await app.request("/api/v1/sync/key", { headers: auth }, env)).status).toBe(426);
   });
+  it("keeps a migrated head's v1 origin through updates, and a restore stops matching it", async () => {
+    await env.DB.prepare("INSERT INTO sync_keys(user_id,salt,key_check,created_at,generation) VALUES (?1,'abcdefghijklmnop','check','2026-01-01',7)").bind(accountId).run();
+    await env.SYNC.put("legacy-ciphertext", "legacy bytes");
+    await env.DB.prepare("INSERT INTO sync_budgets(user_id,budget_id,revision,object_key,size,updated_at) VALUES (?1,'budget_a',42,'legacy-ciphertext',12,'2026-01-01')").bind(accountId).run();
+    await registered(); const b = await boot();
+    await perform("1", { accountId, installationId, operationId: "migrate", kind: "migrateProtocol", keyGeneration: "7", catalogEpoch: b.catalogEpoch, expectedProtocol: 1 });
+    const head = async () => (await (await call("/catalog/snapshot", { headers: await scope() })).json()).budgets[0];
+    const seeded = await head();
+    expect(seeded).toMatchObject({ version: "42", payload: { format: "legacy-v1" }, legacy: { incarnation: seeded.incarnation, revision: "42" } });
+    // Another device rewrites it before a late one has linked its copy: the origin still says
+    // which v1 history this incarnation continues.
+    const update = await content("2", { kind: "update", incarnation: seeded.incarnation, newIncarnation: undefined, expectedVersion: "42" });
+    const updated = (await perform("2", update.m, update.bytes)).receipt.budget;
+    expect(updated).toMatchObject({ version: "43", incarnation: seeded.incarnation, payload: { format: "v2" }, legacy: seeded.legacy });
+    expect(await head()).toEqual(updated);
+    const trash: Manifest = { ...update.m, operationId: "trash", kind: "trash", expectedVersion: "43" }; delete trash.payload;
+    await perform("3", trash);
+    const restore = await content("4", { kind: "restore", incarnation: seeded.incarnation, expectedVersion: "44", source: { incarnation: seeded.incarnation, version: "44", sha256: update.m.payload!.sha256 } }, "resealed restored bytes");
+    const restored = (await perform("4", restore.m, restore.bytes)).receipt.budget;
+    expect(restored.incarnation).toBe("incarnation_4");
+    expect(restored.legacy.incarnation).toBe(seeded.incarnation);
+    // A budget made on protocol 2 never had a v1 history.
+    const fresh = await content("5", { budgetId: "budget_b" });
+    expect((await perform("5", fresh.m, fresh.bytes)).receipt.budget.legacy).toBeNull();
+  });
   it("expires staging with a terminal receipt and retains sequence fences", async () => {
     await setup(); const a = await content("2"); await post("/mutations/2/prepare", a.m);
     await env.DB.prepare("UPDATE sync_staging_v2 SET expires_at='2000-01-01'").run();
@@ -547,4 +572,37 @@ describe("release review server fences and cleanup", () => {
     const list=await (await call("/installations")).json();expect(list.installations).toHaveLength(100);
     expect(list.installations.some((i:{installationId:string})=>i.installationId==="device_a")).toBe(false);
   });
+});
+
+it("gives heads moved before 0016 their origin while they keep the incarnation the move gave them", async () => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const { readFileSync, readdirSync } = await import("node:fs");
+  const db = new DatabaseSync(":memory:");
+  try {
+    const directory = new URL("../migrations/", import.meta.url);
+    for (const name of readdirSync(directory).sort().filter(name => name < "0016")) db.exec(readFileSync(new URL(name, directory), "utf8"));
+    db.exec(`INSERT INTO users(id,email,created_at) VALUES ('usr_moved','moved@example.test','2026-01-01')`);
+    const head = (budget: string, incarnation: string, version: string, format = "v2") => db.exec(`INSERT INTO sync_heads_v2(user_id,budget_id,incarnation,version,key_generation,state,payload,size,updated_sequence,updated_at,applied_by)
+      VALUES ('usr_moved','${budget}','${incarnation}','${version}','7','active',json_object('format','${format}'),1,'1','2026-11-22','marker')`);
+    // Moved on 22 November and never touched since.
+    head("untouched", "0123456789abcdef0123456789abcdef", "42", "legacy-v1");
+    // Moved, then rewritten by a device on protocol 2: same incarnation, later version.
+    head("rewritten", "fedcba9876543210fedcba9876543210", "45");
+    // Restored since the move, under an incarnation an app made (budgets::new_id()).
+    head("restored", "b18a9c3f4e2d1b0a9c8d7e6f5", "46");
+    // Made on protocol 2.
+    head("made_on_v2", "b18a9c3f4e2d1b0a9c8d7e6f6", "1");
+    // A 32-character incarnation that isn't lowercase hex was never made by the move.
+    head("not_hex", "0123456789ABCDEF0123456789ABCDEF", "3");
+    db.exec(readFileSync(new URL("0016_sync_v2_legacy_origin.sql", directory), "utf8"));
+    const origins = Object.fromEntries(db.prepare("SELECT budget_id,legacy FROM sync_heads_v2 ORDER BY budget_id").all()
+      .map(row => [row.budget_id as string, row.legacy === null ? null : JSON.parse(row.legacy as string)]));
+    expect(origins).toEqual({
+      untouched: { incarnation: "0123456789abcdef0123456789abcdef", revision: "42" },
+      rewritten: { incarnation: "fedcba9876543210fedcba9876543210", revision: "45" },
+      restored: null, made_on_v2: null, not_hex: null,
+    });
+  } finally {
+    db.close();
+  }
 });

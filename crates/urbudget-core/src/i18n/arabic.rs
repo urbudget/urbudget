@@ -630,6 +630,8 @@ pub(super) const MESSAGES: &[(&str, &str)] = &[
     ("This account has no sync passphrase yet. Set up sync to choose one.",
      "لا توجد عبارة مرور مزامنة لهذا الحساب بعد. أعِدّ المزامنة لاختيار عبارة."),
     ("That budget is no longer in the cloud.", "لم تعد هذه الميزانية في السحابة."),
+    ("Kept on this device only. This copy's history couldn't be matched to the same budget in your account, which is in the library too. Compare the two and keep the one you want.",
+     "محفوظة على هذا الجهاز فقط. تعذّرت مطابقة سجلّ هذه النسخة مع الميزانية نفسها في حسابك، وهي موجودة في المكتبة أيضًا. قارن بين النسختين واحتفظ بالتي تريدها."),
     ("A newer UrBudget synced this budget. Update the app on this computer first.",
      "زامَن إصدارٌ أحدث من UrBudget هذه الميزانية. حدِّث التطبيق على هذا الجهاز أولًا."),
     ("Save your changes first, then try again.", "احفظ تغييراتك أولًا، ثم حاول مرة أخرى."),

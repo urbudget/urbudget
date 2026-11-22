@@ -21,6 +21,8 @@ export type Head = {
   budgetId: string; incarnation: string; version: string; keyGeneration: string;
   state: "active" | "trashed" | "purged"; payload: Payload | null;
   updatedSequence: string; updatedAt: string; deletedAt: string | null; retainedUntil: string | null; device: string;
+  /** Set on a head moved over from protocol 1: the incarnation and v1 revision it started with. */
+  legacy: { incarnation: string; revision: string } | null;
 };
 export type Receipt = {
   sequence: string; digest: string; operationId: string; kind: Kind;

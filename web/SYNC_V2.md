@@ -45,6 +45,17 @@ upload cleanup from receiving an adopted object key via `INSERT ... RETURNING`.
 Migration preserves existing key material, versions, and immutable ciphertext;
 legacy payload descriptors retain their original budget-only AAD context.
 
+Each head the move seeds records its origin, `legacy: {incarnation, revision}` (migration
+`0016_sync_v2_legacy_origin.sql`): the incarnation the move gave it and the v1 revision it
+carried. Nothing writes it again. A device that was on v1 links its copy of a budget, by the
+budget's id and its own v1 ledger and base, while the head keeps that incarnation, however often
+other devices have rewritten the head since. It links at the revision it last synced, and its next
+pass merges what it missed against that base. A restore gives the head a new incarnation, and a
+copy that can't be linked (restored since, or the device's ledger is gone) stays on the device
+beside the account's budget, its row saying so on every pass. Heads moved before 0016 existed got
+their origin from 0016 itself when they still had the move's incarnation (32 lowercase hex
+digits, which no app makes), with their version then standing in for the revision.
+
 After activation, rollback must retain this compatible schema/protocol. Set
 `SYNC_V2_ENABLED=0` to stop further activations. Set
 `SYNC_V2_PUBLICATION_PAUSED=1` to pause new create/update/restore and key controls;
@@ -172,7 +183,9 @@ unreadable-cache isolation, and downloading without changing the selected budget
 case. The rate-limit test advances only its disposable database window; production
 limits remain unchanged. `--legacy` exercises real native v1 encryption and ancestry migration,
 including old email-only session backfill, a Worker without v2 routes, v1 syncing with
-no open budget, and a stale legacy device returning after restore. It also checks the move
+no open budget, a device that moves only after another has rewritten the migrated head (its
+copy links and both devices' edits are kept), and a stale legacy device returning after restore
+(its copy stays local and its row says so). It also checks the move
 offer (`upgradeAvailable`, none while activation is refused), a locked device refused without
 the passphrase, a move with only the saved v1 key, one with the passphrase, and a device unlocked
 on v1 adopting its saved key after the account moved elsewhere. Scheduler wakes are driven through `sync_now`; this
