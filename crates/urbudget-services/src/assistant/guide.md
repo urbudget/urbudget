@@ -19,7 +19,7 @@ ios: There are five tabs along the bottom: **Budget**, **Transactions**, **Accou
 
 ## assign-money: Assign money to categories
 keywords: assign, budget, ready to assign, unassigned, give money, fund, allocate
-what: Income lands in Ready to Assign; assigning gives it a job in a category for the month.
+what: Income lands in Unassigned; assigning gives it a job in a category for the month.
 desktop: On **Budget**, click the **Unassigned** box above the categories. Enter an **Amount**, pick the category under **To**, and click **Assign**. You can also type straight into a category's **Assigned** cell: math like 10+2.50 works, and Enter saves and moves to the next category.
 android: On the **Budget** tab, tap a category's Assigned amount, type the amount on the keypad (or tap one of the shortcut chips above it) and tap **Assign**. You can also tap the **Unassigned** banner → **Assign to a category**. In the **Assign money** sheet tap **To** to pick the category, tap the amount to change it, tap **Done**, then tap **Assign**.
 ios: On **Budget**, tap a category's Assigned amount (or swipe right on the category and tap **Assign**), type the amount on the keypad, then tap **Assign**. To give money out of Unassigned instead, tap the green **Unassigned** banner (**Tap to assign**) → **Assign to a category**. Choose the category under **To**, tap the amount to change it (finish with **Done**), then tap **Assign**.

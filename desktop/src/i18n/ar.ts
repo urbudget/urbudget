@@ -119,7 +119,7 @@ export const ar: Catalog = {
   "Open scheduled transactions": "فتح قسم المعاملات المجدولة",
   "Open the calendar (arrows move, Enter picks)": "فتح التقويم (الأسهم للتنقل، وEnter للاختيار)",
   "Plan and register CSV files in YNAB's format.": "ملفات CSV للخطة وسجل المعاملات بتنسيق YNAB.",
-  "Positive category balances roll over. Cash overspending reduces next month's Ready to Assign; credit overspending becomes card debt. Your budget is stored only on this computer and is not encrypted; your operating system protects access to the file.": "تُرحَّل أرصدة الفئات الموجبة إلى الشهر التالي. يُنقص تجاوز الإنفاق النقدي المالَ غير المخصَّص في الشهر التالي، ويصبح تجاوز الإنفاق الائتماني دينًا على البطاقة. تُحفظ ميزانيتك على هذا الكمبيوتر فقط ولا تُشفَّر؛ ويحمي نظام التشغيل الوصول إلى الملف.",
+  "Positive category balances roll over. Cash overspending reduces next month's Unassigned; credit overspending becomes card debt. Your budget is stored only on this computer and is not encrypted; your operating system protects access to the file.": "تُرحَّل أرصدة الفئات الموجبة إلى الشهر التالي. يُنقص تجاوز الإنفاق النقدي المالَ غير المخصَّص في الشهر التالي، ويصبح تجاوز الإنفاق الائتماني دينًا على البطاقة. تُحفظ ميزانيتك على هذا الكمبيوتر فقط ولا تُشفَّر؛ ويحمي نظام التشغيل الوصول إلى الملف.",
   "Put column widths, collapsed groups and the sidebar back to how they started.": "إعادة عروض الأعمدة والمجموعات المطوية والشريط الجانبي إلى وضعها الأصلي.",
   "Reload from disk": "إعادة التحميل من القرص",
   "Rename a category or group": "إعادة تسمية فئة أو مجموعة",
