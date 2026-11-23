@@ -2891,6 +2891,22 @@
         <item quantity="other">أُضيفت \u2068%1$s\u2069 معاملة</item>
     </plurals>
     <string name="sms_check_title">مراجعة المعاملة</string>
+    <plurals name="sms_same_name_copied">
+        <item quantity="zero">لم تتغير معاملات أخرى من ⁨%2$s⁩</item>
+        <item quantity="one">تغيّرت أيضًا معاملة أخرى من ⁨%2$s⁩</item>
+        <item quantity="two">تغيّرت أيضًا معاملتان أخريان من ⁨%2$s⁩</item>
+        <item quantity="few">تغيّرت أيضًا ⁨%1$s⁩ معاملات أخرى من ⁨%2$s⁩</item>
+        <item quantity="many">تغيّرت أيضًا ⁨%1$s⁩ معاملة أخرى من ⁨%2$s⁩</item>
+        <item quantity="other">تغيّرت أيضًا ⁨%1$s⁩ معاملة أخرى من ⁨%2$s⁩</item>
+    </plurals>
+    <plurals name="sms_same_name_marked">
+        <item quantity="zero">لم تُعلَّم معاملات أخرى من ⁨%2$s⁩ للمراجعة</item>
+        <item quantity="one">عُلّمت معاملة أخرى من ⁨%2$s⁩ للمراجعة</item>
+        <item quantity="two">عُلّمت معاملتان أخريان من ⁨%2$s⁩ للمراجعة</item>
+        <item quantity="few">عُلّمت ⁨%1$s⁩ معاملات أخرى من ⁨%2$s⁩ للمراجعة</item>
+        <item quantity="many">عُلّمت ⁨%1$s⁩ معاملة أخرى من ⁨%2$s⁩ للمراجعة</item>
+        <item quantity="other">عُلّمت ⁨%1$s⁩ معاملة أخرى من ⁨%2$s⁩ للمراجعة</item>
+    </plurals>
     <string name="sms_from_messages">من رسالة البنك</string>
     <string name="sms_amount_needed">أدخل المبلغ.</string>
     <string name="sms_payee_needed">اختر مستفيدًا.</string>

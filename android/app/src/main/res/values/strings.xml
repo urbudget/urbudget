@@ -2445,6 +2445,14 @@
         <item quantity="other">Added %1$s transactions</item>
     </plurals>
     <string name="sms_check_title">Check transaction</string>
+    <plurals name="sms_same_name_copied">
+        <item quantity="one">Also changed 1 more transaction from %2$s</item>
+        <item quantity="other">Also changed %1$s more transactions from %2$s</item>
+    </plurals>
+    <plurals name="sms_same_name_marked">
+        <item quantity="one">1 more transaction from %2$s is marked to check</item>
+        <item quantity="other">%1$s more transactions from %2$s are marked to check</item>
+    </plurals>
     <string name="sms_from_messages">From the bank’s message</string>
     <string name="sms_amount_needed">Enter the amount.</string>
     <string name="sms_payee_needed">Choose a payee.</string>

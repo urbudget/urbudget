@@ -224,6 +224,68 @@ class SmsImportUiTest {
         assertEquals(listOf(-1000L to "food", -234L to "utilities"), added.rows("splits").map { it.getLong("amount") to it.text("categoryId") })
     }
 
+    @Test fun aCategorySetOnOneRowFollowsToThePayeesOthersButNeverOverOneTheUserSet() {
+        val vm = fixture("same-name")
+        val inbox = SmsInbox.get(context)
+        inbox.saveState(identity!!, "consent", smsConsent(connection))
+        inbox.saveState(identity!!, "mappings", smsRememberCard(JSONArray(), "SyntheticBank", "*1234", "checking").toString())
+        // Three purchases at one pharmacy, as the bank names it, all read as groceries.
+        val amounts = listOf("41.17", "52.28", "63.39")
+        val texts = amounts.mapIndexed { i, amount ->
+            val body = "Purchase USD $amount at SYNTHETIC PHARMACY 0412 card *1234 on 2026-10-2${2 + i}"
+            BankSms(smsId("SyntheticBank", 1000L + i, body), "SyntheticBank", 1000L + i, body).also(inbox::capture)
+        }
+        val items = JSONArray()
+        texts.forEachIndexed { i, sms ->
+            val row = syntheticSmsAnalysis(sms, accountId = null, ref = "*1234").getJSONArray("items").getJSONObject(0).put("raw", "SYNTHETIC PHARMACY 0412")
+                .put("evidence", JSONArray().put(JSONObject().put("sourceId", sms.id).put("quote", "USD ${amounts[i]}")))
+            row.getJSONObject("transaction").put("date", "2026-10-2${2 + i}").put("amount", "-${amounts[i]}").put("writtenAmount", amounts[i])
+                .put("payee", "Synthetic Pharmacy").put("categoryId", "food")
+            items.put(row)
+        }
+        val analysis = JSONObject().put("items", items)
+        inbox.saveState(identity!!, "draft", SmsBatch(texts, analysis).saved())
+        show(vm, analyzer { analysis })
+        waitFor("sms-review")
+        compose.onNodeWithTag("sms-review").performClick()
+        waitFor("sms-row:0")
+        fun open(index: Int) {
+            reach("sms-row:$index")
+            compose.onNode(hasClickAction() and hasAnyAncestor(hasTestTag("sms-row:$index")) and hasText("Synthetic Pharmacy", substring = true)).performClick()
+            waitFor("tx-save")
+        }
+        fun choose(category: String) {
+            compose.onNode(hasText(context.getString(R.string.category_label)) and hasClickAction()).performClick()
+            compose.waitUntil(10_000) { compose.onAllNodesWithText(category).fetchSemanticsNodes().isNotEmpty() }
+            compose.onAllNodesWithText(category).onLast().performClick()
+            compose.onNodeWithTag("tx-save").performClick()
+        }
+        fun shows(index: Int, text: String) = compose.onAllNodes(hasText(text) and hasAnyAncestor(hasTestTag("sms-row:$index")), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        fun said(id: Int, count: Int) = context.resources.getQuantityString(id, count, count.toString(), "Synthetic Pharmacy")
+        fun waitForText(text: String) = compose.waitUntil(10_000) { compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty() }
+        // Utilities for the first: the other two follow, and it's said.
+        open(0); choose("Utilities")
+        waitForText(said(R.plurals.sms_same_name_copied, 2))
+        compose.waitUntil(10_000) { shows(1, "Utilities") && shows(2, "Utilities") }
+        // Groceries for the second: the first keeps the Utilities the user gave it, and the third,
+        // only following, is marked to check.
+        open(1); choose("Groceries")
+        waitForText(said(R.plurals.sms_same_name_marked, 1))
+        val check = context.getString(R.string.sms_check_category)
+        compose.waitUntil(10_000) { shows(0, "Utilities") && shows(1, "Groceries") && shows(2, check) }
+        assertFalse(shows(0, check)); assertFalse(shows(1, check))
+        // Undo takes the mark off again.
+        compose.onNodeWithText(context.getString(R.string.common_undo)).performClick()
+        compose.waitUntil(10_000) { !shows(2, check) }
+        compose.waitUntil(10_000) { runCatching { compose.onNodeWithTag("sms-add").assertIsEnabled() }.isSuccess }
+        compose.onNodeWithTag("sms-add").performClick()
+        val cents = setOf(-4117L, -5228L, -6339L)
+        compose.waitUntil(10_000) { vm.state.value.budget!!.rows("transactions").count { it.getLong("amount") in cents } == 3 }
+        val added = vm.state.value.budget!!.rows("transactions").filter { it.getLong("amount") in cents }
+            .associate { t -> t.getLong("amount") to (t.rows("splits").map { it.text("categoryId") }.singleOrNull() ?: t.text("categoryId")) }
+        assertEquals(mapOf(-4117L to "utilities", -5228L to "food", -6339L to "utilities"), added)
+    }
+
     @Test fun oneCardChoiceAnswersEveryMessageWithoutAskingTheAssistantAgain() {
         val vm = fixture("card")
         val inbox = SmsInbox.get(context)
