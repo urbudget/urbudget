@@ -3,14 +3,14 @@
 // screens. Before the budget exists the answers are a draft kept on the device, and the engine
 // builds the budget from them when they're skipped or assigned (setup.rs). On a budget that
 // exists (the last step, or one reopened from the setup card) each step is a normal edit.
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Plus, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
+import { Check, Plus, X } from "lucide-react";
 import { accountType, typeName } from "./accounts";
 import { api } from "./bridge";
 import { cloud } from "./cloud";
 import { groupNames, orderedCategories } from "./categories";
-import { errorText, money, numberFormatFor, type NumberFormat } from "./format";
-import { t, tn, useLanguage } from "./i18n";
+import { currencySymbol, errorText, money, numberFormatFor, type NumberFormat } from "./format";
+import { stripIsolates, t, tn, useLanguage } from "./i18n";
 import { autoAssignAction } from "./QuickAssign";
 import {
   addAccounts,
@@ -41,7 +41,7 @@ import {
   type SetupOrigin,
   type SetupPreview,
 } from "./setup";
-import { TemplateSelect, useBudgetTemplates } from "./TemplatePicker";
+import { useBudgetTemplates } from "./TemplatePicker";
 import { useToast } from "./ui";
 import type { Budget, BudgetTemplate, Summary } from "./types";
 import "./setup.css";
@@ -51,7 +51,40 @@ export type SetupSession = { mode: "draft"; origin: SetupOrigin } | { mode: "bud
 
 type Money = { currency: string; numberFormat: NumberFormat };
 const show = (cents: number, format: Money) => money(cents, { ...format, symbol: true });
-const editable = (cents: number, format: Money) => (cents / 100).toFixed(2).replace(".", format.numberFormat.decimal);
+/** An amount as a field shows it once it's left: grouped, two decimals, no sign ("3,500.00"). */
+const fieldText = (cents: number, format: Money) => stripIsolates(money(cents, { ...format, symbol: false }));
+/** What was typed, tidied the same way; left alone when blank or when it doesn't read. */
+function tidy(text: string, format: Money) {
+  try {
+    const cents = typedCents(text, format.numberFormat.decimal);
+    return cents === null ? "" : fieldText(cents, format);
+  } catch {
+    return text;
+  }
+}
+
+/** An amount field with the budget's currency sign in it, where the budget puts it. */
+function MoneyInput({ value, onChange, format, label }: { value: string; onChange: (text: string) => void; format: Money; label: string }) {
+  const sign = format.numberFormat.symbol === "none" ? "" : currencySymbol(format.currency);
+  const side = format.numberFormat.symbol === "after" ? "after" : "before";
+  return (
+    <span className={`setup-money${sign ? ` ${side}` : ""}`} style={{ "--sign": `${sign.length}ch` } as CSSProperties}>
+      {sign && <span aria-hidden>{sign}</span>}
+      <input
+        inputMode="decimal"
+        dir="ltr"
+        aria-label={label}
+        placeholder={fieldText(0, format)}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={() => {
+          const next = tidy(value, format);
+          if (next !== value) onChange(next);
+        }}
+      />
+    </span>
+  );
+}
 
 // ---------- The frame every step sits in ----------
 
@@ -67,6 +100,8 @@ function Frame({
   action,
   label,
   blocked = false,
+  note,
+  warn = false,
 }: {
   step: number;
   title: string;
@@ -75,29 +110,54 @@ function Frame({
   error?: string;
   busy: boolean;
   back?: () => void;
-  skip: () => void;
+  /** Left out on the last step, where the budget is made and there is nothing to skip. */
+  skip?: () => void;
   action: () => void;
   /** The one filled button. */
   label: string;
   blocked?: boolean;
+  /** A running total kept beside the buttons, in view however long the step is. */
+  note?: ReactNode;
+  /** The total is more than there is. */
+  warn?: boolean;
 }) {
+  const form = useRef<HTMLFormElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
-  // A new step starts at its top with the question read out, unless a field of it took the caret.
+  // A new step starts at its top with the caret in its first field, or on its question where it has none.
   useEffect(() => {
-    const form = heading.current?.closest("form");
-    form?.closest(".setup-scroll")?.scrollTo?.(0, 0);
-    if (!form?.contains(document.activeElement) || document.activeElement?.tagName === "BUTTON") heading.current?.focus();
+    const fields = [...(form.current?.querySelectorAll<HTMLInputElement | HTMLSelectElement>(".setup-body input, .setup-body select") ?? [])];
+    const first = fields.find((el) => !el.disabled && (el.type !== "radio" || (el as HTMLInputElement).checked));
+    (first ?? heading.current)?.focus();
+    form.current?.closest(".setup-scroll")?.scrollTo?.(0, 0);
   }, [step]);
+  const submit = () => {
+    if (!busy && !blocked) action();
+  };
+  const count = t("Step {step} of {total}", { step, total: 5 });
   return (
     <form
+      ref={form}
       className="setup"
       aria-labelledby="setup-title"
       onSubmit={(e) => {
         e.preventDefault();
-        if (!busy && !blocked) action();
+        submit();
+      }}
+      // Enter presses the filled button from anywhere a field would: the question and a select don't by themselves.
+      onKeyDown={(e) => {
+        const from = e.target as HTMLElement;
+        if (e.key === "Enter" && !e.defaultPrevented && (from === heading.current || from.tagName === "SELECT")) {
+          e.preventDefault();
+          submit();
+        }
       }}
     >
-      <p className="setup-count">{t("Step {step} of {total}", { step, total: 5 })}</p>
+      <div className="setup-progress" aria-hidden>
+        {[1, 2, 3, 4, 5].map((n) => (
+          <span key={n} className={n <= step ? "done" : ""} />
+        ))}
+      </div>
+      <p className="setup-count">{count}</p>
       <h1 id="setup-title" ref={heading} tabIndex={-1}>
         {title}
       </h1>
@@ -114,10 +174,18 @@ function Frame({
             {t("Back")}
           </button>
         )}
-        <span className="setup-spacer" />
-        <button type="button" className="link-button" disabled={busy} onClick={skip}>
-          {t("Skip setup")}
-        </button>
+        {note ? (
+          <p className={`setup-note${warn ? " warning" : ""}`} aria-live="polite">
+            {note}
+          </p>
+        ) : (
+          <span className="setup-spacer" />
+        )}
+        {skip && (
+          <button type="button" className="link-button" disabled={busy} onClick={skip}>
+            {t("Skip setup")}
+          </button>
+        )}
         <button className="primary" disabled={busy || blocked}>
           {label}
         </button>
@@ -129,6 +197,21 @@ function Frame({
 // ---------- Step 1: accounts ----------
 
 type FixedAccount = { id: string; name: string; type: string; balance: number };
+/** A card with money owed on it. */
+type Card = { name: string; owed: number };
+const isCard = (type: string) => type === "creditCard" || type === "lineOfCredit";
+/** What the typed cash accounts hold: the money to plan with. A card is owed, not had. */
+const typedCash = (rows: AccountRow[], decimal: NumberFormat["decimal"]) =>
+  rows.filter((row) => !isCard(row.type) && row.name.trim()).reduce((sum, row) => sum + looseCents(row.balance, decimal), 0);
+/** The typed cards that owe something. */
+const typedCards = (rows: AccountRow[], decimal: NumberFormat["decimal"]): Card[] =>
+  rows
+    .filter((row) => isCard(row.type) && row.name.trim())
+    .map((row) => ({ name: row.name.trim(), owed: looseCents(row.balance, decimal) }))
+    .filter((card) => card.owed > 0);
+const fixedCash = (fixed: FixedAccount[]) => fixed.filter((a) => !isCard(a.type)).reduce((sum, a) => sum + a.balance, 0);
+const fixedCards = (fixed: FixedAccount[]): Card[] => fixed.filter((a) => isCard(a.type) && a.balance < 0).map((a) => ({ name: a.name, owed: -a.balance }));
+const owedOn = (cards: Card[]) => cards.reduce((sum, card) => sum + card.owed, 0);
 
 function AccountRows({
   fixed = [],
@@ -144,10 +227,16 @@ function AccountRows({
 }) {
   const decimal = format.numberFormat.decimal;
   const change = (i: number, patch: Partial<AccountRow>) => onRows(rows.map((row, at) => (at === i ? { ...row, ...patch } : row)));
-  // The money to plan with is what the cash accounts hold: a card is owed, not had.
-  const cash =
-    fixed.filter((a) => a.type !== "creditCard" && a.type !== "lineOfCredit").reduce((sum, a) => sum + a.balance, 0) +
-    rows.filter((row) => row.type !== "creditCard" && row.name.trim()).reduce((sum, row) => sum + looseCents(row.balance, decimal), 0);
+  const cash = fixedCash(fixed) + typedCash(rows, decimal);
+  const owed = owedOn(fixedCards(fixed)) + owedOn(typedCards(rows, decimal));
+  // "Add another" leaves the caret in the new row's name.
+  const list = useRef<HTMLDivElement>(null);
+  const added = useRef(false);
+  useEffect(() => {
+    if (!added.current) return;
+    added.current = false;
+    [...(list.current?.querySelectorAll<HTMLInputElement>(".setup-row:not(.head) > input") ?? [])].at(-1)?.focus();
+  }, [rows.length]);
   return (
     <>
       {fixed.length > 0 && (
@@ -161,50 +250,60 @@ function AccountRows({
           ))}
         </ul>
       )}
-      {rows.map((row, i) => (
-        <div className="setup-row" role="group" aria-label={t("Account {number}", { number: fixed.length + i + 1 })} key={i}>
-          <label>
-            {t("Name")}
-            <input
-              autoFocus={i === 0 && !fixed.length && !row.name}
-              maxLength={200}
-              placeholder={t("e.g. Main account")}
-              value={row.name}
-              onChange={(e) => change(i, { name: e.target.value })}
-            />
-          </label>
-          <label>
-            {t("Type")}
-            <select value={row.type} onChange={(e) => change(i, { type: e.target.value as AccountRow["type"] })}>
+      <div className="setup-rows" ref={list}>
+        {rows.length > 0 && (
+          // The columns are named once; each field carries its own name for a screen reader.
+          <div className="setup-row head" aria-hidden>
+            <span>{t("Name")}</span>
+            <span>{t("Type")}</span>
+            <span>{t("Today's balance")}</span>
+            <span />
+          </div>
+        )}
+        {rows.map((row, i) => (
+          <div className="setup-row" role="group" aria-label={t("Account {number}", { number: fixed.length + i + 1 })} key={i}>
+            <input aria-label={t("Name")} maxLength={200} placeholder={t("e.g. Main account")} value={row.name} onChange={(e) => change(i, { name: e.target.value })} />
+            <select aria-label={t("Type")} value={row.type} onChange={(e) => change(i, { type: e.target.value as AccountRow["type"] })}>
               {SETUP_ACCOUNT_TYPES.map((type) => (
                 <option key={type} value={type}>
                   {typeName(type)}
                 </option>
               ))}
             </select>
-          </label>
-          <label>
-            {row.type === "creditCard" ? t("What you owe") : t("Today's balance")}
-            <input inputMode="decimal" dir="ltr" placeholder={editable(0, format)} value={row.balance} onChange={(e) => change(i, { balance: e.target.value })} />
-          </label>
-          <button
-            type="button"
-            className="icon-button"
-            title={t("Remove this account")}
-            aria-label={t("Remove this account")}
-            disabled={rows.length === 1 && !fixed.length && !row.name && !row.balance}
-            onClick={() => onRows(rows.length === 1 && !fixed.length ? [blankRow()] : rows.filter((_, at) => at !== i))}
-          >
-            <X size={15} />
-          </button>
-        </div>
-      ))}
+            <span className="setup-cell">
+              <MoneyInput label={isCard(row.type) ? t("What you owe") : t("Today's balance")} value={row.balance} onChange={(balance) => change(i, { balance })} format={format} />
+              {isCard(row.type) && <small>{t("What you owe")}</small>}
+            </span>
+            <button
+              type="button"
+              className="icon-button"
+              title={t("Remove this account")}
+              aria-label={t("Remove this account")}
+              disabled={rows.length === 1 && !fixed.length && !row.name && !row.balance}
+              onClick={() => onRows(rows.length === 1 && !fixed.length ? [blankRow()] : rows.filter((_, at) => at !== i))}
+            >
+              <X size={15} />
+            </button>
+          </div>
+        ))}
+      </div>
       <p>
-        <button type="button" className="link-button" onClick={() => onRows([...rows, blankRow()])}>
+        <button
+          type="button"
+          className="link-button"
+          onClick={() => {
+            added.current = true;
+            onRows([...rows, blankRow()]);
+          }}
+        >
           <Plus size={14} /> {t("Add another")}
         </button>
       </p>
-      <p className="setup-sum">{t("You have {amount} to plan with.", { amount: <strong>{show(cash, format)}</strong> })}</p>
+      <p className="setup-sum">
+        {owed > 0
+          ? t("You have {amount} to plan with, and owe {owed} on cards.", { amount: <strong>{show(cash, format)}</strong>, owed: <strong>{show(owed, format)}</strong> })
+          : t("You have {amount} to plan with.", { amount: <strong>{show(cash, format)}</strong> })}
+      </p>
     </>
   );
 }
@@ -276,7 +375,17 @@ function CategoryChoice({
         ))
       ) : (
         <>
-          <TemplateSelect value={templateId} onChange={onTemplate} templates={templates} />
+          {/* The set alone: its chips below say what it holds. "No categories" isn't offered: Skip setup does that. */}
+          <select className="setup-set" aria-label={t("Categories")} value={templateId} disabled={!templates} onChange={(e) => onTemplate(e.target.value)}>
+            {!templates && <option value={templateId}>{t("Loading…")}</option>}
+            {(templates ?? [])
+              .filter((x) => x.groups.length)
+              .map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.name}
+                </option>
+              ))}
+          </select>
           {template?.groups.map((group, g) => (
             <Chips key={group.name} name={group.name}>
               {group.categories.map((name, c) => {
@@ -291,6 +400,7 @@ function CategoryChoice({
                     title={out ? t("Left out. Click to put it back.") : t("Click to leave it out.")}
                     onClick={() => onLeftOut(out ? leftOut.filter((x) => x !== key) : [...leftOut, key])}
                   >
+                    {!out && <Check size={12} strokeWidth={3} aria-hidden />}
                     {name}
                   </button>
                 );
@@ -303,6 +413,7 @@ function CategoryChoice({
         <Chips name={t("Other")}>
           {own.map(({ name, n }) => (
             <span key={n} className="setup-chip own">
+              <Check size={12} strokeWidth={3} aria-hidden />
               {name}
               <button
                 type="button"
@@ -352,13 +463,29 @@ function CategoryChoice({
 
 // ---------- Step 3: what a month costs ----------
 
+/** What the typed amounts come to a month. */
+const monthCost = (categories: SetupCategory[], amounts: Record<string, AmountEntry>, decimal: NumberFormat["decimal"]) =>
+  categories.reduce((sum, c) => sum + monthly(Math.max(0, looseCents(amounts[c.key]?.amount ?? "", decimal)), amounts[c.key]?.yearly), 0);
+
+/** The month's cost beside what there is, with what cards are owed said from the start: it's paid from the same money. */
+function CostNote({ cost, cards, have, format }: { cost: number; cards: Card[]; have: number; format: Money }) {
+  const values = { cost: <strong>{show(cost, format)}</strong>, have: <strong>{show(have, format)}</strong>, owed: <strong>{show(owedOn(cards), format)}</strong> };
+  if (!cards.length) return <>{t("Your month costs {cost}. You have {have}.", values)}</>;
+  return (
+    <>
+      {cards.length === 1
+        ? t("Your month costs {cost}, plus {owed} owed on {card}. You have {have}.", { ...values, card: cards[0].name })
+        : t("Your month costs {cost}, plus {owed} owed on your cards. You have {have}.", values)}
+    </>
+  );
+}
+
 function AmountRows({
   categories,
   amounts,
   onAmounts,
   income,
   onIncome,
-  have,
   format,
 }: {
   categories: SetupCategory[];
@@ -366,58 +493,67 @@ function AmountRows({
   onAmounts: (amounts: Record<string, AmountEntry>) => void;
   income: string;
   onIncome: (text: string) => void;
-  /** The money there is to plan with. */
-  have: number;
   format: Money;
 }) {
   const decimal = format.numberFormat.decimal;
   const groups = [...new Set(categories.map((c) => c.group))];
   const entry = (key: string): AmountEntry => amounts[key] ?? { amount: "" };
-  const cost = categories.reduce((sum, c) => sum + monthly(Math.max(0, looseCents(entry(c.key).amount, decimal)), entry(c.key).yearly), 0);
+  // Enter and Tab go down the amounts, then down the month-or-year switches, as columns read.
+  const keys = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "Enter" && e.key !== "Tab") return;
+    const from = e.target as HTMLElement;
+    const fields = [...e.currentTarget.querySelectorAll<HTMLElement>(".setup-amount input")];
+    const switches = [...e.currentTarget.querySelectorAll<HTMLElement>(".setup-period")];
+    const order = e.key === "Enter" ? fields : [...fields, ...switches];
+    const at = order.indexOf(from);
+    // Enter on a switch flips it; Enter in the last amount presses the step's button.
+    if (at < 0) return;
+    const to = order[at + (e.key === "Tab" && e.shiftKey ? -1 : 1)] ?? (e.key === "Tab" && !e.shiftKey ? e.currentTarget.parentElement?.querySelector<HTMLElement>(".setup-fold summary") : null);
+    if (!to) return;
+    e.preventDefault();
+    to.focus();
+    if (to instanceof HTMLInputElement) to.select();
+  };
   return (
     <>
-      {groups.map((group) => (
-        <section className="setup-group" key={group}>
-          <h2>{group}</h2>
-          {categories
-            .filter((c) => c.group === group)
-            .map((c) => {
-              const value = entry(c.key);
-              const cents = Math.max(0, looseCents(value.amount, decimal));
-              return (
-                <div className="setup-amount" key={c.key}>
-                  <label>
-                    <span>{c.name}</span>
-                    <input
-                      inputMode="decimal"
-                      dir="ltr"
-                      placeholder={editable(0, format)}
-                      value={value.amount}
-                      onChange={(e) => onAmounts({ ...amounts, [c.key]: { ...value, amount: e.target.value } })}
-                    />
-                  </label>
-                  <select
-                    aria-label={t("How often, for {name}", { name: c.name })}
-                    value={value.yearly ? "year" : "month"}
-                    onChange={(e) => onAmounts({ ...amounts, [c.key]: { ...value, yearly: e.target.value === "year" } })}
-                  >
-                    <option value="month">{t("a month")}</option>
-                    <option value="year">{t("a year")}</option>
-                  </select>
-                  <small className="setup-per-month">{value.yearly && cents > 0 ? t("{amount} a month", { amount: show(monthly(cents, true), format) }) : ""}</small>
-                </div>
-              );
-            })}
-        </section>
-      ))}
-      <p className="setup-sum">
-        {t("Your month costs {cost}. You have {have}.", { cost: <strong>{show(cost, format)}</strong>, have: <strong>{show(have, format)}</strong> })}
-      </p>
+      <div className="setup-amounts" onKeyDown={keys}>
+        {groups.map((group) => (
+          <section className="setup-group" key={group}>
+            <h2>{group}</h2>
+            {categories
+              .filter((c) => c.group === group)
+              .map((c) => {
+                const value = entry(c.key);
+                const cents = Math.max(0, looseCents(value.amount, decimal));
+                return (
+                  <div className="setup-amount" key={c.key}>
+                    <label>
+                      <span>{c.name}</span>
+                      <MoneyInput label={c.name} value={value.amount} onChange={(amount) => onAmounts({ ...amounts, [c.key]: { ...value, amount } })} format={format} />
+                    </label>
+                    <button
+                      type="button"
+                      role="switch"
+                      className="setup-period"
+                      aria-checked={!!value.yearly}
+                      aria-label={t("A year's amount, for {name}", { name: c.name })}
+                      title={value.yearly ? t("Switch to a month") : t("Switch to a year")}
+                      onClick={() => onAmounts({ ...amounts, [c.key]: { ...value, yearly: !value.yearly } })}
+                    >
+                      {value.yearly ? t("a year") : t("a month")}
+                    </button>
+                    <small className="setup-per-month">{value.yearly && cents > 0 ? t("{amount} a month", { amount: show(monthly(cents, true), format) }) : ""}</small>
+                  </div>
+                );
+              })}
+          </section>
+        ))}
+      </div>
       <details className="setup-fold" open={!!income.trim() || undefined}>
         <summary>{t("What comes in each month?")}</summary>
         <label>
           {t("Income you expect in a month")}
-          <input inputMode="decimal" dir="ltr" placeholder={editable(0, format)} value={income} onChange={(e) => onIncome(e.target.value)} />
+          <MoneyInput label={t("Income you expect in a month")} value={income} onChange={onIncome} format={format} />
           <small>{t("Optional. It lets the budget say whether the month fits what you earn.")}</small>
         </label>
       </details>
@@ -437,14 +573,13 @@ function amountsProblem(texts: string[], decimal: NumberFormat["decimal"]): stri
 
 // ---------- Step 4: giving the money its jobs ----------
 
-type PlanRow = { id: string; name: string; group: string; card: boolean; amount: number };
-/** What Underfunded would assign, for the screen: the rows it funds, and the totals its ending is told from. */
+/** A category Underfunded has something for: what it gets from the money there is, and what it would get with money for everything. */
+type PlanRow = { id: string; name: string; group: string; card: boolean; amount: number; wanted: number };
+/** What Underfunded would assign, for the screen. */
 type Plan = {
   rows: PlanRow[];
   /** Unassigned now. */
   have: number;
-  /** What the month asks for in all, with money for all of it. */
-  needed: number;
   /** The category leftover money is offered to, if the budget has it. */
   spare?: { id: string; name: string; assigned: number };
 };
@@ -454,33 +589,52 @@ function planOf(
   preview: SetupPreview,
   assignedNow: (id: string) => number,
 ): Plan {
-  const rows = categories.flatMap((c) => {
-    const change = preview.changes.find((x) => x.id === c.id);
-    return change && change.after !== change.before ? [{ id: c.id, name: c.name, group: c.group, card: !!c.paymentAccountId, amount: change.after - change.before }] : [];
-  });
+  const change = (list: SetupPreview["changes"], id: string) => {
+    const found = list.find((x) => x.id === id);
+    return found ? found.after - found.before : 0;
+  };
+  const rows = categories
+    .map((c) => ({ id: c.id, name: c.name, group: c.group, card: !!c.paymentAccountId, amount: change(preview.changes, c.id), wanted: change(preview.wanted, c.id) }))
+    .filter((row) => row.amount !== 0 || row.wanted !== 0);
   const spare = leftoverCategory(categories.filter((c) => !c.paymentAccountId));
   return {
     rows,
     have: preview.readyToAssign,
-    needed: preview.needed,
     spare: spare && { id: spare.id, name: spare.name, assigned: preview.changes.find((x) => x.id === spare.id)?.after ?? assignedNow(spare.id) },
   };
 }
 
-/** What a plan assigns in all, what that leaves, and how far short of the month it stops. */
-const sums = (plan: Plan) => {
+/**
+ * What a plan assigns in all and what that leaves; how far the month's own categories fall short
+ * of what they cost; and, apart from that, what is set aside for cards and how much of what they
+ * owe has to wait. Categories are funded before cards, so a card going short isn't the month
+ * costing too much.
+ */
+function sums(plan: Plan) {
   const total = plan.rows.reduce((sum, row) => sum + row.amount, 0);
-  return { total, left: plan.have - total, short: plan.needed - total };
-};
+  const cards = plan.rows.filter((row) => row.card);
+  const own = plan.rows.filter((row) => !row.card);
+  const toCards = cards.reduce((sum, row) => sum + row.amount, 0);
+  const owed = cards.reduce((sum, row) => sum + Math.max(row.wanted, row.amount), 0);
+  return {
+    total,
+    left: plan.have - total,
+    short: own.reduce((sum, row) => sum + Math.max(0, row.wanted - row.amount), 0),
+    cards,
+    toCards,
+    owed,
+    cardsShort: owed - toCards,
+  };
+}
 /** The leftover that goes to the spare category, when that was asked for and there is one. */
 const spared = (plan: Plan, toSpare: boolean) => {
-  const { left, short } = sums(plan);
-  return toSpare && short <= 0 && left > 0 && plan.spare ? left : 0;
+  const { left, short, cardsShort } = sums(plan);
+  return toSpare && short <= 0 && cardsShort <= 0 && left > 0 && plan.spare ? left : 0;
 };
 
 /** The edit "Assign it" makes: Underfunded for every category, then the leftover if it was given a home. One step for Undo. */
 const fund = (month: string, ids: string[], plan: Plan, leftover: number) => async (budget: Budget) => {
-  let next = plan.rows.length ? await api.action(budget, autoAssignAction("underfunded", month, ids, true, month)) : budget;
+  let next = plan.rows.some((row) => row.amount) ? await api.action(budget, autoAssignAction("underfunded", month, ids, true, month)) : budget;
   if (leftover > 0 && plan.spare)
     next = await api.action(next, { type: "assignAmount", month, categoryId: plan.spare.id, amount: plan.spare.assigned + leftover });
   return next;
@@ -505,15 +659,56 @@ function AssignPlan({
   format: Money;
 }) {
   if (!plan) return failed ? null : <p className="muted" role="status">{t("Working it out…")}</p>;
-  const { total, left, short } = sums(plan);
-  const cards = plan.rows.filter((row) => row.card);
-  const toCards = cards.reduce((sum, row) => sum + row.amount, 0);
+  const { total, left, short, cards, toCards, owed, cardsShort } = sums(plan);
   const sparing = spared(plan, toSpare) > 0;
+  const funded = plan.rows.filter((row) => row.amount > 0);
+  const bold = (cents: number) => <strong>{show(cents, format)}</strong>;
+  // The month's own categories first: short, covered, left over, or exactly spent.
+  const month =
+    short > 0
+      ? t("Your month costs {amount} more than you have right now. The rest waits for payday; assign it when it arrives.", { amount: bold(short) })
+      : cardsShort > 0
+        ? t("Everything this month is covered.")
+        : left > 0 && !sparing
+          ? plan.spare
+            ? t("{amount} is left over. Put it in {category}, or keep it for next month.", { amount: bold(left), category: plan.spare.name })
+            : t("{amount} is left over. It stays in Unassigned for next month.", { amount: bold(left) })
+          : total > 0 || sparing
+            ? t("All of it has a job.")
+            : t("There's nothing to assign yet. Add your accounts and what a month costs, then come back to this step.");
+  // Then the cards, in a sentence of their own: all set aside, part of it, or none yet.
+  const one = cards.length === 1 ? cards[0].name : null;
+  const values = { set: bold(toCards), owed: bold(owed), rest: bold(cardsShort) };
+  const card =
+    cardsShort > 0
+      ? toCards > 0
+        ? one
+          ? t("{set} of the {owed} you owe on {card} is set aside; the other {rest} waits for payday.", { ...values, card: one })
+          : t("{set} of the {owed} you owe on your cards is set aside; the other {rest} waits for payday.", values)
+        : one
+          ? t("The {owed} you owe on {card} waits for payday.", { owed: bold(owed), card: one })
+          : t("The {owed} you owe on your cards waits for payday.", { owed: bold(owed) })
+      : toCards > 0
+        ? tn(cards.length, "{amount} is set aside to pay your card.", "{amount} is set aside to pay your cards.", { amount: show(toCards, format) })
+        : null;
+  const tone = short > 0 ? " warning" : total > 0 || sparing || left > 0 ? " good" : "";
   return (
     <>
+      {/* What it comes to is read first; the table under it is the detail. */}
+      <p className={`setup-outcome${tone}`} role="status">
+        <span>{month}</span>
+        {card && <> <span>{card}</span></>}
+      </p>
+      {short <= 0 && cardsShort <= 0 && left > 0 && plan.spare && (
+        <p>
+          <button type="button" className="secondary" aria-pressed={sparing} onClick={() => onToSpare(!sparing)}>
+            {sparing ? t("Keep it for next month") : t("Put it in {category}", { category: plan.spare.name })}
+          </button>
+        </p>
+      )}
       <div className="setup-plan">
         {groups
-          .map((group) => ({ group, rows: plan.rows.filter((row) => row.group === group) }))
+          .map((group) => ({ group, rows: funded.filter((row) => row.group === group) }))
           .filter((g) => g.rows.length)
           .map(({ group, rows }) => (
             <details key={group}>
@@ -546,29 +741,6 @@ function AssignPlan({
           <span className="setup-figure">{show(sparing ? 0 : left, format)}</span>
         </p>
       </div>
-      <p className="setup-ending" role="status">
-        {short > 0
-          ? t("Your month costs {amount} more than you have right now. The rest waits for payday; assign it when it arrives.", { amount: <strong>{show(short, format)}</strong> })
-          : left > 0 && !sparing
-            ? plan.spare
-              ? t("{amount} is left over. Put it in {category}, or keep it for next month.", { amount: <strong>{show(left, format)}</strong>, category: plan.spare.name })
-              : t("{amount} is left over. It stays in Unassigned for next month.", { amount: <strong>{show(left, format)}</strong> })
-            : total > 0 || sparing
-              ? t("All of it has a job.")
-              : t("There's nothing to assign yet. Add your accounts and what a month costs, then come back to this step.")}
-      </p>
-      {toCards > 0 && (
-        <p className="setup-ending">
-          {tn(cards.length, "{amount} is set aside to pay your card.", "{amount} is set aside to pay your cards.", { amount: show(toCards, format) })}
-        </p>
-      )}
-      {short <= 0 && left > 0 && plan.spare && (
-        <p>
-          <button type="button" className="secondary" aria-pressed={sparing} onClick={() => onToSpare(!sparing)}>
-            {sparing ? t("Keep it for next month") : t("Put it in {category}", { category: plan.spare.name })}
-          </button>
-        </p>
-      )}
     </>
   );
 }
@@ -583,7 +755,7 @@ function KeepChoice({ value, onChange }: { value: KeepRoute; onChange: (value: K
       "file",
       t("Import my bank's file"),
       <>
-        {t("About once a week, from your bank's website. Import from tomorrow's transactions on: today's balance already counts the rest.")}{" "}
+        {t("About once a week, from your bank's website. Start with tomorrow's transactions.")}{" "}
         <button
           type="button"
           className="link-button"
@@ -642,7 +814,8 @@ function DraftSetup({ origin, month, openBudget, transform, close, onBudget }: S
   const format = { currency: draft.format.currency, numberFormat: draft.format.numberFormat };
   const decimal = format.numberFormat.decimal;
   const categories = useMemo(() => draftCategories(draft, template, t("Other")), [draft.leftOut, draft.added, template, language]);
-  const cash = draft.accounts.filter((row) => row.type !== "creditCard" && row.name.trim()).reduce((sum, row) => sum + looseCents(row.balance, decimal), 0);
+  const cash = typedCash(draft.accounts, decimal);
+  const cost = monthCost(categories, draft.amounts, decimal);
 
   // The last step's budget, built once the answers are in, and what Underfunded would give it.
   const [built, setBuilt] = useState<{ budget: Budget; plan: Plan } | null>(null);
@@ -696,7 +869,7 @@ function DraftSetup({ origin, month, openBudget, transform, close, onBudget }: S
       const leftover = spared(plan, toSpare);
       const id = await make(budget);
       try {
-        if (plan.rows.length || leftover > 0) await transform(fund(month, budget.categories.map((c) => c.id), plan, leftover));
+        if (plan.rows.some((row) => row.amount) || leftover > 0) await transform(fund(month, budget.categories.map((c) => c.id), plan, leftover));
         updateMark(id, { assigned: true });
         onBudget(5);
       } catch (e) {
@@ -733,7 +906,7 @@ function DraftSetup({ origin, month, openBudget, transform, close, onBudget }: S
         {...frame}
         step={2}
         title={t("What do you spend on?")}
-        lead={t("Start from a set and make it yours. Click a category to leave it out. You can change all of this later.")}
+        lead={t("Click a category to leave it out. You can change all of this later.")}
         label={t("Next")}
         back={() => go(1)}
         blocked={!templates}
@@ -763,6 +936,8 @@ function DraftSetup({ origin, month, openBudget, transform, close, onBudget }: S
         lead={t("Exact for bills, a guess for the rest. Leave it blank where you're not sure.")}
         label={t("Next")}
         back={() => go(2)}
+        note={<CostNote cost={cost} cards={typedCards(draft.accounts, decimal)} have={cash} format={format} />}
+        warn={cost > cash}
         action={() => {
           const problem = amountsProblem([...categories.map((c) => draft.amounts[c.key]?.amount ?? ""), draft.income], decimal);
           if (problem) setError(problem);
@@ -775,7 +950,6 @@ function DraftSetup({ origin, month, openBudget, transform, close, onBudget }: S
           onAmounts={(amounts) => update({ amounts })}
           income={draft.income}
           onIncome={(income) => update({ income })}
-          have={cash}
           format={format}
         />
       </Frame>
@@ -784,7 +958,7 @@ function DraftSetup({ origin, month, openBudget, transform, close, onBudget }: S
     <Frame
       {...frame}
       step={4}
-      title={t("Give your money its jobs.")}
+      title={t("Give your money its jobs")}
       lead={t("Each category gets what its month costs, from the money you have.")}
       label={t("Assign it")}
       back={() => go(3)}
@@ -838,7 +1012,7 @@ function BudgetSetup({
   const fixed: FixedAccount[] = budget.accounts
     .filter((a) => !a.archived && a.kind !== "tracking")
     .map((a) => ({ id: a.id, name: a.name, type: accountType(a), balance: balances.get(a.id) ?? a.openingBalance }));
-  const cash = fixed.filter((a) => a.type !== "creditCard" && a.type !== "lineOfCredit").reduce((sum, a) => sum + a.balance, 0);
+  const cash = fixedCash(fixed);
 
   // Step 2: its categories; a template to start from when it has none of its own.
   const templates = useBudgetTemplates();
@@ -855,14 +1029,16 @@ function BudgetSetup({
 
   // Step 3: a plain monthly amount per category. One with a target of another kind keeps it: the full editor sets those.
   const plain = orderedCategories(budget).filter((c) => !c.paymentAccountId && !c.hidden && !c.goal);
+  // (Named for its targets: a plain amount a month.)
   const rank = new Map(groupNames(budget).map((name, i) => [name, i]));
   const listed: SetupCategory[] = plain
     .map((c) => ({ key: c.id, name: c.name, group: c.group }))
     .sort((a, b) => (rank.get(a.group) ?? 0) - (rank.get(b.group) ?? 0));
   const [typed, setTyped] = useState<Record<string, AmountEntry>>({});
-  const amounts: Record<string, AmountEntry> = { ...Object.fromEntries(plain.filter((c) => c.target > 0).map((c) => [c.id, { amount: editable(c.target, format) }])), ...typed };
+  const amounts: Record<string, AmountEntry> = { ...Object.fromEntries(plain.filter((c) => c.target > 0).map((c) => [c.id, { amount: fieldText(c.target, format) }])), ...typed };
+  const cost = monthCost(listed, amounts, decimal);
   const [income, setIncome] = useState<string | null>(null);
-  const incomeText = income ?? (budget.expectedIncome ? editable(budget.expectedIncome, format) : "");
+  const incomeText = income ?? (budget.expectedIncome ? fieldText(budget.expectedIncome, format) : "");
 
   // Step 4: Underfunded on the open budget, as Quick assign previews it.
   const [plan, setPlan] = useState<{ budget: Budget; plan: Plan } | null>(null);
@@ -876,7 +1052,7 @@ function BudgetSetup({
       const options = { asOfMonth: month };
       const changes = async (limit: boolean) => (ids.length ? ((await api.autoAssignPreview(budget, month, ids, limit, options)).underfunded ?? []) : []);
       const [within, all] = [await changes(true), await changes(false)];
-      const preview = { readyToAssign: summary.readyToAssign, needed: all.reduce((sum, c) => sum + c.after - c.before, 0), changes: within };
+      const preview = { readyToAssign: summary.readyToAssign, needed: all.reduce((sum, c) => sum + c.after - c.before, 0), changes: within, wanted: all };
       const assigned = (id: string) => budget.assignments.find((a) => a.month === month && a.categoryId === id)?.amount ?? 0;
       if (active) setPlan({ budget, plan: planOf(budget.categories, preview, assigned) });
     })().catch((e) => {
@@ -920,7 +1096,7 @@ function BudgetSetup({
         lead={
           existing
             ? t("These are your categories. Add any that are missing.")
-            : t("Start from a set and make it yours. Click a category to leave it out. You can change all of this later.")
+            : t("Click a category to leave it out. You can change all of this later.")
         }
         label={t("Next")}
         back={() => go(1)}
@@ -957,6 +1133,8 @@ function BudgetSetup({
         lead={t("Exact for bills, a guess for the rest. Leave it blank where you're not sure.")}
         label={t("Next")}
         back={() => go(2)}
+        note={<CostNote cost={cost} cards={fixedCards(fixed)} have={cash} format={format} />}
+        warn={cost > cash}
         action={() => {
           const problem = amountsProblem([...listed.map((c) => amounts[c.key]?.amount ?? ""), incomeText], decimal);
           if (problem) return setError(problem);
@@ -973,7 +1151,7 @@ function BudgetSetup({
           go(4);
         }}
       >
-        <AmountRows categories={listed} amounts={amounts} onAmounts={setTyped} income={incomeText} onIncome={setIncome} have={cash} format={format} />
+        <AmountRows categories={listed} amounts={amounts} onAmounts={setTyped} income={incomeText} onIncome={setIncome} format={format} />
       </Frame>
     );
   if (step === 4)
@@ -981,7 +1159,7 @@ function BudgetSetup({
       <Frame
         {...frame}
         step={4}
-        title={t("Give your money its jobs.")}
+        title={t("Give your money its jobs")}
         lead={t("Each category gets what its month costs, from the money you have.")}
         label={t("Assign it")}
         back={() => go(3)}
@@ -991,7 +1169,7 @@ function BudgetSetup({
           const leftover = spared(current, toSpare);
           setError("");
           setBusy(true);
-          void (current.rows.length || leftover > 0 ? transform(fund(month, ids, current, leftover)) : Promise.resolve())
+          void (current.rows.some((row) => row.amount) || leftover > 0 ? transform(fund(month, ids, current, leftover)) : Promise.resolve())
             .then(() => {
               updateMark(budgetId, { assigned: true });
               go(5);
@@ -1003,16 +1181,19 @@ function BudgetSetup({
         <AssignPlan plan={current} groups={groupNames(budget)} failed={!!error} toSpare={toSpare} onToSpare={setToSpare} format={format} />
       </Frame>
     );
+  // The budget is made and funded by now: there's nothing left to skip, and nothing behind to
+  // undo by going back, so the last step has its one button and no others.
   return (
     <Frame
-      {...frame}
+      busy={busy}
+      error={error}
       step={5}
       title={t("How will you keep it up to date?")}
       lead={t("Pick the one you'll really do. Nothing is connected or imported here, and you can change your mind any time.")}
       label={t("Finish")}
-      back={() => go(4)}
       action={() => {
-        updateMark(budgetId, { keep });
+        // Budget says so once, with the first thing to do for the way that was chosen.
+        updateMark(budgetId, { keep, ready: true });
         close();
       }}
     >
@@ -1050,10 +1231,25 @@ export function SetupWalkthrough({
 }
 
 /**
- * On Budget, for a budget the walkthrough made and didn't finish: how many steps are left, and
- * the way back in at the first of them. Hidden with one click, for good.
+ * On Budget, for a budget the walkthrough made. Left unfinished: how many steps are left, and the
+ * way back in at the first of them, hidden with one click for good. Just finished: one line that
+ * says so, with the first thing to do for the way chosen on the last step; closed or used, it
+ * never comes back.
  */
-export function SetupCard({ budget, budgetId, unassigned, onContinue }: { budget: Budget; budgetId: string; unassigned: number; onContinue: (step: number) => void }) {
+export function SetupCard({
+  budget,
+  budgetId,
+  unassigned,
+  onContinue,
+  onKeepUp,
+}: {
+  budget: Budget;
+  budgetId: string;
+  unassigned: number;
+  onContinue: (step: number) => void;
+  /** Starts what the last step's choice needs: a transaction, a bank file's import, or bank sync. */
+  onKeepUp?: (route: KeepRoute) => void;
+}) {
   const [mark, setMark] = useState(() => readMark(budgetId));
   useEffect(() => {
     setMark(readMark(budgetId));
@@ -1063,7 +1259,36 @@ export function SetupCard({ budget, budgetId, unassigned, onContinue }: { budget
     window.addEventListener(MARK_EVENT, changed);
     return () => window.removeEventListener(MARK_EVENT, changed);
   }, [budgetId]);
-  if (!mark?.card || budget.sample || budget.importedFrom || budget.ynabPlanId) return null;
+  if (!mark || budget.sample || budget.importedFrom || budget.ynabPlanId) return null;
+  if (mark.ready && mark.keep && onKeepUp) {
+    const route = mark.keep;
+    const seen = () => writeMark(budgetId, { ...mark, ready: false });
+    const [text, label] = {
+      type: [t("Add each purchase as you spend."), t("Add a transaction")],
+      file: [t("Import your bank's file about once a week."), t("Import a bank file")],
+      bank: [t("Connect your bank when you're ready."), t("Connect a bank")],
+    }[route];
+    return (
+      <section className="setup-card" aria-label={t("Your budget is ready.")}>
+        <span>
+          <strong>{t("Your budget is ready.")}</strong> {text}
+        </span>
+        <button
+          className="primary small"
+          onClick={() => {
+            seen();
+            onKeepUp(route);
+          }}
+        >
+          {label}
+        </button>
+        <button className="icon-button" title={t("Close")} aria-label={t("Close")} onClick={seen}>
+          <X size={15} />
+        </button>
+      </section>
+    );
+  }
+  if (!mark.card) return null;
   const left = stepsLeft(budget, unassigned, mark);
   if (!left.length) return null;
   return (

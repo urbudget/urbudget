@@ -531,7 +531,11 @@ export default function App() {
             edit={edit}
             transform={model.transform}
             openBudget={switchBudget}
-            close={() => setSetup(null)}
+            // It ends on Budget, where its card or its arrival line is.
+            close={() => {
+              setSetup(null);
+              setPage("budget");
+            }}
           />
         </div>
       </div>
@@ -950,6 +954,14 @@ export default function App() {
               }}
               onOpenSample={() => void openSample(budget, budgetId, switchBudget).catch((e) => fail(e))}
               onSetup={(step) => setSetup({ mode: "budget", step })}
+              onKeepUp={(route) => {
+                // A bank's file goes into an account the money is spent from: the first that isn't a card.
+                const open = budget.accounts.filter((a) => !a.archived && a.kind !== "tracking");
+                const account = open.find((a) => a.kind === "cash") ?? open[0];
+                if (route === "type") setDialog({ type: "transaction", isNew: true });
+                else if (route === "file" && account) openImport({ account: account.id });
+                else openSettings("import");
+              }}
               onPayCard={(id) => {
                 const card = budget.accounts.find((a) => a.id === id);
                 if (card) setDialog({ type: "payment", account: card });

@@ -18,6 +18,33 @@
   color: var(--text-2);
   line-height: 1.5;
 }
+/* A first launch: the whole of it in the middle of the window, a little above centre, under the
+   app's mark. */
+.welcome-first {
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 42px);
+  padding-top: 16px;
+  padding-bottom: 14vh;
+  text-align: center;
+}
+.welcome-mark {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 4px;
+  border-radius: 13px;
+}
+.welcome-first .welcome-start {
+  align-items: center;
+}
+.welcome-first .welcome-format {
+  text-align: start;
+}
+.welcome-first .welcome-links {
+  justify-content: center;
+  align-self: stretch;
+}
 /* The one filled button, with what the device suggested under it. */
 .welcome-start {
   display: flex;

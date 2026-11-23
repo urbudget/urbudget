@@ -152,6 +152,10 @@ it("opens a first launch on one button, the device's currency and date format, a
   vi.spyOn(navigator, "languages", "get").mockReturnValue(["en-US"]);
   render(firstRun({ onSetup }));
   expect(document.querySelectorAll("button.primary")).toHaveLength(1);
+  // Under the app's mark, one line says what the button starts; the walkthrough teaches the method.
+  expect(document.querySelector(".welcome-first > svg.welcome-mark")).not.toBeNull();
+  expect(screen.getByText("Five short steps to a budget where all your money has a job. Skip any time.")).toBeTruthy();
+  expect(screen.queryByText(/works like envelopes/)).toBeNull();
   // No name, currency or format questions: the guess is one line, with a way to change it.
   expect(screen.getByText("US Dollar")).toBeTruthy();
   expect(screen.getByText("10/15/2026")).toBeTruthy();

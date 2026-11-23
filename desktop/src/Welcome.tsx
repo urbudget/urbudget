@@ -11,6 +11,7 @@ import { dateFormats, errorText } from "./format";
 import { localeDefaults } from "./locale";
 import { newDraft, readDraft, readMark, writeDraft } from "./setup";
 import { useToast } from "./ui";
+import { AppMark } from "./WindowControls";
 import { ltr, msg, t, useLanguage } from "./i18n";
 import type { Budget, ImportResult, YnabImportRequest } from "./types";
 import "./welcome.css";
@@ -43,7 +44,8 @@ export async function openSample(budget: Budget, budgetId: string, openBudget: (
   await openBudget(id);
 }
 
-const INTRO = msg("UrBudget works like envelopes: you give all the money you have a job, spend from those jobs, and move money around when life changes the plan.");
+/** What the one button starts. The walkthrough teaches the method by doing it, so nothing explains it here. */
+const STARTS = msg("Five short steps to a budget where all your money has a job. Skip any time.");
 
 /** YNAB's token import into the open budget, with its export file a click away. */
 function FromYnab({
@@ -133,7 +135,7 @@ export function Welcome({
     <div className="page welcome">
       <div className="welcome-intro">
         <h2>{t("Let's set up your budget")}</h2>
-        <p>{t(INTRO)}</p>
+        <p>{t(STARTS)}</p>
       </div>
       {!ynab && (
         <div className="welcome-start">
@@ -330,11 +332,13 @@ export function FirstRunWelcome({
       </div>
     );
   }
+  // The whole of it sits in the middle of the window, under the app's mark, as the phones' welcome does.
   return (
-    <div className="page welcome">
+    <div className="page welcome welcome-first">
+      <AppMark className="welcome-mark" />
       <div className="welcome-intro">
         <h2>{t("Let's set up your budget")}</h2>
-        <p>{t(INTRO)}</p>
+        <p>{t(STARTS)}</p>
       </div>
       <div className="welcome-start">
         <button className="primary welcome-go" disabled={busy} onClick={start}>

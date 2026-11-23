@@ -56,7 +56,14 @@ export type SetupAnswers = {
 };
 
 /** What Underfunded would assign to a budget that isn't in the library yet (setup::Preview). */
-export type SetupPreview = { readyToAssign: number; needed: number; changes: { id: string; before: number; after: number }[] };
+export type SetupPreview = {
+  readyToAssign: number;
+  needed: number;
+  /** The categories whose Assigned would change, with the money there is. */
+  changes: { id: string; before: number; after: number }[];
+  /** The same with money for everything, which says what went short. */
+  wanted: { id: string; before: number; after: number }[];
+};
 
 export const blankRow = (): AccountRow => ({ name: "", type: "checking", balance: "" });
 
@@ -183,9 +190,16 @@ export function draftCategories(draft: Pick<SetupDraft, "leftOut" | "added">, te
 
 /**
  * A budget made by the walkthrough: whether its setup card shows, whether its money was given
- * jobs there, and how its spending will keep arriving. Kept on the device, never in the budget.
+ * jobs there, how its spending will keep arriving, and whether Budget still has to say it's
+ * ready. Kept on the device, never in the budget.
  */
-export type SetupMark = { card: boolean; assigned?: boolean; keep?: KeepRoute };
+export type SetupMark = {
+  card: boolean;
+  assigned?: boolean;
+  keep?: KeepRoute;
+  /** The walkthrough was just finished: Budget says so once, until that line is closed or used. */
+  ready?: boolean;
+};
 const markKey = (budgetId: string) => `lb:setup:${budgetId}`;
 /**
  * A budget's mark, or null for one the walkthrough didn't make. The same key once held "on" or

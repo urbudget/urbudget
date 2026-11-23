@@ -22,6 +22,7 @@ import { uncategorizedCounts } from "./uncategorized";
 import { CategoryRow, GroupRow, NameInput, UncategorizedRow, categoryState, type CategorySummary, type Dnd, type Drop } from "./CategoryRow";
 import { BudgetInspector } from "./BudgetInspector";
 import { SetupCard } from "./SetupWalkthrough";
+import type { KeepRoute } from "./setup";
 import { autoAssignAction } from "./QuickAssign";
 import { MoveMoneyPopover } from "./MoneyPopovers";
 import { ActivityPopover } from "./ActivityPopover";
@@ -149,6 +150,7 @@ export function BudgetPage({
   onEditCategory,
   onAddAccount,
   onSetup,
+  onKeepUp,
   onOpenSample,
   onOpenRegister,
   onAsk,
@@ -176,6 +178,8 @@ export function BudgetPage({
   onAddAccount: () => void;
   /** Opens the setup walkthrough at a step (the setup card's Continue). */
   onSetup?: (step: number) => void;
+  /** Starts what the walkthrough's last choice needs (the line a finished walkthrough leaves on Budget). */
+  onKeepUp?: (route: KeepRoute) => void;
   onOpenSample: () => void;
 }) {
   const toast = useToast();
@@ -518,7 +522,7 @@ export function BudgetPage({
     .filter((c): c is Category => !!c);
 
   // A budget the walkthrough made and didn't finish gets the way back into it.
-  const setupCard = onSetup && <SetupCard budget={budget} budgetId={budgetId} unassigned={rta} onContinue={onSetup} />;
+  const setupCard = onSetup && <SetupCard budget={budget} budgetId={budgetId} unassigned={rta} onContinue={onSetup} onKeepUp={onKeepUp} />;
   if (!budget.accounts.length)
     return (
       <div className="page">

@@ -195,6 +195,9 @@ pub struct Preview {
     pub changes: Vec<AssignChange>,
     /// What Underfunded would assign with money for all of it: what the month asks for.
     pub needed: i64,
+    /// That, category by category, so an app can say which went short: the month's own
+    /// categories, or a card's payment.
+    pub wanted: Vec<AssignChange>,
 }
 
 pub fn preview(budget: &Budget, month: &str) -> Result<Preview, String> {
@@ -207,13 +210,14 @@ pub fn preview(budget: &Budget, month: &str) -> Result<Preview, String> {
     let ready_to_assign = domain::calculate(&budget, month)?.ready_to_assign;
     let categories: Vec<String> = budget.categories.iter().map(|c| c.id.clone()).collect();
     if categories.is_empty() {
-        return Ok(Preview { ready_to_assign, changes: vec![], needed: 0 });
+        return Ok(Preview { ready_to_assign, changes: vec![], needed: 0, wanted: vec![] });
     }
     let underfunded = |limit: bool| -> Result<Vec<AssignChange>, String> {
         Ok(workflows::auto_assign_preview(&budget, month, &categories, limit)?.remove("underfunded").flatten().unwrap_or_default())
     };
-    let needed = underfunded(false)?.iter().map(|c| c.after - c.before).sum();
-    Ok(Preview { ready_to_assign, changes: underfunded(true)?, needed })
+    let wanted = underfunded(false)?;
+    let needed = wanted.iter().map(|c| c.after - c.before).sum();
+    Ok(Preview { ready_to_assign, changes: underfunded(true)?, needed, wanted })
 }
 
 #[cfg(test)]
@@ -417,6 +421,19 @@ mod tests {
         assert_eq!(seen.ready_to_assign, 100000);
         assert_eq!(seen.changes.iter().map(|c| c.after).sum::<i64>(), 100000);
         assert_eq!(seen.needed, 150000 + 60000 + 7500);
+        assert_eq!(seen.wanted.len(), 3);
+
+        // Enough for the month but not for all the card owes: the categories come first, and
+        // what each would get with money for everything says which went short.
+        let mut tight = household();
+        tight.accounts[0].balance = 200000;
+        tight.accounts[1].balance = 30000;
+        let budget = build(&tight).unwrap();
+        let seen = preview(&budget, MONTH).unwrap();
+        let visa = &category(&budget, "Visa").id;
+        let got = |list: &[AssignChange]| list.iter().find(|c| &c.id == visa).map(|c| c.after - c.before);
+        assert_eq!((got(&seen.changes), got(&seen.wanted)), (Some(230000 - 217500), Some(42000)));
+        assert_eq!(seen.changes.iter().filter(|c| &c.id != visa).map(|c| c.after).sum::<i64>(), 217500);
 
         let bare = build(&answers(json!({"currency": "USD"}))).unwrap();
         assert!(preview(&bare, MONTH).unwrap().changes.is_empty());

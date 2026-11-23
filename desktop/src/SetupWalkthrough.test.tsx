@@ -133,6 +133,7 @@ beforeEach(() => {
     readyToAssign: cash(b),
     needed: underfunded(b, false).reduce((sum, c) => sum + c.after - c.before, 0),
     changes: underfunded(b),
+    wanted: underfunded(b, false),
   }));
   vi.mocked(api.createBudget).mockImplementation(async (b) => {
     world.saved.set("made", b);
@@ -179,25 +180,42 @@ it("makes nothing until Assign it, then funds the budget in one step and asks ho
   press("Create my budget");
   await heading("Where is your money?");
   expect(screen.getByText("Step 1 of 5")).toBeTruthy();
+  expect(document.querySelectorAll(".setup-progress > span")).toHaveLength(5);
+  expect(document.querySelectorAll(".setup-progress > .done")).toHaveLength(1);
+  // The step opens with the caret in its first field, and Skip setup beside its one filled button.
+  expect(document.activeElement).toBe(screen.getByLabelText("Name"));
+  expect(document.querySelectorAll("button.primary")).toHaveLength(1);
   // Next needs one account with a name.
   press("Next");
   expect(screen.getByRole("alert").textContent).toBe("Add one account with a name to go on.");
   type("Name", "Checking");
-  type("Today's balance", "3,700");
+  type("Today's balance", "3700");
+  // Left, the amount reads as the budget writes amounts.
+  fireEvent.blur(screen.getByLabelText("Today's balance"));
+  expect((screen.getByLabelText("Today's balance") as HTMLInputElement).value).toBe("3,700.00");
+  // The columns are named once, above the rows.
+  expect(document.querySelectorAll(".setup-row.head")).toHaveLength(1);
   press(/Add another/);
   const card = within(screen.getByRole("group", { name: "Account 2" }));
+  expect(document.activeElement).toBe(card.getByLabelText("Name"));
+  expect(document.querySelectorAll(".setup-row.head")).toHaveLength(1);
   type("Name", "Visa", card);
   fireEvent.change(card.getByLabelText("Type"), { target: { value: "creditCard" } });
   type("What you owe", "420", card);
-  // A card is owed, not had.
-  expect(screen.getByText(/to plan with/).textContent).toBe("You have $3,700.00 to plan with.");
+  // A card is owed, not had, and it's said from the start.
+  expect(screen.getByText(/to plan with/).textContent).toBe("You have $3,700.00 to plan with, and owe $420.00 on cards.");
   press("Next");
 
   await heading("What do you spend on?");
   const water = await screen.findByRole("button", { name: "Water" });
+  expect(document.querySelectorAll(".setup-progress > .done")).toHaveLength(2);
+  // Only the set is chosen here; its chips say what it holds, each with a check while it's in.
+  expect(screen.queryByText("Bills, needs, wants and savings. A good fit for most people.")).toBeNull();
   expect(water.getAttribute("aria-pressed")).toBe("true");
+  expect(water.querySelector("svg")).not.toBeNull();
   fireEvent.click(water);
   expect(water.getAttribute("aria-pressed")).toBe("false");
+  expect(water.querySelector("svg")).toBeNull();
   press(/Add your own/);
   type("Category name", "Pets");
   fireEvent.keyDown(screen.getByLabelText("Category name"), { key: "Enter" });
@@ -208,17 +226,39 @@ it("makes nothing until Assign it, then funds the budget in one step and asks ho
   expect(screen.queryByLabelText("Water")).toBeNull();
   type("Rent or mortgage", "1500");
   type("Insurance", "900");
-  fireEvent.change(screen.getByLabelText("How often, for Insurance"), { target: { value: "year" } });
+  // A month or a year is quiet text after the amount: a switch, not a select.
+  expect(screen.queryAllByRole("combobox")).toHaveLength(0);
+  const yearly = screen.getByRole("switch", { name: "A year's amount, for Insurance" });
+  expect([yearly.textContent, yearly.getAttribute("aria-checked")]).toEqual(["a month", "false"]);
+  fireEvent.click(yearly);
+  expect([yearly.textContent, yearly.getAttribute("aria-checked")]).toEqual(["a year", "true"]);
   expect(screen.getByText("$75.00 a month")).toBeTruthy();
   type("Pets", "40");
-  expect(screen.getByText(/Your month costs/).textContent).toBe("Your month costs $1,615.00. You have $3,700.00.");
+  // The total is beside the buttons, card and all, and follows the typing.
+  const total = document.querySelector(".setup-actions .setup-note")!;
+  expect(total.textContent).toBe("Your month costs $1,615.00, plus $420.00 owed on Visa. You have $3,700.00.");
+  expect(total.className).toBe("setup-note");
+  type("Groceries", "2500");
+  expect(total.textContent).toBe("Your month costs $4,115.00, plus $420.00 owed on Visa. You have $3,700.00.");
+  expect(total.className).toBe("setup-note warning");
+  type("Groceries", "");
+  // Enter goes down the amounts; from the last one it presses Next.
+  const rent = screen.getByLabelText("Rent or mortgage");
+  rent.focus();
+  fireEvent.keyDown(rent, { key: "Enter" });
+  expect(document.activeElement).toBe(screen.getByLabelText("Electricity"));
+  // Tab goes down the amounts too, then down the switches.
+  fireEvent.keyDown(screen.getByLabelText("Electricity"), { key: "Tab" });
+  expect(document.activeElement).toBe(screen.getByLabelText("Internet"));
+  fireEvent.keyDown(screen.getByLabelText("Pets"), { key: "Tab" });
+  expect(document.activeElement).toBe(screen.getByRole("switch", { name: "A year's amount, for Rent or mortgage" }));
   type("Rent or mortgage", "15oo");
   press("Next");
   expect(screen.getByRole("alert").textContent).toMatch(/Enter an amount/);
   type("Rent or mortgage", "1500");
   press("Next");
 
-  await heading("Give your money its jobs.");
+  await heading("Give your money its jobs");
   // The budget is built to be shown, and still isn't in the library.
   await screen.findByText("Bills");
   expect(api.setupBudget).toHaveBeenCalledOnce();
@@ -240,9 +280,13 @@ it("makes nothing until Assign it, then funds the budget in one step and asks ho
   });
   expect(screen.getByText("$420.00 is set aside to pay your card.")).toBeTruthy();
   // 3,700 less 1,500, 75, 40 and the card's 420.
-  expect(screen.getByRole("status").textContent).toBe("$1,665.00 is left over. Put it in Emergency fund, or keep it for next month.");
+  // What it comes to is read first, above the table, in the success tone.
+  const outcome = screen.getByRole("status");
+  expect(outcome.textContent).toBe("$1,665.00 is left over. Put it in Emergency fund, or keep it for next month. $420.00 is set aside to pay your card.");
+  expect(outcome.className).toBe("setup-outcome good");
+  expect(outcome.compareDocumentPosition(document.querySelector(".setup-plan")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   press("Put it in Emergency fund");
-  expect(screen.getByRole("status").textContent).toBe("All of it has a job.");
+  expect(outcome.textContent).toBe("All of it has a job. $420.00 is set aside to pay your card.");
 
   press("Assign it");
   await heading("How will you keep it up to date?");
@@ -257,11 +301,16 @@ it("makes nothing until Assign it, then funds the budget in one step and asks ho
   expect(readDraft("welcome")).toBeNull();
   expect(readMark("made")).toEqual({ card: true, assigned: true });
 
-  // The last step only records the choice, for this budget on this device.
+  // The budget is made: the last step has Finish and nothing else to press.
+  expect(screen.queryByRole("button", { name: "Skip setup" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
+  expect(document.querySelectorAll(".setup-progress > .done")).toHaveLength(5);
+  expect(screen.getByText(/Start with tomorrow's transactions\./)).toBeTruthy();
+  // It only records the choice, for this budget on this device, and that Budget has yet to say it's ready.
   fireEvent.click(screen.getByRole("radio", { name: /Import my bank's file/ }));
   press("Finish");
   expect(screen.getByText("Walkthrough closed")).toBeTruthy();
-  expect(readMark("made")).toEqual({ card: true, assigned: true, keep: "file" });
+  expect(readMark("made")).toEqual({ card: true, assigned: true, keep: "file", ready: true });
   expect(world.undoSteps).toBe(1);
 });
 
@@ -291,7 +340,7 @@ it.each([
 ] as const)("Skip setup on step %i makes the budget that step implies", async (step, implied) => {
   writeDraft(answered(step));
   render(<Harness start={{ mode: "draft", origin: "welcome" }} />);
-  await heading(["Where is your money?", "What do you spend on?", "What does a month cost?", "Give your money its jobs."][step - 1]);
+  await heading(["Where is your money?", "What do you spend on?", "What does a month cost?", "Give your money its jobs"][step - 1]);
   if (step === 4) await screen.findByText("Bills");
   expect(api.createBudget).not.toHaveBeenCalled();
   press("Skip setup");
@@ -373,9 +422,9 @@ it("runs the same steps on a budget that exists, as edits to it", async () => {
   expect(api.setupBudget).not.toHaveBeenCalled();
   type("Rent or mortgage", "1200");
   type("Vacation", "1200");
-  fireEvent.change(screen.getByLabelText("How often, for Vacation"), { target: { value: "year" } });
+  fireEvent.click(screen.getByRole("switch", { name: "A year's amount, for Vacation" }));
   press("Next");
-  await heading("Give your money its jobs.");
+  await heading("Give your money its jobs");
   const targets = Object.fromEntries(world.open!.categories.filter((c) => c.target).map((c) => [c.name, c.target]));
   expect(targets).toEqual({ "Rent or mortgage": 120000, Vacation: 10000 });
   await screen.findByText("Left after this");
@@ -389,12 +438,26 @@ it("runs the same steps on a budget that exists, as edits to it", async () => {
   expect(world.undoSteps).toBe(before + 1);
   expect(assigned(world.open!)).toBe(130000);
   expect(readMark("made")).toEqual({ card: true, assigned: true });
-  // Back shows what's there now; the accounts step lists the one the budget has.
-  press("Back");
-  await heading("Give your money its jobs.");
+  expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
+  cleanup();
+
+  // Opened again at the step before: it shows what's there now, and assigns nothing twice.
+  render(<Harness start={{ mode: "budget", step: 4 }} budget={world.open} />);
+  await heading("Give your money its jobs");
+  await screen.findByText("Left after this");
+  expect(screen.getByRole("status").textContent).toBe("$700.00 is left over. Put it in Emergency fund, or keep it for next month.");
+  expect(document.querySelectorAll(".setup-plan details")).toHaveLength(0);
+  const steps = world.undoSteps;
+  press("Assign it");
+  await heading("How will you keep it up to date?");
+  expect(world.undoSteps).toBe(steps);
+  expect(assigned(world.open!)).toBe(130000);
+  cleanup();
+  render(<Harness start={{ mode: "budget", step: 4 }} budget={world.open} />);
+  await heading("Give your money its jobs");
   press("Back");
   await heading("What does a month cost?");
-  expect((screen.getByLabelText("Rent or mortgage") as HTMLInputElement).value).toBe("1200.00");
+  expect((screen.getByLabelText("Rent or mortgage") as HTMLInputElement).value).toBe("1,200.00");
   press("Back");
   await heading("What do you spend on?");
   expect(screen.queryByRole("combobox", { name: "Categories" })).toBeNull();
@@ -517,4 +580,117 @@ it("opens a made budget again rather than making a second when opening it failed
   press("Skip setup");
   await waitFor(() => expect(screen.getByText("Walkthrough closed")).toBeTruthy());
   expect(api.createBudget).toHaveBeenCalledOnce();
+});
+
+/** The reviewer's run: 3,500 in checking, 420 owed on a card, and a month that costs 3,375. */
+const tight = (rent: string): SetupDraft => ({
+  ...answered(3),
+  accounts: [
+    { name: "Checking", type: "checking", balance: "3500" },
+    { name: "Visa", type: "creditCard", balance: "420" },
+  ],
+  leftOut: [],
+  added: [],
+  amounts: { "0.0": { amount: rent } },
+  income: "",
+});
+
+it("says the card's debt from the start, so the steps agree when only the card goes short", async () => {
+  writeDraft(tight("3375"));
+  render(<Harness start={{ mode: "draft", origin: "welcome" }} />);
+  await heading("What does a month cost?");
+  const total = document.querySelector(".setup-actions .setup-note")!;
+  // The month fits; the card is owed on top of it, and that isn't the month costing too much.
+  expect(total.textContent).toBe("Your month costs $3,375.00, plus $420.00 owed on Visa. You have $3,500.00.");
+  expect(total.className).toBe("setup-note");
+  press("Next");
+  await screen.findByText("Left after this");
+  const outcome = screen.getByRole("status");
+  expect(outcome.textContent).toBe("Everything this month is covered. $125.00 of the $420.00 you owe on Visa is set aside; the other $295.00 waits for payday.");
+  expect(outcome.className).toBe("setup-outcome good");
+  expect(screen.queryByText(/more than you have right now/)).toBeNull();
+  expect(screen.queryByRole("button", { name: /Put it in/ })).toBeNull();
+});
+
+it("says two things when the month and the card both go short, and names no card when there are several", async () => {
+  writeDraft(tight("3600"));
+  const first = render(<Harness start={{ mode: "draft", origin: "welcome" }} />);
+  await heading("What does a month cost?");
+  expect(document.querySelector(".setup-actions .setup-note")!.className).toBe("setup-note warning");
+  press("Next");
+  await screen.findByText("Left after this");
+  expect(screen.getByRole("status").textContent).toBe(
+    "Your month costs $100.00 more than you have right now. The rest waits for payday; assign it when it arrives. The $420.00 you owe on Visa waits for payday.",
+  );
+  expect(screen.getByRole("status").className).toBe("setup-outcome warning");
+  first.unmount();
+
+  writeDraft({ ...tight("3375"), accounts: [...tight("3375").accounts, { name: "Amex", type: "creditCard", balance: "80" }] });
+  render(<Harness start={{ mode: "draft", origin: "welcome" }} />);
+  await heading("What does a month cost?");
+  expect(document.querySelector(".setup-actions .setup-note")!.textContent).toBe("Your month costs $3,375.00, plus $500.00 owed on your cards. You have $3,500.00.");
+  press("Next");
+  await screen.findByText("Left after this");
+  expect(screen.getByRole("status").textContent).toBe(
+    "Everything this month is covered. $125.00 of the $500.00 you owe on your cards is set aside; the other $375.00 waits for payday.",
+  );
+});
+
+it("presses the filled button on Enter from a step with no field to type in", async () => {
+  writeDraft(answered(2));
+  render(<Harness start={{ mode: "draft", origin: "welcome" }} />);
+  await heading("What do you spend on?");
+  await screen.findByRole("button", { name: "Phone" });
+  // The set's select is the step's field; Enter there goes on, as it does from a text field.
+  const set = screen.getByRole("combobox", { name: "Categories" });
+  fireEvent.keyDown(set, { key: "Enter" });
+  await heading("What does a month cost?");
+  // From the last amount Enter isn't taken for moving down: the form's own submit presses Next.
+  const last = screen.getByLabelText("Pets");
+  expect(fireEvent.keyDown(last, { key: "Enter" })).toBe(true);
+  fireEvent.submit(last.closest("form")!);
+  const title = await heading("Give your money its jobs");
+  await screen.findByText("Left after this");
+  // No field here: the caret is on the question, and Enter presses Assign it.
+  expect(document.activeElement).toBe(title);
+  fireEvent.keyDown(title, { key: "Enter" });
+  await heading("How will you keep it up to date?");
+  expect(api.createBudget).toHaveBeenCalledOnce();
+  expect(document.activeElement).toBe(screen.getByRole("radio", { name: /Type it in as I spend/ }));
+});
+
+it("tells a finished budget it's ready once, with the first thing to do for the way chosen", async () => {
+  const onKeepUp = vi.fn();
+  const budget: Budget = { ...skipped(), categories: [{ id: "c", name: "Rent", group: "Bills", target: 120000 }] };
+  const card = <SetupCard budget={budget} budgetId="made" unassigned={0} onContinue={vi.fn()} onKeepUp={onKeepUp} />;
+  act(() => writeMark("made", { card: true, assigned: true, keep: "file", ready: true }));
+  const view = render(card);
+  const line = screen.getByRole("region", { name: "Your budget is ready." });
+  expect(line.textContent).toContain("Your budget is ready. Import your bank's file about once a week.");
+  expect(line.querySelectorAll("button.primary")).toHaveLength(1);
+  press("Import a bank file");
+  expect(onKeepUp).toHaveBeenCalledExactlyOnceWith("file");
+  // Used, it's gone for good.
+  expect(screen.queryByRole("region")).toBeNull();
+  expect(readMark("made")).toEqual({ card: true, assigned: true, keep: "file", ready: false });
+  view.unmount();
+  render(card);
+  expect(screen.queryByRole("region")).toBeNull();
+  cleanup();
+
+  // Each way has its own sentence and button; closing it is enough.
+  for (const [keep, text, button] of [
+    ["type", "Add each purchase as you spend.", "Add a transaction"],
+    ["bank", "Connect your bank when you're ready.", "Connect a bank"],
+  ] as const) {
+    act(() => writeMark("made", { card: true, assigned: true, keep, ready: true }));
+    const shown = render(card);
+    expect(screen.getByRole("region").textContent).toContain(text);
+    expect(screen.getByRole("button", { name: button })).toBeTruthy();
+    press("Close");
+    expect(screen.queryByRole("region")).toBeNull();
+    expect(readMark("made")?.ready).toBe(false);
+    shown.unmount();
+  }
+  expect(onKeepUp).toHaveBeenCalledOnce();
 });
