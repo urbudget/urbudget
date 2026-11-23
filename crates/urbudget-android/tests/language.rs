@@ -11,17 +11,22 @@ fn invoke(method: &str, params: Value) -> Value {
 fn a_new_sample_budget_and_the_engines_errors_follow_the_language() {
     let english = invoke("sampleBudget", json!({ "month": "2026-10" }));
     assert_eq!(english["value"]["name"], "Sample budget");
-    assert_eq!(english["value"]["categories"][0]["name"], "Groceries");
+    let named = |budget: &Value, list: &str, id: &str, field: &str| {
+        budget[list].as_array().unwrap().iter().find(|row| row["id"] == id).unwrap()[field].clone()
+    };
+    assert_eq!(named(&english["value"], "categories", "sample-groceries", "name"), "Groceries");
 
     i18n::set_language("ar");
     let arabic = invoke("sampleBudget", json!({ "month": "2026-10" }))["value"].clone();
     // The sample's names become the new budget's own data, made in the language in use; its
     // ids and amounts are the same in every language.
     assert_eq!(arabic["name"], "ميزانية تجريبية");
-    assert_eq!(arabic["accounts"][0]["name"], "الحساب الجاري");
-    assert_eq!(arabic["categories"][0]["name"], "البقالة");
-    assert_eq!(arabic["categories"][0]["group"], "المصروفات اليومية");
-    assert_eq!(arabic["transactions"][0]["payee"], "بقالة الحي");
+    assert_eq!(arabic["accounts"][0]["name"], "الحساب اليومي");
+    assert_eq!(named(&arabic, "categories", "sample-groceries", "name"), "البقالة");
+    assert_eq!(named(&arabic, "categories", "sample-groceries", "group"), "الأساسيات");
+    assert_eq!(named(&arabic, "transactions", "sample-market", "payee"), "بقالة الحي");
+    // Card payment categories keep the group name every app looks for.
+    assert_eq!(named(&arabic, "categories", "sample-card-payment", "group"), "Credit Card Payments");
     assert_eq!(arabic["categories"][0]["id"], english["value"]["categories"][0]["id"]);
     assert_eq!(arabic["assignments"], english["value"]["assignments"]);
     // A name the app chose stays the app's.

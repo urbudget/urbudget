@@ -143,7 +143,7 @@ final class EngineEditTests: XCTestCase {
         XCTAssertEqual(snapshot.budget?.has("sample"), false)
         // An edit and commands as one change.
         let before = snapshot
-        snapshot = try await repository.edit({ try $0.upsertRecord("categories", ["id": "pets", "name": "Pets", "group": "Everyday", "target": 0]) },
+        snapshot = try await repository.edit({ try $0.upsertRecord("categories", ["id": "pets", "name": "Pets", "group": "Essentials", "target": 0]) },
                                              then: [("workflow", ["action": ["type": "assignAmount", "month": .string(snapshot.month), "categoryId": "pets", "amount": 1_500]]),
                                                     ("saveTransaction", ["transaction": transaction("e2", memo: "Second"), "through": .string(Dates.today)])])
         XCTAssertEqual(snapshot.summary?.rows("categories").first { $0.text("id") == "pets" }?.long("assigned"), 1_500)
@@ -151,7 +151,7 @@ final class EngineEditTests: XCTestCase {
         // The totals that came with the edit are the store's own.
         let asked = try NativeCore.service("query_budget", ["method": "calculate", "params": ["month": .string(snapshot.month), "asOfMonth": .string(Dates.currentMonth)]])
         XCTAssertEqual(snapshot.summary, asked)
-        XCTAssertEqual(snapshot.summary?.rows("categories").first { $0.text("id") == groceries }?.long("assigned"), 60_000)
+        XCTAssertEqual(snapshot.summary?.rows("categories").first { $0.text("id") == groceries }?.long("assigned"), 180_000)
 
         let shown = try XCTUnwrap(snapshot.budget)
         let loaded = try await repository.load()
@@ -198,7 +198,7 @@ final class EngineEditTests: XCTestCase {
         } catch {}
         do {
             // The first step is fine and the second isn't: neither is saved.
-            _ = try await repository.edit({ try $0.upsertRecord("categories", ["id": "half", "name": "Half", "group": "Everyday", "target": 0]) },
+            _ = try await repository.edit({ try $0.upsertRecord("categories", ["id": "half", "name": "Half", "group": "Essentials", "target": 0]) },
                                           then: [("saveTransaction", ["transaction": ["id": "bad", "date": "not a date", "accountId": "nowhere", "amount": 1]])])
             XCTFail("One bad step must stop the whole edit")
         } catch {}
@@ -340,7 +340,7 @@ final class EngineEditTests: XCTestCase {
         XCTAssertNotNil(reconcile.row("transactions", id: "adjust"), "The reconcile sheet reads its adjustment from the reply")
         let after = try await repository.load()
         XCTAssertEqual(after.revision, snapshot.revision)
-        XCTAssertEqual(after.summary?.rows("categories").first { $0.text("id") == groceries }?.long("assigned"), 60_000)
+        XCTAssertEqual(after.summary?.rows("categories").first { $0.text("id") == groceries }?.long("assigned"), 180_000)
     }
 }
 

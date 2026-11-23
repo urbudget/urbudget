@@ -95,7 +95,9 @@ actor BudgetRepository {
     }
 
     func create(name: String, currency: String, sample: Bool, localOnly: Bool = false, adjust: (@Sendable (inout JSON) -> Void)? = nil) throws -> BudgetSnapshot {
-        let params: JSON = ["name": .string(name.trimmingCharacters(in: .whitespaces)), "currency": .string(currency.uppercased()), "month": .string(month)]
+        // "today": the sample dates none of its purchases after it.
+        let params: JSON = ["name": .string(name.trimmingCharacters(in: .whitespaces)), "currency": .string(currency.uppercased()), "month": .string(month),
+                            "today": .string(Dates.today)]
         var budget = try NativeCore.engine(sample ? "sampleBudget" : "defaultBudget", params: params)
         // Marked as the desktop marks its sample, so Budget offers the way back out of it.
         if sample { budget["sample"] = [:] }
