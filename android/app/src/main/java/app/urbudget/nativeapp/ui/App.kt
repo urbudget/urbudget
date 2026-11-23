@@ -575,7 +575,7 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
             else pageStates.SaveableStateProvider(if (tab == 1) "register:$accountFilter|$categoryFilter|$rangeFrom|$rangeThrough|$rangeSearch" else "tab:$tab") { when (tab) {
                 0 -> BudgetScreen(budget, state.summary, state.month, vm::selectMonth, vm, common,
                     onTransactions = { target -> openRegister(target, 0) },
-                    onPayCard = { card -> openEditor("cardPayment", JSONObject().put("id", card)) }, showing = showing)
+                    onPayCard = { card -> openEditor("cardPayment", JSONObject().put("id", card)) }, addAccount = { openEditor("account") }, showing = showing)
                 1 -> TransactionsScreen(budget, state.summary, accountFilter, categoryFilter,
                     onBack = when {
                         returnTab >= 0 -> ({ leaveForm { closeRegister() } })

@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -81,8 +82,10 @@ internal data class RegisterTarget(val category: String = "", val account: Strin
 @Composable
 internal fun BudgetScreen(budget: JSONObject, summary: JSONObject?, month: String, onMonth: (String) -> Unit, vm: BudgetViewModel,
                           bar: @Composable RowScope.() -> Unit, onTransactions: (RegisterTarget) -> Unit, onPayCard: (String) -> Unit,
-                          showing: Showing? = null) {
+                          addAccount: () -> Unit, showing: Showing? = null) {
     val currency = budget.text("currency")
+    // With no accounts there's no money to plan yet, so the list leads with adding one.
+    val noAccounts = remember(budget) { budget.rows("accounts").isEmpty() }
     var filter by rememberSaveable { mutableStateOf("all") }
     // Categories an assistant's card named ("Show in the budget"): marked, the first in view, until the tab is left.
     var marked by remember { mutableStateOf(emptySet<String>()) }
@@ -274,9 +277,9 @@ internal fun BudgetScreen(budget: JSONObject, summary: JSONObject?, month: Strin
                     UncategorizedLine(shown.uncategorized, shown.uncategorizedCredit > 0, currency, assignedWidth, availableWidth) { onTransactions(RegisterTarget(category = "__none")) }
                 }
             }
-            if (visibleGroups.isEmpty()) item(key = "empty", contentType = "empty") {
-                if (filter == "all") EmptyState(stringResource(R.string.budget_empty_title), stringResource(R.string.budget_empty_detail), stringResource(R.string.category_add)) { adding = "" }
-                else EmptyState(stringResource(R.string.view_empty_title), stringResource(R.string.view_empty_detail), stringResource(R.string.view_show_all)) { filter = "all" }
+            if (filter == "all") budgetEmptyPrompts(noAccounts, visibleGroups.isEmpty(), addAccount) { adding = "" }
+            else if (visibleGroups.isEmpty()) item(key = "empty", contentType = "empty") {
+                EmptyState(stringResource(R.string.view_empty_title), stringResource(R.string.view_empty_detail), stringResource(R.string.view_show_all)) { filter = "all" }
             }
             visibleGroups.forEach { (group, rows) ->
                 val open = group.name !in collapsed
@@ -339,6 +342,21 @@ internal fun BudgetScreen(budget: JSONObject, summary: JSONObject?, month: Strin
     if (addingGroup) NewGroupDialog(budget, vm) { addingGroup = false }
     renaming?.let { group -> RenameGroupDialog(group, budget, vm) { renaming = null } }
     deletingGroup?.let { group -> DeleteGroupDialog(group, budget, vm) { deletingGroup = null } }
+}
+
+/**
+ * What an unfinished budget's list says: "Add your first account" while it has none, as the Accounts
+ * tab's empty state has it, and "Start your plan" while it has no categories. With both, the account
+ * leads and keeps the one filled button; the categories prompt follows, quieter.
+ */
+internal fun LazyListScope.budgetEmptyPrompts(noAccounts: Boolean, noCategories: Boolean, addAccount: () -> Unit, addCategory: () -> Unit) {
+    if (noAccounts) item(key = "no-accounts", contentType = "empty") {
+        EmptyState(stringResource(R.string.accounts_empty_title), stringResource(R.string.accounts_empty_detail), stringResource(R.string.account_add), addAccount)
+    }
+    if (noCategories) item(key = "empty", contentType = "empty") {
+        if (noAccounts) QuietPrompt(stringResource(R.string.budget_empty_title), stringResource(R.string.budget_empty_detail), stringResource(R.string.category_add), addCategory)
+        else EmptyState(stringResource(R.string.budget_empty_title), stringResource(R.string.budget_empty_detail), stringResource(R.string.category_add), addCategory)
+    }
 }
 
 /** A request to move money: the category it starts from, and whether money goes to or comes from another. */
