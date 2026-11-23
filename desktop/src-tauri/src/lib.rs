@@ -34,6 +34,19 @@ fn budget_templates() -> Vec<urbudget_core::budget_templates::BudgetTemplate> {
     urbudget_core::budget_templates::list()
 }
 
+/// The budget a setup walkthrough's answers describe, in the engine's language. Nothing is saved
+/// or assigned: the window creates it when the walkthrough gets there.
+#[tauri::command(async)]
+fn setup_budget(answers: urbudget_core::setup::Answers) -> Result<Budget, String> {
+    urbudget_core::setup::build(&answers)
+}
+
+/// What Quick assign › Underfunded would give a budget that isn't in the library yet.
+#[tauri::command(async)]
+fn setup_preview(budget: Budget, month: String) -> Result<urbudget_core::setup::Preview, String> {
+    urbudget_core::setup::preview(&budget, &month)
+}
+
 #[tauri::command(async)]
 fn load_budget(db: State<'_, Database>, legacy_backup_keep: Option<usize>) -> Result<serde_json::Value, String> {
     if !db.is_open(){return Ok(urbudget_services::library_api::empty_snapshot());}
@@ -632,6 +645,8 @@ pub fn run() {
             library::editor_recovery,
             set_language,
             budget_templates,
+            setup_budget,
+            setup_preview,
             upsert_transaction,
             source_loan_terms,
             preview_bank_file,

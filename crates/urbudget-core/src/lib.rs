@@ -24,6 +24,7 @@ pub mod patch;
 pub mod positions_file;
 pub mod reports;
 pub mod schedules;
+pub mod setup;
 pub mod sms_import;
 pub mod sms_templates;
 pub mod store;

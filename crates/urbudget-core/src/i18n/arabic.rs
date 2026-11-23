@@ -1295,6 +1295,8 @@ pub(super) const MESSAGES: &[(&str, &str)] = &[
     ("Tools and software", "الأدوات والبرامج"),
     ("Slow months", "أشهر الدخل القليل"),
     ("Retirement", "التقاعد"),
+    // The setup walkthrough's budget (setup.rs): the group for categories someone adds to a template.
+    ("Other", "أخرى"),
     // The desktop app's own commands and its Microsoft Store updates (desktop/src-tauri).
     ("Choose a downloaded YNAB export.", "اختر ملف تصدير YNAB الذي نزّلته."),
     ("Choose a plain .csv file name.", "اختر اسمًا بسيطًا لملف CSV."),
