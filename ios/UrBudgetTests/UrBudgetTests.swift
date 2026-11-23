@@ -169,11 +169,10 @@ final class RepositoryTests: XCTestCase {
         snapshot = try await repository.open(id: try XCTUnwrap(budgets.first { $0.text("name") == "Tests" }).text("id"))
         XCTAssertEqual(snapshot.budget?.text("name"), "Tests")
 
-        // A budget from the welcome screen starts in the chosen formats with the starter categories.
+        // A budget from the welcome screen starts in the chosen formats with its template's categories.
         // (The native runtime is one per process, so these share this test's library.)
-        snapshot = try await repository.create(name: "Fresh", currency: "EUR", sample: false) { budget in
+        snapshot = try await repository.create(name: "Fresh", currency: "EUR", sample: false, template: BudgetTemplate.defaultID) { budget in
             budget["dateFormat"] = "dmy"
-            StarterBudget.addCategories(to: &budget)
         }
         XCTAssertEqual(snapshot.budget?.text("dateFormat"), "dmy")
         XCTAssertEqual(snapshot.budget?.rows("categories").count, 16)
