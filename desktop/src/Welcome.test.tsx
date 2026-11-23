@@ -1,5 +1,4 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { produce } from "immer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 vi.mock("./bridge", async () => {
@@ -10,11 +9,14 @@ vi.mock("./bridge", async () => {
       createBudget: vi.fn(async () => "sample-id"),
       deleteBudget: vi.fn(async () => []),
       budgetTemplates: vi.fn(async () => templatesFixture()),
+      importYnab: vi.fn(),
     },
   };
 });
 import { api } from "./bridge";
-import { FirstRunWelcome, GettingStarted, SampleBanner, Welcome, isBlank, isUntouched, openSample } from "./Welcome";
+import { FirstRunWelcome, SampleBanner, Welcome, isBlank, isUntouched, openSample } from "./Welcome";
+import { localeDefaults } from "./locale";
+import { readDraft, writeMark } from "./setup";
 import { ToastProvider } from "./ui";
 import type { Budget } from "./types";
 
@@ -29,9 +31,32 @@ const blank = (): Budget => ({
   transactions: [],
   assignments: [],
 });
+/** An empty budget's page. */
+const welcome = (props: Partial<Parameters<typeof Welcome>[0]> = {}) => (
+  <ToastProvider>
+    <Welcome
+      budget={blank()}
+      budgetId="b1"
+      transform={vi.fn()}
+      openBudget={vi.fn()}
+      onSetup={vi.fn()}
+      importYnab={vi.fn()}
+      resolveYnab={vi.fn()}
+      acceptYnab={vi.fn()}
+      {...props}
+    />
+  </ToastProvider>
+);
+const firstRun = (props: Partial<Parameters<typeof FirstRunWelcome>[0]> = {}) => (
+  <ToastProvider>
+    <FirstRunWelcome openBudget={vi.fn(async () => {})} onSetup={vi.fn()} sync={<p>Account and Sync panels</p>} {...props} />
+  </ToastProvider>
+);
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
   vi.clearAllMocks();
+  vi.mocked(api.listBudgets).mockResolvedValue([]);
 });
 afterEach(cleanup);
 
@@ -43,52 +68,26 @@ it("knows a first launch's budget from one someone set up", () => {
   expect(isBlank({ ...blank(), categories: [{ id: "c", name: "Rent", group: "Bills", target: 0 }] })).toBe(false);
 });
 
-it("starts fresh with the default template and the chosen formats, then asks for an account", async () => {
-  let budget = blank();
-  const edit = (update: (d: Budget) => void) => (budget = produce(budget, update));
-  const onAddAccount = vi.fn();
-  render(
-    <ToastProvider>
-      <Welcome
-        budget={budget}
-        budgetId="b1"
-        edit={edit}
-        transform={vi.fn()}
-        openBudget={vi.fn()}
-        onAddAccount={onAddAccount}
-        importYnab={vi.fn()}
-        resolveYnab={vi.fn()} acceptYnab={vi.fn()}
-      />
-    </ToastProvider>,
-  );
-  fireEvent.click(screen.getByRole("button", { name: /Start fresh/ }));
-  expect(await screen.findByText("Bills, Needs, Wants, Savings · 16 categories")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: /Next: add your accounts/ }));
-  await vi.waitFor(() => expect(onAddAccount).toHaveBeenCalled());
-  expect(budget.categories.map((c) => c.group)).toContain("Savings");
-  expect(budget.groupOrder).toEqual(["Bills", "Needs", "Wants", "Savings"]);
-  expect(budget.dateFormat).toBe("mdy");
-  expect(onAddAccount).toHaveBeenCalled();
-  expect(localStorage.getItem("lb:setup:b1")).toBe("on");
+it("gives an empty budget one button into the walkthrough, with the sample and YNAB as quiet links", () => {
+  const onSetup = vi.fn();
+  const view = render(welcome({ onSetup }));
+  // The one filled button.
+  expect(document.querySelectorAll("button.primary")).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "Set up this budget" }));
+  expect(onSetup).toHaveBeenCalledOnce();
+  expect(screen.getByRole("button", { name: "Look around a sample" }).className).toBe("link-button");
+  expect(screen.getByRole("button", { name: "I'm coming from YNAB" }).className).toBe("link-button");
+  // A budget the walkthrough made by skipping is offered the rest of it.
+  writeMark("b1", { card: true });
+  view.unmount();
+  render(welcome());
+  expect(screen.getByRole("button", { name: "Continue setup" })).toBeTruthy();
 });
 
 it("opens the sample as its own budget in this budget's currency", async () => {
   const openBudget = vi.fn(async () => {});
-  render(
-    <ToastProvider>
-      <Welcome
-        budget={{ ...blank(), currency: "CAD" }}
-        budgetId="b1"
-        edit={vi.fn()}
-        transform={vi.fn()}
-        openBudget={openBudget}
-        onAddAccount={vi.fn()}
-        importYnab={vi.fn()}
-        resolveYnab={vi.fn()} acceptYnab={vi.fn()}
-      />
-    </ToastProvider>,
-  );
-  fireEvent.click(screen.getByRole("button", { name: /Look around first/ }));
+  render(welcome({ budget: { ...blank(), currency: "CAD" }, openBudget }));
+  fireEvent.click(screen.getByRole("button", { name: "Look around a sample" }));
   await vi.waitFor(() => expect(openBudget).toHaveBeenCalledWith("sample-id"));
   const sample = vi.mocked(api.createBudget).mock.calls[0][0];
   expect(sample).toMatchObject({ name: "Sample budget", currency: "CAD", sample: { from: "b1" } });
@@ -112,59 +111,17 @@ it("leaves the sample for the budget it came from, deleting it if asked", async 
   expect(openBudget).toHaveBeenCalledWith("b1");
 });
 
-it("walks a budget set up from the welcome screen through the method, step by step", () => {
-  const props = { onAddAccount: vi.fn(), onAssign: vi.fn(), onAddTransaction: vi.fn(), onSetTarget: vi.fn() };
-  const budget: Budget = {
-    ...blank(),
-    accounts: [{ id: "a", name: "Checking", kind: "cash", openingBalance: 100000, archived: false }],
-    categories: [{ id: "c", name: "Rent", group: "Bills", target: 0 }],
-  };
-  // Budgets that never saw the welcome screen don't get it.
-  const { rerender } = render(<GettingStarted budget={budget} budgetId="b1" {...props} />);
-  expect(screen.queryByRole("region", { name: "Getting started" })).toBeNull();
-
-  localStorage.setItem("lb:setup:b2", "on");
-  rerender(<GettingStarted budget={budget} budgetId="b2" {...props} />);
-  expect(screen.getByText("1 of 5 done")).toBeTruthy();
-  expect(screen.getByRole("button", { name: /Assign your money/ }).getAttribute("aria-current")).toBe("step");
-  fireEvent.click(screen.getByRole("button", { name: "Assign money" }));
-  expect(props.onAssign).toHaveBeenCalled();
-
-  const assigned = { ...budget, assignments: [{ month: "2026-10", categoryId: "c", amount: 50000 }] };
-  rerender(<GettingStarted budget={assigned} budgetId="b2" {...props} />);
-  expect(screen.getByText("2 of 5 done")).toBeTruthy();
-  expect(screen.getByRole("button", { name: /Record your spending/ }).getAttribute("aria-current")).toBe("step");
-
-  // Imported budgets already know the method.
-  rerender(<GettingStarted budget={{ ...assigned, importedFrom: "ynabFiles" }} budgetId="b2" {...props} />);
-  expect(screen.queryByRole("region", { name: "Getting started" })).toBeNull();
-
-  rerender(<GettingStarted budget={assigned} budgetId="b2" {...props} />);
-  fireEvent.click(screen.getByRole("button", { name: "Hide getting started" }));
-  expect(screen.queryByRole("region", { name: "Getting started" })).toBeNull();
-  expect(localStorage.getItem("lb:setup:b2")).toBe("off");
-});
-
 it("leads the YNAB choice with the token import, with the export file a click away", () => {
-  render(
-    <ToastProvider>
-      <Welcome
-        budget={blank()}
-        budgetId="b1"
-        edit={vi.fn()}
-        transform={vi.fn()}
-        openBudget={vi.fn()}
-        onAddAccount={vi.fn()}
-        importYnab={vi.fn()}
-        resolveYnab={vi.fn()} acceptYnab={vi.fn()}
-      />
-    </ToastProvider>,
-  );
+  render(welcome());
   fireEvent.click(screen.getByRole("button", { name: /I'm coming from YNAB/ }));
   expect(screen.getByLabelText("YNAB personal access token")).toBeTruthy();
+  // With the import open, the walkthrough steps back to a link: its button isn't a second filled one.
+  expect(screen.queryByRole("button", { name: "Set up this budget" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "No token? Use YNAB's export file" }));
   expect(screen.getByRole("button", { name: /Choose export file/ })).toBeTruthy();
   expect(screen.queryByLabelText("YNAB personal access token")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Set it up step by step instead" }));
+  expect(screen.getByRole("button", { name: "Set up this budget" })).toBeTruthy();
 });
 
 it("creates a new sample when the previous sample is in Trash or recovery", async () => {
@@ -190,31 +147,84 @@ it("leaves a sample for an active budget when its original budget is in Trash", 
   await vi.waitFor(() => expect(open).toHaveBeenCalledWith("mine"));
 });
 
-it("offers first-run choices without creating a placeholder, then creates the selected fresh budget", async () => {
-  const openBudget = vi.fn(async () => {}), onAddAccount = vi.fn();
-  render(<ToastProvider><FirstRunWelcome openBudget={openBudget} onAddAccount={onAddAccount}
-    importYnab={vi.fn()} resolveYnab={vi.fn()} acceptYnab={vi.fn()} /></ToastProvider>);
-  expect(screen.getByRole("button", {name: /I'm coming from YNAB/})).toBeTruthy();
-  expect(screen.getByRole("button", {name: /Look around first/})).toBeTruthy();
+it("opens a first launch on one button, the device's currency and date format, and two quiet links", () => {
+  const onSetup = vi.fn();
+  vi.spyOn(navigator, "languages", "get").mockReturnValue(["en-US"]);
+  render(firstRun({ onSetup }));
+  expect(document.querySelectorAll("button.primary")).toHaveLength(1);
+  // No name, currency or format questions: the guess is one line, with a way to change it.
+  expect(screen.getByText("US Dollar")).toBeTruthy();
+  expect(screen.getByText("10/15/2026")).toBeTruthy();
+  expect(screen.queryByText("Currency")).toBeNull();
+  expect(screen.queryByText("Account and Sync panels")).toBeNull();
+  expect(screen.getByRole("button", { name: "Look around a sample" }).className).toBe("link-button");
+  expect(screen.getByRole("button", { name: "I already have a budget" }).className).toBe("link-button");
+
+  fireEvent.click(screen.getByRole("button", { name: "Create my budget" }));
+  // The walkthrough opens on a draft; nothing is in the library.
+  expect(onSetup).toHaveBeenCalledOnce();
   expect(api.createBudget).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", {name: /Start fresh/}));
-  expect(api.createBudget).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", {name: /Next: add your accounts/}));
-  await vi.waitFor(() => expect(onAddAccount).toHaveBeenCalledOnce());
+  expect(readDraft("welcome")).toMatchObject({ name: "My budget", step: 1, format: localeDefaults(["en-US"]) });
+});
+
+it("starts the walkthrough in the currency and formats changed on the first screen", () => {
+  vi.spyOn(navigator, "languages", "get").mockReturnValue(["en-US"]);
+  render(firstRun());
+  fireEvent.click(screen.getByRole("button", { name: "Change" }));
+  fireEvent.change(screen.getByLabelText("Date format"), { target: { value: "dmy" } });
+  expect(screen.getByText("15/10/2026", { selector: "p span" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Create my budget" }));
+  expect(readDraft("welcome")?.format).toMatchObject({ currency: "USD", dateFormat: "dmy" });
+});
+
+it("opens the sample from a first launch without making a budget of the person's own", async () => {
+  vi.spyOn(navigator, "languages", "get").mockReturnValue(["en-GB"]);
+  const openBudget = vi.fn(async () => {});
+  render(firstRun({ openBudget }));
+  fireEvent.click(screen.getByRole("button", { name: "Look around a sample" }));
+  await vi.waitFor(() => expect(openBudget).toHaveBeenCalledWith("sample-id"));
   expect(api.createBudget).toHaveBeenCalledOnce();
-  expect(vi.mocked(api.createBudget).mock.calls[0][0]).toMatchObject({currency:"SAR",groupOrder:["Bills","Needs","Wants","Savings"]});
-  expect(openBudget).toHaveBeenCalledWith("sample-id");
+  expect(vi.mocked(api.createBudget).mock.calls[0][0]).toMatchObject({ name: "Sample budget", currency: "GBP", dateFormat: "dmy", sample: { from: "" } });
+  expect(readDraft("welcome")).toBeNull();
+});
+
+it("keeps YNAB, a backup file and signing in behind I already have a budget", async () => {
+  const openBudget = vi.fn(async () => {});
+  render(firstRun({ openBudget }));
+  fireEvent.click(screen.getByRole("button", { name: "I already have a budget" }));
+  expect(screen.getByRole("heading", { name: "I already have a budget" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Create my budget" })).toBeNull();
+  for (const name of [/Bring it over from YNAB/, /Use YNAB's export file/, /Restore a backup file/, /Sign in and sync/])
+    expect(screen.getByRole("button", { name })).toBeTruthy();
+  // Account and Sync left the first screen: they're here, behind their row.
+  expect(screen.queryByText("Account and Sync panels")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /Sign in and sync/ }));
+  expect(screen.getByText("Account and Sync panels")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: /Use YNAB's export file/ }));
+  expect(screen.getByRole("button", { name: /Choose export file/ })).toBeTruthy();
+  expect(screen.queryByText("Account and Sync panels")).toBeNull();
+  expect(api.createBudget).not.toHaveBeenCalled();
+
+  // A backup file becomes a budget and opens.
+  const backup = { ...blank(), name: "Restored" };
+  const file = new File([JSON.stringify(backup)], "backup.json", { type: "application/json" });
+  fireEvent.change(screen.getByLabelText("Restore a backup file"), { target: { files: [file] } });
+  await vi.waitFor(() => expect(openBudget).toHaveBeenCalledWith("sample-id"));
+  expect(vi.mocked(api.createBudget).mock.calls[0][0]).toMatchObject({ name: "Restored" });
+
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  expect(screen.getByRole("button", { name: "Create my budget" })).toBeTruthy();
 });
 
 it("creates an explicit YNAB destination before showing its token form so import review survives", async () => {
   const openBudget = vi.fn(async () => {});
-  const {unmount} = render(<ToastProvider><FirstRunWelcome openBudget={openBudget} onAddAccount={vi.fn()}
-    importYnab={vi.fn()} resolveYnab={vi.fn()} acceptYnab={vi.fn()} /></ToastProvider>);
-  fireEvent.click(screen.getByRole("button", {name:/I'm coming from YNAB/}));
+  const { unmount } = render(firstRun({ openBudget }));
+  fireEvent.click(screen.getByRole("button", { name: "I already have a budget" }));
+  fireEvent.click(screen.getByRole("button", { name: /Bring it over from YNAB/ }));
   await vi.waitFor(() => expect(openBudget).toHaveBeenCalledWith("sample-id"));
+  expect(vi.mocked(api.createBudget).mock.calls[0][0]).toMatchObject({ name: "My budget", accounts: [], categories: [] });
   unmount();
-  render(<ToastProvider><Welcome budget={blank()} budgetId="sample-id" openBudget={openBudget} onAddAccount={vi.fn()}
-    edit={vi.fn()} transform={vi.fn()} importYnab={vi.fn()} resolveYnab={vi.fn()} acceptYnab={vi.fn()} /></ToastProvider>);
+  render(welcome({ budgetId: "sample-id", openBudget }));
   expect(screen.getByLabelText("YNAB personal access token")).toBeTruthy();
   expect(sessionStorage.getItem("lb:welcome-ynab:sample-id")).toBeNull();
 });

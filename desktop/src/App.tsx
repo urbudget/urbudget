@@ -41,6 +41,9 @@ import { TransactionsPage, saveTransaction, scheduledMessage } from "./Register"
 import { Sidebar, useSidebarLayout, type Page } from "./Sidebar";
 import { ManageBudgetsDialog, NewBudgetDialog } from "./BudgetDialogs";
 import { SampleBanner, Welcome, FirstRunWelcome, isBlank, isUntouched, openSample } from "./Welcome";
+import { SetupWalkthrough, type SetupSession } from "./SetupWalkthrough";
+import { newDraft, writeDraft } from "./setup";
+import { cardPaymentCategory } from "./accounts";
 import { localeDefaults } from "./locale";
 import { AccountForm, CategoryForm, Modal, ReconcileForm, TransactionForm } from "./forms";
 import { configureFormat, errorText, formatDate, money, monthName, shiftMonth } from "./format";
@@ -199,6 +202,8 @@ export default function App() {
   useLanguage();
   const [month, setMonth] = useState(today().slice(0, 7));
   const [dialog, setDialog] = useState<Dialog>(null);
+  // The setup walkthrough, when it has the window: on answers for a budget not made yet, or on the open budget.
+  const [setup, setSetup] = useState<SetupSession | null>(null);
   const [planningEditor, setPlanningEditor] = useState(false);
   const [importing, setImporting] = useState<ImportState | null>(null);
   const toast = useToast();
@@ -502,17 +507,48 @@ export default function App() {
     }
   };
 
+  // From the New budget dialog: a new walkthrough carrying what the dialog asked, or the one left unfinished.
+  const setupFromDialog: Parameters<typeof NewBudgetDialog>[0]["onSetup"] = (start) => {
+    if (start !== "continue") writeDraft(newDraft("dialog", start));
+    setDialog(null);
+    setSetup({ mode: "draft", origin: "dialog" });
+  };
+  // The walkthrough is the window's whole page: before a budget exists, while the one it made
+  // opens, and on an open budget. Its one filled button is the only one on screen.
+  if (model.ready && setup && (setup.mode === "draft" || budget || model.operation)) {
+    if (budget) configureFormat(budget);
+    return (
+      <div className="empty-library-page setup-page">
+        {customTitleBar && <div className="empty-library-titlebar"><TitleBar /></div>}
+        <div className="setup-scroll">
+          <SetupWalkthrough
+            session={setup}
+            onSession={setSetup}
+            budget={budget}
+            budgetId={budgetId}
+            summary={currentSummary}
+            month={model.calculationMonth ?? today().slice(0, 7)}
+            edit={edit}
+            transform={model.transform}
+            openBudget={switchBudget}
+            close={() => setSetup(null)}
+          />
+        </div>
+      </div>
+    );
+  }
+  const syncSettings = <SyncSettings cloud={cloud} budgetId="" isClean={() => true} openBudget={switchBudget} />;
   if (model.ready && !budget) return (
     <div className="empty-library-page">
       {customTitleBar && <div className="empty-library-titlebar"><TitleBar /></div>}
-      {cloud.status?.library?.firstRun ? <FirstRunWelcome openBudget={switchBudget} onAddAccount={() => setDialog({type:"account"})} importYnab={model.importYnab} acceptYnab={model.acceptYnab} resolveYnab={model.resolveYnab} /> : <div className="settings-page">
+      {cloud.status?.library?.firstRun ? <FirstRunWelcome openBudget={switchBudget} onSetup={() => setSetup({ mode: "draft", origin: "welcome" })} sync={syncSettings} /> : <><div className="settings-page">
       <h1>{t("Budget library")}</h1>
       <p>{t("Create a budget or open one from your account library.")}</p>
       <button className="primary" onClick={() => setDialog({ type: "newBudget" })}>{t("New budget")}</button>{" "}
       <button className="secondary" onClick={() => setDialog({ type: "manageBudgets" })}>{t("Budgets")}</button>
-      </div>}
-      <div className="settings-page"><SyncSettings cloud={cloud} budgetId="" isClean={() => true} openBudget={switchBudget} /></div>
-      {dialog?.type === "newBudget" && <NewBudgetDialog close={close} open={switchBudget} />}
+      </div>
+      <div className="settings-page">{syncSettings}</div></>}
+      {dialog?.type === "newBudget" && <NewBudgetDialog close={close} open={switchBudget} onSetup={setupFromDialog} />}
       {dialog?.type === "manageBudgets" && <ManageBudgetsDialog close={close} open={switchBudget} changed={model.refreshDatabase} review={async (id) => { await flushAllEditorDrafts(); await model.switchBudget(id, true); }} onNew={() => setDialog({ type: "newBudget" })} />}
     </div>
   );
@@ -882,10 +918,9 @@ export default function App() {
               key={budgetId}
               budget={budget}
               budgetId={budgetId}
-              edit={edit}
               transform={model.transform}
               openBudget={switchBudget}
-              onAddAccount={() => setDialog({ type: "account" })}
+              onSetup={() => setSetup({ mode: "budget", step: 1 })}
               importYnab={model.importYnab}
               acceptYnab={model.acceptYnab}
               resolveYnab={model.resolveYnab}
@@ -907,7 +942,6 @@ export default function App() {
               onAsk={(names) =>
                 ask({ text: t("Help me with {categories} this month.", { categories: names.length === 1 ? names[0] : list(names) }) })
               }
-              onNewCategory={() => setDialog({ type: "category" })}
               onAddAccount={() => setDialog({ type: "account" })}
               onOpenRegister={({ accountId: account, ...filter }) => {
                 setAccountId(account);
@@ -915,7 +949,7 @@ export default function App() {
                 setPage("transactions");
               }}
               onOpenSample={() => void openSample(budget, budgetId, switchBudget).catch((e) => fail(e))}
-              onAddTransaction={() => setDialog({ type: "transaction", isNew: true })}
+              onSetup={(step) => setSetup({ mode: "budget", step })}
               onPayCard={(id) => {
                 const card = budget.accounts.find((a) => a.id === id);
                 if (card) setDialog({ type: "payment", account: card });
@@ -1103,7 +1137,7 @@ export default function App() {
         </Blocking>
       )}
       {currentSummary && dialog?.type === "newBudget" && (
-        <NewBudgetDialog current={{ budget, summary, token: metadata?.token ?? "" }} close={close} open={switchBudget} />
+        <NewBudgetDialog current={{ budget, summary, token: metadata?.token ?? "" }} close={close} open={switchBudget} onSetup={setupFromDialog} />
       )}
       {dialog?.type === "manageBudgets" && (
         <ManageBudgetsDialog
@@ -1132,14 +1166,7 @@ export default function App() {
               // A card's payment category follows the card's name, as in YNAB.
               const payment = d.categories.find((c) => c.paymentAccountId === account.id);
               if (payment) payment.name = account.name;
-              else
-                d.categories.push({
-                  id: id(),
-                  name: account.name,
-                  group: "Credit Card Payments",
-                  target: 0,
-                  paymentAccountId: account.id,
-                });
+              else d.categories.push(cardPaymentCategory(account));
             });
             close();
           }}

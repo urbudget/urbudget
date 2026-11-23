@@ -81,3 +81,49 @@ it("opens explicit deletion review instead of restoring over unseen remote edits
   await waitFor(() => expect(changed).toHaveBeenCalledOnce());
   expect(close).toHaveBeenCalledOnce();
 });
+it("offers the walkthrough as one more way to start, without changing the default", async () => {
+  localStorage.clear();
+  const onSetup = vi.fn();
+  const open = vi.fn();
+  render(<NewBudgetDialog open={open} close={vi.fn()} onSetup={onSetup} />);
+  // The dialog opens as it did: categories from a template, and Create budget.
+  expect((screen.getByRole("radio", { name: /Categories from a template/ }) as HTMLInputElement).checked).toBe(true);
+  expect(screen.getByRole("button", { name: "Create budget" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Continue setup" })).toBeNull();
+  const steps = screen.getByRole("radio", { name: /Set it up step by step/ }) as HTMLInputElement;
+  expect(steps.checked).toBe(false);
+  expect(screen.getByText("Accounts, categories and a funded month, in five short steps.")).toBeTruthy();
+
+  fireEvent.change(screen.getByRole("textbox", { name: "Budget name" }), { target: { value: " Business " } });
+  fireEvent.click(screen.getByRole("checkbox", { name: "Keep this budget only on this device" }));
+  fireEvent.change(screen.getByLabelText("Date format"), { target: { value: "dmmmy" } });
+  fireEvent.click(steps);
+  // With it chosen the button reads Next, and nothing is made: step 1 gets the dialog's answers.
+  expect(screen.queryByRole("button", { name: "Create budget" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  expect(onSetup).toHaveBeenCalledExactlyOnceWith({
+    name: "Business",
+    localOnly: true,
+    format: expect.objectContaining({ currency: "SAR", dateFormat: "dmmmy", numberFormat: expect.objectContaining({ decimal: "." }) }),
+  });
+  expect(api.createBudget).not.toHaveBeenCalled();
+  expect(open).not.toHaveBeenCalled();
+});
+
+it("doesn't offer the walkthrough where nothing can open it", () => {
+  render(<NewBudgetDialog open={vi.fn()} close={vi.fn()} />);
+  expect(screen.queryByRole("radio", { name: /Set it up step by step/ })).toBeNull();
+});
+
+it("offers a walkthrough left unfinished from the dialog again as Continue setup", () => {
+  localStorage.setItem("lb:setup-draft:dialog", JSON.stringify({ origin: "dialog", step: 2, name: "Business", format: { currency: "USD", dateFormat: "mdy" }, accounts: [{ name: "Till", type: "cash", balance: "100" }] }));
+  // The welcome screen's own draft isn't the dialog's.
+  localStorage.setItem("lb:setup-draft:welcome", JSON.stringify({ origin: "welcome", step: 1, name: "My budget", format: { currency: "USD", dateFormat: "mdy" } }));
+  const onSetup = vi.fn();
+  render(<NewBudgetDialog open={vi.fn()} close={vi.fn()} onSetup={onSetup} />);
+  expect(screen.getByText("You started setting up “Business”.")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Continue setup" }));
+  expect(onSetup).toHaveBeenCalledExactlyOnceWith("continue");
+  expect(api.createBudget).not.toHaveBeenCalled();
+  localStorage.clear();
+});

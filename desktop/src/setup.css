@@ -1,0 +1,323 @@
+/* ---------- The setup walkthrough: one question a screen, as the window's whole page ---------- */
+.setup-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  min-height: 0;
+}
+.setup-page > .empty-library-titlebar {
+  flex: none;
+}
+/* The page scrolls under the title bar; a step's buttons stay in view at its foot. */
+.setup-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.setup {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 660px;
+  min-height: 100%;
+  margin: 0 auto;
+  padding: 28px 24px 0;
+}
+.setup-count {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.setup h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 24px;
+  outline: none;
+}
+.setup-lead {
+  margin: 0 0 6px;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+.setup-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+}
+.setup-body > p {
+  margin: 0;
+}
+.setup-body .link-button {
+  padding-inline: 0;
+}
+.setup-actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 12px 0 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+.setup-actions > .form-error {
+  flex-basis: 100%;
+  margin: 0;
+}
+.setup-spacer {
+  flex: 1;
+}
+.setup-actions .link-button {
+  color: var(--text-2);
+}
+.setup-actions .primary {
+  min-width: 96px;
+}
+
+/* Step 1: an account a row. */
+.setup-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+.setup-row input,
+.setup-row select {
+  width: 100%;
+}
+.setup-row .icon-button {
+  margin-bottom: 1px;
+}
+.setup-fixed {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  list-style: none;
+}
+.setup-fixed li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 12px;
+}
+.setup-fixed li + li {
+  border-top: 1px solid var(--border);
+}
+.setup-fixed li > span:first-of-type {
+  flex: 1;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.setup-figure {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.setup-sum {
+  margin: 4px 0 0;
+  color: var(--text-2);
+}
+.setup-sum strong {
+  color: var(--text);
+}
+
+/* Step 2: a set's categories as chips, by group. */
+.setup-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.setup-group h2 {
+  margin: 6px 0 0;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+.setup-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.setup-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--accent);
+  border-radius: 14px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 12.5px;
+}
+button.setup-chip {
+  cursor: pointer;
+}
+.setup-chip.out {
+  border-color: var(--border-strong);
+  border-style: dashed;
+  background: transparent;
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.setup-chip.fixed {
+  border-color: var(--border);
+  background: var(--surface-2);
+}
+.setup-chip.own {
+  padding-inline-end: 4px;
+}
+.setup-chip-remove {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-2);
+}
+.setup-chip-remove:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.setup-add {
+  display: flex;
+  gap: 8px;
+  max-width: 360px;
+}
+.setup-add input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Step 3: an amount a category. */
+.setup-amount {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 110px;
+  align-items: center;
+  gap: 2px 8px;
+}
+.setup-amount label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 130px;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 400;
+}
+.setup-amount input,
+.setup-amount select {
+  width: 100%;
+}
+.setup-per-month {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: end;
+}
+.setup-per-month:empty {
+  display: none;
+}
+.setup-fold {
+  margin-top: 2px;
+}
+.setup-fold summary {
+  width: fit-content;
+  color: var(--accent);
+  font-weight: 500;
+  cursor: pointer;
+}
+.setup-fold label {
+  max-width: 320px;
+  margin-top: 8px;
+}
+
+/* Step 4: what each group gets, and what's left. */
+.setup-plan {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.setup-plan > * + * {
+  border-top: 1px solid var(--border);
+}
+.setup-plan summary,
+.setup-plan li,
+.setup-plan-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 8px 12px;
+}
+.setup-plan summary {
+  font-weight: 500;
+  cursor: pointer;
+}
+.setup-plan summary::marker {
+  color: var(--muted);
+}
+.setup-plan summary > span:first-child {
+  flex: 1;
+}
+.setup-plan ul {
+  margin: 0;
+  padding: 0 0 4px;
+  list-style: none;
+}
+.setup-plan li {
+  padding-block: 3px;
+  padding-inline-start: 28px;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.setup-plan-line.total {
+  color: var(--text-2);
+}
+.setup-ending {
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Step 5 uses the dialogs' choice list. */
+.setup .choice-list {
+  gap: 8px;
+}
+.setup .choice small .link-button {
+  display: inline;
+  padding: 0;
+  font-size: inherit;
+}
+
+/* ---------- The setup card on Budget ---------- */
+.setup-card {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 8px 8px 8px 14px;
+  padding-inline: 14px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+.page > .setup-card {
+  margin-bottom: 0;
+}
+.setup-card > span:first-child {
+  flex: 1;
+  color: var(--text-2);
+}
+.setup-card strong {
+  color: var(--text);
+}
