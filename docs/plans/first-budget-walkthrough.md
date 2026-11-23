@@ -214,6 +214,22 @@ Each is one screen with one question and one filled button.
   budget. Hiding it is one tap, as the checklist is hidden today.
 - The five-step checklist is removed. The setup card and the strip do its work.
 
+### From New budget
+
+Someone making a second budget can take the walkthrough as well.
+
+- The desktop's **New budget** dialog gains one more way to start, beside "Categories from a
+  template", "Empty" and "Start over from …": **Set it up step by step**, "Accounts,
+  categories and a funded month, in five short steps."
+- With it chosen, the dialog's button reads **Next** and opens the walkthrough at step 1.
+  The name, currency, formats and "Keep this budget only on this device" come from the
+  dialog; nothing is asked twice.
+- The dialog's default stays as it is: people who open New budget already have a budget.
+- Skip setup, the draft and the setup card work as for a first budget. A draft started from
+  here is offered again in the dialog as **Continue setup**, not on the welcome screen.
+- The phones' new-budget forms in Budget library get the same extra choice when the
+  walkthrough reaches each phone.
+
 ### The engine
 
 One function builds the budget, so the three apps can't differ:
@@ -262,7 +278,9 @@ Each is shown once per budget, as one sentence with one button, in the strip's p
 
 ## The weekly reminder (phones)
 
-- Chosen in step 5, changed in Settings. Off unless chosen.
+- On when "Type it in as I spend" is chosen in step 5, unless switched off there; off
+  otherwise. Changed in Settings.
+- If notification permission is refused, the reminder is off and nothing asks again.
 - One local notification a week, on the chosen day at 18:00: "A few minutes with your
   budget: enter what you spent and check what's left." It opens Budget.
 - Not sent in a week where a transaction was added in the last three days.
@@ -302,7 +320,8 @@ Buttons: **Create my budget**, **Next**, **Back**, **Skip setup**, **Assign it**
 - **Desktop** (vitest): the first screen makes nothing until Assign it or Skip setup; skip
   at each step makes the budget that step implies; the draft comes back after a restart;
   the setup card opens the right step; the strip's items against budgets in each state;
-  each hint shows once.
+  each hint shows once; New budget's step-by-step choice opens step 1 with the dialog's
+  name, formats and device-only setting, and leaves the dialog's default as it was.
 - **Desktop, in the window**: the whole walkthrough at 1000×662 and at a wide size, each
   screen scrolled to its end, in light and dark, English and Arabic, through the QA harness
   on a scratch data folder.
@@ -329,16 +348,23 @@ Buttons: **Create my budget**, **Next**, **Back**, **Skip setup**, **Assign it**
 Steps 3–4 and 5–6 can each be released when done; nothing later is needed for an earlier
 step to be useful.
 
-## Decisions wanted
+## Decided
 
-1. **The walkthrough is the default after Create my budget**, with Skip setup on every
-   screen (recommended), or it's offered beside "Start with an empty budget".
-2. **The five-step checklist goes** in favour of the setup card and the strip (recommended),
-   or it stays for budgets made by skipping.
-3. **The reminder's default**: on, Sunday 18:00, when "Type it in" is chosen (recommended),
-   or off until turned on in Settings.
-4. **The desktop's New budget dialog** keeps its current form (recommended), or offers the
-   walkthrough too.
+- **The walkthrough is the default after Create my budget**, with Skip setup on every screen
+  (2026-11-24). It is not offered as a choice beside an empty budget.
+- **The five-step checklist is removed** in favour of the setup card and the strip
+  (2026-11-24), on all three apps, when the walkthrough ships on each. It is not kept for
+  budgets made by skipping. Until then it stays, with small fix 3's changes.
+
+- **The weekly reminder is on by default** when "Type it in as I spend" is chosen in step 5:
+  Sunday 18:00, with its switch shown on that step (2026-11-24). It is off for every other
+  choice and for budgets made by skipping, until turned on in Settings.
+
+- **The desktop's New budget dialog offers the walkthrough too** (2026-11-24); see "From New
+  budget". The dialog's current choice stays its default (confirmed 2026-11-24). That the
+  phones' new-budget forms follow the same rule is this plan's reading, not yet confirmed.
+
+No decisions are open.
 
 ## Left out, for now
 
