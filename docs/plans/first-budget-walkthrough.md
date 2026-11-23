@@ -1,7 +1,10 @@
 # First budget: a setup walkthrough, and what keeps a new budget going
 
-Status: proposed 2026-11-24. Nothing here is built. It follows two reviews of the first-run
-experience made that day; "What the reviews found" says what was run and what was only read.
+Status: in progress (2026-11-24). Built on branches, not merged: the small fixes, the engine's
+`setup`, and the desktop walkthrough with its setup card. Not built: the "to do" strip, the
+hints, the reminder, the import guard, and anything on the phones beyond the small fixes. It
+follows two reviews of the first-run experience made that day; "What the reviews found" says
+what was run and what was only read.
 
 ## What it's for
 
@@ -208,27 +211,44 @@ Each is one screen with one question and one filled button.
   still makes no placeholder budget.
 - The answers so far are kept on the device (as a draft, not a budget). Opening the app
   again offers **Continue setup** in place of **Create my budget**.
-- A budget made by skipping shows a **setup card** on Budget: "Finish setting up · 2 steps
+- A budget that isn't set up shows a **setup card** on Budget: "Finish setting up · 2 steps
   left" with **Continue**. It reopens the walkthrough at the first step the budget doesn't
-  already answer (no accounts → 1; no targets → 3; money unassigned → 4), filled in from the
-  budget. Hiding it is one tap, as the checklist is hidden today.
+  already answer (no accounts → 1; no categories → 2; no targets → 3; money unassigned → 4),
+  filled in from the budget. Hiding it is one tap, as the checklist is hidden today.
 - The five-step checklist is removed. The setup card and the strip do its work.
 
-### From New budget
+### Every other budget
 
-Someone making a second budget can take the walkthrough as well.
+Setup follows what a budget needs, not how it was made. The first build tied the card to a
+mark only the walkthrough wrote, so a budget from New budget's default, one synced from
+another device, or an empty one left before step 4 got no help.
 
-- The desktop's **New budget** dialog gains one more way to start, beside "Categories from a
-  template", "Empty" and "Start over from …": **Set it up step by step**, "Accounts,
-  categories and a funded month, in five short steps."
-- With it chosen, the dialog's button reads **Next** and opens the walkthrough at step 1.
-  The name, currency, formats and "Keep this budget only on this device" come from the
-  dialog; nothing is asked twice.
-- The dialog's default stays as it is: people who open New budget already have a budget.
-- Skip setup, the draft and the setup card work as for a first budget. A draft started from
-  here is offered again in the dialog as **Continue setup**, not on the welcome screen.
-- The phones' new-budget forms in Budget library get the same extra choice when the
-  walkthrough reaches each phone.
+- **A budget with no accounts has one page**, whatever made it: **Set up this budget** (the
+  walkthrough at the first step it's missing), with **Add an account myself** and the sample
+  as quiet links. YNAB's import is offered there only while the budget is empty.
+- **A budget that isn't in use yet is taken in.** When a device opens a budget it has no
+  mark for, the budget gets the setup card if it has no transactions and still lacks
+  accounts, categories, what a month costs or jobs for its money. The card then stays until
+  the steps are done or it's hidden. This covers a template or empty budget from New budget,
+  one made on another device or a phone, and an old start that was left.
+- **Never taken in:** a budget with a transaction in it, a sample, an import, a fresh start
+  ("Start over from …", marked as set up when it's made), and one whose old checklist was
+  hidden.
+- **The walkthrough marks an existing budget when it opens**, so leaving at any step keeps
+  the card. Opening it again brings back a card that was hidden.
+- **Only the missing choice of how to keep it up to date doesn't count**: a budget that is
+  otherwise complete isn't asked step 5 alone on a device that never saw its setup.
+- The mark stays on the device. Each device decides for itself from the budget's state.
+
+### New budget
+
+- The desktop's **New budget** dialog keeps three ways to start: "Categories from a
+  template" (the default), "Empty" and "Start over from …". It doesn't offer the walkthrough
+  itself: a budget it makes with no accounts opens on the page above, one click from it.
+- With no budget open, the dialog starts from the device's currency and formats, as a first
+  launch does.
+- The phones' new-budget forms follow the same rule when the walkthrough reaches each phone:
+  no separate choice, and the same page and card afterwards.
 
 ### The engine
 
@@ -320,8 +340,10 @@ Buttons: **Create my budget**, **Next**, **Back**, **Skip setup**, **Assign it**
 - **Desktop** (vitest): the first screen makes nothing until Assign it or Skip setup; skip
   at each step makes the budget that step implies; the draft comes back after a restart;
   the setup card opens the right step; the strip's items against budgets in each state;
-  each hint shows once; New budget's step-by-step choice opens step 1 with the dialog's
-  name, formats and device-only setting, and leaves the dialog's default as it was.
+  each hint shows once; a budget not yet in use is taken in and one in use, a sample, an
+  import or a fresh start is not; leaving the walkthrough partway keeps the card; a budget
+  with categories and no accounts shows the setup page; New budget starts from the device's
+  formats with no budget open.
 - **Desktop, in the window**: the whole walkthrough at 1000×662 and at a wide size, each
   screen scrolled to its end, in light and dark, English and Arabic, through the QA harness
   on a scratch data folder.
@@ -360,9 +382,11 @@ step to be useful.
   Sunday 18:00, with its switch shown on that step (2026-11-24). It is off for every other
   choice and for budgets made by skipping, until turned on in Settings.
 
-- **The desktop's New budget dialog offers the walkthrough too** (2026-11-24); see "From New
-  budget". The dialog's current choice stays its default (confirmed 2026-11-24). That the
-  phones' new-budget forms follow the same rule is this plan's reading, not yet confirmed.
+- **Setup follows what a budget needs, not how it was made** (2026-11-24); see "Every other
+  budget". New budget's separate "Set it up step by step" choice, decided earlier the same
+  day, was dropped in its favour: every budget the dialog makes is offered the walkthrough on
+  its own page. The dialog's default stays "Categories from a template". That the phones
+  follow the same rule is this plan's reading, not yet confirmed.
 
 No decisions are open.
 
