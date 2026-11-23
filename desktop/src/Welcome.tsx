@@ -8,6 +8,7 @@ import { YnabFileImport } from "./YnabFileImport";
 import { YnabImport } from "./YnabImport";
 import { demoBudget } from "./demo";
 import { errorText, numberFormatFor } from "./format";
+import { HowThisWorksLink } from "./HowThisWorks";
 import { localeDefaults } from "./locale";
 import { starterCategories } from "./newBudget";
 import { useToast } from "./ui";
@@ -153,6 +154,7 @@ export function Welcome({
         <p>
           {t("UrBudget works like envelopes: you give all the money you have a job, spend from those jobs, and move money around when life changes the plan. How would you like to start?")}
         </p>
+        <p className="welcome-help"><HowThisWorksLink /></p>
       </div>
       <ul className="welcome-paths">
         {options.map((o) => (

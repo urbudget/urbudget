@@ -38,6 +38,11 @@ The privacy policy is maintained in `public/privacy/index.html`. After editing i
 Android destination shares the policy text but has no site navigation or account/checkout
 links. The site tests check that both versions stay in sync.
 
+The phone apps' "How this works" opens `/getting-started/app/`, made the same way from
+`public/getting-started/index.html`: after editing the guide, run `node scripts/app-guide.mjs`
+and commit `public/getting-started/app/index.html` too. It has no navigation and no links;
+mark a sentence that only points at another page with `data-website-only` to leave it out.
+
 Assistant reports use migration `0007_assistant_reports.sql`. Apply the migration and deploy
 the Worker before releasing an app that submits reports. Admins can review and delete them
 under **Health → Assistant reports**; no email is sent automatically. Daily scheduled cleanup

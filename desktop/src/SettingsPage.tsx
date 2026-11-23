@@ -22,6 +22,7 @@ import type { Cloud } from "./cloud";
 import type { Updates } from "./updates";
 import { UpdateSetting } from "./UpdateNotice";
 import { PrivacySettings } from "./PrivacySettings";
+import { HowThisWorksPanel } from "./HowThisWorks";
 import { list, localDateTime, msg, t, tn, type LanguageSetting } from "./i18n";
 import "./settings.css";
 
@@ -454,6 +455,7 @@ export function SettingsPage({
               </div>
             </div>
           </section>
+          <HowThisWorksPanel />
         </>
       )}
 

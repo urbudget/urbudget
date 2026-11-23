@@ -31559,6 +31559,26 @@
           }
         }
       }
+    },
+    "How this works" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "طريقة العمل"
+          }
+        }
+      }
+    },
+    "A short guide: envelope budgeting in five steps and a weekly routine" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "دليل قصير: الميزانية بالمظاريف في خمس خطوات وروتين أسبوعي"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

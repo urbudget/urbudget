@@ -288,6 +288,14 @@ struct SettingsView: View {
 
     private var aboutSection: some View {
         Section {
+            Button {
+                Task {
+                    do { _ = try await store.service("account_open", ["next": .string(AppGuide.path)]) } catch { self.error = BudgetStore.readable(error) }
+                }
+            } label: {
+                rowLabel(String(localized: "How this works"),
+                         String(localized: "A short guide: envelope budgeting in five steps and a weekly routine"), "questionmark.circle")
+            }
             // Straight to the App Store's review page; the system's own prompt comes by itself after real use (AppRating).
             Link(destination: AppRating.writeReview) {
                 rowLabel(String(localized: "Rate UrBudget"), String(localized: "Write a review on the App Store"), "star")

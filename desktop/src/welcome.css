@@ -18,6 +18,9 @@
   color: var(--text-2);
   line-height: 1.5;
 }
+.welcome-intro .welcome-help {
+  margin-top: 6px;
+}
 .welcome-paths {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

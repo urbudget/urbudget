@@ -5,6 +5,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.automirrored.outlined.KeyboardReturn
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -238,7 +239,8 @@ private fun SettingsPage(navigate: (String) -> Unit, budget: JSONObject, vm: Bud
         item {
             ListCard {
                 ListRow(stringResource(R.string.page_library), subtitle = stringResource(R.string.page_library_detail), icon = Icons.Outlined.FolderOpen, onClick = { navigate("Budget library") }, divider = true)
-                ListRow(stringResource(R.string.page_account_sync), subtitle = stringResource(R.string.page_account_sync_detail), icon = Icons.Outlined.CloudSync, onClick = { navigate("Account & sync") })
+                ListRow(stringResource(R.string.page_account_sync), subtitle = stringResource(R.string.page_account_sync_detail), icon = Icons.Outlined.CloudSync, onClick = { navigate("Account & sync") }, divider = true)
+                HowThisWorksRow { vm.service("account_open", JSONObject().put("next", GUIDE_PATH)) }
             }
         }
         item { SectionTitle(stringResource(R.string.settings_privacy_data)) }
@@ -251,6 +253,14 @@ private fun SettingsPage(navigate: (String) -> Unit, budget: JSONObject, vm: Bud
     if (dialog == "budget") BudgetSettingsDialog(budget, vm) { dialog = "" }
     if (dialog == "flags") FlagNamesDialog(budget, vm) { dialog = "" }
 }
+
+/** The getting-started guide as the phone apps open it: urbudget.app's copy without site navigation, checkout or account links. */
+internal const val GUIDE_PATH = "/getting-started/app/"
+
+/** Settings' way to the guide; the welcome screen has a quiet link to the same page. */
+@Composable
+internal fun HowThisWorksRow(open: () -> Unit) =
+    ListRow(stringResource(R.string.help_how_this_works), subtitle = stringResource(R.string.help_how_this_works_detail), icon = Icons.AutoMirrored.Outlined.HelpOutline, onClick = open)
 
 /** As the desktop's Privacy & data: the switch for the anonymous usage counts (UsageCounts), then the policy. */
 @Composable

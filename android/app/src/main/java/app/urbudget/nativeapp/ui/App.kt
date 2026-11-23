@@ -535,7 +535,8 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
                 WelcomeScreen(state.busy, { name, currency, sample ->
                 if (vm.hasExport()) pendingCreate = Triple(name, currency, sample) else vm.createBudget(name, currency, sample)
             }, importFile, if (vm.hasExport()) exportFile else null, if (state.recoveryAvailable) ({ confirmRestore = true }) else null,
-                { tab = 4; morePage = "Account & sync" })
+                { tab = 4; morePage = "Account & sync" },
+                { vm.service("account_open", JSONObject().put("next", GUIDE_PATH)) })
             }
             // Each page's list scrolls under the bar, which turns to glass over it. Bank messages has screens of its own inside and keeps below the bar.
             tab == 4 && morePage.isNotEmpty() -> pageStates.SaveableStateProvider("page:$morePage") { GlassTop(Modifier.fillMaxSize(), padded = morePage == "Bank messages", top = {
@@ -899,7 +900,7 @@ private fun MoreDrawer(budget: JSONObject, close: () -> Unit, open: (String) -> 
 }
 
 @Composable
-private fun WelcomeScreen(busy: Boolean, create: (String, String, Boolean) -> Unit, importFile: () -> Unit, exportFile: (() -> Unit)?, restore: (() -> Unit)?, signIn: () -> Unit) {
+private fun WelcomeScreen(busy: Boolean, create: (String, String, Boolean) -> Unit, importFile: () -> Unit, exportFile: (() -> Unit)?, restore: (() -> Unit)?, signIn: () -> Unit, howThisWorks: () -> Unit) {
     // A new budget's name starts in the language in use; after that it's the person's data.
     val defaultName = stringResource(R.string.welcome_default_name)
     val sampleName = stringResource(R.string.welcome_sample_name)
@@ -917,7 +918,8 @@ private fun WelcomeScreen(busy: Boolean, create: (String, String, Boolean) -> Un
         Text(stringResource(R.string.welcome_title), style = MaterialTheme.typography.displaySmall, color = ur.text)
         Text(stringResource(R.string.welcome_message),
             style = MaterialTheme.typography.bodyLarge, color = ur.text2)
-        Spacer(Modifier.height(8.dp))
+        // A quiet link: the guide on urbudget.app, for anyone who wants the method before starting.
+        TextButton(howThisWorks, contentPadding = PaddingValues(0.dp)) { Text(stringResource(R.string.help_how_this_works)) }
         ListCard {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Field(name, { name = it }, stringResource(R.string.budget_name))

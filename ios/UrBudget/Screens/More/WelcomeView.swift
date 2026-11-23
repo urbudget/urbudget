@@ -33,6 +33,13 @@ struct WelcomeView: View {
                         Text("Make room for\nwhat matters.").font(.largeTitle.bold()).fixedSize(horizontal: false, vertical: true)
                         Text("A plan for every part of your money. Your budget lives on this device, and your desktop backups work here too.")
                             .foregroundStyle(Color.secondary)
+                        // A quiet link: the guide on urbudget.app, for anyone who wants the method before starting.
+                        Button("How this works") {
+                            Task {
+                                do { _ = try await store.service("account_open", ["next": .string(AppGuide.path)]) } catch { fileError = BudgetStore.readable(error) }
+                            }
+                        }
+                        .buttonStyle(.borderless)
                     }
                     .padding(.vertical, 8)
                     .listRowBackground(Color.clear)
@@ -139,6 +146,12 @@ struct WelcomeView: View {
     private func readBackup(_ result: Result<URL, Error>, _ use: (Data) -> Void) {
         attempt($fileError) { use(try readPickedFile(result)) }
     }
+}
+
+/// The getting-started guide as the phone apps open it: urbudget.app's copy without site navigation,
+/// checkout or account links. Welcome and Settings both lead to it, as Android's do.
+enum AppGuide {
+    static let path = "/getting-started/app/"
 }
 
 /// The currencies offered when creating a budget, the device's first.

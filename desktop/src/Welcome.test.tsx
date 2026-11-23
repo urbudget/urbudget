@@ -9,7 +9,12 @@ vi.mock("./bridge", () => ({
     deleteBudget: vi.fn(async () => []),
   },
 }));
+vi.mock("./cloud", async (original) => {
+  const real = await original<typeof import("./cloud")>();
+  return { ...real, cloud: { ...real.cloud, open: vi.fn(async () => {}) } };
+});
 import { api } from "./bridge";
+import { cloud } from "./cloud";
 import { FirstRunWelcome, GettingStarted, SampleBanner, Welcome, isBlank, isUntouched, openSample } from "./Welcome";
 import { ToastProvider } from "./ui";
 import type { Budget } from "./types";
@@ -140,6 +145,14 @@ it("walks a budget set up from the welcome screen through the method, step by st
   fireEvent.click(screen.getByRole("button", { name: "Hide getting started" }));
   expect(screen.queryByRole("region", { name: "Getting started" })).toBeNull();
   expect(localStorage.getItem("lb:setup:b2")).toBe("off");
+});
+
+it("links the welcome screen to the getting-started guide", () => {
+  render(<ToastProvider><FirstRunWelcome openBudget={vi.fn()} onAddAccount={vi.fn()}
+    importYnab={vi.fn()} resolveYnab={vi.fn()} acceptYnab={vi.fn()} /></ToastProvider>);
+  fireEvent.click(screen.getByRole("button", {name: "How this works"}));
+  expect(cloud.open).toHaveBeenCalledWith("/getting-started/");
+  expect(api.createBudget).not.toHaveBeenCalled();
 });
 
 it("leads the YNAB choice with the token import, with the export file a click away", () => {
