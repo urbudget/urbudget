@@ -343,6 +343,11 @@ it("keeps the answers as a draft and offers them again after a restart", async (
   await heading("Where is your money?");
   expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Joint account");
   expect((screen.getByLabelText("Today's balance") as HTMLInputElement).value).toBe("1250.50");
+  // Back from the first step leaves the walkthrough with the answers kept and nothing made.
+  press("Back");
+  expect(screen.getByText("Walkthrough closed")).toBeTruthy();
+  expect(readDraft("welcome")?.accounts[0].name).toBe("Joint account");
+  expect(api.createBudget).not.toHaveBeenCalled();
 });
 
 /** A budget made by skipping after the first step: an account, and nothing else. */

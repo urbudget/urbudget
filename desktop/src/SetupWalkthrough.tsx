@@ -82,10 +82,11 @@ function Frame({
   blocked?: boolean;
 }) {
   const heading = useRef<HTMLHeadingElement>(null);
-  // A new step starts at its top, with the question read out.
+  // A new step starts at its top with the question read out, unless a field of it took the caret.
   useEffect(() => {
-    heading.current?.focus();
-    heading.current?.scrollIntoView?.({ block: "start" });
+    const form = heading.current?.closest("form");
+    form?.closest(".setup-scroll")?.scrollTo?.(0, 0);
+    if (!form?.contains(document.activeElement) || document.activeElement?.tagName === "BUTTON") heading.current?.focus();
   }, [step]);
   return (
     <form
@@ -556,16 +557,16 @@ function AssignPlan({
               ? t("All of it has a job.")
               : t("There's nothing to assign yet. Add your accounts and what a month costs, then come back to this step.")}
       </p>
+      {toCards > 0 && (
+        <p className="setup-ending">
+          {tn(cards.length, "{amount} is set aside to pay your card.", "{amount} is set aside to pay your cards.", { amount: show(toCards, format) })}
+        </p>
+      )}
       {short <= 0 && left > 0 && plan.spare && (
         <p>
           <button type="button" className="secondary" aria-pressed={sparing} onClick={() => onToSpare(!sparing)}>
             {sparing ? t("Keep it for next month") : t("Put it in {category}", { category: plan.spare.name })}
           </button>
-        </p>
-      )}
-      {toCards > 0 && (
-        <p className="setup-ending">
-          {tn(cards.length, "{amount} is set aside to pay your card.", "{amount} is set aside to pay your cards.", { amount: show(toCards, format) })}
         </p>
       )}
     </>
@@ -715,6 +716,8 @@ function DraftSetup({ origin, month, openBudget, transform, close, onBudget }: S
         title={t("Where is your money?")}
         lead={t("Add each account you spend from, with today's balance. Credit cards too.")}
         label={t("Next")}
+        // Back from the first step leaves, keeping the answers: they're offered again as Continue setup.
+        back={close}
         action={() => {
           const problem = accountsProblem(draft.accounts, 0, decimal);
           if (problem) setError(problem);

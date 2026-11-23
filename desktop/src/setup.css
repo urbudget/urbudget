@@ -13,6 +13,8 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* A step that scrolls sits where one that doesn't does. */
+  scrollbar-gutter: stable both-edges;
 }
 .setup {
   display: flex;
@@ -59,8 +61,9 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
-  margin-top: 8px;
-  padding: 12px 0 16px;
+  margin: 8px -6px 0;
+  /* Wider than the fields, so a focus ring scrolling under it doesn't show at its sides. */
+  padding: 12px 6px 16px;
   border-top: 1px solid var(--border);
   background: var(--bg);
 }
@@ -260,11 +263,33 @@ button.setup-chip {
   padding: 8px 12px;
 }
 .setup-plan summary {
+  align-items: center;
   font-weight: 500;
+  list-style: none;
   cursor: pointer;
 }
-.setup-plan summary::marker {
-  color: var(--muted);
+.setup-plan summary::-webkit-details-marker {
+  display: none;
+}
+/* A chevron that points along the text when shut and down when open. */
+.setup-plan summary::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-block-end: 1.5px solid var(--muted);
+  border-inline-end: 1.5px solid var(--muted);
+  transform: rotate(-45deg);
+  transition: transform 0.12s var(--ease);
+}
+:root[dir="rtl"] .setup-plan summary::before {
+  transform: rotate(45deg);
+}
+.setup-plan details[open] > summary::before {
+  transform: rotate(45deg);
+}
+:root[dir="rtl"] .setup-plan details[open] > summary::before {
+  transform: rotate(-45deg);
 }
 .setup-plan summary > span:first-child {
   flex: 1;
@@ -276,7 +301,7 @@ button.setup-chip {
 }
 .setup-plan li {
   padding-block: 3px;
-  padding-inline-start: 28px;
+  padding-inline-start: 30px;
   color: var(--text-2);
   font-size: 12.5px;
 }
@@ -320,4 +345,13 @@ button.setup-chip {
 }
 .setup-card strong {
   color: var(--text);
+}
+
+/* New budget: a walkthrough started there and left unfinished, offered again. */
+.setup-unfinished {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
 }

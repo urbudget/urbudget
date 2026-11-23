@@ -12,6 +12,7 @@ import type { Budget, Summary } from "./types";
 import { cloud } from "./cloud";
 import { editorDrafts, discardEditorDraft, type EditorDraft } from "./editorCheckpoint";
 import { readDraft } from "./setup";
+import "./setup.css";
 
 /** "steps" is the setup walkthrough: the dialog hands over its name and formats and makes nothing itself. */
 type Start = BudgetStart | "steps";
