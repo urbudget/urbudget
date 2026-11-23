@@ -11,48 +11,45 @@ import { localDate, t } from "./i18n";
 import type { Budget, Summary } from "./types";
 import { cloud } from "./cloud";
 import { editorDrafts, discardEditorDraft, type EditorDraft } from "./editorCheckpoint";
-import { readDraft } from "./setup";
-import "./setup.css";
+import { localeDefaults } from "./locale";
+import { writeMark } from "./setup";
 
-/** "steps" is the setup walkthrough: the dialog hands over its name and formats and makes nothing itself. */
-type Start = BudgetStart | "steps";
-
-/** Creates a budget file and opens it. */
+/**
+ * Creates a budget file and opens it. The dialog doesn't offer the setup walkthrough itself: a
+ * budget it makes with no accounts opens on the page that does (Welcome), and its setup card
+ * follows it from there (SetupCard).
+ */
 export function NewBudgetDialog({
   current,
   close,
   open,
-  onSetup,
 }: {
   current?: { budget: Budget; summary: Summary; token: string };
   close: () => void;
   /** Switches to the new budget (saving the open one first). */
   open: (id: string) => Promise<void>;
-  /**
-   * Opens the setup walkthrough with what the dialog asked, or ("continue") the one started from
-   * here and left unfinished. Without it the dialog doesn't offer the walkthrough.
-   */
-  onSetup?: (start: { name: string; format: FormatValue; localOnly: boolean } | "continue") => void;
 }) {
-  // A walkthrough started from here and not finished, offered again.
-  const [unfinished] = useState(() => (onSetup ? readDraft("dialog") : null));
   const [name, setName] = useState("");
   const [localOnly, setLocalOnly] = useState(false);
-  const [format, setFormat] = useState<FormatValue>({
-    currency: current?.budget.currency ?? "SAR",
-    numberFormat: numberFormatFor(current?.budget.currency ?? "SAR", current?.budget.numberFormat),
-    dateFormat: current?.budget.dateFormat ?? "iso",
-  });
-  const [start, setStart] = useState<Start>("template");
+  // The open budget's currency and formats; with none open, the device's, as a first launch has them.
+  const [format, setFormat] = useState<FormatValue>(() =>
+    current
+      ? {
+          currency: current.budget.currency,
+          numberFormat: numberFormatFor(current.budget.currency, current.budget.numberFormat),
+          dateFormat: current.budget.dateFormat ?? "iso",
+        }
+      : localeDefaults(),
+  );
+  const [start, setStart] = useState<BudgetStart>("template");
   const templates = useBudgetTemplates();
   const [templateId, setTemplateId] = useState(DEFAULT_TEMPLATE);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
   const [created, setCreated] = useState<string | null>(null);
-  const options: [Start, string, string][] = [
+  const options: [BudgetStart, string, string][] = [
     ["template", t("Categories from a template"), templates?.find((x) => x.id === templateId)?.summary ?? ""],
-    ["steps", t("Set it up step by step"), t("Accounts, categories and a funded month, in five short steps.")],
     ["blank", t("Empty"), t("No accounts or categories.")],
     [
       "copy",
@@ -67,8 +64,6 @@ export function NewBudgetDialog({
           e.preventDefault();
           if (pending.current) return;
           if (!name.trim()) return setError(t("Give the budget a name."));
-          // The walkthrough makes the budget; the dialog only says what it's called and how it reads.
-          if (start === "steps") return onSetup?.({ name: name.trim(), format, localOnly });
           pending.current = true;
           setBusy(true);
           setError("");
@@ -80,6 +75,8 @@ export function NewBudgetDialog({
               localOnly,
             );
             setCreated(id);
+            // A fresh start is already set up: it's never offered the walkthrough.
+            if (start === "copy") writeMark(id, { card: false });
             await open(id);
             close();
           } catch (e) {
@@ -90,15 +87,7 @@ export function NewBudgetDialog({
           }
         }}
       >
-        <fieldset disabled={busy || created !== null} style={{ border: 0, margin: 0, padding: 0, display: "contents" }}>
-        {unfinished && (
-          <p className="notice setup-unfinished">
-            <span>{t("You started setting up “{budget}”.", { budget: unfinished.name })}</span>
-            <button type="button" className="secondary small" onClick={() => onSetup?.("continue")}>
-              {t("Continue setup")}
-            </button>
-          </p>
-        )}
+        <fieldset className="new-budget-fields" disabled={busy || created !== null} style={{ border: 0, margin: 0, padding: 0, display: "contents" }}>
         <label>
           {t("Budget name")}
           <input
@@ -114,7 +103,7 @@ export function NewBudgetDialog({
         <BudgetFormatFields value={format} onChange={setFormat} />
         <fieldset className="choice-list">
           <legend>{t("Start with")}</legend>
-          {options.filter(([value]) => (value !== "copy" || current) && (value !== "steps" || onSetup)).map(([value, title, help]) => (
+          {options.filter(([value]) => value !== "copy" || current).map(([value, title, help]) => (
             <label key={value} className={`choice${start === value ? " selected" : ""}`}>
               <input
                 type="radio"
@@ -144,7 +133,7 @@ export function NewBudgetDialog({
             {t("Cancel")}
           </button>
           <button className="primary" disabled={busy}>
-            {busy ? (created ? t("Opening…") : t("Creating…")) : created ? t("Open created budget") : start === "steps" ? t("Next") : t("Create budget")}
+            {busy ? (created ? t("Opening…") : t("Creating…")) : created ? t("Open created budget") : t("Create budget")}
           </button>
         </div>
       </form>

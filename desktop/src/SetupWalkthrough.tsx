@@ -22,6 +22,7 @@ import {
   leftoverCategory,
   looseCents,
   monthly,
+  needsSetup,
   newDraft,
   ownCategories,
   readDraft,
@@ -38,7 +39,6 @@ import {
   type KeepRoute,
   type SetupCategory,
   type SetupDraft,
-  type SetupOrigin,
   type SetupPreview,
 } from "./setup";
 import { useBudgetTemplates } from "./TemplatePicker";
@@ -47,7 +47,7 @@ import type { Budget, BudgetTemplate, Summary } from "./types";
 import "./setup.css";
 
 /** A walkthrough in progress: on a draft kept for the welcome screen or the dialog, or on the open budget. */
-export type SetupSession = { mode: "draft"; origin: SetupOrigin } | { mode: "budget"; step: number };
+export type SetupSession = { mode: "draft" } | { mode: "budget"; step: number };
 
 type Money = { currency: string; numberFormat: NumberFormat };
 const show = (cents: number, format: Money) => money(cents, { ...format, symbol: true });
@@ -794,10 +794,10 @@ type Shared = {
   close: () => void;
 };
 
-function DraftSetup({ origin, month, openBudget, transform, close, onBudget }: Shared & { origin: SetupOrigin; onBudget: (step: number) => void }) {
+function DraftSetup({ month, openBudget, transform, close, onBudget }: Shared & { onBudget: (step: number) => void }) {
   const toast = useToast();
   const language = useLanguage();
-  const [draft, setDraft] = useState<SetupDraft>(() => readDraft(origin) ?? newDraft(origin, { name: t("My budget") }));
+  const [draft, setDraft] = useState<SetupDraft>(() => readDraft() ?? newDraft({ name: t("My budget") }));
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const update = (patch: Partial<SetupDraft>) => {
@@ -841,10 +841,10 @@ function DraftSetup({ origin, month, openBudget, transform, close, onBudget }: S
 
   /** Saves the budget and opens it. From here on the walkthrough works on that budget. */
   const make = async (budget: Budget) => {
-    const id = (created.current ??= await api.createBudget(budget, undefined, draft.localOnly));
+    const id = (created.current ??= await api.createBudget(budget));
     made.current = true;
     writeMark(id, readMark(id) ?? { card: true });
-    clearDraft(origin);
+    clearDraft();
     await openBudget(id);
     return id;
   };
@@ -999,6 +999,9 @@ function BudgetSetup({
   const [step, setStep] = useState(Math.min(5, Math.max(1, start)));
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // Opened here, the budget is being set up on this device: its card shows from now on, so
+  // leaving at any step keeps the way back in. One whose card was hidden gets it back.
+  useEffect(() => updateMark(budgetId, { card: true }), [budgetId]);
   const format = { currency: budget.currency, numberFormat: numberFormatFor(budget.currency, budget.numberFormat) };
   const decimal = format.numberFormat.decimal;
   const go = (next: number) => {
@@ -1220,7 +1223,7 @@ export function SetupWalkthrough({
   summary: Summary | null;
   edit: (update: (draft: Budget) => void) => void;
 }) {
-  if (session.mode === "draft") return <DraftSetup key={session.origin} origin={session.origin} onBudget={(step) => onSession({ mode: "budget", step })} {...shared} />;
+  if (session.mode === "draft") return <DraftSetup onBudget={(step) => onSession({ mode: "budget", step })} {...shared} />;
   if (!budget)
     return (
       <p className="setup muted" role="status">
@@ -1231,10 +1234,10 @@ export function SetupWalkthrough({
 }
 
 /**
- * On Budget, for a budget the walkthrough made. Left unfinished: how many steps are left, and the
- * way back in at the first of them, hidden with one click for good. Just finished: one line that
- * says so, with the first thing to do for the way chosen on the last step; closed or used, it
- * never comes back.
+ * On Budget, for a budget that isn't set up yet, whatever made it. Left unfinished: how many
+ * steps are left, and the way back in at the first of them, hidden with one click for good.
+ * Just finished: one line that says so, with the first thing to do for the way chosen on the
+ * last step; closed or used, it never comes back.
  */
 export function SetupCard({
   budget,
@@ -1259,6 +1262,12 @@ export function SetupCard({
     window.addEventListener(MARK_EVENT, changed);
     return () => window.removeEventListener(MARK_EVENT, changed);
   }, [budgetId]);
+  // A budget this device has no mark for is taken in while it isn't in use yet: one made from a
+  // template or empty, one that came from another device, or an old start that was left.
+  const takeIn = !mark && needsSetup(budget, unassigned);
+  useEffect(() => {
+    if (takeIn && !readMark(budgetId)) writeMark(budgetId, { card: true });
+  }, [takeIn, budgetId]);
   if (!mark || budget.sample || budget.importedFrom || budget.ynabPlanId) return null;
   if (mark.ready && mark.keep && onKeepUp) {
     const route = mark.keep;

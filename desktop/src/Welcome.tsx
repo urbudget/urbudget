@@ -1,5 +1,5 @@
-// What someone sees before they have a budget, what an empty budget shows, and the sample
-// budget's banner. Both first screens lead to the setup walkthrough (SetupWalkthrough.tsx).
+// What someone sees before they have a budget, what a budget with no accounts shows, and the
+// sample budget's banner. Both first screens lead to the setup walkthrough (SetupWalkthrough.tsx).
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, ChevronRight, FlaskConical } from "lucide-react";
 import { api } from "./bridge";
@@ -90,8 +90,9 @@ function FromYnab({
 }
 
 /**
- * An empty budget's page: one button into the setup walkthrough, with the sample and YNAB as
- * quiet ways around it.
+ * The page of a budget with no accounts, whatever made it (a template, an empty start, another
+ * device): one button into the setup walkthrough, with quiet ways around it. YNAB's import is
+ * one of them only while the budget is empty, since it fills the whole budget.
  */
 export function Welcome({
   budget,
@@ -99,6 +100,7 @@ export function Welcome({
   transform,
   openBudget,
   onSetup,
+  onAddAccount,
   importYnab,
   acceptYnab,
   resolveYnab,
@@ -111,6 +113,8 @@ export function Welcome({
   openBudget: (id: string) => Promise<void>;
   /** Opens the setup walkthrough on this budget. */
   onSetup: () => void;
+  /** Opens the account form, for someone who'd rather set the budget up by hand. */
+  onAddAccount: () => void;
   /** YNAB's API import into this budget, as Settings › Import runs it. */
   importYnab: (request: YnabImportRequest) => Promise<ImportResult>;
   acceptYnab: (reviewId: string) => Promise<ImportResult>;
@@ -120,7 +124,8 @@ export function Welcome({
 }) {
   const toast = useToast();
   // A budget the first screen made to import YNAB into opens on the import.
-  const [ynab, setYnab] = useState(() => !!budgetId && !!sessionStorage.getItem("lb:welcome-ynab:" + budgetId));
+  const blank = isBlank(budget);
+  const [ynab, setYnab] = useState(() => blank && !!budgetId && !!sessionStorage.getItem("lb:welcome-ynab:" + budgetId));
   useEffect(() => {
     if (budgetId) sessionStorage.removeItem("lb:welcome-ynab:" + budgetId);
   }, [budgetId]);
@@ -140,17 +145,24 @@ export function Welcome({
       {!ynab && (
         <div className="welcome-start">
           <button className="primary welcome-go" disabled={busy} onClick={onSetup}>
-            {readMark(budgetId) ? t("Continue setup") : t("Set up this budget")}
+            {readMark(budgetId)?.card ? t("Continue setup") : t("Set up this budget")}
           </button>
         </div>
       )}
       <p className="welcome-links">
+        {!ynab && (
+          <button className="link-button" disabled={busy} onClick={onAddAccount}>
+            {t("Add an account myself")}
+          </button>
+        )}
         <button className="link-button" disabled={busy} onClick={sample}>
           {t("Look around a sample")}
         </button>
-        <button className="link-button" disabled={busy} aria-expanded={ynab} onClick={() => setYnab(!ynab)}>
-          {ynab ? t("Set it up step by step instead") : t("I'm coming from YNAB")}
-        </button>
+        {blank && (
+          <button className="link-button" disabled={busy} aria-expanded={ynab} onClick={() => setYnab(!ynab)}>
+            {ynab ? t("Set it up step by step instead") : t("I'm coming from YNAB")}
+          </button>
+        )}
       </p>
       {ynab && (
         <FromYnab
@@ -236,7 +248,7 @@ export function FirstRunWelcome({
   const toast = useToast();
   const language = useLanguage();
   // Answers from an earlier sitting, offered again.
-  const [draft] = useState(() => readDraft("welcome"));
+  const [draft] = useState(() => readDraft());
   const [format, setFormat] = useState<FormatValue>(() => draft?.format ?? localeDefaults());
   const [changing, setChanging] = useState(false);
   const [existing, setExisting] = useState(false);
@@ -259,7 +271,7 @@ export function FirstRunWelcome({
   };
   const create = async (budget: Budget) => openBudget(await api.createBudget(budget));
   const start = () => {
-    writeDraft(draft ? { ...draft, format } : newDraft("welcome", { name: t("My budget"), format }));
+    writeDraft(draft ? { ...draft, format } : newDraft({ name: t("My budget"), format }));
     onSetup();
   };
   // YNAB's token import saves into an open budget, so it gets one to land in first.

@@ -499,11 +499,3 @@ button.setup-chip {
   color: var(--text);
 }
 
-/* New budget: a walkthrough started there and left unfinished, offered again. */
-.setup-unfinished {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 0;
-}

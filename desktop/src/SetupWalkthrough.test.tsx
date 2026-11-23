@@ -158,7 +158,7 @@ const press = (name: string | RegExp) => fireEvent.click(screen.getByRole("butto
 const heading = (name: string) => screen.findByRole("heading", { level: 1, name });
 /** A draft with the first three steps answered, left on `step`. */
 const answered = (step: SetupDraft["step"]): SetupDraft => ({
-  ...newDraft("welcome", { name: "My budget", format: { ...USD } }),
+  ...newDraft({ name: "My budget", format: { ...USD } }),
   step,
   accounts: [
     { name: "Checking", type: "checking", balance: "3,700" },
@@ -174,7 +174,7 @@ const answered = (step: SetupDraft["step"]): SetupDraft => ({
 it("makes nothing until Assign it, then funds the budget in one step and asks how it'll be kept up", async () => {
   function App() {
     const [started, setStarted] = useState(false);
-    return started ? <Harness start={{ mode: "draft", origin: "welcome" }} /> : <ToastProvider><FirstRunWelcome openBudget={vi.fn()} onSetup={() => setStarted(true)} /></ToastProvider>;
+    return started ? <Harness start={{ mode: "draft" }} /> : <ToastProvider><FirstRunWelcome openBudget={vi.fn()} onSetup={() => setStarted(true)} /></ToastProvider>;
   }
   render(<App />);
   press("Create my budget");
@@ -291,14 +291,15 @@ it("makes nothing until Assign it, then funds the budget in one step and asks ho
   press("Assign it");
   await heading("How will you keep it up to date?");
   expect(api.createBudget).toHaveBeenCalledOnce();
-  expect(vi.mocked(api.createBudget).mock.calls[0][2]).toBe(false);
+  // Only the budget is passed: it joins account sync like any other (createBudget's own default).
+  expect(vi.mocked(api.createBudget).mock.calls[0]).toHaveLength(1);
   // The budget was saved with nothing assigned; the money went in as one change Undo takes back.
   expect(world.saved.get("made")!.assignments).toEqual([]);
   expect(world.undoSteps).toBe(1);
   expect(vi.mocked(api.action).mock.calls[0][1]).toMatchObject({ type: "autoAssign", mode: "underfunded", month: MONTH, limitToAvailable: true });
   expect(assigned(world.open!)).toBe(370000);
   expect(world.open!.assignments.find((a) => a.categoryId === "c3.0")?.amount).toBe(166500);
-  expect(readDraft("welcome")).toBeNull();
+  expect(readDraft()).toBeNull();
   expect(readMark("made")).toEqual({ card: true, assigned: true });
 
   // The budget is made: the last step has Finish and nothing else to press.
@@ -316,7 +317,7 @@ it("makes nothing until Assign it, then funds the budget in one step and asks ho
 
 it("tells a month that costs more than there is, and one that fits exactly", async () => {
   writeDraft({ ...answered(3), accounts: [{ name: "Checking", type: "checking", balance: "1000" }], added: [], amounts: { "0.0": { amount: "1500" } } });
-  const { unmount } = render(<Harness start={{ mode: "draft", origin: "welcome" }} />);
+  const { unmount } = render(<Harness start={{ mode: "draft" }} />);
   press("Next");
   await screen.findByText("Left after this");
   expect(screen.getByRole("status").textContent).toBe(
@@ -326,7 +327,7 @@ it("tells a month that costs more than there is, and one that fits exactly", asy
   unmount();
 
   writeDraft({ ...answered(3), accounts: [{ name: "Checking", type: "checking", balance: "1500" }], added: [], amounts: { "0.0": { amount: "1500" } } });
-  render(<Harness start={{ mode: "draft", origin: "welcome" }} />);
+  render(<Harness start={{ mode: "draft" }} />);
   press("Next");
   await screen.findByText("Left after this");
   expect(screen.getByRole("status").textContent).toBe("All of it has a job.");
@@ -339,7 +340,7 @@ it.each([
   [4, { template: "everyday", amounts: 3, accounts: 2 }],
 ] as const)("Skip setup on step %i makes the budget that step implies", async (step, implied) => {
   writeDraft(answered(step));
-  render(<Harness start={{ mode: "draft", origin: "welcome" }} />);
+  render(<Harness start={{ mode: "draft" }} />);
   await heading(["Where is your money?", "What do you spend on?", "What does a month cost?", "Give your money its jobs"][step - 1]);
   if (step === 4) await screen.findByText("Bills");
   expect(api.createBudget).not.toHaveBeenCalled();
@@ -362,7 +363,7 @@ it.each([
   expect(api.action).not.toHaveBeenCalled();
   expect(world.open).toBe(made);
   expect(readMark("made")).toEqual({ card: true });
-  expect(readDraft("welcome")).toBeNull();
+  expect(readDraft()).toBeNull();
 });
 
 it("keeps the answers as a draft and offers them again after a restart", async () => {
@@ -370,7 +371,7 @@ it("keeps the answers as a draft and offers them again after a restart", async (
   expect(screen.queryByRole("button", { name: "Continue setup" })).toBeNull();
   press("Create my budget");
   first.unmount();
-  const walk = render(<Harness start={{ mode: "draft", origin: "welcome" }} />);
+  const walk = render(<Harness start={{ mode: "draft" }} />);
   await heading("Where is your money?");
   type("Name", "Joint account");
   type("Today's balance", "1250.50");
@@ -385,7 +386,7 @@ it("keeps the answers as a draft and offers them again after a restart", async (
   expect(screen.queryByRole("button", { name: "Create my budget" })).toBeNull();
   press("Continue setup");
   cleanup();
-  render(<Harness start={{ mode: "draft", origin: "welcome" }} />);
+  render(<Harness start={{ mode: "draft" }} />);
   await heading("What do you spend on?");
   expect((await screen.findByRole("button", { name: "Phone" })).getAttribute("aria-pressed")).toBe("false");
   press("Back");
@@ -395,7 +396,7 @@ it("keeps the answers as a draft and offers them again after a restart", async (
   // Back from the first step leaves the walkthrough with the answers kept and nothing made.
   press("Back");
   expect(screen.getByText("Walkthrough closed")).toBeTruthy();
-  expect(readDraft("welcome")?.accounts[0].name).toBe("Joint account");
+  expect(readDraft()?.accounts[0].name).toBe("Joint account");
   expect(api.createBudget).not.toHaveBeenCalled();
 });
 
@@ -486,17 +487,72 @@ it("adds a card to an open budget with its payment category, owing what was type
   expect(world.open!.categories).toEqual([expect.objectContaining({ name: "Visa", group: "Credit Card Payments", paymentAccountId: visa.id })]);
 });
 
-it("shows the setup card on a budget the walkthrough left unfinished, and opens the first step it doesn't answer", async () => {
+it("takes in a budget that isn't in use yet, whatever made it, and leaves one that is", async () => {
+  const card = (b: Budget, unassigned: number, id: string) => <SetupCard budget={b} budgetId={id} unassigned={unassigned} onContinue={vi.fn()} />;
+  const region = () => screen.queryByRole("region", { name: "Finish setting up" });
+  // Made from a template in New budget, or on another device: no mark here, an account, nothing spent.
+  const young = { ...skipped(), categories: [{ id: "c", name: "Rent", group: "Bills", target: 0 }] };
+  const view = render(card(young, 200000, "template"));
+  await waitFor(() => expect(region()?.textContent).toContain("3 steps left"));
+  expect(readMark("template")).toEqual({ card: true });
+  // Started before the walkthrough and left, its checklist still showing.
+  localStorage.setItem("lb:setup:left", "on");
+  view.rerender(card(young, 200000, "left"));
+  await waitFor(() => expect(readMark("left")).toEqual({ card: true }));
+  expect(region()).toBeTruthy();
+  // Its checklist hidden: it stays hidden.
+  localStorage.setItem("lb:setup:hidden", "off");
+  view.rerender(card(young, 200000, "hidden"));
+  expect(region()).toBeNull();
+  expect(localStorage.getItem("lb:setup:hidden")).toBe("off");
+  // In use: something was spent in it. It's never offered setup, and gets no mark.
+  const purchase = { id: "t", date: "2026-11-02", accountId: "a0", payee: "Shop", memo: "", amount: -500, status: "cleared", splits: [], transferAccountId: null, transferStatus: null };
+  view.rerender(card({ ...young, transactions: [purchase] } as Budget, 200000, "used"));
+  expect(region()).toBeNull();
+  expect(readMark("used")).toBeNull();
+  // Everything done by hand: how it's kept up to date isn't asked on its own.
+  view.rerender(card({ ...young, categories: [{ ...young.categories[0], target: 100000 }] }, 0, "by-hand"));
+  expect(region()).toBeNull();
+  expect(readMark("by-hand")).toBeNull();
+  // A fresh start is marked as set up when New budget makes it.
+  writeMark("fresh", { card: false });
+  view.rerender(card(young, 200000, "fresh"));
+  expect(region()).toBeNull();
+  // A sample or an import was set up somewhere else.
+  view.rerender(card({ ...young, sample: {} }, 200000, "sample"));
+  expect(region()).toBeNull();
+  expect(readMark("sample")).toBeNull();
+});
+
+it("keeps the way back in when the walkthrough is left partway on a budget that exists", async () => {
+  // New budget made it empty; the walkthrough was opened on it from its page.
+  render(<Harness start={{ mode: "budget", step: 1 }} budget={{ ...skipped(), accounts: [] }} />);
+  await heading("Where is your money?");
+  expect(readMark("made")).toEqual({ card: true });
+  type("Name", "Checking");
+  type("Today's balance", "2000");
+  press("Next");
+  await heading("What do you spend on?");
+  press("Skip setup");
+  expect(screen.getByText("Walkthrough closed")).toBeTruthy();
+  const onContinue = vi.fn();
+  render(<SetupCard budget={world.open!} budgetId="made" unassigned={200000} onContinue={onContinue} />);
+  expect(screen.getByRole("region", { name: "Finish setting up" }).textContent).toContain("4 steps left");
+  press("Continue");
+  expect(onContinue).toHaveBeenLastCalledWith(2);
+  cleanup();
+  // A card hidden before comes back when the walkthrough is opened again.
+  writeMark("made", { card: false });
+  render(<Harness start={{ mode: "budget", step: 2 }} budget={world.open} />);
+  await heading("What do you spend on?");
+  expect(readMark("made")).toEqual({ card: true });
+});
+
+it("shows the setup card on a budget left unfinished, and opens the first step it doesn't answer", async () => {
   const onContinue = vi.fn();
   const budget = skipped();
   const card = (b: Budget, unassigned: number, id = "made") => <SetupCard budget={b} budgetId={id} unassigned={unassigned} onContinue={onContinue} />;
-  // A budget the walkthrough didn't make has no card; nor one from before it, with the old checklist's mark.
   const view = render(card(budget, 200000));
-  expect(screen.queryByRole("region", { name: "Finish setting up" })).toBeNull();
-  localStorage.setItem("lb:setup:old", "on");
-  view.rerender(card(budget, 200000, "old"));
-  expect(screen.queryByRole("region", { name: "Finish setting up" })).toBeNull();
-
   act(() => writeMark("made", { card: true }));
   view.rerender(card(budget, 200000));
   expect(screen.getByRole("region", { name: "Finish setting up" }).textContent).toContain("4 steps left");
@@ -550,7 +606,7 @@ it("opens a made budget again rather than making a second when opening it failed
   writeDraft(answered(2));
   let fail = true;
   function Flaky() {
-    const [session, setSession] = useState<SetupSession | null>({ mode: "draft", origin: "welcome" });
+    const [session, setSession] = useState<SetupSession | null>({ mode: "draft" });
     return session ? (
       <ToastProvider>
         <SetupWalkthrough
@@ -597,7 +653,7 @@ const tight = (rent: string): SetupDraft => ({
 
 it("says the card's debt from the start, so the steps agree when only the card goes short", async () => {
   writeDraft(tight("3375"));
-  render(<Harness start={{ mode: "draft", origin: "welcome" }} />);
+  render(<Harness start={{ mode: "draft" }} />);
   await heading("What does a month cost?");
   const total = document.querySelector(".setup-actions .setup-note")!;
   // The month fits; the card is owed on top of it, and that isn't the month costing too much.
@@ -614,7 +670,7 @@ it("says the card's debt from the start, so the steps agree when only the card g
 
 it("says two things when the month and the card both go short, and names no card when there are several", async () => {
   writeDraft(tight("3600"));
-  const first = render(<Harness start={{ mode: "draft", origin: "welcome" }} />);
+  const first = render(<Harness start={{ mode: "draft" }} />);
   await heading("What does a month cost?");
   expect(document.querySelector(".setup-actions .setup-note")!.className).toBe("setup-note warning");
   press("Next");
@@ -626,7 +682,7 @@ it("says two things when the month and the card both go short, and names no card
   first.unmount();
 
   writeDraft({ ...tight("3375"), accounts: [...tight("3375").accounts, { name: "Amex", type: "creditCard", balance: "80" }] });
-  render(<Harness start={{ mode: "draft", origin: "welcome" }} />);
+  render(<Harness start={{ mode: "draft" }} />);
   await heading("What does a month cost?");
   expect(document.querySelector(".setup-actions .setup-note")!.textContent).toBe("Your month costs $3,375.00, plus $500.00 owed on your cards. You have $3,500.00.");
   press("Next");
@@ -638,7 +694,7 @@ it("says two things when the month and the card both go short, and names no card
 
 it("presses the filled button on Enter from a step with no field to type in", async () => {
   writeDraft(answered(2));
-  render(<Harness start={{ mode: "draft", origin: "welcome" }} />);
+  render(<Harness start={{ mode: "draft" }} />);
   await heading("What do you spend on?");
   await screen.findByRole("button", { name: "Phone" });
   // The set's select is the step's field; Enter there goes on, as it does from a text field.

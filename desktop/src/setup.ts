@@ -20,16 +20,11 @@ export type AccountRow = { name: string; type: SetupAccountType; balance: string
 export type AmountEntry = { amount: string; yearly?: boolean };
 /** How spending will keep arriving: typed in, from the bank's file, or from a bank connection. */
 export type KeepRoute = "type" | "file" | "bank";
-/** Where a walkthrough began: the welcome screen, or the New budget dialog. Each keeps its own draft. */
-export type SetupOrigin = "welcome" | "dialog";
-
 /** The answers so far for a budget that isn't made yet. */
 export type SetupDraft = {
-  origin: SetupOrigin;
   step: 1 | 2 | 3 | 4;
   name: string;
   format: FormatValue;
-  localOnly: boolean;
   accounts: AccountRow[];
   template: string;
   /** Template categories left out, by place: "<group>.<category>" from 0 (setup.rs). */
@@ -67,15 +62,13 @@ export type SetupPreview = {
 
 export const blankRow = (): AccountRow => ({ name: "", type: "checking", balance: "" });
 
-/** A new draft: the name and formats the New budget dialog gave, or "My budget" and the device's. */
-export function newDraft(origin: SetupOrigin, start: { name: string; format?: FormatValue; localOnly?: boolean }): SetupDraft {
+/** A new draft, in the formats the first screen settled on or the device's. */
+export function newDraft(start: { name: string; format?: FormatValue }): SetupDraft {
   const guess = localeDefaults();
   return {
-    origin,
     step: 1,
     name: start.name,
     format: start.format ?? guess,
-    localOnly: start.localOnly ?? false,
     accounts: [blankRow()],
     template: "everyday",
     leftOut: [],
@@ -85,19 +78,20 @@ export function newDraft(origin: SetupOrigin, start: { name: string; format?: Fo
   };
 }
 
-const draftKey = (origin: SetupOrigin) => `lb:setup-draft:${origin}`;
-/** The draft kept for the welcome screen or the dialog, if one was started and not finished. */
-export function readDraft(origin: SetupOrigin): SetupDraft | null {
+/** Where the first screen's draft is kept. A walkthrough on a budget that exists needs none: its answers are in the budget. */
+const DRAFT_KEY = "lb:setup-draft:welcome";
+/** The first screen's draft, if a walkthrough was started there and not finished. */
+export function readDraft(): SetupDraft | null {
   try {
-    const saved = JSON.parse(localStorage.getItem(draftKey(origin)) ?? "null") as Partial<SetupDraft> | null;
+    const saved = JSON.parse(localStorage.getItem(DRAFT_KEY) ?? "null") as Partial<SetupDraft> | null;
     if (!saved || typeof saved !== "object" || typeof saved.name !== "string" || !saved.format?.currency) return null;
-    const fresh = newDraft(origin, { name: saved.name });
+    const fresh = newDraft({ name: saved.name });
     const step = [1, 2, 3, 4].includes(saved.step as number) ? saved.step! : 1;
     return {
-      ...fresh,
-      ...saved,
-      origin,
       step,
+      name: saved.name,
+      income: typeof saved.income === "string" ? saved.income : fresh.income,
+      template: typeof saved.template === "string" ? saved.template : fresh.template,
       format: { ...saved.format, numberFormat: numberFormatFor(saved.format.currency, saved.format.numberFormat) },
       accounts: Array.isArray(saved.accounts) && saved.accounts.length ? saved.accounts : fresh.accounts,
       leftOut: Array.isArray(saved.leftOut) ? saved.leftOut : [],
@@ -110,14 +104,14 @@ export function readDraft(origin: SetupOrigin): SetupDraft | null {
 }
 export function writeDraft(draft: SetupDraft) {
   try {
-    localStorage.setItem(draftKey(draft.origin), JSON.stringify(draft));
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
   } catch {
     // Without storage the answers last until the app closes.
   }
 }
-export function clearDraft(origin: SetupOrigin) {
+export function clearDraft() {
   try {
-    localStorage.removeItem(draftKey(origin));
+    localStorage.removeItem(DRAFT_KEY);
   } catch {
     // Nothing was kept.
   }
@@ -189,9 +183,10 @@ export function draftCategories(draft: Pick<SetupDraft, "leftOut" | "added">, te
 // ---------- What the device keeps for a budget ----------
 
 /**
- * A budget made by the walkthrough: whether its setup card shows, whether its money was given
- * jobs there, how its spending will keep arriving, and whether Budget still has to say it's
- * ready. Kept on the device, never in the budget.
+ * A budget's setup on this device: whether its setup card shows, whether its money was given jobs
+ * in the walkthrough, how its spending will keep arriving, and whether Budget still has to say
+ * it's ready. Kept on the device, never in the budget. A budget gets one when the walkthrough
+ * makes or opens it, or when it's opened while it isn't in use yet (`needsSetup`).
  */
 export type SetupMark = {
   card: boolean;
@@ -202,13 +197,15 @@ export type SetupMark = {
 };
 const markKey = (budgetId: string) => `lb:setup:${budgetId}`;
 /**
- * A budget's mark, or null for one the walkthrough didn't make. The same key once held "on" or
- * "off" for the getting-started checklist; those budgets were set up before the walkthrough and
- * get no setup card.
+ * A budget's mark, or null for one this device hasn't given one. The same key once held "on" or
+ * "off" for the getting-started checklist: one hidden there ("off") stays hidden; "on" reads as
+ * no mark, and the budget is offered setup again if it still isn't in use.
  */
 export function readMark(budgetId: string): SetupMark | null {
   try {
-    const saved = JSON.parse(localStorage.getItem(markKey(budgetId)) ?? "null") as SetupMark | null;
+    const raw = localStorage.getItem(markKey(budgetId));
+    if (raw === "off") return { card: false };
+    const saved = JSON.parse(raw ?? "null") as SetupMark | null;
     return saved && typeof saved === "object" && typeof saved.card === "boolean" ? saved : null;
   } catch {
     return null;
@@ -228,6 +225,17 @@ export const updateMark = (budgetId: string, change: Partial<SetupMark>) =>
   writeMark(budgetId, { card: true, ...readMark(budgetId), ...change });
 /** Sent on `window` when a budget's mark changes, with its id. */
 export const MARK_EVENT = "urbudget-setup-mark";
+
+/**
+ * Whether a budget this device has no mark for is offered setup: it isn't in use yet (nothing
+ * has been spent or received in it) and still lacks accounts, categories, what a month costs or
+ * jobs for its money. What made it doesn't matter: New budget, another device, or an old start
+ * that was left. A sample or an import was set up somewhere else.
+ */
+export function needsSetup(budget: Budget, unassigned: number): boolean {
+  if (budget.sample || budget.importedFrom || budget.ynabPlanId || budget.transactions.length) return false;
+  return stepsLeft(budget, unassigned, null).some((step) => step < 5);
+}
 
 /** Categories that are the person's own: every one but a card's payment category. */
 export const ownCategories = (budget: Pick<Budget, "categories">): Category[] => budget.categories.filter((c) => !c.paymentAccountId);

@@ -10,7 +10,6 @@ import {
   Info,
   Pencil,
   Plus,
-  Sparkles,
   Target,
   Trash2,
 } from "lucide-react";
@@ -148,10 +147,8 @@ export function BudgetPage({
   undo,
   onEditorChange,
   onEditCategory,
-  onAddAccount,
   onSetup,
   onKeepUp,
-  onOpenSample,
   onOpenRegister,
   onAsk,
   onSelection,
@@ -175,12 +172,10 @@ export function BudgetPage({
   undo?: () => void;
   onEditorChange: (open: boolean) => void;
   onEditCategory: (c: Category) => void;
-  onAddAccount: () => void;
   /** Opens the setup walkthrough at a step (the setup card's Continue). */
   onSetup?: (step: number) => void;
   /** Starts what the walkthrough's last choice needs (the line a finished walkthrough leaves on Budget). */
   onKeepUp?: (route: KeepRoute) => void;
-  onOpenSample: () => void;
 }) {
   const toast = useToast();
   const collapsedKey = `lb:budget:collapsed:${budgetId}`;
@@ -523,25 +518,6 @@ export function BudgetPage({
 
   // A budget the walkthrough made and didn't finish gets the way back into it.
   const setupCard = onSetup && <SetupCard budget={budget} budgetId={budgetId} unassigned={rta} onContinue={onSetup} onKeepUp={onKeepUp} />;
-  if (!budget.accounts.length)
-    return (
-      <div className="page">
-        {setupCard}
-        <div className="empty-state">
-          <h2>{t("No accounts yet")}</h2>
-          <p>{t("Add your accounts and their current balances, then create categories and assign the money you have.")}</p>
-          <div className="button-row">
-            <button className="primary" onClick={onAddAccount}>
-              <Plus size={15} /> {t("Add account")}
-            </button>
-            <button className="secondary" onClick={onOpenSample}>
-              <Sparkles size={15} /> {t("Explore a sample budget")}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-
   const groupMenu = (name: string, categories: Category[]): MenuItem[] => [
     {
       label: t("Rename group"),

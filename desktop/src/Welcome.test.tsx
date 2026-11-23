@@ -40,6 +40,7 @@ const welcome = (props: Partial<Parameters<typeof Welcome>[0]> = {}) => (
       transform={vi.fn()}
       openBudget={vi.fn()}
       onSetup={vi.fn()}
+      onAddAccount={vi.fn()}
       importYnab={vi.fn()}
       resolveYnab={vi.fn()}
       acceptYnab={vi.fn()}
@@ -82,6 +83,30 @@ it("gives an empty budget one button into the walkthrough, with the sample and Y
   view.unmount();
   render(welcome());
   expect(screen.getByRole("button", { name: "Continue setup" })).toBeTruthy();
+});
+
+it("gives a budget with categories and no accounts the same page, without YNAB's import", () => {
+  // New budget's template made it; nothing can be done in it until it has an account.
+  const onSetup = vi.fn(), onAddAccount = vi.fn();
+  const template = { ...blank(), categories: [{ id: "c", name: "Rent", group: "Bills", target: 0 }] };
+  render(welcome({ budget: template, onSetup, onAddAccount }));
+  expect(document.querySelectorAll("button.primary")).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "Set up this budget" }));
+  expect(onSetup).toHaveBeenCalledOnce();
+  // By hand is a quiet way around it.
+  const byHand = screen.getByRole("button", { name: "Add an account myself" });
+  expect(byHand.className).toBe("link-button");
+  fireEvent.click(byHand);
+  expect(onAddAccount).toHaveBeenCalledOnce();
+  expect(screen.getByRole("button", { name: "Look around a sample" })).toBeTruthy();
+  // YNAB's import fills a whole budget: it's offered only to an empty one.
+  expect(screen.queryByRole("button", { name: "I'm coming from YNAB" })).toBeNull();
+});
+
+it("says Continue setup only where setup is still on offer", () => {
+  writeMark("b1", { card: false });
+  render(welcome());
+  expect(screen.getByRole("button", { name: "Set up this budget" })).toBeTruthy();
 });
 
 it("opens the sample as its own budget in this budget's currency", async () => {
@@ -168,7 +193,7 @@ it("opens a first launch on one button, the device's currency and date format, a
   // The walkthrough opens on a draft; nothing is in the library.
   expect(onSetup).toHaveBeenCalledOnce();
   expect(api.createBudget).not.toHaveBeenCalled();
-  expect(readDraft("welcome")).toMatchObject({ name: "My budget", step: 1, format: localeDefaults(["en-US"]) });
+  expect(readDraft()).toMatchObject({ name: "My budget", step: 1, format: localeDefaults(["en-US"]) });
 });
 
 it("starts the walkthrough in the currency and formats changed on the first screen", () => {
@@ -178,7 +203,7 @@ it("starts the walkthrough in the currency and formats changed on the first scre
   fireEvent.change(screen.getByLabelText("Date format"), { target: { value: "dmy" } });
   expect(screen.getByText("15/10/2026", { selector: "p span" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Create my budget" }));
-  expect(readDraft("welcome")?.format).toMatchObject({ currency: "USD", dateFormat: "dmy" });
+  expect(readDraft()?.format).toMatchObject({ currency: "USD", dateFormat: "dmy" });
 });
 
 it("opens the sample from a first launch without making a budget of the person's own", async () => {
@@ -189,7 +214,7 @@ it("opens the sample from a first launch without making a budget of the person's
   await vi.waitFor(() => expect(openBudget).toHaveBeenCalledWith("sample-id"));
   expect(api.createBudget).toHaveBeenCalledOnce();
   expect(vi.mocked(api.createBudget).mock.calls[0][0]).toMatchObject({ name: "Sample budget", currency: "GBP", dateFormat: "dmy", sample: { from: "" } });
-  expect(readDraft("welcome")).toBeNull();
+  expect(readDraft()).toBeNull();
 });
 
 it("keeps YNAB, a backup file and signing in behind I already have a budget", async () => {

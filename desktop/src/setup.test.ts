@@ -11,6 +11,7 @@ import {
   draftCategories,
   leftoverCategory,
   monthly,
+  needsSetup,
   newDraft,
   readDraft,
   readMark,
@@ -26,16 +27,16 @@ type Fs = { readFileSync(path: string, encoding: "utf8"): string };
 const fs = await vi.importActual<Fs>("node:fs");
 
 const comma = { currency: "EUR", numberFormat: { decimal: ",", group: ".", symbol: "after" }, dateFormat: "dmy" } as const;
-const draft = (patch: Partial<SetupDraft> = {}): SetupDraft => ({ ...newDraft("welcome", { name: " Home ", format: { ...comma } }), ...patch });
+const draft = (patch: Partial<SetupDraft> = {}): SetupDraft => ({ ...newDraft({ name: " Home ", format: { ...comma } }), ...patch });
 const blank = (): Budget => ({ schemaVersion: 2, name: "Home", currency: "EUR", accounts: [], categories: [], transactions: [], assignments: [] });
 
 beforeEach(() => localStorage.clear());
 
-it("starts a draft from the device's formats unless the dialog gave its own", () => {
-  const guessed = newDraft("welcome", { name: "My budget" });
+it("starts a draft from the device's formats unless the first screen changed them", () => {
+  const guessed = newDraft({ name: "My budget" });
   expect(guessed.format.currency).toMatch(/^[A-Z]{3}$/);
-  expect(guessed).toMatchObject({ step: 1, template: "everyday", localOnly: false, accounts: [{ name: "", type: "checking", balance: "" }] });
-  expect(newDraft("dialog", { name: "Trip", format: { ...comma }, localOnly: true })).toMatchObject({ origin: "dialog", name: "Trip", localOnly: true, format: comma });
+  expect(guessed).toMatchObject({ step: 1, template: "everyday", accounts: [{ name: "", type: "checking", balance: "" }] });
+  expect(newDraft({ name: "Trip", format: { ...comma } })).toMatchObject({ name: "Trip", format: comma });
 });
 
 it("reads the answers in the draft's own number format, and only as far as the step they were left on", () => {
@@ -94,27 +95,28 @@ it("lists a draft's categories by the place the engine knows them by", () => {
   expect(draftCategories({ leftOut: [], added: [] }, undefined, "Other")).toEqual([]);
 });
 
-it("keeps a draft for the welcome screen and one for the dialog, and forgives what it can't read", () => {
-  expect(readDraft("welcome")).toBeNull();
-  writeDraft(draft({ step: 3, leftOut: ["1.1"] }));
-  writeDraft({ ...draft(), origin: "dialog", name: "Trip" });
-  expect(readDraft("welcome")).toMatchObject({ step: 3, leftOut: ["1.1"], name: " Home " });
-  expect(readDraft("dialog")?.name).toBe("Trip");
-  clearDraft("welcome");
-  expect(readDraft("welcome")).toBeNull();
-  expect(readDraft("dialog")).not.toBeNull();
+it("keeps the first screen's draft, and forgives what it can't read", () => {
+  expect(readDraft()).toBeNull();
+  writeDraft(draft({ step: 3, leftOut: ["1.1"], template: "family", income: "2.000" }));
+  expect(readDraft()).toMatchObject({ step: 3, leftOut: ["1.1"], name: " Home ", template: "family", income: "2.000" });
+  clearDraft();
+  expect(readDraft()).toBeNull();
   localStorage.setItem("lb:setup-draft:welcome", "{not json");
-  expect(readDraft("welcome")).toBeNull();
-  localStorage.setItem("lb:setup-draft:welcome", JSON.stringify({ name: "Old", format: { currency: "USD" }, step: 9, accounts: [] }));
-  expect(readDraft("welcome")).toMatchObject({ step: 1, accounts: [{ name: "" }], leftOut: [], amounts: {}, format: { currency: "USD", numberFormat: { decimal: "." } } });
+  expect(readDraft()).toBeNull();
+  // One kept by an earlier build, with fields the draft no longer has.
+  localStorage.setItem("lb:setup-draft:welcome", JSON.stringify({ origin: "welcome", localOnly: false, name: "Old", format: { currency: "USD" }, step: 9, accounts: [] }));
+  const old = readDraft();
+  expect(old).toMatchObject({ step: 1, template: "everyday", income: "", accounts: [{ name: "" }], leftOut: [], amounts: {}, format: { currency: "USD", numberFormat: { decimal: "." } } });
+  expect(old).not.toHaveProperty("origin");
 });
 
-it("marks a budget the walkthrough made, apart from the old checklist's mark", () => {
+it("marks a budget's setup on this device, and keeps the old checklist hidden where it was", () => {
   expect(readMark("b")).toBeNull();
+  // The old checklist showing is no mark: the budget is looked at afresh. Hidden, it stays hidden.
   localStorage.setItem("lb:setup:b", "on");
   expect(readMark("b")).toBeNull();
   localStorage.setItem("lb:setup:b", "off");
-  expect(readMark("b")).toBeNull();
+  expect(readMark("b")).toEqual({ card: false });
   writeMark("b", { card: true });
   updateMark("b", { keep: "bank" });
   expect(readMark("b")).toEqual({ card: true, keep: "bank" });
@@ -133,6 +135,26 @@ it("counts the steps a budget doesn't answer yet", () => {
   expect(stepsLeft(withTarget, 5000, { card: true })).toEqual([4, 5]);
   expect(stepsLeft(withTarget, 5000, { card: true, assigned: true, keep: "type" })).toEqual([]);
   expect(stepsLeft({ ...withTarget, categories: [{ id: "c", name: "Car", group: "Bills", target: 0, goal: { goal_type: "NEED" } }] }, 0, null)).toEqual([5]);
+});
+
+it("offers setup to a budget that isn't in use yet, whatever made it", () => {
+  const rent = { id: "c", name: "Rent", group: "Bills", target: 0 };
+  const account = { id: "a", name: "Checking", kind: "cash" as const, openingBalance: 350000, archived: false };
+  const purchase = { id: "t", date: "2026-11-02", accountId: "a", payee: "Shop", memo: "", amount: -500, status: "cleared" as const, splits: [], transferAccountId: null, transferStatus: null };
+  // Empty, or a template's categories and nothing else: New budget's two ways to start.
+  expect(needsSetup(blank(), 0)).toBe(true);
+  expect(needsSetup({ ...blank(), categories: [rent] }, 0)).toBe(true);
+  // Accounts and categories typed by hand, with no amounts or money still to assign.
+  expect(needsSetup({ ...blank(), accounts: [account], categories: [rent] }, 350000)).toBe(true);
+  expect(needsSetup({ ...blank(), accounts: [account], categories: [{ ...rent, target: 100000 }] }, 250000)).toBe(true);
+  // All of it done by hand: only how it's kept up to date is unsaid, and that isn't asked on its own.
+  expect(needsSetup({ ...blank(), accounts: [account], categories: [{ ...rent, target: 100000 }] }, 0)).toBe(false);
+  // In use: something has been spent or received in it.
+  expect(needsSetup({ ...blank(), accounts: [account], categories: [rent], transactions: [purchase] } as Budget, 350000)).toBe(false);
+  // Set up somewhere else.
+  expect(needsSetup({ ...blank(), sample: {} }, 0)).toBe(false);
+  expect(needsSetup({ ...blank(), ynabPlanId: "plan" } as Budget, 0)).toBe(false);
+  expect(needsSetup({ ...blank(), importedFrom: "YNAB" } as Budget, 0)).toBe(false);
 });
 
 it("adds accounts and categories to a budget as the engine would have made them", () => {

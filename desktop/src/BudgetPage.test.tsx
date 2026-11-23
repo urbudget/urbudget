@@ -55,8 +55,6 @@ function setup(initial: Budget = demoBudget(), more: Partial<Summary> = {}) {
         transform={vi.fn()}
         onEditorChange={vi.fn()}
         onEditCategory={vi.fn()}
-        onAddAccount={vi.fn()}
-        onOpenSample={vi.fn()}
         onOpenRegister={onOpenRegister}
       />
     </ToastProvider>
