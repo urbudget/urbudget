@@ -29,7 +29,10 @@ beforeEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 it("knows a first launch's budget from one someone set up", () => {
   const { numberFormat: _n, dateFormat: _d, ...fresh } = { ...blank(), currency: "SAR" };
@@ -185,6 +188,8 @@ it("leaves a sample for an active budget when its original budget is in Trash", 
 });
 
 it("offers first-run choices without creating a placeholder, then creates the selected fresh budget", async () => {
+  // A first launch starts from the device's currency and formats, not the engine's built-in ones.
+  vi.spyOn(navigator, "languages", "get").mockReturnValue(["de-DE"]);
   const openBudget = vi.fn(async () => {}), onAddAccount = vi.fn();
   render(<ToastProvider><FirstRunWelcome openBudget={openBudget} onAddAccount={onAddAccount}
     importYnab={vi.fn()} resolveYnab={vi.fn()} acceptYnab={vi.fn()} /></ToastProvider>);
@@ -196,8 +201,24 @@ it("offers first-run choices without creating a placeholder, then creates the se
   fireEvent.click(screen.getByRole("button", {name: /Next: add your accounts/}));
   await vi.waitFor(() => expect(onAddAccount).toHaveBeenCalledOnce());
   expect(api.createBudget).toHaveBeenCalledOnce();
-  expect(vi.mocked(api.createBudget).mock.calls[0][0]).toMatchObject({currency:"SAR",groupOrder:["Bills","Needs","Wants","Savings"]});
+  expect(vi.mocked(api.createBudget).mock.calls[0][0]).toMatchObject({
+    currency: "EUR", numberFormat: {decimal: ",", group: ".", symbol: "after"}, dateFormat: "dmy",
+    groupOrder: ["Bills","Needs","Wants","Savings"],
+  });
   expect(openBudget).toHaveBeenCalledWith("sample-id");
+});
+
+it("opens a first launch's sample in the device's currency and formats", async () => {
+  vi.spyOn(navigator, "languages", "get").mockReturnValue(["en-US"]);
+  vi.mocked(api.listBudgets).mockResolvedValue([]);
+  const openBudget = vi.fn(async () => {});
+  render(<ToastProvider><FirstRunWelcome openBudget={openBudget} onAddAccount={vi.fn()}
+    importYnab={vi.fn()} resolveYnab={vi.fn()} acceptYnab={vi.fn()} /></ToastProvider>);
+  fireEvent.click(screen.getByRole("button", {name: /Look around first/}));
+  await vi.waitFor(() => expect(openBudget).toHaveBeenCalledWith("sample-id"));
+  expect(vi.mocked(api.createBudget).mock.calls[0][0]).toMatchObject({
+    name: "Sample budget", currency: "USD", numberFormat: {decimal: ".", group: ",", symbol: "before"}, dateFormat: "mdy",
+  });
 });
 
 it("creates an explicit YNAB destination before showing its token form so import review survives", async () => {

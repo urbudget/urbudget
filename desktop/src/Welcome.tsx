@@ -8,6 +8,7 @@ import { YnabFileImport } from "./YnabFileImport";
 import { YnabImport } from "./YnabImport";
 import { demoBudget } from "./demo";
 import { errorText, numberFormatFor } from "./format";
+import { localeDefaults } from "./locale";
 import { starterCategories } from "./newBudget";
 import { useToast } from "./ui";
 import { msg, t } from "./i18n";
@@ -402,7 +403,8 @@ export function FirstRunWelcome({openBudget, onAddAccount, importYnab, acceptYna
   acceptYnab: (reviewId: string) => Promise<ImportResult>;
   resolveYnab: (id: string, choices: Record<string, string>) => Promise<ImportResult>;
 }) {
-  const blank: Budget = {schemaVersion: 2, name: t("My budget"), currency: BUILT_IN_CURRENCY, accounts: [], categories: [], transactions: [], assignments: []};
+  // The device's currency and formats, so the format fields and the sample start from them.
+  const blank: Budget = {schemaVersion: 2, name: t("My budget"), ...localeDefaults(), accounts: [], categories: [], transactions: [], assignments: []};
   const create = async (budget: Budget, ynab = false) => {
     const id = await api.createBudget(budget);
     writeSetup(id, "on");
