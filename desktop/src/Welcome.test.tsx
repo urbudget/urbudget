@@ -115,7 +115,7 @@ it("leaves the sample for the budget it came from, deleting it if asked", async 
 });
 
 it("walks a budget set up from the welcome screen through the method, step by step", () => {
-  const props = { onAddAccount: vi.fn(), onAssign: vi.fn(), onAddTransaction: vi.fn(), onSetTarget: vi.fn() };
+  const props = { unassigned: 100000, onAddAccount: vi.fn(), onAssign: vi.fn(), onAddTransaction: vi.fn(), onSetTarget: vi.fn() };
   const budget: Budget = {
     ...blank(),
     accounts: [{ id: "a", name: "Checking", kind: "cash", openingBalance: 100000, archived: false }],
@@ -132,7 +132,14 @@ it("walks a budget set up from the welcome screen through the method, step by st
   fireEvent.click(screen.getByRole("button", { name: "Assign money" }));
   expect(props.onAssign).toHaveBeenCalled();
 
-  const assigned = { ...budget, assignments: [{ month: "2026-10", categoryId: "c", amount: 50000 }] };
+  // Some of it assigned isn't the step done: it's done when Unassigned reaches zero.
+  const partly = { ...budget, assignments: [{ month: "2026-10", categoryId: "c", amount: 50000 }] };
+  rerender(<GettingStarted budget={partly} budgetId="b2" {...props} unassigned={50000} />);
+  expect(screen.getByText("1 of 5 done")).toBeTruthy();
+  expect(screen.getByRole("button", { name: /Assign your money/ }).getAttribute("aria-current")).toBe("step");
+
+  const assigned = { ...budget, assignments: [{ month: "2026-10", categoryId: "c", amount: 100000 }] };
+  props.unassigned = 0;
   rerender(<GettingStarted budget={assigned} budgetId="b2" {...props} />);
   expect(screen.getByText("2 of 5 done")).toBeTruthy();
   expect(screen.getByRole("button", { name: /Record your spending/ }).getAttribute("aria-current")).toBe("step");

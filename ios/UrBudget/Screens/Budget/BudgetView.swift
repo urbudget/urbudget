@@ -293,7 +293,7 @@ struct BudgetView: View {
                 }
                 UnassignedBanner(amount: model.readyToAssign, currency: currency) { sheet = .unassigned }
                 if checklist, let budget = store.budget, !StarterBudget.isSample(budget), budget["importedFrom"].isNull, budget["ynabPlanId"].isNull {
-                    GettingStartedCard(budget: budget, addAccount: { sheet = .addAccount }, assign: { sheet = .unassigned },
+                    GettingStartedCard(budget: budget, unassigned: model.readyToAssign, addAccount: { sheet = .addAccount }, assign: { sheet = .unassigned },
                                        addTransaction: { launchEditor = TransactionEditorRequest() },
                                        setTarget: {
                                            let categories = budget.rows("categories").filter { !$0.flag("hidden") && $0.text("paymentAccountId").isEmpty }

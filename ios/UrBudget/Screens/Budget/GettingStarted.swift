@@ -71,6 +71,8 @@ enum StarterBudget {
 /// until it's hidden.
 struct GettingStartedCard: View {
     var budget: JSON
+    /// The month's Unassigned.
+    var unassigned: Int64
     var addAccount: () -> Void
     var assign: () -> Void
     var addTransaction: () -> Void
@@ -92,7 +94,8 @@ struct GettingStartedCard: View {
                           done: !budget.rows("accounts").isEmpty, action: (String(localized: "Add an account"), addAccount)))
         steps.append(Step(title: String(localized: "Assign your money"),
                           text: String(localized: "Give all of it a job: tap a category's Assigned amount and type on the keypad until Unassigned reaches zero. Quick assign, in the Unassigned sheet, can fill in targets for you."),
-                          done: budget.rows("assignments").contains { $0.long("amount") != 0 }, action: (String(localized: "Assign money"), assign)))
+                          // Done when all of it has a job, not when the first amount is typed.
+                          done: unassigned == 0 && budget.rows("assignments").contains { $0.long("amount") != 0 }, action: (String(localized: "Assign money"), assign)))
         steps.append(Step(title: String(localized: "Record your spending"),
                           text: String(localized: "Add transactions as you spend, or import the statement file your bank lets you download (CSV, Excel, OFX, QIF and more) from an account's page. Each one comes out of its category."),
                           done: !budget.rows("transactions").isEmpty, action: (String(localized: "Add a transaction"), addTransaction)))

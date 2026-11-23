@@ -288,6 +288,7 @@ type Step = { title: string; text: string; done: boolean; action?: [label: strin
 export function GettingStarted({
   budget,
   budgetId,
+  unassigned,
   onAddAccount,
   onAssign,
   onAddTransaction,
@@ -295,6 +296,8 @@ export function GettingStarted({
 }: {
   budget: Budget;
   budgetId: string;
+  /** The month's Unassigned, in cents. */
+  unassigned: number;
   onAddAccount: () => void;
   onAssign: () => void;
   onAddTransaction?: () => void;
@@ -313,7 +316,8 @@ export function GettingStarted({
     {
       title: t("Assign your money"),
       text: t("Give all of it a job: type amounts in the Assigned column until Unassigned reaches zero. Quick assign on the right can fill in targets for you."),
-      done: budget.assignments.some((a) => a.amount !== 0),
+      // Done when all of it has a job, not when the first amount is typed.
+      done: unassigned === 0 && budget.assignments.some((a) => a.amount !== 0),
       action: [t("Assign money"), onAssign],
     },
     {

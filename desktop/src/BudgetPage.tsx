@@ -523,6 +523,7 @@ export function BudgetPage({
     <GettingStarted
       budget={budget}
       budgetId={budgetId}
+      unassigned={rta}
       onAddAccount={onAddAccount}
       onAssign={() => rtaButton.current?.click()}
       onAddTransaction={onAddTransaction}

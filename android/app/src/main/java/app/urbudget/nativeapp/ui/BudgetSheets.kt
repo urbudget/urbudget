@@ -527,7 +527,21 @@ internal fun MonthField(month: String, onChange: (String) -> Unit, label: String
 internal fun coverAmount(overspent: Long, has: Long?): Long = if (has != null && has in 1 until overspent) has else overspent
 
 /**
+ * The amount the Move money sheet opens with, for a category (or Unassigned) that has [start]:
+ * [cover] when it's covering overspending; what's short when it's below zero; nothing (null, an
+ * empty keypad) when assigning from Unassigned, since all of it rarely belongs in one category;
+ * otherwise what the category has to move.
+ */
+internal fun moveStartAmount(fromUnassigned: Boolean, start: Long, cover: Long?): Long? = when {
+    cover != null -> cover
+    start < 0 -> -start
+    fromUnassigned -> null
+    else -> start
+}
+
+/**
  * Moving money, as a sheet: from one category (or Unassigned) to another, the amount on the keypad.
+ * Assigning from Unassigned opens with no amount (moveStartAmount).
  * Covering overspending takes from Unassigned when it has money, and opens with as much of the
  * overspending as the source can give (coverAmount); choosing another source sets the amount again,
  * until one has been typed.
@@ -550,7 +564,7 @@ internal fun MoveMoneySheet(request: MoveRequest, budget: JSONObject, summary: J
     // Covering this category's overspending: the amount is what the source can give of it.
     val overspent = if (start < 0 && request.direction != "to" && request.category != Unassigned) -start else 0L
     fun covered(source: String) = coverAmount(overspent, source.takeIf { it.isNotBlank() }?.let(::available))
-    val pad = rememberPad(if (overspent > 0) covered(from) else if (start < 0) -start else maxOf(0, start))
+    val pad = rememberPad(moveStartAmount(request.category == Unassigned, start, if (overspent > 0) covered(from) else null))
     // The amount the sheet last put in: while it's still there, a new source puts in its own.
     var suggested by remember { mutableStateOf(pad.cents) }
     LaunchedEffect(from) {
