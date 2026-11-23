@@ -21,6 +21,10 @@
 .welcome-intro .welcome-help {
   margin-top: 6px;
 }
+/* The link has its own padding: its words line up with the paragraph above. */
+.welcome-help .link-button {
+  margin-inline-start: -4px;
+}
 .welcome-paths {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
