@@ -28,6 +28,12 @@ fn set_language(language: String) {
     urbudget_services::i18n::set_language(&language);
 }
 
+/// The category templates a new budget can start with, in the engine's language.
+#[tauri::command(async)]
+fn budget_templates() -> Vec<urbudget_core::budget_templates::BudgetTemplate> {
+    urbudget_core::budget_templates::list()
+}
+
 #[tauri::command(async)]
 fn load_budget(db: State<'_, Database>, legacy_backup_keep: Option<usize>) -> Result<serde_json::Value, String> {
     if !db.is_open(){return Ok(urbudget_services::library_api::empty_snapshot());}
@@ -625,6 +631,7 @@ pub fn run() {
             library::editor_discard,
             library::editor_recovery,
             set_language,
+            budget_templates,
             upsert_transaction,
             source_loan_terms,
             preview_bank_file,

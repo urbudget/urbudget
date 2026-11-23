@@ -103,6 +103,9 @@
     <string name="budget_name">اسم الميزانية</string>
     <string name="budget_currency">العملة</string>
     <string name="welcome_create">إنشاء ميزانيتي</string>
+    <string name="budget_template">الفئات</string>
+    <string name="sample_exit_next">بعد ذلك، أضف الحسابات التي فيها مالك.</string>
+    <string name="sample_exit_next_delete">بعد ذلك، أضف الحسابات التي فيها مالك. تُحذف الميزانية التجريبية بمجرد فتح ميزانيتك.</string>
     <string name="welcome_sample">الاستكشاف بأموال تجريبية</string>
     <string name="welcome_sample_detail">ميزانية جاهزة لتجربة الميزات</string>
     <string name="welcome_import">استيراد نسخة احتياطية من UrBudget</string>

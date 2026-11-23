@@ -94,8 +94,11 @@ actor BudgetRepository {
         return snapshot()
     }
 
-    func create(name: String, currency: String, sample: Bool, localOnly: Bool = false, adjust: (@Sendable (inout JSON) -> Void)? = nil) throws -> BudgetSnapshot {
-        let params: JSON = ["name": .string(name.trimmingCharacters(in: .whitespaces)), "currency": .string(currency.uppercased()), "month": .string(month)]
+    /// `template`: a category template's id (`BudgetTemplate`); without one a new budget has no categories.
+    func create(name: String, currency: String, sample: Bool, localOnly: Bool = false, template: String? = nil,
+                adjust: (@Sendable (inout JSON) -> Void)? = nil) throws -> BudgetSnapshot {
+        var params: JSON = ["name": .string(name.trimmingCharacters(in: .whitespaces)), "currency": .string(currency.uppercased()), "month": .string(month)]
+        if let template, !sample { params["template"] = .string(template) }
         var budget = try NativeCore.engine(sample ? "sampleBudget" : "defaultBudget", params: params)
         // Marked as the desktop marks its sample, so Budget offers the way back out of it.
         if sample { budget["sample"] = [:] }
@@ -506,9 +509,9 @@ final class BudgetStore {
 
     // MARK: Library and history
 
-    func createBudget(name: String, currency: String, sample: Bool = false,
+    func createBudget(name: String, currency: String, sample: Bool = false, template: String? = nil,
                       adjust: (@Sendable (inout JSON) -> Void)? = nil, then: (@MainActor () -> Void)? = nil) {
-        enqueue({ try await $0.create(name: name, currency: currency, sample: sample, adjust: adjust) }, then: then)
+        enqueue({ try await $0.create(name: name, currency: currency, sample: sample, template: template, adjust: adjust) }, then: then)
     }
 
     func importBudget(_ data: Data) { enqueue { try await $0.importBudget(data) } }

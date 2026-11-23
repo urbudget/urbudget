@@ -109,6 +109,9 @@
     <string name="budget_name">Budget name</string>
     <string name="budget_currency">Currency</string>
     <string name="welcome_create">Create my budget</string>
+    <string name="budget_template">Categories</string>
+    <string name="sample_exit_next">Next, add the accounts your money is in.</string>
+    <string name="sample_exit_next_delete">Next, add the accounts your money is in. The sample budget is deleted once yours opens.</string>
     <string name="welcome_sample">Explore with sample money</string>
     <string name="welcome_sample_detail">A filled-in budget to try things on</string>
     <string name="welcome_import">Import UrBudget backup</string>

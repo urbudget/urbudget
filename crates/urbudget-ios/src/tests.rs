@@ -25,6 +25,11 @@ fn engine_requests_match_the_android_transport() {
         "params":{"month":"2026-10","asOfMonth":"2026-10"}}).to_string());
     assert_eq!(summary["ok"], true, "{summary}");
     assert!(summary["value"]["categories"].as_array().is_some_and(|rows| rows.len() == 3));
+    // A template's categories get new ids each time, so the list is what's compared.
+    let request = json!({"version":1,"method":"budgetTemplates","params":{}}).to_string();
+    let reply = call(urbudget_invoke, &request);
+    assert_eq!(reply["ok"], true, "{reply}");
+    assert_eq!(reply, serde_json::from_str::<Value>(&urbudget_android::invoke_json(&request)).unwrap());
 }
 
 #[test]

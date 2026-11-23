@@ -7094,17 +7094,6 @@
         }
       }
     },
-    "Bills" : {
-      "comment" : "Starter category group.",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "الفواتير"
-          }
-        }
-      }
-    },
     "Bills, income and repeating transactions" : {
       "localizations" : {
         "ar" : {
@@ -10181,17 +10170,6 @@
         }
       }
     },
-    "Dining out" : {
-      "comment" : "Starter category.",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "المطاعم"
-          }
-        }
-      }
-    },
     "Direction" : {
       "localizations" : {
         "ar" : {
@@ -10612,34 +10590,12 @@
         }
       }
     },
-    "Electricity" : {
-      "comment" : "Starter category.",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "الكهرباء"
-          }
-        }
-      }
-    },
     "Email address" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "عنوان البريد الإلكتروني"
-          }
-        }
-      }
-    },
-    "Emergency fund" : {
-      "comment" : "Starter category.",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "صندوق الطوارئ"
           }
         }
       }
@@ -10921,17 +10877,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "تم إدخال التحويل إلى حساب آخر."
-          }
-        }
-      }
-    },
-    "Entertainment" : {
-      "comment" : "Starter category.",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "الترفيه"
           }
         }
       }
@@ -11783,16 +11728,6 @@
         }
       }
     },
-    "For bills, needs, wants and savings. Rename or delete any of them later." : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "للفواتير والاحتياجات والرغبات والادخار. يمكنك إعادة تسمية أي منها أو حذفه لاحقًا."
-          }
-        }
-      }
-    },
     "For debt, enter a negative balance." : {
       "localizations" : {
         "ar" : {
@@ -12049,17 +11984,6 @@
         }
       }
     },
-    "Gifts" : {
-      "comment" : "Starter category.",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "الهدايا"
-          }
-        }
-      }
-    },
     "Give all of it a job: tap a category's Assigned amount and type on the keypad until Unassigned reaches zero. Quick assign, in the Unassigned sheet, can fill in targets for you." : {
       "localizations" : {
         "ar" : {
@@ -12126,17 +12050,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "نما"
-          }
-        }
-      }
-    },
-    "Groceries" : {
-      "comment" : "Starter category.",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "البقالة"
           }
         }
       }
@@ -13387,17 +13300,6 @@
         }
       }
     },
-    "Insurance" : {
-      "comment" : "Starter category.",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "التأمين"
-          }
-        }
-      }
-    },
     "Interest" : {
       "localizations" : {
         "ar" : {
@@ -13504,17 +13406,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "الفائدة المتبقية"
-          }
-        }
-      }
-    },
-    "Internet" : {
-      "comment" : "Starter category.",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "الإنترنت"
           }
         }
       }
@@ -14572,17 +14463,6 @@
         }
       }
     },
-    "Medical" : {
-      "comment" : "Starter category.",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "الرعاية الصحية"
-          }
-        }
-      }
-    },
     "Medical debt" : {
       "localizations" : {
         "ar" : {
@@ -15458,17 +15338,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "مطلوب بحلول"
-          }
-        }
-      }
-    },
-    "Needs" : {
-      "comment" : "Starter category group.",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "الضروريات"
           }
         }
       }
@@ -17823,17 +17692,6 @@
         }
       }
     },
-    "Phone" : {
-      "comment" : "Starter category.",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "الهاتف"
-          }
-        }
-      }
-    },
     "Photo library" : {
       "localizations" : {
         "ar" : {
@@ -19393,17 +19251,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "يتجدد في ⁨%@⁩"
-          }
-        }
-      }
-    },
-    "Rent or mortgage" : {
-      "comment" : "Starter category, created once in the budget.",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "الإيجار أو الرهن العقاري"
           }
         }
       }
@@ -21427,17 +21274,6 @@
         }
       }
     },
-    "Shopping" : {
-      "comment" : "Starter category.",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "التسوق"
-          }
-        }
-      }
-    },
     "Short notes the assistant keeps for this budget and gets with every message. It adds one when you ask it to remember something." : {
       "localizations" : {
         "ar" : {
@@ -22300,16 +22136,6 @@
         }
       }
     },
-    "Start with categories" : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "البدء بفئات جاهزة"
-          }
-        }
-      }
-    },
     "Start with sample money" : {
       "localizations" : {
         "ar" : {
@@ -22458,17 +22284,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "اشترك مقابل ⁨%1$@⁩ لكل ⁨%2$@⁩"
-          }
-        }
-      }
-    },
-    "Subscriptions" : {
-      "comment" : "Starter category.",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "الاشتراكات"
           }
         }
       }
@@ -24300,17 +24115,6 @@
         }
       }
     },
-    "Transportation" : {
-      "comment" : "Starter category.",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "المواصلات"
-          }
-        }
-      }
-    },
     "Trend" : {
       "localizations" : {
         "ar" : {
@@ -24988,17 +24792,6 @@
         }
       }
     },
-    "Vacation" : {
-      "comment" : "Starter category.",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "الإجازات"
-          }
-        }
-      }
-    },
     "Vehicle" : {
       "localizations" : {
         "ar" : {
@@ -25075,28 +24868,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "في انتظار ChatGPT…"
-          }
-        }
-      }
-    },
-    "Wants" : {
-      "comment" : "Starter category group.",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "الكماليات"
-          }
-        }
-      }
-    },
-    "Water" : {
-      "comment" : "Starter category.",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "المياه"
           }
         }
       }
@@ -26645,23 +26416,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "بنود التقسيم"
-          }
-        }
-      }
-    },
-    "starter.group.savings" : {
-      "comment" : "A starter category group: money put aside. Same word as the engine's sample budget.",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "المدخرات"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Savings"
           }
         }
       }

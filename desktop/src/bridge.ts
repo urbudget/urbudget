@@ -1,10 +1,12 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { apply, diff, type Patch } from "./patch";
 import { getPref } from "./prefs";
+import { engineLanguageSet, getLanguage, type Language } from "./i18n";
 import type {
   BankColumns,
   BankFileSettings,
   Budget,
+  BudgetTemplate,
   DatabaseStatus,
   Snapshot,
   Summary,
@@ -19,6 +21,27 @@ import type {
   YnabPlan,
 } from "./types";
 export const desktop = isTauri();
+
+// The engine writes the templates in its language, so they're asked once it has the window's and
+// kept per language. One asked across a language switch may have come back in either, so it's
+// asked again.
+const templates = new Map<Language, Promise<BudgetTemplate[]>>();
+function budgetTemplates(): Promise<BudgetTemplate[]> {
+  const language = getLanguage();
+  let list = templates.get(language);
+  if (!list) {
+    list = engineLanguageSet()
+      .then(() => invoke<BudgetTemplate[]>("budget_templates"))
+      .then((rows) => {
+        if (getLanguage() === language) return rows;
+        templates.delete(language);
+        return budgetTemplates();
+      });
+    list.catch(() => templates.delete(language));
+    templates.set(language, list);
+  }
+  return list;
+}
 
 // Rust holds a draft of the budget. `synced` is the budget object that draft
 // matches; calls send the difference between their budget and `synced`, so an
@@ -148,6 +171,8 @@ export const api = {
     return result;
   },
   associateBudgets: (ids: string[]) => invoke("sync_enable", { enabled: true, ids }),
+  /** The category templates a new budget can start with, in the language in use. */
+  budgetTemplates,
   /** Saves a new budget file; the open budget is unchanged. Returns its id. */
   createBudget: (budget: Budget, source?: { budget: Budget; token: string }, localOnly = false) => source
     ? read<string>(source.budget, "create_budget", { budget, freshStartToken: source.token, localOnly })

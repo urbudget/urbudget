@@ -8,10 +8,11 @@ import { YnabFileImport } from "./YnabFileImport";
 import { YnabImport } from "./YnabImport";
 import { demoBudget } from "./demo";
 import { errorText, numberFormatFor } from "./format";
-import { starterCategories } from "./newBudget";
+import { templateCategories } from "./newBudget";
+import { chosenTemplate, DEFAULT_TEMPLATE, TemplateSelect, useBudgetTemplates } from "./TemplatePicker";
 import { useToast } from "./ui";
 import { msg, t } from "./i18n";
-import type { Budget, ImportResult, YnabImportRequest } from "./types";
+import type { Budget, BudgetTemplate, ImportResult, YnabImportRequest } from "./types";
 import "./welcome.css";
 
 /** The currency a first launch's budget is made with (Budget::default in domain.rs). */
@@ -89,7 +90,8 @@ export function Welcome({
   resolveYnab: (id: string, choices: Record<string, string>) => Promise<ImportResult>;
   /** Opens the assistant with a question. */
   onAsk?: (text: string) => void;
-  startFresh?: (format: FormatValue, starter: boolean) => Promise<void>;
+  /** Makes the budget with these formats and the chosen template's categories, if any. */
+  startFresh?: (format: FormatValue, template: BudgetTemplate | undefined) => Promise<void>;
   prepareYnab?: () => Promise<void>;
 }) {
   const toast = useToast();
@@ -101,7 +103,8 @@ export function Welcome({
     numberFormat: numberFormatFor(budget.currency, budget.numberFormat),
     dateFormat: budget.dateFormat ?? "iso",
   }));
-  const [starter, setStarter] = useState(true);
+  const templates = useBudgetTemplates();
+  const [templateId, setTemplateId] = useState(DEFAULT_TEMPLATE);
   const [exportFile, setExportFile] = useState(false);
   // A budget set up from here gets the checklist, unless it was hidden before.
   useEffect(() => {
@@ -119,7 +122,7 @@ export function Welcome({
       id: "fresh",
       icon: <Sprout size={20} />,
       title: t("Start fresh"),
-      text: t("Start with categories for bills, needs, wants and savings, then add your accounts."),
+      text: t("Pick a set of categories that fits your life, then add your accounts."),
     },
     {
       id: "sample",
@@ -199,24 +202,21 @@ export function Welcome({
           className="welcome-step panel"
           onSubmit={(e) => {
             e.preventDefault();
-            if (startFresh) {
-              setBusy(true);
-              void startFresh(format, starter).catch(e => toast({message:errorText(e),tone:"error"})).finally(() => setBusy(false));
-              return;
-            }
-            edit((d) => {
-              Object.assign(d, format);
-              if (starter) Object.assign(d, starterCategories());
-            });
-            onAddAccount();
+            setBusy(true);
+            void (async () => {
+              const template = await chosenTemplate(templateId);
+              if (startFresh) return startFresh(format, template);
+              edit((d) => {
+                Object.assign(d, format);
+                if (template) Object.assign(d, templateCategories(template));
+              });
+              onAddAccount();
+            })().catch(e => toast({message:errorText(e),tone:"error"})).finally(() => setBusy(false));
           }}
         >
           <h2>{t("Start fresh")}</h2>
           <BudgetFormatFields value={format} onChange={setFormat} />
-          <label className="checkbox-label">
-            <input type="checkbox" checked={starter} onChange={(e) => setStarter(e.target.checked)} />
-            {t("Start with categories for bills, needs, wants and savings (rename or delete any of them later)")}
-          </label>
+          <TemplateSelect value={templateId} onChange={setTemplateId} templates={templates} withEmpty />
           <div className="modal-actions">
             <button className="primary" disabled={busy}>
               {t("Next: add your accounts")} <ArrowRight size={15} />
@@ -410,7 +410,7 @@ export function FirstRunWelcome({openBudget, onAddAccount, importYnab, acceptYna
     await openBudget(id);
   };
   return <Welcome budget={blank} budgetId="" edit={() => {}} openBudget={openBudget} onAddAccount={onAddAccount}
-    startFresh={async (format, starter) => { await create({...blank, ...format, ...(starter ? starterCategories() : {})}); onAddAccount(); }}
+    startFresh={async (format, template) => { await create({...blank, ...format, ...(template ? templateCategories(template) : {})}); onAddAccount(); }}
     transform={async work => { await create(await work(blank)); }}
     prepareYnab={() => create(blank, true)} importYnab={importYnab}
     acceptYnab={acceptYnab} resolveYnab={resolveYnab} />;

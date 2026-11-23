@@ -2,13 +2,17 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { produce } from "immer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-vi.mock("./bridge", () => ({
-  api: {
-    listBudgets: vi.fn(async () => []),
-    createBudget: vi.fn(async () => "sample-id"),
-    deleteBudget: vi.fn(async () => []),
-  },
-}));
+vi.mock("./bridge", async () => {
+  const { templatesFixture } = await import("./budgetTemplates.fixture");
+  return {
+    api: {
+      listBudgets: vi.fn(async () => []),
+      createBudget: vi.fn(async () => "sample-id"),
+      deleteBudget: vi.fn(async () => []),
+      budgetTemplates: vi.fn(async () => templatesFixture()),
+    },
+  };
+});
 import { api } from "./bridge";
 import { FirstRunWelcome, GettingStarted, SampleBanner, Welcome, isBlank, isUntouched, openSample } from "./Welcome";
 import { ToastProvider } from "./ui";
@@ -39,7 +43,7 @@ it("knows a first launch's budget from one someone set up", () => {
   expect(isBlank({ ...blank(), categories: [{ id: "c", name: "Rent", group: "Bills", target: 0 }] })).toBe(false);
 });
 
-it("starts fresh with starter categories and the chosen formats, then asks for an account", () => {
+it("starts fresh with the default template and the chosen formats, then asks for an account", async () => {
   let budget = blank();
   const edit = (update: (d: Budget) => void) => (budget = produce(budget, update));
   const onAddAccount = vi.fn();
@@ -58,7 +62,9 @@ it("starts fresh with starter categories and the chosen formats, then asks for a
     </ToastProvider>,
   );
   fireEvent.click(screen.getByRole("button", { name: /Start fresh/ }));
+  expect(await screen.findByText("Bills, Needs, Wants, Savings · 16 categories")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: /Next: add your accounts/ }));
+  await vi.waitFor(() => expect(onAddAccount).toHaveBeenCalled());
   expect(budget.categories.map((c) => c.group)).toContain("Savings");
   expect(budget.groupOrder).toEqual(["Bills", "Needs", "Wants", "Savings"]);
   expect(budget.dateFormat).toBe("mdy");

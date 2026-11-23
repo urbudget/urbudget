@@ -187,6 +187,25 @@ fn invalid_mutations_are_rejected_and_defaults_are_valid() {
     ));
     assert_eq!(empty["currency"], "USD");
     assert_eq!(empty["accounts"], json!([]));
+    assert_eq!(empty["categories"], json!([]), "no template, no categories");
+    let family = value(call(
+        "defaultBudget",
+        Value::Null,
+        json!({"currency":"USD","name":"Native","template":"family"}),
+    ));
+    let names: Vec<&str> = family["categories"].as_array().unwrap().iter().map(|c| c["name"].as_str().unwrap()).collect();
+    assert_eq!(names.len(), 18);
+    assert!(names.contains(&"Childcare"));
+    assert_eq!(family["groupOrder"], json!(["Home", "Kids", "Needs", "Family time", "Savings"]));
+    assert_eq!(
+        call("defaultBudget", Value::Null, json!({"template":"nope"}))["ok"],
+        false
+    );
+    let templates = value(call("budgetTemplates", Value::Null, json!({})));
+    assert_eq!(templates["default"], "everyday");
+    let ids: Vec<&str> = templates["templates"].as_array().unwrap().iter().map(|t| t["id"].as_str().unwrap()).collect();
+    assert_eq!(ids, ["everyday", "simple", "family", "student", "self-employed", "empty"]);
+    assert_eq!(templates["templates"][0]["groups"][0]["categories"][0], "Rent or mortgage");
     let demo = value(call(
         "sampleBudget",
         Value::Null,

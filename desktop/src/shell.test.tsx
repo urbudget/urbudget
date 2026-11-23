@@ -3,6 +3,7 @@ import { produce } from "immer";
 import { afterEach, expect, it, vi } from "vitest";
 import { Sidebar, type Page } from "./Sidebar";
 import { newBudget } from "./newBudget";
+import { templatesFixture } from "./budgetTemplates.fixture";
 import { defaultNumberFormat } from "./format";
 import { demoBudget } from "./demo";
 import type { Budget, Summary } from "./types";
@@ -106,13 +107,16 @@ it("marks a bank-synced account after its name, keeping the balance in line", ()
   expect(screen.getByRole("menuitem", { name: "Bank sync details…" })).toBeTruthy();
 });
 
-it("new budgets start empty, with starter categories, or by starting over", () => {
+it("new budgets start empty, from a template, or by starting over", () => {
   const options = { name: " Travel ", currency: "EUR", numberFormat: defaultNumberFormat, dateFormat: "dmy" as const };
   const blank = newBudget({ ...options, start: "blank" });
   expect(blank).toMatchObject({ name: "Travel", currency: "EUR", dateFormat: "dmy", accounts: [], categories: [] });
-  const starter = newBudget({ ...options, start: "starter" });
+  const [everyday, student, empty] = templatesFixture();
+  const starter = newBudget({ ...options, start: "template", template: everyday });
   expect(starter.groupOrder).toEqual(["Bills", "Needs", "Wants", "Savings"]);
-  expect(starter.categories.length).toBeGreaterThan(10);
+  expect(starter.categories).toHaveLength(16);
+  expect(newBudget({ ...options, start: "template", template: student }).groupOrder).toEqual(["School", "Living", "Fun", "Savings"]);
+  expect(newBudget({ ...options, start: "template", template: empty })).toMatchObject({ categories: [] });
 
   const old = demoBudget();
   old.accounts[0].source = { id: "ynab" };

@@ -507,6 +507,15 @@ export type Portfolio = {
   /** Open investment or retirement accounts that nothing fills. */
   unfilled: string[];
 };
+/** A set of categories a new budget can start with (budget_templates.rs), in the language in use. */
+export type BudgetTemplate = {
+  id: string;
+  name: string;
+  description: string;
+  /** The groups and how many categories, ready to show; the description when there are none. */
+  summary: string;
+  groups: { name: string; categories: string[] }[];
+};
 export type Budget = {
   /** The bank names payees go by (see bankNames.ts). */
   payeeRules?: {

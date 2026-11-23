@@ -422,8 +422,10 @@ private fun SampleBanner(budget: JSONObject, vm: BudgetViewModel, modifier: Modi
     var working by remember { mutableStateOf(false) }
     // The sample's library id while a budget of your own is made, and whether to delete it once that opens.
     var creating by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
-    var name by remember { mutableStateOf("My budget") }
+    val defaultName = stringResource(R.string.welcome_default_name)
+    var name by remember { mutableStateOf(defaultName) }
     var currency by remember { mutableStateOf(budget.text("currency")) }
+    var template by rememberSaveable { mutableStateOf(DEFAULT_TEMPLATE) }
     fun listBudgets() = (NativeServices.call("list_budgets") as JSONArray).let { list -> (0 until list.length()).mapNotNull(list::optJSONObject) }
     LaunchedEffect(Unit) { runCatching { withContext(Dispatchers.IO) { listBudgets() } }.onSuccess { library = it } }
     // Opens the budget to go back to and deletes the sample once it's closed; with none, starts one.
@@ -461,13 +463,14 @@ private fun SampleBanner(budget: JSONObject, vm: BudgetViewModel, modifier: Modi
     }
     creating?.let { (sample, delete) ->
         val currencies = remember { currencyChoices(budget.text("currency")) }
-        FormDialog("Create my budget", { creating = null }, "Create", enabled = name.isNotBlank() && currency.isNotBlank(), onConfirm = {
-            vm.createBudget(name, currency) { if (delete) vm.service("delete_budget", JSONObject().put("id", sample)) }
+        FormDialog(stringResource(R.string.welcome_create), { creating = null }, stringResource(R.string.create_budget_action), enabled = name.isNotBlank() && currency.isNotBlank(), onConfirm = {
+            vm.createBudget(name, currency, template = template) { if (delete) vm.service("delete_budget", JSONObject().put("id", sample)) }
             creating = null
         }) {
-            Field(name, { name = it }, "Budget name")
-            Choice("Currency", currency, currencies, { currency = it })
-            Text("Next, add the accounts your money is in.${if (delete) " The sample budget is deleted once yours opens." else ""}",
+            Field(name, { name = it }, stringResource(R.string.budget_name))
+            Choice(stringResource(R.string.budget_currency), currency, currencies, { currency = it })
+            TemplateChoice(template) { template = it }
+            Text(stringResource(if (delete) R.string.sample_exit_next_delete else R.string.sample_exit_next),
                 color = ur.muted, style = MaterialTheme.typography.bodySmall)
         }
     }

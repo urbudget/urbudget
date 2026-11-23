@@ -5,7 +5,10 @@ import { api } from "./bridge";
 import { demoBudget } from "./demo";
 import type { Summary } from "./types";
 
-vi.mock("./bridge", () => ({ api: { createBudget: vi.fn(), listBudgets: vi.fn(), libraryAction: vi.fn() } }));
+vi.mock("./bridge", async () => {
+  const { templatesFixture } = await import("./budgetTemplates.fixture");
+  return { api: { createBudget: vi.fn(), listBudgets: vi.fn(), libraryAction: vi.fn(), budgetTemplates: vi.fn(async () => templatesFixture()) } };
+});
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 it("can open another budget without offering a summary-dependent new budget action", async () => {
@@ -33,6 +36,22 @@ it("opens the already-created budget on retry after switching failed", async () 
   expect(api.createBudget).toHaveBeenCalledTimes(1);
   expect(open).toHaveBeenNthCalledWith(1, "created-budget");
   expect(open).toHaveBeenNthCalledWith(2, "created-budget");
+});
+
+it("makes a new budget from the template chosen, in the names the engine gave", async () => {
+  vi.mocked(api.createBudget).mockResolvedValue("student-budget");
+  const open = vi.fn().mockResolvedValue(undefined);
+  render(<NewBudgetDialog open={open} close={vi.fn()} />);
+  fireEvent.change(screen.getByRole("textbox", { name: "Budget name" }), { target: { value: "Uni" } });
+  const select = await screen.findByRole("combobox", { name: "Categories" });
+  expect(screen.queryByRole("option", { name: "No categories" })).toBeNull();
+  fireEvent.change(select, { target: { value: "student" } });
+  expect(screen.getByText("School, Living, Fun, Savings · 11 categories")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Create budget" }));
+  await waitFor(() => expect(open).toHaveBeenCalledWith("student-budget"));
+  const made = vi.mocked(api.createBudget).mock.calls[0][0];
+  expect(made.groupOrder).toEqual(["School", "Living", "Fun", "Savings"]);
+  expect(made.categories.map((c) => c.name)).toContain("Tuition");
 });
 
 it("binds a fresh start to the source budget and revision used for its balances", async () => {

@@ -1,33 +1,89 @@
 import SwiftUI
 
-/// How a new budget starts, as the desktop's welcome sets one up (newBudget.ts, Welcome.tsx).
-enum StarterBudget {
-    /// Bills, needs, wants and savings categories to rename or delete later, named in the app's
-    /// language when the budget is created; from then on they're the person's own names.
-    static let groups: [(name: String, categories: [String])] = { () -> [(name: String, categories: [String])] in
-        let bills: [String] = [String(localized: "Rent or mortgage"), String(localized: "Electricity"), String(localized: "Water"),
-                               String(localized: "Internet"), String(localized: "Phone")]
-        let needs: [String] = [String(localized: "Groceries"), String(localized: "Transportation"), String(localized: "Medical"),
-                               String(localized: "Insurance")]
-        let wants: [String] = [String(localized: "Dining out"), String(localized: "Entertainment"), String(localized: "Shopping"),
-                               String(localized: "Subscriptions")]
-        let savings: [String] = [String(localized: "Emergency fund"), String(localized: "Vacation"), String(localized: "Gifts")]
-        return [(String(localized: "Bills"), bills), (String(localized: "Needs"), needs),
-                (String(localized: "Wants"), wants),
-                (String(localized: "starter.group.savings", defaultValue: "Savings", comment: "A starter category group: money put aside."), savings)]
-    }()
+/// A set of categories a new budget can start with, as the engine writes them in the language in
+/// use (budget_templates.rs): the same list on desktop and Android. Its names are the new budget's
+/// own afterwards, to rename or delete like any other.
+struct BudgetTemplate: Identifiable, Equatable {
+    var id: String
+    var name: String
+    var description: String
+    /// The groups and how many categories, or the description when there are none.
+    var summary: String
+    var hasCategories: Bool
 
-    static func addCategories(to budget: inout JSON) {
-        var categories = budget["categories"].array
-        for group in groups {
-            for name in group.categories {
-                categories.append(["id": .string(UUID().uuidString.lowercased()), "name": .string(name), "group": .string(group.name), "target": 0])
+    /// The one a new budget starts on, the engine's first.
+    static let defaultID = "everyday"
+
+    /// Every template, in the order the engine lists them; none if it can't say.
+    static func all() -> [BudgetTemplate] {
+        guard let reply = try? NativeCore.engine("budgetTemplates") else { return [] }
+        return reply["templates"].array.map {
+            BudgetTemplate(id: $0.text("id"), name: $0.text("name"), description: $0.text("description"),
+                           summary: $0.text("summary"), hasCategories: !$0["groups"].array.isEmpty)
+        }
+    }
+}
+
+/// Which template a new budget starts with: one row showing the chosen one and what it holds,
+/// opening the list to choose another.
+struct TemplatePicker: View {
+    @Binding var selection: String
+    @State private var templates: [BudgetTemplate] = []
+
+    var body: some View {
+        let chosen = templates.first { $0.id == selection }
+        NavigationLink {
+            TemplateList(templates: templates, selection: $selection)
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                LabeledContent("Categories") { Text(verbatim: chosen?.name ?? "") }
+                if let chosen {
+                    Text(verbatim: chosen.summary).font(.footnote).foregroundStyle(Color.secondary)
+                }
             }
         }
-        budget["categories"] = .array(categories)
-        budget["groupOrder"] = .array(groups.map { .string($0.name) })
+        .disabled(templates.isEmpty)
+        .task { if templates.isEmpty { templates = BudgetTemplate.all() } }
     }
+}
 
+/// The templates with what each is for, the chosen one ticked. Choosing one goes back.
+private struct TemplateList: View {
+    var templates: [BudgetTemplate]
+    @Binding var selection: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        List(templates) { template in
+            Button {
+                selection = template.id
+                dismiss()
+            } label: {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(verbatim: template.name).foregroundStyle(Color.primary)
+                        Text(verbatim: template.description).font(.footnote).foregroundStyle(Color.secondary)
+                        if template.hasCategories {
+                            Text(verbatim: template.summary).font(.footnote).foregroundStyle(Color.secondary)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    if template.id == selection {
+                        Image(systemName: "checkmark").fontWeight(.semibold).foregroundStyle(Color.urAccent)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(template.id == selection ? .isSelected : [])
+        }
+        .navigationTitle("Categories")
+        .inlineTitle()
+    }
+}
+
+/// How a new budget starts, as the desktop's welcome sets one up (newBudget.ts, Welcome.tsx).
+enum StarterBudget {
     /// The device's way of writing numbers and dates, as a new budget's starting formats.
     static func localFormats(currency: String, locale: Locale = .current) -> (number: LibraryNumberFormat, date: String) {
         let decimal = locale.decimalSeparator == "," ? "," : "."

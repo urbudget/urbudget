@@ -12,7 +12,7 @@ struct WelcomeView: View {
     @State private var currency = Locale.current.currency?.identifier ?? "SAR"
     @State private var importing = false
     @State private var fileError: String?
-    @State private var starter = true
+    @State private var template = BudgetTemplate.defaultID
     @State private var decimal = StarterBudget.localFormats(currency: "SAR").number.decimal
     @State private var dateFormat = StarterBudget.localFormats(currency: "SAR").date
 
@@ -49,12 +49,7 @@ struct WelcomeView: View {
                     Picker("Date format", selection: $dateFormat) {
                         ForEach(LibrarySettings.dateFormats, id: \.self) { Text(LibrarySettings.dateExample($0, day: Dates.today)).tag($0) }
                     }
-                    Toggle(isOn: $starter) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Start with categories")
-                            Text("For bills, needs, wants and savings. Rename or delete any of them later.").font(.footnote).foregroundStyle(Color.secondary)
-                        }
-                    }
+                    TemplatePicker(selection: $template)
                     // The one thing this screen is for, so it's the one filled button on it.
                     Button(action: create) {
                         HStack(spacing: 8) {
@@ -99,17 +94,15 @@ struct WelcomeView: View {
         }
     }
 
-    /// A new budget in this device's formats, with starter categories if wanted, and the getting-started steps.
+    /// A new budget in this device's formats, with the chosen template's categories, and the getting-started steps.
     private func create() {
         let local = StarterBudget.localFormats(currency: currency)
         let number = local.number.with(decimal: decimal)
         let date = dateFormat
-        let starter = starter
         store.setUpFromWelcome = true
-        store.createBudget(name: name, currency: currency, adjust: { budget in
+        store.createBudget(name: name, currency: currency, template: template, adjust: { budget in
             number.write(into: &budget)
             budget["dateFormat"] = .string(date)
-            if starter { StarterBudget.addCategories(to: &budget) }
         }, then: leaveSample)
     }
 

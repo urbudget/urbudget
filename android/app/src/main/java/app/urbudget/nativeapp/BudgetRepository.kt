@@ -190,8 +190,10 @@ class BudgetRepository(
         try { settled(root, value) } catch (failed: Exception) { month = previous; throw failed }
     }
 
-    suspend fun create(name: String, currency: String, sample: Boolean, localOnly: Boolean = sample): BudgetSnapshot = mutex.withLock {
+    /** `template`: a category template's id (`budgetTemplates`); without one a new budget has no categories. */
+    suspend fun create(name: String, currency: String, sample: Boolean, localOnly: Boolean = sample, template: String? = null): BudgetSnapshot = mutex.withLock {
         val params = JSONObject().put("name", name.trim()).put("currency", currency.uppercase()).put("month", month)
+        if (!sample && template != null) params.put("template", template)
         val value = call(if (sample) "sampleBudget" else "defaultBudget", null, params) as? JSONObject
             ?: error(Words[R.string.model_invalid_budget])
         // Marked as the desktop marks its sample, so Budget offers the way back out of it.

@@ -4,6 +4,7 @@ import { Modal } from "./forms";
 import { api, type BudgetListing } from "./bridge";
 import { BudgetFormatFields, type FormatValue } from "./BudgetFormatFields";
 import { newBudget, type BudgetStart } from "./newBudget";
+import { chosenTemplate, DEFAULT_TEMPLATE, TemplateSelect, useBudgetTemplates } from "./TemplatePicker";
 import { errorText, numberFormatFor } from "./format";
 import { useToast } from "./ui";
 import { localDate, t } from "./i18n";
@@ -29,13 +30,15 @@ export function NewBudgetDialog({
     numberFormat: numberFormatFor(current?.budget.currency ?? "SAR", current?.budget.numberFormat),
     dateFormat: current?.budget.dateFormat ?? "iso",
   });
-  const [start, setStart] = useState<BudgetStart>("starter");
+  const [start, setStart] = useState<BudgetStart>("template");
+  const templates = useBudgetTemplates();
+  const [templateId, setTemplateId] = useState(DEFAULT_TEMPLATE);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
   const [created, setCreated] = useState<string | null>(null);
   const options: [BudgetStart, string, string][] = [
-    ["starter", t("Starter categories"), t("Bills, needs, wants and savings groups to rename or delete.")],
+    ["template", t("Categories from a template"), templates?.find((x) => x.id === templateId)?.summary ?? ""],
     ["blank", t("Empty"), t("No accounts or categories.")],
     [
       "copy",
@@ -54,8 +57,9 @@ export function NewBudgetDialog({
           setBusy(true);
           setError("");
           try {
+            const template = start === "template" ? await chosenTemplate(templateId) : undefined;
             const id = created ?? await api.createBudget(
-              newBudget({ name, start, ...format }, current),
+              newBudget({ name, start, template, ...format }, current),
               start === "copy" && current ? { budget: current.budget, token: current.token } : undefined,
               localOnly,
             );
@@ -97,7 +101,9 @@ export function NewBudgetDialog({
               />
               <span>
                 <strong>{title}</strong>
-                <small>{help}</small>
+                {value === "template" && start === "template"
+                  ? <TemplateSelect value={templateId} onChange={setTemplateId} templates={templates} caption={false} />
+                  : help && <small>{help}</small>}
               </span>
             </label>
           ))}

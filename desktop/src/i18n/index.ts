@@ -46,6 +46,10 @@ export const getLanguage = () => current;
 /** Text direction for the language in use. */
 export const getDirection = () => (current === "ar" ? "rtl" : "ltr");
 
+let engineLanguage: Promise<void> = Promise.resolve();
+/** Settles once the engine has been told the language in use, for text it writes in that language. */
+export const engineLanguageSet = () => engineLanguage;
+
 /** Points the document and the native side at the language in use. */
 export function applyLanguage() {
   if (typeof document !== "undefined") {
@@ -54,7 +58,7 @@ export function applyLanguage() {
   }
   // The engine writes some messages itself (errors, sync and import status).
   try {
-    if (isTauri()) void invoke("set_language", { language: current }).catch(() => {});
+    if (isTauri()) engineLanguage = invoke("set_language", { language: current }).then(() => {}, () => {});
   } catch {
     // An older native side without the command: its messages stay in English.
   }

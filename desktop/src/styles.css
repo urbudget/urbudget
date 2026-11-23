@@ -599,6 +599,24 @@ label > textarea {
   font-size: 12px;
   font-weight: 500;
 }
+/* A category template's select, with what the chosen one holds under it (TemplatePicker.tsx). */
+.template-select select {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 400;
+}
+.template-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 0;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 400;
+}
+.template-preview small {
+  color: var(--muted);
+}
 label small {
   color: var(--muted);
   font-weight: 400;

@@ -43,6 +43,7 @@ internal fun LibraryScreen(budget: JSONObject?, vm: BudgetViewModel, importFile:
     var localOnly by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
     var currency by remember { mutableStateOf(budget?.text("currency") ?: "SAR") }
+    var template by remember { mutableStateOf(DEFAULT_TEMPLATE) }
     val currencies = remember(languageKey()) { currencyChoices(budget?.text("currency") ?: "SAR") }
     val defaultName = stringResource(R.string.welcome_default_name)
     var asOf by remember { mutableStateOf(LocalDate.now().toString()) }
@@ -133,7 +134,7 @@ internal fun LibraryScreen(budget: JSONObject?, vm: BudgetViewModel, importFile:
         item {
             ListCard {
                 entries.filterNot(::inTrash).forEach { entry -> key(entry.text("id")) { BudgetRow(entry) } }
-                ListRow(stringResource(R.string.library_new_budget), icon = Icons.Outlined.Add, titleColor = ur.accent, onClick = { if (!state.busy) { name = defaultName; currency = budget?.text("currency") ?: "SAR"; dialog = "new" } }, chevron = false)
+                ListRow(stringResource(R.string.library_new_budget), icon = Icons.Outlined.Add, titleColor = ur.accent, onClick = { if (!state.busy) { name = defaultName; currency = budget?.text("currency") ?: "SAR"; template = DEFAULT_TEMPLATE; dialog = "new" } }, chevron = false)
             }
         }
         item { Text(stringResource(R.string.library_help), Modifier.padding(horizontal = 4.dp), color = ur.muted, style = MaterialTheme.typography.bodySmall) }
@@ -180,11 +181,12 @@ internal fun LibraryScreen(budget: JSONObject?, vm: BudgetViewModel, importFile:
     }
     if (dialog == "settings" && budget != null) BudgetSettingsDialog(budget, vm) { dialog = "" }
     if (dialog == "new") FormDialog(stringResource(R.string.create_budget_action), { dialog = "" }, enabled = !state.busy && name.isNotBlank() && currency.isNotBlank(), onConfirm = {
-        vm.createBudget(name, currency, localOnly = localOnly); dialog = ""
+        vm.createBudget(name, currency, localOnly = localOnly, template = template); dialog = ""
     }) {
         CheckRow(stringResource(R.string.library_keep_local), localOnly, { localOnly = it })
         Field(name, { name = it }, stringResource(R.string.budget_name))
         Choice(stringResource(R.string.budget_currency), currency, currencies, { currency = it })
+        TemplateChoice(template) { template = it }
     }
     if (dialog == "fresh") FormDialog(stringResource(R.string.library_fresh_start), { dialog = "" }, stringResource(R.string.library_fresh_create), enabled = !state.busy && name.isNotBlank(), onConfirm = {
         vm.service("fresh_start", JSONObject().put("name", name).put("asOf", asOf)) { id -> dialog = ""; revision++; vm.service("library_open", JSONObject().put("id", id)) }

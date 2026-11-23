@@ -103,8 +103,8 @@ class BudgetViewModel internal constructor(application: Application, private val
     fun notifyError(message: String) { mutableState.update { it.copy(error = message) } }
     fun dismissError() { mutableState.update { it.copy(error = null, exportFailure = null) } }
     fun retry() { retryOperation?.let { enqueue(operation = it) } ?: refresh() }
-    fun createBudget(name: String, currency: String, sample: Boolean = false, localOnly: Boolean = sample, onSuccess: () -> Unit = {}) = enqueue {
-        publish(repository.create(name, currency, sample, localOnly)); withContext(Dispatchers.Main) { onSuccess() }
+    fun createBudget(name: String, currency: String, sample: Boolean = false, localOnly: Boolean = sample, template: String? = null, onSuccess: () -> Unit = {}) = enqueue {
+        publish(repository.create(name, currency, sample, localOnly, template)); withContext(Dispatchers.Main) { onSuccess() }
     }
     fun importBudget(json: String) {
         val shown = state.value

@@ -193,7 +193,7 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     var fileError by remember { mutableStateOf<String?>(null) }
     var pendingImport by remember { mutableStateOf<String?>(null) }
     var confirmRestore by remember { mutableStateOf(false) }
-    var pendingCreate by remember { mutableStateOf<Triple<String, String, Boolean>?>(null) }
+    var pendingCreate by remember { mutableStateOf<NewBudget?>(null) }
     val snack = remember { SnackbarHostState() }
     // A large screen has the tabs in a rail at its start instead of the dock. With room for both, the
     // register and Reports show their list and detail side by side, and the register's transaction
@@ -532,8 +532,8 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
             // Below the status bar; the welcome page's own padding then has no inset left to add.
             budget == null -> Column(Modifier.fillMaxSize().statusBarsPadding()) {
                 TextButton({ morePage = "Budget library" }) { Text(stringResource(R.string.page_library)) }
-                WelcomeScreen(state.busy, { name, currency, sample ->
-                if (vm.hasExport()) pendingCreate = Triple(name, currency, sample) else vm.createBudget(name, currency, sample)
+                WelcomeScreen(state.busy, { made ->
+                if (vm.hasExport()) pendingCreate = made else vm.createBudget(made.name, made.currency, made.sample, template = made.template)
             }, importFile, if (vm.hasExport()) exportFile else null, if (state.recoveryAvailable) ({ confirmRestore = true }) else null,
                 { tab = 4; morePage = "Account & sync" })
             }
@@ -752,7 +752,7 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
         containerColor = ur.surface)
     if (pendingCreate != null) AlertDialog(onDismissRequest = { pendingCreate = null }, title = { Text(stringResource(R.string.create_replace_title)) },
         text = { Text(stringResource(R.string.create_replace_message)) },
-        confirmButton = { TextButton({ pendingCreate?.let { vm.createBudget(it.first, it.second, it.third) }; pendingCreate = null }) { Text(stringResource(R.string.create_budget_action)) } },
+        confirmButton = { TextButton({ pendingCreate?.let { vm.createBudget(it.name, it.currency, it.sample, template = it.template) }; pendingCreate = null }) { Text(stringResource(R.string.create_budget_action)) } },
         dismissButton = { TextButton({ pendingCreate = null }) { Text(stringResource(R.string.common_cancel)) } }, containerColor = ur.surface)
     }
 }
@@ -898,14 +898,18 @@ private fun MoreDrawer(budget: JSONObject, close: () -> Unit, open: (String) -> 
     }
 }
 
+/** A budget the welcome screen makes: the sample has no template. */
+private data class NewBudget(val name: String, val currency: String, val sample: Boolean, val template: String?)
+
 @Composable
-private fun WelcomeScreen(busy: Boolean, create: (String, String, Boolean) -> Unit, importFile: () -> Unit, exportFile: (() -> Unit)?, restore: (() -> Unit)?, signIn: () -> Unit) {
+private fun WelcomeScreen(busy: Boolean, create: (NewBudget) -> Unit, importFile: () -> Unit, exportFile: (() -> Unit)?, restore: (() -> Unit)?, signIn: () -> Unit) {
     // A new budget's name starts in the language in use; after that it's the person's data.
     val defaultName = stringResource(R.string.welcome_default_name)
     val sampleName = stringResource(R.string.welcome_sample_name)
     var name by rememberSaveable { mutableStateOf(defaultName) }
     // The device's region suggests the currency, whatever language the app is in.
     var currency by rememberSaveable { mutableStateOf(runCatching { Currency.getInstance(android.content.res.Resources.getSystem().configuration.locales[0]).currencyCode }.getOrDefault("SAR")) }
+    var template by rememberSaveable { mutableStateOf(DEFAULT_TEMPLATE) }
     Column(Modifier.fillMaxSize().background(ur.bg).verticalScroll(rememberScrollState()).statusBarsPadding().navigationBarsPadding().padding(horizontal = 24.dp, vertical = 28.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Spacer(Modifier.height(24.dp))
@@ -922,11 +926,12 @@ private fun WelcomeScreen(busy: Boolean, create: (String, String, Boolean) -> Un
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Field(name, { name = it }, stringResource(R.string.budget_name))
                 Choice(stringResource(R.string.budget_currency), currency, (listOf(currency, "SAR", "USD", "EUR", "GBP", "CAD", "AUD", "AED", "INR").distinct()).map { it to it }, { currency = it })
-                PrimaryButton(stringResource(R.string.welcome_create), { create(name, currency, false) }, Modifier.fillMaxWidth(), enabled = !busy && name.isNotBlank())
+                TemplateChoice(template) { template = it }
+                PrimaryButton(stringResource(R.string.welcome_create), { create(NewBudget(name, currency, false, template)) }, Modifier.fillMaxWidth(), enabled = !busy && name.isNotBlank())
             }
         }
         ListCard {
-            ListRow(stringResource(R.string.welcome_sample), subtitle = stringResource(R.string.welcome_sample_detail), icon = Icons.Outlined.AutoAwesome, onClick = { if (!busy) create(sampleName, currency, true) }, divider = true)
+            ListRow(stringResource(R.string.welcome_sample), subtitle = stringResource(R.string.welcome_sample_detail), icon = Icons.Outlined.AutoAwesome, onClick = { if (!busy) create(NewBudget(sampleName, currency, true, null)) }, divider = true)
             ListRow(stringResource(R.string.welcome_import), subtitle = stringResource(R.string.welcome_import_detail), icon = Icons.Outlined.FileOpen, onClick = { if (!busy) importFile() }, divider = true)
             ListRow(stringResource(R.string.welcome_sign_in), subtitle = stringResource(R.string.welcome_sign_in_detail), icon = Icons.Outlined.CloudSync, onClick = { if (!busy) signIn() })
         }

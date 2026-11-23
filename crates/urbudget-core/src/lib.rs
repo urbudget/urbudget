@@ -7,6 +7,7 @@ pub mod bank_csv;
 pub mod bank_import;
 pub mod bank_statement;
 pub mod bank_statements;
+pub mod budget_templates;
 pub mod budgets;
 pub mod commands;
 pub mod domain;

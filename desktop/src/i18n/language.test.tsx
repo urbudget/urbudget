@@ -13,7 +13,8 @@ import { SettingsPage } from "../SettingsPage";
 import { BudgetPage } from "../BudgetPage";
 import { ToastProvider } from "../ui";
 import { demoBudget } from "../demo";
-import { starterCategories } from "../newBudget";
+import { templateCategories } from "../newBudget";
+import { templatesFixture } from "../budgetTemplates.fixture";
 import { today, type Summary } from "../types";
 import type { Cloud } from "../cloud";
 import type { Updates } from "../updates";
@@ -97,12 +98,14 @@ describe("translation", () => {
     expect(dayName(`${Number(today().slice(0, 4)) - 1}-02-05`)).toMatch(/^[؀-ۿ]+، 5 فبراير \d{4}$/);
   });
 
-  it("makes a new budget's starter categories in the language in use", () => {
-    expect(starterCategories().groupOrder).toEqual(["Bills", "Needs", "Wants", "Savings"]);
-    language("ar");
-    const { categories, groupOrder } = starterCategories();
-    expect(groupOrder).toEqual(["الفواتير", "الضروريات", "الكماليات", "المدخرات"]);
-    expect(categories.map((c) => c.name)).toEqual(expect.arrayContaining(["البقالة", "المواصلات", "صندوق الطوارئ"]));
+  it("makes a template's categories with the names the engine wrote, in its group order", () => {
+    // The engine writes them in the language in use (budget_templates.rs); they're kept as they come.
+    const [everyday] = templatesFixture();
+    const { categories, groupOrder } = templateCategories(everyday);
+    expect(groupOrder).toEqual(["Bills", "Needs", "Wants", "Savings"]);
+    expect(categories).toHaveLength(16);
+    expect(new Set(categories.map((c) => c.id)).size).toBe(16);
+    expect(categories[0]).toMatchObject({ name: "Rent or mortgage", group: "Bills", target: 0 });
   });
 });
 

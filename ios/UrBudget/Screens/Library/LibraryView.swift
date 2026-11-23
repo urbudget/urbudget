@@ -582,20 +582,23 @@ private struct NewBudgetForm: View {
     @State private var currency = Locale.current.currency?.identifier ?? "SAR"
     @State private var sample = false
     @State private var localOnly = false
+    @State private var template = BudgetTemplate.defaultID
     @State private var started = false
 
     var body: some View {
         FormSheet(title: String(localized: "New budget"), confirm: String(localized: "Create"),
                   enabled: LibrarySettings.validName(name) && LibraryCurrencies.valid(currency)) {
-            let options = (name, currency, sample, localOnly)
+            let options = (name, currency, sample, localOnly, template)
             try await store.perform { repository in
-                ((), try await repository.create(name: options.0, currency: options.1, sample: options.2, localOnly: options.3))
+                ((), try await repository.create(name: options.0, currency: options.1, sample: options.2, localOnly: options.3, template: options.4))
             }
         } content: {
             Section {
                 TextField("Budget name", text: $name).wordsCapitalized()
                 LibraryCurrencyPicker(selection: $currency)
                 Toggle("Start with sample money", isOn: $sample)
+                // The sample brings its own categories.
+                if !sample { TemplatePicker(selection: $template) }
                 Toggle("Keep this budget only on this device", isOn: $localOnly)
             } footer: {
                 Text("The new budget opens with its own accounts, categories and history. This one stays in the library.")

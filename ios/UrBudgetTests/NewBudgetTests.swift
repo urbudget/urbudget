@@ -13,15 +13,20 @@ final class NewBudgetTests: XCTestCase {
         XCTAssertEqual(StarterBudget.localFormats(currency: "SAR", locale: Locale(identifier: "en_US")).number.symbol, "after")
     }
 
-    func testStarterCategoriesMatchTheDesktopsAndKeepTheirGroupOrder() {
-        var budget: JSON = ["categories": [["id": "existing", "name": "Kept", "group": "Mine"]]]
-        StarterBudget.addCategories(to: &budget)
-        let categories = budget.rows("categories")
-        XCTAssertEqual(categories.count, 17)
-        XCTAssertEqual(categories.first?.text("name"), "Kept")
-        XCTAssertEqual(budget["groupOrder"].array.map(\.string), ["Bills", "Needs", "Wants", "Savings"])
-        XCTAssertEqual(Set(categories.map { $0.text("id") }).count, 17)
-        XCTAssertTrue(categories.dropFirst().allSatisfy { $0.long("target") == 0 })
+    /// The templates are the engine's (budget_templates.rs), the same list desktop and Android offer.
+    func testNewBudgetsStartFromTheEnginesTemplates() throws {
+        let templates = BudgetTemplate.all()
+        XCTAssertEqual(templates.map(\.id), ["everyday", "simple", "family", "student", "self-employed", "empty"])
+        XCTAssertEqual(templates.first?.id, BudgetTemplate.defaultID)
+        XCTAssertEqual(templates.last?.hasCategories, false)
+        let everyday = try NativeCore.engine("defaultBudget", params: ["name": "Test", "currency": "SAR", "template": "everyday"])
+        let categories = everyday.rows("categories")
+        XCTAssertEqual(categories.count, 16)
+        XCTAssertEqual(everyday["groupOrder"].array.map(\.string), ["Bills", "Needs", "Wants", "Savings"])
+        XCTAssertEqual(Set(categories.map { $0.text("id") }).count, 16)
+        XCTAssertTrue(categories.allSatisfy { $0.long("target") == 0 })
+        // Without one there are none: the sample, imports and tests start from that.
+        XCTAssertTrue(try NativeCore.engine("defaultBudget", params: ["name": "Test", "currency": "SAR"]).rows("categories").isEmpty)
     }
 
     func testSamplesAreKnownByTheirMarkOrTheEngineSamplesRecords() {

@@ -1,32 +1,27 @@
 import type { DateFormat, NumberFormat } from "./format";
-import { id, today, type Budget, type Summary, type Transaction } from "./types";
-import { msg, msgc, t } from "./i18n";
+import { id, today, type Budget, type BudgetTemplate, type Summary, type Transaction } from "./types";
+import { t } from "./i18n";
 
-export type BudgetStart = "starter" | "blank" | "copy";
+export type BudgetStart = "template" | "blank" | "copy";
 export type NewBudgetOptions = {
   name: string;
   currency: string;
   numberFormat: NumberFormat;
   dateFormat: DateFormat;
   start: BudgetStart;
+  /** With "template", the template chosen. */
+  template?: BudgetTemplate;
 };
 
-// A new budget's starter categories are made in the language in use; from then on they're the
-// person's own names (docs/LOCALIZATION.md). "Savings" the group isn't the savings account type,
-// so its key has a context.
-const STARTER: [string, string[]][] = [
-  [msg("Bills"), [msg("Rent or mortgage"), msg("Electricity"), msg("Water"), msg("Internet"), msg("Phone")]],
-  [msg("Needs"), [msg("Groceries"), msg("Transportation"), msg("Medical"), msg("Insurance")]],
-  [msg("Wants"), [msg("Dining out"), msg("Entertainment"), msg("Shopping"), msg("Subscriptions")]],
-  [msgc("category group", "Savings"), [msg("Emergency fund"), msg("Vacation"), msg("Gifts")]],
-];
-
-/** Bills, needs, wants and savings categories to rename or delete, and their group order. */
-export const starterCategories = (): Pick<Budget, "categories" | "groupOrder"> => ({
-  categories: STARTER.flatMap(([group, names]) =>
-    names.map((name) => ({ id: id(), name: t(name), group: t(group), target: 0 })),
+/**
+ * A template's categories, with new ids, and their group order. The engine writes the names in
+ * the language in use; from then on they're the person's own names (docs/LOCALIZATION.md).
+ */
+export const templateCategories = (template: BudgetTemplate): Pick<Budget, "categories" | "groupOrder"> => ({
+  categories: template.groups.flatMap((group) =>
+    group.categories.map((name) => ({ id: id(), name, group: group.name, target: 0 })),
   ),
-  groupOrder: STARTER.map(([group]) => t(group)),
+  groupOrder: template.groups.map((group) => group.name),
 });
 
 /** Drops imported YNAB metadata that belongs to the old budget's history. */
@@ -52,7 +47,7 @@ export function newBudget(o: NewBudgetOptions, current?: { budget: Budget; summa
     transactions: [],
     assignments: [],
   };
-  if (o.start === "starter") Object.assign(base, starterCategories());
+  if (o.start === "template" && o.template?.groups.length) Object.assign(base, templateCategories(o.template));
   if (o.start === "copy" && current) {
     const { budget: b } = current;
     if (o.currency !== b.currency)
