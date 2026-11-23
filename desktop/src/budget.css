@@ -1278,6 +1278,12 @@ button.available:hover {
 .popover-title {
   font-size: 13px;
 }
+/* A line under the title; the form's gap would put it too far below. */
+.money-popover .popover-hint {
+  margin-top: -6px;
+  color: var(--text-2);
+  font-size: 12px;
+}
 .segmented.small {
   align-self: flex-start;
   margin: 0;

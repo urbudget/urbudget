@@ -1,5 +1,6 @@
 // The way from the app to the website's getting-started guide: a quiet link on the welcome screen
-// and a panel in Settings. Opened in the browser as the privacy policy is.
+// and a row in Settings. Opened in the browser as the privacy policy is.
+import { ExternalLink } from "lucide-react";
 import { cloud } from "./cloud";
 import { errorText } from "./format";
 import { useToast } from "./ui";
@@ -22,15 +23,18 @@ export function HowThisWorksLink() {
   );
 }
 
-export function HowThisWorksPanel() {
+/** A row in Settings › General's App panel, laid out like the rows above it. */
+export function HowThisWorksRow() {
   const open = useOpenGuide();
   return (
-    <section className="panel">
-      <h2>{t("How this works")}</h2>
-      <p>{t("A short guide on urbudget.app: envelope budgeting in five steps, a first budget worked through, and a weekly routine.")}</p>
+    <div className="setting-row">
+      <span>
+        <strong>{t("How this works")}</strong>
+        <small>{t("A short guide on urbudget.app: envelope budgeting in five steps, a first budget worked through, and a weekly routine.")}</small>
+      </span>
       <button className="secondary" onClick={open}>
-        {t("Open the guide")}
+        <ExternalLink size={14} /> {t("Open the guide")}
       </button>
-    </section>
+    </div>
   );
 }

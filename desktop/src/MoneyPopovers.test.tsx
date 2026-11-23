@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { coverAmount, MoveMoneyPopover } from "./MoneyPopovers";
 import { AppliedChangeError } from "./useBudget";
 import { demoBudget } from "./demo";
-import { editableAmount } from "./format";
+import { editableAmount, money } from "./format";
 import { READY_TO_ASSIGN } from "./ui";
 afterEach(cleanup);
 
@@ -33,6 +33,8 @@ it("opens Assign money with the amount empty, not with all of Unassigned for one
   render(<MoveMoneyPopover {...props} available={370000} readyToAssign={370000} />);
   expect(screen.getByText("Assign money")).toBeTruthy();
   expect((screen.getByLabelText("Amount") as HTMLInputElement).value).toBe("");
+  // With the amount empty, the popover says how much there is to give out.
+  expect(screen.getByText(`${money(370000)} unassigned`)).toBeTruthy();
   // Nothing is assigned until an amount is typed.
   fireEvent.click(screen.getByRole("button", { name: "Assign" }));
   expect(screen.getByRole("alert").textContent).toBe("Enter an amount above zero.");
@@ -41,6 +43,7 @@ it("opens Assign money with the amount empty, not with all of Unassigned for one
   // More assigned than there is: taking it back still opens with the shortfall.
   render(<MoveMoneyPopover {...props} available={-2500} readyToAssign={-2500} />);
   expect((screen.getByLabelText("Amount") as HTMLInputElement).value).toBe(editableAmount(2500));
+  expect(screen.queryByText(/ unassigned$/)).toBeNull();
 });
 
 it("offers save-only retries after a move was already applied, keeping its fields frozen", async () => {

@@ -95,6 +95,10 @@ export function MoveMoneyPopover({
         }}
       >
         <strong className="popover-title">{title}</strong>
+        {/* The amount starts empty, so say how much there is to give out. */}
+        {fromReady && readyToAssign > 0 && (
+          <small className="popover-hint">{t("{amount} unassigned", { amount: money(readyToAssign) })}</small>
+        )}
         <fieldset disabled={busy || !!retrySave} style={{ border: 0, padding: 0, margin: 0, minWidth: 0, display: "grid", gap: 12 }}>
         {!fromReady && (
           <div className="segmented small" role="radiogroup" aria-label={t("Direction")}>
@@ -111,6 +115,7 @@ export function MoveMoneyPopover({
           <input
             autoFocus
             inputMode="decimal"
+            placeholder="0.00"
             value={amount}
             onFocus={(e) => e.currentTarget.select()}
             onChange={(e) => { setAmount(e.target.value); setTyped(true); }}

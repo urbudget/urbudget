@@ -22,7 +22,7 @@ import type { Cloud } from "./cloud";
 import type { Updates } from "./updates";
 import { UpdateSetting } from "./UpdateNotice";
 import { PrivacySettings } from "./PrivacySettings";
-import { HowThisWorksPanel } from "./HowThisWorks";
+import { HowThisWorksRow } from "./HowThisWorks";
 import { list, localDateTime, msg, t, tn, type LanguageSetting } from "./i18n";
 import "./settings.css";
 
@@ -453,9 +453,9 @@ export function SettingsPage({
                   <RotateCcw size={14} /> {t("Reset layout")}
                 </button>
               </div>
+              <HowThisWorksRow />
             </div>
           </section>
-          <HowThisWorksPanel />
         </>
       )}
 
