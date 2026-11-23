@@ -3416,7 +3416,7 @@ export const ar: Catalog = {
     other: "خُصِّص {amount} لسداد بطاقاتك.",
   },
   "How will you keep it up to date?": "كيف ستُبقيها محدَّثة؟",
-  "Pick the one you'll really do. Nothing is connected or imported here, and you can change your mind any time.": "اختر ما ستلتزم به فعلًا. لا يُربط ولا يُستورد شيء هنا، ويمكنك تغيير رأيك في أي وقت.",
+  "Pick the one you'll keep doing. You can change it any time.": "اختر ما ستواظب عليه. يمكنك تغييره في أي وقت.",
   "Type it in as I spend": "أُدخله بنفسي كلما أنفقت",
   "Add each purchase when it happens, or catch up once a week.": "أضف كل عملية شراء عند حدوثها، أو أدخلها كلها مرة في الأسبوع.",
   "Import my bank's file": "أستورد ملف بنكي",

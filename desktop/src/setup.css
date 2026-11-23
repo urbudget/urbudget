@@ -89,14 +89,14 @@
 .setup-spacer {
   flex: 1;
 }
-/* A step's running total, beside its buttons however far the step is scrolled. */
+/* A step's running total, over its buttons however far the step is scrolled. */
 .setup-note {
-  flex: 1;
+  flex-basis: 100%;
   min-width: 0;
   margin: 0;
   color: var(--text-2);
-  font-size: 12.5px;
-  line-height: 1.35;
+  font-size: 13px;
+  line-height: 1.4;
 }
 .setup-note strong {
   color: var(--text);
@@ -150,6 +150,11 @@
 }
 .setup-money.after > input {
   padding-right: calc(14px + var(--sign));
+}
+/* The amount sits against its sign in Arabic too, where fields otherwise keep to the right
+   (styles.css), which left a sign before the amount a field's width away from it. */
+[dir="rtl"] .setup-money.before > input {
+  text-align: left;
 }
 
 /* Step 1: an account a row, the columns named once above them. */
@@ -306,6 +311,8 @@ button.setup-chip {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  /* A form's column, not the page's width: each amount stays beside its name. */
+  max-width: 480px;
 }
 .setup-amount {
   display: grid;
@@ -333,6 +340,10 @@ button.setup-chip {
   font-size: 12.5px;
   white-space: nowrap;
   cursor: pointer;
+  /* A dotted underline says it can be switched, where plain grey words read as a label. */
+  text-decoration: underline dotted;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 4px;
 }
 .setup-period:hover {
   background: var(--hover);
@@ -443,8 +454,15 @@ button.setup-chip {
   color: var(--text-2);
   font-size: 12.5px;
 }
+/* What there is and what's left, set apart from the groups as a sum's foot is. */
 .setup-plan-line.total {
+  background: var(--surface-2);
   color: var(--text-2);
+}
+.setup-plan-line.total:last-child {
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  color: var(--text);
+  font-weight: 500;
 }
 
 /* Step 5 uses the dialogs' choice list. */

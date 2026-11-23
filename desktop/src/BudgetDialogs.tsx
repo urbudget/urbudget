@@ -110,7 +110,7 @@ export function NewBudgetDialog({
             onChange={(e) => setName(e.target.value)}
           />
         </label>
-        <label><input type="checkbox" checked={localOnly} onChange={e => setLocalOnly(e.target.checked)} />{t("Keep this budget only on this device")}</label>
+        <label className="checkbox-label"><input type="checkbox" checked={localOnly} onChange={e => setLocalOnly(e.target.checked)} />{t("Keep this budget only on this device")}</label>
         <BudgetFormatFields value={format} onChange={setFormat} />
         <fieldset className="choice-list">
           <legend>{t("Start with")}</legend>

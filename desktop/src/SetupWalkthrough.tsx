@@ -169,18 +169,18 @@ function Frame({
             {error}
           </p>
         )}
+        {/* On a line of its own over the buttons: squeezed between them it broke over two. */}
+        {note && (
+          <p className={`setup-note${warn ? " warning" : ""}`} aria-live="polite">
+            {note}
+          </p>
+        )}
         {back && (
           <button type="button" className="secondary" disabled={busy} onClick={back}>
             {t("Back")}
           </button>
         )}
-        {note ? (
-          <p className={`setup-note${warn ? " warning" : ""}`} aria-live="polite">
-            {note}
-          </p>
-        ) : (
-          <span className="setup-spacer" />
-        )}
+        <span className="setup-spacer" />
         {skip && (
           <button type="button" className="link-button" disabled={busy} onClick={skip}>
             {t("Skip setup")}
@@ -1189,7 +1189,7 @@ function BudgetSetup({
       error={error}
       step={5}
       title={t("How will you keep it up to date?")}
-      lead={t("Pick the one you'll really do. Nothing is connected or imported here, and you can change your mind any time.")}
+      lead={t("Pick the one you'll keep doing. You can change it any time.")}
       label={t("Finish")}
       action={() => {
         // Budget says so once, with the first thing to do for the way that was chosen.

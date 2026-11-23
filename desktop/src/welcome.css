@@ -41,9 +41,11 @@
 .welcome-first .welcome-format {
   text-align: start;
 }
+/* The rule over the links is as wide as what's above it, not the page. */
 .welcome-first .welcome-links {
   justify-content: center;
-  align-self: stretch;
+  align-self: center;
+  padding-inline: 32px;
 }
 /* The one filled button, with what the device suggested under it. */
 .welcome-start {
