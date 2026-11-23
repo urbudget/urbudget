@@ -228,7 +228,9 @@ internal fun AccountDialog(original: JSONObject?, budget: JSONObject, vm: Budget
     val existingKind = original?.text("kind")?.ifBlank { null }
     var type by remember { mutableStateOf(if (original == null) "checking" else AccountTypes.forEditing(original, balanceNow)) }
     val kind = AccountTypes.kindFor(type)
-    var balance by remember { mutableStateOf(amountText(original?.optLong("openingBalance") ?: 0)) }
+    // A new account's balance starts empty, as on iPhone: a "0.00" already there would have the typed
+    // balance added after it ("0.003500"). Left empty, it's saved as 0.
+    var balance by remember { mutableStateOf(original?.let { amountText(it.optLong("openingBalance")) } ?: "") }
     // A card's limit: the credit left shows on the account, and its texts' credit left gives what's owed.
     var limit by remember { mutableStateOf(smsCreditLimit(original)?.let(::amountText) ?: "") }
     var note by remember { mutableStateOf(original?.text("note") ?: "") }
@@ -262,7 +264,7 @@ internal fun AccountDialog(original: JSONObject?, budget: JSONObject, vm: Budget
         runCatching {
             requireCurrentBudget(openedBudget, vm)
             require(name.isNotBlank()) { Words[R.string.account_name_required] }
-            val opening = amountValue(balance)
+            val opening = amountValue(balance.ifBlank { "0" })
             // Only tracking accounts can stay out of net worth.
             val counted = kind != "tracking" || netWorth
             // Saved only when touched; null terms remove them.

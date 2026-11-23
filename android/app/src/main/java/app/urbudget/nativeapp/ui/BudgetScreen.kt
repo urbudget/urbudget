@@ -233,7 +233,9 @@ internal fun BudgetScreen(budget: JSONObject, summary: JSONObject?, month: Strin
                     FilterPill(stringResource(R.string.month_back_to, shortMonthLabel(current)), false, { onMonth(current) }, Icons.Outlined.Today)
                 }
             }
-            item(key = "unassigned", contentType = "banner") {
+            // With no account and nothing assigned there's no money yet: "All of it is assigned" would
+            // be the wrong thing to say, and the prompts below ask for the account.
+            if (!noAccounts || shown.rta != 0L) item(key = "unassigned", contentType = "banner") {
                 UnassignedBanner(shown.rta, currency, Modifier.padding(horizontal = cardInset).padding(top = 4.dp, bottom = 12.dp)) { assigning = true }
             }
             if (shown.futureAssigned != 0L || shown.shortfalls.isNotEmpty()) item(key = "future", contentType = "notice") {

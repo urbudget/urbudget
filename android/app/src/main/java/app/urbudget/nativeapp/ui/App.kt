@@ -442,6 +442,9 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
             library = { openPage("Budget library") }) { openPage("Settings & data") }
     }
     val budget = state.budget
+    // A transaction needs an account to go in: until there's an open one, "+ Transaction" would open a
+    // form that can't be saved, so it isn't offered (Budget and Accounts ask for an account instead).
+    val canAddTransaction = remember(budget) { budget?.rows("accounts")?.any { !it.optBoolean("archived") } == true }
     // The register and Reports split into list and detail (ListDetail) with room for both, and have it.
     val fontScale = androidx.compose.ui.platform.LocalDensity.current.fontScale
     // The budget splits only while a category is open (BudgetScreen docks it beside the budget).
@@ -611,7 +614,7 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
         // of whatever is open on the other.
         val dockSide = if (hingeRoom != null) Modifier.width(hingeRoom) else Modifier.fillMaxWidth()
         if (budget != null) {
-            val showAdd = tab in 0..2 && morePage.isEmpty() && !dockHidden && !state.loading && !formOpenBeside && !railAdd && !holdingsOpen
+            val showAdd = tab in 0..2 && morePage.isEmpty() && !dockHidden && !state.loading && !formOpenBeside && !railAdd && !holdingsOpen && canAddTransaction
             Box(Modifier.align(Alignment.BottomStart).then(dockSide), contentAlignment = Alignment.BottomEnd) {
                 AnimatedVisibility(showAdd, Modifier.navigationBarsPadding().padding(end = 16.dp, bottom = if (rail) 16.dp else 92.dp),
                     enter = fadeIn() + scaleIn(initialScale = .8f), exit = fadeOut() + scaleOut(targetScale = .8f)) {
@@ -646,7 +649,7 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
             Box(Modifier.fillMaxSize().padding(top = if (onTable) table!! else 0.dp)) {
                 TabRail(if (tab == 4) 4 else tab, ::openTab, Modifier.align(Alignment.CenterStart)
                     .windowInsetsPadding(RailInsets.only(WindowInsetsSides.Start + (if (onTable) WindowInsetsSides.Bottom else WindowInsetsSides.Vertical))).padding(start = RailMargin),
-                    add = if (railAdd && !state.loading) ({ openEditor("transaction") }) else null)
+                    add = if (railAdd && !state.loading && canAddTransaction) ({ openEditor("transaction") }) else null)
             }
         }
         // Beside a hinge the dock spans only the start side, the phone it makes.
