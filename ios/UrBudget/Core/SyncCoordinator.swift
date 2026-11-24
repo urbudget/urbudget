@@ -13,6 +13,9 @@ final class SyncCoordinator {
     private(set) var status: JSON?
     private(set) var syncing = false
     private(set) var pending = false
+    /// A sync code the phone's own Camera opened the app with (`urbudget://…`), until Account &
+    /// sync has acted on it.
+    var scannedLink: String?
 
     @ObservationIgnored private weak var store: BudgetStore?
     @ObservationIgnored private var soon: Task<Void, Never>?

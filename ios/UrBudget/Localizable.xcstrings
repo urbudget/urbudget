@@ -431,6 +431,26 @@
         }
       }
     },
+    "This device already syncs. Scan that code with the device you're adding." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المزامنة تعمل على هذا الجهاز بالفعل. امسح هذا الرمز بالجهاز الذي تضيفه."
+          }
+        }
+      }
+    },
+    "Unlock sync on this device first, then scan the computer's code again." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "افتح قفل المزامنة على هذا الجهاز أولًا، ثم امسح رمز الكمبيوتر مرة أخرى."
+          }
+        }
+      }
+    },
     "What stays on this phone and what sync, bank links and the assistant share" : {
       "localizations" : {
         "ar" : {

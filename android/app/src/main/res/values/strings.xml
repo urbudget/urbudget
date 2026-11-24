@@ -1437,6 +1437,8 @@
     <string name="pair_device_added">Device added</string>
     <string name="pair_scanner_unavailable">The camera can’t be used. Type the code instead, or allow the camera for UrBudget in the phone’s settings.</string>
     <string name="pair_scanner_unavailable_computer">The camera can’t be used. On the computer, type the code shown here instead, or allow the camera for UrBudget in the phone’s settings.</string>
+    <string name="cloud_link_unlock_first">Unlock sync on this device first, then scan the computer’s code again.</string>
+    <string name="cloud_link_already_syncs">This device already syncs. Scan that code with the device you’re adding.</string>
     <string name="scan_hint">Point the camera at the code on your other device.</string>
     <string name="cloud_passphrase_field">Sync passphrase · at least 8 characters</string>
     <string name="cloud_delete_title">Delete your account?</string>

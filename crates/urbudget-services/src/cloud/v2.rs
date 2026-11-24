@@ -1850,7 +1850,11 @@ pub fn enroll_created(cloud: &Cloud, library: &Library, id: &str) -> Result<()> 
 }
 /// Whether a budget is one of the app's samples, which stay on their device.
 fn is_sample(budget: &Budget) -> bool {
-    budget.extra.get("sample").is_some_and(|sample| sample.is_object() || sample == true)
+    // A sample from before the phone apps marked theirs is known the way those apps know it
+    // (android SampleBudget.kt): by the account and the purchase every such sample has.
+    let older = budget.accounts.iter().any(|account| account.id == "sample-checking")
+        && budget.transactions.iter().any(|transaction| transaction.id == "sample-market");
+    older || budget.extra.get("sample").is_some_and(|sample| sample.is_object() || sample == true)
 }
 
 /// Budgets sync unless someone says otherwise: every budget kept on this device with no

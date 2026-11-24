@@ -136,6 +136,13 @@ internal fun pairingCountdown(left: Long): String {
 
 /** What every QR code of UrBudget's starts with (crates/urbudget-services/src/cloud/codes.rs). */
 private const val CODE_PREFIX = "URBUDGET-"
+private const val LINK_PREFIX = "urbudget://"
+
+/** Whether scanned text is one of UrBudget's codes: a link of its own kind, or as codes were written before they were links. */
+internal fun scannableSyncCode(text: String): Boolean = text.trim().let { it.startsWith(LINK_PREFIX, ignoreCase = true) || it.startsWith(CODE_PREFIX) }
+
+/** Whether a scanned code is one a device waiting to be added shows, which a device that syncs approves. */
+internal fun syncCodeIsRequest(text: String): Boolean = text.trim().let { it.startsWith(LINK_PREFIX + "ask/", ignoreCase = true) || it.startsWith(CODE_PREFIX + "ASK:") }
 
 /**
  * The UrBudget code in a camera frame, given the frame's brightness row by row, or null when it
@@ -146,7 +153,7 @@ internal fun decodeSyncCode(brightness: ByteArray, width: Int, height: Int): Str
     val source = com.google.zxing.PlanarYUVLuminanceSource(brightness, width, height, 0, 0, width, height, false)
     com.google.zxing.qrcode.QRCodeReader()
         .decode(com.google.zxing.BinaryBitmap(com.google.zxing.common.HybridBinarizer(source)))
-        .text?.takeIf { it.startsWith(CODE_PREFIX) }
+        .text?.takeIf(::scannableSyncCode)
 } catch (_: com.google.zxing.ReaderException) {
     null
 }

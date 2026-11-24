@@ -38,6 +38,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 
 @Composable
@@ -160,6 +161,8 @@ internal fun CloudScreen(vm: BudgetViewModel) {
         } catch (cancel: CancellationException) { throw cancel }
         catch (_: Exception) { /* Asked for again the next time the status says one is kept. */ }
     }
+    // A computer's code that arrived as a link, until the person says whether to add it.
+    var approvingLink by remember { mutableStateOf<String?>(null) }
     /** Unlocks sync here with whatever was scanned or typed: the engine works out which kind of code, or a passphrase, it is. */
     fun unlock(given: String) = work {
         unlockError = null
@@ -322,6 +325,30 @@ internal fun CloudScreen(vm: BudgetViewModel) {
             }
         } else item { Text(stringResource(R.string.cloud_sign_in_to_sync), Modifier.padding(horizontal = 4.dp), color = ur.muted, style = MaterialTheme.typography.bodyMedium) }
         item { TextButton({ call("account_open", JSONObject().put("next", "/privacy/app/")) }, enabled = !busy) { Text(stringResource(R.string.cloud_privacy)) } }
+    }
+    // A code the phone's own camera opened the app with: done with as this screen's scanner would.
+    // Signed out, it waits for the sign-in.
+    val scannedLink by PageRequests.syncLink.collectAsStateWithLifecycle()
+    LaunchedEffect(scannedLink, signedIn, unlocked, status == null) {
+        val link = scannedLink ?: return@LaunchedEffect
+        if (status == null || signedIn.isBlank()) return@LaunchedEffect
+        PageRequests.syncLink.value = null
+        when {
+            syncCodeIsRequest(link) && unlocked -> approvingLink = link
+            syncCodeIsRequest(link) -> toast(context.getString(R.string.cloud_link_unlock_first), true)
+            unlocked -> toast(context.getString(R.string.cloud_link_already_syncs), true)
+            else -> unlock(link)
+        }
+    }
+    approvingLink?.let { code ->
+        AlertDialog(onDismissRequest = { if (!busy) approvingLink = null },
+            title = { Text(stringResource(R.string.pair_approve_title)) },
+            text = { Text(stringResource(R.string.pair_approve_message)) },
+            confirmButton = { TextButton({
+                approvingLink = null
+                call("sync_pair_approve", JSONObject().put("code", code)) { toast(context.getString(R.string.pair_device_added), false) }
+            }, enabled = !busy) { Text(stringResource(R.string.pair_approve)) } },
+            dismissButton = { TextButton({ approvingLink = null }, enabled = !busy) { Text(stringResource(R.string.common_cancel)) } })
     }
     if (dialog == "addDevice") AddDeviceDialog({ dialog = "" }) { dialog = ""; toast(context.getString(R.string.pair_device_added), false) }
     // What was scanned goes to the engine as it is: it says what the code is, and what's wrong with one that isn't UrBudget's.

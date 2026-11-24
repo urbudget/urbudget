@@ -67,7 +67,15 @@ enum SyncKey {
     /// keeps looking past anything else, so a QR code that happens to be in view isn't tried
     /// as a passphrase.
     static func scannable(_ payload: String) -> Bool {
-        payload.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("URBUDGET-")
+        let text = payload.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.lowercased().hasPrefix("urbudget://") || text.hasPrefix("URBUDGET-")
+    }
+
+    /// Whether a scanned code is one a device waiting to be added shows, which a device that
+    /// syncs approves, as against one a device that syncs shows.
+    static func isRequest(_ payload: String) -> Bool {
+        let text = payload.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.lowercased().hasPrefix("urbudget://ask/") || text.hasPrefix("URBUDGET-ASK:")
     }
 
     /// A time the server wrote, with or without fractions of a second.

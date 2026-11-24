@@ -26,6 +26,8 @@ struct AccountSyncView: View {
     @State private var scanning = false
     @State private var scanned: String?
     @State private var addingDevice = false
+    /// A computer's code that arrived as a link, until the person says whether to add it.
+    @State private var approvingLink: String?
     /// A recovery code this device holds that the person hasn't said they saved.
     @State private var recoveryCode: RecoveryCode?
     @State private var confirmingNewCode = false
@@ -98,6 +100,15 @@ struct AccountSyncView: View {
         // A renewal, refund or approved purchase arrived while the screen is open.
         .onChange(of: appStore.deliveries) { Task { await loadOverview() } }
         .task(id: "\(signedIn)|\(sync.unlocked)") { await loadKeyInfo() }
+        // A code the phone's own Camera opened the app with. Signed out, it waits for the sign-in.
+        .task(id: "\(sync.scannedLink ?? "")|\(signedIn)|\(sync.unlocked)") { takeScannedLink() }
+        // The key goes to whoever shows that code, so the person says yes first.
+        .alert("Add this device?", isPresented: Binding(get: { approvingLink != nil }, set: { if !$0 { approvingLink = nil } }), presenting: approvingLink) { code in
+            Button("Add device") { approveLink(code) }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("Only approve a device you are holding. It will be able to read every budget in this account.")
+        }
         // A code made here stays on this device until it's confirmed saved, so it's shown again
         // after the app was closed on it or an answer was lost.
         .task(id: SyncKey.recoveryUnsaved(status)) { await showUnsavedCode() }
@@ -514,6 +525,28 @@ struct AccountSyncView: View {
                 throw error
             }
             try await sync.syncNow()
+        }
+    }
+
+    /// Does with a code the Camera scanned what this screen's own scanner would: unlocks this
+    /// device with a code another device shows, or asks before approving a device that waits.
+    private func takeScannedLink() {
+        guard let link = sync.scannedLink, !signedIn.isEmpty else { return }
+        sync.scannedLink = nil
+        if SyncKey.isRequest(link) {
+            if sync.unlocked { approvingLink = link }
+            else { store.error = String(localized: "Unlock sync on this device first, then scan the computer's code again.") }
+        } else if sync.unlocked {
+            store.error = String(localized: "This device already syncs. Scan that code with the device you're adding.")
+        } else {
+            unlock(link)
+        }
+    }
+
+    private func approveLink(_ code: String) {
+        run {
+            _ = try await store.service("sync_pair_approve", ["code": .string(code)])
+            notice = String(localized: "Device added.")
         }
     }
 

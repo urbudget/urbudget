@@ -79,10 +79,30 @@ pub(super) fn decode(text: &str) -> Option<Code> {
     (count == CHARACTERS).then(|| std::array::from_fn(|i| (bits >> (112 - 8 * i)) as u8))
 }
 
-/// What a QR code holds before the characters. Plain text and not a link, so neither the
-/// system camera nor another app opens it.
-pub(super) const OFFER: &str = "URBUDGET-PAIR:1:";
-pub(super) const REQUEST: &str = "URBUDGET-ASK:1:";
+/// What a QR code holds before the characters: a link of UrBudget's own kind. People point
+/// the phone's own camera at a code, which can do nothing with plain text ("No usable data
+/// found"); with a link it offers to open UrBudget, which then does what its own scanner would.
+/// A code is no use to anything else that might open the link: a device code opens nothing
+/// without the account's signed-in session, and a request only asks to be approved.
+pub(super) const OFFER: &str = "urbudget://pair/1/";
+pub(super) const REQUEST: &str = "urbudget://ask/1/";
+/// What a code held before it was a link. Still read.
+const PLAIN_OFFER: &str = "URBUDGET-PAIR:1:";
+const PLAIN_REQUEST: &str = "URBUDGET-ASK:1:";
+
+/// `text` after `prefix`, whatever case the prefix came in: a phone hands a link on with its
+/// first part in lower case, and a scanner hands it on as drawn.
+fn after<'a>(text: &'a str, prefix: &str) -> Option<&'a str> {
+    let head = text.get(..prefix.len())?;
+    head.eq_ignore_ascii_case(prefix).then(|| &text[prefix.len()..])
+}
+
+/// Whether this is a scanned code shown by a device that syncs, as against one typed or one
+/// shown by a device waiting to be added.
+pub(super) fn scanned_offer(text: &str) -> bool {
+    let text = text.trim();
+    after(text, OFFER).is_some() || after(text, PLAIN_OFFER).is_some()
+}
 
 /// What someone scanned or typed where a device asks to unlock sync, or to approve another.
 #[derive(Clone, Debug, PartialEq)]
@@ -109,8 +129,8 @@ fn unreadable() -> String {
 /// text that isn't a code is a passphrase.
 pub(super) fn read(text: &str) -> Result<Entry, String> {
     let trimmed = text.trim();
-    for (prefix, request) in [(OFFER, false), (REQUEST, true)] {
-        if let Some(rest) = trimmed.strip_prefix(prefix) {
+    for (prefix, request) in [(OFFER, false), (REQUEST, true), (PLAIN_OFFER, false), (PLAIN_REQUEST, true)] {
+        if let Some(rest) = after(trimmed, prefix) {
             let code = decode(rest).ok_or_else(unreadable)?;
             return match (kind(&code), request) {
                 (Some(Kind::Device), false) => Ok(Entry::Device(code)),
@@ -119,7 +139,7 @@ pub(super) fn read(text: &str) -> Result<Entry, String> {
             };
         }
     }
-    if trimmed.starts_with("URBUDGET-") {
+    if after(trimmed, "urbudget://").is_some() || trimmed.starts_with("URBUDGET-") {
         return Err(t!("A newer UrBudget made that code. Update UrBudget on this device first."));
     }
     Ok(match decode(trimmed) {
@@ -207,8 +227,14 @@ mod tests {
     fn what_was_scanned_or_typed_is_sorted_before_anything_is_tried() {
         let device = fixed(Kind::Device);
         let recovery = fixed(Kind::Recovery);
+        assert_eq!(read("urbudget://pair/1/0123456789ABCDEFGHJKMNG8"), Ok(Entry::Device(device)));
+        assert_eq!(read(" urbudget://ask/1/0123456789ABCDEFGHJKMNG8\n"), Ok(Entry::Request(device)));
+        // However the phone hands the link on, and as codes were written before they were links.
+        assert_eq!(read("URBUDGET://PAIR/1/0123456789abcdefghjkmng8"), Ok(Entry::Device(device)));
         assert_eq!(read("URBUDGET-PAIR:1:0123456789ABCDEFGHJKMNG8"), Ok(Entry::Device(device)));
-        assert_eq!(read(" URBUDGET-ASK:1:0123456789ABCDEFGHJKMNG8\n"), Ok(Entry::Request(device)));
+        assert_eq!(read("URBUDGET-ASK:1:0123456789ABCDEFGHJKMNG8"), Ok(Entry::Request(device)));
+        assert!(scanned_offer("urbudget://pair/1/0123456789ABCDEFGHJKMNG8") && scanned_offer(" URBUDGET-PAIR:1:0123"));
+        assert!(!scanned_offer("urbudget://ask/1/0123456789ABCDEFGHJKMNG8") && !scanned_offer("0123-4567-89AB-CDEF-GHJK-MNG8"));
         assert_eq!(read("0123-4567-89ab-cdef-ghjk-mng8"), Ok(Entry::Device(device)));
         assert_eq!(read("0123 4567 89AB CDEF GHJK MNM7"), Ok(Entry::Recovery(recovery)));
         assert_eq!(read("0123-4567-89AB-CDEF-GHJK-MNG9"), Ok(Entry::Mistyped));
@@ -221,10 +247,12 @@ mod tests {
         assert!(read("URBUDGET-PAIR:1:0123").is_err());
         // A later version of ours this one doesn't know.
         assert!(read("URBUDGET-PAIR:2:0123456789ABCDEFGHJKMNG8").unwrap_err().contains("newer"));
+        assert!(read("urbudget://pair/2/0123456789ABCDEFGHJKMNG8").unwrap_err().contains("newer"));
         // Some other QR code is just text that opens nothing.
         assert_eq!(read("https://example.com/0123456789ABCDEFGHJKMNG8"), Ok(Entry::Other));
+        // A link, so the phone's camera can open it, and of UrBudget's own kind, so a browser can't.
         for prefix in [OFFER, REQUEST] {
-            assert!(!prefix.contains("://"), "a link would open in another app");
+            assert!(prefix.starts_with("urbudget://"), "{prefix}");
         }
     }
 

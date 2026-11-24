@@ -139,6 +139,11 @@ final class SyncKeyTests: XCTestCase {
 
     /// The camera passes over QR codes that aren't UrBudget's.
     func testOnlyUrBudgetsCodesAreScanned() {
+        XCTAssertTrue(SyncKey.scannable("urbudget://pair/1/0123456789ABCDEFGHJKMNPQ"))
+        XCTAssertTrue(SyncKey.scannable("URBUDGET://ASK/1/0123456789ABCDEFGHJKMNPQ"), "as a phone may hand a link on")
+        XCTAssertTrue(SyncKey.isRequest("urbudget://ask/1/0123456789ABCDEFGHJKMNPQ"))
+        XCTAssertTrue(SyncKey.isRequest("URBUDGET-ASK:1:0123456789ABCDEFGHJKMNPQ"))
+        XCTAssertFalse(SyncKey.isRequest("urbudget://pair/1/0123456789ABCDEFGHJKMNPQ"))
         XCTAssertTrue(SyncKey.scannable("URBUDGET-PAIR:1:0123456789ABCDEFGHJKMNPQ"))
         XCTAssertTrue(SyncKey.scannable("URBUDGET-ASK:1:0123456789ABCDEFGHJKMNPQ"))
         XCTAssertTrue(SyncKey.scannable(" URBUDGET-NEXT:2:whatever a later version shows\n"), "the engine says to update")

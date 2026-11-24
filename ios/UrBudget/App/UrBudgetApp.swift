@@ -63,6 +63,8 @@ struct RootView: View {
     /// Debug builds show the welcome screen over a budget with `-open welcome`, for screenshots.
     @State private var welcomePreview = LaunchRoute.open == "welcome"
     @State private var newTransaction: TransactionEditorRequest?
+    /// Account & sync, over whatever is on screen, for a sync code the Camera opened the app with.
+    @State private var showingSyncLink = false
 
     /// Opens the budget this device used last when none is open and the library has one.
     private func openAnotherBudget() async {
@@ -143,6 +145,7 @@ struct RootView: View {
         .task(id: store.loading) { if !store.loading { await SyncQA.run(store: store, sync: sync) } }
         #endif
         .sheet(isPresented: $showingLibrary) { NavigationStack { LibraryView() } }
+        .sheet(isPresented: $showingSyncLink) { NavigationStack { AccountSyncView() } }
         .sheet(isPresented: $welcomePreview) { WelcomeView() }
         // The quick action and the Add a transaction shortcut, once a budget is open.
         .onChange(of: AppActions.shared.pending, initial: true) { _, _ in takeAction() }
@@ -196,6 +199,12 @@ struct RootView: View {
     }
 
     private func open(_ url: URL) {
+        // The code that adds a device to sync, scanned with the phone's own Camera.
+        if url.scheme?.lowercased() == "urbudget" {
+            sync.scannedLink = url.absoluteString
+            showingSyncLink = true
+            return
+        }
         guard let file = OpenedFile(url) else {
             if url.isFileURL { store.error = String(localized: "UrBudget opens JSON backups, bank statements (CSV, OFX, QFX, QIF or MT940) and YNAB exports.") }
             return

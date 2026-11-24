@@ -170,14 +170,14 @@ try {
   });
 
   await test("a new device shows a code, and a device that syncs approves it by scanning", async () => {
-    const request = await c.call("sync_pair_request"), scanned = "URBUDGET-ASK:1:" + request.code.replaceAll("-", "");
+    const request = await c.call("sync_pair_request"), scanned = "urbudget://ask/1/" + request.code.replaceAll("-", "");
     assert.match(request.code, CODE); assert.equal(request.qr.modules.length, request.qr.size ** 2);
     // Nothing is on the server until someone approves.
     assert.deepEqual(await c.call("sync_pair_wait", { code: request.code }), { ready: false });
     // A scan on the wrong screen is told where it belongs, and hands nothing over.
     await assert.rejects(b.call("sync_unlock", { secret: scanned }), /waiting to be added/);
     const shown = await a.call("sync_pair_offer");
-    await assert.rejects(b.call("sync_pair_approve", { code: "URBUDGET-PAIR:1:" + shown.code.replaceAll("-", "") }), /for the device being added/);
+    await assert.rejects(b.call("sync_pair_approve", { code: "urbudget://pair/1/" + shown.code.replaceAll("-", "") }), /for the device being added/);
     await a.call("sync_pair_cancel", { id: shown.id });
     await assert.rejects(c.call("sync_pair_approve", { code: scanned }), /Unlock sync on this device/);
     await b.call("sync_pair_approve", { code: scanned });
@@ -309,7 +309,7 @@ try {
     assert.deepEqual(await e.call("sync_unlock", { secret: passphrase }), { created: false, protocol: 2 });
     await e.call("sync_lock");
     const offered = await d.call("sync_pair_offer");
-    assert.deepEqual(await e.call("sync_unlock", { secret: "URBUDGET-PAIR:1:" + offered.code.replaceAll("-", "") }), { created: false, protocol: 2 });
+    assert.deepEqual(await e.call("sync_unlock", { secret: "urbudget://pair/1/" + offered.code.replaceAll("-", "") }), { created: false, protocol: 2 });
     // Forgot the passphrase? A device that syncs makes a recovery code, and nothing else changes.
     const made = await d.call("sync_recovery_create"); await d.call("sync_recovery_saved");
     await e.call("sync_lock");

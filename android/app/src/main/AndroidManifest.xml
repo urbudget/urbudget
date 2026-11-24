@@ -62,6 +62,15 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="${applicationId}" android:host="assistant" android:path="/sign-in" />
             </intent-filter>
+            <!-- The code that adds a device to sync, scanned with the phone's own camera: it opens
+                 Account & sync, which asks before approving anything (MainActivity.takeSyncLink). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="urbudget" android:host="pair" />
+                <data android:scheme="urbudget" android:host="ask" />
+            </intent-filter>
         </activity>
     </application>
 </manifest>
