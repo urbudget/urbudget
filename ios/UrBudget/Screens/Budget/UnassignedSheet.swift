@@ -66,6 +66,8 @@ struct UnassignedSheet: View {
         for row in summary.rows("categories") { totals[row.text("id")] = row }
         let visible = budget.rows("categories").filter { !$0.flag("hidden") }
         let needed = visible.reduce(Int64(0)) { $0 + CategoryStatus(category: $1, summary: totals[$1.text("id")], month: month).needed }
+        // As the desktop's month summary: with no targets there's no funding to call complete.
+        let hasTargets = visible.contains { $0.long("target") > 0 || $0["goal"].isObject }
         let targets = visible.reduce(Int64(0)) { $0 + (totals[$1.text("id")]?.long("monthTarget") ?? 0) }
         let carried = visible.reduce(Int64(0)) { $0 + (totals[$1.text("id")]?.long("carried") ?? 0) }
         let income: Int64? = budget["expectedIncome"].isNull ? nil : budget.long("expectedIncome")
@@ -86,7 +88,7 @@ struct UnassignedSheet: View {
                 Section {
                     if needed > 0 {
                         Notice(text: String(localized: "\(money(needed, currency)) still needed this month"), tone: "attention", icon: "target")
-                    } else {
+                    } else if hasTargets {
                         Notice(text: String(localized: "This month's funding is complete"), tone: "positive", icon: "checkmark.circle.fill")
                     }
                     Button(action: assignTo) {

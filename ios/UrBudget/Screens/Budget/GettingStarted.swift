@@ -28,6 +28,7 @@ struct BudgetTemplate: Identifiable, Equatable {
 /// opening the list to choose another.
 struct TemplatePicker: View {
     @Binding var selection: String
+    @Environment(BudgetStore.self) private var store
     @State private var templates: [BudgetTemplate] = []
 
     var body: some View {
@@ -43,18 +44,21 @@ struct TemplatePicker: View {
             }
         }
         .disabled(templates.isEmpty)
-        .task { if templates.isEmpty { templates = BudgetTemplate.all() } }
+        // Asked once the store has started, which is when the engine learns the app's language: the
+        // welcome screen debug builds open over the app (`-open welcome`) appears before that.
+        .task(id: store.loading) { if !store.loading { templates = BudgetTemplate.all() } }
     }
 }
 
-/// The templates with what each is for, the chosen one ticked. Choosing one goes back.
+/// The templates with what each is for, the chosen one ticked. Choosing one goes back. On the app's
+/// page and cards, as the currency list beside it (navy in dark, not iOS's grey).
 private struct TemplateList: View {
     var templates: [BudgetTemplate]
     @Binding var selection: String
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        List(templates) { template in
+        AppList(templates, id: \.id) { template in
             Button {
                 selection = template.id
                 dismiss()
@@ -77,6 +81,7 @@ private struct TemplateList: View {
             .buttonStyle(.plain)
             .accessibilityAddTraits(template.id == selection ? .isSelected : [])
         }
+        .groupedList()
         .navigationTitle("Categories")
         .inlineTitle()
     }

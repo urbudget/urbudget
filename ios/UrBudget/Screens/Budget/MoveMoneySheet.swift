@@ -21,7 +21,7 @@ func moveStartAmount(fromUnassigned: Bool, start: Int64, cover: Int64?) -> Int64
 }
 
 /// Moving money, as a sheet: from one category (or Unassigned) to another, the amount on the keypad.
-/// Assigning from Unassigned opens with no amount (`moveStartAmount`).
+/// Assigning from Unassigned opens with no amount (`moveStartAmount`) and the keypad up.
 /// Covering overspending takes from Unassigned when it has money, and opens with as much of the
 /// overspending as the source can give (`coverAmount`); choosing another source sets the amount
 /// again, until one has been typed.
@@ -144,6 +144,8 @@ struct MoveMoneySheet: View {
                                       cover: over > 0 ? coverAmount(over, has: source.isEmpty ? nil : available(source)) : nil)
         pad = PadState(opening)
         suggested = opening
+        // With no amount to start from, the keypad is up and waiting for one.
+        keypad = opening == nil
         if request.category == Unassigned && start >= 0 { title = String(localized: "Assign money") }
         else if start < 0 && request.category != Unassigned { title = String(localized: "Cover overspending") }
     }
