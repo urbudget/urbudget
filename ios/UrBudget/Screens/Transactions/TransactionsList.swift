@@ -265,9 +265,8 @@ struct TransactionsList: View {
     /// older Xcode (CI's 26.6) type-checks each in reasonable time.
     private var decorated: some View {
         list
-            .navigationTitle(screenTitle)
+            .barTitle(Text(screenTitle), large: target.account.isEmpty && target.category.isEmpty && !selecting)
             .barSubtitle(selectionTotal)
-            .barTitle(target.account.isEmpty && target.category.isEmpty && !selecting)
             .searchable(text: $search, prompt: "Payee, category, memo, amount")
             .searchMinimized()
             .toolbar { toolbar }

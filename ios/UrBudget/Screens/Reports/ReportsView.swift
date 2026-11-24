@@ -193,8 +193,7 @@ struct ReportsView: View {
                         path = id.map { [.report(ReportTopic.view(of: $0, remembered: filters.views), group: nil)] } ?? []
                     }
                         .startPaneContent()
-                        .navigationTitle("Reports")
-                        .barTitle()
+                        .barTitle(Text("Reports"))
                 }
                 .environment(\.startPane, true)
                 // On the start side of a fold the list keeps clear of the dock the tabs stand in.
@@ -204,8 +203,7 @@ struct ReportsView: View {
             }
             NavigationStack(path: $path) {
                 ReportsOverview(cache: cache, filters: filters)
-                    .navigationTitle(wide ? Text("Overview") : Text("Reports"))
-                    .barTitle()
+                    .barTitle(wide ? Text("Overview") : Text("Reports"))
                     .toolbar {
                         ToolbarItem(placement: .trailingBar) { AssistantBarButton(page: "reports") }
                         ToolbarItem(placement: .trailingBar) { BudgetActionsMenu() }
