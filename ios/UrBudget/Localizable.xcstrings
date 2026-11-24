@@ -51,12 +51,72 @@
         }
       }
     },
+    "Kept copy" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "نسخة محفوظة"
+          }
+        }
+      }
+    },
+    "Kept copy. Hold to recover it as a new budget." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "نسخة محفوظة. اضغط مطولًا لاستعادتها كميزانية جديدة."
+          }
+        }
+      }
+    },
+    "Kept on this device as a copy. Recover it as a new budget in the budget library." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "محفوظة على هذا الجهاز كنسخة. استعدها كميزانية جديدة من مكتبة الميزانيات."
+          }
+        }
+      }
+    },
+    "Locked" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مقفلة"
+          }
+        }
+      }
+    },
     "Month total: %@ → %@" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "إجمالي الشهر: ⁨%1$@⁩ ← ⁨%2$@⁩"
+          }
+        }
+      }
+    },
+    "Needs a sync plan" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تحتاج إلى اشتراك مزامنة"
+          }
+        }
+      }
+    },
+    "Not downloaded" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "غير منزَّلة"
           }
         }
       }
@@ -197,6 +257,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "بعد الانتقال، يحتاج كل جهاز يزامن هذا الحساب إلى الإصدار 1.0.11 أو أحدث على سطح المكتب، أو 1.0.1 أو أحدث على Android، أو 1.0.1 أو أحدث على iPhone. يُطلب من الإصدارات الأقدم تحديث UrBudget قبل أن تزامن مرة أخرى، وتبقى الميزانيات المحفوظة عليها."
+          }
+        }
+      }
+    },
+    "Signed out" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "خرجت من الحساب"
+          }
+        }
+      }
+    },
+    "Sync was reset on another device. Add this one again to keep syncing." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُعيد ضبط المزامنة على جهاز آخر. أضِف هذا الجهاز من جديد لتستمر المزامنة."
           }
         }
       }
@@ -357,6 +437,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "تغيّر الاستيراد أثناء تطبيق هذه التصحيحات. طبّق البطاقة مرة أخرى."
+          }
+        }
+      }
+    },
+    "This device already syncs. Scan that code with the device you're adding." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المزامنة تعمل على هذا الجهاز بالفعل. امسح هذا الرمز بالجهاز الذي تضيفه."
+          }
+        }
+      }
+    },
+    "Unlock sync on this device first, then scan the computer's code again." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "افتح قفل المزامنة على هذا الجهاز أولًا، ثم امسح رمز الكمبيوتر مرة أخرى."
           }
         }
       }
@@ -10610,16 +10710,6 @@
         }
       }
     },
-    "Encrypted sync" : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "المزامنة المشفَّرة"
-          }
-        }
-      }
-    },
     "Encrypted sync is on" : {
       "localizations" : {
         "ar" : {
@@ -13907,16 +13997,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "آخر 6 أشهر"
-          }
-        }
-      }
-    },
-    "Last attempt: %@" : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "آخر محاولة: ⁨%@⁩"
           }
         }
       }
@@ -20785,26 +20865,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "السلسلة"
-          }
-        }
-      }
-    },
-    "Session stored in %@" : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "الجلسة محفوظة في ⁨%@⁩"
-          }
-        }
-      }
-    },
-    "Session stored securely on this device" : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "الجلسة محفوظة بأمان على هذا الجهاز"
           }
         }
       }
@@ -28075,16 +28135,6 @@
         }
       }
     },
-    "Sign in above to subscribe or restore purchases." : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "سجِّل الدخول أعلاه للاشتراك أو لاستعادة المشتريات."
-          }
-        }
-      }
-    },
     "Show what targets still need" : {
       "localizations" : {
         "ar" : {
@@ -31234,16 +31284,6 @@
         }
       }
     },
-    "Budgets are encrypted before uploading. Only your devices can open them." : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "تُشفَّر الميزانيات قبل رفعها، ولا يفتحها إلا أجهزتك."
-          }
-        }
-      }
-    },
     "Budgets are encrypted with a key only your devices hold. UrBudget can't read or recover them." : {
       "localizations" : {
         "ar" : {
@@ -31670,6 +31710,306 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "إن كانت المزامنة ما زالت تعمل على جهاز آخر لك، فأضف هذا الجهاز منه بدلًا من ذلك. بهذه الطريقة لا يُحذف شيء."
+          }
+        }
+      }
+    },
+    "Sync is on." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المزامنة مشغّلة."
+          }
+        }
+      }
+    },
+    "Sync is on. Last synced %@." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المزامنة مشغّلة. آخر مزامنة ⁨%@⁩."
+          }
+        }
+      }
+    },
+    "Sync is on. Last synced just now." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المزامنة مشغّلة. تمت آخر مزامنة للتو."
+          }
+        }
+      }
+    },
+    "Sync is on, but this device is offline. Changes sync when it's back online." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المزامنة مشغّلة، لكن هذا الجهاز غير متصل بالإنترنت. تُزامَن التغييرات عند عودة الاتصال."
+          }
+        }
+      }
+    },
+    "Sync is on. Changes are waiting to sync." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المزامنة مشغّلة. هناك تغييرات بانتظار المزامنة."
+          }
+        }
+      }
+    },
+    "The last sync didn't finish. Try Sync now." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم تكتمل آخر مزامنة. جرّب «مزامنة الآن»."
+          }
+        }
+      }
+    },
+    "Devices" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الأجهزة"
+          }
+        }
+      }
+    },
+    "This iPhone" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جهاز iPhone هذا"
+          }
+        }
+      }
+    },
+    "This iPad" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جهاز iPad هذا"
+          }
+        }
+      }
+    },
+    "Last synced %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "آخر مزامنة ⁨%@⁩"
+          }
+        }
+      }
+    },
+    "Last synced just now" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تمت آخر مزامنة للتو"
+          }
+        }
+      }
+    },
+    "A device added on %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جهاز أُضيف في ⁨%@⁩"
+          }
+        }
+      }
+    },
+    "A device" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جهاز"
+          }
+        }
+      }
+    },
+    "To stop a device syncing, sign out on it. To cut off a device you no longer have, reset sync." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لإيقاف المزامنة على جهاز، سجّل الخروج منه. ولقطع جهاز لم يعد بحوزتك، أعد ضبط المزامنة."
+          }
+        }
+      }
+    },
+    "Changed on two devices. Choose what to keep." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تغيّرت على جهازين. اختر ما تريد الاحتفاظ به."
+          }
+        }
+      }
+    },
+    "Kept only on this device." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "محفوظة على هذا الجهاز فقط."
+          }
+        }
+      }
+    },
+    "Subscribe" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اشترك"
+          }
+        }
+      }
+    },
+    "%lld budgets need you. See Budgets below." : {
+      "comment" : "Budgets that wait for the person, in Account & sync's status line.",
+      "localizations" : {
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "لا ميزانيات تحتاج تدخلك."
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "ميزانية واحدة تحتاج تدخلك. انظر «الميزانيات» أدناه."
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "ميزانيتان تحتاجان تدخلك. انظر «الميزانيات» أدناه."
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ميزانيات تحتاج تدخلك. انظر «الميزانيات» أدناه."
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ميزانية تحتاج تدخلك. انظر «الميزانيات» أدناه."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ميزانية تحتاج تدخلك. انظر «الميزانيات» أدناه."
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld budget needs you. See Budgets below."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld budgets need you. See Budgets below."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld budgets are syncing" : {
+      "comment" : "Budgets that sync with nothing to do, counted in Account & sync.",
+      "localizations" : {
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "لا ميزانيات قيد المزامنة"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "ميزانية واحدة قيد المزامنة"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "ميزانيتان قيد المزامنة"
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ميزانيات قيد المزامنة"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ميزانية قيد المزامنة"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ميزانية قيد المزامنة"
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld budget is syncing"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld budgets are syncing"
+                }
+              }
+            }
           }
         }
       }

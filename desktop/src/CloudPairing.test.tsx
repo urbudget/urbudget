@@ -74,6 +74,7 @@ beforeEach(() => {
     if (command === "sync_pair_offer") return next(offers, shown("spare", OFFERED));
     if (command === "sync_pair_state") return next(states, { waiting: true, collected: false });
     if (command === "sync_pair_cancel") return null;
+    if (command === "sync_devices") return { devices: [] };
     throw new Error(`Unexpected native command: ${command}`);
   });
 });
@@ -108,6 +109,18 @@ it("shows its own code for a phone to scan, and unlocks once the phone approves"
   // The phone's sealed key was collected: there is nothing left to take back.
   page.unmount();
   expect(commands("sync_pair_cancel")).toEqual([]);
+});
+
+it("says why it asks to unlock when sync was reset on another device", async () => {
+  const told = "Sync was reset on another device. Add this computer again to keep syncing.";
+  const page = render(view(state()));
+  await screen.findByRole("img", { name: UNLOCK_QR });
+  expect(screen.queryByText(told)).toBeNull();
+  page.unmount();
+  status.sync.resetElsewhere = true;
+  render(view(state()));
+  await screen.findByRole("img", { name: UNLOCK_QR });
+  expect(screen.getByText(told)).toBeTruthy();
 });
 
 it("stops asking and drops its code when the screen is left", async () => {

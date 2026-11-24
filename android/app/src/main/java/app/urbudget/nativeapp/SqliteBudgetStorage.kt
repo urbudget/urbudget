@@ -35,7 +35,8 @@ class SqliteBudgetStorage(private val context: Context) : BudgetStorage {
                 val parsed = runCatching { JSONObject(json) }.getOrNull() ?: return@traced StoredBudget.Text(json)
                 val validation = JSONObject(NativeBridge.invoke(JSONObject().put("version", 1).put("method", "validate").put("budget", parsed).toString()))
                 if (!validation.optBoolean("ok")) return@traced StoredBudget.Text(json)
-                val id = NativeServices.call("create_budget", JSONObject().put("budget", parsed).put("localOnly", true)) as String
+                // Not `localOnly`: that records a choice to keep a budget off sync, and nobody made one here.
+                val id = NativeServices.call("create_budget", JSONObject().put("budget", parsed)) as String
                 NativeServices.call("library_open", JSONObject().put("id", id))
                 // library_open's reply has no sourceExport: never adopt it.
                 snapshot = loadLight()

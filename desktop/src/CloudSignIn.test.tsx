@@ -27,6 +27,7 @@ beforeEach(() => {
     if (command === "account_start") return start;
     if (command === "account_verify") return status;
     if (command === "sync_key_info") return { exists: true, secret: "passphrase", recovery: false, protocol: 2 };
+    if (command === "sync_devices") return { devices: [] };
     throw new Error(`Unexpected native command: ${command}`);
   });
 });
@@ -41,12 +42,18 @@ it("renders lifecycle states with no open budget, including a newer native state
     budgets: phases.map(phase => ({ id: phase, name: `Budget ${phase}`, state: phase, device: null, updatedAt: null, message: null })) as NonNullable<CloudStatus["sync"]["last"]>["budgets"],
   } } };
   render(<ToastProvider><SyncSettings cloud={state()} budgetId="" isClean={() => true} openBudget={vi.fn()} /></ToastProvider>);
-  expect(await screen.findByText("In Trash")).toBeTruthy();
-  expect(screen.getByText("Permanently deleted")).toBeTruthy();
-  expect(screen.getByText("Recovered local changes")).toBeTruthy();
-  expect(screen.getByText("Available online")).toBeTruthy();
+  // Listed: the ones that need someone, a state this version doesn't know among them.
+  expect(await screen.findByText("Recovered local changes")).toBeTruthy();
   expect(screen.getByText("Sync needs you")).toBeTruthy();
-  for (const phase of phases) expect(screen.getByText(`Budget ${phase}`)).toBeTruthy();
+  const quiet = ["trashed", "purged", "queued", "evicted"];
+  for (const phase of phases) expect(!!screen.queryByText(`Budget ${phase}`)).toBe(!quiet.includes(phase));
+  // One in Trash or left online is the budget library's, and one waiting its turn is counted.
+  expect(screen.queryByText("In Trash")).toBeNull();
+  expect(screen.queryByText("Permanently deleted")).toBeNull();
+  expect(screen.queryByText("Available online")).toBeNull();
+  expect(screen.getByText("1 budget is syncing.")).toBeTruthy();
+  // No name the engine uses for a state reaches the screen.
+  for (const name of ["local_only", "signed_out", "future_native_state", "subscription_required"]) expect(document.body.textContent!.replaceAll(`Budget ${name}`, "")).not.toContain(name);
 });
 
 it("only loads the account's status when the window opens", async () => {

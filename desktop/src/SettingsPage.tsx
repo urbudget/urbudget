@@ -284,6 +284,7 @@ export function SettingsPage({
   onInstallUpdate,
   budgetId,
   isClean,
+  onManageBudgets,
 }: {
   cloud: Cloud;
   updates: Updates;
@@ -318,6 +319,8 @@ export function SettingsPage({
   onBankSync: () => void;
   /** Opens the page that imports a bank file. */
   onBankImport: () => void;
+  /** Opens the budget library. */
+  onManageBudgets?: () => void;
   theme: Theme;
   setTheme: (theme: Theme) => void;
 }) {
@@ -354,7 +357,7 @@ export function SettingsPage({
         ]}
       />
 
-      {tab === "sync" && <SyncSettings cloud={cloud} budgetId={budgetId} isClean={isClean} openBudget={openBudget} />}
+      {tab === "sync" && <SyncSettings cloud={cloud} budgetId={budgetId} isClean={isClean} openBudget={openBudget} manageBudgets={onManageBudgets} />}
 
       {tab === "general" && (
         <>

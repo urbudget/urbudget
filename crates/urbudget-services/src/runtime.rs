@@ -1397,6 +1397,7 @@ impl Runtime {
             }
             "sync_has_key" => value(cloud::sync::sync_has_key(&self.cloud).await?),
             "sync_key_info" => cloud::sync::sync_key_info(&self.cloud, &self.library).await,
+            "sync_devices" => cloud::v2::devices(&self.cloud, &self.library).await.map_err(cloud::pairing::told),
             // Without a passphrase these make a recovery code here and answer with it as `recoveryCode`.
             "sync_setup" => cloud::sync::sync_setup(&self.cloud, &self.library, optional(&p, "passphrase")?).await,
             // Whatever was scanned or typed: a device code, the recovery code or the passphrase.

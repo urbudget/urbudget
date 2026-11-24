@@ -46,6 +46,11 @@ enum SyncKey {
         status["sync"].flag("recoveryUnsaved")
     }
 
+    /// Sync was reset on another device since this one last synced, and it hasn't been added again.
+    static func resetElsewhere(_ status: JSON) -> Bool {
+        status["sync"].flag("resetElsewhere")
+    }
+
     /// The protocol the account syncs on: `sync_key_info`'s fresh answer where there is one,
     /// else what the last sync saved.
     static func protocolNumber(_ status: JSON, info: JSON? = nil) -> Int64 {
@@ -67,7 +72,15 @@ enum SyncKey {
     /// keeps looking past anything else, so a QR code that happens to be in view isn't tried
     /// as a passphrase.
     static func scannable(_ payload: String) -> Bool {
-        payload.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("URBUDGET-")
+        let text = payload.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.lowercased().hasPrefix("urbudget://") || text.hasPrefix("URBUDGET-")
+    }
+
+    /// Whether a scanned code is one a device waiting to be added shows, which a device that
+    /// syncs approves, as against one a device that syncs shows.
+    static func isRequest(_ payload: String) -> Bool {
+        let text = payload.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.lowercased().hasPrefix("urbudget://ask/") || text.hasPrefix("URBUDGET-ASK:")
     }
 
     /// A time the server wrote, with or without fractions of a second.
@@ -75,6 +88,237 @@ enum SyncKey {
         let parser = ISO8601DateFormatter()
         parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return parser.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
+    }
+}
+
+extension SyncKey {
+    /// Whether `date` is close enough to `now` to read "just now": under a minute ago, or
+    /// ahead of this device's clock.
+    static func isJustNow(_ date: Date, now: Date) -> Bool {
+        now.timeIntervalSince(date) < 60
+    }
+
+    /// How long ago `date` was, as the app's language says it: "5 minutes ago". Never "in 30
+    /// seconds": a time ahead of this device's clock reads as a second ago.
+    static func ago(_ date: Date, now: Date, locale: Locale = .app) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = locale
+        formatter.unitsStyle = .full
+        formatter.dateTimeStyle = .numeric
+        return formatter.localizedString(for: min(date, now.addingTimeInterval(-1)), relativeTo: now)
+    }
+}
+
+/// A device that syncs with the account, as `sync_devices` lists it (v2.rs `devices`):
+/// `{id, name|null, addedAt, lastSeenAt|null, current}`. The list only shows: a device keeps the
+/// key it was given until sync is reset.
+struct SyncDevice: Identifiable, Equatable {
+    let id: String
+    /// The name the device gave itself, or "" for one that registered before names were kept.
+    let name: String
+    let addedAt: Date?
+    let lastSeenAt: Date?
+    /// The device in hand.
+    let current: Bool
+
+    init?(_ row: JSON) {
+        id = row.text("id")
+        guard !id.isEmpty else { return nil }
+        name = row.text("name").trimmingCharacters(in: .whitespacesAndNewlines)
+        addedAt = SyncKey.date(row.text("addedAt"))
+        lastSeenAt = SyncKey.date(row.text("lastSeenAt"))
+        current = row.flag("current")
+    }
+
+    /// The rows of `sync_devices`' answer in the engine's order, the device in hand first.
+    static func list(_ answer: JSON) -> [SyncDevice] {
+        let devices = answer.rows("devices").compactMap(SyncDevice.init)
+        return devices.filter(\.current) + devices.filter { !$0.current }
+    }
+
+    /// What a device's row is called.
+    enum Title: Equatable {
+        case named(String)
+        /// The device in hand, which has no name yet: "This iPhone".
+        case thisDevice
+        /// Another device with no name yet: "A device added on 3 November".
+        case added(Date)
+        case unnamed
+    }
+
+    var title: Title {
+        if !name.isEmpty { return .named(name) }
+        if current { return .thisDevice }
+        if let addedAt { return .added(addedAt) }
+        return .unnamed
+    }
+
+    /// The line under a device's name.
+    enum Detail: Equatable {
+        /// "This iPhone", under the name of the device in hand.
+        case thisDevice
+        case syncedJustNow
+        /// "Last synced 5 minutes ago."
+        case lastSynced(Date)
+        /// Added, and not seen since.
+        case notYet
+        /// Nothing to add: the device in hand, already called "This iPhone".
+        case none
+    }
+
+    func detail(now: Date) -> Detail {
+        if current { return name.isEmpty ? .none : .thisDevice }
+        guard let lastSeenAt else { return .notYet }
+        return SyncKey.isJustNow(lastSeenAt, now: now) ? .syncedJustNow : .lastSynced(lastSeenAt)
+    }
+}
+
+/// Account & sync's one status line while sync is on: what the last sync (`cloud_status().sync.last`)
+/// left to say, the thing that needs the person first.
+enum SyncLine: Equatable {
+    case syncing
+    /// This many budgets wait for the person, each with its row under Budgets.
+    case needsYou(Int)
+    case offline
+    /// The last sync didn't finish: the engine's words for why, "" when it gave none.
+    case failed(String)
+    /// Changes made here haven't been sent yet.
+    case waiting
+    /// Nothing to do: when it last synced, nil when it hasn't yet.
+    case on(Date?)
+
+    static func line(syncing: Bool, pending: Bool, report: JSON?) -> SyncLine {
+        if syncing { return .syncing }
+        guard let report else { return .on(nil) }
+        let waiting = SyncBudgets.waitingForPerson(report)
+        if waiting > 0 { return .needsYou(waiting) }
+        switch report.text("state") {
+        case "offline": return .offline
+        case "waiting": return .waiting
+        case "ok":
+            let states = report.rows("budgets").map { $0.text("state") }
+            if pending || states.contains(where: { ["waiting", "queued"].contains($0) }) { return .waiting }
+            return .on(SyncKey.date(report.text("at")))
+        default: return .failed(report.text("message"))
+        }
+    }
+}
+
+/// Which budgets of the last sync Account & sync lists: only the ones that need something.
+/// The rest are counted in one line that leads to the budget library.
+enum SyncBudgets {
+    /// Simply syncing: counted, never listed.
+    static let syncing: Set<String> = ["synced", "uploaded", "downloaded", "merged", "waiting", "queued"]
+    /// Stopped until the person does something, as `SyncCoordinator.conflicts` counts them.
+    static let attention: Set<String> = ["conflict", "error", "update_app", "recovery", "subscription_required", "deletion_conflict"]
+    /// Said elsewhere on the screen (sync is locked, the account signed out) or in the budget
+    /// library (Trash, a budget not downloaded): neither listed nor counted.
+    static let quiet: Set<String> = ["locked", "signed_out", "paused", "trashed", "purged", "evicted", ""]
+
+    /// A row's one action.
+    enum Action: Equatable {
+        /// Review differences.
+        case review
+        /// A budget kept only on this device: add it to the account's sync.
+        case startSyncing
+        /// The old sync only: a budget in the account that isn't on this device.
+        case download
+        /// A kept copy is recovered in the budget library.
+        case library
+        case none
+    }
+
+    static func action(_ entry: JSON, protocolNumber: Int64) -> Action {
+        switch entry.text("state") {
+        case "conflict": return .review
+        case "local_only": return .startSyncing
+        case "recovery": return .library
+        case "cloud_only": return protocolNumber == 2 ? .none : .download
+        default: return .none
+        }
+    }
+
+    /// Whether a budget has a row: it waits for the person, there is something to do with it
+    /// here, or the engine has something to say about a state this app doesn't know.
+    static func listed(_ entry: JSON, protocolNumber: Int64) -> Bool {
+        let state = entry.text("state")
+        if syncing.contains(state) || quiet.contains(state) { return false }
+        if attention.contains(state) || action(entry, protocolNumber: protocolNumber) != .none { return true }
+        return state != "cloud_only" && !entry.text("message").isEmpty
+    }
+
+    static func needing(_ report: JSON?, protocolNumber: Int64) -> [JSON] {
+        (report?.rows("budgets") ?? []).filter { listed($0, protocolNumber: protocolNumber) }
+    }
+
+    static func syncingCount(_ report: JSON?) -> Int {
+        (report?.rows("budgets") ?? []).count { syncing.contains($0.text("state")) }
+    }
+
+    static func waitingForPerson(_ report: JSON?) -> Int {
+        (report?.rows("budgets") ?? []).count { attention.contains($0.text("state")) }
+    }
+
+    /// The old sync only: the budgets whose cloud copy can be removed, which is every one that has one.
+    static func removable(_ report: JSON?, protocolNumber: Int64) -> [JSON] {
+        guard protocolNumber != 2 else { return [] }
+        return (report?.rows("budgets") ?? []).filter { !["local_only", ""].contains($0.text("state")) && !$0.text("id").isEmpty }
+    }
+
+    /// A row's one sentence: the engine's own words where it has some.
+    enum Sentence: Equatable {
+        case message(String)
+        /// Changed on two devices.
+        case conflict
+        /// A copy kept after a reset.
+        case keptCopy
+        case deviceOnly
+        /// Nothing more than what the state is called.
+        case state(String)
+    }
+
+    static func sentence(_ entry: JSON) -> Sentence {
+        let message = entry.text("message")
+        if !message.isEmpty { return .message(message) }
+        switch entry.text("state") {
+        case "conflict": return .conflict
+        case "recovery": return .keptCopy
+        case "local_only": return .deviceOnly
+        case let state: return .state(state)
+        }
+    }
+}
+
+/// The Sync subscription as Account & sync places it, from the account overview (`/me`): beside
+/// the account while there is something to do or to know, and under More otherwise.
+enum SyncPlan {
+    static func active(_ overview: JSON?) -> Bool {
+        overview?["sync"]["active"].bool ?? false
+    }
+
+    /// The subscription can be bought: there is none, or sync is given by UrBudget (the App
+    /// Review account's), where the purchase can still be tried.
+    static func offered(_ overview: JSON?) -> Bool {
+        guard let overview, overview["sync"].isObject else { return false }
+        return !active(overview) || overview["subscription"].text("provider") == "comp"
+    }
+
+    /// The App Store couldn't take the payment.
+    static func unpaid(_ overview: JSON?) -> Bool {
+        overview?["subscription"].text("status") == "unpaid"
+    }
+
+    /// An active plan that won't renew: it has a day it ends and none it renews.
+    static func ending(_ overview: JSON?) -> Bool {
+        guard let plan = overview?["subscription"], active(overview) else { return false }
+        return SyncKey.date(plan.text("renewsAt")) == nil && SyncKey.date(plan.text("endsAt")) != nil
+    }
+
+    /// Whether the plan has its place beside the account: no plan, one that is ending, a payment
+    /// that failed. A plan in good standing takes no room there.
+    static func needsAttention(_ overview: JSON?) -> Bool {
+        guard let overview, overview["sync"].isObject else { return false }
+        return offered(overview) || unpaid(overview) || ending(overview)
     }
 }
 

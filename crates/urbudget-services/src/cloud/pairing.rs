@@ -51,7 +51,7 @@ pub(super) fn belongs_on_a_syncing_device() -> String {
 }
 
 /// What the server said, in the app's language, without the code it leads with.
-pub(super) fn told(error: String) -> String {
+pub fn told(error: String) -> String {
     if error.starts_with("OFFLINE:") {
         return offline();
     }
@@ -101,7 +101,7 @@ pub async fn offer(cloud: &Cloud, library: &Library) -> Result<Value, String> {
 pub async fn approve(cloud: &Cloud, library: &Library, text: &str) -> Result<(), String> {
     match codes::read(text)? {
         // Typed, a device code doesn't say who shows it: this screen is told it's a request.
-        Entry::Request(code) | Entry::Device(code) if !text.trim().starts_with(codes::OFFER) => {
+        Entry::Request(code) | Entry::Device(code) if !codes::scanned_offer(text) => {
             leave(cloud, library, &code).await.map(|_| ())
         }
         Entry::Device(_) => Err(t!("That code is for the device being added. Scan it there, where it asks to unlock sync.")),

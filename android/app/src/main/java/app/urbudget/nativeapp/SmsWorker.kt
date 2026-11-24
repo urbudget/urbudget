@@ -101,4 +101,6 @@ class SmsWorker(context: Context, params: WorkerParameters) : CoroutineWorker(co
 /** A page the app opens when it comes forward, asked for by a notification. */
 internal object PageRequests {
     val page = MutableStateFlow<String?>(null)
+    /** A sync code the phone's own camera opened the app with (`urbudget://…`), until Account & sync has acted on it. */
+    val syncLink = MutableStateFlow<String?>(null)
 }

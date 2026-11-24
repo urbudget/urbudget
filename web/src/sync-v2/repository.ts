@@ -237,6 +237,9 @@ function controlWrites(db: D1Database, m: Manifest, p: Params) {
         WHERE i.user_id=$user AND i.installation_id<>$id AND EXISTS(SELECT 1 FROM sync_staging_v2 s WHERE s.user_id=i.user_id AND s.installation_id=i.installation_id)
           AND ${readyClaim} AND ${appliedAccount}`, p),
       statement(db, `DELETE FROM sync_staging_v2 WHERE user_id=$user AND installation_id<>$id AND ${readyClaim} AND ${appliedAccount}`, p),
+      // The other devices hold the key this reset retires: they leave the account's list of
+      // devices until they sync again, with the new one.
+      statement(db, `UPDATE sync_installations_v2 SET cut_off=1 WHERE user_id=$user AND installation_id<>$id AND ${readyClaim} AND ${appliedAccount}`, p),
       // A device approval in flight carries the key this reset retires.
       statement(db, `DELETE FROM sync_pairings_v2 WHERE user_id=$user AND ${readyClaim} AND ${appliedAccount}`, p));
     }

@@ -21,6 +21,12 @@ pub async fn sync_has_key(cloud: State<'_, Cloud>) -> Result<bool, String> {
     urbudget_services::cloud::sync::sync_has_key(&cloud).await
 }
 
+/// The devices that sync with the signed-in account, this one first.
+#[tauri::command(async)]
+pub async fn sync_devices(cloud: State<'_, Cloud>, library: State<'_, Library>) -> Result<Value, String> {
+    urbudget_services::cloud::v2::devices(&cloud, &library).await.map_err(urbudget_services::cloud::pairing::told)
+}
+
 /// What the account's sync key is made from and whether it has one, asked fresh.
 #[tauri::command(async)]
 pub async fn sync_key_info(cloud: State<'_, Cloud>, library: State<'_, Library>) -> Result<Value, String> {

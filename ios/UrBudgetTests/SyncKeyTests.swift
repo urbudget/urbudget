@@ -137,8 +137,175 @@ final class SyncKeyTests: XCTestCase {
         XCTAssertNil(PairingOffer(["id": "82a4d067d9aa39431ee15f1626c663e9"], now: now))
     }
 
+    /// `sync_devices`' answer (v2.rs `devices`): what each row is called and what it says under that.
+    func testADeviceRowSaysWhichDeviceItIsAndWhenItLastSynced() throws {
+        let now = try XCTUnwrap(SyncKey.date("2026-11-24T10:00:00.000Z"))
+        let answer = try JSON.parse(#"""
+        {"devices":[
+          {"id":"b","name":"Ahmad's MacBook","addedAt":"2026-11-01T08:00:00.000Z","lastSeenAt":"2026-11-24T09:55:00.000Z","current":false},
+          {"id":"a","name":"iPhone","addedAt":"2026-10-01T08:00:00.000Z","lastSeenAt":"2026-11-24T09:59:50.000Z","current":true},
+          {"id":"c","name":null,"addedAt":"2026-11-03T08:00:00Z","lastSeenAt":null,"current":false},
+          {"id":"d","name":"  ","addedAt":null,"lastSeenAt":"2026-11-24T09:59:30.000Z","current":false},
+          {"name":"no id"}, "not a device"
+        ]}
+        """#)
+        let devices = SyncDevice.list(answer)
+        XCTAssertEqual(devices.map(\.id), ["a", "b", "c", "d"], "this device first, the engine's order after it")
+
+        XCTAssertEqual(devices[0].title, .named("iPhone"))
+        XCTAssertEqual(devices[0].detail(now: now), .thisDevice, "the device in hand says so, not when it synced")
+        XCTAssertEqual(devices[1].title, .named("Ahmad's MacBook"))
+        XCTAssertEqual(devices[1].detail(now: now), .lastSynced(try XCTUnwrap(SyncKey.date("2026-11-24T09:55:00.000Z"))))
+        // Registered before names were kept: called by the day it was added, and not seen since.
+        XCTAssertEqual(devices[2].title, .added(try XCTUnwrap(SyncKey.date("2026-11-03T08:00:00Z"))))
+        XCTAssertEqual(devices[2].detail(now: now), .notYet)
+        XCTAssertEqual(devices[3].title, .unnamed, "a blank name is no name")
+        XCTAssertEqual(devices[3].detail(now: now), .syncedJustNow)
+
+        // The device in hand with no name yet is "This iPhone" once, not twice.
+        let unnamed = try XCTUnwrap(SyncDevice(["id": "a", "name": .null, "current": true]))
+        XCTAssertEqual(unnamed.title, .thisDevice)
+        XCTAssertEqual(unnamed.detail(now: now), SyncDevice.Detail.none)
+
+        XCTAssertEqual(SyncDevice.list(.null), [])
+        XCTAssertEqual(SyncDevice.list(["devices": []]), [])
+        XCTAssertNil(SyncDevice(["name": "no id"]))
+    }
+
+    func testTimesReadAsHowLongAgo() throws {
+        let now = try XCTUnwrap(SyncKey.date("2026-11-24T10:00:00.000Z"))
+        let english = Locale(identifier: "en_US")
+        XCTAssertTrue(SyncKey.isJustNow(now.addingTimeInterval(-59), now: now))
+        XCTAssertFalse(SyncKey.isJustNow(now.addingTimeInterval(-60), now: now))
+        XCTAssertTrue(SyncKey.isJustNow(now.addingTimeInterval(30), now: now), "a clock that runs ahead")
+        XCTAssertEqual(SyncKey.ago(now.addingTimeInterval(-120), now: now, locale: english), "2 minutes ago")
+        XCTAssertEqual(SyncKey.ago(now.addingTimeInterval(-5 * 3600), now: now, locale: english), "5 hours ago")
+        // Never "in 30 seconds": a time ahead of this device's clock reads as now.
+        XCTAssertEqual(SyncKey.ago(now.addingTimeInterval(30), now: now, locale: english), "1 second ago")
+        XCTAssertFalse(SyncKey.ago(now.addingTimeInterval(-300), now: now, locale: Locale(identifier: "ar")).isEmpty)
+    }
+
+    /// The one status line while sync is on: what needs the person comes first.
+    func testTheStatusLineSaysWhatNeedsThePersonFirst() throws {
+        func report(_ state: String, _ budgets: String = "", message: String = "") throws -> JSON {
+            try JSON.parse(#"{"state":"\#(state)","message":"\#(message)","at":"2026-11-24T09:58:00.000Z","budgets":[\#(budgets)]}"#)
+        }
+        let at = try XCTUnwrap(SyncKey.date("2026-11-24T09:58:00.000Z"))
+        let synced = #"{"id":"1","name":"Home","state":"synced"}"#
+        let conflict = #"{"id":"2","name":"Trip","state":"conflict"}"#
+        let kept = #"{"id":"3","name":"Old","state":"recovery"}"#
+        let deviceOnly = #"{"id":"4","name":"Private","state":"local_only"}"#
+
+        XCTAssertEqual(SyncLine.line(syncing: false, pending: false, report: nil), .on(nil), "on, and not synced yet")
+        XCTAssertEqual(SyncLine.line(syncing: false, pending: false, report: try report("ok", synced)), .on(at))
+        XCTAssertEqual(SyncLine.line(syncing: true, pending: false, report: try report("ok", conflict)), .syncing)
+        XCTAssertEqual(SyncLine.line(syncing: false, pending: false, report: try report("ok", [synced, conflict, kept].joined(separator: ","))), .needsYou(2))
+        // A budget kept only on this device is a choice, not something sync waits for.
+        XCTAssertEqual(SyncLine.line(syncing: false, pending: false, report: try report("ok", [synced, deviceOnly].joined(separator: ","))), .on(at))
+        XCTAssertEqual(SyncLine.line(syncing: false, pending: false, report: try report("offline", synced)), .offline)
+        XCTAssertEqual(SyncLine.line(syncing: false, pending: false, report: try report("offline", conflict)), .needsYou(1))
+        XCTAssertEqual(SyncLine.line(syncing: false, pending: true, report: try report("ok", synced)), .waiting)
+        XCTAssertEqual(SyncLine.line(syncing: false, pending: false, report: try report("ok", #"{"id":"1","state":"queued"}"#)), .waiting)
+        XCTAssertEqual(SyncLine.line(syncing: false, pending: false, report: try report("waiting")), .waiting)
+        XCTAssertEqual(SyncLine.line(syncing: false, pending: false, report: try report("error", synced, message: "The server didn't answer.")), .failed("The server didn't answer."))
+        XCTAssertEqual(SyncLine.line(syncing: false, pending: false, report: try report("error")), .failed(""))
+    }
+
+    /// Budgets lists only what needs something; the rest are counted.
+    func testOnlyBudgetsThatNeedSomethingAreListed() throws {
+        let report = try JSON.parse(#"""
+        {"state":"ok","budgets":[
+          {"id":"1","name":"Home","state":"synced"},
+          {"id":"2","name":"Trip","state":"conflict","message":"Both devices changed March."},
+          {"id":"3","name":"Old","state":"recovery"},
+          {"id":"4","name":"Private","state":"local_only"},
+          {"id":"5","name":"Shop","state":"uploaded"},
+          {"id":"6","name":"Broken","state":"error","message":"Couldn't read the cloud copy."},
+          {"id":"7","name":"Elsewhere","state":"cloud_only"},
+          {"id":"8","name":"Gone","state":"trashed"},
+          {"id":"9","name":"Later","state":"something_new","message":"Said by a newer engine."},
+          {"id":"10","name":"Silent","state":"something_new"},
+          {"id":"11","name":"Queued","state":"queued"}
+        ]}
+        """#)
+        XCTAssertEqual(SyncBudgets.needing(report, protocolNumber: 2).map { $0.text("id") }, ["2", "3", "4", "6", "9"])
+        // The old sync offers to download a budget that isn't on this device.
+        XCTAssertEqual(SyncBudgets.needing(report, protocolNumber: 1).map { $0.text("id") }, ["2", "3", "4", "6", "7", "9"])
+        XCTAssertEqual(SyncBudgets.syncingCount(report), 3)
+        XCTAssertEqual(SyncBudgets.waitingForPerson(report), 3)
+        XCTAssertEqual(SyncBudgets.needing(nil, protocolNumber: 2), [])
+        XCTAssertEqual(SyncBudgets.syncingCount(nil), 0)
+
+        let rows = Dictionary(uniqueKeysWithValues: report.rows("budgets").map { ($0.text("id"), $0) })
+        func row(_ id: String) throws -> JSON { try XCTUnwrap(rows[id]) }
+        // One action a row.
+        XCTAssertEqual(SyncBudgets.action(try row("2"), protocolNumber: 2), .review)
+        XCTAssertEqual(SyncBudgets.action(try row("3"), protocolNumber: 2), .library)
+        XCTAssertEqual(SyncBudgets.action(try row("4"), protocolNumber: 2), .startSyncing)
+        XCTAssertEqual(SyncBudgets.action(try row("4"), protocolNumber: 1), .startSyncing)
+        XCTAssertEqual(SyncBudgets.action(try row("6"), protocolNumber: 2), SyncBudgets.Action.none)
+        XCTAssertEqual(SyncBudgets.action(try row("7"), protocolNumber: 1), .download)
+        XCTAssertEqual(SyncBudgets.action(try row("7"), protocolNumber: 2), SyncBudgets.Action.none)
+        // One sentence: the engine's words where it has some.
+        XCTAssertEqual(SyncBudgets.sentence(try row("2")), .message("Both devices changed March."))
+        XCTAssertEqual(SyncBudgets.sentence(["state": "conflict"]), .conflict)
+        XCTAssertEqual(SyncBudgets.sentence(try row("3")), .keptCopy)
+        XCTAssertEqual(SyncBudgets.sentence(try row("4")), .deviceOnly)
+        XCTAssertEqual(SyncBudgets.sentence(["state": "update_app"]), .state("update_app"))
+        // A cloud copy is removed by hand on the old sync only, from any budget that has one.
+        XCTAssertEqual(SyncBudgets.removable(report, protocolNumber: 1).map { $0.text("id") }, ["1", "2", "3", "5", "6", "7", "8", "9", "10", "11"])
+        XCTAssertEqual(SyncBudgets.removable(report, protocolNumber: 2), [])
+    }
+
+    /// The plan sits beside the account only while there is something to do or to know.
+    func testThePlanShowsOnlyWhenItNeedsSomething() throws {
+        func overview(_ sync: String, _ subscription: String) throws -> JSON {
+            try JSON.parse(#"{"sync":\#(sync),"subscription":\#(subscription)}"#)
+        }
+        let renewing = try overview(#"{"active":true}"#, #"{"provider":"apple","status":"active","renewsAt":"2026-12-24T10:00:00.000Z"}"#)
+        XCTAssertFalse(SyncPlan.needsAttention(renewing), "a plan in good standing takes no room")
+        XCTAssertFalse(SyncPlan.offered(renewing))
+        let elsewhere = try overview(#"{"active":true}"#, #"{"provider":"stripe","status":"active","renewsAt":"2026-12-24T10:00:00.000Z"}"#)
+        XCTAssertFalse(SyncPlan.needsAttention(elsewhere))
+
+        let none = try overview(#"{"active":false}"#, "null")
+        XCTAssertTrue(SyncPlan.needsAttention(none))
+        XCTAssertTrue(SyncPlan.offered(none))
+        let ending = try overview(#"{"active":true}"#, #"{"provider":"apple","status":"active","renewsAt":null,"endsAt":"2026-12-24T10:00:00.000Z"}"#)
+        XCTAssertTrue(SyncPlan.ending(ending))
+        XCTAssertTrue(SyncPlan.needsAttention(ending))
+        XCTAssertFalse(SyncPlan.offered(ending), "still paid for: nothing to buy yet")
+        let ended = try overview(#"{"active":false}"#, #"{"provider":"apple","status":"expired","endsAt":"2026-11-01T10:00:00.000Z"}"#)
+        XCTAssertFalse(SyncPlan.ending(ended))
+        XCTAssertTrue(SyncPlan.offered(ended))
+        let unpaid = try overview(#"{"active":true}"#, #"{"provider":"apple","status":"unpaid","renewsAt":"2026-11-20T10:00:00.000Z"}"#)
+        XCTAssertTrue(SyncPlan.unpaid(unpaid))
+        XCTAssertTrue(SyncPlan.needsAttention(unpaid))
+        // Sync given by UrBudget (the App Review account's) can still be bought.
+        let given = try overview(#"{"active":true}"#, #"{"provider":"comp","status":"active"}"#)
+        XCTAssertTrue(SyncPlan.offered(given))
+        XCTAssertTrue(SyncPlan.needsAttention(given))
+        // Nothing is said while the overview loads, or when it has no word on sync.
+        XCTAssertFalse(SyncPlan.needsAttention(nil))
+        XCTAssertFalse(SyncPlan.offered(nil))
+        XCTAssertFalse(SyncPlan.needsAttention(["subscription": .null]))
+    }
+
+    /// The real engine, signed out: there is no account whose devices to list.
+    func testTheEngineSignedOutListsNoDevices() async throws {
+        _ = try await TestLibrary.repository()
+        XCTAssertThrowsError(try NativeCore.service("sync_devices")) { error in
+            XCTAssertTrue(BudgetStore.readable(error).contains("Sign in"), BudgetStore.readable(error))
+        }
+    }
+
     /// The camera passes over QR codes that aren't UrBudget's.
     func testOnlyUrBudgetsCodesAreScanned() {
+        XCTAssertTrue(SyncKey.scannable("urbudget://pair/1/0123456789ABCDEFGHJKMNPQ"))
+        XCTAssertTrue(SyncKey.scannable("URBUDGET://ASK/1/0123456789ABCDEFGHJKMNPQ"), "as a phone may hand a link on")
+        XCTAssertTrue(SyncKey.isRequest("urbudget://ask/1/0123456789ABCDEFGHJKMNPQ"))
+        XCTAssertTrue(SyncKey.isRequest("URBUDGET-ASK:1:0123456789ABCDEFGHJKMNPQ"))
+        XCTAssertFalse(SyncKey.isRequest("urbudget://pair/1/0123456789ABCDEFGHJKMNPQ"))
         XCTAssertTrue(SyncKey.scannable("URBUDGET-PAIR:1:0123456789ABCDEFGHJKMNPQ"))
         XCTAssertTrue(SyncKey.scannable("URBUDGET-ASK:1:0123456789ABCDEFGHJKMNPQ"))
         XCTAssertTrue(SyncKey.scannable(" URBUDGET-NEXT:2:whatever a later version shows\n"), "the engine says to update")

@@ -48,4 +48,27 @@ import Foundation
         }
     }
 }
+
+/// Debug builds only. The development server this copy was last launched against (URBUDGET_API
+/// in the launch environment) is remembered, so reopening the app from the Home Screen, which
+/// passes no environment, keeps it there instead of sending a test account to urbudget.app.
+/// Launching once with URBUDGET_API set to nothing forgets it.
+enum DebugServer {
+    private static let key = "debugServer"
+
+    /// Before the engine is first asked for anything: it reads URBUDGET_API each time.
+    static func restore() {
+        let defaults = UserDefaults.standard
+        if let given = ProcessInfo.processInfo.environment["URBUDGET_API"] {
+            if given.isEmpty {
+                defaults.removeObject(forKey: key)
+                unsetenv("URBUDGET_API")
+            } else {
+                defaults.set(given, forKey: key)
+            }
+        } else if let kept = defaults.string(forKey: key) {
+            setenv("URBUDGET_API", kept, 1)
+        }
+    }
+}
 #endif
