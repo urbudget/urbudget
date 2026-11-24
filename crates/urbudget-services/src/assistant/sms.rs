@@ -237,7 +237,7 @@ What you get
 What to return
 - Call submit_sms_analysis once.
 - Read texts: put each text about money in items, and every other text's number in skipped under its reason. Every read number appears exactly once: in one item or in skipped.
-- Review texts: check each reading against its text and these rules. Say nothing about a correct reading. For a wrong one, add a correction naming the text: fields holding only the values that change (null for the rest), or disposition "unclear" with a note, or skip with its reason. A text the phone skipped that is about money gets its disposition, a quote, and fields for the whole transaction. The payee and category follow these rules too: a reading with the bank's spelling of one of the user's payees, without the category they give it (for a payee with several categories, the one this amount fits), or without the payee its code text names, is wrong in those fields. A transfer reading whose other account the app can't find (no otherRef, or digits no account's name holds) gets otherAccount when you can tell it. Review texts never go in items or skipped.
+- Review texts: check each reading against its text and these rules. Say nothing about a correct reading. For a wrong one, add a correction naming the text: fields holding only the values that change (null for the rest), or disposition "unclear" with a note, or skip with its reason. A text the phone skipped that is about money gets its disposition, a quote, and fields for the whole transaction. The payee and category follow these rules too: a reading with the bank's spelling of one of the user's payees, without the category they give it (for a payee with several categories, the one this amount fits), or without the payee its code text names, is wrong in those fields. A transfer reading whose other account the app can't find (no otherRef, or digits no account's name holds) gets otherAccount when you can tell it. A reading whose money is two things at once (see parts) gets parts, with fields holding kind income or expense when the phone read it as a transfer; otherwise parts is null. Review texts never go in items or skipped.
 - Templates: for each format among the read texts that the known templates don't cover, write one (see Templates). When your corrections show a template is wrong for its format, not just for one odd text, write the corrected template with replaces set to its id.
 - Put texts in one item only when they report the same event: both sides of one transfer, or the same alert sent twice. Separate purchases are separate items, even with equal amounts.
 - The tool checks what you send. If it returns an error, fix what it names (an error about one item names its texts' numbers) and call it again with the whole answer.
@@ -259,6 +259,7 @@ items
 - transaction: null for unclear.
 - bankName: the payee's name exactly as the text writes it, copied from one of the item's texts ("SQ *BLUE BOTTLE", "PANDA RET", "swiggy@icici"), however you write the payee. Null when the text names nobody, and for unclear. The app remembers the user's name for it.
 - unsure: the fields the user should check, from date, amount, payee, kind and category. Empty when you're confident.
+- parts: null, unless one text's money is two things at once that belong in different places: a deposit paid back with its profit, a loan instalment with its interest, a transfer with its fee, a salary with a bonus. Then the transaction is for the whole amount the text gives (kind income for money in, expense for money out, never transfer), and parts are two or more pieces that add up to it exactly, each {amount, otherAccount, categoryId, memo}. amount is signed like the whole. otherAccount is the exact name in accounts of the user's account that piece moved to or from, for a piece that is a transfer (the deposit's own account, for the money paid back), else null. categoryId is for a piece that is spending or a fee, else null: money in with neither is income. memo is a word or two ("Principal", "Profit", "Interest", "Fee") or "". Take each piece's amount from the text when it gives it, from the user's note, or, for money coming back from an account of the user's, from transfers: what was last moved into that account is what comes back, and the rest is the profit. Add "amount" to unsure when a piece's amount is worked out and not written in the text. Without a figure for the pieces, give no parts and add "kind" to unsure.
 
 skipped: texts where no money moved, by reason
 - code: a one-time password or verification code, even one for a purchase.
@@ -297,6 +298,7 @@ Examples, each for a budget in the text's own currency unless it says otherwise;
 - In a USD budget, [7, "BANK-US", "2026-10-31 09:12", "Card ending 9876: purchase of EUR 42.00 at CAFE LUMIERE PARIS on 10/31/26"] is an item: transaction, quote "EUR 42.00", expense, 2026-10-31, amount null, currency "EUR", writtenAmount "42.00", payee "Cafe Lumiere", accountRef "9876".
 - [8, "BANK-US", "2026-10-30 10:00", "Payment of $2,000.00 from checking ***3301 to your credit card ending 4512 posted 10/30/26"] is an item: transaction, quote "$2,000.00", transfer, amount "-2000.00", accountRef "***3301", otherRef "4512", otherAccount null: the app finds both by their digits.
 - With transfers holding ["Current 3301", "Visa 4512", 8, "2026-09-30", "1850.00"], [9, "BANK-SA", "2026-10-31 08:42", "Card Payment VISA Card:4512 Amount:SAR 3,232.33 On:31/10/26 08:42"] is an item: transaction, quote "SAR 3,232.33", transfer, amount "3232.33" into the card, accountRef "4512", otherRef null, otherAccount "Current 3301".
+- With transfers holding ["Current 3301", "Term deposit", 1, "2026-05-24", "500000.00"], [15, "BANK-SA", "2026-11-24 09:01", "Your deposit has matured. SAR 501,900.00 was credited to account ***3301"] is an item: transaction, quote "SAR 501,900.00", income, amount "501900.00", payee "Term deposit", accountRef "***3301", unsure ["amount"], parts [{"amount": "500000.00", "otherAccount": "Term deposit", "categoryId": null, "memo": "Principal"}, {"amount": "1900.00", "otherAccount": null, "categoryId": null, "memo": "Profit"}]: the 500,000.00 moved into the deposit comes back as a transfer, and the 1,900.00 beyond it is income, not a transfer.
 - [10, "BANK-UK", "2026-11-01 14:00", "A pre-authorisation of £150.00 was placed by HILTON LONDON on card 4512"] is an item: pending, quote "£150.00", expense, amount "-150.00", payee "Hilton", accountRef "4512".
 - Text 11, "482193 is your one-time PIN for a purchase of $59.99 at BESTBUY. Never share it.", and text 12, "رمز التحقق 4821 لعملية شراء من AMAZON بمبلغ 120 ريال", are skipped as code; text 13, "Transaction of €230.00 at ELECTRO WORLD declined", as declined; text 14, "تمت إضافة 350 ميل إلى رصيدك", as rewards: "skipped": {"code": [11, 12], "security": [], "balance": [], "declined": [13], "rewards": [14], "marketing": [], "other": []}."#;
 
@@ -324,11 +326,14 @@ fn schema() -> Value {
     );
     let numbers = json!({"type":"array","items":{"type":"integer"}});
     let unsure = json!({"type":"array","items":{"type":"string","enum":["date","amount","payee","kind","category"]}});
+    // One text that is money of two kinds: its pieces, or null.
+    let part = object(json!({"amount":string,"otherAccount":optional,"categoryId":optional,"memo":string}), vec!["amount", "otherAccount", "categoryId", "memo"]);
+    let parts = json!({"anyOf":[{"type":"array","items":part},{"type":"null"}]});
     // Only money is written out; a text where none moved is a number under its reason.
     let item = object(
         json!({"texts":numbers,"disposition":{"type":"string","enum":["transaction","pending","unclear"]},"note":string,"quote":string,
-        "transaction":{"anyOf":[transaction,{"type":"null"}]},"bankName":optional,"unsure":unsure}),
-        vec!["texts", "disposition", "note", "quote", "transaction", "bankName", "unsure"],
+        "transaction":{"anyOf":[transaction,{"type":"null"}]},"bankName":optional,"unsure":unsure,"parts":parts}),
+        vec!["texts", "disposition", "note", "quote", "transaction", "bankName", "unsure", "parts"],
     );
     let skipped = object(
         Value::Object(sms_import::SKIPS.iter().map(|s| (s.to_string(), numbers.clone())).collect()),
@@ -341,8 +346,8 @@ fn schema() -> Value {
     );
     let correction = object(
         json!({"text":{"type":"integer"},"fields":{"anyOf":[fields,{"type":"null"}]},"disposition":nullable(&["transaction","pending","unclear"]),
-            "skip":nullable(&sms_import::SKIPS),"note":optional,"quote":optional,"unsure":{"anyOf":[unsure,{"type":"null"}]}}),
-        vec!["text", "fields", "disposition", "skip", "note", "quote", "unsure"],
+            "skip":nullable(&sms_import::SKIPS),"note":optional,"quote":optional,"unsure":{"anyOf":[unsure,{"type":"null"}]},"parts":parts}),
+        vec!["text", "fields", "disposition", "skip", "note", "quote", "unsure", "parts"],
     );
     let outcome = object(
         json!({"disposition":nullable(&["transaction","pending"]),"kind":nullable(&kinds),"sign":nullable(&["-","+"]),
@@ -387,6 +392,41 @@ struct Found {
     #[serde(default, rename = "bankName")]
     bank_name: Option<String>,
     unsure: Vec<String>,
+    #[serde(default)]
+    parts: Option<Vec<Part>>,
+}
+/// One piece of a text that is money of two kinds, as the model gives it: a transfer with one of
+/// the user's accounts (by its name), spending in a category, or income.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Part {
+    amount: String,
+    #[serde(default, rename = "otherAccount")]
+    other_account: Option<String>,
+    #[serde(default, rename = "categoryId")]
+    category_id: Option<String>,
+    #[serde(default)]
+    memo: String,
+}
+/// The model's parts as a transaction's lines. A transfer piece keeps its account's name where
+/// the id goes until `checked`, which has the budget, finds the account.
+fn lines(n: usize, kind: &str, parts: Vec<Part>) -> Result<Vec<sms_import::SplitLine>, String> {
+    if kind == "transfer" {
+        return Err(format!("Text {n}: with parts, kind is income or expense for the whole amount, and the transfer is one of the parts."));
+    }
+    if !(2..=20).contains(&parts.len()) {
+        return Err(format!("Text {n}: give 2 to 20 parts that add up to the amount, or null."));
+    }
+    let clean = |text: Option<String>| text.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty());
+    parts.into_iter().map(|p| {
+        let (other, category) = (clean(p.other_account), clean(p.category_id));
+        if other.is_some() && category.is_some() {
+            return Err(format!("Text {n}: a part is a transfer (otherAccount) or has a category, not both."));
+        }
+        // Money in that is neither a transfer nor in a category is income: Ready to Assign, said so.
+        let unassigned = other.is_none() && category.is_none() && !p.amount.trim_start().starts_with('-');
+        Ok(sms_import::SplitLine { amount: p.amount, category_id: category, memo: p.memo, unassigned, transfer_account_id: other })
+    }).collect()
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -404,6 +444,8 @@ struct Correction {
     quote: Option<String>,
     #[serde(default)]
     unsure: Option<Vec<String>>,
+    #[serde(default)]
+    parts: Option<Vec<Part>>,
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -548,9 +590,15 @@ fn expand(messages: &[Message], value: Value, review: &[(usize, sms_import::Item
             return Err("Every item names at least one text.".into());
         }
         let at = found.texts.iter().map(|&t| count(t)).collect::<Result<Vec<_>, _>>()?;
-        // Splitting money between categories is the user's, in the review.
+        // Splitting a purchase between categories is the user's, in the review; money of two
+        // kinds comes as parts.
         if found.transaction.as_ref().is_some_and(|t| !t.splits.is_empty()) {
-            return Err(format!("Leave out splits for text {}: give one categoryId or none.", found.texts[0]));
+            return Err(format!("Leave out splits for text {}: give one categoryId or none, or parts.", found.texts[0]));
+        }
+        let mut found = found;
+        if let (Some(parts), Some(t)) = (found.parts.take().filter(|p| !p.is_empty()), found.transaction.as_mut()) {
+            t.splits = lines(found.texts[0], &t.kind, parts)?;
+            t.category_id = None;
         }
         let evidence = if found.quote.trim().is_empty() {
             vec![]
@@ -715,6 +763,15 @@ fn correct(m: &Message, read: &sms_import::Item, c: Correction) -> Result<(sms_i
         // A correction can't clear a field, and a transfer has no category: one read as a purchase
         // of a payee the user categorizes loses it here.
         if t.kind == "transfer" && t.category_id.take().is_some() && !changed.iter().any(|f| f == "categoryId") { changed.push("categoryId".into()); }
+    }
+    // Money of two kinds: the whole amount stays the text's, in the model's parts. What a
+    // transfer reading held of its other account goes with them.
+    if let (Some(parts), Some(t)) = (c.parts.filter(|p| !p.is_empty()), item.transaction.as_mut()) {
+        t.splits = lines(n, &t.kind, parts)?;
+        t.category_id = None;
+        t.other_account = None;
+        t.other_ref = None;
+        changed.push("parts".into());
     }
     if let Some(quote) = c.quote.filter(|q| !q.trim().is_empty()) {
         if !m.body.contains(&quote) {
@@ -1008,6 +1065,13 @@ fn checked(b: &Budget, messages: &[Message], lanes: &Lanes, value: Value) -> Res
         if t.other_account.as_ref().is_some_and(|name| !b.accounts.iter().any(|a| !a.archived && a.name == *name)) {
             return Err("Write otherAccount exactly as an account's name in accounts, or null.".into());
         }
+        // A part that is a transfer came with its account's name (`lines`): here it gets the id.
+        for line in t.splits.iter_mut() {
+            let Some(name) = line.transfer_account_id.take() else { continue };
+            let account = b.accounts.iter().find(|a| !a.archived && a.name == name)
+                .ok_or("Write a part's otherAccount exactly as an account's name in accounts, or null.")?;
+            line.transfer_account_id = Some(account.id.clone());
+        }
     }
     {
         // An error about one item names its texts, so the model fixes that one rather than look
@@ -1177,7 +1241,7 @@ fn learn(b: &Budget, input: &Input, lanes: &Lanes, expanded: Expanded) -> Read {
         // A payee or category the model changed is the user's name for the bank's, learned below, a
         // transfer's other account is the user's, and a memo is the model's words for one text: the
         // format read the text right.
-        let fields: Vec<&String> = expanded.corrected.get(i).into_iter().flatten().filter(|f| !["payee", "categoryId", "otherAccount", "memo", "balance", "available"].contains(&f.as_str())).collect();
+        let fields: Vec<&String> = expanded.corrected.get(i).into_iter().flatten().filter(|f| !["payee", "categoryId", "otherAccount", "memo", "balance", "available", "parts"].contains(&f.as_str())).collect();
         if fields.is_empty() {
             stat.confirmed += 1;
         }
@@ -1810,6 +1874,36 @@ mod tests {
         odd["accountId"] = json!("main");
         assert!(checked(&b, &texts, &review, correction(json!({"text":1,"fields":odd,"disposition":null,"skip":null,"note":null,"quote":null,"unsure":null}))).is_err());
     }
+    #[test]
+    fn a_deposit_paid_back_with_its_profit_is_read_in_parts_a_transfer_and_income() {
+        let mut b = sar_budget();
+        b.accounts.push(serde_json::from_value(json!({"id":"deposit","name":"Term deposit","kind":"tracking","openingBalance":50000000,"archived":false})).unwrap());
+        let messages = vec![message("sms:cd", "Your deposit has matured. SAR 501,900.00 was credited to account ***3301")];
+        let lanes = Lanes { read: vec![0], ..Lanes::default() };
+        let item = |parts: Value, kind: &str| json!({"items":[{"texts":[1],"disposition":"transaction","note":"Deposit paid back","quote":"SAR 501,900.00","bankName":null,"unsure":["amount"],"parts":parts,
+            "transaction":{"date":"2026-11-24","amount":"501900.00","currency":"SAR","writtenAmount":"501900.00","payee":"Term deposit","memo":"","kind":kind,
+                "accountRef":"***3301","otherRef":null,"otherAccount":null,"categoryId":null,"balance":null,"available":null}}],
+            "skipped":skipped(&[]),"corrections":[],"templates":[]});
+        let parts = json!([{"amount":"500000.00","otherAccount":"Term deposit","categoryId":null,"memo":"Principal"},{"amount":"1900.00","otherAccount":null,"categoryId":null,"memo":"Profit"}]);
+        let read = checked(&b, &messages, &lanes, item(parts.clone(), "income")).unwrap();
+        let t = read.analysis.items[0].transaction.as_ref().unwrap();
+        // One transaction for the text's whole amount; the money that came back is a transfer from
+        // the deposit's account, found by its name, and the rest is income with no category.
+        assert_eq!((t.kind.as_str(), t.amount.as_deref(), t.transfer_account_id.as_deref(), t.category_id.as_deref()), ("income", Some("501900.00"), None, None));
+        assert_eq!(t.splits.iter().map(|l| (l.amount.as_str(), l.transfer_account_id.as_deref(), l.memo.as_str())).collect::<Vec<_>>(),
+            vec![("500000.00", Some("deposit"), "Principal"), ("1900.00", None, "Profit")]);
+        // Without parts it reads as before: one amount, nothing split.
+        assert!(checked(&b, &messages, &lanes, item(Value::Null, "income")).unwrap().analysis.items[0].transaction.as_ref().unwrap().splits.is_empty());
+        // What can't be: a transfer in parts, parts that don't add up, an account that isn't the user's, one part.
+        let short = json!([{"amount":"500000.00","otherAccount":"Term deposit","categoryId":null,"memo":""},{"amount":"1000.00","otherAccount":null,"categoryId":null,"memo":""}]);
+        let unknown = json!([{"amount":"500000.00","otherAccount":"Somewhere","categoryId":null,"memo":""},{"amount":"1900.00","otherAccount":null,"categoryId":null,"memo":""}]);
+        let one = json!([{"amount":"501900.00","otherAccount":"Term deposit","categoryId":null,"memo":""}]);
+        assert!(checked(&b, &messages, &lanes, item(parts, "transfer")).unwrap_err().contains("kind is income or expense"));
+        assert!(checked(&b, &messages, &lanes, item(short, "income")).is_err());
+        assert!(checked(&b, &messages, &lanes, item(unknown, "income")).unwrap_err().contains("otherAccount"));
+        assert!(checked(&b, &messages, &lanes, item(one, "income")).unwrap_err().contains("2 to 20 parts"));
+    }
+
     #[test]
     fn junk_the_budget_trusts_never_reaches_the_model_and_nothing_to_send_is_no_request() {
         let b = sar_budget();

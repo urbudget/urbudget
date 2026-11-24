@@ -38,6 +38,16 @@ this section is right.
 - **Wording:** `sms_send_notice` and `sms_disclosure` (English and Arabic), the website's privacy
   page (and its in-app copy), and the SMS declaration in `docs/play-listing`.
 
+- **Parts, and changing the review** (25 November 2026): a reading's split line can be a
+  transfer (core `sms_import::SplitLine.transfer_account_id`), so one text can be a deposit paid
+  back (a transfer from the deposit's account) with its profit (income). The reader gives
+  `parts` on an item or a correction (`assistant/sms.rs`), naming the other account as
+  `otherAccount`. In chat, `get_bank_texts` with `review: true` lists the open review's rows
+  (`bankTextsReviewRows`), `propose_bank_texts` has `change` for rows of the open review
+  (`BankTextChange`, `bankTextsChange`; applying writes the draft and opens Bank messages) and
+  `enter` takes `parts`. The review shows a transfer part as a chip. Unit-tested; not tried on a
+  device or with a real model.
+
 Where it differs from the proposal:
 
 - `available` is only a card's credit left. A bank account's available balance stays in

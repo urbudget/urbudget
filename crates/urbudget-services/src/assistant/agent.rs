@@ -391,7 +391,7 @@ mod tests {
     }
 
     #[test]
-    fn a_question_is_answered_by_the_next_message_and_only_what_was_attached_can_be_deleted() {
+    fn a_question_is_answered_by_the_next_message_and_a_deletion_is_a_card_for_a_transaction_that_is_there() {
         let directory = tempfile::tempdir().unwrap();
         let runtime = scripted(directory.path(), "script-ask");
         // The sample budget with one purchase in it.
@@ -411,14 +411,17 @@ mod tests {
         say(&runtime, Some(&id), "Card", screen());
         assert_eq!((cards(&id)[0]["status"].as_str(), cards(&id)[0]["actions"].clone()), (Some("applied"), json!([])));
 
-        // A deletion is refused for a transaction that wasn't attached, and proposed for one that was.
-        let delete = || vec![script::call("c2", "propose_transaction_deletes", json!({ "ids": ["tx"] })), script::text("Done.")];
-        script::play("script-ask", delete());
+        // A deletion is refused for a transaction that isn't there, and is a card to confirm for
+        // one the assistant found, attached to the message or not.
+        script::play("script-ask", vec![script::call("c2", "propose_transaction_deletes", json!({ "ids": ["tx_gone"] })), script::text("Done.")]);
         say(&runtime, Some(&id), "Delete that purchase", screen());
-        assert!(items(&runtime, &id).iter().any(|i| matches!(i, Item::Result { output, failed: true, .. } if output.contains("isn't one of the transactions the user attached"))));
-        script::play("script-ask", delete());
-        say(&runtime, Some(&id), "Delete this one", prompt::Screen { selected: vec!["tx".into()], ..screen() });
+        assert!(items(&runtime, &id).iter().any(|i| matches!(i, Item::Result { output, failed: true, .. } if output.contains("No transaction has the id tx_gone"))));
+        script::play("script-ask", vec![script::call("c3", "propose_transaction_deletes", json!({ "ids": ["tx"] })), script::text("Done.")]);
+        say(&runtime, Some(&id), "Delete the bakery one", screen());
         let card = cards(&id).pop().unwrap();
+        // Nothing has left the budget yet: the card waits for the user.
+        assert_eq!((card["status"].as_str(), card["actions"][0].as_str()), (Some("proposed"), Some("apply")));
+        assert_eq!(runtime.load().unwrap()["budget"]["transactions"].as_array().map(Vec::len), Some(1));
         assert_eq!((card["kind"].as_str(), card["card"]["rows"][0]["amount"].as_i64()), (Some("delete"), Some(-5000)));
         let applied = crate::block_on(runtime.dispatch("assistant_apply_commit", json!({ "threadId": id, "proposalId": card["id"] }))).unwrap();
         assert_eq!(applied["snapshot"]["budget"]["transactions"].as_array().map(Vec::len), Some(0));

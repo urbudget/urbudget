@@ -2859,6 +2859,8 @@ export const ar: Catalog = {
   "Restore (card)": "استعادة",
   "Remove": "إزالة",
   "Show in the budget": "عرض في الميزانية",
+  "Show in the app": "عرض في التطبيق",
+  "Showing: {title}": "يُعرض الآن: {title}",
   "Replaced by a newer version": "استُبدل بنسخة أحدث",
   "Removed": "أُزيل",
   "Asked: {question}": "سؤال: {question}",

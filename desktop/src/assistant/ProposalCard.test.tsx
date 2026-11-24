@@ -682,6 +682,41 @@ it("draws figures with a bar for each row's share of the largest, and the total 
   expect(screen.getByRole("menuitem", { name: "Remove" })).toBeTruthy();
 });
 
+it("draws a pointer to a place in the app with a button that goes there, and a change to accounts as a card it knows", () => {
+  const pointer = draft({
+    kind: "show",
+    made: true,
+    title: "Groceries in November",
+    actions: ["show", "remove"],
+    card: { kicker: "In the app", rows: [], stats: [], more: 0, note: "November 2026 · Groceries", highlight: { month: "2026-11", categories: ["groceries"], transactions: [], page: "budget" } },
+  });
+  const on = show(pointer);
+  expect(screen.getByText("November 2026 · Groceries")).toBeTruthy();
+  expect(screen.queryByText("Update UrBudget to use this card.")).toBeNull();
+  // Going there is the card's main button.
+  expect(button("Show in the app").className).toContain("primary");
+  fireEvent.click(button("Show in the app"));
+  expect(on.show).toHaveBeenCalledTimes(1);
+  cleanup();
+  const accounts = draft({
+    kind: "accounts",
+    title: "Add the account Travel card",
+    actions: ["apply", "askChanges", "discard", "show"],
+    card: {
+      kicker: "Proposal · Accounts",
+      rows: [{ label: "New account: Travel card", detail: "credit card · limit 5000.00", amount: -120000, badge: "new", key: "a:0" }],
+      stats: [],
+      more: 0,
+      highlight: { categories: [], transactions: [], page: "accounts" },
+    },
+  });
+  show(accounts);
+  expect(screen.getByText("New account: Travel card")).toBeTruthy();
+  expect(screen.queryByText("Update UrBudget to use this card.")).toBeNull();
+  expect(button("Apply")).toBeTruthy();
+  expect(button("Show in the app")).toBeTruthy();
+});
+
 it("draws a deletion with the destructive accent and a button that says how many it deletes", async () => {
   fakePause();
   const gone: CardRow[] = ["a", "b", "c"].map((id, i) => ({ label: `Shop ${i + 1} · Oct ${i + 1}`, detail: "Everyday · Dining out", amount: -(i + 1) * 100, key: `t:${id}` }));

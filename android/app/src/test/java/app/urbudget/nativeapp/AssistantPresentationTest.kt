@@ -449,6 +449,20 @@ class AssistantPresentationTest {
         assertNull(ProposalCards.show(card(JSONObject().put("month", "2026-10").put("categories", JSONArray()).put("transactions", JSONArray()))))
         assertNull(ProposalCards.show(card(null)))
         assertNull(ProposalCards.show(JSONObject()))
+        // A page the assistant points to: the Budget tab on a month, an account's transactions, a page under More.
+        val none = JSONObject().put("categories", JSONArray()).put("transactions", JSONArray())
+        fun at(page: String) = JSONObject(none.toString()).put("page", page)
+        assertEquals(AssistantShow("2026-10", emptyList(), emptyList(), "budget"), ProposalCards.show(card(at("budget").put("month", "2026-10"))))
+        assertEquals(AssistantShow(null, emptyList(), emptyList(), "transactions", "a1"), ProposalCards.show(card(at("transactions").put("account", "a1"))))
+        assertEquals(AssistantShow(null, emptyList(), emptyList(), "reports"), ProposalCards.show(card(at("reports").put("month", "2026-10"))))
+        // What it names in the budget still comes first, and its button says where it leads.
+        assertEquals(AssistantShow("2026-10", listOf("c1"), emptyList()), ProposalCards.show(card(at("budget").put("month", "2026-10").put("categories", JSONArray(listOf("c1"))))))
+        assertTrue(ProposalCards.showsPage(card(at("payees"))))
+        assertFalse(ProposalCards.showsPage(card(both)))
+        assertEquals(listOf("Scheduled", "Payees & rules", "Investments", "Bank connections", "Bank messages", "Settings & data", null, null),
+            listOf("scheduled", "payees", "investments", "bankConnections", "bankMessages", "settings", "budget", "accounts").map(::assistantMorePage))
+        // A card for accounts, and one that only points somewhere, are drawn as cards this app knows.
+        assertTrue(ProposalCards.known(JSONObject().put("kind", "accounts")) && ProposalCards.known(JSONObject().put("kind", "show")))
     }
 
     @Test fun aFixCardIsMarkedWithTheFixesItsImportDidntTake() {

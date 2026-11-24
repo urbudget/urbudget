@@ -711,21 +711,36 @@ export default function App() {
     else await open().catch(fail);
   };
   /**
-   * Goes to what an assistant's card names: its transactions in the register (the account they
-   * are all in, or all accounts), selected, with the first in view; otherwise its categories on
-   * the Budget page, in its month, marked.
+   * Goes to what an assistant's card names: a page of the window; its transactions in the
+   * register (the account they are all in, or all accounts), selected, with the first in view;
+   * otherwise the Budget page in its month, with its categories marked.
    */
   const showInBudget = (named: Card["highlight"]) => {
+    // A page the assistant points to. The window shows accounts, loans and what's scheduled in
+    // the register, and bank and broker connections in Settings; the rest have pages of their own.
+    const account = named.account && budget.accounts.some((a) => a.id === named.account) ? named.account : undefined;
+    const place = named.page && !["budget", "transactions"].includes(named.page) ? named.page : undefined;
+    if (place === "reports" || place === "payees" || place === "settings" || place === "investments" || place === "bankConnections") {
+      setPage(place === "reports" || place === "payees" ? place : "settings");
+      return;
+    }
+    if (place || (named.page === "transactions" && !named.transactions.length)) {
+      setAccountId(account ?? "all");
+      setRegisterFilter(undefined);
+      setPage("transactions");
+      return;
+    }
     if (named.transactions.length) {
       const wanted = new Set(named.transactions);
       const accounts = new Set(budget.transactions.filter((tx) => wanted.has(tx.id)).map((tx) => tx.accountId));
       setAccountId(accounts.size === 1 ? [...accounts][0] : "all");
       setRegisterFilter({ select: named.transactions });
       setPage("transactions");
-    } else if (named.categories.length) {
+    } else if (named.categories.length || named.page === "budget") {
       const at = named.month ?? month;
       setMonth(at);
       setPage("budget");
+      if (!named.categories.length) return;
       setShown({ month: at, categories: named.categories });
       // Once the page is there, the first of them is brought into view.
       const first = named.categories[0];

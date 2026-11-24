@@ -752,3 +752,27 @@ tuple-typed stored property in the `@Observable` controller (`AssistantControlle
 with header and footer returned from a computed property (`AssistantSettingsView.swift`); and
 the two plural catalog entries with two substitutions.
 
+**More it can do, and going to it** (25 November 2026; `cargo test -p urbudget-core -p
+urbudget-services` passing, desktop `vitest` for the assistant, Android unit tests, iPhone
+`AssistantTests`):
+
+- `propose_account_changes` (`Change::Accounts`, kind `accounts`): add an account of any of the
+  apps' types (a card gets its payment category, with ids chosen when it's proposed), rename
+  (the payment category follows), change the type within its kind, close or reopen (the card
+  warns when it closes with a balance), a card's credit limit, the starting balance. Deleting an
+  account, loan terms and bank links stay in the apps.
+- `propose_category_changes` takes `delete` (`CategoryOp::Delete`, the engine's `deleteCategory`:
+  history to another category or Ready to Assign), `propose_schedule_changes` takes `delete`, and
+  `propose_payee_changes` takes `removeRules` (`get_setup` lists rule ids).
+- `propose_transaction_deletes` no longer needs the transactions attached: any the assistant
+  found, up to 200, on the same red card. The instructions say a deletion is only ever the
+  user's own request. This reverses 4.9's limit.
+- `show_in_app` (kind `show`, `proposals::build_show`): a card whose `highlight` names a `page`
+  (`prompt::PAGES`), an `account`, a month with categories, or transactions. The desktop goes
+  there as the card arrives (`Assistant.tsx`, `App.tsx` `showInBudget`); the phones go on Show
+  (`App.kt` `show`, `UrBudgetApp.swift` `go`, with More's pages through `AppActions.moreRequest`).
+  Cards for accounts, schedules and payees carry their page, and offer Show.
+- A conversation keeps the instructions it began with, so one started before this still reads
+  the old limits; its tools are the new ones.
+
+Not checked: nothing here was tried on a device or against a real model.

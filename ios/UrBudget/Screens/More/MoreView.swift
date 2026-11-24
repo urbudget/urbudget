@@ -96,6 +96,24 @@ struct MoreView: View {
                 }
             }
             .onAppear(perform: openLaunchRoute)
+            // A page a card of the assistant asked for, whether More was showing or not.
+            .onAppear(perform: openRequested)
+            .onChange(of: AppActions.shared.moreRequest) { _, _ in openRequested() }
+        }
+    }
+
+    /// Opens the page the assistant asked for, in place of whatever page was open.
+    private func openRequested() {
+        guard let request = AppActions.shared.moreRequest else { return }
+        AppActions.shared.moreRequest = nil
+        switch request.page {
+        case "schedules": path = [.schedules]
+        case "loans": path = [.loans]
+        case "payees": path = [.payees]
+        case "banks": path = [.banks]
+        case "brokers": path = [.brokers]
+        case "settings": path = [.settings]
+        default: break
         }
     }
 

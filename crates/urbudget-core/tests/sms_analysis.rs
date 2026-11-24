@@ -512,3 +512,57 @@ fn a_split_adds_up_to_a_known_amount_of_a_purchase_or_income() {
         assert!(!check(change), "{what}");
     }
 }
+
+/// A text for a deposit paid back with its profit: one credit, most of it the money coming back.
+fn matured() -> (urbudget_core::domain::Budget, Vec<Message>, Value) {
+    let mut b = common::budget("SAR");
+    b.accounts.push(urbudget_core::domain::Account { extra: Default::default(), id: "deposit".into(), name: "Term deposit".into(),
+        kind: urbudget_core::domain::AccountKind::Tracking, opening_balance: 50_000_000, archived: false });
+    let messages = vec![Message { id: "sms:cd".into(), sender: "Bank".into(), received_date: "2026-11-24".into(), received_time: String::new(),
+        body: "Your deposit has matured. SAR 501,900.00 was credited to account *1234".into() }];
+    let v = json!({"items":[
+        {"sourceIds":["sms:cd"],"disposition":"transaction","skip":null,"note":"Deposit paid back","evidence":[{"sourceId":"sms:cd","quote":"SAR 501,900.00"}],"unsure":["amount"],
+         "transaction":{"date":"2026-11-24","amount":"501900.00","currency":"SAR","writtenAmount":"501900.00","payee":"Term deposit","memo":"","kind":"income","accountRef":"*1234","otherRef":null,
+            "categoryId":null,"accountId":"main","transferAccountId":null,
+            "splits":[{"amount":"500000.00","categoryId":null,"memo":"Principal","transferAccountId":"deposit"},{"amount":"1900.00","categoryId":null,"memo":"Profit","unassigned":true}]}}
+    ]});
+    (b, messages, v)
+}
+
+#[test]
+fn a_deposit_paid_back_with_its_profit_is_one_transaction_whose_parts_are_a_transfer_and_income() {
+    let (b, messages, v) = matured();
+    let a = analysis(v);
+    let saved = apply_batch(b.clone(), &messages, &a, vec![Decision { index: 0, action: "new".into(), match_id: None }]).unwrap();
+    let [t] = &saved.transactions[..] else { panic!("one transaction for the one text") };
+    assert_eq!((t.account_id.as_str(), t.amount, t.transfer_account_id.as_deref()), ("main", 50_190_000, None));
+    let parts: Vec<_> = t.splits.iter().map(|s| (s.amount, urbudget_core::ledger::transfer(s).map(String::from), s.extra.get("memo").and_then(Value::as_str).map(String::from))).collect();
+    assert_eq!(parts, vec![(50_000_000, Some("deposit".to_string()), Some("Principal".to_string())), (190_000, None, Some("Profit".to_string()))]);
+    // The deposit's account gives up what came back; the profit is in no other account.
+    let month = urbudget_core::domain::calculate(&saved, "2026-11").unwrap();
+    let balance = |id: &str| month.accounts.iter().find(|x| x.id == id).unwrap().balance;
+    assert_eq!((balance("main"), balance("deposit")), (50_190_000, 0));
+    // The same text again is the budget's already.
+    assert!(preview(&saved, &messages, &a).unwrap()[0].row.duplicate);
+}
+
+#[test]
+fn a_part_that_is_a_transfer_names_another_open_account_beside_a_part_that_isnt() {
+    let (b, messages, good) = matured();
+    let check = |change: &dyn Fn(&mut Value)| {
+        let mut v = good.clone();
+        change(&mut v["items"][0]["transaction"]);
+        serde_json::from_value::<Analysis>(v).is_ok_and(|a| validate_analysis(&b, &messages, &a).is_ok())
+    };
+    assert!(check(&|_| {}));
+    let wrong: [(&str, &dyn Fn(&mut Value)); 5] = [
+        ("its own account", &|t| t["splits"][0]["transferAccountId"] = json!("main")),
+        ("an invented account", &|t| t["splits"][0]["transferAccountId"] = json!("nowhere")),
+        ("a category on the transfer", &|t| t["splits"][0]["categoryId"] = json!("card-payment")),
+        ("Ready to Assign on the transfer", &|t| t["splits"][0]["unassigned"] = json!(true)),
+        ("every part a transfer", &|t| { t["splits"][1]["transferAccountId"] = json!("card"); t["splits"][1]["unassigned"] = json!(false); }),
+    ];
+    for (what, change) in wrong {
+        assert!(!check(change), "{what}");
+    }
+}

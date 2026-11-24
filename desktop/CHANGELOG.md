@@ -4,6 +4,16 @@ Notable changes to UrBudget, organized using [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Added
+
+- The assistant can do more in the budget, each as a card you apply: add an account (a bank account, cash, a card with its limit, or a tracking account), rename one, change its type, close it or open it again, set a card's credit limit, and correct a starting balance; delete a category with its history moved to another; delete a scheduled transaction; and remove a payee rule.
+- The assistant can take you to what it's talking about. It opens the page, the month with its categories marked, an account's transactions, or the transactions it found, selected. The window goes there as the reply arrives, and the card's Show in the app goes back to it.
+- Bank texts on Android: one text can be a transaction in parts, such as a deposit paid back with its profit: the money back is a transfer from the deposit's account and the profit is income. The reading gives the parts when a text or your note has the figures, and the assistant in chat can list the open review's rows and change one.
+
+### Changed
+
+- The assistant can propose deleting transactions it found for you, not only ones you attached to your message. The card still lists each one, and nothing goes until you confirm.
+
 ## [1.0.14] - 2026-11-22
 
 This update brings Interactive Brokers holdings and new investment reports, and makes the new sync sturdier.

@@ -311,8 +311,23 @@ internal enum class ProposalAction(val key: String) {
     }
 }
 
-/** Where a card's "Show in the budget" leads: the register with [transactions] selected, or else the Budget tab on [month] with [categories] marked. */
-internal data class AssistantShow(val month: String?, val categories: List<String>, val transactions: List<String>)
+/**
+ * Where a card's Show leads: the register with [transactions] selected, or else the Budget tab on
+ * [month] with [categories] marked, or else a [page] of the app as the core names them (`PAGES`),
+ * with the [account] whose transactions to open there.
+ */
+internal data class AssistantShow(val month: String?, val categories: List<String>, val transactions: List<String>, val page: String? = null, val account: String? = null)
+
+/** The More page a page of the core's is on this phone, by its key ([app.urbudget.nativeapp.ui.morePages]); none for one that is a tab. */
+internal fun assistantMorePage(page: String?): String? = when (page) {
+    "scheduled" -> "Scheduled"
+    "payees" -> "Payees & rules"
+    "investments" -> "Investments"
+    "bankConnections" -> "Bank connections"
+    "bankMessages" -> "Bank messages"
+    "settings" -> "Settings & data"
+    else -> null
+}
 
 /**
  * When a card was applied, as the app writes a day and a time ("21/10/2026, 14:30"), and no longer
@@ -332,8 +347,8 @@ internal fun assistantMoment(at: String, zone: ZoneId = ZoneId.systemDefault(), 
  * offers: that is the core's `actions`.
  */
 internal object ProposalCards {
-    private val kinds = setOf("budget", "transactions", "payees", "notes", "categories", "schedules", "delete", "fix", "bankTexts",
-        "report", "spreadsheet", "import", "figures", "question")
+    private val kinds = setOf("budget", "transactions", "payees", "accounts", "notes", "categories", "schedules", "delete", "fix", "bankTexts",
+        "report", "spreadsheet", "import", "figures", "show", "question")
     private val onLine = setOf(ProposalAction.Undo, ProposalAction.Restore, ProposalAction.Show)
 
     /** Whether this app draws the card's kind in full. Any other is drawn plainly, with a line saying an update is needed. */
@@ -416,17 +431,27 @@ internal object ProposalCards {
         return if (keyed.isEmpty()) rows.size + more else keyed.count { !it.optBoolean("skipped") }
     }
 
-    /** Where the card's Show leads, from its `highlight`: its transactions when it names any, else its month and categories. None when it names neither. */
+    /**
+     * Where the card's Show leads, from its `highlight`: its transactions when it names any, else its
+     * month and categories, else the page it names (with its month on the Budget page, and its
+     * account). None when it names none of them.
+     */
     fun show(proposal: JSONObject): AssistantShow? {
         val highlight = proposal.optJSONObject("card")?.optJSONObject("highlight") ?: return null
         val transactions = highlight.strings("transactions")
         val categories = highlight.strings("categories")
+        val month = highlight.optString("month").ifEmpty { null }
+        val page = highlight.optString("page").ifEmpty { null }
         return when {
             transactions.isNotEmpty() -> AssistantShow(null, emptyList(), transactions)
-            categories.isNotEmpty() -> AssistantShow(highlight.optString("month").ifEmpty { null }, categories, emptyList())
+            categories.isNotEmpty() -> AssistantShow(month, categories, emptyList())
+            page != null -> AssistantShow(month.takeIf { page == "budget" }, emptyList(), emptyList(), page, highlight.optString("account").ifEmpty { null })
             else -> null
         }
     }
+
+    /** Whether the card's Show leads to a page of the app, not to categories or transactions in the budget: its button says so. */
+    fun showsPage(proposal: JSONObject): Boolean = show(proposal)?.page != null
 
     /**
      * What a `fix` card is marked with when its import took only some of its fixes: "Fixes

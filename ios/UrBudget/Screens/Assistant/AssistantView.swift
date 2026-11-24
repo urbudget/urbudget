@@ -641,10 +641,12 @@ struct AssistantView: View {
     }
 
     /// Goes to what a card names, once the assistant has closed: its transactions in the
-    /// Transactions tab, or else the Budget tab on its month with its categories marked.
+    /// Transactions tab, or else the Budget tab on its month with its categories marked, or
+    /// else the page of the app it points to.
     private func show(_ highlight: JSON) {
         let destination = AppActions.Destination(month: highlight.text("month"), transactions: highlight["transactions"].array.map(\.string),
-                                                 categories: highlight["categories"].array.map(\.string))
+                                                 categories: highlight["categories"].array.map(\.string),
+                                                 page: highlight.text("page"), account: highlight.text("account"))
         if !beside { dismiss() }
         AppActions.shared.destination = destination
     }

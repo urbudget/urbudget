@@ -477,7 +477,8 @@ struct MainTabs: View {
     }
 
     /// Goes where a card of the assistant asked: the Transactions tab showing its transactions
-    /// alone, or else the Budget tab on its month, where its categories are marked.
+    /// alone; a page of the app (a page under More, an account's transactions, Accounts or
+    /// Reports); or else the Budget tab on its month, where its categories are marked.
     private func go(_ destination: AppActions.Destination?) {
         guard let destination else { return }
         AppActions.shared.destination = nil
@@ -485,6 +486,19 @@ struct MainTabs: View {
             register = RegisterTarget(only: destination.transactions)
             registerShown += 1
             tab = .transactions
+        } else if destination.categories.isEmpty, let more = AppActions.morePage(destination.page) {
+            AppActions.shared.moreRequest = .init(page: more)
+            tab = .more
+        } else if destination.categories.isEmpty, destination.page == "transactions" {
+            // An account's own transactions, or all of them when it names none that's here.
+            let known = store.budget?.row("accounts", id: destination.account) != nil
+            register = RegisterTarget(account: known ? destination.account : "")
+            registerShown += 1
+            tab = .transactions
+        } else if destination.categories.isEmpty, destination.page == "accounts" {
+            tab = .accounts
+        } else if destination.categories.isEmpty, destination.page == "reports" {
+            tab = .reports
         } else {
             if Dates.isMonth(destination.month) { store.selectMonth(destination.month) }
             if !destination.categories.isEmpty { AppActions.shared.marking = .init(categories: Set(destination.categories)) }

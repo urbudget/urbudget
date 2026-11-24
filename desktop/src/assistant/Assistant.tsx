@@ -778,6 +778,9 @@ export function AssistantPanel({
 }) {
   const toast = useToast();
   const threadKey = `lb:assistant:thread:${budgetId}`;
+  /** Where a card's Show leads, as it is now: the listener for replies outlives a render. */
+  const shows = useRef(onShow);
+  shows.current = onShow;
   const [status, setStatus] = useState<Status | null>(null);
   /** The status couldn't be read: the panel says so, with a way to try again. */
   const [unreachable, setUnreachable] = useState(false);
@@ -967,7 +970,12 @@ export function AssistantPanel({
           }
           case "proposal":
             setEntries((list) => [...list, { kind: "proposal", proposal: e.proposal }]);
-            setSaid(t("A proposal is ready to review."));
+            // A pointer to a place in the app: the window goes there as it arrives, beside the
+            // conversation, and its card stays to go back with.
+            if (e.proposal.kind === "show") {
+              shows.current?.(e.proposal.card.highlight);
+              setSaid(t("Showing: {title}", { title: e.proposal.title }));
+            } else setSaid(t("A proposal is ready to review."));
             break;
           case "replaced":
             // The earlier card as it is now that a newer one corrects it: in its place, not after it.

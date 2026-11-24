@@ -16,13 +16,39 @@ final class AppActions {
 
     /// Where a card of the assistant asks the app to go as its sheet closes: the Transactions
     /// tab showing some transactions alone, or else the Budget tab on a month with the card's
-    /// categories marked. Each is its own, so asking for the same place again goes there again.
+    /// categories marked, or else a page of the app as the service names them (`page`), with the
+    /// account whose transactions to open there. Each is its own, so asking for the same place
+    /// again goes there again.
     struct Destination: Equatable {
         var id = UUID()
         var month = ""
         var transactions: [String] = []
         var categories: [String] = []
+        var page = ""
+        var account = ""
     }
+
+    /// The More page a page of the service's is here, by the key `MoreView` opens it with; nil
+    /// for one that is a tab, or that this app doesn't have (Bank messages is Android's).
+    static func morePage(_ page: String) -> String? {
+        switch page {
+        case "scheduled": return "schedules"
+        case "payees": return "payees"
+        case "loans": return "loans"
+        case "investments": return "brokers"
+        case "bankConnections": return "banks"
+        case "settings": return "settings"
+        default: return nil
+        }
+    }
+
+    /// A page for More to open, asked for by a card of the assistant. Each is its own, so asking
+    /// for the page that's open goes back to it.
+    struct MoreRequest: Equatable {
+        var id = UUID()
+        var page: String
+    }
+    var moreRequest: MoreRequest?
 
     /// The place waiting for the tabs to go to, cleared once they have.
     var destination: Destination?

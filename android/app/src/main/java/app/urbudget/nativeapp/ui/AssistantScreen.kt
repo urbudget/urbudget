@@ -817,7 +817,7 @@ internal fun AssistantProposalCard(proposal: JSONObject, currency: String, busy:
         ProposalAction.ApplyToImport -> if (partial != null) stringResource(R.string.assistant_fix_apply_some, "${partial.chosen}", "${partial.total}") else stringResource(R.string.assistant_fix_apply)
         ProposalAction.ApplyBankTexts -> stringResource(when (proposal.optJSONObject("bankTexts")?.optString("action")) {
             "read" -> R.string.bank_texts_apply_read; "add" -> R.string.bank_texts_apply_add; "enter" -> R.string.bank_texts_apply_enter
-            "remember" -> R.string.bank_texts_apply_remember; else -> R.string.bank_texts_apply_limit
+            "change" -> R.string.bank_texts_apply_change; "remember" -> R.string.bank_texts_apply_remember; else -> R.string.bank_texts_apply_limit
         })
         ProposalAction.AskChanges -> stringResource(R.string.assistant_ask_changes)
         ProposalAction.UseOriginal -> stringResource(R.string.assistant_use_original)
@@ -826,7 +826,7 @@ internal fun AssistantProposalCard(proposal: JSONObject, currency: String, busy:
         ProposalAction.Restore -> stringResource(R.string.common_restore)
         ProposalAction.Undo -> stringResource(R.string.assistant_undo_proposal)
         ProposalAction.AskAgain -> stringResource(R.string.assistant_ask_again)
-        ProposalAction.Show -> stringResource(R.string.assistant_show_in_budget)
+        ProposalAction.Show -> stringResource(if (ProposalCards.showsPage(proposal)) R.string.assistant_show_in_app else R.string.assistant_show_in_budget)
         ProposalAction.Preview -> stringResource(R.string.assistant_preview)
         ProposalAction.Print -> stringResource(R.string.assistant_print)
         ProposalAction.Excel -> stringResource(R.string.assistant_export_report_tables)
