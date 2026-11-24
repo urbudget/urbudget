@@ -332,3 +332,35 @@ fn a_bank_file_import_is_a_session_the_phones_fix_and_review() {
     assert_eq!(prepared["structure"]["dateOrder"], json!({"order": "ymd", "confirmed": true}));
     assert_eq!(prepared["structure"]["columns"]["amount"], "Amount");
 }
+
+#[test]
+fn setup_budget_builds_the_walkthroughs_answers_and_the_phone_can_fund_it() {
+    let answers = json!({
+        "name": "Home", "currency": "USD", "dateFormat": "mdy",
+        "accounts": [
+            {"name": "Checking", "type": "checking", "balance": 370000},
+            {"name": "Visa", "type": "creditCard", "balance": 42000}
+        ],
+        "template": "everyday", "leftOut": ["0.2"], "added": ["Pets"],
+        "amounts": [{"category": "0.0", "amount": 150000}, {"category": "1.3", "amount": 90000, "period": "year"}],
+        "expectedIncome": 500000
+    });
+    let budget = value(call("setupBudget", Value::Null, json!({"answers": answers})));
+    assert_eq!((&budget["name"], &budget["currency"], &budget["expectedIncome"]), (&json!("Home"), &json!("USD"), &json!(500000)));
+    assert_eq!(budget["accounts"][1]["openingBalance"], -42000);
+    assert_eq!(budget["assignments"], json!([]));
+    let categories = budget["categories"].as_array().unwrap();
+    let named = |name: &str| categories.iter().find(|c| c["name"] == name).unwrap_or_else(|| panic!("no {name}"));
+    assert_eq!(categories.len(), 16 - 1 + 1 + 1);
+    assert_eq!(named("Insurance")["target"], 7500);
+    assert_eq!(named("Pets")["group"], "Other");
+    assert_eq!(named("Visa")["paymentAccountId"], budget["accounts"][1]["id"]);
+    // The stateless calls a phone previews step 4 with read the budget as it came.
+    let ids: Vec<&Value> = categories.iter().map(|c| &c["id"]).collect();
+    let preview = value(call("autoAssignPreview", &budget, json!({"month":"2026-11","categories":ids,"limitToAvailable":true,"asOfMonth":"2026-11"})));
+    let total: i64 = preview["underfunded"].as_array().unwrap().iter().map(|c| c["after"].as_i64().unwrap()).sum();
+    assert_eq!(total, 150000 + 7500 + 42000);
+    for bad in [json!({}), json!({"answers": {"currency": "usd"}}), json!({"answers": {"currency": "USD", "accounts": [{"name": "X", "type": "mortgage"}]}})] {
+        assert_eq!(call("setupBudget", Value::Null, bad)["ok"], false);
+    }
+}

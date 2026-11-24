@@ -12,9 +12,9 @@ export const customTitleBar = typeof window !== "undefined" && "__TAURI_INTERNAL
 const NAME = "UrBudget";
 
 /** The app's mark (assets/icon.svg): "Ur" in one stroke, the U a pocket with a stack of coins saved in it. */
-function AppMark() {
+export function AppMark({ className = "titlebar-mark" }: { className?: string }) {
   return (
-    <svg className="titlebar-mark" viewBox="40 40 944 944" aria-hidden="true">
+    <svg className={className} viewBox="40 40 944 944" aria-hidden="true">
       <rect x="40" y="40" width="944" height="944" rx="212" fill="#6d4ae8" />
       <g transform="translate(-33 0)">
         <path

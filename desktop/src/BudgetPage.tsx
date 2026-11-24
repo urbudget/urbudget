@@ -10,18 +10,18 @@ import {
   Info,
   Pencil,
   Plus,
-  Sparkles,
   Target,
   Trash2,
 } from "lucide-react";
 import { api } from "./bridge";
 import { CommitInput, Modal } from "./forms";
-import { HIDDEN_GROUP, groupNames, orderedCategories, orderedGroups } from "./categories";
+import { HIDDEN_GROUP, groupNames, orderedGroups } from "./categories";
 import { errorText, money, monthName, tone } from "./format";
 import { uncategorizedCounts } from "./uncategorized";
 import { CategoryRow, GroupRow, NameInput, UncategorizedRow, categoryState, type CategorySummary, type Dnd, type Drop } from "./CategoryRow";
 import { BudgetInspector } from "./BudgetInspector";
-import { GettingStarted } from "./Welcome";
+import { SetupCard } from "./SetupWalkthrough";
+import type { KeepRoute } from "./setup";
 import { autoAssignAction } from "./QuickAssign";
 import { MoveMoneyPopover } from "./MoneyPopovers";
 import { ActivityPopover } from "./ActivityPopover";
@@ -147,10 +147,8 @@ export function BudgetPage({
   undo,
   onEditorChange,
   onEditCategory,
-  onNewCategory,
-  onAddAccount,
-  onAddTransaction,
-  onOpenSample,
+  onSetup,
+  onKeepUp,
   onOpenRegister,
   onAsk,
   onSelection,
@@ -174,11 +172,10 @@ export function BudgetPage({
   undo?: () => void;
   onEditorChange: (open: boolean) => void;
   onEditCategory: (c: Category) => void;
-  onNewCategory?: () => void;
-  onAddAccount: () => void;
-  /** Opens the new-transaction dialog (the getting-started checklist offers it). */
-  onAddTransaction?: () => void;
-  onOpenSample: () => void;
+  /** Opens the setup walkthrough at a step (the setup card's Continue). */
+  onSetup?: (step: number) => void;
+  /** Starts what the walkthrough's last choice needs (the line a finished walkthrough leaves on Budget). */
+  onKeepUp?: (route: KeepRoute) => void;
 }) {
   const toast = useToast();
   const collapsedKey = `lb:budget:collapsed:${budgetId}`;
@@ -519,41 +516,8 @@ export function BudgetPage({
     .map((id) => budget.categories.find((c) => c.id === id))
     .filter((c): c is Category => !!c);
 
-  const gettingStarted = (
-    <GettingStarted
-      budget={budget}
-      budgetId={budgetId}
-      onAddAccount={onAddAccount}
-      onAssign={() => rtaButton.current?.click()}
-      onAddTransaction={onAddTransaction}
-      onSetTarget={() => {
-        // The first everyday category, with its target editor open.
-        const category = orderedCategories(budget).find((c) => !c.hidden && !c.paymentAccountId);
-        if (!category) return onNewCategory?.();
-        setSelected([category.id]);
-        setTargetFor(category.id);
-      }}
-    />
-  );
-  if (!budget.accounts.length)
-    return (
-      <div className="page">
-        {gettingStarted}
-        <div className="empty-state">
-          <h2>{t("No accounts yet")}</h2>
-          <p>{t("Add your accounts and their current balances, then create categories and assign the money you have.")}</p>
-          <div className="button-row">
-            <button className="primary" onClick={onAddAccount}>
-              <Plus size={15} /> {t("Add account")}
-            </button>
-            <button className="secondary" onClick={onOpenSample}>
-              <Sparkles size={15} /> {t("Explore a sample budget")}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-
+  // A budget the walkthrough made and didn't finish gets the way back into it.
+  const setupCard = onSetup && <SetupCard budget={budget} budgetId={budgetId} unassigned={rta} onContinue={onSetup} onKeepUp={onKeepUp} />;
   const groupMenu = (name: string, categories: Category[]): MenuItem[] => [
     {
       label: t("Rename group"),
@@ -619,7 +583,7 @@ export function BudgetPage({
           stay pinned above the table, whose header and total stick while the rows scroll. */}
       <div className="budget-main">
         <div className="budget-pinned" ref={pinned.ref}>
-          {gettingStarted}
+          {setupCard}
           <div className="summary-strip">
             <button
               ref={rtaButton}

@@ -1,21 +1,22 @@
-// What someone sees before their budget has anything in it, the sample budget's banner, and the
-// getting-started checklist that walks a new budget through the method.
-import { useEffect, useState, type ReactNode } from "react";
-import { ArrowRight, Check, FileArchive, FlaskConical, Sprout, X } from "lucide-react";
+// What someone sees before they have a budget, what a budget with no accounts shows, and the
+// sample budget's banner. Both first screens lead to the setup walkthrough (SetupWalkthrough.tsx).
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ArrowLeft, ChevronRight, FlaskConical } from "lucide-react";
 import { api } from "./bridge";
 import { BudgetFormatFields, type FormatValue } from "./BudgetFormatFields";
 import { YnabFileImport } from "./YnabFileImport";
 import { YnabImport } from "./YnabImport";
 import { demoBudget } from "./demo";
-import { errorText, numberFormatFor } from "./format";
-import { templateCategories } from "./newBudget";
-import { chosenTemplate, DEFAULT_TEMPLATE, TemplateSelect, useBudgetTemplates } from "./TemplatePicker";
+import { dateFormats, errorText } from "./format";
+import { localeDefaults } from "./locale";
+import { newDraft, readDraft, readMark, writeDraft } from "./setup";
 import { useToast } from "./ui";
-import { msg, t } from "./i18n";
-import type { Budget, BudgetTemplate, ImportResult, YnabImportRequest } from "./types";
+import { AppMark } from "./WindowControls";
+import { ltr, msg, t, useLanguage } from "./i18n";
+import type { Budget, ImportResult, YnabImportRequest } from "./types";
 import "./welcome.css";
 
-/** The currency a first launch's budget is made with (Budget::default in domain.rs). */
+/** The currency a budget made without one is in (Budget::default in domain.rs). */
 const BUILT_IN_CURRENCY = "SAR";
 /** The sample budget's name: made in the language in use, found by either name. */
 const SAMPLE_NAME = msg("Sample budget");
@@ -23,26 +24,9 @@ const SAMPLE_NAME = msg("Sample budget");
 /** No accounts, categories or transactions: a budget nobody has set up yet. */
 export const isBlank = (b: Budget) => !b.accounts.length && !b.categories.length && !b.transactions.length;
 
-/** A first launch's empty budget, still in the built-in currency and formats nobody chose. */
+/** An empty budget still in the built-in currency and formats nobody chose. */
 export const isUntouched = (b: Budget) =>
   isBlank(b) && !b.assignments.length && b.currency === BUILT_IN_CURRENCY && !b.numberFormat && !b.dateFormat;
-
-/** Whether a budget shows the getting-started checklist: "on" once it was set up from the welcome screen. */
-const setupKey = (budgetId: string) => `lb:setup:${budgetId}`;
-const readSetup = (budgetId: string) => {
-  try {
-    return localStorage.getItem(setupKey(budgetId));
-  } catch {
-    return null;
-  }
-};
-const writeSetup = (budgetId: string, value: "on" | "off") => {
-  try {
-    localStorage.setItem(setupKey(budgetId), value);
-  } catch {
-    // Without storage the checklist shows until the app closes.
-  }
-};
 
 /** Opens the sample budget, making it (in this budget's currency and formats) the first time. */
 export async function openSample(budget: Budget, budgetId: string, openBudget: (id: string) => Promise<void>) {
@@ -60,29 +44,76 @@ export async function openSample(budget: Budget, budgetId: string, openBudget: (
   await openBudget(id);
 }
 
-type Path = "ynab" | "fresh";
+/** What the one button starts. The walkthrough teaches the method by doing it, so nothing explains it here. */
+const STARTS = msg("Five short steps to a budget where all your money has a job. Skip any time.");
 
-/** Three ways into an empty budget: bring it over from YNAB, start from starter categories, or look around a sample. */
+/** YNAB's token import into the open budget, with its export file a click away. */
+function FromYnab({
+  budget,
+  openBudget,
+  onBudget,
+  importYnab,
+  acceptYnab,
+  resolveYnab,
+  onAsk,
+}: {
+  budget: Budget;
+  openBudget: (id: string) => Promise<void>;
+  /** Takes a budget read from YNAB's export file. */
+  onBudget: (imported: Budget) => Promise<void>;
+  importYnab: (request: YnabImportRequest) => Promise<ImportResult>;
+  acceptYnab: (reviewId: string) => Promise<ImportResult>;
+  resolveYnab: (id: string, choices: Record<string, string>) => Promise<ImportResult>;
+  onAsk?: (text: string) => void;
+}) {
+  const [exportFile, setExportFile] = useState(false);
+  return (
+    <div className="welcome-step">
+      {!exportFile && (
+        <p className="help">
+          {t("Make a token in YNAB on the web (Account Settings, then Developer Settings, then New Token), paste it below, pick your plan and choose Import & save.")}
+        </p>
+      )}
+      {exportFile ? (
+        <YnabFileImport budget={budget} openBudget={openBudget} onBudget={onBudget} />
+      ) : (
+        <YnabImport onImport={importYnab} onAccept={acceptYnab} onResolve={resolveYnab} onAsk={onAsk} blank />
+      )}
+      <p className="help">
+        <button className="link-button" onClick={() => setExportFile(!exportFile)}>
+          {exportFile ? t("Use a YNAB token instead") : t("No token? Use YNAB's export file")}
+        </button>
+        {!exportFile && t(" (it leaves out targets, notes and scheduled transactions).")}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * The page of a budget with no accounts, whatever made it (a template, an empty start, another
+ * device): one button into the setup walkthrough, with quiet ways around it. YNAB's import is
+ * one of them only while the budget is empty, since it fills the whole budget.
+ */
 export function Welcome({
   budget,
   budgetId,
-  edit,
   transform,
   openBudget,
+  onSetup,
   onAddAccount,
   importYnab,
   acceptYnab,
   resolveYnab,
   onAsk,
-  startFresh,
-  prepareYnab,
 }: {
   budget: Budget;
   budgetId: string;
-  edit: (update: (draft: Budget) => void) => void;
   transform: (work: (b: Budget) => Promise<Budget>) => Promise<void>;
   /** Switches to another budget (saving this one first). */
   openBudget: (id: string) => Promise<void>;
+  /** Opens the setup walkthrough on this budget. */
+  onSetup: () => void;
+  /** Opens the account form, for someone who'd rather set the budget up by hand. */
   onAddAccount: () => void;
   /** YNAB's API import into this budget, as Settings › Import runs it. */
   importYnab: (request: YnabImportRequest) => Promise<ImportResult>;
@@ -90,139 +121,59 @@ export function Welcome({
   resolveYnab: (id: string, choices: Record<string, string>) => Promise<ImportResult>;
   /** Opens the assistant with a question. */
   onAsk?: (text: string) => void;
-  /** Makes the budget with these formats and the chosen template's categories, if any. */
-  startFresh?: (format: FormatValue, template: BudgetTemplate | undefined) => Promise<void>;
-  prepareYnab?: () => Promise<void>;
 }) {
   const toast = useToast();
-  const [path, setPath] = useState<Path | null>(() => budgetId && sessionStorage.getItem("lb:welcome-ynab:" + budgetId) ? "ynab" : null);
-  useEffect(() => { if (budgetId) sessionStorage.removeItem("lb:welcome-ynab:" + budgetId); }, [budgetId]);
-  const [busy, setBusy] = useState(false);
-  const [format, setFormat] = useState<FormatValue>(() => ({
-    currency: budget.currency,
-    numberFormat: numberFormatFor(budget.currency, budget.numberFormat),
-    dateFormat: budget.dateFormat ?? "iso",
-  }));
-  const templates = useBudgetTemplates();
-  const [templateId, setTemplateId] = useState(DEFAULT_TEMPLATE);
-  const [exportFile, setExportFile] = useState(false);
-  // A budget set up from here gets the checklist, unless it was hidden before.
+  // A budget the first screen made to import YNAB into opens on the import.
+  const blank = isBlank(budget);
+  const [ynab, setYnab] = useState(() => blank && !!budgetId && !!sessionStorage.getItem("lb:welcome-ynab:" + budgetId));
   useEffect(() => {
-    if (budgetId && !readSetup(budgetId)) writeSetup(budgetId, "on");
+    if (budgetId) sessionStorage.removeItem("lb:welcome-ynab:" + budgetId);
   }, [budgetId]);
-
-  const options: { id: Path | "sample"; icon: ReactNode; title: string; text: string }[] = [
-    {
-      id: "ynab",
-      icon: <FileArchive size={20} />,
-      title: t("I'm coming from YNAB"),
-      text: t("Paste a YNAB token and bring everything over in one click, checked against YNAB's own numbers."),
-    },
-    {
-      id: "fresh",
-      icon: <Sprout size={20} />,
-      title: t("Start fresh"),
-      text: t("Pick a set of categories that fits your life, then add your accounts."),
-    },
-    {
-      id: "sample",
-      icon: <FlaskConical size={20} />,
-      title: t("Look around first"),
-      text: t("Open a sample budget to try things out. This budget stays empty until you're ready."),
-    },
-  ];
-  const choose = async (id: Path | "sample") => {
-    if (id === "ynab" && prepareYnab) {
-      setBusy(true);
-      try { await prepareYnab(); } catch (e) { toast({message:errorText(e),tone:"error"}); } finally { setBusy(false); }
-      return;
-    }
-    if (id !== "sample") return setPath(path === id ? null : id);
+  const [busy, setBusy] = useState(false);
+  const sample = () => {
     setBusy(true);
-    try {
-      await openSample(budget, budgetId, openBudget);
-    } catch (e) {
-      toast({ message: errorText(e), tone: "error" });
-    } finally {
-      setBusy(false);
-    }
+    openSample(budget, budgetId, openBudget)
+      .catch((e) => toast({ message: errorText(e), tone: "error" }))
+      .finally(() => setBusy(false));
   };
-
   return (
     <div className="page welcome">
       <div className="welcome-intro">
         <h2>{t("Let's set up your budget")}</h2>
-        <p>
-          {t("UrBudget works like envelopes: you give all the money you have a job, spend from those jobs, and move money around when life changes the plan. How would you like to start?")}
-        </p>
+        <p>{t(STARTS)}</p>
       </div>
-      <ul className="welcome-paths">
-        {options.map((o) => (
-          <li key={o.id}>
-            <button
-              className={`welcome-path${path === o.id ? " selected" : ""}`}
-              aria-expanded={o.id === "sample" ? undefined : path === o.id}
-              disabled={busy}
-              onClick={() => void choose(o.id)}
-            >
-              <span className="welcome-icon">{o.icon}</span>
-              <strong>{o.title}</strong>
-              <small>{o.text}</small>
-              <ArrowRight size={15} className="welcome-arrow" />
-            </button>
-          </li>
-        ))}
-      </ul>
-      {path === "ynab" && (
-        <div className="welcome-step">
-          {!exportFile && (
-            <p className="help">
-              {t("Make a token in YNAB on the web (Account Settings, then Developer Settings, then New Token), paste it below, pick your plan and choose Import & save.")}
-            </p>
-          )}
-          {exportFile ? (
-            <YnabFileImport
-              budget={budget}
-              openBudget={openBudget}
-              onBudget={(imported) => transform(async () => imported)}
-            />
-          ) : (
-            <YnabImport onImport={importYnab} onAccept={acceptYnab} onResolve={resolveYnab} onAsk={onAsk} blank />
-          )}
-          <p className="help">
-            <button className="link-button" onClick={() => setExportFile(!exportFile)}>
-              {exportFile ? t("Use a YNAB token instead") : t("No token? Use YNAB's export file")}
-            </button>
-            {!exportFile && t(" (it leaves out targets, notes and scheduled transactions).")}
-          </p>
+      {!ynab && (
+        <div className="welcome-start">
+          <button className="primary welcome-go" disabled={busy} onClick={onSetup}>
+            {readMark(budgetId)?.card ? t("Continue setup") : t("Set up this budget")}
+          </button>
         </div>
       )}
-      {path === "fresh" && (
-        <form
-          className="welcome-step panel"
-          onSubmit={(e) => {
-            e.preventDefault();
-            setBusy(true);
-            void (async () => {
-              const template = await chosenTemplate(templateId);
-              if (startFresh) return startFresh(format, template);
-              edit((d) => {
-                Object.assign(d, format);
-                if (template) Object.assign(d, templateCategories(template));
-              });
-              onAddAccount();
-            })().catch(e => toast({message:errorText(e),tone:"error"})).finally(() => setBusy(false));
-          }}
-        >
-          <h2>{t("Start fresh")}</h2>
-          <BudgetFormatFields value={format} onChange={setFormat} />
-          <TemplateSelect value={templateId} onChange={setTemplateId} templates={templates} withEmpty />
-          <div className="modal-actions">
-            <button className="primary" disabled={busy}>
-              {t("Next: add your accounts")} <ArrowRight size={15} />
-            </button>
-          </div>
-        </form>
+      <p className="welcome-links">
+        {!ynab && (
+          <button className="link-button" disabled={busy} onClick={onAddAccount}>
+            {t("Add an account myself")}
+          </button>
+        )}
+        <button className="link-button" disabled={busy} onClick={sample}>
+          {t("Look around a sample")}
+        </button>
+        {blank && (
+          <button className="link-button" disabled={busy} aria-expanded={ynab} onClick={() => setYnab(!ynab)}>
+            {ynab ? t("Set it up step by step instead") : t("I'm coming from YNAB")}
+          </button>
+        )}
+      </p>
+      {ynab && (
+        <FromYnab
+          budget={budget}
+          openBudget={openBudget}
+          onBudget={(imported) => transform(async () => imported)}
+          importYnab={importYnab}
+          acceptYnab={acceptYnab}
+          resolveYnab={resolveYnab}
+          onAsk={onAsk}
+        />
       )}
     </div>
   );
@@ -276,142 +227,157 @@ export function SampleBanner({
   );
 }
 
-type Step = { title: string; text: string; done: boolean; action?: [label: string, run: () => void] };
+type Way = "ynab" | "file" | "backup" | "sync";
 
 /**
- * Five steps that teach the method by doing it, each ticked off by what's in the budget. Shown for
- * budgets set up from the welcome screen until they're hidden.
+ * A first launch: one button into the setup walkthrough, the device's currency and date format
+ * with a way to change them, and two quiet ways around it. No budget is made until the
+ * walkthrough is skipped or assigns the money, or one of the other ways brings a budget in.
  */
-export function GettingStarted({
-  budget,
-  budgetId,
-  onAddAccount,
-  onAssign,
-  onAddTransaction,
-  onSetTarget,
+export function FirstRunWelcome({
+  openBudget,
+  onSetup,
+  sync,
 }: {
-  budget: Budget;
-  budgetId: string;
-  onAddAccount: () => void;
-  onAssign: () => void;
-  onAddTransaction?: () => void;
-  onSetTarget: () => void;
+  openBudget: (id: string) => Promise<void>;
+  /** Opens the setup walkthrough on the welcome screen's draft. */
+  onSetup: () => void;
+  /** Account and Sync, shown behind "I already have a budget". */
+  sync?: ReactNode;
 }) {
-  const [shown, setShown] = useState(() => readSetup(budgetId) === "on");
-  const [chosen, setChosen] = useState<number | null>(null);
-  useEffect(() => setShown(readSetup(budgetId) === "on"), [budgetId]);
-  const steps: Step[] = [
-    {
-      title: t("Add your accounts"),
-      text: t("Add each bank account and credit card with today's balance. That balance is the money you have to budget."),
-      done: budget.accounts.length > 0,
-      action: [t("Add an account"), onAddAccount],
-    },
-    {
-      title: t("Assign your money"),
-      text: t("Give all of it a job: type amounts in the Assigned column until Unassigned reaches zero. Quick assign on the right can fill in targets for you."),
-      done: budget.assignments.some((a) => a.amount !== 0),
-      action: [t("Assign money"), onAssign],
-    },
-    {
-      title: t("Record your spending"),
-      text: t("Add transactions as you spend, or import the statement file your bank lets you download (CSV, OFX, QFX or QIF) from an account's page. Each one comes out of its category."),
-      done: budget.transactions.length > 0,
-      action: onAddTransaction && [t("Add a transaction"), onAddTransaction],
-    },
-    {
-      title: t("Plan for a bigger bill"),
-      text: t("Pick something that doesn't come every month, like car insurance or gifts, and give it a target. UrBudget works out what to set aside each month so it's ready when it's due."),
-      done: budget.categories.some((c) => c.target > 0 || !!c.goal),
-      action: [t("Set a target"), onSetTarget],
-    },
-    {
-      title: t("Cover overspending"),
-      text: t("When a category's Available turns red, click the amount and move money over from a category that has some left. Changing the plan is part of the plan."),
-      done: (budget.moneyMoves ?? []).some((m) => m.kind === "move" && (m.changes?.length ?? 0) > 1),
-    },
-  ];
-  const doneCount = steps.filter((s) => s.done).length;
-  // When a step gets done, move on to the next one.
-  useEffect(() => setChosen(null), [doneCount]);
-  if (!shown || budget.sample || budget.importedFrom || budget.ynabPlanId) return null;
-  const hide = () => {
-    writeSetup(budgetId, "off");
-    setShown(false);
+  const toast = useToast();
+  const language = useLanguage();
+  // Answers from an earlier sitting, offered again.
+  const [draft] = useState(() => readDraft());
+  const [format, setFormat] = useState<FormatValue>(() => draft?.format ?? localeDefaults());
+  const [changing, setChanging] = useState(false);
+  const [existing, setExisting] = useState(false);
+  const [way, setWay] = useState<Way | null>(null);
+  const [busy, setBusy] = useState(false);
+  const backup = useRef<HTMLInputElement>(null);
+  const blank: Budget = { schemaVersion: 2, name: t("My budget"), ...format, accounts: [], categories: [], transactions: [], assignments: [] };
+  const currency = useMemo(() => {
+    try {
+      return new Intl.DisplayNames([language], { type: "currency" }).of(format.currency) ?? format.currency;
+    } catch {
+      return format.currency;
+    }
+  }, [language, format.currency]);
+  const run = (work: () => Promise<unknown>) => {
+    setBusy(true);
+    work()
+      .catch((e) => toast({ message: errorText(e), tone: "error" }))
+      .finally(() => setBusy(false));
   };
-  const allDone = doneCount === steps.length;
-  const open = chosen ?? steps.findIndex((s) => !s.done);
-  const step = steps[open];
-  return (
-    <section className="getting-started" aria-label={t("Getting started")}>
-      <div className="gs-head">
-        <strong>{t("Getting started")}</strong>
-        <span className="gs-count">
-          {t("{done} of {total} done", { done: doneCount, total: steps.length })}
-        </span>
-        <span className="gs-bar" aria-hidden>
-          <span style={{ width: `${(doneCount / steps.length) * 100}%` }} />
-        </span>
-        <button className="icon-button" title={t("Hide getting started")} aria-label={t("Hide getting started")} onClick={hide}>
-          <X size={15} />
-        </button>
-      </div>
-      <ol className="gs-steps">
-        {steps.map((s, i) => (
-          <li key={s.title}>
-            <button
-              className={`gs-step${s.done ? " done" : ""}${i === open && !allDone ? " open" : ""}`}
-              aria-current={i === open && !allDone ? "step" : undefined}
-              onClick={() => setChosen(i)}
-            >
-              <span className="gs-mark">{s.done ? <Check size={12} strokeWidth={3} /> : i + 1}</span>
-              {s.title}
-            </button>
-          </li>
-        ))}
-      </ol>
-      {allDone ? (
-        <div className="gs-detail">
-          <p>
-            {t("That's the method. From here it's a few minutes a week: record what you spent, and assign new money when it comes in.")}
-          </p>
-          <button className="secondary small" onClick={hide}>
-            {t("Hide this")}
-          </button>
-        </div>
-      ) : (
-        step && (
-          <div className="gs-detail">
-            <p>{step.text}</p>
-            {step.action && !step.done && (
-              <button className="secondary small" onClick={step.action[1]}>
-                {step.action[0]}
-              </button>
-            )}
-          </div>
-        )
-      )}
-    </section>
-  );
-}
+  const create = async (budget: Budget) => openBudget(await api.createBudget(budget));
+  const start = () => {
+    writeDraft(draft ? { ...draft, format } : newDraft({ name: t("My budget"), format }));
+    onSetup();
+  };
+  // YNAB's token import saves into an open budget, so it gets one to land in first.
+  const fromYnab = () =>
+    run(async () => {
+      const id = await api.createBudget(blank);
+      sessionStorage.setItem("lb:welcome-ynab:" + id, "on");
+      await openBudget(id);
+    });
+  const restore = (file: File) =>
+    run(async () => {
+      const raw = JSON.parse(await file.text());
+      await create(raw.data?.plan || raw.data?.budget ? await api.importYnab(raw) : (raw as Budget));
+    });
 
-/** A first launch offers the normal paths without creating a budget until a path is chosen. */
-export function FirstRunWelcome({openBudget, onAddAccount, importYnab, acceptYnab, resolveYnab}: {
-  openBudget: (id: string) => Promise<void>; onAddAccount: () => void;
-  importYnab: (request: YnabImportRequest) => Promise<ImportResult>;
-  acceptYnab: (reviewId: string) => Promise<ImportResult>;
-  resolveYnab: (id: string, choices: Record<string, string>) => Promise<ImportResult>;
-}) {
-  const blank: Budget = {schemaVersion: 2, name: t("My budget"), currency: BUILT_IN_CURRENCY, accounts: [], categories: [], transactions: [], assignments: []};
-  const create = async (budget: Budget, ynab = false) => {
-    const id = await api.createBudget(budget);
-    writeSetup(id, "on");
-    if (ynab) sessionStorage.setItem("lb:welcome-ynab:" + id, "on");
-    await openBudget(id);
-  };
-  return <Welcome budget={blank} budgetId="" edit={() => {}} openBudget={openBudget} onAddAccount={onAddAccount}
-    startFresh={async (format, template) => { await create({...blank, ...format, ...(template ? templateCategories(template) : {})}); onAddAccount(); }}
-    transform={async work => { await create(await work(blank)); }}
-    prepareYnab={() => create(blank, true)} importYnab={importYnab}
-    acceptYnab={acceptYnab} resolveYnab={resolveYnab} />;
+  if (existing) {
+    const ways: { id: Way; title: string; text: string; run?: () => void }[] = [
+      { id: "ynab", title: t("Bring it over from YNAB"), text: t("Paste a YNAB token and bring everything over in one click, checked against YNAB's own numbers."), run: fromYnab },
+      { id: "file", title: t("Use YNAB's export file"), text: t("The file YNAB lets you download. It leaves out targets, notes and scheduled transactions.") },
+      { id: "backup", title: t("Restore a backup file"), text: t("A .json backup that UrBudget made."), run: () => backup.current?.click() },
+      { id: "sync", title: t("Sign in and sync"), text: t("Open the budgets in your UrBudget account.") },
+    ];
+    return (
+      <div className="page welcome">
+        <p>
+          <button className="link-button" onClick={() => setExisting(false)}>
+            <ArrowLeft size={14} className="welcome-back" /> {t("Back")}
+          </button>
+        </p>
+        <div className="welcome-intro">
+          <h2>{t("I already have a budget")}</h2>
+          <p>{t("Bring it in from where it is now.")}</p>
+        </div>
+        <ul className="welcome-ways">
+          {ways.map((w) => (
+            <li key={w.id}>
+              <button
+                className={`welcome-way${way === w.id ? " selected" : ""}`}
+                aria-expanded={w.run ? undefined : way === w.id}
+                disabled={busy}
+                onClick={() => (w.run ? w.run() : setWay(way === w.id ? null : w.id))}
+              >
+                <span>
+                  <strong>{w.title}</strong>
+                  <small>{w.text}</small>
+                </span>
+                <ChevronRight size={15} className="welcome-arrow" />
+              </button>
+              {way === w.id && w.id === "file" && (
+                <div className="welcome-step">
+                  <YnabFileImport budget={blank} openBudget={openBudget} onBudget={create} />
+                </div>
+              )}
+              {way === w.id && w.id === "sync" && <div className="welcome-sync">{sync}</div>}
+            </li>
+          ))}
+        </ul>
+        <input
+          ref={backup}
+          type="file"
+          accept=".json,application/json"
+          hidden
+          aria-label={t("Restore a backup file")}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) restore(file);
+            e.target.value = "";
+          }}
+        />
+      </div>
+    );
+  }
+  // The whole of it sits in the middle of the window, under the app's mark, as the phones' welcome does.
+  return (
+    <div className="page welcome welcome-first">
+      <AppMark className="welcome-mark" />
+      <div className="welcome-intro">
+        <h2>{t("Let's set up your budget")}</h2>
+        <p>{t(STARTS)}</p>
+      </div>
+      <div className="welcome-start">
+        <button className="primary welcome-go" disabled={busy} onClick={start}>
+          {draft ? t("Continue setup") : t("Create my budget")}
+        </button>
+        <p className="welcome-guess">
+          <span>{currency}</span>
+          <span aria-hidden> · </span>
+          <span>{ltr(dateFormats[format.dateFormat])}</span>{" "}
+          <button className="link-button" aria-expanded={changing} onClick={() => setChanging(!changing)}>
+            {t("Change")}
+          </button>
+        </p>
+        {changing && (
+          <div className="welcome-format panel">
+            <BudgetFormatFields value={format} onChange={setFormat} />
+          </div>
+        )}
+      </div>
+      <p className="welcome-links">
+        <button className="link-button" disabled={busy} onClick={() => run(() => openSample(blank, "", openBudget))}>
+          {t("Look around a sample")}
+        </button>
+        <button className="link-button" disabled={busy} onClick={() => setExisting(true)}>
+          {t("I already have a budget")}
+        </button>
+      </p>
+    </div>
+  );
 }

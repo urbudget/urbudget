@@ -1,84 +1,150 @@
-/* ---------- Welcome: an empty budget's three ways in ---------- */
+/* ---------- Welcome: before there is a budget, and an empty budget's page ---------- */
 .welcome {
   width: 100%;
-  max-width: 820px;
+  max-width: 660px;
   margin: 0 auto;
   padding-top: 40px;
 }
-.welcome-intro {
-  max-width: 600px;
+.welcome > p {
+  margin: 0;
 }
 .welcome-intro h2 {
   margin-bottom: 6px;
   font-family: var(--font-display);
-  font-size: 22px;
+  font-size: 24px;
 }
 .welcome-intro p {
   margin: 0;
   color: var(--text-2);
   line-height: 1.5;
 }
-.welcome-paths {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 10px;
-  margin: 8px 0 0;
-  padding: 0;
-  list-style: none;
+/* A first launch: the whole of it in the middle of the window, a little above centre, under the
+   app's mark. */
+.welcome-first {
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 42px);
+  padding-top: 16px;
+  padding-bottom: 14vh;
+  text-align: center;
 }
-.welcome-paths > li {
-  display: flex;
+.welcome-mark {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 4px;
+  border-radius: 13px;
 }
-.welcome-path {
-  flex: 1;
-  position: relative;
+.welcome-first .welcome-start {
+  align-items: center;
+}
+.welcome-first .welcome-format {
+  text-align: start;
+}
+/* The rule over the links is as wide as what's above it, not the page. */
+.welcome-first .welcome-links {
+  justify-content: center;
+  align-self: center;
+  padding-inline: 32px;
+}
+/* The one filled button, with what the device suggested under it. */
+.welcome-start {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 6px;
-  padding: 16px 16px 18px;
+  gap: 8px;
+  margin-top: 8px;
+}
+.welcome-go {
+  height: 38px;
+  padding: 0 20px;
+  font-size: 14px;
+}
+.welcome-guess {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.welcome-format {
+  align-self: stretch;
+}
+.welcome-format .form-grid {
+  margin-bottom: 0;
+}
+/* The quiet ways around the button. */
+.welcome-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  margin-top: 14px !important;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.welcome .link-button {
+  padding-inline: 0;
+}
+:root[dir="rtl"] .welcome-back,
+:root[dir="rtl"] .welcome-arrow {
+  transform: scaleX(-1);
+}
+/* "I already have a budget": where it is now, a row each. */
+.welcome-ways {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.welcome-ways > li {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.welcome-way {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface);
-  box-shadow: var(--shadow);
   color: var(--text);
   text-align: start;
   cursor: pointer;
   transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
 }
-.welcome-path:hover:not(:disabled) {
+.welcome-way:hover:not(:disabled) {
   border-color: var(--border-strong);
 }
-.welcome-path.selected {
+.welcome-way.selected {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
-.welcome-path strong {
-  font-size: 14px;
+.welcome-way > span {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
 }
-.welcome-path small {
+.welcome-way strong {
+  font-size: 13.5px;
+}
+.welcome-way small {
   color: var(--muted);
   font-size: 12.5px;
   line-height: 1.45;
 }
-.welcome-icon {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  margin-bottom: 4px;
-  border-radius: var(--radius);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.welcome-path.selected .welcome-icon {
-  background: var(--surface);
-}
 .welcome-arrow {
-  position: absolute;
-  top: 16px;
-  inset-inline-end: 14px;
+  flex: none;
   color: var(--muted);
+}
+.welcome-way.selected .welcome-arrow {
+  transform: rotate(90deg);
+}
+.welcome-sync > .panel + .panel {
+  margin-top: 12px;
 }
 .welcome-step {
   display: flex;
@@ -88,120 +154,9 @@
 .welcome-step .help {
   margin: 0;
 }
-.welcome-step .modal-actions button {
-  gap: 6px;
-}
 
 /* ---------- The sample budget's banner ---------- */
 .sample-banner > svg {
   flex: none;
   color: var(--accent);
-}
-
-/* ---------- Getting started checklist ---------- */
-.getting-started {
-  display: flex;
-  flex: none;
-  flex-direction: column;
-  gap: 10px;
-  margin-bottom: 10px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-}
-.page > .getting-started {
-  margin-bottom: 0;
-}
-.gs-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.gs-count {
-  color: var(--muted);
-  font-size: 12.5px;
-}
-.gs-bar {
-  flex: 1;
-  max-width: 160px;
-  height: 4px;
-  overflow: hidden;
-  border-radius: 2px;
-  background: var(--surface-2);
-}
-.gs-bar > span {
-  display: block;
-  height: 100%;
-  background: var(--positive);
-  transition: width 0.3s var(--ease);
-}
-.gs-head .icon-button {
-  margin-inline-start: auto;
-}
-.gs-steps {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.gs-step {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 28px;
-  padding-block: 0;
-  padding-inline: 5px 10px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--surface);
-  color: var(--text-2);
-  font-size: 12.5px;
-  cursor: pointer;
-}
-.gs-step:hover {
-  border-color: var(--border-strong);
-}
-.gs-step.open {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--text);
-}
-.gs-step.done {
-  color: var(--muted);
-}
-.gs-mark {
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--surface-2);
-  color: var(--text-2);
-  font-size: 11px;
-  font-weight: 600;
-}
-.gs-step.open .gs-mark {
-  background: var(--accent);
-  color: #fff;
-}
-.gs-step.done .gs-mark {
-  background: var(--positive);
-  color: #fff;
-}
-.gs-detail {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.gs-detail p {
-  flex: 1;
-  margin: 0;
-  color: var(--text-2);
-  line-height: 1.45;
-}
-.gs-detail button {
-  flex: none;
 }

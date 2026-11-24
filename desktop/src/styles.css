@@ -1049,6 +1049,11 @@ tr.muted td {
 .modal form > .checkbox-label {
   margin-bottom: 10px;
 }
+/* New budget's fields sit in a fieldset that only disables them, which the rule above doesn't
+   reach: its checkbox keeps clear of the fields on either side. */
+.new-budget-fields > .checkbox-label {
+  margin: 6px 0 2px;
+}
 .modal-actions {
   display: flex;
   flex-wrap: wrap;

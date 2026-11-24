@@ -81,3 +81,40 @@ it("opens explicit deletion review instead of restoring over unseen remote edits
   await waitFor(() => expect(changed).toHaveBeenCalledOnce());
   expect(close).toHaveBeenCalledOnce();
 });
+it("makes the budget itself and leaves the walkthrough to the budget's own page", async () => {
+  localStorage.clear();
+  const open = vi.fn(async () => {});
+  render(<NewBudgetDialog open={open} close={vi.fn()} />);
+  // Three ways to start with no budget open, the template first; the walkthrough isn't one of them.
+  expect(screen.getAllByRole("radio").map((r) => (r as HTMLInputElement).value)).toEqual(["template", "blank"]);
+  expect((screen.getByRole("radio", { name: /Categories from a template/ }) as HTMLInputElement).checked).toBe(true);
+  expect(screen.queryByRole("radio", { name: /step by step/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Continue setup" })).toBeNull();
+  fireEvent.change(screen.getByRole("textbox", { name: "Budget name" }), { target: { value: "Business" } });
+  fireEvent.click(screen.getByRole("button", { name: "Create budget" }));
+  await waitFor(() => expect(open).toHaveBeenCalledOnce());
+  // No mark is written for it: it's taken in when it opens, by what it still needs (SetupCard).
+  expect(Object.keys(localStorage).filter((key) => key.startsWith("lb:setup:"))).toEqual([]);
+});
+
+it("starts from the device's currency and formats when no budget is open", () => {
+  const languages = vi.spyOn(navigator, "languages", "get").mockReturnValue(["en-US"]);
+  render(<NewBudgetDialog open={vi.fn()} close={vi.fn()} />);
+  expect((screen.getByRole("combobox", { name: "Currency" }) as HTMLInputElement).value).toContain("USD");
+  expect((screen.getByLabelText("Date format") as HTMLSelectElement).value).toBe("mdy");
+  languages.mockRestore();
+});
+
+it("marks a fresh start as set up, so it's never offered the walkthrough", async () => {
+  localStorage.clear();
+  vi.mocked(api.createBudget).mockResolvedValue("fresh-id");
+  const budget = demoBudget();
+  const summary: Summary = { readyToAssign: 0, assigned: 0, activity: 0, available: 0, income: 0, netWorth: 0, accounts: [], categories: [] };
+  render(<NewBudgetDialog current={{ budget, summary, token: "source:4:1" }} open={vi.fn(async () => {})} close={vi.fn()} />);
+  // With a budget open the dialog keeps its currency and formats.
+  expect((screen.getByRole("combobox", { name: "Currency" }) as HTMLInputElement).value).toContain(budget.currency);
+  fireEvent.change(screen.getByRole("textbox", { name: "Budget name" }), { target: { value: "Fresh plan" } });
+  fireEvent.click(screen.getByRole("radio", { name: /Start over from/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Create budget" }));
+  await waitFor(() => expect(localStorage.getItem("lb:setup:fresh-id")).toBe(JSON.stringify({ card: false })));
+});

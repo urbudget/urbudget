@@ -30,6 +30,17 @@ fn engine_requests_match_the_android_transport() {
     let reply = call(urbudget_invoke, &request);
     assert_eq!(reply["ok"], true, "{reply}");
     assert_eq!(reply, serde_json::from_str::<Value>(&urbudget_android::invoke_json(&request)).unwrap());
+    // The setup walkthrough's budget: new ids each time too, so what it holds is compared.
+    let request = json!({"version":1,"method":"setupBudget","params":{"answers":{
+        "currency":"USD","template":"simple","accounts":[{"name":"Visa","type":"creditCard","balance":42000}],
+        "amounts":[{"category":"0.0","amount":120000,"period":"year"}]}}}).to_string();
+    let reply = call(urbudget_invoke, &request);
+    assert_eq!(reply["ok"], true, "{reply}");
+    let budget = &reply["value"];
+    assert_eq!(budget["accounts"][0]["openingBalance"], -42000);
+    assert_eq!(budget["categories"][0]["target"], 10000);
+    assert_eq!(budget["categories"].as_array().map(Vec::len), Some(8 + 1));
+    assert_eq!(budget["categories"][8]["paymentAccountId"], budget["accounts"][0]["id"]);
 }
 
 #[test]

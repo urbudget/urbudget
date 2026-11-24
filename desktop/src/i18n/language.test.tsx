@@ -210,8 +210,6 @@ describe("the budget page in Arabic", () => {
           transform={vi.fn()}
           onEditorChange={vi.fn()}
           onEditCategory={vi.fn()}
-          onAddAccount={vi.fn()}
-          onOpenSample={vi.fn()}
           onOpenRegister={vi.fn()}
         />
       </ToastProvider>,

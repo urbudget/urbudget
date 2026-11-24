@@ -18,8 +18,7 @@ it("shows an intermediate future shortage even when later returns cancel the agg
     accounts: [], categories: [],
   };
   render(<ToastProvider><BudgetPage budget={budget} summary={summary} month="2026-10"
-    edit={vi.fn()} transform={vi.fn()} onEditorChange={vi.fn()} onEditCategory={vi.fn()}
-    onAddAccount={vi.fn()} onOpenSample={vi.fn()} /></ToastProvider>);
+    edit={vi.fn()} transform={vi.fn()} onEditorChange={vi.fn()} onEditCategory={vi.fn()} /></ToastProvider>);
   const warning = screen.getByText(/November 2026 is short by 500.00/);
   expect(warning.closest(".notice")?.classList.contains("error")).toBe(true);
   expect(warning.textContent).toContain("Move funds back from a future month");
@@ -39,8 +38,7 @@ it.each([
     accounts: [], categories: [],
   };
   render(<ToastProvider><BudgetPage budget={budget} summary={summary} month="2024-10"
-    edit={vi.fn()} transform={vi.fn()} onEditorChange={vi.fn()} onEditCategory={vi.fn()}
-    onAddAccount={vi.fn()} onOpenSample={vi.fn()} /></ToastProvider>);
+    edit={vi.fn()} transform={vi.fn()} onEditorChange={vi.fn()} onEditCategory={vi.fn()} /></ToastProvider>);
   const notice = screen.getByText(/Assigned in future months/);
   expect(notice.classList.contains("error")).toBe(false);
   expect(notice.textContent).not.toContain("short");

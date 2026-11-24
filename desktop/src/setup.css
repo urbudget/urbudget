@@ -1,0 +1,562 @@
+/* ---------- The setup walkthrough: one question a screen, as the window's whole page ---------- */
+.setup-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  min-height: 0;
+}
+.setup-page > .empty-library-titlebar {
+  flex: none;
+}
+/* The page scrolls under the title bar; a step's buttons stay in view at its foot. */
+.setup-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* A step that scrolls sits where one that doesn't does. */
+  scrollbar-gutter: stable both-edges;
+}
+/* The question and its lead read as one block, set well apart from the fields under them. */
+.setup {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 660px;
+  min-height: 100%;
+  margin: 0 auto;
+  padding: 24px 24px 0;
+}
+/* Five parts, one a step, filled as far as the walkthrough has come. */
+.setup-progress {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+  margin-bottom: 14px;
+}
+.setup-progress > span {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border-strong);
+  transition: background-color 0.2s var(--ease);
+}
+.setup-progress > span.done {
+  background: var(--accent);
+}
+.setup-count {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.setup h1 {
+  margin: 0 0 8px;
+  font-family: var(--font-display);
+  font-size: 24px;
+  outline: none;
+}
+.setup-lead {
+  margin: 0;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+.setup-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 12px;
+}
+.setup-lead + .setup-body {
+  margin-top: 22px;
+}
+.setup-body > p {
+  margin: 0;
+}
+.setup-body .link-button {
+  padding-inline: 0;
+}
+.setup-actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 10px;
+  margin: 24px -6px 0;
+  /* Wider than the fields, so a focus ring scrolling under it doesn't show at its sides. */
+  padding: 14px 6px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+.setup-actions > .form-error {
+  flex-basis: 100%;
+  margin: 0;
+}
+.setup-spacer {
+  flex: 1;
+}
+/* A step's running total, over its buttons however far the step is scrolled. */
+.setup-note {
+  flex-basis: 100%;
+  min-width: 0;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.setup-note strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.setup-note.warning,
+.setup-note.warning strong {
+  color: var(--warning);
+}
+.setup-actions .link-button {
+  flex: none;
+  color: var(--text-2);
+}
+.setup-actions .primary {
+  flex: none;
+  min-width: 96px;
+}
+.setup-actions .secondary {
+  flex: none;
+}
+
+/* An amount field with the currency's sign inside it. The field reads left to right in every
+   language, so the sign's side is the budget's, not the text's. */
+.setup-money {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+.setup-money > input {
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+.setup-money > span {
+  position: absolute;
+  top: 50%;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.setup-money.before > span {
+  left: 9px;
+}
+.setup-money.before > input {
+  padding-left: calc(14px + var(--sign));
+}
+.setup-money.after > span {
+  right: 9px;
+}
+.setup-money.after > input {
+  padding-right: calc(14px + var(--sign));
+}
+/* The amount sits against its sign in Arabic too, where fields otherwise keep to the right
+   (styles.css), which left a sign before the amount a field's width away from it. */
+[dir="rtl"] .setup-money.before > input {
+  text-align: left;
+}
+
+/* Step 1: an account a row, the columns named once above them. */
+.setup-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+/* With the rows gone (they're added to the list above it), "Add another" isn't spaced twice. */
+.setup-rows:empty {
+  display: none;
+}
+.setup-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr) 28px;
+  align-items: start;
+  gap: 8px;
+}
+.setup-row.head {
+  margin-bottom: -5px;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 500;
+}
+.setup-row > input,
+.setup-row > select {
+  width: 100%;
+}
+.setup-row > .icon-button {
+  margin-top: 1px;
+}
+.setup-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.setup-cell > small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.setup-fixed {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  list-style: none;
+}
+.setup-fixed li {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 10px 14px;
+}
+.setup-fixed li + li {
+  border-top: 1px solid var(--border);
+}
+.setup-fixed li > span:first-of-type {
+  flex: 1;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.setup-figure {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Step 2: a set's categories as chips, by group. */
+.setup-set {
+  align-self: flex-start;
+  min-width: 260px;
+}
+.setup-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.setup-group h2 {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+.setup-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.setup-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--accent);
+  border-radius: 14px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 12.5px;
+}
+/* The check says it's in; without it the chip is out. */
+.setup-chip > svg {
+  flex: none;
+  color: var(--accent);
+}
+button.setup-chip {
+  cursor: pointer;
+}
+.setup-chip.out {
+  border-color: var(--border-strong);
+  border-style: dashed;
+  background: transparent;
+  color: var(--muted);
+}
+.setup-chip.fixed {
+  border-color: var(--border);
+  background: var(--surface-2);
+}
+.setup-chip.own {
+  padding-inline-end: 4px;
+}
+.setup-chip-remove {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-2);
+}
+.setup-chip-remove:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.setup-add {
+  display: flex;
+  gap: 8px;
+  max-width: 360px;
+}
+.setup-add input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Step 3: an amount a category, and whether it's a month's or a year's as quiet text after it. */
+.setup-amounts {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  /* A form's column, not the page's width: each amount stays beside its name. */
+  max-width: 480px;
+}
+.setup-amount {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 76px;
+  align-items: center;
+  gap: 3px 8px;
+}
+.setup-amount label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 400;
+}
+.setup-period {
+  justify-self: start;
+  height: 26px;
+  padding: 0 6px;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  white-space: nowrap;
+  cursor: pointer;
+  /* A dotted underline says it can be switched, where plain grey words read as a label. */
+  text-decoration: underline dotted;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 4px;
+}
+.setup-period:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.setup-period[aria-checked="true"] {
+  color: var(--accent);
+  font-weight: 500;
+}
+.setup-period:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.setup-per-month {
+  grid-column: 1;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: end;
+}
+.setup-per-month:empty {
+  display: none;
+}
+.setup-fold {
+  margin-top: 4px;
+}
+/* The same chevron as step 4's groups, not the browser's triangle. */
+.setup-fold summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  color: var(--accent);
+  font-weight: 500;
+  list-style: none;
+  cursor: pointer;
+}
+.setup-fold summary::-webkit-details-marker {
+  display: none;
+}
+.setup-fold summary::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-inline: 1px 2px;
+  border-block-end: 1.5px solid currentColor;
+  border-inline-end: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.12s var(--ease);
+}
+:root[dir="rtl"] .setup-fold summary::before {
+  transform: rotate(45deg);
+}
+.setup-fold[open] > summary::before {
+  transform: rotate(45deg);
+}
+:root[dir="rtl"] .setup-fold[open] > summary::before {
+  transform: rotate(-45deg);
+}
+.setup-fold summary:hover {
+  text-decoration: underline;
+}
+.setup-fold label {
+  gap: 6px;
+  max-width: 320px;
+  margin-top: 10px;
+}
+.setup-fold label > small {
+  color: var(--muted);
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+/* Step 4: what it comes to, with what can be done about a leftover inside it; then what each group gets. */
+.setup-result {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+}
+.setup-result.good {
+  background: var(--positive-soft);
+}
+.setup-result.warning {
+  background: var(--warning-soft);
+}
+.setup-outcome {
+  margin: 0;
+  line-height: 1.5;
+}
+.setup-plan {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.setup-plan > * + * {
+  border-top: 1px solid var(--border);
+}
+.setup-plan summary,
+.setup-plan li,
+.setup-plan-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 10px 14px;
+}
+.setup-plan summary {
+  align-items: center;
+  font-weight: 500;
+  list-style: none;
+  cursor: pointer;
+}
+.setup-plan summary::-webkit-details-marker {
+  display: none;
+}
+/* A chevron that points along the text when shut and down when open. */
+.setup-plan summary::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-block-end: 1.5px solid var(--muted);
+  border-inline-end: 1.5px solid var(--muted);
+  transform: rotate(-45deg);
+  transition: transform 0.12s var(--ease);
+}
+:root[dir="rtl"] .setup-plan summary::before {
+  transform: rotate(45deg);
+}
+.setup-plan details[open] > summary::before {
+  transform: rotate(45deg);
+}
+:root[dir="rtl"] .setup-plan details[open] > summary::before {
+  transform: rotate(-45deg);
+}
+.setup-plan summary > span:first-child {
+  flex: 1;
+}
+.setup-plan ul {
+  margin: 0;
+  padding: 0 0 8px;
+  list-style: none;
+}
+.setup-plan li {
+  padding-block: 5px;
+  padding-inline-start: 32px;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+/* What there is and what's left, set apart from the groups as a sum's foot is. */
+.setup-plan-line.total {
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+.setup-plan-line.total:last-child {
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* Step 5 uses the dialogs' choice list, with the room of the welcome screen's cards: it's the whole step. */
+.setup .choice-list {
+  gap: 10px;
+  margin: 0;
+}
+.setup .choice {
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-lg);
+}
+.setup .choice span {
+  gap: 3px;
+}
+.setup .choice strong {
+  font-size: 13.5px;
+}
+.setup .choice small {
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.setup .choice small .link-button {
+  display: inline;
+  padding: 0;
+  font-size: inherit;
+}
+
+/* ---------- On Budget: the setup card, and the line a finished walkthrough leaves ---------- */
+.setup-card {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding-block: 8px;
+  padding-inline: 14px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+.page > .setup-card {
+  margin-bottom: 0;
+}
+.setup-card > span:first-child {
+  flex: 1;
+  color: var(--text-2);
+}
+.setup-card strong {
+  color: var(--text);
+}
+

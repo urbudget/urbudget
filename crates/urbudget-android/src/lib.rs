@@ -2,7 +2,7 @@
 use serde::Deserialize;
 use serde_json::{json, Value};
 use urbudget_core::commands::{self, encode, optional, required};
-use urbudget_core::{bank_csv, budget_templates, domain, loans, t, ynab, ynab_files};
+use urbudget_core::{bank_csv, budget_templates, domain, loans, setup, t, ynab, ynab_files};
 
 const API_VERSION: u32 = 1;
 const MAX_REQUEST_BYTES: usize = 64 * 1024 * 1024;
@@ -129,6 +129,8 @@ fn dispatch(request: Request) -> Result<Value, String> {
         }
         // The category templates a new budget can start with, for the apps' pickers.
         "budgetTemplates" => Ok(json!({"templates": budget_templates::list(), "default": budget_templates::DEFAULT})),
+        // The budget a setup walkthrough's answers describe, with nothing assigned (setup.rs).
+        "setupBudget" => request.changed(setup::build(&required(p, "answers")?)?),
         "sampleBudget" => sample_budget(p).and_then(|budget| request.changed(budget)),
         "importYnab" => encode(ynab::import_export(&required::<Value>(p, "export")?)?),
         // A statement that isn't UTF-8, sent as ISO-8859-1 so its bytes cross unchanged.

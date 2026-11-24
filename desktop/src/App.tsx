@@ -40,7 +40,9 @@ import { UpdateChip, UpdateInstalling } from "./UpdateNotice";
 import { TransactionsPage, saveTransaction, scheduledMessage } from "./Register";
 import { Sidebar, useSidebarLayout, type Page } from "./Sidebar";
 import { ManageBudgetsDialog, NewBudgetDialog } from "./BudgetDialogs";
-import { SampleBanner, Welcome, FirstRunWelcome, isBlank, isUntouched, openSample } from "./Welcome";
+import { SampleBanner, Welcome, FirstRunWelcome, isUntouched } from "./Welcome";
+import { SetupWalkthrough, type SetupSession } from "./SetupWalkthrough";
+import { cardPaymentCategory } from "./accounts";
 import { localeDefaults } from "./locale";
 import { AccountForm, CategoryForm, Modal, ReconcileForm, TransactionForm } from "./forms";
 import { configureFormat, errorText, formatDate, money, monthName, shiftMonth } from "./format";
@@ -199,6 +201,8 @@ export default function App() {
   useLanguage();
   const [month, setMonth] = useState(today().slice(0, 7));
   const [dialog, setDialog] = useState<Dialog>(null);
+  // The setup walkthrough, when it has the window: on answers for a budget not made yet, or on the open budget.
+  const [setup, setSetup] = useState<SetupSession | null>(null);
   const [planningEditor, setPlanningEditor] = useState(false);
   const [importing, setImporting] = useState<ImportState | null>(null);
   const toast = useToast();
@@ -502,16 +506,45 @@ export default function App() {
     }
   };
 
+  // The walkthrough is the window's whole page: before a budget exists, while the one it made
+  // opens, and on an open budget. Its one filled button is the only one on screen.
+  if (model.ready && setup && (setup.mode === "draft" || budget || model.operation)) {
+    if (budget) configureFormat(budget);
+    return (
+      <div className="empty-library-page setup-page">
+        {customTitleBar && <div className="empty-library-titlebar"><TitleBar /></div>}
+        <div className="setup-scroll">
+          <SetupWalkthrough
+            session={setup}
+            onSession={setSetup}
+            budget={budget}
+            budgetId={budgetId}
+            summary={currentSummary}
+            month={model.calculationMonth ?? today().slice(0, 7)}
+            edit={edit}
+            transform={model.transform}
+            openBudget={switchBudget}
+            // It ends on Budget, where its card or its arrival line is.
+            close={() => {
+              setSetup(null);
+              setPage("budget");
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+  const syncSettings = <SyncSettings cloud={cloud} budgetId="" isClean={() => true} openBudget={switchBudget} />;
   if (model.ready && !budget) return (
     <div className="empty-library-page">
       {customTitleBar && <div className="empty-library-titlebar"><TitleBar /></div>}
-      {cloud.status?.library?.firstRun ? <FirstRunWelcome openBudget={switchBudget} onAddAccount={() => setDialog({type:"account"})} importYnab={model.importYnab} acceptYnab={model.acceptYnab} resolveYnab={model.resolveYnab} /> : <div className="settings-page">
+      {cloud.status?.library?.firstRun ? <FirstRunWelcome openBudget={switchBudget} onSetup={() => setSetup({ mode: "draft" })} sync={syncSettings} /> : <><div className="settings-page">
       <h1>{t("Budget library")}</h1>
       <p>{t("Create a budget or open one from your account library.")}</p>
       <button className="primary" onClick={() => setDialog({ type: "newBudget" })}>{t("New budget")}</button>{" "}
       <button className="secondary" onClick={() => setDialog({ type: "manageBudgets" })}>{t("Budgets")}</button>
-      </div>}
-      <div className="settings-page"><SyncSettings cloud={cloud} budgetId="" isClean={() => true} openBudget={switchBudget} /></div>
+      </div>
+      <div className="settings-page">{syncSettings}</div></>}
       {dialog?.type === "newBudget" && <NewBudgetDialog close={close} open={switchBudget} />}
       {dialog?.type === "manageBudgets" && <ManageBudgetsDialog close={close} open={switchBudget} changed={model.refreshDatabase} review={async (id) => { await flushAllEditorDrafts(); await model.switchBudget(id, true); }} onNew={() => setDialog({ type: "newBudget" })} />}
     </div>
@@ -877,14 +910,15 @@ export default function App() {
           <div className="calculating" role="status"><span><LoaderCircle size={12} className="spin" />{t("Updating {month} totals…", { month: monthName(month) })}</span></div>
         )}
         <div key={formatKey} inert={!currentSummary && ["budget", "transactions"].includes(page)} aria-busy={!currentSummary} className={`page-scroll${page === "transactions" || page === "budget" || page === "reports" ? " fill" : ""}`}>
-          {page === "budget" && isBlank(budget) && (
+          {/* A budget with no accounts isn't set up, whatever made it: one page offers the walkthrough. */}
+          {page === "budget" && !budget.accounts.length && (
             <Welcome
               key={budgetId}
               budget={budget}
               budgetId={budgetId}
-              edit={edit}
               transform={model.transform}
               openBudget={switchBudget}
+              onSetup={() => setSetup({ mode: "budget", step: 1 })}
               onAddAccount={() => setDialog({ type: "account" })}
               importYnab={model.importYnab}
               acceptYnab={model.acceptYnab}
@@ -892,7 +926,7 @@ export default function App() {
               onAsk={(text) => ask({ text })}
             />
           )}
-          {page === "budget" && !isBlank(budget) && (
+          {page === "budget" && budget.accounts.length > 0 && (
             <BudgetPage
               budget={budget}
               budgetId={budgetId}
@@ -907,15 +941,20 @@ export default function App() {
               onAsk={(names) =>
                 ask({ text: t("Help me with {categories} this month.", { categories: names.length === 1 ? names[0] : list(names) }) })
               }
-              onNewCategory={() => setDialog({ type: "category" })}
-              onAddAccount={() => setDialog({ type: "account" })}
               onOpenRegister={({ accountId: account, ...filter }) => {
                 setAccountId(account);
                 setRegisterFilter(filter);
                 setPage("transactions");
               }}
-              onOpenSample={() => void openSample(budget, budgetId, switchBudget).catch((e) => fail(e))}
-              onAddTransaction={() => setDialog({ type: "transaction", isNew: true })}
+              onSetup={(step) => setSetup({ mode: "budget", step })}
+              onKeepUp={(route) => {
+                // A bank's file goes into an account the money is spent from: the first that isn't a card.
+                const open = budget.accounts.filter((a) => !a.archived && a.kind !== "tracking");
+                const account = open.find((a) => a.kind === "cash") ?? open[0];
+                if (route === "type") setDialog({ type: "transaction", isNew: true });
+                else if (route === "file" && account) openImport({ account: account.id });
+                else openSettings("import");
+              }}
               onPayCard={(id) => {
                 const card = budget.accounts.find((a) => a.id === id);
                 if (card) setDialog({ type: "payment", account: card });
@@ -1132,14 +1171,7 @@ export default function App() {
               // A card's payment category follows the card's name, as in YNAB.
               const payment = d.categories.find((c) => c.paymentAccountId === account.id);
               if (payment) payment.name = account.name;
-              else
-                d.categories.push({
-                  id: id(),
-                  name: account.name,
-                  group: "Credit Card Payments",
-                  target: 0,
-                  paymentAccountId: account.id,
-                });
+              else d.categories.push(cardPaymentCategory(account));
             });
             close();
           }}

@@ -20,6 +20,7 @@ import type {
   YnabImportRequest,
   YnabPlan,
 } from "./types";
+import type { SetupAnswers, SetupPreview } from "./setup";
 export const desktop = isTauri();
 
 // The engine writes the templates in its language, so they're asked once it has the window's and
@@ -173,6 +174,13 @@ export const api = {
   associateBudgets: (ids: string[]) => invoke("sync_enable", { enabled: true, ids }),
   /** The category templates a new budget can start with, in the language in use. */
   budgetTemplates,
+  /**
+   * The budget a setup walkthrough's answers describe (setup.rs), named in the language in use.
+   * Nothing is saved or assigned.
+   */
+  setupBudget: (answers: SetupAnswers) => engineLanguageSet().then(() => invoke<Budget>("setup_budget", { answers })),
+  /** What Quick assign › Underfunded would give a budget that isn't in the library yet. */
+  setupPreview: (budget: Budget, month: string) => invoke<SetupPreview>("setup_preview", { budget, month }),
   /** Saves a new budget file; the open budget is unchanged. Returns its id. */
   createBudget: (budget: Budget, source?: { budget: Budget; token: string }, localOnly = false) => source
     ? read<string>(source.budget, "create_budget", { budget, freshStartToken: source.token, localOnly })

@@ -11,8 +11,14 @@ import { localDate, t } from "./i18n";
 import type { Budget, Summary } from "./types";
 import { cloud } from "./cloud";
 import { editorDrafts, discardEditorDraft, type EditorDraft } from "./editorCheckpoint";
+import { localeDefaults } from "./locale";
+import { writeMark } from "./setup";
 
-/** Creates a budget file and opens it. */
+/**
+ * Creates a budget file and opens it. The dialog doesn't offer the setup walkthrough itself: a
+ * budget it makes with no accounts opens on the page that does (Welcome), and its setup card
+ * follows it from there (SetupCard).
+ */
 export function NewBudgetDialog({
   current,
   close,
@@ -25,11 +31,16 @@ export function NewBudgetDialog({
 }) {
   const [name, setName] = useState("");
   const [localOnly, setLocalOnly] = useState(false);
-  const [format, setFormat] = useState<FormatValue>({
-    currency: current?.budget.currency ?? "SAR",
-    numberFormat: numberFormatFor(current?.budget.currency ?? "SAR", current?.budget.numberFormat),
-    dateFormat: current?.budget.dateFormat ?? "iso",
-  });
+  // The open budget's currency and formats; with none open, the device's, as a first launch has them.
+  const [format, setFormat] = useState<FormatValue>(() =>
+    current
+      ? {
+          currency: current.budget.currency,
+          numberFormat: numberFormatFor(current.budget.currency, current.budget.numberFormat),
+          dateFormat: current.budget.dateFormat ?? "iso",
+        }
+      : localeDefaults(),
+  );
   const [start, setStart] = useState<BudgetStart>("template");
   const templates = useBudgetTemplates();
   const [templateId, setTemplateId] = useState(DEFAULT_TEMPLATE);
@@ -64,6 +75,8 @@ export function NewBudgetDialog({
               localOnly,
             );
             setCreated(id);
+            // A fresh start is already set up: it's never offered the walkthrough.
+            if (start === "copy") writeMark(id, { card: false });
             await open(id);
             close();
           } catch (e) {
@@ -74,7 +87,7 @@ export function NewBudgetDialog({
           }
         }}
       >
-        <fieldset disabled={busy || created !== null} style={{ border: 0, margin: 0, padding: 0, display: "contents" }}>
+        <fieldset className="new-budget-fields" disabled={busy || created !== null} style={{ border: 0, margin: 0, padding: 0, display: "contents" }}>
         <label>
           {t("Budget name")}
           <input
@@ -86,7 +99,7 @@ export function NewBudgetDialog({
             onChange={(e) => setName(e.target.value)}
           />
         </label>
-        <label><input type="checkbox" checked={localOnly} onChange={e => setLocalOnly(e.target.checked)} />{t("Keep this budget only on this device")}</label>
+        <label className="checkbox-label"><input type="checkbox" checked={localOnly} onChange={e => setLocalOnly(e.target.checked)} />{t("Keep this budget only on this device")}</label>
         <BudgetFormatFields value={format} onChange={setFormat} />
         <fieldset className="choice-list">
           <legend>{t("Start with")}</legend>

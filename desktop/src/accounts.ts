@@ -1,4 +1,4 @@
-import type { Account } from "./types";
+import { id, type Account, type Category } from "./types";
 import { msg, t } from "./i18n";
 
 /** Account types: budget accounts, then tracking assets and liabilities. The type sets the kind. */
@@ -89,6 +89,14 @@ export function accountType(a: Account, balance = a.openingBalance): string {
   if (a.kind === "cash") return "checking";
   return balance < 0 ? "otherDebt" : "otherAsset";
 }
+/** A card's payment category: named after the card, in its own group, as in YNAB (setup.rs makes the same). */
+export const cardPaymentCategory = (account: Pick<Account, "id" | "name">): Category => ({
+  id: id(),
+  name: account.name,
+  group: "Credit Card Payments",
+  target: 0,
+  paymentAccountId: account.id,
+});
 /** Whether the account's balance counts toward net worth (tracking accounts can opt out). */
 export const inNetWorth = (a: Account) => a.netWorth !== false;
 /** A credit account's limit in cents, or undefined when it has none (or one that doesn't read). */
