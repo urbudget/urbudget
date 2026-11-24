@@ -39,6 +39,11 @@ targets:
         # Only to scan the one-time code that adds a device to sync (Account & sync). Its Arabic is in
         # InfoPlist.xcstrings.
         NSCameraUsageDescription: UrBudget uses the camera to scan the code that adds a device to sync.
+        # The code that adds a device to sync is a link of this kind, so the phone's own Camera
+        # offers to open UrBudget with it (crates/urbudget-services/src/cloud/codes.rs).
+        CFBundleURLTypes:
+          - CFBundleURLName: app.urbudget.sync
+            CFBundleURLSchemes: [urbudget]
         UILaunchScreen: {}
         # Bank statements, YNAB exports and JSON backups open in UrBudget from Files, Mail and AirDrop
         # (as a copy). It's never the default app for these types.

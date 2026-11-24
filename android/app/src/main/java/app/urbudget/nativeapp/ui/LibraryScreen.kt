@@ -85,7 +85,7 @@ internal fun LibraryScreen(budget: JSONObject?, vm: BudgetViewModel, importFile:
         val account = entry.text("scope") == "account"
         var menu by remember { mutableStateOf(false) }
         Box {
-            ListRow(entry.text("name"), subtitle = "${entry.text("currency")} · ${stringResource(if (deletionConflict) R.string.library_deletion_conflict else if (trashed) R.string.library_trash else if (entry.optBoolean("pending")) R.string.sync_state_waiting else if (remote) R.string.library_available_online else if (current) R.string.library_open_now else if (missing) R.string.library_file_missing else R.string.library_on_device)}",
+            ListRow(entry.text("name"), subtitle = "${entry.text("currency")} · ${stringResource(if (deletionConflict) R.string.library_deletion_conflict else if (trashed) R.string.library_trash else if (recovery) R.string.library_kept_copy else if (entry.optBoolean("pending")) R.string.sync_state_waiting else if (remote) R.string.library_available_online else if (current) R.string.library_open_now else if (missing) R.string.library_file_missing else R.string.library_on_device)}",
                 icon = Icons.Outlined.AccountBalanceWallet, iconTint = if (current) ur.accent else ur.text2, iconFill = if (current) ur.accentSoft else ur.zeroSoft,
                 onClick = { if (current) dialog = "settings" else if (!state.busy && !missing && !trashed && !recovery) vm.service("library_open", JSONObject().put("id", entry.text("id"))) },
                 onLongClick = { menu = true }, chevron = !current,
@@ -228,4 +228,4 @@ private fun JSONArray.objects() = (0 until length()).mapNotNull(::optJSONObject)
 private fun inTrash(entry: JSONObject) = entry.text("lifecycle") in setOf("trashed", "purged")
 
 /** A budget in Trash that lives only on this phone: it can be deleted permanently. */
-private fun deviceTrash(entry: JSONObject) = entry.text("lifecycle") == "trashed" && entry.text("scope") != "account"
+private fun deviceTrash(entry: JSONObject) = entry.text("lifecycle") in setOf("trashed", "recovery") && entry.text("scope") != "account"

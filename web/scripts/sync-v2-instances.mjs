@@ -190,14 +190,19 @@ try {
     await a.restart(); await a.call("sync_setup", { passphrase }); await settle(); await checkPrivate();
     await a.call("library_trash", { id }); await open(a, a.remote);
   });
-  await test("budgets created after sign-out stay private after signing in again", async () => {
+  // Budgets sync unless someone says otherwise: one with no account joins the account once sync
+  // is on and unlocked, and only the choice to keep it on the device holds it back.
+  await test("a budget created while signed out joins the account at the next sign-in, unless it was kept on the device", async () => {
     await a.call("account_sign_out");
-    const id = await a.call("create_budget", { budget: { ...initial(), name: "Signed-out private budget" } });
+    const id = await a.call("create_budget", { budget: { ...initial(), name: "Made while signed out" } });
+    const keptId = await a.call("create_budget", { budget: { ...initial(), name: "Signed-out private budget" }, localOnly: true });
     await signIn(a); await a.call("sync_setup", { passphrase }); await settle();
-    const item = (await snapshot(a)).entries.find(e => e.id === id);
-    assert.equal(item.scope, "local"); assert.equal(item.accountId, null); assert.equal(item.remoteId, null);
+    const entries = (await snapshot(a)).entries, item = entries.find(e => e.id === id), kept = entries.find(e => e.id === keptId);
+    assert.equal(item.scope, "account"); assert.equal(item.accountId, local.accountId); assert.ok(item.remoteId);
+    for (const peer of [b, c]) assert.ok((await snapshot(peer)).entries.some(e => e.remoteId === item.remoteId && e.name === "Made while signed out"));
+    assert.equal(kept.scope, "local"); assert.equal(kept.accountId, null); assert.equal(kept.remoteId, null);
     for (const peer of [b, c]) assert.ok(!(await snapshot(peer)).entries.some(e => e.name === "Signed-out private budget"));
-    await a.call("library_trash", { id }); await open(a, a.remote);
+    await a.call("library_trash", { id }); await a.call("library_trash", { id: keptId }); await settle(); await open(a, a.remote);
   });
   await test("switching accounts cannot upload another account's cached edits", async () => {
     assert.ok(local.execute, "This scenario requires the isolated managed Worker");
@@ -574,7 +579,9 @@ try {
     // From here it syncs as any budget does.
     await edit(b, budget => budget.transactions.push(transaction("after-the-reset"))); await settle();
     assert.ok((await equalBudgets(a.remote)).transactions.some(t => t.id === "after-the-reset"));
-    assert.equal((await cloud()).heads.length, before.length, "no device added a budget a second time");
+    // Budgets sync unless someone says otherwise, so the two copies that were recovered by hand
+    // are budgets of their own in the account. Nothing else was added a second time.
+    assert.equal((await cloud()).heads.length, before.length + 2, "only the copies someone recovered were added");
   });
   await test("a key reset whose answer was lost ends the same way once it is retried", async () => {
     const id = (await entry(a, a.remote)).id, oldB = await entry(b, a.remote), before = await syncing(a), content = (await a.call("load_budget")).budget;

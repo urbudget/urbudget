@@ -753,6 +753,7 @@ pub fn run() {
             cloud::sync::sync_now,
             cloud::sync::sync_has_key,
             cloud::sync::sync_key_info,
+            cloud::sync::sync_devices,
             cloud::sync::sync_setup,
             cloud::sync::sync_unlock,
             cloud::sync::sync_upgrade,

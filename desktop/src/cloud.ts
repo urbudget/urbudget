@@ -59,6 +59,8 @@ export type CloudStatus = {
     recovery?: boolean;
     /** This computer holds a recovery code nobody has said they saved (`syncRecoveryUnsaved`). */
     recoveryUnsaved?: boolean;
+    /** Sync was reset on another device since this computer last synced, and it hasn't been added again. */
+    resetElsewhere?: boolean;
   };
   site: string;
   library?: LibrarySnapshot;
@@ -106,17 +108,23 @@ export const cloud = {
   /** Moves the account to the new sync; the passphrase only when `upgradeNeedsPassphrase`. */
   syncUpgrade: (passphrase?: string) => invoke<{ created: boolean; protocol: 2 }>("sync_upgrade", { passphrase: passphrase || null }),
   syncTrack: (ids: string[]) => invoke<void>("sync_track", { ids }),
+  /** On the new sync: adds budgets kept only on this computer to the account, so they start syncing. */
+  syncAdd: (ids: string[]) => invoke<unknown>("sync_enable", { enabled: true, ids }),
   syncDownload: (id: string) => invoke<string>("sync_download", { id }),
   /** "merge" merges again with the answers in `choices`; "local" and "cloud" keep one whole version. */
   syncResolve: (id: string, keep: "merge" | "local" | "cloud", openClean: boolean, choices?: Record<string, "local" | "cloud">, review?: BudgetSync["review"]) =>
     invoke<SyncReport>("sync_resolve", { id, keep, openClean, choices: choices ?? null, review: review ?? null }),
   syncRemove: (id: string) => invoke<void>("sync_remove", { id }),
   syncLock: () => invoke<void>("sync_lock"),
+  /** The devices that sync with the account, this computer first. */
+  syncDevices: () => invoke<{ devices: SyncDevice[] }>("sync_devices"),
 };
 
 export type SyncKeyInfo = { exists: boolean; secret: "code" | "passphrase" | null; recovery: boolean; protocol: number };
 /** Sync was set up, unlocked or reset here. `recoveryCode` when that made a recovery code for the person to keep. */
 export type SyncUnlocked = { created: boolean; protocol?: number; recoveryCode?: string };
+/** A device that syncs with the account. `name` is null for one that registered before devices sent theirs, and `lastSeenAt` until it has synced. */
+export type SyncDevice = { id: string; name: string | null; addedAt: string; lastSeenAt: string | null; current: boolean };
 /** A one-time code: its 24 characters, and the same as a QR code's squares row by row ("1" is dark). */
 export type PairingCode = { id: string; code: string; qr: { size: number; modules: string }; expiresAt: string };
 

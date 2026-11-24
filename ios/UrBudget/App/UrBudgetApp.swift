@@ -11,6 +11,15 @@ struct UrBudgetApp: App {
     /// Unit tests open their own temporary library; the app's must stay closed.
     private let testing = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 
+    init() {
+        #if DEBUG
+        DebugServer.restore()
+        #endif
+        // What this device is called in the account's list of devices (Account & sync). The engine
+        // takes a device's name from here, as it takes a computer's from its system.
+        setenv("COMPUTERNAME", UIDevice.current.name, 1)
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
@@ -57,16 +66,24 @@ struct RootView: View {
     /// Debug builds show the welcome screen over a budget with `-open welcome`, for screenshots.
     @State private var welcomePreview = LaunchRoute.open == "welcome"
     @State private var newTransaction: TransactionEditorRequest?
+    /// Account & sync, over whatever is on screen, for a sync code the Camera opened the app with.
+    @State private var showingSyncLink = false
+
+    /// Opens the budget this device used last when none is open and the library has one.
+    private func openAnotherBudget() async {
+        guard !store.loading, store.budget == nil, !welcomePreview,
+              let library = try? await store.service("library_snapshot") else { return }
+        let usable = library.rows("entries").filter { ["", "active"].contains($0.text("lifecycle")) }
+        guard let next = usable.max(by: { $0.text("lastOpened") < $1.text("lastOpened") }) else { return }
+        store.openBudget(id: next.text("id"))
+    }
 
     var body: some View {
         Group {
             if store.loading {
                 ProgressView().controlSize(.large)
             } else if store.budget == nil {
-                VStack {
-                    Button("Budget library") { showingLibrary = true }.padding()
-                    WelcomeView()
-                }
+                WelcomeView(openLibrary: { showingLibrary = true })
             } else {
                 // Every form, picker and report belongs to one library entry.
                 MainTabs().id(store.identity ?? "")
@@ -128,10 +145,14 @@ struct RootView: View {
         .task(id: store.loading) { if !store.loading { await SyncQA.run(store: store, sync: sync) } }
         #endif
         .sheet(isPresented: $showingLibrary) { NavigationStack { LibraryView() } }
+        .sheet(isPresented: $showingSyncLink) { NavigationStack { AccountSyncView() } }
         .sheet(isPresented: $welcomePreview) { WelcomeView() }
         // The quick action and the Add a transaction shortcut, once a budget is open.
         .onChange(of: AppActions.shared.pending, initial: true) { _, _ in takeAction() }
         .onChange(of: store.budget == nil) { _, _ in takeAction() }
+        // The open budget can go away under the app: a reset or a deletion on another device closes
+        // it. With other budgets in the library, the first-run screen is the wrong place to land.
+        .task(id: store.loading || store.budget != nil) { await openAnotherBudget() }
         .cover(item: $newTransaction) { TransactionEditor(request: $0) }
         .sheet(item: $opened) { file in
             if file.kind == .ynab { YnabImportView(files: [file.url]) } else { BankFileImportView(file: file.url) }
@@ -178,6 +199,12 @@ struct RootView: View {
     }
 
     private func open(_ url: URL) {
+        // The code that adds a device to sync, scanned with the phone's own Camera.
+        if url.scheme?.lowercased() == "urbudget" {
+            sync.scannedLink = url.absoluteString
+            showingSyncLink = true
+            return
+        }
         guard let file = OpenedFile(url) else {
             if url.isFileURL { store.error = String(localized: "UrBudget opens JSON backups, bank statements (CSV, OFX, QFX, QIF or MT940) and YNAB exports.") }
             return

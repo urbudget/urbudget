@@ -270,3 +270,113 @@ a computer's code scanned from a phone, and Add a device closing itself.
 - Android adds the CAMERA permission, and iPhone a camera usage string. Both need the stores'
   declarations updated, and the Play listing still says "encrypted with your own passphrase"
   (`docs/play-listing/README.md`), as do the review notes that tell a reviewer to set one.
+
+## 13. Found on real devices
+
+The first run between a real iPhone and the desktop app (24 November) found three things the
+automated suites had not, all fixed on this branch.
+
+- **Budgets sync unless someone says otherwise.** The phone's camera read the desktop's code
+  and the phone unlocked, but the budget never arrived: it was made before sync was turned on,
+  and such a budget stayed "only on this device" until added by hand in the budget library.
+  Now every budget with no account joins the signed-in account once sync is on and unlocked,
+  on every device and on every pass (`v2::enroll_local`), and turning sync on adds the
+  device's budgets at once. The exceptions are a budget created with "Keep this budget only on
+  this device" (now remembered, in the library's `device_only` table, and taken back by adding
+  the budget to sync), the app's samples, a budget that belongs to another account, and an
+  unlinked copy of a budget the account already has. Nothing is matched by name: a budget a
+  second device made on its own becomes a second budget in the account. An earlier version did
+  not record the "keep on this device" choice, so a budget it was made for syncs after this.
+  A "This device only" row in Account & sync has its Sync button on protocol 2 as well.
+- **The iPhone app ran out of stack in a sync pass.** Swift calls the engine from its
+  concurrency threads, which have 512 KB. An unoptimized engine overflows that as soon as a
+  pass has a budget to work on (a bus error at the stack guard, in `process_budget`). Every
+  service call from the iPhone app now runs on its own thread with 8 MB
+  (`urbudget-ios`, `on_service_stack`), in every build.
+- **A debug build forgot its test server.** Reopened from the Home Screen, it talked to
+  urbudget.app. A debug build now remembers the server it was last launched against
+  (`DebugServer`, debug builds only).
+
+## 14. Account & sync, simplified, with the account's devices
+
+Asked for by the owner after using the screens: show which devices are connected, and make the
+screen simpler. One screen, top to bottom. Each part shows only when it has something to say.
+
+1. **Account.** Signed out: the email, then the code, one button each. Signed in: one row with
+   the email; Sign out is a quiet action on it.
+2. **Plan.** Only when there is something to do or to know: no plan (the price, Subscribe, and
+   the links the stores require beside it), a plan that is ending, a payment that failed. A plan
+   in good standing takes no room here; its details are under More.
+3. **Sync.**
+   - Off: **Turn on sync** and one sentence.
+   - Locked: as section 12 (scan or be scanned, one box, "Can't unlock?").
+   - On: one status line, "Sync is on. Last synced 2 minutes ago.", with **Sync now** beside
+     it. When something needs the person, the line says what, in plain words.
+   - The offer to move to the new sync stays here while it applies.
+4. **Devices**, while sync is on. One row per device that syncs (`sync_devices`): its name; the
+   device in hand reads "This iPhone", "This phone" or "This computer"; the others say when they
+   last synced ("Last synced 5 minutes ago", from `lastSeenAt`). A device with no name yet reads
+   "A device added on 3 November". **Add a device** ends the list. Under it, one line: "To stop
+   a device syncing, sign out on it. To cut off a device you no longer have, reset sync." The
+   list only shows: removing a device from here would not take back the key it holds.
+5. **Budgets**, only the ones that need something: differences to review, a kept copy, one kept
+   only on this device (with its Sync button), one that failed. A row is a name, one plain
+   sentence and one action. Budgets that are simply syncing are not listed; one line counts them
+   and leads to the budget library ("3 budgets are syncing").
+6. **More**, closed until opened: Sync automatically (phones), New recovery code, Lock sync on
+   this device, Reset sync, the plan's details with Manage subscription and Restore purchases,
+   Privacy & your choices, Delete account.
+
+No state names from the engine reach the screen ("local_only", "Signed Out"), and no words about
+how it works ("protocol", "key generation"). Every flow of section 12 behaves as it did; this
+changes where things are, not what they do.
+
+The server keeps each device's name and when it was last seen (migration 0019,
+`POST /installations {device}`, `GET /installations`), and a device that registered before
+that sends its name once more.
+
+## 15. Found with a real iPhone and a real Android phone against the desktop (25 Nov 2026)
+
+Each phone did both scans against the desktop app: the phone's own Camera app opening UrBudget
+from a computer's code and approving it, and the phone scanning the code a computer shows under
+Add a device, after a reset from the desktop had cut it off. All four worked. What they showed
+that needed changing:
+
+- **A sync link did nothing on an Android phone with no budget open.** That is a new phone's
+  state: the app opened and stayed where it was. Account & sync now opens for a link with no
+  budget open too.
+- **"Last synced" ran up to ten minutes behind.** A device that had synced seconds earlier read
+  "Last synced 9 minutes ago" on the others. The server now notes a device as seen at most every
+  two minutes.
+- **Devices cut off by a reset stayed in the list**, as if they still synced. A reset marks the
+  other devices cut off (`cut_off`, migration 0019) and `GET /installations` leaves them out. A
+  locked device still asks the server for the catalog, so asking proves nothing: with each
+  catalog request a device says whether it holds the account's key (`X-Sync-Unlocked: 1` or
+  `0`), and a cut-off device is listed again on its first request that says it does. One that
+  asks while locked isn't noted as seen either. An app from before this says neither: it is
+  noted as before, and after a reset stays out of the list until it is updated.
+- **A device cut off by a reset didn't say why it asked to unlock.** The engine notes it when the
+  account's catalog was replaced since the device last synced and it hasn't the new key (status
+  `resetElsewhere`), and the screen says "Sync was reset on another device. Add this one again
+  to keep syncing." above the scan button. Locking a device by hand doesn't say that.
+- **The list was read once**, so a screen left open went on showing devices a reset had cut
+  off. The three apps read it again after each sync pass while the screen is open.
+- On iPhone, "Device added." stayed on screen after sync locked; it now goes when sync locks or
+  unlocks. On Android the phone's own row reads its name with "This phone" beneath, as the
+  other two apps do, and the budget library says which rows are kept copies ("Kept copy. Press
+  and hold to recover it."): they read "On this device", like the budget beside them, and did
+  nothing when tapped.
+- An iPhone is listed as "iPhone": iOS gives apps the model, not the name its owner chose.
+
+Still as it was, and the roughest part left: after a reset, every other device keeps its copies
+of the budgets as kept copies beside the ones it downloads again, to delete by hand, and the
+budget it had open closes when it is added back. Two resets left the iPhone saying "4 budgets
+need you" and the Android library showing three of each budget. A copy is safe to drop when it
+holds nothing the resetting device's upload lacks. The file already keeps what would tell
+(`Binding.remote_version` and the last synced `base`); what's missing is the new budget saying
+which old one it continues, and at which version.
+
+For testing on a phone attached to the Mac: an Android copy built with `-PrustDebug=true
+-PdebugSuffix=.syncqa` installs beside the sideloaded app and talks to the server named by
+`adb shell setprop debug.urbudget.api http://127.0.0.1:<port>` over `adb reverse`.
+

@@ -54,6 +54,7 @@ class MainActivity : AppCompatActivity() {
             ProvideLanguage(interfaceConfiguration ?: resources.configuration) { UrBudgetTheme { UrBudgetApp(model) } }
         }
         if (savedInstanceState == null) intent?.getStringExtra(SmsWorker.PAGE)?.let { PageRequests.page.value = it }
+        if (savedInstanceState == null) takeSyncLink(intent)
         // The core's events are read by asking for them. At rest that's a few times a second while the
         // app is in front. While a reply runs it's ten times a second and carries on behind another
         // app, for as long as the process lives: the core waits only so long for the phone's answer
@@ -133,9 +134,22 @@ class MainActivity : AppCompatActivity() {
         }.onFailure { model.notifyError(it.message ?: getString(R.string.error_no_app_to_open)) }
     }
 
+    /**
+     * The code that adds a device to sync is a link of UrBudget's own kind, so the phone's camera
+     * can open the app with it. It is handed to Account & sync, which does with it what its own
+     * scanner would. A link alone unlocks nothing: the engine still needs this account's sign-in.
+     */
+    private fun takeSyncLink(intent: Intent?) {
+        val uri = intent?.data ?: return
+        if (intent.action != Intent.ACTION_VIEW || !uri.scheme.equals("urbudget", ignoreCase = true)) return
+        PageRequests.syncLink.value = uri.toString()
+        PageRequests.page.value = "Account & sync"
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         intent.getStringExtra(SmsWorker.PAGE)?.let { PageRequests.page.value = it }
+        takeSyncLink(intent)
         val uri = intent.data
         if (intent.action == Intent.ACTION_VIEW && uri?.scheme == packageName &&
             uri.host == "assistant" && uri.path == "/sign-in") {

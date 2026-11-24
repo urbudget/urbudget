@@ -10,6 +10,8 @@ internal object NativeServicePolicy {
         // Device approval (cloud/pairing.rs, cloud/recovery.rs): what the account's key is, the recovery code this device
         // still holds unsaved, and whether a shown code is still waiting. Making, using or taking back a code is a command.
         "sync_key_info", "sync_recovery_unsaved", "sync_pair_state",
+        // The devices that sync with the account, as Account & sync lists them (cloud/v2.rs).
+        "sync_devices",
         "native_budget_status", "database_status", "list_budgets", "list_backups", "backup_retention",
         "simplefin_status", "simplefin_accounts", "simplefin_sync", "ynab_tokens", "ynab_plans", "ibkr_status", "ibkr_review_compact")
     fun coalesce(method: String) = method in reads

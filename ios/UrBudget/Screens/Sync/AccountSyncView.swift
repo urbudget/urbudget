@@ -1,7 +1,9 @@
 import SwiftUI
 
-/// Account & sync, as Android's CloudScreen: sign in with an emailed code, and end-to-end
-/// encrypted sync of budgets between this iPhone, desktop and Android.
+/// Account & sync: sign in with an emailed code, and end-to-end encrypted sync of budgets
+/// between this iPhone, desktop and Android. One screen, top to bottom, each part only while it
+/// has something to say (docs/plans/2026-11-24-sync-device-approval.md, section 14): the account,
+/// the plan, sync, the devices that sync, the budgets that need something, and More.
 struct AccountSyncView: View {
     @Environment(BudgetStore.self) private var store
     @Environment(SyncCoordinator.self) private var sync
@@ -26,12 +28,19 @@ struct AccountSyncView: View {
     @State private var scanning = false
     @State private var scanned: String?
     @State private var addingDevice = false
+    /// A computer's code that arrived as a link, until the person says whether to add it.
+    @State private var approvingLink: String?
     /// A recovery code this device holds that the person hasn't said they saved.
     @State private var recoveryCode: RecoveryCode?
     @State private var confirmingNewCode = false
     @State private var confirmingReset = false
-    /// Sync's less used rows (a new recovery code, reset, lock) are folded away until asked for.
+    /// What few people need, and nobody often, is folded away until asked for.
     @State private var more = false
+    /// The devices that sync with the account (`sync_devices`), this one first.
+    @State private var devices: [SyncDevice] = []
+    /// Counts devices added from here, so the list is asked for again.
+    @State private var devicesAdded = 0
+    @State private var showingLibrary = false
     @State private var conflict: IdentifiedJSON?
     @State private var removing: JSON?
     @State private var confirmSignOut = false
@@ -41,44 +50,33 @@ struct AccountSyncView: View {
 
     private var status: JSON { sync.status ?? [:] }
     private var signedIn: String { status.text("email") }
+    private var stage: SyncKey.Stage { SyncKey.stage(status, info: keyInfo) }
 
     var body: some View {
         CompactForm {
-            Section {
-                Text("Your budgets stay on this device. Sync is optional, and budgets are encrypted before they leave it.")
-                    .font(.subheadline).foregroundStyle(Color.secondary)
-                    .listRowBackground(Color.clear)
+            if signedIn.isEmpty {
+                Section {
+                    Text("Your budgets stay on this device. Sync is optional, and budgets are encrypted before they leave it.")
+                        .font(.subheadline).foregroundStyle(Color.secondary)
+                        .listRowBackground(Color.clear)
+                }
             }
             if let notice { Notice(text: notice, tone: "info").listRowInsets(EdgeInsets()).listRowBackground(Color.clear) }
             if let error { FormErrorView(message: error) }
             accountSection
             if !signedIn.isEmpty {
-                if SyncMove.offered(status) { moveSection }
                 SyncSubscriptionSection(overview: overview, reload: loadOverview)
                 syncSection
+                if stage == .unlocked { devicesSection }
                 budgetsSection
-                Section {
-                    Button("Delete account and cloud data", role: .destructive) { deletingAccount = true }
-                }
-                .disabled(busy)
+                moreSection
             } else {
-                // Before signing in, what sync costs and how it's kept private, as on Android.
-                Section("Sync subscription") {
-                    Text("UrBudget is free. Sync is an optional subscription. The App Store shows its price and handles payment.")
-                    Text("Sign in above to subscribe or restore purchases.").font(.footnote).foregroundStyle(Color.secondary)
-                        .listRowSeparator(.hidden, edges: .top)
+                Section {
+                    Button("Privacy & your choices", action: openPrivacy).disabled(busy)
                 }
-                .font(.subheadline)
-                Section("Encrypted sync") {
-                    Text("Budgets are encrypted before uploading. Only your devices can open them.")
-                }
-                .font(.subheadline)
-            }
-            Section {
-                Button("Privacy & your choices") { run { _ = try await store.service("account_open", ["next": "/privacy/app/"]) } }
-                    .disabled(busy)
             }
         }
+        .navigationDestination(isPresented: $showingLibrary) { LibraryView() }
         .navigationTitle("Account & sync")
         .inlineTitle()
         .overlay(alignment: .top) { if busy { ProgressView().padding(8) } }
@@ -98,9 +96,24 @@ struct AccountSyncView: View {
         // A renewal, refund or approved purchase arrived while the screen is open.
         .onChange(of: appStore.deliveries) { Task { await loadOverview() } }
         .task(id: "\(signedIn)|\(sync.unlocked)") { await loadKeyInfo() }
+        // Asked again after each sync pass while the screen is open: a device added or cut off
+        // from another one, and when each last synced.
+        .task(id: "\(signedIn)|\(sync.unlocked)|\(devicesAdded)|\(status["sync"]["last"].text("at"))") { await loadDevices() }
+        // A code the phone's own Camera opened the app with. Signed out, it waits for the sign-in.
+        .task(id: "\(sync.scannedLink ?? "")|\(signedIn)|\(sync.unlocked)") { takeScannedLink() }
+        // The key goes to whoever shows that code, so the person says yes first.
+        .alert("Add this device?", isPresented: Binding(get: { approvingLink != nil }, set: { if !$0 { approvingLink = nil } }), presenting: approvingLink) { code in
+            Button("Add device") { approveLink(code) }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("Only approve a device you are holding. It will be able to read every budget in this account.")
+        }
         // A code made here stays on this device until it's confirmed saved, so it's shown again
         // after the app was closed on it or an answer was lost.
         .task(id: SyncKey.recoveryUnsaved(status)) { await showUnsavedCode() }
+        // What the screen last said ("Device added.") is about the state it was in: once sync
+        // locks or unlocks here, it no longer holds.
+        .onChange(of: sync.unlocked) { notice = nil }
         .sheet(item: $recoveryCode) { shown in
             RecoveryCodeSheet(code: shown.code) {
                 _ = try await store.service("sync_recovery_saved")
@@ -108,7 +121,7 @@ struct AccountSyncView: View {
                 recoveryCode = nil
             }
         }
-        .sheet(isPresented: $addingDevice) { AddDeviceSheet { notice = String(localized: "Device added.") } }
+        .sheet(isPresented: $addingDevice) { AddDeviceSheet { deviceAdded() } }
         .sheet(isPresented: $scanning, onDismiss: {
             if let scanned { unlock(scanned) }
             scanned = nil
@@ -150,8 +163,11 @@ struct AccountSyncView: View {
                 Text("The code or passphrase you already have keeps working. To retire it, reset sync.")
             }
         }
-        .confirmationDialog("Reset sync?", isPresented: $confirmingReset, titleVisibility: .visible) {
+        // An alert, not a confirmation dialog: this explanation is several sentences, and a dialog
+        // hangs them as a narrow popover off whichever row is nearest.
+        .alert("Reset sync?", isPresented: $confirmingReset) {
             Button("Reset sync", role: .destructive) { reset() }
+            Button("Cancel", role: .cancel) {}
         } message: {
             Text(resetMessage)
         }
@@ -176,7 +192,7 @@ struct AccountSyncView: View {
     // MARK: Sections
 
     @ViewBuilder private var accountSection: some View {
-        Section("Account") {
+        Section {
             if signedIn.isEmpty {
                 Text("Sign in with your email to sync your budgets. No password needed.")
                     .font(.subheadline).foregroundStyle(Color.secondary)
@@ -209,19 +225,31 @@ struct AccountSyncView: View {
                         .disabled(busy || !email.contains("@"))
                 }
             } else {
+                // One row: the email, and signing out as a quiet action on it.
                 Label {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text(signedIn)
-                        Text(status.text("credentialStore").isEmpty ? "Session stored securely on this device" : "Session stored in \(status.text("credentialStore"))")
-                            .font(.footnote).foregroundStyle(Color.secondary)
+                        Button("Sign out on this device") { confirmSignOut = true }
+                            .buttonStyle(.borderless)
+                            .font(.footnote)
+                            .disabled(busy)
                     }
                 } icon: {
                     Image(systemName: "person.crop.circle.fill").foregroundStyle(Color.urAccent).font(.title2)
                 }
-                Button("Sign out on this device", role: .destructive) { confirmSignOut = true }
-                    .disabled(busy)
+            }
+        } header: {
+            Text("Account")
+        } footer: {
+            // Before signing in, what sync costs.
+            if signedIn.isEmpty {
+                Text("UrBudget is free. Sync is an optional subscription. The App Store shows its price and handles payment.")
             }
         }
+    }
+
+    private func openPrivacy() {
+        run { _ = try await store.service("account_open", ["next": "/privacy/app/"]) }
     }
 
     /// Optional subscription details: a slow request mustn't hold up the local controls.
@@ -245,36 +273,33 @@ struct AccountSyncView: View {
     }
 
     /// The account still syncs on protocol 1, and urbudget.app now moves it to the new sync.
-    @ViewBuilder private var moveSection: some View {
-        Section {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("A new sync is ready for this account").fontWeight(.semibold)
-                Text("It finds every budget in your account on its own and recovers safely when an upload is interrupted. Your budgets and sync passphrase stay the same.")
-                    .font(.footnote).foregroundStyle(Color.secondary)
-            }
-            Button("Move to the new sync") { moving = true }
-                .disabled(busy)
+    @ViewBuilder private var moveRows: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("A new sync is ready for this account").fontWeight(.semibold)
+            Text("It finds every budget in your account on its own and recovers safely when an upload is interrupted. Your budgets and sync passphrase stay the same.")
+                .font(.footnote).foregroundStyle(Color.secondary)
         }
+        Button("Move to the new sync") { moving = true }
+            .disabled(busy)
     }
 
     @ViewBuilder private var syncSection: some View {
-        let report = sync.lastReport
         Section {
-            Toggle(isOn: $automatic) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Sync automatically")
-                    Text("After changes and every minute while the app is open").font(.footnote).foregroundStyle(Color.secondary)
-                }
-            }
-            switch SyncKey.stage(status, info: keyInfo) {
+            switch stage {
             case .unlocked:
-                unlockedRows
+                statusRow
             case .locked:
                 lockedRows
             case .none:
                 // Nothing to choose or type: the key is made here, and its recovery code comes back to show.
-                Button(action: turnOn) { Label("Turn on sync", systemImage: "key") }
-                    .disabled(busy || overview?["sync"]["active"] == JSON.bool(false))
+                Text("Budgets are encrypted with a key only your devices hold. UrBudget can't read or recover them.")
+                    .font(.subheadline).foregroundStyle(Color.secondary)
+                Button(action: turnOn) {
+                    Label("Turn on sync", systemImage: "key").fontWeight(.semibold).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent).buttonBorderShape(.capsule)
+                .listRowSeparator(.hidden)
+                .disabled(busy || overview?["sync"]["active"] == JSON.bool(false))
             case .asking:
                 if let keyInfoError {
                     FormErrorView(message: keyInfoError)
@@ -283,40 +308,165 @@ struct AccountSyncView: View {
                     ProgressView().frame(maxWidth: .infinity)
                 }
             }
+            if SyncMove.offered(status) { moveRows }
         } header: {
-            Text("Encrypted sync")
-        } footer: {
-            if let report, !(report.text("message").isEmpty && report.text("at").isEmpty) {
-                Text(reportLine(report))
-            } else {
-                Text("Budgets are encrypted with a key only your devices hold. UrBudget can't read or recover them.")
-            }
+            Text("Sync")
         }
     }
 
-    @ViewBuilder private var unlockedRows: some View {
-        Button {
-            run { try await sync.syncNow() }
-        } label: {
-            HStack {
-                Label("Sync now", systemImage: "arrow.triangle.2.circlepath")
-                if sync.syncing { Spacer(); ProgressView() }
+    /// Sync is on: one line saying where it stands, with Sync now beside it.
+    private var statusRow: some View {
+        HStack(spacing: 12) {
+            // "2 minutes ago" is kept current while the screen is open.
+            TimelineView(.periodic(from: .now, by: 30)) { clock in
+                Text(statusLine(now: clock.date))
+                    .font(.subheadline)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Button {
+                run { try await sync.syncNow() }
+            } label: {
+                if sync.syncing { ProgressView() } else { Text("Sync now").fontWeight(.semibold) }
+            }
+            .buttonStyle(.bordered).buttonBorderShape(.capsule)
+            .fixedSize()
+            .disabled(busy || sync.syncing)
+        }
+    }
+
+    private func statusLine(now: Date) -> String {
+        switch SyncLine.line(syncing: sync.syncing, pending: sync.pending, report: sync.lastReport) {
+        case .syncing:
+            return String(localized: "Syncing…")
+        case .needsYou(let count):
+            return String(localized: "\(count) budgets need you. See Budgets below.")
+        case .offline:
+            return String(localized: "Sync is on, but this device is offline. Changes sync when it's back online.")
+        case .failed(let message):
+            return message.isEmpty ? String(localized: "The last sync didn't finish. Try Sync now.") : message
+        case .waiting:
+            return String(localized: "Sync is on. Changes are waiting to sync.")
+        case .on(nil):
+            return String(localized: "Sync is on.")
+        case .on(let last?):
+            if SyncKey.isJustNow(last, now: now) { return String(localized: "Sync is on. Last synced just now.") }
+            let ago = SyncKey.ago(last, now: now)
+            return String(localized: "Sync is on. Last synced \(ago).")
+        }
+    }
+
+    // MARK: Devices
+
+    /// The devices that sync, to look at: taking one off this list wouldn't take back the key it
+    /// holds, so the line under it says what does.
+    @ViewBuilder private var devicesSection: some View {
+        Section {
+            ForEach(devices) { device in
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(deviceTitle(device))
+                        TimelineView(.periodic(from: .now, by: 30)) { clock in
+                            if let detail = deviceDetail(device, now: clock.date) {
+                                Text(detail).font(.footnote).foregroundStyle(Color.secondary)
+                            }
+                        }
+                    }
+                } icon: {
+                    Image(systemName: device.current ? (Self.isPad ? "ipad" : "iphone") : "laptopcomputer.and.iphone")
+                        .foregroundStyle(Color.secondary)
+                }
+            }
+            Button { addingDevice = true } label: { Label("Add a device", systemImage: "plus") }
+                .disabled(busy)
+        } header: {
+            Text("Devices")
+        } footer: {
+            Text("To stop a device syncing, sign out on it. To cut off a device you no longer have, reset sync.")
+        }
+    }
+
+    private static var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
+    private static var thisDevice: String { isPad ? String(localized: "This iPad") : String(localized: "This iPhone") }
+
+    private func deviceTitle(_ device: SyncDevice) -> String {
+        switch device.title {
+        case .named(let name): return name
+        case .thisDevice: return Self.thisDevice
+        case .added(let date):
+            let day = date.formatted(Date.FormatStyle().day().month(.wide).locale(.app))
+            return String(localized: "A device added on \(day)")
+        case .unnamed: return String(localized: "A device")
+        }
+    }
+
+    private func deviceDetail(_ device: SyncDevice, now: Date) -> String? {
+        switch device.detail(now: now) {
+        case .thisDevice: return Self.thisDevice
+        case .syncedJustNow: return String(localized: "Last synced just now")
+        case .lastSynced(let date):
+            let ago = SyncKey.ago(date, now: now)
+            return String(localized: "Last synced \(ago)")
+        // Not known, for a device that joined before the account kept this: nothing is said of it.
+        case .notYet: return nil
+        case .none: return nil
+        }
+    }
+
+    private func loadDevices() async {
+        guard !signedIn.isEmpty, sync.unlocked else { devices = []; return }
+        // A list that didn't arrive leaves the last one shown.
+        if let answer = try? await store.service("sync_devices") { devices = SyncDevice.list(answer) }
+        // A device added a moment ago gives its name with its first sync: asked once more for it.
+        guard devicesAdded > 0 else { return }
+        try? await Task.sleep(for: .seconds(8))
+        guard !Task.isCancelled, let answer = try? await store.service("sync_devices") else { return }
+        devices = SyncDevice.list(answer)
+    }
+
+    private func deviceAdded() {
+        notice = String(localized: "Device added.")
+        devicesAdded += 1
+    }
+
+    // MARK: More
+
+    @ViewBuilder private var moreSection: some View {
+        let removable = SyncBudgets.removable(sync.lastReport, protocolNumber: status["sync"]["protocol"].int)
+        Section {
+            DisclosureGroup("More", isExpanded: $more) {
+                Toggle(isOn: $automatic) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Sync automatically")
+                        Text("After changes and every minute while the app is open").font(.footnote).foregroundStyle(Color.secondary)
+                    }
+                }
+                if stage == .unlocked {
+                    if SyncKey.canReplaceRecoveryCode(status) {
+                        Button { confirmingNewCode = true } label: { Label("New recovery code", systemImage: "key") }
+                            .disabled(busy)
+                    }
+                    Button { run { _ = try await store.service("sync_lock") } } label: { Label("Lock sync on this device", systemImage: "lock") }
+                        .disabled(busy)
+                    Button(role: .destructive) { confirmingReset = true } label: {
+                        Label("Reset sync", systemImage: "arrow.counterclockwise").foregroundStyle(Color.urNegative)
+                    }
+                    .disabled(busy)
+                }
+                SyncPlanRows(overview: overview, reload: loadOverview)
+                // The old sync only: any budget's cloud copy can be removed, listed above or not.
+                if !removable.isEmpty {
+                    Menu("Remove cloud copy") {
+                        ForEach(removable, id: \.idText) { entry in
+                            Button(entry.text("name")) { removing = entry }
+                        }
+                    }
+                    .disabled(busy)
+                }
+                Button("Privacy & your choices", action: openPrivacy).disabled(busy)
+                Button("Delete account and cloud data", role: .destructive) { deletingAccount = true }
+                    .disabled(busy)
             }
         }
-        .disabled(busy || sync.syncing)
-        Button { addingDevice = true } label: { Label("Add a device", systemImage: "laptopcomputer.and.iphone") }
-            .disabled(busy)
-        // What few people need, and nobody often.
-        DisclosureGroup("More", isExpanded: $more) {
-            if SyncKey.canReplaceRecoveryCode(status) {
-                Button { confirmingNewCode = true } label: { Label("New recovery code", systemImage: "key") }
-            }
-            Button(role: .destructive) { confirmingReset = true } label: {
-                Label("Reset sync", systemImage: "arrow.counterclockwise").foregroundStyle(Color.urNegative)
-            }
-            Button { run { _ = try await store.service("sync_lock") } } label: { Label("Lock sync on this device", systemImage: "lock") }
-        }
-        .disabled(busy)
     }
 
     /// The account has a key this device doesn't hold: a code from a device that syncs, the
@@ -326,6 +476,11 @@ struct AccountSyncView: View {
         let label: LocalizedStringKey = passphrase
             ? "Code from another device, your recovery code, or your sync passphrase"
             : "Code from another device, or your recovery code"
+        // Another device reset sync: why this one asks to unlock when it used to sync.
+        if SyncKey.resetElsewhere(status) {
+            Text("Sync was reset on another device. Add this one again to keep syncing.")
+                .font(.subheadline).listRowSeparator(.hidden)
+        }
         Text("To unlock sync here, open Account & sync on a device that already syncs and choose Add a device. Then scan the code it shows.")
             .font(.subheadline).foregroundStyle(Color.secondary)
         Button { scanning = true } label: {
@@ -369,59 +524,75 @@ struct AccountSyncView: View {
             .disabled(busy)
     }
 
+    // MARK: Budgets
+
+    /// Only the budgets that need something, each a name, one sentence and one action. The ones
+    /// that are simply syncing are counted in a line that leads to the budget library.
     @ViewBuilder private var budgetsSection: some View {
-        let budgets = sync.lastReport?.rows("budgets") ?? []
-        if !budgets.isEmpty {
+        let protocolNumber = status["sync"]["protocol"].int
+        let needing = SyncBudgets.needing(sync.lastReport, protocolNumber: protocolNumber)
+        let syncing = SyncBudgets.syncingCount(sync.lastReport)
+        if !needing.isEmpty || syncing > 0 {
             Section("Budgets") {
-                NavigationLink("Budget library") { LibraryView() }
-                ForEach(budgets, id: \.idText) { entry in
-                    let state = entry.text("state")
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text(entry.text("name")).fontWeight(.semibold)
-                            Spacer()
-                            Text(syncStateLabel(state))
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(state == "conflict" ? Color.urWarning : state == "error" ? Color.urNegative : .secondary)
-                                .padding(.horizontal, 8).padding(.vertical, 3)
-                                .background((state == "conflict" ? Color.urWarning : Color.secondary).opacity(0.14), in: Capsule())
-                        }
-                        if !entry.text("message").isEmpty { Text(entry.text("message")).font(.subheadline).foregroundStyle(Color.secondary) }
+                ForEach(needing, id: \.idText) { entry in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(entry.text("name")).fontWeight(.semibold)
+                        Text(sentence(entry)).font(.subheadline).foregroundStyle(Color.secondary)
                         ForEach(entry["notes"].array.map(\.string), id: \.self) { Text($0).font(.footnote).foregroundStyle(Color.secondary) }
-                        HStack(spacing: 10) {
-                            switch state {
-                            case "cloud_only" where sync.status?["sync"]["protocol"].int != 2:
-                                Button("Download and open") {
-                                    run {
-                                        let id = try await store.service("sync_download", ["id": .string(entry.text("id"))]).string
-                                        store.openBudget(id: id)
-                                    }
-                                }
-                                .buttonStyle(.bordered)
-                            case "local_only" where sync.status?["sync"]["protocol"].int != 2:
-                                Button("Start syncing") {
-                                    run {
-                                        _ = try await store.service("sync_track", ["ids": JSON([entry.text("id")])])
-                                        try await sync.syncNow()
-                                    }
-                                }
-                                .buttonStyle(.bordered)
-                            case "conflict":
-                                Button("Review differences") { conflict = IdentifiedJSON(value: entry) }
-                                    .buttonStyle(.borderedProminent).tint(.urWarning)
-                            default:
-                                EmptyView()
-                            }
-                            Spacer()
-                            if sync.status?["sync"]["protocol"].int != 2 && state != "local_only" {
-                                Button("Remove cloud copy", role: .destructive) { removing = entry }.buttonStyle(.borderless).font(.subheadline)
-                            }
-                        }
-                        .disabled(busy)
+                        budgetAction(entry, protocolNumber: protocolNumber)
+                            .disabled(busy)
                     }
                     .padding(.vertical, 4)
                 }
+                if syncing > 0 {
+                    NavigationLink { LibraryView() } label: { Text("\(syncing) budgets are syncing") }
+                }
             }
+        }
+    }
+
+    @ViewBuilder private func budgetAction(_ entry: JSON, protocolNumber: Int64) -> some View {
+        switch SyncBudgets.action(entry, protocolNumber: protocolNumber) {
+        case .review:
+            Button("Review differences") { conflict = IdentifiedJSON(value: entry) }
+                .buttonStyle(.borderedProminent).tint(.urWarning)
+        // A budget kept only on this device, on either sync: one tap adds it to the account.
+        case .startSyncing:
+            Button("Start syncing") {
+                run {
+                    if protocolNumber == 2 {
+                        _ = try await store.service("sync_enable", ["enabled": true, "ids": JSON([entry.text("id")])])
+                    } else {
+                        _ = try await store.service("sync_track", ["ids": JSON([entry.text("id")])])
+                    }
+                    try await sync.syncNow()
+                }
+            }
+            .buttonStyle(.bordered)
+        case .download:
+            Button("Download and open") {
+                run {
+                    let id = try await store.service("sync_download", ["id": .string(entry.text("id"))]).string
+                    store.openBudget(id: id)
+                }
+            }
+            .buttonStyle(.bordered)
+        // A copy kept after a reset is brought back in the library.
+        case .library:
+            Button("Budget library") { showingLibrary = true }
+                .buttonStyle(.bordered)
+        case .none:
+            EmptyView()
+        }
+    }
+
+    private func sentence(_ entry: JSON) -> String {
+        switch SyncBudgets.sentence(entry) {
+        case .message(let message): return message
+        case .conflict: return String(localized: "Changed on two devices. Choose what to keep.")
+        case .keptCopy: return String(localized: "Kept on this device as a copy. Recover it as a new budget in the budget library.")
+        case .deviceOnly: return String(localized: "Kept only on this device.")
+        case .state(let state): return syncStateLabel(state)
         }
     }
 
@@ -435,29 +606,21 @@ struct AccountSyncView: View {
         case "downloaded": return String(localized: "Downloaded")
         case "merged": return String(localized: "Merged")
         case "waiting": return String(localized: "Waiting")
+        case "recovery": return String(localized: "Kept copy")
+        case "locked": return String(localized: "Locked")
         case "deletion_conflict": return String(localized: "Newer changes need review before deletion")
         case "update_app": return String(localized: "Update the app")
         case "error": return String(localized: "Error")
+        case "queued": return String(localized: "Waiting to sync")
+        case "trashed": return String(localized: "In Trash")
+        case "purged": return String(localized: "Removed")
+        case "signed_out": return String(localized: "Signed out")
+        case "evicted": return String(localized: "Not downloaded")
+        case "subscription_required": return String(localized: "Needs a sync plan")
         case "": return String(localized: "Unknown")
-        default: return state.replacingOccurrences(of: "_", with: " ").capitalized
+        // A state this version doesn't know is never shown by the engine's name for it.
+        default: return String(localized: "Unknown")
         }
-    }
-
-    /// The last sync's message (the engine's words) and when it was tried.
-    private func reportLine(_ report: JSON) -> String {
-        var parts = [report.text("message")].filter { !$0.isEmpty }
-        if !report.text("at").isEmpty {
-            let when = lastAttempt(report.text("at"))
-            parts.append(String(localized: "Last attempt: \(when)"))
-        }
-        return ImportsText.line(parts)
-    }
-
-    private func lastAttempt(_ at: String) -> String {
-        let parser = ISO8601DateFormatter()
-        parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let date = parser.date(from: at) ?? ISO8601DateFormatter().date(from: at)
-        return date.map { $0.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(.app)) } ?? at
     }
 
     // MARK: The sync key
@@ -496,6 +659,28 @@ struct AccountSyncView: View {
         }
     }
 
+    /// Does with a code the Camera scanned what this screen's own scanner would: unlocks this
+    /// device with a code another device shows, or asks before approving a device that waits.
+    private func takeScannedLink() {
+        guard let link = sync.scannedLink, !signedIn.isEmpty else { return }
+        sync.scannedLink = nil
+        if SyncKey.isRequest(link) {
+            if sync.unlocked { approvingLink = link }
+            else { store.error = String(localized: "Unlock sync on this device first, then scan the computer's code again.") }
+        } else if sync.unlocked {
+            store.error = String(localized: "This device already syncs. Scan that code with the device you're adding.")
+        } else {
+            unlock(link)
+        }
+    }
+
+    private func approveLink(_ code: String) {
+        run {
+            _ = try await store.service("sync_pair_approve", ["code": .string(code)])
+            deviceAdded()
+        }
+    }
+
     private func unlockTyped() {
         guard !typedSecret.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         unlock(typedSecret)
@@ -513,6 +698,8 @@ struct AccountSyncView: View {
                 return
             }
             typedSecret = ""
+            // The next passphrase typed here is hidden again.
+            showingTyped = false
             try await sync.syncNow()
         }
     }

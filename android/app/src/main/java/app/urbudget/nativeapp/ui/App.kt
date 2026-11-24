@@ -362,11 +362,12 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     // A notification's page, such as Bank messages when texts need the user.
     val requested by PageRequests.page.collectAsStateWithLifecycle()
     // Taken only once loading is over: at a cold start the budget's arrival replaces this group (the
-    // key() above), and a page opened before then would be lost. With no budget there's nothing to open.
+    // key() above), and a page opened before then would be lost. With no budget only Account & sync
+    // is there to open: a new phone has none yet when its camera opens the app with a sync code.
     LaunchedEffect(requested, state.loading) {
         val page = requested ?: return@LaunchedEffect
         if (state.loading) return@LaunchedEffect
-        if (state.budget != null) openPage(page)
+        if (state.budget != null) openPage(page) else if (page == "Account & sync") morePage = page
         PageRequests.page.value = null
     }
     fun openChildPage(page: String) {
@@ -542,13 +543,21 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
             state.loading -> CircularProgressIndicator(Modifier.align(Alignment.Center), color = ur.accent)
             morePage == "Account & sync" && budget == null -> GlassTop(Modifier.fillMaxSize(), top = {
                 PhoneTopBar(pageTitle("Account & sync"), onBack = { morePage = ""; tab = 0 })
-            }) { CloudScreen(vm) }
+            }) { CloudScreen(vm) { morePage = "Budget library" } }
             morePage == "Budget library" && budget == null -> GlassTop(Modifier.fillMaxSize(), top = {
                 PhoneTopBar(pageTitle("Budget library"), onBack = { morePage = ""; tab = 0 })
             }) { LibraryScreen(null, vm, importFile, exportFile) }
             // Below the status bar; the welcome page's own padding then has no inset left to add.
             budget == null -> Column(Modifier.fillMaxSize().statusBarsPadding()) {
-                TextButton({ morePage = "Budget library" }) { Text(stringResource(R.string.page_library)) }
+                // A quiet way to the budgets this device has (kept copies, the trash, ones in the
+                // account), at the top's far end, lined up with the page: not a title over it.
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.End) {
+                    TextButton({ morePage = "Budget library" }) {
+                        Icon(Icons.Outlined.FolderOpen, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(stringResource(R.string.page_library))
+                    }
+                }
                 WelcomeScreen(state.busy, { made ->
                 if (vm.hasExport()) pendingCreate = made else vm.createBudget(made.name, made.currency, made.sample, template = made.template)
             }, importFile, if (vm.hasExport()) exportFile else null, if (state.recoveryAvailable) ({ confirmRestore = true }) else null,
@@ -561,7 +570,7 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
             }) {
                 Box(Modifier.fillMaxSize()) {
                     when (morePage) {
-                        "Account & sync" -> CloudScreen(vm)
+                        "Account & sync" -> CloudScreen(vm) { openChildPage("Budget library") }
                         "Bank connections" -> BankConnectionsScreen(budget, vm)
                         "Investments" -> InvestmentsPage(budget) { openChildPage("Interactive Brokers") }
                         "Interactive Brokers" -> IbkrScreen(budget, vm)
@@ -930,8 +939,8 @@ private fun WelcomeScreen(busy: Boolean, create: (NewBudget) -> Unit, importFile
     var template by rememberSaveable { mutableStateOf(DEFAULT_TEMPLATE) }
     Column(Modifier.fillMaxSize().background(ur.bg).verticalScroll(rememberScrollState()).statusBarsPadding().navigationBarsPadding().padding(horizontal = 24.dp, vertical = 28.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Spacer(Modifier.height(24.dp))
-        // The app icon's two layers: the mark on the brand purple, as on the home screen.
+        // The app icon's two layers: the mark on the brand purple, as on the home screen. The
+        // budget library's link above leaves room enough at the top.
         Box(Modifier.size(64.dp).clip(RoundedCornerShape(18.dp)).background(androidx.compose.ui.graphics.Color(0xFF6D4AE8)), contentAlignment = Alignment.Center) {
             androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(R.drawable.ic_launcher_foreground), contentDescription = null, modifier = Modifier.fillMaxSize())
         }

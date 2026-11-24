@@ -607,6 +607,64 @@ it("gives heads moved before 0016 their origin while they keep the incarnation t
   }
 });
 
+describe("the account's devices", () => {
+  it("lists each device that syncs with the name it gave and when it was last seen", async () => {
+    await post("/installations", { installationId: "device_a", device: "  Ahmed's Mac  " }, "device_a");
+    await post("/installations", { installationId: "device_b", device: "x".repeat(200) }, "device_b");
+    await post("/installations", { installationId: "device_c" }, "device_c");
+    const list = async () => (await (await call("/installations")).json()).installations;
+    const [a, b, c] = await list();
+    expect(a).toMatchObject({ installationId: "device_a", device: "Ahmed's Mac" }); expect(Date.parse(a.lastSeenAt)).toBeGreaterThan(0);
+    expect(b.device).toHaveLength(64); expect(c.device).toBeNull();
+    // Registering again renames it, and with no name keeps the one it had.
+    await post("/installations", { installationId: "device_a", device: "Study iMac" }, "device_a");
+    await post("/installations", { installationId: "device_a" }, "device_a");
+    expect((await list())[0].device).toBe("Study iMac");
+    // A sync pass marks it seen, at most every two minutes.
+    await setup("device_c"); await env.DB.prepare("UPDATE sync_installations_v2 SET last_seen_at='2026-01-01T00:00:00.000Z'").run();
+    const changes = async (device: string) => call("/catalog/changes?after=0", { headers: { ...(await scope()), "X-Sync-Installation": device } });
+    await changes("device_c");
+    const seen = await list();
+    expect(Date.parse(seen[2].lastSeenAt)).toBeGreaterThan(Date.parse("2026-06-01")); expect(seen[0].lastSeenAt).toBe("2026-01-01T00:00:00.000Z");
+    const minuteAgo = new Date(Date.now() - 60_000).toISOString();
+    await env.DB.prepare("UPDATE sync_installations_v2 SET last_seen_at=?1 WHERE installation_id='device_c'").bind(minuteAgo).run();
+    await changes("device_c");
+    expect((await list())[2].lastSeenAt).toBe(minuteAgo);
+  });
+  it("leaves out the devices a reset cut off until they sync again with the new key", async () => {
+    for (const device of ["device_a", "device_b", "device_c"]) await post("/installations", { installationId: device, device }, device);
+    const m: Manifest = { accountId, installationId: "device_a", operationId: "setup", kind: "keySetup", keyGeneration: null, catalogEpoch: null, expectedProtocol: 1, key: { salt: "abcdefghijklmnop", check: "synthetic-check" } };
+    await perform("1", m);
+    const listed = async () => (await (await call("/installations")).json()).installations.map((i: { installationId: string }) => i.installationId);
+    expect(await listed()).toEqual(["device_a", "device_b", "device_c"]);
+    const b = await boot();
+    const reset: Manifest = { accountId, installationId: "device_b", operationId: "reset", kind: "keyReset", keyGeneration: b.keyGeneration, catalogEpoch: b.catalogEpoch, expectedProtocol: 2, key: { salt: "qrstuvwxyzabcdef", check: "new-synthetic-check" } };
+    expect((await perform("1", reset)).receipt).toMatchObject({ outcome: "accepted", keyGeneration: "1" });
+    expect(await listed()).toEqual(["device_b"]);
+    // With the old key a device is turned away, and stays out of the list.
+    const old = await call("/catalog/changes?after=0", { headers: { "X-Sync-Generation": b.keyGeneration, "X-Sync-Epoch": b.catalogEpoch, "X-Sync-Installation": "device_a" } });
+    expect(old.status).toBe(409); expect(await listed()).toEqual(["device_b"]);
+    // Asking for the new catalog isn't having its key: a locked device asks too, as does an app
+    // from before devices said which they are.
+    const ask = async (path: string, device: string, held?: string) => (await call(path, { headers: { ...(await scope()), "X-Sync-Installation": device, ...(held ? { "X-Sync-Unlocked": held } : {}) } })).status;
+    expect(await ask("/catalog/changes?after=0", "device_a", "0")).toBe(200); expect(await ask("/catalog/snapshot", "device_a", "0")).toBe(200);
+    expect(await ask("/catalog/changes?after=0", "device_c")).toBe(200);
+    expect(await listed()).toEqual(["device_b"]);
+    // Added back with the new key, its next sync pass lists it again, however lately it was seen.
+    expect(await ask("/catalog/snapshot", "device_a", "1")).toBe(200);
+    expect(await listed()).toEqual(["device_a", "device_b"]);
+    expect(await ask("/catalog/changes?after=0", "device_c", "1")).toBe(200);
+    expect(await listed()).toEqual(["device_a", "device_b", "device_c"]);
+    // A device that asks while locked isn't noted as syncing.
+    await env.DB.prepare("UPDATE sync_installations_v2 SET last_seen_at='2026-01-01T00:00:00.000Z'").run();
+    await ask("/catalog/changes?after=0", "device_a", "0");
+    const lastSeen = async (device: string) => (await env.DB.prepare("SELECT last_seen_at AS at FROM sync_installations_v2 WHERE installation_id=?1").bind(device).first<{ at: string }>())!.at;
+    expect(await lastSeen("device_a")).toBe("2026-01-01T00:00:00.000Z");
+    await ask("/catalog/changes?after=0", "device_a", "1");
+    expect(Date.parse(await lastSeen("device_a"))).toBeGreaterThan(Date.parse("2026-06-01"));
+  });
+});
+
 describe("device approval", () => {
   const sealed = "c2VhbGVkLWtleS1ieXRlcw", id = "0123456789abcdef0123456789abcdef";
   const put = (pairing: string, body: unknown) => call(`/pairings/${pairing}`, { method: "PUT", headers: json(body), body: JSON.stringify(body) });

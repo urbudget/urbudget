@@ -169,8 +169,10 @@ impl<'a> Transport<'a> {
             .header("X-Sync-Generation", string(bootstrap, "keyGeneration")?)
             .header("X-Sync-Epoch", string(bootstrap, "catalogEpoch")?))
     }
-    async fn catalog(&self, bootstrap: &Value) -> Result<Value> {
-        self.response(self.scoped(Method::GET, "/catalog/snapshot", bootstrap)?)
+    /// `held`: this device has the account's key, said to the server with each catalog request
+    /// ([`HELD`]).
+    async fn catalog(&self, bootstrap: &Value, held: bool) -> Result<Value> {
+        self.response(self.scoped(Method::GET, "/catalog/snapshot", bootstrap)?.header(HELD, held_value(held)))
             .await?
             .json()
             .await
@@ -319,6 +321,30 @@ pub(super) fn held_key(cloud: &Cloud, account: &str, bootstrap: &Value) -> Optio
     verified_key(key, bootstrap)
 }
 
+/// The devices that sync with the signed-in account, this one first, then the most recently
+/// seen: `{devices: [{id, name, addedAt, lastSeenAt, current}]}`. A device that registered
+/// before the server kept names has none until its next sync. Listing is all this does: a
+/// device keeps the key it was given, and only a reset takes that back.
+pub async fn devices(cloud: &Cloud, library: &Library) -> Result<Value> {
+    let account = cloud.selected_account().ok_or("Sign in to your UrBudget account first.")?;
+    let mine = library.lock().account_state(&account)?["installationId"].as_str().unwrap_or_default().to_owned();
+    let listed = Transport::new(cloud, String::new())?.json(Method::GET, "/installations", None).await?;
+    let mut devices: Vec<Value> = listed["installations"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|row| json!({
+            "id": row["installationId"], "name": row["device"], "addedAt": row["createdAt"],
+            "lastSeenAt": row["lastSeenAt"], "current": row["installationId"] == mine.as_str(),
+        }))
+        .collect();
+    devices.sort_by(|a, b| {
+        let key = |d: &Value| (d["current"] != true, std::cmp::Reverse(d["lastSeenAt"].as_str().unwrap_or_default().to_owned()));
+        key(a).cmp(&key(b))
+    });
+    Ok(json!({ "devices": devices }))
+}
+
 /// What the account's key is made from, as far as `bootstrap` says: a recovery code the app
 /// made (`"code"`) or a passphrase someone chose. `None` when the account has no key yet. An
 /// account from before recovery codes says nothing, and its key is from a passphrase.
@@ -377,6 +403,7 @@ pub(super) fn decorate_status(cloud: &Cloud, catalog: &budgets::Budgets, status:
     }
     status.protocol = 2;
     status.enabled = state["enabled"] == true;
+    status.reset_elsewhere = !status.unlocked && cloud.token().is_some() && state[RESET_ELSEWHERE] == true;
     let Ok(entries) = catalog.try_list_all() else {
         return;
     };
@@ -591,13 +618,16 @@ async fn connect_bootstrap<'a>(
     }
     let state = library.lock().ensure_account(&account)?;
     let transport = Transport::new(cloud, string(&state, "installationId")?)?;
-    if state["registered"] != true {
+    // Registered once, and once more by a device that registered before the server kept names,
+    // so the account's list of devices can call it something (`devices`).
+    if state["registered"] != true || state["deviceNamed"] != true {
         transport.json(Method::POST, "/installations", Some(json!({
             "installationId":transport.installation,"device":super::device_name()
         }))).await?;
         let mut catalog = library.lock();
         let mut fresh = catalog.account_state(&account)?;
         fresh["registered"] = json!(true);
+        fresh["deviceNamed"] = json!(true);
         catalog.set_account_state(&account, &fresh)?;
     }
     Ok((account, transport, bootstrap))
@@ -1375,6 +1405,7 @@ async fn reconcile_catalog(
     if let Some(after) = cursor.clone() {
         let query = transport
             .scoped(Method::GET, "/catalog/changes", bootstrap)?
+            .header(HELD, held_value(key.is_some()))
             .query(&[("after", after)]);
         match transport.response(query).await {
             Ok(response) => {
@@ -1411,6 +1442,7 @@ async fn reconcile_catalog(
                         .response(
                             transport
                                 .scoped(Method::GET, "/catalog/changes", bootstrap)?
+                                .header(HELD, held_value(key.is_some()))
                                 .query(&[("after", next), ("through", through.clone())]),
                         )
                         .await?
@@ -1424,7 +1456,7 @@ async fn reconcile_catalog(
         }
     }
     if cursor.is_none() {
-        let snapshot = transport.catalog(bootstrap).await?;
+        let snapshot = transport.catalog(bootstrap, key.is_some()).await?;
         if snapshot["catalogEpoch"] != bootstrap["catalogEpoch"]
             || snapshot["keyGeneration"] != bootstrap["keyGeneration"]
         {
@@ -1501,9 +1533,29 @@ async fn reconcile_catalog(
     }
     let mut library = library.lock();
     let mut state = library.account_state(account)?;
+    // The account's catalog was replaced since this device last synced, which only a reset does,
+    // and this device hasn't the new key: its screen says so until it is added again.
+    if key.is_some() {
+        if let Some(object) = state.as_object_mut() {
+            object.remove(RESET_ELSEWHERE);
+        }
+    } else if state["cursorEpoch"].is_string() && !same_epoch {
+        state[RESET_ELSEWHERE] = json!(true);
+    }
     state["cursor"] = json!(cursor);
     state["cursorEpoch"] = bootstrap["catalogEpoch"].clone();
     library.set_account_state(account, &state)
+}
+
+/// In an account's saved state: sync was reset on another device, and this one hasn't the new key.
+const RESET_ELSEWHERE: &str = "resetElsewhere";
+
+/// Sent with each catalog request: whether this device holds the account's key ("1") or asks
+/// while locked ("0"). The server lists a device among the account's devices on the first, and a
+/// device a reset cut off stays out of the list until then. Apps from before this say neither.
+const HELD: &str = "X-Sync-Unlocked";
+fn held_value(held: bool) -> &'static str {
+    if held { "1" } else { "0" }
 }
 
 /// In an account's saved state: the key generation a reset asked for on this device made.
@@ -1848,15 +1900,77 @@ pub fn enroll_created(cloud: &Cloud, library: &Library, id: &str) -> Result<()> 
     }
     Ok(())
 }
-/// Explicit device-only and sample budgets never acquire a cloud identity implicitly.
+/// Whether a budget is one of the app's samples, which stay on their device.
+fn is_sample(budget: &Budget) -> bool {
+    // A sample from before the phone apps marked theirs is known the way those apps know it
+    // (android SampleBudget.kt): by the account and the purchase every such sample has.
+    let older = budget.accounts.iter().any(|account| account.id == "sample-checking")
+        && budget.transactions.iter().any(|transaction| transaction.id == "sample-market");
+    older || budget.extra.get("sample").is_some_and(|sample| sample.is_object() || sample == true)
+}
+
+/// Budgets sync unless someone says otherwise: every budget kept on this device with no
+/// account joins the signed-in account, as a new budget there, once sync is on and unlocked.
+/// Left alone are:
+/// - a budget the person chose to keep on this device (`Budgets::device_only`);
+/// - the app's samples;
+/// - one that belongs to another account, which never moves by itself;
+/// - a copy of a budget the account already has under the same id (`known`), whose row says to
+///   compare the two (`unlinked_legacy_copy`);
+/// - one that can't be read.
+/// Nothing is matched by name or content: a budget this device made apart from the account's
+/// becomes a second budget there, for the person to keep or remove. Returns how many joined.
+fn enroll_local(library: &Library, account: &str, known: &std::collections::BTreeSet<String>) -> Result<usize> {
+    let mut library = library.lock();
+    let state = library.account_state(account)?;
+    if state["enabled"] != true || state["protocol"] != 2 {
+        return Ok(0);
+    }
+    let mut joined = 0;
+    for entry in library.list_all() {
+        if entry.account_id.is_some() || entry.lifecycle != "active" || entry.availability != "local" || entry.missing {
+            continue;
+        }
+        if known.contains(&entry.id) || library.device_only(&entry.id)? {
+            continue;
+        }
+        let ordinary = crate::store::Store::open_budget(std::path::Path::new(&entry.path), &entry.id)
+            .and_then(|mut store| store.saved())
+            .is_ok_and(|(budget, _)| !is_sample(&budget));
+        if !ordinary {
+            continue;
+        }
+        library.associate(&entry.id, account, &budgets::new_id(), &budgets::new_id())?;
+        library.set_entry_status(&entry.id, "queued")?;
+        joined += 1;
+    }
+    Ok(joined)
+}
+
+/// `enroll_local` at the moment sync is turned on for an account, on the device that made its
+/// key, so its budgets are on their way before the first pass. The account was empty a moment
+/// ago, so it has no budget of its own yet.
+pub(super) fn enroll_existing(cloud: &Cloud, library: &Library) -> Result<usize> {
+    match cloud.selected_account() {
+        Some(account) => enroll_local(library, &account, &Default::default()),
+        None => Ok(0),
+    }
+}
+
+/// A new budget joins the signed-in account unless it is a sample or the person chose to keep
+/// it on this device (`local_only`), which is remembered so sync never adds it later either.
 pub fn create_with_scope(
     cloud: &Cloud,
     library: &mut budgets::Budgets,
     budget: &Budget,
     local_only: bool,
 ) -> Result<String> {
-    if local_only || budget.extra.get("sample").is_some_and(|sample| sample.is_object() || sample == true) {
+    if is_sample(budget) {
         library.create()
+    } else if local_only {
+        let id = library.create()?;
+        library.set_device_only(&id, true)?;
+        Ok(id)
     } else {
         create_owned(cloud, library)
     }
@@ -1908,6 +2022,8 @@ pub fn enable(
             }
             library.associate(id, &account, &budgets::new_id(), &budgets::new_id())?;
             library.set_entry_status(id, "queued")?;
+            // Adding it is the person changing their mind about keeping it here only.
+            library.set_device_only(id, false)?;
         }
     }
     drop(library);
@@ -2732,7 +2848,7 @@ async fn run_inner(
     // judged first by the identity the reset deleted.
     let after_reset = reenroll_after_reset(db, library, &account, &generation, &mut entry_errors)?;
     if !entry_errors.is_empty() { report.state = "attention"; }
-    adopt_legacy_bindings(&transport, db, library, &account, &bootstrap).await?;
+    adopt_legacy_bindings(&transport, db, library, &account, &bootstrap, key.is_some()).await?;
     reconcile_catalog(&transport, library, &account, &bootstrap, key.as_ref()).await?;
     // Deletion is catalog metadata: it must invalidate editors even while content is locked.
     let observed = library.lock().list_all();
@@ -2816,9 +2932,14 @@ async fn run_inner(
             }
         }
     }
+    let account_budgets = account_budget_ids(library, &account, &bootstrap)?;
+    // Budgets sync unless someone says otherwise. Without a plan nothing could upload, so
+    // nothing is given an identity it can't use.
+    if enabled && bootstrap["entitlement"]["active"] == true {
+        enroll_local(library, &account, &account_budgets)?;
+    }
     let entries = library.lock().list_all();
     let lifecycle_errors = library.lock().account_state(&account)?["lifecycleErrors"].clone();
-    let account_budgets = account_budget_ids(library, &account, &bootstrap)?;
     for entry in entries {
         let mut outcome = if let Some(error) = entry_errors.remove(&entry.id) {
             report_entry(&entry,"error",Some(error))
@@ -2889,6 +3010,7 @@ async fn adopt_legacy_bindings(
     library: &Library,
     account: &str,
     bootstrap: &Value,
+    held: bool,
 ) -> Result<()> {
     let state = library.lock().account_state(account)?;
     if state["legacyAdopted"] == true {
@@ -2916,7 +3038,7 @@ async fn adopt_legacy_bindings(
         .filter(|e| tracked.contains_key(&e.id))
         .collect();
     if !candidates.is_empty() {
-        let snapshot = transport.catalog(bootstrap).await?;
+        let snapshot = transport.catalog(bootstrap, held).await?;
         let heads: Vec<Head> =
             serde_json::from_value(snapshot["budgets"].clone()).map_err(|e| e.to_string())?;
         for entry in candidates {

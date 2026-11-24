@@ -36,12 +36,20 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.time.Instant
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 
+/**
+ * Account & sync, top to bottom: the account, the plan when there's something to do or know, sync
+ * (off, locked here, or on with one status line), the devices that sync, the budgets that need
+ * something, and More (docs/plans/2026-11-24-sync-device-approval.md, section 14). [openLibrary]
+ * leads to the Budget library, where the budgets that are simply syncing are.
+ */
 @Composable
-internal fun CloudScreen(vm: BudgetViewModel) {
+internal fun CloudScreen(vm: BudgetViewModel, openLibrary: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val toast = LocalToast.current
@@ -71,8 +79,13 @@ internal fun CloudScreen(vm: BudgetViewModel) {
     var secret by remember { mutableStateOf("") }
     var unlockError by remember { mutableStateOf<String?>(null) }
     var scanning by remember { mutableStateOf(false) }
-    // Sync's seldom used rows (a new recovery code, reset, lock) stay folded away until asked for.
+    // What few people need (Sync automatically, a new recovery code, lock, reset, the plan's details) stays folded away until asked for.
     var more by remember { mutableStateOf(false) }
+    // The devices that sync with the account, asked for while sync is on here and again when one is added.
+    var devices by remember { mutableStateOf(emptyList<SyncDevice>()) }
+    var devicesRevision by remember { mutableIntStateOf(0) }
+    // The moment "Last synced 2 minutes ago" counts from, moved on twice a minute and whenever the status changes.
+    var now by remember { mutableStateOf(Instant.now()) }
     var automatic by remember { mutableStateOf(preferences.automaticSync) }
     var overviewRevision by remember { mutableIntStateOf(0) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -146,6 +159,24 @@ internal fun CloudScreen(vm: BudgetViewModel) {
             catch (_: Exception) { /* Offline: the row asks again when it's tapped. */ }
             finally { askingKey = false }
     }
+    // Asked again after each sync pass while the screen is open: a device added or cut off from
+    // another one, and when each last synced.
+    val lastPass = sync?.optJSONObject("last")?.optString("at").orEmpty()
+    LaunchedEffect(signedIn, unlocked, devicesRevision, lastPass, lifecycle) {
+        if (signedIn.isBlank() || !unlocked) devices = emptyList()
+        else lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            try { devices = syncDevices(NativeServices.read("sync_devices")) }
+            catch (cancel: CancellationException) { throw cancel }
+            catch (_: Exception) { /* Offline, or an account on the older sync: the list stays as it was, and Add a device is still offered. */ }
+        }
+    }
+    LaunchedEffect(lifecycle) { lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { while (true) { now = Instant.now(); delay(30_000) } } }
+    LaunchedEffect(status) { now = Instant.now() }
+    /** A device was added: the list is asked for again now, and once more when the new device has had a moment to sync. */
+    fun deviceAdded() {
+        toast(context.getString(R.string.pair_device_added), false)
+        scope.launch { devicesRevision++; delay(6_000); devicesRevision++ }
+    }
     val key = syncKey(status, keyInfo)
     val secretKind = syncSecret(status, keyInfo)
     // Turning sync on is offered to an account with no key, unless it's known to have no plan to sync with.
@@ -160,6 +191,8 @@ internal fun CloudScreen(vm: BudgetViewModel) {
         } catch (cancel: CancellationException) { throw cancel }
         catch (_: Exception) { /* Asked for again the next time the status says one is kept. */ }
     }
+    // A computer's code that arrived as a link, until the person says whether to add it.
+    var approvingLink by remember { mutableStateOf<String?>(null) }
     /** Unlocks sync here with whatever was scanned or typed: the engine works out which kind of code, or a passphrase, it is. */
     fun unlock(given: String) = work {
         unlockError = null
@@ -189,18 +222,16 @@ internal fun CloudScreen(vm: BudgetViewModel) {
             else -> R.string.billing_none_found
         })
     }
+    val plan = planNotice(status, overview)
+    val budgets = remember(status) { syncBudgets(status) }
+    val newSync = sync?.optInt("protocol", 1) == 2
+    val moveOffered = syncMoveOffered(status)
     PageList(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 4.dp, bottom = DockRoom), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { Text(stringResource(R.string.cloud_intro), Modifier.padding(horizontal = 4.dp), color = ur.muted, style = MaterialTheme.typography.bodyMedium) }
-        if (syncMoveOffered(status)) item {
-            CloudCard {
-                Text(stringResource(R.string.cloud_move_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = ur.text)
-                Text(stringResource(R.string.cloud_move_detail), color = ur.text2, style = MaterialTheme.typography.bodyMedium)
-                PrimaryButton(stringResource(R.string.cloud_move_action), { if (!busy) { phrase = ""; error = null; dialog = "move" } }, Modifier.fillMaxWidth(), enabled = !busy)
-            }
-        }
+        if (signedIn.isBlank()) item { Text(stringResource(R.string.cloud_intro), Modifier.padding(horizontal = 4.dp), color = ur.muted, style = MaterialTheme.typography.bodyMedium) }
         if (busy) item { LinearProgressIndicator(Modifier.fillMaxWidth(), color = ur.accent) }
         error?.let { item { FormError(it) } }
         notice?.let { item { Notice(it, tone = "info") } }
+        // 1. The account: signed out, the email and then its code; signed in, the email with a quiet way out.
         item { SectionTitle(stringResource(R.string.cloud_account)) }
         item {
             if (signedIn.isBlank()) CloudCard {
@@ -213,112 +244,203 @@ internal fun CloudScreen(vm: BudgetViewModel) {
                     SecondaryButton(stringResource(R.string.cloud_new_code), sendCode, Modifier.weight(1f), enabled = !busy && email.contains('@'))
                 } else PrimaryButton(stringResource(R.string.cloud_send_code), sendCode, Modifier.fillMaxWidth(), enabled = !busy && email.contains('@'))
             } else ListCard {
-                ListRow(signedIn, subtitle = status?.text("credentialStore").orEmpty().ifBlank { stringResource(R.string.cloud_session_stored) }, icon = Icons.Outlined.Person, chevron = false, divider = true)
-                ListRow(stringResource(R.string.cloud_sign_out), titleColor = ur.negative, onClick = { if (!busy) call("account_sign_out") }, chevron = false)
+                ListRow(signedIn, icon = Icons.Outlined.Person, chevron = false)
+                // Under the email, past its icon.
+                TextButton({ if (!busy) call("account_sign_out") }, Modifier.padding(start = 56.dp, bottom = 4.dp), enabled = !busy) { Text(stringResource(R.string.cloud_sign_out), color = ur.text2) }
             }
         }
-        item { SectionTitle(stringResource(R.string.cloud_subscription)) }
-        item {
-            CloudCard {
-                Text(stringResource(R.string.cloud_subscription_intro), color = ur.text2, style = MaterialTheme.typography.bodyMedium)
-                if (signedIn.isBlank()) Text(stringResource(R.string.cloud_sign_in_to_subscribe), color = ur.muted, style = MaterialTheme.typography.bodySmall) else {
-                    val product = catalog?.optJSONObject("sync")
-                    if (catalog == null) PrimaryButton(stringResource(R.string.cloud_show_price), { work { catalog = billing.products() } }, Modifier.fillMaxWidth(), enabled = !busy)
-                    if (product != null) PrimaryButton(stringResource(R.string.cloud_subscribe, product.text("price")), { work { purchaseMessage(billing.subscribe()) } }, Modifier.fillMaxWidth(), enabled = !busy)
-                    catalog?.optJSONObject("errors")?.text("sync")?.takeIf(String::isNotBlank)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = ur.negative) }
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        TextButton({ work { purchaseMessage(billing.restore()) } }, enabled = !busy) { Text(stringResource(R.string.cloud_restore_purchases)) }
-                        TextButton({ work { billing.manage() } }, enabled = !busy) { Text(stringResource(R.string.cloud_manage_subscription)) }
-                    }
-                }
-            }
-        }
-        item { SectionTitle(stringResource(R.string.cloud_encrypted_sync), stringResource(R.string.cloud_encrypted_sync_detail)) }
         if (signedIn.isNotBlank()) {
-            item {
-                ListCard {
-                    overview?.optJSONObject("sync")?.let { ListRow(if (it.optBoolean("active")) stringResource(R.string.cloud_subscription_active) else stringResource(R.string.cloud_subscription_needed),
-                        icon = Icons.Outlined.CloudSync, iconTint = if (it.optBoolean("active")) ur.positive else ur.warning, iconFill = if (it.optBoolean("active")) ur.positiveSoft else ur.warningSoft, chevron = false, divider = true) }
-                    SwitchRow(stringResource(R.string.cloud_sync_automatically), automatic, { automatic = it; preferences.automaticSync = it }, subtitle = stringResource(R.string.cloud_while_open), divider = key == SyncKey.Unlocked || turnOn || askKey)
-                    when (key) {
-                        SyncKey.Unlocked -> {
-                            ListRow(stringResource(R.string.cloud_sync_now), icon = Icons.Outlined.Sync, onClick = { if (!busy) call("sync_now") }, chevron = false, divider = true)
-                            ListRow(stringResource(R.string.pair_add_device), icon = Icons.Outlined.Devices, onClick = { if (!busy) { error = null; dialog = "addDevice" } }, divider = true)
-                            // What few people need, and nobody often, folds away.
-                            ListRow(stringResource(R.string.cloud_more), icon = Icons.Outlined.MoreHoriz, iconTint = ur.text2, iconFill = ur.zeroSoft, onClick = { more = !more }, chevron = false, divider = more,
-                                trailing = { Icon(if (more) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null, Modifier.size(20.dp), tint = ur.muted) })
-                            if (more) {
-                                // Under More's own words, past its icon. A replacement code needs the new sync (cloud/recovery.rs).
-                                if (sync?.optInt("protocol", 1) == 2) ListRow(stringResource(R.string.cloud_new_recovery_code), Modifier.padding(start = 52.dp), onClick = { if (!busy) { error = null; dialog = "newCode" } }, divider = true)
-                                ListRow(stringResource(R.string.cloud_reset_sync), Modifier.padding(start = 52.dp), onClick = { if (!busy) { error = null; dialog = "reset" } }, divider = true)
-                                ListRow(stringResource(R.string.cloud_lock), Modifier.padding(start = 52.dp), onClick = { if (!busy) call("sync_lock") }, chevron = false)
-                            }
-                        }
-                        // The account has a key: the card below unlocks it.
-                        SyncKey.Locked -> {}
-                        // One tap: the key is made here with its recovery code, which comes back to be shown. Without the plan there's nothing to turn on yet.
-                        SyncKey.None -> if (turnOn) ListRow(stringResource(R.string.cloud_turn_on_sync), icon = Icons.Outlined.Key, onClick = { if (!busy) call("sync_setup") { vm.service("sync_now") } }, chevron = false)
-                        // The engine couldn't say (offline, most likely): tapping asks again and says what's wrong.
-                        SyncKey.Unknown -> if (askKey) ListRow(stringResource(R.string.cloud_set_up_or_unlock), icon = Icons.Outlined.Key, onClick = { if (!busy) work { keyInfo = NativeServices.read("sync_key_info") as? JSONObject } })
-                    }
-                }
-            }
-            if (key == SyncKey.Locked) item {
-                CloudCard {
-                    Text(stringResource(R.string.cloud_locked_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = ur.text)
-                    Text(stringResource(R.string.cloud_locked_detail), color = ur.text2, style = MaterialTheme.typography.bodyMedium)
-                    // Stretching a typed code into a key takes a moment, and this card may be all that's in view.
-                    if (busy) LinearProgressIndicator(Modifier.fillMaxWidth(), color = ur.accent)
-                    unlockError?.let { FormError(it) }
-                    PrimaryButton(stringResource(R.string.cloud_scan_code), {
-                        unlockError = null
-                        scanning = true
-                    }, Modifier.fillMaxWidth(), enabled = !busy, icon = Icons.Outlined.QrCodeScanner)
-                    // One box for whatever they have: the engine tells a device code, a recovery code and a passphrase apart.
-                    val label = stringResource(syncUnlockLabel(secretKind))
-                    Text(label, color = ur.text2, style = MaterialTheme.typography.bodyMedium)
-                    SecretField(secret, { secret = it; unlockError = null }, label, hidden = secretKind == "passphrase") { if (!busy && secret.isNotBlank()) unlock(secret) }
-                    SecondaryButton(stringResource(R.string.cloud_unlock), { unlock(secret) }, Modifier.fillMaxWidth(), enabled = !busy && secret.isNotBlank())
-                    TextButton({ if (!busy) { error = null; dialog = "reset" } }, contentPadding = PaddingValues(horizontal = 0.dp, vertical = 8.dp)) { Text(stringResource(R.string.cloud_cant_unlock), color = ur.muted) }
-                }
-            }
-            if (report != null && (report.text("message").isNotBlank() || report.text("at").isNotBlank())) item {
-                Text(Money.joined(listOfNotNull(report.text("message").ifBlank { null }, report.text("at").ifBlank { null }?.let { stringResource(R.string.cloud_last_attempt, it) })),
-                    Modifier.padding(horizontal = 4.dp), color = ur.muted, style = MaterialTheme.typography.bodySmall)
-            }
-            if (reportedBudgets.isNotEmpty()) item {
-                ListCard {
-                    reportedBudgets.forEachIndexed { index, entry ->
-                        val state = entry.text("state")
-                        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(entry.text("name"), Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, color = ur.text)
-                                TagChip(syncStateLabel(state), fill = if (state == "conflict") ur.warningSoft else ur.zeroSoft, color = if (state == "conflict") ur.warning else ur.text2)
-                            }
-                            entry.text("message").takeIf(String::isNotBlank)?.let { Text(it, color = ur.text2, style = MaterialTheme.typography.bodyMedium) }
-                            entry.optJSONArray("notes")?.let { notes -> for (i in 0 until notes.length()) Text(notes.optString(i), style = MaterialTheme.typography.bodySmall, color = ur.muted) }
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                when (state) {
-                                    "cloud_only" -> if (sync?.optInt("protocol", 1) != 2) SecondaryButton(stringResource(R.string.cloud_download_open), { call("sync_download", JSONObject().put("id", entry.text("id"))) { id -> vm.service("open_budget", JSONObject().put("id", id)) } }, enabled = !busy)
-                                    "local_only" -> if (sync?.optInt("protocol", 1) != 2) SecondaryButton(stringResource(R.string.cloud_start_syncing), { call("sync_track", JSONObject().put("ids", JSONArray().put(entry.text("id")))) { vm.service("sync_now") } }, enabled = !busy)
-                                    "conflict" -> PrimaryButton(stringResource(R.string.cloud_review_differences), { pendingBudget = entry; dialog = "conflict" }, enabled = !busy, color = ur.warning)
+            // 2. The plan, only when there's something to do or to know. One in good standing is under More.
+            if (plan != PlanNotice.None) {
+                item { SectionTitle(stringResource(R.string.cloud_subscription)) }
+                item {
+                    CloudCard {
+                        when (plan) {
+                            PlanNotice.Subscribe -> {
+                                Text(stringResource(R.string.cloud_subscription_intro), color = ur.text2, style = MaterialTheme.typography.bodyMedium)
+                                val product = catalog?.optJSONObject("sync")
+                                if (catalog == null) PrimaryButton(stringResource(R.string.cloud_show_price), { work { catalog = billing.products() } }, Modifier.fillMaxWidth(), enabled = !busy)
+                                if (product != null) PrimaryButton(stringResource(R.string.cloud_subscribe, product.text("price")), { work { purchaseMessage(billing.subscribe()) } }, Modifier.fillMaxWidth(), enabled = !busy)
+                                catalog?.optJSONObject("errors")?.text("sync")?.takeIf(String::isNotBlank)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = ur.negative) }
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    TextButton({ work { purchaseMessage(billing.restore()) } }, enabled = !busy) { Text(stringResource(R.string.cloud_restore_purchases)) }
+                                    TextButton({ work { billing.manage() } }, enabled = !busy) { Text(stringResource(R.string.cloud_manage_subscription)) }
                                 }
-                                if (sync?.optInt("protocol", 1) != 2 && state != "local_only") TextButton({ pendingBudget = entry; dialog = "removeCloud" }, enabled = !busy) { Text(stringResource(R.string.cloud_remove_copy), color = ur.negative) }
                             }
+                            PlanNotice.Ending -> {
+                                Text(stringResource(R.string.cloud_plan_ending, Money.date(planDay(overview, "endsAt").toString())), color = ur.text, style = MaterialTheme.typography.bodyMedium)
+                                SecondaryButton(stringResource(R.string.cloud_manage_subscription), { work { billing.manage() } }, Modifier.fillMaxWidth(), enabled = !busy)
+                            }
+                            PlanNotice.PaymentFailed -> {
+                                Text(stringResource(R.string.cloud_plan_payment_failed), color = ur.text, style = MaterialTheme.typography.bodyMedium)
+                                PrimaryButton(stringResource(R.string.cloud_manage_subscription), { work { billing.manage() } }, Modifier.fillMaxWidth(), enabled = !busy)
+                            }
+                            PlanNotice.None -> {}
                         }
-                        if (index < reportedBudgets.lastIndex) Hairline(start = 16.dp)
                     }
                 }
             }
-            item {
-                ListCard {
-                    ListRow(stringResource(R.string.cloud_delete_account), titleColor = ur.negative, onClick = { if (!busy) { confirmation = ""; dialog = "deleteAccount" } })
+            // 3. Sync: off, locked here, or on with one line that says how it stands.
+            if (moveOffered || key != SyncKey.Unknown || askKey) item { SectionTitle(stringResource(R.string.cloud_sync_title)) }
+            if (moveOffered) item {
+                CloudCard {
+                    Text(stringResource(R.string.cloud_move_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = ur.text)
+                    Text(stringResource(R.string.cloud_move_detail), color = ur.text2, style = MaterialTheme.typography.bodyMedium)
+                    PrimaryButton(stringResource(R.string.cloud_move_action), { if (!busy) { phrase = ""; error = null; dialog = "move" } }, Modifier.fillMaxWidth(), enabled = !busy)
                 }
             }
-        } else item { Text(stringResource(R.string.cloud_sign_in_to_sync), Modifier.padding(horizontal = 4.dp), color = ur.muted, style = MaterialTheme.typography.bodyMedium) }
-        item { TextButton({ call("account_open", JSONObject().put("next", "/privacy/app/")) }, enabled = !busy) { Text(stringResource(R.string.cloud_privacy)) } }
+            when (key) {
+                SyncKey.Unlocked -> item {
+                    CloudCard {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(syncLineText(status, now), Modifier.weight(1f), color = ur.text, style = MaterialTheme.typography.bodyMedium)
+                            SecondaryButton(stringResource(R.string.cloud_sync_now), { if (!busy) call("sync_now") }, enabled = !busy)
+                        }
+                    }
+                }
+                SyncKey.Locked -> item {
+                    CloudCard {
+                        Text(stringResource(R.string.cloud_locked_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = ur.text)
+                        // Another device reset sync: why this one asks to unlock when it used to sync.
+                        if (sync?.optBoolean("resetElsewhere") == true) Text(stringResource(R.string.cloud_locked_reset), color = ur.text, style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.cloud_locked_detail), color = ur.text2, style = MaterialTheme.typography.bodyMedium)
+                        // Stretching a typed code into a key takes a moment, and this card may be all that's in view.
+                        if (busy) LinearProgressIndicator(Modifier.fillMaxWidth(), color = ur.accent)
+                        unlockError?.let { FormError(it) }
+                        PrimaryButton(stringResource(R.string.cloud_scan_code), {
+                            unlockError = null
+                            scanning = true
+                        }, Modifier.fillMaxWidth(), enabled = !busy, icon = Icons.Outlined.QrCodeScanner)
+                        // One box for whatever they have: the engine tells a device code, a recovery code and a passphrase apart.
+                        val label = stringResource(syncUnlockLabel(secretKind))
+                        Text(label, color = ur.text2, style = MaterialTheme.typography.bodyMedium)
+                        SecretField(secret, { secret = it; unlockError = null }, label, hidden = secretKind == "passphrase") { if (!busy && secret.isNotBlank()) unlock(secret) }
+                        SecondaryButton(stringResource(R.string.cloud_unlock), { unlock(secret) }, Modifier.fillMaxWidth(), enabled = !busy && secret.isNotBlank())
+                        TextButton({ if (!busy) { error = null; dialog = "reset" } }, contentPadding = PaddingValues(horizontal = 0.dp, vertical = 8.dp)) { Text(stringResource(R.string.cloud_cant_unlock), color = ur.muted) }
+                    }
+                }
+                // One tap: the key is made here with its recovery code, which comes back to be shown. Without the plan there's nothing to turn on yet.
+                SyncKey.None -> item {
+                    CloudCard {
+                        if (turnOn) {
+                            Text(stringResource(R.string.cloud_encrypted_sync_detail), color = ur.text2, style = MaterialTheme.typography.bodyMedium)
+                            PrimaryButton(stringResource(R.string.cloud_turn_on_sync), { if (!busy) call("sync_setup") { vm.service("sync_now") } }, Modifier.fillMaxWidth(), enabled = !busy)
+                        } else Text(stringResource(R.string.cloud_subscription_needed), color = ur.text2, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                // The engine couldn't say (offline, most likely): tapping asks again and says what's wrong.
+                SyncKey.Unknown -> if (askKey) item {
+                    ListCard { ListRow(stringResource(R.string.cloud_set_up_or_unlock), icon = Icons.Outlined.Key, onClick = { if (!busy) work { keyInfo = NativeServices.read("sync_key_info") as? JSONObject } }) }
+                }
+            }
+            // 4. The devices that sync, while sync is on here. The list only shows: a device keeps the key it was given.
+            if (unlocked) {
+                item { SectionTitle(stringResource(R.string.cloud_devices)) }
+                item {
+                    ListCard {
+                        devices.forEach { device ->
+                            ListRow(deviceTitle(device), subtitle = deviceDetail(device, now), icon = if (device.current) Icons.Outlined.Smartphone else Icons.Outlined.Devices,
+                                iconTint = ur.text2, iconFill = ur.zeroSoft, chevron = false, divider = true)
+                        }
+                        ListRow(stringResource(R.string.pair_add_device), icon = Icons.Outlined.Add, onClick = { if (!busy) { error = null; dialog = "addDevice" } })
+                    }
+                }
+                item { Text(stringResource(R.string.cloud_devices_note), Modifier.padding(horizontal = 4.dp), color = ur.muted, style = MaterialTheme.typography.bodySmall) }
+            }
+            // 5. Budgets, only the ones that need something: a name, one sentence and one action. The rest are counted.
+            if (budgets.rows.isNotEmpty() || budgets.syncing > 0) {
+                item { SectionTitle(stringResource(R.string.cloud_budgets)) }
+                item {
+                    ListCard {
+                        budgets.rows.forEachIndexed { index, row ->
+                            val entry = row.entry
+                            Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(entry.text("name"), Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, color = ur.text)
+                                    if (row.need == BudgetNeed.Review) TagChip(stringResource(R.string.sync_state_conflict), fill = ur.warningSoft, color = ur.warning)
+                                }
+                                Text(budgetSentence(row), color = ur.text2, style = MaterialTheme.typography.bodyMedium)
+                                entry.optJSONArray("notes")?.let { notes -> for (i in 0 until notes.length()) Text(notes.optString(i), style = MaterialTheme.typography.bodySmall, color = ur.muted) }
+                                when (row.need) {
+                                    BudgetNeed.Review -> PrimaryButton(stringResource(R.string.cloud_review_differences), { pendingBudget = entry; dialog = "conflict" }, enabled = !busy, color = ur.warning)
+                                    // A budget kept only on this device, on either sync: one tap adds it to the account.
+                                    BudgetNeed.DeviceOnly -> SecondaryButton(stringResource(R.string.cloud_start_syncing), {
+                                        val ids = JSONArray().put(entry.text("id"))
+                                        if (newSync) call("sync_enable", JSONObject().put("enabled", true).put("ids", ids)) { vm.service("sync_now") }
+                                        else call("sync_track", JSONObject().put("ids", ids)) { vm.service("sync_now") }
+                                    }, enabled = !busy)
+                                    BudgetNeed.Download -> SecondaryButton(stringResource(R.string.cloud_download_open), { call("sync_download", JSONObject().put("id", entry.text("id"))) { id -> vm.service("open_budget", JSONObject().put("id", id)) } }, enabled = !busy)
+                                    BudgetNeed.Failed -> SecondaryButton(stringResource(R.string.cloud_sync_now), { if (!busy) call("sync_now") }, enabled = !busy)
+                                    // Recovering a kept copy, and looking over a budget deleted here and changed elsewhere, are the library's.
+                                    BudgetNeed.KeptCopy, BudgetNeed.ReviewDeletion -> SecondaryButton(stringResource(R.string.cloud_open_library), openLibrary)
+                                    BudgetNeed.Update, BudgetNeed.NeedsPlan -> {}
+                                }
+                            }
+                            if (index < budgets.rows.lastIndex || budgets.syncing > 0) Hairline(start = 16.dp)
+                        }
+                        if (budgets.syncing > 0) ListRow(Words.count(R.plurals.cloud_budgets_syncing, budgets.syncing.toLong()), onClick = openLibrary)
+                    }
+                }
+            }
+        }
+        // 6. What few people need, and nobody often, stays closed until it's opened.
+        item {
+            ListCard {
+                ListRow(stringResource(R.string.cloud_more), onClick = { more = !more }, chevron = false, divider = more,
+                    trailing = { Icon(if (more) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null, Modifier.size(20.dp), tint = ur.muted) })
+                if (more) {
+                    if (signedIn.isNotBlank()) {
+                        SwitchRow(stringResource(R.string.cloud_sync_automatically), automatic, { automatic = it; preferences.automaticSync = it }, subtitle = stringResource(R.string.cloud_while_open), divider = true)
+                        if (unlocked) {
+                            // A replacement code needs the new sync (cloud/recovery.rs).
+                            if (newSync) ListRow(stringResource(R.string.cloud_new_recovery_code), onClick = { if (!busy) { error = null; dialog = "newCode" } }, divider = true)
+                            ListRow(stringResource(R.string.cloud_lock), onClick = { if (!busy) call("sync_lock") }, chevron = false, divider = true)
+                            ListRow(stringResource(R.string.cloud_reset_sync), onClick = { if (!busy) { error = null; dialog = "reset" } }, divider = true)
+                        }
+                        // The plan's details: how it stands, and the store's own pages for it.
+                        overview?.optJSONObject("sync")?.let { standing ->
+                            val day = planDay(overview, "endsAt")?.let { stringResource(R.string.cloud_plan_ends, Money.date(it.toString())) }
+                                ?: planDay(overview, "renewsAt")?.let { stringResource(R.string.cloud_plan_renews, Money.date(it.toString())) }
+                            ListRow(stringResource(if (standing.optBoolean("active")) R.string.cloud_subscription_active else R.string.cloud_subscription_needed), subtitle = day, chevron = false, divider = true)
+                        }
+                        ListRow(stringResource(R.string.cloud_manage_subscription), onClick = { work { billing.manage() } }, divider = true)
+                        ListRow(stringResource(R.string.cloud_restore_purchases), onClick = { work { purchaseMessage(billing.restore()) } }, chevron = false, divider = true)
+                        // The older sync can stop syncing a budget and delete its cloud copy from here.
+                        if (!newSync) reportedBudgets.filter { it.text("state") != "local_only" }.forEach { entry ->
+                            ListRow(stringResource(R.string.cloud_remove_copy), subtitle = entry.text("name"), titleColor = ur.negative, onClick = { if (!busy) { pendingBudget = entry; dialog = "removeCloud" } }, divider = true)
+                        }
+                    }
+                    ListRow(stringResource(R.string.cloud_privacy), onClick = { if (!busy) call("account_open", JSONObject().put("next", "/privacy/app/")) }, divider = signedIn.isNotBlank())
+                    if (signedIn.isNotBlank()) ListRow(stringResource(R.string.cloud_delete_account), titleColor = ur.negative, onClick = { if (!busy) { confirmation = ""; dialog = "deleteAccount" } })
+                }
+            }
+        }
     }
-    if (dialog == "addDevice") AddDeviceDialog({ dialog = "" }) { dialog = ""; toast(context.getString(R.string.pair_device_added), false) }
+    // A code the phone's own camera opened the app with: done with as this screen's scanner would.
+    // Signed out, it waits for the sign-in.
+    val scannedLink by PageRequests.syncLink.collectAsStateWithLifecycle()
+    LaunchedEffect(scannedLink, signedIn, unlocked, status == null) {
+        val link = scannedLink ?: return@LaunchedEffect
+        if (status == null || signedIn.isBlank()) return@LaunchedEffect
+        PageRequests.syncLink.value = null
+        when {
+            syncCodeIsRequest(link) && unlocked -> approvingLink = link
+            syncCodeIsRequest(link) -> toast(context.getString(R.string.cloud_link_unlock_first), true)
+            unlocked -> toast(context.getString(R.string.cloud_link_already_syncs), true)
+            else -> unlock(link)
+        }
+    }
+    approvingLink?.let { code ->
+        AlertDialog(onDismissRequest = { if (!busy) approvingLink = null },
+            title = { Text(stringResource(R.string.pair_approve_title)) },
+            text = { Text(stringResource(R.string.pair_approve_message)) },
+            confirmButton = { TextButton({
+                approvingLink = null
+                call("sync_pair_approve", JSONObject().put("code", code)) { deviceAdded() }
+            }, enabled = !busy) { Text(stringResource(R.string.pair_approve)) } },
+            dismissButton = { TextButton({ approvingLink = null }, enabled = !busy) { Text(stringResource(R.string.common_cancel)) } })
+    }
+    if (dialog == "addDevice") AddDeviceDialog({ dialog = "" }) { dialog = ""; deviceAdded() }
     // What was scanned goes to the engine as it is: it says what the code is, and what's wrong with one that isn't UrBudget's.
     if (scanning) SyncCodeScanner(
         found = { scanning = false; unlock(it) },
@@ -398,19 +520,6 @@ private fun SecretField(value: String, onChange: (String) -> Unit, label: String
 @Composable
 private fun CloudCard(content: @Composable ColumnScope.() -> Unit) {
     ListCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp), content = content) }
-}
-
-/** A budget's sync state as its chip names it (sync.rs's BudgetSync states). */
-@Composable
-private fun syncStateLabel(state: String): String = when (state) {
-    "cloud_only" -> stringResource(R.string.sync_state_cloud_only); "local_only" -> stringResource(R.string.sync_state_local_only)
-    "conflict" -> stringResource(R.string.sync_state_conflict); "synced" -> stringResource(R.string.sync_state_synced)
-    "uploaded" -> stringResource(R.string.sync_state_uploaded); "downloaded" -> stringResource(R.string.sync_state_downloaded)
-    "merged" -> stringResource(R.string.sync_state_merged); "waiting" -> stringResource(R.string.sync_state_waiting)
-    "update_app" -> stringResource(R.string.sync_state_update_app); "error" -> stringResource(R.string.sync_state_error)
-    "deletion_conflict" -> stringResource(R.string.library_deletion_conflict)
-    "" -> stringResource(R.string.sync_state_unknown)
-    else -> state.replace('_', ' ').replaceFirstChar(Char::uppercase)
 }
 
 @Composable

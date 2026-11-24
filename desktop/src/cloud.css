@@ -112,8 +112,28 @@
   font-style: normal;
   font-weight: 400;
 }
-.plan-line {
-  margin: 0 0 6px;
+/* One line and the action beside it: sync's status with Sync now, a plan that needs a look.
+   Not .sync-status: that is the title bar's pill. */
+.sync-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.sync-line.trouble > span:first-child {
+  color: var(--negative);
+}
+/* The devices that sync, with Add a device ending the list. */
+.device-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.device-add {
+  margin: 8px 0;
+}
+.device-add + .help {
+  margin-bottom: 0;
 }
 /* Sync asks to be unlocked: this computer's own code for a phone to scan, and beside it (under
    it in a narrow window) the box for a code or passphrase typed here. */
@@ -177,11 +197,21 @@
 .modal.must-save .modal-heading .icon-button {
   visibility: hidden;
 }
-/* Sync's rarely used actions, folded away. */
+/* What is rarely needed, folded away: the page's More, and the budgets that are simply syncing. */
 .sync-more {
   margin-top: 8px;
   color: var(--muted);
   font-size: 12.5px;
+}
+/* More is a panel of its own, so its summary stands where a heading would. */
+.panel.more-panel > .sync-more {
+  margin-top: 0;
+}
+.more-panel > .sync-more > summary {
+  padding: 0;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
 }
 .sync-more > summary {
   width: fit-content;

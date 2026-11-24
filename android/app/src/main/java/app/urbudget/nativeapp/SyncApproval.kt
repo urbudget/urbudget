@@ -136,6 +136,13 @@ internal fun pairingCountdown(left: Long): String {
 
 /** What every QR code of UrBudget's starts with (crates/urbudget-services/src/cloud/codes.rs). */
 private const val CODE_PREFIX = "URBUDGET-"
+private const val LINK_PREFIX = "urbudget://"
+
+/** Whether scanned text is one of UrBudget's codes: a link of its own kind, or as codes were written before they were links. */
+internal fun scannableSyncCode(text: String): Boolean = text.trim().let { it.startsWith(LINK_PREFIX, ignoreCase = true) || it.startsWith(CODE_PREFIX) }
+
+/** Whether a scanned code is one a device waiting to be added shows, which a device that syncs approves. */
+internal fun syncCodeIsRequest(text: String): Boolean = text.trim().let { it.startsWith(LINK_PREFIX + "ask/", ignoreCase = true) || it.startsWith(CODE_PREFIX + "ASK:") }
 
 /**
  * The UrBudget code in a camera frame, given the frame's brightness row by row, or null when it
@@ -146,7 +153,229 @@ internal fun decodeSyncCode(brightness: ByteArray, width: Int, height: Int): Str
     val source = com.google.zxing.PlanarYUVLuminanceSource(brightness, width, height, 0, 0, width, height, false)
     com.google.zxing.qrcode.QRCodeReader()
         .decode(com.google.zxing.BinaryBitmap(com.google.zxing.common.HybridBinarizer(source)))
-        .text?.takeIf { it.startsWith(CODE_PREFIX) }
+        .text?.takeIf(::scannableSyncCode)
 } catch (_: com.google.zxing.ReaderException) {
     null
+}
+
+// Account & sync, simplified (section 14 of the same plan): which parts the screen shows, which
+// budgets it lists and what a device's row says. Each part shows only when it has something to say.
+
+/** A moment the engine or the server wrote, in either of the ways they write one. Null for anything else. */
+internal fun syncInstant(text: String?): Instant? {
+    val written = text?.trim().orEmpty()
+    if (written.isEmpty() || written == "null") return null
+    return runCatching { OffsetDateTime.parse(written).toInstant() }.getOrNull()
+        ?: runCatching { Instant.parse(written.replace(' ', 'T').removeSuffix("Z") + "Z") }.getOrNull()
+}
+
+/**
+ * "Last synced 5 minutes ago", counted in minutes up to an hour, hours up to two days, then days.
+ * A clock that runs behind the server's makes it "just now" rather than a time to come. Null when
+ * there is no moment to count from.
+ */
+internal fun lastSynced(then: Instant?, now: Instant): String? {
+    val minutes = java.time.Duration.between(then ?: return null, now).toMinutes()
+    return when {
+        minutes < 1 -> Words[R.string.sync_last_now]
+        minutes < 60 -> Words.count(R.plurals.sync_last_minutes, minutes)
+        minutes < 48 * 60 -> Words.count(R.plurals.sync_last_hours, minutes / 60)
+        else -> Words.count(R.plurals.sync_last_days, minutes / (24 * 60))
+    }
+}
+
+/** A device that syncs with the account (`sync_devices`). */
+internal class SyncDevice(val id: String, val name: String?, val added: Instant?, val lastSeen: Instant?, val current: Boolean)
+
+/** Reads `{devices: [{id, name, addedAt, lastSeenAt, current}]}` in the engine's order: this phone first, then the most recently seen. */
+internal fun syncDevices(answer: Any?): List<SyncDevice> {
+    val rows = (answer as? JSONObject)?.optJSONArray("devices") ?: return emptyList()
+    return (0 until rows.length()).mapNotNull { rows.optJSONObject(it) }.map { row ->
+        fun words(key: String) = if (row.isNull(key)) null else row.optString(key).trim().ifEmpty { null }
+        SyncDevice(row.optString("id"), words("name"), syncInstant(words("addedAt")), syncInstant(words("lastSeenAt")), row.optBoolean("current"))
+    }
+}
+
+/**
+ * What a device is called in the list: its name, or "This phone" for the one in hand before it has
+ * one, and one that registered before names were kept by the day it was added ("A device added on
+ * 3 November").
+ */
+internal fun deviceTitle(device: SyncDevice, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): String = when {
+    device.name != null -> device.name
+    device.current -> Words[R.string.sync_device_this]
+    device.added != null -> Words[R.string.sync_device_added_on, Money.ltr(device.added.atZone(zone).toLocalDate().format(Money.pattern("d MMMM")))]
+    else -> Words[R.string.sync_device_unnamed]
+}
+
+/** The line under a device's name: "This phone" for the one in hand, when another last synced. */
+internal fun deviceDetail(device: SyncDevice, now: Instant): String? =
+    if (device.current) Words[R.string.sync_device_this].takeIf { device.name != null } else lastSynced(device.lastSeen, now)
+
+/** What the plan part of the screen has to say. A plan in good standing says nothing there. */
+internal enum class PlanNotice {
+    None,
+    /** No plan: the price and Subscribe. */
+    Subscribe,
+    /** A plan that was cancelled and runs to a date. */
+    Ending,
+    /** The store couldn't take the last payment. */
+    PaymentFailed,
+}
+
+private fun budgetStates(status: JSONObject?): List<String> {
+    val rows = status?.optJSONObject("sync")?.optJSONObject("last")?.optJSONArray("budgets") ?: return emptyList()
+    return (0 until rows.length()).mapNotNull { rows.optJSONObject(it)?.optString("state") }
+}
+
+/**
+ * `overview` is `account_overview` (null until it answers, or offline). Without it the plan is only
+ * mentioned when the last sync was turned away for want of one.
+ */
+internal fun planNotice(status: JSONObject?, overview: JSONObject?): PlanNotice {
+    val plan = overview?.optJSONObject("subscription")
+    val active = overview?.optJSONObject("sync")?.optBoolean("active")
+    val turnedAway = status?.optJSONObject("sync")?.optJSONObject("last")?.optString("state") == "subscription_required" ||
+        "subscription_required" in budgetStates(status)
+    return when {
+        plan?.optString("status") == "past_due" -> PlanNotice.PaymentFailed
+        active == false || (active == null && turnedAway) -> PlanNotice.Subscribe
+        planDay(overview, "endsAt") != null -> PlanNotice.Ending
+        else -> PlanNotice.None
+    }
+}
+
+/** The day the plan renews (`renewsAt`) or ends (`endsAt`), when the server gave one. */
+internal fun planDay(overview: JSONObject?, key: String, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): java.time.LocalDate? {
+    val plan = overview?.optJSONObject("subscription") ?: return null
+    return syncInstant(if (plan.isNull(key)) null else plan.optString(key))?.atZone(zone)?.toLocalDate()
+}
+
+/** What the one status line says where sync is on. */
+internal enum class SyncLine {
+    /** Nothing needs the person: "Sync is on", with when it last synced. */
+    On,
+    /** Changes made here haven't gone up yet. */
+    Waiting,
+    /** A budget changed in two places and waits for a choice. */
+    Review,
+    /** A budget needs something else: a kept copy to recover, one that failed. */
+    Attention,
+    /** This version of the app is too old to sync a budget. */
+    Update,
+    NeedsPlan,
+    Offline,
+    /** The last sync stopped with an error, which the engine words itself. */
+    Failed,
+}
+
+/** The first thing that needs the person, else how sync stands (`cloud_status`). */
+internal fun syncLine(status: JSONObject?): SyncLine {
+    val report = status?.optJSONObject("sync")?.optJSONObject("last")
+    val states = budgetStates(status)
+    val state = report?.optString("state").orEmpty()
+    return when {
+        "conflict" in states || "deletion_conflict" in states -> SyncLine.Review
+        "update_app" in states -> SyncLine.Update
+        state == "subscription_required" || "subscription_required" in states -> SyncLine.NeedsPlan
+        "recovery" in states || "error" in states -> SyncLine.Attention
+        state == "offline" -> SyncLine.Offline
+        state == "error" || state == "attention" -> SyncLine.Failed
+        state == "waiting" || "waiting" in states || "queued" in states -> SyncLine.Waiting
+        else -> SyncLine.On
+    }
+}
+
+/** When the last sync that finished was, for "Last synced 2 minutes ago". None while one is waiting or failed. */
+internal fun lastSyncedAt(status: JSONObject?): Instant? {
+    val report = status?.optJSONObject("sync")?.optJSONObject("last") ?: return null
+    return if (report.optString("state") == "ok") syncInstant(report.optString("at")) else null
+}
+
+/** What a listed budget needs from the person. */
+internal enum class BudgetNeed {
+    /** Changed in two places: the differences are reviewed here. */
+    Review,
+    /** A copy this device kept when the account's budgets were replaced: recovered from the budget library. */
+    KeptCopy,
+    /** Kept only on this device, with a button that adds it to sync. */
+    DeviceOnly,
+    Failed,
+    /** In the account and not on this device (the older sync): downloaded from here. */
+    Download,
+    /** Deleted here and changed elsewhere: looked over in the budget library. */
+    ReviewDeletion,
+    Update,
+    NeedsPlan,
+}
+
+internal class BudgetRow(val entry: JSONObject, val need: BudgetNeed)
+
+/** The budgets that need something, in the engine's order, and how many others are simply syncing. */
+internal class SyncBudgets(val rows: List<BudgetRow>, val syncing: Int)
+
+/**
+ * Sorts the last sync's budgets (`sync.last.budgets`) into those listed and those only counted.
+ * One that is neither, such as a budget in the Trash, is left to the budget library.
+ */
+internal fun syncBudgets(status: JSONObject?): SyncBudgets {
+    val sync = status?.optJSONObject("sync")
+    val entries = sync?.optJSONObject("last")?.optJSONArray("budgets")
+    val newSync = sync?.optInt("protocol", 1) == 2
+    val rows = mutableListOf<BudgetRow>()
+    var syncing = 0
+    for (i in 0 until (entries?.length() ?: 0)) {
+        val entry = entries?.optJSONObject(i) ?: continue
+        val need = when (entry.optString("state")) {
+            "conflict" -> BudgetNeed.Review
+            "recovery" -> BudgetNeed.KeptCopy
+            "local_only" -> BudgetNeed.DeviceOnly
+            "error" -> BudgetNeed.Failed
+            "cloud_only" -> if (newSync) null else BudgetNeed.Download
+            "deletion_conflict" -> BudgetNeed.ReviewDeletion
+            "update_app" -> BudgetNeed.Update
+            "subscription_required" -> BudgetNeed.NeedsPlan
+            "synced", "uploaded", "downloaded", "merged", "waiting", "queued" -> { syncing++; null }
+            else -> null
+        }
+        if (need != null) rows += BudgetRow(entry, need)
+    }
+    return SyncBudgets(rows, syncing)
+}
+
+/** The one plain sentence under a listed budget's name when the engine has none of its own. */
+@StringRes
+internal fun budgetNeedSentence(need: BudgetNeed): Int = when (need) {
+    BudgetNeed.Review -> R.string.cloud_budget_review
+    BudgetNeed.KeptCopy -> R.string.cloud_budget_kept
+    BudgetNeed.DeviceOnly -> R.string.cloud_budget_device_only
+    BudgetNeed.Failed -> R.string.cloud_budget_failed
+    BudgetNeed.Download -> R.string.cloud_budget_download
+    BudgetNeed.ReviewDeletion -> R.string.library_deletion_conflict
+    BudgetNeed.Update -> R.string.cloud_budget_update
+    BudgetNeed.NeedsPlan -> R.string.cloud_subscription_needed
+}
+
+/**
+ * What a listed budget's row says. The engine's own sentence is used where it says what went wrong
+ * or what to choose; a kept copy and a budget waiting for a plan or an update are worded here, as
+ * the engine's words for those say how sync works.
+ */
+internal fun budgetSentence(row: BudgetRow): String {
+    val own = if (row.entry.isNull("message")) "" else row.entry.optString("message").trim()
+    val worded = row.need in setOf(BudgetNeed.Review, BudgetNeed.Failed, BudgetNeed.DeviceOnly, BudgetNeed.ReviewDeletion)
+    return if (worded && own.isNotEmpty()) own else Words[budgetNeedSentence(row.need)]
+}
+
+/** The status line where sync is on: "Sync is on. Last synced 2 minutes ago.", or what needs the person, in plain words. */
+internal fun syncLineText(status: JSONObject?, now: Instant): String = when (syncLine(status)) {
+    SyncLine.On -> lastSynced(lastSyncedAt(status), now)?.let { Words[R.string.cloud_line_on_last, it] } ?: Words[R.string.cloud_line_on]
+    SyncLine.Waiting -> Words[R.string.cloud_line_waiting]
+    SyncLine.Review -> Words[R.string.cloud_line_review]
+    SyncLine.Attention -> Words[R.string.cloud_line_attention]
+    SyncLine.Update -> Words[R.string.cloud_line_update]
+    SyncLine.NeedsPlan -> Words[R.string.cloud_subscription_needed]
+    SyncLine.Offline -> Words[R.string.cloud_line_offline]
+    SyncLine.Failed -> status?.optJSONObject("sync")?.optJSONObject("last")?.takeUnless { it.isNull("message") }?.optString("message")?.trim()?.ifEmpty { null }
+        ?: Words[R.string.cloud_line_failed]
 }

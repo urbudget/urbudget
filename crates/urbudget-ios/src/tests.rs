@@ -88,3 +88,23 @@ fn services_store_budgets_with_revision_checks_and_undo() {
     assert_eq!(undone["value"]["budget"]["name"], "Sample budget", "{undone}");
     assert_eq!(service("list_budgets", json!({}))["value"].as_array().unwrap().len(), 1);
 }
+
+#[test]
+fn a_service_call_has_room_however_small_the_callers_stack() {
+    // What a sync pass needs in an unoptimized build is far past the 512 KB a Swift concurrency
+    // thread has; on that stack this would end the process, not fail the test.
+    #[inline(never)]
+    fn deep(levels: usize) -> usize {
+        let frame = [0u8; 16 * 1024];
+        std::hint::black_box(&frame);
+        if levels == 0 { 0 } else { 1 + deep(levels - 1) }
+    }
+    let caller = std::thread::Builder::new()
+        .stack_size(512 * 1024)
+        .spawn(|| super::on_service_stack(|| Ok(deep(128))))
+        .unwrap();
+    assert_eq!(caller.join().unwrap(), Ok(128));
+    // A panic on that thread is an answer, as it is from `urbudget_service`, not a crash.
+    let failed: Result<(), String> = super::on_service_stack(|| panic!("inside the service"));
+    assert!(failed.is_err());
+}

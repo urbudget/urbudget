@@ -55,7 +55,7 @@ class SharedServiceReadsTest {
             assertFalse(broker, NativeServicePolicy.coalesce(broker))
         }
         // Device approval: what its screens ask may be joined; whatever makes, uses or takes back a code or a key runs on its own.
-        for (read in listOf("sync_key_info", "sync_recovery_unsaved", "sync_pair_state")) {
+        for (read in listOf("sync_key_info", "sync_recovery_unsaved", "sync_pair_state", "sync_devices")) {
             assertTrue(read, NativeServicePolicy.independent(read))
             assertTrue(read, NativeServicePolicy.coalesce(read))
             assertFalse(read, NativeServicePolicy.budgetRead(read))

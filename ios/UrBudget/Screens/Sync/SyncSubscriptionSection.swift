@@ -1,12 +1,15 @@
 import StoreKit
 import SwiftUI
 
-/// Account & sync's Sync subscription: whether it's active, and buying, restoring or managing it
-/// through the App Store. The account overview (`/me`) says what's active; StoreKit only sells.
+/// Account & sync's Sync subscription, beside the account only while there is something to do or
+/// to know: no plan (its price, Subscribe, and what the App Store asks to be said beside it), a
+/// plan that is ending, a payment that failed. A plan in good standing takes no room here: its
+/// details are under More (`SyncPlanRows`). The account overview (`/me`) says what's active;
+/// StoreKit only sells.
 struct SyncSubscriptionSection: View {
     /// The account overview, or nil while it loads.
     var overview: JSON?
-    /// Loads the overview again after a purchase or restore.
+    /// Loads the overview again after a purchase.
     var reload: () async -> Void
 
     @Environment(AppStoreSubscription.self) private var appStore
@@ -16,19 +19,15 @@ struct SyncSubscriptionSection: View {
     @State private var notice: String?
     @State private var managing = false
 
-    private var plan: JSON { overview?["subscription"] ?? .null }
-    private var provider: String { plan.text("provider") }
-    private var active: Bool { overview?["sync"]["active"].bool ?? false }
-    /// Sync given by UrBudget (the App Review account's) can still be bought, so the purchase can be tried.
-    private var offered: Bool { !active || provider == "comp" }
+    private var offered: Bool { SyncPlan.offered(overview) }
 
     var body: some View {
-        if overview?["sync"].isObject == true {
+        if SyncPlan.needsAttention(overview) {
             Section {
-                statusRow
+                SyncPlanStatus(overview: overview)
                 if let notice { Text(notice).font(.subheadline) }
                 if let error { Text(error).font(.subheadline).foregroundStyle(Color.urNegative) }
-                if provider == "apple" { Button("Manage subscription") { managing = true }.disabled(busy) }
+                if overview?["subscription"].text("provider") == "apple" { Button("Manage subscription") { managing = true }.disabled(busy) }
                 if offered { offerRows }
             } header: {
                 Text("Sync subscription")
@@ -38,34 +37,6 @@ struct SyncSubscriptionSection: View {
             .task(id: offered) { if offered { await appStore.loadProduct() } }
             .manageSubscriptionsSheet(isPresented: $managing)
             .onChange(of: managing) { _, open in if !open { Task { await reload() } } }
-        }
-    }
-
-    private var statusRow: some View {
-        Label {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(active ? "Sync subscription active" : "Sync needs an active subscription")
-                if !statusDetail.isEmpty { Text(statusDetail).font(.footnote).foregroundStyle(Color.secondary) }
-            }
-        } icon: {
-            Image(systemName: active ? "checkmark.icloud.fill" : "exclamationmark.icloud")
-        }
-        .foregroundStyle(active ? Color.urPositive : Color.urWarning)
-    }
-
-    private var statusDetail: String {
-        switch provider {
-        case "comp":
-            return active ? String(localized: "Included with this account by UrBudget") : ""
-        case "apple":
-            if plan.text("status") == "unpaid" { return String(localized: "The App Store couldn't renew it. Check your payment method in Manage subscription.") }
-            if let renews = date(plan.text("renewsAt")), active { return String(localized: "Renews \(renews)") }
-            if let ends = date(plan.text("endsAt")) { return active ? String(localized: "Ends \(ends)") : String(localized: "Ended \(ends)") }
-            return ""
-        case "":
-            return ""
-        default:
-            return active ? String(localized: "Manage it where you subscribed.") : ""
         }
     }
 
@@ -84,11 +55,19 @@ struct SyncSubscriptionSection: View {
             .fontWeight(.semibold)
             .disabled(busy)
         } else if appStore.unavailable {
-            Text("The App Store isn't available right now. Try again later.").font(.subheadline).foregroundStyle(Color.secondary)
+            // The App Store didn't list the product. Nothing is said of that until someone asks
+            // to subscribe: then it's asked again, and its price shown before anything is bought.
+            Button(action: askAgain) {
+                HStack {
+                    Text("Subscribe")
+                    if busy { Spacer(); ProgressView() }
+                }
+            }
+            .fontWeight(.semibold)
+            .disabled(busy)
         } else {
             ProgressView()
         }
-        Button("Restore purchases", action: restore).disabled(busy)
     }
 
     /// What App Review guideline 3.1.2 asks for beside the button: the subscription's name, length
@@ -105,15 +84,18 @@ struct SyncSubscriptionSection: View {
         }
     }
 
+    private func askAgain() {
+        run {
+            await appStore.loadProduct()
+            if appStore.product == nil { throw AppError(String(localized: "The App Store isn't available right now. Try again later.")) }
+        }
+    }
+
     private func subscribe(_ product: Product) {
         run {
             let token = try await appStore.accountToken()
             notice = try await appStore.complete(try await purchase(product, options: [.appAccountToken(token)]))
         }
-    }
-
-    private func restore() {
-        run { notice = try await appStore.restore() }
     }
 
     /// One App Store action at a time, with its error shown in the section; the overview reloads after.
@@ -166,11 +148,87 @@ struct SyncSubscriptionSection: View {
         @unknown default: return String(localized: "period")
         }
     }
+}
+
+/// Whether sync is paid for, and until when: the plan's one row, beside the account or under More.
+struct SyncPlanStatus: View {
+    var overview: JSON?
+
+    private var plan: JSON { overview?["subscription"] ?? .null }
+    private var active: Bool { SyncPlan.active(overview) }
+
+    var body: some View {
+        Label {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(active ? "Sync subscription active" : "Sync needs an active subscription")
+                if !detail.isEmpty { Text(detail).font(.footnote).foregroundStyle(Color.secondary) }
+            }
+        } icon: {
+            Image(systemName: active ? "checkmark.icloud.fill" : "exclamationmark.icloud")
+        }
+        .foregroundStyle(active ? Color.urPositive : Color.urWarning)
+    }
+
+    private var detail: String {
+        switch plan.text("provider") {
+        case "comp":
+            return active ? String(localized: "Included with this account by UrBudget") : ""
+        case "apple":
+            if SyncPlan.unpaid(overview) { return String(localized: "The App Store couldn't renew it. Check your payment method in Manage subscription.") }
+            if let renews = date(plan.text("renewsAt")), active { return String(localized: "Renews \(renews)") }
+            if let ends = date(plan.text("endsAt")) { return active ? String(localized: "Ends \(ends)") : String(localized: "Ended \(ends)") }
+            return ""
+        case "":
+            return ""
+        default:
+            return active ? String(localized: "Manage it where you subscribed.") : ""
+        }
+    }
 
     private func date(_ iso: String) -> String? {
-        let parser = ISO8601DateFormatter()
-        parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let parsed = parser.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
-        return parsed?.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted).locale(.app))
+        SyncKey.date(iso)?.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted).locale(.app))
+    }
+}
+
+/// The plan's rows under More: its details while it's in good standing, Manage subscription for
+/// one bought in the App Store, and Restore purchases.
+struct SyncPlanRows: View {
+    var overview: JSON?
+    /// Loads the overview again after a restore, or after Apple's sheet closes.
+    var reload: () async -> Void
+
+    @Environment(AppStoreSubscription.self) private var appStore
+    @State private var busy = false
+    @State private var error: String?
+    @State private var notice: String?
+    @State private var managing = false
+
+    var body: some View {
+        // Beside the account while it needs something, so it isn't said twice.
+        if overview?["sync"].isObject == true, !SyncPlan.needsAttention(overview) { SyncPlanStatus(overview: overview) }
+        if overview?["subscription"].text("provider") == "apple" { Button("Manage subscription") { managing = true }.disabled(busy) }
+        Button(action: restore) {
+            HStack {
+                Text("Restore purchases")
+                if busy { Spacer(); ProgressView() }
+            }
+        }
+        .disabled(busy)
+        .manageSubscriptionsSheet(isPresented: $managing)
+        .onChange(of: managing) { _, open in if !open { Task { await reload() } } }
+        if let notice { Text(notice).font(.subheadline) }
+        if let error { Text(error).font(.subheadline).foregroundStyle(Color.urNegative) }
+    }
+
+    private func restore() {
+        guard !busy else { return }
+        busy = true
+        error = nil
+        notice = nil
+        Task {
+            defer { busy = false }
+            do { notice = try await appStore.restore() } catch { self.error = BudgetStore.readable(error) }
+            await reload()
+        }
     }
 }

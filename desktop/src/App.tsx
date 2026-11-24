@@ -534,7 +534,7 @@ export default function App() {
       </div>
     );
   }
-  const syncSettings = <SyncSettings cloud={cloud} budgetId="" isClean={() => true} openBudget={switchBudget} />;
+  const syncSettings = <SyncSettings cloud={cloud} budgetId="" isClean={() => true} openBudget={switchBudget} manageBudgets={() => setDialog({ type: "manageBudgets" })} />;
   if (model.ready && !budget) return (
     <div className="empty-library-page">
       {customTitleBar && <div className="empty-library-titlebar"><TitleBar /></div>}
@@ -1038,6 +1038,7 @@ export default function App() {
             <SettingsPage
               key={settingsTab?.key}
               initialTab={settingsTab?.tab}
+              onManageBudgets={() => setDialog({ type: "manageBudgets" })}
               budget={budget}
               sync={sync}
               syncLabel={t(syncLabels[sync])}
