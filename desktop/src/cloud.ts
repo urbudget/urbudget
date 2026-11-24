@@ -53,6 +53,12 @@ export type CloudStatus = {
     upgradeAvailable?: boolean;
     /** Moving needs the passphrase: this computer has no saved key that opens the account. */
     upgradeNeedsPassphrase?: boolean;
+    /** What the account's key is made from, as far as this computer last heard: a recovery code the app made, or a passphrase someone chose. Null with no key. */
+    secret?: "code" | "passphrase" | null;
+    /** A replacement recovery code was made for the account. */
+    recovery?: boolean;
+    /** This computer holds a recovery code nobody has said they saved (`syncRecoveryUnsaved`). */
+    recoveryUnsaved?: boolean;
   };
   site: string;
   library?: LibrarySnapshot;
@@ -74,9 +80,29 @@ export const cloud = {
   /** Opens a page of urbudget.app in the browser, signed in when this computer is. */
   open: (next: string) => invoke<void>("account_open", { next }),
   syncNow: (openClean: boolean) => invoke<SyncReport>("sync_now", { openClean }),
-  syncHasKey: () => invoke<boolean>("sync_has_key"),
-  syncSetup: (passphrase: string) => invoke<{ created: boolean }>("sync_setup", { passphrase }),
-  syncReset: (passphrase: string) => invoke<void>("sync_reset", { passphrase }),
+  /** Whether the account has a sync key and what it's made from, asked fresh. */
+  syncKeyInfo: () => invoke<SyncKeyInfo>("sync_key_info"),
+  /** Turns sync on for an account with no key. The key is made from a recovery code made here, which comes back to be shown. */
+  syncSetup: () => invoke<SyncUnlocked>("sync_setup", { passphrase: null }),
+  /** Unlocks sync here with whatever was typed: a code another device shows, the recovery code, or the passphrase. */
+  syncUnlock: (secret: string) => invoke<SyncUnlocked>("sync_unlock", { secret }),
+  /** A new key and a new recovery code. The cloud copies made with the old key are deleted. */
+  syncReset: () => invoke<SyncUnlocked>("sync_reset", { passphrase: null }),
+  /** Where sync is unlocked: another recovery code. What the key was first made from keeps working. */
+  syncRecoveryCreate: () => invoke<{ recoveryCode: string }>("sync_recovery_create"),
+  /** The recovery code this computer still holds because nobody has said they saved it. */
+  syncRecoveryUnsaved: () => invoke<{ recoveryCode: string } | null>("sync_recovery_unsaved"),
+  syncRecoverySaved: () => invoke<void>("sync_recovery_saved"),
+  /** On a computer that syncs: a one-time code that hands the sync key to another device. */
+  syncPairOffer: () => invoke<PairingCode>("sync_pair_offer"),
+  /** What became of the code from `syncPairOffer`: still `waiting`, `collected` by the new device, or neither once it ran out or was taken back. */
+  syncPairState: (id: string) => invoke<{ waiting: boolean; collected: boolean }>("sync_pair_state", { id }),
+  /** Takes back a code when its screen closes. */
+  syncPairCancel: (id: string) => invoke<void>("sync_pair_cancel", { id }),
+  /** On a computer that doesn't sync yet: a code to show, for a phone that syncs to scan and approve. */
+  syncPairRequest: () => invoke<PairingCode>("sync_pair_request"),
+  /** Whether a device that syncs has approved the code from `syncPairRequest`. Sync is unlocked here once it has. */
+  syncPairWait: (code: string) => invoke<{ ready: false } | ({ ready: true } & SyncUnlocked)>("sync_pair_wait", { code }),
   /** Moves the account to the new sync; the passphrase only when `upgradeNeedsPassphrase`. */
   syncUpgrade: (passphrase?: string) => invoke<{ created: boolean; protocol: 2 }>("sync_upgrade", { passphrase: passphrase || null }),
   syncTrack: (ids: string[]) => invoke<void>("sync_track", { ids }),
@@ -87,6 +113,12 @@ export const cloud = {
   syncRemove: (id: string) => invoke<void>("sync_remove", { id }),
   syncLock: () => invoke<void>("sync_lock"),
 };
+
+export type SyncKeyInfo = { exists: boolean; secret: "code" | "passphrase" | null; recovery: boolean; protocol: number };
+/** Sync was set up, unlocked or reset here. `recoveryCode` when that made a recovery code for the person to keep. */
+export type SyncUnlocked = { created: boolean; protocol?: number; recoveryCode?: string };
+/** A one-time code: its 24 characters, and the same as a QR code's squares row by row ("1" is dark). */
+export type PairingCode = { id: string; code: string; qr: { size: number; modules: string }; expiresAt: string };
 
 /** Locked v2 accounts still reconcile catalog, receipts and deletion; uploads require the key. */
 export function syncCanReconcile(status: Pick<CloudStatus, "email" | "sync"> | null | undefined) {

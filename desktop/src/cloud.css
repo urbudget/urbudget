@@ -115,6 +115,80 @@
 .plan-line {
   margin: 0 0 6px;
 }
+/* Sync asks to be unlocked: this computer's own code for a phone to scan, and beside it (under
+   it in a narrow window) the box for a code or passphrase typed here. */
+.unlock {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px 32px;
+  margin-top: 12px;
+}
+/* On the page the code sits with the text beside it, not centred as in a dialog. */
+.unlock > .unlock-code {
+  flex: none;
+  align-items: flex-start;
+  width: 280px;
+  margin: 0;
+  text-align: start;
+}
+.unlock > .passphrase {
+  flex: 1 1 280px;
+}
+.passphrase .checkbox-label {
+  flex-direction: row;
+}
+/* A code to scan or copy down: the QR code, its characters, and what to do with them. */
+.pairing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+.pairing p {
+  max-width: 420px;
+  margin: 0;
+}
+.pairing-qr {
+  width: 200px;
+  height: 200px;
+  border-radius: 6px;
+}
+.pairing-code,
+.pairing-code-input {
+  font-family: var(--mono);
+  letter-spacing: 0.04em;
+}
+.pairing-code {
+  font-size: 14px;
+  white-space: nowrap;
+  user-select: all;
+}
+/* The recovery code is the one thing its dialog is for: set apart, to read as what to copy down. */
+.recovery-code {
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  font-size: 18px;
+}
+/* That dialog closes only by its own button, so the heading's close button is taken away. */
+.modal.must-save .modal-heading .icon-button {
+  visibility: hidden;
+}
+/* Sync's rarely used actions, folded away. */
+.sync-more {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.sync-more > summary {
+  width: fit-content;
+}
+.sync-more > .sync-footer {
+  margin-top: 4px;
+}
 .sync-footer {
   display: flex;
   flex-wrap: wrap;

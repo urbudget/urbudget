@@ -742,7 +742,7 @@ function renderAccount({ account, subscriptions, sessions, budgets, syncKeySetAt
     ...fact("Created", when(account.createdAt)),
     ...fact("Last seen", seen ? when(seen) : h("span", { class: "muted" }, "Signed out everywhere")),
     ...fact("Polar customer", account.customerId ? h("span", { class: "mono" }, account.customerId) : h("span", { class: "muted" }, "None yet")),
-    ...fact("Sync passphrase", syncKeySetAt ? `Set ${when(syncKeySetAt)}` : syncKeySet ? "Set" : h("span", { class: "muted" }, "Not set")),
+    ...fact("Sync key", syncKeySetAt ? `Set ${when(syncKeySetAt)}` : syncKeySet ? "Set" : h("span", { class: "muted" }, "Not set")),
     ...fact("Account id", h("span", { class: "mono" }, account.id)),
   );
   $("account-subscriptions").replaceChildren(
