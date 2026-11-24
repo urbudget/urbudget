@@ -226,10 +226,7 @@ function AccountRows({
   onRows: (rows: AccountRow[]) => void;
   format: Money;
 }) {
-  const decimal = format.numberFormat.decimal;
   const change = (i: number, patch: Partial<AccountRow>) => onRows(rows.map((row, at) => (at === i ? { ...row, ...patch } : row)));
-  const cash = fixedCash(fixed) + typedCash(rows, decimal);
-  const owed = owedOn(fixedCards(fixed)) + owedOn(typedCards(rows, decimal));
   // "Add another" leaves the caret in the new row's name.
   const list = useRef<HTMLDivElement>(null);
   const added = useRef(false);
@@ -300,11 +297,20 @@ function AccountRows({
           <Plus size={14} /> {t("Add another")}
         </button>
       </p>
-      <p className="setup-sum">
-        {owed > 0
-          ? t("You have {amount} to plan with, and owe {owed} on cards.", { amount: <strong>{show(cash, format)}</strong>, owed: <strong>{show(owed, format)}</strong> })
-          : t("You have {amount} to plan with.", { amount: <strong>{show(cash, format)}</strong> })}
-      </p>
+    </>
+  );
+}
+
+/** What the accounts come to, kept over the step's buttons as step 3's total is. A card is owed, not had, and it's said from the start. */
+function AccountsNote({ fixed = [], rows, format }: { fixed?: FixedAccount[]; rows: AccountRow[]; format: Money }) {
+  const decimal = format.numberFormat.decimal;
+  const cash = fixedCash(fixed) + typedCash(rows, decimal);
+  const owed = owedOn(fixedCards(fixed)) + owedOn(typedCards(rows, decimal));
+  return (
+    <>
+      {owed > 0
+        ? t("You have {amount} to plan with, and owe {owed} on cards.", { amount: <strong>{show(cash, format)}</strong>, owed: <strong>{show(owed, format)}</strong> })
+        : t("You have {amount} to plan with.", { amount: <strong>{show(cash, format)}</strong> })}
     </>
   );
 }
@@ -715,23 +721,23 @@ function AssignPlan({
           ? t("The {owed} you owe on {card} waits for payday.", { owed: bold(owed), card: one })
           : t("The {owed} you owe on your cards waits for payday.", { owed: bold(owed) })
       : toCards > 0
-        ? tn(cards.length, "{amount} is set aside to pay your card.", "{amount} is set aside to pay your cards.", { amount: show(toCards, format) })
+        ? tn(cards.length, "{amount} is set aside to pay your card.", "{amount} is set aside to pay your cards.", { amount: bold(toCards) })
         : null;
   const tone = short > 0 ? " warning" : total > 0 || sparing || left > 0 ? " good" : "";
   return (
     <>
-      {/* What it comes to is read first; the table under it is the detail. */}
-      <p className={`setup-outcome${tone}`} role="status">
-        <span>{month}</span>
-        {card && <> <span>{card}</span></>}
-      </p>
-      {short <= 0 && cardsShort <= 0 && left > 0 && plan.spare && (
-        <p>
+      {/* What it comes to is read first, with the leftover's choice in the same box; the table under it is the detail. */}
+      <div className={`setup-result${tone}`}>
+        <p className="setup-outcome" role="status">
+          <span>{month}</span>
+          {card && <> <span>{card}</span></>}
+        </p>
+        {short <= 0 && cardsShort <= 0 && left > 0 && plan.spare && (
           <button type="button" className="secondary" aria-pressed={sparing} onClick={() => onToSpare(!sparing)}>
             {sparing ? t("Keep it for next month") : t("Put it in {category}", { category: plan.spare.name })}
           </button>
-        </p>
-      )}
+        )}
+      </div>
       <div className="setup-plan">
         {groups
           .map((group) => ({ group, rows: funded.filter((row) => row.group === group) }))
@@ -917,6 +923,7 @@ function DraftSetup({ month, openBudget, transform, close, onBudget }: Shared & 
         label={t("Next")}
         // Back from the first step leaves, keeping the answers: they're offered again as Continue setup.
         back={close}
+        note={<AccountsNote rows={draft.accounts} format={format} />}
         action={() => {
           const problem = accountsProblem(draft.accounts, 0, decimal);
           if (problem) setError(problem);
@@ -1120,6 +1127,7 @@ function BudgetSetup({
         title={t("Where is your money?")}
         lead={t("Add each account you spend from, with today's balance. Credit cards too.")}
         label={t("Next")}
+        note={<AccountsNote fixed={fixed} rows={rows} format={format} />}
         action={() => {
           const problem = accountsProblem(rows, budget.accounts.length, decimal);
           if (problem) return setError(problem);

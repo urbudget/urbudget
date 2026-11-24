@@ -202,8 +202,8 @@ it("makes nothing until Assign it, then funds the budget in one step and asks ho
   type("Name", "Visa", card);
   fireEvent.change(card.getByLabelText("Type"), { target: { value: "creditCard" } });
   type("What you owe", "420", card);
-  // A card is owed, not had, and it's said from the start.
-  expect(screen.getByText(/to plan with/).textContent).toBe("You have $3,700.00 to plan with, and owe $420.00 on cards.");
+  // A card is owed, not had, and it's said from the start, over the buttons as step 3's total is.
+  expect(document.querySelector(".setup-actions .setup-note")!.textContent).toBe("You have $3,700.00 to plan with, and owe $420.00 on cards.");
   press("Next");
 
   await heading("What do you spend on?");
@@ -278,12 +278,11 @@ it("makes nothing until Assign it, then funds the budget in one step and asks ho
       { category: "+0", amount: 4000, period: "month" },
     ],
   });
-  expect(screen.getByText("$420.00 is set aside to pay your card.")).toBeTruthy();
   // 3,700 less 1,500, 75, 40 and the card's 420.
-  // What it comes to is read first, above the table, in the success tone.
+  // What it comes to is read first, above the table, in the success tone, with the leftover's choice in the same box.
   const outcome = screen.getByRole("status");
   expect(outcome.textContent).toBe("$1,665.00 is left over. Put it in Emergency fund, or keep it for next month. $420.00 is set aside to pay your card.");
-  expect(outcome.className).toBe("setup-outcome good");
+  expect(outcome.closest(".setup-result")!.className).toBe("setup-result good");
   expect(outcome.compareDocumentPosition(document.querySelector(".setup-plan")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   press("Put it in Emergency fund");
   expect(outcome.textContent).toBe("All of it has a job. $420.00 is set aside to pay your card.");
@@ -708,7 +707,7 @@ it("says the card's debt from the start, so the steps agree when only the card g
   await screen.findByText("Left after this");
   const outcome = screen.getByRole("status");
   expect(outcome.textContent).toBe("Everything this month is covered. $125.00 of the $420.00 you owe on Visa is set aside; the other $295.00 waits for payday.");
-  expect(outcome.className).toBe("setup-outcome good");
+  expect(outcome.closest(".setup-result")!.className).toBe("setup-result good");
   expect(screen.queryByText(/more than you have right now/)).toBeNull();
   expect(screen.queryByRole("button", { name: /Put it in/ })).toBeNull();
 });
@@ -723,7 +722,7 @@ it("says two things when the month and the card both go short, and names no card
   expect(screen.getByRole("status").textContent).toBe(
     "Your month costs $100.00 more than you have right now. The rest waits for payday; assign it when it arrives. The $420.00 you owe on Visa waits for payday.",
   );
-  expect(screen.getByRole("status").className).toBe("setup-outcome warning");
+  expect(screen.getByRole("status").closest(".setup-result")!.className).toBe("setup-result warning");
   first.unmount();
 
   writeDraft({ ...tight("3375"), accounts: [...tight("3375").accounts, { name: "Amex", type: "creditCard", balance: "80" }] });

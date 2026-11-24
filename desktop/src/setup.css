@@ -16,10 +16,10 @@
   /* A step that scrolls sits where one that doesn't does. */
   scrollbar-gutter: stable both-edges;
 }
+/* The question and its lead read as one block, set well apart from the fields under them. */
 .setup {
   display: flex;
   flex-direction: column;
-  gap: 10px;
   width: 100%;
   max-width: 660px;
   min-height: 100%;
@@ -31,6 +31,7 @@
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 4px;
+  margin-bottom: 14px;
 }
 .setup-progress > span {
   height: 3px;
@@ -42,18 +43,18 @@
   background: var(--accent);
 }
 .setup-count {
-  margin: 2px 0 0;
+  margin: 0 0 4px;
   color: var(--muted);
   font-size: 12.5px;
 }
 .setup h1 {
-  margin: 0;
+  margin: 0 0 8px;
   font-family: var(--font-display);
   font-size: 24px;
   outline: none;
 }
 .setup-lead {
-  margin: 0 0 6px;
+  margin: 0;
   color: var(--text-2);
   line-height: 1.5;
 }
@@ -61,7 +62,11 @@
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 10px;
+  gap: 16px;
+  margin-top: 12px;
+}
+.setup-lead + .setup-body {
+  margin-top: 22px;
 }
 .setup-body > p {
   margin: 0;
@@ -75,10 +80,10 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  margin: 8px -6px 0;
+  gap: 12px 10px;
+  margin: 24px -6px 0;
   /* Wider than the fields, so a focus ring scrolling under it doesn't show at its sides. */
-  padding: 12px 6px 16px;
+  padding: 14px 6px 16px;
   border-top: 1px solid var(--border);
   background: var(--bg);
 }
@@ -161,7 +166,11 @@
 .setup-rows {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+}
+/* With the rows gone (they're added to the list above it), "Add another" isn't spaced twice. */
+.setup-rows:empty {
+  display: none;
 }
 .setup-row {
   display: grid;
@@ -170,7 +179,7 @@
   gap: 8px;
 }
 .setup-row.head {
-  margin-bottom: -4px;
+  margin-bottom: -5px;
   color: var(--text-2);
   font-size: 12px;
   font-weight: 500;
@@ -204,8 +213,8 @@
 .setup-fixed li {
   display: flex;
   align-items: baseline;
-  gap: 10px;
-  padding: 8px 12px;
+  gap: 12px;
+  padding: 10px 14px;
 }
 .setup-fixed li + li {
   border-top: 1px solid var(--border);
@@ -219,13 +228,6 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.setup-sum {
-  margin: 4px 0 0;
-  color: var(--text-2);
-}
-.setup-sum strong {
-  color: var(--text);
-}
 
 /* Step 2: a set's categories as chips, by group. */
 .setup-set {
@@ -235,10 +237,10 @@
 .setup-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 .setup-group h2 {
-  margin: 6px 0 0;
+  margin: 0;
   color: var(--text-2);
   font-size: 12px;
   font-weight: 600;
@@ -246,7 +248,7 @@
 .setup-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
 }
 .setup-chip {
   display: inline-flex;
@@ -310,7 +312,7 @@ button.setup-chip {
 .setup-amounts {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 22px;
   /* A form's column, not the page's width: each amount stays beside its name. */
   max-width: 480px;
 }
@@ -318,7 +320,7 @@ button.setup-chip {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 76px;
   align-items: center;
-  gap: 2px 6px;
+  gap: 3px 8px;
 }
 .setup-amount label {
   display: grid;
@@ -367,32 +369,75 @@ button.setup-chip {
   display: none;
 }
 .setup-fold {
-  margin-top: 2px;
+  margin-top: 4px;
 }
+/* The same chevron as step 4's groups, not the browser's triangle. */
 .setup-fold summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: fit-content;
   color: var(--accent);
   font-weight: 500;
+  list-style: none;
   cursor: pointer;
 }
+.setup-fold summary::-webkit-details-marker {
+  display: none;
+}
+.setup-fold summary::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-inline: 1px 2px;
+  border-block-end: 1.5px solid currentColor;
+  border-inline-end: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.12s var(--ease);
+}
+:root[dir="rtl"] .setup-fold summary::before {
+  transform: rotate(45deg);
+}
+.setup-fold[open] > summary::before {
+  transform: rotate(45deg);
+}
+:root[dir="rtl"] .setup-fold[open] > summary::before {
+  transform: rotate(-45deg);
+}
+.setup-fold summary:hover {
+  text-decoration: underline;
+}
 .setup-fold label {
+  gap: 6px;
   max-width: 320px;
-  margin-top: 8px;
+  margin-top: 10px;
+}
+.setup-fold label > small {
+  color: var(--muted);
+  font-weight: 400;
+  line-height: 1.45;
 }
 
-/* Step 4: what it comes to, then what each group gets. */
-.setup-outcome {
-  margin: 0;
-  padding: 10px 12px;
+/* Step 4: what it comes to, with what can be done about a leftover inside it; then what each group gets. */
+.setup-result {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
   border-radius: var(--radius-lg);
   background: var(--surface-2);
-  line-height: 1.5;
 }
-.setup-outcome.good {
+.setup-result.good {
   background: var(--positive-soft);
 }
-.setup-outcome.warning {
+.setup-result.warning {
   background: var(--warning-soft);
+}
+.setup-outcome {
+  margin: 0;
+  line-height: 1.5;
 }
 .setup-plan {
   border: 1px solid var(--border);
@@ -409,7 +454,7 @@ button.setup-chip {
   justify-content: space-between;
   gap: 12px;
   margin: 0;
-  padding: 8px 12px;
+  padding: 10px 14px;
 }
 .setup-plan summary {
   align-items: center;
@@ -445,12 +490,12 @@ button.setup-chip {
 }
 .setup-plan ul {
   margin: 0;
-  padding: 0 0 4px;
+  padding: 0 0 8px;
   list-style: none;
 }
 .setup-plan li {
-  padding-block: 3px;
-  padding-inline-start: 30px;
+  padding-block: 5px;
+  padding-inline-start: 32px;
   color: var(--text-2);
   font-size: 12.5px;
 }
@@ -465,9 +510,25 @@ button.setup-chip {
   font-weight: 500;
 }
 
-/* Step 5 uses the dialogs' choice list. */
+/* Step 5 uses the dialogs' choice list, with the room of the welcome screen's cards: it's the whole step. */
 .setup .choice-list {
-  gap: 8px;
+  gap: 10px;
+  margin: 0;
+}
+.setup .choice {
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-lg);
+}
+.setup .choice span {
+  gap: 3px;
+}
+.setup .choice strong {
+  font-size: 13.5px;
+}
+.setup .choice small {
+  font-size: 12.5px;
+  line-height: 1.45;
 }
 .setup .choice small .link-button {
   display: inline;
