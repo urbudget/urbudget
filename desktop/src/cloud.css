@@ -112,14 +112,15 @@
   font-style: normal;
   font-weight: 400;
 }
-/* One line and the action beside it: sync's status with Sync now, a plan that needs a look. */
-.sync-status {
+/* One line and the action beside it: sync's status with Sync now, a plan that needs a look.
+   Not .sync-status: that is the title bar's pill. */
+.sync-line {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
 }
-.sync-status.trouble > span:first-child {
+.sync-line.trouble > span:first-child {
   color: var(--negative);
 }
 /* The devices that sync, with Add a device ending the list. */

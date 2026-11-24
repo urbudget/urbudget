@@ -1023,7 +1023,7 @@ export function SyncSettings({
         (plan?.endsAt || plan?.status === "past_due") && (
           <section className="panel">
             <h2>{tc("subscription", "Plan")}</h2>
-            <div className="sync-status">
+            <div className="sync-line">
               <span>
                 {plan.endsAt
                   ? t("Your plan ends on {date}.", { date: formatDate(plan.endsAt.slice(0, 10)) })
@@ -1062,7 +1062,7 @@ export function SyncSettings({
           <UnlockSync cloud={state} onDone={unlockedHere} reset={() => askReset(true)} />
         ) : (
           on && (
-            <div className={"sync-status" + (trouble ? " trouble" : "")}>
+            <div className={"sync-line" + (trouble ? " trouble" : "")}>
               <span>{line}</span>
               <span className="sync-actions">
                 <button className="secondary" disabled={state.syncing} onClick={() => void state.syncNow()}>

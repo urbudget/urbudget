@@ -535,7 +535,15 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
             }) { LibraryScreen(null, vm, importFile, exportFile) }
             // Below the status bar; the welcome page's own padding then has no inset left to add.
             budget == null -> Column(Modifier.fillMaxSize().statusBarsPadding()) {
-                TextButton({ morePage = "Budget library" }) { Text(stringResource(R.string.page_library)) }
+                // A quiet way to the budgets this device has (kept copies, the trash, ones in the
+                // account), at the top's far end, lined up with the page: not a title over it.
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.End) {
+                    TextButton({ morePage = "Budget library" }) {
+                        Icon(Icons.Outlined.FolderOpen, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(stringResource(R.string.page_library))
+                    }
+                }
                 WelcomeScreen(state.busy, { made ->
                 if (vm.hasExport()) pendingCreate = made else vm.createBudget(made.name, made.currency, made.sample, template = made.template)
             }, importFile, if (vm.hasExport()) exportFile else null, if (state.recoveryAvailable) ({ confirmRestore = true }) else null,
