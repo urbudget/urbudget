@@ -406,12 +406,18 @@ internal fun smsOtherSides(items: List<SmsItem>, dismissed: Set<Int>): List<SmsI
 internal data class SmsBatch(val messages: List<BankSms>, val analysis: JSONObject, val ticked: Map<Int, Boolean> = emptyMap(), val dismissed: Set<Int> = emptySet(),
                              val fresh: Set<String> = emptySet(), val setup: Map<String, SmsSetupPlan> = emptyMap(),
                              /** The user's answers for rows that may already be in the budget ("new" or "match:id"), by item. */
-                             val decisions: Map<Int, String> = emptyMap()) {
+                             val decisions: Map<Int, String> = emptyMap(),
+                             /**
+                              * The payee and category the user set on a row in its editor, by item: another row's change never
+                              * overwrites them ([app.urbudget.nativeapp.ui.smsSameName]). Kept apart from the analysis, which the core reads as it's defined.
+                              */
+                             val mine: Map<Int, Set<String>> = emptyMap()) {
     fun params(analysis: JSONObject = this.analysis): JSONObject = JSONObject().put("messages", JSONArray(messages.map { it.json() })).put("analysis", analysis)
     // Drafts reference inbox originals by ID; evidence excerpts are part of the local review.
     fun saved(): String = JSONObject().put("v", 2).put("ids", JSONArray(messages.map { it.id })).put("analysis", analysis)
         .put("ticked", JSONObject(ticked.mapKeys { it.key.toString() })).put("dismissed", JSONArray(dismissed.toList())).put("fresh", JSONArray(fresh.toList()))
-        .put("setup", JSONObject(setup.mapValues { it.value.json() })).put("decisions", JSONObject(decisions.mapKeys { it.key.toString() })).toString()
+        .put("setup", JSONObject(setup.mapValues { it.value.json() })).put("decisions", JSONObject(decisions.mapKeys { it.key.toString() }))
+        .put("mine", JSONObject(mine.map { (i, fields) -> i.toString() to JSONArray(fields.toList()) }.toMap())).toString()
 
     /** Texts a template read on the phone, which the assistant reviewed rather than read in full. */
     val templated: Int get() = analysis.rows("items").filter { it.text("template").isNotBlank() && !it.optBoolean("kept") }.sumOf { sourceIds(it).size }
@@ -488,7 +494,7 @@ internal data class SmsBatch(val messages: List<BankSms>, val analysis: JSONObje
         val at = keep.withIndex().associate { (new, old) -> old to new }
         return SmsBatch(messages.filter { it.id in ids }, JSONObject(analysis.toString()).put("items", JSONArray(keep.map { JSONObject(all.getJSONObject(it).toString()) })),
             ticked.mapNotNull { (i, on) -> at[i]?.let { it to on } }.toMap(), dismissed.mapNotNull { at[it] }.toSet(), fresh, setup,
-            decisions.mapNotNull { (i, d) -> at[i]?.let { it to d } }.toMap())
+            decisions.mapNotNull { (i, d) -> at[i]?.let { it to d } }.toMap(), mine.mapNotNull { (i, f) -> at[i]?.let { it to f } }.toMap())
     }
 
     /** The items with a text from [since] on: a later start takes the rest out of the review. */
@@ -549,7 +555,8 @@ internal data class SmsBatch(val messages: List<BankSms>, val analysis: JSONObje
             val fresh = json.optJSONArray("fresh")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() }.orEmpty()
             val setup = json.optJSONObject("setup")?.let { s -> s.keys().asSequence().mapNotNull { key -> s.optJSONObject(key)?.let(SmsSetupPlan::of)?.let { key to it } }.toMap() }.orEmpty()
             val decisions = json.optJSONObject("decisions")?.let { d -> d.keys().asSequence().associate { it.toInt() to d.getString(it) } }.orEmpty()
-            SmsBatch(messages, json.getJSONObject("analysis"), ticked, dismissed, fresh, setup, decisions)
+            val mine = json.optJSONObject("mine")?.let { m -> m.keys().asSequence().associate { key -> key.toInt() to m.getJSONArray(key).let { a -> (0 until a.length()).map(a::getString).toSet() } } }.orEmpty()
+            SmsBatch(messages, json.getJSONObject("analysis"), ticked, dismissed, fresh, setup, decisions, mine)
         }.getOrNull()
     }
 }

@@ -97,13 +97,17 @@ object NativeServices {
         check(ready) { Words[R.string.error_services_starting] }
         val changesReadContext = method in setOf("account_verify", "account_sign_out", "account_delete", "simplefin_connect", "simplefin_disconnect", "billing_verify",
             // Each changes the statement Interactive Brokers' status and review read from.
-            "ibkr_connect", "ibkr_fetch", "ibkr_file", "ibkr_disconnect")
+            "ibkr_connect", "ibkr_fetch", "ibkr_file", "ibkr_disconnect",
+            // Each changes the account's sync key or the recovery code kept here, which sync_key_info and sync_recovery_unsaved read.
+            "sync_setup", "sync_unlock", "sync_reset", "sync_recovery_create", "sync_recovery_saved")
         if (changesReadContext) readEpoch.incrementAndGet()
         try {
             val result = decode(NativeBridge.service("{\"version\":1,\"method\":${JSONObject.quote(method)},\"params\":$params}"))
-            if (method in setOf("create_budget", "library_trash", "library_restore", "library_recover", "sync_enable", "sync_setup", "sync_upgrade", "save_budget", "edit_budget", "native_apply_patch", "assistant_apply_commit", "assistant_undo_commit", "simplefin_import", "simplefin_holdings", "ibkr_apply", "ibkr_import", "accept_ynab_import", "resolve_ynab", "undo_budget", "redo_budget", "restore_backup_file", "restore_budget", "apply_due_schedules")) runCatching { notifySaved() } // It's committed: a failure here must not read as a refusal.
+            if (method in setOf("create_budget", "library_trash", "library_restore", "library_recover", "sync_enable", "sync_setup", "sync_unlock", "sync_upgrade", "save_budget", "edit_budget", "native_apply_patch", "assistant_apply_commit", "assistant_undo_commit", "simplefin_import", "simplefin_holdings", "ibkr_apply", "ibkr_import", "accept_ynab_import", "resolve_ynab", "undo_budget", "redo_budget", "restore_backup_file", "restore_budget", "apply_due_schedules")) runCatching { notifySaved() } // It's committed: a failure here must not read as a refusal.
             if (method in setOf("sync_now", "sync_resolve") && result is JSONObject) syncCompletedSource.tryEmit(result)
-            if (method in setOf("account_verify", "account_sign_out", "account_delete", "sync_setup", "sync_upgrade", "sync_enable", "sync_reset", "sync_lock")) refreshSyncStatus()
+            // Each changes what the sync status says: who is signed in, whether this device holds the key, or the recovery code it keeps.
+            if (method in setOf("account_verify", "account_sign_out", "account_delete", "sync_setup", "sync_unlock", "sync_upgrade", "sync_enable", "sync_reset", "sync_lock",
+                    "sync_recovery_create", "sync_recovery_saved")) refreshSyncStatus()
             result
         } finally {
             // Reads started while a credential transition was in progress must not be joined

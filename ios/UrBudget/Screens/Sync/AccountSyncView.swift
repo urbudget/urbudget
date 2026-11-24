@@ -15,7 +15,23 @@ struct AccountSyncView: View {
     @State private var email = ""
     @State private var code = ""
     @State private var sent = false
-    @State private var passphrase: PassphraseRequest?
+    /// What the account's sync key is, as `sync_key_info` last answered: asked while sync is
+    /// locked here, since that decides between turning sync on and unlocking it.
+    @State private var keyInfo: JSON?
+    @State private var keyInfoError: String?
+    /// A code or passphrase typed to unlock sync, and what the engine said of the last one tried.
+    @State private var typedSecret = ""
+    @State private var showingTyped = false
+    @State private var unlockError: String?
+    @State private var scanning = false
+    @State private var scanned: String?
+    @State private var addingDevice = false
+    /// A recovery code this device holds that the person hasn't said they saved.
+    @State private var recoveryCode: RecoveryCode?
+    @State private var confirmingNewCode = false
+    @State private var confirmingReset = false
+    /// Sync's less used rows (a new recovery code, reset, lock) are folded away until asked for.
+    @State private var more = false
     @State private var conflict: IdentifiedJSON?
     @State private var removing: JSON?
     @State private var confirmSignOut = false
@@ -42,7 +58,6 @@ struct AccountSyncView: View {
                 syncSection
                 budgetsSection
                 Section {
-                    Button("Reset forgotten sync passphrase") { passphrase = PassphraseRequest(kind: .reset) }
                     Button("Delete account and cloud data", role: .destructive) { deletingAccount = true }
                 }
                 .disabled(busy)
@@ -55,7 +70,7 @@ struct AccountSyncView: View {
                 }
                 .font(.subheadline)
                 Section("Encrypted sync") {
-                    Text("Budgets are encrypted before uploading. Only your sync passphrase opens them.")
+                    Text("Budgets are encrypted before uploading. Only your devices can open them.")
                 }
                 .font(.subheadline)
             }
@@ -82,12 +97,23 @@ struct AccountSyncView: View {
         }
         // A renewal, refund or approved purchase arrived while the screen is open.
         .onChange(of: appStore.deliveries) { Task { await loadOverview() } }
-        .sheet(item: $passphrase) { request in
-            // A wrong passphrase stays in the sheet; the first sync after it shows here.
-            PassphraseSheet(request: request) { phrase in
-                _ = try await store.service(request.kind == .reset ? "sync_reset" : "sync_setup", ["passphrase": .string(phrase)])
-                run { try await sync.syncNow() }
+        .task(id: "\(signedIn)|\(sync.unlocked)") { await loadKeyInfo() }
+        // A code made here stays on this device until it's confirmed saved, so it's shown again
+        // after the app was closed on it or an answer was lost.
+        .task(id: SyncKey.recoveryUnsaved(status)) { await showUnsavedCode() }
+        .sheet(item: $recoveryCode) { shown in
+            RecoveryCodeSheet(code: shown.code) {
+                _ = try await store.service("sync_recovery_saved")
+                await sync.refreshStatus()
+                recoveryCode = nil
             }
+        }
+        .sheet(isPresented: $addingDevice) { AddDeviceSheet { notice = String(localized: "Device added.") } }
+        .sheet(isPresented: $scanning, onDismiss: {
+            if let scanned { unlock(scanned) }
+            scanned = nil
+        }) {
+            CodeScannerSheet { scanned = $0 }
         }
         .sheet(isPresented: $moving) {
             // Re-read on every status refresh: a stale saved key turns into a passphrase request.
@@ -113,6 +139,21 @@ struct AccountSyncView: View {
             Button("Sign out", role: .destructive) { run { _ = try await store.service("account_sign_out") } }
         } message: {
             Text("Sync stops on this iPhone and it forgets the sync key. Your budgets here stay as they are.")
+        }
+        .alert("Make a new recovery code?", isPresented: $confirmingNewCode) {
+            Button("Make a new code") { makeRecoveryCode() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            if SyncKey.hasRecoveryCopy(status) {
+                Text("The new code replaces the last one made this way. The code or passphrase sync was set up with keeps working. To retire it, reset sync.")
+            } else {
+                Text("The code or passphrase you already have keeps working. To retire it, reset sync.")
+            }
+        }
+        .confirmationDialog("Reset sync?", isPresented: $confirmingReset, titleVisibility: .visible) {
+            Button("Reset sync", role: .destructive) { reset() }
+        } message: {
+            Text(resetMessage)
         }
         .confirmationDialog(removeTitle, isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible) {
             Button("Remove cloud copy", role: .destructive) {
@@ -225,26 +266,22 @@ struct AccountSyncView: View {
                     Text("After changes and every minute while the app is open").font(.footnote).foregroundStyle(Color.secondary)
                 }
             }
-            if sync.unlocked {
-                Button {
-                    run { try await sync.syncNow() }
-                } label: {
-                    HStack {
-                        Label("Sync now", systemImage: "arrow.triangle.2.circlepath")
-                        if sync.syncing { Spacer(); ProgressView() }
-                    }
+            switch SyncKey.stage(status, info: keyInfo) {
+            case .unlocked:
+                unlockedRows
+            case .locked:
+                lockedRows
+            case .none:
+                // Nothing to choose or type: the key is made here, and its recovery code comes back to show.
+                Button(action: turnOn) { Label("Turn on sync", systemImage: "key") }
+                    .disabled(busy || overview?["sync"]["active"] == JSON.bool(false))
+            case .asking:
+                if let keyInfoError {
+                    FormErrorView(message: keyInfoError)
+                    Button("Try again") { Task { await loadKeyInfo() } }
+                } else {
+                    ProgressView().frame(maxWidth: .infinity)
                 }
-                .disabled(busy || sync.syncing)
-                Button { run { _ = try await store.service("sync_lock") } } label: { Label("Lock sync on this device", systemImage: "lock") }
-                    .disabled(busy)
-            } else {
-                Button {
-                    run {
-                        let exists = try await store.service("sync_has_key").bool
-                        passphrase = PassphraseRequest(kind: exists ? .unlock : .setup)
-                    }
-                } label: { Label("Set up or unlock sync", systemImage: "key") }
-                .disabled(busy)
             }
         } header: {
             Text("Encrypted sync")
@@ -252,9 +289,84 @@ struct AccountSyncView: View {
             if let report, !(report.text("message").isEmpty && report.text("at").isEmpty) {
                 Text(reportLine(report))
             } else {
-                Text("Only your sync passphrase opens your budgets. UrBudget can't read or recover them.")
+                Text("Budgets are encrypted with a key only your devices hold. UrBudget can't read or recover them.")
             }
         }
+    }
+
+    @ViewBuilder private var unlockedRows: some View {
+        Button {
+            run { try await sync.syncNow() }
+        } label: {
+            HStack {
+                Label("Sync now", systemImage: "arrow.triangle.2.circlepath")
+                if sync.syncing { Spacer(); ProgressView() }
+            }
+        }
+        .disabled(busy || sync.syncing)
+        Button { addingDevice = true } label: { Label("Add a device", systemImage: "laptopcomputer.and.iphone") }
+            .disabled(busy)
+        // What few people need, and nobody often.
+        DisclosureGroup("More", isExpanded: $more) {
+            if SyncKey.canReplaceRecoveryCode(status) {
+                Button { confirmingNewCode = true } label: { Label("New recovery code", systemImage: "key") }
+            }
+            Button(role: .destructive) { confirmingReset = true } label: {
+                Label("Reset sync", systemImage: "arrow.counterclockwise").foregroundStyle(Color.urNegative)
+            }
+            Button { run { _ = try await store.service("sync_lock") } } label: { Label("Lock sync on this device", systemImage: "lock") }
+        }
+        .disabled(busy)
+    }
+
+    /// The account has a key this device doesn't hold: a code from a device that syncs, the
+    /// recovery code or (where the account has one) the passphrase unlocks it, scanned or typed.
+    @ViewBuilder private var lockedRows: some View {
+        let passphrase = SyncKey.secret(status, info: keyInfo) != "code"
+        let label: LocalizedStringKey = passphrase
+            ? "Code from another device, your recovery code, or your sync passphrase"
+            : "Code from another device, or your recovery code"
+        Text("To unlock sync here, open Account & sync on a device that already syncs and choose Add a device. Then scan the code it shows.")
+            .font(.subheadline).foregroundStyle(Color.secondary)
+        Button { scanning = true } label: {
+            Label("Scan a code", systemImage: "qrcode.viewfinder").fontWeight(.semibold).frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.borderedProminent).buttonBorderShape(.capsule)
+        .listRowSeparator(.hidden)
+        .disabled(busy)
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label).font(.subheadline).foregroundStyle(Color.secondary)
+            HStack(spacing: 12) {
+                Group {
+                    if passphrase && !showingTyped {
+                        // A passphrase is hidden as it's typed, and the password manager can fill it in.
+                        SecureField(label, text: $typedSecret, prompt: Text("Code or passphrase")).textContentType(.password)
+                    } else if passphrase {
+                        TextField(label, text: $typedSecret, prompt: Text("Code or passphrase"))
+                    } else {
+                        // A code reads left to right in Arabic too, from its first character.
+                        TextField(label, text: $typedSecret, prompt: Text(verbatim: SyncKey.codeShape))
+                            .environment(\.layoutDirection, .leftToRight)
+                    }
+                }
+                // A code in even letters; a passphrase, and the Arabic that asks for one, as it's written.
+                .font(passphrase ? .body : .body.monospaced())
+                .plainTextEntry()
+                .submitLabel(.go)
+                .onSubmit { unlockTyped() }
+                if passphrase {
+                    Button { showingTyped.toggle() } label: { Image(systemName: showingTyped ? "eye.slash" : "eye") }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel(Text("Show what I type"))
+                }
+            }
+            if let unlockError { FormErrorView(message: unlockError) }
+        }
+        Button("Unlock sync", action: unlockTyped)
+            .disabled(busy || typedSecret.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        Button("Can't unlock?") { confirmingReset = true }
+            .font(.footnote)
+            .disabled(busy)
     }
 
     @ViewBuilder private var budgetsSection: some View {
@@ -348,11 +460,95 @@ struct AccountSyncView: View {
         return date.map { $0.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(.app)) } ?? at
     }
 
+    // MARK: The sync key
+
+    private func loadKeyInfo() async {
+        guard !signedIn.isEmpty, !sync.unlocked else {
+            keyInfo = nil
+            keyInfoError = nil
+            return
+        }
+        do {
+            keyInfo = try await store.service("sync_key_info")
+            keyInfoError = nil
+        } catch {
+            keyInfoError = BudgetStore.readable(error)
+        }
+    }
+
+    private func showUnsavedCode() async {
+        guard SyncKey.recoveryUnsaved(status), recoveryCode == nil else { return }
+        guard let kept = try? await store.service("sync_recovery_unsaved"), let shown = RecoveryCode(kept) else { return }
+        if recoveryCode == nil { recoveryCode = shown }
+    }
+
+    /// The account's first device: makes the key, and the recovery code that comes back is shown.
+    private func turnOn() {
+        run {
+            do {
+                recoveryCode = RecoveryCode(try await store.service("sync_setup")) ?? recoveryCode
+            } catch {
+                // Another device may have set sync up since this screen asked.
+                await loadKeyInfo()
+                throw error
+            }
+            try await sync.syncNow()
+        }
+    }
+
+    private func unlockTyped() {
+        guard !typedSecret.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        unlock(typedSecret)
+    }
+
+    /// Whatever was scanned or typed: the engine tells a device code, a recovery code and a
+    /// passphrase apart. What it says of a wrong one shows under the box.
+    private func unlock(_ secret: String) {
+        run {
+            do {
+                _ = try await store.service("sync_unlock", ["secret": .string(secret)])
+            } catch {
+                unlockError = BudgetStore.readable(error)
+                await loadKeyInfo()
+                return
+            }
+            typedSecret = ""
+            try await sync.syncNow()
+        }
+    }
+
+    /// What a reset does, which differs by protocol: on the new sync this device uploads the
+    /// budgets it was syncing by itself, and every other device receives them and keeps its own
+    /// copy to recover from the budget library; on protocol 1 every budget here uploads again.
+    private var resetMessage: String {
+        var parts = [SyncKey.protocolNumber(status, info: keyInfo) == 2
+            ? String(localized: "Sync gets a new key and a new recovery code, and the cloud copies made with the old key are deleted. This device uploads the budgets it was syncing again, and they keep syncing. Your other devices are unlocked with the new recovery code, or added from this device. Each of them then receives those budgets and keeps its own copy in the budget library, where Recover as a new budget brings back anything only that device had.")
+            : String(localized: "Sync gets a new key and a new recovery code. The cloud copies made with the old key are deleted, and this device's budgets upload again. Your other devices keep their budgets. To sync again, each one is unlocked with the new recovery code or added from this device.")]
+        // Asked from a device that can't unlock: there may be a way that deletes nothing.
+        if !sync.unlocked {
+            parts.append(String(localized: "If another device of yours still syncs, add this device from it instead. Nothing is deleted that way."))
+        }
+        return parts.joined(separator: "\n\n")
+    }
+
+    private func makeRecoveryCode() {
+        run { recoveryCode = RecoveryCode(try await store.service("sync_recovery_create")) ?? recoveryCode }
+    }
+
+    private func reset() {
+        run {
+            recoveryCode = RecoveryCode(try await store.service("sync_reset")) ?? recoveryCode
+            typedSecret = ""
+            try await sync.syncNow()
+        }
+    }
+
     /// Runs one account or sync action: one at a time, with its error shown on the screen.
     private func run(_ action: @escaping @MainActor () async throws -> Void) {
         guard !busy else { return }
         busy = true
         error = nil
+        unlockError = nil
         notice = nil
         Task {
             defer { busy = false }
@@ -397,50 +593,6 @@ private struct MoveSyncSheet: View {
             }
         }
         .sheetDetents([.medium, .large])
-    }
-}
-
-private struct PassphraseRequest: Identifiable {
-    enum Kind { case setup, unlock, reset }
-    let id = UUID()
-    var kind: Kind
-}
-
-/// Creating, entering or resetting the sync passphrase.
-private struct PassphraseSheet: View {
-    var request: PassphraseRequest
-    var submit: (String) async throws -> Void
-    @State private var phrase = ""
-    @State private var repeated = ""
-
-    var body: some View {
-        let needsRepeat = request.kind != .unlock
-        let valid = phrase.count >= 8 && (!needsRepeat || phrase == repeated)
-        FormSheet(title: title, confirm: request.kind == .reset ? String(localized: "Reset") : String(localized: "Continue"),
-                  enabled: valid, destructive: request.kind == .reset) {
-            try await submit(phrase)
-        } content: {
-            Section {
-                SecureField("Sync passphrase", text: $phrase).textContentType(request.kind == .unlock ? .password : .newPassword)
-                if needsRepeat { SecureField("Repeat passphrase", text: $repeated).textContentType(.newPassword) }
-            } footer: {
-                Text(request.kind == .reset
-                     ? "This deletes cloud copies encrypted with the old passphrase. Budgets on your devices stay, and this device uploads its copies again."
-                     : request.kind == .setup
-                        ? "At least 8 characters. Keep it somewhere safe: UrBudget can't recover it for you."
-                        : "The passphrase you chose when you set up sync on another device.")
-            }
-            if needsRepeat && !repeated.isEmpty && phrase != repeated { FormErrorView(message: String(localized: "The passphrases don't match.")) }
-        }
-        .sheetDetents([.medium])
-    }
-
-    private var title: String {
-        switch request.kind {
-        case .reset: return String(localized: "Reset passphrase")
-        case .setup: return String(localized: "Create passphrase")
-        case .unlock: return String(localized: "Unlock sync")
-        }
     }
 }
 

@@ -21,9 +21,68 @@ pub async fn sync_has_key(cloud: State<'_, Cloud>) -> Result<bool, String> {
     urbudget_services::cloud::sync::sync_has_key(&cloud).await
 }
 
+/// What the account's sync key is made from and whether it has one, asked fresh.
 #[tauri::command(async)]
-pub async fn sync_setup(cloud: State<'_, Cloud>, library: State<'_, Library>, passphrase: String) -> Result<Value, String> {
+pub async fn sync_key_info(cloud: State<'_, Cloud>, library: State<'_, Library>) -> Result<Value, String> {
+    urbudget_services::cloud::sync::sync_key_info(&cloud, &library).await
+}
+
+/// Without a passphrase, sets sync up with a recovery code made here and answers with it.
+#[tauri::command(async)]
+pub async fn sync_setup(cloud: State<'_, Cloud>, library: State<'_, Library>, passphrase: Option<String>) -> Result<Value, String> {
     urbudget_services::cloud::sync::sync_setup(&cloud, &library, passphrase).await
+}
+
+/// Unlocks sync with whatever was typed: a code another device shows, the recovery code, or
+/// the passphrase.
+#[tauri::command(async)]
+pub async fn sync_unlock(cloud: State<'_, Cloud>, library: State<'_, Library>, secret: String) -> Result<Value, String> {
+    urbudget_services::cloud::sync::sync_unlock(&cloud, &library, secret).await
+}
+
+#[tauri::command(async)]
+pub async fn sync_recovery_create(cloud: State<'_, Cloud>, library: State<'_, Library>) -> Result<Value, String> {
+    urbudget_services::cloud::recovery::create(&cloud, &library).await
+}
+
+#[tauri::command]
+pub fn sync_recovery_unsaved(cloud: State<'_, Cloud>, library: State<'_, Library>) -> Result<Value, String> {
+    urbudget_services::cloud::recovery::unsaved_code(&cloud, &library)
+}
+
+#[tauri::command]
+pub fn sync_recovery_saved(cloud: State<'_, Cloud>) -> Result<(), String> {
+    urbudget_services::cloud::recovery::saved(&cloud)
+}
+
+#[tauri::command(async)]
+pub async fn sync_pair_offer(cloud: State<'_, Cloud>, library: State<'_, Library>) -> Result<Value, String> {
+    urbudget_services::cloud::pairing::offer(&cloud, &library).await
+}
+
+#[tauri::command(async)]
+pub async fn sync_pair_state(cloud: State<'_, Cloud>, id: String) -> Result<Value, String> {
+    urbudget_services::cloud::pairing::state(&cloud, &id).await
+}
+
+#[tauri::command(async)]
+pub async fn sync_pair_cancel(cloud: State<'_, Cloud>, id: String) -> Result<(), String> {
+    urbudget_services::cloud::pairing::cancel(&cloud, &id).await
+}
+
+#[tauri::command]
+pub fn sync_pair_request(cloud: State<'_, Cloud>) -> Result<Value, String> {
+    urbudget_services::cloud::pairing::request(&cloud)
+}
+
+#[tauri::command(async)]
+pub async fn sync_pair_wait(cloud: State<'_, Cloud>, library: State<'_, Library>, code: String) -> Result<Value, String> {
+    urbudget_services::cloud::pairing::wait(&cloud, &library, &code).await
+}
+
+#[tauri::command(async)]
+pub async fn sync_pair_approve(cloud: State<'_, Cloud>, library: State<'_, Library>, code: String) -> Result<(), String> {
+    urbudget_services::cloud::pairing::approve(&cloud, &library, &code).await
 }
 
 /// Moves an account that still syncs on protocol 1 to the new sync; `passphrase` only when
@@ -33,9 +92,11 @@ pub async fn sync_upgrade(cloud: State<'_, Cloud>, library: State<'_, Library>, 
     urbudget_services::cloud::sync::sync_upgrade(&cloud, &library, passphrase).await
 }
 
+/// A new key, from a passphrase or, without one, from a recovery code made here. This
+/// computer's budgets that were syncing upload again under it before this answers.
 #[tauri::command(async)]
-pub async fn sync_reset(cloud: State<'_, Cloud>, library: State<'_, Library>, passphrase: String) -> Result<(), String> {
-    urbudget_services::cloud::sync::sync_reset(&cloud, &library, passphrase).await
+pub async fn sync_reset(cloud: State<'_, Cloud>, db: State<'_, Database>, library: State<'_, Library>, passphrase: Option<String>) -> Result<Value, String> {
+    urbudget_services::cloud::sync::sync_reset(&cloud, &db, &library, passphrase).await
 }
 
 #[tauri::command(async)]
