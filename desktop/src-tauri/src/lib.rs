@@ -28,6 +28,14 @@ fn set_language(language: String) {
     urbudget_services::i18n::set_language(&language);
 }
 
+/// Settings' Send feedback: a new email to support in the computer's mail app, saying only which
+/// app and version it's from. The destination is fixed; the window supplies nothing.
+#[tauri::command]
+fn feedback_open(app: tauri::AppHandle) -> Result<(), String> {
+    let system = match std::env::consts::OS { "windows" => "Windows", "macos" => "macOS", _ => "Linux" };
+    urbudget_services::host::open_mail(&format!("UrBudget feedback ({system} {})", app.package_info().version))
+}
+
 #[tauri::command(async)]
 fn load_budget(db: State<'_, Database>, legacy_backup_keep: Option<usize>) -> Result<serde_json::Value, String> {
     if !db.is_open(){return Ok(urbudget_services::library_api::empty_snapshot());}
@@ -711,6 +719,7 @@ pub fn run() {
             updates::apply_store_update,
             updates::open_update_store,
             updates::report_usage,
+            feedback_open,
             cloud::cloud_status,
             cloud::account_overview,
             cloud::account_start,

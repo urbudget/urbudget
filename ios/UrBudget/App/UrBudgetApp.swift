@@ -286,6 +286,21 @@ final class AppRating {
     static let writeReview = URL(string: "https://apps.apple.com/app/id6825535486?action=write-review")!
 }
 
+/// Feedback goes by email to support, written in the phone's own mail app.
+enum AppFeedback {
+    static let address = "support@urbudget.app"
+
+    /// A new email to support that says only which app and version it's from. Its subject stays in
+    /// English for whoever reads it.
+    static func mail(version: String = AppRating.version) -> URL {
+        var parts = URLComponents()
+        parts.scheme = "mailto"
+        parts.path = address
+        parts.queryItems = [URLQueryItem(name: "subject", value: "UrBudget feedback (iOS \(version))")]
+        return parts.url ?? URL(string: "mailto:\(address)")!
+    }
+}
+
 /// Anonymous usage counts, as the desktop and Android keep them (crates/urbudget-services/src/usage.rs):
 /// the engine counts this copy as in use on urbudget.app when the day, week or month is new since it
 /// was last counted, saying only what's new, with the app's version and where it came from. Nothing

@@ -391,6 +391,26 @@
         }
       }
     },
+    "Send feedback" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إرسال رأيك"
+          }
+        }
+      }
+    },
+    "Email %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "راسلنا على ⁨%@⁩"
+          }
+        }
+      }
+    },
     "Your library is empty." : {
       "localizations" : {
         "ar" : {

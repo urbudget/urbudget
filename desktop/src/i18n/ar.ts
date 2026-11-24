@@ -3398,6 +3398,10 @@ export const ar: Catalog = {
   "How this works": "طريقة العمل",
   "A short guide on urbudget.app: envelope budgeting in five steps, a first budget worked through, and a weekly routine.": "دليل قصير على urbudget.app: الميزانية بالمظاريف في خمس خطوات، ومثال كامل لأول ميزانية، وروتين أسبوعي.",
   "Open the guide": "فتح الدليل",
+  "Send feedback": "إرسال رأيك",
+  "Tell us what works and what doesn't, by email to {address}.": "أخبرنا بما يعجبك وما لا يعجبك، برسالة إلى {address}.",
+  "Write an email": "كتابة رسالة",
+  "Couldn't open your mail app. Write to {address}.": "تعذّر فتح تطبيق البريد. راسلنا على {address}.",
   "{amount} unassigned": "{amount} غير مخصَّص",
   "Investments changed by {change}: {put} put in, {gain} from markets.": "تغيّرت الاستثمارات بمقدار {change}: {put} مودَعة و{gain} من الأسواق.",
 };

@@ -191,6 +191,11 @@
     <string name="settings_privacy_data">الخصوصية والبيانات</string>
     <string name="help_how_this_works">طريقة العمل</string>
     <string name="help_how_this_works_detail">دليل قصير: الميزانية بالمظاريف في خمس خطوات وروتين أسبوعي</string>
+    <string name="feedback_title">إرسال رأيك</string>
+    <string name="feedback_detail">راسلنا على ⁨%1$s⁩</string>
+    <string name="feedback_no_mail">لا يوجد تطبيق بريد على هذا الهاتف. نُسخ العنوان: ⁨%1$s⁩</string>
+    <string name="rate_title">تقييم UrBudget</string>
+    <string name="rate_detail">كتابة مراجعة في Google Play</string>
     <string name="settings_usage_counts">إحصاء استخدام هذه النسخة</string>
     <string name="settings_usage_counts_detail">مرة واحدة في اليوم، يُبلغ urbudget.app بأن نسخة من UrBudget فُتحت، وبما إذا كانت هذه أول مرة تُفتح فيها، أو أول مرة هذا الأسبوع أو هذا الشهر، مع إصدارها ونظام التشغيل ومصدر تثبيتها والأسبوع الذي فُتحت فيه أول مرة. لا شيء من ذلك يدل عليك أو على هذا الهاتف أو على ميزانياتك.</string>
     <string name="settings_footer">\u2068%1$s\u2069 · محفوظة على هذا الجهاز. يعتمد احتساب المظاريف والأهداف والتقارير والاستيراد على المحرّك نفسه الذي يستخدمه تطبيق سطح المكتب.</string>

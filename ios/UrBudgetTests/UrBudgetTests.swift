@@ -353,3 +353,14 @@ final class AppRatingTests: XCTestCase {
         XCTAssertFalse(rating.due, "once per version")
     }
 }
+
+/// Settings' Send feedback row (AppFeedback): an email to support that names only the app and its version.
+final class AppFeedbackTests: XCTestCase {
+    func testItStartsAnEmailToSupportWithTheVersionInItsSubject() throws {
+        let mail = AppFeedback.mail(version: "1.0.2")
+        XCTAssertEqual(mail.scheme, "mailto")
+        let parts = try XCTUnwrap(URLComponents(url: mail, resolvingAgainstBaseURL: false))
+        XCTAssertEqual(parts.path, "support@urbudget.app")
+        XCTAssertEqual(parts.queryItems, [URLQueryItem(name: "subject", value: "UrBudget feedback (iOS 1.0.2)")])
+    }
+}

@@ -198,6 +198,11 @@
     <string name="settings_privacy_data">Privacy &amp; data</string>
     <string name="help_how_this_works">How this works</string>
     <string name="help_how_this_works_detail">A short guide: envelope budgeting in five steps and a weekly routine</string>
+    <string name="feedback_title">Send feedback</string>
+    <string name="feedback_detail">Email %1$s</string>
+    <string name="feedback_no_mail">No email app on this phone. The address is copied: %1$s</string>
+    <string name="rate_title">Rate UrBudget</string>
+    <string name="rate_detail">Write a review on Google Play</string>
     <string name="settings_usage_counts">Count this copy as in use</string>
     <string name="settings_usage_counts_detail">Once a day, tells urbudget.app that a copy of UrBudget was opened, and whether that\'s its first time, or its first this week or month, with its version, system, where it was installed from and the week it was first opened. Nothing identifies you, this phone or your budgets.</string>
     <string name="settings_footer">%1$s · Stored on this device. Envelope math, targets, reports and imports use the same engine as the desktop app.</string>

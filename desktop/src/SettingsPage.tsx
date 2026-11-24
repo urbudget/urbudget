@@ -23,6 +23,7 @@ import type { Updates } from "./updates";
 import { UpdateSetting } from "./UpdateNotice";
 import { PrivacySettings } from "./PrivacySettings";
 import { HowThisWorksRow } from "./HowThisWorks";
+import { SendFeedbackRow } from "./Feedback";
 import { list, localDateTime, msg, t, tn, type LanguageSetting } from "./i18n";
 import "./settings.css";
 
@@ -454,6 +455,7 @@ export function SettingsPage({
                 </button>
               </div>
               <HowThisWorksRow />
+              <SendFeedbackRow />
             </div>
           </section>
         </>
