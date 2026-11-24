@@ -86,6 +86,10 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
     var settingUp by remember { mutableStateOf<String?>(null) }
     var clearing by remember { mutableStateOf(false) }
     val keepCard = remember { mutableStateMapOf<String, Boolean>() }
+    // Said above the review's own bar: what an edit did to the other rows, with Undo for that alone.
+    val snack = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val undoLabel = stringResource(R.string.common_undo)
     LaunchedEffect(budget, resolved, attempt) {
         error = null; previewFailed = false; loading = true
         try {
@@ -234,7 +238,8 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
     Column(Modifier.fillMaxSize().testTag("sms-review-page")) {
         // Checking against the budget shows above the list, in room that's always there: no row moves for it.
         Box(Modifier.fillMaxWidth().height(4.dp)) { if (loading) LinearProgressIndicator(Modifier.fillMaxWidth().testTag("sms-review-checking"), color = ur.accent) }
-        LazyColumn(Modifier.weight(1f).fillMaxWidth().testTag("sms-review-list"), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 0.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+        LazyColumn(Modifier.fillMaxSize().testTag("sms-review-list"), contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 0.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item(key = "head") {
                 SectionTitle(stringResource(R.string.sms_review_title), countText(R.plurals.sms_message_count, batch.messages.size)) {
                     Box {
@@ -298,6 +303,8 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
                 }
             }
         }
+        SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).testTag("sms-same-name-said")) { UrSnackbar(it) }
+        }
         // The decision stays in reach: what this adds, what it does to each balance, and what else it settles.
         Column(Modifier.fillMaxWidth().background(ur.bg).navigationBarsPadding().padding(horizontal = Gutter, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (balances.first.isNotEmpty()) SmsBalances(balances.first, balances.second, currency)
@@ -349,8 +356,15 @@ internal fun SmsReview(budget: JSONObject, vm: BudgetViewModel, batch: SmsBatch,
     editing?.let { index -> items.firstOrNull { it.index == index } }?.let { item ->
         TransactionDialog(smsEditable(item, currency), budget, "", vm, close = { editing = null }, dialogTitle = stringResource(R.string.sms_check_title), saveOverride = { record ->
             val (fields, category) = smsChanged(item, record)
-            // The other rows with the bank's name for this payee get the user's name and category for it too.
-            change { smsSameName(smsEdited(it, item, record, budget), item, fields, record.text("payee"), category) }
+            // The other rows with the bank's name for this payee follow, unless the user set theirs: said, with Undo.
+            var same: SmsSameName? = null
+            change { b -> smsSameName(smsEdited(b, item, record, budget), item, fields, record.text("payee"), category).also { same = it }.batch }
+            same?.let { s -> smsSameNameSaid(s, record.text("payee"))?.let { message ->
+                scope.launch {
+                    snack.currentSnackbarData?.dismiss()
+                    if (snack.showSnackbar(message, undoLabel, duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) changeNow.value(s::undo)
+                }
+            } }
             // Counted against the template that read it, if one did, and its payee learned for the next texts.
             if (fields.isNotEmpty()) edited(item, fields, record.text("payee"), category)
             // Money to or from a person the user made a transfer: the bank's name for their own account at another bank.
@@ -894,43 +908,97 @@ internal fun smsBankKey(name: String): String {
 }
 
 /**
- * The review after the user renamed [item]'s payee or changed its category ([fields]): the other
- * rows from its sender with the same bank's name ([SmsItem.raw], or the same payee when none is
- * known) get the same, unless the user gave one of them a name of its own. A transfer is left.
+ * What saving a row's editor did to the review's other rows: [batch] is the review after it, and
+ * [saved] the same review with only the saved row changed. The change was copied to [copied], and
+ * [marked] were only marked to check.
  */
-internal fun smsSameName(batch: SmsBatch, item: SmsItem, fields: Set<String>, payee: String, category: String?): SmsBatch {
-    val before = item.transaction ?: return batch
-    if ("payee" !in fields && "category" !in fields) return batch
+internal class SmsSameName(val batch: SmsBatch, val saved: SmsBatch, val copied: List<Int>, val marked: List<Int>) {
+    /** Undo: [now] with those rows as they were before, each one nothing has changed since. */
+    fun undo(now: SmsBatch): SmsBatch {
+        val after = batch.analysis.getJSONArray("items")
+        val was = saved.analysis.getJSONArray("items")
+        val back = (copied + marked).filter { now.analysis.getJSONArray("items").optJSONObject(it)?.toString() == after.getJSONObject(it).toString() }
+        if (back.isEmpty()) return now
+        val copy = JSONObject(now.analysis.toString())
+        back.forEach { copy.getJSONArray("items").put(it, JSONObject(was.getJSONObject(it).toString())) }
+        return now.copy(analysis = copy)
+    }
+}
+
+/**
+ * The review after the user changed [item]'s payee or category ([fields]) in its editor, which are
+ * then theirs on that row. The other rows from its sender with the same bank's name ([SmsItem.raw],
+ * or the same payee when none is known), still showing that name, follow, except where the user
+ * set that field on one of them: what they set stays. Once they've set it two ways on rows of one
+ * name (a pharmacy that's health one day and a meal the next), nothing follows: the rows they
+ * didn't set are marked to check instead, as the next texts' are (`sms_templates::Names`). A
+ * transfer is left, and a split keeps its lines.
+ */
+internal fun smsSameName(batch: SmsBatch, item: SmsItem, fields: Set<String>, payee: String, category: String?): SmsSameName {
+    val set = fields intersect setOf("payee", "category")
+    val own = if (set.isEmpty()) batch else batch.copy(mine = batch.mine + (item.index to batch.mine[item.index].orEmpty() + set))
+    val before = item.transaction
+    if (before == null || set.isEmpty()) return SmsSameName(own, own, emptyList(), emptyList())
     val raw = item.raw?.let(::smsBankKey)?.ifEmpty { null }
     val name = smsBankKey(before.text("payee"))
     val sender = smsSenderKey(item.sender)
-    val senders = batch.messages.associate { it.id to smsSenderKey(it.sender) }
-    val items = batch.analysis.rows("items")
-    var next = batch
-    items.forEachIndexed { index, other ->
-        if (index == item.index) return@forEachIndexed
-        val t = other.optJSONObject("transaction") ?: return@forEachIndexed
-        if (t.text("kind") == "transfer" || t.text("transferAccountId").isNotBlank()) return@forEachIndexed
-        val ids = other.optJSONArray("sourceIds") ?: return@forEachIndexed
-        if ((0 until ids.length()).none { senders[ids.getString(it)] == sender }) return@forEachIndexed
+    val senders = own.messages.associate { it.id to smsSenderKey(it.sender) }
+    val analysis = JSONObject(own.analysis.toString())
+    val items = analysis.getJSONArray("items")
+    // The rows of this name: from the sender, the bank's same words, and not a transfer.
+    val kin = (0 until items.length()).filter { index ->
+        val other = items.getJSONObject(index)
+        val t = other.optJSONObject("transaction") ?: return@filter false
+        val ids = other.optJSONArray("sourceIds") ?: return@filter false
         val theirs = other.text("raw").ifBlank { null }?.let(::smsBankKey)
-        val same = if (raw != null && theirs != null) theirs == raw else name.isNotEmpty() && smsBankKey(t.text("payee")) == name
+        index != item.index && t.text("kind") != "transfer" && t.text("transferAccountId").isBlank() && (0 until ids.length()).any { senders[ids.getString(it)] == sender } &&
+            if (raw != null && theirs != null) theirs == raw else name.isNotEmpty() && smsBankKey(t.text("payee")) == name
+    }
+    fun tx(index: Int): JSONObject = items.getJSONObject(index).getJSONObject("transaction")
+    fun value(t: JSONObject, field: String): String? = if (field == "payee") smsBankKey(t.text("payee")) else t.text("categoryId").ifBlank { null }
+    val wanted = mapOf("payee" to smsBankKey(payee), "category" to category?.ifBlank { null })
+    // Set another way on a row of this name, by the user: it isn't one name or category, and nothing follows.
+    val mixed = set.filter { field -> kin.any { field in own.mine[it].orEmpty() && !(field == "category" && smsSplitLines(tx(it)).isNotEmpty()) && value(tx(it), field) != wanted[field] } }.toSet()
+    val copied = mutableListOf<Int>()
+    val marked = mutableListOf<Int>()
+    kin.forEach { index ->
+        val json = items.getJSONObject(index)
+        val t = tx(index)
         // Still the bank's name, or what this row had before the user changed it: not a name of its own.
         val shown = smsBankKey(t.text("payee"))
-        if (!same || (shown != name && shown != theirs)) return@forEachIndexed
-        next = next.edit(index) { json ->
-            val tx = json.getJSONObject("transaction")
-            if ("payee" in fields) {
-                val old = tx.text("payee")
-                tx.put("payee", payee)
-                if (old.length >= 3 && json.text("note").contains(old)) json.put("note", json.text("note").replace(old, payee))
+        if (shown != name && shown != json.text("raw").ifBlank { null }?.let(::smsBankKey)) return@forEach
+        val theirs = own.mine[index].orEmpty()
+        val unsure = json.optJSONArray("unsure")?.let { list -> (0 until list.length()).map(list::getString) }.orEmpty().toMutableList()
+        var changed = false
+        var flagged = false
+        for (field in set) {
+            // What the user set on this row stays; a row they split keeps its lines.
+            if (field in theirs || (field == "category" && smsSplitLines(t).isNotEmpty())) continue
+            if (field in mixed) { if (field !in unsure) { unsure += field; flagged = true }; continue }
+            val follows = when (field) {
+                "payee" -> t.text("payee") != payee
+                else -> t.text("categoryId") == before.text("categoryId") && t.text("categoryId") != category.orEmpty()
             }
-            // One the user split keeps its lines.
-            if ("category" in fields && tx.text("categoryId") == before.text("categoryId") && smsSplitLines(tx).isEmpty()) tx.put("categoryId", category ?: JSONObject.NULL)
-            json.optJSONArray("unsure")?.let { list -> json.put("unsure", JSONArray((0 until list.length()).map { list.getString(it) }.filter { it !in setOf("payee", "category") || it !in fields })) }
+            if (!follows) continue
+            if (field == "payee") {
+                val old = t.text("payee")
+                t.put("payee", payee)
+                if (old.length >= 3 && json.text("note").contains(old)) json.put("note", json.text("note").replace(old, payee))
+            } else t.put("categoryId", category?.ifBlank { null } ?: JSONObject.NULL)
+            unsure.remove(field)
+            changed = true
         }
+        if (changed || flagged) json.put("unsure", JSONArray(unsure))
+        if (changed) copied += index else if (flagged) marked += index
     }
-    return next
+    return SmsSameName(if (copied.isEmpty() && marked.isEmpty()) own else own.copy(analysis = analysis), own, copied, marked)
+}
+
+/** What to say about the other rows a save changed, or null when it changed none. */
+internal fun smsSameNameSaid(same: SmsSameName, payee: String): String? = when {
+    same.copied.isNotEmpty() -> Words.count(R.plurals.sms_same_name_copied, same.copied.size.toLong(), payee)
+    same.marked.isNotEmpty() -> Words.count(R.plurals.sms_same_name_marked, same.marked.size.toLong(), payee)
+    else -> null
 }
 
 /**

@@ -7,6 +7,7 @@ import app.urbudget.nativeapp.ui.smsBankIds
 import app.urbudget.nativeapp.ui.smsChanged
 import app.urbudget.nativeapp.ui.smsOwnName
 import app.urbudget.nativeapp.ui.smsBankKey
+import app.urbudget.nativeapp.ui.SmsSameName
 import app.urbudget.nativeapp.ui.smsSameName
 import app.urbudget.nativeapp.ui.smsSameTransaction
 import app.urbudget.nativeapp.ui.smsSort
@@ -439,14 +440,14 @@ class SmsAnalysisTest {
         record.getJSONArray("splits").getJSONObject(0).put("categoryId", "personal")
         val (fields, category) = smsChanged(items[0], record)
         val budget = JSONObject().put("currency", "SAR").put("accounts", JSONArray())
-        val after = smsSameName(smsEdited(batch, items[0], record, budget), items[0], fields, "Blade and Fade", category).analysis.getJSONArray("items")
+        val after = smsSameName(smsEdited(batch, items[0], record, budget), items[0], fields, "Blade and Fade", category).batch.analysis.getJSONArray("items")
         fun t(i: Int) = after.getJSONObject(i).getJSONObject("transaction")
         assertEquals(listOf("Blade and Fade", "Blade and Fade", "Barber X", "Noon", "SALON A"), (0..4).map { t(it).getString("payee") })
         assertEquals("personal", t(1).getString("categoryId")); assertTrue(t(2).isNull("categoryId"))
         // A row the user split keeps its lines when another row's category changes.
         val split = JSONArray().put(JSONObject().put("amount", "-10.00").put("categoryId", "food")).put(JSONObject().put("amount", "-2.34").put("categoryId", JSONObject.NULL))
         val splitBatch = batch.edit(1) { it.getJSONObject("transaction").put("splits", split) }
-        val kept = smsSameName(smsEdited(splitBatch, items[0], record, budget), items[0], fields, "Blade and Fade", category).analysis.getJSONArray("items").getJSONObject(1).getJSONObject("transaction")
+        val kept = smsSameName(smsEdited(splitBatch, items[0], record, budget), items[0], fields, "Blade and Fade", category).batch.analysis.getJSONArray("items").getJSONObject(1).getJSONObject("transaction")
         assertTrue(kept.isNull("categoryId")); assertEquals(2, kept.getJSONArray("splits").length()); assertEquals("Blade and Fade", kept.getString("payee"))
         assertEquals("Purchase at Blade and Fade", after.getJSONObject(1).getString("note"))
         assertEquals(listOf("date"), after.getJSONObject(1).getJSONArray("unsure").let { a -> (0 until a.length()).map(a::getString) })
@@ -522,5 +523,77 @@ class SmsAnalysisTest {
         assertEquals(listOf(texts[0], texts[3]), batch.fromSenders(setOf("anb"))!!.messages)
         // What's kept restores from the texts still waiting.
         assertEquals(rest.messages, SmsBatch.restore(rest.saved()) { ids -> texts.filter { it.id in ids } }!!.messages)
+    }
+
+    /** [count] purchases at one pharmacy, as the bank names it, all read as shopping. */
+    private fun pharmacy(count: Int): SmsBatch {
+        val texts = (0 until count).map { i -> BankSms(smsId("Bank", 2_000L + i, "pharmacy $i"), "Bank", 2_000L + i, "pharmacy $i") }
+        val items = JSONArray()
+        texts.forEach { items.put(item(it, purchase("4417").put("payee", "NAHDI").put("categoryId", "shopping")).put("raw", "NAHDI 0412")) }
+        return SmsBatch(texts, JSONObject().put("items", items))
+    }
+    /** Row [index] saved from its editor with [category], and [payee] when given, as the review saves it. */
+    private fun save(batch: SmsBatch, index: Int, category: String, payee: String? = null): SmsSameName {
+        val item = batch.items(SmsAccounts(accounts, JSONArray())).first { it.index == index }
+        val record = smsEditable(item, "SAR")
+        payee?.let { record.put("payee", it) }
+        record.getJSONArray("splits").getJSONObject(0).put("categoryId", category)
+        val (fields, chosen) = smsChanged(item, record)
+        return smsSameName(smsEdited(batch, item, record, JSONObject().put("currency", "SAR").put("accounts", JSONArray())), item, fields, record.getString("payee"), chosen)
+    }
+    private fun categories(batch: SmsBatch) = batch.analysis.rows("items").map { it.getJSONObject("transaction").getString("categoryId") }
+    private fun payees(batch: SmsBatch) = batch.analysis.rows("items").map { it.getJSONObject("transaction").getString("payee") }
+    private fun unsure(batch: SmsBatch, index: Int) = batch.analysis.rows("items")[index].getJSONArray("unsure").let { a -> (0 until a.length()).map(a::getString) }
+
+    @Test fun aCategoryTheUserSetOnARowIsntChangedBySettingAnotherFromThePayee() {
+        // Health for the first follows to the second, the way it's said with Undo.
+        val first = save(pharmacy(2), 0, "health")
+        assertEquals(listOf(1), first.copied); assertEquals(listOf("health", "health"), categories(first.batch))
+        // Then food for the second: the first keeps the health the user gave it.
+        val second = save(first.batch, 1, "food")
+        assertEquals(listOf("health", "food"), categories(second.batch))
+        assertEquals(emptyList<Int>(), second.copied); assertEquals(emptyList<Int>(), second.marked)
+        assertEquals(mapOf(0 to setOf("category"), 1 to setOf("category")), second.batch.mine)
+    }
+
+    @Test fun aPayeeTheUserGaveTwoCategoriesStopsFollowingAndItsOtherRowsAreMarkedToCheck() {
+        val first = save(pharmacy(5), 0, "health")
+        assertEquals(listOf(1, 2, 3, 4), first.copied)
+        val second = save(first.batch, 1, "food")
+        assertEquals(listOf("health", "food", "health", "health", "health"), categories(second.batch))
+        assertEquals(listOf(2, 3, 4), second.marked); assertEquals(emptyList<Int>(), second.copied)
+        assertTrue((2..4).all { "category" in unsure(second.batch, it) }); assertFalse("category" in unsure(second.batch, 0))
+        // One more set by the user changes no other row, and they're marked already: nothing to say.
+        val third = save(second.batch, 2, "health")
+        assertEquals(emptyList<Int>(), third.copied); assertEquals(emptyList<Int>(), third.marked)
+        assertFalse("category" in unsure(third.batch, 2)); assertTrue("category" in unsure(third.batch, 3))
+        // Undo takes the marks off.
+        assertTrue((2..4).none { "category" in unsure(second.undo(second.batch), it) })
+    }
+
+    @Test fun undoPutsBackTheRowsTheChangeWasCopiedToUnlessChangedSince() {
+        val first = save(pharmacy(3), 0, "health")
+        val later = first.batch.edit(2) { it.getJSONObject("transaction").put("memo", "changed since") }
+        val undone = first.undo(later)
+        assertEquals(listOf("health", "shopping", "health"), categories(undone))
+        assertEquals("changed since", undone.analysis.rows("items")[2].getJSONObject("transaction").getString("memo"))
+        // Changing their mind on the row they set, the rows that followed it follow again.
+        assertEquals(listOf("food", "food", "food"), categories(save(first.batch, 0, "food").batch))
+    }
+
+    @Test fun aNameTheUserGaveARowIsntReplacedByRenamingAnother() {
+        val first = save(pharmacy(3), 0, "shopping", payee = "Nahdi Pharmacy")
+        assertEquals(listOf(1, 2), first.copied); assertEquals(List(3) { "Nahdi Pharmacy" }, payees(first.batch))
+        val second = save(first.batch, 1, "shopping", payee = "Nahdi Cafe")
+        assertEquals(listOf("Nahdi Pharmacy", "Nahdi Cafe", "Nahdi Pharmacy"), payees(second.batch))
+        assertEquals(listOf(2), second.marked); assertTrue("payee" in unsure(second.batch, 2))
+    }
+
+    @Test fun whatTheUserSetOnARowStaysWithTheDraft() {
+        val batch = save(pharmacy(3), 1, "health").batch
+        assertEquals(mapOf(1 to setOf("category")), batch.mine)
+        val restored = SmsBatch.restore(batch.saved()) { ids -> batch.messages.filter { it.id in ids } }!!
+        assertEquals(mapOf(1 to setOf("category")), restored.mine)
+        assertEquals(mapOf(0 to setOf("category")), restored.only(listOf(1, 2))!!.mine)
     }
 }

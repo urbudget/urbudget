@@ -124,6 +124,20 @@ internal val LocalImportSaid = staticCompositionLocalOf<(before: JSONObject?, af
 /** Where an assistant card's "Show in the budget" last led, for the page it led to: [key] tells one request from the next. */
 internal class Showing(val key: Int, val what: AssistantShow)
 
+/** A snackbar's colours: dark in either theme, its action the accent's. */
+internal class SnackColors(val fill: androidx.compose.ui.graphics.Color, val ink: androidx.compose.ui.graphics.Color, val action: androidx.compose.ui.graphics.Color)
+
+@Composable
+internal fun snackColors(): SnackColors = if (ur.dark) SnackColors(androidx.compose.ui.graphics.Color(0xFF262C3E), ur.text, ur.accent)
+    else SnackColors(androidx.compose.ui.graphics.Color(0xFF1D1D1F), androidx.compose.ui.graphics.Color(0xFFF5F5F7), androidx.compose.ui.graphics.Color(0xFF78A7FF))
+
+/** The app's snackbar, the same wherever it shows. */
+@Composable
+internal fun UrSnackbar(data: SnackbarData) {
+    val colors = snackColors()
+    Snackbar(data, Modifier.padding(horizontal = 12.dp), shape = RoundedCornerShape(16.dp), containerColor = colors.fill, contentColor = colors.ink, actionColor = colors.action)
+}
+
 /** A message with something to do about it besides Undo: the offer is the snackbar's action. */
 private class OfferVisuals(override val message: String, val offer: String) : SnackbarVisuals {
     override val actionLabel: String get() = offer
@@ -624,19 +638,19 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
         }
         Box(Modifier.align(Alignment.BottomStart).then(dockSide), contentAlignment = Alignment.BottomCenter) {
         SnackbarHost(snack, Modifier.navigationBarsPadding().padding(bottom = if (rail) 16.dp else 96.dp)) { data ->
-            val fill = if (ur.dark) androidx.compose.ui.graphics.Color(0xFF262C3E) else androidx.compose.ui.graphics.Color(0xFF1D1D1F)
-            val ink = if (ur.dark) ur.text else androidx.compose.ui.graphics.Color(0xFFF5F5F7)
-            val action = if (ur.dark) ur.accent else androidx.compose.ui.graphics.Color(0xFF78A7FF)
             val offer = data.visuals as? OfferVisuals
-            if (offer == null) Snackbar(data, Modifier.padding(horizontal = 12.dp), shape = RoundedCornerShape(16.dp), containerColor = fill, contentColor = ink, actionColor = action)
+            if (offer == null) UrSnackbar(data)
             // A message with an offer keeps Undo beside it, on a line of their own under the words.
-            else Snackbar(Modifier.padding(horizontal = 12.dp).testTag("import-said"), shape = RoundedCornerShape(16.dp), containerColor = fill, contentColor = ink, actionOnNewLine = true,
-                action = {
-                    Row {
-                        TextButton({ vm.undo(); data.dismiss() }) { Text(undoLabel, color = action) }
-                        TextButton({ data.performAction() }) { Text(offer.offer, color = action) }
-                    }
-                }) { Text(offer.message) }
+            else {
+                val colors = snackColors()
+                Snackbar(Modifier.padding(horizontal = 12.dp).testTag("import-said"), shape = RoundedCornerShape(16.dp), containerColor = colors.fill, contentColor = colors.ink, actionOnNewLine = true,
+                    action = {
+                        Row {
+                            TextButton({ vm.undo(); data.dismiss() }) { Text(undoLabel, color = colors.action) }
+                            TextButton({ data.performAction() }) { Text(offer.offer, color = colors.action) }
+                        }
+                    }) { Text(offer.message) }
+            }
         }
         }
         } }
