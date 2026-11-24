@@ -2955,6 +2955,18 @@
     <string name="bank_texts_card_enter_match">موجودة في ميزانيتك، فتُطابَق ولا تُضاف مرة أخرى</string>
     <string name="bank_texts_apply_enter">إضافة إلى الميزانية</string>
     <string name="bank_texts_reading_now">رسائل البنك تقرأ الرسائل الآن. حاول مرة أخرى عند انتهائها.</string>
+    <string name="bank_texts_no_review">لا توجد مراجعة مفتوحة في رسائل البنك. اقرأ الرسائل المنتظرة أولًا.</string>
+    <string name="bank_texts_rows_gone">بعض هذه الصفوف لم يعد في المراجعة، فلم يُغيَّر.</string>
+    <plurals name="bank_texts_card_change">
+        <item quantity="zero">لا صفوف تُغيَّر في المراجعة</item>
+        <item quantity="one">تغيير صف واحد في المراجعة</item>
+        <item quantity="two">تغيير صفين في المراجعة</item>
+        <item quantity="few">تغيير ⁨%1$s⁩ صفوف في المراجعة</item>
+        <item quantity="many">تغيير ⁨%1$s⁩ صفًا في المراجعة</item>
+        <item quantity="other">تغيير ⁨%1$s⁩ صف في المراجعة</item>
+    </plurals>
+    <string name="bank_texts_card_change_note">تُفتح رسائل البنك وقد تغيّرت هذه الصفوف. ولا يُضاف شيء إلى ميزانيتك حتى تضيفه من هناك.</string>
+    <string name="bank_texts_apply_change">تغيير المراجعة</string>
     <string name="bank_texts_title_remember">تذكّر بطاقة</string>
     <string name="bank_texts_card_remember">\u2068%1$s\u2069 هي \u2068%2$s\u2069</string>
     <string name="bank_texts_card_remember_note">من الآن تذهب إلى هذا الحساب رسائلُ هذا المرسل التي تذكر هذه الأرقام.</string>
@@ -3035,6 +3047,7 @@
     <string name="assistant_ask_again">طلب نسخة جديدة</string>
     <string name="assistant_ask_again_prompt">أعِدّ «⁨%1$s⁩» من جديد. تعذّر تطبيقه: ⁨%2$s⁩</string>
     <string name="assistant_show_in_budget">عرض في الميزانية</string>
+    <string name="assistant_show_in_app">عرض في التطبيق</string>
     <plurals name="assistant_delete_transactions">
         <item quantity="zero">حذف لا معاملات</item>
         <item quantity="one">حذف معاملة واحدة</item>

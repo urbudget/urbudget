@@ -33,6 +33,7 @@ const KINDS = new Set([
   "budget",
   "transactions",
   "payees",
+  "accounts",
   "notes",
   "categories",
   "schedules",
@@ -43,6 +44,7 @@ const KINDS = new Set([
   "spreadsheet",
   "import",
   "figures",
+  "show",
   "question",
 ]);
 
@@ -677,9 +679,11 @@ export const ProposalCard = memo(function ProposalCard({
           </button>
         );
       case "show":
+        // A card that names categories or transactions leads to them in the budget; one that
+        // names a page (or is only a pointer to one) leads there.
         return (
           <button key={action} className={look} disabled={busy} onClick={on.show}>
-            {t("Show in the budget")}
+            {c.highlight.page ? t("Show in the app") : t("Show in the budget")}
           </button>
         );
       case "preview":

@@ -581,7 +581,14 @@ struct AssistantProposalCard: View {
         case .undo:
             Button("Undo", systemImage: "arrow.uturn.backward", action: actions.undo).disabled(busy)
         case .show:
-            Button("Show in the budget", systemImage: "eye", action: actions.show).disabled(busy)
+            if proposal.text("kind") == "show" {
+                // Going there is all a pointer's card is for.
+                primary("Show in the app", "arrow.up.forward.app", actions.show, spins: "")
+            } else if AssistantCard.showsPage(proposal) {
+                Button("Show in the app", systemImage: "arrow.up.forward.app", action: actions.show).disabled(busy)
+            } else {
+                Button("Show in the budget", systemImage: "eye", action: actions.show).disabled(busy)
+            }
         case .remove, .answer:
             // Remove is in the card's menu, and a question's answers are its rows.
             EmptyView()
@@ -661,6 +668,8 @@ struct AssistantProposalCard: View {
         case "schedules": return "calendar.badge.clock"
         case "delete": return "trash"
         case "figures": return "chart.bar"
+        case "accounts": return "building.columns"
+        case "show": return "arrow.up.forward.app"
         case "question": return "questionmark.circle"
         default: return "arrow.left.arrow.right"
         }

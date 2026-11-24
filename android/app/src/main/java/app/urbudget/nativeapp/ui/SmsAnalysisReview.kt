@@ -732,8 +732,9 @@ private fun SmsTransactionRow(item: SmsItem, names: SmsRowNames, row: BankReview
 
 /**
  * A split row's lines as chips, as a category is shown: each line's category and its share
- * ("Groceries 60.00"), the first marked as a split, three at most and how many more. A line with
- * no category yet is in the plain colour, as an uncategorized row is.
+ * ("Groceries 60.00"), or the account a part moved with ("Transfer: Term deposit 500,000.00"), the
+ * first marked as a split, three at most and how many more. A line with no category yet is in the
+ * plain colour, as an uncategorized row is.
  */
 @Composable
 private fun SmsSplitChips(index: Int, lines: List<JSONObject>, names: SmsRowNames) {
@@ -741,7 +742,9 @@ private fun SmsSplitChips(index: Int, lines: List<JSONObject>, names: SmsRowName
     val ready = stringResource(R.string.category_unassigned)
     val shown = if (lines.size > 3) lines.take(2) else lines
     shown.forEachIndexed { i, line ->
-        val category = if (line.optBoolean("unassigned")) ready else line.text("categoryId").ifBlank { null }?.let { names.categories[it] }
+        // A part moved to or from another account is named by it, as the register names a transfer.
+        val moved = line.text("transferAccountId").ifBlank { null }?.let { names.accounts[it] }?.let { stringResource(R.string.transfer_to_account, it) }
+        val category = moved ?: if (line.optBoolean("unassigned")) ready else line.text("categoryId").ifBlank { null }?.let { names.categories[it] }
         val share = money(kotlin.math.abs(smsCents(line.text("amount")) ?: 0L), names.currency)
         TagChip("${category ?: none} $share", Modifier.testTag("sms-split:$index:$i"), fill = if (category == null) ur.zeroSoft else ur.accentSoft,
             color = if (category == null) ur.text2 else ur.accent, icon = if (i == 0) Icons.AutoMirrored.Outlined.CallSplit else null)
@@ -949,8 +952,10 @@ internal fun smsEditable(item: SmsItem, currency: String): JSONObject {
     val cents = item.amount ?: 0L
     val transfer = t.text("transferAccountId").ifBlank { null }
     val lines = item.splits.map { line ->
+        val moved = line.text("transferAccountId").ifBlank { null }
         JSONObject().put("categoryId", line.text("categoryId").ifBlank { null } ?: JSONObject.NULL).put("amount", smsCents(line.text("amount")) ?: 0L)
             .put("memo", line.text("memo")).put("unassigned", line.optBoolean("unassigned"))
+            .put("transferAccountId", moved ?: JSONObject.NULL).put("transferStatus", if (moved != null) "uncleared" else JSONObject.NULL)
     }.ifEmpty { listOf(JSONObject().put("categoryId", t.text("categoryId").ifBlank { null } ?: JSONObject.NULL).put("amount", cents).put("unassigned", false)) }
     return JSONObject().put("id", "sms-review").put("date", t.text("date").ifBlank { item.sources.first().receivedDate }).put("accountId", t.text("accountId"))
         .put("payee", t.text("payee")).put("memo", t.text("memo")).put("amount", cents).put("status", "uncleared").put("approved", true).put("flag", JSONObject.NULL)
@@ -969,8 +974,11 @@ internal fun smsEdited(batch: SmsBatch, item: SmsItem, record: JSONObject, budge
     val parts = smsParts(record)
     val transfer = record.text("transferAccountId")
     val lines = parts.takeIf { it.size > 1 && transfer.isBlank() }?.map { part ->
-        JSONObject().put("amount", smsDecimal(part.optLong("amount"))).put("categoryId", part.text("categoryId").ifBlank { null } ?: JSONObject.NULL)
-            .put("memo", part.text("memo")).put("unassigned", part.optBoolean("unassigned"))
+        // A part that is a transfer keeps its other account, and has no category of its own.
+        val moved = part.text("transferAccountId").ifBlank { null }
+        JSONObject().put("amount", smsDecimal(part.optLong("amount"))).put("categoryId", part.text("categoryId").ifBlank { null }?.takeIf { moved == null } ?: JSONObject.NULL)
+            .put("memo", part.text("memo")).put("unassigned", part.optBoolean("unassigned") && moved == null)
+            .apply { moved?.let { put("transferAccountId", it) } }
     }
     val category = parts[0].takeUnless { it.optBoolean("unassigned") || lines != null }?.text("categoryId").orEmpty()
     return batch.edit(item.index) { json ->

@@ -182,6 +182,11 @@ internal fun smsBalanceChanges(items: List<SmsItem>, adding: List<Pair<Int, Stri
         val amount = item.amount ?: return@forEach
         t.text("accountId").takeIf { it.isNotBlank() }?.let { changes.merge(it, amount, Long::plus) }
         t.text("transferAccountId").takeIf { it.isNotBlank() }?.let { changes.merge(it, -amount, Long::plus) }
+        // A part that is a transfer moves its own share in or out of its other account.
+        item.splits.forEach { line ->
+            val share = smsCents(line.text("amount")) ?: return@forEach
+            line.text("transferAccountId").takeIf { it.isNotBlank() }?.let { changes.merge(it, -share, Long::plus) }
+        }
     }
     return changes.filterValues { it != 0L }
 }
@@ -198,6 +203,8 @@ internal class SmsAccounts(private val open: List<Pair<String, String>>, mapping
 
     private val entries = (0 until mappings.length()).map { mappings.getJSONObject(it) }
     private fun isOpen(account: String) = open.any { it.first == account }
+    /** Whether this is one of the budget's open accounts: where a part that is a transfer can go. */
+    fun has(account: String): Boolean = isOpen(account)
     /** What's remembered of one kind, by its key, for an open account or [SmsSkipCard]. */
     private fun kept(kind: String) = entries.filter { it.text("for") == kind }.associate { smsEntryKey(kind, it.text("sender"), it.text("reference")) to it.text("accountId") }
     private val remembered = kept("").filterValues { isOpen(it) }
@@ -343,20 +350,25 @@ internal data class SmsItem(
     /** The other account was found from the budget's habits or the assistant's reading, not the text's digits: worth a look. */
     val otherGuessed: Boolean get() = otherSource == SmsAccountSource.Usual || otherSource == SmsAccountSource.Assistant
     val amount: Long? get() = transaction?.text("amount")?.let(::smsCents)
-    /** How the user split the amount between categories, line by line; empty when it's in one. */
+    /** The amount in parts, line by line: split between categories, or part of it a transfer; empty when it's in one. */
     val splits: List<JSONObject> get() = transaction?.let(::smsSplitLines).orEmpty()
 }
 
 /**
- * The lines a row's amount is split into, as the user split it in the review: two or more that
- * add up to it, for a purchase or income. Empty when it isn't split, or when the row changed since
- * (another amount, or a transfer now) so that they no longer fit it.
+ * The lines a row's amount is in: two or more that add up to it, for a purchase or income, as the
+ * user split it between categories in the review or as the assistant read money of two kinds (a
+ * deposit paid back with its profit: the money back is a line that's a transfer with the deposit's
+ * account, its `transferAccountId`). Empty when it isn't in parts, or when the row changed since
+ * (another amount, a transfer now, the account a line moves with now its own) so that they no
+ * longer fit it.
  */
 internal fun smsSplitLines(t: JSONObject): List<JSONObject> {
     val lines = t.rows("splits")
     val amount = smsCents(t.text("amount")) ?: return emptyList()
     val cents = lines.map { smsCents(it.text("amount")) ?: return emptyList() }
-    val fits = lines.size >= 2 && t.text("kind") != "transfer" && t.text("transferAccountId").isBlank() && cents.sum() == amount
+    val moved = lines.map { it.text("transferAccountId") }.filter { it.isNotBlank() }
+    val fits = lines.size >= 2 && t.text("kind") != "transfer" && t.text("transferAccountId").isBlank() && cents.sum() == amount &&
+        moved.size < lines.size && t.text("accountId").let { own -> own.isBlank() || own !in moved }
     return if (fits) lines else emptyList()
 }
 
@@ -445,9 +457,11 @@ internal data class SmsBatch(val messages: List<BankSms>, val analysis: JSONObje
                     t.text("otherAccount").ifBlank { null }, account, smsCents(t.text("amount")), t.text("date"), item.text("template").ifBlank { null })
                     ?.let { (id, how) -> t.put("transferAccountId", id); other = how }
             }
-            // A split's lines hold its categories. One that no longer fits the row is dropped here,
-            // not sent on for the import to refuse.
-            if (smsSplitLines(t).isNotEmpty()) t.put("categoryId", JSONObject.NULL) else t.remove("splits")
+            // A split's lines hold its categories. One that no longer fits the row (or a line that
+            // moves with an account since closed) is dropped here, not sent on for the import to refuse.
+            val lines = smsSplitLines(t)
+            if (lines.isNotEmpty() && lines.all { line -> line.text("transferAccountId").let { it.isBlank() || accounts.has(it) } }) t.put("categoryId", JSONObject.NULL)
+            else t.remove("splits")
             needs = when {
                 account.isBlank() -> "account"
                 t.isNull("amount") || t.text("amount").isBlank() -> "amount"

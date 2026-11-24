@@ -62,12 +62,14 @@ pub struct Transaction {
     pub account_id: Option<String>,
     #[serde(default)]
     pub transfer_account_id: Option<String>,
-    /// The amount split between categories, as the user split it in the review: two or more
-    /// lines that add up to it, in place of [Self::category_id]. Never the model's reading.
+    /// The amount in parts: two or more lines that add up to it, in place of
+    /// [Self::category_id]. The user splits a purchase between categories in the review; the
+    /// assistant gives parts when one text is money of two kinds, such as a deposit paid back
+    /// (a transfer from the deposit's account) with its profit (income).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub splits: Vec<SplitLine>,
 }
-/// One line of a split the user made in the review.
+/// One line of a transaction in parts.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SplitLine {
@@ -79,6 +81,10 @@ pub struct SplitLine {
     /// Ready to Assign, rather than no category yet.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unassigned: bool,
+    /// The other account, for a part that is a transfer with it: the money of this line moved
+    /// between the two accounts, and has no category.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transfer_account_id: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -369,6 +375,16 @@ fn transaction(
         if !(2..=100).contains(&lines.len()) || !filed || lines.iter().try_fold(0i64, |sum, c| sum.checked_add(*c)) != Some(whole) {
             return Err(crate::t!("Give a split 2–100 lines that add up to the amount, each in a spending category or none."));
         }
+        // A part that is a transfer names another open account, and has no category of its own.
+        // With every part a transfer the money has no part left to file: that's a plain transfer.
+        let moved = |line: &&SplitLine| line.transfer_account_id.is_some();
+        if t.splits.iter().filter(moved).any(|line| {
+            let other = line.transfer_account_id.as_deref().unwrap_or_default();
+            !active_account(b, other) || t.account_id.as_deref() == Some(other) || line.category_id.is_some() || line.unassigned
+        }) || t.splits.iter().all(|line| line.transfer_account_id.is_some())
+        {
+            return Err(crate::t!("A part that is a transfer names another open account and has no category, beside at least one part that isn't a transfer."));
+        }
     }
     if t.account_id.as_deref().is_some_and(|a| !active_account(b, a))
         || t.transfer_account_id.as_deref().is_some_and(|a| {
@@ -577,10 +593,17 @@ pub fn apply_batch(
                 let mut lines = Vec::with_capacity(proposed.splits.len());
                 for line in &proposed.splits {
                     let amount = cents(&line.amount)?;
-                    let waiting = on_budget && amount < 0 && line.category_id.is_none() && !line.unassigned;
+                    let moved = line.transfer_account_id.as_deref();
+                    let waiting = on_budget && amount < 0 && line.category_id.is_none() && !line.unassigned && moved.is_none();
                     let mut extra = serde_json::Map::new();
                     extra.insert("unassigned".into(), json!(line.unassigned));
                     if !line.memo.is_empty() { extra.insert("memo".into(), json!(line.memo)); }
+                    // A part moved to or from another account: a transfer of its own, as the
+                    // register's split transfers are, not yet cleared on the other side.
+                    if let Some(other) = moved {
+                        extra.insert("transferAccountId".into(), json!(other));
+                        extra.insert("transferStatus".into(), json!("uncleared"));
+                    }
                     lines.push(Split {
                         category_id: if waiting { Some(bank_import::uncategorized(&mut b)) } else { line.category_id.clone() },
                         amount,

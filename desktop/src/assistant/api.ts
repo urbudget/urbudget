@@ -67,7 +67,11 @@ export type Card = {
   warning?: string;
   note?: string;
   more: number;
-  highlight: { month?: string; categories: string[]; transactions: string[] };
+  /**
+   * What the app can go to from the card: categories on the Budget page in `month`, transactions
+   * in the register, or a `page` (as the core's `PAGES` names them) and the `account` to open there.
+   */
+  highlight: { month?: string; categories: string[]; transactions: string[]; page?: string; account?: string };
 };
 export type ProposalStatus = "proposed" | "applied" | "discarded" | "undone" | "failed" | "replaced";
 /** What a card has to say about itself: it was brought up to date (info), there's something to check (warn), or it can't be applied (error). */
@@ -76,8 +80,9 @@ export type Proposal = {
   id: string;
   title: string;
   /**
-   * A change (budget, transactions, payees, notes, categories, schedules, delete, fix), a thing
-   * made (report, spreadsheet, import, figures) or a question. One the app doesn't know is
+   * A change (budget, transactions, payees, accounts, notes, categories, schedules, delete, fix),
+   * a thing made (report, spreadsheet, import, figures), a place in the app to go to (show) or a
+   * question. One the app doesn't know is
    * drawn as a plain card.
    */
   kind: string;

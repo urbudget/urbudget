@@ -3,7 +3,7 @@
 //! here writes to the database.
 use super::attachments::{self, Files};
 use super::workbook;
-use super::proposals::{self, CategoryOp, Change, Edit, Move, NewTransaction, Pick, Proposal, Rename, Rule, ScheduleOp};
+use super::proposals::{self, AccountOp, CategoryOp, Change, Edit, Move, NewTransaction, Pick, Proposal, Rename, Rule, ScheduleOp};
 use super::{money, new_id, parse_money};
 use crate::domain::*;
 use crate::i18n::{comma, language, tr, Language};
@@ -70,6 +70,20 @@ pub fn specs() -> Vec<Spec> {
 }
 fn listed() -> Vec<Spec> {
     let id_list = |what: &str| json!({ "type": "array", "items": { "type": "string" }, "description": what });
+    // A bank text that is money of two kinds, in parts.
+    let bank_text_parts = json!({
+        "type": "array",
+        "description": "The amount in 2 to 20 parts that add up to it, for a text that is money of two kinds; never for a plain transfer. Each part is a transfer (transferAccountId), spending (categoryId), or neither: money in that is income.",
+        "items": object(
+            json!({
+                "amount": { "type": "number", "description": "This part's share, positive." },
+                "transferAccountId": { "type": "string", "description": "The other budget account, for the part that moved to or from it." },
+                "categoryId": { "type": "string", "description": "A spending category, for a part that is spending, interest or a fee." },
+                "memo": { "type": "string", "description": "A word or two: Principal, Profit, Interest, Fee." }
+            }),
+            &["amount"],
+        )
+    });
     vec![
         Spec {
             name: "get_month",
@@ -171,7 +185,7 @@ fn listed() -> Vec<Spec> {
         Spec {
             name: "get_bank_texts",
             description: "Bank texts on this phone: the senders chosen in Bank messages and the day collecting starts, texts waiting to be read (not in the review yet), the open review as Bank messages shows it (to review, ready to add, may already be in the budget and asking add or match, needing an account or the other side, holds, already in the budget, not transactions), the last review, remembered cards, how many formats are learned, and for each account the latest balance the bank's texts gave beside the budget's at that moment (a card's from its credit left and limit). No texts. How it works: the user chooses the bank's senders in Bank messages, the app collects their texts, and they're read into a review there, where the user ticks what to add. A gap between the balance a text gives and the budget's at that moment usually comes from texts still waiting, holds left unticked in the review, transactions entered by hand on another day, or a text that was cleared, dismissed or skipped: search the days around it before guessing. A card's texts usually give its credit left. With the card's credit limit, what's owed and held is the limit less the credit left. Without a limit a text can't tell you what's owed: offer propose_bank_texts with action limit when the user gives the limit or a text states it, and don't work a limit out from the budget unless the user agrees it's right.",
-            parameters: object(json!({}), &[]),
+            parameters: object(json!({ "review": { "type": "boolean", "description": "True to also list the open review's rows (review.rows): each with the textId it's known by, its text, what it was read as (date, amount, kind, payee, account, other account, category, parts), why it waits, and whether it's ticked to add. Up to 60 rows; rowsNotListed counts the rest. Ask for them before changing a row with propose_bank_texts." } }), &[]),
             proposes: false,
         },
         Spec {
@@ -191,10 +205,10 @@ fn listed() -> Vec<Spec> {
         },
         Spec {
             name: "propose_bank_texts",
-            description: "A card the user confirms, for bank texts: read the waiting texts into the review (with an optional note for the reading, like \"Card 3358 is my savings card\"), add texts found with search_bank_texts to the review (by id, even from before the day collecting starts), enter texts found with search_bank_texts straight into the budget as transactions, remember which account a card's or account's digits are, or set a card's credit limit. Nothing changes until the user confirms on the card. Use enter when the user asks you to add particular texts, a few at a time; for everything that's waiting, read is the way, since the review checks each text against the budget. With enter, give each transaction as its text says it: the amount is a number the text gives, and a text is entered once. Bank messages then counts those texts as handled, so they aren't read or offered again and its last text handled moves with them. A text the budget already has is left out, and one that is surely a transaction already there is matched to it, not added twice; the answer says which. When the answer names several transactions it could be, ask the user or give match.",
+            description: "A card the user confirms, for bank texts: read the waiting texts into the review (with an optional note for the reading, like \"Card 3358 is my savings card\"), add texts found with search_bank_texts to the review (by id, even from before the day collecting starts), enter texts found with search_bank_texts straight into the budget as transactions, change rows of the open review (what get_bank_texts with review: true lists), remember which account a card's or account's digits are, or set a card's credit limit. Nothing changes until the user confirms on the card. Use change when a row in the review was read wrongly or the user tells you what it really was: give the row's textId and only what changes (its kind, payee, date, memo, category, account, a transfer's other account, its parts, or add false to leave it out); Bank messages then shows the row as changed, and the user adds it there. Use enter when the user asks you to add particular texts, a few at a time; for everything that's waiting, read is the way, since the review checks each text against the budget. With enter, give each transaction as its text says it: the amount is a number the text gives, and a text is entered once. A text that is money of two kinds (a deposit paid back with its profit, a loan payment with its interest) is still one transaction for the amount the text gives, kind income or expense, with parts that add up to it: the part that is a transfer has transferAccountId, a fee or spending part has categoryId, and money in with neither is income. A part's amount needn't be written in the text; take it from the user, or from what the budget shows was moved (find_transactions), and say which you used. Bank messages then counts those texts as handled, so they aren't read or offered again and its last text handled moves with them. A text the budget already has is left out, and one that is surely a transaction already there is matched to it, not added twice; the answer says which. When the answer names several transactions it could be, ask the user or give match.",
             parameters: object(
                 json!({
-                    "action": { "type": "string", "enum": ["read", "add", "enter", "remember", "limit"] },
+                    "action": { "type": "string", "enum": ["read", "add", "enter", "change", "remember", "limit"] },
                     "note": { "type": "string", "description": "read: what the reading should do differently." },
                     "textIds": { "type": "array", "items": { "type": "string" }, "description": "add: ids from search_bank_texts." },
                     "transactions": {
@@ -211,9 +225,29 @@ fn listed() -> Vec<Spec> {
                                 "categoryId": { "type": "string", "description": "A spending category; never for a transfer." },
                                 "transferAccountId": { "type": "string", "description": "transfer: the other budget account." },
                                 "memo": { "type": "string" },
-                                "match": { "type": "string", "description": "The id of the transaction already in the budget that this text is, or \"new\" to add it beside one like it." }
+                                "match": { "type": "string", "description": "The id of the transaction already in the budget that this text is, or \"new\" to add it beside one like it." },
+                                "parts": bank_text_parts.clone()
                             }),
                             &["textIds", "accountId", "date", "amount", "kind", "payee"],
+                        )
+                    },
+                    "rows": {
+                        "type": "array",
+                        "description": "change: up to 20 rows of the open review, each once. Leave out what stays as it is.",
+                        "items": object(
+                            json!({
+                                "textId": { "type": "string", "description": "The row's textId from get_bank_texts with review: true." },
+                                "kind": { "type": "string", "enum": ["expense", "income", "refund", "transfer"], "description": "Money out is an expense, money in income or a refund; either can be a transfer." },
+                                "payee": { "type": "string" },
+                                "date": { "type": "string", "description": "YYYY-MM-DD." },
+                                "memo": { "type": "string" },
+                                "categoryId": { "type": "string", "description": "A spending category; never for a transfer." },
+                                "accountId": { "type": "string", "description": "The budget account the money moved in." },
+                                "transferAccountId": { "type": "string", "description": "transfer: the other budget account." },
+                                "parts": bank_text_parts.clone(),
+                                "add": { "type": "boolean", "description": "False leaves the row out of what's added; true ticks it again." }
+                            }),
+                            &["textId"],
                         )
                     },
                     "sender": { "type": "string", "description": "remember: the sender whose texts give the digits." },
@@ -413,8 +447,32 @@ fn listed() -> Vec<Spec> {
             proposes: true,
         },
         Spec {
+            name: "propose_account_changes",
+            description: "Propose changes to the user's accounts: add one (a bank account, cash, a credit card, or a tracking account such as an investment, a property or a loan), rename one, change its type, close it or open it again, set or remove a card's credit limit, or correct the balance it started with. get_setup lists the accounts with their ids and types. A new card gets its payment category by itself. A type can change only within its kind: checking, savings and cash are budget accounts; creditCard and lineOfCredit are credit; the rest are tracking accounts, outside the budget. Before closing an account, check its balance with get_month and say so if it isn't zero. Deleting an account for good, loan terms and linking a bank are done in the app.",
+            parameters: object(
+                json!({
+                    "title": { "type": "string" },
+                    "add": { "type": "array", "items": object(json!({
+                        "name": { "type": "string" },
+                        "type": { "type": "string", "enum": proposals::ACCOUNT_TYPES.iter().map(|(key, _)| *key).collect::<Vec<_>>() },
+                        "balance": { "type": "number", "description": "What it holds today, before any transaction is added to it. Negative when overdrawn. Leave out for nothing." },
+                        "owed": { "type": "number", "description": "For a credit card, a line of credit or a debt: what is owed today, as a positive number, in place of balance." },
+                        "creditLimit": { "type": "number", "description": "A card's credit limit, when the user gave it." },
+                        "note": { "type": "string" }
+                    }), &["name", "type"]) },
+                    "rename": { "type": "array", "items": object(json!({ "id": { "type": "string" }, "name": { "type": "string" } }), &["id", "name"]) },
+                    "setType": { "type": "array", "items": object(json!({ "id": { "type": "string" }, "type": { "type": "string", "enum": proposals::ACCOUNT_TYPES.iter().map(|(key, _)| *key).collect::<Vec<_>>() } }), &["id", "type"]) },
+                    "close": { "type": "array", "items": object(json!({ "id": { "type": "string" }, "closed": { "type": "boolean", "description": "False opens a closed account again." } }), &["id", "closed"]) },
+                    "creditLimits": { "type": "array", "items": object(json!({ "id": { "type": "string" }, "limit": { "type": "number", "description": "The limit. 0 removes it." } }), &["id", "limit"]) },
+                    "startingBalances": { "type": "array", "items": object(json!({ "id": { "type": "string" }, "balance": { "type": "number", "description": "The balance the account started with, before its first transaction. Negative when owed." } }), &["id", "balance"]) }
+                }),
+                &[],
+            ),
+            proposes: true,
+        },
+        Spec {
             name: "propose_payee_changes",
-            description: "Propose renaming or merging payees (every transaction with the old name gets the new one) and adding payee rules.",
+            description: "Propose renaming or merging payees (every transaction with the old name gets the new one), adding payee rules, and removing rules (get_setup lists them with their ids). To change a rule, remove it and add the new one in the same proposal.",
             parameters: object(
                 json!({
                     "title": { "type": "string" },
@@ -429,7 +487,8 @@ fn listed() -> Vec<Spec> {
                             "payee": { "type": "string" },
                             "categoryId": { "type": "string" }
                         }), &["match"])
-                    }
+                    },
+                    "removeRules": id_list("Ids of payee rules to remove, from get_setup.")
                 }),
                 &[],
             ),
@@ -437,7 +496,7 @@ fn listed() -> Vec<Spec> {
         },
         Spec {
             name: "propose_category_changes",
-            description: "Propose changes to the budget's categories and their groups: add a category (with a target, if wanted), rename one, move it to another group, hide it or show it again, rename a group, and set, change or remove a category's target. A target is setAside (set this much aside every month), refill (top the category up to this much every month), balance (keep this much in it) or byDate (reach this much by a date: give by). Deleting a category is done in the app.",
+            description: "Propose changes to the budget's categories and their groups: add a category (with a target, if wanted), rename one, move it to another group, hide it or show it again, rename a group, set, change or remove a category's target, and delete a category. A target is setAside (set this much aside every month), refill (top the category up to this much every month), balance (keep this much in it) or byDate (reach this much by a date: give by). A deleted category's transactions, assigned money, schedules and rules go to the category named in moveTo, or to ready_to_assign: ask which when the user hasn't said, and offer hiding when they only want it out of the way. A card's payment category can't be deleted.",
             parameters: object(
                 json!({
                     "title": { "type": "string" },
@@ -459,7 +518,11 @@ fn listed() -> Vec<Spec> {
                         "amount": { "type": "number", "description": "The target's amount. 0 removes the target." },
                         "kind": { "type": "string", "enum": proposals::TARGETS },
                         "by": { "type": "string", "description": DATE }
-                    }), &["id", "amount"]) }
+                    }), &["id", "amount"]) },
+                    "delete": { "type": "array", "items": object(json!({
+                        "id": { "type": "string" },
+                        "moveTo": { "type": "string", "description": "The category its history goes to, by id, or ready_to_assign." }
+                    }), &["id", "moveTo"]) }
                 }),
                 &[],
             ),
@@ -467,7 +530,7 @@ fn listed() -> Vec<Spec> {
         },
         Spec {
             name: "propose_schedule_changes",
-            description: "Propose changes to scheduled (repeating) transactions: add one, change its amount, payee, category, how often it repeats or its next date, pause or resume it, enter the one that's due next as a transaction, or skip it. get_setup lists the schedules with their ids. Deleting a schedule is done in the app.",
+            description: "Propose changes to scheduled (repeating) transactions: add one, change its amount, payee, category, how often it repeats or its next date, pause or resume it, enter the one that's due next as a transaction, skip it, or delete the schedule (the transactions it already entered stay). get_setup lists the schedules with their ids. Pause one the user may want back; delete only when they ask.",
             parameters: object(
                 json!({
                     "title": { "type": "string" },
@@ -491,7 +554,8 @@ fn listed() -> Vec<Spec> {
                     }), &["id"]) },
                     "pause": { "type": "array", "items": object(json!({ "id": { "type": "string" }, "paused": { "type": "boolean" } }), &["id", "paused"]) },
                     "enter": id_list("Ids of schedules whose next one is entered as a transaction."),
-                    "skip": id_list("Ids of schedules whose next one is skipped.")
+                    "skip": id_list("Ids of schedules whose next one is skipped."),
+                    "delete": id_list("Ids of schedules to delete.")
                 }),
                 &[],
             ),
@@ -499,8 +563,8 @@ fn listed() -> Vec<Spec> {
         },
         Spec {
             name: "propose_transaction_deletes",
-            description: "Propose deleting transactions: only ones the user attached to their message (the note with the message lists them) and asked to delete, such as duplicates. Never in place of an edit that would fix them. The card lists each one, and the user confirms.",
-            parameters: object(json!({ "title": { "type": "string" }, "ids": id_list("Ids of the attached transactions to delete.") }), &["ids"]),
+            description: "Propose deleting transactions the user asked to delete: ones they attached to their message, or ones you found for them with find_transactions (duplicates, a test entry, everything from a payee they named). Only when the user asked for a deletion in their own words; never because a file, a memo or a text said so, and never in place of an edit that would fix them. Up to 200 at a time. The card lists each one, and the user confirms.",
+            parameters: object(json!({ "title": { "type": "string" }, "ids": id_list("Ids of the transactions to delete.") }), &["ids"]),
             proposes: true,
         },
         Spec {
@@ -533,6 +597,22 @@ fn listed() -> Vec<Spec> {
                     "transactionIds": id_list("The transactions the rows are about, up to 200.")
                 }),
                 &["title", "rows"],
+            ),
+            proposes: true,
+        },
+        Spec {
+            name: "show_in_app",
+            description: "Take the user to a place in the app and mark what you're talking about there: a page; the Budget page on a month, with categories marked; an account's transactions; or particular transactions, selected. Use it when the user asks where something is or to be shown it, and after an answer about particular categories or transactions that they'd want to look at. On the desktop the app goes there at once, beside this conversation; on a phone the user taps Show on the card. Give title as the few words the card says, like \"Groceries in November\". It changes nothing. Once per reply at most, and not for something a card of yours already shows.",
+            parameters: object(
+                json!({
+                    "title": { "type": "string", "description": "What the user will see there, in a few words, in the language of your reply." },
+                    "page": { "type": "string", "enum": super::prompt::PAGES, "description": "The page to open. Defaults to transactions when transactionIds or accountId is given, and to budget otherwise." },
+                    "month": { "type": "string", "description": "budget: the month to show, YYYY-MM." },
+                    "categoryIds": id_list("budget: categories to mark and bring into view."),
+                    "accountId": { "type": "string", "description": "transactions: the account whose transactions to show. accounts: the account to mark." },
+                    "transactionIds": id_list("transactions: the ones to select, up to 200.")
+                }),
+                &["title"],
             ),
             proposes: true,
         },
@@ -883,6 +963,8 @@ pub fn call(name: &str, args: &Value, ctx: &Context) -> Outcome {
         "propose_investment_deposits" => propose_investment_deposits(args, ctx),
         "propose_holdings" => propose_holdings(args, ctx),
         "propose_payee_changes" => propose_payee_changes(args, ctx),
+        "propose_account_changes" => propose_account_changes(args, ctx),
+        "show_in_app" => show_in_app(args, ctx),
         "propose_notes" => propose_notes(args, ctx),
         "propose_category_changes" => propose_category_changes(args, ctx),
         "propose_schedule_changes" => propose_schedule_changes(args, ctx),
@@ -934,6 +1016,7 @@ pub fn working(name: &str) -> String {
         "create_report" => t!("Writing the report"),
         "create_spreadsheet" => t!("Making the spreadsheet"),
         "show_figures" => t!("Laying out the figures"),
+        "show_in_app" => t!("Finding it in the app"),
         "ask_user" => t!("Asking you"),
         n if n.starts_with("propose") || n == "prepare_import" || n == "fix_import" => t!("Preparing a change"),
         _ => t!("Working"),
@@ -1696,6 +1779,9 @@ fn get_setup(ctx: &Context) -> Result<Outcome, String> {
         "currency": b.currency,
         "accounts": b.accounts.iter().map(|a| {
             let mut row = json!({ "id": a.id, "name": a.name, "type": a.kind, "onBudget": a.on_budget(), "closed": a.archived });
+            if let Some(kind) = a.extra.get("accountType").and_then(Value::as_str) {
+                row["accountType"] = json!(kind);
+            }
             // A card's limit, and the credit left on it today: the limit plus its balance, which is negative when owed.
             if let Some(limit) = a.credit_limit() {
                 row["creditLimit"] = json!(money(limit));
@@ -1705,6 +1791,7 @@ fn get_setup(ctx: &Context) -> Result<Outcome, String> {
         }).collect::<Vec<_>>(),
         "categoryGroups": groups.into_iter().map(|(group, categories)| json!({ "group": group, "categories": categories })).collect::<Vec<_>>(),
         "payeeRules": b.extra.get("payeeRules").and_then(Value::as_array).map(|rules| rules.iter().map(|r| json!({
+            "id": r["id"],
             "match": r["match"],
             "renameTo": r["payee"],
             "category": r["categoryId"].as_str().map(|id| names.category(Some(id))),
@@ -2235,15 +2322,183 @@ fn propose_payee_changes(args: &Value, ctx: &Context) -> Result<Outcome, String>
         renames.push(Rename { from: from.to_owned(), to: truncate(to, 200) });
     }
     let rules = rules_arg(args, &names)?;
-    if renames.is_empty() && rules.is_empty() {
-        return Err("Give at least one rename or rule.".into());
+    let kept = b.extra.get("payeeRules").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+    let mut removed: Vec<String> = vec![];
+    for id in strings(args, "removeRules") {
+        if !kept.iter().any(|r| r["id"] == json!(id)) {
+            return Err(format!("No payee rule has the id {id}. get_setup lists the rules with their ids."));
+        }
+        if !removed.contains(&id) {
+            removed.push(id);
+        }
     }
-    let default = match (renames.len(), rules.len()) {
-        (0, r) => t!("Add {r|# payee rule|# payee rules}", r),
-        (n, 0) => t!("Rename {n|# payee|# payees}", n),
-        (n, r) => t!("Rename {n|# payee|# payees}, add {r|# rule|# rules}", n, r),
+    if renames.is_empty() && rules.is_empty() && removed.is_empty() {
+        return Err("Give at least one rename, a rule to add or a rule to remove.".into());
+    }
+    let default = match (renames.len(), rules.len(), removed.len()) {
+        (0, 0, x) => t!("Remove {x|# payee rule|# payee rules}", x),
+        (0, r, 0) => t!("Add {r|# payee rule|# payee rules}", r),
+        (n, 0, 0) => t!("Rename {n|# payee|# payees}", n),
+        (0, _, _) => t!("Change payee rules"),
+        (n, r, x) => t!("Rename {n|# payee|# payees}, change {r|# rule|# rules}", n, r = r + x),
     };
-    propose(Change::Payees { renames, rules }, title(args, default), ctx, t!("Prepared payee changes"))
+    propose(Change::Payees { renames, rules, removed }, title(args, default), ctx, t!("Prepared payee changes"))
+}
+
+/// An account by its id, for a change to it.
+fn account_arg<'n>(names: &'n Names, v: &Value) -> Result<&'n Account, String> {
+    let id = v["id"].as_str().ok_or("Each one needs the account's id.")?;
+    names.accounts.get(id).copied().ok_or_else(|| format!("No account has the id {id}. Use get_setup to find ids."))
+}
+fn account_type_arg(v: &Value) -> Result<(String, AccountKind), String> {
+    let key = v["type"].as_str().unwrap_or_default();
+    let kind = proposals::kind_of(key).ok_or_else(|| format!("{key} isn't an account type. Use one of: {}.", proposals::ACCOUNT_TYPES.iter().map(|(key, _)| *key).collect::<Vec<_>>().join(", ")))?;
+    Ok((key.to_owned(), kind))
+}
+
+fn propose_account_changes(args: &Value, ctx: &Context) -> Result<Outcome, String> {
+    let names = Names::new(ctx.budget);
+    const OWED: [&str; 8] = ["creditCard", "lineOfCredit", "mortgage", "autoLoan", "studentLoan", "personalLoan", "medicalDebt", "otherDebt"];
+    let mut ops = vec![];
+    let mut added: Vec<String> = vec![];
+    for a in rows(args, "add") {
+        let name = name_arg(a, "name", "the account a name")?;
+        let (account_type, kind) = account_type_arg(a)?;
+        let given = |key: &str| a.get(key).filter(|v| !v.is_null()).map(parse_money).transpose();
+        let opening_balance = match (given("balance")?, given("owed")?) {
+            (Some(_), Some(_)) => return Err(format!("{name}: give balance or owed, not both.")),
+            (_, Some(owed)) if !OWED.contains(&account_type.as_str()) => return Err(format!("{name}: owed is for a card or a debt. Give its balance ({} here).", money(owed))),
+            (_, Some(owed)) => -owed,
+            (Some(balance), None) => balance,
+            (None, None) => 0,
+        };
+        let credit_limit = given("creditLimit")?.filter(|limit| *limit != 0);
+        if credit_limit.is_some_and(|limit| limit < 0 || kind != AccountKind::Credit) {
+            return Err(format!("{name}: a credit limit is a positive amount, on a creditCard or lineOfCredit."));
+        }
+        if added.iter().any(|n| n.to_lowercase() == name.to_lowercase()) {
+            return Err(format!("{name} is in the new accounts twice."));
+        }
+        added.push(name.clone());
+        ops.push(AccountOp::Add {
+            id: new_id("acct"),
+            payment_category: new_id("cat"),
+            name,
+            account_type,
+            opening_balance,
+            credit_limit,
+            note: a["note"].as_str().map(|n| truncate(n.trim(), 500)).unwrap_or_default(),
+        });
+    }
+    for r in rows(args, "rename") {
+        ops.push(AccountOp::Rename { id: account_arg(&names, r)?.id.clone(), name: name_arg(r, "name", "the new name")? });
+    }
+    for t in rows(args, "setType") {
+        let account = account_arg(&names, t)?;
+        let (account_type, kind) = account_type_arg(t)?;
+        if kind != account.kind {
+            return Err(format!("{} can't become {account_type}: that would change how it affects the budget. Its type can be one of the same kind; for another kind, add a new account.", account.name));
+        }
+        ops.push(AccountOp::Type { id: account.id.clone(), account_type });
+    }
+    for c in rows(args, "close") {
+        let account = account_arg(&names, c)?;
+        let closed = c["closed"].as_bool().unwrap_or(true);
+        if account.archived == closed {
+            return Err(format!("{} is already {}.", account.name, if closed { "closed" } else { "open" }));
+        }
+        ops.push(AccountOp::Close { id: account.id.clone(), closed });
+    }
+    for l in rows(args, "creditLimits") {
+        let account = account_arg(&names, l)?;
+        if account.kind != AccountKind::Credit {
+            return Err(format!("{} isn't a credit account, so it has no credit limit.", account.name));
+        }
+        let limit = parse_money(&l["limit"])?;
+        if limit < 0 {
+            return Err("A credit limit is a positive amount, or 0 to remove it.".into());
+        }
+        ops.push(AccountOp::Limit { id: account.id.clone(), limit: (limit > 0).then_some(limit) });
+    }
+    for o in rows(args, "startingBalances") {
+        ops.push(AccountOp::Opening { id: account_arg(&names, o)?.id.clone(), amount: parse_money(&o["balance"])? });
+    }
+    if ops.is_empty() {
+        return Err("Give at least one change.".into());
+    }
+    if ops.len() > 50 {
+        return Err("Propose at most 50 account changes at a time.".into());
+    }
+    let default = match &ops[..] {
+        [AccountOp::Add { name, .. }] => t!("Add the account {name}", name),
+        _ if ops.iter().all(|op| matches!(op, AccountOp::Add { .. })) => t!("Add {n|# account|# accounts}", n = ops.len()),
+        _ => t!("Change {n|# account|# accounts}", n = ops.len()),
+    };
+    propose(Change::Accounts { ops }, title(args, default), ctx, t!("Prepared changes to your accounts"))
+}
+
+/// A place in the app to take the user to, as a card (`proposals::build_show`).
+fn show_in_app(args: &Value, ctx: &Context) -> Result<Outcome, String> {
+    let names = Names::new(ctx.budget);
+    let title = truncate(arg(args, "title").ok_or("Give the card a title: what the user will see there.")?, 100);
+    let categories = strings(args, "categoryIds");
+    if let Some(unknown) = categories.iter().find(|id| !names.categories.contains_key(id.as_str())) {
+        return Err(format!("No category has the id {unknown}. Use get_month or get_setup to find ids."));
+    }
+    let known: std::collections::HashSet<&str> = ctx.budget.transactions.iter().map(|t| t.id.as_str()).collect();
+    let asked = strings(args, "transactionIds");
+    let transactions: Vec<String> = asked.iter().filter(|id| known.contains(id.as_str())).take(200).cloned().collect();
+    if !asked.is_empty() && transactions.is_empty() {
+        return Err("None of those transactions are in the budget. Use find_transactions to find ids.".into());
+    }
+    let account = match arg(args, "accountId") {
+        None => None,
+        Some(id) => Some(names.accounts.get(id).map(|a| a.id.clone()).ok_or_else(|| format!("No account has the id {id}. Use get_setup to find ids."))?),
+    };
+    let page = match arg(args, "page") {
+        Some(page) if super::prompt::PAGES.contains(&page) => page,
+        Some(page) => return Err(format!("{page} isn't a page. Use one of: {}.", super::prompt::PAGES.join(", "))),
+        None if !transactions.is_empty() || account.is_some() => "transactions",
+        None => "budget",
+    };
+    if page == "bankMessages" && ctx.platform != super::guide::Platform::Android {
+        return Err("Bank messages is on the Android app only. Tell the user so.".into());
+    }
+    // Each page takes what it can show; the rest would only mislead the card.
+    let (month, categories) = if page == "budget" { (Some(month_arg(args, "month", ctx.month)?), categories) } else { (None, vec![]) };
+    let transactions = if page == "transactions" { transactions } else { vec![] };
+    let account = account.filter(|_| matches!(page, "transactions" | "accounts" | "loans" | "investments"));
+    // What's there, under the card's title: the month, the account, the categories by name.
+    let mut said = vec![];
+    if let Some(month) = month.as_ref().filter(|_| page == "budget") {
+        said.push(month_label(month));
+    }
+    if let Some(account) = &account {
+        said.push(names.account(account));
+    }
+    if !categories.is_empty() {
+        let mut listed: Vec<String> = categories.iter().take(3).map(|id| names.category(Some(id))).collect();
+        if categories.len() > listed.len() {
+            listed.push(format!("+{}", categories.len() - listed.len()));
+        }
+        said.push(listed.join(comma()));
+    }
+    if !transactions.is_empty() {
+        said.push(t!("{n|# transaction|# transactions}", n = transactions.len()));
+    }
+    let highlight = proposals::Highlight { month, categories, transactions, page: Some(page.to_owned()), account };
+    let detail = (!said.is_empty()).then(|| said.join(" · "));
+    let proposal = proposals::build_show(title.clone(), detail, highlight);
+    let output = json!({
+        "cardId": proposal.id,
+        "shownToUser": true,
+        "note": if ctx.platform == super::guide::Platform::Desktop {
+            "The app went there, beside this conversation, with what you named marked. Say in a few words what the user is looking at."
+        } else {
+            "The user sees a card with a Show button that takes them there. Say in a few words what it shows, and that Show opens it."
+        },
+    });
+    Ok(Outcome { output, step: t!("Pointed to {title}", title), proposal: Some(proposal) })
 }
 
 fn rows<'v>(args: &'v Value, key: &str) -> &'v [Value] {
@@ -2307,6 +2562,20 @@ fn propose_category_changes(args: &Value, ctx: &Context) -> Result<Outcome, Stri
     }
     for t in rows(args, "targets") {
         ops.push(target_arg(t, &category_arg(&names, t)?.id, month)?);
+    }
+    for d in rows(args, "delete") {
+        let category = category_arg(&names, d)?;
+        if category.payment_account().is_some() {
+            return Err(format!("{} pays a credit card and belongs to its account: it can't be deleted.", category.name));
+        }
+        let replacement = category_or_rta(&names, d["moveTo"].as_str().ok_or("Say where the category's history goes, as moveTo: a category id or ready_to_assign.")?)?;
+        if replacement.as_deref() == Some(category.id.as_str()) {
+            return Err("moveTo is the category being deleted. Give another, or ready_to_assign.".into());
+        }
+        if replacement.as_deref().is_some_and(|id| names.categories.get(id).is_some_and(|c| c.payment_account().is_some())) {
+            return Err("A deleted category's history can't go to a card's payment category.".into());
+        }
+        ops.push(CategoryOp::Delete { id: category.id.clone(), replacement });
     }
     if ops.is_empty() {
         return Err("Give at least one change.".into());
@@ -2416,6 +2685,10 @@ fn propose_schedule_changes(args: &Value, ctx: &Context) -> Result<Outcome, Stri
         known(&id)?;
         ops.push(ScheduleOp::Skip { id });
     }
+    for id in strings(args, "delete") {
+        known(&id)?;
+        ops.push(ScheduleOp::Delete { id });
+    }
     if ops.is_empty() {
         return Err("Give at least one change.".into());
     }
@@ -2431,9 +2704,12 @@ fn propose_transaction_deletes(args: &Value, ctx: &Context) -> Result<Outcome, S
     if ids.is_empty() {
         return Err("Give the ids of the transactions to delete.".into());
     }
-    // Only what the user handed over with their message: a deletion is never the assistant's find.
-    if let Some(other) = ids.iter().find(|id| !ctx.selected.contains(id)) {
-        return Err(format!("{other} isn't one of the transactions the user attached to their message. You can only propose deleting those; ask the user to select the ones to delete and ask again."));
+    if ids.len() > 200 {
+        return Err("Propose deleting at most 200 transactions at a time.".into());
+    }
+    let known: std::collections::HashSet<&str> = ctx.budget.transactions.iter().map(|t| t.id.as_str()).collect();
+    if let Some(other) = ids.iter().find(|id| !known.contains(id.as_str())) {
+        return Err(format!("No transaction has the id {other}. Use find_transactions."));
     }
     let mut seen = std::collections::HashSet::new();
     let ids: Vec<String> = ids.into_iter().filter(|id| seen.insert(id.clone())).collect();
@@ -2482,6 +2758,7 @@ fn show_figures(args: &Value, ctx: &Context) -> Result<Outcome, String> {
         month: if categories.is_empty() { None } else { Some(month_arg(args, "month", ctx.month)?) },
         categories,
         transactions,
+        ..Default::default()
     };
     let proposal = proposals::build_figures(title.clone(), arg(args, "period").map(|p| truncate(p, 80)), shown, args["total"] == json!(true), highlight);
     let output = json!({
@@ -2771,6 +3048,7 @@ fn fix_import(args: &Value, ctx: &Context) -> Result<Outcome, String> {
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use crate::assistant::history;
 
     pub fn sample() -> Budget {
         serde_json::from_value(json!({
@@ -3285,15 +3563,147 @@ pub mod tests {
         assert_eq!(schedules::read(&after).unwrap()[0].next_date.as_deref(), Some("2026-12-01"));
         assert!(call("propose_schedule_changes", &json!({ "pause": [{ "id": "sch_none", "paused": true }] }), &ctx(&with_rent, &files)).proposal.is_none());
 
-        // Deleting is only for what the user attached.
-        let attached = vec!["t3".to_string()];
-        let handed = Context { selected: &attached, ..ctx(&b, &files) };
-        let refused = call("propose_transaction_deletes", &json!({ "ids": ["t1"] }), &handed);
-        assert!(refused.proposal.is_none() && refused.output["error"].as_str().unwrap().contains("isn't one of the transactions the user attached"));
-        let p = call("propose_transaction_deletes", &json!({ "ids": ["t3"] }), &handed).proposal.unwrap();
-        assert_eq!((p.kind.as_str(), p.card.rows[0].label.as_str()), ("delete", "Corner Bakery · Sep 5"));
+        // The schedule deleted: what it entered stays.
+        let out = call("propose_schedule_changes", &json!({ "delete": [id] }), &ctx(&after, &files));
+        let p = out.proposal.unwrap();
+        assert_eq!((p.card.rows[0].badge.as_deref(), p.card.highlight.page.as_deref()), (Some("delete"), Some("scheduled")));
+        let gone = p.change.unwrap().run(after.clone()).unwrap();
+        assert!(schedules::read(&gone).unwrap().is_empty() && gone.transactions.iter().any(|t| t.payee == "Landlord"));
+
+        // A transaction the assistant found is deleted on a card the user confirms; one that
+        // isn't in the budget is refused.
+        let refused = call("propose_transaction_deletes", &json!({ "ids": ["t_none"] }), &ctx(&b, &files));
+        assert!(refused.proposal.is_none() && refused.output["error"].as_str().unwrap().contains("No transaction has the id t_none"));
+        let p = call("propose_transaction_deletes", &json!({ "ids": ["t3", "t3"] }), &ctx(&b, &files)).proposal.unwrap();
+        assert_eq!((p.kind.as_str(), p.card.rows.len(), p.card.rows[0].label.as_str()), ("delete", 1, "Corner Bakery · Sep 5"));
         let after = p.change.unwrap().run(b.clone()).unwrap();
         assert!(!after.transactions.iter().any(|t| t.id == "t3") && after.transactions.len() == b.transactions.len() - 1);
+    }
+
+    #[test]
+    fn a_category_is_deleted_with_its_history_moved_and_a_payee_rule_is_removed() {
+        let b = sample();
+        let files = Files::empty();
+        // Coffee goes, and what was assigned to it and spent in it goes to Dining out.
+        let out = call("propose_category_changes", &json!({ "delete": [{ "id": "coffee", "moveTo": "dining" }] }), &ctx(&b, &files));
+        let p = out.proposal.unwrap();
+        assert_eq!((p.card.rows[0].label.as_str(), p.card.rows[0].badge.as_deref()), ("Coffee", Some("delete")));
+        assert!(p.card.warning.is_some() && p.card.rows[0].detail.as_deref().unwrap().contains("Dining out"));
+        let after = p.change.unwrap().run(b.clone()).unwrap();
+        assert!(!after.categories.iter().any(|c| c.id == "coffee"));
+        assert_eq!(after.assignments.iter().find(|a| a.category_id == "dining" && a.month == "2026-10").map(|a| a.amount), Some(120000));
+        // It needs somewhere for its history, never itself or a card's payment category, and a payment category stays.
+        for wrong in [json!({ "id": "coffee" }), json!({ "id": "coffee", "moveTo": "coffee" }), json!({ "id": "coffee", "moveTo": "card-pay" }), json!({ "id": "card-pay", "moveTo": "dining" })] {
+            assert!(call("propose_category_changes", &json!({ "delete": [wrong.clone()] }), &ctx(&b, &files)).proposal.is_none(), "{wrong}");
+        }
+        assert!(call("propose_category_changes", &json!({ "delete": [{ "id": "coffee", "moveTo": "ready_to_assign" }] }), &ctx(&b, &files)).proposal.is_some());
+
+        // A rule is listed with its id, and removed by it; another is added in the same card.
+        let mut ruled = b.clone();
+        ruled.extra.insert("payeeRules".into(), json!([{ "id": "rule_a", "match": "bistro", "payee": "Bistro", "categoryId": "dining" }]));
+        assert_eq!(call("get_setup", &json!({}), &ctx(&ruled, &files)).output["payeeRules"][0]["id"], "rule_a");
+        assert!(call("propose_payee_changes", &json!({ "removeRules": ["rule_none"] }), &ctx(&ruled, &files)).proposal.is_none());
+        let p = call("propose_payee_changes", &json!({ "removeRules": ["rule_a"], "rules": [{ "match": "bakery", "categoryId": "groceries" }] }), &ctx(&ruled, &files)).proposal.unwrap();
+        assert_eq!(p.card.rows.iter().map(|r| r.badge.as_deref()).collect::<Vec<_>>(), vec![Some("rule"), Some("remove")]);
+        let after = p.change.clone().unwrap().run(ruled.clone()).unwrap();
+        let rules = after.extra["payeeRules"].as_array().unwrap();
+        assert_eq!((rules.len(), rules[0]["match"].as_str()), (1, Some("bakery")));
+        // Left out on the card, the rule stays.
+        let kept = proposals::revise(&p, proposals::Revision { skip: vec!["x:rule_a".into()], set: vec![] }, &ruled).unwrap();
+        assert_eq!(kept.change.unwrap().run(ruled).unwrap().extra["payeeRules"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn accounts_are_added_renamed_retyped_closed_and_given_a_limit_on_a_card() {
+        let b = sample();
+        let files = Files::empty();
+        // A new card with what's owed and a limit, and a savings account with money in it.
+        let out = call("propose_account_changes", &json!({ "add": [
+            { "name": "Travel card", "type": "creditCard", "owed": 1200, "creditLimit": 5000 },
+            { "name": "Rainy day", "type": "savings", "balance": 3000.5 },
+        ] }), &ctx(&b, &files));
+        let p = out.proposal.unwrap();
+        assert_eq!((p.kind.as_str(), p.title.as_str(), p.card.rows.len(), p.card.highlight.page.as_deref()), ("accounts", "Add 2 accounts", 2, Some("accounts")));
+        assert_eq!((p.card.rows[0].label.as_str(), p.card.rows[0].detail.as_deref(), p.card.rows[0].amount), ("New account: Travel card", Some("credit card · limit 5000.00"), Some(-120000)));
+        let after = p.change.clone().unwrap().run(b.clone()).unwrap();
+        let card = after.accounts.iter().find(|a| a.name == "Travel card").unwrap();
+        assert_eq!((card.kind, card.opening_balance, card.credit_limit(), card.extra["accountType"].as_str()), (AccountKind::Credit, -120000, Some(500000), Some("creditCard")));
+        // The card has its payment category, named after it, as one made in the app has.
+        let payment = after.categories.iter().find(|c| c.payment_account() == Some(card.id.as_str())).unwrap();
+        assert_eq!((payment.name.as_str(), payment.group.as_str()), ("Travel card", "Credit Card Payments"));
+        let savings = after.accounts.iter().find(|a| a.name == "Rainy day").unwrap();
+        assert_eq!((savings.kind, savings.opening_balance, savings.on_budget()), (AccountKind::Cash, 300050, true));
+        // Applied again on the same budget, the same records: the ids were chosen with the card.
+        assert_eq!(p.change.clone().unwrap().run(b.clone()).unwrap(), after);
+        // Left out on the card, the savings account isn't made.
+        let chosen = proposals::revise(&p, proposals::Revision { skip: vec!["a:1".into()], set: vec![] }, &b).unwrap();
+        let only = chosen.change.unwrap().run(b.clone()).unwrap();
+        assert!(only.accounts.iter().any(|a| a.name == "Travel card") && !only.accounts.iter().any(|a| a.name == "Rainy day"));
+
+        // What can't be: an unknown type, a name the budget has, owed on a bank account, a limit on one.
+        for wrong in [
+            json!({ "name": "Wallet", "type": "wallet" }),
+            json!({ "name": "everyday", "type": "checking" }),
+            json!({ "name": "Wallet", "type": "cash", "owed": 50 }),
+            json!({ "name": "Wallet", "type": "cash", "creditLimit": 500 }),
+            json!({ "name": "Wallet", "type": "cash", "balance": 5, "owed": 5 }),
+        ] {
+            assert!(call("propose_account_changes", &json!({ "add": [wrong.clone()] }), &ctx(&b, &files)).proposal.is_none(), "{wrong}");
+        }
+
+        // Renamed, a card's payment category follows; its type changes within its kind only.
+        let p = call("propose_account_changes", &json!({
+            "rename": [{ "id": "card", "name": "Visa" }], "setType": [{ "id": "checking", "type": "savings" }], "creditLimits": [{ "id": "card", "limit": 8000 }],
+            "startingBalances": [{ "id": "checking", "balance": 4000 }],
+        }), &ctx(&b, &files)).proposal.unwrap();
+        let after = p.change.unwrap().run(b.clone()).unwrap();
+        assert_eq!(after.categories.iter().find(|c| c.id == "card-pay").unwrap().name, "Visa");
+        let account = |id: &str| after.accounts.iter().find(|a| a.id == id).unwrap();
+        assert_eq!((account("card").name.as_str(), account("card").credit_limit()), ("Visa", Some(800000)));
+        assert_eq!((account("checking").extra["accountType"].as_str(), account("checking").opening_balance), (Some("savings"), 400000));
+        assert!(call("propose_account_changes", &json!({ "setType": [{ "id": "checking", "type": "creditCard" }] }), &ctx(&b, &files)).proposal.is_none());
+        assert!(call("propose_account_changes", &json!({ "creditLimits": [{ "id": "checking", "limit": 100 }] }), &ctx(&b, &files)).proposal.is_none());
+
+        // Closed with money in it, the card says so; closing what's closed is refused.
+        let p = call("propose_account_changes", &json!({ "close": [{ "id": "checking", "closed": true }] }), &ctx(&b, &files)).proposal.unwrap();
+        assert!(p.card.warning.is_some() && p.card.rows[0].badge.as_deref() == Some("close"));
+        let closed = p.change.unwrap().run(b.clone()).unwrap();
+        assert!(closed.accounts.iter().find(|a| a.id == "checking").unwrap().archived);
+        assert!(call("propose_account_changes", &json!({ "close": [{ "id": "checking", "closed": true }] }), &ctx(&closed, &files)).proposal.is_none());
+        assert!(call("propose_account_changes", &json!({ "close": [{ "id": "checking", "closed": false }] }), &ctx(&closed, &files)).proposal.is_some());
+    }
+
+    #[test]
+    fn the_assistant_points_to_a_place_in_the_app_and_changes_nothing() {
+        let b = sample();
+        let files = Files::empty();
+        // Categories on the Budget page, in a month.
+        let out = call("show_in_app", &json!({ "title": "Dining out in October", "month": "2026-10", "categoryIds": ["dining", "coffee"] }), &ctx(&b, &files));
+        let p = out.proposal.unwrap();
+        assert_eq!((p.kind.as_str(), p.title.as_str(), p.change.is_none(), p.made()), ("show", "Dining out in October", true, true));
+        assert_eq!(serde_json::to_value(&p.card.highlight).unwrap(), json!({ "month": "2026-10", "categories": ["dining", "coffee"], "transactions": [], "page": "budget" }));
+        assert_eq!(p.card.note.as_deref(), Some("October 2026 · Dining out, Coffee"));
+        // Going there is what the card is for, and it can be removed like any made thing.
+        assert_eq!(history::proposal_view(&p)["actions"], json!(["show", "remove"]));
+        // Transactions, selected in the register; an account's register; a page by itself.
+        let p = call("show_in_app", &json!({ "title": "The two bakery visits", "transactionIds": ["t2", "t3", "t_gone"] }), &ctx(&b, &files)).proposal.unwrap();
+        assert_eq!((p.card.highlight.page.as_deref(), p.card.highlight.transactions.len(), p.card.highlight.month.as_deref()), (Some("transactions"), 2, None));
+        let p = call("show_in_app", &json!({ "title": "Your card", "accountId": "card" }), &ctx(&b, &files)).proposal.unwrap();
+        assert_eq!((p.card.highlight.page.as_deref(), p.card.highlight.account.as_deref(), p.card.note.as_deref()), (Some("transactions"), Some("card"), Some("Card")));
+        let p = call("show_in_app", &json!({ "title": "Your reports", "page": "reports", "categoryIds": ["dining"] }), &ctx(&b, &files)).proposal.unwrap();
+        assert_eq!((p.card.highlight.page.as_deref(), p.card.highlight.categories.len(), p.card.note.as_deref()), (Some("reports"), 0, None));
+        // Nowhere that isn't there: an unknown page, category, account or only unknown transactions; Bank messages off Android.
+        for wrong in [
+            json!({ "title": "x", "page": "dashboard" }), json!({ "title": "x", "categoryIds": ["nope"] }), json!({ "title": "x", "accountId": "nope" }),
+            json!({ "title": "x", "transactionIds": ["t_gone"] }), json!({ "page": "budget" }), json!({ "title": "x", "page": "bankMessages" }),
+        ] {
+            assert!(call("show_in_app", &wrong, &ctx(&b, &files)).proposal.is_none(), "{wrong}");
+        }
+        let phone = Context { platform: crate::assistant::guide::Platform::Android, ..ctx(&b, &files) };
+        assert!(call("show_in_app", &json!({ "title": "Your bank messages", "page": "bankMessages" }), &phone).proposal.is_some());
+        // A change to a page's own things leads to that page from its card.
+        let p = call("propose_account_changes", &json!({ "rename": [{ "id": "card", "name": "Visa" }] }), &ctx(&b, &files)).proposal.unwrap();
+        assert_eq!(history::proposal_view(&p)["actions"], json!(["apply", "askChanges", "discard", "show"]));
     }
 
     #[test]

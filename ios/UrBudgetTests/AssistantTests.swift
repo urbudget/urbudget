@@ -809,6 +809,19 @@ final class AssistantCardTests: XCTestCase {
         XCTAssertTrue(AssistantCard.known(["kind": "delete"]))
         XCTAssertTrue(AssistantCard.known(["kind": "bankTexts"]))
         XCTAssertFalse(AssistantCard.known(["kind": "somethingNewer"]))
+        // A change to accounts is a card like any other; a pointer to a place in the app leads there first.
+        XCTAssertTrue(AssistantCard.known(["kind": "accounts"]))
+        let pointer: JSON = ["kind": "show", "status": "proposed", "made": true, "actions": ["show", "remove"],
+                             "card": ["highlight": ["page": "budget", "month": "2026-10", "categories": ["dining"], "transactions": []]]]
+        XCTAssertTrue(AssistantCard.known(pointer))
+        XCTAssertEqual(AssistantCard.main(pointer), .show)
+        XCTAssertEqual(AssistantCard.buttons(pointer, canUndo: false), [.show])
+        XCTAssertTrue(AssistantCard.showsPage(pointer))
+        XCTAssertFalse(AssistantCard.showsPage(figures))
+        // Pages under More are opened by More's own keys; the tabs, and what only Android has, aren't.
+        XCTAssertEqual(["scheduled", "payees", "loans", "investments", "bankConnections", "settings"].map(AppActions.morePage),
+                       ["schedules", "payees", "loans", "brokers", "banks", "settings"])
+        XCTAssertEqual(["budget", "transactions", "accounts", "reports", "bankMessages", ""].compactMap(AppActions.morePage), [])
     }
 
     func testUndoShowsOnlyOnTheCardTheBudgetsUndoWouldTakeBack() {

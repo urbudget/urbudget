@@ -1,6 +1,8 @@
 package app.urbudget.nativeapp
 
 import app.urbudget.nativeapp.ui.smsSort
+import app.urbudget.nativeapp.ui.SmsRowNames
+import app.urbudget.nativeapp.ui.SmsSorted
 import app.urbudget.nativeapp.ui.smsKnown
 import app.urbudget.nativeapp.ui.smsPreview
 import android.content.Context
@@ -29,10 +31,12 @@ import kotlin.math.roundToLong
 /**
  * The assistant's bank-text tools, answered on the phone (services `assistant/phone.rs`): what's
  * waiting and the bank's balances, a search of the chosen senders' texts in Messages, and cards
- * the user applies here. Texts go to the assistant only when a search finds them; no other
- * sender's are ever read. A card can enter texts' transactions straight into the budget: they
- * go in as the review's do (the engine's `smsBatchApply`), and their texts are finished in Bank
- * messages, so its last text handled moves with them.
+ * the user applies here. Texts go to the assistant only when a search finds them, or when it
+ * asks for the open review's rows; no other sender's are ever read. A card can enter texts'
+ * transactions straight into the budget: they go in as the review's do (the engine's
+ * `smsBatchApply`), and their texts are finished in Bank messages, so its last text handled
+ * moves with them. A card can also change rows of the open review (what a text is, its
+ * accounts, its category, its parts), which Bank messages then shows for the user to add.
  */
 internal object BankTextsAssistant {
     /** A reading a card asked for, for Bank messages to start: what's waiting, with a note. */
@@ -78,7 +82,7 @@ internal object BankTextsAssistant {
             check(available(context, identity, connection())) { Words[R.string.bank_texts_not_set_up] }
             val args = request.optJSONObject("args") ?: JSONObject()
             when (request.optString("tool")) {
-                "get_bank_texts" -> status(context, vm, identity!!, budget, state.summary)
+                "get_bank_texts" -> status(context, vm, identity!!, budget, state.summary, args.optBoolean("review"))
                 "search_bank_texts" -> search(context, identity!!, budget, args)
                 "propose_bank_texts" -> propose(context, vm, identity!!, budget, args)
                 else -> error("There's no bank-text tool named ${request.optString("tool")}.")
@@ -86,7 +90,7 @@ internal object BankTextsAssistant {
         }.getOrElse { JSONObject().put("error", it.message ?: it.javaClass.simpleName) }
     }
 
-    private suspend fun status(context: Context, vm: BudgetViewModel, identity: String, budget: JSONObject, summary: JSONObject?): JSONObject {
+    private suspend fun status(context: Context, vm: BudgetViewModel, identity: String, budget: JSONObject, summary: JSONObject?, listed: Boolean = false): JSONObject {
         val inbox = SmsInbox.get(context)
         val accounts = budget.rows("accounts")
         fun name(id: String) = accounts.firstOrNull { it.text("id") == id }?.text("name")
@@ -116,7 +120,13 @@ internal object BankTextsAssistant {
                 .put("mayAlreadyBeInTheBudget", sorted.ready.count { it.index in asks })
                 .put("needAnAccountOrTheOtherSide", sorted.waiting.size).put("holds", sorted.holds.size)
                 .put("alreadyInTheBudget", sorted.existing.size).put("notTransactions", sorted.skipped.size)
-                .put("checked", prepared != null)
+                .put("checked", prepared != null).apply {
+                    // Asked for, the rows themselves: what each text was read as, for the assistant to correct.
+                    if (listed) {
+                        val rows = bankTextsReviewRows(batch, sorted, asks, budget)
+                        put("rows", JSONArray(rows.take(BankTextsRowsListed))).put("rowsNotListed", (rows.size - BankTextsRowsListed).coerceAtLeast(0))
+                    }
+                }
         }.getOrDefault(JSONObject.NULL))
         inbox.state(identity, "last")?.let { runCatching { JSONObject(it) }.getOrNull() }?.let { last ->
             output.put("lastReview", JSONObject().put("matchedWithoutAQuestion", last.optInt("known")).put("skipped", last.optJSONObject("skipped") ?: JSONObject())
@@ -250,6 +260,25 @@ internal object BankTextsAssistant {
                         JSONObject().put("textIds", JSONArray(e.textIds)).put("does", if (e.match == null) "add" else "match").apply { e.match?.let { put("matches", it) } }
                     })).put("alreadyInTheBudget", JSONArray(decided.already)))
             }
+            "change" -> {
+                val open = requireNotNull(runCatching { SmsBatch.restore(inbox.state(identity, "draft")) { ids -> inbox.waiting(identity, ids) } }.getOrNull()) { Words[R.string.bank_texts_no_review] }
+                val asked = args.rows("rows").map(BankTextChange::of)
+                require(asked.isNotEmpty() && asked.size <= 20) { "Give 1 to 20 rows to change, each by a textId from get_bank_texts with review: true." }
+                val (edited, touched) = bankTextsChange(open, budget, asked)
+                // Read as the review will read them, and checked by the engine as its own rows are.
+                val mappings = JSONArray(inbox.state(identity, "mappings") ?: "[]")
+                val items = edited.items(SmsAccounts.of(budget, mappings, edited.starts(budget)))
+                asked.zip(touched).firstOrNull { (change, index) -> change.parts != null && items[index].splits.isEmpty() }?.let { (change, _) ->
+                    error("The parts for ${change.textId} don't fit its row: they add up to its amount, each part that is a transfer with another open account than the row's own.")
+                }
+                vm.smsQuery("smsBatchPreview", edited.params(edited.resolved(items)))
+                val names = SmsRowNames.of(budget)
+                Proposed(Words.count(R.plurals.bank_texts_card_change, touched.size.toLong()),
+                    asked.zip(touched).map { (change, index) -> bankTextsChangeRow(items[index], change, names).let { (label, detail, amount) -> row(label, detail, amount) } },
+                    Words[R.string.bank_texts_card_change_note],
+                    JSONObject().put("action", action).put("rows", JSONArray(asked.map { it.json() })),
+                    JSONObject().put("rowsChanged", JSONArray(asked.map { it.textId })))
+            }
             "remember" -> {
                 val sender = args.optString("sender").trim()
                 val ref = args.optString("ref").trim()
@@ -272,7 +301,7 @@ internal object BankTextsAssistant {
                         now?.let { Words[R.string.bank_texts_card_limit_now, Money.format(it, currency)] } ?: Words[R.string.bank_texts_card_limit_none], limit)),
                     Words[R.string.bank_texts_card_limit_note], JSONObject().put("action", action).put("accountId", account.text("id")).put("limit", limit))
             }
-            else -> error("Give an action: read, add, enter, remember or limit.")
+            else -> error("Give an action: read, add, enter, change, remember or limit.")
         }
         val card = JSONObject().put("kicker", Words[R.string.sms_title]).put("rows", JSONArray(rows)).put("note", note)
         val output = JSONObject().put("card", title).put("action", apply.optString("action")).put("rows", rows.size)
@@ -345,6 +374,24 @@ internal object BankTextsAssistant {
                 }
                 entered.value = entered.value + 1; Applied(notice = gone)
             }
+            "change" -> {
+                // A reading under way saves its review when it ends, over what's changed here.
+                check(SmsReadings.state.value == null) { Words[R.string.bank_texts_reading_now] }
+                val budget = checkNotNull(vm.state.value.budget) { Words[R.string.bank_texts_not_set_up] }
+                val asked = apply.rows("rows").map(BankTextChange::of)
+                val missing = withContext(smsStorageLane) {
+                    val open = SmsBatch.restore(inbox.state(identity, "draft")) { ids -> inbox.waiting(identity, ids) } ?: error(Words[R.string.bank_texts_no_review])
+                    // A row added or cleared since the card was made is no longer in the review: the rest are changed.
+                    val inReview = open.messages.mapTo(HashSet()) { it.id }
+                    val there = asked.filter { it.textId in inReview }
+                    if (there.isEmpty()) error(Words[R.string.bank_texts_rows_gone])
+                    inbox.saveState(identity, "draft", bankTextsChange(open, budget, there).first.saved())
+                    asked.size - there.size
+                }
+                // The open page takes its review from storage again, and shows the rows as changed.
+                entered.value = entered.value + 1
+                Applied("Bank messages", if (missing > 0) Words[R.string.bank_texts_rows_gone] else null)
+            }
             "remember" -> {
                 withContext(smsStorageLane) {
                     val kept = JSONArray(inbox.state(identity, "mappings") ?: "[]")
@@ -387,7 +434,14 @@ internal fun bankTextsCardProblem(apply: JSONObject, budget: JSONObject?): Int? 
     fun open(id: String) = budget?.row("accounts", id)?.optBoolean("archived") == false
     return when (apply.optString("action")) {
         "enter" -> R.string.bank_texts_unknown_account.takeIf {
-            apply.rows("entries").map(BankTextEntry::carded).any { e -> !open(e.accountId) || e.transferAccountId?.let(::open) == false }
+            apply.rows("entries").map(BankTextEntry::carded).any { e ->
+                !open(e.accountId) || e.transferAccountId?.let(::open) == false || e.parts.any { it.transferAccountId?.let(::open) == false }
+            }
+        }
+        "change" -> R.string.bank_texts_unknown_account.takeIf {
+            apply.rows("rows").map(BankTextChange::of).any { c ->
+                c.accountId?.let(::open) == false || c.transferAccountId?.let(::open) == false || c.parts.orEmpty().any { it.transferAccountId?.let(::open) == false }
+            }
         }
         "remember" -> R.string.bank_texts_unknown_account.takeIf { account == null || account.optBoolean("archived") }
         "limit" -> when {
@@ -430,11 +484,14 @@ internal fun bankTextsOfCard(apply: JSONObject, cached: (String) -> BankSms?, re
  * what the assistant said: a transaction's id, "new", or nothing.
  */
 internal data class BankTextEntry(val textIds: List<String>, val accountId: String, val date: String, val cents: Long, val payee: String, val kind: String,
-                                  val categoryId: String? = null, val transferAccountId: String? = null, val memo: String = "", val match: String? = null) {
+                                  val categoryId: String? = null, val transferAccountId: String? = null, val memo: String = "", val match: String? = null,
+                                  /** The amount in parts, when the text is money of two kinds: they add up to [cents], signed as it is. */
+                                  val parts: List<BankTextPart> = emptyList()) {
     /** As a card keeps it. */
     fun card(): JSONObject = JSONObject().put("textIds", JSONArray(textIds)).put("accountId", accountId).put("date", date).put("cents", cents).put("payee", payee)
         .put("kind", kind).put("memo", memo).apply {
             categoryId?.let { put("categoryId", it) }; transferAccountId?.let { put("transferAccountId", it) }; match?.let { put("match", it) }
+            if (parts.isNotEmpty()) put("parts", JSONArray(parts.map { it.json() }))
         }
 
     companion object {
@@ -448,13 +505,56 @@ internal data class BankTextEntry(val textIds: List<String>, val accountId: Stri
             val written = if (json.isNull("amount")) 0L else (json.getDouble("amount") * 100).roundToLong()
             val cents = when (kind) { "expense" -> -abs(written); "income", "refund" -> abs(written); else -> written }
             return BankTextEntry(ids(json), words(json, "accountId"), words(json, "date"), cents, words(json, "payee"), kind,
-                optional(json, "categoryId"), optional(json, "transferAccountId"), words(json, "memo"), optional(json, "match"))
+                optional(json, "categoryId"), optional(json, "transferAccountId"), words(json, "memo"), optional(json, "match"),
+                bankTextParts(json.rows("parts").map(BankTextPart::asked), cents))
         }
 
         /** As a card kept it. */
         fun carded(json: JSONObject): BankTextEntry = BankTextEntry(ids(json), words(json, "accountId"), words(json, "date"), json.optLong("cents"), words(json, "payee"),
-            words(json, "kind"), optional(json, "categoryId"), optional(json, "transferAccountId"), words(json, "memo"), optional(json, "match"))
+            words(json, "kind"), optional(json, "categoryId"), optional(json, "transferAccountId"), words(json, "memo"), optional(json, "match"),
+            json.rows("parts").map(BankTextPart::carded))
     }
+}
+
+/**
+ * One part of a text that is money of two kinds (a deposit paid back with its profit, a loan
+ * payment with its interest): its share in [cents], and where it belongs: a transfer with
+ * [transferAccountId], spending in [categoryId], or neither, which is income when money came in.
+ */
+internal data class BankTextPart(val cents: Long, val categoryId: String? = null, val transferAccountId: String? = null, val memo: String = "") {
+    /** As a card keeps it. */
+    fun json(): JSONObject = JSONObject().put("cents", cents).put("memo", memo).apply { categoryId?.let { put("categoryId", it) }; transferAccountId?.let { put("transferAccountId", it) } }
+
+    /** As the review keeps a line of a row in parts (the core's `SplitLine`): money in that's neither a transfer nor in a category is Ready to Assign. */
+    fun line(): JSONObject = JSONObject().put("amount", smsDecimal(cents)).put("categoryId", categoryId ?: JSONObject.NULL).put("memo", memo)
+        .put("unassigned", cents > 0 && categoryId == null && transferAccountId == null).apply { transferAccountId?.let { put("transferAccountId", it) } }
+
+    companion object {
+        private fun optional(json: JSONObject, name: String) = if (json.isNull(name)) null else json.optString(name).trim().ifEmpty { null }
+        /** As the assistant asks for it: its amount a number, signed with the whole by [bankTextParts]. */
+        fun asked(json: JSONObject): BankTextPart = BankTextPart(if (json.isNull("amount")) 0L else (json.getDouble("amount") * 100).roundToLong(),
+            optional(json, "categoryId"), optional(json, "transferAccountId"), if (json.isNull("memo")) "" else json.optString("memo").trim().take(200))
+        fun carded(json: JSONObject): BankTextPart = BankTextPart(json.optLong("cents"), optional(json, "categoryId"), optional(json, "transferAccountId"), json.optString("memo"))
+    }
+}
+
+/** The parts signed as the [whole] they're parts of: money out is negative however each was written. */
+internal fun bankTextParts(parts: List<BankTextPart>, whole: Long): List<BankTextPart> = parts.map { it.copy(cents = if (whole < 0) -abs(it.cents) else abs(it.cents)) }
+
+/**
+ * Why these parts can't be a row's, said to the assistant; none when they can. They are two to
+ * twenty, add up to the [whole] amount, and aren't for a plain transfer; a part that is a transfer
+ * names another open account than the row's [account] and has no category; one part at least isn't a transfer.
+ */
+internal fun bankTextPartsProblem(parts: List<BankTextPart>, whole: Long, kind: String, account: String, open: (String) -> Boolean): String? = when {
+    kind == "transfer" -> "with parts, kind is income or expense for the whole amount, and the transfer is one of the parts."
+    parts.size !in 2..20 -> "give 2 to 20 parts."
+    parts.any { it.cents == 0L } -> "a part's amount can't be zero."
+    parts.sumOf { it.cents } != whole -> "the parts add up to ${smsDecimal(parts.sumOf { it.cents })}, not the text's ${smsDecimal(whole)}."
+    parts.any { p -> p.transferAccountId != null && (p.categoryId != null || p.transferAccountId == account || !open(p.transferAccountId)) } ->
+        "a part that is a transfer needs transferAccountId, another open account than the row's own, and no categoryId."
+    parts.all { it.transferAccountId != null } -> "at least one part isn't a transfer. For a plain transfer, use kind transfer with transferAccountId."
+    else -> null
 }
 
 /**
@@ -477,7 +577,10 @@ internal fun bankTextEntriesProblem(entries: List<BankTextEntry>, texts: Map<Str
             !open(e.accountId) -> return "$named: accountId isn't an open account of this budget."
             e.kind == "transfer" && (e.transferAccountId == null || e.transferAccountId == e.accountId || !open(e.transferAccountId)) ->
                 return "$named: a transfer needs transferAccountId, another open account."
-            e.kind != "transfer" && e.transferAccountId != null -> return "$named: only a transfer has transferAccountId."
+            e.kind != "transfer" && e.transferAccountId != null -> return "$named: only a transfer has transferAccountId. For money of two kinds, give parts."
+            e.parts.isNotEmpty() && e.categoryId != null -> return "$named: with parts, leave categoryId out: each part has its own."
+            e.parts.isNotEmpty() && bankTextPartsProblem(e.parts, e.cents, e.kind, e.accountId, ::open) != null ->
+                return "$named: " + bankTextPartsProblem(e.parts, e.cents, e.kind, e.accountId, ::open)
             e.cents == 0L || e.textIds.none { abs(e.cents) in smsWrittenAmounts(texts[it]?.body.orEmpty()) } ->
                 return "$named: the amount isn't a number its text gives. Copy it from the text. For a purchase in another currency that the text doesn't convert, add the text to the review instead (action add)."
         }
@@ -503,7 +606,8 @@ internal fun bankTextsReading(entries: List<BankTextEntry>, texts: Map<String, B
             .put("evidence", JSONArray().put(JSONObject().put("sourceId", first.id).put("quote", bankTextQuote(first.body))))
             .put("transaction", JSONObject().put("date", e.date).put("amount", smsDecimal(e.cents)).put("currency", currency).put("writtenAmount", smsDecimal(abs(e.cents)))
                 .put("payee", e.payee).put("memo", e.memo).put("kind", e.kind).put("accountRef", JSONObject.NULL).put("otherRef", JSONObject.NULL)
-                .put("categoryId", e.categoryId ?: JSONObject.NULL).put("accountId", e.accountId).put("transferAccountId", e.transferAccountId ?: JSONObject.NULL))
+                .put("categoryId", e.categoryId ?: JSONObject.NULL).put("accountId", e.accountId).put("transferAccountId", e.transferAccountId ?: JSONObject.NULL)
+                .apply { if (e.parts.isNotEmpty()) put("splits", JSONArray(e.parts.map { it.line() })) })
             .put("unsure", JSONArray())
     }
     return SmsBatch(entries.flatMap { it.textIds }.map(texts::getValue), JSONObject().put("items", JSONArray(items)))
@@ -561,3 +665,148 @@ internal fun bankTextOutcomes(entries: List<BankTextEntry>, texts: Map<String, B
         decision?.takeIf { it.startsWith("match:") }?.let { outcome.put("transactionId", it.removePrefix("match:")) }
         e.textIds.map { it to outcome }
     }.toMap()
+
+/** How many of the review's rows the assistant is given at once; the rest are counted. */
+internal const val BankTextsRowsListed = 60
+
+/**
+ * The open review's rows for the assistant, as Bank messages shows them: those that need
+ * something, those ready to add (and the ones that [asks] may already be in the budget), then
+ * holds. Each is named by the text it was read from ([BankTextChange.textId]) and carries its
+ * text, what it was read as, and whether it's ticked to add. Rows already in the budget and
+ * texts that aren't transactions are left out: there's nothing of them to correct.
+ */
+internal fun bankTextsReviewRows(batch: SmsBatch, sorted: SmsSorted, asks: Set<Int>, budget: JSONObject): List<JSONObject> {
+    val accounts = budget.rows("accounts").associate { it.text("id") to it.text("name") }
+    val categories = budget.rows("categories").associate { it.text("id") to it.text("name") }
+    fun named(id: String, names: Map<String, String>) = id.ifBlank { null }?.let { JSONObject().put("id", it).put("name", names[it].orEmpty()) }
+    fun row(item: SmsItem, status: String): JSONObject {
+        val first = item.sources.first()
+        val row = JSONObject().put("textId", first.id).put("status", status).put("sender", first.sender).put("received", "${first.receivedDate} ${first.receivedTime}")
+            .put("text", item.sources.joinToString("\n") { it.body }.take(800)).put("note", item.note).put("tickedToAdd", item.tickedIn(batch))
+        val t = item.transaction ?: return row
+        row.put("date", t.text("date")).put("amount", t.text("amount").ifBlank { null } ?: JSONObject.NULL).put("kind", t.text("kind")).put("payee", t.text("payee"))
+        named(t.text("accountId"), accounts)?.let { row.put("account", it) }
+        named(t.text("transferAccountId"), accounts)?.let { row.put("otherAccount", it) }
+        named(t.text("categoryId"), categories)?.let { row.put("category", it) }
+        if (t.text("currency") != budget.text("currency")) row.put("written", t.text("currency") + " " + t.text("writtenAmount"))
+        if (item.splits.isNotEmpty()) row.put("parts", JSONArray(item.splits.map { line ->
+            JSONObject().put("amount", line.text("amount")).put("memo", line.text("memo")).apply {
+                named(line.text("transferAccountId"), accounts)?.let { put("transferWith", it) }
+                named(line.text("categoryId"), categories)?.let { put("category", it) }
+            }
+        }))
+        if (item.unsure.isNotEmpty()) row.put("toCheck", JSONArray(item.unsure.toList()))
+        return row
+    }
+    return sorted.waiting.map { item ->
+        row(item, when { item.disposition == "unclear" -> "not read as one transaction"; item.needs == "account" -> "needs its account"
+            item.needs == "transfer" -> "needs the other account of its transfer"; else -> "needs its amount in the budget's currency" })
+    } + sorted.ready.map { row(it, if (it.index in asks) "may already be in the budget" else "ready to add") } + sorted.holds.map { row(it, "a hold, not yet settled") }
+}
+
+/**
+ * A row of the open review to change, as the assistant asks and as its card keeps it: the row is
+ * the one read from [textId]. What's left out stays as it is. [parts] puts the amount in parts
+ * (written unsigned or signed; they take the row's sign); [add] ticks the row to add, or unticks it.
+ */
+internal data class BankTextChange(val textId: String, val kind: String? = null, val payee: String? = null, val date: String? = null, val memo: String? = null,
+                                   val categoryId: String? = null, val accountId: String? = null, val transferAccountId: String? = null,
+                                   val parts: List<BankTextPart>? = null, val add: Boolean? = null) {
+    fun json(): JSONObject = JSONObject().put("textId", textId).apply {
+        kind?.let { put("kind", it) }; payee?.let { put("payee", it) }; date?.let { put("date", it) }; memo?.let { put("memo", it) }
+        categoryId?.let { put("categoryId", it) }; accountId?.let { put("accountId", it) }; transferAccountId?.let { put("transferAccountId", it) }
+        parts?.let { list -> put("parts", JSONArray(list.map { JSONObject().put("amount", it.cents / 100.0).put("memo", it.memo).apply {
+            it.categoryId?.let { id -> put("categoryId", id) }; it.transferAccountId?.let { id -> put("transferAccountId", id) } } })) }
+        add?.let { put("add", it) }
+    }
+
+    companion object {
+        private fun optional(json: JSONObject, name: String) = if (json.isNull(name)) null else json.optString(name).trim().ifEmpty { null }
+        fun of(json: JSONObject): BankTextChange = BankTextChange(json.optString("textId").trim(), optional(json, "kind"), optional(json, "payee")?.take(500), optional(json, "date"),
+            if (json.has("memo") && !json.isNull("memo")) json.optString("memo").trim().take(2000) else null, optional(json, "categoryId"), optional(json, "accountId"),
+            optional(json, "transferAccountId"), json.rows("parts").map(BankTextPart::asked).takeIf { it.isNotEmpty() },
+            if (json.has("add") && !json.isNull("add")) json.optBoolean("add") else null)
+    }
+}
+
+/**
+ * The review with these rows changed, and each change's row by its place. A row is changed as
+ * the user's own editor would leave it: a transfer has its other account and no category or
+ * parts; anything else has no other account, and its category or its parts. What can't be is
+ * said to the assistant (an `IllegalArgumentException`): a text the review has no row for, a row
+ * that isn't read as money, a kind the amount's direction doesn't allow, an account that isn't open.
+ */
+internal fun bankTextsChange(batch: SmsBatch, budget: JSONObject, changes: List<BankTextChange>): Pair<SmsBatch, List<Int>> {
+    fun open(id: String) = budget.row("accounts", id)?.optBoolean("archived") == false
+    val rows = batch.analysis.rows("items")
+    var edited = batch
+    val touched = mutableListOf<Int>()
+    changes.forEach { c ->
+        val index = rows.indexOfFirst { item -> item.optJSONArray("sourceIds")?.let { ids -> (0 until ids.length()).any { ids.getString(it) == c.textId } } == true }
+        require(index >= 0) { "The review has no row read from ${c.textId}. get_bank_texts with review: true lists its rows." }
+        require(index !in touched) { "Give each row once, with all its changes." }
+        requireNotNull(rows[index].optJSONObject("transaction")) { "The row read from ${c.textId} isn't read as a transaction, so there's nothing of it to change here. The user can enter it in Bank messages." }
+        edited = edited.edit(index) { json ->
+            val t = json.getJSONObject("transaction")
+            c.date?.let { day -> require(runCatching { LocalDate.parse(day) }.isSuccess) { "Write the date as YYYY-MM-DD." }; t.put("date", day) }
+            c.payee?.let { t.put("payee", it) }
+            c.memo?.let { t.put("memo", it) }
+            c.accountId?.let { id -> require(open(id)) { "accountId $id isn't an open account of this budget." }; t.put("accountId", id) }
+            val cents = smsCents(t.text("amount"))
+            val kind = c.kind ?: t.text("kind")
+            require(kind in setOf("expense", "income", "refund", "transfer")) { "kind is expense, income, refund or transfer." }
+            require(cents == null || kind == "transfer" || (kind == "expense") == (cents < 0)) {
+                "The text's amount is ${smsDecimal(cents ?: 0)}: money ${if ((cents ?: 0) < 0) "out is an expense" else "in is income or a refund"}, or a transfer."
+            }
+            t.put("kind", kind)
+            val account = t.text("accountId")
+            if (kind == "transfer") {
+                require(c.parts == null && c.categoryId == null) { "A transfer has no category and no parts. For money of two kinds, make the row income or an expense, with the transfer as one of its parts." }
+                c.transferAccountId?.let { id -> require(open(id) && id != account) { "transferAccountId $id isn't another open account of this budget." }; t.put("transferAccountId", id) }
+                t.put("categoryId", JSONObject.NULL)
+                t.remove("splits")
+            } else {
+                require(c.transferAccountId == null) { "Only a transfer has transferAccountId. For money of two kinds, give parts, the transfer as one of them." }
+                t.put("transferAccountId", JSONObject.NULL).put("otherAccount", JSONObject.NULL)
+                val parts = c.parts?.let { list ->
+                    requireNotNull(cents) { "The row's amount in the budget's currency isn't known yet, so it can't be put in parts." }
+                    bankTextParts(list, cents).also { signed -> bankTextPartsProblem(signed, cents, kind, account, ::open)?.let { throw IllegalArgumentException("${c.textId}: $it") } }
+                }
+                when {
+                    parts != null -> t.put("splits", JSONArray(parts.map { it.line() })).put("categoryId", JSONObject.NULL)
+                    c.categoryId != null -> { t.put("categoryId", c.categoryId); t.remove("splits") }
+                    // What it was is no longer a transfer: a category read for it before stays.
+                    else -> {}
+                }
+            }
+            // The assistant read it again with the user's words: nothing of it is marked to check.
+            json.put("unsure", JSONArray())
+        }
+        c.add?.let { on -> edited = edited.copy(ticked = edited.ticked + (index to on), dismissed = if (on) edited.dismissed - index else edited.dismissed) }
+        touched += index
+    }
+    return edited to touched
+}
+
+/**
+ * A changed row as its card says it: who and when, then what it is now (its account; a transfer's
+ * other account, its category, or each of its parts with its share; "Won't be added" when it was
+ * unticked), and its amount.
+ */
+internal fun bankTextsChangeRow(item: SmsItem, change: BankTextChange, names: SmsRowNames): Triple<String, String, Long?> {
+    val t = item.transaction ?: JSONObject()
+    fun moved(id: String) = Words[R.string.transfer_to_account, names.accounts[id].orEmpty()]
+    val what = when {
+        item.splits.isNotEmpty() -> item.splits.map { line ->
+            val share = Money.format(abs(smsCents(line.text("amount")) ?: 0L), names.currency)
+            val where = line.text("transferAccountId").ifBlank { null }?.let(::moved) ?: line.text("categoryId").ifBlank { null }?.let { names.categories[it] }
+                ?: Words[if (line.optBoolean("unassigned")) R.string.category_unassigned else R.string.sms_uncategorized]
+            "$where $share"
+        }
+        t.text("kind") == "transfer" -> listOfNotNull(t.text("transferAccountId").ifBlank { null }?.let(::moved) ?: Words[R.string.transfer_label])
+        else -> listOf(t.text("categoryId").ifBlank { null }?.let { names.categories[it] } ?: Words[R.string.sms_uncategorized])
+    }
+    val detail = listOfNotNull(names.accounts[t.text("accountId")]) + what + listOfNotNull(Words[R.string.sms_wont_add].takeIf { change.add == false })
+    return Triple(Money.joined(listOf(t.text("payee"), Money.date(t.text("date")))), Money.joined(detail), item.amount)
+}

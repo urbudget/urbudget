@@ -710,8 +710,12 @@ enum AssistantCardAction: String, Equatable, Sendable {
 enum AssistantCard {
     /// The kinds of card this version draws in full. Any other is drawn plainly, with a line
     /// saying an update is needed.
-    static let kinds: Set<String> = ["budget", "transactions", "payees", "notes", "categories", "schedules", "delete", "fix", "bankTexts",
-                                     "report", "spreadsheet", "import", "figures", "question"]
+    static let kinds: Set<String> = ["budget", "transactions", "payees", "accounts", "notes", "categories", "schedules", "delete", "fix", "bankTexts",
+                                     "report", "spreadsheet", "import", "figures", "show", "question"]
+
+    /// Whether the card's Show leads to a page of the app, not to categories or transactions in
+    /// the budget: its button says so.
+    static func showsPage(_ proposal: JSON) -> Bool { !proposal["card"]["highlight"].text("page").isEmpty }
 
     static func known(_ proposal: JSON) -> Bool { kinds.contains(proposal.text("kind")) }
 

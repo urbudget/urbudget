@@ -1595,6 +1595,31 @@ it("goes to what a card names in the budget", async () => {
   expect(handlers.onShow).toHaveBeenCalledWith(proposal.card.highlight);
 });
 
+/** A pointer to a place in the app, as the core makes it for `show_in_app`. */
+const pointer: Proposal = {
+  ...proposal,
+  id: "p_show",
+  title: "Dining out in October",
+  kind: "show",
+  made: true,
+  actions: ["show", "remove"],
+  card: { kicker: "In the app", rows: [], stats: [], more: 0, note: "October 2026 · Dining out", highlight: { month: "2026-10", categories: ["dining"], transactions: [], page: "budget" } },
+};
+
+it("goes where the assistant points as its card arrives, and again from the card; one from an earlier reply only waits", async () => {
+  // Opened from history, the card is there to press: nothing moves by itself.
+  const { handlers } = await withCard(pointer);
+  expect(handlers.onShow).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Show in the app" }));
+  expect(handlers.onShow).toHaveBeenCalledWith(pointer.card.highlight);
+  // Arriving in a reply, the window goes there at once, beside the conversation.
+  const arriving: Proposal = { ...pointer, id: "p_show2", title: "The Everyday account", card: { ...pointer.card, highlight: { categories: [], transactions: [], page: "transactions", account: "everyday" } } };
+  act(() => emit({ threadId: "t_9", type: "proposal", proposal: arriving }));
+  expect(handlers.onShow).toHaveBeenLastCalledWith(arriving.card.highlight);
+  expect(handlers.onShow).toHaveBeenCalledTimes(2);
+  expect(await screen.findByLabelText("Proposal: The Everyday account")).toBeTruthy();
+});
+
 const question: Proposal = {
   id: "p_q",
   title: "Which account did you pay from?",

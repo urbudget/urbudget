@@ -44,6 +44,7 @@ import app.urbudget.nativeapp.AccountTypes
 import app.urbudget.nativeapp.AssistantController
 import app.urbudget.nativeapp.AssistantPlace
 import app.urbudget.nativeapp.AssistantShow
+import app.urbudget.nativeapp.assistantMorePage
 import app.urbudget.nativeapp.AssistantStart
 import app.urbudget.nativeapp.BudgetViewModel
 import app.urbudget.nativeapp.CardDone
@@ -305,16 +306,31 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
         }
     }
     /**
-     * Goes to what an assistant's card names: the register with its transactions selected, or
-     * the Budget tab on its month with its categories marked. Over the app the panel gives way;
-     * beside it both stay in view.
+     * Goes to what an assistant's card names: the register with its transactions selected, the
+     * Budget tab on its month with its categories marked, or a page of the app (an account's
+     * transactions, a tab, a page under More). Over the app the panel gives way; beside it both
+     * stay in view.
      */
     fun show(target: AssistantShow) {
         leaveForm {
+            val from = tab
             morePage = ""; parentPage = ""; accountFilter = ""; categoryFilter = ""; rangeFrom = ""; rangeThrough = ""; rangeSearch = ""; returnTab = -1
             dockHidden = false; addExpanded = true
-            if (target.transactions.isNotEmpty()) tab = 1
-            else { target.month?.takeIf { it != state.month }?.let(vm::selectMonth); tab = 0 }
+            val more = assistantMorePage(target.page)
+            when {
+                target.transactions.isNotEmpty() -> tab = 1
+                more != null -> { if (from != 4) lastTab = from; tab = 4; morePage = more }
+                // An account's own transactions, as tapping it on Accounts opens them.
+                target.page == "transactions" -> {
+                    accountFilter = target.account?.takeIf { id -> state.budget?.row("accounts", id) != null }.orEmpty()
+                    if (accountFilter.isNotEmpty()) returnTab = 2
+                    tab = 1
+                }
+                // Loans are on their accounts here.
+                target.page == "accounts" || target.page == "loans" -> tab = 2
+                target.page == "reports" -> tab = 3
+                else -> { target.month?.takeIf { it != state.month }?.let(vm::selectMonth); tab = 0 }
+            }
             showing = Showing((showing?.key ?: 0) + 1, target)
             if (!assistantBeside) assistant = false
         }

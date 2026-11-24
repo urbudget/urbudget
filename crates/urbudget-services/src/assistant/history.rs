@@ -265,7 +265,8 @@ pub struct ProposalView<'a> {
 ///   spreadsheet; "reviewImport" and "saveCsv" for a converted file; "remove" for each, and for
 ///   figures.
 /// - A question: "answer", until the user's next message.
-/// - "show", where the card names categories or transactions the app can go to.
+/// - "show", where the card names categories, transactions or a page the app can go to. It's a
+///   `show` card's main action: going there is all that card does.
 fn actions(p: &Proposal, sheets: usize) -> Vec<&'static str> {
     use Status::*;
     let mut actions: Vec<&'static str> = match (p.kind.as_str(), p.status) {
@@ -275,7 +276,7 @@ fn actions(p: &Proposal, sheets: usize) -> Vec<&'static str> {
         ("spreadsheet", _) => vec!["open", "save", "remove"],
         ("import", Applied) => vec!["saveCsv"],
         ("import", _) => vec!["reviewImport", "saveCsv", "remove"],
-        ("figures", _) => vec!["remove"],
+        ("figures" | "show", _) => vec!["remove"],
         ("question", Proposed) => vec!["answer"],
         ("question", _) => vec![],
         (_, Failed) => vec!["askAgain", "discard"],
@@ -296,7 +297,13 @@ fn actions(p: &Proposal, sheets: usize) -> Vec<&'static str> {
         _ => true,
     };
     let names = !p.card.highlight.categories.is_empty() || !p.card.highlight.transactions.is_empty();
-    if names && there && (p.change.is_some() || p.kind == "figures") && matches!(p.status, Proposed | Undone | Applied) {
+    // A card that points to a place leads there first; one for a change to a page's own things
+    // (accounts, schedules, payee rules) leads to that page.
+    if p.kind == "show" {
+        if !matches!(p.status, Discarded | Replaced) {
+            actions.insert(0, "show");
+        }
+    } else if (names || p.card.highlight.page.is_some()) && there && (p.change.is_some() || p.kind == "figures") && matches!(p.status, Proposed | Undone | Applied) {
         actions.push("show");
     }
     actions

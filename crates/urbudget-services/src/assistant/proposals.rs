@@ -90,6 +90,9 @@ pub enum CategoryOp {
     /// A target: "setAside" or "refill" each month, a "balance" to keep, or a balance "byDate"
     /// (`by`). No `amount` removes it. `since` is the month it's set in, YYYY-MM.
     Target { id: String, amount: Option<i64>, kind: String, by: Option<String>, since: String },
+    /// Deleted: its transactions, assigned money, schedules and rules go to `replacement`, or to
+    /// Ready to Assign with none.
+    Delete { id: String, replacement: Option<String> },
 }
 
 /// One change to the scheduled transactions.
@@ -118,6 +121,89 @@ pub enum ScheduleOp {
     Enter { id: String },
     /// Passes over the one that's due next.
     Skip { id: String },
+    /// Deleted: what it already entered stays.
+    Delete { id: String },
+}
+
+/// One change to the accounts.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "op", rename_all = "camelCase")]
+pub enum AccountOp {
+    /// A new account. Its id, and its payment category's when it's a card, are chosen when it's
+    /// proposed, so applying later makes the records the card showed.
+    #[serde(rename_all = "camelCase")]
+    Add {
+        id: String,
+        payment_category: String,
+        name: String,
+        account_type: String,
+        /// Its balance before any transaction, negative when owed.
+        opening_balance: i64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        credit_limit: Option<i64>,
+        #[serde(default)]
+        note: String,
+    },
+    Rename { id: String, name: String },
+    /// Another type of the same kind: a checking account can become savings, never a card.
+    #[serde(rename_all = "camelCase")]
+    Type { id: String, account_type: String },
+    Close { id: String, closed: bool },
+    /// A card's credit limit; none removes it.
+    Limit { id: String, limit: Option<i64> },
+    /// The balance it started with.
+    Opening { id: String, amount: i64 },
+}
+
+/// The account types the apps offer, each with the kind it makes an account (`accounts.ts`).
+pub const ACCOUNT_TYPES: [(&str, AccountKind); 17] = [
+    ("checking", AccountKind::Cash),
+    ("savings", AccountKind::Cash),
+    ("cash", AccountKind::Cash),
+    ("creditCard", AccountKind::Credit),
+    ("lineOfCredit", AccountKind::Credit),
+    ("investment", AccountKind::Tracking),
+    ("retirement", AccountKind::Tracking),
+    ("property", AccountKind::Tracking),
+    ("vehicle", AccountKind::Tracking),
+    ("receivable", AccountKind::Tracking),
+    ("otherAsset", AccountKind::Tracking),
+    ("mortgage", AccountKind::Tracking),
+    ("autoLoan", AccountKind::Tracking),
+    ("studentLoan", AccountKind::Tracking),
+    ("personalLoan", AccountKind::Tracking),
+    ("medicalDebt", AccountKind::Tracking),
+    ("otherDebt", AccountKind::Tracking),
+];
+/// The kind an account of this type is; none for a type the apps don't have.
+pub fn kind_of(account_type: &str) -> Option<AccountKind> {
+    ACCOUNT_TYPES.iter().find(|(key, _)| *key == account_type).map(|(_, kind)| *kind)
+}
+/// An account type as a card names it, in a card's small words.
+pub fn type_label(account_type: &str) -> String {
+    match account_type {
+        "checking" => t!("checking account"),
+        "savings" => t!("savings account"),
+        "cash" => t!("cash account"),
+        "creditCard" => t!("credit card"),
+        "lineOfCredit" => t!("line of credit"),
+        "investment" => t!("investment account"),
+        "retirement" => t!("retirement account"),
+        "property" => t!("property"),
+        "vehicle" => t!("vehicle"),
+        "receivable" => t!("money owed to you"),
+        "otherAsset" => t!("other asset"),
+        "mortgage" => t!("mortgage"),
+        "autoLoan" => t!("auto loan"),
+        "studentLoan" => t!("student loan"),
+        "personalLoan" => t!("personal loan"),
+        "medicalDebt" => t!("medical debt"),
+        "otherDebt" => t!("other debt"),
+        other => other.to_owned(),
+    }
+}
+fn account_mut<'a>(b: &'a mut Budget, id: &str) -> Result<&'a mut Account, String> {
+    b.accounts.iter_mut().find(|a| a.id == id).ok_or_else(|| t!("An account in this proposal is gone."))
 }
 
 /// How often a schedule repeats, as a card says it.
@@ -195,14 +281,22 @@ pub enum Change {
     Edits { edits: Vec<Edit>, rules: Vec<Rule> },
     #[serde(rename_all = "camelCase")]
     Add { account: String, transactions: Vec<NewTransaction>, from_file: bool },
-    Payees { renames: Vec<Rename>, rules: Vec<Rule> },
+    /// Payees renamed or merged, rules added, and rules removed by id (`removed`).
+    Payees {
+        renames: Vec<Rename>,
+        rules: Vec<Rule>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        removed: Vec<String>,
+    },
+    /// Accounts: added, renamed, retyped, closed or opened again, and a card's limit.
+    Accounts { ops: Vec<AccountOp> },
     /// Notes the assistant keeps for the budget (`notes`): ones to keep and ones to forget.
     Notes { add: Vec<String>, remove: Vec<String> },
     /// Categories and their groups: added, renamed, moved, hidden, and their targets.
     Categories { ops: Vec<CategoryOp> },
     /// Scheduled transactions: added, changed, paused, entered or skipped.
     Schedules { ops: Vec<ScheduleOp> },
-    /// Transactions the user attached to their message, deleted.
+    /// Transactions the user asked to delete.
     Delete { ids: Vec<String> },
     /// Money moved into or out of an investment account, as its broker listed it
     /// (`investments::pending`), brought into the budget.
@@ -425,6 +519,13 @@ pub struct Highlight {
     pub categories: Vec<String>,
     #[serde(default)]
     pub transactions: Vec<String>,
+    /// A page of the app to open, by the key the apps tell the assistant where they are with
+    /// (`prompt::PAGES`): what a `show` card leads to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page: Option<String>,
+    /// The account whose register to open, or whose row to mark on Accounts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -454,7 +555,9 @@ pub struct Card {
 pub struct Proposal {
     pub id: String,
     pub title: String,
-    /// "budget", "transactions", "payees", "import", "report", "spreadsheet", "fix" or "bankTexts".
+    /// "budget", "transactions", "payees", "accounts", "categories", "schedules", "notes",
+    /// "delete", "import", "report", "spreadsheet", "figures", "question", "show", "fix" or
+    /// "bankTexts".
     pub kind: String,
     pub status: Status,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -504,7 +607,7 @@ impl Proposal {
     /// A report, a spreadsheet or a converted file: something the assistant made, to open and
     /// save, not a change to apply.
     pub fn made(&self) -> bool {
-        matches!(self.kind.as_str(), "report" | "spreadsheet" | "import" | "figures")
+        matches!(self.kind.as_str(), "report" | "spreadsheet" | "import" | "figures" | "show")
     }
     /// Waiting on the user, and a change to the budget: what's kept up to date with it.
     pub fn waiting_change(&self) -> bool {
@@ -584,6 +687,7 @@ impl Change {
             Change::Moves { .. } | Change::AutoAssign { .. } => "budget",
             Change::Edits { .. } | Change::Add { .. } => "transactions",
             Change::Payees { .. } => "payees",
+            Change::Accounts { .. } => "accounts",
             Change::Notes { .. } => "notes",
             Change::Categories { .. } => "categories",
             Change::Schedules { .. } => "schedules",
@@ -732,11 +836,79 @@ impl Change {
                 }
                 loans::apply_new_payments(&mut b, &ids)?;
             }
-            Change::Payees { renames, rules } => {
+            Change::Payees { renames, rules, removed } => {
                 for r in renames {
                     b = workflows::apply(b, &json!({ "type": "renamePayee", "from": r.from, "to": r.to }))?;
                 }
+                if !removed.is_empty() {
+                    let list = b.extra.get_mut("payeeRules").and_then(Value::as_array_mut).ok_or_else(|| t!("A payee rule in this proposal is gone."))?;
+                    for id in removed {
+                        let at = list.iter().position(|r| r["id"] == json!(id)).ok_or_else(|| t!("A payee rule in this proposal is gone."))?;
+                        list.remove(at);
+                    }
+                }
                 add_rules(&mut b, rules);
+            }
+            Change::Accounts { ops } => {
+                for op in ops {
+                    match op {
+                        AccountOp::Add { id, payment_category, name, account_type, opening_balance, credit_limit, note } => {
+                            let kind = kind_of(account_type).ok_or_else(|| t!("Choose an account type."))?;
+                            if b.accounts.iter().any(|a| !a.archived && a.name.to_lowercase() == name.to_lowercase()) {
+                                return Err(t!("You already have an account named {name}.", name));
+                            }
+                            let card = kind == AccountKind::Credit;
+                            let mut extra = serde_json::Map::from_iter([
+                                ("accountType".to_owned(), json!(account_type)),
+                                ("netWorth".to_owned(), json!(true)),
+                                ("onBudget".to_owned(), json!(kind != AccountKind::Tracking)),
+                            ]);
+                            if !note.is_empty() {
+                                extra.insert("note".into(), json!(note));
+                            }
+                            if let Some(limit) = credit_limit.filter(|limit| card && *limit > 0) {
+                                extra.insert("creditLimit".into(), json!(limit));
+                            }
+                            b.accounts.push(Account { extra, id: id.clone(), name: name.clone(), kind, opening_balance: *opening_balance, archived: false });
+                            // A card's payment category, named after the card, as the apps' own account form makes it.
+                            if card {
+                                b.categories.push(Category {
+                                    extra: serde_json::Map::from_iter([("paymentAccountId".to_owned(), json!(id))]),
+                                    id: payment_category.clone(),
+                                    name: name.clone(),
+                                    group: urbudget_core::setup::CARD_PAYMENTS.to_owned(),
+                                    target: 0,
+                                });
+                            }
+                        }
+                        AccountOp::Rename { id, name } => {
+                            account_mut(&mut b, id)?.name = name.clone();
+                            // A card's payment category follows the card's name.
+                            if let Some(payment) = b.categories.iter_mut().find(|c| c.payment_account() == Some(id.as_str())) {
+                                payment.name = name.clone();
+                            }
+                        }
+                        AccountOp::Type { id, account_type } => {
+                            let a = account_mut(&mut b, id)?;
+                            if kind_of(account_type) != Some(a.kind) {
+                                return Err(t!("Create a new account to change how {name} affects your budget.", name = a.name));
+                            }
+                            a.extra.insert("accountType".into(), json!(account_type));
+                        }
+                        AccountOp::Close { id, closed } => account_mut(&mut b, id)?.archived = *closed,
+                        AccountOp::Limit { id, limit } => {
+                            let a = account_mut(&mut b, id)?;
+                            if a.kind != AccountKind::Credit {
+                                return Err(t!("{name} isn't a credit account, so it has no credit limit.", name = a.name));
+                            }
+                            match limit.filter(|limit| *limit > 0) {
+                                Some(limit) => a.extra.insert("creditLimit".into(), json!(limit)),
+                                None => a.extra.remove("creditLimit"),
+                            };
+                        }
+                        AccountOp::Opening { id, amount } => account_mut(&mut b, id)?.opening_balance = *amount,
+                    }
+                }
             }
             Change::Categories { ops } => {
                 for op in ops {
@@ -766,6 +938,10 @@ impl Change {
                                 return Err(t!("A group in this proposal is gone."));
                             }
                             b = workflows::apply(b, &json!({ "type": "renameGroup", "from": from, "to": to }))?;
+                        }
+                        CategoryOp::Delete { id, replacement } => {
+                            category_mut(&mut b, id)?;
+                            b = workflows::apply(b, &json!({ "type": "deleteCategory", "id": id, "replacement": replacement.as_deref().unwrap_or("__rta") }))?;
                         }
                         CategoryOp::Target { id, amount, kind, by, since } => {
                             let c = category_mut(&mut b, id)?;
@@ -851,6 +1027,12 @@ impl Change {
                             }
                         }
                         ScheduleOp::Pause { id, paused } => schedule_mut(&mut b, id)?["paused"] = json!(paused),
+                        ScheduleOp::Delete { id } => {
+                            schedule_mut(&mut b, id)?;
+                            if let Some(list) = b.extra.get_mut("schedules").and_then(Value::as_array_mut) {
+                                list.retain(|s| s["id"] != json!(id));
+                            }
+                        }
                         ScheduleOp::Enter { id } | ScheduleOp::Skip { id } => {
                             let due = crate::schedules::read(&b)?
                                 .into_iter()
@@ -1195,7 +1377,8 @@ impl Change {
             Change::AutoAssign { categories, .. } => categories.is_empty(),
             Change::Edits { edits, rules } => edits.is_empty() && rules.is_empty(),
             Change::Add { transactions, .. } => transactions.is_empty(),
-            Change::Payees { renames, rules } => renames.is_empty() && rules.is_empty(),
+            Change::Payees { renames, rules, removed } => renames.is_empty() && rules.is_empty() && removed.is_empty(),
+            Change::Accounts { ops } => ops.is_empty(),
             Change::Notes { add, remove } => add.is_empty() && remove.is_empty(),
             Change::Categories { ops } => ops.is_empty(),
             Change::Schedules { ops } => ops.is_empty(),
@@ -1342,10 +1525,27 @@ impl Change {
                 }
                 Change::Add { account: account.clone(), transactions: chosen, from_file: *from_file }
             }
-            Change::Payees { renames, rules } => Change::Payees {
+            Change::Payees { renames, rules, removed } => Change::Payees {
                 renames: renames.iter().filter(|x| !r.skips(&format!("p:{}", x.from))).cloned().collect(),
                 rules: rules.iter().filter(|x| !r.skips(&format!("r:{}", x.id))).cloned().collect(),
+                removed: removed.iter().filter(|id| !r.skips(&format!("x:{id}"))).cloned().collect(),
             },
+            Change::Accounts { ops } => {
+                // A new account left out takes what was to be done with it along.
+                let left: Vec<&str> = ops.iter().enumerate().filter(|(i, _)| r.skips(&format!("a:{i}"))).filter_map(|(_, op)| match op {
+                    AccountOp::Add { id, .. } => Some(id.as_str()),
+                    _ => None,
+                }).collect();
+                fn of(op: &AccountOp) -> Option<&str> {
+                    match op {
+                        AccountOp::Add { .. } => None,
+                        AccountOp::Rename { id, .. } | AccountOp::Type { id, .. } | AccountOp::Close { id, .. } | AccountOp::Limit { id, .. } | AccountOp::Opening { id, .. } => Some(id.as_str()),
+                    }
+                }
+                Change::Accounts {
+                    ops: ops.iter().enumerate().filter(|(i, op)| !r.skips(&format!("a:{i}")) && !of(op).is_some_and(|id| left.contains(&id))).map(|(_, op)| op.clone()).collect(),
+                }
+            }
             Change::Notes { add, remove } => Change::Notes {
                 add: add.iter().enumerate().filter(|(i, _)| !r.skips(&format!("n:+{i}"))).map(|(_, n)| n.clone()).collect(),
                 remove: remove.iter().enumerate().filter(|(i, _)| !r.skips(&format!("n:-{i}"))).map(|(_, n)| n.clone()).collect(),
@@ -1358,7 +1558,7 @@ impl Change {
                 }).collect();
                 fn of(op: &CategoryOp) -> Option<&str> {
                     match op {
-                        CategoryOp::Rename { id, .. } | CategoryOp::Move { id, .. } | CategoryOp::Hide { id, .. } | CategoryOp::Target { id, .. } => Some(id.as_str()),
+                        CategoryOp::Rename { id, .. } | CategoryOp::Move { id, .. } | CategoryOp::Hide { id, .. } | CategoryOp::Target { id, .. } | CategoryOp::Delete { id, .. } => Some(id.as_str()),
                         _ => None,
                     }
                 }
@@ -1528,7 +1728,7 @@ fn card_as(change: &Change, before: &Budget, after: &Budget, single: Option<bool
                     .filter(|c| rows.iter().any(|r| r.label == c.name))
                     .map(|c| c.id.clone())
                     .collect(),
-                transactions: vec![],
+                ..Highlight::default()
             };
             Ok(Card {
                 kicker: t!("Proposal · Budget"),
@@ -1684,7 +1884,7 @@ fn card_as(change: &Change, before: &Budget, after: &Budget, single: Option<bool
                 ..Card::default()
             })
         }
-        Change::Payees { renames, rules } => {
+        Change::Payees { renames, rules, removed } => {
             let mut rows = vec![];
             for r in renames {
                 let count = before.transactions.iter().filter(|t| t.payee == r.from).count();
@@ -1698,12 +1898,72 @@ fn card_as(change: &Change, before: &Budget, after: &Budget, single: Option<bool
             for r in rules {
                 rows.push(rule_row(r, &names));
             }
-            Ok(Card { kicker: t!("Proposal · Payees"), rows, ..Card::default() })
+            // A rule taken away, as it reads now.
+            let kept = before.extra.get("payeeRules").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+            for id in removed {
+                let Some(rule) = kept.iter().find(|r| r["id"] == json!(id)) else { continue };
+                let mut parts = vec![];
+                if let Some(payee) = rule["payee"].as_str().filter(|p| !p.is_empty()) {
+                    parts.push(t!("rename to {payee}", payee));
+                }
+                if let Some(category) = rule["categoryId"].as_str() {
+                    parts.push(names.category_shown(Some(category)));
+                }
+                rows.push(Row {
+                    label: t!("Rule: payees containing \u{201c}{text}\u{201d}", text = rule["match"].as_str().unwrap_or_default()),
+                    detail: (!parts.is_empty()).then(|| parts.join(" · ")),
+                    badge: Some(t!("remove")),
+                    key: Some(format!("x:{id}")),
+                    ..Row::default()
+                });
+            }
+            Ok(Card { kicker: t!("Proposal · Payees"), rows, highlight: Highlight { page: Some("payees".into()), ..Highlight::default() }, ..Card::default() })
+        }
+        Change::Accounts { ops } => {
+            let was = Names::new(before);
+            let mut rows = vec![];
+            let mut warning = None;
+            let today = engine::current_month();
+            let balances = engine::calculate(before, &today).ok();
+            for (i, op) in ops.iter().enumerate() {
+                let key = Some(format!("a:{i}"));
+                rows.push(match op {
+                    AccountOp::Add { name, account_type, opening_balance, credit_limit, .. } => {
+                        let mut parts = vec![type_label(account_type)];
+                        if let Some(limit) = credit_limit.filter(|limit| *limit > 0) {
+                            parts.push(t!("limit {amount}", amount = money(limit)));
+                        }
+                        Row { label: t!("New account: {name}", name), detail: Some(parts.join(" · ")), amount: Some(*opening_balance), badge: Some(t!("new")), key, ..Row::default() }
+                    }
+                    AccountOp::Rename { id, name } => Row { label: t!("{from} → {to}", from = was.account(id), to = name), detail: Some(t!("rename")), key, ..Row::default() },
+                    AccountOp::Type { id, account_type } => {
+                        let from = before.accounts.iter().find(|a| &a.id == id).and_then(|a| a.extra.get("accountType").and_then(Value::as_str)).map(type_label);
+                        let to = type_label(account_type);
+                        Row { label: was.account(id), detail: Some(match from { Some(from) => t!("{from} → {to}", from, to), None => to }), key, ..Row::default() }
+                    }
+                    AccountOp::Close { id, closed } => {
+                        // What's still in it when it closes: worth a look before it leaves the lists.
+                        let balance = balances.as_ref().and_then(|s| s.accounts.iter().find(|a| &a.id == id)).map(|a| a.balance).filter(|b| *closed && *b != 0);
+                        if balance.is_some() {
+                            warning = Some(t!("An account closed with money in it still counts in your budget. Move the money out first, or check its balance."));
+                        }
+                        Row { label: was.account(id), amount: balance, badge: Some(if *closed { t!("close") } else { t!("reopen") }), tone: balance.map(|_| "warn".into()), key, ..Row::default() }
+                    }
+                    AccountOp::Limit { id, limit: Some(limit) } => Row { label: was.account(id), detail: Some(t!("credit limit")), amount: Some(*limit), key, ..Row::default() },
+                    AccountOp::Limit { id, limit: None } => Row { label: was.account(id), badge: Some(t!("remove limit")), key, ..Row::default() },
+                    AccountOp::Opening { id, amount } => {
+                        let from = before.accounts.iter().find(|a| &a.id == id).map(|a| a.opening_balance);
+                        Row { label: was.account(id), detail: Some(t!("starting balance")), amount: Some(*amount), before: from, after: Some(*amount), key, ..Row::default() }
+                    }
+                });
+            }
+            Ok(Card { kicker: t!("Proposal · Accounts"), rows, warning, highlight: Highlight { page: Some("accounts".into()), ..Highlight::default() }, ..Card::default() })
         }
         Change::Categories { ops } => {
             let was = Names::new(before);
             let mut rows = vec![];
             let mut touched = vec![];
+            let mut deleting = false;
             for (i, op) in ops.iter().enumerate() {
                 let key = Some(format!("g:{i}"));
                 let name = |id: &str| names.category(Some(id));
@@ -1727,6 +1987,17 @@ fn card_as(change: &Change, before: &Budget, after: &Budget, single: Option<bool
                         ..Row::default()
                     },
                     CategoryOp::Target { id, amount: None, .. } => Row { label: name(id), badge: Some(t!("remove target")), key, ..Row::default() },
+                    CategoryOp::Delete { id, replacement } => {
+                        deleting = true;
+                        Row {
+                            label: was.category(Some(id)),
+                            detail: Some(t!("Its transactions and assigned money go to {category}", category = was.category_shown(replacement.as_deref()))),
+                            badge: Some(t!("delete")),
+                            tone: Some("warn".into()),
+                            key,
+                            ..Row::default()
+                        }
+                    }
                 });
                 if let CategoryOp::Rename { id, .. } | CategoryOp::Move { id, .. } | CategoryOp::Hide { id, .. } | CategoryOp::Target { id, .. } | CategoryOp::Add { id, .. } = op {
                     if !touched.contains(id) {
@@ -1734,7 +2005,15 @@ fn card_as(change: &Change, before: &Budget, after: &Budget, single: Option<bool
                     }
                 }
             }
-            Ok(Card { kicker: t!("Proposal · Categories"), rows, highlight: Highlight { categories: touched, ..Highlight::default() }, ..Card::default() })
+            // One that's deleted isn't there to show afterwards.
+            touched.retain(|id| after.categories.iter().any(|c| &c.id == id));
+            Ok(Card {
+                kicker: t!("Proposal · Categories"),
+                rows,
+                warning: deleting.then(|| t!("A deleted category leaves the budget, with its history moved where the card says. Undo brings it back while this is the budget's latest change.")),
+                highlight: Highlight { categories: touched, ..Highlight::default() },
+                ..Card::default()
+            })
         }
         Change::Schedules { ops } => {
             let existing = crate::schedules::read(before).unwrap_or_default();
@@ -1791,6 +2070,10 @@ fn card_as(change: &Change, before: &Budget, after: &Budget, single: Option<bool
                         let s = of(id)?;
                         Row { label: who(s), detail: Some(which(s)), amount: Some(s.transaction.amount), badge: Some(if *paused { t!("pause") } else { t!("resume") }), key, ..Row::default() }
                     }
+                    ScheduleOp::Delete { id } => {
+                        let s = of(id)?;
+                        Row { label: who(s), detail: Some(which(s)), amount: Some(s.transaction.amount), badge: Some(t!("delete")), tone: Some("warn".into()), key, ..Row::default() }
+                    }
                     ScheduleOp::Enter { id } | ScheduleOp::Skip { id } => {
                         let s = of(id)?;
                         let due = s.next_date.as_deref().map(short_date).unwrap_or_default();
@@ -1805,7 +2088,7 @@ fn card_as(change: &Change, before: &Budget, after: &Budget, single: Option<bool
                     }
                 });
             }
-            Ok(Card { kicker: t!("Proposal · Scheduled"), rows, ..Card::default() })
+            Ok(Card { kicker: t!("Proposal · Scheduled"), rows, highlight: Highlight { page: Some("scheduled".into()), ..Highlight::default() }, ..Card::default() })
         }
         Change::Delete { ids } => {
             let was = Names::new(before);
@@ -2087,6 +2370,14 @@ pub fn build_figures(title: String, period: Option<String>, rows: Vec<Row>, tota
     };
     let summary = summary(&title, &card);
     Proposal { id: new_id("p"), title, kind: "figures".into(), card, summary, ..Proposal::default() }
+}
+
+/// A place in the app the assistant points to: a card whose Show goes there, and which the
+/// desktop goes to as it arrives.
+pub fn build_show(title: String, detail: Option<String>, highlight: Highlight) -> Proposal {
+    let card = Card { kicker: t!("In the app"), note: detail, highlight, ..Card::default() };
+    let summary = json!({ "title": title });
+    Proposal { id: new_id("p"), title, kind: "show".into(), card, summary, ..Proposal::default() }
 }
 
 /// A card for fixes to a bank file being imported: each fix, with why.
@@ -2520,6 +2811,7 @@ mod tests {
         let change = Change::Payees {
             renames: vec![Rename { from: "Corner Bakery".into(), to: "Bakery".into() }],
             rules: vec![Rule { id: "r1".into(), matching: "bistro".into(), payee: "Bistro".into(), category: None }],
+            removed: vec![],
         };
         let p = build(change, "Tidy payees".into(), &b).unwrap();
         let q = revise(&p, skip(&["p:Corner Bakery", "r:r1"]), &b).unwrap();

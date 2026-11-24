@@ -21429,6 +21429,16 @@
         }
       }
     },
+    "Show in the app" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عرض في التطبيق"
+          }
+        }
+      }
+    },
     "Show in the budget" : {
       "localizations" : {
         "ar" : {

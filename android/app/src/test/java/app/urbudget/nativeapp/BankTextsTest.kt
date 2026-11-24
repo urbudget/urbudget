@@ -291,4 +291,96 @@ class BankTextsTest {
         assertNull(review.without(texts.keys))
         assertEquals(review.messages, review.without(setOf("sms:other"))!!.messages)
     }
+
+    /** A deposit's account beside the usual ones, and the bank's one text for the deposit paid back with its profit. */
+    private fun withDeposit() = budget().apply { getJSONArray("accounts").put(JSONObject().put("id", "deposit").put("name", "Term deposit").put("kind", "tracking")) }
+    private fun part(amount: Double, transfer: String? = null, category: String? = null, memo: String = "") = JSONObject().put("amount", amount).put("memo", memo)
+        .put("transferAccountId", transfer ?: JSONObject.NULL).put("categoryId", category ?: JSONObject.NULL)
+
+    @Test fun aTextThatIsMoneyOfTwoKindsIsEnteredAsOneTransactionInParts() {
+        val matured = sms("Your deposit has matured. SAR 501,900.00 was credited to account 3301")
+        val texts = mapOf(matured.id to matured)
+        val b = withDeposit()
+        fun entered(vararg parts: JSONObject, kind: String = "income") = BankTextEntry.asked(JSONObject().put("textIds", JSONArray().put(matured.id)).put("accountId", "checking")
+            .put("date", matured.receivedDate).put("amount", 501_900.0).put("kind", kind).put("payee", "Term deposit").put("parts", JSONArray(parts.toList())))
+        // The money back is a transfer from the deposit's account; what's beyond it is income, not a transfer.
+        val entry = entered(part(500_000.0, transfer = "deposit", memo = "Principal"), part(1_900.0, memo = "Profit"))
+        assertEquals(listOf(50_000_000L, 190_000L), entry.parts.map { it.cents })
+        assertNull(bankTextEntriesProblem(listOf(entry), texts, b))
+        val t = bankTextsReading(listOf(entry), texts, "SAR").analysis.getJSONArray("items").getJSONObject(0).getJSONObject("transaction")
+        // The whole is still the amount the text gives; only the parts are worked out.
+        assertEquals(listOf("501900.00", "income"), listOf(t.getString("amount"), t.getString("kind")))
+        assertTrue(t.isNull("transferAccountId") && t.isNull("categoryId"))
+        val lines = t.getJSONArray("splits").let { a -> (0 until a.length()).map { a.getJSONObject(it) } }
+        assertEquals(listOf("500000.00", "1900.00"), lines.map { it.getString("amount") })
+        assertEquals("deposit", lines[0].getString("transferAccountId"))
+        assertTrue(!lines[0].getBoolean("unassigned") && !lines[1].has("transferAccountId") && lines[1].getBoolean("unassigned"))
+        // Money out in parts is negative in each, however it was written.
+        assertEquals(listOf(-90_000L, -10_000L), bankTextParts(listOf(BankTextPart(90_000L), BankTextPart(-10_000L)), -100_000L).map { it.cents })
+        // What can't be: parts that don't add up, one part, a plain transfer in parts, a transfer with its own account or one that isn't open, every part a transfer.
+        assertNotNull(bankTextEntriesProblem(listOf(entered(part(500_000.0, transfer = "deposit"), part(1_000.0))), texts, b))
+        assertNotNull(bankTextEntriesProblem(listOf(entered(part(501_900.0, transfer = "deposit"))), texts, b))
+        assertNotNull(bankTextEntriesProblem(listOf(entered(part(500_000.0, transfer = "deposit"), part(1_900.0), kind = "transfer")), texts, b))
+        assertNotNull(bankTextEntriesProblem(listOf(entered(part(500_000.0, transfer = "checking"), part(1_900.0))), texts, b))
+        assertNotNull(bankTextEntriesProblem(listOf(entered(part(500_000.0, transfer = "nowhere"), part(1_900.0))), texts, b))
+        assertNotNull(bankTextEntriesProblem(listOf(entered(part(500_000.0, transfer = "deposit"), part(1_900.0, transfer = "card"))), texts, b))
+        // The card keeps the parts, and checks their accounts again as it's applied.
+        assertEquals(entry, BankTextEntry.carded(JSONObject(entry.card().toString())))
+        val card = JSONObject().put("action", "enter").put("entries", JSONArray().put(entry.card()))
+        assertNull(bankTextsCardProblem(card, b))
+        assertEquals(R.string.bank_texts_unknown_account, bankTextsCardProblem(card, budget()))
+    }
+
+    @Test fun chatListsTheReviewsRowsAndChangesOneToATransferWithItsProfit() {
+        val matured = sms("Your deposit has matured. SAR 501,900.00 was credited to account 3301")
+        val ride = sms("Purchase SAR 45.00 at Careem")
+        val b = withDeposit()
+        fun read(text: BankSms, amount: String, kind: String, payee: String, other: String? = null) = JSONObject().put("sourceIds", JSONArray().put(text.id)).put("disposition", "transaction")
+            .put("skip", JSONObject.NULL).put("note", payee).put("unsure", JSONArray().put("kind"))
+            .put("transaction", JSONObject().put("date", text.receivedDate).put("amount", amount).put("currency", "USD").put("writtenAmount", amount.trimStart('-')).put("payee", payee)
+                .put("memo", "").put("kind", kind).put("accountRef", JSONObject.NULL).put("otherRef", JSONObject.NULL).put("categoryId", JSONObject.NULL)
+                .put("accountId", "checking").put("transferAccountId", other ?: JSONObject.NULL))
+        // The reading took the whole credit for a transfer from the deposit.
+        val review = SmsBatch(listOf(matured, ride), JSONObject().put("items", JSONArray().put(read(matured, "501900.00", "transfer", "Term deposit", other = "deposit")).put(read(ride, "-45.00", "expense", "Careem"))),
+            ticked = mapOf(0 to true, 1 to false))
+        fun items(batch: SmsBatch) = batch.items(SmsAccounts.of(b, JSONArray(), batch.starts(b)))
+        val listed = bankTextsReviewRows(review, app.urbudget.nativeapp.ui.smsSort(review, items(review), emptyMap()), emptySet(), b)
+        assertEquals(listOf(matured.id, ride.id), listed.map { it.getString("textId") })
+        assertEquals(listOf("501900.00", "transfer", "Term deposit", true), listed[0].let { listOf(it.getString("amount"), it.getString("kind"), it.getJSONObject("otherAccount").getString("name"), it.getBoolean("tickedToAdd")) })
+        assertTrue(listed[0].getString("text").startsWith("Your deposit has matured") && !listed[1].getBoolean("tickedToAdd"))
+
+        // Told what it was: income for the text's whole amount, the money back a transfer, the rest profit; and the ride is ticked.
+        val changes = listOf(BankTextChange.of(JSONObject().put("textId", matured.id).put("kind", "income").put("parts", JSONArray().put(part(500_000.0, transfer = "deposit", memo = "Principal")).put(part(1_900.0, memo = "Profit")))),
+            BankTextChange.of(JSONObject().put("textId", ride.id).put("payee", "Careem ride").put("add", true)))
+        val (edited, touched) = bankTextsChange(review, b, changes)
+        assertEquals(listOf(0, 1), touched)
+        val after = items(edited)
+        val t = after[0].transaction!!
+        assertEquals(listOf("income", "501900.00", ""), listOf(t.getString("kind"), t.getString("amount"), t.optString("transferAccountId").takeUnless { t.isNull("transferAccountId") }.orEmpty()))
+        assertEquals(listOf("500000.00" to "deposit", "1900.00" to ""), after[0].splits.map { it.getString("amount") to it.optString("transferAccountId") })
+        assertTrue(after[0].unsure.isEmpty() && after[0].needs == null)
+        assertEquals("Careem ride", after[1].transaction!!.getString("payee"))
+        assertEquals(mapOf(0 to true, 1 to true), edited.ticked)
+        // Added, the account takes the whole credit and the deposit gives up only what came back.
+        assertEquals(mapOf("checking" to 50_190_000L, "deposit" to -50_000_000L), smsBalanceChanges(after, listOf(0 to "new")))
+        // The review itself is untouched until the card is applied, and the card reads its rows back the same.
+        assertEquals("transfer", review.analysis.getJSONArray("items").getJSONObject(0).getJSONObject("transaction").getString("kind"))
+        assertEquals(changes, changes.map { BankTextChange.of(JSONObject(it.json().toString())) })
+
+        // What can't be: a text with no row, a row twice, money in called an expense, a transfer in parts, an account that isn't open.
+        fun refused(vararg change: JSONObject) = runCatching { bankTextsChange(review, b, change.map(BankTextChange::of)) }.exceptionOrNull() is IllegalArgumentException
+        assertTrue(refused(JSONObject().put("textId", "sms:nowhere").put("payee", "X")))
+        assertTrue(refused(JSONObject().put("textId", ride.id).put("payee", "X"), JSONObject().put("textId", ride.id).put("memo", "Y")))
+        assertTrue(refused(JSONObject().put("textId", matured.id).put("kind", "expense")))
+        assertTrue(refused(JSONObject().put("textId", matured.id).put("parts", JSONArray().put(part(500_000.0, transfer = "deposit")).put(part(1_900.0)))))
+        assertTrue(refused(JSONObject().put("textId", ride.id).put("accountId", "nowhere")))
+        assertTrue(refused(JSONObject().put("textId", ride.id).put("kind", "transfer").put("transferAccountId", "checking")))
+        // A purchase becomes a transfer with another account, and loses the category it was read with.
+        val paid = bankTextsChange(review, b, listOf(BankTextChange.of(JSONObject().put("textId", ride.id).put("kind", "transfer").put("transferAccountId", "card")))).first
+        assertEquals("card", items(paid)[1].transaction!!.getString("transferAccountId"))
+        // A card's accounts are checked again as it's applied.
+        val card = JSONObject().put("action", "change").put("rows", JSONArray(changes.map { it.json() }))
+        assertNull(bankTextsCardProblem(card, b))
+        assertEquals(R.string.bank_texts_unknown_account, bankTextsCardProblem(card, budget()))
+    }
 }
