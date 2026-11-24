@@ -2,6 +2,11 @@ package app.urbudget.nativeapp.ui
 
 import android.app.Activity
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.ui.Alignment
@@ -11,8 +16,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
 import app.urbudget.nativeapp.*
 import app.urbudget.nativeapp.R
@@ -32,6 +44,7 @@ import androidx.lifecycle.repeatOnLifecycle
 internal fun CloudScreen(vm: BudgetViewModel) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val toast = LocalToast.current
     val preferences = remember { NativePreferences(context) }
     val billing = remember { BillingGateway(context as Activity) }
     DisposableEffect(billing) { onDispose { billing.close() } }
@@ -46,9 +59,20 @@ internal fun CloudScreen(vm: BudgetViewModel) {
     var sent by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf("") }
     var phrase by remember { mutableStateOf("") }
-    var repeated by remember { mutableStateOf("") }
     var confirmation by remember { mutableStateOf("") }
     var pendingBudget by remember { mutableStateOf<JSONObject?>(null) }
+    // What the account's sync key is, as the engine last answered `sync_key_info` while sync is locked here.
+    var keyInfo by remember { mutableStateOf<JSONObject?>(null) }
+    var askingKey by remember { mutableStateOf(false) }
+    // A recovery code the person hasn't said they've saved, and the one they last said they had.
+    var recoveryCode by remember { mutableStateOf("") }
+    var savedCode by remember { mutableStateOf("") }
+    // What's typed to unlock sync, and what went wrong with it, said beside the box rather than up the page.
+    var secret by remember { mutableStateOf("") }
+    var unlockError by remember { mutableStateOf<String?>(null) }
+    var scanning by remember { mutableStateOf(false) }
+    // Sync's seldom used rows (a new recovery code, reset, lock) stay folded away until asked for.
+    var more by remember { mutableStateOf(false) }
     var automatic by remember { mutableStateOf(preferences.automaticSync) }
     var overviewRevision by remember { mutableIntStateOf(0) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -77,6 +101,8 @@ internal fun CloudScreen(vm: BudgetViewModel) {
                 NativeServices.call(method, params)
             }
             if (method in setOf("sync_now", "sync_resolve")) syncReport = result as? JSONObject
+            // A key made here, or a code that replaces a lost one: shown until it's saved (RecoveryCodeDialog).
+            recoveryCodeIn(result)?.let { recoveryCode = it }
             done(result)
         } finally {
             // JNI can complete a sync commit after this screen is disposed. Queue the
@@ -109,6 +135,50 @@ internal fun CloudScreen(vm: BudgetViewModel) {
         }
     }
     val sync = status?.optJSONObject("sync")
+    val unlocked = sync?.optBoolean("unlocked") == true
+    // While sync is locked here, what this screen offers depends on the account's key, asked fresh:
+    // turning sync on for an account that has none, or unlocking with what its key is made from.
+    LaunchedEffect(signedIn, unlocked) {
+        keyInfo = null
+        if (signedIn.isBlank()) { secret = ""; unlockError = null }
+        else if (!unlocked) try { askingKey = true; keyInfo = NativeServices.read("sync_key_info") as? JSONObject }
+            catch (cancel: CancellationException) { throw cancel }
+            catch (_: Exception) { /* Offline: the row asks again when it's tapped. */ }
+            finally { askingKey = false }
+    }
+    val key = syncKey(status, keyInfo)
+    val secretKind = syncSecret(status, keyInfo)
+    // Turning sync on is offered to an account with no key, unless it's known to have no plan to sync with.
+    val turnOn = key == SyncKey.None && overview?.optJSONObject("sync")?.let { !it.optBoolean("active") } != true
+    val askKey = key == SyncKey.Unknown && !askingKey
+    // The engine keeps a recovery code on this device until it's confirmed saved, so one that was
+    // never confirmed (the app closed, the answer was lost) is shown again when this screen opens.
+    val unsaved = sync?.optBoolean("recoveryUnsaved") == true
+    LaunchedEffect(unsaved) {
+        if (unsaved && recoveryCode.isBlank()) try {
+            recoveryCodeIn(NativeServices.read("sync_recovery_unsaved"))?.takeIf { it != savedCode }?.let { recoveryCode = it }
+        } catch (cancel: CancellationException) { throw cancel }
+        catch (_: Exception) { /* Asked for again the next time the status says one is kept. */ }
+    }
+    /** Unlocks sync here with whatever was scanned or typed: the engine works out which kind of code, or a passphrase, it is. */
+    fun unlock(given: String) = work {
+        unlockError = null
+        try {
+            val answer = withContext(Dispatchers.IO) { NativeServices.call("sync_unlock", JSONObject().put("secret", given)) }
+            recoveryCodeIn(answer)?.let { recoveryCode = it }
+            secret = ""
+            vm.service("sync_now")
+        } catch (cancel: CancellationException) { throw cancel }
+        catch (failure: Exception) { unlockError = failure.message ?: context.getString(R.string.common_try_again) }
+    }
+    /** The person says the code is saved, so it's put away even if the engine couldn't let go of it just now: then it shows again the next time this screen opens. */
+    fun codeSaved() {
+        val code = recoveryCode
+        work {
+            try { withContext(Dispatchers.IO) { NativeServices.call("sync_recovery_saved") } }
+            finally { savedCode = code; recoveryCode = "" }
+        }
+    }
     val report = sync?.optJSONObject("last")
     val reportedBudgets = remember(report) { report?.rows("budgets").orEmpty() }
     fun purchaseMessage(result: JSONObject) {
@@ -169,11 +239,47 @@ internal fun CloudScreen(vm: BudgetViewModel) {
                 ListCard {
                     overview?.optJSONObject("sync")?.let { ListRow(if (it.optBoolean("active")) stringResource(R.string.cloud_subscription_active) else stringResource(R.string.cloud_subscription_needed),
                         icon = Icons.Outlined.CloudSync, iconTint = if (it.optBoolean("active")) ur.positive else ur.warning, iconFill = if (it.optBoolean("active")) ur.positiveSoft else ur.warningSoft, chevron = false, divider = true) }
-                    SwitchRow(stringResource(R.string.cloud_sync_automatically), automatic, { automatic = it; preferences.automaticSync = it }, subtitle = stringResource(R.string.cloud_while_open), divider = true)
-                    if (sync?.optBoolean("unlocked") == true) {
-                        ListRow(stringResource(R.string.cloud_sync_now), icon = Icons.Outlined.Sync, onClick = { if (!busy) call("sync_now") }, chevron = false, divider = true)
-                        ListRow(stringResource(R.string.cloud_lock), icon = Icons.Outlined.Lock, iconTint = ur.text2, iconFill = ur.zeroSoft, onClick = { if (!busy) call("sync_lock") }, chevron = false)
-                    } else ListRow(stringResource(R.string.cloud_set_up_or_unlock), icon = Icons.Outlined.Key, onClick = { if (!busy) call("sync_has_key") { exists -> phrase = ""; repeated = ""; dialog = if (exists == true) "unlock" else "setup" } })
+                    SwitchRow(stringResource(R.string.cloud_sync_automatically), automatic, { automatic = it; preferences.automaticSync = it }, subtitle = stringResource(R.string.cloud_while_open), divider = key == SyncKey.Unlocked || turnOn || askKey)
+                    when (key) {
+                        SyncKey.Unlocked -> {
+                            ListRow(stringResource(R.string.cloud_sync_now), icon = Icons.Outlined.Sync, onClick = { if (!busy) call("sync_now") }, chevron = false, divider = true)
+                            ListRow(stringResource(R.string.pair_add_device), icon = Icons.Outlined.Devices, onClick = { if (!busy) { error = null; dialog = "addDevice" } }, divider = true)
+                            // What few people need, and nobody often, folds away.
+                            ListRow(stringResource(R.string.cloud_more), icon = Icons.Outlined.MoreHoriz, iconTint = ur.text2, iconFill = ur.zeroSoft, onClick = { more = !more }, chevron = false, divider = more,
+                                trailing = { Icon(if (more) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null, Modifier.size(20.dp), tint = ur.muted) })
+                            if (more) {
+                                // Under More's own words, past its icon. A replacement code needs the new sync (cloud/recovery.rs).
+                                if (sync?.optInt("protocol", 1) == 2) ListRow(stringResource(R.string.cloud_new_recovery_code), Modifier.padding(start = 52.dp), onClick = { if (!busy) { error = null; dialog = "newCode" } }, divider = true)
+                                ListRow(stringResource(R.string.cloud_reset_sync), Modifier.padding(start = 52.dp), onClick = { if (!busy) { error = null; dialog = "reset" } }, divider = true)
+                                ListRow(stringResource(R.string.cloud_lock), Modifier.padding(start = 52.dp), onClick = { if (!busy) call("sync_lock") }, chevron = false)
+                            }
+                        }
+                        // The account has a key: the card below unlocks it.
+                        SyncKey.Locked -> {}
+                        // One tap: the key is made here with its recovery code, which comes back to be shown. Without the plan there's nothing to turn on yet.
+                        SyncKey.None -> if (turnOn) ListRow(stringResource(R.string.cloud_turn_on_sync), icon = Icons.Outlined.Key, onClick = { if (!busy) call("sync_setup") { vm.service("sync_now") } }, chevron = false)
+                        // The engine couldn't say (offline, most likely): tapping asks again and says what's wrong.
+                        SyncKey.Unknown -> if (askKey) ListRow(stringResource(R.string.cloud_set_up_or_unlock), icon = Icons.Outlined.Key, onClick = { if (!busy) work { keyInfo = NativeServices.read("sync_key_info") as? JSONObject } })
+                    }
+                }
+            }
+            if (key == SyncKey.Locked) item {
+                CloudCard {
+                    Text(stringResource(R.string.cloud_locked_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = ur.text)
+                    Text(stringResource(R.string.cloud_locked_detail), color = ur.text2, style = MaterialTheme.typography.bodyMedium)
+                    // Stretching a typed code into a key takes a moment, and this card may be all that's in view.
+                    if (busy) LinearProgressIndicator(Modifier.fillMaxWidth(), color = ur.accent)
+                    unlockError?.let { FormError(it) }
+                    PrimaryButton(stringResource(R.string.cloud_scan_code), {
+                        unlockError = null
+                        scanning = true
+                    }, Modifier.fillMaxWidth(), enabled = !busy, icon = Icons.Outlined.QrCodeScanner)
+                    // One box for whatever they have: the engine tells a device code, a recovery code and a passphrase apart.
+                    val label = stringResource(syncUnlockLabel(secretKind))
+                    Text(label, color = ur.text2, style = MaterialTheme.typography.bodyMedium)
+                    SecretField(secret, { secret = it; unlockError = null }, label, hidden = secretKind == "passphrase") { if (!busy && secret.isNotBlank()) unlock(secret) }
+                    SecondaryButton(stringResource(R.string.cloud_unlock), { unlock(secret) }, Modifier.fillMaxWidth(), enabled = !busy && secret.isNotBlank())
+                    TextButton({ if (!busy) { error = null; dialog = "reset" } }, contentPadding = PaddingValues(horizontal = 0.dp, vertical = 8.dp)) { Text(stringResource(R.string.cloud_cant_unlock), color = ur.muted) }
                 }
             }
             if (report != null && (report.text("message").isNotBlank() || report.text("at").isNotBlank())) item {
@@ -206,23 +312,42 @@ internal fun CloudScreen(vm: BudgetViewModel) {
             }
             item {
                 ListCard {
-                    ListRow(stringResource(R.string.cloud_reset_passphrase), onClick = { if (!busy) { phrase = ""; repeated = ""; dialog = "reset" } }, divider = true)
                     ListRow(stringResource(R.string.cloud_delete_account), titleColor = ur.negative, onClick = { if (!busy) { confirmation = ""; dialog = "deleteAccount" } })
                 }
             }
         } else item { Text(stringResource(R.string.cloud_sign_in_to_sync), Modifier.padding(horizontal = 4.dp), color = ur.muted, style = MaterialTheme.typography.bodyMedium) }
         item { TextButton({ call("account_open", JSONObject().put("next", "/privacy/app/")) }, enabled = !busy) { Text(stringResource(R.string.cloud_privacy)) } }
     }
-    if (dialog in setOf("setup", "unlock", "reset")) FormDialog(stringResource(if (dialog == "reset") R.string.cloud_reset_title else if (dialog == "setup") R.string.cloud_setup_title else R.string.cloud_unlock_title),
-        { dialog = ""; phrase = ""; repeated = "" }, confirm = stringResource(if (dialog == "reset") R.string.cloud_reset_confirm else R.string.common_continue), enabled = !busy && phrase.length >= 8 && (dialog == "unlock" || phrase == repeated), onConfirm = {
-        val method = if (dialog == "reset") "sync_reset" else "sync_setup"
-        call(method, JSONObject().put("passphrase", phrase)) { dialog = ""; phrase = ""; repeated = ""; vm.service("sync_now") }
-    }) {
-        if (dialog == "reset") Text(stringResource(R.string.cloud_reset_message))
-        else Text(stringResource(R.string.cloud_passphrase_safe))
-        FilledField(phrase, { phrase = it }, label = { Text(stringResource(R.string.cloud_passphrase_field)) }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
-        if (dialog != "unlock") FilledField(repeated, { repeated = it }, label = { Text(stringResource(R.string.cloud_passphrase_repeat)) }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
-    }
+    if (dialog == "addDevice") AddDeviceDialog({ dialog = "" }) { dialog = ""; toast(context.getString(R.string.pair_device_added), false) }
+    // What was scanned goes to the engine as it is: it says what the code is, and what's wrong with one that isn't UrBudget's.
+    if (scanning) SyncCodeScanner(
+        found = { scanning = false; unlock(it) },
+        unavailable = { scanning = false; unlockError = context.getString(R.string.pair_scanner_unavailable) },
+        close = { scanning = false })
+    // Nothing to choose or type: a reset makes the new key here, and its recovery code comes back to be shown.
+    if (dialog == "reset") AlertDialog(onDismissRequest = { if (!busy) dialog = "" }, title = { Text(stringResource(R.string.cloud_reset_title)) },
+        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(stringResource(R.string.cloud_reset_message))
+            // The new sync keeps each budget that was syncing as a copy to bring back from the budget library, on every
+            // device, and uploads nothing by itself. The older one uploads this device's budgets again.
+            Text(stringResource(if (syncProtocol(status, keyInfo) == 2) R.string.cloud_reset_keeps_recover else R.string.cloud_reset_keeps_upload))
+            Text(stringResource(R.string.cloud_reset_devices))
+            // Asked from a device that can't unlock: there may be a way that deletes nothing.
+            if (!unlocked) Text(stringResource(R.string.cloud_reset_instead))
+            error?.let { FormError(it) }
+        } },
+        confirmButton = { TextButton({ call("sync_reset") { dialog = ""; vm.service("sync_now") } }, enabled = !busy) { Text(stringResource(R.string.cloud_reset_sync), color = ur.negative) } },
+        dismissButton = { TextButton({ dialog = "" }, enabled = !busy) { Text(stringResource(R.string.common_cancel)) } })
+    // The code or passphrase the key was made from can't be shown again, so a lost one is replaced. Only a reset retires it.
+    if (dialog == "newCode") AlertDialog(onDismissRequest = { if (!busy) dialog = "" }, title = { Text(stringResource(R.string.cloud_new_code_title)) },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(stringResource(R.string.cloud_new_code_message))
+            // The server keeps one replacement at a time (`recovery` in the status).
+            if (sync?.optBoolean("recovery") == true) Text(stringResource(R.string.cloud_new_code_replaces))
+            error?.let { FormError(it) }
+        } },
+        confirmButton = { TextButton({ call("sync_recovery_create") { dialog = "" } }, enabled = !busy) { Text(stringResource(R.string.cloud_new_code_confirm)) } },
+        dismissButton = { TextButton({ dialog = "" }, enabled = !busy) { Text(stringResource(R.string.common_cancel)) } })
     if (dialog == "move") {
         // Moving is the person's choice: devices on older versions stop syncing until updated.
         val needsPassphrase = syncMoveNeedsPassphrase(status)
@@ -245,6 +370,26 @@ internal fun CloudScreen(vm: BudgetViewModel) {
     if (dialog == "conflict" && pendingBudget != null) SyncConflictDialog(pendingBudget!!, busy, { dialog = "" }) { keep, choices ->
         call("sync_resolve", JSONObject().put("id", pendingBudget!!.text("id")).put("keep", keep).put("choices", choices).put("review", pendingBudget!!.opt("review") ?: JSONObject.NULL)) { dialog = "" }
     }
+    // Last, so it rises over whatever else is open.
+    if (recoveryCode.isNotBlank()) RecoveryCodeDialog(recoveryCode, busy) { codeSaved() }
+}
+
+/**
+ * The box a sync code or passphrase is typed into: left to right in any language, and with no
+ * suggestions or corrections from the keyboard. A passphrase is [hidden] as it's typed until the
+ * eye is tapped; a code is 24 characters to check against another screen, so it shows.
+ */
+@Composable
+private fun SecretField(value: String, onChange: (String) -> Unit, label: String, hidden: Boolean, onDone: () -> Unit) {
+    var shown by remember(hidden) { mutableStateOf(!hidden) }
+    TextField(value, onChange, Modifier.fillMaxWidth().semantics { contentDescription = label }, singleLine = true, shape = RoundedCornerShape(12.dp), colors = fieldColors(),
+        textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, textDirection = TextDirection.Ltr),
+        visualTransformation = if (shown) VisualTransformation.None else PasswordVisualTransformation(),
+        trailingIcon = if (hidden) ({ IconButton({ shown = !shown }) {
+            Icon(if (shown) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, stringResource(if (shown) R.string.cloud_hide_typed else R.string.cloud_show_typed), tint = ur.muted)
+        } }) else null,
+        keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { onDone() }))
 }
 
 /** A white card with its contents padded, for a section of controls. */

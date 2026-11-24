@@ -54,6 +54,17 @@ class SharedServiceReadsTest {
             assertTrue(broker, NativeServicePolicy.independent(broker))
             assertFalse(broker, NativeServicePolicy.coalesce(broker))
         }
+        // Device approval: what its screens ask may be joined; whatever makes, uses or takes back a code or a key runs on its own.
+        for (read in listOf("sync_key_info", "sync_recovery_unsaved", "sync_pair_state")) {
+            assertTrue(read, NativeServicePolicy.independent(read))
+            assertTrue(read, NativeServicePolicy.coalesce(read))
+            assertFalse(read, NativeServicePolicy.budgetRead(read))
+        }
+        for (command in listOf("sync_setup", "sync_unlock", "sync_reset", "sync_recovery_create", "sync_recovery_saved", "sync_pair_offer", "sync_pair_cancel", "sync_pair_approve")) {
+            assertTrue(command, NativeServicePolicy.independent(command))
+            assertFalse(command, NativeServicePolicy.coalesce(command))
+            assertFalse(command, NativeServicePolicy.budgetResult(command))
+        }
         for (budgetRead in listOf("simplefin_sync", "ibkr_review_compact", "native_budget_status", "database_status", "list_backups", "backup_retention")) {
             assertTrue(budgetRead, NativeServicePolicy.budgetRead(budgetRead))
         }

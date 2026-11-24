@@ -132,6 +132,13 @@ dependencies {
     // Custom Tabs: pages the services open show over the app, and their close button comes back to it.
     implementation("androidx.browser:browser:1.8.0")
     implementation("androidx.work:work-runtime-ktx:2.11.2")
+    // Scanning the one-time code that adds a device to sync (ui/CodeScanner.kt): the camera through
+    // CameraX, and ZXing to read the code from its frames on the phone. No scanner of Google's or
+    // anyone's is called, so nothing the camera sees leaves the device.
+    implementation("androidx.camera:camera-camera2:1.4.2")
+    implementation("androidx.camera:camera-lifecycle:1.4.2")
+    implementation("androidx.camera:camera-view:1.4.2")
+    implementation("com.google.zxing:core:3.5.3")
     implementation(platform("androidx.compose:compose-bom:2025.08.00"))
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.compose.material3:material3")

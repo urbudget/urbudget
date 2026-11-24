@@ -69,7 +69,7 @@ final class AppStoreSubscription {
         case .success(let verification):
             let answer = try await deliver(verification)
             return answer["active"].bool
-                ? String(localized: "Sync is on. Set up or unlock sync on this iPhone to start.")
+                ? String(localized: "Your subscription is active. Turn on or unlock sync on this device to start.")
                 : String(localized: "The App Store took the purchase, but Sync isn't on yet. Try Restore purchases in a minute.")
         case .pending:
             return String(localized: "The purchase is waiting for approval. Sync turns on once it's approved.")

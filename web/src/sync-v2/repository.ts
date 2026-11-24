@@ -18,7 +18,7 @@ export const headJson = (h = "h") => `json_object('budgetId',${h}.budget_id,'inc
  'keyGeneration',${h}.key_generation,'state',${h}.state,'payload',json(${h}.payload),'updatedSequence',${h}.updated_sequence,
  'updatedAt',${h}.updated_at,'deletedAt',${h}.deleted_at,'retainedUntil',${h}.retained_until,'device',${h}.device,
  'legacy',json(${h}.legacy))`;
-export type Account = { user_id: string; protocol: number; key_generation: string | null; salt: string | null; key_check: string | null; catalog_epoch: string; catalog_sequence: string; min_cursor: string };
+export type Account = { user_id: string; protocol: number; key_generation: string | null; salt: string | null; key_check: string | null; key_secret: string | null; recovery_salt: string | null; recovery_wrapped: string | null; catalog_epoch: string; catalog_sequence: string; min_cursor: string };
 export type Installation = { last_sequence: string; last_digest: string | null; receipt: string | null; status: string };
 export type Staging = { sequence: string; digest: string; manifest: string; object_key: string | null; expires_at: string; claim: string | null; decision: string | null };
 export type MutationResult = { state: "terminal"; receipt: Receipt } | { state: "prepared"; sequence: string; digest: string; expiresAt: string; blobReady: boolean };
@@ -81,7 +81,7 @@ function parameters(env: Env, user: string, id: string, seq: string, digest: str
     generation: m.keyGeneration, epoch: m.catalogEpoch, budget: m.budgetId ?? "", incarnation: m.incarnation ?? "",
     version: m.expectedVersion ?? "0", nextIncarnation: m.newIncarnation ?? m.incarnation ?? "", kind: m.kind,
     bytes: m.payload?.length ?? 0, payload: m.payload ? canonical(m.payload) : null, sha: m.payload?.sha256 ?? null,
-    expectedProtocol: m.expectedProtocol ?? 2, salt: m.key?.salt ?? null, check: m.key?.check ?? null,
+    expectedProtocol: m.expectedProtocol ?? 2, salt: m.key?.salt ?? null, check: m.key?.check ?? null, secret: m.key?.secret ?? null,
     sourceSha: m.source?.sha256 ?? null, enabled: env.SYNC_V2_ENABLED === "1" ? 1 : 0,
     maxBudgets: MAX_BUDGETS, maxBytes: MAX_TOTAL_BYTES, maxStaging: MAX_STAGING_BYTES, maxCounter: MAX_COUNTER.toString(),
     retained: new Date(Date.now() + RETENTION_MS).toISOString(), nextEpoch: randomId("epoch"),
@@ -221,7 +221,8 @@ function controlWrites(db: D1Database, m: Manifest, p: Params) {
         WHERE user_id=$user AND applied_by=$marker AND ${readyClaim} AND ${appliedAccount}`, p));
   } else {
     statements.push(statement(db, `UPDATE sync_accounts_v2 SET protocol=2,key_generation=${m.kind === "keySetup" ? "'0'" : "CAST(CAST(key_generation AS INTEGER)+1 AS TEXT)"},
-      salt=$salt,key_check=$check,catalog_epoch=$nextEpoch,catalog_sequence='1',min_cursor='0',updated_at=$at,applied_by=$marker,legacy_cleanup=1
+      salt=$salt,key_check=$check,key_secret=$secret,recovery_salt=NULL,recovery_wrapped=NULL,
+      catalog_epoch=$nextEpoch,catalog_sequence='1',min_cursor='0',updated_at=$at,applied_by=$marker,legacy_cleanup=1
       WHERE user_id=$user AND ${readyClaim}`, p));
     if (m.kind === "keyReset") {
       statements.push(statement(db, `DELETE FROM sync_heads_v2 WHERE user_id=$user AND ${readyClaim} AND ${appliedAccount}`, p));
@@ -235,7 +236,9 @@ function controlWrites(db: D1Database, m: Manifest, p: Params) {
           FROM sync_staging_v2 s JOIN sync_accounts_v2 a ON a.user_id=s.user_id WHERE s.user_id=i.user_id AND s.installation_id=i.installation_id)
         WHERE i.user_id=$user AND i.installation_id<>$id AND EXISTS(SELECT 1 FROM sync_staging_v2 s WHERE s.user_id=i.user_id AND s.installation_id=i.installation_id)
           AND ${readyClaim} AND ${appliedAccount}`, p),
-      statement(db, `DELETE FROM sync_staging_v2 WHERE user_id=$user AND installation_id<>$id AND ${readyClaim} AND ${appliedAccount}`, p));
+      statement(db, `DELETE FROM sync_staging_v2 WHERE user_id=$user AND installation_id<>$id AND ${readyClaim} AND ${appliedAccount}`, p),
+      // A device approval in flight carries the key this reset retires.
+      statement(db, `DELETE FROM sync_pairings_v2 WHERE user_id=$user AND ${readyClaim} AND ${appliedAccount}`, p));
     }
   }
   statements.push(statement(db, `DELETE FROM sync_events_v2 WHERE user_id=$user AND ${readyClaim} AND ${appliedAccount}`, p),

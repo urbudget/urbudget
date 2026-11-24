@@ -68,7 +68,12 @@ drop tombstones/receipts, reopen legacy writes, or rewind D1 independently of R2
 
 | Route | Request and result |
 | --- | --- |
-| `GET /bootstrap` | Account ID, protocol, nullable key generation/salt/check, catalog epoch/highwater/minCursor, entitlement and flags. Requires account authentication but no installation header. |
+| `GET /bootstrap` | Account ID, protocol, nullable key generation/salt/check, `secret` (what the key is made from: `"code"`, `"passphrase"`, or null with no key), `recovery` (`{salt, wrapped}` or null), catalog epoch/highwater/minCursor, entitlement and flags. Requires account authentication but no installation header. |
+| `PUT /pairings/:id` | `{wrapped, keyGeneration}`: the account key sealed for a one-time device code, kept five minutes. `id` is 32 hex characters made from the code. At most 3 waiting per account and 30 an hour; 409 `sync_key_changed` for another generation. Either protocol, no activation needed. |
+| `GET /pairings/:id` | `{wrapped, keyGeneration}`, deleted in the same statement, so it is handed out once. 404 `pairing_not_found` when absent or expired. |
+| `GET /pairings/:id/state` | `{waiting}`. Reads only: the device showing the code learns it was collected. |
+| `DELETE /pairings/:id` | Takes an uncollected message back. Idempotent. |
+| `PUT /recovery` | `{keyGeneration, salt, wrapped}`: a replacement recovery code's copy of the key, replacing any earlier copy. Protocol 2 only; 409 `sync_key_changed` for another generation. The key, its generation and every head stay as they are. |
 | `POST /installations` | `{installationId}` with a client-generated random ID. Returns `lastSequence` and last terminal `receipt`. Re-registering never resets a sequence. |
 | `GET /installations` | Active installation IDs, creation times, last sequences, and whether each has a pending mutation. |
 | `DELETE /installations/:id` | Retire an installation with no pending mutation; idempotent once retired. Retains its sequence and receipt, prevents registration or new mutations under that ID, and frees active-device capacity. |
@@ -136,6 +141,27 @@ the manifest and exact sealed bytes before sending; retries cannot reseal with
 a different nonce. Control kinds are `keySetup`, `keyReset`, and
 `migrateProtocol`; they use the same sequence and receipt protocol.
 
+## Device approval and the recovery code
+
+The account key is `Argon2id(secret, salt)` on both protocols, whatever the secret is: a
+passphrase someone chose, or a recovery code the app made (24 characters, 112 random bits).
+`keySetup` and `keyReset` carry `key: {salt, check}` as before, with an optional
+`secret: "code"` that only tells other devices what to ask for. So an app from before recovery
+codes unlocks any account: the code typed as shown into its passphrase box makes the same key.
+
+A device that syncs hands the key to a new one through `/pairings`: it seals the key with a key
+made from a one-time device code that travels between the two screens (camera or keyboard) and
+never reaches the server. The server keeps the sealed key for five minutes and hands it out once.
+
+`/recovery` holds at most one recovery copy per account: the key sealed with
+`Argon2id(replacement code, its own salt)`, for someone who lost their recovery code or passphrase
+but still has a device that syncs. `keySetup` and `keyReset` clear it, and a reset also deletes
+the account's pairing messages, as does a protocol-1 reset (`PUT /api/v1/sync/key`).
+
+None of what the server holds for this opens a budget: `salt`, `check`, the recovery copy and a
+pairing message all need a secret the server never sees. The design, the engine's calls and the
+threat table are in `docs/plans/2026-11-24-sync-device-approval.md`.
+
 ## Retention and limits
 
 The initial limits are 50 active budgets, 1 GiB referenced content including
@@ -181,6 +207,7 @@ node scripts/sync-v2-instances.mjs
 node scripts/sync-v2-instances.mjs --rounds 300
 node scripts/sync-v2-instances.mjs --rounds 300 --large-transactions 50000
 node scripts/sync-v2-instances.mjs --legacy
+node scripts/sync-v2-approval.mjs
 ```
 
 The instance suite needs the current
@@ -211,3 +238,14 @@ on v1 adopting its saved key after the account moved elsewhere, and a passphrase
 account still on protocol 1 while activation is on. Scheduler wakes are driven through `sync_now`; this
 does not substitute for desktop/mobile background-lifecycle testing. Each run
 saves an inspectable trace under `crates/target/sync-v2-instances/`.
+
+`sync-v2-approval.mjs` runs device approval and the recovery code through the same real
+processes, each account on its own devices: a first setup that makes a recovery code and keeps it
+through a restart until it is confirmed saved; a second device unlocked by a typed device code,
+handed out once, with a typo caught before any request; a new device's own code approved from a
+device that syncs; the recovery code typed on this app and as a passphrase on an older one; a
+replacement code that changes neither the key nor any head; a reset that retires the old code, the
+recovery copy and a waiting approval; a setup whose answer is lost and still ends with its code
+shown; an account with a passphrase that keeps it and gains approval and a recovery code; and
+protocol 1, including an approval that moves the account to protocol 2. It does not cover a
+camera, which only a device has.

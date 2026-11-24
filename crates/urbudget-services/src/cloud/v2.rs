@@ -99,13 +99,13 @@ fn legacy_revision(head: &Head) -> Option<u64> {
     }
 }
 
-struct Transport<'a> {
+pub(super) struct Transport<'a> {
     cloud: &'a Cloud,
     session: Session,
     installation: String,
 }
 impl<'a> Transport<'a> {
-    fn new(cloud: &'a Cloud, installation: String) -> Result<Self> {
+    pub(super) fn new(cloud: &'a Cloud, installation: String) -> Result<Self> {
         Ok(Self {
             cloud,
             session: cloud.session().map_err(String::from)?,
@@ -142,7 +142,7 @@ impl<'a> Transport<'a> {
         }
         Err(format!("{}: {}", error.code, error.message))
     }
-    async fn json(&self, method: Method, path: &str, body: Option<Value>) -> Result<Value> {
+    pub(super) async fn json(&self, method: Method, path: &str, body: Option<Value>) -> Result<Value> {
         let mut request = self.request(method, path)?;
         if let Some(body) = body {
             request = request.json(&body);
@@ -217,7 +217,7 @@ impl<'a> Transport<'a> {
 fn key_service(account: &str, generation: &str) -> String {
     super::service(&format!("com.urbudget.sync-v2.{account}.{generation}"))
 }
-fn read_key(cloud: &Cloud, account: &str, generation: &str) -> Option<crypto::Key> {
+pub(super) fn read_key(cloud: &Cloud, account: &str, generation: &str) -> Option<crypto::Key> {
     super::vault::read(&key_service(account, generation))
         .and_then(|k| BASE64.decode(k).ok())
         .and_then(|k| k.try_into().ok())
@@ -282,7 +282,7 @@ fn upgrade_offered(bootstrap: &Value) -> bool {
 /// moved account is therefore byte for byte the v1 key this device saved when the passphrase
 /// was entered here. The check rules out a stale key: after a passphrase reset elsewhere it no
 /// longer opens the account's check, and the person is asked for the passphrase instead.
-fn verified_key(key: Option<crypto::Key>, bootstrap: &Value) -> Option<crypto::Key> {
+pub(super) fn verified_key(key: Option<crypto::Key>, bootstrap: &Value) -> Option<crypto::Key> {
     let check = BASE64.decode(bootstrap["check"].as_str()?).ok()?;
     key.filter(|key| crypto::matches_check(key, &check))
 }
@@ -299,12 +299,40 @@ fn upgrade_status(state: &Value, signed_in: bool, saved: impl FnOnce() -> Option
 
 /// The current generation's key, adopting this device's verified protocol-1 key when the
 /// account was moved to v2 elsewhere (see `verified_key`), so it keeps syncing unlocked.
-fn current_key(cloud: &Cloud, account: &str, generation: &str, bootstrap: &Value) -> Option<crypto::Key> {
+pub(super) fn current_key(cloud: &Cloud, account: &str, generation: &str, bootstrap: &Value) -> Option<crypto::Key> {
     read_key(cloud, account, generation).or_else(|| {
         let key = verified_key(cloud.sync.key(), bootstrap)?;
         store_key(cloud, account, generation, key).ok()?;
         Some(key)
     })
+}
+
+/// The key this device holds for the account's current generation, on either protocol, when
+/// it still opens the account's key check.
+pub(super) fn held_key(cloud: &Cloud, account: &str, bootstrap: &Value) -> Option<crypto::Key> {
+    let generation = bootstrap["keyGeneration"].as_str()?;
+    let key = if bootstrap["protocol"] == 2 {
+        current_key(cloud, account, generation, bootstrap)
+    } else {
+        cloud.sync.key()
+    };
+    verified_key(key, bootstrap)
+}
+
+/// What the account's key is made from, as far as `bootstrap` says: a recovery code the app
+/// made (`"code"`) or a passphrase someone chose. `None` when the account has no key yet. An
+/// account from before recovery codes says nothing, and its key is from a passphrase.
+pub(super) fn secret_kind(bootstrap: &Value) -> Option<&'static str> {
+    bootstrap["keyGeneration"].as_str()?;
+    Some(if bootstrap["secret"] == "code" { "code" } else { "passphrase" })
+}
+
+/// Notes the recovery copy the server now holds for the account's key.
+pub(super) fn save_recovery(library: &Library, account: &str, recovery: &Value) -> Result<()> {
+    let mut library = library.lock();
+    let mut state = library.account_state(account)?;
+    state["bootstrap"]["recovery"] = recovery.clone();
+    library.set_account_state(account, &state)
 }
 
 pub fn is_active(cloud: &Cloud, library: &Library) -> bool {
@@ -337,6 +365,11 @@ pub(super) fn decorate_status(cloud: &Cloud, catalog: &budgets::Budgets, status:
     let Ok(state) = catalog.account_state(&account) else {
         return;
     };
+    if cloud.token().is_some() {
+        status.secret = secret_kind(&state["bootstrap"]);
+        status.recovery = state["bootstrap"]["recovery"].is_object();
+        status.recovery_unsaved = super::recovery::unsaved(cloud, &account, &state["bootstrap"]).is_some();
+    }
     if state["protocol"] != 2 {
         (status.upgrade_available, status.upgrade_needs_passphrase) =
             upgrade_status(&state, cloud.token().is_some(), || cloud.sync.key());
@@ -533,7 +566,7 @@ fn decrypt(key: &crypto::Key, account: &str, head: &Head, bytes: &[u8]) -> Resul
 
 /// Probe before registering: legacy clients have no accountId and old Workers have no v2 routes.
 /// A known v2 account must never silently fall back to the legacy publication engine.
-async fn probe_bootstrap(cloud: &Cloud, library: &Library) -> Result<Option<(String, Value)>> {
+pub(super) async fn probe_bootstrap(cloud: &Cloud, library: &Library) -> Result<Option<(String, Value)>> {
     let transport = Transport::new(cloud, String::new())?;
     let bootstrap = match transport.json(Method::GET, "/bootstrap", None).await {
         Ok(value) => value,
@@ -824,6 +857,12 @@ async fn deliver_inner(
         if slot.manifest.get("key").is_some() {
             state["bootstrap"]["salt"] = slot.manifest["key"]["salt"].clone();
             state["bootstrap"]["check"] = slot.manifest["key"]["check"].clone();
+            // A new key has no recovery copy, and says what it is made from.
+            state["bootstrap"]["secret"] = match slot.manifest["key"]["secret"].as_str() {
+                Some(secret) => json!(secret),
+                None => json!("passphrase"),
+            };
+            state["bootstrap"]["recovery"] = Value::Null;
         }
         library.set_account_state(account, &state)?;
     }
@@ -923,53 +962,95 @@ fn set_up_on_v2(bootstrap: &Value, reset: bool) -> bool {
 
 /// What proves this device may hold the account's content key.
 #[derive(Clone, Copy)]
-enum Secret<'a> {
-    /// Typed by the person: it creates, resets, or derives the current generation's key.
+pub(super) enum Secret<'a> {
+    /// Typed by the person, a passphrase or a recovery code as it reads: it creates, resets,
+    /// or derives the current generation's key.
     Passphrase(&'a str),
+    /// Nothing typed: a first setup or a reset makes a recovery code here and the key from it,
+    /// exactly as a passphrase would. The answer carries the code as `recoveryCode`.
+    Generate,
     /// The protocol-1 key this device saved, used only once it opens the account's key check
     /// (`verified_key`). It can move or unlock an existing account, never create or reset one.
     Saved,
+    /// The key itself, handed over by a device that has it (`pairing`) or opened from the
+    /// recovery copy (`recovery`). Like `Saved`, kept only once it opens the key check.
+    Key(crypto::Key),
 }
 
 /// The person's answer when the saved key can't stand in for the passphrase.
 fn passphrase_needed() -> String {
     t!("Enter your sync passphrase to move this account to the new sync.")
 }
+/// A key change this device started can only be finished with what started it.
+fn pending_secret_needed() -> String {
+    t!("This device was in the middle of changing the sync key. Enter the passphrase or recovery code it was started with.")
+}
+fn already_set_up() -> String {
+    t!("Sync is already set up for this account. Unlock it with a code from a device that syncs, or with your recovery code.")
+}
+pub(super) fn not_set_up() -> String {
+    t!("Sync isn't set up for this account yet. Turn it on first.")
+}
+pub(super) fn key_changed() -> String {
+    t!("Sync was reset on another device. Unlock sync on this device again.")
+}
 
+/// Sets sync up, unlocks it or resets it with `passphrase`. With `None`, a first setup or a
+/// reset makes a recovery code here and the key from it; the answer then carries the code as
+/// `recoveryCode`.
 pub async fn try_setup(
     cloud: &Cloud,
     library: &Library,
-    passphrase: &str,
+    passphrase: Option<&str>,
     reset: bool,
 ) -> Result<Option<Value>> {
-    setup(cloud, library, Secret::Passphrase(passphrase), reset).await
+    try_unlock(cloud, library, passphrase.map_or(Secret::Generate, Secret::Passphrase), reset).await
 }
 
 /// Moves a protocol-1 account to protocol 2 with the key this device saved for protocol 1, or
 /// unlocks one another device already moved. `Ok(None)` when urbudget.app doesn't accept moves.
 pub async fn try_saved_key(cloud: &Cloud, library: &Library) -> Result<Option<Value>> {
-    setup(cloud, library, Secret::Saved, false).await
+    try_unlock(cloud, library, Secret::Saved, false).await
 }
 
-async fn setup(
+/// `Ok(None)` when this account doesn't go through protocol 2 here: the caller's protocol-1
+/// engine does it.
+pub(super) async fn try_unlock(
     cloud: &Cloud,
     library: &Library,
     secret: Secret<'_>,
     reset: bool,
 ) -> Result<Option<Value>> {
     let _operation = cloud.sync.operation().await?;
-    match setup_once(cloud, library, secret, reset).await {
+    let done = match setup_once(cloud, library, secret, reset).await {
         // A restored data folder unlocks under its new identity in the same attempt.
         Err(error) if installation_replaced(&error) => setup_once(cloud, library, secret, reset).await,
         result => result,
+    }?;
+    let Some((mut answer, owes_code)) = done else { return Ok(None) };
+    if owes_code {
+        // This finished a key change whose own code is gone, so the person has nothing that
+        // unlocks another device. A replacement code gives them one.
+        answer["recoveryCode"] = super::recovery::replace(cloud, library).await?;
     }
+    Ok(Some(answer))
 }
+
+fn unlocked_answer(created: bool, code: Option<String>) -> Value {
+    let mut answer = json!({"created":created,"protocol":2});
+    if let Some(code) = code {
+        answer["recoveryCode"] = json!(code);
+    }
+    answer
+}
+
+/// The answer, and whether it still owes the person a recovery code (`try_unlock`).
 async fn setup_once(
     cloud: &Cloud,
     library: &Library,
     secret: Secret<'_>,
     reset: bool,
-) -> Result<Option<Value>> {
+) -> Result<Option<(Value, bool)>> {
     let Some((account, bootstrap)) = probe_bootstrap(cloud, library).await? else { return Ok(None); };
     if !set_up_on_v2(&bootstrap, reset) { return Ok(None); }
     let (account, transport, mut bootstrap) = connect_bootstrap(cloud, library, account, bootstrap).await?;
@@ -979,26 +1060,42 @@ async fn setup_once(
         }
     }
     save_bootstrap(library, &account, &bootstrap)?;
+    let generating = matches!(secret, Secret::Generate);
+    // Set when this attempt finishes a key change that was started without a passphrase and
+    // the code that change made is no longer here.
+    let mut owes_code = false;
     // A pending key change owns its own salt and key check, including after process death.
     let pending = library.lock().pending_delivery(&account)?;
     if let Some(slot) = pending {
+        let mut finished_with = None;
         let pending_key_verified = if let Some(salt) = slot.manifest["key"]["salt"].as_str() {
-            // Only its own passphrase can finish a key change: the saved key predates it.
-            let Secret::Passphrase(passphrase) = secret else { return Err(passphrase_needed()) };
             let salt = BASE64.decode(salt).map_err(|e| e.to_string())?;
-            let key = crypto::derive(passphrase, &salt)?;
-            let check = BASE64
-                .decode(slot.manifest["key"]["check"].as_str().unwrap_or_default())
-                .map_err(|e| e.to_string())?;
-            if !crypto::matches_check(&key, &check) {
-                return Err("Enter the passphrase used for the pending key change.".into());
-            }
-            store_key(
-                cloud,
-                &account,
-                &format!("pending-{}", slot.operation_id),
-                key,
-            )?;
+            let check = slot.manifest["key"]["check"].as_str().unwrap_or_default();
+            let opens = |key: &crypto::Key| BASE64.decode(check).is_ok_and(|check| crypto::matches_check(key, &check));
+            let service = format!("pending-{}", slot.operation_id);
+            // Only what started a key change can finish it: the saved key predates it.
+            let key = match secret {
+                Secret::Passphrase(passphrase) => Some(crypto::derive(passphrase, &salt)?),
+                // The code that attempt made is kept until someone confirms saving it. Failing
+                // that, the key it made is still in the vault.
+                Secret::Generate => match super::recovery::kept_for(cloud, &account, check) {
+                    Some(code) => {
+                        let key = crypto::derive(&code, &salt)?;
+                        finished_with = Some(code);
+                        Some(key)
+                    }
+                    None => read_key(cloud, &account, &service),
+                },
+                Secret::Saved | Secret::Key(_) => None,
+            };
+            let Some(key) = key.filter(opens) else {
+                return Err(match secret {
+                    Secret::Passphrase(_) => "Enter the passphrase used for the pending key change.".into(),
+                    _ => pending_secret_needed(),
+                });
+            };
+            store_key(cloud, &account, &service, key)?;
+            owes_code = generating && finished_with.is_none();
             true
         } else {
             false
@@ -1006,41 +1103,49 @@ async fn setup_once(
         let receipt = deliver(&transport, None, library, &account)
             .await?
             .ok_or("The pending key operation disappeared before its outcome was confirmed.")?;
-        if let Some(completed) =
+        if let Some(mut completed) =
             completed_reset_retry(reset, &slot.manifest, &receipt, pending_key_verified)?
         {
             // deliver() durably installed the accepted generation/epoch/key and enabled
             // state. A subsequent offline bootstrap fetch cannot invalidate that success.
-            return Ok(Some(completed));
+            if let Some(code) = finished_with {
+                completed["recoveryCode"] = json!(code);
+            }
+            return Ok(Some((completed, owes_code)));
         }
         bootstrap = transport.json(Method::GET, "/bootstrap", None).await?;
         save_bootstrap(library, &account, &bootstrap)?;
     }
     let created = bootstrap["keyGeneration"].is_null();
-    let passphrase = match secret {
-        Secret::Passphrase(passphrase) => passphrase,
-        Secret::Saved if created => {
-            return Err(t!("This account has no sync passphrase yet. Set up sync to choose one."))
-        }
-        Secret::Saved => "",
-    };
-    if !created && !reset {
-        let check = BASE64
-            .decode(string(&bootstrap, "check")?)
-            .map_err(|e| e.to_string())?;
-        let key = if let Secret::Saved = secret {
-            verified_key(cloud.sync.key(), &bootstrap).ok_or_else(passphrase_needed)?
-        } else {
-            let salt = BASE64
-                .decode(string(&bootstrap, "salt")?)
-                .map_err(|e| e.to_string())?;
-            crypto::derive(passphrase, &salt)?
-        };
-        if !crypto::matches_check(&key, &check) {
-            return Err("That isn't the sync passphrase for this account.".into());
-        }
-        store_key(cloud, &account, &string(&bootstrap, "keyGeneration")?, key)?;
+    if created && matches!(secret, Secret::Saved | Secret::Key(_)) {
+        return Err(not_set_up());
     }
+    if !created && !reset {
+        let generation = string(&bootstrap, "keyGeneration")?;
+        let key = match secret {
+            Secret::Passphrase(passphrase) => {
+                let salt = BASE64
+                    .decode(string(&bootstrap, "salt")?)
+                    .map_err(|e| e.to_string())?;
+                crypto::derive(passphrase, &salt)?
+            }
+            Secret::Saved => verified_key(cloud.sync.key(), &bootstrap).ok_or_else(passphrase_needed)?,
+            Secret::Key(key) => key,
+            // Sync is already on. A device that holds the key gets through, as after an
+            // attempt of its own whose answer was lost; any other is told how to unlock.
+            Secret::Generate => read_key(cloud, &account, &generation).ok_or_else(already_set_up)?,
+        };
+        if verified_key(Some(key), &bootstrap).is_none() {
+            return Err(match secret {
+                Secret::Passphrase(_) => "That isn't the sync passphrase for this account.".into(),
+                Secret::Generate => already_set_up(),
+                Secret::Saved => passphrase_needed(),
+                Secret::Key(_) => key_changed(),
+            });
+        }
+        store_key(cloud, &account, &generation, key)?;
+    }
+    let mut code = None;
     if created || reset || bootstrap["protocol"] != 2 {
         let operation = budgets::new_id();
         let mut manifest = control_manifest(&account, &transport.installation, &operation, &bootstrap, created, reset);
@@ -1048,11 +1153,31 @@ async fn setup_once(
             if super::vault::store().is_none() {
                 return Err("A secure credential store is required to safely create or reset the sync passphrase on this device.".into());
             }
+            let made = match secret {
+                Secret::Generate => Some(super::codes::encode(&super::codes::new(super::codes::Kind::Recovery)?)),
+                _ => None,
+            };
+            let phrase = match (secret, made.as_deref()) {
+                (Secret::Passphrase(passphrase), _) => passphrase,
+                (_, Some(made)) => made,
+                // A new key needs something new to make it from.
+                _ => return Err(not_set_up()),
+            };
             let salt: [u8; crypto::SALT_LEN] = crypto::random()?;
-            let key = crypto::derive(passphrase, &salt)?;
-            manifest["key"] =
-                json!({"salt":BASE64.encode(salt),"check":BASE64.encode(crypto::key_check(&key)?)});
+            let key = crypto::derive(phrase, &salt)?;
+            let check = BASE64.encode(crypto::key_check(&key)?);
+            manifest["key"] = json!({"salt":BASE64.encode(salt),"check":check});
+            match &made {
+                Some(made) => {
+                    manifest["key"]["secret"] = json!("code");
+                    // Kept before the request leaves, so the code outlives a crash or a lost answer.
+                    super::recovery::keep(cloud, &account, made, &check)?;
+                }
+                // A code kept for the key this one replaces would open nothing.
+                None => super::recovery::forget(cloud, &account)?,
+            }
             store_key(cloud, &account, &format!("pending-{operation}"), key)?;
+            code = made;
         }
         let digest = hash(canonical(&manifest).as_bytes());
         library
@@ -1063,16 +1188,21 @@ async fn setup_once(
             .ok_or("The key operation was not queued.")?;
         accepted(&receipt)?;
         if reset {
-            return Ok(Some(json!({"created":created,"protocol":2})));
+            return Ok(Some((unlocked_answer(created, code), false)));
         }
         bootstrap = transport.json(Method::GET, "/bootstrap", None).await?;
     }
     save_bootstrap(library, &account, &bootstrap)?;
-    let mut library = library.lock();
-    let mut state = library.account_state(&account)?;
-    state["enabled"] = json!(true);
-    library.set_account_state(&account, &state)?;
-    Ok(Some(json!({"created":created,"protocol":2})))
+    {
+        let mut library = library.lock();
+        let mut state = library.account_state(&account)?;
+        state["enabled"] = json!(true);
+        library.set_account_state(&account, &state)?;
+    }
+    // A device that already had the key hands back the code it still holds unconfirmed.
+    let code = code.or_else(|| generating.then(|| super::recovery::unsaved(cloud, &account, &bootstrap)).flatten());
+    let owes_code = owes_code && code.is_none();
+    Ok(Some((unlocked_answer(created, code), owes_code)))
 }
 
 #[cfg(test)]

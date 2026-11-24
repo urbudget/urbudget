@@ -35,11 +35,35 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(arabic.localizedString(forKey: "Opened %@", value: "MISSING", table: nil), "فُتحت \u{2068}%@\u{2069}")
     }
 
+    /// The engine's messages about codes name the app's own buttons and words (arabic.rs: «إضافة جهاز»,
+    /// رمز الاسترداد), so Account & sync says them the same way.
+    func testSyncsWordsAreTheEngines() throws {
+        let arabic = try bundle("ar")
+        let expected = [
+            "Add a device": "إضافة جهاز",
+            "New recovery code": "رمز استرداد جديد",
+            "Save your recovery code": "احفظ رمز الاسترداد",
+            "Reset sync": "إعادة ضبط المزامنة",
+            "Unlock sync": "فتح قفل المزامنة",
+        ]
+        for (key, value) in expected {
+            XCTAssertEqual(arabic.localizedString(forKey: key, value: "MISSING", table: nil), value, key)
+        }
+        // The time a shown code runs out keeps its own direction inside the Arabic sentence.
+        let until = arabic.localizedString(forKey: "It works once, until %@. Use it only on a device you're holding: anyone with this code can read your budgets.", value: "MISSING", table: nil)
+        XCTAssertTrue(until.contains("\u{2068}%@\u{2069}"), until)
+    }
+
     func testInfoPlistAndShortcutsAreTranslated() throws {
         let arabic = try bundle("ar")
         XCTAssertEqual(arabic.localizedString(forKey: "CFBundleDisplayName", value: "MISSING", table: "InfoPlist"), "UrBudget")
         XCTAssertEqual(arabic.localizedString(forKey: "New transaction", value: "MISSING", table: "InfoPlist"), "معاملة جديدة")
         XCTAssertEqual(arabic.localizedString(forKey: "Bank statement", value: "MISSING", table: "InfoPlist"), "كشف حساب")
+        // Why iOS asks for the camera, in both languages: only Add a device and unlocking sync scan.
+        XCTAssertEqual(arabic.localizedString(forKey: "NSCameraUsageDescription", value: "MISSING", table: "InfoPlist"),
+                       "يستخدم UrBudget الكاميرا لمسح الرمز الذي يضيف جهازًا إلى المزامنة.")
+        XCTAssertEqual(try bundle("en").localizedString(forKey: "NSCameraUsageDescription", value: "MISSING", table: "InfoPlist"),
+                       "UrBudget uses the camera to scan the code that adds a device to sync.")
         XCTAssertEqual(try bundle("en").localizedString(forKey: "CFBundleDisplayName", value: "MISSING", table: "InfoPlist"), "UrBudget")
         XCTAssertNotEqual(arabic.localizedString(forKey: "Add a transaction in ${applicationName}", value: "MISSING", table: "AppShortcuts"), "MISSING")
     }

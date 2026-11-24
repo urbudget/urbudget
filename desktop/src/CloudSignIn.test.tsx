@@ -26,7 +26,7 @@ beforeEach(() => {
     if (command === "account_overview") return overview;
     if (command === "account_start") return start;
     if (command === "account_verify") return status;
-    if (command === "sync_has_key") return true;
+    if (command === "sync_key_info") return { exists: true, secret: "passphrase", recovery: false, protocol: 2 };
     throw new Error(`Unexpected native command: ${command}`);
   });
 });
