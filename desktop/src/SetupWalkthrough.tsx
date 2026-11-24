@@ -8,6 +8,7 @@ import { Check, Plus, X } from "lucide-react";
 import { accountType, typeName } from "./accounts";
 import { api } from "./bridge";
 import { cloud } from "./cloud";
+import { deleteCategory } from "./budgetEdits";
 import { groupNames, orderedCategories } from "./categories";
 import { currencySymbol, errorText, money, numberFormatFor, type NumberFormat } from "./format";
 import { stripIsolates, t, tn, useLanguage } from "./i18n";
@@ -335,6 +336,8 @@ function Chips({ name, children }: { name: string; children: ReactNode }) {
 
 function CategoryChoice({
   existing,
+  removed = [],
+  onRemoved,
   templates,
   templateId,
   onTemplate,
@@ -343,8 +346,14 @@ function CategoryChoice({
   added,
   onAdded,
 }: {
-  /** The budget's own categories by group, when it has some: they stay, and more can be added. */
-  existing?: { name: string; categories: string[] }[];
+  /**
+   * The budget's own categories by group, when it has some. One nothing uses yet can be left
+   * out, as a template's can; one with spending or money in it stays.
+   */
+  existing?: { name: string; categories: { id: string; name: string; unused: boolean }[] }[];
+  /** Ids of the budget's categories to leave out. */
+  removed?: string[];
+  onRemoved?: (ids: string[]) => void;
   templates: BudgetTemplate[] | null;
   templateId: string;
   onTemplate: (id: string) => void;
@@ -366,11 +375,28 @@ function CategoryChoice({
       {existing ? (
         existing.map((group) => (
           <Chips key={group.name} name={group.name}>
-            {group.categories.map((name, i) => (
-              <span key={i} className="setup-chip fixed">
-                {name}
-              </span>
-            ))}
+            {group.categories.map((c) => {
+              if (!c.unused || !onRemoved)
+                return (
+                  <span key={c.id} className="setup-chip fixed">
+                    {c.name}
+                  </span>
+                );
+              const out = removed.includes(c.id);
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  className={`setup-chip${out ? " out" : ""}`}
+                  aria-pressed={!out}
+                  title={out ? t("Left out. Click to put it back.") : t("Click to leave it out.")}
+                  onClick={() => onRemoved(out ? removed.filter((x) => x !== c.id) : [...removed, c.id])}
+                >
+                  {!out && <Check size={12} strokeWidth={3} aria-hidden />}
+                  {c.name}
+                </button>
+              );
+            })}
           </Chips>
         ))
       ) : (
@@ -1023,11 +1049,26 @@ function BudgetSetup({
   const [leftOut, setLeftOut] = useState<string[]>([]);
   const [added, setAdded] = useState<string[]>([]);
   const own = ownCategories(budget);
+  // A category nothing uses yet can still be left out: no spending or schedule in it, and no money.
+  const inUse = useMemo(() => {
+    const ids = new Set<string>();
+    for (const tx of budget.transactions) for (const s of tx.splits) if (s.categoryId) ids.add(s.categoryId);
+    for (const s of budget.schedules ?? []) for (const part of s.transaction.splits) if (part.categoryId) ids.add(part.categoryId);
+    for (const a of budget.assignments) if (a.amount) ids.add(a.categoryId);
+    return ids;
+  }, [budget.transactions, budget.schedules, budget.assignments]);
+  const [removed, setRemoved] = useState<string[]>([]);
   const existing = own.length
     ? groupNames(budget)
-        .map((name) => ({ name, categories: orderedCategories(budget).filter((c) => c.group === name && !c.paymentAccountId && !c.hidden).map((c) => c.name) }))
+        .map((name) => ({
+          name,
+          categories: orderedCategories(budget)
+            .filter((c) => c.group === name && !c.paymentAccountId && !c.hidden)
+            .map((c) => ({ id: c.id, name: c.name, unused: !inUse.has(c.id) })),
+        }))
         .filter((group) => group.categories.length)
     : undefined;
+  const removable = !!existing?.some((group) => group.categories.some((c) => c.unused));
   const adding = draftCategories({ leftOut, added }, existing ? undefined : templates?.find((x) => x.id === templateId), t("Other"));
 
   // Step 3: a plain monthly amount per category. One with a target of another kind keeps it: the full editor sets those.
@@ -1098,15 +1139,26 @@ function BudgetSetup({
         title={t("What do you spend on?")}
         lead={
           existing
-            ? t("These are your categories. Add any that are missing.")
+            ? removable
+              ? t("These are your categories. Click one to leave it out, and add any that are missing.")
+              : t("These are your categories. Add any that are missing.")
             : t("Click a category to leave it out. You can change all of this later.")
         }
         label={t("Next")}
         back={() => go(1)}
         blocked={!existing && !templates}
         action={() => {
-          if (!own.length && !adding.length) return setError(t("Keep or add at least one category to go on."));
-          if (adding.length) edit((d) => addCategories(d, adding));
+          const leaving = removed.filter((id) => own.some((c) => c.id === id) && !inUse.has(id));
+          if (own.length - leaving.length + adding.length <= 0) return setError(t("Keep or add at least one category to go on."));
+          if (leaving.length || adding.length)
+            edit((d) => {
+              const groups = new Set(d.categories.filter((c) => leaving.includes(c.id)).map((c) => c.group));
+              for (const id of leaving) deleteCategory(d, id, null);
+              // A group left with nothing in it goes too, unless a new category is about to fill it.
+              if (d.groupOrder) d.groupOrder = d.groupOrder.filter((g) => !groups.has(g) || d.categories.some((c) => c.group === g));
+              if (adding.length) addCategories(d, adding);
+            });
+          setRemoved([]);
           setLeftOut([]);
           setAdded([]);
           go(3);
@@ -1114,6 +1166,8 @@ function BudgetSetup({
       >
         <CategoryChoice
           existing={existing}
+          removed={removed}
+          onRemoved={setRemoved}
           templates={templates}
           templateId={templateId}
           onTemplate={(id) => {

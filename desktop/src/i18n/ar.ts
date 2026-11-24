@@ -3382,6 +3382,7 @@ export const ar: Catalog = {
   "Add one account with a name to go on.": "أضف حسابًا واحدًا له اسم للمتابعة.",
   "What do you spend on?": "علامَ تنفق؟",
   "These are your categories. Add any that are missing.": "هذه فئاتك. أضف ما ينقصها.",
+  "These are your categories. Click one to leave it out, and add any that are missing.": "هذه فئاتك. انقر فئة لاستبعادها، وأضف ما ينقصها.",
   "Left out. Click to put it back.": "مستبعدة. انقر لإعادتها.",
   "Click to leave it out.": "انقر لاستبعادها.",
   "Add your own": "إضافة فئة من عندك",

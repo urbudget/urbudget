@@ -462,7 +462,10 @@ it("runs the same steps on a budget that exists, as edits to it", async () => {
   press("Back");
   await heading("What do you spend on?");
   expect(screen.queryByRole("combobox", { name: "Categories" })).toBeNull();
-  expect(screen.getByText("These are your categories. Add any that are missing.")).toBeTruthy();
+  expect(screen.getByText("These are your categories. Click one to leave it out, and add any that are missing.")).toBeTruthy();
+  // The ones given money in step 4 stay; the rest can still be left out.
+  expect(screen.queryByRole("button", { name: "Rent or mortgage" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Water" })).toBeTruthy();
   press("Back");
   await heading("Where is your money?");
   expect(screen.getByText("Checking", { selector: "strong" })).toBeTruthy();
@@ -470,6 +473,48 @@ it("runs the same steps on a budget that exists, as edits to it", async () => {
   press("Skip setup");
   expect(screen.getByText("Walkthrough closed")).toBeTruthy();
   expect(api.createBudget).not.toHaveBeenCalled();
+});
+
+it("leaves out a budget's categories that nothing uses yet, and keeps the ones in use", async () => {
+  // New budget made it from a template; an account was added, and Groceries was given money by hand.
+  const rent = { id: "c-rent", name: "Rent", group: "Bills", target: 0 };
+  const water = { id: "c-water", name: "Water", group: "Bills", target: 0 };
+  const groceries = { id: "c-food", name: "Groceries", group: "Needs", target: 0 };
+  const gifts = { id: "c-gifts", name: "Gifts", group: "Savings", target: 0 };
+  const template: Budget = {
+    ...skipped(),
+    categories: [rent, water, groceries, gifts],
+    groupOrder: ["Bills", "Needs", "Savings"],
+    assignments: [{ month: MONTH, categoryId: "c-food", amount: 5000 }],
+  };
+  render(<Harness start={{ mode: "budget", step: 2 }} budget={template} />);
+  await heading("What do you spend on?");
+  expect(screen.getByText("These are your categories. Click one to leave it out, and add any that are missing.")).toBeTruthy();
+  // One with money in it isn't a button: it stays.
+  expect(screen.queryByRole("button", { name: "Groceries" })).toBeNull();
+  expect(screen.getByText("Groceries").className).toBe("setup-chip fixed");
+  press("Water");
+  expect(screen.getByRole("button", { name: "Water" }).getAttribute("aria-pressed")).toBe("false");
+  press("Gifts");
+  // Put back before going on: it stays.
+  press("Water");
+  press("Water");
+  const before = world.undoSteps;
+  press("Next");
+  await heading("What does a month cost?");
+  expect(world.open!.categories.map((c) => c.name)).toEqual(["Rent", "Groceries"]);
+  // Savings held only Gifts: the group goes with it. It's one change, which Undo takes back.
+  expect(world.open!.groupOrder).toEqual(["Bills", "Needs"]);
+  expect(world.undoSteps).toBe(before + 1);
+  expect(world.open!.assignments).toEqual(template.assignments);
+  cleanup();
+
+  // Leaving them all out, with nothing added, can't go on.
+  render(<Harness start={{ mode: "budget", step: 2 }} budget={{ ...template, categories: [rent], assignments: [] }} />);
+  await heading("What do you spend on?");
+  press("Rent");
+  press("Next");
+  expect(screen.getByRole("alert").textContent).toBe("Keep or add at least one category to go on.");
 });
 
 it("adds a card to an open budget with its payment category, owing what was typed", async () => {
