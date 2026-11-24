@@ -584,7 +584,12 @@ internal fun MoveMoneySheet(request: MoveRequest, budget: JSONObject, summary: J
         Column(Modifier.padding(horizontal = Gutter).padding(bottom = if (keypad) 8.dp else 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(if (keypad) ur.accentSoft else ur.surface2).clickable { keypad = true; pad.fresh = true }.padding(vertical = 18.dp),
                 contentAlignment = Alignment.Center) {
-                PadAmount(pad, currency, color = if (keypad) ur.accent else ur.text)
+                // Nothing typed yet: the zero is grey with what to do under it, not an amount that looks entered.
+                val empty = !keypad && !pad.isSum && (pad.cents ?: 0L) == 0L
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    PadAmount(pad, currency, color = if (keypad) ur.accent else if (empty) ur.muted else ur.text)
+                    if (empty) Text(stringResource(R.string.amount_type), color = ur.muted, style = MaterialTheme.typography.bodySmall)
+                }
             }
             ListCard(Modifier.border(1.dp, ur.border, RoundedCornerShape(18.dp))) {
                 MoveEnd(stringResource(R.string.date_from), from, ::name, ::available, currency) { picking = "from" }

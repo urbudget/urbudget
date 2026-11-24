@@ -585,7 +585,7 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
                         accountFilter.isNotEmpty() -> ({ leaveForm { accountFilter = ""; tab = 2 } })
                         categoryFilter.isNotEmpty() -> ({ leaveForm { categoryFilter = ""; tab = 0 } })
                         else -> null
-                    }, initialFrom = rangeFrom, initialThrough = rangeThrough, initialSearch = rangeSearch, payCard = { card -> openEditor("cardPayment", JSONObject().put("id", card)) }, setCategory = { categoryFilter = it }, edit = { openEditor("transaction", it) }, add = { openEditor("transaction") },
+                    }, initialFrom = rangeFrom, initialThrough = rangeThrough, initialSearch = rangeSearch, payCard = { card -> openEditor("cardPayment", JSONObject().put("id", card)) }, setCategory = { categoryFilter = it }, edit = { openEditor("transaction", it) }, add = { openEditor("transaction") }, addAccount = { openEditor("account") },
                     editAccount = { openEditor("account", it) }, reconcile = { openEditor("reconcile", it) },
                     editSchedule = { openEditor("schedule", it) }, vm = vm, bar = common, setDockHidden = { dockHidden = it },
                     openAccount = { id -> accountFilter = id; categoryFilter = ""; rangeFrom = ""; rangeThrough = "" },
@@ -926,7 +926,7 @@ private fun WelcomeScreen(busy: Boolean, create: (String, String, Boolean) -> Un
         ListCard {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Field(name, { name = it }, stringResource(R.string.budget_name))
-                Choice(stringResource(R.string.budget_currency), currency, (listOf(currency, "SAR", "USD", "EUR", "GBP", "CAD", "AUD", "AED", "INR").distinct()).map { it to it }, { currency = it })
+                Choice(stringResource(R.string.budget_currency), currency, remember(languageKey()) { currencyChoices(currency) }, { currency = it })
                 PrimaryButton(stringResource(R.string.welcome_create), { create(name, currency, false) }, Modifier.fillMaxWidth(), enabled = !busy && name.isNotBlank())
             }
         }

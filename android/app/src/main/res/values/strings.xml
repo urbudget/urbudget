@@ -725,7 +725,6 @@
     <string name="account_current_balance">Current balance (%1$s)</string>
     <string name="account_opening_balance">Opening balance (%1$s)</string>
     <string name="account_owed_negative">Enter what you owe as a negative amount.</string>
-    <string name="account_debt_negative">For debt, enter a negative balance.</string>
     <string name="account_opening_changes_history">Changing an opening balance changes the account’s entire history.</string>
     <string name="account_kind_switch_help">To switch between cash, credit and tracking, create a new account so past transactions keep their budget treatment.</string>
     <string name="account_count_in_net_worth">Count in net worth</string>

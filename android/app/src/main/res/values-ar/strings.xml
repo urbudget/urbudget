@@ -778,7 +778,6 @@
     <string name="account_current_balance">الرصيد الحالي (\u2068%1$s\u2069)</string>
     <string name="account_opening_balance">الرصيد الافتتاحي (\u2068%1$s\u2069)</string>
     <string name="account_owed_negative">أدخل ما عليك مبلغًا سالبًا.</string>
-    <string name="account_debt_negative">للديون، أدخل رصيدًا سالبًا.</string>
     <string name="account_opening_changes_history">تغيير الرصيد الافتتاحي يغيّر سجل الحساب بأكمله.</string>
     <string name="account_kind_switch_help">للتبديل بين النقد والائتمان والتتبُّع، أنشئ حسابًا جديدًا لتبقى المعاملات السابقة محتسبة في الميزانية كما كانت.</string>
     <string name="account_count_in_net_worth">احتسابه في صافي الثروة</string>

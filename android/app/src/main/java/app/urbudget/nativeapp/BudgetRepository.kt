@@ -198,6 +198,8 @@ class BudgetRepository(
             ?: error(Words[R.string.model_invalid_budget])
         // Marked as the desktop marks its sample, so Budget offers the way back out of it.
         if (sample) value.put("sample", JSONObject())
+        // Dates and numbers as the device writes them, as the desktop and iPhone start a budget.
+        DeviceFormats.applyTo(value, DeviceFormats.deviceLocale())
         persist(value, retainPrevious = true, createNew = true, localOnly = localOnly)
     }
 
